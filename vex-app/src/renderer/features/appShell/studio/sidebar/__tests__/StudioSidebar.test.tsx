@@ -176,7 +176,7 @@ describe("the project rows", () => {
 
     const activeRow = screen.getByRole("button", { current: true });
     expect(activeRow.textContent).toContain("vex-core");
-    expect(activeRow.querySelector(".vex-state-dot")).not.toBeNull();
+    expect(activeRow.querySelector(".vex-swatch")).not.toBeNull();
 
     const otherRow = screen
       .getAllByRole("button")
@@ -186,7 +186,7 @@ describe("the project rows", () => {
           el.getAttribute("aria-current") === null,
       );
     expect(otherRow).toBeDefined();
-    expect(otherRow?.querySelector(".vex-state-dot")).toBeNull();
+    expect(otherRow?.querySelector(".vex-swatch")).toBeNull();
   });
 
   it("shows full access and keeps restricted as an accessible description", async () => {

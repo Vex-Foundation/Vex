@@ -62,7 +62,7 @@ export function SessionDeleteDialog({
         <DialogFooter className="border-line-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="bare"
             onClick={onCancel}
             disabled={pending}
             // The safer choice takes focus (rule 08). `DialogContent` moves
@@ -76,7 +76,7 @@ export function SessionDeleteDialog({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="ink"
             onClick={onConfirm}
             disabled={pending}
           >

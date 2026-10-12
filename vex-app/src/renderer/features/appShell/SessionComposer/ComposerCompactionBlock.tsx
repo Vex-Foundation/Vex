@@ -25,7 +25,7 @@ import {
   usePreparation,
   usePreparationLiveSync,
 } from "../../../lib/api/compaction-preparation.js";
-import { StateDot } from "../../../components/ui/state-dot.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { CompactionApplyButton } from "../CompactionApplyButton.js";
 
 const COMPACTION_REMOTE_NOTE =
@@ -101,9 +101,9 @@ function CompactionNote({
       aria-label={`Compaction status: ${label}. ${COMPACTION_REMOTE_NOTE}`}
       className="inline-flex items-center gap-1.5 text-[11px] text-ink-tertiary"
     >
-      {/* Status grammar: the word carries the meaning, the StateDot the
+      {/* Status grammar: the word carries the meaning, the Swatch the
        * motion (running = pixel chase). */}
-      <StateDot
+      <Swatch
         state={
           state === "failed" ? "error" : state === "running" ? "ongoing" : "warning"
         }

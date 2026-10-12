@@ -27,7 +27,7 @@ import {
   IconLoading,
   IconWarning,
 } from "../../../../components/icons/index.js";
-import { StateDot } from "../../../../components/ui/state-dot.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { cn } from "../../../../lib/utils.js";
 
 /** Row height in pixels. A file tree is denser than the 32px rail row. */
@@ -277,7 +277,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
           title={props.driftLabel}
           data-vex-file-drift="true"
         >
-          <StateDot state="warning" size={8} label={props.driftLabel} />
+          <Swatch state="warning" size={8} label={props.driftLabel} />
         </span>
       )}
       {props.describedById === null || props.description === null ? null : (

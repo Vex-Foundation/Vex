@@ -1,7 +1,6 @@
 /**
- * Pill: small capsule label chip (view switchers, filters, badges).
- * Interactive when onClick is supplied (renders a button); otherwise a
- * static span. Capsule radius = height / 2.
+ * Pill: small outlined label (view switchers, filters, badges). Interactive
+ * when onClick is supplied (renders a button); otherwise a static span.
  */
 
 import type { HTMLAttributes, JSX, ReactNode } from "react";
@@ -14,29 +13,27 @@ import { cn } from "../../lib/utils.js";
 // is the only element that knows which text is expendable. Deliberately NO
 // `overflow-hidden` here - the interactive variant must keep its focus ring
 // paintable.
+//
+// V10: square, one 1px outline, no fill and no status hue. A variant differs
+// by the line it draws (the rule, the one blue, the ink), never by a wash.
 const pillVariants = cva(
-  "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-capsule border-0",
+  "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap border",
   {
     variants: {
       variant: {
-        neutral: "bg-surface-2 text-ink-secondary",
-        accent: "bg-accent-wash text-accent-primary",
-        danger: "bg-danger-wash text-danger",
-        // STATUS FAMILY (board safety chips). These three carry a hairline
-        // the three above do not: a status chip has to read as a verdict on
-        // a dark plate where a wash alone is nearly invisible, while the
-        // label/filter pills above sit on chrome and must stay quiet. The
-        // ring is the LAST class in the string on purpose - `cn` runs
-        // tailwind-merge over the whole result, so it resolves the base
-        // `border-0` deterministically rather than by source order luck.
-        positive: "bg-success-wash text-success border border-success/40",
-        caution: "bg-warning-wash text-warning-label border border-warning/40",
-        info: "bg-surface-2 text-ink-secondary border border-line-2",
+        neutral: "border-rule text-ink-secondary",
+        accent: "border-accent-primary text-accent-primary",
+        danger: "border-rule-ink text-ink-primary",
+        // STATUS FAMILY (board safety chips): the verdict is the line weight
+        // and its colour family, with a Swatch or a word beside it.
+        positive: "border-rule-ink text-ink-primary",
+        caution: "border-accent-primary text-accent-primary",
+        info: "border-rule text-ink-secondary",
       },
       size: {
         md: "h-6 px-2 text-[12px] leading-[18px]",
         sm: "h-5 px-1.5 text-[11px] leading-[14px]",
-        // The board card's status chip: a taller capsule with room for a
+        // The board card's status chip: a taller pill with room for a
         // leading glyph, sized against the 64px token photo beside it.
         lg: "h-7 gap-1.5 px-2.5 text-[12.5px] leading-[20px]",
       },
@@ -49,13 +46,12 @@ const pillVariants = cva(
 );
 
 /**
- * The ACTIVE treatment of a filter or view pill: the accent wash under an
- * inset accent ring, never a solid accent fill. One string, so a chain
- * filter, a safety filter and the spotlight crumb cannot each invent their
- * own version of "selected".
+ * The ACTIVE treatment of a filter or view pill: the ink frame and the ink
+ * type, never a solid fill. One string, so a chain filter, a safety filter
+ * and the spotlight crumb cannot each invent their own version of "selected".
  */
 export const PILL_ACTIVE_CLASS =
-  "bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary/40";
+  "border-rule-ink bg-interactive-hover text-ink-primary";
 
 /**
  * ATTRIBUTES REACH BOTH ELEMENTS.

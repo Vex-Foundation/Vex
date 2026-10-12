@@ -294,7 +294,7 @@ export function ReportIssueDialog({
           <DialogFooter className="border-line-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="bare"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
               className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"

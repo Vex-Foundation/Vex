@@ -61,7 +61,7 @@ export function DaemonStoppedBody({
         </div>
 
         <Button
-          variant="ghost"
+          variant="bare"
           disabled={starting}
           onClick={onStart}
           className="self-start text-ink-secondary"

@@ -68,7 +68,7 @@ export function RailRow({
   return (
     <div
       className={cn(
-        "group/rail-row relative flex rounded-lg transition-colors",
+        "group/rail-row relative flex transition-colors",
         collapsed ? "h-9" : "h-8",
         // Hover fill and selected fill are deliberately the same tint.
         selected || actionsPinned
@@ -87,7 +87,7 @@ export function RailRow({
           aria-description={description}
           title={collapsed && description === undefined ? label ?? title : undefined}
           className={cn(
-            "flex h-full w-full min-w-0 items-center rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+            "flex h-full w-full min-w-0 items-center text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
             collapsed ? "justify-center px-0" : "gap-2 px-2",
           )}
         >
@@ -255,7 +255,7 @@ export function RailSearchField({
       ? { label: closeLabel, run: onClose }
       : { label: clearLabel ?? closeLabel, run: onClear };
   return (
-    <div className="flex h-9 items-center gap-2 rounded-lg border border-line-input bg-surface-1 px-2.5 transition-colors">
+    <div className="flex h-9 items-center gap-2 border border-line-input bg-surface-1 px-2.5 transition-colors">
       {icon !== undefined ? (
         <span className="shrink-0 text-ink-tertiary">{icon}</span>
       ) : null}
@@ -308,7 +308,7 @@ export function RailSearchField({
         type="button"
         aria-label={trailing.label}
         onClick={trailing.run}
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        className="flex h-5 w-5 shrink-0 items-center justify-center text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
       >
         {closeIcon}
       </button>

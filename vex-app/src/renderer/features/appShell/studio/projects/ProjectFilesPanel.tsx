@@ -31,9 +31,9 @@ import type { StudioFilesStatus } from "@shared/schemas/studio-installer.js";
 import { IconWarning } from "../../../../components/icons/index.js";
 import { Pill } from "../../../../components/ui/pill.js";
 import {
-  StateDot,
-  type StateDotState,
-} from "../../../../components/ui/state-dot.js";
+  Swatch,
+  type SwatchState,
+} from "../../../../components/ui/swatch.js";
 import { agentPresentation } from "./studio-agent-catalogue.js";
 import {
   ARTIFACT_KIND_LABELS,
@@ -62,7 +62,7 @@ import {
  * than a row with no glyph.
  */
 const ARTIFACT_STATE_DOTS: Readonly<
-  Record<StudioFilesStatus["artifacts"][number]["state"], StateDotState>
+  Record<StudioFilesStatus["artifacts"][number]["state"], SwatchState>
 > = {
   current: "done",
   drifted: "warning",
@@ -150,7 +150,7 @@ export function ProjectFilesPanel({
                 <div className="flex items-center justify-between gap-2">
                   {/* The leading state slot. No `label`: the Pill on the same
                     * line carries the verdict word already. */}
-                  <StateDot
+                  <Swatch
                     state={ARTIFACT_STATE_DOTS[artifact.state]}
                     size={8}
                     className="shrink-0"

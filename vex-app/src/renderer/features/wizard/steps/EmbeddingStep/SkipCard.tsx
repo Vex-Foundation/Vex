@@ -69,7 +69,7 @@ export function EmbeddingSkipCard({
       footer={
         <>
           <Button
-            variant="ghost"
+            variant="bare"
             onClick={onOverride}
             disabled={isPending}
           >

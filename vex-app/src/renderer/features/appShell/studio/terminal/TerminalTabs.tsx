@@ -29,9 +29,9 @@
  * called `bash`. Nothing in that strip told one terminal from another, which is
  * the one job a tab strip has. It now follows the two surfaces the owner named:
  *
- *  - deepseek's `StateDot`: a 10px state slot per row, colour-only and
+ *  - deepseek's `Swatch`: a 10px state slot per row, colour-only and
  *    `aria-hidden`, paired with the state IN WORDS for assistive technology
- *    (the repo's own `components/ui/state-dot.tsx` is that primitive);
+ *    (the repo's own `components/ui/swatch.tsx` is that primitive);
  *  - VS Code's tabs: the close affordance appears on HOVER and on the active
  *    tab (`multiEditorTabsControl.ts`), the strip scrolls horizontally with an
  *    overflow affordance rather than squeezing tabs to nothing, and the split
@@ -93,7 +93,7 @@ import {
   IconPlus,
   IconTerminal,
 } from "../../../../components/icons/index.js";
-import { StateDot, type StateDotState } from "../../../../components/ui/state-dot.js";
+import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
 import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceFileTab, WorkspaceState, WorkspaceTab } from "../workspace/types.js";
@@ -146,7 +146,7 @@ const IDLE_FACTS: TerminalRunFacts = {
  * finished, nothing went wrong) and only a failure is `error`, which keeps the
  * red dot meaning "look at this" instead of "a shell closed".
  */
-const DOT_BY_STATE: Readonly<Record<TerminalTabRunState, StateDotState>> = {
+const DOT_BY_STATE: Readonly<Record<TerminalTabRunState, SwatchState>> = {
   running: "ongoing",
   restoring: "ongoing",
   exited: "done",
@@ -705,7 +705,7 @@ function TabRow({
             is what a screen reader gets, and it comes AFTER so the tab's
             accessible name reads "Terminal 1 Running" rather than opening with
             a status nobody asked about yet. */}
-        {runState === null ? null : <StateDot state={DOT_BY_STATE[runState]} size={8} />}
+        {runState === null ? null : <Swatch state={DOT_BY_STATE[runState]} size={8} />}
         {/* ITALIC IS THE PREVIEW SIGNAL, and it is only half of it: italics say
             nothing to a screen reader, so the state word below carries the same
             fact in the accessible name. VS Code paints the identical

@@ -16,7 +16,7 @@ import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { cn } from "../../../lib/utils.js";
 import { HoverCard } from "../../../components/ui/hover-card.js";
 import { RailRow } from "../../../components/ui/rail-list.js";
-import { StateDot } from "../../../components/ui/state-dot.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import {
   formatSessionTime,
   getMissionActivity,
@@ -134,7 +134,7 @@ export function SessionRow({
       }
       leading={
         activity !== null && activity.tone !== "stopped" ? (
-          <StateDot
+          <Swatch
             state={activity.tone === "active" ? "ongoing" : "warning"}
             size={10}
           />

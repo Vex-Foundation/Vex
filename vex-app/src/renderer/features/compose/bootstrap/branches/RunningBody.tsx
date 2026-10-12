@@ -88,7 +88,7 @@ export function RunningBody({
       </ul>
 
       <Button
-        variant="ghost"
+        variant="bare"
         disabled={cancelling}
         onClick={onCancel}
         {...(cancelling

@@ -83,7 +83,7 @@ describe("Pill", () => {
       </Pill>,
     );
     expect(document.querySelector('[data-vex-area="probe"]')?.className).toBe(
-      "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap rounded-capsule border-0 bg-surface-2 text-ink-secondary h-6 px-2 text-[12px] leading-[18px]",
+      "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap border border-rule text-ink-secondary h-6 px-2 text-[12px] leading-[18px]",
     );
   });
 });
