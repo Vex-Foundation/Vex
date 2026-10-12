@@ -23,9 +23,10 @@ export function DeskTicketLoadStamp({ act }: { readonly act: ToolCallActView }):
       data-vex-desk-ticket-load=""
       aria-label="Load this order preview into the trade ticket"
       onClick={() => publish(load)}
-      className="shrink-0 rounded-[3px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]"
+      className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
     >
-      <span className="inline-flex items-center rounded-[3px] border border-line-2 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-secondary hover:border-line-3 hover:text-ink-primary">
+      {/* A V10 stamp: Departure Mono 11px caps, the blue word in a blue frame. */}
+      <span className="inline-flex h-[22px] items-center border border-accent-primary px-2 font-mono text-[11px] uppercase tracking-chip text-accent-primary hover:bg-interactive-hover">
         Load into ticket
       </span>
     </button>

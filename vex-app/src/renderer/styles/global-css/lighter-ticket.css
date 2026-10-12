@@ -1,5 +1,9 @@
 /* ---------------------------------------------------------------------------
- * Order ticket
+ * Order ticket (docs/design/V10-SPREAD.md sections 1 and 7). Departure Mono
+ * 11px caps labels over white fields with a 1px rule; the facts as a column
+ * of key and value rows; then the one review outline and the two side keys.
+ * Long is the true blue fill, Short the ink fill; the arrow carries the
+ * direction. Nothing here signs: the approval card takes over.
  * ------------------------------------------------------------------------- */
 
 /* The ticket owns its panel height. Account context and actions stay visible;
@@ -28,15 +32,26 @@
   outline-offset: 2px;
 }
 
+.lit-ticket-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 2px;
+  background: var(--lit-panel);
+  font-size: 11px;
+}
+
 .lit-ticket-body {
   display: flex;
   min-height: 0;
   flex: 0 1 auto;
   flex-direction: column;
-  gap: 5px;
+  gap: 9px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 6px 8px 8px;
+  padding: 7px 12px 10px;
 }
 
 .lit-ticket-body::-webkit-scrollbar { width: 5px; }
@@ -48,42 +63,31 @@
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 4px;
-  border-top: 1px solid var(--lit-line);
-  padding: 6px 8px;
-  background: var(--lit-panel);
-}
-
-.lit-ticket-meta {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid var(--lit-line);
-  padding: 6px 8px;
+  margin-top: auto;
+  padding: 8px 12px 12px;
   background: var(--lit-panel);
-  font-size: 11.5px;
 }
 
+/* Cross · 10x: the leverage key, a blue word in a rule frame. */
 .lit-margin-chip {
   display: inline-flex;
+  height: 26px;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel-raised);
-  padding: 4px 8px;
-  color: var(--lit-ink);
-  font-size: 11.5px;
-  font-weight: 600;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--lit-positive);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
-.lit-margin-chip i {
-  color: var(--lit-ink-muted);
-  font-style: normal;
-}
-
-.lit-margin-chip:hover { border-color: var(--lit-line-strong); }
+.lit-margin-chip i { color: inherit; font-style: normal; }
+.lit-margin-chip:hover { outline-color: var(--lit-positive); }
 
 .lit-ticket-available {
   display: flex;
@@ -91,117 +95,124 @@
   flex: 1 1 auto;
   justify-content: flex-end;
   gap: 6px;
-  color: var(--lit-ink-muted);
+  color: var(--lit-ink-secondary);
   white-space: nowrap;
 }
 
 .lit-ticket-available small {
   overflow: hidden;
+  font-size: 11px;
   text-overflow: ellipsis;
 }
 
 .lit-ticket-available b {
   color: var(--lit-ink);
-  font-weight: 600;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
 .lit-ticket-context {
   margin: 0;
-  color: var(--lit-ink-muted);
-  font-size: 11.5px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   line-height: 1.45;
 }
 
 .lit-ticket-book-hint {
   flex: 0 0 auto;
-  margin: -1px 0 0;
-  overflow: hidden;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .lit-field {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 .lit-field > span:first-child,
 .lit-protection-leg legend,
 .lit-tif-field legend {
-  color: var(--lit-ink-muted);
+  color: var(--lit-ink-secondary);
   font-size: 11px;
-  font-weight: 600;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
 .lit-field small,
 .lit-protection-leg > small,
 .lit-tif-field > small {
-  color: var(--lit-ink-muted);
-  font-size: 11px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
   line-height: 1.4;
 }
 
+/* The field: white by day, night-1 at night, a 1px rule, figures in 14px. */
 .lit-input-shell {
   display: flex;
+  min-height: 38px;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--lit-line);
-  background: var(--lit-bg);
-  padding: 0 10px;
-  transition: border-color 140ms ease;
+  background: var(--lit-field);
+  padding: 0 0 0 10px;
 }
 
-.lit-input-shell:focus-within { border-color: var(--lit-line-strong); }
+.lit-input-shell:focus-within { border-color: var(--lit-positive); }
 
 .lit-input-shell input {
   min-width: 0;
-  height: 32px;
+  height: 36px;
   flex: 1 1 auto;
   border: 0;
   background: transparent;
   color: var(--lit-ink);
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
   outline: 0;
 }
 
+.lit-input-shell input::placeholder { color: var(--vex-alias-label-tertiary); }
+
 .lit-input-shell b,
 .lit-unit-toggle {
-  color: var(--lit-ink-muted);
-  font-size: 11.5px;
-  font-weight: 600;
+  padding: 0 10px;
+  color: var(--lit-ink-secondary);
+  font-size: 11px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
 .lit-unit-toggle,
 .lit-price-chip {
   display: inline-flex;
+  align-self: stretch;
   align-items: center;
   gap: 4px;
   border: 0;
-  background: var(--lit-panel-raised);
-  padding: 3px 7px;
+  background: transparent;
 }
 
 .lit-unit-toggle:hover,
-.lit-price-chip:hover { color: var(--lit-ink); }
+.lit-price-chip:hover { background: var(--lit-hover); color: var(--lit-ink); }
 
 .lit-price-chip {
+  padding: 0 10px;
   color: var(--lit-positive);
   font-size: 11px;
-  font-weight: 600;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
 /* One row: label, presets, custom input. The worst price is a fact below. */
 .lit-slippage-field {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
 }
@@ -209,90 +220,118 @@
 .lit-slippage-controls {
   display: grid;
   grid-template-columns: repeat(3, auto) minmax(0, 1fr);
-  gap: 4px;
+  align-items: center;
+  gap: 0;
 }
 
 .lit-slippage-controls > button {
-  min-height: 26px;
-  border: 1px solid var(--lit-line);
+  height: 22px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
   background: transparent;
   padding: 0 6px;
-  color: var(--lit-ink-muted);
-  font-size: 11.5px;
-  font-weight: 600;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
 }
+
+.lit-slippage-controls > button + button { margin-left: -1px; }
+.lit-slippage-controls > button:hover { color: var(--lit-ink); }
 
 .lit-slippage-controls > button[aria-pressed="true"] {
-  border-color: var(--lit-line-strong);
   background: var(--lit-panel-raised);
-  color: var(--lit-ink);
+  color: var(--lit-positive);
 }
 
-.lit-slippage-input { padding: 0 6px; }
-.lit-slippage-input input { height: 24px; font-size: 11.5px; }
+.lit-slippage-input { min-height: 22px; margin-left: 8px; padding: 0 0 0 6px; }
+.lit-slippage-input input { height: 20px; font-size: 11px; }
+.lit-slippage-input b { padding: 0 6px; }
 
 /* Keep slippage on one row at the ticket floor; smaller gaps preserve the
  * editable value without stealing a second line from the order flow. */
 @container (max-width: 300px) {
-  .lit-slippage-field { grid-template-columns: 48px minmax(0, 1fr); gap: 4px; }
-  .lit-slippage-controls { gap: 3px; }
+  .lit-slippage-field { grid-template-columns: 68px minmax(0, 1fr); gap: 4px; }
   .lit-slippage-controls > button { padding-inline: 4px; }
-  .lit-slippage-input { padding-inline: 4px; }
+  .lit-slippage-input { margin-left: 4px; padding-inline: 4px; }
 }
 
-/* Binance-style size slider: the track fills to the share, quarter ticks below. */
+/* Size slider: a 1px rule track, the blue run to the share, a 9px blue
+ * square thumb, quarter ticks below. */
 .lit-size-slider {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 2px 0 0;
+  gap: 5px;
+  padding: 4px 0 0;
 }
 
 .lit-size-slider input[type="range"] {
   width: 100%;
-  height: 14px;
+  height: 11px;
   margin: 0;
   appearance: none;
   background: transparent;
   cursor: pointer;
 }
 
-.lit-size-slider input[type="range"]:disabled { cursor: default; opacity: 0.4; }
+.lit-size-slider input[type="range"]:disabled { cursor: default; }
 
 .lit-size-slider input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px;
-  background: linear-gradient(to right, var(--lit-ink-secondary) var(--lit-size-fill, 0%), var(--lit-line) 0);
+  height: 1px;
+  background: linear-gradient(to right, var(--lit-positive) var(--lit-size-fill, 0%), var(--lit-line) 0);
 }
 
 .lit-size-slider input[type="range"]::-webkit-slider-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -4.5px;
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
   appearance: none;
-  border: 2px solid var(--lit-ink);
-  background: var(--lit-panel);
-  transform: rotate(45deg);
+  border: 0;
+  background: var(--lit-positive);
+}
+
+.lit-size-slider input[type="range"]:disabled::-webkit-slider-thumb {
+  outline: 1px dotted var(--lit-positive);
+  background: var(--lit-field);
 }
 
 .lit-size-slider input[type="range"]:focus-visible { outline: 0; }
-.lit-size-slider input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--lit-focus); }
+.lit-size-slider input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
 
 .lit-size-presets {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
+  gap: 0;
 }
 
 .lit-size-slider .lit-size-presets {
   grid-template-columns: repeat(5, 1fr);
-  gap: 0;
 }
 
-.lit-size-slider .lit-size-presets button {
-  min-height: 16px;
+.lit-size-presets button {
+  height: 22px;
   border: 0;
-  padding: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
+  color: var(--lit-ink-secondary);
   font-size: 10px;
+}
+
+.lit-size-presets button + button { margin-left: -1px; }
+.lit-size-presets button:hover:not(:disabled) { color: var(--lit-ink); }
+.lit-size-presets button:disabled { color: var(--lit-ink-muted); }
+
+.lit-size-presets button[aria-pressed="true"] {
+  background: var(--lit-panel-raised);
+  color: var(--lit-positive);
+}
+
+/* The slider's ticks are labels, not keys in a frame. */
+.lit-size-slider .lit-size-presets button {
+  height: 16px;
+  outline: 0;
+  margin-left: 0;
+  padding: 0;
   text-align: center;
 }
 
@@ -301,25 +340,7 @@
 
 .lit-size-slider .lit-size-presets button[aria-pressed="true"] {
   background: transparent;
-  color: var(--lit-ink);
-}
-
-.lit-size-presets button {
-  min-height: 24px;
-  border: 1px solid var(--lit-line);
-  background: transparent;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.lit-size-presets button:hover:not(:disabled) { color: var(--lit-ink); }
-.lit-size-presets button:disabled { opacity: 0.4; }
-
-.lit-size-presets button[aria-pressed="true"] {
-  border-color: var(--lit-line-strong);
-  background: var(--lit-panel-raised);
-  color: var(--lit-ink);
+  color: var(--lit-positive);
 }
 
 /* Qty | Risk beside the Size label; Risk derives the size from the stop-loss. */
@@ -332,42 +353,42 @@
 
 .lit-size-mode {
   display: inline-flex;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-panel);
-  padding: 1px;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
 }
 
 .lit-size-mode button {
-  min-height: 18px;
+  height: 22px;
   border: 0;
   background: transparent;
-  padding: 0 7px;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
-  font-weight: 650;
+  padding: 0 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
 .lit-size-mode button:hover:not(:disabled) { color: var(--lit-ink); }
-.lit-size-mode button:disabled { opacity: 0.4; }
+.lit-size-mode button:disabled { color: var(--lit-ink-muted); cursor: default; }
 
 .lit-size-mode button[aria-pressed="true"] {
   background: var(--lit-panel-raised);
-  color: var(--lit-ink);
-  box-shadow: inset 0 0 0 1px var(--lit-line);
+  color: var(--lit-positive);
 }
 
 .lit-size-field[data-size-mode="risk"] .lit-size-presets { grid-template-columns: repeat(3, 1fr); }
 
 /* The size Risk mode computed: read, not typed. */
-.lit-input-shell--readout { background: var(--lit-panel); }
-.lit-input-shell--readout input { color: var(--lit-ink-muted); }
+.lit-input-shell--readout { background: transparent; border-style: dotted; }
+.lit-input-shell--readout input { color: var(--lit-ink-secondary); }
 
+/* Attached take profit and stop loss: a quiet-ruled block of two rows. */
 .lit-protect {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--lit-line);
+  gap: 8px;
+  border: 1px solid var(--lit-line-quiet);
   padding: 8px 10px;
 }
 
@@ -377,20 +398,24 @@
   grid-template-columns: 76px minmax(0, 1fr);
   align-items: center;
   column-gap: 8px;
-  row-gap: 2px;
+  row-gap: 3px;
 }
 
 .lit-protect-row > span:first-child {
   color: var(--lit-ink-secondary);
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
+
+.lit-protect-row .lit-input-shell { min-height: 30px; }
+.lit-protect-row .lit-input-shell input { height: 28px; font-size: 12px; }
 
 .lit-protect-row > small {
   grid-column: 2;
   overflow: hidden;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
+  color: var(--lit-ink-secondary);
+  font-size: 10px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -398,15 +423,17 @@
 
 .lit-protect-note {
   margin: 0;
-  color: var(--lit-ink-muted);
-  font-size: 10.5px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   line-height: 1.4;
 }
 
 .lit-check-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
 }
 
 .lit-protection-leg,
@@ -421,7 +448,7 @@
 }
 
 .lit-protection-leg {
-  border-top: 1px solid var(--lit-line);
+  border-top: 1px solid var(--lit-line-quiet);
   padding-top: 10px;
 }
 
@@ -431,12 +458,16 @@
   gap: 6px;
 }
 
+.lit-protection-fields .lit-input-shell { min-height: 32px; }
+.lit-protection-fields .lit-input-shell input { height: 30px; font-size: 12px; }
+
+/* Time in force: one rule-framed row of segments. */
 .lit-tif-tabs {
   display: grid;
   grid-auto-columns: 1fr;
   grid-auto-flow: column;
-  border: 1px solid var(--lit-line);
-  overflow: hidden;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
 }
 
 .lit-tif-tabs button {
@@ -444,18 +475,17 @@
   border: 0;
   background: transparent;
   padding: 0 4px;
-  color: var(--lit-ink-muted);
+  color: var(--lit-ink-secondary);
   font-size: 11px;
-  font-weight: 600;
   line-height: 1.2;
 }
 
-.lit-tif-tabs button + button { border-left: 1px solid var(--lit-line); }
-.lit-tif-tabs button:hover { background: var(--lit-hover); color: var(--lit-ink); }
+.lit-tif-tabs button + button { border-left: 1px solid var(--lit-line-quiet); }
+.lit-tif-tabs button:hover { color: var(--lit-ink); }
 
 .lit-tif-tabs button[aria-pressed="true"] {
   background: var(--lit-panel-raised);
-  color: var(--lit-ink);
+  color: var(--lit-positive);
 }
 
 .lit-ticket-options {
@@ -464,51 +494,55 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px 18px;
 }
 
+/* The check labels read in the room's sans, the one place the ticket does. */
 .lit-check-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--lit-ink-secondary);
-  font-size: 12px;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
-
-.lit-check-row input { margin: 0; accent-color: var(--lit-positive); }
 
 .lit-expiry {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--lit-ink-muted);
+  gap: 8px;
+  color: var(--lit-ink-secondary);
   font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
 
+.lit-expiry select { letter-spacing: var(--lit-tr-data); text-transform: none; }
+
+/* Facts: one column of key and value rows under a quiet rule. */
 .lit-ticket-facts {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px 8px;
-  margin: 4px 0 0;
-  border-top: 1px solid var(--lit-line);
-  padding-top: 6px;
+  grid-template-columns: 1fr;
+  margin: 0;
+  border-top: 1px solid var(--lit-line-quiet);
+  padding-top: 4px;
   font-size: 11px;
 }
 
 .lit-ticket-facts > div {
   display: flex;
   min-width: 0;
+  min-height: 21px;
+  align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
 }
-
-.lit-ticket-facts > div:nth-last-child(-n + 2):nth-child(odd),
-.lit-ticket-facts > div:last-child { grid-column: auto; }
 
 .lit-ticket-facts dt {
   overflow: hidden;
-  color: var(--lit-ink-muted);
+  color: var(--lit-ink-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -524,63 +558,74 @@
 .lit-review-note {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   margin: 0;
-  color: var(--lit-ink-muted);
-  font-size: 11px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   line-height: 1.45;
+  text-align: center;
 }
 
-/* Agent review comes before the manual order actions. */
+/* Agent review comes before the manual order actions: the blue outline. */
 .lit-ask-draft {
   display: flex;
+  min-height: 34px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-height: 32px;
-  gap: 6px;
-  border: 1px solid color-mix(in srgb, var(--lit-focus) 32%, var(--lit-line));
-  background: color-mix(in srgb, var(--lit-focus) 10%, transparent);
-  padding: 6px 8px;
-  color: var(--lit-focus);
-  font-size: 12px;
-  font-weight: 600;
+  gap: 8px;
+  border: 0;
+  outline: 1px solid var(--lit-positive);
+  outline-offset: -1px;
+  background: transparent;
+  padding: 0 10px;
+  color: var(--lit-positive);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
 .lit-ask-draft:hover:not(:disabled) { background: var(--lit-hover); }
-.lit-ask-draft:disabled { opacity: 0.45; cursor: not-allowed; }
+.lit-ask-draft:disabled { outline-style: dotted; cursor: not-allowed; }
 
 .lit-ticket-approval-action {
-  align-self: flex-start;
+  align-self: center;
   border: 0;
   background: transparent;
   padding: 4px 0;
-  color: var(--lit-warning);
-  font-size: 11.5px;
-  font-weight: 600;
+  color: var(--lit-positive);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-transform: uppercase;
+  text-underline-offset: 3px;
 }
 
 .lit-ticket-approval-action:hover { color: var(--lit-ink); }
-.lit-ticket-approval-action:focus-visible { outline: 2px solid var(--lit-warning); outline-offset: 2px; }
+.lit-ticket-approval-action:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
 
-/* Ticket feedback: preparation, validation, approval, and provider outcomes. */
+/* Ticket feedback: preparation, validation, approval and provider outcomes.
+ * A framed note: the blue frame for news and attention, the ink frame with a
+ * hatched edge for an error. The bar under it drains the time it stays. */
 .lit-review-outcome {
   position: relative;
   overflow: hidden;
   margin: 0;
-  margin-top: 4px;
-  border: 1px solid color-mix(in srgb, var(--lit-notice) 42%, transparent);
-  background: color-mix(in srgb, var(--lit-notice) 11%, var(--lit-panel));
+  border: 1px solid var(--lit-notice);
+  background: var(--lit-panel);
   padding: 8px 10px 11px;
-  color: var(--lit-notice);
-  font-size: 11.5px;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
   line-height: 1.45;
   overflow-wrap: anywhere;
-  animation: lit-ticket-status-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: lit-ticket-status-in 160ms steps(2, end);
 }
 
 .lit-review-outcome-text {
@@ -593,28 +638,29 @@
   top: 4px;
   right: 4px;
   display: grid;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  width: 26px;
-  height: 26px;
   border: 0;
   background: transparent;
-  color: inherit;
-  font-size: 18px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }
 
 .lit-review-outcome-dismiss::before { content: "×"; }
-.lit-review-outcome-dismiss:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
-.lit-review-outcome-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.lit-review-outcome-dismiss:hover { background: var(--lit-hover); color: var(--lit-ink); }
+.lit-review-outcome-dismiss:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: -2px; }
 
 .lit-review-outcome-timer {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
-  height: 3px;
-  background: currentColor;
+  height: 2px;
+  background: var(--lit-notice);
   transform-origin: left center;
   animation: lit-review-outcome-drain 20s linear forwards;
 }
@@ -628,126 +674,170 @@
 }
 
 @keyframes lit-ticket-status-in {
-  from { opacity: 0; transform: translateY(3px); }
+  from { opacity: 0; }
 }
 
 .lit-review-outcome[data-tone="warn"] {
-  border-color: color-mix(in srgb, var(--lit-warning) 40%, transparent);
-  background: color-mix(in srgb, var(--lit-warning) 12%, transparent);
-  color: var(--lit-warning);
+  border-color: var(--lit-warning);
 }
 
 .lit-review-outcome[data-tone="error"] {
-  border-color: color-mix(in srgb, var(--lit-negative) 40%, transparent);
-  background: var(--lit-negative-wash);
-  color: var(--lit-negative);
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  padding-left: 18px;
 }
 
+.lit-review-outcome[data-tone="error"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  background: repeating-linear-gradient(45deg, var(--lit-ink) 0 1px, transparent 1px 4px);
+}
+
+.lit-review-outcome[data-tone="error"] .lit-review-outcome-timer { background: var(--lit-ink); }
+
+/* The side keys and the setup action share one base: the true blue fill. */
 .lit-review-button {
-  min-height: 38px;
+  min-height: 40px;
   flex: 0 0 auto;
   border: 0;
-  background: var(--lit-positive);
-  color: var(--lit-positive-ink);
-  font-size: 13.5px;
-  font-weight: 700;
-  transition: opacity 140ms ease, transform 140ms ease;
+  background: var(--lit-action);
+  color: var(--lit-action-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
+.lit-review-button:hover:not(:disabled) { background: var(--lit-action-hover); }
+.lit-review-button:active:not(:disabled) { transform: translateY(1px); }
+
+.lit-review-button:disabled {
+  outline: 1px dotted var(--lit-positive);
+  outline-offset: -1px;
+  background: transparent;
+  color: var(--lit-positive);
+  cursor: not-allowed;
+}
+
+/* Short is the ink fill: ink by day, paper at night. */
 .lit-review-button[data-side="sell"] {
-  background: var(--lit-negative);
-  color: var(--vex-alias-label-on-primary);
+  background: var(--lit-ink-fill);
+  color: var(--lit-ink-fill-ink);
 }
 
-/* The two side buttons: the active side submits, the other side flips the
- * ticket and submits for it. The inactive side reads as a choice, not a state. */
+.lit-review-button[data-side="sell"]:hover:not(:disabled) { background: var(--lit-ink-fill-hover); }
+
+.lit-review-button[data-side="sell"]:disabled {
+  outline-color: var(--lit-ink);
+  background: transparent;
+  color: var(--lit-ink);
+}
+
+/* The two side keys: the active side submits, the other flips the ticket and
+ * submits for it. Both are orders, so both are full keys. */
 .lit-side-actions {
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: 8px;
 }
 
 .lit-side-actions .lit-review-button {
   display: flex;
-  min-height: 38px;
+  min-height: 50px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   padding: 4px 8px;
-  gap: 1px;
-  line-height: 1.2;
+  line-height: 1.15;
+}
+
+.lit-side-actions .lit-review-button b {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.lit-side-actions .lit-review-button[data-side="buy"] b::before { content: "\2191\00a0"; }
+.lit-side-actions .lit-review-button[data-side="sell"] b::before { content: "\2193\00a0"; }
+
+.lit-side-actions .lit-review-button small {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: var(--lit-tr-label);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 @container (max-width: 300px) {
   .lit-ticket-body,
   .lit-ticket-footer,
-  .lit-ticket-meta { padding-inline: 7px; }
+  .lit-ticket-meta { padding-inline: 10px; }
 }
-
-.lit-side-actions .lit-review-button small {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 10.5px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0.85;
-}
-
-.lit-side-actions .lit-review-button:not([data-active]) {
-  border: 1px solid var(--lit-positive);
-  background: var(--lit-positive-wash);
-  color: var(--lit-positive);
-}
-
-.lit-side-actions .lit-review-button[data-side="sell"]:not([data-active]) {
-  border-color: var(--lit-negative);
-  background: var(--lit-negative-wash);
-  color: var(--lit-negative);
-}
-
-.lit-review-button:hover:not(:disabled) { opacity: 0.92; }
-.lit-review-button:active:not(:disabled) { transform: translateY(1px); }
-.lit-review-button:disabled { cursor: not-allowed; opacity: 0.45; }
 
 /* No account yet: the ticket becomes one guided setup block. */
 .lit-ticket-connect {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 14px 12px;
   color: var(--lit-ink-secondary);
-  font-size: 11.5px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
   line-height: 1.45;
 }
 
-.lit-ticket-connect b { color: var(--lit-ink); font-size: 13px; }
+.lit-ticket-connect > b {
+  color: var(--lit-ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--lit-tr-eyebrow);
+  text-transform: uppercase;
+}
+
 .lit-ticket-connect .lit-review-button { margin-top: 6px; }
 
 .lit-ticket-steps {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin: 4px 0 0;
+  border-top: 1px solid var(--lit-line-quiet);
   padding: 0;
   list-style: none;
   counter-reset: lit-step;
 }
+
 .lit-ticket-steps li {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  min-height: 30px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--lit-line-quiet);
   counter-increment: lit-step;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
+
 .lit-ticket-steps li::before {
-  content: counter(lit-step);
-  min-width: 14px;
-  color: var(--lit-ink-muted);
+  content: counter(lit-step, decimal-leading-zero);
+  min-width: 18px;
+  color: var(--lit-ink-secondary);
   font-variant-numeric: tabular-nums;
 }
+
 .lit-ticket-steps li span { flex: 1; color: var(--lit-ink); }
-.lit-ticket-steps li em { font-style: normal; color: var(--lit-ink-muted); }
+.lit-ticket-steps li em { color: var(--lit-ink-secondary); font-style: normal; }
 .lit-ticket-steps li[data-state="done"] span { color: var(--lit-ink-secondary); }
 .lit-ticket-steps li[data-state="done"] em { color: var(--lit-positive); }
 
@@ -755,44 +845,40 @@
  * three-step tracker (Deposit -> Trading key -> Fees) that plans the work while
  * idle and reports it live while the chain runs, and one primary action.
  *
- * The setup accent (`--lit-setup-accent`) marks the selected segment, asset
- * unit and active step. V10 has one blue, so both deployments take the
+ * The setup accent (`--lit-setup-accent`) marks the selected segment's asset
+ * and the active step. V10 has one blue, so both deployments take the
  * environment mark; the segment's label and asset name the deployment. */
 [data-vex-area="lighter-account-setup"] { --lit-setup-accent: var(--lit-environment-mark); }
 
-/* Environment segmented control: one inset track, the selected desk a raised
- * segment carrying its own accent and its settlement asset. */
+/* Environment segmented control: two rule-framed halves, the chosen desk in
+ * an ink frame on the paper-2 step. */
 .lit-setup-env {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
-  background: var(--lit-bg);
-  border: 1px solid var(--lit-line);
+  gap: 8px;
 }
+
 .lit-setup-env > button {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid transparent;
+  gap: 10px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
   background: transparent;
-  color: var(--lit-ink-muted);
+  padding: 10px;
+  color: var(--lit-ink-secondary);
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
 }
 
 /* The network mark beside its own name: Ethereum for Core, the Robinhood
- * feather for RHC - the same pairing, from the same source, that the desk's
- * environment switch makes, so the two surfaces read alike.
+ * feather for RHC - the same pairing, from the same source, the desk names
+ * its deployments with.
  *
- * Beside, not behind. Behind was tried: these buttons are only as tall as
- * their two lines of text, so a mark large enough to see either sat squarely
- * under the label or was stranded out at an edge with the centred text
- * floating away from it. Set against the label it belongs to, the pair reads
- * as one name. The unselected side dims its mark to match its muted label
+ * Beside, not behind: set against the label it belongs to, the pair reads as
+ * one name. The unselected side dims its mark to match its muted label
  * rather than hiding it.
  *
  * `aria-hidden` on the image: the network is already written next to it, and
@@ -801,182 +887,226 @@
   width: 19px;
   height: 19px;
   flex: 0 0 auto;
-  opacity: 0.75;
+  opacity: 0.6;
   pointer-events: none;
   user-select: none;
-  transition: opacity 140ms ease;
 }
+
 .lit-setup-env-text {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
-  min-width: 0;
+  gap: 3px;
 }
-.lit-setup-env-name { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
-.lit-setup-env-asset {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+
+.lit-setup-env-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  letter-spacing: var(--lit-tr-label);
   text-transform: uppercase;
-  opacity: 0.75;
 }
-.lit-setup-env > button:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
-.lit-setup-env > button:hover:not(:disabled) .lit-setup-env-logo { opacity: 0.9; }
+
+.lit-setup-env-asset {
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
+}
+
+.lit-setup-env > button:hover:not(:disabled) { background: var(--lit-hover); color: var(--lit-ink); }
+
 .lit-setup-env > button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--lit-setup-accent) 14%, var(--lit-panel-raised));
-  border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
+  outline-color: var(--lit-ink);
+  background: var(--lit-panel-raised);
   color: var(--lit-ink);
 }
-.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-asset { color: var(--lit-setup-accent); opacity: 1; }
+
+.lit-setup-env > button[aria-pressed="true"] .lit-setup-env-asset { color: var(--lit-setup-accent); }
 .lit-setup-env > button[aria-pressed="true"] .lit-setup-env-logo { opacity: 1; }
 
 .lit-setup-env > button:disabled { cursor: default; }
-.lit-setup-env > button:disabled:not([aria-pressed="true"]) { opacity: 0.4; }
+.lit-setup-env > button:disabled:not([aria-pressed="true"]) { outline-style: dotted; }
+
 .lit-setup-env > button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--lit-bg), 0 0 0 4px var(--lit-setup-accent);
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 2px;
 }
 
 /* Checking-account and already-funded lines. */
 .lit-setup-loading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--lit-ink-secondary);
-  font-size: 12.5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-status);
+  text-transform: uppercase;
 }
-.lit-setup-loading .lit-loader { width: 14px; height: 14px; }
+
 .lit-setup-note {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   color: var(--lit-ink-secondary);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
 }
-.lit-setup-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--lit-positive); }
 
-/* Deposit field: a label/balance head over a large tabular amount input whose
- * unit is an accent chip. */
-.lit-setup-field { display: flex; flex-direction: column; gap: 7px; }
+.lit-setup-note svg { flex: 0 0 auto; margin-top: 2px; color: var(--lit-positive); }
+
+/* Deposit field: a label and balance head over a large mono amount whose
+ * unit is a blue chip. */
+.lit-setup-field { display: flex; flex-direction: column; gap: 8px; }
+
 .lit-setup-field-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
-.lit-setup-field-head label { font-size: 12px; font-weight: 600; color: var(--lit-ink-secondary); }
-.lit-setup-balance { font-size: 11.5px; color: var(--lit-ink-muted); font-variant-numeric: tabular-nums; }
+
+.lit-setup-field-head label {
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
+}
+
+.lit-setup-balance {
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .lit-setup-amount {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 14px;
   border: 1px solid var(--lit-line);
-  background: var(--lit-bg);
-  transition: border-color 140ms ease, box-shadow 140ms ease;
+  background: var(--lit-field);
+  padding: 10px 12px;
 }
-.lit-setup-amount:focus-within {
-  border-color: color-mix(in srgb, var(--lit-setup-accent) 60%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lit-setup-accent) 18%, transparent);
-}
+
+.lit-setup-amount:focus-within { border-color: var(--lit-setup-accent); }
+
 .lit-setup-amount input {
-  flex: 1 1 auto;
   min-width: 0;
+  flex: 1 1 auto;
   border: 0;
   background: transparent;
   color: var(--lit-ink);
+  font-family: var(--font-mono);
   font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   outline: none;
 }
+
 .lit-setup-amount input::placeholder { color: var(--lit-ink-muted); }
+
 .lit-setup-amount b {
   flex: 0 0 auto;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  outline: 1px solid var(--lit-setup-accent);
+  outline-offset: -1px;
+  padding: 4px 8px;
   color: var(--lit-setup-accent);
-  padding: 3px 9px;
-  background: color-mix(in srgb, var(--lit-setup-accent) 15%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--lit-tr-label);
 }
-/* The wrapper already draws a rounded ring on :focus-within, so the
- * frame-wide `input:focus-visible` outline in lighter-tokens.css would stack a
- * second, square one inside it. Opt this field out; the ring is the focus cue. */
+
+/* The wrapper draws the focus frame on :focus-within, so the frame-wide
+ * `input:focus-visible` outline in lighter-tokens.css would stack a second
+ * one inside it. Opt this field out; the frame is the focus cue. */
 .lit-chat-frame .lit-setup-amount input:focus-visible { outline: none; }
 
-.lit-setup-min { font-size: 11.5px; color: var(--lit-ink-muted); }
+.lit-setup-min {
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
 
 /* Shortfall: the amount is larger than the wallet holds. Names the gap and
- * hands over the address that closes it. Tinted from the warning hue rather
- * than bordered, so it reads as part of the field instead of a fourth panel
- * competing with the env switch, the input and the tracker. */
+ * hands over the address that closes it, in the blue frame of attention. */
 .lit-setup-fund {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 1px;
+  border: 1px solid var(--lit-warning);
   padding: 10px 11px;
-  background: color-mix(in srgb, var(--lit-warning) 12%, transparent);
-}
-.lit-setup-fund > p {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--lit-warning);
-}
-.lit-setup-fund-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.lit-setup-fund-label {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 600;
-  color: color-mix(in srgb, var(--lit-warning) 45%, var(--lit-ink-muted));
-}
-.lit-setup-fund-row code {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--lit-ink);
-}
-.lit-setup-fund-copy {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border: 1px solid var(--lit-line);
-  background: var(--lit-bg);
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  transition: border-color 140ms ease, color 140ms ease;
-}
-.lit-setup-fund-copy:hover {
-  border-color: var(--lit-line-strong);
-  color: var(--lit-ink);
 }
 
-/* Three-step tracker: the plan while idle, live progress while the chain runs. */
+.lit-setup-fund > p {
+  margin: 0;
+  color: var(--lit-ink);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.lit-setup-fund-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.lit-setup-fund-label {
+  flex: 0 0 auto;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
+}
+
+.lit-setup-fund-row code {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--lit-ink);
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-setup-fund-copy {
+  display: inline-flex;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
+}
+
+.lit-setup-fund-copy:hover { background: var(--lit-hover); color: var(--lit-ink); }
+
+/* Three-step tracker: the plan while idle, live progress while the chain
+ * runs. Each step is a swatch: outline to do, dot screen running, solid done. */
 .lit-setup-steps {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding: 13px 14px;
+  gap: 12px;
   border: 1px solid var(--lit-line);
-  background: color-mix(in srgb, var(--lit-panel-raised) 45%, transparent);
+  padding: 12px 14px;
 }
+
 .lit-setup-steps ol {
   display: flex;
   align-items: center;
@@ -986,111 +1116,132 @@
   padding: 0;
   list-style: none;
 }
+
 .lit-setup-steps li {
   display: flex;
-  align-items: center;
-  gap: 6px;
   min-width: 0;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--lit-ink-muted);
+  align-items: center;
+  gap: 8px;
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-label);
+  text-transform: uppercase;
 }
+
 .lit-setup-step-mark {
-  flex: 0 0 auto;
   display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid var(--lit-line-strong);
-  color: var(--lit-ink-muted);
-  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  color: var(--lit-ink-secondary);
 }
-.lit-setup-step-dot { width: 5px; height: 5px; background: currentColor; }
-.lit-setup-step-mark .lit-loader { width: 12px; height: 12px; border-width: 1.5px; border-top-color: var(--lit-setup-accent); }
+
+.lit-setup-step-dot { display: none; }
+.lit-setup-step-mark .lit-loader { width: 12px; height: 12px; border: 0; }
+.lit-setup-step-mark:has(.lit-loader) { border: 0; }
 .lit-setup-step-label { white-space: nowrap; }
 .lit-setup-steps li[data-state="active"] { color: var(--lit-ink); }
-.lit-setup-steps li[data-state="active"] .lit-setup-step-mark {
-  border-color: color-mix(in srgb, var(--lit-setup-accent) 55%, transparent);
-  background: color-mix(in srgb, var(--lit-setup-accent) 12%, transparent);
-}
-.lit-setup-steps li[data-state="done"] { color: var(--lit-ink-secondary); }
+.lit-setup-steps li[data-state="active"] .lit-setup-step-mark { color: var(--lit-setup-accent); }
+.lit-setup-steps li[data-state="done"] { color: var(--lit-ink); }
+
 .lit-setup-steps li[data-state="done"] .lit-setup-step-mark {
-  border-color: var(--lit-positive);
+  border: 0;
   background: var(--lit-positive);
-  color: var(--lit-positive-ink);
 }
+
+.lit-setup-steps li[data-state="done"] .lit-setup-step-mark svg { display: none; }
+
 .lit-setup-status {
-  font-size: 12px;
   color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.lit-setup-status[data-phase="done"] { color: var(--lit-positive); font-weight: 600; }
 
-/* Fee line: a quiet hairline-topped note, the rates in ink. */
+.lit-setup-status[data-phase="done"] { color: var(--lit-positive); }
+
+/* Fee line: a quiet rule-topped note, the rates in mono ink. */
 .lit-setup-fee {
+  border-top: 1px solid var(--lit-line-quiet);
   padding-top: 11px;
-  border-top: 1px solid var(--lit-line);
-  color: var(--lit-ink-muted);
-  font-size: 11.5px;
+  color: var(--lit-ink-secondary);
+  font-size: 12.5px;
   line-height: 1.5;
 }
-.lit-setup-fee b { color: var(--lit-ink-secondary); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.lit-setup-fee b {
+  color: var(--lit-ink);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
 
 .lit-setup-status-error,
 .lit-setup-step-error {
-  color: var(--lit-negative);
-  font-size: 12px;
+  color: var(--lit-ink);
+  font-size: 12.5px;
   line-height: 1.4;
 }
 
-/* Primary action: full-width, the desk's confident go-green, carrying its own
- * running and done states so there is one thing to watch. */
+/* Primary action: full width, the true blue fill, carrying its own running
+ * and done states so there is one thing to watch. */
 .lit-setup-cta {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
   width: 100%;
   min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   border: 0;
-  background: var(--lit-positive);
-  color: var(--lit-positive-ink);
+  background: var(--lit-action);
+  color: var(--lit-action-ink);
   font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 500;
   cursor: pointer;
-  transition: filter 140ms ease, transform 80ms ease, opacity 140ms ease;
-}
-.lit-setup-cta:hover:not(:disabled) { filter: brightness(1.05); }
-.lit-setup-cta:active:not(:disabled) { transform: translateY(1px); }
-.lit-setup-cta:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--lit-panel), 0 0 0 4px var(--lit-positive);
-}
-.lit-setup-cta:disabled { cursor: default; opacity: 0.5; }
-.lit-setup-cta[data-busy] { opacity: 0.85; }
-.lit-setup-cta[data-done] { opacity: 1; }
-.lit-setup-cta .lit-loader {
-  width: 16px;
-  height: 16px;
-  border-color: color-mix(in srgb, var(--lit-positive-ink) 35%, transparent);
-  border-top-color: var(--lit-positive-ink);
 }
 
+.lit-setup-cta:hover:not(:disabled) { background: var(--lit-action-hover); }
+.lit-setup-cta:active:not(:disabled) { transform: translateY(1px); }
+
+.lit-setup-cta:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 3px;
+}
+
+.lit-setup-cta:disabled:not([data-busy]) {
+  outline: 1px dotted var(--lit-positive);
+  outline-offset: -1px;
+  background: transparent;
+  color: var(--lit-positive);
+  cursor: default;
+}
+
+.lit-setup-cta[data-busy] { cursor: progress; }
+.lit-setup-cta .lit-loader { color: var(--lit-action-ink); }
+
 .lit-setup-footer { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
+
 .lit-setup-cancel {
-  min-height: 42px;
+  min-height: 44px;
+  border: 0;
+  outline: 1px solid var(--lit-line);
+  outline-offset: -1px;
+  background: transparent;
   padding: 0 16px;
-  border: 1px solid var(--lit-border-strong);
-  color: var(--lit-ink-secondary);
-  background: var(--lit-panel-raised);
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--lit-ink);
+  font-size: 14px;
 }
-.lit-setup-cancel:hover:not(:disabled) { color: var(--lit-ink); background: var(--lit-hover); }
+
+.lit-setup-cancel:hover:not(:disabled) { background: var(--lit-hover); }
+
 .lit-setup-cancel:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--lit-bg), 0 0 0 4px var(--lit-setup-accent);
+  outline: 2px solid var(--lit-focus);
+  outline-offset: 3px;
 }
-.lit-setup-cancel:disabled { cursor: default; opacity: 0.45; }
+
+.lit-setup-cancel:disabled { color: var(--lit-ink-muted); cursor: default; }
