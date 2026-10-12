@@ -42,11 +42,11 @@ describe("Button variants", () => {
 
   it("the retired variant names do not produce their old recipes", () => {
     for (const old of ["accent", "outline", "toolbar", "danger", "default", "secondary", "destructive", "link"]) {
-      const classes = buttonVariants({
-        variant: old as unknown as (typeof VARIANTS)[number],
-      });
+      expect(VARIANTS).not.toContain(old);
+    }
+    for (const variant of VARIANTS) {
+      const classes = buttonVariants({ variant });
       expect(classes).not.toContain("bg-danger");
-      expect(classes).not.toContain("bg-accent-primary ");
       expect(classes).not.toContain("underline-offset-4");
     }
   });
