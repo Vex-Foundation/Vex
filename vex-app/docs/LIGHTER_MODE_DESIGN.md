@@ -35,7 +35,7 @@ vex-2026-09-17/
 
 - `features/appShell/AppShell.tsx` — 3열 CSS 그리드 `사이드바 | 센터 | 우측 트랙(BOOK)`. 폭은 `lib/shell-columns.ts`의 `computeShellColumns()`가 해결 (사이드바 264–420, BOOK 300–520, 센터 ≥ 640, 사이드바 자동 접힘 < 1024).
 - 모드 분기는 딱 두 곳: 사이드바(`StudioSidebar` vs `SessionsList`, `AppShell.tsx:263`) 와 센터(`StudioCenter` vs `SessionPanel`, `:305`).
-- `ShellStatusStrip` + `GlobalApprovals`는 모드와 무관하게 **한 번만** 마운트 (preload가 이벤트 종류당 구독자 1개만 허용).
+- `RunningHead` + `GlobalApprovals`는 모드와 무관하게 **한 번만** 마운트 (preload가 이벤트 종류당 구독자 1개만 허용).
 - `BookPanel.tsx`는 `runtimeMode` + `activeSessionId/activeProjectId`로 4갈래 분기해서 세션 스코프 / 프로젝트 스코프 / 웰컴 포트폴리오를 그림.
 - 풀스크린 오버레이 화면은 `ShellRoute` 유니온 (`memory | sessions | howItWorks | agentScan | assets | settings | tokenHistory`) → `ShellScreens.tsx`가 디스패치.
 - 영속 상태(`stores/uiStore/persistence.ts` 화이트리스트): `runtimeMode`, `activeProjectId`, 테마, 사이드바/BOOK 폭·열림, 섹션 순서 등. `activeSessionId`는 **비영속**.

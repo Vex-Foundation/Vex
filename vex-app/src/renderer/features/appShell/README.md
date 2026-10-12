@@ -1,37 +1,53 @@
-# App Shell: layout frame + left sidebar
+# App Shell: the spread + the sessions index
 
-Exact behavior of the shell's column layout and the sessions sidebar,
-rebuilt in the UIUX rebrand phase 3. A fresh agent should be able to rebuild
-these surfaces from this file.
+Exact behavior of the shell's column layout and the sessions index. The
+design values are `docs/design/V10-SPREAD.md` sections 2 to 5 and 8. A fresh
+agent should be able to rebuild these surfaces from this file.
 
-## Column frame (`AppShell.tsx` + `lib/shell-columns.ts`)
+## The spread (`AppShell.tsx` + `lib/shell-columns.ts`)
 
-- Three grid tracks: sidebar | session column | BOOK, solved per frame by the
-  pure `computeShellColumns(viewport, sidebarPref, bookPref)`.
-- Contract geometry: CENTER_MIN 640; sidebar 264-420 (default 280, rail 56,
-  auto-collapse below 1024); BOOK 300-520 (default 360, collapsed spine 48).
-- Concession chain: sidebar never concedes; BOOK shrinks to 300, then
-  auto-closes to its 48px spine (DERIVED - the stored `bookOpen` preference
-  is never rewritten, widening restores it); center absorbs the rest and may
-  drop below its floor only in the final fallback.
+- Five grid tracks: left page | gutter | Studio rail | centre | BOOK, solved
+  per frame by the pure `computeShellColumns({ viewport, mode, sidebar, book,
+  closedBook, zen })`. Every track is a length.
+- Contract geometry: CENTER_MIN 640. Left page 300 (wider by drag up to 420,
+  only into room the centre does not need), spine 56. Gutter 36 beside the
+  page, 22 beside a spine, 0 under the spread. BOOK 300-520 (default 340,
+  held at 300 under 1316, collapsed spine 48). Studio rail 240-420 inside the
+  centre, icon spine 56. First-column preference 240-420 (default 240).
+- Breakpoints: under SPREAD_MIN 1276 the left page and Studio's rail close to
+  their spines (a manual toggle there flips the launch-ephemeral
+  `sidebarNarrowExpanded` override) and the gutter folds into the running
+  head. Lighter and Studio always show the spine.
+- Concession chain: a widened page gives its extra back first; then the BOOK
+  shrinks to 300, then auto-closes to its 48px spine (DERIVED - the stored
+  `bookOpen` preference is never rewritten, widening restores it); the centre
+  absorbs the rest and may drop below its floor only in the final fallback.
 - Width preferences persist in `stores/uiStore` (`sidebarWidth`, `bookWidth`,
-  v10 migration, coerced on every rehydrate). The narrow-viewport re-expand
-  override (`sidebarNarrowExpanded`) is launch-ephemeral.
+  v10 migration, coerced on every rehydrate).
 - Drag handles (`ShellDragHandle.tsx`): 8px strips on the column borders,
   pointer capture, rAF-throttled dx against the drag-start base (the RENDERED
-  width, so a concession-clamped panel does not jump). Track transitions run
-  300ms on `--vex-ease-inout` and pause under `data-dragging`.
-- Welcome stage: the BOOK track is `auto` (the floating Portfolio tab sizes
-  itself); the solver drives the BOOK track only with a session open.
+  width, so a concession-clamped panel does not jump). The page handle exists
+  only while the page can widen; the BOOK handle only while the BOOK is open
+  and free (1316 and up, or Lighter). Track transitions run 300ms on
+  `--vex-ease-inout` and pause under `data-dragging`.
+- Welcome stage: the Portfolio tab fills the BOOK track; closed, the track is
+  0 (no spine).
+- The left page (`ShellBackdrop.tsx`): the day or night print in place
+  (window size from the column's corner, swapped on `data-vex-theme`), or the
+  user's own image from `window.vex.shellBackdrop.read`; the spine adds a
+  44px paper cap. Its children slot is the agent state canvas.
+- The gutter (`ShellGutter.tsx`): the `aria-hidden` spread caption, context |
+  tape word | connection, a drag column.
+- The running head (`RunningHead.tsx`, seam `shell-status-strip`): the
+  centre's 44px drag row, mounted once for the frame; it reserves the Windows
+  and Linux caption buttons over a narrow BOOK and carries the folded gutter.
 
-## Sidebar (`SessionsList.tsx`)
+## Sessions index (`SessionsList.tsx`)
 
-- Collapse choreography (`lib/useCollapseChoreography.ts` +
-  `.vex-sidebar-*` in `styles/global-css/shell.css`): 0-150ms the wide
-  content freezes at its expanded width and fades in place; at the 150ms
-  settle the rail controls enter the 56px spine from a 49px offset over the
-  track transition's second half; the foot only fades. Cold-collapsed mounts
-  render statically; expand remounts wide content on a 200ms fade.
+- Open page or spine: the frame decides (`collapsed`); the spine renders the
+  icon rail. The column has no surface of its own: the print is the ground.
+  The open page's header is the left page's 44px head row (drag region,
+  clear of the macOS traffic lights).
 - Quiet scrollbars (`lib/useQuietScrollbars.ts`): the column rebinds the
   `--vex-scrollbar-thumb` pair to transparent while the pointer is outside
   its box (document pointermove probe; 2s linger). Rebinding, not hiding,
