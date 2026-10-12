@@ -7,6 +7,7 @@ import type {
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
 import {
+  chartColorWithAlpha,
   compareCandleTradeIds,
   toChartCandles,
   toChartVolume,
@@ -109,6 +110,19 @@ describe("Light it up risk sizing", () => {
     expect(riskBaseSize(10_000, 1, 3000, 3000)).toBeNull();
     expect(riskBaseSize(0, 1, 3210.5, 3000)).toBeNull();
     expect(riskBaseSize(10_000, 0, 3210.5, 3000)).toBeNull();
+  });
+});
+
+describe("chart colour with alpha", () => {
+  it("tints the candle hexes for the volume bars without a second spelled colour", () => {
+    expect(chartColorWithAlpha("#22c55e", 0.42)).toBe("rgba(34, 197, 94, 0.42)");
+    expect(chartColorWithAlpha("#ef4444", 0.42)).toBe("rgba(239, 68, 68, 0.42)");
+    expect(chartColorWithAlpha(" #0F0 ", 0.5)).toBe("rgba(0, 255, 0, 0.5)");
+  });
+
+  it("passes any colour it cannot parse through unchanged", () => {
+    expect(chartColorWithAlpha("", 0.42)).toBe("");
+    expect(chartColorWithAlpha("rgb(1, 2, 3)", 0.42)).toBe("rgb(1, 2, 3)");
   });
 });
 
@@ -227,7 +241,7 @@ describe("Light it up chart adapter", () => {
     expect(chartHarness.createChart).toHaveBeenCalledWith(
       expect.any(HTMLElement),
       expect.objectContaining({
-        layout: expect.objectContaining({ fontSize: 13 }),
+        layout: expect.objectContaining({ fontSize: 11 }),
       }),
     );
     expect(chartHarness.candleSetData).toHaveBeenLastCalledWith([]);
