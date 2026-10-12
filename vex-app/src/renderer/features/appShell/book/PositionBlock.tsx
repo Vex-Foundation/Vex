@@ -1,7 +1,7 @@
 /**
  * POSITION — the wallet portfolio card. Card-system grammar (`PortfolioCard`,
  * C3) since the book became one card stack: the display total from
- * `PortfolioOverviewCard`'s hero convention (Inter Tight 600 tabular), the snapshot/PnL line, and the
+ * `PortfolioOverviewCard`'s hero convention (Departure Mono), the snapshot/PnL line, and the
  * resolved wallet COUNT in the card's trailing slot.
  *
  * TRI-SCOPE, driven purely by its `scope` input (the studio seam, #3 - the
@@ -33,8 +33,8 @@
  * cross-wallet aggregate — selecting one wallet in the switcher never changes
  * it; the wallet-scoped body shows that wallet's own total separately.
  *
- * Signal Tape language: one display figure, semantic up/down on the PnL,
- * `tabular-nums` on every figure.
+ * One display figure in mono, the PnL in ink (direction is the sign, never a
+ * colour), `tabular-nums` on every figure.
  */
 
 import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
@@ -107,9 +107,13 @@ export function PositionBlock({
   return (
     <PortfolioCard
       eyebrow={title}
-      trailing={`${portfolio.walletCount} ${
-        portfolio.walletCount === 1 ? "wallet" : "wallets"
-      }`}
+      trailing={
+        <>
+          {portfolio.walletCount}{" "}
+          {portfolio.walletCount === 1 ? "wallet" : "wallets"}
+          <PortfolioRefreshButton />
+        </>
+      }
     >
       {scope.kind === "session" ? (
         <SessionPositionBody portfolio={portfolio} sessionId={scope.sessionId} />
@@ -153,7 +157,7 @@ function SessionPositionBody({
   const walletsQuery = useSessionWallets(sessionId);
   const scope = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2">
       <TotalFigure portfolio={portfolio} />
       <PositionChains
         key={sessionId}
@@ -187,7 +191,7 @@ function ProjectPositionBody({
   const result = projectQuery.data;
   const project = result !== undefined && result.ok ? result.data : null;
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2">
       <TotalFigure portfolio={portfolio} />
       <PositionChains
         key={projectId}
@@ -205,7 +209,7 @@ function PositionBody({
   readonly portfolio: PortfolioDto;
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2">
       <TotalFigure portfolio={portfolio} />
       <GlobalWalletSwitcher portfolio={portfolio} />
     </div>
@@ -214,7 +218,7 @@ function PositionBody({
 
 /**
  * The card's ONE display figure: the live total in the serif hero treatment
- * (`PortfolioOverviewCard` grammar, 34px), with the snapshot total and the
+ * (`PortfolioOverviewCard` grammar), with the snapshot total and the
  * PnL versus it underneath when the DTO carries them.
  *
  * `snapshotAt` IS RENDERED, as an AGE beside the snapshot value (owner
@@ -234,33 +238,28 @@ function TotalFigure({
   const age = snapshotAt === null ? null : snapshotAge(snapshotAt, Date.now());
   const stale = age !== null && age.stale;
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[10.5px] text-ink-tertiary">Total value</span>
-        <PortfolioRefreshButton />
-      </div>
-      {/* Display figure: Inter Tight 600 tabular — the serif retired to the
-        * gate voice (tokens v2 typography law). */}
-      <span className="font-display text-[30px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-ink-primary">
-        {formatUsd(liveTotalUsd)}
-      </span>
+    <div className="grid gap-1.5">
+      <span className="vex-bs__k">Total value</span>
+      <span className="vex-bs__fig">{formatUsd(liveTotalUsd)}</span>
       <ChainReadWarning portfolio={portfolio} />
       {snapshotTotalUsd !== null ? (
         <span
           data-vex-area="position-snapshot"
           data-stale={stale ? "true" : "false"}
-          className="flex items-baseline gap-1.5 text-[11px] tabular-nums text-ink-tertiary"
+          className="vex-bs__sub"
         >
           <span>snapshot {formatUsd(snapshotTotalUsd)}</span>
           {age !== null ? (
             <span data-vex-area="position-snapshot-age">
+              {" "}
               <span aria-hidden>| </span>
               {age.label}
             </span>
           ) : null}
           {pnlVsPrev !== null ? (
             <span
-              className={stale ? "text-ink-tertiary" : pnlToneClass(pnlVsPrev)}
+              className="vex-bs__pnl"
+              style={stale ? { color: "var(--vex-alias-label-secondary)" } : undefined}
               aria-label={
                 age === null
                   ? `Profit and loss versus previous snapshot ${formatUsdDelta(pnlVsPrev)}`
@@ -274,11 +273,4 @@ function TotalFigure({
       ) : null}
     </div>
   );
-}
-
-/** Up = success, down = warn, flat/zero = muted. No glow, token colours only. */
-function pnlToneClass(pnl: number): string {
-  if (pnl > 0) return "text-success";
-  if (pnl < 0) return "text-warning-label";
-  return "text-ink-tertiary";
 }

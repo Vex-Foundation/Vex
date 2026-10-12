@@ -1,46 +1,30 @@
 /**
- * WELCOME PORTFOLIO TAB — the right-edge presentation of the BOOK on the
- * welcome stage (no active session; `BookPanel` routes here). Not a rail:
- * a floating, collapsible tab anchored near the lower right edge, driven by
- * the SAME persisted `bookOpen` flag as the session rail, so the user's one
- * choice survives across both stages (welcome floating tab ⇄ session rail).
+ * WELCOME PORTFOLIO TAB - the BOOK on the welcome stage (no active session;
+ * `BookPanel` routes here). Driven by the SAME persisted `bookOpen` flag as the
+ * session rail, so the user's one choice survives across both stages.
  *
- *  - `bookOpen === false`: only the round ink handle button.
- *  - `bookOpen === true`: the handle plus a 340px card stack (Portfolio
- *    Overview / Wallets / Balances) expanding UPWARD from the button —
- *    SPRING_PANEL carries the surface, the SidebarProfile-DNA stagger
- *    cascades the cards (see `portfolio-motion.ts`); collapse settles the
- *    stack back down onto the handle. The handle persists in BOTH states as
- *    the anchor of the morph (`origin-bottom-right` on the stack), so the
- *    tab always reads as one object, never two unrelated elements.
+ *  - `bookOpen === false`: only the square handle key.
+ *  - `bookOpen === true`: the right page (paper, one rule on its left edge, an
+ *    empty 44px head so the head rule stays clear) carrying the Position,
+ *    Wallets and Balances sections as ledger sections
+ *    (docs/design/V10-SPREAD.md section 2), with the handle at its foot.
+ *    `stackVariants` carries the page and the `cardVariants` stagger cascades
+ *    the sections (see `portfolio-motion.ts`); collapse settles it back out.
+ *    The handle persists in BOTH states as the one anchor, so the tab always
+ *    reads as one object.
  *
- * IN-FLOW like a sidebar (owner correction, 2026-07-20 screenshot review:
- * the earlier absolute overlay ran the cards OVER the hero/composer): the
- * root is an `<aside>` that FILLS the BOOK track the shell solves for the
- * welcome stage (lib/shell-columns.ts: the BOOK's width open, 0 closed), so
- * the centered welcome canvas reflows and re-centers instead of being
- * covered. The track sits at the window's right edge, so the handle,
- * anchored `absolute bottom-[88px] right-5` INSIDE the aside, sits at the
- * same spot in both states. The stack starts under the 44px head row, clear
- * of the Windows and Linux caption buttons (docs/design/V10-SPREAD.md
- * section 8). The only transient overlap left is the ~0.15s stack exit fade
- * painting over the re-expanding center: decay, not occlusion.
- *
- * The handle deliberately carries NO glass blur (the design-guard scans raw
- * text, so even naming the banned utility here would redden the build): at
- * 44px the effect is imperceptible, and portfolio cards are solid on tokens
- * v2 (no portfolio file holds a glass exemption any more); the
- * solid-leaning `--vex-rail-strong` ink reads clean over the Eclipse.
- * Reduced motion is sampled once per mount (SidebarProfile pattern): the
- * stack renders and removes its final frame instantly.
+ * IN-FLOW like a sidebar: the root is an `<aside>` that FILLS the BOOK track
+ * the shell solves for the welcome stage (lib/shell-columns.ts: the BOOK's
+ * width open, 0 closed), so the centred welcome canvas reflows and re-centres
+ * instead of being covered. The page starts under the 44px head row, clear of
+ * the Windows and Linux caption buttons (section 8). Reduced motion is sampled
+ * once per mount (SidebarProfile pattern): the page renders and removes its
+ * final frame instantly.
  */
 
 import { useId, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  IconChevronDown,
-  IconWallet,
-} from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import { prefersReducedMotion, stackVariants } from "./portfolio-motion.js";
 import { GLOBAL_PORTFOLIO_SCOPE } from "./portfolio-scope.js";
 import { PortfolioOverviewCard } from "./PortfolioOverviewCard.js";
@@ -64,23 +48,12 @@ export function WelcomePortfolioPanel({
       data-vex-area="welcome-portfolio"
       data-vex-book-open={bookOpen ? "true" : "false"}
       aria-label="Portfolio"
-      // Sidebar-like reservation (owner correction): the aside fills the
-      // BOOK track, which the shell holds open while the tab is open, so the
-      // cards can never cover the center column. The track owns the width
-      // (and its transition); the aside only fills it.
+      // The aside fills the BOOK track, which the shell holds open while the
+      // tab is open, so the sections can never cover the centre column. The
+      // track owns the width (and its transition); the aside only fills it.
       className="relative z-20 h-full w-full"
     >
-      {/* Anchor column: the full height budget between the top inset and the
-        * handle zone (top-6 → bottom-[88px]). The stack is flex-constrained
-        * (min-h-0 + overflow-y-auto), so when content outgrows the viewport
-        * it scrolls INSIDE the column with everything reachable — no card
-        * ever gets cut mid-row and the Balances footer stays visible (owner
-        * report 2026-07-21: the fixed max-h hid "Add wallet" and "View all
-        * assets" below the fold). pointer-events-none on the anchor so the
-        * tall column never blocks the center when the aside is collapsed;
-        * the stack and the handle restore their own events. */}
-      <div className="pointer-events-none absolute bottom-[88px] right-5 top-[var(--head-h)] flex w-[max(260px,calc(100%-40px))] flex-col items-end justify-end">
-        <AnimatePresence>
+      <AnimatePresence>
         {bookOpen ? (
           <motion.div
             key="stack"
@@ -89,12 +62,14 @@ export function WelcomePortfolioPanel({
             initial={reduced ? false : "hidden"}
             animate="show"
             exit={reduced ? undefined : "exit"}
-            // origin-bottom-right = the morph's anchor at the handle below.
-            className="vex-scroll pointer-events-auto mb-4 flex min-h-0 w-full origin-bottom-right flex-col gap-3 overflow-y-auto"
+            className="vex-bk absolute inset-0"
           >
-            <PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />
-            <WalletsCard scope={GLOBAL_PORTFOLIO_SCOPE} />
-            <BalancesCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+            <div className="vex-bk__head vex-drag vex-overlay-end" />
+            <div className="vex-bk__body vex-bk__stack vex-scroll min-h-0 flex-1 overflow-y-auto pb-[72px]">
+              <PortfolioOverviewCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+              <WalletsCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+              <BalancesCard scope={GLOBAL_PORTFOLIO_SCOPE} />
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -105,18 +80,11 @@ export function WelcomePortfolioPanel({
         aria-controls={bookOpen ? stackId : undefined}
         aria-label={bookOpen ? "Collapse the Portfolio tab" : "Open the Portfolio tab"}
         onClick={onToggle}
-        // shrink-0: in the height-constrained justify-end column the button
-        // must never be squashed by flex shrink (owner report 2026-07-21:
-        // the stack rode over a shrunken handle).
-        className="pointer-events-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line-2 bg-[var(--vex-rail-strong)] text-ink-secondary shadow-lv2 transition-colors hover:border-line-3 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        // shrink-0 and absolute: the handle is the one anchor in both states.
+        className="vex-bk-handle absolute bottom-5 right-5"
       >
-        {bookOpen ? (
-          <IconChevronDown size={17} />
-        ) : (
-          <IconWallet size={17} />
-        )}
+        <PxIcon name={bookOpen ? "chevron-down" : "wallet"} />
       </button>
-      </div>
     </aside>
   );
 }

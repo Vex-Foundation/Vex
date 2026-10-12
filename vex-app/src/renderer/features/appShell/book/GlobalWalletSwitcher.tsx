@@ -29,13 +29,10 @@ import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
 import { useState, type JSX } from "react";
 import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
 import type { PortfolioDto, PositionTokenDto } from "@shared/schemas/portfolio.js";
-import { ETHEREUM_CHAIN_ID, SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { useAvailableWallets } from "../../../lib/api/wallet-inventory.js";
 import { useWalletPortfolio } from "../../../lib/api/portfolio.js";
 import { formatTokenQuantity, formatUsd, truncateAddress } from "../../../lib/format.js";
-import { ChainIcon } from "../../../components/common/ChainIcon.js";
-import { cn } from "../../../lib/utils.js";
 import { GlobalWalletAddresses } from "./GlobalWalletAddresses.js";
 import { PositionChains } from "./PositionChains.js";
 
@@ -87,7 +84,7 @@ export function GlobalWalletSwitcher({
     selectedId === null ? null : allWallets.find((w) => w.id === selectedId) ?? null;
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2">
       {allWallets.length > 1 ? (
         <WalletChipRow
           wallets={allWallets}
@@ -114,7 +111,7 @@ function WalletChipRow({
   readonly onSelect: (id: string | null) => void;
 }): JSX.Element {
   return (
-    <div role="group" aria-label="Wallet" className="flex flex-wrap items-center gap-1">
+    <div role="group" aria-label="Wallet" className="vex-chs">
       <WalletChip
         label="All wallets"
         pressed={selectedId === null}
@@ -125,7 +122,6 @@ function WalletChipRow({
           key={wallet.id}
           label={wallet.label.length > 0 ? wallet.label : truncateAddress(wallet.address)}
           title={wallet.label.length > 0 ? wallet.address : undefined}
-          chainId={wallet.family === "evm" ? ETHEREUM_CHAIN_ID : SOLANA_CHAIN_ID}
           pressed={wallet.id === selectedId}
           onClick={() => onSelect(wallet.id)}
         />
@@ -137,13 +133,11 @@ function WalletChipRow({
 function WalletChip({
   label,
   title,
-  chainId,
   pressed,
   onClick,
 }: {
   readonly label: string;
   readonly title?: string;
-  readonly chainId?: number;
   readonly pressed: boolean;
   readonly onClick: () => void;
 }): JSX.Element {
@@ -153,15 +147,9 @@ function WalletChip({
       title={title}
       aria-pressed={pressed}
       onClick={onClick}
-      className={cn(
-        "inline-flex h-6 max-w-[120px] items-center gap-1 rounded-full border px-2 text-[10.5px] transition-colors",
-        pressed
-          ? "border-accent-primary text-ink-primary"
-          : "border-line-2 text-ink-tertiary hover:border-line-3 hover:text-ink-secondary",
-      )}
+      className="vex-ch"
     >
-      {chainId !== undefined ? <ChainIcon chainId={chainId} size={11} /> : null}
-      <span className="truncate">{label}</span>
+      <span className="vex-ch__t">{label}</span>
     </button>
   );
 }
@@ -194,16 +182,16 @@ function DefaultHoldings({
       ) : tokens.length > 0 ? (
         // Wallet HAS tokens but every row rounds to $0.00 — say so instead
         // of leaving an unexplained gap under the total.
-        <p className="text-[11px] text-ink-tertiary">
+        <p className="vex-bs__empty">
           No priced balances.
         </p>
       ) : (
-        <p className="text-[11px] text-ink-tertiary">
+        <p className="vex-bs__empty">
           No token balances.
         </p>
       )}
       {remainder > 0 ? (
-        <p className="vex-micro-label text-ink-secondary">
+        <p className="vex-bs__k">
           +{remainder} more
         </p>
       ) : null}
@@ -227,24 +215,12 @@ function TokenRow({ token }: { readonly token: PositionTokenDto }): JSX.Element 
   // never a fabricated $0.00).
   const quantity = formatTokenQuantity(token.amount, symbol);
   return (
-    <li className="flex items-baseline justify-between gap-3 border-b border-line-1 py-1.5 last:border-b-0">
-      <span className="min-w-0 flex-1 truncate text-[11px] text-ink-secondary">
-        {symbol ?? "-"}
+    <li className="vex-kv3" data-unpriced={token.balanceUsd === null ? "" : undefined}>
+      <span className="vex-kv3__n">
+        <span>{symbol ?? "-"}</span>
       </span>
-      <span className="flex shrink-0 items-baseline gap-2 text-[11px] font-semibold tabular-nums">
-        {quantity !== null ? (
-          <span className="text-ink-tertiary">{quantity}</span>
-        ) : null}
-        <span
-          className={
-            token.balanceUsd === null
-              ? "text-ink-tertiary"
-              : "text-ink-primary"
-          }
-        >
-          {formatUsd(token.balanceUsd)}
-        </span>
-      </span>
+      <span className="vex-kv3__q">{quantity ?? ""}</span>
+      <span>{formatUsd(token.balanceUsd)}</span>
     </li>
   );
 }
@@ -268,21 +244,21 @@ function WalletScopedHoldings({
 
   if (query.isLoading) {
     return (
-      <p className="vex-micro-label uppercase text-ink-secondary">
+      <p className="vex-bs__empty" data-tone="loading">
         Loading…
       </p>
     );
   }
   if ((result !== undefined && !result.ok) || query.isError) {
     return (
-      <p className="text-[11px] text-warning-label">
+      <p className="vex-bs__empty" data-tone="warn">
         Couldn&apos;t load this wallet&apos;s holdings.
       </p>
     );
   }
   if (portfolio === null) {
     return (
-      <p className="text-[11px] text-ink-tertiary">
+      <p className="vex-bs__empty">
         No holdings for this wallet.
       </p>
     );
@@ -290,13 +266,9 @@ function WalletScopedHoldings({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="vex-micro-label uppercase text-ink-secondary">
-          Wallet total
-        </span>
-        <span className="text-[13px] font-semibold tabular-nums text-ink-primary">
-          {formatUsd(portfolio.liveTotalUsd)}
-        </span>
+      <div className="vex-kv vex-kv--h">
+        <span>Wallet total</span>
+        <span>{formatUsd(portfolio.liveTotalUsd)}</span>
       </div>
       <ChainReadWarning portfolio={portfolio} />
       <PositionChains

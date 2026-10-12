@@ -31,6 +31,7 @@
 
 import { useEffect, useMemo, type JSX } from "react";
 import { cn } from "../../../../lib/utils.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { ActiveBoardRow } from "./ActiveBoardRow.js";
 import {
   boardLiveReadout,
@@ -70,10 +71,10 @@ const LIVE_STATE_LABEL = {
 export const ACTIVE_BOARD_EMPTY = "No board yet - ask VEX to compose one";
 
 /**
- * The module's plate: the glass CARD tier the rest of the rail's cards wear
- * (glass.css; inside the rail it is a tinted plate, the rail blurs for it).
+ * The module's section: the same `.vex-bs` grammar as the Portfolio sections
+ * (book.css), on the paper of the page.
  */
-const CARD_CLASS = "vex-glass-card rounded-xl px-3 py-3";
+const CARD_CLASS = "vex-bs";
 
 export function ActiveBoardModule(): JSX.Element {
   const pinnedBoard = useBoardSurfaceStore((s) => s.pinnedBoard);
@@ -92,7 +93,7 @@ export function ActiveBoardModule(): JSX.Element {
       >
         <p
           data-vex-area="active-board-empty"
-          className="text-[12.5px] leading-[17px] text-ink-tertiary"
+          className="vex-bs__empty"
         >
           {ACTIVE_BOARD_EMPTY}
         </p>
@@ -179,22 +180,19 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
       data-live={held ? "true" : "false"}
       data-live-state={liveState}
       aria-label={`Active board: ${board.title}`}
-      className={cn(CARD_CLASS, "flex flex-col gap-2.5")}
+      className={cn(CARD_CLASS, "gap-2.5")}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="vex-bs__h" style={{ alignItems: "flex-start" }}>
         <div className="min-w-0">
           {/* The MODEL's own title. The rail prints no product label over it. */}
           <p
             data-vex-area="active-board-title"
-            className="truncate font-display text-[13.5px] font-bold leading-[18px] tracking-[-0.01em] text-ink-primary"
+            className="vex-bs__t truncate"
             title={board.title}
           >
             {board.title}
           </p>
-          <p
-            data-vex-area="active-board-clock"
-            className="truncate text-[11.5px] leading-[15px] text-ink-tertiary"
-          >
+          <p data-vex-area="active-board-clock" className="vex-bs__sub truncate">
             {clock === null ? "clock unavailable" : `Updated ${clock}`}
           </p>
         </div>
@@ -202,25 +200,14 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
           data-vex-area="active-board-mode"
           data-mode={liveState}
           data-live-mode={model.mode}
-          className={cn(
-            "flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[15px]",
-            connected ? "text-success" : held ? "text-warning-label" : "text-ink-tertiary",
-          )}
+          className="vex-bs__m inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap"
         >
-          {/* The dot pulses ONLY for a lease that is actually delivering
-            * ticks. A pulse on a connecting or dropped socket would be motion
-            * standing in for an event that has not happened. The WORD beside
-            * it carries the whole meaning on its own. */}
-          <span
-            aria-hidden
-            className={cn(
-              "h-[5px] w-[5px] rounded-full",
-              connected
-                ? "bg-success motion-safe:animate-pulse"
-                : held
-                  ? "bg-warning"
-                  : "bg-ink-dimmed",
-            )}
+          {/* Status by fill: a solid square is delivering, the dot screen
+            * (the one stepping fill) is connecting or dropped, an empty outline
+            * is a snapshot. The WORD beside it carries the whole meaning. */}
+          <Swatch
+            state={connected ? "done" : held ? "ongoing" : "idle"}
+            size={9}
           />
           {liveLabel}
         </span>
@@ -240,7 +227,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
               : `${board.title}: snapshot figures${clock === null ? "" : ` read at ${clock}`}`}
       </p>
 
-      <ul data-vex-area="active-board-rows" className="flex flex-col gap-1">
+      <ul data-vex-area="active-board-rows" className="flex flex-col">
         {rows.map((card, index) => (
           <li key={card.key} className="flex">
             <ActiveBoardRow
@@ -259,7 +246,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
       {overflow > 0 ? (
         <p
           data-vex-area="active-board-overflow"
-          className="text-[11.5px] leading-[15px] text-ink-tertiary"
+          className="vex-bs__sub"
         >
           {`+${String(overflow)} more on the board`}
         </p>
@@ -267,7 +254,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
 
       {spotlightCard !== null ? (
         <div data-vex-area="active-board-spotlight" className="flex flex-col gap-1">
-          <p className="vex-micro-label uppercase text-ink-secondary">Spotlight</p>
+          <p className="vex-bs__k">Spotlight</p>
           <ActiveBoardRow
             card={spotlightCard}
             active
@@ -279,14 +266,15 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-2">
+      <div className="mt-1 flex items-center gap-2">
         <button
           type="button"
           data-vex-area="active-board-open"
           onClick={() => {
             openBoardModal(board);
           }}
-          className="inline-flex flex-1 items-center justify-center rounded-lg bg-button-accent px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-on-button-accent transition-colors duration-150 hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="vex-bk__btn"
+          data-primary=""
         >
           Open board
         </button>
@@ -299,7 +287,7 @@ function ActiveBoard({ board }: { readonly board: BoardRef }): JSX.Element {
             openBoardModal(board);
             setBoardAskOpen(true);
           }}
-          className="inline-flex flex-1 items-center justify-center rounded-lg border border-line-2 px-2.5 py-1.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-line-3 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="vex-bk__btn"
         >
           Ask VEX
         </button>
