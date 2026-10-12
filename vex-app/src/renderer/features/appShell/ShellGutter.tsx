@@ -33,13 +33,8 @@ import { useSession } from "../../lib/api/sessions.js";
 import { useSystemHealth } from "../../lib/api/system.js";
 import { cn } from "../../lib/utils.js";
 import type { RuntimeMode } from "../../stores/uiStore.js";
-import {
-  TAPE_FILL,
-  TAPE_LABEL,
-  TapeSwatch,
-  useTapeState,
-  type TapeFill,
-} from "./DeskRuleTapeState.js";
+import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
+import { TAPE_FILL, TAPE_LABEL, useTapeState } from "./DeskRuleTapeState.js";
 import { getRuntimeStatus } from "./SidebarProfile.js";
 
 const MODE_LABEL: Readonly<Record<RuntimeMode, string>> = {
@@ -58,7 +53,7 @@ export interface SpreadCaption {
   readonly context: string;
   readonly state: string;
   /** The swatch beside the state word; null when the state is a date. */
-  readonly fill: TapeFill | null;
+  readonly fill: SwatchState | null;
   readonly connection: string;
 }
 
@@ -117,14 +112,17 @@ export interface SpreadCaptionSource {
   readonly activeProjectId: string | null;
 }
 
-/** The three groups, read and painted. */
-function GutterCaption(source: SpreadCaptionSource): JSX.Element {
+/** The three groups, read and painted; the swatch is 12px, 9 beside a spine. */
+function GutterCaption({
+  swatch,
+  ...source
+}: SpreadCaptionSource & { readonly swatch: number }): JSX.Element {
   const caption = useSpreadCaption(source);
   return (
     <>
       <span className="vex-gutter__group" data-caption={caption.context} />
       <span className="vex-gutter__group" data-caption={caption.state}>
-        {caption.fill === null ? null : <TapeSwatch fill={caption.fill} className="vex-gutter__swatch" />}
+        {caption.fill === null ? null : <Swatch state={caption.fill} size={swatch} />}
       </span>
       <span className="vex-gutter__group" data-caption={caption.connection} />
     </>
@@ -146,7 +144,7 @@ export function ShellGutter({
       data-vex-gutter={folded ? "folded" : width < 36 ? "small" : "full"}
       className={cn("vex-gutter vex-drag", folded && "invisible")}
     >
-      {folded ? null : <GutterCaption {...source} />}
+      {folded ? null : <GutterCaption {...source} swatch={width < 36 ? 9 : 12} />}
     </div>
   );
 }

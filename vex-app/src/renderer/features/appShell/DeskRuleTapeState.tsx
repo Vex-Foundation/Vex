@@ -35,6 +35,7 @@ import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
 import { cn } from "../../lib/utils.js";
 import { readSessionActivityReadout } from "./session-activity-readout.js";
 
@@ -46,11 +47,11 @@ export type TapeState =
   | "sleeping"
   | "idle";
 
-/** The five fills of the agent states (docs/design/V10-SPREAD.md section 6). */
-export type TapeFill = "idle" | "done" | "ongoing" | "warning" | "draft";
-
-/** Sleeping draws idle; every in-flight word draws its own fill. */
-export const TAPE_FILL: Readonly<Record<TapeState, TapeFill>> = {
+/**
+ * The fill of each state (docs/design/V10-SPREAD.md section 6): sleeping
+ * draws idle; every in-flight word draws its own fill.
+ */
+export const TAPE_FILL: Readonly<Record<TapeState, SwatchState>> = {
   idle: "idle",
   sleeping: "idle",
   live: "done",
@@ -58,35 +59,6 @@ export const TAPE_FILL: Readonly<Record<TapeState, TapeFill>> = {
   awaiting: "warning",
   paused: "draft",
 };
-
-/**
- * One status swatch, drawn on the pixel grid in the current text colour: the
- * fill carries the state. Sized by its caller's CSS (`.vex-tape-swatch`, 9px
- * here, 12 or 9 in the gutter). An interim drawing shared by the running head
- * and the gutter; the shared `Swatch` primitive replaces it, with the same
- * state names.
- */
-export function TapeSwatch({
-  fill,
-  className,
-}: {
-  readonly fill: TapeFill;
-  readonly className: string;
-}): JSX.Element {
-  return (
-    <svg viewBox="0 0 12 12" className={className} data-s={fill} aria-hidden="true" focusable="false">
-      <rect x="0.75" y="0.75" width="10.5" height="10.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      {fill === "done" ? <rect x="0" y="0" width="12" height="12" fill="currentColor" /> : null}
-      {fill === "ongoing" ? (
-        <path d="M3 3h2v2H3zM7 3h2v2H7zM3 7h2v2H3zM7 7h2v2H7z" fill="currentColor" />
-      ) : null}
-      {fill === "warning" ? <rect x="4" y="4" width="4" height="4" fill="currentColor" /> : null}
-      {fill === "draft" ? (
-        <path d="M1.5 6.5 6.5 1.5M1.5 10.5 10.5 1.5M5.5 10.5 10.5 5.5" stroke="currentColor" strokeWidth="1.25" fill="none" />
-      ) : null}
-    </svg>
-  );
-}
 
 export const TAPE_LABEL: Readonly<Record<TapeState, string>> = {
   awaiting: "Awaiting",
@@ -153,7 +125,7 @@ export function DeskRuleTapeState(): JSX.Element | null {
         lit ? "text-[var(--vex-accent-text)]" : "text-[var(--vex-text-2)]",
       )}
     >
-      <TapeSwatch fill={TAPE_FILL[state]} className="vex-tape-swatch" />
+      <Swatch state={TAPE_FILL[state]} size={9} />
       {TAPE_LABEL[state]}
     </span>
   );

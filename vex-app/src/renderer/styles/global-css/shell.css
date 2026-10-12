@@ -337,17 +337,6 @@
 .vex-gutter[data-vex-gutter="small"] .vex-gutter__group {
   gap: 9px;
 }
-.vex-gutter__swatch {
-  display: block;
-  flex: none;
-  width: 12px;
-  height: 12px;
-  shape-rendering: crispEdges;
-}
-.vex-gutter[data-vex-gutter="small"] .vex-gutter__swatch {
-  width: 9px;
-  height: 9px;
-}
 
 /* THE RUNNING HEAD (docs/design/V10-SPREAD.md section 4): the centre page's
  * 44px head row and the window's drag region. Its right padding reserves the
@@ -391,14 +380,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-/* The tape word's swatch: 9px, crisp, in the word's own colour. */
-.vex-tape-swatch {
-  display: block;
-  flex: none;
-  width: 9px;
-  height: 9px;
-  shape-rendering: crispEdges;
 }
 /* The welcome stage's clear head row runs across the spine's cap too. */
 .vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {

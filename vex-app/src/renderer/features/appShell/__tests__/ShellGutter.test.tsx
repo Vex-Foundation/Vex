@@ -144,13 +144,15 @@ describe("ShellGutter", () => {
     expect(groups).toEqual(["Agent · Restricted", "Live", "Connected"]);
     // Painted, not written: the page's text holds each word once.
     expect(gutter?.textContent).toBe("");
-    expect(gutter?.querySelector(".vex-gutter__swatch")?.getAttribute("data-s")).toBe("done");
+    const swatch = gutter?.querySelector<HTMLElement>(".vex-swatch");
+    expect(swatch?.getAttribute("data-s")).toBe("done");
+    expect(swatch?.style.width).toBe("12px");
   });
 
   it("draws no swatch beside a date", () => {
     tapeMock.mockReturnValue(null);
     const view = render(<ShellGutter {...SOURCE} activeSessionId={null} width={36} />);
-    expect(view.container.querySelector(".vex-gutter__swatch")).toBeNull();
+    expect(view.container.querySelector(".vex-swatch")).toBeNull();
   });
 
   it("sets the small caption in the 22px gutter beside a spine", () => {
@@ -158,6 +160,7 @@ describe("ShellGutter", () => {
     expect(
       view.container.querySelector("[data-vex-area='shell-gutter']")?.getAttribute("data-vex-gutter"),
     ).toBe("small");
+    expect(view.container.querySelector<HTMLElement>(".vex-swatch")?.style.width).toBe("9px");
   });
 
   it("folds to nothing under the spread, and reads nothing while folded", () => {
