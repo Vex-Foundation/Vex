@@ -120,7 +120,6 @@ button.vex-disclosure-leading {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 50%;
   background: currentColor;
   opacity: 0.1;
 }
@@ -129,7 +128,6 @@ button.vex-disclosure-leading {
   content: "";
   position: absolute;
   inset: 20%;
-  border-radius: 50%;
   background: currentColor;
 }
 

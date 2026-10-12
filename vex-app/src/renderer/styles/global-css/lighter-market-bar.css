@@ -17,7 +17,6 @@ button.lit-market-select {
   gap: 10px;
   min-height: 36px;
   border: 1px solid transparent;
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 2px 8px 2px 6px;
   color: var(--lit-ink);
@@ -60,7 +59,6 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   flex: 0 0 auto;
   align-items: center;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: var(--lit-panel);
   padding: 2px;
 }
@@ -68,7 +66,6 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-category-tabs button {
   min-height: 26px;
   border: 0;
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 0 10px;
   color: var(--lit-ink-muted);
@@ -229,7 +226,6 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
 .lit-live-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
   background: currentColor;
 }
 
@@ -253,7 +249,6 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   height: 16px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -274,7 +269,6 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   flex: 0 0 auto;
   align-items: center;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: var(--lit-environment-surface);
   padding: 2px;
 }
@@ -286,7 +280,6 @@ button.lit-market-select > .lit-chevron { width: 18px; height: 18px; color: var(
   gap: 6px;
   min-height: 26px;
   border: 0;
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 0 9px;
   color: var(--lit-ink-muted);
@@ -342,15 +335,6 @@ button.lit-market-select small { overflow: hidden; text-overflow: ellipsis; }
 }
 
 .lit-market-metrics { gap: 16px; }
-
-.lit-live-status[data-status="live"] i {
-  animation: lit-live-pulse 2.4s ease-in-out infinite;
-}
-
-@keyframes lit-live-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lit-positive) 0%, transparent); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--lit-positive) 22%, transparent); }
-}
 
 @container (max-width: 930px) {
   .lit-market-bar { gap: 10px; }

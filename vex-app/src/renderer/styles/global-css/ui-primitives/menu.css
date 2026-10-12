@@ -1,7 +1,8 @@
 /* Menu primitive chrome: dropdown card, items, submenu bridge. */
 
 /* ── Menu ──────────────────────────────────────────────────────────────────
- * Dropdown card: 4px inset pad, r12, lv3, NO entry animation. */
+ * Dropdown card: 4px inset pad, square, one 1px rule for an edge (V10: no
+ * shadow; the card sits on the same paper as the page), NO entry animation. */
 .vex-menu-root {
   position: relative;
   display: inline-flex;
@@ -13,10 +14,8 @@
   padding: 4px;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--vex-alias-border-l1);
-  border-radius: 12px;
+  border: 1px solid var(--vex-alias-border-l2);
   background: var(--vex-alias-bg-layer-2);
-  box-shadow: var(--shadow-lv3);
   /* Elevated surface: the scrollbar pair takes the l2 tier; the custom
    * properties inherit to whichever descendant actually scrolls. */
   --vex-scrollbar-thumb: var(--vex-alias-scrollbar-l2);
@@ -90,7 +89,6 @@
   min-height: 40px;
   padding: 8px 10px;
   border: none;
-  border-radius: 10px;
   background: transparent;
   cursor: pointer;
   font-size: 14px;
@@ -121,14 +119,12 @@
 .vex-menu-submenu.vex-menu-compact {
   min-width: 164px;
   padding: 2px;
-  border-radius: 7px;
 }
 
 .vex-menu-compact .vex-menu-item {
   min-height: 26px;
   gap: 6px;
   padding: 3px 7px;
-  border-radius: 5px;
   font-size: 12px;
   line-height: 18px;
 }
