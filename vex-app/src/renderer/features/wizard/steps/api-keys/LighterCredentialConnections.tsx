@@ -169,7 +169,7 @@ function ConnectionRow({
           <span className="break-all font-mono text-xs text-ink-primary">
             {connection.walletAddress}
           </span>
-          <span className="rounded-capsule border border-line-2 px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
+          <span className="border border-line-2 px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
             {connection.protected ? "Primary Vex wallet · protected" : "Not primary"}
           </span>
         </div>

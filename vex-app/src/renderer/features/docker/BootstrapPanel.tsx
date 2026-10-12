@@ -1,10 +1,9 @@
 /**
- * Docker bootstrap orchestrator — the Docker slide on the cobalt
- * continuum (Chronos rebrand, AMENDMENT A2): `SetupFrame` paints the
- * SetupGate plate, a serif "Docker" title sits above one ink-glass
- * card holding the active branch body, and the footer carries exactly
- * one CTA per state — the paper-pill Continue (branch A) or the quiet
- * ghost Recheck (everywhere else).
+ * Docker bootstrap orchestrator: the Docker page on the pre-shell stage
+ * (docs/design/V10-SPREAD.md section 2). `SetupFrame` lays the paper leaf
+ * on the print; a serif "Docker" title sits above the active branch body,
+ * and the footer carries exactly one CTA per state: the blue Continue
+ * (branch A) or the quiet outlined Recheck (everywhere else).
  *
  * Branch dispatch lives here; the per-branch render is delegated to
  * the body components in `bootstrap/branches/`. Shared visual
@@ -190,14 +189,12 @@ export function BootstrapPanel(): JSX.Element {
   return (
     <SetupFrame
       screen="dockerBootstrap"
-      maxWidth="lg"
       title="Docker"
       subline="Vex runs Postgres and embeddings locally through Docker."
     >
-      {/* THE BODY — the active branch, directly on the plate (AMENDMENT
-       * A3: the container card and its inner scroll well are retired;
-       * the page column scrolls, so long Linux instructions scroll the
-       * page, not a well). */}
+      {/* THE BODY: the active branch, directly on the leaf (no container
+       * card, no inner scroll well: the leaf scrolls, so long Linux
+       * instructions scroll the page, not a well). */}
       <div className="vex-rise vex-rise-d1">
           {showInstallProgress ? (
             <InstallProgressStrip active />
@@ -240,13 +237,12 @@ export function BootstrapPanel(): JSX.Element {
           )}
       </div>
 
-      {/* FOOTER — one CTA per state: paper-pill Continue on branch A,
-       * quiet ghost Recheck everywhere else. */}
-      <div className="vex-rise vex-rise-d2 mt-6 flex justify-center">
+      {/* FOOTER: one CTA per state, the blue Continue on branch A, the
+       * quiet outlined Recheck everywhere else. */}
+      <div className="vex-rise vex-rise-d2 mt-8 flex">
         {branch === "A" ? (
           <Button
             size="lg"
-            className="min-w-[208px]"
             onClick={handleContinue}
             aria-label="Continue to services startup"
           >
@@ -254,9 +250,8 @@ export function BootstrapPanel(): JSX.Element {
           </Button>
         ) : (
           <Button
-            variant="bare"
+            variant="quiet"
             size="lg"
-            className="min-w-[208px] text-ink-secondary"
             onClick={handleRecheck}
             disabled={recheckDisabled}
           >

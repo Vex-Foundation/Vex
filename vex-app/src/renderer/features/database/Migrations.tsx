@@ -1,8 +1,8 @@
 /**
- * Database migrations orchestrator — the "Database" slide on the cobalt
- * continuum (intro is gone; the Chronos Gate fast-path skips this
- * screen for healthy returning users). Visual system: `SetupFrame`
- * plate + serif title + one ink-glass card (Chronos rebrand, A2).
+ * Database migrations orchestrator: the "Database" page on the pre-shell
+ * stage (intro is gone; the Chronos Gate fast-path skips this screen for
+ * healthy returning users). Visual system: `SetupFrame`'s paper leaf on
+ * the print, a serif title, the active phase below it.
  *
  * Flow (unchanged):
  *   1. Subscribe to the progress bus BEFORE invoking `migrate()`. The
@@ -151,9 +151,8 @@ export function Migrations(): JSX.Element {
       title="Database"
       subline="Bringing your local schema up to date."
     >
-      {/* THE BODY — the active phase, directly on the plate (AMENDMENT
-       * A3: the container card and its inner scroll well are retired;
-       * the page column scrolls). */}
+      {/* THE BODY: the active phase, directly on the leaf (no container
+       * card, no inner scroll well: the leaf scrolls). */}
       <div className="vex-rise vex-rise-d1">
           {phase.kind === "running" ? (
             <RunningBody current={phase.current} />
@@ -175,10 +174,9 @@ export function Migrations(): JSX.Element {
        * is up to date (error offers Retry in the body; noop
        * auto-advances). */}
       {phase.kind === "ready" ? (
-        <div className="vex-rise vex-rise-d2 mt-6 flex justify-center">
+        <div className="vex-rise vex-rise-d2 mt-8 flex">
           <Button
             size="lg"
-            className="min-w-[208px]"
             onClick={handleContinue}
             aria-label="Continue to setup wizard"
           >

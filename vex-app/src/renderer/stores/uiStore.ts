@@ -195,9 +195,9 @@ export interface UiState {
   readonly bookOpen: boolean;
   readonly currentView: View;
   /**
-   * The Chronos Gate boot overlay (features/setup/SetupGate). `true` from
-   * first paint until the launch pipeline resolves and the curtain reveal
-   * completes — then dismissed for the rest of the process. NOT persisted.
+   * The Chronos Gate boot overlay (features/setup/ChronosGate). `true` from
+   * first paint until the launch pipeline resolves and the gate has lifted
+   * away, then dismissed for the rest of the process. NOT persisted.
    */
   readonly setupGateActive: boolean;
   /**
@@ -208,10 +208,10 @@ export interface UiState {
    */
   readonly prologueReplayNonce: number;
   /**
-   * The unlock-success exit curtain (features/setup/CurtainExit, mounted by
-   * App): `true` from a successful unlock IPC until the cobalt curtain has
-   * covered the screen, flipped `currentView` to `unlockReturnView`, and
-   * split open over the revealed view. No cancel path. NOT persisted.
+   * The unlock-success page turn (features/setup/CurtainExit, mounted by
+   * App): `true` from a successful unlock IPC until the right page has
+   * arrived over the print, `currentView` has flipped to `unlockReturnView`
+   * beneath it, and the turn has lifted away. No cancel path. NOT persisted.
    */
   readonly unlockCurtainActive: boolean;
   readonly wizardEntryMode: WizardEntryMode;

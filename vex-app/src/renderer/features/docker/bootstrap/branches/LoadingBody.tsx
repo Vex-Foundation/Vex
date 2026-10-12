@@ -9,17 +9,16 @@ import { VexLoader } from "../../../../components/ui/vex-loader.js";
 
 export function LoadingBody(): JSX.Element {
   return (
-    <div className="flex flex-col items-center gap-5 py-6">
+    <div className="flex flex-col items-start gap-5 py-6">
       {/* Loader label deliberately does NOT repeat "Detecting Docker" —
        * the visible line below carries it, and tests getByText the
        * phrase (a duplicate sr-only match would be ambiguous). */}
       <VexLoader
-        size={72}
+        size={40}
         stroke={2}
-        tone="paper"
         label="Probing the Docker endpoint"
       />
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-col items-start gap-1">
         <p className="text-sm font-medium text-ink-primary">
           Detecting Docker…
         </p>

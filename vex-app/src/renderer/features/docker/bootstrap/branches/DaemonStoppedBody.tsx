@@ -52,7 +52,7 @@ export function DaemonStoppedBody({
           <p className="vex-micro text-ink-secondary">
             Run this in a terminal
           </p>
-          <pre className="overflow-auto rounded-lg border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
+          <pre className="overflow-auto border border-[var(--color-border)] bg-gate-code p-3 font-code text-xs leading-relaxed text-ink-primary">
             <code>sudo systemctl start docker</code>
           </pre>
           <p className="text-xs text-ink-secondary">
@@ -61,10 +61,10 @@ export function DaemonStoppedBody({
         </div>
 
         <Button
-          variant="bare"
+          variant="quiet"
           disabled={starting}
           onClick={onStart}
-          className="self-start text-ink-secondary"
+          className="self-start"
         >
           {starting ? "Starting…" : "Try Start Docker Desktop"}
         </Button>

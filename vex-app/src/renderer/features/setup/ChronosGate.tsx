@@ -1,16 +1,16 @@
 /**
- * CHRONOS GATE — the boot cold open (design-language §6a). A royal-blue
- * brand plate (drifting dither sky) covers the window from first paint
- * while `useSetupOrchestrator` runs the real launch pipeline; the four
- * acts (gate opens → mark enters → seal stamps → curtain release) play
- * over it, with the progress line bound to the pipeline's real stages.
+ * CHRONOS GATE: the boot cold open (docs/design/V10-SPREAD.md sections 2
+ * and 10). The stage print covers the window from first paint while
+ * `useSetupOrchestrator` runs the real launch pipeline; the three acts (the
+ * print develops, the release counter arrives, the ground fills in) play on
+ * it, with the ground rule bound to the pipeline's real stages.
  *
- * Act IV: once BOTH the pipeline handoff and the Act III settle time have
- * resolved, the gate applies the handoff to the view machine BENEATH
- * itself, the act content fades, and the sky splits into two curtain
- * panels sliding off the top and bottom edges — one continuous motion
- * into the first boot screen. Reduced motion: the static Act III frame,
- * no hold, and a plain fade instead of the curtain.
+ * The reveal: once BOTH the pipeline handoff and the Act III settle time
+ * have resolved, the gate applies the handoff to the view machine BENEATH
+ * itself, waits one frame for the screen to mount, and lifts away. The
+ * screen beneath stands on an identical print in the same place, so only
+ * the gate's type fades: the picture never moves. Reduced motion: the
+ * static Act III frame, no hold, and the gate leaves at once.
  *
  * Layering: `z-50`, mounted BELOW `UpdateLayer` (`z-[60]`) so a critical
  * update toast stays visible over the boot ritual.
@@ -18,16 +18,11 @@
 
 import { useEffect, useState, type JSX } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { EASE_INOUT, EASE_STANDARD } from "../../lib/motion/index.js";
+import { DURATION_SLOW_MS, EASE_STANDARD } from "../../lib/motion/index.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useSetupOrchestrator } from "./useSetupOrchestrator.js";
 import { GateActs } from "./ChronosGate/GateActs.js";
-import { GateBackdrop } from "./ChronosGate/GateBackdrop.js";
 import { ACTS_SETTLED_MS } from "./ChronosGate/gate-timeline.js";
-
-const CURTAIN_S = 0.62;
-const CURTAIN_DELAY_S = 0.18;
-const CONTENT_FADE_S = 0.22;
 
 export function ChronosGate(): JSX.Element | null {
   const active = useUiStore((s) => s.setupGateActive);
@@ -40,9 +35,9 @@ export function ChronosGate(): JSX.Element | null {
   const [revealing, setRevealing] = useState(false);
   const [actsSettled, setActsSettled] = useState(reduced);
 
-  // The curtain never wipes a stamp mid-act: hold until Act III settles.
-  // Bounded and input-free, so an unlock or error handoff is never
-  // stranded. Reduced motion skips the hold entirely.
+  // The gate never lifts mid-act: hold until Act III settles. Bounded and
+  // input-free, so an unlock or error handoff is never stranded. Reduced
+  // motion skips the hold entirely.
   useEffect(() => {
     if (reduced || actsSettled) return;
     const timer = window.setTimeout(
@@ -52,8 +47,8 @@ export function ChronosGate(): JSX.Element | null {
     return () => window.clearTimeout(timer);
   }, [reduced, actsSettled]);
 
-  // Apply the handoff to the view machine beneath the plate, give React
-  // one frame to mount the target screen, then start the curtain.
+  // Apply the handoff to the view machine beneath the gate, give React
+  // one frame to mount the target screen, then start the reveal.
   useEffect(() => {
     if (handoff === null || revealing || !actsSettled) return;
     if (handoff.kind === "unlock") {
@@ -65,11 +60,11 @@ export function ChronosGate(): JSX.Element | null {
     return () => cancelAnimationFrame(raf);
   }, [handoff, revealing, actsSettled, openUnlock, setCurrentView]);
 
-  // Reduced motion: dismiss via effect, not the panel's animation
-  // callback — a zero-duration animation's completion is not a contract
-  // (same rationale as CurtainExit). One frame so the unveiled view
-  // paints beneath the plate first. The animation callback below stays
-  // as a harmless duplicate (dismissSetupGate is idempotent).
+  // Reduced motion: dismiss via effect, not the fade's animation callback -
+  // a zero-duration animation's completion is not a contract (same
+  // rationale as CurtainExit). One frame so the unveiled view paints beneath
+  // the gate first. The animation callback below stays as a harmless
+  // duplicate (dismissSetupGate is idempotent).
   useEffect(() => {
     if (!reduced || !revealing) return;
     const raf = requestAnimationFrame(() => dismissSetupGate());
@@ -78,58 +73,26 @@ export function ChronosGate(): JSX.Element | null {
 
   if (!active) return null;
 
-  const panelTransition = reduced
-    ? { duration: 0 }
-    : { duration: CURTAIN_S, ease: EASE_INOUT, delay: CURTAIN_DELAY_S };
-
   return (
-    <div
+    <motion.div
       data-vex-screen="chronos-gate"
       data-vex-gate-phase={revealing ? "reveal" : "hold"}
-      // Carries the pre-shell token scope so `.vex-micro` speaks the
-      // gate's label voice at the pre-shell size and weight.
+      // Carries the pre-shell token scope so the gate's type speaks the
+      // pre-shell register.
       data-vex-gate="true"
       className="fixed inset-0 z-50 overflow-hidden"
+      initial={false}
+      animate={{ opacity: revealing ? 0 : 1 }}
+      transition={
+        reduced
+          ? { duration: 0 }
+          : { duration: DURATION_SLOW_MS / 1000, ease: EASE_STANDARD }
+      }
+      onAnimationComplete={() => {
+        if (revealing) dismissSetupGate();
+      }}
     >
-      {/* Curtain panels — one seamless sky until the reveal splits it. */}
-      <motion.div
-        aria-hidden
-        className="absolute inset-x-0 top-0 h-1/2 overflow-hidden"
-        initial={false}
-        animate={{ y: revealing ? "-101%" : "0%" }}
-        transition={panelTransition}
-        onAnimationComplete={() => {
-          if (revealing) dismissSetupGate();
-        }}
-      >
-        <GateBackdrop edge="top" />
-      </motion.div>
-      <motion.div
-        aria-hidden
-        className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden"
-        initial={false}
-        animate={{ y: revealing ? "101%" : "0%" }}
-        transition={panelTransition}
-      >
-        <GateBackdrop edge="bottom" />
-      </motion.div>
-
-      {/* Act content — fades out before the panels move. */}
-      <motion.div
-        className="absolute inset-0"
-        initial={false}
-        animate={{ opacity: revealing ? 0 : 1 }}
-        transition={
-          reduced
-            ? { duration: 0 }
-            : { duration: CONTENT_FADE_S, ease: EASE_STANDARD }
-        }
-      >
-        <GateActs status={status} />
-        <span className="absolute bottom-7 right-10 vex-micro text-white/60">
-          v{__VEX_APP_VERSION__}
-        </span>
-      </motion.div>
-    </div>
+      <GateActs status={status} />
+    </motion.div>
   );
 }

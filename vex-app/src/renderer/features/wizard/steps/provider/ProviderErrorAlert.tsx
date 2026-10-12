@@ -11,6 +11,7 @@
 
 import type { JSX } from "react";
 import { CAUSE_HINTS, uiCopyFor, type ServerError } from "./error-ui.js";
+import { RAIL_DANGER_CHROME } from "../step-chrome.js";
 
 export interface ProviderErrorAlertProps {
   readonly error: ServerError;
@@ -27,7 +28,7 @@ export function ProviderErrorAlert({
     <div
       role="alert"
       data-vex-provider-error={String(error.code)}
-      className="border-l-2 border-[color-mix(in_oklab,var(--color-danger)_45%,transparent)] py-1 pl-3 text-sm text-danger"
+      className={RAIL_DANGER_CHROME}
     >
       <strong className="block font-semibold">{copy.title}</strong>
       <p className="mt-1">{copy.body}</p>

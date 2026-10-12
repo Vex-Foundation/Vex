@@ -34,16 +34,15 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
   return (
     <div className="flex flex-col gap-6">
       {/* HERO — the ring at work, centered above the readout. */}
-      <div className="flex justify-center pt-2">
+      <div className="flex pt-2">
         <VexLoader
-          size={72}
+          size={40}
           stroke={2}
-          tone="paper"
           label="Applying migrations"
         />
       </div>
 
-      <p className="text-center vex-micro text-ink-secondary">
+      <p className="vex-micro text-ink-secondary">
         {progressLabel(current)}
       </p>
 
@@ -55,7 +54,6 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
           <VexLoader
             size={16}
             stroke={2}
-            tone="paper"
             label={`Migration ${current.version} in progress`}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">

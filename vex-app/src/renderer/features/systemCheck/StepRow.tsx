@@ -1,11 +1,13 @@
 /**
- * Single probe row on the System Check card (cobalt continuum).
+ * Single probe row on the System Check page.
  *
- * Layout (left → right): glyph · label + mono detail · status word.
- * While a probe is loading the status cell shows the inline VexLoader
- * ring (paper tone — the pre-shell loader idiom) beside the pinned
- * "CHECKING…" text; once resolved it prints a colored mono WORD — no
- * stamp box, no press animation (state is color + words).
+ * Layout (left → right): glyph · label + mono detail · status.
+ * Status is shown by fill (docs/design/V10-SPREAD.md section 1): while a
+ * probe is loading the status cell shows the ongoing swatch at size (the
+ * VexLoader) beside the pinned "CHECKING…" text; once resolved it prints a
+ * swatch (solid = ok, target = warn, ink cross = fail) beside the mono
+ * WORD. The word's ink follows the status aliases, which are the ink and the
+ * one blue, never a hue.
  *
  * The `data-step-status` attribute remains the stable selector across
  * refactors (e2e + unit tests rely on it). `badgeLabel` decouples the
@@ -20,6 +22,7 @@
 
 import { type ReactNode } from "react";
 
+import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
 import { VexLoader } from "../../components/ui/vex-loader.js";
 import { cn } from "../../lib/utils.js";
 
@@ -40,11 +43,18 @@ const defaultBadgeLabel: Record<StepStatus, string> = {
   fail: "FAIL",
 };
 
-/** Status word ink — colored word grammar, no boxes, no fills. */
+/** Status word ink: the status aliases (ink, the one blue, ink). */
 const wordInk: Record<Exclude<StepStatus, "loading">, string> = {
   ok: "text-[var(--color-success)]",
   warn: "text-[var(--color-warning)]",
   fail: "text-[var(--color-danger)]",
+};
+
+/** Status by fill. */
+const wordSwatch: Record<Exclude<StepStatus, "loading">, SwatchState> = {
+  ok: "done",
+  warn: "warning",
+  fail: "error",
 };
 
 export function StepRow({
@@ -78,7 +88,7 @@ export function StepRow({
       </div>
       {status === "loading" ? (
         <span className="flex shrink-0 items-center gap-2">
-          <VexLoader size={16} stroke={2} tone="paper" label="Checking" />
+          <VexLoader size={9} label="Checking" />
           <span className="vex-micro text-ink-secondary">
             {labelText}
           </span>
@@ -86,10 +96,11 @@ export function StepRow({
       ) : (
         <span
           className={cn(
-            "shrink-0 vex-micro font-semibold",
+            "flex shrink-0 items-center gap-2 vex-micro",
             wordInk[status],
           )}
         >
+          <Swatch state={wordSwatch[status]} size={9} />
           {labelText}
         </span>
       )}
