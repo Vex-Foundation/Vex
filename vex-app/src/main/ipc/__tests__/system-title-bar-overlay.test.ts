@@ -8,33 +8,32 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IpcMainInvokeEvent } from "electron";
 import { CH } from "@shared/ipc/channels.js";
-import { createTestWebContents, createTrustedSender } from "./test-sender.js";
+import { createTestWebContents, createTrustedSender, type TestIpcEvent } from "./test-sender.js";
+
+type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => ({
   fromWebContents: vi.fn((): unknown => null),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock("electron", () => {
-  const handlers = new Map<string, (e: IpcMainInvokeEvent, p: unknown) => unknown>();
-  return {
-    ipcMain: {
-      handle: vi.fn((channel: string, fn: (e: IpcMainInvokeEvent, p: unknown) => unknown) =>
-        handlers.set(channel, fn)),
-      removeHandler: vi.fn((ch: string) => handlers.delete(ch)),
+const handlers = new Map<string, Handler>();
+
+vi.mock("electron", () => ({
+  ipcMain: {
+    handle: (channel: string, fn: Handler) => {
+      handlers.set(channel, fn);
     },
-    BrowserWindow: { fromWebContents: mocks.fromWebContents },
-    __handlers: handlers,
-  };
-});
+    removeHandler: (channel: string) => {
+      handlers.delete(channel);
+    },
+  },
+  BrowserWindow: { fromWebContents: mocks.fromWebContents },
+}));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
 const { registerSystemTitleBarOverlayHandler } = await import("../system/title-bar-overlay.js");
-const electronMock = (await import("electron")) as unknown as {
-  __handlers: Map<string, (e: IpcMainInvokeEvent, p: unknown) => unknown>;
-};
 
 const webContents = createTestWebContents();
 const sender = createTrustedSender({ sender: webContents });
@@ -44,13 +43,24 @@ function setPlatform(value: NodeJS.Platform): void {
   Object.defineProperty(process, "platform", { value, configurable: true });
 }
 
-async function invoke(payload: unknown): Promise<any> {
-  const handler = electronMock.__handlers.get(CH.system.setTitleBarOverlay);
+interface HandlerResult {
+  ok: boolean;
+  data?: unknown;
+}
+
+function isHandlerResult(value: unknown): value is HandlerResult {
+  return typeof value === "object" && value !== null && "ok" in value;
+}
+
+async function invoke(payload: unknown): Promise<HandlerResult> {
+  const handler = handlers.get(CH.system.setTitleBarOverlay);
   if (!handler) throw new Error("No handler for system.setTitleBarOverlay");
-  return handler(sender as unknown as IpcMainInvokeEvent, {
+  const result = await handler(sender, {
     requestId: "11111111-1111-4111-8111-111111111111",
     payload,
   });
+  if (!isHandlerResult(result)) throw new Error("handler returned a non-Result value");
+  return result;
 }
 
 function fakeWindow(setTitleBarOverlay = vi.fn()) {
@@ -59,7 +69,7 @@ function fakeWindow(setTitleBarOverlay = vi.fn()) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  electronMock.__handlers.clear();
+  handlers.clear();
   setPlatform("win32");
   registerSystemTitleBarOverlayHandler();
 });
