@@ -74,7 +74,7 @@
 
 /* An overlay bar: present only while the surface is actually scrolling, then
  * gone. Compose it WITH `.vex-scroll` - that class still owns the shape (6px,
- * the 2px content-box inset, the rounded thumb, the transparent track); this
+ * the 2px content-box inset, the square thumb, the transparent track); this
  * one owns only WHEN the thumb is visible.
  *
  * The visibility signal is `data-vex-scrolling`, written by
@@ -129,7 +129,7 @@
  * `verticalScrollbarSize` (10px, not a public option), so the `!important`s
  * below are the only way an author rule out-ranks those inline widths. The
  * shape is `.vex-scroll`'s: 6px, a 2px transparent inset (padding plus
- * content-box clip), a fully rounded thumb, a transparent track.
+ * content-box clip), a square thumb, a transparent track.
  *
  * COLOUR IS SET HERE, unlike the text's, and the reason is measured: xterm
  * colours the slider through a `<style>` element it injects into the
