@@ -1,8 +1,9 @@
 /**
  * Composer toolbar seats (B18/B20/B21): the model chip and the legacy-plan
- * chip on the capsule's bottom row, both in the LEADING cluster. The runtime
+ * chip on the field's bottom row, both in the LEADING cluster. The runtime
  * model is GLOBAL (env-resolved, no per-session mutation channel), so the model
- * chip navigates to Settings -> Model instead of offering a picker.
+ * chip navigates to Settings -> Model instead of offering a picker - and so it
+ * draws no chevron: there is no menu behind it.
  *
  * The permission seat left this file in round 3: it moved to the TRAILING
  * cluster beside the context meter and now owns a glyph and a container
@@ -18,7 +19,6 @@ import { lazy, Suspense, type JSX } from "react";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
-import { ModelBrandIcon } from "../../wizard/steps/provider/ModelBrandIcon.js";
 
 // Lazy: the plan modal pulls the markdown pipeline - a heavy graph the
 // composer must not pay for until the review actually opens.
@@ -27,22 +27,22 @@ const PlanDisplayModal = lazy(async () => ({
 }));
 
 /**
- * Capsule seat chip: h28, r8, 13/20 w500 (catalog select-chip geometry).
- * `min-w-0` and NO `shrink-0`: the box concedes, the label inside truncates.
- * A visible focus ring is kept - a shrinking control must never become an
- * unreachable or invisible focus target.
+ * Field seat chip (reference d3): 28px, 12px Departure Mono at the data
+ * tracking, the second ink on a rule outline (`.vex-composer-chip`,
+ * console.css). `min-w-0` and NO `shrink-0`: the box concedes, the label
+ * inside truncates. A visible focus ring is kept - a shrinking control must
+ * never become an unreachable or invisible focus target.
  */
 const SEAT_CHIP =
-  "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary";
+  "vex-composer-chip inline-flex h-7 min-w-0 items-center gap-1.5 px-2 font-mono text-[12px] leading-5 tracking-[0.02em] text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-focus";
 
 /**
  * DISPLAY-ONLY trim of the routing prefix: `deepseek/deepseek-v4-pro` reads
- * as `deepseek-v4-pro` on the chip (owner QA round 3 follow-up). The brand
- * icon already names the provider, so the prefix was pure duplication eating
- * the chip's 160px. Only the FIRST segment is cut - an id with no `/` passes
- * through, and a variant suffix (`:free`) survives. The FULL id stays the
- * source of truth everywhere else: the accessible name, the tooltip, the
- * settings screen, and every request path.
+ * as `deepseek-v4-pro` on the chip (owner QA round 3 follow-up), the way the
+ * field draws it (`claude-sonnet-4`). Only the FIRST segment is cut - an id
+ * with no `/` passes through, and a variant suffix (`:free`) survives. The
+ * FULL id stays the source of truth everywhere else: the accessible name, the
+ * tooltip, the settings screen, and every request path.
  */
 export function modelDisplayName(modelId: string): string {
   const slash = modelId.indexOf("/");
@@ -69,10 +69,6 @@ export function ComposerModelChip({
           setShellRoute({ kind: "settings", origin: null, section: "model" })
         }
       >
-        {/* The brand icon is a FIXED glyph - identity never shrinks. */}
-        <span className="inline-flex shrink-0">
-          <ModelBrandIcon modelId={modelId} size={14} />
-        </span>
         <span data-vex-model-label className="min-w-0 max-w-40 flex-1 truncate">
           {modelDisplayName(modelId)}
         </span>

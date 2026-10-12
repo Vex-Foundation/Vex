@@ -1,8 +1,8 @@
 /* Composer chrome (SessionComposer), V10: a square white field on a 1px rule
- * (docs/design/V10-SPREAD.md section 1: radius 0, no shadow, no blur), with NO
- * focus treatment of any kind - the accent caret and the send key carry focus.
- * Border lives here (not in a className) because the design guard scans .tsx
- * sources for border chrome. */
+ * (docs/design/V10-SPREAD.md section 1: `--app-field`, radius 0, no shadow,
+ * no blur), with NO focus treatment of any kind - the accent caret and the
+ * send key carry focus. Border lives here (not in a className) because the
+ * design guard scans .tsx sources for border chrome. */
 
 .vex-composer-card {
   position: relative;
@@ -15,31 +15,26 @@
 }
 
 /* Approval park draws the 1.5px ink frame - the run is waiting on a
- * signature, and the floating tag above the card says so. Status is shown by
- * the frame, never by a colour. */
+ * signature, and the tag above the card says so. Status is shown by the
+ * frame, never by a colour. */
 .vex-composer-card[data-vex-composer-state="approval"] {
   border-width: 1.5px;
   border-color: var(--vex-alias-rule-ink);
 }
 
-/* Pending mark: an 8px square, 1s ease-in-out infinite alternate (opacity
- * 0.35 -> 1), accent via currentColor from its wrapper, beside the send/stop
- * key while a turn is in flight. */
-.vex-composer-pending-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 0;
-  background: currentColor;
-  animation: vex-composer-pending 1s ease-in-out infinite alternate;
+/* Toolbar chip: the model and the reasoning effort, 28px, 12px Departure
+ * Mono on a rule outline (reference d3). An outline, so the chip's box keeps
+ * its width whether or not a hover fills it. */
+.vex-composer-chip {
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
 }
 
-@keyframes vex-composer-pending {
-  from {
-    opacity: 0.35;
-  }
-  to {
-    opacity: 1;
-  }
+/* The context meter's cells are the field's own instrument: 5 x 12, two
+ * pixels apart (reference d3), not the default square cell. */
+.vex-context-meter > i {
+  width: 5px;
+  height: 12px;
 }
 
 /* Dashed drop ring: a masked SVG rect with square corners. The 4px stroke is
@@ -59,11 +54,4 @@
  * the textarea, so :hover/:focus cannot paint it). */
 [data-vex-composer-command-menu] .vex-menu-item[data-active="true"] {
   background: var(--vex-alias-interactive-hover);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-composer-pending-dot {
-    animation: none;
-    opacity: 1;
-  }
 }

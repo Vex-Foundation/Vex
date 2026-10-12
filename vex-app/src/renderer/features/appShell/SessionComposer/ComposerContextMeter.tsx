@@ -1,11 +1,12 @@
 /**
- * Context meter (A29, reshaped in round 3) - the composer's trailing-cluster
+ * Context meter (A29, reshaped for V10) - the composer's trailing-cluster
  * instrument for session context occupancy, fed by `useContextWindow`, the
  * SAME channel the retired BOOK "Runtime & Cost" card read.
  *
- * Geometry follows the deepseek `ContextMeter`: a fixed 28x28 circular trigger
- * carrying a 14x14 ring (r 5.5, stroke 2, accent progress over a line track),
- * and a click-opened 264px panel seated above and right-aligned.
+ * Geometry (docs/design/V10-SPREAD.md section 1, reference d3): a 28px trigger
+ * carrying the shared `CellMeter` - eight 5x12 cells, the used share filled
+ * in the blue, the rest on the rule - and a click-opened 264px panel seated
+ * above and right-aligned whose total bar is the same meter at twenty cells.
  *
  * HONESTY RULES (both inherited from the retired card, both load-bearing):
  *  - nothing renders until the engine reports BOTH a token count and a valid
@@ -13,8 +14,9 @@
  *  - the panel draws a TOTAL-ONLY bar. `ContextWindowDto` carries no
  *    System/Tools/Messages split, so the reference's category legend is
  *    deliberately absent rather than invented.
- *  - the tint follows the ENGINE's own pressure bands from the DTO, never a
- *    local threshold.
+ *  - the pressure follows the ENGINE's own bands from the DTO, never a local
+ *    threshold. Status is shown by fill: past the critical band the cells
+ *    turn ink (`CellMeter`'s `over`), never red.
  *  - the figure lags the live turn by one, and the panel says so.
  *
  * Panel lifecycle: `role="dialog"`, dismissed by outside pointer or Escape,
@@ -27,12 +29,13 @@ import type { JSX } from "react";
 import type { ContextWindowDto } from "@shared/schemas/usage.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 import { useContextWindow } from "../../../lib/api/usage.js";
+import { CellMeter } from "../../../components/ui/cell-meter.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
 import { ComposerCompactionBlock } from "./ComposerCompactionBlock.js";
 
-/** Ring geometry: 14px viewBox, 2px stroke (reference 1:1). */
-const RADIUS = 5.5;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+/** The trigger's cells (reference d3) and the panel's longer total bar. */
+const TRIGGER_CELLS = 8;
+const PANEL_CELLS = 20;
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -40,7 +43,7 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-export function contextRingTone(
+export function contextMeterTone(
   fraction: number,
   context: ContextWindowDto,
 ): "ok" | "warn" | "critical" {
@@ -51,19 +54,7 @@ export function contextRingTone(
   return "ok";
 }
 
-const TONE_CLASS: Readonly<Record<"ok" | "warn" | "critical", string>> = {
-  ok: "text-accent-primary",
-  warn: "text-warning",
-  critical: "text-danger",
-};
-
-const BAR_TONE_CLASS: Readonly<Record<"ok" | "warn" | "critical", string>> = {
-  ok: "bg-accent-primary",
-  warn: "bg-warning",
-  critical: "bg-danger",
-};
-
-export function ComposerContextRing({
+export function ComposerContextMeter({
   sessionId,
   permission = null,
 }: {
@@ -120,7 +111,8 @@ export function ComposerContextRing({
 
   const fraction = Math.min(1, Math.max(0, tokensUsed / contextLimit));
   const percent = Math.round(fraction * 100);
-  const tone = contextRingTone(fraction, context);
+  const tone = contextMeterTone(fraction, context);
+  const over = tone === "critical";
   const barrier = context.pressureBarrierFraction;
   const autoCompactPct = barrier !== undefined ? Math.round(barrier * 100) : null;
 
@@ -144,29 +136,18 @@ export function ComposerContextRing({
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           onClick={() => (open ? close(true) : setOpen(true))}
-          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${TONE_CLASS[tone]}`}
+          className="inline-flex h-7 shrink-0 items-center justify-center px-1 transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
-          <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden>
-            <circle
-              cx="7"
-              cy="7"
-              r={RADIUS}
-              fill="none"
-              stroke="var(--vex-alias-border-l3)"
-              strokeWidth="2"
-            />
-            <circle
-              cx="7"
-              cy="7"
-              r={RADIUS}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeDasharray={`${(CIRCUMFERENCE * percent) / 100} ${CIRCUMFERENCE}`}
-              transform="rotate(-90 7 7)"
-            />
-          </svg>
+          {/* The trigger's name is the percentage; the drawing is decoration
+              to it, so the meter's own role stays out of the button. */}
+          <CellMeter
+            className="vex-context-meter"
+            value={fraction * TRIGGER_CELLS}
+            max={TRIGGER_CELLS}
+            over={over}
+            label={`Context ${percent}% used`}
+            aria-hidden
+          />
         </button>
       </Tooltip>
 
@@ -177,27 +158,26 @@ export function ComposerContextRing({
           role="dialog"
           aria-label="Session context"
           data-vex-area="composer-context-panel"
-          className="absolute bottom-full right-0 z-30 mb-2 flex w-[264px] flex-col gap-2 rounded-xl border border-line-1 bg-surface-2 p-3 shadow-lv3"
+          className="absolute bottom-full right-0 z-30 mb-2 flex w-[264px] flex-col gap-2 border border-rule bg-surface-base p-3"
         >
-          <p className="text-[12px] leading-[18px] text-ink-primary">
+          <p className="text-[13px] leading-5 text-ink-primary">
             Context {percent}% used
           </p>
-          <div
-            className="h-1 w-full overflow-hidden rounded-full bg-surface-skeleton"
+          {/* TOTAL-ONLY bar: the DTO carries no category breakdown, so no
+           * System/Tools/Messages segments are drawn. */}
+          <CellMeter
+            data-vex-context-bar="total"
+            className="vex-context-meter"
+            value={fraction * PANEL_CELLS}
+            max={PANEL_CELLS}
+            over={over}
+            label={`Context ${percent}% used`}
             aria-hidden
-          >
-            {/* TOTAL-ONLY bar: the DTO carries no category breakdown, so no
-             * System/Tools/Messages segments are drawn. */}
-            <div
-              data-vex-context-bar="total"
-              className={`h-full rounded-full ${BAR_TONE_CLASS[tone]}`}
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-          <p className="text-[11px] leading-[16px] tabular-nums text-ink-secondary">
+          />
+          <p className="font-mono text-[11px] leading-4 tracking-[0.02em] tabular-nums text-ink-secondary">
             ~{formatTokens(tokensUsed)} of {formatTokens(contextLimit)} tokens
           </p>
-          <p className="text-[11px] leading-[16px] text-ink-tertiary">
+          <p className="text-[12px] leading-[18px] text-ink-secondary">
             {autoCompactPct !== null
               ? `Auto-compact at ~${autoCompactPct}%. `
               : ""}
