@@ -4,7 +4,7 @@
  * Read top to bottom, the card is: a 64px round token photo, the token's name
  * over its ticker over its bare chain mark, a hero price with a signed 24h
  * delta and a bare sparkline in the right third of that row, a hairline, four
- * equal stat columns, and a footer of the status chip beside Ask VEX. The two
+ * equal stat columns, and a footer of the status chip above Ask VEX. The two
  * actions - Spotlight and Ask VEX - are real buttons.
  *
  * EQUAL CARDS ARE A CONTRACT, NOT A CONSEQUENCE. A grid of cards whose
@@ -40,9 +40,12 @@
  * query container and `global-css/board-layout.css` owns every threshold; the
  * card carries the classes and reads the mode's values out of custom
  * properties. In WIDE mode the sparkline sits in the price row, the stats are
- * four columns and the footer is one line. In COMPACT mode the sparkline
- * moves to its own full-width slot, the stats go 2x2 and the footer stacks
- * the chip above the actions. Nothing here knows a pixel: there is no solver,
+ * four columns and the header's two actions share one row. In COMPACT mode
+ * the sparkline moves to its own full-width slot, the stats go 2x2 and the
+ * header's actions stack, which keeps the identity column wide enough for
+ * the ticker budget. In both, the footer stacks the chip above the actions,
+ * because the widest verdict and the two actions do not share one row at
+ * either floor. Nothing here knows a pixel: there is no solver,
  * no ResizeObserver and no window read, so opening the Ask VEX drawer changes
  * the layout in the same paint that changes the container.
  *
@@ -269,7 +272,7 @@ export function TokenCardV3({
             <span className="sr-only">{card.chain}</span>
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-2 self-start">
+        <div className="vex-board-card-actions">
           <FullValueDisclosure
             ticker={ticker}
             heading={heading}
@@ -382,11 +385,10 @@ export function TokenCardV3({
       {/* FOOTER. `mt-auto` pins this row to the bottom of the plate, so a
         * row of cards has its chips and its buttons on one line whatever
         * happens above them. */}
-      {/* In WIDE mode this is one line with the chip against the actions; in
-        * COMPACT it stacks, which is what lets the chip print
-        * "Checks unavailable in this response" - 242px, the widest string the
-        * frozen safety table can produce - beside nothing instead of
-        * ellipsizing beside two buttons. `board-layout.css` owns the switch. */}
+      {/* STACKED in both modes, which is what lets the chip print
+        * "Checks unavailable in this response" - 308px, the widest string the
+        * frozen safety table can produce - on a row of its own instead of
+        * cutting the two buttons beside it. `board-layout.css` owns it. */}
       <div
         data-vex-area="board-token-footer"
         className="vex-board-card-footer mt-auto pt-4"

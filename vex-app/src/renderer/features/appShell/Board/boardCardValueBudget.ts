@@ -68,20 +68,25 @@
  * definition of the feature, so a count of clusters IS a width and one slot
  * is one digit.
  *
- * PROPORTIONAL (`"proportional"`) is the ticker, which renders in ordinary
- * uppercase Inter Tight (`TokenCardV3.tsx`) where glyph advances differ by
- * more than a factor of four. Measured in the committed face at the ticker's
- * own 13px, one slot is 8.8px - the 88px identity column divided by the
- * budget of 10 - and the glyphs fall either side of it:
+ * PROPORTIONAL (`"proportional"`) is the ticker. The model was measured in
+ * the face the ticker used to render in, uppercase Inter Tight at 13px, where
+ * glyph advances differ by more than a factor of four and one slot was 8.8px:
  *
  *   W 11.82   M 10.84   % 9.85   C D G H N O Q U 8.86
  *   A B K P R S T V X Y Z $ + 0 3 4 7.88   E F L 2 5 6 7 8 9 6.90
  *   J 5.91   1 - 4.93   I . , : 2.95
  *
- * So a count of characters is NOT a width here, and treating it as one was a
- * defect: `WWWWWWWW` is eight characters, cost eight of ten slots, and
+ * So a count of characters was NOT a width there, and treating it as one was
+ * a defect: `WWWWWWWW` is eight characters, cost eight of ten slots, and
  * rendered 94.56px into an 88px column - clipped, with nothing reporting it.
  * Anything measuring wider than a slot is charged two.
+ *
+ * The V10 ticker (`TokenCardV3.tsx`) is Departure Mono at 11px, uppercase,
+ * tracked 0.14em: every Latin-1 glyph, the ellipsis included, is one 7px
+ * cell plus 1.54px of tracking, 8.54px. That is under one slot of the 95px
+ * identity column, so a glyph charged one still fits one, and a glyph the
+ * table above charges two (`W`, `M`, `%`) is now over-charged - the safe
+ * direction, so the model stands as it was measured.
  *
  * THE PROPORTIONAL CLASS IS AN ALLOWLIST OF NARROW GLYPHS, not a blocklist of
  * wide ones, and that direction is the point: a character nobody measured -
@@ -109,9 +114,11 @@ const NARROW_CODE_POINT_MAX = 0x00ff;
 const WIDE_SLOTS = 2;
 
 /**
- * The glyphs measured at or under one slot (8.8px) in the ticker's own type,
- * after its `uppercase` transform. Everything else on that surface - measured
- * wider, or never measured - is charged {@link WIDE_SLOTS}.
+ * The glyphs measured at or under one slot (8.8px) in the ticker's former
+ * proportional type, after its `uppercase` transform. Everything else on that
+ * surface - measured wider, or never measured - is charged
+ * {@link WIDE_SLOTS}. See the head note for why the table still holds in the
+ * V10 mono face.
  */
 const PROPORTIONAL_NARROW = new Set(
   [..."ABEFIJKLPRSTVXYZ0123456789.,:-$+ "],
@@ -153,12 +160,12 @@ export const BOARD_CARD_STAT_MAX_SLOTS = 11;
 /**
  * The ticker under the name, and the one PROPORTIONAL surface.
  *
- * The compact header spends its inner width on the 64px photo, two 16px gaps
- * and the 132px action cluster, which leaves the identity column 88px. Ten
- * slots of 8.8px each is that column exactly, which is what makes 8.8px the
- * slot on this surface and what the glyph table in the head note is measured
- * against. The widest a ten-slot string can render is ten narrow glyphs at
- * 7.88px, or 78.8px, so the model keeps 9px in hand against its own column.
+ * The compact header spends its inner 316px on the 64px photo, two 16px gaps
+ * and the action cluster, which STACKS in compact mode (`board-layout.css`)
+ * so it is the 125px Spotlight button alone. That leaves the identity column
+ * 95px at the compact floor. The widest a ten-slot string can render in the
+ * V10 mono face is ten cells of 8.54px, or 85.4px, so the budget keeps 9px in
+ * hand against its own column.
  */
 export const BOARD_CARD_TICKER_MAX_SLOTS = 10;
 
