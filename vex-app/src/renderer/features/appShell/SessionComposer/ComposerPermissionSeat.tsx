@@ -20,8 +20,7 @@
 import type { JSX } from "react";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 import {
-  IconKey,
-  IconLock,
+  pxGlyph,
   type GlyphProps,
 } from "../../../components/icons/index.js";
 import { Pill } from "../../../components/ui/pill.js";
@@ -42,8 +41,8 @@ const PERMISSION_LABEL: Readonly<Record<SessionPermission, string>> = {
 const PERMISSION_GLYPH: Readonly<
   Record<SessionPermission, (props: GlyphProps) => JSX.Element>
 > = {
-  restricted: IconLock,
-  full: IconKey,
+  restricted: pxGlyph("approvals"),
+  full: pxGlyph("shield-alert"),
 };
 
 const PERMISSION_TOOLTIP: Readonly<Record<SessionPermission, string>> = {

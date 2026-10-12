@@ -16,7 +16,7 @@
 import type { JSX, RefObject } from "react";
 import { Tavily, X } from "@thesvg/react";
 import type { LighterManagedTradingScope } from "@shared/schemas/onboarding.js";
-import { IconWaypoints } from "../../../../components/icons/index.js";
+import { PxIcon } from "../../../../components/icons/index.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { cn } from "../../../../lib/utils.js";
@@ -202,7 +202,7 @@ export function RelayCard({
     <ProviderCard
       slug="relay"
       iconSlot={
-        <IconWaypoints size={18} />
+        <PxIcon name="api" />
       }
       name="Relay"
       status={status}

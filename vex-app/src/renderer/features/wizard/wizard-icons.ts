@@ -16,11 +16,11 @@ import {
   type GlyphProps,
   IconBrainCircuit,
   IconBadgeCheck,
-  IconCable,
   IconCpu,
   IconKey,
   IconLock,
   IconWallet,
+  pxGlyph,
 } from "../../components/icons/index.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 
@@ -62,7 +62,7 @@ export const WIZARD_STEP_META: Readonly<Record<WizardStepId, WizardStepMeta>> = 
       "Tune context and output-token limits, plus sampling temperature. All optional.",
   },
   provider: {
-    icon: IconCable,
+    icon: pxGlyph("api"),
     label: "Provider",
     description: "Verify your OpenRouter API key and pick a model.",
   },

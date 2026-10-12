@@ -6,6 +6,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App.js";
+import { PxSprite } from "./components/icons/px/PxSprite.js";
 import { queryClient } from "./app/queryClient.js";
 import type { CreateBugReportInput } from "@shared/schemas/bug-reports.js";
 import { probeZodLocale, registerZodLocale } from "@vex-lib/zod-locale.js";
@@ -228,6 +229,7 @@ createRoot(rootEl, {
   },
 }).render(
   <React.StrictMode>
+    <PxSprite />
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>
