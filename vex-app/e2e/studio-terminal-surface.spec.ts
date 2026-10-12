@@ -271,19 +271,30 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
   }
 
   // THE OPAQUE PANE: no backdrop filter, and a background that is the
-  // reading surface itself, never a translucent tint.
-  expect(facts.paneBackdropFilter === "" || facts.paneBackdropFilter === "none").toBe(true);
-  expect(facts.paneBackground).not.toMatch(/rgba\(.*,\s*0(\.\d+)?\)$/);
+  // reading surface itself, never a translucent tint. In V10 the workspace
+  // sheet's wrapper paints nothing (the strip sits on the paper) and the
+  // surface under the glyphs is the terminal's own field, painted with the
+  // palette's opaque background (`terminal.css`). So: nothing from that field
+  // up to the workspace card blurs, the field is fully opaque, and the
+  // wrapper is clear or opaque but never a tint.
+  expect(facts.backdropFilters.length).toBeGreaterThan(0);
+  for (const filter of facts.backdropFilters) {
+    expect(filter === "" || filter === "none", `backdrop-filter ${filter}`).toBe(true);
+  }
+  expect(facts.surfaceBackground).toMatch(/^rgba?\(/);
+  expect(facts.surfaceBackground).not.toMatch(/rgba\(.*,\s*0(\.\d+)?\)$/);
+  expect(facts.paneBackground).not.toMatch(/rgba\(.*,\s*0\.\d+\)$/);
 
-  // THE SCROLLBAR (owner review 2026-09-04: "rounder, smaller, smoother").
-  // The `.vex-scroll` shape on xterm's slider, the vestigial viewport gutter
-  // gone, the colour from the app's ladder, VS Code's reveal/hide, and the
-  // fade collapsed under reduced motion.
+  // THE SCROLLBAR (owner review 2026-09-04: "smaller, smoother"; square
+  // since the V10 spread, which allows no radius anywhere,
+  // docs/design/V10-SPREAD.md section 1). The `.vex-scroll` shape on xterm's
+  // slider, the vestigial viewport gutter gone, the colour from the app's
+  // ladder, VS Code's reveal/hide, and the fade collapsed under reduced motion.
   expect(scrollbar.viewportGutter).toBe(0);
   expect(scrollbar.trackWidth).toBe(6);
   expect(scrollbar.sliderWidth).toBe(6);
   expect(scrollbar.sliderInset).toBe(2);
-  expect(scrollbar.sliderRadius).toBe("9999px");
+  expect(scrollbar.sliderRadius).toBe("0px");
   expect(scrollbar.sliderBackground).toBe(scrollbar.tokenBackground);
   expect(scrollbar.classesAfterWheel).toMatch(/\bvisible\b/);
   expect(scrollbar.classesAfterLeave).toMatch(/\binvisible\b/);

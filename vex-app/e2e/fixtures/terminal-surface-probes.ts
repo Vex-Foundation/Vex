@@ -66,9 +66,20 @@ export interface PaneFacts {
   readonly renderer: "webgl" | "dom";
   /** Whether this environment can hand out a WebGL2 context at all. */
   readonly webgl2Available: boolean;
+  /** The workspace sheet's wrapper (`[data-vex-workspace-card] > div`). */
   readonly paneBackdropFilter: string;
   readonly paneBackground: string;
   readonly hostBackground: string;
+  /**
+   * The READING SURFACE: the active terminal's own field
+   * (`.vex-terminal-surface--active`), which is what the glyphs sit on.
+   */
+  readonly surfaceBackground: string;
+  /**
+   * `backdrop-filter` of every element from the reading surface up to and
+   * including the workspace card, innermost first.
+   */
+  readonly backdropFilters: readonly string[];
   readonly foreground: string;
 }
 
@@ -260,6 +271,15 @@ export async function readPaneFacts(page: Page): Promise<PaneFacts> {
     const foreground = getComputedStyle(probe).color;
     probe.remove();
     const paneStyle = pane === null ? null : getComputedStyle(pane);
+    const backdropFilters: string[] = [];
+    for (
+      let node: HTMLElement | null = surface ?? null;
+      node !== null;
+      node = node.parentElement
+    ) {
+      backdropFilters.push(getComputedStyle(node).backdropFilter);
+      if (node.hasAttribute("data-vex-workspace-card")) break;
+    }
     const gl = document.createElement("canvas").getContext("webgl2");
     return {
       renderer: surface?.querySelector("canvas") ? "webgl" : "dom",
@@ -267,6 +287,8 @@ export async function readPaneFacts(page: Page): Promise<PaneFacts> {
       paneBackdropFilter: paneStyle?.backdropFilter ?? "",
       paneBackground: paneStyle?.backgroundColor ?? "",
       hostBackground: host === null ? "" : getComputedStyle(host).backgroundColor,
+      surfaceBackground: surface === null ? "" : getComputedStyle(surface).backgroundColor,
+      backdropFilters,
       foreground,
     } as const;
   });
