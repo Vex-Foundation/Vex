@@ -9,6 +9,12 @@ import { Stamp } from "../stamp.js";
 import { Chip } from "../chip.js";
 import { CellMeter } from "../cell-meter.js";
 
+function mustQuery(container: HTMLElement, selector: string): Element {
+  const node = container.querySelector(selector);
+  if (node === null) throw new Error(`missing ${selector}`);
+  return node;
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -16,7 +22,7 @@ afterEach(() => {
 describe("Stamp", () => {
   it("reads REAL FUNDS by default and carries no status hue", () => {
     const { container } = render(<Stamp />);
-    const stamp = container.querySelector(".vex-stamp")!;
+    const stamp = mustQuery(container, ".vex-stamp");
     expect(stamp.textContent).toBe("Real funds");
     expect(stamp.className).not.toMatch(/red|danger|blue|accent/);
   });
@@ -30,7 +36,7 @@ describe("Stamp", () => {
 describe("Chip", () => {
   it("pairs a swatch of the same state with the word", () => {
     const { container } = render(<Chip state="ongoing">Running</Chip>);
-    const chip = container.querySelector(".vex-chip")!;
+    const chip = mustQuery(container, ".vex-chip");
     expect(chip.getAttribute("data-s")).toBe("ongoing");
     expect(chip.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("ongoing");
     expect(chip.querySelector("b")?.textContent).toBe("Running");
@@ -40,7 +46,7 @@ describe("Chip", () => {
     const { container } = render(
       <Chip state="done" compact onPhoto>Live</Chip>,
     );
-    const chip = container.querySelector(".vex-chip")!;
+    const chip = mustQuery(container, ".vex-chip");
     expect(chip.hasAttribute("data-compact")).toBe(true);
     expect(chip.hasAttribute("data-on-photo")).toBe(true);
   });
