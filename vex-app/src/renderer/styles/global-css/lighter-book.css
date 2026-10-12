@@ -18,7 +18,6 @@
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--lit-line);
-  border-radius: 50%;
   background: transparent;
   color: var(--lit-ink-muted);
   font-size: 15px;
@@ -70,7 +69,6 @@
 .lit-expiry select {
   height: 24px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: var(--lit-panel);
   padding: 0 20px 0 6px;
   color: var(--lit-ink-secondary);
@@ -80,7 +78,6 @@
 .lit-unit-switch {
   display: flex;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   padding: 1px;
 }
 
@@ -88,7 +85,6 @@
   min-width: 34px;
   min-height: 20px;
   border: 0;
-  border-radius: 2px;
   background: transparent;
   padding: 0 6px;
   color: var(--lit-ink-muted);
@@ -170,7 +166,6 @@
   height: 20px;
   flex: 0 0 auto;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: var(--lit-panel);
   padding: 0 12px 0 5px;
   color: var(--lit-ink-secondary);
@@ -344,7 +339,6 @@
   --lit-bid-share: 50%;
   display: block;
   height: 4px;
-  border-radius: 2px;
   background: linear-gradient(to right, var(--lit-positive) var(--lit-bid-share), var(--lit-negative) var(--lit-bid-share));
 }
 
@@ -380,10 +374,3 @@
   background: color-mix(in srgb, var(--lit-panel-raised) 34%, transparent);
 }
 
-.lit-live-dot[role="status"][data-status="live"] {
-  animation: lit-live-pulse 2.4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lit-live-dot[role="status"][data-status="live"] { animation: none; }
-}

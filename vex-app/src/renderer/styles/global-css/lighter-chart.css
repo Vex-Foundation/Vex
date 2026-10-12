@@ -13,7 +13,6 @@
   min-width: 34px;
   min-height: 26px;
   border: 0;
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 0 6px;
   color: var(--lit-ink-muted);
@@ -56,14 +55,11 @@
 .lit-chart-connection i {
   width: 5px;
   height: 5px;
-  border-radius: 50%;
   background: var(--lit-warning);
 }
 
 .lit-chart-connection[data-status="live"] i { background: var(--lit-positive); }
 .lit-chart-connection[data-status="unavailable"] i { background: var(--lit-negative); }
-.lit-chart-connection[data-status="connecting"] i,
-.lit-chart-connection[data-status="reconnecting"] i { animation: lit-live-pulse 1.6s ease-in-out infinite; }
 
 .lit-chart-expand {
   display: grid;
@@ -71,7 +67,6 @@
   height: 28px;
   place-items: center;
   border: 0;
-  border-radius: var(--lit-radius);
   background: transparent;
   color: var(--lit-ink-muted);
 }
@@ -98,10 +93,7 @@
   gap: 5px;
   padding: 4px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
-  background: color-mix(in srgb, var(--lit-panel) 92%, transparent);
-  box-shadow: var(--shadow-lv2);
-  backdrop-filter: blur(10px);
+  background: var(--lit-panel);
 }
 
 .lit-chart-tools button {
@@ -111,7 +103,6 @@
   height: 30px;
   place-items: center;
   border: 0;
-  border-radius: var(--lit-radius-lg);
   background: transparent;
   color: var(--lit-ink-secondary);
   transition: background 140ms ease, color 140ms ease;
@@ -134,10 +125,8 @@
   max-width: 120px;
   transform: translate(3px, -50%);
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius-lg);
   background: var(--lit-panel-raised);
   padding: 5px 7px;
-  box-shadow: var(--shadow-lv2);
   color: var(--lit-ink);
   content: attr(data-label);
   font-size: 10px;
@@ -183,7 +172,6 @@
   max-width: calc(100% - 180px);
   transform: translateX(-50%);
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: color-mix(in srgb, var(--lit-panel) 92%, transparent);
   padding: 4px 8px;
   pointer-events: none;
@@ -233,7 +221,6 @@
 .lit-chart-empty-actions button {
   min-height: 34px;
   border: 1px solid var(--lit-line-strong);
-  border-radius: var(--lit-radius-lg);
   background: var(--lit-panel-raised);
   padding: 0 12px;
   color: var(--lit-ink-secondary);
@@ -375,7 +362,6 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--lit-line-strong);
-  border-radius: var(--lit-radius-lg);
   background: var(--lit-bg);
   color: var(--lit-ink);
   padding-inline: 6px;

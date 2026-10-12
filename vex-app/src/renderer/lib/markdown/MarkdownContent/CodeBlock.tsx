@@ -99,7 +99,7 @@ export function CodeBlock({
           )}
         </button>
       </div>
-      <pre className="max-h-[480px] overflow-auto px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-[var(--vex-text-2)]">
+      <pre className="max-h-[480px] overflow-auto px-4 py-3 font-code text-[12.5px] leading-[1.6] text-[var(--vex-text-2)]">
         <code>{body}</code>
       </pre>
     </div>

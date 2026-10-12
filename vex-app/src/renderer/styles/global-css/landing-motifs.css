@@ -2,133 +2,94 @@
  *  LANDING MOTIF UTILITIES — the projectvex.ai signature set    *
  * ============================================================ */
 
-/* ─────────────────────────────────────────────────────────────────────────
- * THE TYPOGRAPHY REGISTER (tokens v2, 2026-08 rebrand)
+/* -------------------------------------------------------------------------
+ * THE TYPOGRAPHY REGISTER (V10)
  *
- * The app-wide voice is Inter Tight (--font-sans: UI + reading, INCLUDING
- * every micro-label and stat) and JetBrains Mono for strictly technical
- * artifacts only - code blocks, raw JSON args/output, addresses, tx hashes.
- * Instrument Serif survives ONLY as the gate voice (pre-shell display
- * headings). Doto retired app-wide (owner decree, ratified 2026-08-21). The
- * classes below own family and scale at the CLASS level so their ~40 call
- * sites change register in one edit.
- * ───────────────────────────────────────────────────────────────────────── */
+ * Instrument Sans (--font-sans) is the UI and reading voice. Departure Mono
+ * (--font-mono) is every label, caption, status word and figure, always at
+ * its one 400 weight and set in caps. Instrument Serif (--font-serif) carries
+ * counters and titles. JetBrains Mono (--font-code) is code only. The classes
+ * below own family and scale at the CLASS level so their call sites change
+ * register in one edit.
+ * ------------------------------------------------------------------------- */
 
-/* Eyebrow — the section/group label. Formerly carried a leading ::before rule
- * (28px currentColor hairline); removed app-wide by owner decree (2026-07-20:
- * no dash rules) — the mark read as visual noise next to group headers, the
- * welcome tagline, and block titles. The dash sweep (2026-07-20) also retired
- * the last multi-child call site (UnlockScreen's mirrored trailing dash on
- * "Master Vault · Sealed"), so `gap` is dropped too — every call site is
- * single-child text now. Color comes from the accent-text family (readable
- * cobalt on ink). */
+/* Eyebrow: the section and group label. 11px Departure Mono caps at the
+ * eyebrow tracking, in the accent-text family (the one blue). */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
-  font-family: var(--font-sans);
-  font-size: 10px;
-  /* Tightened from the mono 0.26em: a proportional face needs less optical
-   * separation than a monospaced one at the same size. */
-  letter-spacing: 0.2em;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
-  color: var(
-    --vex-accent-text,
-    color-mix(in oklab, var(--color-accent-primary) 55%, white)
-  );
+  color: var(--vex-accent-text, var(--color-accent-primary));
 }
 
-/* Micro-label — the small-caps stamp the app repeats everywhere a value needs
- * a caption: stepper lines, trailing meta rows, status words, version stamps,
- * inline tags. Extracted (INK REDESIGN, 2026-07-27) from ~25 duplicated
- * `font-mono text-[10px] uppercase tracking-[0.18em]` call sites so the two
- * worlds can size the stamp independently: the shell keeps the 10px/0.14em
- * default below, the pre-shell re-pins both vars in the
- * `[data-vex-gate="true"]` scope (global-css/chronos-gate.css) to 12px/0.14em.
- * That split matters because most of those call sites live in wizard step
- * files, which the app shell's Settings screen renders too.
+/* Micro: the 10px caption register (group heads, stepper lines, trailing
+ * meta). The shell keeps the 10px default below; the pre-shell re-pins the
+ * size var in the `[data-vex-gate="true"]` scope (chronos-gate.css) to 12px,
+ * because most of these call sites live in wizard step files the Settings
+ * screen renders too.
  *
- * Sets NO color and no display — every call site owns its own text tier and
+ * Sets NO color and no display: every call site owns its own text tier and
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
  * site that needs a different size must not use this class. */
 .vex-micro {
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: var(--vex-micro-size, 0.625rem);
-  letter-spacing: var(--vex-micro-tracking, 0.14em);
+  font-weight: 400;
+  letter-spacing: var(--vex-micro-tracking, var(--tracking-status));
   text-transform: uppercase;
 }
 
-/* Micro-LABEL - THE app-wide small-caps stamp register (R3-F3, 2026-08-21).
+/* Micro-LABEL: THE app-wide label stamp (status words, version stamps,
+ * dates, counts, inline tags).
  *
- * Succeeds `.vex-doto-label`. Doto was a dot-matrix face: at a given size and
- * weight it laid down roughly half the ink a solid face does, so the tiers
- * calibrated for Inter Tight OVERSTATED its perceived contrast and the owner's
- * QA read the whole register as invisible in both themes. The ratified fix
- * (2026-08-21) is not a bigger dot grid - it is a solid face. The register is
- * Inter Tight small-caps; Doto leaves the bundle entirely.
+ * V10 sets it in Departure Mono, the pixel mono the website captions in:
  *
- * THE LADDER AND WHY (deepseek's discipline, `design-platform.css` label tiers
- * + `ModelsSection.module.css` field-label tier): must-read small text goes UP
- * A TIER and UP A WEIGHT, and takes LESS air, not more. A solid proportional
- * face at weight 600 needs nothing like the optical separation sparse dot
- * glyphs demanded, so the old 0.14/0.16em tracking comes down hard:
+ *   font-size   11px      (Departure Mono is crispest at 11, 22 and 33px)
+ *   font-weight 400       (the face's only weight; base.css forbids a fake
+ *                          bold, so legibility comes from the size and the
+ *                          tracking, never from weight)
+ *   tracking    0.12em    (the chip tracking; `--wide` is the 0.18em eyebrow
+ *                          step for short all-caps heads)
+ *   tabular-nums          (every label carries figures that must not jitter
+ *                          a column)
  *
- *   font-size   11px      (the label tier; the register's own step, distinct
- *                          from the 10px `.vex-micro` caption above)
- *   font-weight 600       (the "up a weight" half of the ladder - this is what
- *                          buys legibility at 11px, never wider tracking)
- *   tracking    <= 0.08em (CAP. 0.06em base, 0.08em for the one `--wide` step)
- *   tabular-nums          (every micro label carries figures: versions, counts,
- *                          dates, amounts - they must not jitter column width)
+ * COLOR IS A CALL-SITE DECISION, deliberately. This sheet is unlayered
+ * (globals.css keeps every import unlayered on purpose), so a `color` here
+ * would BEAT the Tailwind `text-*` utility at the call site and the genuine
+ * tone deviations (attention, accent, active-state ink) could not be
+ * expressed. The FLOOR TIER is `text-ink-secondary`; the design guard
+ * (`shell-design-guard.test.ts`) keeps the tertiary and caption tiers off
+ * this class.
  *
- * COLOR IS A CALL-SITE DECISION, deliberately - same law as `.vex-micro`
- * above. This sheet is unlayered (globals.css keeps every import unlayered on
- * purpose), so a `color` here would BEAT the Tailwind `text-*` utility at the
- * call site and the genuine tone deviations (warning / success / accent /
- * active-state ink) could not be expressed. The contract instead is: the
- * FLOOR TIER is `text-ink-secondary`; `text-ink-tertiary` and `text-ink-caption`
- * are below the readable threshold at this size and are a red build
- * (`shell-design-guard.test.ts`). Uppercase is also a call-site decision - a
- * value ("V0.2.6", "88.1K IN") is not an eyebrow.
+ * CASE IS A CALL-SITE DECISION too: an eyebrow adds `uppercase`, a value
+ * ("v0.3.1", "88.1K IN") keeps its own case.
  *
- * NO BACKING CHIP. The retired `.vex-doto-chip` gave the three rail-glass
- * labels (welcome date line, $VEX card, BOOK version stamp) an opaque plate
- * because no fixed ink could carry a dot grid over an arbitrary photo
- * backdrop. A solid 600-weight face stands on its own, and the owner read the
- * plates as chrome (decision 2, ratified 2026-08-21). Do not re-add a
- * background here.
- *
- * `--wide` is the ONE sanctioned tracking step, for short all-caps eyebrows
- * that want more optical separation. It stops at the cap. */
+ * NO BACKING CHIP: a label never carries its own plate. */
 .vex-micro-label {
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 400;
+  letter-spacing: var(--tracking-chip);
   font-variant-numeric: tabular-nums;
 }
 .vex-micro-label--wide {
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-eyebrow);
 }
 
-/* Chat prose — the READING register for message bodies.
+/* Chat prose: the READING register for message bodies.
  *
- * TYPOGRAPHY LAW, CORRECTED (owner readability round, 2026-07-30). The
- * previous pass set assistant/user body copy in Instrument Serif at 16.5px.
- * That was a misreading of the source: whitehouse.gov uses Instrument Serif
- * for HEADINGS only. It is a condensed, high-contrast DISPLAY face — at
- * paragraph length and screen resolution its hairlines thin out and the
- * narrow counters close up, and the owner's first live session reported the
- * body as plainly hard to read.
- *
-
- * The register (tokens v2, 2026-08-20):
- *   BODY      -> Inter Tight 15.5px/1.65 (reading scale).
- *   HEADINGS  -> Inter Tight 600/700, set per-node in `MarkdownContent`.
- *   REASONING -> Inter Tight 14px muted (`.vex-reasoning-prose` below) - a
- *                quieter voice for a different kind of speech; the serif
- *                is confined to the gate.
- *   TECHNICAL -> mono (code, raw JSON, addresses, tx hashes) / sans+tabular
- *                (numeric columns). Unchanged. */
+ * The register (V10):
+ *   BODY      -> Instrument Sans 15.5px/1.65 (reading scale). The serif is
+ *                a display face and never sets a paragraph.
+ *   HEADINGS  -> Instrument Sans 600/700, set per-node in `MarkdownContent`.
+ *   REASONING -> Instrument Sans 14px muted (`.vex-reasoning-prose` below),
+ *                a quieter voice for a different kind of speech.
+ *   CODE      -> JetBrains Mono (--font-code) for code and raw JSON;
+ *                Departure Mono (--font-mono) for labels and figures. */
 .vex-chat-prose {
   font-family: var(--font-sans);
   font-size: 15.5px;
@@ -140,7 +101,7 @@
 }
 .vex-chat-prose code,
 .vex-chat-prose pre {
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
   font-style: normal;
   font-weight: 400;
 }
@@ -179,7 +140,7 @@
   font-weight: 600;
 }
 .vex-reasoning-prose :is(code, pre) {
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
 }
 
 /* Grain — the landing .noise SVG turbulence, near-invisible. CSP-safe:
@@ -212,36 +173,6 @@
  * panel step but still a whisper. */
 .vex-noise--backdrop {
   opacity: 0.07;
-}
-
-/* Selection beam — the landing workspace's selected item (.ws-item.sel):
- * cobalt gradient sweep + white ledger bar. The ONE sanctioned gradient in
- * the shell; the shadow is directional (depth of the lit item), not a
- * resting glow. Host must be position-relative-capable (the class sets it). */
-.vex-select-beam {
-  position: relative;
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, var(--vex-accent, var(--color-accent-primary)) 92%, transparent),
-    color-mix(in oklab, var(--vex-accent, var(--color-accent-primary)) 50%, transparent)
-  );
-  box-shadow: 0 8px 22px -8px
-    color-mix(in oklab, var(--vex-accent, var(--color-accent-primary)) 75%, transparent);
-}
-.vex-select-beam::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 16%;
-  bottom: 16%;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  /* The ledger bar is the beam's foreground mark: white on the cobalt beam,
-   * ink on the Robinhood lime beam (same law as text on an accent fill). The
-   * fallback keeps it white if the beam is ever used outside the shell scope
-   * where the token is undefined. */
-  background: var(--vex-accent-contrast, #ffffff);
-  opacity: 0.9;
 }
 
 /* Hero rise — the landing's load-in reveal (masked line rise, "Out" curve),

@@ -59,7 +59,6 @@
 .lit-account-refresh-button {
   min-height: 26px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 0 10px;
   color: var(--lit-ink-secondary);
@@ -189,7 +188,6 @@
   flex: 0 0 auto;
   border: 1.5px solid color-mix(in srgb, var(--lit-ink-secondary) 35%, transparent);
   border-top-color: var(--lit-ink-secondary);
-  border-radius: 50%;
   animation: lit-position-close-spin 900ms linear infinite;
 }
 
@@ -266,7 +264,6 @@
   min-height: 24px;
   flex: 0 0 auto;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 0 8px;
   color: var(--lit-ink-secondary);
@@ -294,7 +291,6 @@
 .lit-row-actions button {
   min-height: 24px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: transparent;
   padding: 0 8px;
   color: var(--lit-ink-secondary);
@@ -345,11 +341,8 @@
   flex-direction: column;
   gap: 8px;
   border: 1px solid var(--lit-line-strong);
-  border-radius: calc(var(--lit-radius) * 2);
   background: var(--lit-panel);
   padding: 10px;
-  /* An offset and a soft blur: the card is above the panel, not glowing on it. */
-  box-shadow: 0 8px 24px -6px rgb(0 0 0 / 0.45);
 }
 
 .lit-close-card-title {
@@ -368,7 +361,6 @@
 .lit-close-portions button {
   min-height: 24px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: transparent;
   color: var(--lit-ink-secondary);
   font-size: 11px;
@@ -396,7 +388,6 @@
 .lit-close-card-keys button {
   min-height: 28px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: transparent;
   color: var(--lit-ink-secondary);
   font-size: 11px;
@@ -467,7 +458,6 @@
   align-items: flex-start;
   gap: 3px;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   padding: 8px 10px;
 }
 
@@ -489,7 +479,6 @@
 
 .lit-margin-usage-bar {
   height: 4px;
-  border-radius: 2px;
   background: var(--lit-panel-raised);
   overflow: hidden;
 }
@@ -497,7 +486,6 @@
 .lit-margin-usage-bar i {
   display: block;
   height: 100%;
-  border-radius: inherit;
   background: var(--lit-positive);
   transition: width 200ms ease;
 }
@@ -565,7 +553,6 @@
   min-height: 28px;
   margin-top: 4px;
   border: 1px solid var(--lit-line-strong);
-  border-radius: var(--lit-radius);
   background: var(--lit-panel-raised);
   padding: 0 12px;
   color: var(--lit-ink);
@@ -600,7 +587,6 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--lit-line);
-  border-radius: var(--lit-radius);
   background: transparent;
   color: var(--lit-ink-secondary);
   transition: border-color 140ms ease, color 140ms ease;
