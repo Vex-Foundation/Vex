@@ -15,4 +15,7 @@ export const system = {
   notifyTurnComplete(input) {
     return invokeWithSchema(CH.system.notifyTurnComplete, input);
   },
+  setTitleBarOverlay(input) {
+    return invokeWithSchema(CH.system.setTitleBarOverlay, input);
+  },
 } satisfies SystemBridge;

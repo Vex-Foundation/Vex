@@ -19,6 +19,8 @@ export const CH = {
     network: "vex:system:network",
     /** OS-native turn-complete notification (A34); main checks focus itself. */
     notifyTurnComplete: "vex:system:notifyTurnComplete",
+    /** Recolour the Windows/Linux title bar overlay on a theme change. */
+    setTitleBarOverlay: "vex:system:setTitleBarOverlay",
   },
 
   // Docker - detection + lifecycle (M4)

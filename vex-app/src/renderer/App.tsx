@@ -24,6 +24,7 @@
  * they are not part of the user-facing flow.
  */
 
+import { useWindowChrome } from "./lib/use-window-chrome.js";
 import { useEffect, useState, type JSX } from "react";
 import {
   AnimatePresence,
@@ -69,6 +70,7 @@ export function App(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const dismissUnlockCurtain = useUiStore((s) => s.dismissUnlockCurtain);
   const reducedMotion = useReducedMotion() === true;
+  useWindowChrome();
 
   // Dispatch map keeps view routing flat: adding a view = one entry,
   // not a new ternary branch. Keep the map inline (no separate registry
