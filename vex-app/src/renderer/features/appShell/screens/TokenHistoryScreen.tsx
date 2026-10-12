@@ -1,22 +1,22 @@
 /**
- * Token-history screen — the full-app ShellScreen showing one token's
+ * Token-history screen - the full-app ShellScreen showing one token's
  * Vex-recorded activity (owner decree 2026-07-21: the eye key on a token row
  * in Balances / All assets opens this). Chronos grammar throughout: ink
  * glass inherited from the ShellScreen chrome, tabular figures, serif
  * NOWHERE here (the chrome's serif H1 is replaced via the `header` slot).
  *
- * This file is the SCREEN GATE only — identity, query, the states matrix,
+ * This file is the SCREEN GATE only - identity, query, the states matrix,
  * and pagination. The row, the bridge per-leg audit, and the
  * provenance-gated field readers live beside it in `token-history/`
  * (split MOVE-ONLY in the Agent Scan renderer round; the same suite pins
  * both sides):
- *   - `token-history/TokenHistoryRow.tsx`      — one entry row
- *   - `token-history/BridgeLegsDetail.tsx`     — the expandable leg audit
- *   - `token-history/token-history-display.ts` — quantity/USD/date/link readers
+ *   - `token-history/TokenHistoryRow.tsx`      - one entry row
+ *   - `token-history/BridgeLegsDetail.tsx`     - the expandable leg audit
+ *   - `token-history/token-history-display.ts` - quantity/USD/date/link readers
  *
  * Data: `useTokenHistoryInfinite` → `vex:portfolio:listTokenHistory`, exact
  * `(chainId, tokenAddress)` identity from the route (name/symbol are display
- * metadata only). The DTO is a discriminated `status` union — a page that
+ * metadata only). The DTO is a discriminated `status` union - a page that
  * timed out arrives as `"unavailable"` and renders the calm try-again note,
  * NEVER the empty state (a timeout must not read as "no history").
  *
@@ -25,17 +25,17 @@
  *    (`unitProvenance === "human"`); unknown values show the em dash;
  *  - the primary USD figure carries a `usdProvenance` tag (contract C35):
  *    `"recorded"` renders plain, `"estimated"` renders with an explicit
- *    `~ … est.` marker — it must NEVER read as bare execution-time USD;
+ *    `~ … est.` marker - it must NEVER read as bare execution-time USD;
  *  - leg token identity goes through the shared token-leg policy
- *    (`lib/token-leg-display.ts`) — a known mint address is the only thing
+ *    (`lib/token-leg-display.ts`) - a known mint address is the only thing
  *    that authorizes a brand ticker/logo; hostile symbols degrade safely;
  *  - explorer links are BUILT from `txRefs[{chainId, ref}]` via
  *    `shared/explorer-links.ts` (hosts already allow-listed in main);
  *    unknown chains / unresolved ids (0) render no link, never a guess;
  *  - the subtitle disclosure scopes the feed honestly: protocol captures +
- *    Vex-executed sends — external transfers/airdrops are not locally known.
+ *    Vex-executed sends - external transfers/airdrops are not locally known.
  *
- * Cost basis was retired in the same pass — this screen's Activity feed is
+ * Cost basis was retired in the same pass - this screen's Activity feed is
  * the whole page now.
  */
 
@@ -81,7 +81,7 @@ export function TokenHistoryScreen({
   });
 
   // Display identity: main-sanitized name, else the sanitized symbol, else
-  // the truncated address — never raw provider text.
+  // the truncated address - never raw provider text.
   const symbol = sanitizeTokenSymbol(token.symbol);
   const displayName =
     token.tokenName ?? symbol ?? truncateAddress(token.tokenAddress);
@@ -103,7 +103,7 @@ export function TokenHistoryScreen({
   let body: JSX.Element;
   if (query.isLoading) {
     body = (
-      <p className="vex-micro-label uppercase text-ink-secondary">
+      <p className="vex-ov-label">
         Loading…
       </p>
     );
@@ -150,7 +150,7 @@ export function TokenHistoryScreen({
             type="button"
             onClick={() => void query.fetchNextPage()}
             disabled={query.isFetchingNextPage}
-            className="mt-3 w-full rounded-xl border border-line-2 py-1.5 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
+            className="mt-3 w-full border border-line-2 py-1.5 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
           >
             {query.isFetchingNextPage ? "Loading…" : "Load more"}
           </button>
@@ -164,31 +164,28 @@ export function TokenHistoryScreen({
       title={title}
       origin={origin}
       onClose={onClose}
+      chapter={title}
       header={
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <TokenMark mark={mark} size={20} />
-            <span className="min-w-0 truncate text-[17px] font-medium leading-tight text-ink-primary">
-              {displayName}
-            </span>
-            <span className="shrink-0 text-[13px] text-ink-tertiary">
-              ({chainName})
-            </span>
-          </div>
-          {/* Scope disclosure (plan v2): this feed is what Vex itself
-           * recorded — protocol captures + Vex-executed sends. It is NOT a
-           * chain scan; external activity is honestly out of scope. */}
-          <p className="text-[11px] leading-snug text-ink-tertiary">
-            Vex-recorded activity - protocol captures and Vex-executed sends.
-            Transfers made outside Vex (including airdrops) are not locally
-            known.
-          </p>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <TokenMark mark={mark} size={20} />
+          <span className="min-w-0 truncate text-[14px] font-medium leading-tight text-ink-primary">
+            {displayName}
+          </span>
+          <span className="vex-ov-label shrink-0">({chainName})</span>
         </div>
       }
     >
-      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
+        {/* Scope disclosure (plan v2): this feed is what Vex itself
+         * recorded - protocol captures + Vex-executed sends. It is NOT a
+         * chain scan; external activity is honestly out of scope. */}
+        <p className="max-w-[56ch] text-[13px] leading-[19px] text-ink-secondary">
+          Vex-recorded activity - protocol captures and Vex-executed sends.
+          Transfers made outside Vex (including airdrops) are not locally
+          known.
+        </p>
         <section aria-label="Activity">
-          <h2 className="mb-2 vex-micro-label uppercase text-ink-secondary">
+          <h2 className="vex-ov-label mb-2">
             Activity
           </h2>
           {body}

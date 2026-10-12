@@ -58,17 +58,14 @@
   --vex-glass-tint-rail: var(--vex-alias-bg-base);
   --vex-glass-tint-card: var(--vex-alias-bg-layer-1);
   --vex-glass-tint-pane: var(--vex-alias-field);
-  --vex-glass-tint-overlay: var(--vex-alias-bg-base);
   /* The edge a neutralised tier draws: one 1px rule inside its box, the V10
    * region divider. A hairline, not an elevation: it is the only box-shadow
    * glass.css may declare. */
   --vex-glass-rule: inset 0 0 0 1px var(--vex-alias-rule);
   /* COMPATIBILITY ALIASES, each with a named consumer and a removal
    * condition (glass-tokens.test.ts fails the moment an alias has no `var()`
-   * consumer left, which is the signal to delete it here):
-   *  - --vex-glass-strong: screens/ShellScreen.tsx until it paints the
-   *    overlay paper itself. */
-  --vex-glass-strong: var(--vex-glass-tint-overlay);
+   * consumer left, which is the signal to delete it here): none are left;
+   * the overlay sheet, the profile row and the BOOK paint their own paper. */
   /* shadcn projection: stock Button/Input/Dialog inside the shell speak the
    * brand automatically (same mechanism as the onboarding scope). */
   --color-primary: var(--vex-accent);

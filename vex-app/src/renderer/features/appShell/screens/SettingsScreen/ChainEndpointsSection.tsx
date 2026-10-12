@@ -37,7 +37,7 @@ export function ChainEndpointsSection(): JSX.Element {
     } catch { setMessage("Unable to save chain endpoints. Try again."); }
     finally { setBusy(false); }
   };
-  const inputClass = "mt-1 w-full rounded border border-line-2 bg-transparent px-3 py-2 text-ink-primary";
+  const inputClass = "mt-1 w-full border border-line-2 bg-transparent px-3 py-2 text-ink-primary";
   return <section aria-label="Chain endpoints" className="flex flex-col gap-4">
     <h2 className="font-serif text-2xl text-ink-primary">Chain endpoints</h2>
     <p className="text-sm text-ink-secondary">Set your own endpoints per chain. Leave a field empty to use its default. Blockscout discovers tokens; RPC reads their balances.</p>
