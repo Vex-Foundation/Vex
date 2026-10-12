@@ -65,6 +65,7 @@ import { ModelBrandIcon } from "./provider/ModelBrandIcon.js";
 import { ModelPicker } from "./provider/ModelPicker.js";
 import { EndpointPicker } from "./provider/EndpointPicker.js";
 import { ProviderErrorAlert } from "./provider/ProviderErrorAlert.js";
+import { RAIL_WARNING_CHROME } from "./step-chrome.js";
 
 export interface ProviderStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -295,7 +296,7 @@ export function ProviderStep({
           <p
             role="status"
             data-vex-provider-configure-later-alert
-            className="border-l-2 border-[color-mix(in_oklab,var(--color-warning)_45%,transparent)] py-0.5 pl-3 text-sm text-warning"
+            className={RAIL_WARNING_CHROME}
           >
             The agent cannot run any inference without a provider - it will
             stay idle until you add an OpenRouter key and model. You can do

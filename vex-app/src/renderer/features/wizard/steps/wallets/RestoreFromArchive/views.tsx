@@ -19,6 +19,7 @@ export function CollapsedTrigger({ onOpen }: CollapsedTriggerProps): JSX.Element
         size="sm"
         onClick={onOpen}
         data-vex-restore-open
+        className="text-accent-primary"
       >
         Restore a full backup
       </Button>
@@ -56,7 +57,6 @@ export function LoadingBackups(): JSX.Element {
       <VexLoader
         size={16}
         stroke={2}
-        tone="paper"
         label="Loading backups…"
       />
       <span aria-hidden className="text-xs text-ink-tertiary">
@@ -177,12 +177,12 @@ export function RestoreForm({
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {backup.vaultIncluded ? (
-                          <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
+                          <span className="border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
                             vault
                           </span>
                         ) : null}
                         {backup.envIncluded ? (
-                          <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
+                          <span className="border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
                             .env
                           </span>
                         ) : null}
