@@ -26,15 +26,15 @@ const hrefOf = (G: Glyph): string | null =>
   render(<G />).container.querySelector("use")?.getAttribute("href") ?? null;
 
 describe("px sprite", () => {
-  it("holds 109 symbols and px-names.ts lists exactly them", () => {
-    expect(SPRITE_IDS).toHaveLength(109);
+  it("holds 119 symbols and px-names.ts lists exactly them", () => {
+    expect(SPRITE_IDS).toHaveLength(119);
     expect([...PX_NAMES].sort()).toEqual([...SPRITE_IDS].sort());
   });
 
   it("mounts without a style attribute (CSP style-src 'self')", () => {
     const { container } = render(<icons.PxSprite />);
     expect(container.querySelector("[style]")).toBeNull();
-    expect(container.querySelectorAll("symbol")).toHaveLength(109);
+    expect(container.querySelectorAll("symbol")).toHaveLength(119);
   });
 
   it("renders every sprite symbol with its exact rects (generated data in sync)", () => {

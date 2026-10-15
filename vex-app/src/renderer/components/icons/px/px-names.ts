@@ -1,4 +1,4 @@
-/** Generated from px/sprite.svg (109 symbols). Do not edit by hand; the sprite test checks it. */
+/** Generated from px/sprite.svg (119 symbols). Do not edit by hand; the sprite test checks it. */
 export const PX_NAMES = [
   "panel-left",
   "panel-right",
@@ -109,6 +109,16 @@ export const PX_NAMES = [
   "nowrap",
   "shield-off",
   "shield-question",
+  "cloud",
+  "desktop",
+  "token",
+  "mint",
+  "testnet",
+  "news",
+  "release",
+  "article",
+  "leaderboard",
+  "launch",
 ] as const;
 
 export type PxName = (typeof PX_NAMES)[number];
