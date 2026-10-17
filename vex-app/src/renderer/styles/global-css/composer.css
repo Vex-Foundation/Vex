@@ -23,8 +23,9 @@
   justify-content: flex-start;
 }
 
-/* The welcome stands centred in the centre column: Vex, the state line, the
- * serif greeting, the 720 composer and the four task rows (section 10.1).
+/* The welcome stands centred in the centre column: Vex on her token, the
+ * serif greeting, the 720 composer and the four task rows (section 10.1; no
+ * state word under her, the owner 2026-10-17).
  * Auto block margins centre the stack while there is room and let it start at
  * the top (still scrollable) when the window is too short; padding 0 40 30. */
 [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat] {
@@ -56,30 +57,38 @@
 }
 
 .vex-welcome__stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
 /* Vex's stage: 268 to 284 high on a full window (240 to 300 allowed), so the
- * greeting, the field and the rows stay above the fold at the 720 minimum. */
+ * greeting, the field and the rows stay above the fold at the 720 minimum.
+ * With only her token showing (the token toggle) the clip around her host
+ * collapses to the coin's box, set inline from the box her host reports; the
+ * host itself keeps this size (a smaller host would refit her smaller). */
 .vex-welcome__vex {
   width: 320px;
   height: clamp(240px, calc(100vh - 620px), 284px);
 }
-
-/* The state line under her: 13 ink 2, "Ready · 1 mission running". */
-.vex-welcome__state {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--vex-alias-label-secondary);
+.vex-welcome__clip {
+  overflow: hidden;
 }
-.vex-welcome__dot {
-  color: var(--vex-alias-label-tertiary);
+
+/* The token's toggle ("Hide Vex", aria-pressed): transparent over the coin,
+ * flat or upright (its box is set inline), the square focus ring. */
+.vex-welcome__token {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.vex-welcome__token:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
 }
 
 /* The greeting: Instrument Serif 52 / 1.02 in the blue, never bold. */
