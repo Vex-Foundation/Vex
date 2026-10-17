@@ -6,6 +6,11 @@
  *                        bootstrap (initdb + CREATE DATABASE vex) completed
  *   pg.lastPort          the port tried first next launch (D5)
  *   pg.major             the major the data dir was created by
+ *   provider             "native" once this install's data lives in the
+ *                        native cluster: copied from the previous release's
+ *                        container volume, or started fresh in its place
+ *   migration            that copy, step by step, so a crash, quit or update
+ *                        resumes it (plan section 10, `migration/`)
  *
  * `pg` is null until the bootstrap completes, so "the cluster exists but was
  * never finished" and "no cluster" are both visible as `pg === null`.
@@ -31,11 +36,45 @@ const pgStateSchema = z.looseObject({
   major: z.literal(PG_MAJOR),
 });
 
+/**
+ * The last step the migration COMPLETED, in order. `completed` is terminal;
+ * every other value means the migration is in progress and owns the native
+ * cluster, which nothing else may start or write into until it completes.
+ */
+export const MIGRATION_STEPS = ["started", "dumped", "restored", "verified", "completed"] as const;
+export type MigrationStep = (typeof MIGRATION_STEPS)[number];
+
+const migrationFailureSchema = z.looseObject({
+  kind: z.string().min(1),
+  message: z.string(),
+  at: z.string(),
+});
+
+const migrationStateSchema = z.looseObject({
+  /** The install whose volume is being read; bound once, at `started`. */
+  installId: z.string().min(1),
+  step: z.enum(MIGRATION_STEPS),
+  /** Set with `completed`: the data was copied, or the user started fresh. */
+  outcome: z.enum(["migrated", "fresh"]).nullable(),
+  /** The dump's sha256 and size, recorded with `dumped`; null before. */
+  dump: z.looseObject({ sha256: z.string().regex(/^[0-9a-f]{64}$/), bytes: z.number().int().nonnegative() }).nullable(),
+  attempts: z.number().int().nonnegative(),
+  lastFailure: migrationFailureSchema.nullable(),
+  /** Whether the old stack was confirmed stopped when the migration completed. */
+  oldStackStopped: z.boolean().nullable(),
+  startedAt: z.string(),
+  updatedAt: z.string(),
+});
+
 const runtimeStateSchema = z.looseObject({
   pg: pgStateSchema.nullable(),
+  provider: z.literal("native").optional(),
+  migration: migrationStateSchema.optional(),
 });
 
 export type PgRuntimeState = z.infer<typeof pgStateSchema>;
+export type MigrationState = z.infer<typeof migrationStateSchema>;
+export type MigrationFailureRecord = z.infer<typeof migrationFailureSchema>;
 export type RuntimeState = z.infer<typeof runtimeStateSchema>;
 
 export const EMPTY_RUNTIME_STATE: RuntimeState = { pg: null };
