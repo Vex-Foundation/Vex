@@ -1,7 +1,7 @@
 /**
  * Module-level handoff between the compose lifecycle (writer) and the
- * database migration handler (reader). The pgPort + pgPasswordPath pair
- * is sensitive enough that it MUST stay main-process-only — never
+ * database migration handler (reader). The host + pgPort + pgPasswordPath
+ * triple is sensitive enough that it MUST stay main-process-only — never
  * crosses the preload boundary, never reaches the renderer.
  *
  * The compose handler calls `setDbConnection(...)` after a successful
@@ -10,7 +10,17 @@
  * pool — migrate runs are short-lived and the pool is closed after).
  */
 
+/**
+ * Where every local database Vex runs today listens: the compose stack
+ * publishes on loopback, and the native runtime will listen on loopback TCP
+ * too (one transport on every OS; node-postgres cannot use AF_UNIX on
+ * Windows).
+ */
+export const LOOPBACK_DB_HOST = "127.0.0.1";
+
 export interface DbConnection {
+  /** The address the server listens on; carried so no reader hard-codes it. */
+  readonly host: string;
   readonly pgPort: number;
   readonly pgPasswordPath: string;
 }

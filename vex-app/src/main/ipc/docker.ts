@@ -37,7 +37,7 @@ import { buildRenderDeps } from "../compose/deps-factory.js";
 import { log } from "../logger/index.js";
 import { CONFIG_DIR } from "../paths/config-dir.js";
 import { resolvePgPort } from "../paths/service-ports.js";
-import { setDbConnection } from "../database/connection-state.js";
+import { LOOPBACK_DB_HOST, setDbConnection } from "../database/connection-state.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
 import { stopStacksHoldingPorts } from "../compose/orphan-stacks.js";
@@ -163,6 +163,8 @@ export function registerDockerHandlers(): Array<() => void> {
     // at a degraded stack.
     if (internal.kind === "running" || internal.kind === "reused") {
       setDbConnection({
+        // The compose template publishes Postgres on 127.0.0.1 only.
+        host: LOOPBACK_DB_HOST,
         pgPort: internal.pgPort,
         pgPasswordPath: internal.pgPasswordPath,
       });

@@ -19,7 +19,6 @@ export interface DbPoolConfig {
   readonly password: string;
 }
 
-const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_DATABASE = "vex";
 const DEFAULT_USER = "vex";
 
@@ -35,7 +34,7 @@ export async function buildPoolConfig(): Promise<DbPoolConfig | null> {
   }
   if (password.length === 0) return null;
   return {
-    host: DEFAULT_HOST,
+    host: conn.host,
     port: conn.pgPort,
     database: DEFAULT_DATABASE,
     user: DEFAULT_USER,

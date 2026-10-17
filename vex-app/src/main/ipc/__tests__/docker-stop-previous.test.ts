@@ -35,6 +35,7 @@ vi.mock("../../lifecycle/broadcast.js", () => ({
   broadcastToAllWindows: vi.fn(),
 }));
 vi.mock("../../database/connection-state.js", () => ({
+  LOOPBACK_DB_HOST: "127.0.0.1",
   setDbConnection: vi.fn(),
 }));
 vi.mock("../../compose/deps-factory.js", () => ({

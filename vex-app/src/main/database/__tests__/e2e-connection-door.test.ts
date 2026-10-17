@@ -51,7 +51,7 @@ describe("decideE2eConnectionDoor", () => {
   it("publishes the requested connection when every guard passes", () => {
     expect(decideE2eConnectionDoor(input())).toEqual({
       kind: "publish",
-      connection: { pgPort: E2E_PORT, pgPasswordPath: PASSWORD_PATH },
+      connection: { host: "127.0.0.1", pgPort: E2E_PORT, pgPasswordPath: PASSWORD_PATH },
     });
   });
 
@@ -228,7 +228,7 @@ describe("openE2eConnectionDoor", () => {
     const { open, state } = await load();
     const dispose = open();
 
-    expect(state.getDbConnection()).toEqual({ pgPort: E2E_PORT, pgPasswordPath: passwordPath });
+    expect(state.getDbConnection()).toEqual({ host: "127.0.0.1", pgPort: E2E_PORT, pgPasswordPath: passwordPath });
     const loud = logged.filter((entry) => entry.message.includes("[db:e2e-door] OPEN"));
     expect(loud).toHaveLength(1);
     expect(loud[0]?.message).toContain(String(E2E_PORT));
@@ -246,7 +246,7 @@ describe("openE2eConnectionDoor", () => {
 
     const { open, state } = await load();
     const dispose = open();
-    state.setDbConnection({ pgPort: DEFAULT_PG_PORT, pgPasswordPath: "/elsewhere/pg_password" });
+    state.setDbConnection({ host: "127.0.0.1", pgPort: DEFAULT_PG_PORT, pgPasswordPath: "/elsewhere/pg_password" });
 
     expect(
       logged.some((entry) => entry.level === "warn" && entry.message.includes("was replaced by")),

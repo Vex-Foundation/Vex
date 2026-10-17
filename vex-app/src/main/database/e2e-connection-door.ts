@@ -56,6 +56,7 @@ import { DEFAULT_PG_PORT } from "../../shared/local-service-ports.js";
 import { log } from "../logger/index.js";
 import {
   getDbConnection,
+  LOOPBACK_DB_HOST,
   setDbConnection,
   subscribeDbConnection,
   type DbConnection,
@@ -203,7 +204,7 @@ export function decideE2eConnectionDoor(input: E2eDoorInput): E2eDoorDecision {
 
   return {
     kind: "publish",
-    connection: { pgPort: port, pgPasswordPath: rawPasswordFile },
+    connection: { host: LOOPBACK_DB_HOST, pgPort: port, pgPasswordPath: rawPasswordFile },
   };
 }
 
@@ -259,7 +260,7 @@ export function openE2eConnectionDoor(): () => void {
 
   setDbConnection(decision.connection);
   log.warn(
-    `[db:e2e-door] OPEN: published an e2e database connection on 127.0.0.1:${decision.connection.pgPort}. ` +
+    `[db:e2e-door] OPEN: published an e2e database connection on ${decision.connection.host}:${decision.connection.pgPort}. ` +
       "This path exists only for end-to-end tests and is inert in a packaged build.",
   );
 

@@ -64,6 +64,7 @@ vi.mock("../../lifecycle/broadcast.js", () => ({
 }));
 
 vi.mock("../../database/connection-state.js", () => ({
+  LOOPBACK_DB_HOST: "127.0.0.1",
   setDbConnection: vi.fn(),
 }));
 
