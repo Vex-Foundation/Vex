@@ -20,7 +20,8 @@
  *
  * Dust (sub-cent priced) rows are filtered out BEFORE the top-5 cut, per the
  * `hideDustBalances` preference, so a dust row never takes a real holding's
- * slot. The token history opens from a row's menu, only for a row with an
+ * slot; a scope holding only dust says "No priced balances." and still offers
+ * the full register. The token history opens from a row's menu, only for a row with an
  * exact `(chainId, tokenAddress)` identity.
  *
  * "View all assets" opens the All assets page carrying the SAME scope, so the
@@ -87,12 +88,15 @@ export function BalancesCard({
         )
       : [];
   const register = assetsScopeOf(scope);
+  // Holdings exist but every one is sub-cent dust the preference hides: say
+  // so, and keep the door to the full register, where the dust toggle lives.
+  const onlyDust = portfolio !== null && portfolio.tokens.length > 0 && top.length === 0;
 
   return (
     <PortfolioCard
       title="Balances"
       action={
-        register !== null && top.length > 0 ? (
+        register !== null && (top.length > 0 || onlyDust) ? (
           <SectionLink
             onClick={(event) => setShellRoute(assetsRouteFor(register, originOf(event)))}
           >
@@ -105,6 +109,8 @@ export function BalancesCard({
         <CardStateNote tone="loading">Loading…</CardStateNote>
       ) : (result !== undefined && !result.ok) || query.isError ? (
         <CardStateNote tone="warn">Couldn&apos;t load your balances.</CardStateNote>
+      ) : onlyDust ? (
+        <CardStateNote>No priced balances.</CardStateNote>
       ) : top.length === 0 ? (
         <CardStateNote>{emptyNote(scope)}</CardStateNote>
       ) : (
