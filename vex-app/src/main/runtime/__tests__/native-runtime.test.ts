@@ -261,7 +261,22 @@ describe("native runtime start, as the runtime screen sees it", () => {
   it("marks a ready runtime unhealthy when Postgres does not recover", async () => {
     const { startNativeRuntime, progress } = await load();
     await startNativeRuntime();
-    mocks.pgHealth.forEach((listener) => listener({ kind: "unhealthy", message: "The local database stopped." }));
+    mocks.pgHealth.forEach((listener) =>
+      listener({ kind: "unhealthy", message: "The local database stopped.", failure: "unhealthy" }),
+    );
     expect(progress.current()).toMatchObject({ phase: "failed", step: "postgres", kind: "unhealthy" });
+  });
+
+  it("marks a ready runtime disk_full when Postgres stopped because its disk filled", async () => {
+    const { startNativeRuntime, progress } = await load();
+    await startNativeRuntime();
+    mocks.pgHealth.forEach((listener) =>
+      listener({
+        kind: "unhealthy",
+        message: "The local database stopped and did not recover: The disk is full, so the local database could not start.",
+        failure: "disk_full",
+      }),
+    );
+    expect(progress.current()).toMatchObject({ phase: "failed", step: "postgres", kind: "disk_full" });
   });
 });

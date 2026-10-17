@@ -63,13 +63,19 @@ import {
   type RuntimeState,
 } from "../runtime-state.js";
 import { chooseFreePort } from "./free-port.js";
-import { checkPgIdentity, describePgError, withPgClient, type PgIdentityResult } from "./pg-identity.js";
+import {
+  checkPgIdentity,
+  describePgError,
+  isDiskFullPgError,
+  withPgClient,
+  type PgIdentityResult,
+} from "./pg-identity.js";
 import { VEX_PG_HBA, withVexConfBlock } from "./postgres-conf.js";
 import {
   classifyStartFailure,
   firstFatalLine,
   isReadyFor,
-  logLinesForPid,
+  logLinesForPostmaster,
   parseControldataSystemIdentifier,
   parsePostmasterPid,
   type StartFailureReason,
@@ -191,7 +197,12 @@ export interface PgStopResult {
 export type PgHealth =
   | { readonly kind: "restarting"; readonly attempt: number }
   | { readonly kind: "running"; readonly connection: DbConnection }
-  | { readonly kind: "unhealthy"; readonly message: string };
+  /**
+   * `failure` is why the last restart failed: `disk_full` when the volume is
+   * full (a running server that fills its disk shuts itself down, and every
+   * restart then dies in crash recovery), else `unhealthy`.
+   */
+  | { readonly kind: "unhealthy"; readonly message: string; readonly failure: "disk_full" | "unhealthy" };
 
 export type EnsureClusterResult =
   | { readonly kind: "ready"; readonly initialized: boolean }
@@ -672,14 +683,14 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
     }
   }
 
-  /** stderr first (pre-collector failures), then this PID's lines in log/. */
+  /** stderr first (pre-collector failures), then this postmaster's lines in log/ and its children's. */
   async function failureText(child: PgChild, pid: number): Promise<string> {
     const stderr = child.stderrTail();
     if (firstFatalLine(stderr) !== null) return stderr;
     // The collector may flush the postmaster's last lines just after it exits.
     let lines: string[] = [];
     for (let attempt = 0; attempt < 5; attempt++) {
-      lines = logLinesForPid(await newestLogTail(), pid);
+      lines = logLinesForPostmaster(await newestLogTail(), pid);
       if (firstFatalLine(lines.join("\n")) !== null) break;
       await sleep(100);
     }
@@ -809,8 +820,12 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
         const row = await client.query<{ id: string }>("SELECT system_identifier::text AS id FROM pg_control_system()");
         return row.rows[0]?.id ?? null;
       });
-      return result.ok ? { kind: "answered" as const, id: result.value } : describePgError(result.error);
+      if (result.ok) return { kind: "answered" as const, id: result.value };
+      // CREATE DATABASE copies template1: the first write of a new cluster.
+      if (isDiskFullPgError(result.error)) return { kind: "disk_full" as const };
+      return describePgError(result.error);
     });
+    if (answer.kind === "disk_full") throw fail("disk_full", "The disk is full, so the local database could not be set up.");
     if (answer.kind !== "answered") {
       throw fail(answer.kind === "foreign_listener" ? "foreign_listener" : "failed", `Setting up the local database failed: ${answer.detail}`);
     }
@@ -857,6 +872,7 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
 
   async function superviseRestarts(): Promise<void> {
     let lastMessage = "the postmaster exited";
+    let lastKind: PgStartKind = "failed";
     while (!stopRequested && restarts <= PG_MAX_RESTARTS) {
       restarts += 1;
       log.warn(`[runtime:pg] restarting (attempt ${String(restarts)})`);
@@ -874,10 +890,15 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
         return;
       }
       lastMessage = result.message;
+      lastKind = result.kind;
     }
     if (stopRequested) return;
     log.error(`[runtime:pg] giving up after ${String(restarts)} restarts: ${lastMessage}`);
-    emit({ kind: "unhealthy", message: `The local database stopped and did not recover: ${lastMessage}` });
+    emit({
+      kind: "unhealthy",
+      message: `The local database stopped and did not recover: ${lastMessage}`,
+      failure: lastKind === "disk_full" ? "disk_full" : "unhealthy",
+    });
   }
 
   async function bringUp(signal: AbortSignal | undefined): Promise<PgStartResult> {

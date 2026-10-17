@@ -16,6 +16,7 @@
 
 import pg from "pg";
 import { LOOPBACK_DB_HOST } from "../../database/connection-state.js";
+import { isDiskFullText } from "./postgres-facts.js";
 
 export const VEX_DATABASE = "vex";
 export const VEX_ROLE = "vex";
@@ -80,6 +81,17 @@ function serverSqlState(error: unknown): string | null {
   const { code, severity } = error as { code?: unknown; severity?: unknown };
   if (typeof severity !== "string" || severity.length === 0) return null;
   return typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null;
+}
+
+/**
+ * The server ran out of disk: SQLSTATE 53100 (`disk_full`, what Postgres maps
+ * ENOSPC to), or a message carrying the ENOSPC text. Measured on PG 18.6: an
+ * INSERT on a full volume is answered `PANIC 53100 could not write to file
+ * "pg_wal/xlogtemp.55629": No space left on device`.
+ */
+export function isDiskFullPgError(error: unknown): boolean {
+  if (serverSqlState(error) === "53100") return true;
+  return error instanceof Error && isDiskFullText(error.message);
 }
 
 export function describePgError(error: unknown): Exclude<PgIdentityResult, { readonly kind: "usable" }> {

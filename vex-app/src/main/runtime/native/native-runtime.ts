@@ -69,7 +69,7 @@ async function buildHost(): Promise<NativeHost | NativeRuntimeStart> {
   // it again. Restarts within the budget are the provider's to republish.
   postgres.onHealthChange((health) => {
     if (health.kind === "unhealthy" && progress.current().phase === "ready") {
-      progress.fail("unhealthy", health.message, "postgres");
+      progress.fail(health.failure, health.message, "postgres");
     }
   });
   const llamaSupervisor = new LlamaSupervisor({

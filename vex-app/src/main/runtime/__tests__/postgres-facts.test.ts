@@ -2,11 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   classifyStartFailure,
   firstFatalLine,
+  isDiskFullText,
   isReadyFor,
   logLinesForPid,
+  logLinesForPostmaster,
   parseControldataSystemIdentifier,
   parsePostmasterPid,
 } from "../native/postgres-facts.js";
+import {
+  INITDB_DISK_FULL_OUTPUT,
+  RESTART_DISK_FULL_LOG,
+  RESTART_DISK_FULL_STDERR,
+  RESTART_POSTMASTER_PID,
+  RESTART_STARTUP_PID,
+  RUNNING_DISK_FULL_LOG,
+  SEMGET_ENOSPC,
+  SHMGET_ENOSPC,
+} from "./pg-disk-full-logs.js";
 
 /** A postmaster.pid as PG 18 writes it (status padded to its fixed width). */
 function pidFile(pid: number, status: string): string {
@@ -64,6 +76,62 @@ describe("failed-start classification", () => {
     expect(
       classifyStartFailure("[9] FATAL:  could not write to file \"pg_wal/xlogtemp.9\": No space left on device"),
     ).toBe("disk_full");
+  });
+
+  describe("disk full, from what PG 18.6 printed on a full volume", () => {
+    it("initdb's own output", () => {
+      expect(classifyStartFailure(INITDB_DISK_FULL_OUTPUT)).toBe("disk_full");
+      expect(firstFatalLine(INITDB_DISK_FULL_OUTPUT)).toBe('could not write to file "base/4/2615_fsm": No space left on device');
+    });
+
+    it("a restart on a full disk: the reason is the startup process's line, which the postmaster's lines alone miss", () => {
+      const postmasterOnly = logLinesForPid(RESTART_DISK_FULL_LOG, RESTART_POSTMASTER_PID).join("\n");
+      expect(classifyStartFailure(postmasterOnly)).toBe("other");
+      expect(firstFatalLine(postmasterOnly)).toBeNull();
+
+      const withChildren = logLinesForPostmaster(RESTART_DISK_FULL_LOG, RESTART_POSTMASTER_PID);
+      expect(withChildren.some((line) => line.includes(`[${String(RESTART_STARTUP_PID)}]`))).toBe(true);
+      const text = [RESTART_DISK_FULL_STDERR, ...withChildren].join("\n");
+      expect(classifyStartFailure(text)).toBe("disk_full");
+      expect(firstFatalLine(text)).toBe('could not write to file "pg_wal/xlogtemp.56100": No space left on device');
+    });
+
+    it("a running server that fills its disk: the backend's PANIC and recovery's FATAL", () => {
+      const lines = logLinesForPostmaster(RUNNING_DISK_FULL_LOG, 55388);
+      // The backend (55629) and the startup process (55639) are both named.
+      expect(lines.filter((l) => l.includes("[55629]"))).toHaveLength(2);
+      expect(lines.filter((l) => l.includes("[55639]"))).toHaveLength(5);
+      // 55397 is the first boot's startup process, never named by the postmaster.
+      expect(lines.some((l) => l.includes("[55397]"))).toBe(false);
+      expect(classifyStartFailure(lines.join("\n"))).toBe("disk_full");
+    });
+
+    it("a short write that carries no errno", () => {
+      // md.c's message and hint (PG 18.6 src/backend/storage/smgr/md.c).
+      const text = [
+        '2026-10-17 19:52:30.010 UTC [55629] ERROR:  could not extend file "base/16384/16385": wrote only 4096 of 8192 bytes at block 120',
+        "2026-10-17 19:52:30.010 UTC [55629] HINT:  Check free disk space.",
+      ].join("\n");
+      expect(classifyStartFailure(text)).toBe("disk_full");
+    });
+
+    it("Node's errno code and the Windows system message", () => {
+      expect(isDiskFullText("ENOSPC: no space left on device, write")).toBe(true);
+      expect(isDiskFullText("There is not enough space on the disk.")).toBe(true);
+    });
+  });
+
+  it("ENOSPC from SysV shared memory or semaphores is a kernel limit, not a full disk", () => {
+    expect(isDiskFullText(SHMGET_ENOSPC)).toBe(false);
+    expect(isDiskFullText(SEMGET_ENOSPC)).toBe(false);
+    expect(classifyStartFailure(SHMGET_ENOSPC)).toBe("other");
+    expect(classifyStartFailure(SEMGET_ENOSPC)).toBe("other");
+  });
+
+  it("a write that failed for another reason is not a full disk", () => {
+    expect(
+      classifyStartFailure('2026-10-17 19:52:30.010 UTC [55629] PANIC:  could not write to file "pg_wal/xlogtemp.55629": Input/output error'),
+    ).toBe("other");
   });
 
   it("a lock or shared memory still held by a crashed postmaster's children", () => {

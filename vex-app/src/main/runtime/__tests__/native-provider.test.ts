@@ -134,7 +134,7 @@ describe("native provider", () => {
     // A requested stop is not an outage to report.
     await provider.stop();
     llamaEndpoint(null);
-    pgHealth({ kind: "unhealthy", message: "gone" });
+    pgHealth({ kind: "unhealthy", message: "gone", failure: "unhealthy" });
     expect(seen).toHaveLength(4);
   });
 });
