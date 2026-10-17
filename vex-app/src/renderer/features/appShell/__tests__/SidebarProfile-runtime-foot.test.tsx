@@ -172,7 +172,44 @@ describe("SidebarProfile foot", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     render(<SidebarProfile sidebarOpen />);
     expect(
-      screen.getByRole("button", { name: "Vex - Degraded. Open menu" }),
+      screen.getByRole("button", { name: "Kuba, Degraded. Open menu" }),
+    ).not.toBeNull();
+  });
+
+  it("names the account row by the name it shows, then the runtime word", () => {
+    // The row shows "Kuba"; its accessible name must lead with that name and
+    // not with the product ("Vex - Connected. Open menu" was the defect).
+    render(<SidebarProfile sidebarOpen />);
+    const trigger = screen.getByRole("button", { name: "Kuba, Connected. Open menu" });
+    expect(trigger.getAttribute("aria-label")).toBe("Kuba, Connected. Open menu");
+    expect(trigger.textContent).toContain("Kuba");
+    expect(screen.queryByRole("button", { name: /^Vex - / })).toBeNull();
+  });
+
+  it("names the collapsed rail's box by the same account name", () => {
+    render(<SidebarProfile sidebarOpen={false} />);
+    expect(
+      screen.getByRole("button", { name: "Kuba, Connected. Open menu" }),
+    ).not.toBeNull();
+  });
+
+  it("falls back to Vex while there is no name: the ask is not a name", () => {
+    profileMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: { displayName: null } },
+    });
+    const asking = render(<SidebarProfile sidebarOpen />);
+    expect(screen.getByText("What should Vex call you?")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Vex, Connected. Open menu" }),
+    ).not.toBeNull();
+    asking.unmount();
+
+    profileMock.mockReturnValue({ isLoading: true, isError: false, data: undefined });
+    render(<SidebarProfile sidebarOpen />);
+    expect(
+      screen.getByRole("button", { name: "Vex, Connected. Open menu" }),
     ).not.toBeNull();
   });
 
