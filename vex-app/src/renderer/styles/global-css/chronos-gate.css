@@ -516,7 +516,7 @@
 }
 
 /* ============================================================ *
- *  leaf: the setup screens and the wizard (d8)                  *
+ *  leaf: SetupFrame's default page (no caller since R3 wave 5)  *
  * ============================================================ */
 .vex-stage-sky {
   position: relative;

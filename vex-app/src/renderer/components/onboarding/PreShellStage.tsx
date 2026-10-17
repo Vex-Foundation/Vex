@@ -10,8 +10,8 @@
  *          by day or night, its grain, Vex rising from the VEX token, her state word on the
  *          print) and paper at the right. A first run screen says what she shows
  *          (`stageVexFace`, `SetupFrame`);
- *   print  the wizard, which keeps its V10 composition until it is restyled: the same print at
- *          window size, no animal on it.
+ *   print  the wizard, which draws its own R3 frame and plate over it (`WizardShell`): the same
+ *          print at window size, no animal on it.
  *
  *   StagePlate    the persistent plate (decorative, except the state word)
  *   VersionStamp  the small version at the window's bottom right
