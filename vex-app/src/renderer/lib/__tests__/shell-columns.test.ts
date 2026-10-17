@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { LIGHTER_CHAT_DEFAULT_SHARE } from "../../features/appShell/lighterTrading/desk-preferences.js";
 import {
   CENTER_MIN,
   LEFT_WIDTH,
@@ -207,6 +208,63 @@ describe("Lighter", () => {
     expect(lighterChatDragMax(lighter(1440), 1440)).toBe(LIGHTER_CHAT_MAX);
     expect(lighterChatDragMax(lighter(1100), 1100)).toBe(1100 - 56 - CENTER_MIN);
     expect(lighterChatDragMax(lighter(980), 980)).toBe(LIGHTER_CHAT_MIN);
+  });
+});
+
+/**
+ * The three small windows the final round captures (1000 x 720, the window
+ * minimum; 1024 x 720; 1280 x 800), per page class, as the shell asks: the
+ * left from the stored choice from 1180 up and from the narrow override
+ * under it (closed until the user opens it), Vex by the page class, and
+ * Lighter's chat at its default share of the window. Heights are the CSS's
+ * (the Vex plate's clamp); the solver owns the widths.
+ */
+describe("the small windows, per page class", () => {
+  const solve = (viewport: number, overrides: Partial<ShellLayoutInput>) =>
+    computeShellColumns({
+      viewport,
+      mode: "agent",
+      left: !isShellNarrow(viewport),
+      vex: true,
+      ...overrides,
+    });
+  const lighterChat = (viewport: number) => Math.max(1, viewport * LIGHTER_CHAT_DEFAULT_SHARE);
+
+  it("1000 x 720: the rail, the transcript beside Vex at 720, the pages wide", () => {
+    expect(solve(1000, {})).toEqual({ left: 56, center: 720, vex: 224 });
+    expect(solve(1000, { vex: false })).toEqual({ left: 56, center: 944, vex: 0 });
+    expect(solve(1000, { vex: false, left: true })).toEqual({ left: 224, center: 776, vex: 0 });
+    expect(solve(1000, { welcome: true })).toEqual({ left: 56, center: 944, vex: 0 });
+    expect(solve(1000, { mode: "studio" })).toEqual({ left: 56, center: 720, vex: 224 });
+    expect(solve(1000, { mode: "lighter", lighterChat: lighterChat(1000) })).toEqual({
+      left: 56,
+      center: CENTER_MIN,
+      vex: 304,
+    });
+  });
+
+  it("1024 x 720: the rail, the transcript beside Vex at 744", () => {
+    expect(solve(1024, {})).toEqual({ left: 56, center: 744, vex: 224 });
+    expect(solve(1024, { vex: false })).toEqual({ left: 56, center: 968, vex: 0 });
+    expect(solve(1024, { welcome: true })).toEqual({ left: 56, center: 968, vex: 0 });
+    expect(solve(1024, { mode: "studio" })).toEqual({ left: 56, center: 744, vex: 224 });
+    expect(solve(1024, { mode: "lighter", lighterChat: lighterChat(1024) })).toEqual({
+      left: 56,
+      center: CENTER_MIN,
+      vex: 328,
+    });
+  });
+
+  it("1280 x 800: both sidebars at the medium widths, the transcript at 816", () => {
+    expect(solve(1280, {})).toEqual({ left: 224, center: 816, vex: 240 });
+    expect(solve(1280, { vex: false })).toEqual({ left: 224, center: 1056, vex: 0 });
+    expect(solve(1280, { welcome: true })).toEqual({ left: 224, center: 1056, vex: 0 });
+    expect(solve(1280, { mode: "studio" })).toEqual({ left: 224, center: 816, vex: 240 });
+    expect(solve(1280, { mode: "lighter", lighterChat: lighterChat(1280) })).toEqual({
+      left: 56,
+      center: 814,
+      vex: 410,
+    });
   });
 });
 
