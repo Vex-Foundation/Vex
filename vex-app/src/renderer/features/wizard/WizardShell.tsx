@@ -2,16 +2,17 @@
  * The setup wizard's frame (docs/design/R3-MINIMAL.md section 10.3).
  *
  * Layout: a plate at the left (480 at 1440, a third of the window under it,
- * gone under 1180): the plateau print, its grain, Vex rising from the token
- * and her state word on the print. At the right: the named stepper in the
+ * gone under 1180): the plateau print, its grain and Vex rising from the
+ * token, with no word under her (owner). At the right: the named stepper in the
  * top band (the hidden title bar's drag region), then the current step's page
  * (`WizardStepPanel`): "Step N of 7 · {name}", the serif title, the lead, the
  * form, and a footer at the window's foot with the privacy link and the
  * step's actions. Under 1180 a small vx mark and Vex's word stand above the
  * step instead of the plate. Loading is the quiet loading line.
  *
- * Vex's word follows real focus: "Listening" while a text field of the form
- * has focus, else "Ready".
+ * Vex's mood follows real focus: she listens while a text field of the form
+ * has focus, else she is at rest ("Listening" and "Ready" beside the small
+ * mark under 1180).
  *
  * Per-step chrome lives in `WizardStepPanel`; the shell provides the wizard
  * host (`wizard-host.ts`) with what stands above each step's title. Each step
@@ -156,7 +157,7 @@ function useGateDocumentScope(): void {
   }, []);
 }
 
-/** The plate: the print, its grain, Vex and her word. */
+/** The plate: the print, its grain and Vex (her mood, no word under her). */
 function WizardPlate({ face }: { readonly face: WizardFace }): JSX.Element {
   return (
     <div className="vex-wz__plate">
@@ -183,9 +184,6 @@ function WizardPlate({ face }: { readonly face: WizardFace }): JSX.Element {
         emotion={face.emotion}
         className="vex-wz__vex"
       />
-      <div className="vex-wz__word" data-vex-wizard-vex-word>
-        <StateWord state={face.swatch} word={face.word} size={10} />
-      </div>
       <div aria-hidden="true" className="vex-wz__drag vex-drag" />
     </div>
   );

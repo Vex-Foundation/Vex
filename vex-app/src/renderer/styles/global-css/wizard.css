@@ -4,7 +4,8 @@
  * Two hosts draw the same seven step forms:
  *
  *   the wizard   a plate with Vex at the left (480 at 1440, a third of the
- *                window under it, gone under 1180), and at the right the named
+ *                window under it, gone under 1180; no word under her), and at
+ *                the right the named
  *                stepper (top band padding 30 72 0), the form (body padding
  *                40 72 0, column max 600) and a footer that stays at the foot
  *                of the window (padding 16 72 22, a quiet rule above) with the
@@ -50,8 +51,8 @@
 }
 
 /* The plate: the plateau print by day or night (wizard position 50% 80%), its
- * grain, Vex rising from the token, her state word on the print. The ground
- * shows while the photograph decodes. */
+ * grain and Vex rising from the token; no state word under her (owner). The
+ * ground shows while the photograph decodes. */
 .vex-wz__plate {
   position: relative;
   overflow: hidden;
@@ -90,9 +91,9 @@
   background-image: url(/art/grain.svg);
   background-size: 220px 220px;
 }
-/* The wizard's token stands at bottom 104 and the word at bottom 70, both
- * 14 px under the wake's 118 and 84 (spec section 10.1): her host is the
- * plate's own height, set 14 px lower, so her scale is the wake's. */
+/* The wizard's token stands at bottom 104, 14 px under the wake's 118 (spec
+ * section 10.1): her host is the plate's own height, set 14 px lower, so her
+ * scale is the wake's. */
 .vex-wz__vex {
   position: absolute;
   top: 14px;
@@ -100,25 +101,6 @@
   bottom: -14px;
   left: 0;
   z-index: 2;
-}
-/* Her state word, 23 px under the token's foot (86.22% of the plate on the
- * stage, k2-rig.ts STAGE_TOKEN), plus the 14 px: white on the print, 13 / 500. */
-.vex-wz__word {
-  position: absolute;
-  z-index: 3;
-  top: calc(86.22% + 37px);
-  right: 0;
-  left: 0;
-  display: flex;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.2;
-  color: var(--vex-alias-on-photo);
-}
-.vex-wz__word .vex-swatch[data-s] {
-  color: var(--vex-alias-on-photo);
-  border-color: var(--vex-alias-on-photo);
 }
 /* The plate's 44 px head row: the hidden title bar's drag region over the
  * print, where the macOS traffic lights sit. */

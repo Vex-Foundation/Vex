@@ -50,14 +50,24 @@ vi.mock("../../../stores/uiStore.js", () => ({
     }),
 }));
 
-vi.mock("../steps/KeystoreStep.js", () => ({
-  KeystoreStep: () => (
-    <div data-testid="keystore-step">
-      <input aria-label="Master password" type="password" />
-      <button type="button">Save and continue</button>
-    </div>
-  ),
-}));
+// The keystore stub, like WizardStepPanel, renders what the shell stands
+// above a step's title (the small mark and Vex's word under 1180).
+vi.mock("../steps/KeystoreStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    KeystoreStep: () => {
+      const host = useContext(WizardHostContext);
+      return (
+        <div data-testid="keystore-step">
+          {host?.before}
+          <input aria-label="Master password" type="password" />
+          <button type="button">Save and continue</button>
+        </div>
+      );
+    },
+  };
+});
 
 // The wallets stub renders what the shell stands above a step's title, the
 // way WizardStepPanel does.
@@ -193,21 +203,29 @@ describe("WizardShell frame (R3)", () => {
     expect(step.textContent).toContain("Step 2 of 7 · Wallets");
   });
 
-  it("shows Vex Listening while a text field has focus, else Ready", async () => {
+  it("draws no state word under Vex on the plate; her mood still follows focus", async () => {
     mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
     const { findByTestId, container, getByLabelText, getByRole } = renderWithQuery(
       <WizardShell />,
     );
     await findByTestId("keystore-step");
-    const word = (): string | null | undefined =>
-      container.querySelector("[data-vex-wizard-vex-word]")?.textContent;
-    expect(word()).toBe("Ready");
+    const plate = container.querySelector(".vex-wz__plate");
+    expect(plate).not.toBeNull();
+    // Owner: no "Ready" or "Listening" under Vex.
+    expect(plate?.querySelector(".vex-state-word")).toBeNull();
+    expect(plate?.textContent).toBe("");
+    // The mood (the face the plate and the small mark share) follows focus;
+    // the small mark under 1180 still names it.
+    const mood = (): string | null | undefined =>
+      container.querySelector("[data-vex-wizard-mini] .vex-state-word")?.textContent;
+    expect(mood()).toBe("Ready");
     fireEvent.focus(getByLabelText("Master password"));
-    expect(word()).toBe("Listening");
+    expect(mood()).toBe("Listening");
+    expect(plate?.querySelector(".vex-state-word")).toBeNull();
     fireEvent.blur(getByLabelText("Master password"), {
       relatedTarget: getByRole("button", { name: "Save and continue" }),
     });
-    expect(word()).toBe("Ready");
+    expect(mood()).toBe("Ready");
   });
 
   it("carries the gate scope on the document while it stands", async () => {
