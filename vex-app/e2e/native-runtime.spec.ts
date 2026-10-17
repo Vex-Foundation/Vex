@@ -18,6 +18,9 @@
  *   - Installed app (`VEX_E2E_APP_EXECUTABLE=<path to the packaged app's
  *     executable>`): the clean-machine release gate. The app uses only the
  *     binaries it ships and downloads the model like a user's first run.
+ *     For a local re-run, `VEX_E2E_SEED_MODEL=<a verified model file>` is
+ *     hard-linked into the fresh profile instead (Hugging Face throttles
+ *     repeated 333 MB downloads); the gate itself never sets it.
  *
  * DRIVING AN INSTALLED APP. Playwright's `_electron.launch` reaches the main
  * process through Node's inspector, and a packaged Vex has
@@ -56,6 +59,8 @@ const LLAMA_DIR = path.join(REPO, "native-runtime/out", TARGET, "llama");
 const MODEL_FILE = "embeddinggemma-300M-Q8_0.gguf";
 const MODEL = path.join(REPO, "native-runtime/.work/models", MODEL_FILE);
 const INSTALLED_APP = process.env["VEX_E2E_APP_EXECUTABLE"];
+/** The model the profile starts with: always in development, opt-in for an installed app. */
+const SEED_MODEL = INSTALLED_APP === undefined ? MODEL : process.env["VEX_E2E_SEED_MODEL"];
 
 /** How long a quit may take before the app counts as wedged on the way out. */
 const QUIT_DEADLINE_MS = 60_000;
@@ -300,9 +305,9 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
   configDir = mkdtempSync(path.join(tmpdir(), "vex-e2e-native-"));
   const runtimeDir = path.join(configDir, "runtime");
   const modelPath = path.join(runtimeDir, "models", MODEL_FILE);
-  if (INSTALLED_APP === undefined) {
+  if (SEED_MODEL !== undefined && SEED_MODEL !== "") {
     mkdirSync(path.join(runtimeDir, "models"), { recursive: true });
-    linkSync(MODEL, modelPath);
+    linkSync(SEED_MODEL, modelPath);
   }
 
   // First-run timings, for the gate's report. The model is fetched by main's
