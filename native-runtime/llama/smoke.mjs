@@ -20,6 +20,10 @@
 // publish it to the host (the one deviation from the production flags), and
 // Run B keeps --host 127.0.0.1 --port 0 and is probed from inside the
 // container. Timings from an emulated container are not representative.
+// win32-* run natively on Windows (win32-arm64 on an arm64 machine). The tree
+// AND the model are placed under a path with spaces and a non-ASCII component
+// (a user profile like C:\Users\Zoë\...); "SIGTERM" is TerminateProcess
+// there (the server is stateless, plan section 7).
 
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
@@ -27,6 +31,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { peInfo } from "../lib/pe.mjs";
 
 const ALIAS = "ai/embeddinggemma:300M-Q8_0";
 const DIM = 768;
@@ -38,21 +43,27 @@ const LOAD_TIMEOUT_MS = 180_000;
 const STOP_TIMEOUT_MS = 10_000;
 
 const [target, treeArg, modelArg] = process.argv.slice(2);
-if (!["darwin-arm64", "darwin-x64", "linux-x64"].includes(target) || !treeArg || !modelArg) {
-  console.error("usage: node smoke.mjs <darwin-arm64|darwin-x64|linux-x64> <tree> <model.gguf>");
+const TARGETS = ["darwin-arm64", "darwin-x64", "linux-x64", "win32-x64", "win32-arm64"];
+if (!TARGETS.includes(target) || !treeArg || !modelArg) {
+  console.error(`usage: node smoke.mjs <${TARGETS.join("|")}> <tree> <model.gguf>`);
   process.exit(2);
 }
 const tree = path.resolve(treeArg);
-const model = path.resolve(modelArg);
+const srcModel = path.resolve(modelArg);
 const inContainer = target === "linux-x64";
-for (const p of [path.join(tree, "llama-server"), model]) {
+const win = target.startsWith("win32");
+const exeName = win ? "llama-server.exe" : "llama-server";
+for (const p of [path.join(tree, exeName), srcModel]) {
   if (!fs.existsSync(p)) fail(`missing ${p}`);
 }
+if (win && process.platform !== "win32") fail(`${target} smoke needs Windows`);
+const ps = (cmd) => execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", cmd]).toString().trim();
 
 // Threads as plan D9: min(4, physical cores / 2). In the container the
 // relevant count is the Docker VM's CPUs.
 function physicalCores() {
   if (process.platform === "darwin") return Number(execFileSync("sysctl", ["-n", "hw.physicalcpu"]).toString());
+  if (process.platform === "win32") return Number(ps("(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum"));
   return os.availableParallelism();
 }
 const threads = Math.max(1, Math.min(4, Math.floor(physicalCores() / 2)));
@@ -93,12 +104,22 @@ function freePort() {
 
 // ---------------------------------------------------------------- relocation
 
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "vex llama smoke "));
-cleanups.push(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
-const relocated = path.join(tmpRoot, "runtime dir", "llama");
+const tmpRoot = fs.mkdtempSync(path.join(win ? fs.realpathSync.native(os.tmpdir()) : os.tmpdir(), "vex llama smoke "));
+cleanups.push(() => fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+const home = win ? path.join(tmpRoot, "vex ünïcode test") : tmpRoot;
+const relocated = path.join(home, "runtime dir", "llama");
 fs.cpSync(tree, relocated, { recursive: true, verbatimSymlinks: true });
-const exe = path.join(relocated, "llama-server");
+const exe = path.join(relocated, exeName);
 const cacheDir = path.join(tmpRoot, "llama cache");
+// Windows: the model too, as it will sit under the user's profile.
+let model = srcModel;
+if (win) {
+  model = path.join(home, "models", path.basename(srcModel));
+  fs.mkdirSync(path.dirname(model), { recursive: true });
+  fs.copyFileSync(srcModel, model);
+  console.log(`model copied to "${model}"`);
+}
+const launchedPids = [];
 const containerTree = "/opt/vex runtime/llama";
 const containerModel = `/models/${path.basename(model)}`;
 console.log(`tree copied to "${relocated}"`);
@@ -134,9 +155,15 @@ function launch({ name, host, port, publish, apiKey }) {
   // dereferences getenv("HOME") == NULL at startup (common/common.cpp
   // fs_get_cache_directory) and dies with SIGSEGV. Nothing may be written
   // there (checked after the runs).
-  const env = { PATH: "/usr/bin:/bin", LLAMA_API_KEY: apiKey, LLAMA_CACHE: inContainer ? "/tmp/llama-cache" : cacheDir };
+  // Windows: SystemRoot is needed by Winsock; nothing else is inherited.
+  const env = win
+    ? { SystemRoot: process.env.SystemRoot, LLAMA_API_KEY: apiKey, LLAMA_CACHE: cacheDir }
+    : { PATH: "/usr/bin:/bin", LLAMA_API_KEY: apiKey, LLAMA_CACHE: inContainer ? "/tmp/llama-cache" : cacheDir };
   if (!inContainer) {
-    child = spawn(exe, args, { cwd: "/", env, stdio: ["ignore", "pipe", "pipe"] });
+    // cwd is a directory without the tree in it (the filesystem root), so the
+    // DLLs and CPU backends must be found next to the executable.
+    child = spawn(exe, args, { cwd: path.parse(exe).root, env, stdio: ["ignore", "pipe", "pipe"] });
+    launchedPids.push(child.pid);
   } else {
     containerName = `vex-llama-smoke-${name}-${randomBytes(4).toString("hex")}`;
     const dargs = [
@@ -196,6 +223,12 @@ function launch({ name, host, port, publish, apiKey }) {
         const st = execFileSync("docker", ["exec", containerName, "cat", "/proc/1/status"]).toString();
         return { rssMiB: Math.round(Number(/VmRSS:\s+(\d+)/.exec(st)[1]) / 1024) };
       }
+      if (win) {
+        // Working set (the RSS analogue) and private bytes (the commit charge,
+        // the stable number, like macOS's phys_footprint).
+        const [ws, priv] = ps(`$p = Get-Process -Id ${child.pid}; "$($p.WorkingSet64) $($p.PrivateMemorySize64)"`).split(/\s+/).map(Number);
+        return { rssMiB: Math.round(ws / 1048576), privateMiB: Math.round(priv / 1048576) };
+      }
       const rssMiB = Math.round(Number(execFileSync("ps", ["-o", "rss=", "-p", String(child.pid)]).toString().trim()) / 1024);
       const fp = /phys_footprint:\s*([\d.]+)\s*(KB|MB|GB)/.exec(execFileSync("footprint", ["-p", String(child.pid)], { stdio: ["ignore", "pipe", "ignore"] }).toString());
       const footprintMiB = fp ? Math.round(Number(fp[1]) * { KB: 1 / 1024, MB: 1, GB: 1024 }[fp[2]]) : null;
@@ -227,8 +260,12 @@ function noOrphans() {
     const left = execFileSync("docker", ["ps", "-q", "--filter", "name=vex-llama-smoke-"]).toString().trim();
     return left === "";
   }
-  const ps = execFileSync("ps", ["-axo", "pid=,command="]).toString();
-  return !ps.split("\n").some((l) => l.includes(relocated));
+  if (win) {
+    // The server starts no processes of its own: every PID we launched is gone.
+    return launchedPids.every((pid) => { try { process.kill(pid, 0); return false; } catch { return true; } });
+  }
+  const psOut = execFileSync("ps", ["-axo", "pid=,command="]).toString();
+  return !psOut.split("\n").some((l) => l.includes(relocated));
 }
 
 // ------------------------------------------------------------------ client
@@ -305,7 +342,8 @@ async function runA() {
   results.metrics.backendLine = backendLine;
   results.metrics.systemInfo = sysInfo;
   const backendDir = inContainer ? containerTree : relocated;
-  check(backendLine.includes(`${backendDir}/libggml-cpu`), `CPU backend loaded from the relocated tree: ${backendLine.replace(/^.*from /, "")}`);
+  const backendPrefix = win ? path.join(backendDir, "ggml-cpu") : `${backendDir}/libggml-cpu`;
+  check(backendLine.includes(backendPrefix), `CPU backend loaded from the relocated tree: ${backendLine.replace(/^.*from /, "")}`);
 
   // Public endpoints and auth.
   const health = await http(base, "GET", "/health");
@@ -474,6 +512,13 @@ try {
     if (results.metrics.rosetta) note("darwin-x64 is running under Rosetta 2 on Apple Silicon");
   }
   if (inContainer) note("linux-x64 runs in a linux/amd64 container on this host: timings are emulated and not representative");
+  if (win) {
+    const want = target === "win32-arm64" ? "arm64" : "x64";
+    const machines = [...new Set(fs.readdirSync(relocated).filter((f) => /\.(exe|dll)$/i.test(f)).map((f) => peInfo(path.join(relocated, f))?.machine))];
+    check(machines.length === 1 && machines[0] === want, `every PE in the tree is ${want} (${machines.join(", ")})`);
+    check(os.arch() === want, `running natively: host is ${os.arch()} (${os.cpus()[0]?.model})`);
+    results.metrics.host = { arch: os.arch(), cpu: os.cpus()[0]?.model, logicalCpus: os.availableParallelism() };
+  }
   const ta = performance.now();
   await runA();
   await runB();

@@ -19,6 +19,13 @@
 // 127.0.0.1, hba 127.0.0.1/32 only): a socat forwarder inside the container
 // relays the published port to 127.0.0.1:<port>, so connections reach
 // Postgres from 127.0.0.1 and no setting is overridden for the container.
+// win32-*: on this Windows host, the tree and data dir under a path with
+// spaces AND a non-ASCII component. postgres.exe refuses to run with
+// administrative rights (CI runners are elevated; checked explicitly), so the
+// server is driven the way Vex will on Windows (plan 6.5): `pg_ctl start -w
+// -o "-p <port>"` (pg_ctl runs it under a restricted token), `pg_ctl stop -m
+// fast|immediate`, and TerminateProcess for the crash test. win32-arm64 runs
+// the x64 tree under the OS's x64 emulation.
 //
 // Exits non-zero on any failure; always tears down processes, the container
 // and temp dirs.
@@ -31,6 +38,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { peInfo } from '../lib/pe.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../..');
@@ -40,7 +48,7 @@ const pgVersion = appRequire('pg/package.json').version;
 
 const UBUNTU_IMAGE =
   'ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf026486401';
-const TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
+const TARGETS = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64', 'win32-arm64'];
 const PG_USER = 'vex';
 const READY_TIMEOUT_MS = 120_000;
 
@@ -172,6 +180,71 @@ class HostRunner {
   async close() {}
 }
 
+// Windows runner: the host runner, with the server lifecycle through pg_ctl
+// (see the header). The postmaster is not our child, so its exit is observed
+// through its PID; a stop's outcome is pg_ctl's exit code.
+class WindowsRunner extends HostRunner {
+  constructor(base, tree) {
+    super(base, tree);
+    this.label = 'windows host (pg_ctl)';
+    this.pgctlLog = path.join(this.workDir, 'pg_ctl.log');
+    this.stopping = null;
+    this.lastStop = null;
+  }
+  bin(name) {
+    return path.join(this.treeDir, 'bin', `${name}.exe`);
+  }
+  spawnServer() {
+    throw new SmokeError('on Windows postgres.exe is started through pg_ctl');
+  }
+  async signal(pid, sig) {
+    if (sig === 'SIGKILL') {
+      process.kill(pid, 'SIGKILL'); // TerminateProcess
+      return;
+    }
+    const mode = { SIGINT: 'fast', SIGQUIT: 'immediate' }[sig];
+    if (!mode) throw new SmokeError(`no pg_ctl equivalent of ${sig}`);
+    this.stopping = this.exec('pg_ctl', ['stop', '-D', this.dataDir, '-m', mode, '-w', '-t', '60']).then((res) => {
+      this.lastStop = { pid, mode, code: res.code, out: `${res.stdout}${res.stderr}`.trim() };
+      return res;
+    });
+    const res = await this.stopping;
+    if (res.code !== 0) throw new SmokeError(`pg_ctl stop -m ${mode} exited ${res.code}: ${this.lastStop.out}`);
+  }
+}
+
+// `pg_ctl start -w`: returns once the server is ready (or has failed). Only
+// the port goes through -o; every setting is in postgresql.conf (plan 6.3).
+async function startServerWin(r, port) {
+  const t0 = performance.now();
+  const logOffset = fs.existsSync(r.pgctlLog) ? fs.statSync(r.pgctlLog).size : 0;
+  const res = await r.exec('pg_ctl', ['start', '-w', '-t', '60', '-D', r.dataDir, '-l', r.pgctlLog, '-o', `-p ${port}`]);
+  const ms = performance.now() - t0;
+  // Early messages (before the logging collector takes over) land in -l.
+  const early = fs.existsSync(r.pgctlLog) ? fs.readFileSync(r.pgctlLog).subarray(logOffset).toString('utf8') : '';
+  const srv = { child: null, stderr: `${res.stdout}${res.stderr}${early}`, exited: null, port };
+  if (res.code !== 0) {
+    srv.exited = { code: res.code, signal: null, via: 'pg_ctl start' };
+    srv.exitPromise = Promise.resolve(srv.exited);
+    return { srv, ready: false, ms };
+  }
+  const lines = (await r.readFile(path.join(r.dataDir, 'postmaster.pid')))?.split('\n') ?? [];
+  const pid = Number(lines[0]);
+  if (!(lines.length > 7 && lines[7].trim() === 'ready' && (await r.alive(pid)))) {
+    throw new SmokeError(`pg_ctl start succeeded but postmaster.pid is not ready: ${JSON.stringify(lines)}`);
+  }
+  srv.pid = pid;
+  srv.exitPromise = (async () => {
+    while (await r.alive(pid)) await sleep(25);
+    const stop = r.stopping ? await r.stopping.then(() => r.lastStop, () => r.lastStop) : null;
+    srv.exited = stop?.pid === pid
+      ? { code: stop.code, signal: null, via: `pg_ctl stop -m ${stop.mode}` }
+      : { code: null, signal: 'terminated' };
+    return srv.exited;
+  })();
+  return { srv, ready: true, ms };
+}
+
 // Container runner: ubuntu:22.04 linux/amd64, tree bind-mounted read-only at
 // "/opt/Vex Runtime/postgres", data dir on the container's own filesystem
 // (Postgres insists the data dir is owned by the server's uid, which a
@@ -292,6 +365,7 @@ class DockerRunner {
 // connections" line goes to log/, not to stderr.
 const seenPostmasters = new Set();
 async function startServer(r, port) {
+  if (r instanceof WindowsRunner) return startServerWin(r, port);
   const t0 = performance.now();
   const child = r.spawnServer(['-D', r.dataDir, '-p', String(port)]);
   const srv = { child, stderr: '', exited: null, port };
@@ -408,13 +482,24 @@ async function main() {
   const srcTree = path.resolve(treeArg);
   const target = targetArg ?? TARGETS.find((t) => srcTree.split(path.sep).includes(t));
   if (!TARGETS.includes(target)) throw new SmokeError(`cannot tell the target of ${srcTree}; pass it`);
-  if (!fs.existsSync(path.join(srcTree, 'bin', 'postgres'))) throw new SmokeError(`${srcTree} has no bin/postgres`);
+  const win = target.startsWith('win32');
+  const pgExe = path.join(srcTree, 'bin', win ? 'postgres.exe' : 'postgres');
+  if (!fs.existsSync(pgExe)) throw new SmokeError(`${srcTree} has no ${path.relative(srcTree, pgExe)}`);
   if (target.startsWith('darwin') && process.platform !== 'darwin') throw new SmokeError(`${target} smoke needs macOS`);
-  log(`target ${target}, tree ${srcTree}, node ${process.version}, pg client ${pgVersion}`);
+  if (win && process.platform !== 'win32') throw new SmokeError(`${target} smoke needs Windows`);
+  log(`target ${target}, tree ${srcTree}, node ${process.version} (${process.arch}), pg client ${pgVersion}`);
 
   const results = { target };
-  const fileOut = (await runOk('file', ['-b', path.join(srcTree, 'bin', 'postgres')])).stdout.trim();
-  log(`bin/postgres: ${fileOut}`);
+  if (win) {
+    // Both Windows runtimes ship the x64 tree (win32-arm64: under emulation).
+    const machine = peInfo(pgExe)?.machine;
+    check(machine === 'x64', `bin/postgres.exe is an x64 PE (${machine})`);
+    results.host = { arch: os.arch(), cpu: os.cpus()[0]?.model, emulated: os.arch() !== 'x64' };
+    log(`host ${os.arch()} (${results.host.cpu}): ${os.arch() === 'x64' ? 'native x64' : 'x64 binaries run under Windows x64 emulation'}`);
+  } else {
+    const fileOut = (await runOk('file', ['-b', pgExe])).stdout.trim();
+    log(`bin/postgres: ${fileOut}`);
+  }
   if (target === 'darwin-x64') {
     const archs = (await runOk('lipo', ['-archs', path.join(srcTree, 'bin', 'postgres')])).stdout.trim();
     const hostArch = (await runOk('uname', ['-m'])).stdout.trim();
@@ -423,20 +508,32 @@ async function main() {
   }
 
   // Size of the shipped tree, uncompressed and as the archives we might ship.
-  const du = (await runOk('du', ['-sk', srcTree])).stdout.split('\t')[0];
-  const gz = (await runOk('bash', ['-c', 'tar -C "$1" -cf - . | gzip -9 | wc -c', '_', srcTree])).stdout.trim();
-  const xz = (await runOk('bash', ['-c', 'tar -C "$1" -cf - . | xz -9 | wc -c', '_', srcTree])).stdout.trim();
-  results.size = { du_kib: Number(du), tar_gz_9_bytes: Number(gz), tar_xz_9_bytes: Number(xz) };
-  log(`tree size: ${(du / 1024).toFixed(1)} MiB on disk, tar.gz -9 ${(gz / 1048576).toFixed(1)} MiB, tar.xz -9 ${(xz / 1048576).toFixed(1)} MiB`);
+  if (win) {
+    // No du/tar/xz outside Git Bash; the workflow's pack step prints those.
+    const bytes = fs.readdirSync(srcTree, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile()).reduce((n, e) => n + fs.statSync(path.join(e.parentPath, e.name)).size, 0);
+    results.size = { bytes };
+    log(`tree size: ${(bytes / 1048576).toFixed(1)} MiB (file bytes)`);
+  } else {
+    const du = (await runOk('du', ['-sk', srcTree])).stdout.split('\t')[0];
+    const gz = (await runOk('bash', ['-c', 'tar -C "$1" -cf - . | gzip -9 | wc -c', '_', srcTree])).stdout.trim();
+    const xz = (await runOk('bash', ['-c', 'tar -C "$1" -cf - . | xz -9 | wc -c', '_', srcTree])).stdout.trim();
+    results.size = { du_kib: Number(du), tar_gz_9_bytes: Number(gz), tar_xz_9_bytes: Number(xz) };
+    log(`tree size: ${(du / 1024).toFixed(1)} MiB on disk, tar.gz -9 ${(gz / 1048576).toFixed(1)} MiB, tar.xz -9 ${(xz / 1048576).toFixed(1)} MiB`);
+  }
 
-  // Relocate: a fresh directory whose path contains spaces.
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'vex pg smoke '));
+  // Relocate: a fresh directory whose path contains spaces. On Windows also a
+  // non-ASCII component (a user profile path like C:\Users\Zoë\...), with
+  // the 8.3 short form %TEMP% often has on CI expanded to the long one.
+  const tmp = win ? fs.realpathSync.native(os.tmpdir()) : os.tmpdir();
+  const base = fs.mkdtempSync(path.join(tmp, 'vex pg smoke '));
+  const home = win ? path.join(base, 'vex ünïcode test') : base;
   const cleanup = [];
   cleanup.push(async () => fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
   const servers = [];
   let r;
   try {
-    const tree = path.join(base, 'Vex Runtime', 'postgres');
+    const tree = path.join(home, 'Vex Runtime', 'postgres');
     fs.cpSync(srcTree, tree, { recursive: true, verbatimSymlinks: true });
     log(`relocated tree to "${tree}"`);
 
@@ -444,6 +541,8 @@ async function main() {
       r = new DockerRunner(tree);
       cleanup.unshift(() => r.close());
       await r.start();
+    } else if (win) {
+      r = new WindowsRunner(home, tree);
     } else {
       r = new HostRunner(base, tree);
     }
@@ -462,7 +561,7 @@ async function main() {
         if (!s.exited) {
           console.error(`[smoke] cleanup: postmaster ${s.pid} ignored SIGQUIT; killing it (its SysV IPC may leak)`);
           if (s.pid) await r.signal(s.pid, 'SIGKILL').catch(() => {});
-          s.child.kill('SIGKILL');
+          s.child?.kill('SIGKILL');
         }
       }
     });
@@ -527,8 +626,10 @@ async function main() {
       'host  all  vex  127.0.0.1/32  scram-sha-256\nhost  all  vex  ::1/128       scram-sha-256\n');
 
     // -- 6.6 semaphores and shared memory (runtime-computed: server stopped) -
+    // On Windows -C must come first: only then does postgres.exe skip its
+    // refusal to run with administrative rights (main.c do_check_root).
     const cfg = async (name) => {
-      const res = await r.exec('postgres', ['-D', r.dataDir, '-C', name]);
+      const res = await r.exec('postgres', win ? ['-C', name, '-D', r.dataDir] : ['-D', r.dataDir, '-C', name]);
       if (res.code !== 0) throw new SmokeError(`postgres -C ${name} failed:\n${res.stderr}`);
       return res.stdout.trim();
     };
@@ -538,6 +639,20 @@ async function main() {
 
     // -- start --------------------------------------------------------------
     const port = await r.pickPort();
+    if (r instanceof WindowsRunner) {
+      // The reason Vex must use pg_ctl on Windows, shown on this machine.
+      const groups = (await runOk('whoami', ['/groups'])).stdout;
+      results.elevated = /S-1-16-12288/.test(groups); // High Mandatory Level
+      if (results.elevated) {
+        const direct = await r.exec('postgres', ['-D', r.dataDir, '-p', String(port)], { timeoutMs: 60_000 });
+        check(direct.code !== 0 &&
+          /Execution of PostgreSQL by a user with administrative permissions is not\s+permitted/.test(direct.stderr),
+        `elevated: postgres.exe started directly refuses to run (exit ${direct.code}), so it is started through pg_ctl`);
+        check(!(await r.exists(path.join(r.dataDir, 'postmaster.pid'))), 'the refused direct start left no postmaster.pid');
+      } else {
+        log('not elevated: skipping the direct-start refusal check (CI runners are elevated)');
+      }
+    }
     let { srv, ms } = await startOrDie(r, port, 'first start');
     servers.push(srv);
     results.start_to_ready_ms = Math.round(ms);
@@ -564,7 +679,17 @@ async function main() {
 
     let c = await connect(r, port, 'postgres', password);
     const who = await one(c, `SELECT current_setting('data_directory') AS dir, current_setting('port') AS port`);
-    check(who.dir === r.dataDir && who.port === String(port), `connected to the smoke server ("${who.dir}", port ${who.port})`);
+    // Windows: the server reports data_directory with forward slashes, and in
+    // the ANSI code page (Postgres uses the -A file APIs), so to a UTF8 client
+    // each non-ASCII character of the path arrives as U+FFFD.
+    const wantDir = win ? r.dataDir.replace(/\\/g, '/') : r.dataDir;
+    const acpDir = wantDir.replace(/[^\x00-\x7f]/g, '\ufffd');
+    check((who.dir === wantDir || (win && who.dir === acpDir)) && who.port === String(port),
+      `connected to the smoke server ("${who.dir}", port ${who.port})`);
+    if (who.dir !== wantDir) {
+      results.data_directory_as_reported = who.dir;
+      log('note: data_directory comes back in the ANSI code page, not UTF-8 (non-ASCII characters arrive as U+FFFD)');
+    }
     const authRow = await one(c, `SELECT rolpassword LIKE 'SCRAM-SHA-256$%' AS scram FROM pg_authid WHERE rolname = 'vex'`);
     check(authRow.scram === true, 'vex password is stored as a SCRAM-SHA-256 verifier');
     const hba = await c.query('SELECT type, user_name, address, auth_method FROM pg_hba_file_rules ORDER BY rule_number');
@@ -737,7 +862,9 @@ async function main() {
     check(!conflict.ready && conflict.srv.exited.code !== 0,
       `start on a taken port fails: exit ${JSON.stringify(conflict.srv.exited)}`);
     const conflictLog = await r.readLogs();
-    const msgRe = /could not bind IPv4 address "127\.0\.0\.1": Address already in use[\s\S]*could not create any TCP\/IP sockets/;
+    const msgRe = win
+      ? /could not bind IPv4 address "127\.0\.0\.1": [^\n]*[\s\S]*could not create any TCP\/IP sockets/
+      : /could not bind IPv4 address "127\.0\.0\.1": Address already in use[\s\S]*could not create any TCP\/IP sockets/;
     results.port_conflict = {
       exit: conflict.srv.exited,
       stderr: conflict.srv.stderr.trim(),
@@ -749,13 +876,31 @@ async function main() {
     log(`port-conflict stderr: ${JSON.stringify(conflict.srv.stderr.trim())}`);
     check(!(await r.exists(pidFile)), 'no postmaster.pid left behind by the failed start');
 
-    if (r instanceof HostRunner) {
+    if (r instanceof HostRunner && !(r instanceof WindowsRunner)) {
       // Every postmaster we ran, including the SIGKILLed one (its successor
       // reclaims the same IPC keys), must have released its SysV segment.
       const ours = new Set(servers.map((s) => s.child.pid).concat(conflict.srv.child.pid));
       const leaked = (await runOk('ipcs', ['-m', '-p'])).stdout.split('\n')
         .filter((l) => l.startsWith('m')).filter((l) => ours.has(Number(l.trim().split(/\s+/)[6])));
       check(leaked.length === 0, `no SysV shared memory left behind by our postmasters${leaked.length ? `: ${leaked}` : ''}`);
+    }
+
+    if (r instanceof WindowsRunner) {
+      // Not a gate, a measurement for the app: Postgres reaches files through
+      // the ANSI code page, so a data dir path with characters outside it
+      // (here Greek, on a Western code page) is the case to know about.
+      const acp = (await run('reg', ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage', '/v', 'ACP'])).stdout;
+      const odd = path.join(base, 'δοκιμή', 'pg18');
+      fs.mkdirSync(path.dirname(odd), { recursive: true });
+      const pw2 = path.join(path.dirname(odd), 'pwfile');
+      fs.writeFileSync(pw2, `${password}\n`);
+      const res = await r.exec('initdb', ['-D', odd, '-U', PG_USER, `--pwfile=${pw2}`, '-E', 'UTF8',
+        '--locale=C', '--locale-provider=builtin', '--builtin-locale=C.UTF-8', '-A', 'scram-sha-256']);
+      results.non_acp_path_initdb = {
+        acp: /ACP\s+REG_SZ\s+(\d+)/.exec(acp)?.[1] ?? null, exit: res.code,
+        tail: `${res.stdout}${res.stderr}`.trim().split('\n').slice(-3).join(' | '),
+      };
+      log(`note: initdb under a path outside the ANSI code page (ACP ${results.non_acp_path_initdb.acp}): exit ${res.code}: ${results.non_acp_path_initdb.tail}`);
     }
 
     log('RESULTS ' + JSON.stringify(results, null, 2));
