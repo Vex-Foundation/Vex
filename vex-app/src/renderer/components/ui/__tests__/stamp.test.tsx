@@ -1,11 +1,12 @@
 /**
- * Stamp, Chip and CellMeter: the reversed REAL FUNDS label, the bracketed
- * status chip and the cell meter.
+ * Stamp, Tag, Chip and CellMeter: the reversed REAL FUNDS label, the outlined
+ * risk tag, the status chip (a swatch and its word, sentence case) and the
+ * cell meter.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Stamp } from "../stamp.js";
+import { Stamp, Tag } from "../stamp.js";
 import { Chip } from "../chip.js";
 import { CellMeter } from "../cell-meter.js";
 
@@ -33,6 +34,18 @@ describe("Stamp", () => {
   });
 });
 
+describe("Tag", () => {
+  it("carries its word, no hue, and marks the quiet form", () => {
+    const { container, rerender } = render(<Tag>High risk</Tag>);
+    const tag = mustQuery(container, ".vex-tag");
+    expect(tag.textContent).toBe("High risk");
+    expect(tag.className).not.toMatch(/red|danger|blue|accent/);
+    expect(tag.hasAttribute("data-quiet")).toBe(false);
+    rerender(<Tag quiet>Wallet broadcast</Tag>);
+    expect(mustQuery(container, ".vex-tag").hasAttribute("data-quiet")).toBe(true);
+  });
+});
+
 describe("Chip", () => {
   it("pairs a swatch of the same state with the word", () => {
     const { container } = render(<Chip state="ongoing">Running</Chip>);
@@ -40,6 +53,13 @@ describe("Chip", () => {
     expect(chip.getAttribute("data-s")).toBe("ongoing");
     expect(chip.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("ongoing");
     expect(chip.querySelector("b")?.textContent).toBe("Running");
+  });
+
+  it("paints the swatch in the one blue, and in the print's type on a photo", () => {
+    const { container, rerender } = render(<Chip state="done">Live</Chip>);
+    expect(mustQuery(container, ".vex-chip .vex-swatch").className).toContain("text-accent-primary");
+    rerender(<Chip state="done" onPhoto>Live</Chip>);
+    expect(mustQuery(container, ".vex-chip .vex-swatch").className).not.toContain("text-accent-primary");
   });
 
   it("marks compact and on-photo forms", () => {

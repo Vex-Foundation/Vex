@@ -1,27 +1,26 @@
 /**
- * VEX LOADER: the brand loader for the boot and setup flow, drawn as the
- * ongoing swatch at size (docs/design/V10-SPREAD.md section 1): a square
- * outline filled with a dot screen that steps through four positions. The
- * pattern lives in `ui-primitives/marks.css`. The center is a `children` slot
- * (no baked-in feature artwork) so this shared primitive never imports from
- * `features/`; inline sizes leave it empty.
+ * VEX LOADER: the quiet loading line (docs/design/R3-MINIMAL.md sections 5
+ * and 11). A word and a quiet line, never a skeleton of fake numbers and
+ * never a spinner: a 2px track in the quiet rule with one blue segment, still.
+ * The pattern lives in `ui-primitives/marks.css`. The visible word belongs to
+ * the caller (a swatch and a word beside the line); this primitive announces
+ * its label once and draws the line.
  *
- * Motion contract: the screen steps ONLY while mounted, and consumers mount
- * it only for real in-flight work (probes, compose, migrate), never
- * decoratively. `prefers-reduced-motion` and `data-still` freeze it to one
- * still frame via CSS; no JS branch is needed.
+ * `size` is the line's length in px (120 by default, the R3 loading line) and
+ * `stroke` its thickness (2 by default). The V10 centre slot is gone: a line
+ * has no centre, and no caller filled it.
  *
  * A11y: `role="status"` + visually-hidden label announce the work once; the
- * pattern itself is decorative (`aria-hidden` on the slot).
+ * line itself is decorative.
  */
 
-import type { CSSProperties, JSX, ReactNode } from "react";
+import type { CSSProperties, JSX } from "react";
 import { cn } from "../../lib/utils.js";
 
 export type VexLoaderTone = "ink" | "paper";
 
 export interface VexLoaderProps {
-  /** Outer edge in px. */
+  /** Length of the line in px. */
   readonly size?: number;
   /** Ink family: `ink` = the theme's accent on the shell canvas (default);
    * `paper` = paper on the dark pre-shell plate. Every `tone="paper"` call
@@ -29,19 +28,19 @@ export interface VexLoaderProps {
   readonly tone?: VexLoaderTone;
   /** Announced once via role="status"; never rendered visually. */
   readonly label: string;
-  /** Outline width in px (defaults to 1 via CSS). */
+  /** Thickness of the line in px (defaults to 2 via CSS). */
   readonly stroke?: number;
-  /** Optional center content (e.g. a brand mark at hero sizes). */
-  readonly children?: ReactNode;
   readonly className?: string;
 }
 
+/** The R3 loading line's length. */
+const LINE_LENGTH_PX = 120;
+
 export function VexLoader({
-  size = 40,
+  size = LINE_LENGTH_PX,
   tone = "ink",
   label,
   stroke,
-  children,
   className,
 }: VexLoaderProps): JSX.Element {
   return (
@@ -57,24 +56,17 @@ export function VexLoader({
       style={
         {
           width: size,
-          height: size,
           ...(stroke !== undefined
             ? { "--vex-loader-stroke": `${stroke}px` }
             : {}),
-          // Custom-property inline style — the repo's DotMatrix idiom
-          // (see dotm-square-3.tsx); CSSOM property writes, CSP-safe.
+          // Custom-property inline style: a CSSOM property write, CSP-safe
+          // (MOTION-POLICY.md).
         } as CSSProperties
       }
     >
       <span className="sr-only">{label}</span>
-      {children !== undefined && children !== null ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-[14%] select-none"
-        >
-          {children}
-        </div>
-      ) : null}
+      {/* Empty, so assistive technology has nothing to read in it. */}
+      <i className="vex-loader__segment" />
     </div>
   );
 }
