@@ -33,6 +33,13 @@ export interface EmbeddingConfig {
   dim: number;
   /** Provider tag for logging/observability. Free-form (e.g. "local", "openrouter"). */
   provider: string;
+  /**
+   * Bearer key the provider requires, from EMBEDDING_API_KEY; absent means
+   * requests carry no Authorization header. The bundled native embeddings
+   * server takes a per-launch key that main injects into the environment and
+   * never persists. A secret: never log it.
+   */
+  apiKey?: string;
 }
 
 /**
@@ -86,11 +93,14 @@ export function loadEmbeddingConfig(): EmbeddingConfig {
     throw new Error(`Embedding config validation failed:\n${errors.join("\n")}`);
   }
 
+  const apiKey = (process.env.EMBEDDING_API_KEY ?? "").trim();
+
   return {
     baseUrl: baseUrl.replace(/\/$/, ""),
     model,
     dim,
     provider,
+    ...(apiKey ? { apiKey } : {}),
   };
 }
 

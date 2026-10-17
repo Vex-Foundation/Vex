@@ -74,6 +74,20 @@ describe("embedDocument", () => {
     expect(result.embedding).toHaveLength(VALID_CONFIG.dim);
   });
 
+  it("sends no Authorization header when the config has no apiKey", async () => {
+    mockFetchOk({ data: [{ embedding: makeEmbedding() }] });
+    await embedDocument("title", "summary", VALID_CONFIG);
+    const [, init] = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(init.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("sends the configured apiKey as a bearer token", async () => {
+    mockFetchOk({ data: [{ embedding: makeEmbedding() }] });
+    await embedQuery("q", { ...VALID_CONFIG, apiKey: "per-launch-key" });
+    const [, init] = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(init.headers).toMatchObject({ Authorization: "Bearer per-launch-key" });
+  });
+
   it("throws on dim mismatch against config.dim", async () => {
     mockFetchOk({ data: [{ embedding: makeEmbedding(1024) }] });
     await expect(embedDocument("t", "s", VALID_CONFIG)).rejects.toThrow(/dim 1024.*expected 768/);

@@ -5,7 +5,13 @@ import {
   MAX_EMBEDDING_DIM,
 } from "@vex-agent/embeddings/config.js";
 
-const ENV_KEYS = ["EMBEDDING_BASE_URL", "EMBEDDING_MODEL", "EMBEDDING_DIM", "EMBEDDING_PROVIDER"] as const;
+const ENV_KEYS = [
+  "EMBEDDING_BASE_URL",
+  "EMBEDDING_MODEL",
+  "EMBEDDING_DIM",
+  "EMBEDDING_PROVIDER",
+  "EMBEDDING_API_KEY",
+] as const;
 
 function clearEnv(): void {
   for (const k of ENV_KEYS) {
@@ -40,6 +46,19 @@ describe("loadEmbeddingConfig", () => {
     expect(config.model).toBe("ai/embeddinggemma:300M-Q8_0");
     expect(config.dim).toBe(768);
     expect(config.provider).toBe("local");
+  });
+
+  it("carries no apiKey when EMBEDDING_API_KEY is unset or blank", () => {
+    setValid();
+    expect(loadEmbeddingConfig()).not.toHaveProperty("apiKey");
+    process.env.EMBEDDING_API_KEY = "   ";
+    expect(loadEmbeddingConfig()).not.toHaveProperty("apiKey");
+  });
+
+  it("loads EMBEDDING_API_KEY, trimmed", () => {
+    setValid();
+    process.env.EMBEDDING_API_KEY = "  per-launch-key  ";
+    expect(loadEmbeddingConfig().apiKey).toBe("per-launch-key");
   });
 
   it("strips trailing slash from baseUrl", () => {
