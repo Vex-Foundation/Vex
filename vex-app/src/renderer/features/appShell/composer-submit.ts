@@ -480,7 +480,8 @@ export function useComposerSubmit(
       if (isLighterWorkspaceCommand(typed)) {
         setDraft("");
         setNotice(null);
-        enterLighterMode();
+        // Typed in a conversation: the desk opens with its chat showing.
+        enterLighterMode({ openChat: true });
         return;
       }
       // On the Lighter desk a typed message carries the desk's scope, so

@@ -45,6 +45,7 @@ vi.mock("../AccountPanel.js", () => ({
 }));
 
 import { LighterCenter } from "../LighterCenter.js";
+import { setDeskReviewSlot } from "../desk-review-slot.js";
 
 const market = {
   marketId: 1,
@@ -244,6 +245,44 @@ describe("LighterCenter", () => {
     expect(dialog?.hasAttribute("open")).toBe(true);
     expect(dialog?.textContent).toContain("Review order");
     expect(screen.getAllByTestId("approval-card").map((node) => node.textContent)).toEqual(["a1", "a3"]);
+  });
+
+  it("gives the review a usable ticket width while it stands in the ticket's place, then returns to the saved share", () => {
+    // The real ticket keeps a slot beside its form; the mocked one does not,
+    // so the slot is provided here, as the ticket would.
+    const slot = document.createElement("div");
+    document.body.append(slot);
+    setDeskReviewSlot(slot);
+    try {
+      mocks.useLighterDesk.mockReturnValue(desk({
+        approvals: [
+          { id: "a1", origin: "desk", preview: { namespace: "lighter", toolName: "order.create", criticalArgs: {} } },
+        ],
+        focusApprovalId: "a1",
+      }));
+      const queryClient = new QueryClient();
+      const { container, rerender } = render(<LighterCenter />, {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
+      const upper = (): HTMLElement | null => container.querySelector<HTMLElement>(".lit-desk-upper");
+      // The 1200 wide desk resolves the ticket to 300 (its 0.25 share); the
+      // review takes the mockup's 338 beside the 240 book column.
+      expect(upper()?.hasAttribute("data-ticket-review")).toBe(true);
+      expect(upper()?.style.gridTemplateColumns).toBe("minmax(0, 1fr) 240px 338px");
+      mocks.useLighterDesk.mockReturnValue(desk({ approvals: [] }));
+      rerender(<LighterCenter />);
+      expect(upper()?.hasAttribute("data-ticket-review")).toBe(false);
+      expect(upper()?.style.gridTemplateColumns).toBe("minmax(0, 1fr) 240px 300px");
+      // The saved share is never written by the review.
+      expect(useLighterAnalysisStore.getState().desk.layout.ticketShare).toBe(
+        DEFAULT_LIGHTER_LAYOUT.ticketShare,
+      );
+    } finally {
+      setDeskReviewSlot(null);
+      slot.remove();
+    }
   });
 
   it("keeps the desk's dialog closed while only the agent's cards are pending", () => {
