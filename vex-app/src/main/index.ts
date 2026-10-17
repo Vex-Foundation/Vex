@@ -59,7 +59,8 @@ import { whenEngineDbReady } from "./database/engine-db-readiness.js";
 import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
 import { getDbConnection } from "./database/connection-state.js";
 import { getRuntimeMode, resolveRuntimeMode, setRuntimeMode } from "./runtime/runtime-mode.js";
-import { startNativeRuntime, stopNativeRuntime } from "./runtime/native/native-runtime.js";
+import { stopNativeRuntime } from "./runtime/native/native-runtime.js";
+import { nativeStartGate } from "./runtime/migration/native-start-gate.js";
 import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
 import { recordEventLoopWindow } from "./database/event-loop-samples-db.js";
 import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
@@ -294,8 +295,11 @@ async function initializeMainRuntime(): Promise<void> {
   // 3b'. Local runtime mode, decided once and after the e2e door (a door's
   // database is never displaced). The native runtime is started by MAIN at
   // boot (plan D8): the window opens at once and the migrate handler joins
-  // this start, so the renderer never drives it. The compose provider keeps
-  // its renderer-driven start unchanged.
+  // this start, so the renderer never drives it. It starts through the
+  // migration gate: boot first asks whether this install's data must be moved
+  // from the previous release, and starts nothing while it must (the
+  // migration screen moves it, then the gate starts the runtime). The compose
+  // provider keeps its renderer-driven start unchanged.
   setRuntimeMode(
     resolveRuntimeMode({
       env: process.env,
@@ -304,7 +308,7 @@ async function initializeMainRuntime(): Promise<void> {
   );
   if (getRuntimeMode() === "native") {
     log.info("[main] local runtime: native (VEX_RUNTIME=native)");
-    void startNativeRuntime();
+    void nativeStartGate().boot();
   }
 
   // 3c. Event loop delay telemetry (K-5, measurement only): p50/p99/max delay
@@ -617,6 +621,9 @@ async function initializeMainRuntime(): Promise<void> {
       // runs a compose stop against a compose file an earlier session left.
       if (getRuntimeMode() === "native") {
         await runQuitStage("native-runtime-and-secret-cleanup", COMPOSE_QUIT_DEADLINE_MS, async () => {
+          // A data move in flight is cancelled first: it keeps its durable
+          // steps for the next launch and stops the database it started.
+          await nativeStartGate().shutdown();
           await stopNativeRuntime();
           await sweepTransientSecrets();
         });

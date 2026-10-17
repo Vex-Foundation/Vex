@@ -22,7 +22,7 @@ import {
   type RuntimeInfo,
 } from "@shared/schemas/system.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
-import { startNativeRuntime } from "../runtime/native/native-runtime.js";
+import { nativeStartGate } from "../runtime/migration/native-start-gate.js";
 import {
   nativeRuntimeProgress,
   nativeRuntimeProgressBus,
@@ -141,7 +141,8 @@ export function registerSystemHandlers(): Array<() => void> {
 
   // Main owns the start (D8); the renderer may only ask for another attempt
   // once one has failed. Joining a start in flight or re-checking a ready
-  // runtime is the migrate handler's, not a button's.
+  // runtime is the migrate handler's, not a button's. The start goes through
+  // the migration gate, which starts nothing while data must be moved first.
   handlers.push(
     registerHandler({
       channel: CH.system.runtimeRetry,
@@ -150,7 +151,7 @@ export function registerSystemHandlers(): Array<() => void> {
       outputSchema: nativeRuntimeStatusSchema,
       handle: async (): Promise<Result<NativeRuntimeStatus>> => {
         if (getRuntimeMode() === "native" && nativeRuntimeProgress.current().phase === "failed") {
-          void startNativeRuntime();
+          void nativeStartGate().startNative();
         }
         return ok(nativeRuntimeProgress.current());
       },
