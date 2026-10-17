@@ -1,0 +1,740 @@
+/* THE SETUP WIZARD AND ITS STEP FORMS (docs/design/R3-MINIMAL.md sections 9.6
+ * and 10.3).
+ *
+ * Two hosts draw the same seven step forms:
+ *
+ *   the wizard   a plate with Vex at the left (480 at 1440, a third of the
+ *                window under it, gone under 1180), and at the right the named
+ *                stepper (top band padding 30 72 0), the form (body padding
+ *                40 72 0, column max 600) and a footer that stays at the foot
+ *                of the window (padding 16 72 22, a quiet rule above) with the
+ *                privacy link and the step's actions. Under 1360 the side
+ *                padding is the 1000 x 720 value, 40; under 1180 the plate
+ *                leaves and a 26 vx mark with Vex's state word stands above
+ *                the form (top 22 40 0, body 26 40 0, foot 12 40 16, title 38);
+ *   Settings     the step form in back-edit mode under the Settings section
+ *                head (the `.vex-set__head` grammar of settings.css: the title
+ *                22 / 500 with its status word, the lead 14), the actions at
+ *                the right, the privacy link under them.
+ *
+ * The step bodies share one vocabulary (label and value rows, provider rows,
+ * number rows, the model picker, the review grid, the card), so a form reads
+ * the same in both hosts. Radius 0, no shadow, no blur, no gradient ramp; every
+ * colour is an alias except the plate's day ground (spec section 1.1, the value
+ * chronos-gate.css paints the stage plate with) and the selection wash, which
+ * has no alias yet (blue at 7.5% by day, periwinkle at 10% at night, the value
+ * settings.css draws its selected row with). */
+
+/* ============================================================ *
+ *  The wizard frame                                             *
+ * ============================================================ */
+.vex-wz {
+  --wz-pad: 72px;
+  --wz-sel: rgba(163, 171, 255, 0.1);
+  position: relative;
+  display: grid;
+  grid-template-columns: min(480px, 33.333vw) minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+[data-vex-theme="celeris"] .vex-wz,
+[data-vex-theme="celeris"] .vex-wzs {
+  --wz-sel: rgba(0, 0, 192, 0.075);
+}
+.vex-wzs {
+  --wz-sel: rgba(163, 171, 255, 0.1);
+}
+
+/* The plate: the plateau print by day or night (wizard position 50% 80%), its
+ * grain, Vex rising from the token, her state word on the print. The ground
+ * shows while the photograph decodes. */
+.vex-wz__plate {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--color-night-0);
+}
+[data-vex-theme="celeris"] .vex-wz__plate {
+  background: #c7b6a6;
+}
+.vex-wz__print {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 50% 80%;
+  user-select: none;
+}
+.vex-wz__print--day {
+  display: none;
+}
+[data-vex-theme="celeris"] .vex-wz__print--day {
+  display: block;
+}
+[data-vex-theme="celeris"] .vex-wz__print--night {
+  display: none;
+}
+.vex-wz__grain {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+  background-image: url(/art/grain.svg);
+  background-size: 220px 220px;
+}
+/* The wizard's token stands at bottom 104 and the word at bottom 70, both
+ * 14 px under the wake's 118 and 84 (spec section 10.1): her host is the
+ * plate's own height, set 14 px lower, so her scale is the wake's. */
+.vex-wz__vex {
+  position: absolute;
+  top: 14px;
+  right: 0;
+  bottom: -14px;
+  left: 0;
+  z-index: 2;
+}
+/* Her state word, 23 px under the token's foot (86.22% of the plate on the
+ * stage, k2-rig.ts STAGE_TOKEN), plus the 14 px: white on the print, 13 / 500. */
+.vex-wz__word {
+  position: absolute;
+  z-index: 3;
+  top: calc(86.22% + 37px);
+  right: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--vex-alias-on-photo);
+}
+.vex-wz__word .vex-swatch[data-s] {
+  color: var(--vex-alias-on-photo);
+  border-color: var(--vex-alias-on-photo);
+}
+/* The plate's 44 px head row: the hidden title bar's drag region over the
+ * print, where the macOS traffic lights sit. */
+.vex-wz__drag {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--head-h, 44px);
+}
+
+.vex-wz__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The top band is the hidden title bar's drag region (the stepper is display
+ * only); its rule runs under the Windows and Linux caption buttons. */
+.vex-wz__top {
+  flex: none;
+  padding: 30px var(--wz-pad) 0;
+}
+
+/* The named stepper: 13, the current step blue 500 with a 2px underline, done
+ * and upcoming steps muted; done is the solid swatch, the current step solid,
+ * upcoming the outline. */
+.vex-wz-steps {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-wz-steps__step {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin-right: 20px;
+  padding: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-steps__step:last-child {
+  margin-right: 0;
+}
+.vex-wz-steps__step .vex-swatch[data-s] {
+  color: var(--vex-alias-accent-primary);
+}
+.vex-wz-steps__step[aria-current="step"] {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-wz-steps__step[aria-current="step"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--vex-alias-accent-primary);
+}
+
+/* The body scrolls; the step fills it so the footer stands at the window's
+ * foot when the form is short and sticks there when it is long. */
+.vex-wz__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-x: clip;
+  overflow-y: auto;
+}
+.vex-wz__step {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.vex-wz__loading {
+  padding: 40px var(--wz-pad) 0;
+}
+
+/* --- The step panel in the wizard ------------------------------ */
+.vex-wzp {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.vex-wzp__form {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.vex-wzp__head,
+.vex-wzp__content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(600px + 2 * var(--wz-pad));
+  padding-inline: var(--wz-pad);
+}
+.vex-wzp__head {
+  padding-top: 40px;
+}
+.vex-wzp__content {
+  padding-bottom: 32px;
+}
+/* Above the form under 1180: the 26 vx mark and Vex's state word. */
+.vex-wzp__mini {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wzp__eyebrow {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wzp__title {
+  margin: 0 0 12px;
+  font-family: var(--font-serif);
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.012em;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-wzp__lead {
+  margin: 0 0 26px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--vex-alias-label-secondary);
+}
+/* Review's edit path: the step being edited and the way back. */
+.vex-wzp__editing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wzp__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding: 16px var(--wz-pad) 22px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-base);
+}
+.vex-wzp__sp {
+  flex: 1 1 auto;
+}
+.vex-wzp__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.vex-wzp__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wzp__meta:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-wzp__meta:focus-visible,
+.vex-wzs__meta:focus-visible,
+.vex-wz-link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1359px) {
+  .vex-wz {
+    --wz-pad: 40px;
+  }
+}
+@media (max-width: 1179px) {
+  .vex-wz {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .vex-wz__plate {
+    display: none;
+  }
+  .vex-wz__top {
+    padding-top: 22px;
+  }
+  .vex-wzp__head {
+    padding-top: 26px;
+  }
+  .vex-wzp__foot {
+    padding-top: 12px;
+    padding-bottom: 16px;
+  }
+  .vex-wzp__mini {
+    display: flex;
+  }
+  .vex-wzp__title {
+    font-size: 38px;
+  }
+}
+/* macOS without the plate: the traffic lights sit at the window's top left,
+ * so the top band starts under the 44 px head row. */
+@media (max-width: 1179px) {
+  html[data-os="mac"] .vex-wz__top {
+    padding-top: var(--head-h, 44px);
+  }
+}
+
+/* --- The step panel in Settings -------------------------------- */
+.vex-wzs {
+  display: flex;
+  flex-direction: column;
+}
+.vex-wzs__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+.vex-wzs__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin: 18px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+
+/* ============================================================ *
+ *  The step vocabulary (both hosts)                             *
+ * ============================================================ */
+/* A column of field groups. */
+.vex-wz-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.vex-wz-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vex-wz-hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wz-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-wz-link:disabled {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+}
+.vex-wz-num-text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* The strength meter: four cells (4 high, a 3px gap), the reached ones blue. */
+.vex-wz-meter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 8px;
+}
+.vex-wz-meter > i {
+  display: block;
+  height: 4px;
+  background: var(--vex-alias-rule-quiet);
+}
+.vex-wz-meter > i[data-on] {
+  background: var(--vex-alias-accent-primary);
+}
+
+/* Label and value rows: a rule above the list, a quiet rule under each row;
+ * the label 13.5 muted (170 wide), the value 14 ink with a sub line (12.5
+ * muted), an action at the right (13). */
+.vex-wz-kvl {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-wz-kv {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 14px;
+}
+.vex-wz-kv__k {
+  font-size: 13.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-kv__v {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-kv__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-kv__a {
+  font-size: 13px;
+}
+
+/* A list of rows under one rule (the provider rows, the number rows). */
+.vex-wz-list {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+
+/* A provider row (API keys): the name 15 / 500, what it is for (13.5 ink 2)
+ * and the status word at the right (13), then the field. */
+.vex-wz-prov {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 0 14px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-wz-prov__h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.vex-wz-prov__n {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-prov__dsc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wz-prov__st {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-prov__st[data-set] {
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-prov__detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* A number row (Agent core): the name 15 / 500 with its variable (mono 11.5
+ * muted), the help (13 ink 2) at the left; the field (200 wide) and its
+ * default (12 muted) at the right. */
+.vex-wz-num {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  align-items: start;
+  gap: 6px 24px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-wz-num__n {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-num__env {
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-num__h {
+  grid-column: 1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wz-num__f {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.vex-wz-num__dflt {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+@container (max-width: 520px) {
+  .vex-wz-num {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .vex-wz-num__f,
+  .vex-wz-num__dflt {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* The model picker: under its field, a blue frame without a top edge, rows
+ * of the name (14), the id (mono 12 muted) and the context (12 muted) at the
+ * right; the highlighted row takes the selection wash, its name blue 500. */
+.vex-wz-picker {
+  border: 1px solid var(--vex-alias-accent-primary);
+  border-top: 0;
+  background: var(--vex-alias-field);
+}
+.vex-wz-picker__o {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 14px;
+  width: 100%;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  text-align: left;
+  font-size: 14px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-picker__o:last-child {
+  border-bottom: 0;
+}
+.vex-wz-picker__m {
+  grid-column: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-picker__x {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-picker__o[aria-selected="true"],
+.vex-wz-picker__o[data-active] {
+  background: var(--wz-sel);
+}
+.vex-wz-picker__o[aria-selected="true"] .vex-wz-picker__t,
+.vex-wz-picker__o[data-active] .vex-wz-picker__t {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+
+/* The review grid: two columns of step rows; the name 14.5 / 500 after its
+ * swatch, the detail 12.5 muted, Edit at the right (13 / 500 blue). */
+.vex-wz-sum {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-wz-sum__c {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-wz-sum__n {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-sum__w {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-sum__d {
+  grid-column: 1;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-sum__a {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+@container (max-width: 520px) {
+  .vex-wz-sum {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The card: a field-ground box under a rule (a state headline, a choice). */
+.vex-wz-card {
+  padding: 14px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+}
+.vex-wz-card__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-card__sp {
+  flex: 1 1 auto;
+}
+.vex-wz-card__p {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-wz-card__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* A consent row: the checkbox, then the title 14.5 / 500 and the text 13
+ * muted. */
+.vex-wz-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 600px;
+}
+.vex-wz-check__t {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-check__d {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The forms answer to their own width (Settings sections narrow them). */
+.vex-wzp__content,
+.vex-wzs {
+  container-type: inline-size;
+}

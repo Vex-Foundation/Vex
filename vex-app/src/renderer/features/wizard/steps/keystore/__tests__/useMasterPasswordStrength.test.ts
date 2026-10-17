@@ -1,5 +1,5 @@
 /**
- * useMasterPasswordStrength — real @zxcvbn-ts/core behavior (no mocks).
+ * useMasterPasswordStrength - real @zxcvbn-ts/core behavior (no mocks).
  * KeystoreStep.test.tsx mocks this hook entirely for its own submit-wiring
  * tests; this file is where the actual estimator + label mapping is
  * verified against real scores (confirmed via a scratch script against the

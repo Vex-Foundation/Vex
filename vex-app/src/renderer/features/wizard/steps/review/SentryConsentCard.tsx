@@ -7,7 +7,11 @@
  *     intentionally has no telemetry path (codex v3 D5).
  *   - telemetryAvailable=true → checkbox + collapse with the 5-7
  *     bullets explaining what we collect AND what we never collect.
- *     Default unchecked — the operator must affirmatively opt in.
+ *     Default unchecked - the operator must affirmatively opt in.
+ *
+ * Drawn as the review's consent row (docs/design/R3-MINIMAL.md section
+ * 10.3): the checkbox, the title 14.5 / 500, the line 13 muted; the details
+ * under a quiet rule.
  */
 
 import { useState, type JSX } from "react";
@@ -58,22 +62,22 @@ export function SentryConsentCard({
 
   return (
     <div
-      className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-3 last:border-0"
+      className="flex flex-col gap-3"
       data-vex-review-card="sentry-consent"
     >
-      <label className="flex cursor-pointer items-start gap-3">
+      <label className="vex-wz-check cursor-pointer">
         <input
           type="checkbox"
           checked={checked}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
-          className="mt-1 accent-accent-primary"
+          className="mt-0.5 h-4 w-4 shrink-0 accent-accent-primary"
         />
         <span className="flex flex-col">
-          <span className="text-sm font-medium text-ink-primary">
+          <span className="vex-wz-check__t">
             Send anonymous error reports to help improve Vex
           </span>
-          <span className="text-xs text-ink-secondary">
+          <span className="vex-wz-check__d">
             Default: off. Nothing is sent unless you tick this box.
           </span>
         </span>
@@ -82,14 +86,14 @@ export function SentryConsentCard({
       <details
         open={showDetails}
         onToggle={(e) => setShowDetails((e.target as HTMLDetailsElement).open)}
-        className="border-y border-[var(--color-border)] py-3"
+        className="max-w-[600px] border-t border-rule-quiet pt-3"
       >
-        <summary className="cursor-pointer text-xs font-medium text-ink-primary">
+        <summary className="vex-wz-link cursor-pointer">
           What we collect / never collect
         </summary>
-        <div className="mt-3 flex flex-col gap-3 text-xs text-ink-secondary">
+        <div className="mt-3 flex flex-col gap-3 text-[13px] leading-normal text-ink-secondary">
           <div>
-            <p className="font-semibold text-ink-primary">
+            <p className="font-medium text-ink-primary">
               Collected (only with this opt-in):
             </p>
             <ul className="mt-1 list-disc pl-5">
@@ -99,7 +103,7 @@ export function SentryConsentCard({
             </ul>
           </div>
           <div>
-            <p className="font-semibold text-success">
+            <p className="font-medium text-ink-primary">
               Never sent (regardless of consent):
             </p>
             <ul className="mt-1 list-disc pl-5">
