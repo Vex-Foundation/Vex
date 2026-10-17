@@ -1,18 +1,18 @@
 /**
- * Token-history field display — the provenance-gated readers that turn one
+ * Token-history field display - the provenance-gated readers that turn one
  * `TokenHistoryEntry` field into the exact string the row prints.
  *
  * Extracted MOVE-ONLY from `TokenHistoryScreen.tsx` (Agent Scan renderer
  * round): these are the screen's honesty rules, and they are the part a
  * future reader most needs to find without touching JSX. Behavior is
- * byte-identical to the inline versions — the screen's own suite pins every
+ * byte-identical to the inline versions - the screen's own suite pins every
  * one of them.
  *
  * The rules they encode (plan v2/v3, unchanged by the extraction):
  *  - a quantity prints ONLY with proven unit provenance
  *    (`unitProvenance === "human"`); anything else is the em dash, never a
  *    blind base-unit format;
- *  - a USD figure carries its `usdProvenance` tag (contract C35) —
+ *  - a USD figure carries its `usdProvenance` tag (contract C35) -
  *    `"estimated"` renders `~$X est.`, never bare execution-time USD;
  *  - explorer URLs are BUILT from `{chainId, ref}` through the shared
  *    allow-list; chain id 0 is the DB layer's "could not resolve" sentinel
@@ -21,9 +21,11 @@
 
 import type {
   AmountField,
+  TokenHistoryEntry,
   TokenHistoryTxRef,
   UsdField,
 } from "@shared/schemas/token-history.js";
+import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
 import {
@@ -32,15 +34,16 @@ import {
   formatUsd,
 } from "../../../../lib/format.js";
 import { amountDisplay } from "../../../../lib/token-leg-display.js";
+import type { ScanOutcome } from "../agent-scan/ScanRowParts.js";
 
 /**
  * Quantity honesty (plan v2, the MovesBlock discipline): a figure prints
  * ONLY when the DTO proves human units (`unitProvenance: "human"`).
- * Unknown provenance — raw wei/lamports-scale integers, or an
+ * Unknown provenance - raw wei/lamports-scale integers, or an
  * agent_activity leg the main-process mapper could not resolve for its
- * status (C20) — renders the em dash, never a blind format. Once
+ * status (C20) - renders the em dash, never a blind format. Once
  * `unitProvenance === "human"` is established, `amountDisplay` is called
- * with `trustedHuman: true` — the DTO's own typed provenance tag is
+ * with `trustedHuman: true` - the DTO's own typed provenance tag is
  * authoritative, so a whole-number result (no decimal point) still renders
  * instead of being blanked by a redundant dot-heuristic (Codex final review
  * finding 10 / contract C27).
@@ -54,7 +57,7 @@ export function quantityText(field: AmountField): string {
 /**
  * USD figure → compact display, honoring its provenance tag (contract C35):
  * an `"estimated"` figure (`agent_activity`'s quote-time `usd_in/out_est`)
- * renders `~$X est.` — it must never read as bare execution-time USD, since
+ * renders `~$X est.` - it must never read as bare execution-time USD, since
  * it was priced BEFORE dispatch and never re-derived from the settled fill.
  * `"recorded"` (the legacy `proj_activity` capture) renders plain.
  * `value: null`/unparseable → em dash (never $0.00).
@@ -94,7 +97,7 @@ export function entryDateText(iso: string): string | null {
 /**
  * Resolve one `{chainId, ref}` pair to its explorer URL. The DTO never
  * carries URLs; chainId 0 is the DB layer's "could not resolve" sentinel and
- * the synthetic Solana id maps to the `solana` alias — everything else rides
+ * the synthetic Solana id maps to the `solana` alias - everything else rides
  * the bare-decimal alias in `explorer-links.ts`. Unknown chain → null → no
  * link (never a half-built URL).
  */
@@ -103,4 +106,130 @@ export function txRefUrl(ref: TokenHistoryTxRef): string | null {
   const chain =
     ref.chainId === SOLANA_CHAIN_ID ? "solana" : String(ref.chainId);
   return explorerTxUrl(chain, ref.ref);
+}
+
+const ASK_WHAT_HAPPENED = "ask Vex what happened";
+
+const SUPERSEDED_TITLE =
+  "Another transaction from this wallet used this one's nonce; what it did has not been checked. Vex has stopped tracking this as in flight - the outcome is unproven.";
+
+/** A raw transfer status in sentence case ("executed" -> "Executed"), bounded. */
+function sentenceCase(status: string): string {
+  const trimmed = status.trim().slice(0, 32).replace(/_/g, " ");
+  if (trimmed.length === 0) return "Recorded";
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+/**
+ * How a token-history row ends: the state word, its fill and the consequence
+ * under it (docs/design/R3-MINIMAL.md section 9.2, the same grammar as the
+ * Agent Scan rows in `agent-scan/agent-scan-outcome.ts`).
+ *
+ * The words say only what the row proves:
+ *  - a `confirmed` swap or bridge reads "Confirmed"; a legacy capture with no
+ *    lifecycle status reads "Recorded" (nothing was proven, nothing is
+ *    claimed);
+ *  - a `pending` swap reads "Submitted, awaiting confirmation" only when the
+ *    row itself carries a transaction reference, else "Pending";
+ *  - a `failed` row reads "Failed" with the failure code on hover; a refunded
+ *    bridge reads "Refunded" (money returned is neither a completed bridge nor
+ *    a loss);
+ *  - a `superseded_unproven` row reads "Status unknown": its outcome was never
+ *    checked, so it is never called failed;
+ *  - a pending bridge reads "Settling" (tracked automatically), or "Status
+ *    unknown" with "tracking delayed" when the durable sweep has fallen behind
+ *    (R12), which must never read as the reassuring default;
+ *  - a transfer keeps its own recorded status word in sentence case.
+ *
+ * `nowMs` is injectable so the staleness decision is deterministic.
+ */
+export function tokenHistoryOutcome(
+  entry: TokenHistoryEntry,
+  nowMs: number = Date.now(),
+): ScanOutcome {
+  if (entry.kind === "transfer") {
+    const status = entry.status.trim().toLowerCase();
+    const word = sentenceCase(entry.status);
+    if (status === "executed" || status === "confirmed" || status === "completed") {
+      return { state: "done", word, notes: [] };
+    }
+    if (status === "failed") return { state: "error", word, notes: [] };
+    if (status === "pending" || status === "submitted" || status === "broadcast") {
+      return { state: "listening", word, notes: [] };
+    }
+    return { state: "idle", word, notes: [] };
+  }
+
+  const status = entry.status;
+  if (status === null) return { state: "idle", word: "Recorded", notes: [] };
+  if (status === "confirmed") return { state: "done", word: "Confirmed", notes: [] };
+  if (status === "superseded_unproven") {
+    return {
+      state: "error",
+      word: "Status unknown",
+      notes: [{ text: "superseded", title: SUPERSEDED_TITLE }],
+    };
+  }
+  if (status === "failed") {
+    if (entry.kind === "bridge" && entry.failureCode === "bridge_refunded") {
+      return {
+        state: "idle",
+        word: "Refunded",
+        notes: [
+          {
+            text: "returned to the origin chain",
+            title: "Funds returned to the origin chain - not a completed bridge",
+          },
+        ],
+      };
+    }
+    return {
+      state: "error",
+      word: "Failed",
+      notes: [{ text: ASK_WHAT_HAPPENED, title: entry.failureCode ?? undefined }],
+    };
+  }
+
+  // status === "pending"
+  if (entry.kind === "bridge") {
+    // R12: a pending bridge is normally "settling, tracked automatically", BUT
+    // if the sweep has not successfully checked its order status in a long time
+    // (last_checked_at, or createdAt before the first check, is stale) the
+    // tracking is DELAYED: say so honestly instead of the reassuring default.
+    if (isBridgeTrackingStale(entry.lastCheckedAt, entry.createdAt, nowMs)) {
+      const checked =
+        entry.lastCheckedAt !== null
+          ? (entryDateText(entry.lastCheckedAt) ?? "an unknown time")
+          : null;
+      return {
+        state: "error",
+        word: "Status unknown",
+        notes: [
+          {
+            text: "tracking delayed",
+            title:
+              checked !== null
+                ? `Tracking delayed - last checked ${checked}`
+                : "Tracking delayed - not yet checked since the bridge started",
+          },
+          { text: "checked again automatically" },
+        ],
+      };
+    }
+    return {
+      state: "listening",
+      word: "Settling",
+      notes: [
+        {
+          text: "tracked automatically",
+          title: "Still settling - tracked automatically",
+        },
+      ],
+    };
+  }
+  return {
+    state: "listening",
+    word: entry.txRefs.length > 0 ? "Submitted, awaiting confirmation" : "Pending",
+    notes: [],
+  };
 }

@@ -1,21 +1,27 @@
 /**
- * TokenHistoryScreen HONESTY PINS — the money-truth rules the row layer must
+ * TokenHistoryScreen HONESTY PINS - the money-truth rules the row layer must
  * never quietly relax. Split from `TokenHistoryScreen-rows.test.tsx` at the
  * 500-line cap, along the seam that matters: the sibling owns what a row LOOKS
  * like, this file owns what a row is allowed to CLAIM.
  *
  * Pins:
- *   - an `agent_activity`-sourced swap entry's pending/failed status renders a
- *     status chip (Agent Scan §4.7); `null`/`"confirmed"` renders none — the
- *     shell's "quiet unless it needs attention" posture;
+ *   - every row ends in a state word (R3, docs/design/R3-MINIMAL.md section
+ *     9.2) and the word claims only what the row proves: a pending swap reads
+ *     "Submitted, awaiting confirmation" only when it carries a transaction
+ *     reference, else "Pending"; a failed swap reads "Failed" with the failure
+ *     code on its consequence; a `superseded_unproven` swap reads "Status
+ *     unknown", never "Failed"; a confirmed swap reads "Confirmed"; a legacy
+ *     capture with no status reads "Recorded";
+ *   - the pure reader behind the word, `tokenHistoryOutcome`, is pinned branch
+ *     by branch in `token-history-outcome.test.ts`;
  *   - amount honesty (C20/C27): a proven-human whole number renders, while an
- *     unknown-provenance value keeps the em dash even when a value string is
- *     present — never a blind base-unit format;
+ *     unknown-provenance value keeps the hyphen even when a value string is
+ *     present - never a blind base-unit format;
  *   - USD provenance (C35): an `"estimated"` figure renders with an explicit
- *     `~ … est.` marker and a `"recorded"` one renders bare, and neither leg
+ *     `~ ... est.` marker and a `"recorded"` one renders bare, and neither leg
  *     having a value omits the figure entirely rather than fabricating $0.00.
  *
- * `useTokenHistoryInfinite` is mocked — this suite owns display rules, not
+ * `useTokenHistoryInfinite` is mocked - this suite owns display rules, not
  * query wiring.
  */
 
@@ -81,34 +87,72 @@ afterEach(() => {
   cleanup();
 });
 
-describe("TokenHistoryScreen - agent_activity swap status chip (Agent Scan §4.7)", () => {
-  it("renders a PENDING chip for a pending agent_activity swap entry", () => {
+describe("TokenHistoryScreen - agent_activity swap state word (Agent Scan §4.7)", () => {
+  it("reads 'Submitted, awaiting confirmation' for a pending swap that carries a transaction reference", () => {
     mockQuery([
       availablePage([swapEntry({ id: "a-1", status: "pending", failureCode: null })]),
     ]);
     mountScreen();
-    expect(screen.getByText("PENDING")).not.toBeNull();
+    expect(screen.getByText("Submitted, awaiting confirmation")).not.toBeNull();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
   });
 
-  it("renders a FAILED chip with the failureCode as its tooltip", () => {
+  it("reads plain 'Pending' for a pending swap with no transaction reference - never claims it was submitted", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({ id: "a-1", status: "pending", failureCode: null, txRefs: [] }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("Pending")).not.toBeNull();
+    expect(screen.queryByText("Submitted, awaiting confirmation")).toBeNull();
+  });
+
+  it("reads 'Failed' with the failureCode on the consequence's title", () => {
     mockQuery([
       availablePage([
         swapEntry({ id: "a-1", status: "failed", failureCode: "slippage" }),
       ]),
     ]);
     mountScreen();
-    const chip = screen.getByText("FAILED");
-    expect(chip.getAttribute("title")).toBe("slippage");
+    expect(screen.getByText("Failed")).not.toBeNull();
+    const note = screen.getByText("ask Vex what happened");
+    expect(note.getAttribute("title")).toBe("slippage");
   });
 
-  it("renders NO status chip for a confirmed or null-status swap entry (the quiet default)", () => {
+  it("reads 'Status unknown' for a superseded swap - its outcome is unproven, so it is never called failed", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({ id: "a-1", status: "superseded_unproven", failureCode: null }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("Status unknown")).not.toBeNull();
+    const note = screen.getByText("superseded");
+    expect(note.getAttribute("title")).toContain("the outcome is unproven");
+    expect(screen.queryByText("Failed")).toBeNull();
+    expect(screen.queryByText("Confirmed")).toBeNull();
+  });
+
+  it("reads 'Confirmed' for a confirmed swap and shows neither 'Pending' nor 'Failed'", () => {
     mockQuery([
       availablePage([swapEntry({ id: "a-1", status: "confirmed", failureCode: null })]),
     ]);
     mountScreen();
-    expect(screen.queryByText("PENDING")).toBeNull();
-    expect(screen.queryByText("FAILED")).toBeNull();
-    expect(screen.queryByText("CONFIRMED")).toBeNull();
+    expect(screen.getByText("Confirmed")).not.toBeNull();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
+    expect(screen.queryByText("ask Vex what happened")).toBeNull();
+  });
+
+  it("reads 'Recorded' for a legacy swap with no lifecycle status - nothing proven, nothing claimed", () => {
+    mockQuery([availablePage([swapEntry({ id: "a-1", status: null })])]);
+    mountScreen();
+    expect(screen.getByText("Recorded")).not.toBeNull();
+    expect(screen.queryByText("Confirmed")).toBeNull();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
   });
 });
 
@@ -133,7 +177,7 @@ describe("TokenHistoryScreen - agent_activity amount honesty (Codex final review
     ]);
     mountScreen();
     // A main-process-resolved executed amount with no fractional part (e.g.
-    // `formatUnits(50_000_000n, 6)` → "50") must still render — the
+    // `formatUnits(50_000_000n, 6)` → "50") must still render - the
     // decimal-point heuristic never applies once `unitProvenance` already
     // proves the value human (contract C27).
     expect(screen.getByText(/50 TOKA/)).not.toBeNull();
