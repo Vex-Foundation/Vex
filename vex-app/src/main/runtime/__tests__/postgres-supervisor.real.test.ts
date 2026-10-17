@@ -16,7 +16,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -217,6 +217,26 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
     const result = await supervisors[0]?.stop({ deadlineMs: 15_000 });
     expect(result).toMatchObject({ kind: "stopped", mode: "fast" });
     expect(pidFile()).toBeNull();
+  });
+
+  it("keeps log/ bounded: a start prunes to the newest files", { timeout: STEP_TIMEOUT_MS }, async () => {
+    const logDir = path.join(dataDir, "log");
+    // Fifteen logs from "earlier starts", oldest first.
+    const base = Date.now() / 1_000 - 100_000;
+    for (let i = 0; i < 15; i++) {
+      const file = path.join(logDir, `postgresql-old-${String(i).padStart(2, "0")}.log`);
+      writeFileSync(file, `old start ${String(i)}\n`);
+      utimesSync(file, base + i * 60, base + i * 60);
+    }
+    const s = supervisor();
+    expect((await s.start()).kind).toBe("running");
+    const names = readdirSync(logDir);
+    expect(names.length).toBeLessThanOrEqual(10);
+    // The oldest seeded files are the ones that went; this start's own log stayed.
+    expect(names).not.toContain("postgresql-old-00.log");
+    expect(names).toContain("postgresql-old-14.log");
+    expect(names.some((n) => !n.startsWith("postgresql-old-"))).toBe(true);
+    expect((await s.stop({ deadlineMs: 15_000 })).kind).toBe("stopped");
   });
 
   it("a wrong recorded system_identifier is foreign_listener, and our postmaster is stopped", { timeout: STEP_TIMEOUT_MS }, async () => {

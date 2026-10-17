@@ -100,6 +100,14 @@ const WINDOWS_POLL_MS = 5_000;
 const ORPHAN_POLL_MS = 50;
 const STDERR_TAIL_CHARS = 16_384;
 const LOG_TAIL_BYTES = 65_536;
+/**
+ * Log files kept in `<pg18>/log/`. The default `log_filename` is timestamped,
+ * so every start opens a new file (and `log_rotation_size` caps each at
+ * 10 MB); without pruning they pile up forever. A fixed per-weekday name does
+ * not bound them either: truncation only happens on a time-based rotation of
+ * a running server, and a start reopens the file in append mode.
+ */
+const KEPT_LOG_FILES = 10;
 
 /* ------------------------------------------------------------------ *
  * Seams. Production passes none of these.
@@ -600,6 +608,26 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
 
   /* -------------------------- launch ----------------------------- */
 
+  /** Keep the newest log files, leaving room for the one this start opens. */
+  async function pruneLogs(): Promise<void> {
+    let names: string[];
+    try {
+      names = await fs.readdir(logDir);
+    } catch {
+      return; // No log/ yet: the first start creates it.
+    }
+    const files: Array<{ readonly file: string; readonly mtime: number }> = [];
+    for (const name of names) {
+      const file = path.join(logDir, name);
+      const stat = await fs.stat(file).catch(() => null);
+      if (stat?.isFile()) files.push({ file, mtime: stat.mtimeMs });
+    }
+    files.sort((a, b) => b.mtime - a.mtime);
+    for (const { file } of files.slice(KEPT_LOG_FILES - 1)) {
+      await fs.rm(file, { force: true });
+    }
+  }
+
   async function newestLogTail(): Promise<string> {
     try {
       const names = await fs.readdir(logDir);
@@ -712,6 +740,7 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
       const preferred = preferredPort !== null && !tried.has(preferredPort) ? [preferredPort] : [];
       const port = await chooseFreePort(preferred);
       tried.add(port);
+      await pruneLogs();
       const launched = platform === "win32" ? await launchWindows(port, signal) : await launchPosix(port, signal);
       if (launched.kind === "ready") return launched.postmaster;
       if (stopRequested) throw fail("failed", "The database was stopped while it was starting.");
