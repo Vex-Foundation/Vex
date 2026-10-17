@@ -127,8 +127,11 @@ default she looks at you and now and then glances away, and while the agent is
 idle she plays one action of her idle pool at a time (the blow, the bird, the
 giggle, the blush, the whistle, the hum). It is bound four ways:
 
-- **A 10 fps step.** Her clock (`STEP_MS`, 100ms in `k2-time.ts`) steps at
-  10 fps; a frame whose dots, token and light did not change is never
+- **A 30 fps episode step, a 10 fps idle step.** Her clock steps at 30 fps
+  while an episode plays (the wake, an open, the close and the coin's turn, a
+  gesture) and at 10 fps otherwise (`frameTime`, `EPISODE_FPS` and `STEP_MS`
+  in `k2-time.ts`); her idle life reads the 10 fps step even inside an
+  episode. A frame whose dots, token and light did not change is never
   repainted, and a settled frame's unchanging dots are drawn once and copied.
 - **A 250ms clock cap.** One animation frame never advances her clock by more
   than 250ms (`CLOCK_CAP_MS` in `k2-engine.ts`), so a stalled or hidden window

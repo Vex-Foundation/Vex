@@ -245,7 +245,7 @@ Width 256 (240 at 1280, 224 under 1180), hidden is zero width. Background paper,
 5. Portrait plate: 280 high, `1px` rule quiet above, her face at least 90 px, cut at the shoulders, a short beam to a small token at its base. Plate heights 220 to 280 are allowed in small windows (236 at 1024).
 6. Foot: padding 10 18 12, "Show avatar" 13 ink 2 and the switch.
 
-States and the inspect view take over the body (inspect has a Back key). Studio adds a "This project" block with "Project assets" and "Agent Scan". Lighter mounts the desk chat under the plate: a scope chip, the position prompts, the transcript, the desk composer (padding 0 14, 28 high prompt keys with 12.5). Avatar off: no plate and no hologram anywhere; the sidebar keeps a 44 disc, the scope, word and timer, the narration and Needs you; the welcome shows the token alone over the greeting.
+States and the inspect view take over the body (inspect has a Back key). Studio adds a "This project" block with "Project assets" and "Agent Scan". Lighter mounts the desk chat under the plate: a scope chip, the position prompts, the transcript, the desk composer (padding 0 14, 28 high prompt keys with 12.5). Avatar off: no plate and no hologram anywhere; the sidebar keeps a 44 disc, the scope, word and timer, the narration and Needs you; the welcome shows the upright coin alone over the greeting (the same `showAvatar` preference its token toggle writes).
 
 ### 5.2 States
 Words: Ready, Listening, Thinking, Working, Waiting for approval, Done, Concerned, Error, Sleeping, Waking up.
@@ -267,7 +267,7 @@ Precedence: awaiting, then live (thinking or working from the turn island view),
 
 ### 5.3 Scope, background work and Needs you
 - Scope words: "This chat:" (agent session), "This mission:" (mission session), "This project:" (Studio), none on the welcome.
-- Background work comes from the sessions list items whose `missionStatus` is `running` or `paused_wake`, excluding the open session: "1 mission running · {title}". The welcome says "Ready · 1 mission running". "Idle" is never shown while a mission runs without saying what is idle.
+- Background work comes from the sessions list items whose `missionStatus` is `running` or `paused_wake`, excluding the open session: "1 mission running · {title}". The welcome says no state word (owner decision); the line lives in the Vex sidebar. "Idle" is never shown while a mission runs without saying what is idle.
 - Needs you items: pending approvals (action from the tool identity, session or project title, `expiresAt` or "since {createdAt}") plus sessions whose `missionStatus` is `paused_error` (Recover), `paused_plan_acceptance` (Review contract) or `paused_user_form` (Fill in the form). `paused_user` and `paused_wake` never count. The list never approves; Review opens the card.
 - Narration is one line from real parts: the live word, the tool title and the last user message, for example "Calling {tool title} to answer “{message}”". No invented text; when there is nothing to say there is no line.
 
@@ -369,7 +369,7 @@ Brand moments exist only where there is room: the welcome, the wake and unlock s
 ### 10.1 Placements
 | Place | Geometry |
 |---|---|
-| Welcome | Vex centred, stage 268 to 284 px high (240 to 300 allowed), the state line under it (13 ink 2: "Ready · 1 mission running"), the serif greeting 52 in blue (margin 16 0 24), the 720 composer, four rows; at 1024 Vex sits beside the greeting (the composer column is 540 wide, her face stays above 90 px) |
+| Welcome | Vex centred, stage 268 to 284 px high (240 to 300 allowed), no state line under her (the state stays in the title bar chip and the Vex sidebar); her token is the toggle ("Hide Vex", pressed: she closes into the upright coin and the stage collapses to it; pressed again: she wakes from it), the serif greeting 52 in blue (margin 16 0 24), the 720 composer, four rows; at 1024 Vex sits beside the greeting (the composer column is 540 wide, her face stays above 90 px) |
 | Wake, unlock, first run | a 720 wide plate at the left at the full window height, paper at the right; token at `bottom 118`, the state word at `bottom 84` on the print (13 / 500 white); the right side has padding 0 120 0 96 |
 | Wizard | the plate shrinks to 480 wide (token `bottom 104`, word `bottom 70`); at 1000 x 720 no plate: a 40 mark and the state word above the form |
 | Vex sidebar | 280 high plate, token `bottom 4` |
@@ -384,7 +384,7 @@ She wakes on every launch: she rises from the token, yawns, rubs an eye and smil
 The stage plate with Vex per state and a crumb (13, gap 18): System check, Docker, Services, Database, Setup; the current one blue 500, done and upcoming ones muted. Probe rows (grid, padding 12 0 13, label 15 / 500, detail 12.5 muted, state word 13) with the words OK, Ready, Setup, Paused, Probing, Applying in sentence case; a log block (mono 12.5, paper 2, 1px rule quiet, padding 10 12). The wizard: "Step N of 7 · {name}", a named stepper (13, the current step blue 500 with a 2px underline, steps muted), the serif title, the form (max 600), a fixed footer (padding 16 72 22, a 1px rule quiet above) with Back and the one primary action; the top band has padding 30 72 0 and the body 40 72 0.
 
 ### 10.4 The hologram
-Vex is the K2 halftone portrait projected from the vx token: a hex dot screen (about 7,000 dots stamped from an atlas), eyes, mouths, hands and wind, on a 10 fps step clock with a 250 ms clock cap. Idle animation is paused when the window is hidden or the plate is off screen; under reduced motion or Save-Data it paints one still frame. Her face stays at about 90 px or more wherever she is the subject (the nine state miniatures in the kit are smaller on purpose). Reference scales for the stills the design was cut from: 0.64 in the sidebar, 0.6 on the welcome, 1.0 on wake and unlock, 0.56 to 0.58 at 1024.
+Vex is the K2 halftone portrait projected from the vx token: a hex dot screen (about 7,000 dots stamped from an atlas), eyes, mouths, hands and wind, on a step clock of 30 fps while an episode plays (the wake, an open, the close and the coin's turn, a gesture) and 10 fps otherwise, with a 250 ms clock cap. Idle animation is paused when the window is hidden or the plate is off screen; under reduced motion or Save-Data it paints one still frame. Her face stays at about 90 px or more wherever she is the subject (the nine state miniatures in the kit are smaller on purpose). Reference scales for the stills the design was cut from: 0.64 in the sidebar, 0.6 on the welcome, 1.0 on wake and unlock, 0.56 to 0.58 at 1024.
 
 Beam ink by ground: blue `#0000C0` at 0.4 alpha on paper (a quiet blue where white light cannot show), white at 0.66 on the print by day (a step under the clouds' 0.9, so her tee reads; the web home's value) and at 0.46 at night. Poses are idle, listening, thinking, working, approval, done, concerned, error and sleeping; eye modes narrow, wide, worried, half and smile; mouths frown and pout; gaze targets composer, up side, work, aside, card and viewer; open and close episodes (collapse into the token, sleeping dim, re-wake) and one "look at you" chain.
 
