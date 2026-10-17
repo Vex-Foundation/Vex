@@ -39,6 +39,8 @@ CONFIG_DIR/
   config.json                       wallet addresses + chain config (plaintext, no secrets)
   compose/                          rendered docker-compose.yml + secrets
   local-infra/secrets/pg_password   Postgres password (generated per install)
+  runtime/                          bundled runtime: pg18/ cluster, models/, runtime-state.json
+                                    (Windows: %LOCALAPPDATA%\vex\runtime instead)
   .electron-state/                  Electron-only (window state, session cache, log files)
 ```
 
@@ -75,8 +77,13 @@ stale Docker stack), reset:
 ### 1. Stop the running app
 
 Close the desktop app. On Windows, verify no `vex.exe` lingers in Task Manager.
+Quitting also stops the bundled runtime; verify no `postgres` or
+`llama-server` process from the app is left (Task Manager on Windows,
+`pgrep -fl 'postgres|llama-server'` on macOS / Linux).
 
-### 2. Tear down the Docker stack
+### 2. Tear down the Docker stack (installs that ran a Docker release)
+
+Skip this step if the install never ran a Docker-based release of Vex.
 
 Run `docker compose down` from the per-install compose directory so the
 generated `docker-compose.yml` is auto-discovered. Pass `--volumes` to drop
@@ -165,7 +172,16 @@ Do not proceed to 3b until all checks above succeed.
 | Windows (PowerShell) | `Remove-Item -Recurse -Force "$env:APPDATA\vex"` |
 | WSL2 reaching Windows AppData | `rm -rf /mnt/c/Users/<user>/AppData/Roaming/vex` |
 
-### 4. Verify Docker volumes are gone
+The bundled runtime's directory (database cluster, embeddings model,
+`runtime-state.json`) is `CONFIG_DIR/runtime` on macOS and Linux, so the
+commands above remove it. **On Windows it is machine-local and must be removed
+separately**, or the next launch reuses the old database:
+
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\vex\runtime"
+```
+
+### 4. Verify Docker volumes are gone (installs that ran a Docker release)
 
 Per-install volumes are named after the project label and disappear with
 `docker compose down --volumes`. If you didn't pass `--volumes` above (the
@@ -183,6 +199,22 @@ A fresh `CONFIG_DIR` is created on next launch and the wizard flow restarts
 from System Check.
 
 ## Diagnostic commands
+
+Bundled runtime (`RUNTIME_DIR` is `CONFIG_DIR/runtime`, or
+`%LOCALAPPDATA%\vex\runtime` on Windows):
+
+```bash
+# Is the cluster up? Line 8 of postmaster.pid reads "ready" once it accepts connections.
+cat "$RUNTIME_DIR/pg18/postmaster.pid"
+
+# Postgres's own log (the logging collector writes here, not to the app log)
+ls -t "$RUNTIME_DIR/pg18/log" | head -1
+
+# Recorded cluster identity, migration state and provider
+cat "$RUNTIME_DIR/runtime-state.json"
+```
+
+Docker stack (installs that ran a Docker release):
 
 ```bash
 # Is the Vex compose project running?
