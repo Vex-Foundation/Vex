@@ -16,8 +16,9 @@
  *   - an approval whose card is already on screen (its session open in the
  *     centre, no page over it) is scrolled into view and its Reject takes the
  *     focus, the safer choice first;
- *   - any other approval opens its full card over the window
- *     (`GlobalApprovalsReview`), in place, in whichever mode the user is in;
+ *   - any other approval opens the Needs you page (route `needsYou`) on its
+ *     full card, in whichever mode the user is in; the card's Reject takes
+ *     the focus there;
  *   - a mission that needs Recover, its contract or its form opens its
  *     session, where those controls live.
  *
@@ -30,7 +31,6 @@ import { useCallback, useEffect, useId, useRef, useState, type JSX, type Keyboar
 import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { GlobalApprovalsReview } from "../appShell/GlobalApprovals.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
 import { NEEDS_YOU_UNKNOWN_COPY, type NeedsYouItem, type NeedsYouStatus } from "./needs-you.js";
 import { useNeedsYou } from "./useVexPresence.js";
@@ -70,7 +70,6 @@ function inlineApprovalCard(approvalId: string): HTMLElement | null {
 export function NeedsYouControl(): JSX.Element {
   const model = useNeedsYou();
   const [open, setOpen] = useState(false);
-  const [reviewId, setReviewId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -129,7 +128,10 @@ export function NeedsYouControl(): JSX.Element {
         card.querySelector<HTMLElement>("[autofocus]:not([disabled])")?.focus();
         return;
       }
-      setReviewId(item.approvalId);
+      // The page's card takes the focus; the control is where it rests until
+      // the page has painted.
+      triggerRef.current?.focus();
+      setShellRoute({ kind: "needsYou", origin: null, approvalId: item.approvalId });
       return;
     }
     if (item.sessionId !== null) {
@@ -138,11 +140,6 @@ export function NeedsYouControl(): JSX.Element {
     }
     triggerRef.current?.focus();
   };
-
-  const closeReview = useCallback((): void => {
-    setReviewId(null);
-    triggerRef.current?.focus();
-  }, []);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Escape" && open) {
@@ -223,10 +220,6 @@ export function NeedsYouControl(): JSX.Element {
           <NeedsYouList model={model} variant="panel" onReview={review} />
         </div>
       ) : null}
-
-      {reviewId === null ? null : (
-        <GlobalApprovalsReview approvalId={reviewId} onClose={closeReview} />
-      )}
     </div>
   );
 }
