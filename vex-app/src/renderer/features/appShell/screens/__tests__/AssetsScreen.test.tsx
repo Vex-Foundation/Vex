@@ -5,8 +5,8 @@
  * Pins (mirroring the Sessions-screen shape in the AppShell suite):
  *   - `uiStore.shellRoute = { kind: "assets" }` mounts the screen through
  *     ShellScreens as a titled modal dialog ("All assets"),
- *   - EVERY portfolio token line renders (no top-5 cut here), in the shared
- *     row grammar, sorted largest USD first,
+ *   - EVERY portfolio token line renders (no top-5 cut here), as the Balances
+ *     table's own rows under the same column heads, sorted largest USD first,
  *   - Escape closes back to `{ kind: "none" }` (the ShellScreen chrome's
  *     window-level listener, identical to MemoryScreen's shape), or to the
  *     page it was opened from (Portfolio); the crumb is the title bar's
@@ -15,10 +15,10 @@
  *   - hide-dust: the screen's checkbox (default checked, `hideDustBalances`
  *     in uiStore) filters sub-cent priced rows and names the hidden count;
  *     toggling flips the persisted uiStore preference and re-shows/re-hides,
- *   - THE EYE: rows with exact `(chainId, tokenAddress)` identity carry the
- *     token-history eye; clicking routes to `tokenHistory` with the row's
- *     identity + `returnTo: { kind: "assets", sessionId }`; identity-less rows
- *     carry NO eye,
+ *   - THE HISTORY KEY: rows with exact `(chainId, tokenAddress)` identity carry
+ *     a visible token-history key and answer a row press; both route to
+ *     `tokenHistory` with the row's identity + `returnTo: { kind: "assets",
+ *     sessionId }`; identity-less rows carry NO key and no press,
  *   - SESSION SCOPE (C4): a `sessionId` on the route reads THAT session's
  *     portfolio (never the global one), retitles the screen, and rides along
  *     on the eye's `returnTo` so the close path restores the same scope,
@@ -145,7 +145,7 @@ describe("AssetsScreen", () => {
       screen.getByRole("heading", { level: 1, name: "All assets" }),
     ).not.toBeNull();
     // All six lines render - the card's top-5 cut does not apply here.
-    const rows = [...view.container.querySelectorAll("li")].map(
+    const rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
@@ -299,7 +299,7 @@ describe("AssetsScreen - hide dust", () => {
     const checkbox = screen.getByRole("checkbox", { name: /Hide dust/i });
     expect(checkbox).toHaveProperty("checked", true);
 
-    const rows = [...view.container.querySelectorAll("li")].map(
+    const rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -319,7 +319,7 @@ describe("AssetsScreen - hide dust", () => {
     );
     expect(persisted.state.hideDustBalances).toBe(false);
 
-    let rows = [...view.container.querySelectorAll("li")].map(
+    let rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
@@ -329,7 +329,7 @@ describe("AssetsScreen - hide dust", () => {
 
     fireEvent.click(checkbox);
     expect(useUiStore.getState().hideDustBalances).toBe(true);
-    rows = [...view.container.querySelectorAll("li")].map(
+    rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -489,5 +489,156 @@ describe("AssetsScreen - project scope (Studio parity)", () => {
     expect(
       screen.getByText(/No balances in this project's wallets yet/i),
     ).not.toBeNull();
+  });
+});
+
+describe("AssetsScreen - column heads and the way into a token's history (review problem 10d)", () => {
+  const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+  const WETH = "0x4200000000000000000000000000000000000006";
+
+  function mountRegister(projectId?: string): ReturnType<typeof render> {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ok: true,
+        data: portfolio([
+          token({
+            tokenName: "USD Coin",
+            symbol: "USDC",
+            chainId: 8453,
+            tokenAddress: USDC_BASE,
+            balanceUsd: 100,
+          }),
+          token({
+            tokenName: "Wrapped Ether",
+            symbol: "WETH",
+            chainId: 1,
+            tokenAddress: WETH,
+            balanceUsd: 90,
+            amount: null,
+          }),
+          // No tokenAddress: no exact identity, so nothing to open.
+          token({ tokenName: "Legacy Row", symbol: "OLD", balanceUsd: 50 }),
+        ]),
+      },
+    });
+    useUiStore.setState({
+      shellRoute:
+        projectId === undefined
+          ? { kind: "assets", origin: null, sessionId: null }
+          : { kind: "assets", origin: null, projectId },
+    });
+    return render(<ShellScreens />);
+  }
+
+  const routeOf = () => useUiStore.getState().shellRoute;
+
+  it("heads the register with the Balances heads: Asset, Network, Quantity, Price, Value", () => {
+    mountRegister();
+    const heads = screen.getAllByRole("columnheader");
+    expect(heads.map((head) => head.textContent)).toEqual([
+      "Asset",
+      "Network",
+      "Quantity",
+      "Price",
+      "Value",
+      "Token history",
+    ]);
+    // The table is the Balances table (same class, so the same head style),
+    // not a list that borrows its look.
+    const table = document.querySelector('[data-vex-area="assets-register"]');
+    expect(table?.tagName).toBe("TABLE");
+    expect(table?.classList.contains("vex-pf-t")).toBe(true);
+    expect(table?.classList.contains("vex-pf-t--balances")).toBe(true);
+  });
+
+  it("says Not available for a figure the read lacks, never a dash or $0.00", () => {
+    mountRegister();
+    const weth = [...document.querySelectorAll("tbody tr")].find((row) =>
+      (row.textContent ?? "").includes("Wrapped Ether"),
+    );
+    const cells = [...(weth?.querySelectorAll("td") ?? [])].map((cell) => cell.textContent);
+    expect(cells[2]).toBe("Not available");
+    expect(cells[3]).toBe("Not available");
+    expect(cells[4]).toBe("$90.00");
+  });
+
+  it("offers a visible, keyboard-reachable key on every row that has a history, named for its token", () => {
+    mountRegister();
+    const keys = screen.getAllByRole("button", { name: /^Token history:/ });
+    expect(keys.map((key) => key.getAttribute("aria-label"))).toEqual([
+      "Token history: USD Coin",
+      "Token history: Wrapped Ether",
+    ]);
+    for (const key of keys) {
+      expect(key.tagName).toBe("BUTTON");
+      expect(key.getAttribute("type")).toBe("button");
+      expect(key.hasAttribute("hidden")).toBe(false);
+      expect(key.hasAttribute("tabindex")).toBe(false);
+      expect(key.querySelector("svg")).not.toBeNull();
+      key.focus();
+      expect(document.activeElement).toBe(key);
+    }
+    // The identity-less row has no key and no press.
+    const legacy = [...document.querySelectorAll("tbody tr")].find((row) =>
+      (row.textContent ?? "").includes("Legacy Row"),
+    );
+    expect(legacy?.querySelector("button")).toBeNull();
+    expect(legacy?.hasAttribute("data-vex-press")).toBe(false);
+  });
+
+  it("opens the token history from the key, once, carrying the register's scope", () => {
+    mountRegister();
+    const seen: string[] = [];
+    const stop = useUiStore.subscribe((state) => seen.push(state.shellRoute.kind));
+    fireEvent.click(screen.getByRole("button", { name: "Token history: Wrapped Ether" }));
+    stop();
+
+    // One route change: the key's click does not bubble into a second press.
+    expect(seen).toEqual(["tokenHistory"]);
+    const route = routeOf();
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.token).toEqual({
+      chainId: 1,
+      tokenAddress: WETH,
+      symbol: "WETH",
+      tokenName: "Wrapped Ether",
+    });
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
+  });
+
+  it("opens the token history from a press on the row, the way the key does", () => {
+    mountRegister();
+    const row = [...document.querySelectorAll("tbody tr")].find((candidate) =>
+      (candidate.textContent ?? "").includes("USD Coin"),
+    );
+    expect(row?.hasAttribute("data-vex-press")).toBe(true);
+    // The press lands on the name, as a pointer does.
+    fireEvent.click(screen.getByText("USD Coin"));
+
+    const route = routeOf();
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.token.tokenAddress).toBe(USDC_BASE);
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
+    // The row's rect rides along as the morph origin.
+    expect(route.origin).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
+
+  it("a press on a row with no history opens nothing", () => {
+    mountRegister();
+    fireEvent.click(screen.getByText("Legacy Row"));
+    expect(routeOf().kind).toBe("assets");
+  });
+
+  it("carries a project register's scope onto the route a row press opens", () => {
+    mountRegister("9c1b0e8e-0000-4000-8000-0000000000ab");
+    fireEvent.click(screen.getByText("USD Coin"));
+    const route = routeOf();
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.returnTo).toEqual({
+      kind: "assets",
+      projectId: "9c1b0e8e-0000-4000-8000-0000000000ab",
+    });
   });
 });

@@ -10,25 +10,15 @@
  *    wallets (a `chainId: null` row is a real aggregate line and keeps its
  *    place without a network, it is never dropped).
  *
- * The row grammar keeps the shared trust rules (`TokenHoldingRow.tsx`): the
- * address-verified `TokenMark` (never a symbol-keyed icon), the main-sanitized
- * name, a provider symbol only after `sanitizeTokenSymbol`, and a hostile one
- * dropped to a dash. A holding without a valuation says "Not available" for
- * its price and value, never $0.00. The price is the valuation's own unit
- * value (value over quantity), so a row priced by the read shows the price
- * that priced it and an unpriced row shows none.
+ * The table and its row grammar are `BalancesTable` (shared with the All
+ * assets page): the trust rules, "Not available" instead of $0.00, and the
+ * Value column that never clips.
  *
  * Dust (sub-cent priced) rows are filtered out BEFORE the top-5 cut, per the
  * `hideDustBalances` preference, so a dust row never takes a real holding's
  * slot; a scope holding only dust says "No priced balances." and still offers
- * the full register. The token history opens from a row's menu, only for a row with an
- * exact `(chainId, tokenAddress)` identity.
- *
- * THE VALUE NEVER CLIPS. The table sits in the narrower column of the Wallets
- * band, so what gives way when it is tight is decided in the markup: the Value
- * column (`vex-pf-v`) is nowrap and keeps its whole figure, while a muted "Not
- * available" (`vex-pf-wrap`), the network and the asset name may wrap
- * (book.css, `.vex-pf-t--balances`).
+ * the full register. The token history opens from a row's menu, only for a row
+ * with an exact `(chainId, tokenAddress)` identity.
  *
  * "View all assets" opens the All assets page carrying the SAME scope, so the
  * register is never wider than the table that led to it; a single wallet has
@@ -36,12 +26,6 @@
  */
 
 import type { JSX } from "react";
-import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
-import { chainDisplay } from "@shared/chains/display.js";
-import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
-import { TokenMark } from "../../../../components/common/TokenIcon.js";
-import { resolveTokenMark } from "../../../../lib/token-marks.js";
-import { formatTokenAmount } from "../../../../lib/format.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   RETURN_TO_SHELL,
@@ -54,22 +38,12 @@ import {
   SectionLink,
   originOf,
 } from "./PortfolioCard.js";
-import { RowActions } from "./RowActions.js";
+import { BalancesTable } from "./BalancesTable.js";
 import {
   usePageScopePortfolio,
   type PortfolioPageScope,
 } from "./portfolio-page-scope.js";
-import {
-  NOT_AVAILABLE,
-  priceFigure,
-  unitPriceUsd,
-  usdFigure,
-} from "./portfolio-format.js";
-import {
-  filterDustTokens,
-  sortTokensByUsdDesc,
-  tokenLineKey,
-} from "./TokenHoldingRow.js";
+import { filterDustTokens, sortTokensByUsdDesc } from "./TokenHoldingRow.js";
 
 /** The table shows the top holdings only; the All assets page has the rest. */
 const TOP_TOKENS = 5;
@@ -120,25 +94,7 @@ export function BalancesCard({
       ) : top.length === 0 ? (
         <CardStateNote>{emptyNote(scope)}</CardStateNote>
       ) : (
-        <table className="vex-pf-t vex-pf-t--balances" data-vex-area="portfolio-balances">
-          <thead>
-            <tr>
-              <th scope="col">Asset</th>
-              <th scope="col">Network</th>
-              <th scope="col" className="vex-pf-r">Quantity</th>
-              <th scope="col" className="vex-pf-r">Price</th>
-              <th scope="col" className="vex-pf-r vex-pf-v">Value</th>
-              <th scope="col" className="vex-pf-act">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {top.map((token) => (
-              <BalanceRow key={tokenLineKey(token)} token={token} />
-            ))}
-          </tbody>
-        </table>
+        <BalancesTable tokens={top} historyReturnTo={RETURN_TO_SHELL} />
       )}
     </PortfolioCard>
   );
@@ -174,85 +130,4 @@ function assetsScopeOf(scope: PortfolioPageScope): AssetsRouteScope | null {
     case "project":
       return { kind: "project", projectId: scope.projectId };
   }
-}
-
-/**
- * "Not available", in the muted word a figure the read does not carry says.
- * It is the one piece of a figure cell that may wrap: the two words stack
- * before the table scrolls sideways, so a figure that IS carried (the Value
- * above all) keeps its whole width (`.vex-pf-wrap`, book.css).
- */
-function NotAvailable(): JSX.Element {
-  return <span className="vex-pf-muted vex-pf-wrap">{NOT_AVAILABLE}</span>;
-}
-
-function BalanceRow({ token }: { readonly token: PositionTokenDto }): JSX.Element {
-  const setShellRoute = useUiStore((s) => s.setShellRoute);
-  const symbol = sanitizeTokenSymbol(token.symbol);
-  // The sanitized human name from main, else the sanitized symbol, else a
-  // dash: never raw provider text.
-  const name = token.tokenName ?? symbol ?? "-";
-  const network = token.chainId !== null ? chainDisplay(token.chainId).name : null;
-  const mark = resolveTokenMark(token.chainId, token.tokenAddress ?? null, token.symbol);
-  const quantity =
-    token.amount !== null && Number.isFinite(token.amount)
-      ? formatTokenAmount(token.amount)
-      : null;
-  const price = priceFigure(unitPriceUsd(token.balanceUsd, token.amount));
-  const value = usdFigure(token.balanceUsd);
-  // The history needs the EXACT query identity: no chain id and token address,
-  // no action.
-  const tokenAddress = token.tokenAddress ?? null;
-  const chainId = token.chainId;
-  const history =
-    chainId !== null && tokenAddress !== null && tokenAddress.length > 0
-      ? { chainId, tokenAddress }
-      : null;
-
-  return (
-    <tr data-unpriced={token.balanceUsd === null ? "" : undefined}>
-      <td>
-        <span className="vex-pf-asset">
-          <TokenMark mark={mark} size={15} />
-          <span>{name}</span>
-        </span>
-      </td>
-      <td className="vex-pf-muted vex-pf-net">{network ?? ""}</td>
-      <td className="vex-pf-r vex-num">
-        {quantity ?? <NotAvailable />}
-        {quantity !== null && symbol !== null ? (
-          <span className="vex-pf-u">{` ${symbol}`}</span>
-        ) : null}
-      </td>
-      <td className="vex-pf-r vex-num">{price ?? <NotAvailable />}</td>
-      <td className="vex-pf-r vex-num vex-pf-v">{value ?? <NotAvailable />}</td>
-      <td className="vex-pf-act">
-        <RowActions
-          label={`Actions for ${name}`}
-          actions={
-            history === null
-              ? []
-              : [
-                  {
-                    id: "history",
-                    label: "Token history",
-                    run: () =>
-                      setShellRoute({
-                        kind: "tokenHistory",
-                        origin: null,
-                        token: {
-                          chainId: history.chainId,
-                          tokenAddress: history.tokenAddress,
-                          symbol: token.symbol ?? null,
-                          tokenName: token.tokenName ?? null,
-                        },
-                        returnTo: RETURN_TO_SHELL,
-                      }),
-                  },
-                ]
-          }
-        />
-      </td>
-    </tr>
-  );
 }

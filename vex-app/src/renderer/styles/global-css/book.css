@@ -456,6 +456,25 @@
   line-height: 1.25;
 }
 
+/* ALL ASSETS draws the same table at full length (`BalancesTable`, variant
+ * `register`), on the wide ledger page rather than a `.vex-pf` page (whose
+ * sheet width is the Portfolio page's), so it carries the few rules the table
+ * takes from `.vex-pf` there. A row with a token history is pressable by a
+ * pointer; its key at the row's end is the keyboard's way in. */
+.vex-pf-t--register .vex-num {
+  font-size: 13px;
+}
+.vex-pf-t--register :is(button, a):focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-pf-t--register tr[data-vex-press] {
+  cursor: pointer;
+}
+.vex-pf-t--register tr[data-vex-press]:hover > td {
+  background: var(--vex-alias-interactive-hover);
+}
+
 /* Trading values only: the Lighter uPnL, Long and Short, the $VEX change. */
 .vex-pf [data-trade="up"],
 .vex-pf-vex [data-trade="up"] {
@@ -724,74 +743,9 @@
 }
 
 /* ---- the shared ledger grammar ----------------------------------------
- * Rows other surfaces still compose, in R3 voice: the holding row of the All
- * assets page (`TokenHoldingRow`, `.vex-kv3`) and the address and copy key of
+ * Rows other surfaces still compose, in R3 voice: the address and copy key of
  * `AddressDisplay` (`.vex-wal__a`, `.vex-copy`, used by the wizard and
  * Settings). */
-
-.vex-kv3 {
-  display: grid;
-  min-height: 36px;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  column-gap: 18px;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-kv3 > span {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-  color: var(--vex-alias-label-primary);
-}
-.vex-kv3 > .vex-kv3__n {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  font-family: var(--font-sans);
-  font-size: 14px;
-  letter-spacing: 0;
-  text-align: left;
-}
-.vex-kv3__n > :where(span:not([data-mark])) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.vex-kv3__n em {
-  font-size: 13px;
-  font-style: normal;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-kv3 > .vex-kv3__q {
-  color: var(--vex-alias-label-secondary);
-}
-.vex-kv3[data-unpriced] > :last-child {
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-kv3__key {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  background: none;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-kv3__key:hover {
-  background: var(--vex-alias-interactive-hover);
-  color: var(--vex-alias-label-primary);
-}
-.vex-kv3__key:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -2px;
-}
 
 /* An address in mono, then the copy key in blue. */
 .vex-wal__a {
