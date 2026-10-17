@@ -30,6 +30,17 @@ export const EMBEDDING_MODEL_ALIAS = "ai/embeddinggemma:300M-Q8_0";
 export const EMBEDDING_DIM = 768;
 export const EMBEDDING_PROVIDER = "local";
 
+/**
+ * EmbeddingGemma's trained context, used as the server's context, logical
+ * batch AND physical batch (`-c/-b/-ub`). An embedding input is encoded in
+ * one physical batch, so at llama.cpp's default of 512 any longer input is
+ * an HTTP 500 ("increase the physical batch size"); real session memories
+ * with UUIDs and timestamps reach 544 to 780 tokens. Both runtimes (compose
+ * template and the native launch) pass this value; the engine's character
+ * budget (`document-size-budget.ts`) is sized to fit inside it.
+ */
+export const EMBEDDING_CONTEXT_TOKENS = 2048;
+
 export function buildEmbeddingBaseUrl(port: number = DEFAULT_EMBED_PORT): string {
   return `http://127.0.0.1:${port}/v1`;
 }

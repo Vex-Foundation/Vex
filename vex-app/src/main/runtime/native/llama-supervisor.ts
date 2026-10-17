@@ -25,7 +25,12 @@ import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from "node:c
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { buildEmbeddingBaseUrl, EMBEDDING_DIM, EMBEDDING_MODEL_ALIAS } from "@shared/embedding-defaults.js";
+import {
+  buildEmbeddingBaseUrl,
+  EMBEDDING_CONTEXT_TOKENS,
+  EMBEDDING_DIM,
+  EMBEDDING_MODEL_ALIAS,
+} from "@shared/embedding-defaults.js";
 import { log } from "../../logger/index.js";
 
 /** How long the model may take to load before the launch counts as failed. */
@@ -81,6 +86,9 @@ export function llamaArgs(modelPath: string, threads: number): string[] {
     "--device", "none",
     "-ngl", "0",
     "-np", "1",
+    "-c", String(EMBEDDING_CONTEXT_TOKENS),
+    "-b", String(EMBEDDING_CONTEXT_TOKENS),
+    "-ub", String(EMBEDDING_CONTEXT_TOKENS),
     "-t", String(threads),
     "-tb", String(threads),
     "--no-webui",
