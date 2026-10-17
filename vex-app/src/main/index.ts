@@ -298,7 +298,6 @@ async function initializeMainRuntime(): Promise<void> {
   // its renderer-driven start unchanged.
   setRuntimeMode(
     resolveRuntimeMode({
-      packaged: app.isPackaged,
       env: process.env,
       connectionAlreadyPublished: getDbConnection() !== null,
     }),

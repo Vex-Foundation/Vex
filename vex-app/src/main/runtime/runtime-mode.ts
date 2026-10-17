@@ -2,11 +2,13 @@
  * Which provider runs Vex's local services in this process.
  *
  * Until the native runtime ships (plan D11), the compose provider stays the
- * default and the native runtime is an explicit opt-in for unpackaged builds:
- * `VEX_RUNTIME=native pnpm dev`. A packaged build ignores the variable: users
- * get the provider the release chose, never one an environment variable
- * picked. An e2e run whose door already published a database keeps that
- * database; the native runtime never displaces it.
+ * default and the native runtime is an explicit opt-in: `VEX_RUNTIME=native`,
+ * in development and in packaged builds alike. Packaged, it is how QA and the
+ * clean-machine release gate run a real install with no container runtime
+ * before the default flips. It cannot widen what runs: a packaged build only
+ * ever starts the binaries it shipped (runtime-paths.ts ignores the dev tree
+ * overrides there). An e2e run whose door already published a database keeps
+ * that database; the native runtime never displaces it.
  *
  * This is the switch that the release-N flip deletes along with the compose
  * provider (it is in the no-container ratchet's baseline for that reason).
@@ -19,11 +21,10 @@ export type RuntimeMode = RuntimeProviderId;
 const DEFAULT_MODE: RuntimeMode = "docker";
 
 export function resolveRuntimeMode(input: {
-  readonly packaged: boolean;
   readonly env: NodeJS.ProcessEnv;
   readonly connectionAlreadyPublished: boolean;
 }): RuntimeMode {
-  if (input.packaged || input.connectionAlreadyPublished) return DEFAULT_MODE;
+  if (input.connectionAlreadyPublished) return DEFAULT_MODE;
   return input.env["VEX_RUNTIME"] === "native" ? "native" : DEFAULT_MODE;
 }
 
