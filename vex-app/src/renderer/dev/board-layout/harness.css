@@ -8,3 +8,22 @@
  * renderer tree, which is exactly what `vite.renderer.config.ts` gives it. */
 @import "../../styles/globals.css";
 @source "../../";
+
+/* The shell's two places, as the product lays them out: the centre column
+ * with the page padding (docs/design/R3-MINIMAL.md section 9.4, 20 28) and,
+ * while the Ask block is open, the Vex sidebar at 256 with its quiet rule. */
+.vex-board-harness {
+  display: flex;
+  min-height: 100vh;
+  background: var(--vex-alias-bg-base);
+}
+.vex-board-harness__centre {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 20px 28px 56px;
+}
+.vex-board-harness__vex {
+  width: var(--vex-vex-w);
+  flex: none;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
