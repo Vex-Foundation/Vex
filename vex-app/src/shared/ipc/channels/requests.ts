@@ -23,6 +23,17 @@ export const CH = {
     runtimeStatus: "vex:system:runtimeStatus",
     /** Start the native runtime again after a failure; a no-op otherwise. */
     runtimeRetry: "vex:system:runtimeRetry",
+    /**
+     * Whether this install's data must first be moved from the previous
+     * release's stack; the native runtime does not start until it is not.
+     */
+    runtimeMigrationStatus: "vex:system:runtimeMigrationStatus",
+    /** Move the data (joins a move in flight); resolves when it settles. */
+    runtimeMigrationMove: "vex:system:runtimeMigrationMove",
+    /** A fresh native database instead of the move; the old data is kept where it is. */
+    runtimeMigrationStartFresh: "vex:system:runtimeMigrationStartFresh",
+    /** Remove the previous release's data once the move completed (no UI yet). */
+    runtimeMigrationRemoveOldData: "vex:system:runtimeMigrationRemoveOldData",
     /** OS-native turn-complete notification (A34); main checks focus itself. */
     notifyTurnComplete: "vex:system:notifyTurnComplete",
     /** Recolour the Windows/Linux title bar overlay on a theme change. */

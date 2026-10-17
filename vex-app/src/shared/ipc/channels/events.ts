@@ -17,6 +17,11 @@ export const EV = {
      * `CH.system.runtimeStatus` too and keeps whichever has the higher seq.
      */
     runtimeProgress: "vex:event:system:runtimeProgress",
+    /**
+     * Every progress event of a data move (`RuntimeMigrationProgress`). A
+     * screen joining a move in flight is sent the latest one directly.
+     */
+    runtimeMigrationProgress: "vex:event:system:runtimeMigrationProgress",
   },
   docker: {
     installProgress: "vex:event:docker:installProgress",
