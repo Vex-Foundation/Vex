@@ -1,64 +1,122 @@
-/* THE OVERLAY SHEET (docs/design/V10-SPREAD.md sections 1, 2 and 4).
+/* THE PAGE SHEET (docs/design/R3-MINIMAL.md sections 2.3, 9.2, 9.6 and 12).
  *
- * A full-app screen (Settings, Memory, Sessions, assets, agent scan, token
- * history) is ONE paper sheet laid over the centre and the BOOK: the left page
- * and the gutter stay where they are (`--vex-overlay-left`, set by the shell
- * frame). It is a 44px head (the title in Departure Mono at the left, close at
- * the right, the whole row a drag region), a chapter title in Instrument Serif
- * and a body capped at 760px. Radius 0, no shadow, no blur. Every colour is an
- * alias, so the Night Ledger needs no second rule set. */
+ * A page (Memory, Sessions, Settings, Portfolio and its subpages, Board,
+ * Needs you, How Vex works) is ONE paper sheet inside the centre column, under
+ * the title bar row: the title bar keeps the page's name, Needs you and the
+ * token chip, and both sidebars stay standing. The sheet opens with the page
+ * chrome (the crumb of a subpage at the left, the close key at the right),
+ * then a centred column: 760 for reading pages (padding 30 40), 1100 with
+ * its padding for the money ledgers (padding 18 44). Radius 0, no shadow, no
+ * blur; every colour is an alias, so the Night Ledger needs no second rule
+ * set.
+ *
+ * Stacking: the sheet sits over the mode's surface (the composer console is
+ * 20) and UNDER the title bar's popovers (40), so the Needs you and Notices
+ * panels still open over a page. */
 
 .vex-ov {
+  --vex-ov-max: 840px;
+  --vex-ov-pad: 40px;
+  --vex-ov-top: 14px;
   position: absolute;
-  top: 0;
+  top: var(--head-h);
   right: 0;
   bottom: 0;
   left: var(--vex-overlay-left, 0px);
-  z-index: 50;
+  z-index: 30;
   display: grid;
-  grid-template-rows: var(--head-h) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--vex-alias-bg-base);
   color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+}
+/* The money ledgers (Agent Scan, All assets, token history): 1100 with the
+ * page padding, so the rows read as the design's 112 | 1fr | 120 | 250 grid. */
+.vex-ov[data-width="wide"] {
+  --vex-ov-max: 1100px;
+  --vex-ov-pad: 44px;
+  --vex-ov-top: 6px;
+}
+@media (max-width: 1179px) {
+  .vex-ov {
+    --vex-ov-pad: 28px;
+  }
+}
+/* Lighter folds the title bar row into its desk bar, so there is no row to
+ * sit under. */
+.vex-shell-centre > [data-vex-area="shell-status-strip"][data-collapsed] ~ .vex-ov {
+  top: 0;
 }
 
-.vex-ov__head {
+/* The page chrome: the crumb of a subpage, the close key. One 32px row at
+ * the top of the column, never a second drag bar (the title bar is it). */
+.vex-ov__bar {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
+  max-width: var(--vex-ov-max);
   min-width: 0;
-  padding-block: 0;
-  padding-inline: 32px 12px;
-  border-bottom: 1px solid var(--vex-alias-rule);
+  margin-inline: auto;
+  padding: 12px var(--vex-ov-pad) 0;
 }
-.vex-ov__head-start {
+.vex-ov__crumb {
+  min-width: 0;
+}
+.vex-ov__crumb > ol {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 14px;
-}
-.vex-ov__title {
+  gap: 6px;
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ov__crumb li {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.vex-ov__crumb-link {
+  color: var(--vex-alias-label-tertiary);
+  text-underline-offset: 3px;
+}
+.vex-ov__crumb-link:hover {
+  color: var(--vex-alias-label-primary);
+  text-decoration: underline;
+}
+.vex-ov__crumb-link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-ov__crumb-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
   color: var(--vex-alias-label-primary);
 }
+/* The icon key (32 x 32): the close that returns to the previous route. */
 .vex-ov__close {
   display: inline-grid;
   width: 32px;
   height: 32px;
   flex: none;
+  margin-left: auto;
   place-items: center;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
 }
 .vex-ov__close:hover {
-  background: var(--vex-alias-bg-layer-3);
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
 }
 .vex-ov__close:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -68,51 +126,57 @@
 .vex-ov__scroll {
   min-height: 0;
   overflow-y: auto;
-  padding: 40px 64px 96px;
+  padding: var(--vex-ov-top) 0 56px;
 }
 .vex-ov__body {
+  box-sizing: border-box;
   width: 100%;
-  max-width: 760px;
+  max-width: var(--vex-ov-max);
+  margin-inline: auto;
+  padding-inline: var(--vex-ov-pad);
 }
-/* A register that needs the ledger's width (assets, token history) keeps the
- * same cap; the sheet never spans the window. */
+/* The serif page head (Memory, Sessions, How Vex works): serif 40 / 1,
+ * `-.01em`, the title ink, margin 0 0 8 (section 1.3). */
 .vex-ov__chapter {
-  margin: 0 0 20px;
+  margin: 0 0 8px;
   font-family: var(--font-serif);
-  font-size: 56px;
+  font-size: 40px;
   font-weight: 400;
-  line-height: 0.94;
-  letter-spacing: -0.02em;
+  line-height: 1;
+  letter-spacing: -0.01em;
   color: var(--vex-alias-title);
 }
-@media (max-width: 1275px) {
-  .vex-ov__chapter {
-    font-size: 48px;
-  }
-  .vex-ov__scroll {
-    padding-inline: 32px;
-  }
-  .vex-ov__head {
-    padding-inline-start: 24px;
-  }
+
+/* A screen with its own inner scroller (the agent scan's virtual list): the
+ * sheet's body does not scroll, it hands its height down. */
+.vex-ov__scroll[data-fill] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 24px;
 }
-/* Windows and Linux caption buttons sit over the head's right end. */
-html[data-chrome="overlay"] .vex-ov__head {
-  padding-inline-end: calc(var(--overlay-w) + 8px);
+.vex-ov__scroll[data-fill] > .vex-ov__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+.vex-ov__scroll[data-fill] .vex-ov__chapter {
+  flex: none;
 }
 
-/* The small mono label every group, eyebrow and index word shares. */
+/* A group head inside a page: 12.5 / 500 muted, sentence case (the day head
+ * of the ledgers, field and group labels). */
 .vex-ov-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
 }
 
 /* THE SECTION INDEX: italic numerals at 24px over the name, a hint, the
- * status word in mono at the right, hairline rows. */
+ * status word at the right (12 muted, sentence case), hairline rows. */
 .vex-reg {
   margin: 0;
   padding: 0;
@@ -167,11 +231,9 @@ html[data-chrome="overlay"] .vex-ov__head {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--tracking-status);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
 }
 
 /* PREFERENCES: setting rows with 15px titles and 13px help. */
@@ -253,11 +315,9 @@ html[data-chrome="overlay"] .vex-ov__head {
   line-height: 20px;
 }
 .vex-tile__caption {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-tile[aria-pressed="true"] {
   outline: 1.5px solid var(--vex-alias-accent-primary);
@@ -272,7 +332,8 @@ html[data-chrome="overlay"] .vex-ov__head {
   background: var(--vex-alias-accent-primary);
 }
 
-/* Segmented choice (the Enter key). */
+/* Segmented choice (the Enter key): 32 high, 13, the pressed one takes the
+ * selection fill and blue 500 (section 9.6). */
 .vex-seg {
   display: inline-flex;
   outline: 1px solid var(--vex-alias-rule);
@@ -281,12 +342,10 @@ html[data-chrome="overlay"] .vex-ov__head {
 .vex-seg > button {
   display: inline-flex;
   align-items: center;
-  height: 36px;
-  padding: 0 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
   white-space: nowrap;
   color: var(--vex-alias-label-secondary);
 }
@@ -295,23 +354,24 @@ html[data-chrome="overlay"] .vex-ov__head {
 }
 .vex-seg > button[aria-pressed="true"] {
   position: relative;
-  background: var(--vex-alias-bg-layer-3);
-  color: var(--vex-alias-label-primary);
-  outline: 1px solid var(--vex-alias-rule-ink);
-  outline-offset: -1px;
+  background: var(--vex-alias-interactive-active);
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
 }
 .vex-seg > button:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: 2px;
 }
 
-/* The switch: a 44 x 24 track with a square 20px knob; ON slides the knob and
- * fills it blue. The state is the fill and the position, never a hue. */
+/* The switch (section 1.5): a 32 x 18 track with a 10 x 10 thumb at a 3px
+ * inset; off the thumb is muted, on the track fills blue and the thumb moves.
+ * The state is the fill and the position, never a hue. */
 .vex-switch {
   position: relative;
   display: inline-block;
-  width: 44px;
-  height: 24px;
+  box-sizing: border-box;
+  width: 32px;
+  height: 18px;
   flex: none;
   border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-field);
@@ -319,19 +379,22 @@ html[data-chrome="overlay"] .vex-ov__head {
 .vex-switch::after {
   content: "";
   position: absolute;
-  top: 1px;
-  left: 1px;
-  box-sizing: border-box;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-field);
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  background: var(--vex-alias-label-tertiary);
   transition: transform var(--vex-duration-base) linear;
 }
+/* The edge token is clear on paper (the fill shows through) and periwinkle
+ * at night, the 1px edge every night blue fill keeps (section 1.1). */
+.vex-switch[aria-checked="true"] {
+  border-color: var(--vex-alias-button-accent-edge);
+  background: var(--vex-alias-button-accent-fill);
+}
 .vex-switch[aria-checked="true"]::after {
-  transform: translateX(20px);
-  background: var(--vex-alias-accent-primary);
-  border-color: var(--vex-alias-accent-primary);
+  transform: translateX(14px);
+  background: var(--vex-alias-button-accent-ink);
 }
 .vex-switch:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -370,16 +433,18 @@ html[data-chrome="overlay"] .vex-ov__head {
   color: var(--vex-alias-label-tertiary);
 }
 
-/* A framed tag (PROPOSED, OPEN): 22px, outline in the current colour. */
+/* A framed tag (PROPOSED, OPEN): 22 high, sans 11 / 600 caps at `.08em`,
+ * outline in the current colour (the one place caps stay, section 1.3). */
 .vex-ov-tag {
   display: inline-flex;
   align-items: center;
   height: 22px;
   padding: 0 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 11px;
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: var(--tracking-chip);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--vex-alias-accent-primary);
   outline: 1px solid currentColor;
@@ -443,20 +508,478 @@ html[data-chrome="overlay"] .vex-ov__head {
   color: var(--vex-alias-title);
 }
 
-/* A screen with its own inner scroller (the agent scan's virtual list): the
- * sheet's body does not scroll, it hands its height down. */
-.vex-ov__scroll[data-fill] {
+/* THE LEDGER PAGES (docs/design/R3-MINIMAL.md section 9.2): Agent Scan,
+ * token history and All assets. A lead (14, ink 2), the four named filter
+ * menus, rows by day; a row is a grid of 112 (the kind in caps), 1fr (what
+ * happened, with its meta line and links), 120 (the value, right) and 250
+ * (the state word and its consequence, right), min height 52, gap 14. Every
+ * row ends in a word. The ledger column is a size container, so the grid
+ * tightens with the centre, not the window (only on the wide pages: layout
+ * containment would capture a fixed panel inside a reading page). */
+.vex-ov[data-width="wide"] .vex-ov__body {
+  container-type: inline-size;
+}
+.vex-scan-lead {
+  margin: 0;
+  max-width: 820px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* The filter row: four named menus (Kind, Status, Protocol, Chain), the scope
+ * the page was opened with, the active count and Clear. */
+.vex-scan-filters {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0 16px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-scan-filter {
+  position: relative;
+  display: inline-flex;
+}
+.vex-scan-filter__key {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-scan-filter__key:hover {
+  border-color: var(--vex-alias-rule-ink);
+}
+.vex-scan-filter__key[aria-expanded="true"] {
+  border-color: var(--vex-alias-rule-ink);
+}
+.vex-scan-filter__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-scan-filter__name {
+  color: var(--vex-alias-label-tertiary);
+}
+/* A menu that narrows the feed says so in blue: the value and the edge. */
+.vex-scan-filter__key[data-active] {
+  border-color: var(--vex-alias-accent-primary);
+}
+.vex-scan-filter__key[data-active] .vex-scan-filter__value {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-scan-filter__chev {
+  color: var(--vex-alias-label-tertiary);
+}
+/* The list is the kit's menu card (ui-primitives/menu.css); the rows are
+ * checkbox or radio items, so the choice reaches assistive tech too. */
+.vex-scan-filter__menu {
+  max-height: min(360px, calc(100vh - 160px));
+  overflow-y: auto;
+}
+.vex-scan-filter__menu .vex-menu-check {
+  margin-left: auto;
+}
+.vex-scan-scope {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--vex-alias-interactive-active);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--vex-alias-accent-primary);
+  cursor: default;
+}
+.vex-scan-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* A day head: 12.5 / 500 muted, padding 18 0 6, a 1px rule below. */
+.vex-scan-day {
+  padding: 18px 0 6px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+.vex-scan-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 120px 250px;
+  align-items: center;
+  column-gap: 14px;
+  min-height: 52px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-scan-row[data-open] {
+  background: var(--vex-alias-interactive-hover);
+}
+/* The kind in caps: sans 11 / 600 at `.08em`, ink 2. The activity badge's
+ * own chip is read as text here (the word carries the kind, never a fill). */
+.vex-scan-kind {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.vex-scan-kind > span {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-scan-what {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.vex-scan-legs {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
   overflow: hidden;
-  padding-bottom: 24px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-primary);
 }
-.vex-ov__scroll[data-fill] > .vex-ov__body {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-  flex-direction: column;
+.vex-scan-legs[data-wrap] {
+  flex-wrap: wrap;
+  white-space: normal;
 }
-.vex-ov__scroll[data-fill] .vex-ov__chapter {
+.vex-scan-legs__arrow {
   flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-est {
+  flex: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-meta__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-num.vex-scan-meta__time,
+.vex-scan-meta .vex-num {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: -0.01em;
+}
+.vex-scan-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 14px;
+}
+.vex-scan-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--vex-alias-accent-primary);
+  text-underline-offset: 3px;
+}
+.vex-scan-link:hover {
+  text-decoration: underline;
+}
+.vex-scan-link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-scan-value {
+  min-width: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-primary);
+}
+.vex-scan-value__sub {
+  display: block;
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-state {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-self: end;
+  text-align: right;
+  font-size: 12.5px;
+}
+.vex-scan-state .vex-state-word {
+  font-size: 13px;
+}
+.vex-scan-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The detail under a row (a failed row opens to What happened and Next step):
+ * definition rows of 150 and 1fr at 13, under the row's own text column. The
+ * reveal's outer box takes the grid place; the list inside takes the margins
+ * (the reveal adds no vertical chrome of its own). */
+.vex-scan-expand {
+  grid-column: 2 / span 3;
+  min-width: 0;
+}
+.vex-scan-detail {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  margin: 8px 0 6px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-scan-detail > dt,
+.vex-scan-detail > dd {
+  margin: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.vex-scan-detail > dt {
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-detail > dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-scan-detail .vex-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.vex-scan-detail__lead {
+  font-weight: 500;
+}
+/* The legs of a bridge: the role as a code chip, the chain, a swatch and its
+ * word, the TX link. */
+.vex-scan-legs-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-scan-leg {
+  display: flex;
+  min-height: 26px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-scan-code {
+  padding: 2px 6px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-field);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+/* The token history's own legs: under the row's text column, closed by
+ * default ("Show 2 legs"). */
+.vex-scan-subdetail {
+  grid-column: 2 / span 3;
+  min-width: 0;
+  margin: 4px 0 2px;
+}
+
+/* The token head of a token history page: a 40 box with the mark, the name
+ * 20 / 600 with the chain in muted 15, the address in mono 11.5 muted. */
+.vex-scan-token {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+.vex-scan-token__mark {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-scan-token__name {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--vex-alias-label-primary);
+}
+.vex-scan-token__chain {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-token__address {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The register's own control row (All assets: Hide dust at the right) and
+ * the kit checkbox (section 1.5): 16 x 16, a 1.5px ink border, on = the blue
+ * fill with a white tick. */
+.vex-scan-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 6px 0 12px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-scan-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-scan-check input {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: transparent;
+  cursor: pointer;
+}
+.vex-scan-check input:checked {
+  border-color: var(--vex-alias-button-accent-edge);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-scan-check input:checked::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0;
+  width: 4px;
+  height: 8px;
+  border: solid var(--vex-alias-button-accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.vex-scan-check input:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+}
+
+/* A list's quiet states and its foot: a note (13, muted; a failure in ink
+ * with the warning word), Load more as the small outline key. */
+.vex-scan-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-scan-note[data-tone="calm"] {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-scan-note[data-tone="warn"] {
+  color: var(--vex-alias-label-primary);
+}
+.vex-scan-more {
+  display: flex;
+  height: 32px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  border: 1px solid var(--vex-alias-rule);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-scan-more:hover:not(:disabled) {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-scan-more:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-scan-more:disabled {
+  cursor: progress;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* Narrow centre (the rail at 1024 with Vex open): the grid tightens, the
+ * state column keeps its words. */
+@container (max-width: 760px) {
+  .vex-scan-row {
+    grid-template-columns: 92px minmax(0, 1fr) 96px 168px;
+    column-gap: 12px;
+  }
+  .vex-scan-detail {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
 }

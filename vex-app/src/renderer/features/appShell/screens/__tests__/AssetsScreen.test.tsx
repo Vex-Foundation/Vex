@@ -1,6 +1,6 @@
 /**
- * AssetsScreen — the All-assets ShellScreen (opened from the welcome
- * Portfolio tab's Balances footer).
+ * AssetsScreen - the All-assets page, a Portfolio subpage (opened from the
+ * Balances section's "View all assets").
  *
  * Pins (mirroring the Sessions-screen shape in the AppShell suite):
  *   - `uiStore.shellRoute = { kind: "assets" }` mounts the screen through
@@ -8,7 +8,9 @@
  *   - EVERY portfolio token line renders (no top-5 cut here), in the shared
  *     row grammar, sorted largest USD first,
  *   - Escape closes back to `{ kind: "none" }` (the ShellScreen chrome's
- *     window-level listener — identical to MemoryScreen's shape),
+ *     window-level listener, identical to MemoryScreen's shape), or to the
+ *     page it was opened from (Portfolio), and the crumb's "Portfolio" goes
+ *     up to it (docs/design/R3-MINIMAL.md section 9.2),
  *   - the quiet empty state invites rather than errors,
  *   - hide-dust: the screen's checkbox (default checked, `hideDustBalances`
  *     in uiStore) filters sub-cent priced rows and names the hidden count;
@@ -24,7 +26,7 @@
  *     project's own selection, names the project in the title, and the
  *     token-history close path returns to the PROJECT register.
  *
- * The sibling screens and the portfolio query hook are mocked — this suite
+ * The sibling screens and the portfolio query hook are mocked - this suite
  * owns the assets branch, not Memory/Sessions/HowVexWorks/TokenHistory or
  * query wiring.
  */
@@ -47,9 +49,12 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
 vi.mock("../SessionsScreen.js", () => ({ SessionsScreen: () => null }));
 vi.mock("../HowVexWorksScreen.js", () => ({ HowVexWorksScreen: () => null }));
-// Phase 2b: SettingsScreen hosts the wizard step forms — a heavy module
+// Phase 2b: SettingsScreen hosts the wizard step forms - a heavy module
 // graph this suite's partial mocks do not cover. Own suite covers it.
 vi.mock("../SettingsScreen.js", () => ({ SettingsScreen: () => null }));
+// The Portfolio page owns its own suite; here it is only where a close or the
+// crumb lands.
+vi.mock("../PortfolioScreen.js", () => ({ PortfolioScreen: () => null }));
 // The token-history screen itself is owned by TokenHistoryScreen.test.tsx;
 // here a stub exposing its `onClose` wire is enough to pin ShellScreens'
 // returnTo routing back into THIS screen.
@@ -97,7 +102,7 @@ function portfolio(tokens: readonly PositionTokenDto[]): PortfolioDto {
   };
 }
 
-/** Six lines — more than the Balances card's five, proving the full list. */
+/** Six lines - more than the Balances card's five, proving the full list. */
 const SIX_TOKENS: readonly PositionTokenDto[] = [
   token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 600 }),
   token({ tokenName: "Token B", symbol: "BBB", balanceUsd: 500 }),
@@ -139,13 +144,39 @@ describe("AssetsScreen", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "All assets" }),
     ).not.toBeNull();
-    // All six lines render — the card's top-5 cut does not apply here.
-    const rows = [...view.container.querySelectorAll("li")].map(
+    // All six lines render - the card's top-5 cut does not apply here.
+    const rows = [...view.container.querySelectorAll("ul > li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
     expect(rows[0]).toContain("Token A");
     expect(rows[5]).toContain("Token F");
+  });
+
+  it("closes back to the page it was opened from, and the crumb goes up to Portfolio", () => {
+    render(<ShellScreens />);
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "portfolio", origin: null });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
+    });
+    // The crumb names the parent as a link and the page itself as current.
+    const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(crumb.textContent).toContain("Portfolio");
+    expect(screen.getByText("All assets", { selector: "[aria-current='page']" })).not.toBeNull();
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    // Back where the user came from, never the bare shell.
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
+
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
   });
 
   it("closes on Escape back to shellRoute 'none' (ShellScreen chrome contract)", () => {
@@ -212,7 +243,7 @@ describe("AssetsScreen - token-history eye", () => {
       tokenName: "USD Coin",
     });
     expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
-    // jsdom rects are all-zero — the pin is that a measured rect object
+    // jsdom rects are all-zero - the pin is that a measured rect object
     // (not null) rode along as the expand origin.
     expect(route.origin).toEqual({ x: 0, y: 0, width: 0, height: 0 });
   });
@@ -239,7 +270,7 @@ describe("AssetsScreen - token-history eye", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Close token history (stub)" }),
     );
-    // Back to assets — with a NULL origin: the old morph rect belonged to a
+    // Back to assets - with a NULL origin: the old morph rect belonged to a
     // row instance that no longer exists (no stale-origin morph).
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "assets",
@@ -276,7 +307,7 @@ describe("AssetsScreen - hide dust", () => {
     const checkbox = screen.getByRole("checkbox", { name: /Hide dust/i });
     expect(checkbox).toHaveProperty("checked", true);
 
-    const rows = [...view.container.querySelectorAll("li")].map(
+    const rows = [...view.container.querySelectorAll("ul > li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -296,7 +327,7 @@ describe("AssetsScreen - hide dust", () => {
     );
     expect(persisted.state.hideDustBalances).toBe(false);
 
-    let rows = [...view.container.querySelectorAll("li")].map(
+    let rows = [...view.container.querySelectorAll("ul > li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
@@ -306,7 +337,7 @@ describe("AssetsScreen - hide dust", () => {
 
     fireEvent.click(checkbox);
     expect(useUiStore.getState().hideDustBalances).toBe(true);
-    rows = [...view.container.querySelectorAll("li")].map(
+    rows = [...view.container.querySelectorAll("ul > li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -324,7 +355,7 @@ describe("AssetsScreen - session scope (C4)", () => {
       shellRoute: { kind: "assets", origin: null, sessionId: SESSION },
     });
     render(<ShellScreens />);
-    // The scope reaches the query hook — a narrowed register must never be
+    // The scope reaches the query hook - a narrowed register must never be
     // fed the global read.
     // The hook takes the WHOLE validated read input now, not a
     // `string | null` session id: that parameter could not express the B0
