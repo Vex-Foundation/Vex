@@ -1,0 +1,165 @@
+name: Native runtime
+
+# Builds the bundled Postgres + pgvector and llama-server trees for every
+# target from the pins in native-runtime/sources.env, and runs the smoke and
+# parity gates on real hardware of each target (native-runtime/README.md).
+# Not part of every push: the trees change only when a pin or a recipe does.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [native-runtime]
+    paths:
+      - "native-runtime/**"
+      - ".github/workflows/native-runtime.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # The gates need the app's `pg` client and tsx, not Electron itself.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  darwin-arm64:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir vex-app install --frozen-lockfile
+
+      - name: Build Postgres
+        run: native-runtime/postgres/build.sh darwin-arm64
+      - name: Build llama-server
+        run: native-runtime/llama/build.sh darwin-arm64
+
+      - name: Smoke Postgres
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/darwin-arm64/postgres
+      - uses: actions/cache@v4
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server
+        run: node native-runtime/llama/smoke.mjs darwin-arm64 native-runtime/out/darwin-arm64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+      - name: Durability benchmark
+        run: node native-runtime/postgres/bench-durability.mjs native-runtime/out/darwin-arm64/postgres fsync fsync_writethrough
+
+      - name: Pack the trees
+        run: tar -czf runtime-darwin-arm64.tar.gz -C native-runtime/out darwin-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-darwin-arm64
+          path: runtime-darwin-arm64.tar.gz
+          retention-days: 14
+
+  darwin-x64-build:
+    # Cross-built on Apple Silicon (the same recipe as a local build), run on
+    # a real Intel Mac below.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Postgres
+        run: native-runtime/postgres/build.sh darwin-x64
+      - name: Build llama-server
+        run: native-runtime/llama/build.sh darwin-x64
+      - name: Pack the trees
+        run: tar -czf runtime-darwin-x64.tar.gz -C native-runtime/out darwin-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-darwin-x64
+          path: runtime-darwin-x64.tar.gz
+          retention-days: 14
+
+  darwin-x64-smoke:
+    needs: darwin-x64-build
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir vex-app install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-darwin-x64
+      - name: Unpack the trees
+        run: mkdir -p native-runtime/out && tar -xzf runtime-darwin-x64.tar.gz -C native-runtime/out
+      - name: Verify the trees on this machine
+        run: |
+          native-runtime/lib/verify-tree.sh native-runtime/out/darwin-x64/postgres darwin-x64
+          native-runtime/lib/verify-tree.sh native-runtime/out/darwin-x64/llama darwin-x64
+
+      - name: Smoke Postgres
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/darwin-x64/postgres darwin-x64
+      - uses: actions/cache@v4
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server
+        run: node native-runtime/llama/smoke.mjs darwin-x64 native-runtime/out/darwin-x64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+      - name: Durability benchmark
+        run: node native-runtime/postgres/bench-durability.mjs native-runtime/out/darwin-x64/postgres fsync fsync_writethrough
+
+  linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir vex-app install --frozen-lockfile
+
+      - name: Build Postgres (manylinux_2_28)
+        run: native-runtime/linux/build-in-container.sh postgres
+      - name: Build llama-server (manylinux_2_28)
+        run: native-runtime/linux/build-in-container.sh llama
+
+      - name: Smoke Postgres (server in ubuntu:22.04)
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/linux-x64/postgres linux-x64
+      - uses: actions/cache@v4
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server (in ubuntu:22.04)
+        run: node native-runtime/llama/smoke.mjs linux-x64 native-runtime/out/linux-x64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+      - name: Embedding parity vs the pinned server-b9115 image
+        run: native-runtime/parity/run.sh linux-x64
+
+      - name: Pack the trees
+        if: always()
+        run: tar -czf runtime-linux-x64.tar.gz -C native-runtime/out .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-linux-x64
+          path: runtime-linux-x64.tar.gz
+          retention-days: 14
