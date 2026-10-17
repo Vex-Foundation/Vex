@@ -58,39 +58,164 @@
   overflow: hidden;
 }
 
-/* THE TAB STRIP (docs/design/V10-SPREAD.md section 1). The strip sits on the
- * paper over one 1px rule; a tab is a clear shell at rest, and the active tab
- * is a field box with a rule on three sides that sits 1px low, so it covers the
- * rule under itself and opens into the pane body below. A hovered tab previews
- * activation with the quiet hover wash and never takes the active field. Named
- * rules rather than utilities because the shell is one wrapper around the
- * trigger, the Keep action and the close, and `[data-active]` is the switch.
- * Class, not `[role="tablist"]`: the primitive's list is shared by every tab
- * set and only the terminal strip has tab shells. */
-.vex-terminal-tab-strip {
-  border-bottom: 1px solid var(--vex-alias-rule);
+/* THE WORKSPACE CHROME (docs/design/R3-MINIMAL.md section 9.5). The strip, the
+ * pane head and the panes carry no box: the strip and the head sit on the
+ * paper under a quiet rule each, the panes are the field, and nothing frames
+ * the workspace. Radius 0, no shadow, tokens only. Named rules rather than
+ * utilities where one wrapper owns the paint of several children, and where an
+ * unlayered rule has to beat a shared primitive's utility.
+ *
+ *   .vex-ws-strip              the strip wrapper; draws the quiet rule under
+ *                              the strip from beneath the scroller
+ *   .vex-terminal-tab-strip    the scroller (the shared tablist)
+ *   .vex-tab-shell             one tab: trigger, Keep and close in one box
+ *   .vex-ws-cap                the overflow caps at the strip's two ends
+ *   .vex-ws-head               the pane head
+ *   .vex-ws-picker             the shell picker key
+ *   .vex-ws-panes, .vex-ws-pane  the split container and one pane */
+
+/* The strip is 40 high. Its quiet rule is drawn by the wrapper UNDER the
+ * scroller, because a scroller clips to its padding box: a tab that sat 1px
+ * low over a border would lose that pixel and its underline would thin to
+ * half a pixel. The scroller paints above the rule, so the active tab's
+ * 1.5px blue underline covers it and the rule shows between and after tabs. */
+.vex-ws-strip {
+  position: relative;
+  flex: none;
 }
 
-.vex-tab-shell {
-  margin-bottom: -1px;
-  border: 1px solid transparent;
+.vex-ws-strip::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--vex-alias-rule-quiet);
+  pointer-events: none;
+}
+
+.vex-terminal-tab-strip {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 14px;
+  gap: 2px;
+  align-items: stretch;
   border-bottom: 0;
-  color: var(--vex-alias-label-secondary);
+}
+
+/* A tab is a clear shell at rest: padding 0 12, a 1.5px transparent underline
+ * on its bottom edge. The active tab is ink with a blue underline (its weight
+ * and ink come from the trigger inside it). A hovered inactive tab previews
+ * activation with the quiet hover wash and never takes the underline. */
+.vex-tab-shell {
+  box-sizing: border-box;
+  padding-left: 12px;
+  border-bottom: 1.5px solid transparent;
   transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
 }
 
 .vex-tab-shell[data-active] {
-  background: var(--vex-alias-field);
-  border-color: var(--vex-alias-rule);
-  color: var(--vex-alias-label-primary);
+  border-bottom-color: var(--vex-alias-accent-primary);
 }
 
 .vex-terminal-tab-strip .vex-tab-shell:not([data-active]):hover {
   background: var(--vex-alias-interactive-hover);
 }
 
+/* The overflow caps: a flat paper block, 12 wide, with a quiet rule on its
+ * inner edge. They stop 1px short of the bottom so the strip's rule runs on.
+ * The strip's wrapper puts the scroller at z 1; the caps sit above it. */
+.vex-ws-cap {
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  z-index: 2;
+  width: 12px;
+  background: var(--vex-alias-bg-base);
+  pointer-events: none;
+}
+
+.vex-ws-cap[data-edge="start"] {
+  left: 0;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+
+.vex-ws-cap[data-edge="end"] {
+  right: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* THE PANE HEAD: 50 high on the paper, a quiet rule under it, padding
+ * 0 14 0 18, gap 12: the disc, the name over the shell and directory line,
+ * then the icon keys and the shell picker at the right. */
+.vex-ws-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: 50px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+
+.vex-ws-head__keys {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The shell picker key: 32 high, about 170 wide, a 1px rule frame on the
+ * field, padding 0 12, gap 9; the label is mono 13 ink, the chevron muted at
+ * the right. */
+.vex-ws-picker {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  box-sizing: border-box;
+  width: 170px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  text-align: left;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-ws-picker:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+
+.vex-ws-picker:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+}
+
+/* THE PANES: JetBrains Mono 12 / 19 inside a 12 16 inset (the inset is the
+ * terminal container's margin, because the registry's wrapper is absolute and
+ * fills its container's box), on the field, and a quiet rule between split
+ * panes. The focused pane of a split is outlined 1.5px in the blue, INSIDE its
+ * own box, so the outline never grows the layout. */
+.vex-ws-pane[data-active] {
+  outline: 1.5px solid var(--vex-alias-accent-primary);
+  outline-offset: -1.5px;
+}
+
+/* The seam at rest. The hover and the drag keep the primitive's blue. */
+.vex-ws-panes [role="separator"]:not(:hover):not([data-dragging]) {
+  background: var(--vex-alias-rule-quiet);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .vex-tab-shell {
+  .vex-tab-shell,
+  .vex-ws-picker {
     transition: none;
   }
 }

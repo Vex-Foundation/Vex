@@ -1,14 +1,16 @@
 /* This hint cannot steal the modifier click from the terminal. No animation
- * means reduced-motion preferences need no special transition override. */
+ * means reduced-motion preferences need no special transition override. It is
+ * a flat panel over the pane (docs/design/R3-MINIMAL.md section 12): the field
+ * and a 1px ink border, kept inside the pane's 12 16 inset. */
 .vex-terminal-link-hint {
   position: absolute;
-  inset-inline: 8px;
-  bottom: 8px;
+  inset-inline: 16px;
+  bottom: 12px;
   z-index: 20;
   max-height: 40%;
   overflow: hidden;
   padding: 8px 12px;
-  border: 1px solid var(--vex-alias-rule);
+  border: 1px solid var(--vex-alias-rule-ink);
   background: var(--vex-alias-field);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-code);

@@ -677,9 +677,11 @@ describe("XtermHost on glass", () => {
     expect(root?.className).toContain("bg-transparent");
     expect(root?.className).not.toMatch(/\bbg-surface-/);
     // The registry's wrapper fills its container's box, so the inset the text
-    // keeps from the pane's edge light is the container's margin.
+    // keeps from the pane's edge is the container's margin: 12 above and below
+    // and 16 at the sides (docs/design/R3-MINIMAL.md section 9.5).
     const wrapper = container.querySelector("[data-terminal-id]");
-    expect(wrapper?.parentElement?.className).toContain("mx-2");
-    expect(wrapper?.parentElement?.className).toContain("mb-2");
+    expect(wrapper?.parentElement?.className).toContain("mx-4");
+    expect(wrapper?.parentElement?.className).toContain("mt-3");
+    expect(wrapper?.parentElement?.className).toContain("mb-3");
   });
 });
