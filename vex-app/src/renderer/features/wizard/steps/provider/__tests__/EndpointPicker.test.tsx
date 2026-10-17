@@ -29,7 +29,7 @@ function endpointOption(
 
 const ENDPOINTS: ReadonlyArray<ProviderEndpointOption> = [
   endpointOption(),
-  // Same DISPLAY name as another tag in the live catalogue — the row must be
+  // Same DISPLAY name as another tag in the live catalogue - the row must be
   // keyed and reported by `tag`, never by `providerName`.
   endpointOption({
     tag: "amazon-bedrock/eu-west-1",

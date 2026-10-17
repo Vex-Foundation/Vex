@@ -1,21 +1,21 @@
 /**
- * AgentCoreStep form-state helpers — extracted from
+ * AgentCoreStep form-state helpers - extracted from
  * `AgentCoreStep.tsx` to keep the screen file under the 400-LOC
  * scalability ceiling (V2 refactor).
  *
  * The form models each tunable field as a discriminated union:
  *
- *   - `{ kind: "unchanged" }` — no edit; .env keeps its current value
- *   - `{ kind: "set", raw: string }` — submitted as a parsed number
- *   - `{ kind: "clear" }` — submitted as `null`, REMOVED from .env
+ *   - `{ kind: "unchanged" }` - no edit; .env keeps its current value
+ *   - `{ kind: "set", raw: string }` - submitted as a parsed number
+ *   - `{ kind: "clear" }` - submitted as `null`, REMOVED from .env
  *     (engine falls back to its compile-time default)
  *
  * The distinction matters: a parse failure must NOT silently turn
- * into a `null` (which would CLEAR the key — codex DRIFT #1).
+ * into a `null` (which would CLEAR the key - codex DRIFT #1).
  * `fieldToPayload` returns `ok: false` on parse failure so the
  * caller surfaces a validation error instead of submitting.
  *
- * Pure module — no React imports, fully unit-testable, no JSX.
+ * Pure module - no React imports, fully unit-testable, no JSX.
  */
 
 import type { AgentCoreConfigureInput } from "@shared/schemas/agent-core.js";

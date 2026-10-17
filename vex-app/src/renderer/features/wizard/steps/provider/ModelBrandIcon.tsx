@@ -5,7 +5,7 @@
  * label) so the operator gets an immediate, visual confirmation of
  * which engine they're targeting.
  *
- * Mapping is hardcoded — small, predictable, and CSP-friendly (no
+ * Mapping is hardcoded - small, predictable, and CSP-friendly (no
  * dynamic require/import; bundle stays static). Unknown prefixes fall
  * back to a generic `IconBrainCircuit` so the UI never goes blank.
  *
@@ -44,7 +44,7 @@ type SvgIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 /**
  * Provider prefix (always lowercase, as returned by `parseModelProvider`)
- * → brand icon. Aliases coexist intentionally — e.g. `anthropic/claude-*`
+ * → brand icon. Aliases coexist intentionally - e.g. `anthropic/claude-*`
  * should land on the Claude wordmark rather than the generic Anthropic
  * monogram, but a raw `claude/*` (rare on OpenRouter) is still covered.
  */

@@ -1,12 +1,12 @@
 /**
- * `ConfiguredProviderPanel` — the "Provider is configured" screen.
+ * `ConfiguredProviderPanel` - the "Provider is configured" screen.
  *
  * The behaviour that matters:
  *   - three status rows are DISPLAYED (key status, model, routing) and the
- *     key row is a status word only — there is no key material to show;
+ *     key row is a status word only - there is no key material to show;
  *   - "Edit configuration" reveals pickers PREFILLED with the live values;
  *   - saving with a blank replace-key field OMITS `apiKey` from the persist
- *     payload — that is the whole point: no re-typing the key to change a
+ *     payload - that is the whole point: no re-typing the key to change a
  *     model;
  *   - typing a replacement key DOES send it, and the input is cleared;
  *   - the "changes apply next start" semantic stays visible.
@@ -140,7 +140,7 @@ describe("status view", () => {
     expect(getByText("Configured")).toBeTruthy();
     expect(getByText(ACTIVE_MODEL)).toBeTruthy();
     expect(getByText("Auto (recommended)")).toBeTruthy();
-    // Status only — no password input is rendered before Edit.
+    // Status only - no password input is rendered before Edit.
     expect(container.querySelector('input[type="password"]')).toBeNull();
   });
 
