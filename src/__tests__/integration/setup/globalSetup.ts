@@ -12,11 +12,16 @@
  * Dynamic imports are deliberate: the db client pool singleton reads
  * `VEX_DB_URL` on first `getPool()` call, so we MUST set the env var
  * BEFORE any repo module resolves `client.js`.
+ *
+ * `VEX_TEST_PG=native` runs the same suites against the bundled native
+ * Postgres instead of the container (see `native-postgres.ts`).
  */
 
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { startNativePostgres, type NativePostgres } from "./native-postgres.js";
 
 let container: StartedPostgreSqlContainer | null = null;
+let native: NativePostgres | null = null;
 
 const PGVECTOR_IMAGE = "pgvector/pgvector:0.8.2-pg18-trixie";
 const FALLBACK_EMBED_MODEL = "ai/embeddinggemma:300M-Q8_0";
@@ -34,6 +39,11 @@ export async function setupPostgresWithoutEmbeddings(): Promise<void> {
 }
 
 async function startPostgres(): Promise<void> {
+  if (process.env.VEX_TEST_PG === "native") {
+    native = await startNativePostgres("vex_test");
+    process.env.VEX_DB_URL = native.url;
+    return;
+  }
   try {
     container = await new PostgreSqlContainer(PGVECTOR_IMAGE)
       .withDatabase("vex_test")
@@ -61,6 +71,10 @@ export async function teardown(): Promise<void> {
     await closePool();
   } catch {
     // Best-effort — pool teardown errors shouldn't mask container.stop().
+  }
+  if (native) {
+    await native.stop();
+    native = null;
   }
   if (container) {
     await container.stop();
