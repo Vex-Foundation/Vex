@@ -26,6 +26,7 @@ import {
   type DisplayInfo,
 } from "./visibility.js";
 import { chromeOptionsFor } from "./chrome-options.js";
+import { quitWhenMainWindowCloses } from "../lifecycle/window-all-closed.js";
 import {
   computeFirstRunBounds,
   computeMinConstraints,
@@ -222,6 +223,8 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       devTools: !app.isPackaged,
     },
   });
+
+  quitWhenMainWindowCloses(win);
 
   if (prefs.window.maximized) win.maximize();
 
