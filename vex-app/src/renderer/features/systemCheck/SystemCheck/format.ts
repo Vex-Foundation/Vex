@@ -3,7 +3,7 @@
  *
  * Each takes a validated Result payload (already narrowed by the caller)
  * and returns the human-readable `detail` string surfaced under the row
- * label. No IO, no React — deterministic string assembly only.
+ * label. No IO, no React - deterministic string assembly only.
  */
 
 export function formatPlatform(
