@@ -12,7 +12,10 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
-import type { RuntimeMigrationStatus } from "@shared/schemas/runtime-migration.js";
+import type {
+  RuntimeMigrationRemoveOldDataResult,
+  RuntimeMigrationStatus,
+} from "@shared/schemas/runtime-migration.js";
 import type {
   HealthReport,
   LOCAL_DATA_RESET_PHRASE,
@@ -103,6 +106,25 @@ export function useResetLocalData(): UseMutationResult<Result<RuntimeResetResult
   return useMutation({
     mutationFn: (typed: string) =>
       window.vex.system.runtimeReset({ confirmation: typed as typeof LOCAL_DATA_RESET_PHRASE }),
+  });
+}
+
+/**
+ * Remove the previous release's data once the move completed. Takes
+ * `allowWithoutImport`: true only after a start-fresh, when the dialog has
+ * said that data is its only copy. The section is read again after, so a
+ * recorded removal takes the row away.
+ */
+export function useRemovePreviousReleaseData(): UseMutationResult<
+  Result<RuntimeMigrationRemoveOldDataResult>,
+  Error,
+  boolean
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (allowWithoutImport: boolean) =>
+      window.vex.system.runtimeMigrationRemoveOldData({ allowWithoutImport }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: systemKeys.localRuntime() }),
   });
 }
 

@@ -35,6 +35,7 @@ const INFO: LocalRuntimeInfo = {
     database: { bytes: 52_345_678, files: 1_234, complete: true },
     model: { bytes: 333_590_944, files: 2, complete: true },
   },
+  previousReleaseData: { kind: "none" },
 };
 
 let progressListeners: Array<(status: NativeRuntimeStatus) => void> = [];
@@ -175,6 +176,17 @@ describe("LocalRuntimeSection", () => {
     expect(rowStatus("postgres")).toBe("failed");
     // A failed runtime can be restarted.
     expect((screen.getByRole("button", { name: "Restart runtime" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("offers removing the previous release's data only while main says it may still exist", async () => {
+    renderSection();
+    await waitFor(() => expect(fact("release")).not.toBe(""));
+    expect(screen.queryByRole("button", { name: "Remove old Docker data…" })).toBeNull();
+    cleanup();
+
+    system.runtimeInfo.mockResolvedValue({ ok: true, data: { ...INFO, previousReleaseData: { kind: "kept", imported: true } } });
+    renderSection();
+    expect(await screen.findByRole("button", { name: "Remove old Docker data…" })).not.toBeNull();
   });
 
   it("opens the logs folder through the shared link", async () => {

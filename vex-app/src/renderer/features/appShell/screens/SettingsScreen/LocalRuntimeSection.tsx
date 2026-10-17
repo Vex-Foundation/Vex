@@ -9,6 +9,7 @@
  *     the folders off its critical path), measured again after a restart.
  *   - Maintenance: Restart runtime, and the app's logs folder, where the
  *     runtime writes what it does.
+ *   - Old data of the previous release, removable once the move completed.
  *   - Reset local data, behind a typed confirmation.
  *
  * The section owns no runtime state of its own: everything it shows is what
@@ -23,6 +24,7 @@ import { StepRows } from "../../../runtime/bootstrap/StepRows.js";
 import { stepRows } from "../../../runtime/bootstrap/steps.js";
 import { useNativeRuntimeStatus } from "../../../runtime/bootstrap/useNativeRuntimeStatus.js";
 import { LocalDataResetDialog } from "./LocalDataResetDialog.js";
+import { PreviousReleaseDataSection } from "./PreviousReleaseDataSection.js";
 import {
   DATA_LABELS,
   formatDiskSize,
@@ -188,13 +190,7 @@ export function LocalRuntimeSection(): JSX.Element {
         ) : null}
       </section>
 
-      {/*
-        SLOT(remove-old-data): the "Remove old ... data" row for an install
-        migrated from the previous release's database volume goes HERE, as its
-        own section between Maintenance and Reset. Its IPC (`removeOldData`
-        on the migration branch, with its own typed confirmation) is wired
-        once both branches have merged; nothing calls it from this section yet.
-      */}
+      {info !== null ? <PreviousReleaseDataSection data={info.previousReleaseData} /> : null}
 
       <section aria-label={LOCAL_RUNTIME_RESET_HEADING} className={SECTION} data-vex-local-runtime-reset="">
         <h2 className="vex-ov-label">{LOCAL_RUNTIME_RESET_HEADING}</h2>

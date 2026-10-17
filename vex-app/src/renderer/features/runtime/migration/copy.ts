@@ -237,3 +237,53 @@ export function failureCopy(
 }
 
 export const START_FRESH_FAILED_TITLE = "Starting fresh failed";
+
+/* ------------------- Settings: remove the old data -------------------- */
+
+/**
+ * Settings → Local runtime, once the move completed: removing what the
+ * previous version left in Docker. After a start-fresh that data was never
+ * imported, so the copy says plainly that removing it deletes its only copy.
+ */
+export const REMOVE_OLD_DATA = {
+  heading: "Old Docker data",
+  bodyImported:
+    "Your data was moved into the database on this computer and checked against the original. The copy the previous version kept in Docker is no longer needed; removing it frees its disk space.",
+  bodyNotImported:
+    "This install started fresh, so its earlier data was never imported. That data is still in Docker, and it is the only copy: removing it deletes it for good.",
+  open: "Remove old Docker data…",
+  dialogTitle: "Remove old Docker data?",
+  descriptionImported: "Deletes the previous version's database from Docker. Vex no longer uses it.",
+  descriptionNotImported: "Deletes the previous version's database from Docker. It was never imported into Vex.",
+  whatImported: "Deletes the copy of your data the previous version kept in Docker.",
+  whatNotImported: "Deletes the only copy of your data from before this version: it was never imported.",
+  kept: "Your data in the database on this computer, your wallets and the vault stay.",
+  undo: "This cannot be undone. Docker has no way to bring the data back.",
+  phrase: "REMOVE",
+  submit: "Remove old data",
+  pending: "Removing…",
+  done: "The old Docker data was removed.",
+} as const;
+
+/** What a refused or failed removal means for the person who asked for it. */
+export function removeOldDataProblem(
+  outcome:
+    | { readonly kind: "refused"; readonly reason: "not_completed" | "not_imported" | "install_changed" | "busy" }
+    | { readonly kind: "failed"; readonly reason: "source_offline" | "failed"; readonly message: string },
+): string {
+  if (outcome.kind === "failed") {
+    return outcome.reason === "source_offline"
+      ? "Docker is not running, so nothing was removed. Start Docker, wait until it is running, then try again."
+      : `Nothing was removed: ${outcome.message}`;
+  }
+  switch (outcome.reason) {
+    case "not_completed":
+      return "Vex keeps the old data until your data has finished moving, so nothing was removed.";
+    case "not_imported":
+      return "This install started fresh, so the old data is its only copy. Nothing was removed.";
+    case "install_changed":
+      return "The old data belongs to a different install of Vex, so it was left alone.";
+    case "busy":
+      return "Another step of the move is running. Try again when it finishes.";
+  }
+}

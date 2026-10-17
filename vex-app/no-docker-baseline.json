@@ -89,7 +89,7 @@
     "vex-app/src/renderer/features/docker/InstallProgress.tsx": 3,
     "vex-app/src/renderer/features/docker/LicenseNotice.tsx": 12,
     "vex-app/src/renderer/features/docker/LinuxManualInstructions.tsx": 2,
-    "vex-app/src/renderer/features/runtime/migration/copy.ts": 22,
+    "vex-app/src/renderer/features/runtime/migration/copy.ts": 35,
     "vex-app/src/renderer/features/setup/SetupTour.tsx": 1,
     "vex-app/src/renderer/features/setup/useSetupOrchestrator.ts": 19,
     "vex-app/src/renderer/features/systemCheck/SystemCheck.tsx": 19,
