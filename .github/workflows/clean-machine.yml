@@ -58,16 +58,13 @@ jobs:
             {"leg": "linux-x64", "runner": "ubuntu-22.04", "executable": "dist-electron/linux-unpacked/@vexapp"},
             {"leg": "win32-x64", "runner": "windows-2025", "executable": "dist-electron/win-unpacked/Vex.exe"}
           ]'
-          if [ "$LEGS" = all ]; then
-            legs=$(jq -c . <<<"$all")
-          else
-            legs=$(jq -c --arg legs "$LEGS" '($legs | gsub("\\s"; "") | split(",")) as $want | [.[] | select(.leg as $leg | $want | index($leg))]' <<<"$all")
-            wanted=$(tr ',' '\n' <<<"$LEGS" | tr -d '[:space:]' | grep -c . || true)
-            if [ "$(jq length <<<"$legs")" != "$wanted" ]; then
-              echo "::error::unknown leg in '$LEGS'; legs are $(jq -r 'map(.leg) | join(", ")' <<<"$all")"
-              exit 1
-            fi
-          fi
+          legs=$(jq -c --arg legs "$LEGS" '
+            ($legs | gsub("\\s"; "") | split(",") | map(select(. != ""))) as $want
+            | (map(.leg)) as $known
+            | if $want == ["all"] then .
+              elif $want == [] then error("no legs requested")
+              elif ($want - $known) != [] then error("unknown leg(s) \($want - $known | join(", ")); legs are \($known | join(", "))")
+              else map(select(.leg as $leg | $want | any(.[]; . == $leg))) end' <<<"$all")
           echo "legs=$legs" >> "$GITHUB_OUTPUT"
           jq . <<<"$legs"
 
