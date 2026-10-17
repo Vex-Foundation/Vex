@@ -23,7 +23,7 @@ on:
         description: >-
           Also run the clean-machine gate (clean-machine.yml) on these legs:
           "all" or a comma-separated list of darwin-arm64, darwin-x64,
-          linux-x64, win32-x64; empty = do not run it
+          linux-x64, win32-x64, win32-arm64; empty = do not run it
         type: string
         default: ""
   push:
