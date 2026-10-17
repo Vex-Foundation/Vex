@@ -77,6 +77,13 @@ export interface LocalRuntimeProvider<Input, StartDetail, StopDetail> {
    */
   start(input: Input, options: RuntimeStartOptions): Promise<RuntimeStartOutcome<StartDetail>>;
   stop(): Promise<RuntimeStopOutcome<StopDetail>>;
+  /**
+   * Endpoint changes AFTER a usable start, for providers that supervise their
+   * services: a restart can come back on a new port (and a new key), and
+   * between the crash and the restart the endpoints are null. The host is
+   * the one subscriber and republishes them.
+   */
+  watch?(listener: (endpoints: RuntimeEndpoints | null) => void): () => void;
 }
 
 export function isUsableStart(kind: RuntimeStartKind): boolean {

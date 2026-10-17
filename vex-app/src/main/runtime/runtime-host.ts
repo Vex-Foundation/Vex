@@ -25,10 +25,21 @@ import { raceWithAbort } from "../ipc/cancel-helpers.js";
 import {
   isUsableStart,
   type LocalRuntimeProvider,
+  type RuntimeEndpoints,
   type RuntimeStartOptions,
   type RuntimeStartOutcome,
   type RuntimeStopOutcome,
 } from "./provider.js";
+
+export interface RuntimeHostOptions {
+  /**
+   * Receives the embeddings endpoint whenever the database connection is
+   * published, and null when it is withdrawn. The native runtime routes it
+   * into the engine's EMBEDDING_* environment; the compose path configures
+   * embeddings through `.env` instead and passes nothing.
+   */
+  readonly onEmbeddings?: (embeddings: RuntimeEndpoints["embeddings"] | null) => void;
+}
 
 export interface HostedStart<Detail> {
   readonly outcome: RuntimeStartOutcome<Detail>;
@@ -48,8 +59,17 @@ export interface RuntimeHost<Input, StartDetail, StopDetail> {
 
 export function createRuntimeHost<Input, StartDetail, StopDetail>(
   provider: LocalRuntimeProvider<Input, StartDetail, StopDetail>,
+  hostOptions: RuntimeHostOptions = {},
 ): RuntimeHost<Input, StartDetail, StopDetail> {
   let inFlight: { readonly key: string; readonly run: Promise<RuntimeStartOutcome<StartDetail>> } | null = null;
+
+  const publish = (endpoints: RuntimeEndpoints | null): void => {
+    setDbConnection(endpoints?.db ?? null);
+    hostOptions.onEmbeddings?.(endpoints?.embeddings ?? null);
+  };
+  // A supervising provider reports restarts (new port, new key) and the gap
+  // between a crash and its restart; republish them like a start.
+  provider.watch?.(publish);
 
   return {
     provider,
@@ -62,7 +82,7 @@ export function createRuntimeHost<Input, StartDetail, StopDetail>(
 
       const run = provider.start(input, options).then((outcome) => {
         if (isUsableStart(outcome.kind) && outcome.endpoints !== null) {
-          setDbConnection(outcome.endpoints.db);
+          publish(outcome.endpoints);
         }
         return outcome;
       });
@@ -77,7 +97,7 @@ export function createRuntimeHost<Input, StartDetail, StopDetail>(
 
     async stop() {
       const outcome = await provider.stop();
-      if (outcome.kind === "stopped") setDbConnection(null);
+      if (outcome.kind === "stopped") publish(null);
       return outcome;
     },
   };

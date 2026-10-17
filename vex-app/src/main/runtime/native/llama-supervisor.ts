@@ -204,7 +204,7 @@ async function launch(
 export interface LlamaSupervisorOptions {
   readonly launch: LlamaLaunch;
   /** Called with the new endpoint after every (re)start, and null when it is gone. */
-  readonly onEndpoint: (endpoint: LlamaEndpoint | null) => void;
+  readonly onEndpoint?: (endpoint: LlamaEndpoint | null) => void;
   /** Called once the restart budget is spent. */
   readonly onUnhealthy: (reason: string) => void;
   readonly spawn?: SpawnFn;
@@ -219,10 +219,24 @@ export class LlamaSupervisor {
   private stopping = false;
   private readonly spawnFn: SpawnFn;
   private readonly threads: number;
+  private readonly listeners = new Set<(endpoint: LlamaEndpoint | null) => void>();
 
   constructor(private readonly options: LlamaSupervisorOptions) {
     this.spawnFn = options.spawn ?? nodeSpawn;
     this.threads = options.threads ?? embeddingThreads();
+  }
+
+  /** Endpoint changes (each restart brings a new port and key); idempotent cleanup. */
+  onEndpointChange(listener: (endpoint: LlamaEndpoint | null) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private publish(endpoint: LlamaEndpoint | null): void {
+    this.options.onEndpoint?.(endpoint);
+    for (const listener of this.listeners) listener(endpoint);
   }
 
   /** The running server's PID, for diagnostics; undefined while none runs. */
@@ -243,7 +257,7 @@ export class LlamaSupervisor {
     const live = this.live;
     this.live = null;
     if (live === null) return;
-    this.options.onEndpoint(null);
+    this.publish(null);
     live.child.kill("SIGTERM");
     const gone = await Promise.race([
       live.exited.then(() => true),
@@ -258,11 +272,11 @@ export class LlamaSupervisor {
 
   private adopt(live: LiveServer): void {
     this.live = live;
-    this.options.onEndpoint(live.endpoint);
+    this.publish(live.endpoint);
     void live.exited.then(() => {
       if (this.live !== live || this.stopping) return;
       this.live = null;
-      this.options.onEndpoint(null);
+      this.publish(null);
       void this.restart();
     });
   }

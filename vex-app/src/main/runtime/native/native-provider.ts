@@ -19,9 +19,10 @@
  * stops it), but yields no endpoints, so nothing is published.
  */
 
+import type { DbConnection } from "../../database/connection-state.js";
 import { AbortError } from "../../ipc/cancel-helpers.js";
-import type { LocalRuntimeProvider, RuntimeStopKind } from "../provider.js";
-import type { LlamaStartResult, LlamaSupervisor } from "./llama-supervisor.js";
+import type { LocalRuntimeProvider, RuntimeEndpoints, RuntimeStopKind } from "../provider.js";
+import type { LlamaEndpoint, LlamaStartResult, LlamaSupervisor } from "./llama-supervisor.js";
 import type { PgStartResult, PgStopResult, PostgresSupervisor } from "./postgres-supervisor.js";
 
 export interface NativeStartDetail {
@@ -39,10 +40,37 @@ export const NATIVE_PG_STOP_DEADLINE_MS = 15_000;
 
 export function createNativeProvider(deps: {
   readonly postgres: PostgresSupervisor;
-  readonly embeddings: Pick<LlamaSupervisor, "start" | "stop">;
+  readonly embeddings: Pick<LlamaSupervisor, "start" | "stop" | "onEndpointChange">;
 }): LocalRuntimeProvider<void, NativeStartDetail, NativeStopDetail> {
+  // What supervision has reported since the last usable start; null halves
+  // mean "down right now" (crashed, restarting) and withdraw the endpoints.
+  let live = false;
+  let db: DbConnection | null = null;
+  let embeddingsEndpoint: LlamaEndpoint | null = null;
+  const current = (): RuntimeEndpoints | null =>
+    db !== null && embeddingsEndpoint !== null
+      ? { db, embeddings: { baseUrl: embeddingsEndpoint.baseUrl, apiKey: embeddingsEndpoint.apiKey } }
+      : null;
+
   return {
     id: "native",
+
+    watch(listener) {
+      const offPg = deps.postgres.onHealthChange((health) => {
+        if (!live) return;
+        db = health.kind === "running" ? health.connection : null;
+        listener(current());
+      });
+      const offEmbeddings = deps.embeddings.onEndpointChange((endpoint) => {
+        if (!live) return;
+        embeddingsEndpoint = endpoint;
+        listener(current());
+      });
+      return () => {
+        offPg();
+        offEmbeddings();
+      };
+    },
 
     async start(_input, options) {
       const postgres = await deps.postgres.start(options.signal);
@@ -54,6 +82,9 @@ export function createNativeProvider(deps: {
       if (embeddings.kind !== "ready") {
         return { kind: "failed", endpoints: null, detail: { postgres, embeddings } };
       }
+      live = true;
+      db = postgres.connection;
+      embeddingsEndpoint = embeddings.endpoint;
       return {
         kind: postgres.kind,
         endpoints: {
@@ -65,6 +96,9 @@ export function createNativeProvider(deps: {
     },
 
     async stop() {
+      // A requested stop is not an outage to republish; the host withdraws
+      // the endpoints itself once the stop is confirmed.
+      live = false;
       // llama-server is stateless; its stop settles only once it is gone.
       await deps.embeddings.stop();
       const postgres = await deps.postgres.stop({ deadlineMs: NATIVE_PG_STOP_DEADLINE_MS });

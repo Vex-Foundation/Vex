@@ -4,6 +4,7 @@ import { getDbConnection, setDbConnection } from "../../database/connection-stat
 import { AbortError } from "../../ipc/cancel-helpers.js";
 import type {
   LocalRuntimeProvider,
+  RuntimeEndpoints,
   RuntimeStartKind,
   RuntimeStartOutcome,
   RuntimeStopKind,
@@ -76,6 +77,30 @@ describe("runtime host publication", () => {
       expect(getDbConnection()).toBeNull();
     },
   );
+
+  it("republishes a supervising provider's restarts and outages, embeddings included", async () => {
+    const { provider, starts } = fakeProvider();
+    let report: ((endpoints: RuntimeEndpoints | null) => void) | null = null;
+    const watched = { ...provider, watch: (listener: (e: RuntimeEndpoints | null) => void) => ((report = listener), () => {}) };
+    const embeddings: Array<RuntimeEndpoints["embeddings"] | null> = [];
+    const host = createRuntimeHost(watched, { onEmbeddings: (e) => embeddings.push(e) });
+
+    const pending = host.start("in", "k", { signal: new AbortController().signal });
+    starts[0]?.result.resolve(outcome("running"));
+    await pending;
+    expect(embeddings).toEqual([{ baseUrl: "http://127.0.0.1:27134/v1", apiKey: null }]);
+
+    report!(null);
+    expect(getDbConnection()).toBeNull();
+    const moved = { db: { ...DB, pgPort: 46001 }, embeddings: { baseUrl: "http://127.0.0.1:41000/v1", apiKey: "k2" } };
+    report!(moved);
+    expect(getDbConnection()).toEqual(moved.db);
+    expect(embeddings.slice(1)).toEqual([null, moved.embeddings]);
+
+    await host.stop();
+    expect(getDbConnection()).toBeNull();
+    expect(embeddings.at(-1)).toBeNull();
+  });
 
   it("clears the connection only on a confirmed stop", async () => {
     for (const [kind, cleared] of [["stopped", true], ["failed", false], ["not_running", false]] as const) {
