@@ -37,7 +37,7 @@ vi.mock("../../../lib/api/approvals.js", () => ({
   useReject: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-const { GlobalApprovals } = await import("../GlobalApprovals.js");
+const { GlobalApprovalsSync } = await import("../GlobalApprovals.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
 const { resetCrossModeToastMemory } = await import(
   "../approvals/useCrossModeApprovalToast.js"
@@ -90,7 +90,7 @@ function renderBadge(strict = false): ReturnType<typeof render> {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (
     <QueryClientProvider client={qc}>
-      <GlobalApprovals />
+      <GlobalApprovalsSync />
     </QueryClientProvider>
   );
   return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
@@ -122,7 +122,7 @@ describe("a Studio-raised approval seen from agent mode", () => {
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <GlobalApprovals />
+        <GlobalApprovalsSync />
       </QueryClientProvider>,
     );
     expect(shown).toHaveLength(1);
@@ -145,7 +145,7 @@ describe("a Studio-raised approval seen from agent mode", () => {
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <GlobalApprovals />
+        <GlobalApprovalsSync />
       </QueryClientProvider>,
     );
     expect(shown).toHaveLength(1);
@@ -169,7 +169,7 @@ describe("a Studio-raised approval seen from agent mode", () => {
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <GlobalApprovals />
+        <GlobalApprovalsSync />
       </QueryClientProvider>,
     );
     expect(shown).toEqual([
@@ -265,7 +265,7 @@ describe("an unknown list is not an observation", () => {
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <GlobalApprovals />
+        <GlobalApprovalsSync />
       </QueryClientProvider>,
     );
     expect(shown).toHaveLength(1);
@@ -293,7 +293,7 @@ describe("an unknown list is not an observation", () => {
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
-        <GlobalApprovals />
+        <GlobalApprovalsSync />
       </QueryClientProvider>,
     );
     expect(shown).toHaveLength(1);

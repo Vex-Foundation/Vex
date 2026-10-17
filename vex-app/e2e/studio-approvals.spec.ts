@@ -1,6 +1,8 @@
 /**
- * APV-1: the `AWAITING n` badge, DECIDED IN A REAL WINDOW while Studio is the
- * runtime mode.
+ * APV-1: the title bar's "Needs you · N" control (the successor of the
+ * `AWAITING n` badge), DECIDED IN A REAL WINDOW while Studio is the runtime
+ * mode: the control opens its list, Review opens the approval's full card in
+ * place, and the decision lands.
  *
  * ## The finding this exists to settle
  *
@@ -121,7 +123,7 @@ function describeProbe(what: string, probe: HitProbe): string {
   );
 }
 
-test("APV-1 approvals badge in Studio: the pin is hit-testable, opens, and the decision lands", async ({
+test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the decision lands", async ({
   vexDb,
 }: {
   vexDb: VexDatabaseFixture;
@@ -181,15 +183,11 @@ test("APV-1 approvals badge in Studio: the pin is hit-testable, opens, and the d
   await expect(centre.getByRole("tablist", { name: "Studio terminals and files" }))
     .toBeVisible({ timeout: 60_000 });
 
-  /* ---- 1: the badge is on screen, and says what it holds --------------- */
+  /* ---- 1: the control is on screen, and says what it holds ------------- */
 
-  const badge = page.locator('[data-vex-area="global-approvals-badge"]');
+  const badge = page.locator('[data-vex-area="needs-you-control"]');
   await expect(badge).toBeVisible({ timeout: 60_000 });
-  await expect(badge).toHaveText(/AWAITING\s+1/);
-  await expect(badge).toHaveAttribute(
-    "aria-label",
-    "1 pending approval awaiting your signature",
-  );
+  await expect(badge).toHaveText(/Needs you\s*·\s*1/);
   await expect(badge).toHaveAttribute("aria-expanded", "false");
 
   /* ---- 2: THE HIT TEST, before anything is clicked --------------------- */
@@ -209,9 +207,21 @@ test("APV-1 approvals badge in Studio: the pin is hit-testable, opens, and the d
   // Playwright's own actionability + hit-target check runs here; an element
   // intercepting the pointer fails this line by name.
   await badge.click();
+  const list = page.locator('[data-vex-area="needs-you-panel"]');
+  await expect(list).toBeVisible();
+  await expect(badge).toHaveAttribute("aria-expanded", "true");
+
+  // The list never decides: its Review key opens the approval's full card,
+  // in place, without leaving Studio.
+  const review = list.getByRole("button", { name: /^Review:/ });
+  await expect(review).toHaveCount(1);
+  await review.click();
   const panel = page.locator('[data-vex-area="global-approvals-panel"]');
   await expect(panel).toBeVisible();
-  await expect(badge).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator('[data-vex-runtime-mode]').first()).toHaveAttribute(
+    "data-vex-runtime-mode",
+    "studio",
+  );
 
   const card = panel.locator(`[data-approval-id="${approvalId}"]`);
   await expect(card).toBeVisible();
@@ -277,7 +287,8 @@ test("APV-1 approvals badge in Studio: the pin is hit-testable, opens, and the d
     description: JSON.stringify(settlement),
   });
 
-  // The strip empties: with nothing pending, `GlobalApprovals` renders null.
-  await expect(badge).toHaveCount(0, { timeout: 60_000 });
+  // The control counts down to zero (it never leaves the title bar), and the
+  // review closes by itself once its approval is no longer pending.
+  await expect(badge).toHaveText(/Needs you\s*·\s*0/, { timeout: 60_000 });
   await expect(panel).toHaveCount(0);
 });

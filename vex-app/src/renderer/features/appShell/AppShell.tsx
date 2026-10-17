@@ -382,6 +382,15 @@ function ShellFrame({
           runtimeMode={runtimeMode}
           activeSessionId={activeSessionId}
           empty={runtimeMode === "agent" && activeSessionId === null}
+          // The token chip toggles the column the frame SOLVED, not the stored
+          // choice: a column the narrow tier closed reads closed, and its
+          // press opens it (the store action also clears the narrow override).
+          // No column on the welcome or in Zen, so no toggle there.
+          vex={
+            welcomeStage || zen
+              ? null
+              : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) }
+          }
         />
 
         <div className="min-h-0 flex-1">
