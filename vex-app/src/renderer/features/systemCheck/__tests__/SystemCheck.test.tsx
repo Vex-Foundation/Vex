@@ -158,7 +158,7 @@ describe("SystemCheck", () => {
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
   });
 
-  it("Continue goes straight to migrations when main runs the native runtime", () => {
+  it("Continue goes to the runtime screen when main runs the native runtime", () => {
     mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
     const { getByRole } = render(<SystemCheck />);
     act(() => {
@@ -167,7 +167,7 @@ describe("SystemCheck", () => {
     act(() => {
       getByRole("button", { name: /continue/i }).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(useUiStore.getState().currentView).toBe("migrations");
+    expect(useUiStore.getState().currentView).toBe("runtimeBootstrap");
   });
 
   it("renders an adjacent translocation warning without adding a probe or blocking Continue", () => {
