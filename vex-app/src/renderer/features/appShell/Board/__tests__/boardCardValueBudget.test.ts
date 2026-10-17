@@ -280,8 +280,11 @@ describe("anyShortened", () => {
  * a real engine.
  */
 describe("the budgets fit the columns the tile floor leaves", () => {
-  /** The tile's inner floor: the header binds, see board-layout.css. */
-  const FLOOR_INNER = 282;
+  /**
+   * The tile's inner floor: the price row binds at whole-pixel advances (it
+   * measures 287), see board-layout.css.
+   */
+  const FLOOR_INNER = 288;
   /** JetBrains Mono 13 with `.vex-num` at -.01em: 7.8 - 0.13. */
   const MONO_13 = 7.67;
   /** JetBrains Mono 26 / 500 at -.03em: 15.6 - 0.78. */
@@ -304,6 +307,20 @@ describe("the budgets fit the columns the tile floor leaves", () => {
     expect(row + MONO_26).toBeGreaterThan(FLOOR_INNER);
   });
 
+  it("fits the same row at whole-pixel glyph advances, which Linux Chromium paints", () => {
+    // Chromium on Linux without subpixel text positioning rounds each glyph
+    // advance to a whole pixel: the mono 26 advance 15.6 becomes 16 (15.22
+    // after the -.03em tracking), the mono 13 advance 7.8 becomes 8 (7.87
+    // after -.01em), and `24h` measures 21.5 instead of 20.51. The fractional
+    // row of 279.71 above is then 287.1, which is what made 282 too narrow.
+    const priceRounded = BOARD_CARD_PRICE_MAX_SLOTS * (16 - 0.78);
+    const deltaRounded = BOARD_CARD_DELTA_MAX_SLOTS * (8 - 0.13);
+    const row = priceRounded + 10 + deltaRounded + 10 + 21.5;
+    expect(row).toBeLessThanOrEqual(FLOOR_INNER);
+    // The rounding is what moved the floor: the same row does not fit 282.
+    expect(row).toBeGreaterThan(282);
+  });
+
   it("fits the widest stat value in a column of four, and one more slot would not", () => {
     const column = (FLOOR_INNER - 3 * 6) / 4;
     expect(BOARD_CARD_STAT_MAX_SLOTS * MONO_13).toBeLessThanOrEqual(column);
@@ -313,7 +330,7 @@ describe("the budgets fit the columns the tile floor leaves", () => {
   it("keeps a ten-slot ticker inside the identity column", () => {
     // 34 photo + 11 + [identity] + 11 + (26 key + 6 + 74 chip).
     const identity = FLOOR_INNER - (34 + 11 + 11 + 26 + 6 + 74);
-    expect(identity).toBe(120);
+    expect(identity).toBe(126);
     expect(BOARD_CARD_TICKER_MAX_SLOTS * SLOT).toBeLessThanOrEqual(identity);
   });
 });
