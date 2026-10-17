@@ -10,7 +10,8 @@
  * The coin's states (`docs/design/R3-MINIMAL.md sections 5.2 and 10.4`): face-on it floats, tilts
  * toward the pointer and lifts a little under it (`liftOf`); it presses like a key and turns to lie
  * flat for her; a close turns it back face-on (the reverse flip, the same poses run backward,
- * `loadPoses`); asleep it dims with her light (`tokenBrightness`).
+ * `loadPoses`) and it stands upright at rest, the token toggle's coin; asleep it dims with her
+ * light (`tokenBrightness`).
  */
 import { loadBitmap, loadTokenSheet, type Scratch2D } from "./k2-assets.js";
 import type { TokenBase } from "./k2-scene.js";
@@ -140,6 +141,11 @@ export class TokenSprite {
 
   get ready(): boolean {
     return this.#sheet !== null && this.#flat !== null;
+  }
+
+  /** Every pose is in (face-on, the press, the turn), not the flat coin alone. */
+  get posed(): boolean {
+    return this.#wake !== null;
   }
 
   /**

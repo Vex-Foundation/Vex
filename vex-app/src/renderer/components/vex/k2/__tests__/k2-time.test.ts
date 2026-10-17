@@ -5,17 +5,22 @@
  * 15 s, an action during a hover, a giggle inside its cooldown, a blush that does not follow the
  * giggle or a long hover, a whistle before 40 s of a still pointer or crowding the pool; a gaze
  * that does not rest on the viewer by default; an open episode that shows her before the token has
- * turned flat or the beam has risen, a close that leaves her standing or the coin flat, an episode
- * that plays under the still frame; a look at you that is missing after she comes back, runs out
+ * turned flat or the beam has risen, a close that leaves her standing or the coin flat, a close off
+ * the web app's beats (1.94 s: her dots by 1.2 s, the beam from 0.9 to 1.4 s, the coin from 1.3 s),
+ * a close in the middle of a wake that does not run from where the wake was, a token toggle open
+ * that does not press at once, an episode that plays under the still frame; a look at you that is
+ * missing after she comes back, runs out
  * of its 1.5 to 3 s, or follows a return that has not happened yet; and a schedule that is not a
  * pure function of the clock.
  */
 import { describe, expect, test } from "vitest";
 import {
+  AWAKE as AWAKE_PJ,
   CLOSE,
   CLOSE_MS,
   CLOSED,
   canGiggle,
+  closing,
   type Episode,
   episodeBusy,
   episodeProjector,
@@ -33,6 +38,7 @@ import {
   LOOK,
   lookAtYou,
   OPEN,
+  OPEN_LEAD,
   OPEN_MS,
   projector,
   slowBlink,
@@ -438,6 +444,12 @@ describe("the episodes", () => {
     expect(episodeBusy(open, 1000 + OPEN_MS)).toBe(false);
   });
 
+  test("the close keeps the web app's beats: 1.94 s, her dots by 1.2 s, the beam 0.9 to 1.4 s, the coin from 1.3 s", () => {
+    expect(CLOSE).toEqual({ collapse: 1200, cone: [900, 1400], flip: [1300, 1940] });
+    expect(CLOSE_MS).toBe(1940);
+    expect(AWAKE_PJ).toEqual(AWAKE);
+  });
+
   test("close: she collapses first, the beam sinks after, the coin turns face-on last; then the token alone", () => {
     const at = (a: number) => episodeProjector(close, 1000 + a, false);
     expect(at(-100)).toEqual(AWAKE);
@@ -453,6 +465,52 @@ describe("the episodes", () => {
     expect(CLOSED).toEqual({ press: 0, flip: 0, cone: 0, asm: 0 });
     // closed there is nothing of her to live
     expect(episodeBusy(close, 1000 + 60000)).toBe(true);
+  });
+
+  test("the close runs her assembly backwards: half of her gone half way through her dots' beat", () => {
+    const mid = closing(CLOSE.collapse / 2, AWAKE_PJ);
+    expect(mid.asm).toBeCloseTo(0.5, 5);
+    expect(mid.cone).toBe(1);
+    expect(mid.flip).toBe(1);
+    const beam = closing((CLOSE.cone[0] + CLOSE.cone[1]) / 2, AWAKE_PJ);
+    expect(beam.asm).toBeLessThan(0.3);
+    expect(beam.cone).toBeCloseTo(0.5, 5);
+    expect(beam.flip).toBe(1);
+    const turning = closing((CLOSE.flip[0] + CLOSE.flip[1]) / 2, AWAKE_PJ);
+    expect(turning.asm).toBe(0);
+    expect(turning.cone).toBe(0);
+    expect(turning.flip).toBeCloseTo(0.5, 5);
+    // settled: the coin upright alone, and it stays there
+    expect(closing(CLOSE_MS, AWAKE_PJ)).toEqual(CLOSED);
+    expect(closing(CLOSE_MS + 60000, AWAKE_PJ)).toEqual(CLOSED);
+    // the episode's close is the same function from awake
+    for (const a of [0, 300, 900, 1250, 1600, 1900])
+      expect(episodeProjector(close, 1000 + a, false)).toEqual(closing(a, AWAKE_PJ));
+  });
+
+  test("a close in the middle of a wake runs each part from where the wake was", () => {
+    const from = projector(T_ASM[0] + 200, "full");
+    expect(from.asm).toBeGreaterThan(0);
+    expect(from.asm).toBeLessThan(1);
+    const c = closing(CLOSE.collapse / 2, from);
+    expect(c.asm).toBeCloseTo(from.asm / 2, 5);
+    expect(c.cone).toBe(from.cone);
+    expect(c.flip).toBe(from.flip);
+    expect(closing(CLOSE_MS, from)).toEqual(CLOSED);
+    // an episode that carries its projector closes from it
+    const fromEp: Episode = { kind: "close", at: 1000, from };
+    expect(episodeProjector(fromEp, 1000 + CLOSE.collapse / 2, false)).toEqual(c);
+    expect(episodeProjector(fromEp, 1000 + CLOSE.collapse / 2, true)).toEqual(CLOSED);
+  });
+
+  test("the token toggle's open replays the wake from the press: face-on, pressed at once, then she rises", () => {
+    expect(OPEN_LEAD).toBe(T_PRESS);
+    // the open's clock starts OPEN_LEAD before the press: the upright coin it leaves is the wake's own
+    expect(projector(OPEN_LEAD - 100, "full")).toEqual(CLOSED);
+    expect(projector(OPEN_LEAD + 50, "full").press).toBeGreaterThan(0);
+    expect(projector(wakeEnd("full"), "full")).toEqual(AWAKE_PJ);
+    // she wakes asleep first (the yawn and the rub follow)
+    expect(wakeState(W0 + 100, "full", 3, 1, GLANCE)?.map).toBe("asleep");
   });
 
   test("under the still frame an open shows her at once and a close leaves the token alone", () => {

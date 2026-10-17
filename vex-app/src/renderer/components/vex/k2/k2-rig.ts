@@ -86,6 +86,12 @@ export const TOKEN_SHEET = { td: 58, box: 80, flatCy: 42.25, flatRy: 9.59 } as c
 /** How far the flat face's centre lies under the coin's resting centre, per css px of coin. */
 const FLAT_DROP = (TOKEN_SHEET.flatCy - (TOKEN_SHEET.box / 2 - 6)) / TOKEN_SHEET.td;
 
+/**
+ * The upright coin (face on: the wake's first beat, and the token toggle's rest with the hologram
+ * off) sits this much of its diameter under the token's point, as the wake's face-on coin rests.
+ */
+export const STAND_DROP = 0.12;
+
 /* ------------------------------------------------------------------ the wide drawing */
 
 /** The wide drawing's constants (map px). */
@@ -199,9 +205,12 @@ function bustRig(palm: boolean): Rig {
   const cx = W / 2;
   const half = 0.36 * W;
   const foot = flatCy + d * BUST.foot;
+  const ty = flatCy - FLAT_DROP * d;
+  // the upright coin's foot (the token toggle's rest) reaches a little under the flat coin's
+  const stand = ty + d * STAND_DROP + d / 2;
   return {
     drawing: "app",
-    token: { x: cx, y: flatCy - FLAT_DROP * d, d },
+    token: { x: cx, y: ty, d },
     hairTop: APP.top,
     tokenFoot: foot,
     figure: [0, APP.top, W, y],
@@ -211,8 +220,8 @@ function bustRig(palm: boolean): Rig {
     palm,
     shift: APP.shift,
     looks: { cloud: APP_LOOKS.upSide, birds: APP_LOOKS.aside },
-    // the bird comes in at the frame's right edge
-    canvas: [-8, 0, W + 8, foot + BUST.padBottom],
+    // the bird comes in at the frame's right edge; down to the upright coin's foot
+    canvas: [-8, 0, W + 8, Math.max(foot + BUST.padBottom, stand)],
   };
 }
 
@@ -279,4 +288,37 @@ export function boxToHost(f: Fit, b: Rect): Box {
 /** The canvas's box in the host: her, her light, her token and the gestures' actors. */
 export function canvasBox(f: Fit): Box {
   return boxToHost(f, f.rig.canvas);
+}
+
+/* ------------------------------------------------------------------ the token toggle's coin */
+
+/** The upright coin in the host: face on at the token's place (the toggle's rest). */
+export function tokenStand(f: Fit): Box {
+  const t = f.rig.token;
+  const r = t.d / 2;
+  const cy = t.y + t.d * STAND_DROP;
+  return boxToHost(f, [t.x - r, cy - r, t.x + r, cy + r]);
+}
+
+/** The flat coin in the host: its face's ellipse and its rim, down to the token's foot. */
+export function tokenFlat(f: Fit): Box {
+  const t = f.rig.token;
+  const cy = t.y + FLAT_DROP * t.d;
+  const ry = (TOKEN_SHEET.flatRy * t.d) / TOKEN_SHEET.td;
+  return boxToHost(f, [t.x - t.d / 2, cy - ry, t.x + t.d / 2, f.rig.tokenFoot]);
+}
+
+/**
+ * The token's box for its toggle button, and its stage's height while only the coin shows: the
+ * flat coin and the upright one together (host px).
+ */
+export function tokenBox(f: Fit): Box {
+  const flat = tokenFlat(f);
+  const up = tokenStand(f);
+  return {
+    left: Math.min(flat.left, up.left),
+    top: Math.min(flat.top, up.top),
+    right: Math.max(flat.right, up.right),
+    bottom: Math.max(flat.bottom, up.bottom),
+  };
 }

@@ -20,9 +20,15 @@
  *   hand, rubs an eye, blinks, looks at you and smiles); into any other emotion her head simply
  *   comes up, so a working turn never waits on a yawn.
  * - The episodes (`k2-time.ts`): `open` assembles her from the token when the host shows her
- *   (the Vex sidebar's dock from the welcome, or the column shown again); `setClosed` collapses
- *   her into the token and opens her again. Face-on, the coin lifts a little under the pointer;
- *   asleep it dims with her light.
+ *   (the Vex sidebar's dock from the welcome, or the column shown again); `setClosed` closes her
+ *   into the token and opens her again.
+ * - The token toggle (`setTokenOnly`, the owner 2026-10-17, as on the web app): a press closes
+ *   her back into the token (her assembly backwards, the beam falling, the coin turning upright,
+ *   face on), the next opens her again (the wake replayed from the press: asleep, the yawn, the
+ *   rub, the blinks, the smile). While she is not shown her gestures, glances and hover face hold;
+ *   the upright coin rests (no bob, no tilt) and her dots are not drawn. `onToken` reports each
+ *   state (`K2TokenState`). Under the still frame it swaps at once between the two still states.
+ *   Face-on, the coin lifts a little under the pointer; asleep it dims with her light.
  * - When she comes back (the wake, an open, the re-wake, an emotion settling back to idle, an idle
  *   action ending, the window shown again after 10 s away) she holds her eyes on you a moment, now
  *   and then with the soft smile or a slow blink (`lookAtYou`).
@@ -68,6 +74,7 @@ import {
   canvasBox,
   type Fit,
   type K2Drawing,
+  STAND_DROP,
   TOKEN_SHEET,
 } from "./k2-rig.js";
 import {
@@ -83,8 +90,10 @@ import {
 import { type InkStyle, Stamper } from "./k2-stamp.js";
 import {
   type ActiveGesture,
+  AWAKE,
   birdState,
   blinkAt,
+  CLOSE_MS,
   canGiggle,
   clamp,
   type Episode,
@@ -105,7 +114,9 @@ import {
   type LookAtYou,
   lookAtYou,
   type MapName,
+  OPEN_LEAD,
   OPEN_MS,
+  type Projector,
   projector,
   ramp,
   STEP_MS,
@@ -144,6 +155,13 @@ const WIDE_MOOD_MAPS: readonly MapName[] = ["hover", "asleep", "yawn", "rub"];
 /** What she stands on: the print, day paper or night paper (the beam's ink follows it). */
 export type K2Ground = "print" | "paper" | "night";
 
+/**
+ * The token toggle's states: `shown` (projected from the flat token), `closing` (dissolving back
+ * into it, the coin turning upright), `token` (the hologram off, the coin upright at rest) and
+ * `opening` (the wake from the token, or the open episode).
+ */
+export type K2TokenState = "shown" | "closing" | "token" | "opening";
+
 export interface K2EngineOptions {
   /** Her host: host px are its box's. */
   readonly host: HTMLElement;
@@ -163,6 +181,10 @@ export interface K2EngineOptions {
   readonly open?: boolean;
   /** She starts closed: the token alone, face-on (`setClosed(false)` opens her). */
   readonly closed?: boolean;
+  /** Start with the hologram off: the coin upright, no episode, no wake (`setTokenOnly`). */
+  readonly tokenOnly?: boolean;
+  /** Each change of the token toggle's state (an episode starting or settling). */
+  readonly onToken?: ((state: K2TokenState) => void) | undefined;
 }
 
 /** Her returns kept for the look at you chain (the latest one decides). */
@@ -273,6 +295,18 @@ export class K2Engine {
   #unliftAt = -1;
   /** When the window was hidden (wall clock), -1 while it shows. */
   #hiddenAt = -1;
+  /** The token toggle asked for: the hologram off, the coin upright (`setTokenOnly`, `setClosed`). */
+  #want = false;
+  /** How she opens once the toggle turns off: the wake from the token, or the open episode. */
+  #reopen: "wake" | "episode" = "episode";
+  /** When the wake playing began on her clock (0: the gate's), and a re-open's wake mode. */
+  #wake0 = 0;
+  #rewake: WakeMode | null = null;
+  /** The toggle's state, and whether the host has heard the first one (after her first frame). */
+  #tokenState: K2TokenState = "shown";
+  #reported = false;
+  /** The coin's poses were asked for and the answer is in (loaded, or failed: the coin stays flat). */
+  #posesTried = false;
 
   constructor(o: K2EngineOptions) {
     this.#o = o;
@@ -283,9 +317,17 @@ export class K2Engine {
     const force = f === "blow" || f === "bird" || f === "blush" || f === "hum" ? f : null;
     this.#chain = new GestureChain(this.#awakeAt(), force);
     if (f === "giggle") this.#giggles.push(this.#awakeAt() + 1000);
-    if (!o.wake) {
-      if (o.closed === true) this.#episode = { kind: "close", at: -1e9 };
-      else if (o.open === true) {
+    if (o.tokenOnly === true) {
+      this.#want = true;
+      this.#reopen = "wake";
+      this.#episode = { kind: "close", at: -1e9 };
+      this.#tokenState = "token";
+    } else if (!o.wake) {
+      if (o.closed === true) {
+        this.#want = true;
+        this.#episode = { kind: "close", at: -1e9 };
+        this.#tokenState = "token";
+      } else if (o.open === true) {
         this.#episode = { kind: "open", at: 0 };
         this.#return(OPEN_MS);
       }
@@ -327,8 +369,13 @@ export class K2Engine {
     const now = this.#now();
     if (on) this.#hoverAt = now;
     else {
-      // a long hover, once it ends, makes her blush
-      if (!this.#o.still && now - this.#hoverAt >= LONG_HOVER && now >= this.#awakeAt()) {
+      // a long hover, once it ends, makes her blush (not while she is the coin's)
+      if (
+        !this.#o.still &&
+        !this.#want &&
+        now - this.#hoverAt >= LONG_HOVER &&
+        now >= this.#awakeAt()
+      ) {
         this.#blushes.push(now);
         if (this.#blushes.length > 8) this.#blushes.shift();
       }
@@ -367,24 +414,46 @@ export class K2Engine {
    * look at you). Under the still frame the change is instant.
    */
   setClosed(closed: boolean): void {
-    if (closed === (this.#episode?.kind === "close")) return;
-    const now = this.#now();
-    if (closed) {
-      this.#episode = { kind: "close", at: now };
-      // the reverse flip needs the coin's poses
-      if (this.#started) void this.#token.loadPoses();
-    } else {
-      this.#episode = { kind: "open", at: now };
-      this.#return(now + OPEN_MS);
+    this.#toggle(closed, "episode");
+  }
+
+  /**
+   * The token toggle: `true` closes her back into the token (the coin upright), `false` opens her
+   * again (the wake from the token). A close asked for while she opens starts at once from where
+   * she is; an open asked for while she closes starts when the close has settled. Asked before her
+   * first frame she simply starts there, with no episode. Under the still frame the swap is
+   * instant.
+   */
+  setTokenOnly(on: boolean): void {
+    this.#toggle(on, "wake");
+  }
+
+  #toggle(on: boolean, reopen: "wake" | "episode"): void {
+    if (on === this.#want) return;
+    this.#want = on;
+    this.#reopen = reopen;
+    if (!this.#started) {
+      this.#episode = on ? { kind: "close", at: -1e9 } : null;
+      this.#tokenState = on ? "token" : "shown";
+      return;
     }
     this.#frozen = null;
     this.#lastSig = -1;
+    // the coin's turns need its poses; until they are in, the toggle waits for them
+    void this.#token.loadPoses().then(() => {
+      this.#posesTried = true;
+      if (this.#stopped) return;
+      this.#advance(this.#now());
+      this.#repaintIdle();
+    });
     this.#repaintIdle();
   }
 
   /** A click or a tap on her: a giggle, once she is awake, idle and its cooldown is over. */
   poke(): void {
     if (this.#o.still) return;
+    // the coin alone has no one to giggle
+    if (this.#episode?.kind === "close") return;
     if (this.#mood !== null && this.#mood.to !== "idle") return;
     const t = this.#now();
     if (canGiggle(t, this.#giggles, this.#awakeAt())) this.#giggles.push(t);
@@ -403,14 +472,18 @@ export class K2Engine {
     // device px per css px of the sheet's coin
     const coin = fit.rig.token.d * fit.s;
     const density = (Math.min(window.devicePixelRatio || 1, DPR_CAP) * coin) / TOKEN_SHEET.td;
-    // the coin's poses for the wake and the episodes (a still open shows her whole, flat coin)
-    const poses =
-      this.#o.wake || this.#o.closed === true || (this.#o.open === true && !this.#o.still);
+    // the coin's poses for the wake, the episodes and the upright coin (a still open shows her
+    // whole, flat coin)
+    const poses = this.#o.wake || this.#want || (this.#o.open === true && !this.#o.still);
     await Promise.all([this.#loadDrawing(fit.rig.drawing), this.#token.load(poses, density)]);
     if (this.#stopped) return;
+    if (poses) this.#posesTried = true;
     this.#started = true;
     this.#paint(0, true);
     this.#o.host.dataset["vexK2Ready"] = "";
+    // the toggle's state she starts in (later changes report as they happen)
+    this.#reported = true;
+    this.#o.onToken?.(this.#tokenState);
     if (this.#o.still) return;
     this.#listen();
     this.#gate = new RunGate(this.#o.canvas, (run) => {
@@ -571,11 +644,60 @@ export class K2Engine {
   }
 
   #awakeAt(): number {
-    return wakeEnd(this.#mode());
+    return this.#wake0 + wakeEnd(this.#mode());
   }
 
+  /** The wake playing: a re-open's, else the gate's (none when she starts awake or as a coin). */
   #mode(): WakeMode {
-    return this.#o.wake && !this.#o.still ? "full" : "none";
+    if (this.#o.still) return "none";
+    if (this.#rewake !== null) return this.#rewake;
+    return this.#o.wake && this.#o.tokenOnly !== true ? "full" : "none";
+  }
+
+  /* ---------------------------------------------------------------- the token toggle */
+
+  /** The projector she stands on at t while she is not closed: a wake's, an open's, or awake. */
+  #shownProjector(t: number): Projector {
+    const mode = this.#mode();
+    const ep = this.#episode;
+    if (ep?.kind === "open" && t >= this.#wake0 + wakeEnd(mode))
+      return episodeProjector(ep, t, this.#o.still);
+    return projector(t - this.#wake0, mode);
+  }
+
+  /** Starts the episode the toggle asks for, when it can start (at t, her clock). */
+  #advance(t: number): void {
+    const still = this.#o.still;
+    const ep = this.#episode;
+    if (this.#want && ep?.kind !== "close") {
+      this.#episode = { kind: "close", at: t, from: still ? AWAKE : this.#shownProjector(t) };
+    } else if (!this.#want && ep?.kind === "close") {
+      if (!still && t - ep.at < CLOSE_MS) return;
+      if (!still && !this.#token.posed && !this.#posesTried) return;
+      if (this.#reopen === "wake" && !still) {
+        // the wake replayed from the press, then a look at you
+        this.#episode = null;
+        this.#rewake = "full";
+        this.#wake0 = t - OPEN_LEAD;
+        this.#return(this.#wake0 + wakeEnd("full"));
+      } else if (this.#reopen === "wake") this.#episode = null;
+      else {
+        this.#episode = { kind: "open", at: t };
+        this.#return(t + OPEN_MS);
+      }
+    } else return;
+    this.#cache = null;
+    this.#frozen = null;
+    this.#lastSig = -1;
+  }
+
+  /** The token toggle's state at t (awakeAt: the wake playing hands her over then). */
+  #tokenAt(t: number, awakeAt: number): K2TokenState {
+    const ep = this.#episode;
+    if (ep?.kind === "close")
+      return this.#o.still || t - ep.at >= CLOSE_MS ? "token" : "closing";
+    if (this.#rewake !== null && t < awakeAt) return "opening";
+    return ep?.kind === "open" && t >= awakeAt && episodeBusy(ep, t) ? "opening" : "shown";
   }
 
   /** She came back at `at` (her clock): a look at you starts then. */
@@ -649,19 +771,38 @@ export class K2Engine {
     if (portrait === undefined || !this.#token.ready) return;
     const meta = portrait.meta;
     const R = fit.rig;
+    // the token toggle: an episode it asked for starts once the coin's poses are in
+    if (
+      this.#want !== (this.#episode?.kind === "close") &&
+      (this.#o.still || this.#token.posed || this.#posesTried)
+    )
+      this.#advance(t);
     const mode = this.#mode();
-    const awakeAt = wakeEnd(mode);
+    const awakeAt = this.#wake0 + wakeEnd(mode);
     if (mode !== "none" && t >= awakeAt && !this.#woken) {
       this.#woken = true;
-      this.#return(awakeAt);
-      this.#o.onWoken();
+      // a re-open's wake left its own return; the gate's wake tells its host
+      if (this.#rewake === null) this.#return(awakeAt);
+      if (this.#o.wake) this.#o.onWoken();
     }
     const glance = { x: meta.glance[0], y: meta.glance[1] };
-    // the wake's projector, then the episodes' (awake when none)
-    const ep = t >= awakeAt ? this.#episode : null;
-    const pj = ep !== null ? episodeProjector(ep, t, this.#o.still) : projector(t, mode);
-    const busy = episodeBusy(ep, t);
-    const WS = wakeState(t, mode, meta.pitch, meta.k, glance);
+    // closed (or closing) she is the coin's: her face, her gestures and her hover hold
+    const ep = this.#episode;
+    const veiled = ep?.kind === "close";
+    const rest = ep?.kind === "close" && (this.#o.still || t - ep.at >= CLOSE_MS);
+    // the wake's projector (the gate's, or a re-open's), then an open episode's, or the close's
+    const opened = ep?.kind === "open" && t >= awakeAt ? ep : null;
+    const pj =
+      veiled || opened !== null
+        ? episodeProjector(ep, t, this.#o.still)
+        : projector(t - this.#wake0, mode);
+    const busy = veiled || episodeBusy(opened, t);
+    const WS = veiled ? null : wakeState(t - this.#wake0, mode, meta.pitch, meta.k, glance);
+    const tokenState = this.#tokenAt(t, awakeAt);
+    if (tokenState !== this.#tokenState) {
+      this.#tokenState = tokenState;
+      if (this.#reported) this.#o.onToken?.(tokenState);
+    }
     // the emotion, after the wake: one set while she woke dissolves in from her waking smile when
     // the wake hands her over (a wake already played is not played again)
     const mood: MoodChange | null =
@@ -690,8 +831,9 @@ export class K2Engine {
       this.#frozen = key;
     } else this.#frozen = null;
 
-    // what holds the idle pool back: a hover, an episode, any emotion but idle (settled)
-    const hold = this.#hover || busy || (mf !== null && !mf.gestures);
+    // what holds the idle pool back: a hover, an episode, a wake, any emotion but idle (settled);
+    // a slot due meanwhile is skipped, never shown half way
+    const hold = this.#hover || busy || t < awakeAt || (mf !== null && !mf.gestures);
     if (hold !== this.#hold) {
       this.#hold = hold;
       if (hold) this.#holdAt = t;
@@ -742,7 +884,8 @@ export class K2Engine {
     const away: GlanceAway | null = free && atYou === null ? this.#glances.chain.at(t) : null;
     const rise = Math.round((1 - rp) ** 3 * meta.rise);
     const gp = gs.gp * (1 - hp);
-    const smirk = G === null && WS === null && !still && !this.#hover && hp === 0 && smirking(t);
+    const smirk =
+      G === null && WS === null && !veiled && !still && !this.#hover && hp === 0 && smirking(t);
     const gust = still ? 0 : gustAt(t);
     const em = gs.eyes !== null && hp < 0.5 && !still ? gs.eyes : null;
     let lid = still ? 0 : em === "soft" ? Math.max(0.22, blinkAt(t)) : blinkAt(t);
@@ -791,27 +934,30 @@ export class K2Engine {
     // closed into the token there is nothing of her to draw
     if (pj.asm > 0) portrait.emit(fr, pal, dots, pass);
 
-    // the token: face-on, pressed, turning flat, flat; it tilts to the pointer while face-on
+    // the token: face-on, pressed, turning flat, flat; it tilts to the pointer while face-on in a
+    // wake or an open; upright after a close it rests (no bob, no tilt)
     const T = R.token;
     const td = T.d;
     const p = this.#pointerMap(fit);
     const fl = pj.flip;
+    const calm = still || rest;
     const ptx =
-      p !== null && !still
+      p !== null && !calm
         ? clamp((p[0] - T.x) / (td * 6), -1, 1)
-        : still
+        : calm
           ? 0
           : noise1(t / 2600, 7) * 0.25;
     const pty =
-      p !== null && !still
+      p !== null && !calm
         ? clamp((p[1] - T.y) / (td * 6), -1, 1)
-        : still
+        : calm
           ? 0
           : noise1(t / 3100, 8) * 0.2;
-    const float = still ? 0 : (Math.sin((t / 3400) * 6.2832) * td * 0.03 - td * 0.12) * (1 - fl);
+    const bob = calm ? 0 : Math.sin((t / 3400) * 6.2832) * td * 0.03;
+    const float = (bob - td * STAND_DROP) * (1 - fl);
     // face-on, the coin lifts a little under the pointer
     const over =
-      p !== null && !still && fl < 0.5 && Math.hypot(p[0] - T.x, p[1] - T.y) < td * 0.55;
+      p !== null && !still && fl < 0.5 && Math.hypot(p[0] - T.x, p[1] - (T.y - float)) < td * 0.55;
     if (over !== this.#overToken) {
       this.#overToken = over;
       if (over) this.#liftAt = t;
@@ -867,12 +1013,14 @@ export class K2Engine {
         (x, y) => portrait.lightAt(x, y),
       );
     const coneMoves = !still && pj.cone > 0;
-    // a coin face-on or turning floats, tilts and lifts: every step is a new frame
-    const coinMoves = !still && fl < 1;
+    // a coin face-on or turning floats and tilts: every step is a new frame; at rest only its lift
+    // changes it
+    const coinMoves = !still && fl < 1 && !rest;
     const sig =
       (dots.hash ^
         (coneMoves || actors || coinMoves ? t : 0) ^
         ((placed?.n ?? -2) * 7919) ^
+        (Math.round(lift * 64) * 104729) ^
         (settled ? 1 : 2)) >>>
       0;
     if (!force && sig === this.#lastSig) return;

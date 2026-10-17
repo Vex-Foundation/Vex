@@ -3,8 +3,9 @@
  * draws the wide drawing as on its own frame (scale 1 at 900 px, anchored at 652 of 900), loses the
  * wake still's token (97.5 px, its foot at 776 of 900) or lets her scale run past its bounds; a bust that leaves the app drawing, loses its cut under the
  * necklace, its 0.6 scale, its short beam or its token's foot; an approval bust whose cut does not
- * drop for the palm; a host too small for her dots that still draws; and any placement that pushes
- * her hair or her token out of the plate at the sidebar's three widths.
+ * drop for the palm; a host too small for her dots that still draws; any placement that pushes
+ * her hair or her token out of the plate at the sidebar's three widths; and an upright coin (the
+ * token toggle's rest) off the token's place, cut by the canvas, or outside its button's box.
  */
 import { describe, expect, test } from "vitest";
 import {
@@ -18,7 +19,11 @@ import {
   fitFor,
   type K2PlacementName,
   STAGE_TOKEN,
+  STAND_DROP,
   TOKEN_SHEET,
+  tokenBox,
+  tokenFlat,
+  tokenStand,
   toHost,
 } from "../k2-rig.js";
 
@@ -179,4 +184,57 @@ test("the canvas box follows the fit: the rig's canvas through the same transfor
   expect(box.left).toBeCloseTo(left, 6);
   expect(box.top).toBeCloseTo(top, 6);
   expect(box.right - box.left).toBeCloseTo((fit.rig.canvas[2] - fit.rig.canvas[0]) * fit.s, 6);
+});
+
+describe("the token toggle's coin", () => {
+  const FITS: readonly [K2PlacementName, number, number][] = [
+    ["welcome", 320, 284],
+    ["welcome", 280, 268],
+    ["welcome", 320, 240],
+    ["sidebar", 256, 280],
+    ["sidebar", 224, 236],
+    ["stage", 720, 900],
+  ];
+
+  test("the upright coin stands face on at the token's place, its foot near the flat coin's, inside the button's box", () => {
+    for (const [name, w, h] of FITS) {
+      const f = fitOf(name, w, h);
+      const t = f.rig.token;
+      const up = tokenStand(f);
+      const flat = tokenFlat(f);
+      const [cx] = toHost(f, t.x, t.y);
+      expect((up.left + up.right) / 2).toBeCloseTo(cx, 5);
+      expect(up.right - up.left).toBeCloseTo(t.d * f.s, 5);
+      expect(up.bottom - up.top).toBeCloseTo(t.d * f.s, 5);
+      const [, cy] = toHost(f, t.x, t.y + t.d * STAND_DROP);
+      expect((up.top + up.bottom) / 2).toBeCloseTo(cy, 5);
+      // its foot within a quarter of the coin of the flat coin's foot
+      expect(Math.abs(up.bottom - flat.bottom)).toBeLessThanOrEqual(t.d * f.s * 0.25);
+      const box = tokenBox(f);
+      expect(box.left).toBeLessThanOrEqual(Math.min(up.left, flat.left));
+      expect(box.top).toBeLessThanOrEqual(Math.min(up.top, flat.top));
+      expect(box.right).toBeGreaterThanOrEqual(Math.max(up.right, flat.right));
+      expect(box.bottom).toBeGreaterThanOrEqual(Math.max(up.bottom, flat.bottom));
+    }
+  });
+
+  test("the canvas reaches the upright coin's foot, and the bust's coin stays inside its host", () => {
+    for (const [name, w, h] of FITS) {
+      const f = fitOf(name, w, h);
+      const up = tokenStand(f);
+      expect(canvasBox(f).bottom).toBeGreaterThanOrEqual(up.bottom - 1e-9);
+      if (name !== "stage") {
+        expect(up.bottom).toBeLessThanOrEqual(h + 0.5);
+        expect(up.top).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  test("on the welcome's full stage the coin's box is about 59 px high at the stage's foot", () => {
+    const box = tokenBox(fitOf("welcome", 320, 284));
+    expect(box.bottom - box.top).toBeGreaterThan(55);
+    expect(box.bottom - box.top).toBeLessThan(62);
+    expect(box.bottom).toBeLessThanOrEqual(284.5);
+    expect((box.left + box.right) / 2).toBeCloseTo(160, 0);
+  });
 });

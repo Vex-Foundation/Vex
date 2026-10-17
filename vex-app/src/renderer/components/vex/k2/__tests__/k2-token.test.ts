@@ -131,10 +131,12 @@ describe("the poses and the reverse flip", () => {
     const coin = new TokenSprite();
     await coin.load(false, 1);
     expect(asked).toEqual(["token.json", "token-flat-1x.webp"]);
+    expect(coin.posed).toBe(false);
     // without its poses a face-on coin is drawn flat
     expect(coin.place(100, 200, 58, 0, FACE_ON)?.n).toBe(-1);
     await coin.loadPoses();
     await coin.loadPoses();
+    expect(coin.posed).toBe(true);
     expect(asked.filter((f) => f === "token-wake-1x.webp")).toHaveLength(1);
     expect(coin.place(100, 200, 58, 0, FACE_ON)?.n).toBeGreaterThanOrEqual(0);
     expect(coin.place(100, 200, 58, 0, FLAT)?.n).toBe(-1);
@@ -151,6 +153,7 @@ describe("the poses and the reverse flip", () => {
     const coin = new TokenSprite();
     await coin.load(true, 1);
     expect(coin.ready).toBe(true);
+    expect(coin.posed).toBe(false);
     expect(coin.place(100, 200, 58, 0, FACE_ON)?.n).toBe(-1);
   });
 

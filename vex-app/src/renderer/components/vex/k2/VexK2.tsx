@@ -6,6 +6,7 @@
  * ```
  * div[data-vex-k2=<placement>][data-vex-k2-ground][data-vex-k2-ready?]   her host, aria-hidden
  *    [data-vex-k2-open?][data-vex-k2-closed?]                            her episodes
+ *    [data-vex-k2-token?=shown|closing|token|opening]                    the token toggle's state
  *   canvas                                                               her, her light, her token
  * ```
  *
@@ -15,14 +16,21 @@
  * Her episodes (`docs/design/R3-MINIMAL.md sections 10.4 and 11`): `open` assembles her from the
  * token as she first shows (the Vex sidebar's dock from the welcome); `closed` collapses her into
  * the token and, set back, opens her again. Under the still frame she simply appears or goes.
+ *
+ * The token toggle (`tokenOnly`, the owner 2026-10-17, as on the web app): set, she dissolves back
+ * into the token and the coin stands upright, face on; cleared, the coin lies down and she wakes
+ * from it again (asleep, the yawn, the rub, the blinks, the smile). The host stays decorative: the
+ * caller renders `K2TokenButton` over the box `onTokenBox` reports (`tokenBox`, host px, on every
+ * fit) and hears each state through `onToken`. A host shrunk below her fit draws nothing, so a
+ * caller that shrinks her stage to the coin clips around this host rather than resizing it.
  */
-import { type JSX, useEffect, useRef } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 import { useStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { cn } from "../../../lib/utils.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import type { K2Emotion } from "./k2-emotion.js";
-import { K2Engine, type K2Ground } from "./k2-engine.js";
-import { fitFor, type K2PlacementName } from "./k2-rig.js";
+import { K2Engine, type K2Ground, type K2TokenState } from "./k2-engine.js";
+import { type Box, fitFor, type K2PlacementName, tokenBox } from "./k2-rig.js";
 import type { GestureName } from "./k2-time.js";
 
 export interface VexK2Props {
@@ -48,6 +56,12 @@ export interface VexK2Props {
   readonly open?: boolean;
   /** She is closed into the token; a change plays the close or the open episode. */
   readonly closed?: boolean;
+  /** The token toggle: the hologram off, the coin upright (the close and the wake play between). */
+  readonly tokenOnly?: boolean;
+  /** Each toggle state: `shown`, `closing`, `token` (settled), `opening`. */
+  readonly onToken?: (state: K2TokenState) => void;
+  /** The token's box in this host's px on every fit, for the caller's button and its stage. */
+  readonly onTokenBox?: (box: Box) => void;
   readonly className?: string;
 }
 
@@ -63,6 +77,9 @@ export function VexK2({
   composer,
   open = false,
   closed = false,
+  tokenOnly = false,
+  onToken,
+  onTokenBox,
   className,
 }: VexK2Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -70,9 +87,33 @@ export function VexK2({
   const engineRef = useRef<K2Engine | null>(null);
   const frame = useStillFrame() || still;
   const dark = useUiStore((s) => s.theme) === "chronos";
-  const live = useRef({ dark, ground, emotion, hover, onWoken, composer, closed });
-  live.current = { dark, ground, emotion, hover, onWoken, composer, closed };
+  const live = useRef({
+    dark,
+    ground,
+    emotion,
+    hover,
+    onWoken,
+    composer,
+    closed,
+    tokenOnly,
+    onToken,
+    onTokenBox,
+  });
+  live.current = {
+    dark,
+    ground,
+    emotion,
+    hover,
+    onWoken,
+    composer,
+    closed,
+    tokenOnly,
+    onToken,
+    onTokenBox,
+  };
   const placeRef = useRef<(() => void) | null>(null);
+  // the toggle's state as the engine reports it (a seam for review and tests)
+  const [token, setToken] = useState<K2TokenState | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -91,6 +132,11 @@ export function VexK2({
       composer: () => live.current.composer?.() ?? null,
       open,
       closed: now.closed,
+      tokenOnly: now.tokenOnly,
+      onToken: (state) => {
+        setToken(state);
+        live.current.onToken?.(state);
+      },
     });
     engineRef.current = engine;
     engine.setEmotion(now.emotion);
@@ -102,6 +148,7 @@ export function VexK2({
       const fit = fitFor(placement, host.clientWidth, host.clientHeight, palm);
       if (fit === null) return;
       engine.setFit(fit);
+      live.current.onTokenBox?.(tokenBox(fit));
       if (started) return;
       started = true;
       void engine.start().catch(() => undefined);
@@ -135,6 +182,9 @@ export function VexK2({
   useEffect(() => {
     engineRef.current?.setClosed(closed);
   }, [closed]);
+  useEffect(() => {
+    engineRef.current?.setTokenOnly(tokenOnly);
+  }, [tokenOnly]);
 
   return (
     <div
@@ -144,6 +194,7 @@ export function VexK2({
       data-vex-k2-ground={ground}
       data-vex-k2-open={open ? "" : undefined}
       data-vex-k2-closed={closed ? "" : undefined}
+      data-vex-k2-token={token ?? undefined}
       className={cn("pointer-events-none relative overflow-hidden", className)}
     >
       <canvas ref={canvasRef} className="pointer-events-none absolute left-0 top-0 block" />
