@@ -1,7 +1,8 @@
 /**
  * The stage's persistent plate (`PreShellStage.tsx`, `docs/design/R3-MINIMAL.md section 10`): which
- * layout each view takes, that the wake and the unlock stand on the plate with Vex's word on it,
- * that the first run screens keep a plain print, and that the plate leaves with the stage.
+ * layout each view takes, that the wake, the unlock and the first run screens stand on the plate
+ * with Vex's word on it, that the wizard keeps a plain print, and that the plate leaves with the
+ * stage.
  *
  * jsdom paints no canvas and gives her host no size, so the K2 engine loads no art here.
  */
@@ -20,6 +21,7 @@ import {
   resetStageVex,
   stageVexEnd,
   stageVexExit,
+  stageVexFace,
   stageVexPipelineReady,
   stageVexWoken,
 } from "../stage-vex.js";
@@ -43,18 +45,18 @@ afterEach(() => {
 });
 
 describe("stageLayoutFor", () => {
-  it("puts the wake and the unlock on the plate, the first run on the print, the shell on nothing", () => {
-    expect(stageLayoutFor("splash", false)).toBe("plate");
-    expect(stageLayoutFor("unlock", false)).toBe("plate");
+  it("puts the wake, the unlock and the first run on the plate, the wizard on the print, the shell on nothing", () => {
     for (const view of [
+      "splash",
+      "unlock",
       "systemCheck",
       "dockerBootstrap",
       "composeBootstrap",
       "migrations",
-      "wizard",
     ] as const) {
-      expect(stageLayoutFor(view, false)).toBe("print");
+      expect(stageLayoutFor(view, false)).toBe("plate");
     }
+    expect(stageLayoutFor("wizard", false)).toBe("print");
     expect(stageLayoutFor("appShell", false)).toBeNull();
   });
 
@@ -103,8 +105,8 @@ describe("StagePlate", () => {
     expect(container.querySelector('.vex-stage-plate__word [data-s="sleeping"]')).not.toBeNull();
   });
 
-  it("keeps the first run screens on a plain print with no animal and no state word", () => {
-    stand("systemCheck");
+  it("keeps the wizard on a plain print with no animal and no state word", () => {
+    stand("wizard");
     const { container } = render(<StagePlate />);
     expect(container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-plate")).toBe(
       "print",
@@ -112,6 +114,26 @@ describe("StagePlate", () => {
     expect(container.querySelector(".vex-stage-plate__full")).not.toBeNull();
     expect(container.querySelector("[data-vex-k2]")).toBeNull();
     expect(container.querySelector(".vex-stage-plate__word")).toBeNull();
+  });
+
+  it("stands a first run screen on the plate with the word the screen says she shows", () => {
+    stageVexEnd();
+    stand("composeBootstrap");
+    const { container, getByText, queryByText } = render(<StagePlate />);
+    expect(container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-plate")).toBe(
+      "plate",
+    );
+    expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-vex-k2")).toBe("stage");
+    expect(container.querySelector(".vex-stage-plate__full")).toBeNull();
+    // Nothing said yet: the desk's own story (locked here, as after the launch).
+    expect(getByText("Sleeping")).toBeTruthy();
+    act(() =>
+      stageVexFace({ emotion: "working", swatch: "done", word: "Working", note: "0:14" }),
+    );
+    expect(getByText("Working")).toBeTruthy();
+    expect(getByText("0:14")).toBeTruthy();
+    expect(container.querySelector('.vex-stage-plate__word [data-s="done"]')).not.toBeNull();
+    expect(queryByText("Sleeping")).toBeNull();
   });
 
   it("renders nothing while the shell stands, and ends the launch's wake when it leaves the plate", () => {

@@ -11,6 +11,8 @@ import {
   stageVexConcerned,
   stageVexEnd,
   stageVexExit,
+  stageVexFace,
+  stageVexFaceClear,
   stageVexPipelineReady,
   stageVexUnlocked,
   stageVexView,
@@ -103,6 +105,7 @@ describe("the stage store", () => {
       pipelineReady: false,
       unlocked: false,
       concerned: false,
+      face: null,
       countdown: null,
       exit: "idle",
     });
@@ -112,5 +115,50 @@ describe("the stage store", () => {
     const before = getStageVex();
     stageVexConcerned(false);
     expect(getStageVex()).toBe(before);
+  });
+});
+
+describe("a first run screen's face", () => {
+  const working = { emotion: "working", swatch: "done", word: "Working", note: "0:14" } as const;
+  const ready = { emotion: "idle", swatch: "idle", word: "Ready", note: null } as const;
+
+  it("waits for the launch's wake: she never skips it", () => {
+    stageVexFace(working);
+    expect(stageVexView(getStageVex()).word).toBe("Waking up");
+    stageVexWoken();
+    expect(stageVexView(getStageVex())).toEqual(working);
+  });
+
+  it("speaks as soon as the launch is over, with no wake to wait for", () => {
+    stageVexEnd();
+    stageVexFace(ready);
+    expect(stageVexView(getStageVex())).toEqual(ready);
+  });
+
+  it("is concerned over the face when the unlock is", () => {
+    stageVexEnd();
+    stageVexFace(ready);
+    stageVexConcerned(true);
+    expect(stageVexView(getStageVex()).word).toBe("Concerned");
+  });
+
+  it("is a value: setting the same face again changes nothing", () => {
+    stageVexEnd();
+    stageVexFace(ready);
+    const held = getStageVex();
+    stageVexFace({ ...ready });
+    expect(getStageVex()).toBe(held);
+  });
+
+  it("clears only the face its own screen set, and the launch's end clears it", () => {
+    stageVexEnd();
+    stageVexFace(working);
+    stageVexFaceClear(ready);
+    expect(getStageVex().face).toEqual(working);
+    stageVexFaceClear({ ...working });
+    expect(getStageVex().face).toBeNull();
+    stageVexFace(ready);
+    stageVexEnd();
+    expect(getStageVex().face).toBeNull();
   });
 });
