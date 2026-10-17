@@ -30,6 +30,7 @@ import {
 import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { registerHandler } from "./register-handler.js";
+import { registerSystemLocalRuntimeHandlers } from "./system/local-runtime.js";
 import { registerSystemNotifyTurnCompleteHandler } from "./system/notify-turn-complete.js";
 import { registerSystemTitleBarOverlayHandler } from "./system/title-bar-overlay.js";
 import { isAppTranslocated } from "../system/translocation.js";
@@ -108,6 +109,7 @@ export function registerSystemHandlers(): Array<() => void> {
 
   handlers.push(registerSystemNotifyTurnCompleteHandler());
   handlers.push(registerSystemTitleBarOverlayHandler());
+  handlers.push(...registerSystemLocalRuntimeHandlers());
 
   handlers.push(
     registerHandler({

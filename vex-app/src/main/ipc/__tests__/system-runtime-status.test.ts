@@ -41,6 +41,7 @@ vi.mock("electron", () => ({
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 vi.mock("../system/notify-turn-complete.js", () => ({ registerSystemNotifyTurnCompleteHandler: () => () => {} }));
 vi.mock("../system/title-bar-overlay.js", () => ({ registerSystemTitleBarOverlayHandler: () => () => {} }));
+vi.mock("../system/local-runtime.js", () => ({ registerSystemLocalRuntimeHandlers: () => [] }));
 vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => mocks.mode }));
 vi.mock("../../runtime/native/native-runtime.js", () => ({ startNativeRuntime: mocks.startNativeRuntime }));
 
