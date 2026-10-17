@@ -200,7 +200,7 @@ function launch({ name, host, port, publish, apiKey }) {
       buf += d;
       let i;
       while ((i = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, i);
+        const line = buf.slice(0, i).replace(/\r$/, ""); // Windows writes CRLF
         buf = buf.slice(i + 1);
         lines.push({ t: performance.now() - t0, line });
         for (const w of [...waiters]) if (w.re.test(line)) { waiters.splice(waiters.indexOf(w), 1); w.resolve({ t: performance.now() - t0, line }); }
@@ -280,7 +280,20 @@ function noOrphans() {
 
 // ------------------------------------------------------------------ client
 
-async function http(base, method, p, { key, body, timeoutMs = 60_000 } = {}) {
+// Windows: the memory probe (PowerShell) can take longer than cpp-httplib's
+// 5 s keep-alive on a small runner, and the next request then goes out on a
+// pooled socket the server already closed. Retry such a request once.
+async function http(base, method, p, opts = {}) {
+  try {
+    return await httpOnce(base, method, p, opts);
+  } catch (e) {
+    if (!win || !["UND_ERR_SOCKET", "ECONNRESET"].includes(e?.cause?.code)) throw e;
+    results.metrics.staleSocketRetries = (results.metrics.staleSocketRetries ?? 0) + 1;
+    return httpOnce(base, method, p, opts);
+  }
+}
+
+async function httpOnce(base, method, p, { key, body, timeoutMs = 60_000 } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (key) headers.Authorization = `Bearer ${key}`;

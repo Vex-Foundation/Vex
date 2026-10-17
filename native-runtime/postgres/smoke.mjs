@@ -516,7 +516,7 @@ async function main() {
     // Both Windows runtimes ship the x64 tree (win32-arm64: under emulation).
     const machine = peInfo(pgExe)?.machine;
     check(machine === 'x64', `bin/postgres.exe is an x64 PE (${machine})`);
-    const acp = (await run('reg', ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage', '/v', 'ACP'])).stdout;
+    const acp = (await run(path.join(process.env.SystemRoot, 'System32', 'reg.exe'), ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage', '/v', 'ACP'])).stdout;
     results.host = {
       arch: os.arch(), cpu: os.cpus()[0]?.model, emulated: os.arch() !== 'x64',
       systemAnsiCodePage: /ACP\s+REG_SZ\s+(\d+)/.exec(acp)?.[1] ?? null,
@@ -670,7 +670,7 @@ async function main() {
     const port = await r.pickPort();
     if (r instanceof WindowsRunner) {
       // The reason Vex must use pg_ctl on Windows, shown on this machine.
-      const groups = (await runOk('whoami', ['/groups'])).stdout;
+      const groups = (await runOk(path.join(process.env.SystemRoot, 'System32', 'whoami.exe'), ['/groups'])).stdout;
       results.elevated = /S-1-16-12288/.test(groups); // High Mandatory Level
       if (results.elevated) {
         const direct = await r.exec('postgres', ['-D', r.dataDir, '-p', String(port)], { timeoutMs: 60_000 });
