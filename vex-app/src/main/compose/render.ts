@@ -63,6 +63,25 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
+/** Where `renderCompose` writes this install's project file. */
+export function renderedComposePath(userDataDir: string): string {
+  return path.join(userDataDir, COMPOSE_OUT_DIR_NAME, COMPOSE_OUT_FILE_NAME);
+}
+
+/**
+ * The install id if one was ever generated, else null. Never creates one:
+ * the data migration asks whether this install ever ran the compose stack.
+ */
+export async function readInstallId(userDataDir: string): Promise<string | null> {
+  try {
+    const id = (await fs.readFile(path.join(userDataDir, INSTALL_ID_FILE_NAME), "utf8")).trim();
+    return id.length > 0 ? id : null;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
 /**
  * Reads or generates the install id. Once written, it is immutable for
  * the lifetime of this `userDataDir` so per-install resource names
@@ -102,9 +121,9 @@ export async function renderCompose(
       String(embedPort)
     );
 
-  const outDir = path.join(deps.userDataDir, COMPOSE_OUT_DIR_NAME);
+  const outPath = renderedComposePath(deps.userDataDir);
+  const outDir = path.dirname(outPath);
   await fs.mkdir(outDir, { recursive: true });
-  const outPath = path.join(outDir, COMPOSE_OUT_FILE_NAME);
 
   // Atomic write — temp + rename so a crash mid-write never leaves
   // compose with an unparseable file.

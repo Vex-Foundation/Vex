@@ -20,6 +20,11 @@ export interface ComposeSpawnContext {
   readonly composeDir: string;
   readonly signal?: AbortSignal;
   readonly onLogLine?: (stream: "stdout" | "stderr", line: string) => void;
+  /**
+   * Bring up only these services (and what they depend on). Omitted: the
+   * whole project. The data migration starts `db` alone.
+   */
+  readonly services?: readonly string[];
 }
 
 /**
@@ -51,7 +56,7 @@ export async function composeUpDetached(
   ctx: ComposeSpawnContext
 ): Promise<SpawnRunnerResult> {
   const { composeDir, signal, onLogLine } = ctx;
-  return runSpawn("docker", composeArgs(["up", "-d"]), {
+  return runSpawn("docker", composeArgs(["up", "-d", ...(ctx.services ?? [])]), {
     cwd: composeDir,
     timeoutMs: UP_TIMEOUT_MS,
     ...(signal !== undefined ? { signal } : {}),
