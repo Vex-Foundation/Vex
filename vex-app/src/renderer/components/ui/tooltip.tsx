@@ -60,9 +60,9 @@ export function Tooltip({
 }): JSX.Element {
   const anchor = useRef<HTMLElement | null>(null);
   // Forward the child's own ref so wrapping never severs the owner's ref.
-  const childRef = (children as ReactElement<AnchorProps> & {
-    ref?: Ref<HTMLElement>;
-  }).ref;
+  // React 19 passes `ref` as a regular prop; `element.ref` is a removed
+  // accessor that logs "Accessing element.ref was removed in React 19".
+  const childRef = children.props.ref;
   const mergedRef = useCallback(
     (el: HTMLElement | null) => {
       anchor.current = el;
