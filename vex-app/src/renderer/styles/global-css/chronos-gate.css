@@ -234,8 +234,10 @@
   user-select: none;
 }
 
-/* The ground row: a hairline and one mono caption line on the dark ground,
- * white in both rooms (the spread caption anatomy). */
+/* The ground row: a hairline and one caption line on the dark ground, white
+ * in both rooms. The caption is a word, so it is Instrument Sans in sentence
+ * case (docs/design/R3-MINIMAL.md section 1.3); a figure inside it carries
+ * `.vex-num`. */
 .vex-stage-ground {
   position: absolute;
   z-index: 2;
@@ -256,11 +258,11 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 24px;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.1;
-  letter-spacing: var(--tracking-caption);
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--vex-alias-on-photo);
   white-space: nowrap;
 }
@@ -563,6 +565,35 @@
     overflow-y: clip;
   }
 }
+
+/* The rise: the first run screens' one-shot load-in (a line rises 18px on
+ * the entrance curve, `--vex-ease-out`), with stagger steps for a screen's
+ * head, body and actions. Rests perfectly still. The 600ms is a named
+ * exception to the desktop duration scale (MOTION-POLICY.md, the landing
+ * motifs it was authored against); base.css's reduced-motion catch-all
+ * collapses it. */
+@keyframes vex-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.vex-rise {
+  animation: vex-rise 600ms var(--vex-ease-out) both;
+}
+.vex-rise-d1 {
+  animation-delay: 90ms;
+}
+.vex-rise-d2 {
+  animation-delay: 190ms;
+}
+.vex-rise-d3 {
+  animation-delay: 300ms;
+}
 /* Night Ledger paper carries the faint print grain. */
 :root:not([data-vex-theme="celeris"]) .vex-stage-leaf::after {
   content: "";
@@ -576,7 +607,8 @@
   background-size: 240px 240px;
 }
 
-/* The page head: mono eyebrow, the 56px serif title, the lead. */
+/* The page head: the eyebrow ("Step 1 of 7 · Master password", sans 13 in
+ * sentence case, R3-MINIMAL.md section 1.3), the 56px serif title, the lead. */
 .vex-stage-leaf__head {
   margin-bottom: 28px;
 }
@@ -585,12 +617,12 @@
   margin-bottom: 0;
 }
 .vex-stage-leaf__eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.2;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--vex-alias-label-primary);
 }
 .vex-stage-leaf__eyebrow > span {
@@ -671,8 +703,7 @@
  * screen, so the pre-shell differences are a re-projection here, never a
  * call-site edit. The leaf is the same paper as the shell, so the scope
  * re-pins little: the hairline and field strengths from the theme-aware
- * `--vex-alias-gate-*` group, the accent-as-text names, and the 11px
- * Departure Mono caption (crisp at 11, section 1). */
+ * `--vex-alias-gate-*` group and the accent-as-text names. */
 [data-vex-gate="true"] {
   --color-border: var(--vex-alias-gate-border);
   --color-input: var(--vex-alias-gate-input);
@@ -680,8 +711,6 @@
   --vex-accent-text: var(--color-accent-primary);
   --color-popover: var(--color-surface-1);
   --color-muted: var(--vex-alias-gate-muted);
-  --vex-micro-size: 0.6875rem;
-  --vex-micro-tracking: var(--tracking-status);
 }
 
 /* --- The page CTA ---------------------------------------------- */

@@ -1,6 +1,13 @@
 /* ============================================================ *
- *  LANDING MOTIF UTILITIES — the projectvex.ai signature set    *
- * ============================================================ */
+ *  THE TYPE REGISTER: labels, figures and the two prose voices  *
+ * ============================================================ *
+ *
+ * docs/design/R3-MINIMAL.md section 1.3. globals.css imports this sheet in
+ * the slot the retired landing motif sheet held, after book.css and before
+ * motion-primitives.css, so every rule here keeps its place in the cascade:
+ * it beats the sheets above it and loses to the screen sheets below it on
+ * the same element, exactly as before. Unlayered, like every partial, so it
+ * also beats Tailwind's `@layer utilities` at the call site. */
 
 /* -------------------------------------------------------------------------
  * THE TYPOGRAPHY REGISTER (R3, docs/design/R3-MINIMAL.md section 1)
@@ -122,19 +129,19 @@
   font-variant-numeric: tabular-nums;
 }
 /* The serif survivors inside chat prose are display-only (headings), and
- * Instrument Serif still ships static 400 + 400 italic with NO weight axis —
+ * Instrument Serif still ships static 400 + 400 italic with NO weight axis:
  * a `font-weight: 600` reaching them would be FAKED by the browser. */
 .vex-chat-prose :is(h1, h2, h3, h4, .font-serif) {
   font-synthesis-weight: none;
 }
 
-/* Reasoning prose — the SECOND voice. Vex thinking aloud is not Vex speaking,
+/* Reasoning prose: the SECOND voice. Vex thinking aloud is not Vex speaking,
  * so the aside stays MUTED and one step below the reading scale. What it no
  * longer does is lean: the italic went with the serif in the shell-chrome
  * sweep (owner 6/6a, ratified 2026-08-21). Deepseek's `ReasoningRow` sets the
  * same aside in the plain UI face at a muted tier and it reads as an aside on
  * tone and size alone; a slanted paragraph at 14px only costs legibility.
- * Worn by all three reasoning surfaces so they read as one object — the live
+ * Worn by all three reasoning surfaces so they read as one object: the live
  * segment streaming in the island, the settled segment stamps, and the
  * persisted `ReasonedBlock`.
  *
@@ -152,84 +159,3 @@
 .vex-reasoning-prose :is(code, pre) {
   font-family: var(--font-code);
 }
-
-/* Grain — the landing .noise SVG turbulence, near-invisible. CSP-safe:
- * data: URIs are governed by img-src (which allows data:). */
-.vex-noise {
-  pointer-events: none;
-  opacity: 0.04;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/* Hero rise — the landing's load-in reveal (masked line rise, "Out" curve),
- * one-shot with stagger delay modifiers for the welcome-stage choreography:
- * status line → headline → instrument → chips. Rests perfectly still. */
-@keyframes vex-rise {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.vex-rise {
-  /* The curve was `cubic-bezier(0.25, 1, 0.5, 1)` written out - the entrance
-   * curve of the family, by hand. The 600ms stays a landing-motif duration
-   * (named exception in MOTION-POLICY.md): these are the landing's staggered
-   * hero risings, not desktop state changes. */
-  animation: vex-rise 600ms var(--vex-ease-out) both;
-}
-.vex-rise-d1 {
-  animation-delay: 90ms;
-}
-.vex-rise-d2 {
-  animation-delay: 190ms;
-}
-.vex-rise-d3 {
-  animation-delay: 300ms;
-}
-.vex-rise-d4 {
-  animation-delay: 420ms;
-}
-
-/* Dialog reveal - rise + settle on the native <dialog> top layer. Element-level
- * so every modal inherits it; one-shot, rests still; the global reduced-motion
- * catch-all in base.css collapses it.
- *
- * TWO CORRECTIONS, 2026-09-02 (B5.2 motion pass). The rule hardcoded
- * `cubic-bezier(0.42, 0, 0.58, 1)` under a comment claiming it was "the shared
- * EASE_STANDARD curve"; EASE_STANDARD is [0.4, 0, 0.2, 1] and 0.42/0.58 is
- * plain `ease-in-out`, so the modal was riding a FOURTH curve the family
- * forbids, and the split declaration sites were what let the drift hide. A
- * dialog is a surface arriving from nothing, which the family assigns to
- * `--vex-ease-out`, so that is what it now rides. The `scale(0.985)` is gone
- * with it: the reference vocabulary moves a surface in with opacity plus a
- * small translate and nothing else, and a scaling modal reads as a pop rather
- * than a rise. */
-@keyframes vex-dialog-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-dialog[open] {
-  animation: vex-dialog-enter var(--vex-duration-slow) var(--vex-ease-out) both;
-}
-@keyframes vex-backdrop-enter {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-dialog[open]::backdrop {
-  animation: vex-backdrop-enter 240ms ease-out both;
-}
-

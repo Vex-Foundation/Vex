@@ -107,7 +107,7 @@
    *     every UI word, labels and status words included, in sentence case.
    *     Inter Tight follows it as glyph coverage only.
    *   --font-mono  = JetBrains Mono (variable 100-800): every figure,
-   *     address, time and duration, with `.vex-num` (landing-motifs.css) for
+   *     address, time and duration, with `.vex-num` (type.css) for
    *     tabular figures. No pixel face.
    *   --font-code  = JetBrains Mono: code - xterm, code blocks, the file
    *     viewer, raw JSON. The same face as the figures, kept as its own

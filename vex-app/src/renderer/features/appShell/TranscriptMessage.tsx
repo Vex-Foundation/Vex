@@ -190,7 +190,7 @@ function AssistantActionsTail({
  * TYPOGRAPHY LAW (docs/design/R3-MINIMAL.md sections 1.3 and 6): message BODY
  * copy is the sans reading register, Instrument Sans 15 / 1.6 with 10 between
  * paragraphs. The serif is a display face and never sets a paragraph. The face
- * is declared on `.vex-chat-prose` (landing-motifs.css) and the turn's metric
+ * is declared on `.vex-chat-prose` (type.css) and the turn's metric
  * on `.vex-reply .vex-chat-prose` (chat-transcript.css); this wrapper only owns
  * the tone and wrapping.
  */

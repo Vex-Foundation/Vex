@@ -725,7 +725,7 @@ describe("the close control sits inside its tab", () => {
 
     // THE SHAPE OF 16.png, as the DOM shows it. The trigger and the close
     // share a `.vex-tab-shell` wrapper that is the tab's box; the paint is
-    // the wrapper's (glass.css, terminal.css) and neither half draws a stroke.
+    // the wrapper's (terminal.css) and neither half draws a stroke.
     const shell = trigger.closest(".vex-tab-shell");
     expect(shell).not.toBeNull();
     expect(shell?.contains(close)).toBe(true);

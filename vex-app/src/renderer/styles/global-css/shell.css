@@ -34,17 +34,6 @@
    * surface reads this token instead of a raw colour, so a theme flip carries
    * the contrast automatically. */
   --vex-accent-contrast: var(--vex-alias-label-on-accent);
-  /* THE GLASS TIERS, NEUTRALISED (V10: no glass, no blur). The tier names
-   * stay because their classes (glass.css) and two call sites still read
-   * them; each tint is now an OPAQUE surface alias, so the room under a tier
-   * never shows through. WP18 deletes the tiers with their call sites. */
-  --vex-glass-tint-rail: var(--vex-alias-bg-base);
-  --vex-glass-tint-card: var(--vex-alias-bg-layer-1);
-  --vex-glass-tint-pane: var(--vex-alias-field);
-  /* The edge a neutralised tier draws: one 1px rule inside its box, the V10
-   * region divider. A hairline, not an elevation: it is the only box-shadow
-   * glass.css may declare. */
-  --vex-glass-rule: inset 0 0 0 1px var(--vex-alias-rule);
   /* COMPATIBILITY ALIASES, each with a named consumer and a removal
    * condition (glass-tokens.test.ts fails the moment an alias has no `var()`
    * consumer left, which is the signal to delete it here): none are left;
