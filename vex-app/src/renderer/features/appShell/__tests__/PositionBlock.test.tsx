@@ -51,8 +51,9 @@ const mockProgressInvalidation = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/api/portfolio.js", () => ({
   usePortfolio: mockUsePortfolio,
   useWalletPortfolio: mockUseWalletPortfolio,
-  // The block subscribes the page's figures to the activity pushes and hosts
-  // the refresh key. Both are query-cache concerns owned by the api module.
+  // The block hosts the refresh key, a query-cache concern owned by the api
+  // module. The activity pushes are mocked only to prove the block never
+  // subscribes them itself: AppShell holds them once for the whole app.
   useActivityResolvedInvalidation: mockResolvedInvalidation,
   useActivityProgressInvalidation: mockProgressInvalidation,
   usePortfolioRefresh: () => ({ refresh: async () => ({ status: "refreshed" }) }),
@@ -216,10 +217,10 @@ describe("PositionBlock - each scope reads its own scope and never a wider one",
     for (const input of scopeReads()) expect(input).toEqual({ scope: "global" });
   });
 
-  it("subscribes the figures to the activity pushes", () => {
+  it("leaves the activity pushes to the shell and never subscribes them twice", () => {
     renderBlock();
-    expect(mockResolvedInvalidation).toHaveBeenCalled();
-    expect(mockProgressInvalidation).toHaveBeenCalled();
+    expect(mockResolvedInvalidation).not.toHaveBeenCalled();
+    expect(mockProgressInvalidation).not.toHaveBeenCalled();
   });
 });
 

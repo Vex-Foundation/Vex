@@ -59,6 +59,10 @@ import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
+import {
+  useActivityProgressInvalidation,
+  useActivityResolvedInvalidation,
+} from "../../lib/api/portfolio.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
@@ -78,6 +82,12 @@ function AppShellContent(): JSX.Element {
   // compact failure for a session the user is not currently looking at must
   // still be waiting for them when they select it.
   useEngineErrorRetentionSync();
+  // App-wide activity pushes (settled and progress) refresh the portfolio
+  // queries wherever the user is, not only on the Portfolio page. Mounted
+  // once, here (the page mounts none of its own), so each push invalidates
+  // the portfolio queries once.
+  useActivityResolvedInvalidation();
+  useActivityProgressInvalidation();
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
   const runtimeMode = useUiStore((s) => s.runtimeMode);

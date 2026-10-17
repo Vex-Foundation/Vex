@@ -24,17 +24,13 @@
  * and not a claim about when the chain was read (the DTO carries no read
  * time). Chain read problems are printed under the total (`ChainReadWarning`).
  *
- * This component also subscribes the portfolio queries to the activity
- * terminalization and progress pushes, so the page's figures follow a pending
- * transaction without waiting for the periodic poll.
+ * The activity terminalization and progress pushes that keep these figures
+ * following a pending transaction are subscribed once for the whole app, in
+ * AppShell; this block mounts none of its own.
  */
 
 import type { JSX, ReactNode } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
-import {
-  useActivityProgressInvalidation,
-  useActivityResolvedInvalidation,
-} from "../../../lib/api/portfolio.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
 import { CardStateNote, SectionLink, originOf } from "./portfolio/PortfolioCard.js";
@@ -61,8 +57,6 @@ export function PositionBlock({
   /** The scope chips, owned by the page (their selection is the page's). */
   readonly chips: ReactNode;
 }): JSX.Element {
-  useActivityResolvedInvalidation();
-  useActivityProgressInvalidation();
   const query = usePageScopePortfolio(scope);
   const result = query.data;
   const portfolio = result?.ok ? result.data : null;
