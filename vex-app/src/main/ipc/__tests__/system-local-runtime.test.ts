@@ -63,6 +63,7 @@ const INFO: LocalRuntimeInfo = {
     database: { bytes: 52_000_000, files: 1_200, complete: true },
     model: { bytes: 333_590_944, files: 2, complete: true },
   },
+  previousReleaseData: { kind: "none" },
 };
 
 const flushImmediates = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));

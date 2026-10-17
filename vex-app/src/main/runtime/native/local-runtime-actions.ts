@@ -12,8 +12,8 @@ import { log } from "../../logger/index.js";
 import { activeCriticalOps, beginCriticalOp, CRITICAL_OP } from "../../updates/critical-ops.js";
 import { nativeStartGate } from "../migration/native-start-gate.js";
 import { getRuntimeMode } from "../runtime-mode.js";
-import { modelsDir, pgDataDir, RUNTIME_DIR } from "../runtime-paths.js";
-import { readRuntimeState, writeRuntimeState } from "../runtime-state.js";
+import { modelsDir, pgDataDir, RUNTIME_DIR, runtimeStatePath } from "../runtime-paths.js";
+import { previousReleaseData, readRuntimeState, writeRuntimeState } from "../runtime-state.js";
 import { measureDirectory } from "./dir-size.js";
 import { createLocalRuntimeMaintenance, type LocalRuntimeMaintenance } from "./local-runtime-maintenance.js";
 import { acquireNativeRuntimeHold } from "./native-runtime.js";
@@ -71,10 +71,17 @@ export function resetLocalData(): Promise<RuntimeResetResult> {
 
 /** The release, the binaries' versions and the two data sizes, measured off the main thread's critical path. */
 export async function readLocalRuntimeInfo(): Promise<LocalRuntimeInfo> {
-  const [versions, database, model] = await Promise.all([
+  const [versions, database, model, state] = await Promise.all([
     bundledVersions(),
     measureDirectory(pgDataDir(RUNTIME_DIR)),
     measureDirectory(modelsDir(RUNTIME_DIR)),
+    // An unreadable state offers no removal: nothing may be decided from it.
+    readRuntimeState(runtimeStatePath(RUNTIME_DIR)).catch(() => null),
   ]);
-  return { release: NATIVE_RUNTIME_RELEASE, versions, sizes: { database, model } };
+  return {
+    release: NATIVE_RUNTIME_RELEASE,
+    versions,
+    sizes: { database, model },
+    previousReleaseData: state === null ? { kind: "none" } : previousReleaseData(state),
+  };
 }

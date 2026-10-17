@@ -753,8 +753,19 @@ describe("removeOldData", () => {
 
   it("after a completed migration, for this install's project only", async () => {
     await engine(world).migrate();
+    expect((await state()).migration?.oldDataRemovedAt).toBeUndefined();
     expect(await engine(world).removeOldData()).toMatchObject({ kind: "removed" });
     expect(world.calls.filter((c) => c.startsWith("source.removeData"))).toEqual([`source.removeData:${INSTALL_ID}`]);
+    // Recorded, so Settings stops offering it; the migration's record is otherwise unchanged.
+    const after = await state();
+    expect(after.migration?.oldDataRemovedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(after.migration).toMatchObject({ step: "completed", outcome: "migrated" });
+  });
+
+  it("records nothing when it was refused", async () => {
+    await engine(world).startFresh();
+    await engine(world).removeOldData();
+    expect((await state()).migration?.oldDataRemovedAt).toBeUndefined();
   });
 
   it("is refused when the install id changed since", async () => {

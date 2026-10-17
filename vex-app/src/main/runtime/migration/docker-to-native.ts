@@ -954,6 +954,19 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
       const removed = await deps.source.removeData(migration.installId, signal);
       if (removed.kind === "removed") {
         log.info(`[runtime:migration] removed the old data of install ${migration.installId}`);
+        // Recorded so Settings stops offering a removal there is nothing left for.
+        // Best effort: the data is gone either way, and a second removal is harmless.
+        try {
+          const latest = await readRuntimeState(statePath);
+          if (latest.migration !== undefined) {
+            await writeRuntimeState(statePath, {
+              ...latest,
+              migration: { ...latest.migration, oldDataRemovedAt: new Date().toISOString() },
+            });
+          }
+        } catch (error: unknown) {
+          log.warn(`[runtime:migration] could not record the removal: ${messageOf(error)}`);
+        }
         return { kind: "removed", message: removed.message };
       }
       return { kind: "failed", reason: removed.kind === "docker_unavailable" ? "docker_unavailable" : "failed", message: removed.message };

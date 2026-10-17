@@ -131,6 +131,18 @@ export type RuntimeDirSize = z.infer<typeof runtimeDirSizeSchema>;
  */
 const versionSchema = z.string().min(1).max(64).nullable();
 
+/**
+ * Whether the previous release's data may still be on this computer, from
+ * runtime-state.json: `kept` once the move into the native runtime completed
+ * (`imported`: the data was copied; false after a start-fresh, when that old
+ * data is its only copy) and until its removal was recorded; `none` otherwise.
+ */
+export const previousReleaseDataSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("none") }).strict(),
+  z.object({ kind: z.literal("kept"), imported: z.boolean() }).strict(),
+]);
+export type PreviousReleaseData = z.infer<typeof previousReleaseDataSchema>;
+
 export const localRuntimeInfoSchema = z
   .object({
     release: z.string().min(1).max(128),
@@ -147,6 +159,7 @@ export const localRuntimeInfoSchema = z
         model: runtimeDirSizeSchema,
       })
       .strict(),
+    previousReleaseData: previousReleaseDataSchema,
   })
   .strict();
 export type LocalRuntimeInfo = z.infer<typeof localRuntimeInfoSchema>;

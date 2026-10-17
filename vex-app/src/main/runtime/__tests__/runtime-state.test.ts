@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_RUNTIME_STATE,
+  previousReleaseData,
   readRuntimeState,
   RuntimeStateCorruptError,
   writeRuntimeState,
@@ -101,5 +102,38 @@ describe("runtime-state.json", () => {
     writeFileSync(file, content);
     await expect(readRuntimeState(file)).rejects.toBeInstanceOf(RuntimeStateCorruptError);
     expect(readFileSync(file, "utf8")).toBe(content);
+  });
+});
+
+describe("previousReleaseData", () => {
+  const completed = {
+    installId: "install-1",
+    step: "completed" as const,
+    outcome: "migrated" as const,
+    dump: null,
+    attempts: 1,
+    lastFailure: null,
+    oldStackStopped: true,
+    startedAt: "2026-10-17T10:00:00.000Z",
+    updatedAt: "2026-10-17T10:05:00.000Z",
+  };
+
+  it("says the old data may still exist after a completed move or start-fresh, until its removal is recorded", () => {
+    expect(previousReleaseData({ pg: null, migration: completed })).toEqual({ kind: "kept", imported: true });
+    expect(previousReleaseData({ pg: null, migration: { ...completed, outcome: "fresh" } })).toEqual({
+      kind: "kept",
+      imported: false,
+    });
+    expect(
+      previousReleaseData({ pg: null, migration: { ...completed, oldDataRemovedAt: "2026-10-17T11:00:00.000Z" } }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("offers nothing without a migration, or while one is unfinished", () => {
+    expect(previousReleaseData({ pg: null })).toEqual({ kind: "none" });
+    expect(previousReleaseData({ pg: null, provider: "native" })).toEqual({ kind: "none" });
+    expect(previousReleaseData({ pg: null, migration: { ...completed, step: "restored", outcome: null } })).toEqual({
+      kind: "none",
+    });
   });
 });

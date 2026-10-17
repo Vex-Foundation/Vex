@@ -27,6 +27,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import type { PreviousReleaseData } from "@shared/schemas/system.js";
 
 export const PG_MAJOR = 18;
 
@@ -62,6 +63,11 @@ const migrationStateSchema = z.looseObject({
   lastFailure: migrationFailureSchema.nullable(),
   /** Whether the old stack was confirmed stopped when the migration completed. */
   oldStackStopped: z.boolean().nullable(),
+  /**
+   * When the previous release's data was removed (Settings), after the
+   * migration completed. Absent while that data may still exist.
+   */
+  oldDataRemovedAt: z.string().optional(),
   startedAt: z.string(),
   updatedAt: z.string(),
 });
@@ -112,6 +118,17 @@ export async function readRuntimeState(filePath: string): Promise<RuntimeState> 
     );
   }
   return parsed.data;
+}
+
+/**
+ * Whether the previous release's data may still exist: a migration that
+ * completed (moved, or started fresh beside it) and whose old data was not
+ * removed since. Settings offers the removal only then.
+ */
+export function previousReleaseData(state: RuntimeState): PreviousReleaseData {
+  const migration = state.migration;
+  if (migration?.step !== "completed" || migration.oldDataRemovedAt !== undefined) return { kind: "none" };
+  return { kind: "kept", imported: migration.outcome === "migrated" };
 }
 
 /** Atomic: a crash mid-write leaves the previous file, never a torn one. */
