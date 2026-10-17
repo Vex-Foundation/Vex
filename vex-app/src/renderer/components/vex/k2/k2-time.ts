@@ -5,10 +5,11 @@
  * - the wake: the token presses, turns flat, its beam of dots rises, she assembles bottom up asleep,
  *   rises, yawns behind her hand, rubs an eye, blinks twice, looks at you and smiles (about 9 s);
  *   `projector` and `wakeState`;
- * - the gestures (blow the cloud, the bird on her palm, the giggle on a click), one at a time, never
- *   during a hover, with a fixed rhythm; `GestureChain`, `gestureAt`, `gestureState`;
- * - the idle life: blinks, gusts of wind, the smirk, and now and then she looks at you
- *   (`LookChain`, `lookAt`).
+ * - the idle pool (blow the cloud, the bird on her palm, the giggle on a click, the blush, the
+ *   whistle, the hum), one at a time, never during a hover, 15 to 25 s apart; `GestureChain`,
+ *   `whistleStarts`, `whistleAt`, `gestureAt`, `gestureState`;
+ * - the idle life: by default she looks at you and now and then glances away (`GlanceChain`);
+ *   blinks, gusts of wind, the smirk.
  *
  * Nothing here reads a clock, the DOM or `Math.random()`: the engine passes t (ms of her own clock,
  * which stops while she is off screen) and the inputs (the hover, the clicks), so each frame follows
@@ -90,7 +91,11 @@ export function projector(t: number, mode: WakeMode): Projector {
   };
 }
 
-/** Her drawings: the base and the hover, and one per gesture and wake beat. */
+/**
+ * Her drawings: the base and the hover, one per gesture and wake beat, and the moods' (the finger
+ * on her chin, the narrowed focus, the concern, the pout, the palm toward the conversation;
+ * `k2-poses.ts`).
+ */
 export type MapName =
   | "base"
   | "hover"
@@ -99,14 +104,33 @@ export type MapName =
   | "giggle"
   | "asleep"
   | "yawn"
-  | "rub";
+  | "rub"
+  | "think"
+  | "focus"
+  | "concern"
+  | "pout"
+  | "approve";
 
-/** The mouths authored on the screen (`rest` is her own, with its idle smirk). */
-export type MouthName = "rest" | "calm" | "smile" | "pucker" | "o" | "none";
+/**
+ * The mouths authored on the screen (`rest` is her own, with its idle smirk); the app's moods add
+ * `frown` (the corners down) and `pout` (a short full stroke, a fuller lip).
+ */
+export type MouthName =
+  | "rest"
+  | "calm"
+  | "smile"
+  | "pucker"
+  | "o"
+  | "none"
+  | "frown"
+  | "pout";
 
 /**
  * The eyes: `map` the drawing's own (asleep), `closed`, `drowsy` (half), `squeeze` (`> <`),
- * `happy` (arcs), `soft` (the lids a little lower, the smile lifting the lower lid), `open`.
+ * `happy` (arcs), `soft` (the lids a little lower, the smile lifting the lower lid), `open`; the
+ * moods: `narrow` (focused, Working), `wide` (brows up, the
+ * approval), `worried` (the lid tilting up to the inner corner, Concerned), `half` (half lidded,
+ * Error), `smile` (the grin's lifted lower lid, Done).
  */
 export type EyeMode =
   | "map"
@@ -115,7 +139,12 @@ export type EyeMode =
   | "squeeze"
   | "happy"
   | "soft"
-  | "open";
+  | "open"
+  | "narrow"
+  | "wide"
+  | "worried"
+  | "half"
+  | "smile";
 
 /** A hand that rises out of her light: its drawing, rows still to rise, a column shift, its dissolve. */
 export interface Hand {
@@ -140,7 +169,11 @@ export interface FaceState {
   readonly mouth: MouthName | null;
   readonly blush: number;
   readonly gaze: GazeTarget | null;
-  readonly actors: "cloud" | "bird" | null;
+  readonly actors: "cloud" | "bird" | "notes" | null;
+  /** Her eyes drift up to the side (the whistle). */
+  readonly aside: boolean;
+  /** The hum's sway of her free hair, -1..1 (her head stays still). */
+  readonly sway: number;
   /** The nose mark shows (hidden while the asleep drawing carries its own face). */
   readonly nose: boolean;
   /** A blink layered on top (the wake's two). */
@@ -153,6 +186,14 @@ export interface FaceState {
   readonly dim: number;
   /** A gesture fading out under a hover, 1..0. */
   readonly fade: number;
+  /**
+   * The drawing it dissolves from (the app's mood changes; the base when absent): the cells the
+   * dissolve has not reached show it, with its hand sinking back into her light.
+   */
+  readonly from?: {
+    readonly map: MapName;
+    readonly hand: Hand | null;
+  } | null;
 }
 
 export const NO_FACE: FaceState = {
@@ -165,6 +206,8 @@ export const NO_FACE: FaceState = {
   blush: 0,
   gaze: null,
   actors: null,
+  aside: false,
+  sway: 0,
   nose: true,
   lid: 0,
   tear: 0,
@@ -267,19 +310,52 @@ export function wakeState(
   };
 }
 
-/* ------------------------------------------------------------------ the gestures */
+/* ------------------------------------------------------------------ the idle pool */
 
-export type GestureName = "blow" | "bird" | "giggle";
+/**
+ * Her idle actions, one at a time, never under a hover, a gesture or the wake: the blow, the bird
+ * and the giggle, and the blush, the whistle and the hum.
+ */
+export type GestureName =
+  | "blow"
+  | "bird"
+  | "giggle"
+  | "blush"
+  | "whistle"
+  | "hum";
 
 export const GESTURE_MS: Readonly<Record<GestureName, number>> = {
   blow: 6400,
   bird: 7800,
   giggle: 2000,
+  blush: 2600,
+  whistle: 4000,
+  hum: 2000,
 };
-/** Never two scheduled gestures within 20 s (end to start). */
-export const GESTURE_GAP = 20000;
+/** At least 15 s between any two idle actions (end to start), at most 25 s; the reflexes (a giggle, a blush that answers it or a long hover) are the user's, not idle. */
+export const GESTURE_GAP = 15000;
+const GAP_MAX = 25000;
 /** A giggle's cooldown after its end: clicks inside are ignored. */
 export const GIGGLE_COOLDOWN = 8000;
+/** A hover this long, once it ends, makes her blush. */
+export const LONG_HOVER = 4000;
+/** The whistle: after 40 to 90 s without the pointer moving, then again every 40 to 90 s; 3 s of notes, then a glance back at you. */
+export const WHISTLE = { min: 40000, max: 90000, notes: 3000 } as const;
+
+/** The actions on a clock: when each is first due after she is awake, how often at most, its seed. */
+type PoolName = "blow" | "bird" | "blush" | "hum";
+const POOL: Readonly<
+  Record<PoolName, { first: number; min: number; max: number; seed: number }>
+> = {
+  blow: { first: 6000, min: 45000, max: 90000, seed: 301 },
+  bird: { first: 20000, min: 60000, max: 120000, seed: 302 },
+  blush: { first: 45000, min: 60000, max: 120000, seed: 303 },
+  hum: { first: 70000, min: 80000, max: 160000, seed: 304 },
+};
+const POOL_NAMES: readonly PoolName[] = ["blow", "bird", "blush", "hum"];
+/** A slot keeps room for the longest action that may take it over (the whistle). */
+const slotSpan = (name: GestureName) =>
+  Math.max(GESTURE_MS[name], GESTURE_MS.whistle);
 
 export interface ScheduledGesture {
   readonly name: GestureName;
@@ -287,58 +363,68 @@ export interface ScheduledGesture {
 }
 
 /**
- * The idle pool's chain: the first blow 6 s after she is awake, the first
- * bird 20 s after; then a blow every 45 to 90 s and a bird every 60 to 120 s (seeded), never two
- * within 20 s. Pure in t: the chain extends itself as far as it is asked and never changes behind.
+ * The pool's slots: one idle action, then 15 to 25 s of her just looking at you, then the next
+ * (seeded). Each slot takes the most overdue kind: the blow keeps its own rhythm (first 6 s
+ * after she is awake, then 45 to 90 s), the bird 60 to 120 s, the blush 60 to 120 s, the hum 80 to
+ * 160 s, never sooner; a kind not yet due waits. A due whistle takes a slot over (`whistleAt`).
+ * Pure in t: the chain extends itself as far as it is asked and never changes behind.
  */
 export class GestureChain {
   readonly #ev: ScheduledGesture[] = [];
-  #nb: number;
-  #nd: number;
-  #kb = 0;
-  #kd = 0;
-  #end: number;
+  readonly #due: Record<PoolName, number>;
+  readonly #k: Record<PoolName, number> = {
+    blow: 0,
+    bird: 0,
+    blush: 0,
+    hum: 0,
+  };
 
-  /** `force` (review in the dev harness) plays that gesture 1 s after she is awake instead. */
-  constructor(awakeAt: number, force: "blow" | "bird" | null = null) {
+  /** `force` (review in the dev harness) plays that action 1 s after she is awake first. */
+  constructor(awakeAt: number, force: PoolName | null = null) {
+    this.#due = {
+      blow: awakeAt + POOL.blow.first,
+      bird: awakeAt + POOL.bird.first,
+      blush: awakeAt + POOL.blush.first,
+      hum: awakeAt + POOL.hum.first,
+    };
     if (force !== null) {
       const at = awakeAt + 1000;
       this.#ev.push({ name: force, start: at });
-      this.#end = at + GESTURE_MS[force];
-      this.#nb =
-        force === "blow" ? at + 45000 + hash01(0, 301) * 45000 : at + 29000;
-      this.#nd =
-        force === "bird" ? at + 60000 + hash01(0, 302) * 60000 : at + 29000;
-      return;
+      this.#bump(force, at);
     }
-    this.#ev.push(
-      { name: "blow", start: awakeAt + 6000 },
-      { name: "bird", start: awakeAt + 20000 },
-    );
-    this.#end = awakeAt + 20000 + GESTURE_MS.bird;
-    this.#nb = awakeAt + 6000 + 45000 + hash01(0, 301) * 45000;
-    this.#nd = awakeAt + 20000 + 60000 + hash01(0, 302) * 60000;
   }
 
-  /** The scheduled gesture running at t (with its age), or null. */
-  at(t: number): (ScheduledGesture & { readonly age: number }) | null {
-    while ((this.#ev[this.#ev.length - 1]?.start ?? 0) <= t) {
-      const isBlow = this.#nb <= this.#nd;
-      const name: GestureName = isBlow ? "blow" : "bird";
-      const start = Math.max(
-        isBlow ? this.#nb : this.#nd,
-        this.#end + GESTURE_GAP,
-      );
+  #bump(name: PoolName, start: number): void {
+    const p = POOL[name];
+    this.#k[name]++;
+    this.#due[name] =
+      start + p.min + hash01(this.#k[name], p.seed) * (p.max - p.min);
+  }
+
+  #extend(t: number): void {
+    while (
+      (this.#ev[this.#ev.length - 1]?.start ?? Number.NEGATIVE_INFINITY) <= t
+    ) {
+      const prev = this.#ev[this.#ev.length - 1];
+      const n = this.#ev.length;
+      const free =
+        prev === undefined
+          ? Number.NEGATIVE_INFINITY
+          : prev.start +
+            slotSpan(prev.name) +
+            GESTURE_GAP +
+            hash01(n, 305) * (GAP_MAX - GESTURE_GAP);
+      let name: PoolName = "blow";
+      for (const k of POOL_NAMES) if (this.#due[k] < this.#due[name]) name = k;
+      const start = Math.max(free, this.#due[name]);
       this.#ev.push({ name, start });
-      this.#end = start + GESTURE_MS[name];
-      if (isBlow) {
-        this.#kb++;
-        this.#nb = start + 45000 + hash01(this.#kb, 301) * 45000;
-      } else {
-        this.#kd++;
-        this.#nd = start + 60000 + hash01(this.#kd, 302) * 60000;
-      }
+      this.#bump(name, start);
     }
+  }
+
+  /** The slot running at t (by its own action's length, with its age), or null. */
+  at(t: number): (ScheduledGesture & { readonly age: number }) | null {
+    this.#extend(t);
     for (let n = this.#ev.length - 1; n >= 0; n--) {
       const e = this.#ev[n];
       if (e === undefined || e.start > t) continue;
@@ -348,6 +434,48 @@ export class GestureChain {
     }
     return null;
   }
+
+  /** The first slot that starts at or after t. */
+  from(t: number): ScheduledGesture {
+    this.#extend(t);
+    for (const e of this.#ev) if (e.start >= t) return e;
+    return this.#ev[this.#ev.length - 1] ?? { name: "blow", start: t };
+  }
+}
+
+/**
+ * The slots a whistle takes over up to t, for a pointer still since `since` (her clock): the first
+ * slot 40 to 90 s into the stillness, then the first slot 40 to 90 s after each whistle. A pointer
+ * that moves starts a new stillness (and ends a whistle).
+ */
+export function whistleStarts(
+  chain: GestureChain,
+  t: number,
+  since: number,
+): readonly number[] {
+  const seed = Math.round(since / STEP_MS);
+  const out: number[] = [];
+  let due = since;
+  for (let k = 0; k < 4096; k++) {
+    due += WHISTLE.min + hash01(seed, k, 311) * (WHISTLE.max - WHISTLE.min);
+    const s = chain.from(due).start;
+    if (s > t) break;
+    out.push(s);
+    due = s + GESTURE_MS.whistle;
+  }
+  return out;
+}
+
+/** The whistle running at t, or null (it lasts its own 4 s in the slot it takes over). */
+export function whistleAt(
+  chain: GestureChain,
+  t: number,
+  since: number,
+): (ScheduledGesture & { readonly age: number }) | null {
+  const last = whistleStarts(chain, t, since).at(-1);
+  return last !== undefined && t < last + GESTURE_MS.whistle
+    ? { name: "whistle", start: last, age: t - last }
+    : null;
 }
 
 /** Whether a click at t starts a giggle: she is awake and the last one's cooldown is over. */
@@ -363,16 +491,20 @@ export function canGiggle(
 
 export interface GestureInput {
   readonly t: number;
-  /** Gestures can run at all (the wide drawing, motion allowed). */
-  readonly enabled: boolean;
+  /** The actions that can run: all once her gestures' drawings are in, the map-free ones before, none still. */
+  readonly allowed: readonly GestureName[];
   /** When the wake handed her over (0 when she started awake). */
   readonly awakeAt: number;
-  /** Click times on her clock. */
+  /** Click times on her clock (each a giggle, then a blush). */
   readonly giggles: readonly number[];
+  /** When long hovers ended (each a blush). */
+  readonly blushes: readonly number[];
+  /** Since when the pointer has not moved (the whistle's stillness). */
+  readonly stillSince: number;
   /**
-   * What holds the idle pool back: a hover on her (or her products), a reply running, typing in
-   * the composer. `holdAge` is ms since the hold began (-1 when none), `unholdAge` ms since the
-   * last one ended (-1 when holding or never).
+   * What holds the idle pool back: a hover on her, an emotion other than idle (`k2-poses.ts`).
+   * `holdAge` is ms since the hold began (-1 when none), `unholdAge` ms since the last one ended
+   * (-1 when holding or never).
    */
   readonly hold: boolean;
   readonly holdAge: number;
@@ -383,31 +515,56 @@ export interface ActiveGesture {
   readonly name: GestureName;
   readonly start: number;
   readonly age: number;
-  /** A hold during a scheduled gesture fades it out in 300 ms. */
+  /** A hold during a scheduled action fades it out in 300 ms. */
   readonly fade: number;
 }
 
 /**
- * The gesture at t, one at a time: a giggle (a click) wins; a scheduled gesture is cancelled by a
- * hold that began before it, faded out by one that begins during it, and stays gone after.
+ * The action at t, one at a time: a giggle (a click) wins, and a blush follows it; a long hover's
+ * end makes her blush; then the pool and the whistle, each cancelled by a hold that began before it,
+ * faded out by one that begins during it, and gone after.
  */
 export function gestureAt(
   chain: GestureChain,
   g: GestureInput,
 ): ActiveGesture | null {
-  if (!g.enabled || g.t < g.awakeAt) return null;
+  if (g.allowed.length === 0 || g.t < g.awakeAt) return null;
   const t = g.t;
-  for (let n = g.giggles.length - 1; n >= 0; n--) {
-    const at = g.giggles[n] ?? 0;
-    if (at > t) continue;
-    if (t - at < GESTURE_MS.giggle)
-      return { name: "giggle", start: at, age: t - at, fade: 1 };
-    break;
-  }
-  const ev = chain.at(t);
-  if (ev === null) return null;
-  if (g.giggles.some((at) => at >= ev.start - GESTURE_MS.giggle && at <= t))
-    return null;
+  const can = (n: GestureName) => g.allowed.includes(n);
+  const GG = GESTURE_MS.giggle;
+  const GB = GESTURE_MS.blush;
+  if (can("giggle"))
+    for (let n = g.giggles.length - 1; n >= 0; n--) {
+      const at = g.giggles[n] ?? 0;
+      if (at > t) continue;
+      if (t - at < GG)
+        return { name: "giggle", start: at, age: t - at, fade: 1 };
+      if (can("blush") && t - at < GG + GB)
+        return { name: "blush", start: at + GG, age: t - at - GG, fade: 1 };
+      break;
+    }
+  if (can("blush"))
+    for (let n = g.blushes.length - 1; n >= 0; n--) {
+      const at = g.blushes[n] ?? 0;
+      if (at > t) continue;
+      if (t - at < GB)
+        return { name: "blush", start: at, age: t - at, fade: 1 };
+      break;
+    }
+  // the pool's slot at t, unless a whistle took it over
+  const whistles = whistleStarts(chain, t, Math.max(g.stillSince, g.awakeAt));
+  const w = whistles.at(-1);
+  const slotNow = chain.at(t);
+  const ev =
+    w !== undefined && t < w + GESTURE_MS.whistle
+      ? { name: "whistle" as const, start: w, age: t - w }
+      : slotNow !== null && whistles.includes(slotNow.start)
+        ? null
+        : slotNow;
+  if (ev === null || !can(ev.name)) return null;
+  // a reflex inside its window cancels it
+  if (g.giggles.some((at) => at >= ev.start - GG - GB && at <= t)) return null;
+  if (g.blushes.some((at) => at >= ev.start - GB && at <= t)) return null;
   if (g.hold) {
     if (g.holdAge >= ev.age) return null;
     const fade = 1 - clamp(g.holdAge / 300, 0, 1);
@@ -617,6 +774,35 @@ export function gestureState(g: ActiveGesture | null): FaceState {
       blush: ramp(a, 2600, 3200) * (1 - ramp(a, 6600, 7400)),
       actors: "bird",
     };
+  } else if (g.name === "blush") {
+    // the hatch blush on both cheeks with the soft smile, looking at you
+    const D = GESTURE_MS.blush;
+    st = {
+      ...NO_FACE,
+      blush: ramp(a, 0, 300) * (1 - ramp(a, D - 400, D)),
+      eyes: a > 100 && a < D - 150 ? "soft" : null,
+      mouth: a > 150 && a < D - 100 ? "smile" : null,
+    };
+  } else if (g.name === "whistle") {
+    // eyes up to the side, lips in a small "o", notes rising; then a glance back at you
+    const W = WHISTLE.notes;
+    st = {
+      ...NO_FACE,
+      mouth: a > 150 && a < W ? "o" : null,
+      aside: a < W,
+      actors: "notes",
+    };
+  } else if (g.name === "hum") {
+    // eyes closed in happy arcs, her free hair swaying while her head stays still
+    const D = GESTURE_MS.hum;
+    st = {
+      ...NO_FACE,
+      eyes: a > 100 && a < D - 100 ? "happy" : null,
+      sway:
+        Math.sin((a / 700) * 6.2832) *
+        ramp(a, 0, 250) *
+        (1 - ramp(a, D - 300, D)),
+    };
   } else {
     const up = ramp(a, 0, 200);
     const down = ramp(a, 1750, 1950);
@@ -647,6 +833,7 @@ export function gestureState(g: ActiveGesture | null): FaceState {
     gp: st.gp * fd,
     hand: st.hand ? { ...st.hand, p: st.hand.p * fd } : null,
     blush: st.blush * fd,
+    sway: st.sway * fd,
     fade: fd,
   };
   return fd < 0.5 ? { ...faded, eyes: null, mouth: null, sh: 0 } : faded;
@@ -673,42 +860,40 @@ export function blinkAt(t: number): number {
 /* ------------------------------------------------------------------ she looks at you */
 
 /**
- * Now and then she looks at the viewer: her eyes turn straight out (the wake's last beat), held 1.5
- * to 3 s, at rest every 8 to 20 s, right after a gesture ends, when the window is shown again after
- * 10 s or more away; about one in three paired with the soft smile or a slow blink.
+ * By default she looks at you; every 5 to 12 s she glances away for 0.9 to
+ * 2 s, to the composer, a passing cloud or the birds, and comes back. A moving pointer pulls her eyes
+ * while it moves; a hover wins over everything (the engine).
  */
-export const LOOK = {
-  gapMin: 8000,
-  gapMax: 20000,
-  holdMin: 1500,
-  holdMax: 3000,
-  /** Away this long, the window shown again makes her look at you. */
-  away: 10000,
+export const GLANCE = {
+  gapMin: 5000,
+  gapMax: 12000,
+  holdMin: 900,
+  holdMax: 2000,
 } as const;
 
-export type LookFlavour = "plain" | "smile" | "blink";
+export type GlanceTarget = "composer" | "cloud" | "birds";
 
-export interface LookAt {
+export interface GlanceAway {
   readonly start: number;
   readonly age: number;
   readonly hold: number;
-  readonly flavour: LookFlavour;
+  readonly target: GlanceTarget;
 }
 
-const holdOf = (seed: number, salt: number): number =>
-  LOOK.holdMin + hash01(seed, salt) * (LOOK.holdMax - LOOK.holdMin);
+const holdOf = (k: number): number =>
+  GLANCE.holdMin + hash01(k, 162) * (GLANCE.holdMax - GLANCE.holdMin);
 
-/** About one in three looks is paired: half with the soft smile, half with a slow blink. */
-function flavourOf(seed: number, salt: number): LookFlavour {
-  const h = hash01(seed, salt);
-  return h < 1 / 6 ? "smile" : h < 1 / 3 ? "blink" : "plain";
+/** Half of her glances go to the composer, a quarter to a cloud, a quarter to the birds. */
+function targetOf(k: number): GlanceTarget {
+  const h = hash01(k, 163);
+  return h < 0.5 ? "composer" : h < 0.75 ? "cloud" : "birds";
 }
 
 /**
- * Her looks at rest from when she is awake: start(k + 1) = start(k) + hold(k) + gap(k + 1), each gap
- * hashed in 8 to 20 s, each hold in 1.5 to 3 s. Pure in t: the chain extends itself as asked.
+ * Her glances away from when she is awake: start(k + 1) = start(k) + hold(k) + gap(k + 1), each gap
+ * hashed in 5 to 12 s, each hold in 0.9 to 2 s. Pure in t: the chain extends itself as asked.
  */
-export class LookChain {
+export class GlanceChain {
   readonly #starts: number[] = [];
   readonly #awakeAt: number;
 
@@ -717,11 +902,12 @@ export class LookChain {
   }
 
   #gap(k: number): number {
-    return LOOK.gapMin + hash01(k, 151) * (LOOK.gapMax - LOOK.gapMin);
+    return GLANCE.gapMin + hash01(k, 161) * (GLANCE.gapMax - GLANCE.gapMin);
   }
 
-  /** The look at rest running at t, or null. */
-  at(t: number): LookAt | null {
+  /** The glance away at t, or null (she looks at you); nothing before she is awake. */
+  at(t: number): GlanceAway | null {
+    if (t < this.#awakeAt) return null;
     const st = this.#starts;
     while (st.length === 0 || (st[st.length - 1] ?? 0) <= t) {
       const k = st.length;
@@ -729,49 +915,19 @@ export class LookChain {
       st.push(
         prev === undefined
           ? this.#awakeAt + this.#gap(0)
-          : prev + holdOf(k - 1, 152) + this.#gap(k),
+          : prev + holdOf(k - 1) + this.#gap(k),
       );
     }
     for (let k = st.length - 1; k >= 0; k--) {
       const start = st[k] ?? 0;
       if (start > t) continue;
-      const hold = holdOf(k, 152);
+      const hold = holdOf(k);
       return t < start + hold
-        ? { start, age: t - start, hold, flavour: flavourOf(k, 153) }
+        ? { start, age: t - start, hold, target: targetOf(k) }
         : null;
     }
     return null;
   }
-}
-
-/**
- * Whether she looks at you at t: a triggered look (a gesture just ended, the window came back; times
- * on her clock) wins over the rest chain; nothing before she is awake.
- */
-export function lookAt(
-  chain: LookChain,
-  t: number,
-  awakeAt: number,
-  triggers: readonly number[],
-): LookAt | null {
-  if (t < awakeAt) return null;
-  for (let n = triggers.length - 1; n >= 0; n--) {
-    const at = triggers[n] ?? 0;
-    if (at > t || at < awakeAt) continue;
-    const seed = Math.round(at / STEP_MS);
-    const hold = holdOf(seed, 154);
-    if (t < at + hold)
-      return { start: at, age: t - at, hold, flavour: flavourOf(seed, 155) };
-    break;
-  }
-  return chain.at(t);
-}
-
-/** A look's slow blink: half, closed, half, about a third into the look (0 when it has none). */
-export function lookLid(look: LookAt | null): number {
-  if (look === null || look.flavour !== "blink") return 0;
-  const x = look.age - look.hold * 0.35;
-  return x < 0 ? 0 : x < 150 ? 0.55 : x < 400 ? 1 : x < 550 ? 0.55 : 0;
 }
 
 /** Every 20 to 40 s, for 1.5 s, the near mouth corner lifts. */

@@ -1,10 +1,11 @@
 /**
  * K2's timeline (`k2-time.ts`), without a canvas. Regressions this catches: a wake whose beats run
  * out of order or late (the token, the beam, the assembly, asleep, the rise, the yawn, the rub, the
- * blinks, the smile); a wake that plays when she starts awake; two gestures at once, a gesture
- * during a hover, a giggle inside its cooldown; a look at you that comes too often, too rarely, too
- * long or before she is awake, that misses a gesture's end or the window's return, or pairs too
- * often; and a schedule that is not a pure function of the clock.
+ * blinks, the smile); a wake that plays when she starts awake; two idle actions at once or within
+ * 15 s, an action during a hover, a giggle inside its cooldown, a blush that does not follow the
+ * giggle or a long hover, a whistle before 40 s of a still pointer or crowding the pool; a gaze
+ * that does not rest on the viewer by default; and a schedule that is not a pure function of the
+ * clock.
  */
 import { describe, expect, test } from "vitest";
 import {
@@ -14,22 +15,22 @@ import {
   GestureChain,
   type GestureInput,
   type GestureName,
+  GLANCE as GLANCE_MS,
+  type GlanceAway,
+  GlanceChain,
   gestureAt,
   gestureState,
   hoverProgress,
-  LOOK,
-  type LookAt,
-  LookChain,
-  lookAt,
-  lookLid,
   projector,
   T_ASM,
   T_CONE,
   T_FLIP,
   T_PRESS,
   W0,
+  WHISTLE,
   wakeEnd,
   wakeState,
+  whistleAt,
 } from "../k2-time.js";
 
 const GLANCE = { x: 1330, y: 300 };
@@ -107,55 +108,121 @@ describe("the wake", () => {
   });
 });
 
+const ALL: readonly GestureName[] = [
+  "blow",
+  "bird",
+  "giggle",
+  "blush",
+  "whistle",
+  "hum",
+];
+
 const idle = (t: number, more: Partial<GestureInput> = {}): GestureInput => ({
   t,
-  enabled: true,
+  allowed: ALL,
   awakeAt: 0,
   giggles: [],
+  blushes: [],
+  stillSince: 0,
   hold: false,
   holdAge: -1,
   unholdAge: -1,
   ...more,
 });
 
-describe("the gestures", () => {
-  test("her rhythm: the first blow 6 s after she is awake, the first bird 20 s after", () => {
+/** Every idle action between `from` and `to`, sampled at her 10 fps steps. */
+function runsOf(
+  chain: GestureChain,
+  from: number,
+  to: number,
+  more: Partial<GestureInput> = {},
+): { name: GestureName; start: number; end: number }[] {
+  const runs: { name: GestureName; start: number; end: number }[] = [];
+  let open: { name: GestureName; start: number } | null = null;
+  for (let t = from; t <= to; t += 100) {
+    const g = gestureAt(chain, idle(t, more));
+    if (g !== null && open !== null && g.start !== open.start) {
+      runs.push({ ...open, end: t });
+      open = null;
+    }
+    if (g !== null && open === null) open = { name: g.name, start: g.start };
+    if (g === null && open !== null) {
+      runs.push({ ...open, end: t });
+      open = null;
+    }
+  }
+  return runs;
+}
+
+describe("the idle pool", () => {
+  test("her rhythm: the first blow 6 s after she is awake, then the bird 15 to 25 s after it", () => {
     const chain = new GestureChain(9100);
     expect(gestureAt(chain, idle(9100 + 5900, { awakeAt: 9100 }))).toBeNull();
     expect(gestureAt(chain, idle(9100 + 6000, { awakeAt: 9100 }))?.name).toBe(
       "blow",
     );
-    expect(gestureAt(chain, idle(9100 + 20000, { awakeAt: 9100 }))?.name).toBe(
-      "bird",
-    );
+    const runs = runsOf(chain, 9100, 9100 + 60000, { awakeAt: 9100 });
+    expect(runs.slice(0, 2).map((r) => r.name)).toEqual(["blow", "bird"]);
+    const gap = (runs[1]?.start ?? 0) - (runs[0]?.end ?? 0);
+    expect(gap).toBeGreaterThanOrEqual(GESTURE_GAP - 100);
+    expect(gap).toBeLessThanOrEqual(25000 + 100);
   });
 
-  test("one at a time, never two scheduled within 20 s, and the same answer for the same moment", () => {
+  test("one at a time, at least 15 s between any two, every kind in an hour, the same answer for the same moment", () => {
     const chain = new GestureChain(0);
-    const runs: { name: GestureName; start: number; end: number }[] = [];
-    let open: { name: GestureName; start: number } | null = null;
-    for (let t = 0; t <= 900000; t += 100) {
-      const g = gestureAt(chain, idle(t));
-      if (g !== null && open === null) open = { name: g.name, start: g.start };
-      if (g === null && open !== null) {
-        runs.push({ ...open, end: t });
-        open = null;
-      }
-    }
-    expect(runs.length).toBeGreaterThan(10);
-    for (let n = 2; n < runs.length; n++) {
-      const a = runs[n - 1];
-      const b = runs[n];
-      if (a === undefined || b === undefined) continue;
-      expect(b.start - a.end).toBeGreaterThanOrEqual(GESTURE_GAP - 100);
-    }
-    // pure: asking again, out of order, gives the same gestures
+    const runs = runsOf(chain, 0, 3600000);
+    expect(runs.length).toBeGreaterThan(40);
+    const gaps = runs.slice(1).map((r, n) => r.start - (runs[n]?.end ?? 0));
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(GESTURE_GAP - 100);
+    const kinds = new Set(runs.map((r) => r.name));
+    expect([...kinds].sort()).toEqual([
+      "bird",
+      "blow",
+      "blush",
+      "hum",
+      "whistle",
+    ]);
+    // the blow and the bird keep their rhythm: never sooner than 45 s and 60 s apart
+    const blows = runs.filter((r) => r.name === "blow").map((r) => r.start);
+    const birds = runs.filter((r) => r.name === "bird").map((r) => r.start);
+    expect(
+      Math.min(...blows.slice(1).map((s, n) => s - (blows[n] ?? 0))),
+    ).toBeGreaterThanOrEqual(45000);
+    expect(
+      Math.min(...birds.slice(1).map((s, n) => s - (birds[n] ?? 0))),
+    ).toBeGreaterThanOrEqual(60000);
+    // pure: asking again, out of order, gives the same actions
     const again = new GestureChain(0);
     for (const r of [...runs].reverse())
       expect(gestureAt(again, idle(r.start + 50))?.name).toBe(r.name);
   });
 
-  test("a hover before a gesture cancels it, one during it fades it out in 300 ms", () => {
+  test("the whistle: it takes over the first slot 40 to 90 s into a still pointer, and waits again when the pointer moves", () => {
+    const chain = new GestureChain(0);
+    const still = 200000;
+    expect(whistleAt(chain, still + WHISTLE.min - 100, still)).toBeNull();
+    let first: number | null = null;
+    for (let t = still; t < still + 200000 && first === null; t += 100)
+      first = whistleAt(chain, t, still)?.start ?? null;
+    expect(first).not.toBeNull();
+    const at = first ?? 0;
+    expect(at).toBeGreaterThanOrEqual(still + WHISTLE.min);
+    // it stands in one of the pool's slots, in place of that slot's action
+    expect(chain.from(at).start).toBe(at);
+    expect(gestureAt(chain, idle(at + 100, { stillSince: still }))?.name).toBe(
+      "whistle",
+    );
+    expect(
+      gestureAt(
+        chain,
+        idle(at + GESTURE_MS.whistle + 100, { stillSince: still }),
+      ),
+    ).toBeNull();
+    // the pointer moved just before it: the wait starts again
+    expect(whistleAt(chain, at + 100, at - 1000)).toBeNull();
+  });
+
+  test("a hover before an action cancels it, one during it fades it out in 300 ms", () => {
     const chain = new GestureChain(0);
     expect(
       gestureAt(chain, idle(6500, { hold: true, holdAge: 2000 })),
@@ -170,34 +237,57 @@ describe("the gestures", () => {
     expect(gestureAt(chain, idle(7200, { unholdAge: 200 }))).toBeNull();
   });
 
-  test("the giggle answers a click, wins over a scheduled gesture and has an 8 s cooldown", () => {
+  test("the giggle answers a click and a blush follows it; a long hover's end makes her blush; an 8 s cooldown", () => {
     const chain = new GestureChain(0);
-    const g = gestureAt(chain, idle(6500, { giggles: [6400] }));
-    expect(g?.name).toBe("giggle");
+    expect(gestureAt(chain, idle(6500, { giggles: [6400] }))?.name).toBe(
+      "giggle",
+    );
+    const after = gestureAt(
+      chain,
+      idle(6400 + GESTURE_MS.giggle + 100, { giggles: [6400] }),
+    );
+    expect(after?.name).toBe("blush");
+    expect(after?.start).toBe(6400 + GESTURE_MS.giggle);
     expect(
-      gestureAt(chain, idle(6400 + GESTURE_MS.giggle, { giggles: [6400] })),
+      gestureAt(
+        chain,
+        idle(6400 + GESTURE_MS.giggle + GESTURE_MS.blush + 100, {
+          giggles: [6400],
+        }),
+      ),
     ).toBeNull();
+    expect(gestureAt(chain, idle(3100, { blushes: [3000] }))?.name).toBe(
+      "blush",
+    );
     expect(canGiggle(7000, [6400], 0)).toBe(false);
     expect(canGiggle(6400 + GESTURE_MS.giggle + 8000, [6400], 0)).toBe(true);
     expect(canGiggle(5000, [], 9100)).toBe(false);
   });
 
-  test("nothing before she is awake, nothing when gestures are off", () => {
+  test("nothing before she is awake or when nothing is allowed; only the allowed ones play", () => {
     const chain = new GestureChain(9100);
     expect(gestureAt(chain, idle(15100, { awakeAt: 16000 }))).toBeNull();
     expect(
-      gestureAt(chain, idle(15100, { awakeAt: 9100, enabled: false })),
+      gestureAt(chain, idle(15100, { awakeAt: 9100, allowed: [] })),
     ).toBeNull();
+    const mapFree = runsOf(new GestureChain(0), 0, 1800000, {
+      allowed: ["blush", "whistle", "hum"],
+    });
+    expect(mapFree.length).toBeGreaterThan(5);
+    expect(
+      mapFree.every(
+        (r) => r.name === "blush" || r.name === "whistle" || r.name === "hum",
+      ),
+    ).toBe(true);
   });
 
-  test("each gesture's state: the blow squeezes and puffs, the bird blushes, the giggle hides the mouth", () => {
+  test("each action's state: blow, bird, giggle, the blush's smile, the whistle's o and notes, the hum's sway", () => {
     const blow = gestureState({ name: "blow", start: 0, age: 4500, fade: 1 });
     expect(blow.eyes).toBe("squeeze");
     expect(blow.mouth).toBe("o");
     expect(blow.actors).toBe("cloud");
     const bird = gestureState({ name: "bird", start: 0, age: 4000, fade: 1 });
     expect(bird.blush).toBe(1);
-    expect(bird.hand?.map).toBe("palm");
     expect(bird.actors).toBe("bird");
     const giggle = gestureState({
       name: "giggle",
@@ -207,7 +297,31 @@ describe("the gestures", () => {
     });
     expect(giggle.eyes).toBe("happy");
     expect(giggle.mouth).toBe("none");
-    expect(giggle.sh).toBe(1);
+    const blush = gestureState({ name: "blush", start: 0, age: 1200, fade: 1 });
+    expect(blush.blush).toBe(1);
+    expect(blush.mouth).toBe("smile");
+    expect(blush.gaze).toBeNull();
+    const whistle = gestureState({
+      name: "whistle",
+      start: 0,
+      age: 1500,
+      fade: 1,
+    });
+    expect(whistle.mouth).toBe("o");
+    expect(whistle.aside).toBe(true);
+    expect(whistle.actors).toBe("notes");
+    // then the glance back at you
+    expect(
+      gestureState({
+        name: "whistle",
+        start: 0,
+        age: WHISTLE.notes + 200,
+        fade: 1,
+      }).aside,
+    ).toBe(false);
+    const hum = gestureState({ name: "hum", start: 0, age: 525, fade: 1 });
+    expect(hum.eyes).toBe("happy");
+    expect(Math.abs(hum.sway)).toBeGreaterThan(0.5);
     // a hover fading it out drops the face marks past half
     const faded = gestureState({
       name: "blow",
@@ -229,87 +343,51 @@ describe("the hover", () => {
   });
 });
 
-/** Every look at rest between `from` and `to`, sampled at her 10 fps steps. */
-function restLooks(chain: LookChain, from: number, to: number): LookAt[] {
-  const out: LookAt[] = [];
+/** Every glance away between `from` and `to`, sampled at her 10 fps steps, and the time spent away. */
+function glancesOf(
+  chain: GlanceChain,
+  from: number,
+  to: number,
+): { list: GlanceAway[]; away: number } {
+  const list: GlanceAway[] = [];
+  let away = 0;
   for (let t = from; t <= to; t += 100) {
-    const hit = lookAt(chain, t, from, []);
-    if (hit !== null && out.at(-1)?.start !== hit.start) out.push(hit);
+    const hit = chain.at(t);
+    if (hit === null) continue;
+    away += 100;
+    if (list.at(-1)?.start !== hit.start) list.push(hit);
   }
-  return out;
+  return { list, away };
 }
 
 describe("she looks at you", () => {
-  test("at rest every 8 to 20 s, each look held 1.5 to 3 s, never before she is awake", () => {
+  test("by default: away for under a fifth of the time, each glance 0.9 to 2 s, every 5 to 12 s", () => {
     const awake = 9100;
-    const chain = new LookChain(awake);
-    expect(lookAt(chain, awake - 100, awake, [])).toBeNull();
-    const looks = restLooks(chain, awake, awake + 600000);
-    expect(looks.length).toBeGreaterThan(
-      600000 / (LOOK.gapMax + LOOK.holdMax) - 1,
-    );
-    expect(looks.length).toBeLessThan(600000 / LOOK.gapMin + 1);
-    expect(looks[0]?.start ?? 0).toBeGreaterThanOrEqual(awake + LOOK.gapMin);
-    for (const look of looks) {
-      expect(look.hold).toBeGreaterThanOrEqual(LOOK.holdMin);
-      expect(look.hold).toBeLessThanOrEqual(LOOK.holdMax);
+    const chain = new GlanceChain(awake);
+    expect(chain.at(awake - 100)).toBeNull();
+    const span = 600000;
+    const { list, away } = glancesOf(chain, awake, awake + span);
+    expect(away / span).toBeLessThan(0.2);
+    expect(away / span).toBeGreaterThan(0.05);
+    for (const g of list) {
+      expect(g.hold).toBeGreaterThanOrEqual(GLANCE_MS.holdMin);
+      expect(g.hold).toBeLessThanOrEqual(GLANCE_MS.holdMax);
     }
-    const gaps = looks
+    const gaps = list
       .slice(1)
-      .map(
-        (look, n) =>
-          look.start - ((looks[n]?.start ?? 0) + (looks[n]?.hold ?? 0)),
-      );
-    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(LOOK.gapMin);
-    expect(Math.max(...gaps)).toBeLessThanOrEqual(LOOK.gapMax);
+      .map((g, n) => g.start - ((list[n]?.start ?? 0) + (list[n]?.hold ?? 0)));
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(GLANCE_MS.gapMin);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(GLANCE_MS.gapMax);
   });
 
-  test("pure: the same moments give the same looks, asked in any order", () => {
-    const a = new LookChain(0);
-    const b = new LookChain(0);
-    const forward = [30000, 60000, 90000, 120000].map((t) =>
-      lookAt(a, t, 0, []),
-    );
-    const backward = [120000, 90000, 60000, 30000]
-      .map((t) => lookAt(b, t, 0, []))
-      .reverse();
+  test("she glances to the composer, a cloud and the birds, and the same moments give the same glances", () => {
+    const { list } = glancesOf(new GlanceChain(0), 0, 600000);
+    const targets = new Set(list.map((g) => g.target));
+    expect([...targets].sort()).toEqual(["birds", "cloud", "composer"]);
+    const a = new GlanceChain(0);
+    const b = new GlanceChain(0);
+    const forward = [30000, 60000, 90000].map((t) => a.at(t));
+    const backward = [90000, 60000, 30000].map((t) => b.at(t)).reverse();
     expect(backward).toEqual(forward);
-  });
-
-  test("a gesture's end or the window's return starts a look at once and holds it 1.5 to 3 s", () => {
-    const chain = new LookChain(9100);
-    const ended = 23000;
-    const hit = lookAt(chain, ended + 100, 9100, [ended]);
-    expect(hit?.start).toBe(ended);
-    expect(hit?.hold ?? 0).toBeGreaterThanOrEqual(LOOK.holdMin);
-    expect(hit?.hold ?? 9999).toBeLessThanOrEqual(LOOK.holdMax);
-    const after = lookAt(chain, ended + (hit?.hold ?? 0) + 100, 9100, [ended]);
-    expect(after?.start === ended).toBe(false);
-    // a trigger while she is still waking up is ignored
-    expect(lookAt(chain, 5100, 9100, [5000])).toBeNull();
-    expect(LOOK.away).toBe(10000);
-  });
-
-  test("about one in three looks is paired with the soft smile or a slow blink", () => {
-    const looks = restLooks(new LookChain(0), 0, 3600000);
-    const smile = looks.filter((l) => l.flavour === "smile").length;
-    const blink = looks.filter((l) => l.flavour === "blink").length;
-    expect(looks.length).toBeGreaterThan(150);
-    expect((smile + blink) / looks.length).toBeGreaterThan(0.2);
-    expect((smile + blink) / looks.length).toBeLessThan(0.46);
-    expect(smile).toBeGreaterThan(0);
-    expect(blink).toBeGreaterThan(0);
-  });
-
-  test("the slow blink closes once inside the look; a plain look never moves the lid", () => {
-    const blink: LookAt = { start: 0, age: 0, hold: 2000, flavour: "blink" };
-    const lids = [0, 400, 700, 900, 1200, 1999].map((age) =>
-      lookLid({ ...blink, age }),
-    );
-    expect(lids[0]).toBe(0);
-    expect(Math.max(...lids)).toBe(1);
-    expect(lids[5]).toBe(0);
-    expect(lookLid({ ...blink, flavour: "plain", age: 900 })).toBe(0);
-    expect(lookLid(null)).toBe(0);
   });
 });

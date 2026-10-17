@@ -11,11 +11,12 @@
  *   ?placement=stage|sidebar|welcome      where she stands (stage)
  *   ?ground=print|paper|night             what she stands on (print)
  *   ?theme=celeris|chronos                the room (celeris)
- *   ?emotion=idle|working|...             what she shows of the agent (idle)
+ *   ?emotion=idle|working|...             what she shows of the agent (idle); approval drops the
+ *                                         bust's cut for the palm
  *   ?w=256&h=280                          the host's size; stage fills the window by default,
  *                                         sidebar is 256 x 280, welcome 284 x 284
  *   ?wake=1                               the wake from the token
- *   ?g=blow|bird|giggle                   that gesture 1 s after she is awake
+ *   ?g=blow|bird|giggle|blush|hum         that gesture 1 s after she is awake
  *   ?hover=1                              the pointer on her
  *   ?still                                the still frame (reduced motion is the browser's own)
  * The host carries `data-vex-k2-ready` once her first frame is painted.
@@ -46,7 +47,11 @@ function size(name: string, fallback: number): number {
 const placement = pick<K2PlacementName>("placement", ["stage", "sidebar", "welcome"], "stage");
 const ground = pick<K2Ground>("ground", ["print", "paper", "night"], "print");
 const emotion = pick<K2Emotion>("emotion", K2_EMOTIONS, "idle");
-const gesture = pick<GestureName | "none">("g", ["blow", "bird", "giggle", "none"], "none");
+const gesture = pick<GestureName | "none">(
+  "g",
+  ["blow", "bird", "giggle", "blush", "hum", "none"],
+  "none",
+);
 const chronos = params.get("theme") === "chronos";
 
 document.documentElement.dataset["vexTheme"] = chronos ? "chronos" : "celeris";
