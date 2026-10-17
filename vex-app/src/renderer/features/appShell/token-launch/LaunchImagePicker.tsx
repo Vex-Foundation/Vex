@@ -1,9 +1,9 @@
 /**
- * The image field of the launch form — the one genuinely new interaction.
+ * The image field of the launch form - the one genuinely new interaction.
  *
  * A Vex launch REQUIRES an image. That is our product rule, not a contract
  * rule: the Diamond accepts empty image bytes (`launch_preview` proves it), and
- * we refuse to. So this field is not optional decoration — with nothing picked,
+ * we refuse to. So this field is not optional decoration - with nothing picked,
  * there is no preview and no Deploy.
  *
  * ── WHY THERE IS NO `<input type="file">` ─────────────────────────────────
@@ -11,17 +11,24 @@
  * introduced here. The user picks from the LOCKER (images main already
  * validated and stored), or presses Add, which opens MAIN's own picker
  * (`vex:images:upload`). The renderer never learns, sends, or guesses a
- * filesystem path — the whole traversal class is designed out rather than
+ * filesystem path - the whole traversal class is designed out rather than
  * filtered. Thumbnails arrive as `data:` URLs over already-validated bytes,
  * which `index.html`'s `img-src 'self' data:` already permits.
  *
  * Refusals (over-cap, wrong magic bytes) are main's message rendered verbatim
  * in an inline alert: main knows the actual size and the actual limit, and a
  * sentence invented here could only be vaguer or wrong. A CANCELLED picker is
- * silent — the user closed a dialog they opened, which is not an error.
+ * silent - the user closed a dialog they opened, which is not an error.
+ *
+ * LOOK (docs/design/R3-MINIMAL.md sections 1.3, 1.5 and 12). The pick area is a
+ * 1px dotted rule box holding the chosen picture and the Add image key (the kit
+ * `Button`, quiet and small). Every picture is square: the 64px preview and the
+ * 44px locker tiles carry a 1px rule, and the chosen tile takes the 1.5px blue
+ * frame plus a solid swatch in its corner, so the choice is never colour alone.
+ * Notes are a swatch beside the sentence in ink, never red or amber.
  */
 
-import { useState, type JSX } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 import type { LockerImage } from "@shared/schemas/images.js";
 import type { VexError } from "@shared/ipc/result.js";
 import {
@@ -29,7 +36,13 @@ import {
   useLockerImages,
   useUploadLockerImage,
 } from "../../../lib/api/images.js";
-import { Label } from "../../../components/ui/label.js";
+import { Button } from "../../../components/ui/button.js";
+import { Swatch } from "../../../components/ui/swatch.js";
+import { cn } from "../../../lib/utils.js";
+import {
+  DIALOG_HINT_CLASS,
+  DIALOG_LABEL_CLASS,
+} from "../SessionCreator/dialog-fields.js";
 
 interface LaunchImagePickerProps {
   readonly selectedImageId: string | null;
@@ -71,39 +84,43 @@ export function LaunchImagePicker({
 
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor="vex-launch-image">Image</Label>
-      <p className="text-[11px] leading-relaxed text-ink-tertiary">
+      <label htmlFor="vex-launch-image" className={DIALOG_LABEL_CLASS}>
+        Image
+      </label>
+      <p className={DIALOG_HINT_CLASS}>
         Required. Pick one from your launch photos, or add a new one - the
         picture is published with the token, so it can&apos;t be changed
         afterwards.
       </p>
 
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 border border-dotted border-rule p-3">
         <SelectedImageWell image={selected} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           {selected !== null ? (
             <>
-              <span className="truncate text-[12.5px] text-ink-secondary">
+              <span className="truncate text-[13px] text-ink-secondary">
                 {selected.label}
               </span>
-              <span className="font-mono text-[10px] tabular-nums text-ink-tertiary">
+              <span className="vex-num text-[12px] text-ink-tertiary">
                 {selected.width}×{selected.height} · {selected.byteLength} bytes
               </span>
             </>
           ) : (
-            <span className="text-[12.5px] text-ink-tertiary">
+            <span className="text-[13px] text-ink-tertiary">
               No image selected.
             </span>
           )}
-          <button
+          <Button
             id="vex-launch-image"
             type="button"
+            variant="quiet"
+            size="sm"
             onClick={runUpload}
             disabled={disabled || upload.isPending}
-            className="mt-1 w-fit rounded-full border border-line-3 px-3 py-1 vex-micro-label vex-micro-label--wide uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-50"
+            className="mt-1 w-fit"
           >
             {upload.isPending ? "Adding…" : "Add image"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -115,11 +132,7 @@ export function LaunchImagePicker({
         disabled={disabled}
       />
 
-      {notice !== null ? (
-        <p className="text-sm text-danger" role="alert">
-          {notice}
-        </p>
-      ) : null}
+      {notice !== null ? <PickerNote state="error" role="alert">{notice}</PickerNote> : null}
     </div>
   );
 }
@@ -140,26 +153,22 @@ function LockerStrip({
   const result = query.data;
 
   if (query.isLoading) {
-    return (
-      <p className="vex-micro-label uppercase text-ink-secondary">
-        Loading your photos…
-      </p>
-    );
+    return <PickerNote state="ongoing">Loading your photos…</PickerNote>;
   }
 
-  // A failed locker read is NOT "you have no photos" — saying so would send the
+  // A failed locker read is NOT "you have no photos" - saying so would send the
   // user off to re-upload images they already have.
   if (query.isError || (result !== undefined && !result.ok)) {
     return (
-      <p className="text-[12px] text-warning">
+      <PickerNote state="concerned">
         Couldn&apos;t read your image locker - add an image to continue.
-      </p>
+      </PickerNote>
     );
   }
 
   if (images.length === 0) {
     return (
-      <p className="text-[12px] leading-relaxed text-ink-tertiary">
+      <p className={DIALOG_HINT_CLASS}>
         Your launch photos are empty. Add one here, or from the Launchpad card
         in the right-hand panel.
       </p>
@@ -167,7 +176,7 @@ function LockerStrip({
   }
 
   return (
-    <ul className="flex flex-row flex-wrap gap-1.5">
+    <ul className="flex flex-row flex-wrap gap-2">
       {images.map((image) => (
         <li key={image.imageId}>
           <LockerTile
@@ -203,27 +212,37 @@ function LockerTile({
       aria-label={`Use ${image.label}`}
       disabled={disabled}
       onClick={() => onSelect(image.imageId)}
-      className={[
-        "size-11 overflow-hidden rounded-xl border transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-        "disabled:opacity-50",
+      className={cn(
+        "relative size-11 overflow-hidden",
+        "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
+        "disabled:cursor-not-allowed disabled:border-dotted",
         selected
-          ? "border-accent-primary/85"
-          : "border-line-2 hover:border-line-3",
-      ].join(" ")}
+          ? "border-[1.5px] border-accent-primary"
+          : "border border-rule enabled:hover:border-rule-ink",
+      )}
     >
       {dataUrl !== null ? (
         // Decorative INSIDE the button: the accessible name is the button's
         // own aria-label, so an empty alt avoids announcing the label twice.
         <img src={dataUrl} alt="" className="size-full object-cover" />
       ) : (
-        <span className="block size-full bg-surface-deep" />
+        <span className="block size-full bg-surface-field" />
       )}
+      {selected ? (
+        // The mark of the chosen tile, on a paper chip so it holds over any
+        // picture. Decorative: `aria-pressed` already says it.
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0 right-0 flex bg-surface-2 p-[3px] text-accent-primary"
+        >
+          <Swatch state="done" size={10} />
+        </span>
+      ) : null}
     </button>
   );
 }
 
-/** The 64×64 preview well for the chosen image. */
+/** The 64×64 preview well for the chosen image: square, a 1px rule. */
 function SelectedImageWell({
   image,
 }: {
@@ -233,7 +252,7 @@ function SelectedImageWell({
   const dataUrl = thumb.data?.ok === true ? thumb.data.data.dataUrl : null;
 
   return (
-    <div className="size-16 shrink-0 overflow-hidden rounded-xl border border-line-3 bg-surface-deep">
+    <div className="size-16 shrink-0 overflow-hidden border border-rule bg-surface-field">
       {dataUrl !== null && image !== null ? (
         <img
           src={dataUrl}
@@ -246,7 +265,29 @@ function SelectedImageWell({
 }
 
 /**
- * A cancelled picker must stay silent — the user closed a dialog they opened.
+ * A flat note under the picker: the swatch, then the sentence in ink. The
+ * fill carries the state (loading = dot screen, trouble = concerned, a refusal =
+ * error) and the sentence says it in words.
+ */
+function PickerNote({
+  state,
+  role,
+  children,
+}: {
+  readonly state: "ongoing" | "concerned" | "error";
+  readonly role?: "alert";
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <p role={role} className="flex items-start gap-2 text-[13px] leading-[1.45] text-ink-primary">
+      <Swatch state={state} size={10} className="mt-1 shrink-0 text-accent-primary" />
+      <span className="min-w-0">{children}</span>
+    </p>
+  );
+}
+
+/**
+ * A cancelled picker must stay silent - the user closed a dialog they opened.
  * Everything else is main's already-redacted message, which names the actual
  * limit and the actual size.
  */
