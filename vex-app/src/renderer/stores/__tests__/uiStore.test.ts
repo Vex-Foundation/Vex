@@ -20,6 +20,10 @@ function resetStoreToDefaults(): void {
   useUiStore.setState({
     theme: "chronos",
     sidebarOpen: true,
+    leftOpen: true,
+    vexOpenChat: true,
+    vexOpenPages: false,
+    showAvatar: true,
     bookOpen: true,
     currentView: "splash",
     setupGateActive: true,
@@ -322,6 +326,11 @@ describe("uiStore", () => {
       studioFileTabs: {},
       sessionOrdinals: { next: 1, byId: {} },
       terminalPasteWarning: true,
+      // The R3 frame (v22): the left sidebar, where Vex opens, the avatar.
+      leftOpen: true,
+      vexOpenChat: true,
+      vexOpenPages: false,
+      showAvatar: true,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -672,6 +681,11 @@ describe("uiStore", () => {
       studioFileTabs: {},
       sessionOrdinals: { next: 1, byId: {} },
       terminalPasteWarning: true,
+      // The R3 frame (v22): `setSidebarOpen` keeps `leftOpen` in step.
+      leftOpen: false,
+      vexOpenChat: true,
+      vexOpenPages: false,
+      showAvatar: true,
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();
