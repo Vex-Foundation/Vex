@@ -119,6 +119,12 @@ describe("CH / EV channel constants", () => {
     expect(Object.keys(CH.studio)).toEqual(["hostStatus", "bridgeReadiness"]);
   });
 
+  it("ships the native runtime's start surface with its canonical names", () => {
+    expect(CH.system.runtimeStatus).toBe("vex:system:runtimeStatus");
+    expect(CH.system.runtimeRetry).toBe("vex:system:runtimeRetry");
+    expect(EV.system.runtimeProgress).toBe("vex:event:system:runtimeProgress");
+  });
+
   it("channels are unique (no duplicate values across namespaces)", () => {
     const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
     const seen = new Set<string>();

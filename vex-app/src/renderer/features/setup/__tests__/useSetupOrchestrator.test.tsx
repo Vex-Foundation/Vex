@@ -13,7 +13,9 @@
  *    documented contract, not style);
  *  - non-happy compose/migrate outcomes hand off to the classic screen
  *    that owns that remediation;
- *  - a completed setup with a locked vault hands off to unlock.
+ *  - a completed setup with a locked vault hands off to unlock;
+ *  - on the native runtime the gate waits for main's start: ready →
+ *    migrate; a failure or a model download → runtimeBootstrap.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +23,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
+import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 import { useSetupOrchestrator } from "../useSetupOrchestrator.js";
 
 function ok<T>(data: T): { ok: true; data: T } {
@@ -76,6 +79,8 @@ const WIZARD_DONE = {
 interface VexMock {
   readonly health: ReturnType<typeof vi.fn>;
   readonly runtime: ReturnType<typeof vi.fn>;
+  readonly runtimeStatus: ReturnType<typeof vi.fn>;
+  readonly onRuntimeProgress: ReturnType<typeof vi.fn>;
   readonly detect: ReturnType<typeof vi.fn>;
   readonly getEnvState: ReturnType<typeof vi.fn>;
   readonly composeUpAbortable: ReturnType<typeof vi.fn>;
@@ -85,10 +90,21 @@ interface VexMock {
   readonly secretsStatus: ReturnType<typeof vi.fn>;
 }
 
+const runtimeListeners = new Set<(status: NativeRuntimeStatus) => void>();
+
+function emitRuntime(status: NativeRuntimeStatus): void {
+  for (const listener of runtimeListeners) listener(status);
+}
+
 function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
   const mock: VexMock = {
     health: vi.fn(async () => ok(HEALTH)),
     runtime: vi.fn(async () => ok({ native: false })),
+    runtimeStatus: vi.fn(async () => ok({ seq: 6, phase: "ready" })),
+    onRuntimeProgress: vi.fn((cb: (status: NativeRuntimeStatus) => void) => {
+      runtimeListeners.add(cb);
+      return () => runtimeListeners.delete(cb);
+    }),
     detect: vi.fn(async () => ok(DOCKER_READY)),
     getEnvState: vi.fn(async () => ok({ setupCompleteFlag: true })),
     composeUpAbortable: vi.fn(() => ({
@@ -107,7 +123,12 @@ function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
     configurable: true,
     writable: true,
     value: {
-      system: { health: mock.health, runtime: mock.runtime },
+      system: {
+        health: mock.health,
+        runtime: mock.runtime,
+        runtimeStatus: mock.runtimeStatus,
+        onRuntimeProgress: mock.onRuntimeProgress,
+      },
       docker: {
         detect: mock.detect,
         composeUpAbortable: mock.composeUpAbortable,
@@ -132,6 +153,7 @@ function wrapper({ children }: { readonly children: ReactNode }) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  runtimeListeners.clear();
 });
 
 afterEach(() => {
@@ -231,6 +253,88 @@ describe("useSetupOrchestrator", () => {
     );
     expect(mock.composeUpAbortable).not.toHaveBeenCalled();
     expect(calls).toEqual(["subscribe", "migrate"]);
+    expect(runtimeListeners.size).toBe(0);
+  });
+
+  it("native runtime: the gate waits through a start in flight, then migrates", async () => {
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      runtimeStatus: vi.fn(async () => ok({ seq: 2, phase: "postgres", initializing: false })),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() => expect(runtimeListeners.size).toBe(1));
+    await waitFor(() => expect(result.current.status.key).toBe("services"));
+    emitRuntime({ seq: 3, phase: "model", model: { state: "checking" } });
+    emitRuntime({ seq: 4, phase: "embeddings" });
+    expect(mock.migrate).not.toHaveBeenCalled();
+    expect(result.current.handoff).toBeNull();
+    emitRuntime({ seq: 5, phase: "ready" });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
+    );
+    expect(mock.migrate).toHaveBeenCalledTimes(1);
+    expect(runtimeListeners.size).toBe(0);
+  });
+
+  it.each<[string, NativeRuntimeStatus]>([
+    [
+      "a model download",
+      {
+        seq: 3,
+        phase: "model",
+        model: { state: "downloading", receivedBytes: 1, totalBytes: 10, bytesPerSecond: null },
+      },
+    ],
+    ["a model re-hash", { seq: 3, phase: "model", model: { state: "verifying" } }],
+    ["a failed start", { seq: 3, phase: "failed", step: "postgres", kind: "port_collision", message: "No port." }],
+  ])("native runtime: %s hands off to runtimeBootstrap without migrating", async (_label, status) => {
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      runtimeStatus: vi.fn(async () => ok(status)),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "runtimeBootstrap" }),
+    );
+    expect(mock.migrate).not.toHaveBeenCalled();
+    expect(runtimeListeners.size).toBe(0);
+  });
+
+  it("native runtime: a status reply older than an event already seen is ignored", async () => {
+    let answer: (value: unknown) => void = () => {};
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      runtimeStatus: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() => expect(runtimeListeners.size).toBe(1));
+    emitRuntime({ seq: 5, phase: "ready" });
+    answer(ok({ seq: 4, phase: "failed", step: "embeddings", kind: "failed", message: "stale" }));
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
+    );
+    expect(mock.migrate).toHaveBeenCalledTimes(1);
+  });
+
+  it("native runtime: an unreadable status hands off to runtimeBootstrap", async () => {
+    installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      runtimeStatus: vi.fn(async () => ({ ok: false, error: { code: "internal.unexpected", message: "x" } })),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "runtimeBootstrap" }),
+    );
+  });
+
+  it("compose provider: never reads the native runtime's status", async () => {
+    const mock = installVexMock();
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
+    );
+    expect(mock.runtimeStatus).not.toHaveBeenCalled();
+    expect(mock.onRuntimeProgress).not.toHaveBeenCalled();
   });
 
   it("port_collision hands off to the classic compose screen", async () => {

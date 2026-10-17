@@ -82,7 +82,7 @@ export function SystemCheck(): JSX.Element {
         : "warn";
 
   const anyLoading = health.isPending || docker.isPending || env.isPending || runtime.isPending;
-  // The native runtime is started by main; setup goes straight to the schema.
+  // The native runtime is started by main; setup watches it come up.
   const nativeRuntime = runtime.data?.ok === true && runtime.data.data.native;
 
   return (
@@ -119,7 +119,7 @@ export function SystemCheck(): JSX.Element {
 
       <Footer
         disabled={anyLoading}
-        onContinue={() => setCurrentView(nativeRuntime ? "migrations" : "dockerBootstrap")}
+        onContinue={() => setCurrentView(nativeRuntime ? "runtimeBootstrap" : "dockerBootstrap")}
       />
     </SetupFrame>
   );

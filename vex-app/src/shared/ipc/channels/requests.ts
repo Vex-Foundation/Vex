@@ -19,6 +19,10 @@ export const CH = {
     network: "vex:system:network",
     /** Which local runtime main runs: the native one (bundled binaries) or not. */
     runtime: "vex:system:runtime",
+    /** The native runtime's start as it stands, for a screen that arrives late. */
+    runtimeStatus: "vex:system:runtimeStatus",
+    /** Start the native runtime again after a failure; a no-op otherwise. */
+    runtimeRetry: "vex:system:runtimeRetry",
     /** OS-native turn-complete notification (A34); main checks focus itself. */
     notifyTurnComplete: "vex:system:notifyTurnComplete",
     /** Recolour the Windows/Linux title bar overlay on a theme change. */

@@ -635,6 +635,27 @@ describe("the post-signing native runtime gate (check:package)", () => {
     expect((result.value as { issues: string[] }).issues.join("\n")).toMatch(/postgres\.bki: sha256 .* but the lock-pinned listing records/);
   });
 
+  it("in a signed Windows app, requires signed .exe files but accepts Microsoft-signed or lock-bound unsigned DLLs", () => {
+    const root = temporaryRoot("vex-nr-check-win-");
+    const runtime = fakeApp(root, ["win32-x64"]).get("win32-x64")!;
+    const { resources } = fakePackage(root, runtime);
+    writeFile(path.join(path.dirname(resources), "Vex.exe"), Buffer.from("MZ app"), true);
+
+    const exeSignedDllsUnsigned = `(file) => file.endsWith(".dll") ? { verified: false, detail: "NotSigned" } : { verified: true, detail: "Valid" }`;
+    expect(check(root, resources, runtime.target, exeSignedDllsUnsigned, "win32")).toMatchObject({ ok: true, value: { issues: [] } });
+
+    const anExeUnsigned = `(file) => file.endsWith("Vex.exe") || file.endsWith(".dll") ? { verified: file.endsWith("Vex.exe"), detail: file.endsWith("Vex.exe") ? "Valid" : "NotSigned" } : { verified: false, detail: "NotSigned" }`;
+    const unsignedExe = check(root, resources, runtime.target, anExeUnsigned, "win32");
+    expect((unsignedExe.value as { issues: string[] }).issues.join("\n")).toMatch(/\.exe is NOT validly signed inside a SIGNED app/);
+
+    const aDllTampered = `(file) => file.endsWith(".dll") ? { verified: false, detail: "HashMismatch" } : { verified: true, detail: "Valid" }`;
+    const tampered = check(root, resources, runtime.target, aDllTampered, "win32");
+    expect((tampered.value as { issues: string[] }).issues.join("\n")).toMatch(/\.dll is NOT validly signed inside a SIGNED app: HashMismatch/);
+
+    const allValid = `() => ({ verified: true, detail: "Valid" })`;
+    expect(check(root, resources, runtime.target, allValid, "win32")).toMatchObject({ ok: true, value: { issues: [] } });
+  });
+
   it("verifies a Linux package by sha256 and consults no signature tool", () => {
     const root = temporaryRoot("vex-nr-check-linux-");
     const runtime = fakeApp(root, ["linux-x64"]).get("linux-x64")!;

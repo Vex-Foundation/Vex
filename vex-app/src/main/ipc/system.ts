@@ -6,19 +6,27 @@ import { app, net } from "electron";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import { z } from "zod";
-import { CH } from "@shared/ipc/channels.js";
+import { CH, EV } from "@shared/ipc/channels.js";
 import { ok, type Result } from "@shared/ipc/result.js";
 import {
   healthReportSchema,
+  nativeRuntimeStatusSchema,
   networkProbeSchema,
   osInfoSchema,
   runtimeInfoSchema,
   type HealthReport,
+  type NativeRuntimeStatus,
   type NetworkProbe,
   type OsInfo,
   type OsPlatform,
   type RuntimeInfo,
 } from "@shared/schemas/system.js";
+import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
+import { startNativeRuntime } from "../runtime/native/native-runtime.js";
+import {
+  nativeRuntimeProgress,
+  nativeRuntimeProgressBus,
+} from "../runtime/native/native-runtime-progress.js";
 import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { registerHandler } from "./register-handler.js";
@@ -119,6 +127,40 @@ export function registerSystemHandlers(): Array<() => void> {
       outputSchema: runtimeInfoSchema,
       handle: async (): Promise<Result<RuntimeInfo>> => ok({ native: getRuntimeMode() === "native" }),
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.system.runtimeStatus,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: nativeRuntimeStatusSchema,
+      handle: async (): Promise<Result<NativeRuntimeStatus>> => ok(nativeRuntimeProgress.current()),
+    })
+  );
+
+  // Main owns the start (D8); the renderer may only ask for another attempt
+  // once one has failed. Joining a start in flight or re-checking a ready
+  // runtime is the migrate handler's, not a button's.
+  handlers.push(
+    registerHandler({
+      channel: CH.system.runtimeRetry,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: nativeRuntimeStatusSchema,
+      handle: async (): Promise<Result<NativeRuntimeStatus>> => {
+        if (getRuntimeMode() === "native" && nativeRuntimeProgress.current().phase === "failed") {
+          void startNativeRuntime();
+        }
+        return ok(nativeRuntimeProgress.current());
+      },
+    })
+  );
+
+  handlers.push(
+    nativeRuntimeProgressBus.subscribe((status) =>
+      broadcastToAllWindows(EV.system.runtimeProgress, status)
+    )
   );
 
   handlers.push(

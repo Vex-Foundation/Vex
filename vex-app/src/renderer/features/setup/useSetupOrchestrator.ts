@@ -19,6 +19,10 @@
  *      (features/wizard/wizard-entry.ts) → appShell / unlock / wizard.
  *      Any non-happy outcome hands off to the classic screen that owns
  *      that remediation — never a dead end.
+ *   4. NATIVE RUNTIME: main started it at boot, so the gate waits for it
+ *      instead: ready → migrate as above; a failed start, or a model
+ *      download or re-hash long enough to deserve its progress, hands off
+ *      to runtimeBootstrap (which advances to migrations once ready).
  *
  * Contract notes carried over from the screens this fast path bypasses:
  *  - compose: `composeUpAbortable` is NEVER cancelled from effect cleanup
@@ -38,11 +42,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { MigrateProgress } from "@shared/schemas/database.js";
+import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 import {
   dockerKeys,
   onboardingKeys,
   systemKeys,
 } from "../../lib/api/queryKeys.js";
+import { needsRuntimeScreen } from "../runtime/bootstrap/steps.js";
 import { resolveWizardEntry } from "../wizard/wizard-entry.js";
 import type { UnlockReturnView, View } from "../../stores/uiStore.js";
 
@@ -55,6 +61,7 @@ export type SetupHandoff =
         | "systemCheck"
         | "dockerBootstrap"
         | "composeBootstrap"
+        | "runtimeBootstrap"
         | "migrations"
         | "wizard"
         | "appShell"
@@ -89,6 +96,35 @@ function statusLine(
 export interface SetupOrchestrator {
   readonly status: SetupStatusLine;
   readonly handoff: SetupHandoff | null;
+}
+
+/**
+ * Wait for main's start of the native runtime: true once it is ready, false
+ * as soon as the runtime screen should take over. Subscribes BEFORE reading
+ * the status and ignores anything older than what it has seen.
+ */
+function nativeRuntimeReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let seen = -1;
+    let settled = false;
+    const settle = (ready: boolean): void => {
+      if (settled) return;
+      settled = true;
+      off();
+      resolve(ready);
+    };
+    const decide = (status: NativeRuntimeStatus): void => {
+      if (status.seq < seen) return;
+      seen = status.seq;
+      if (status.phase === "ready") settle(true);
+      else if (needsRuntimeScreen(status)) settle(false);
+    };
+    const off = window.vex.system.onRuntimeProgress(decide);
+    void window.vex.system.runtimeStatus().then((result) => {
+      if (result.ok) decide(result.data);
+      else settle(false);
+    });
+  });
 }
 
 export function useSetupOrchestrator(): SetupOrchestrator {
@@ -141,7 +177,13 @@ export function useSetupOrchestrator(): SetupOrchestrator {
       const runtime = await window.vex.system.runtime();
       const nativeRuntime = runtime.ok && runtime.data.native;
 
-      if (!nativeRuntime) {
+      if (nativeRuntime) {
+        setStatus(statusLine("services"));
+        if (!(await nativeRuntimeReady())) {
+          setHandoff({ kind: "view", view: "runtimeBootstrap" });
+          return;
+        }
+      } else {
         const dockerReady =
           docker.ok &&
           docker.data.endpoint.accepted &&

@@ -1,9 +1,10 @@
 /**
  * The native runtime, end to end, against the BUILT app: a first run with
- * `VEX_RUNTIME=native` gets from System Check through migrations on the
- * bundled Postgres to the setup wizard, without any container, quitting the
- * app stops the bundled servers cleanly, and a relaunch on the same profile
- * comes back up on the same cluster without downloading the model again.
+ * `VEX_RUNTIME=native` gets from System Check through the "Preparing local
+ * runtime" screen and the migrations on the bundled Postgres to the setup
+ * wizard, without any container, quitting the app stops the bundled servers
+ * cleanly, and a relaunch on the same profile comes back up on the same
+ * cluster without downloading the model again.
  * While it runs, the OS must show the postmaster and llama-server as the
  * app's own binaries; after each quit, nothing the app ships may still run.
  *
@@ -39,6 +40,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   statSync,
 } from "node:fs";
@@ -111,8 +113,10 @@ function processesUnder(dir: string): OsProcess[] {
       });
   }
   const fold = (p: string): string => (process.platform === "win32" ? p.toLowerCase() : p);
-  const root = fold(path.resolve(dir) + path.sep);
-  return all.filter((entry) => fold(path.resolve(entry.executable)).startsWith(root));
+  // Either spelling of the directory: Linux reports executables by their real
+  // path, macOS by the path they were started from.
+  const roots = [path.resolve(dir), realpathSync(dir)].map((root) => fold(root + path.sep));
+  return all.filter((entry) => roots.some((root) => fold(path.resolve(entry.executable)).startsWith(root)));
 }
 
 const programName = (executable: string): string => path.basename(executable).replace(/\.exe$/i, "");
@@ -332,28 +336,56 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
     );
     expect(runtime).toEqual({ ok: true, data: { native: true } });
 
-    // First run: System Check, whose Continue now leads to migrations.
+    // First run: System Check, whose Continue leads to the runtime screen.
     await expect(window.locator('[data-vex-screen="systemCheck"]')).toBeVisible({ timeout: 30_000 });
     const continueSetup = window.getByRole("button", { name: "Continue setup" });
     await expect(continueSetup).toBeEnabled({ timeout: 30_000 });
     timings["systemCheckPassed"] = seconds(Date.now());
-    await continueSetup.click();
-
-    // Migrations join main's boot start of the native runtime, then apply
-    // the full chain to the bundled cluster.
-    await expect(window.locator('[data-vex-screen="migrations"]')).toBeVisible({ timeout: 30_000 });
+    // Record every state the runtime screen's model row shows: once the
+    // runtime is ready the screen moves on within a second, which a
+    // visibility poll can miss. And when the migrations report progress, for
+    // the timings.
     await window.evaluate(() => {
       const w = window as unknown as {
         vex: { database: { onProgress: (cb: () => void) => unknown } };
+        vexE2eModelRow: string[];
         vexGateMigrations?: { first: number; last: number };
       };
+      const seen: string[] = [];
+      w.vexE2eModelRow = seen;
+      const record = (): void => {
+        const row = document.querySelector('[data-vex-screen="runtimeBootstrap"] [data-step="model"]');
+        if (row === null) return;
+        const state = `${row.getAttribute("data-status") ?? ""} ${row.textContent ?? ""}`;
+        if (seen.at(-1) !== state) seen.push(state);
+      };
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
       w.vex.database.onProgress(() => {
         const now = Date.now();
         w.vexGateMigrations = { first: w.vexGateMigrations?.first ?? now, last: now };
       });
     });
+    await continueSetup.click();
+
+    // The runtime screen watches main's boot start (an installed app
+    // downloads the model here), then advances to the migrations, which
+    // apply the full chain to the bundled cluster.
+    await expect(window.locator('[data-vex-screen="migrations"]')).toBeVisible({
+      timeout: INSTALLED_APP === undefined ? 120_000 : 840_000,
+    });
+    timings["runtimeReady"] = seconds(Date.now());
+    const modelRow = await window.evaluate(
+      () => (window as unknown as { vexE2eModelRow: string[] }).vexE2eModelRow,
+    );
+    expect(modelRow.length, "the runtime screen never showed the model step").toBeGreaterThan(0);
+    expect(modelRow.at(-1)).toMatch(/^ready Embeddings model/);
     const toWizard = window.getByRole("button", { name: "Continue to setup wizard" });
-    await expect(toWizard).toBeVisible({ timeout: INSTALLED_APP === undefined ? 180_000 : 840_000 });
+    await expect(toWizard).toBeVisible({ timeout: 180_000 });
     timings["migrationsDone"] = seconds(Date.now());
     const migrations = await window.evaluate(
       () => (window as unknown as { vexGateMigrations?: { first: number; last: number } }).vexGateMigrations,
