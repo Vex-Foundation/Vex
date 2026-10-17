@@ -28,7 +28,22 @@ import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
 import { log } from "../logger/index.js";
 import { ensureEmbeddingDefaults } from "../onboarding/ensure-embedding-defaults.js";
+import { startNativeRuntime } from "../runtime/native/native-runtime.js";
+import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { registerHandler } from "./register-handler.js";
+
+/**
+ * Native mode: main started the runtime at boot; join that start (or retry a
+ * failed one) before migrating, and report the runtime's own reason when it
+ * is not usable instead of a missing-connection failure.
+ */
+async function migrateOnNativeRuntime(): Promise<MigrateRunResult> {
+  const started = await startNativeRuntime();
+  if (started.kind !== "running" && started.kind !== "reused") {
+    return { kind: "failed", message: `The local database could not start: ${started.message}`, failedAt: null };
+  }
+  return runMigrationsForIpc();
+}
 
 const PROGRESS_CHANNEL = EV.database.migrateProgress;
 
@@ -112,7 +127,7 @@ export function registerDatabaseHandlers(): Array<() => void> {
           log.info(
             `[ipc:vex:database:migrate] starting correlationId=${ctx.requestId}`
           );
-          run = runMigrationsForIpc();
+          run = getRuntimeMode() === "native" ? migrateOnNativeRuntime() : runMigrationsForIpc();
           migrateInFlight = run;
         }
 

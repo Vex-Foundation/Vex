@@ -41,6 +41,8 @@ import { verifyOpenRouterConnection } from "../../onboarding/openrouter-test-cli
 import { withEnvWriteLock } from "../../onboarding/env-write-mutex.js";
 import { readUnlockedSecret } from "../../secrets/session.js";
 import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
+import { applyNativeEmbeddingEnv } from "../../runtime/native/embedding-env.js";
+import { getRuntimeMode } from "../../runtime/runtime-mode.js";
 import { log } from "../../logger/index.js";
 import { registerHandler } from "../register-handler.js";
 
@@ -153,6 +155,9 @@ export function registerProviderHandler(): () => void {
         const result = await writeProvider(input);
         if (result.ok) {
           loadProviderDotenv({ overwrite: true });
+          // The file holds the bundled embeddings tuple; the native server's
+          // live port and key exist only in memory and must win again.
+          if (getRuntimeMode() === "native") applyNativeEmbeddingEnv();
           const { resetProvider } = await import(
             "@vex-agent/inference/registry.js"
           );

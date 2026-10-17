@@ -39,7 +39,7 @@
     "vex-app/src/main/docker/spawn-runner.ts": 12,
     "vex-app/src/main/docker/start.ts": 57,
     "vex-app/src/main/events/event-bus.ts": 2,
-    "vex-app/src/main/index.ts": 4,
+    "vex-app/src/main/index.ts": 3,
     "vex-app/src/main/ipc/capabilities.ts": 1,
     "vex-app/src/main/ipc/docker.ts": 45,
     "vex-app/src/main/ipc/register-all.ts": 3,

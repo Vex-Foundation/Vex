@@ -57,6 +57,9 @@ import {
 } from "./agent/studio-settlement-bridge.js";
 import { whenEngineDbReady } from "./database/engine-db-readiness.js";
 import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
+import { getDbConnection } from "./database/connection-state.js";
+import { getRuntimeMode, resolveRuntimeMode, setRuntimeMode } from "./runtime/runtime-mode.js";
+import { startNativeRuntime, stopNativeRuntime } from "./runtime/native/native-runtime.js";
 import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
 import { recordEventLoopWindow } from "./database/event-loop-samples-db.js";
 import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
@@ -68,7 +71,7 @@ import {
   removeUpdaterEventListeners,
 } from "./updates/configureUpdater.js";
 import { installUpdaterAutoCheck } from "./updates/autoCheck.js";
-import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
+import { cleanupOnBoot, cleanupOnQuit, sweepTransientSecrets } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import {
@@ -287,6 +290,23 @@ async function initializeMainRuntime(): Promise<void> {
   globalCleanup.add(() => {
     closeE2eDbDoor();
   }, "e2e-db-door");
+
+  // 3b'. Local runtime mode, decided once and after the e2e door (a door's
+  // database is never displaced). The native runtime is started by MAIN at
+  // boot (plan D8): the window opens at once and the migrate handler joins
+  // this start, so the renderer never drives it. The compose provider keeps
+  // its renderer-driven start unchanged.
+  setRuntimeMode(
+    resolveRuntimeMode({
+      packaged: app.isPackaged,
+      env: process.env,
+      connectionAlreadyPublished: getDbConnection() !== null,
+    }),
+  );
+  if (getRuntimeMode() === "native") {
+    log.info("[main] local runtime: native (VEX_RUNTIME=native)");
+    void startNativeRuntime();
+  }
 
   // 3c. Event loop delay telemetry (K-5, measurement only): p50/p99/max delay
   // and a count of perceptible stalls per window, logged and written to
@@ -592,9 +612,18 @@ async function initializeMainRuntime(): Promise<void> {
       // connection is left for the server shutdown to sever.
       await runQuitStage("main-ipc-pg-pool", QUIT_TASK_DEADLINE_MS, closeMainIpcPgPool);
     }, async () => {
-      // `docker compose stop` on a live Postgres is the one participant that
-      // is legitimately slow, so it gets the quit's largest single budget.
-      await runQuitStage("compose-and-secret-cleanup", COMPOSE_QUIT_DEADLINE_MS, cleanupOnQuit);
+      // Stopping a live Postgres is the one participant that is legitimately
+      // slow, so it gets the quit's largest single budget. The native runtime
+      // stops its own servers (Postgres' fast stop fits the slot) and never
+      // runs a compose stop against a compose file an earlier session left.
+      if (getRuntimeMode() === "native") {
+        await runQuitStage("native-runtime-and-secret-cleanup", COMPOSE_QUIT_DEADLINE_MS, async () => {
+          await stopNativeRuntime();
+          await sweepTransientSecrets();
+        });
+      } else {
+        await runQuitStage("compose-and-secret-cleanup", COMPOSE_QUIT_DEADLINE_MS, cleanupOnQuit);
+      }
     }),
     "ordered-quit",
     { deadlineMs: ORDERED_QUIT_DEADLINE_MS },

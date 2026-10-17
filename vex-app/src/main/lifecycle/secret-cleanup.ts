@@ -92,6 +92,11 @@ export async function cleanupOnQuit(): Promise<void> {
 
   // Sweep transient files. Even if `compose stop` failed, the stack
   // is on its way down and the plaintext should not survive the quit.
+  await sweepTransientSecrets();
+}
+
+/** Remove every `*.transient` secret file; the native runtime's quit runs it too. */
+export async function sweepTransientSecrets(): Promise<void> {
   let entries: string[] = [];
   try {
     entries = await fs.readdir(SECRETS_DIR);
