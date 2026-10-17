@@ -91,7 +91,9 @@
   outline-offset: 2px;
 }
 
-/* The greeting: Instrument Serif 52 / 1.02 in the blue, never bold. */
+/* The greeting: Instrument Serif 52 / 1.02 in the blue, never bold. The blue
+ * as type: #0000C0 by day, the periwinkle at night (the mockup's type blue),
+ * not the night title's paper white. */
 .vex-welcome__greeting {
   margin: 16px 0 24px;
   max-width: 720px;
@@ -102,7 +104,7 @@
   letter-spacing: -0.012em;
   text-align: center;
   text-wrap: balance;
-  color: var(--vex-alias-title);
+  color: var(--vex-alias-accent-primary);
 }
 
 /* A read that failed under the greeting (the database down): the ink callout

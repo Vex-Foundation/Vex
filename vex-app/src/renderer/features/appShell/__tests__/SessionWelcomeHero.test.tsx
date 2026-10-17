@@ -13,6 +13,8 @@
  * notice) stays gone.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useRef } from "react";
@@ -428,6 +430,23 @@ describe("SessionWelcomeHero - the seat glides as the stage changes", () => {
 });
 
 describe("SessionWelcomeHero - the greeting", () => {
+  it("is set in the blue as type: #0000C0 by day, the periwinkle at night, never the night title's paper", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /\.vex-welcome__greeting\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/color:\s*var\(--vex-alias-accent-primary\);/);
+    const tokens = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
+      "utf8",
+    );
+    // The token it reads: the periwinkle in the night block, the blue by day.
+    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-peri);");
+    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-blue);");
+    expect(tokens).toContain("--color-peri: #a3abff;");
+  });
+
   it("sets the greeting in the serif title and keeps the honest preview disclosure as its tooltip", () => {
     render(<SessionWelcomeHero />);
     const heading = screen.getByRole("heading", { level: 1 });
