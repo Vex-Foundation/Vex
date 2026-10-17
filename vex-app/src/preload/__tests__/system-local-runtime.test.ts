@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const invoke = vi.hoisted(() => vi.fn(async () => ({ ok: true, data: {} })));
+const invoke = vi.hoisted(() => vi.fn(async (_channel: string, _request: unknown) => ({ ok: true, data: {} })));
 
 vi.mock("electron", () => ({
   ipcRenderer: { invoke, on: vi.fn(), removeListener: vi.fn() },
@@ -23,7 +23,7 @@ describe("vex.system local runtime calls", () => {
   it("sends runtimeInfo and runtimeRestart with an empty payload", async () => {
     await system.runtimeInfo();
     await system.runtimeRestart();
-    expect(invoke.mock.calls.map((call) => [call[0], (call as unknown[])[1]])).toEqual([
+    expect(invoke.mock.calls.map((call) => [call[0], call[1]])).toEqual([
       [CH.system.runtimeInfo, { requestId: expect.any(String), payload: {} }],
       [CH.system.runtimeRestart, { requestId: expect.any(String), payload: {} }],
     ]);
