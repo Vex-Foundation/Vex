@@ -1,8 +1,7 @@
 /**
- * The pixel animal system: white blocks, 4x4 Bayer dither and dithered motion
- * trails over a sepia print. `core` holds the generator, the dither and the
- * canvas helpers; `sprite` turns an RGBA sprite into a classified grid and
- * draws it. Both touch the canvas only when a sprite is classified or drawn.
+ * The pixel core: the seeded generator, the 4x4 Bayer dither and the canvas
+ * helpers the K2 hologram draws through. It touches the canvas only when one
+ * is created or drawn on.
  */
 
 export {
@@ -26,10 +25,3 @@ export type {
   DitherOptions,
   AlphaBounds,
 } from "./core.js";
-export { spriteGrid, drawSpriteGrid } from "./sprite.js";
-export type {
-  LumaMode,
-  SpriteGrid,
-  SpriteGridOptions,
-  SpriteDrawOptions,
-} from "./sprite.js";

@@ -1,22 +1,28 @@
 /**
- * The art the plate ships (`public/art/`), pinned to the art table of
- * `docs/design/V10-SPREAD.md section 9`: the day and night prints
- * at 2560 x 1440, the Desktop eagle at 480 x 369, the five far birds 192
- * wide, at their exact byte sizes, plus the print's grain tile. A re-export
- * or a swapped file shows up here before it shows up as a misplaced eagle.
- * Dimensions are read from the file headers (JPEG SOF, PNG IHDR, WebP VP8X,
- * VP8L or VP8).
+ * The print art the app still ships (`public/art/`): the day and night
+ * plateau prints at 2560 x 1440 at their exact byte sizes, behind the Vex
+ * sidebar's plate and the pre-shell stage (docs/design/R3-MINIMAL.md sections
+ * 5.1 and 10), plus the grain tile laid over them. A re-export or a swapped
+ * file shows up here before it shows up as a misplaced print. The eagle and
+ * the far birds left with the flock; the K2 hologram's own assets are pinned
+ * by `components/vex/k2/__tests__/k2-art.test.ts`. Dimensions are read from
+ * the JPEG frame header.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PLATE_ART, spritesFor } from "../flock-engine.js";
-import { DESK_AGENT_STATES } from "../agent-state.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(here, "..", "..", "..", "public");
+
+/** The URLs the plate and the stage load the print and the grain from. */
+const PRINT_ART = {
+  day: "/art/plateau.jpg",
+  night: "/art/plateau-night.jpg",
+  grain: "/art/grain.svg",
+} as const;
 
 const fileOf = (url: string) => path.join(PUBLIC, ...url.split("/").filter(Boolean));
 
@@ -32,63 +38,23 @@ function jpegSize(b: Buffer): [number, number] {
   throw new Error("no JPEG frame header");
 }
 
-function pngSize(b: Buffer): [number, number] {
-  expect(b.subarray(12, 16).toString("ascii")).toBe("IHDR");
-  return [b.readUInt32BE(16), b.readUInt32BE(20)];
-}
-
-function webpSize(b: Buffer): [number, number] {
-  expect(b.subarray(0, 4).toString("ascii")).toBe("RIFF");
-  expect(b.subarray(8, 12).toString("ascii")).toBe("WEBP");
-  const chunk = b.subarray(12, 16).toString("ascii");
-  if (chunk === "VP8X") return [1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3)];
-  if (chunk === "VP8L") {
-    const bits = b.readUInt32LE(21);
-    return [1 + (bits & 0x3fff), 1 + ((bits >> 14) & 0x3fff)];
-  }
-  return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
-}
-
-function sizeOf(url: string): [number, number] {
-  const b = readFileSync(fileOf(url));
-  if (url.endsWith(".jpg")) return jpegSize(b);
-  if (url.endsWith(".png")) return pngSize(b);
-  return webpSize(b);
-}
-
-const birds = [1, 3, 6, 7, 8].map((n) => `${PLATE_ART.birds}bird-${n}.webp`);
-
-describe("the plate art", () => {
+describe("the print art", () => {
   it.each([
-    [PLATE_ART.day, 2560, 1440, 150_801],
-    [PLATE_ART.night, 2560, 1440, 102_175],
-    [PLATE_ART.eagle, 480, 369, 77_840],
+    [PRINT_ART.day, 2560, 1440, 150_801],
+    [PRINT_ART.night, 2560, 1440, 102_175],
   ])("%s is %i x %i, %i bytes", (url, w, h, bytes) => {
-    expect(sizeOf(url)).toEqual([w, h]);
+    expect(jpegSize(readFileSync(fileOf(url)))).toEqual([w, h]);
     expect(statSync(fileOf(url)).size).toBe(bytes);
   });
 
-  it("the five far birds are 192 wide, 41,530 bytes together", () => {
-    let total = 0;
-    for (const url of birds) {
-      expect(sizeOf(url)[0]).toBe(192);
-      total += statSync(fileOf(url)).size;
-    }
-    expect(total).toBe(41_530);
-  });
-
   it("the grain is the fractal noise tile the prints are laid under", () => {
-    const svg = readFileSync(fileOf(PLATE_ART.grain), "utf8");
+    const svg = readFileSync(fileOf(PRINT_ART.grain), "utf8");
     expect(svg).toContain("feTurbulence");
     expect(svg).toContain("width='220' height='220'");
   });
 
-  it("every sprite a state can ask for ships", () => {
-    const wanted = new Set<string>();
-    for (const state of DESK_AGENT_STATES)
-      for (const layout of ["page", "stage"] as const)
-        for (const moving of [false, true]) for (const u of spritesFor(state, layout, moving)) wanted.add(u);
-    for (const url of wanted) expect(statSync(fileOf(url)).size).toBeGreaterThan(0);
-    expect([...wanted].filter((u) => u.startsWith(PLATE_ART.birds)).sort()).toEqual([...birds].sort());
+  it("no longer ships the eagle or the far birds", () => {
+    expect(existsSync(fileOf("/art/eagle.png"))).toBe(false);
+    expect(existsSync(fileOf("/art/birds"))).toBe(false);
   });
 });
