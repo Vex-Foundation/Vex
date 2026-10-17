@@ -7,7 +7,9 @@
  * user. The pipeline is a re-sequencing of the EXACT same IPC contracts
  * those screens own today — no new main-process behavior:
  *
- *   1. Parallel probes: system.health / docker.detect / onboarding.envState.
+ *   1. Parallel probes: system.health / system.runtime / onboarding.envState,
+ *      and docker.detect on the container runtime only (never on the native
+ *      one, where nothing may touch the container engine).
  *   2. FIRST RUN (`setupCompleteFlag === false`): hand off to the classic
  *      systemCheck screen after the probes — the gate never auto-starts
  *      compose on a machine that has not completed setup (this also keeps
@@ -148,15 +150,20 @@ export function useSetupOrchestrator(): SetupOrchestrator {
 
     const run = async (): Promise<void> => {
       // ---- 1. Parallel probes ---------------------------------------
-      const [health, docker, env] = await Promise.all([
+      // The container probe runs only on the container runtime: on the
+      // native one nothing may touch the container engine.
+      const runtimeMode = window.vex.system.runtime();
+      const [health, runtime, engine, env] = await Promise.all([
         window.vex.system.health(),
-        window.vex.docker.detect(),
+        runtimeMode,
+        runtimeMode.then((mode) => (mode.ok && mode.data.native ? null : window.vex.docker.detect())),
         window.vex.onboarding.getEnvState(),
       ]);
+      const nativeRuntime = runtime.ok && runtime.data.native;
       // Seed the caches the classic screens read (parity with today's
       // cross-screen reuse; each option's own staleTime applies).
       queryClient.setQueryData(systemKeys.health(), health);
-      queryClient.setQueryData(dockerKeys.status(), docker);
+      if (engine !== null) queryClient.setQueryData(dockerKeys.status(), engine);
       queryClient.setQueryData(onboardingKeys.envState(), env);
 
       const setupComplete = env.ok && env.data.setupCompleteFlag;
@@ -174,9 +181,6 @@ export function useSetupOrchestrator(): SetupOrchestrator {
       }
       // The native runtime is started by main at boot and joined by the
       // migrate call below, so there is no container to detect or start.
-      const runtime = await window.vex.system.runtime();
-      const nativeRuntime = runtime.ok && runtime.data.native;
-
       if (nativeRuntime) {
         setStatus(statusLine("services"));
         if (!(await nativeRuntimeReady())) {
@@ -185,10 +189,10 @@ export function useSetupOrchestrator(): SetupOrchestrator {
         }
       } else {
         const dockerReady =
-          docker.ok &&
-          docker.data.endpoint.accepted &&
-          docker.data.engine.present &&
-          docker.data.daemon.running;
+          engine?.ok === true &&
+          engine.data.endpoint.accepted &&
+          engine.data.engine.present &&
+          engine.data.daemon.running;
         if (!dockerReady) {
           setHandoff({ kind: "view", view: "dockerBootstrap" });
           return;

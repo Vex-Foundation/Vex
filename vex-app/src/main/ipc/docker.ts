@@ -1,9 +1,13 @@
 /**
- * vex.docker.* — Docker subsystem detection (M2 surface).
+ * The container runtime's IPC surface: detection, install, engine start and
+ * the compose lifecycle (behind the runtime seam), plus the install-progress
+ * and compose-log broadcasts.
  *
- * `detect()` runs the async probe runner in `../docker/probe.ts`. M4 will
- * expand this domain with `install`, `start`, `composeUp`, `composeDown`
- * + domain-namespaced event subscriptions; for M2 we only ship detection.
+ * NATIVE RUNTIME GUARD. On the native runtime nothing may touch the
+ * container engine, so every handler here refuses before it reaches the CLI,
+ * the engine socket or the Model Runner port (`registerContainerHandler`).
+ * The renderer never asks there (System Check, the setup gate and the setup
+ * tour read the runtime mode first); this is the defence in depth.
  */
 
 import { z } from "zod";
@@ -36,7 +40,8 @@ import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
 import { createDockerProvider } from "../runtime/docker/docker-provider.js";
 import { createRuntimeHost } from "../runtime/runtime-host.js";
-import { registerHandler } from "./register-handler.js";
+import { getRuntimeMode } from "../runtime/runtime-mode.js";
+import { registerHandler, type HandlerArgs } from "./register-handler.js";
 import { cancelledError, isAbortError } from "./cancel-helpers.js";
 
 const empty = z.object({}).strict();
@@ -61,11 +66,36 @@ function broadcastComposeLogs(): () => void {
   );
 }
 
+/**
+ * `registerHandler`, refusing on the native runtime. The mode is read per
+ * call: it is decided at boot, after the handlers are registered.
+ */
+function registerContainerHandler<I, O>(args: HandlerArgs<I, O>): () => void {
+  return registerHandler({
+    ...args,
+    handle: async (input, ctx): Promise<Result<O>> => {
+      if (getRuntimeMode() === "native") {
+        log.warn(`[ipc:${args.channel}] refused: this process runs the native runtime`);
+        return err({
+          code: "services.docker_unavailable",
+          domain: args.domain,
+          message: "This install runs its bundled local runtime; this request does not apply to it.",
+          retryable: false,
+          userActionable: false,
+          redacted: true,
+          correlationId: ctx.requestId,
+        });
+      }
+      return args.handle(input, ctx);
+    },
+  });
+}
+
 export function registerDockerHandlers(): Array<() => void> {
   const teardowns: Array<() => void> = [];
 
   teardowns.push(
-    registerHandler({
+    registerContainerHandler({
       channel: CH.docker.detect,
       domain: "docker",
       inputSchema: empty,
@@ -82,7 +112,7 @@ export function registerDockerHandlers(): Array<() => void> {
   );
 
   teardowns.push(
-    registerHandler({
+    registerContainerHandler({
       channel: CH.docker.install,
       domain: "docker",
       inputSchema: installInputSchema,
@@ -98,7 +128,7 @@ export function registerDockerHandlers(): Array<() => void> {
   );
 
   teardowns.push(
-    registerHandler({
+    registerContainerHandler({
       channel: CH.docker.start,
       domain: "docker",
       inputSchema: empty,
@@ -137,7 +167,7 @@ export function registerDockerHandlers(): Array<() => void> {
   }
 
   teardowns.push(
-    registerHandler({
+    registerContainerHandler({
       channel: CH.docker.composeUp,
       domain: "docker",
       inputSchema: composeUpInputSchema,
@@ -189,7 +219,7 @@ export function registerDockerHandlers(): Array<() => void> {
   );
 
   teardowns.push(
-    registerHandler({
+    registerContainerHandler({
       channel: CH.docker.stopPreviousInstallStacks,
       domain: "docker",
       inputSchema: empty,
@@ -227,7 +257,7 @@ export function registerDockerHandlers(): Array<() => void> {
   );
 
   teardowns.push(
-    registerHandler({
+    registerContainerHandler({
       channel: CH.docker.composeDown,
       domain: "docker",
       inputSchema: empty,
