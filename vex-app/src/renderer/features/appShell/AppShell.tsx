@@ -342,11 +342,6 @@ function ShellFrame({
         ? zenControlsOpen ? "open" : "closed"
         : undefined}
     >
-      {/* G10 - fixed strip; only an actual outage renders it. */}
-      <ConnectionBanner
-        reconnecting={!networkOnline}
-        label="Offline - waiting for the network to come back"
-      />
       {/* TRACK 1 - the left sidebar: the sessions sidebar (agent), the
         * projects and explorer (Studio), its rail on the Lighter desk.
         * The column stays overflow-visible so nothing the sidebar opens is
@@ -433,6 +428,16 @@ function ShellFrame({
             }}
           />
         ) : null}
+
+        {/* G10 - the offline row: only an actual outage renders it. A row of
+          * the centre column under its head row (R3-MINIMAL.md section 12,
+          * the d3x-offline mockup), so the left sidebar's New chat, Vex's
+          * state line and the transcript's top all stay uncovered; a page
+          * opened while offline starts under it (overlay.css). */}
+        <ConnectionBanner
+          reconnecting={!networkOnline}
+          label="Offline: waiting for the network to come back"
+        />
 
         {/* The centre's own error boundary (R3-MINIMAL.md section 12): a
           * surface or page that throws is replaced by the recovery card

@@ -150,7 +150,8 @@ describe("where Vex opens", () => {
   });
 
   it("gives the Lighter desk chat its own slot, so a desk visit never opens Vex on the table pages", () => {
-    // What entering the desk does (`enterLighterMode`): the mode, then the chat.
+    // What entering the desk from a conversation does (`enterLighterMode`
+    // with `openChat`): the mode, then the chat.
     useUiStore.getState().setRuntimeMode("lighter");
     useUiStore.getState().setBookOpen(true);
     expect(selectVexOpen(useUiStore.getState())).toBe(true);

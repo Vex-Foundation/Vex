@@ -446,16 +446,16 @@ describe("BalancesCard scope input", () => {
     }[] = [
       {
         scope: { kind: "global" },
-        note: "No balances yet - fund a wallet and your holdings appear here.",
+        note: "No balances yet. Fund a wallet and your holdings appear here.",
       },
       { scope: { kind: "wallet", wallet: EVM_WALLET }, note: "No balances in this wallet yet." },
       {
         scope: { kind: "session", sessionId: SESSION },
-        note: "No balances in this session's wallets yet - fund them and your holdings appear here.",
+        note: "No balances in this session's wallets yet. Fund them and your holdings appear here.",
       },
       {
         scope: { kind: "project", projectId: PROJECT },
-        note: "No balances in this project's wallets yet - fund them and your holdings appear here.",
+        note: "No balances in this project's wallets yet. Fund them and your holdings appear here.",
       },
     ];
     readMock.mockResolvedValue(ok(portfolio({ tokens: [] })));

@@ -12,9 +12,11 @@ import {
   LIGHTER_TICKET_MIN,
   LIGHTER_TICKET_MAX,
   LIGHTER_TRADES_MIN,
+  LIGHTER_REVIEW_TICKET_MIN,
   coerceLighterDesk,
   coerceLighterLayout,
   resolveLighterLayout,
+  reviewTicketWidth,
 } from "../desk-preferences.js";
 
 describe("resolveLighterLayout", () => {
@@ -154,5 +156,32 @@ describe("coerceLighterDesk", () => {
     expect(coerceLighterDesk({ ...DEFAULT_LIGHTER_DESK, skipCloseConfirm: "true" }).skipCloseConfirm).toBe(false);
     expect(coerceLighterDesk({ ...DEFAULT_LIGHTER_DESK, skipCloseConfirm: 1 }).skipCloseConfirm).toBe(false);
     expect(coerceLighterDesk({ ...DEFAULT_LIGHTER_DESK, skipCloseConfirm: true }).skipCloseConfirm).toBe(true);
+  });
+});
+
+describe("reviewTicketWidth", () => {
+  it("grows the ticket to the review's width beside the book where the chart keeps its minimum", () => {
+    expect(LIGHTER_REVIEW_TICKET_MIN).toBe(338);
+    const frame = { width: 1200, height: 900 };
+    const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
+    expect(pixels.ticketWidth).toBe(300);
+    expect(reviewTicketWidth(pixels, frame)).toBe(338);
+  });
+
+  it("never shrinks a ticket the user made wider than the review needs", () => {
+    expect(reviewTicketWidth({ ticketWidth: 380, bookWidth: 240 }, { width: 1400, height: 900 })).toBe(380);
+  });
+
+  it("on a compact desk (the chat open at 1440) the ticket still reaches the review width", () => {
+    const frame = { width: 923, height: 800 };
+    const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
+    expect(pixels.ticketWidth).toBe(LIGHTER_TICKET_MIN);
+    expect(reviewTicketWidth(pixels, frame)).toBe(338);
+  });
+
+  it("yields to the chart minimum when the desk has no room, never below the resolved ticket", () => {
+    const frame = { width: 640, height: 800 };
+    const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
+    expect(reviewTicketWidth(pixels, frame)).toBe(Math.max(pixels.ticketWidth, 640 - 1 - 360));
   });
 });

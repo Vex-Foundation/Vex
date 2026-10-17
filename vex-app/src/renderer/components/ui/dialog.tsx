@@ -40,6 +40,8 @@ import {
   type JSX,
   type ReactEventHandler,
   type ReactNode,
+  type Ref,
+  type RefCallback,
 } from "react";
 import { Swatch } from "./swatch.js";
 import { cn } from "../../lib/utils.js";
@@ -115,6 +117,14 @@ const DIALOG_BOX_CLASS: Readonly<Record<DialogSize, string>> = {
 export type DialogBackdrop = "scrim" | "none";
 
 /**
+ * Write the `autofocus` content attribute onto a node as its ref attaches.
+ * The one stamp behind `DIALOG_INITIAL_FOCUS` and `useInitialFocusRef`.
+ */
+export function stampInitialFocus(node: HTMLElement | null): void {
+  node?.setAttribute("autofocus", "");
+}
+
+/**
  * NAME THE ELEMENT THAT TAKES FOCUS WHEN THIS DIALOG OPENS.
  *
  * Spread onto the ONE element the dialog wants focused:
@@ -139,10 +149,49 @@ export type DialogBackdrop = "scrim" | "none";
  * means the same thing to the browser, to the jsdom polyfill, and to
  * `DialogContent` below. It is a content attribute, so a test can assert it
  * without a live focus manager.
+ *
+ * ## Why the attribute is written by a ref and not spread as a prop
+ *
+ * React 19 warns on the lowercase `autofocus` PROP ("Invalid DOM property
+ * `autofocus`. Did you mean `autoFocus`?") and its only other spelling,
+ * `autoFocus`, is the one that never reaches the DOM. So the constant carries
+ * a ref that stamps the content attribute onto the node as it mounts: the DOM
+ * is exactly what the prop produced (every `[autofocus]` reader and every
+ * `hasAttribute("autofocus")` test still finds it) and React has no prop to
+ * complain about. The ref runs in the commit's layout phase, before any
+ * parent effect, so it is on the node before `DialogContent` calls
+ * `showModal()` and before a host such as the approval card reads it.
+ *
+ * A ref is one slot: an element that ALSO needs its own ref must not spread
+ * this constant (the spread would replace that ref). It takes
+ * `useInitialFocusRef(ownRef)` instead, which does both.
  */
-export const DIALOG_INITIAL_FOCUS: { readonly autofocus?: string } = {
-  autofocus: "",
+export const DIALOG_INITIAL_FOCUS: { readonly ref: RefCallback<HTMLElement> } = {
+  ref: stampInitialFocus,
 };
+
+/**
+ * `DIALOG_INITIAL_FOCUS` for an element that keeps a ref of its own: the
+ * returned callback stamps the attribute and then hands the node to `own`
+ * (object or callback, a callback's cleanup included). Stable while `own` is,
+ * so React does not detach and re-attach it on every render.
+ */
+export function useInitialFocusRef<T extends HTMLElement>(
+  own: Ref<T> | undefined,
+): RefCallback<T> {
+  return useCallback(
+    (node: T | null) => {
+      stampInitialFocus(node);
+      if (typeof own === "function") {
+        const cleanup = own(node);
+        return cleanup;
+      }
+      if (own !== null && own !== undefined) own.current = node;
+      return undefined;
+    },
+    [own],
+  );
+}
 
 /**
  * Which element `DialogContent` focuses after `showModal()`.

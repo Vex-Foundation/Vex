@@ -46,11 +46,12 @@
  * moves in the DOM. `data-vex-area="shell-status-strip"` stays the test seam.
  */
 
-import { Fragment, type JSX } from "react";
+import { Fragment, type JSX, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { selectVexOpen, useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import { LineClose } from "../../components/icons/line/index.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
+import { ErrorBoundary } from "../../components/ui/error-boundary.js";
 import { useProject } from "../../lib/api/projects.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
@@ -208,6 +209,37 @@ function TitleBarContext({
   return <SessionTitle sessionId={sessionId} />;
 }
 
+/**
+ * The title cell's own error boundary. The title bar stands outside the
+ * centre's boundary (it owns the approvals live sync), so a title that threw
+ * used to reach the App boundary and replace the whole window, sidebars and
+ * title bar included. Now a failing title (a page crumb over a malformed
+ * route, a session or project title) leaves the cell empty and is reported
+ * like any boundary catch; everything else in the title bar keeps working,
+ * and the next page, session or project renders it again (the reset key).
+ */
+function TitleCellBoundary({
+  runtimeMode,
+  sessionId,
+  children,
+}: {
+  readonly runtimeMode: RuntimeMode;
+  readonly sessionId: string | null;
+  readonly children: ReactNode;
+}): JSX.Element {
+  const routeKind = useUiStore((s) => s.shellRoute.kind);
+  const activeProjectId = useUiStore((s) => s.activeProjectId);
+  return (
+    <ErrorBoundary
+      surface="shell.title-bar"
+      resetKey={`${runtimeMode}:${routeKind}:${sessionId ?? ""}:${activeProjectId ?? ""}`}
+      fallback={() => <span data-vex-title-failed="" className="vex-tb-title" />}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
+
 /** The stored choice, for a head mounted without the frame's solve. */
 function useStoredVexToggle(): VexToggle {
   const open = useUiStore(selectVexOpen);
@@ -262,7 +294,9 @@ export function RunningHead({
         <>
           <div className="vex-running-head__start">
             {empty ? null : (
-              <TitleBarContext runtimeMode={runtimeMode} sessionId={sessionScopedId} />
+              <TitleCellBoundary runtimeMode={runtimeMode} sessionId={sessionScopedId}>
+                <TitleBarContext runtimeMode={runtimeMode} sessionId={sessionScopedId} />
+              </TitleCellBoundary>
             )}
             <MissionRail activeSessionId={sessionScopedId} />
           </div>

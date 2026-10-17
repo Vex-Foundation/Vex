@@ -1,6 +1,7 @@
 /**
  * Background work: missions that run or sleep while another session is open,
- * counted and named; everything that needs the user, or nothing, stays out.
+ * listed; only the running ones are counted and named; everything that needs
+ * the user, or nothing, stays out.
  */
 
 import { describe, expect, it } from "vitest";
@@ -34,11 +35,33 @@ describe("backgroundWorkOf", () => {
     ]);
   });
 
-  it("counts a mission sleeping on a wake as background work", () => {
+  it("lists a mission sleeping on a wake as background work, but never counts it as running", () => {
     const sleeping = session({ missionStatus: "paused_wake" });
     const work = backgroundWorkOf([sleeping], null);
     expect(work.items.map((item) => item.status)).toEqual(["sleeping"]);
     expect(work.items.map((item) => item.detail)).toEqual(["Mission · Sleeping"]);
+    expect(work.count).toBe(0);
+    expect(work.label).toBeNull();
+    expect(work.summary).toBeNull();
+  });
+
+  it("counts by status: one running and one sleeping read 1 mission running and name the running one", () => {
+    const sleeping = session({ missionStatus: "paused_wake", title: "Open BTC Perp Position" });
+    const running = session({ missionStatus: "running", title: "Arbitrum LP Rebalance" });
+    const work = backgroundWorkOf([sleeping, running], null);
+    expect(work.count).toBe(1);
+    expect(work.label).toBe("1 mission running");
+    expect(work.summary).toBe("1 mission running · Arbitrum LP Rebalance");
+    expect(work.items.map((item) => item.status)).toEqual(["sleeping", "running"]);
+  });
+
+  it("inside the running mission, a sleeping one elsewhere is not running work", () => {
+    const sleeping = session({ missionStatus: "paused_wake", title: "Open BTC Perp Position" });
+    const running = session({ missionStatus: "running", title: "Arbitrum LP Rebalance" });
+    const work = backgroundWorkOf([sleeping, running], running.id);
+    expect(work.count).toBe(0);
+    expect(work.label).toBeNull();
+    expect(work.summary).toBeNull();
   });
 
   it("excludes the open session, whose own state is the state word", () => {
@@ -54,12 +77,13 @@ describe("backgroundWorkOf", () => {
       [
         session({ missionStatus: "running", title: "One" }),
         session({ missionStatus: "paused_wake", title: "Two" }),
+        session({ missionStatus: "running", title: "Three" }),
       ],
       null,
     );
     expect(work.count).toBe(2);
     expect(work.summary).toBe("2 missions running");
-    expect(work.items.map((item) => item.title)).toEqual(["One", "Two"]);
+    expect(work.items.map((item) => item.title)).toEqual(["One", "Two", "Three"]);
   });
 
   const NOT_BACKGROUND: readonly (MissionRunStatus | null)[] = [

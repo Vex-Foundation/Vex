@@ -21,7 +21,7 @@ import {
   type SessionMode,
   type SessionPermission,
 } from "@shared/schemas/sessions.js";
-import { DIALOG_INITIAL_FOCUS } from "../../../components/ui/dialog.js";
+import { useInitialFocusRef } from "../../../components/ui/dialog.js";
 import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
 import { cn } from "../../../lib/utils.js";
@@ -44,18 +44,21 @@ export function NameField({
   onNameChange,
   nameRef,
 }: NameFieldProps): JSX.Element {
+  // The name field is both where the new-session form opens and the field
+  // `SessionCreator` focuses itself: one ref does both.
+  const nameFieldRef = useInitialFocusRef(nameRef);
   return (
     <div className="flex flex-col">
       <Label htmlFor="vex-session-name" className={cn(DIALOG_LABEL_CLASS, "mb-[7px]")}>
         Name
       </Label>
       <Input
-        ref={nameRef}
+        // Where the new-session form opens (`DialogContent` reads the
+        // attribute the ref writes, after `showModal()`): the field the user
+        // came here to fill in.
+        ref={nameFieldRef}
         id="vex-session-name"
         type="text"
-        // Where the new-session form opens (`DialogContent` reads this
-        // after `showModal()`): the field the user came here to fill in.
-        {...DIALOG_INITIAL_FOCUS}
         required
         maxLength={SESSION_TITLE_MAX_LENGTH}
         value={name}

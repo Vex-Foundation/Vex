@@ -267,7 +267,7 @@ Precedence: awaiting, then live (thinking or working from the turn island view),
 
 ### 5.3 Scope, background work and Needs you
 - Scope words: "This chat:" (agent session), "This mission:" (mission session), "This project:" (Studio), none on the welcome.
-- Background work comes from the sessions list items whose `missionStatus` is `running` or `paused_wake`, excluding the open session: "1 mission running · {title}". The welcome says no state word (owner decision); the line lives in the Vex sidebar. "Idle" is never shown while a mission runs without saying what is idle.
+- Background work comes from the sessions list items whose `missionStatus` is `running` or `paused_wake`, excluding the open session; only `running` ones are counted and named: "1 mission running · {title}" (a sleeping mission is never "running"). The welcome says no state word (owner decision); the line lives in the Vex sidebar. "Idle" is never shown while a mission runs without saying what is idle.
 - Needs you items: pending approvals (action from the tool identity, session or project title, `expiresAt` or "since {createdAt}") plus sessions whose `missionStatus` is `paused_error` (Recover), `paused_plan_acceptance` (Review contract) or `paused_user_form` (Fill in the form). `paused_user` and `paused_wake` never count. The list never approves; Review opens the card.
 - Narration is one line from real parts: the live word, the tool title and the last user message, for example "Calling {tool title} to answer “{message}”". No invented text; when there is nothing to say there is no line.
 

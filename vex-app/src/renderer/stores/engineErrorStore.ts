@@ -32,6 +32,15 @@
  * other reason - a replacement, the retention cap, this store's own close -
  * does not clear, because none of those is the user saying "I have read it".
  *
+ * ## One report per failure (review problem 6)
+ *
+ * While the failing session is ON SCREEN (`isSessionOnScreen`: its panel in
+ * front of the user, the window visible) the inline card is the report: no
+ * toast and no Notices row is raised for the same failure, and an older
+ * notice for that session (from while it was off screen) is retired, since
+ * the card now carries the newest. A failure that arrives while the session
+ * is off screen raises the notice as before.
+ *
  * A null `sessionId` is a positive claim that the failure is system-wide, so
  * routing is by that field alone and never by a fallback: a global failure
  * must never land in `bySessionId`, where a session banner would render it and
@@ -51,6 +60,7 @@ import {
   globalEngineErrorNotification,
   sessionEngineErrorNotification,
 } from "./engine-error-notice.js";
+import { isSessionOnScreen } from "./session-on-screen.js";
 
 interface EngineErrorState {
   /** Latest failure per session id. NEVER contains a session-less event. */
@@ -90,6 +100,17 @@ export const useEngineErrorStore = create<EngineErrorState>((set) => ({
     // Close the previous one FIRST so its listener cannot fire against the
     // handle we are about to store.
     closeSessionNotification(sessionId);
+    const keep = (): void => {
+      set((state) => ({
+        ...state,
+        bySessionId: { ...state.bySessionId, [sessionId]: event },
+      }));
+    };
+    // On screen, the inline card is the one report: no toast, no Notices row.
+    if (isSessionOnScreen(sessionId)) {
+      keep();
+      return;
+    }
     const handle = notify(sessionEngineErrorNotification(event, sessionId));
     sessionHandles.set(sessionId, handle);
     handle.onDidClose((reason) => {
@@ -99,10 +120,7 @@ export const useEngineErrorStore = create<EngineErrorState>((set) => ({
       if (reason !== "user") return;
       useEngineErrorStore.getState().clear(sessionId);
     });
-    set((state) => ({
-      ...state,
-      bySessionId: { ...state.bySessionId, [sessionId]: event },
-    }));
+    keep();
   },
   clear: (sessionId) => {
     closeSessionNotification(sessionId);

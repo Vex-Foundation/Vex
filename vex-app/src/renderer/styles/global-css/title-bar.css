@@ -133,7 +133,9 @@
 /* The mark, a 10px state swatch by the badge's state (section 1.6): solid
  * for accepted or ended, the blue target while it waits for the user, the dot screen
  * while it is prepared, the ink hatch when it needs another look, the ink
- * cross on an error. */
+ * cross on an error. The state rules name the badge itself
+ * (`[data-vex-action="open-mission-detail"]`), so nothing else that renders
+ * inside the cluster (the contract sheet's own status marker) picks them up. */
 .vex-tb-mission [data-vex-action="open-mission-detail"] > span:first-child {
   box-sizing: border-box;
   width: 10px;
@@ -141,25 +143,25 @@
   border-radius: 0;
   background: currentColor;
 }
-.vex-tb-mission [data-vex-state="ready"] > span:first-child {
+.vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="ready"] > span:first-child {
   border: 1px solid var(--vex-alias-accent-primary);
   background: linear-gradient(var(--vex-alias-accent-primary), var(--vex-alias-accent-primary)) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
 }
-.vex-tb-mission [data-vex-state="preparing"] > span:first-child {
+.vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="preparing"] > span:first-child {
   border: 1px solid var(--vex-alias-accent-primary);
   background: radial-gradient(var(--vex-alias-accent-primary) 0.8px, transparent 1px) 0 0 / 3px 3px;
 }
-.vex-tb-mission [data-vex-state="accepted"] > span:first-child {
+.vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="accepted"] > span:first-child {
   background: var(--vex-alias-accent-primary);
 }
-.vex-tb-mission [data-vex-state="ended"] > span:first-child {
+.vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="ended"] > span:first-child {
   background: var(--vex-alias-accent-primary);
 }
-.vex-tb-mission [data-vex-state="stale"] > span:first-child {
+.vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="stale"] > span:first-child {
   border: 1px solid currentColor;
   background: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 3px);
 }
-.vex-tb-mission [data-vex-state="error"] > span:first-child {
+.vex-tb-mission [data-vex-action="open-mission-detail"][data-vex-state="error"] > span:first-child {
   border: 1.5px solid currentColor;
   background:
     linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),

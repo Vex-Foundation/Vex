@@ -144,6 +144,7 @@ export const PERSISTED_UI_KEYS = [
   "vexOpenChat",
   "vexOpenPages",
   "showAvatar",
+  "welcomeVexShown",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -481,5 +482,11 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     vexOpenChat: coerceBooleanPreference(incoming?.vexOpenChat, current.vexOpenChat),
     vexOpenPages: coerceBooleanPreference(incoming?.vexOpenPages, current.vexOpenPages),
     showAvatar: coerceBooleanPreference(incoming?.showAvatar, current.showAvatar),
+    // The welcome token's own choice, added after v22 without a hop: a
+    // payload that does not carry it hydrates to the store's default (shown).
+    welcomeVexShown: coerceBooleanPreference(
+      incoming?.welcomeVexShown,
+      current.welcomeVexShown,
+    ),
   };
 }

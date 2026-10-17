@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { ShellRoute, ShellRouteReturnTo } from "../../../../stores/uiStore/shell-route.js";
-import { PORTFOLIO_CRUMB, titleBarPageOf, tokenDisplayName } from "../page-crumbs.js";
+import { PORTFOLIO_CRUMB, UNNAMED_TOKEN, titleBarPageOf, tokenDisplayName } from "../page-crumbs.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000aa";
 const PROJECT = "00000000-0000-4000-8000-0000000000bb";
@@ -94,5 +94,25 @@ describe("tokenDisplayName", () => {
     const bare = tokenDisplayName({ ...TOKEN, tokenName: null, symbol: null });
     expect(bare).not.toBe(TOKEN.tokenAddress);
     expect(bare.startsWith("0x8335")).toBe(true);
+  });
+});
+
+describe("a malformed route never throws in the title bar", () => {
+  it("names a missing or empty token identity honestly", () => {
+    expect(UNNAMED_TOKEN).toBe("Token");
+    expect(tokenDisplayName(undefined)).toBe("Token");
+    expect(tokenDisplayName(null)).toBe("Token");
+    expect(
+      tokenDisplayName({ chainId: 1, tokenAddress: "", symbol: null, tokenName: null }),
+    ).toBe("Token");
+    expect(
+      tokenDisplayName({ chainId: 1, tokenAddress: "0xabc", symbol: null, tokenName: null }),
+    ).toBe("0xabc");
+  });
+
+  it("a token history route without its token or its return point reads as a Portfolio subpage", () => {
+    const malformed = { kind: "tokenHistory", origin: null } as unknown as ShellRoute;
+    expect(() => titleBarPageOf(malformed)).not.toThrow();
+    expect(titleBarPageOf(malformed)).toEqual({ name: "Token history", parents: [PORTFOLIO_CRUMB] });
   });
 });

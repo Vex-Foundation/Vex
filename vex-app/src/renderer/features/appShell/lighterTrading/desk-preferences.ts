@@ -37,6 +37,12 @@ export const LIGHTER_BOOK_COLUMN_DEFAULT_SHARE = 0.2;
 export const LIGHTER_TICKET_MIN = 280;
 export const LIGHTER_TICKET_MAX = 380;
 export const LIGHTER_TICKET_DEFAULT_SHARE = 0.25;
+/**
+ * While "Review order" stands in the ticket's place the column takes at least
+ * this width (the d2x-lighter-review mockup's ticket column), so the approval
+ * card's lines and its "All signed fields" key never wrap word by word.
+ */
+export const LIGHTER_REVIEW_TICKET_MIN = 338;
 /** Either column stops at half the desk. */
 export const LIGHTER_COLUMN_MAX_SHARE = 0.5;
 /** Header, column labels, inside row and ratio bar plus a level a side. */
@@ -130,6 +136,26 @@ export function resolveLighterLayout(layout: LighterLayout, frame: LighterDeskFr
     ? clampNumber(column * layout.tradesShare, LIGHTER_TRADES_MIN, tradesMax, LIGHTER_TRADES_MIN)
     : LIGHTER_TRADES_MIN;
   return { bookWidth, bookMax, ticketWidth, ticketMax, tradesHeight, tradesMax, compactBookHeight, compactBookMax, bottomHeight, bottomMax, dockSqueezed };
+}
+
+/**
+ * The ticket column while the desk's review shows in it: the resolved ticket
+ * width, grown to `LIGHTER_REVIEW_TICKET_MIN` where the chart keeps its own
+ * minimum beside it (and, across, the book column its resolved width). The
+ * saved ticket share is never written: the column returns to it once the
+ * review closes.
+ */
+export function reviewTicketWidth(
+  pixels: Pick<LighterLayoutPixels, "ticketWidth" | "bookWidth">,
+  frame: LighterDeskFrame,
+): number {
+  const { width } = frame;
+  if (width <= 0) return Math.max(pixels.ticketWidth, LIGHTER_REVIEW_TICKET_MIN);
+  const compact = width < LIGHTER_STACK_BELOW;
+  const room = compact
+    ? width - 1 - LIGHTER_CHART_MIN
+    : width - 2 - LIGHTER_CHART_MIN - pixels.bookWidth;
+  return Math.max(pixels.ticketWidth, Math.min(LIGHTER_REVIEW_TICKET_MIN, room));
 }
 
 export interface LighterDeskPreferences {

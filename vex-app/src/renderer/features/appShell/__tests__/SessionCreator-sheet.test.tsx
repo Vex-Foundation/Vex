@@ -88,24 +88,23 @@ describe("SessionCreator as a sheet", () => {
     expect(screen.getByText("SOL")).toBeTruthy();
   });
 
-  it("says why Mission is preselected, only while it is the chosen mode", () => {
+  it("says why Mission is preselected, only while it is the chosen mode, and names no door it cannot know", () => {
     sessionModeFilter = "mission";
     render(<SessionCreator open onOpenChange={() => {}} />);
 
-    expect(
-      screen.getByText("Opened from Missions, so Mission is preselected."),
-    ).toBeTruthy();
+    // The Missions nav row, the welcome's "Create a mission" and the search's
+    // Mission tab all leave the store on the Mission tab, so the foot names
+    // the tab, not an origin: "Opened from Missions" was false from the welcome.
+    const note = screen.getByText("The sidebar is on Missions, so Mission is preselected.");
+    expect(note).toBeTruthy();
+    expect(note.textContent).not.toMatch(/opened from/i);
     fireEvent.click(screen.getByRole("radio", { name: /^Agent/ }));
-    expect(
-      screen.queryByText("Opened from Missions, so Mission is preselected."),
-    ).toBeNull();
+    expect(screen.queryByText(/so Mission is preselected/)).toBeNull();
   });
 
   it("stays silent about a preselection when nothing preselected Mission", () => {
     render(<SessionCreator open onOpenChange={() => {}} />);
-    expect(
-      screen.queryByText("Opened from Missions, so Mission is preselected."),
-    ).toBeNull();
+    expect(screen.queryByText(/so Mission is preselected/)).toBeNull();
   });
 
   it("Cancel closes the sheet without creating", () => {

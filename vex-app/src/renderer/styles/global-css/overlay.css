@@ -31,6 +31,11 @@
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
 }
+/* Offline, the centre column carries the 40 high connection row under its
+ * head row; a page sheet starts under that row instead of covering it. */
+.vex-shell-centre:has(> .vex-connection-banner) .vex-ov {
+  top: calc(var(--head-h) + 40px);
+}
 /* The money ledgers (Agent Scan, All assets, token history): 1100 with the
  * page padding, so the rows read as the design's 112 | 1fr | 120 | 250 grid. */
 .vex-ov[data-width="wide"] {

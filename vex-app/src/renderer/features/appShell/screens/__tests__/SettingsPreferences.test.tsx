@@ -175,6 +175,14 @@ describe("SettingsPreferences", () => {
     expect(useUiStore.getState().showAvatar).toBe(true);
   });
 
+  it("Show avatar is the global avatar switch and never writes the welcome token's own key", () => {
+    useUiStore.setState({ welcomeVexShown: true });
+    renderGroup(<SettingsPreferences />);
+    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
+    expect(useUiStore.getState().showAvatar).toBe(false);
+    expect(useUiStore.getState().welcomeVexShown).toBe(true);
+  });
+
   it("Open Vex's sidebar in chats writes vexOpenChat only, never the table pages' slot", () => {
     useUiStore.setState({ vexOpenPages: false, bookOpen: true });
     renderGroup(<SettingsPreferences />);

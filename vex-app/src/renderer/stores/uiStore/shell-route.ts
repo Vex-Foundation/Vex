@@ -417,17 +417,32 @@ export function navigationTarget(
 }
 
 /**
- * The nav row that reads as selected: it follows the open page first, then the
- * mode. Portfolio's subpages (Agent Scan, All assets, Token history) keep
- * Portfolio selected; a page with no nav row of its own (Memory, Sessions, How
- * Vex works, Needs you) leaves the mode's row selected.
+ * The nav row that reads as selected, or `null` when the screen is none of the
+ * nav's destinations. It follows the REAL destination, page first, then mode:
+ *
+ *  - an open page with a row of its own selects that row (Portfolio's subpages,
+ *    Agent Scan, All assets and Token history, select Portfolio);
+ *  - a page with no row of its own (Memory, Sessions, How Vex works, Needs
+ *    you) selects NOTHING: the chat or desk behind it is not where the user is;
+ *  - with no page, the mode's row: Lighter, Studio, and in the agent workspace
+ *    Missions when the Mission tab is on or the chat in view IS a mission
+ *    (`activeSessionMode`), else Chat.
+ *
+ * The session's mode is not store state (it is a read of the session), so the
+ * caller that has the session rows passes it; `null` says it is not known, and
+ * the Mission tab then decides alone.
  */
-export function selectNavDestination(state: {
-  readonly runtimeMode: RuntimeMode;
-  readonly shellRoute: ShellRoute;
-  readonly sessionModeFilter: SessionModeFilter;
-}): NavDestination {
+export function selectNavDestination(
+  state: {
+    readonly runtimeMode: RuntimeMode;
+    readonly shellRoute: ShellRoute;
+    readonly sessionModeFilter: SessionModeFilter;
+  },
+  activeSessionMode: "agent" | "mission" | null = null,
+): NavDestination | null {
   switch (state.shellRoute.kind) {
+    case "none":
+      break;
     case "settings":
       return "settings";
     case "portfolio":
@@ -438,9 +453,11 @@ export function selectNavDestination(state: {
     case "board":
       return "board";
     default:
-      break;
+      return null;
   }
   if (state.runtimeMode === "lighter") return "lighter";
   if (state.runtimeMode === "studio") return "studio";
-  return state.sessionModeFilter === "mission" ? "missions" : "chat";
+  return state.sessionModeFilter === "mission" || activeSessionMode === "mission"
+    ? "missions"
+    : "chat";
 }

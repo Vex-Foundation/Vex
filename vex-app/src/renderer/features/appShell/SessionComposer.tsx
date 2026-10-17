@@ -38,7 +38,11 @@ import { useComposerSubmit } from "./composer-submit.js";
 import { ComposerField } from "./ComposerField.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
 import { ComposerSendControl } from "./ComposerSendControl.js";
-import { LIGHTER_DESK_PLACEHOLDER, usePlaceholderRotator } from "./composer-placeholders.js";
+import {
+  APPROVAL_WAIT_PLACEHOLDER,
+  LIGHTER_DESK_PLACEHOLDER,
+  usePlaceholderRotator,
+} from "./composer-placeholders.js";
 import {
   ReasoningEffortPlaceholder,
   ReasoningEffortSelect,
@@ -91,6 +95,14 @@ export interface SessionComposerProps {
    * explicitly.
    */
   readonly variant?: "hero" | "docked";
+  /**
+   * Whether a decision waits in this session's pending approvals list (an
+   * agent chat's approval, which never parks a mission run). Read by the
+   * owner (`SessionPanel`) from the same query the approvals region polls.
+   * Joined with the run's `paused_approval` for the "Waiting for approval"
+   * frame; presentation only, it never changes what the Send key does.
+   */
+  readonly pendingApproval?: boolean;
 }
 
 
@@ -98,6 +110,7 @@ export function SessionComposer({
   activeSession,
   activeSessionId,
   variant,
+  pendingApproval = false,
 }: SessionComposerProps): JSX.Element {
   // Submit/enable gate on the canonical selected id (uiStore), NOT the
   // detail-query object: the engine ingress loads its own session context,
@@ -123,7 +136,7 @@ export function SessionComposer({
     stopRequested,
     stopAvailable,
     stopLabel,
-    awaitingApproval,
+    awaitingApproval: runAwaitingApproval,
     onSubmit,
     onRetry,
     onStop,
@@ -135,6 +148,10 @@ export function SessionComposer({
     carryReasoningEffort,
     effectiveReasoningEffort,
   );
+
+  // The ink "Waiting for approval" frame: a mission run parked for approval,
+  // or a decision waiting in this session's pending approvals.
+  const awaitingApproval = runAwaitingApproval || (sessionId !== null && pendingApproval);
 
   const [focused, setFocused] = useState<boolean>(false);
   // Sampled once per mount - the chips' enter/exit declaration must not flip
@@ -267,22 +284,27 @@ export function SessionComposer({
     draft.length > 0 ||
     activeSession?.mode === "mission" ||
     submitPending ||
+    awaitingApproval ||
     onLighterDesk;
   const welcomePlaceholder = usePlaceholderRotator(rotatorPaused);
   // PLACEHOLDER PRECEDENCE, highest first: mission copy (the run owns the
-  // field) -> the steer/queue hint while a turn is running -> the rotating
-  // default. The steer hint outranks the default because during a turn the
-  // Send key does something DIFFERENT from what the default advertises, and a
-  // rotating suggestion at that moment is actively misleading. On the Lighter
-  // desk the rail is a trading copilot, so the resting phrase is the desk's.
+  // field) -> the resting phrase while an approval waits (no example order
+  // beside a pending decision) -> the steer/queue hint while a turn is
+  // running -> the rotating default. The steer hint outranks the default
+  // because during a turn the Send key does something DIFFERENT from what the
+  // default advertises, and a rotating suggestion at that moment is actively
+  // misleading. On the Lighter desk the rail is a trading copilot, so the
+  // resting phrase is the desk's.
   const placeholder =
     activeSession?.mode === "mission"
       ? placeholderFor(activeSession)
-      : submitPending
-        ? STEER_QUEUE_PLACEHOLDER
-        : onLighterDesk
-          ? LIGHTER_DESK_PLACEHOLDER
-          : welcomePlaceholder;
+      : awaitingApproval
+        ? APPROVAL_WAIT_PLACEHOLDER
+        : submitPending
+          ? STEER_QUEUE_PLACEHOLDER
+          : onLighterDesk
+            ? LIGHTER_DESK_PLACEHOLDER
+            : welcomePlaceholder;
 
   // File-drag visual only: attachments are not supported yet, so the drop
   // ring signals the surface and the drop itself answers honestly.

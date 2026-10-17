@@ -187,6 +187,44 @@ describe("the nav", () => {
   });
 });
 
+describe("the selected nav row follows the real destination", () => {
+  const MISSION_ID = "10000000-0000-4000-8000-000000000002";
+  const AGENT_ID = "10000000-0000-4000-8000-000000000001";
+  const selectedRows = (): readonly string[] =>
+    within(nav())
+      .getAllByRole("button")
+      .filter((button) => button.hasAttribute("aria-current"))
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent ?? "");
+
+  it("a mission chat selects Missions, an agent chat selects Chat", () => {
+    renderSidebar();
+    act(() => useUiStore.setState({ activeSessionId: MISSION_ID }));
+    expect(selectedRows()).toEqual(["Missions"]);
+    expect(navRow("Missions").getAttribute("aria-current")).toBe("page");
+
+    act(() => useUiStore.setState({ activeSessionId: AGENT_ID }));
+    expect(selectedRows()).toEqual(["Chat"]);
+  });
+
+  it("a mission chat selects Missions on the rail too", () => {
+    renderSidebar(true);
+    act(() => useUiStore.setState({ activeSessionId: MISSION_ID }));
+    expect(selectedRows()).toEqual(["Missions"]);
+  });
+
+  it("Memory, Sessions, How Vex works and Needs you select no row, whatever chat is open", () => {
+    renderSidebar();
+    act(() => useUiStore.setState({ activeSessionId: MISSION_ID }));
+    for (const kind of ["memory", "sessions", "howItWorks", "needsYou"] as const) {
+      act(() => useUiStore.setState({ shellRoute: { kind, origin: null } }));
+      expect(selectedRows()).toEqual([]);
+    }
+    // And the row comes back with the page that leaves.
+    act(() => useUiStore.setState({ shellRoute: { kind: "none" } }));
+    expect(selectedRows()).toEqual(["Missions"]);
+  });
+});
+
 describe("New chat and the search mode", () => {
   it("New chat opens the creator", () => {
     const { onCreate } = renderSidebar();

@@ -4,10 +4,14 @@
  * list, which already carries every session's `missionStatus`; the open
  * session is excluded because its own state is the state word.
  *
- * Pure. A mission counts while its run is `running`, or `paused_wake`
- * (sleeping on a wake it will answer by itself). A mission paused by the user,
- * waiting on an approval or a decision, or on an error is not background work:
- * it needs the user, so it belongs to Needs you (or to nothing at all).
+ * Pure. A mission is background work while its run is `running`, or
+ * `paused_wake` (sleeping on a wake it will answer by itself); both are
+ * listed in `items` with their own word. Only a `running` mission is
+ * COUNTED: the count, the label and the summary say "running", so a sleeping
+ * mission never adds to "2 missions running" and is never the one the
+ * summary names. A mission paused by the user, waiting on an approval or a
+ * decision, or on an error is not background work: it needs the user, so it
+ * belongs to Needs you (or to nothing at all).
  */
 
 import type { MissionRunStatus, SessionListItem } from "@shared/schemas/sessions.js";
@@ -24,11 +28,13 @@ export interface BackgroundMission {
 }
 
 export interface BackgroundWork {
+  /** How many background missions are RUNNING (a sleeping one is not). */
   readonly count: number;
+  /** Every background mission, running or sleeping, in list order. */
   readonly items: readonly BackgroundMission[];
-  /** "1 mission running" or "2 missions running"; `null` with none. */
+  /** "1 mission running" or "2 missions running"; `null` with none running. */
   readonly label: string | null;
-  /** The label with the mission's name when exactly one runs; else the label. */
+  /** The label with the running mission's name when exactly one runs; else the label. */
   readonly summary: string | null;
 }
 
@@ -76,10 +82,12 @@ export function backgroundWorkOf(
       detail: STATUS_DETAIL[status],
     });
   }
-  const label = backgroundLabelOf(items.length);
-  const only = items.length === 1 ? items[0] : undefined;
+  if (items.length === 0) return NO_BACKGROUND_WORK;
+  const running = items.filter((item) => item.status === "running");
+  const label = backgroundLabelOf(running.length);
+  const only = running.length === 1 ? running[0] : undefined;
   return {
-    count: items.length,
+    count: running.length,
     items,
     label,
     summary: label === null ? null : only === undefined ? label : `${label} · ${only.title}`,

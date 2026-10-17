@@ -103,7 +103,7 @@ describe("concerned and error", () => {
   it("offline", () => {
     expect(narrate({ concern: { kind: "offline" } })).toEqual({
       state: "concerned",
-      line: "Offline - waiting for the network to come back.",
+      line: "Offline: waiting for the network to come back.",
     });
   });
 

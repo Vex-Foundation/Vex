@@ -1,24 +1,27 @@
 /**
  * The token toggle's button (`K2TokenButton.tsx`). Regressions this catches: a button that is not a
- * native button (no Enter or Space), a name that changes with its state (read as "Show Vex,
- * pressed") or a state not carried by `aria-pressed`, a press that does not reach its caller, a box
- * that is not where the caller placed it, and a target smaller than 44 px round a small coin.
+ * native button (no Enter or Space), an `aria-pressed` whose meaning differs from the title bar's
+ * token chip (pressed = Vex shown on both), a name that does not say the press ("Hide Vex" while
+ * she is shown, "Show Vex" while only the coin stands), a press that does not reach its caller, a
+ * box that is not where the caller placed it, and a target smaller than 44 px round a small coin.
  */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { K2TokenButton, TOKEN_BUTTON_NAME, TOKEN_TARGET_MIN, targetBox } from "../K2TokenButton.js";
+import { K2TokenButton, TOKEN_TARGET_MIN, targetBox, tokenButtonName } from "../K2TokenButton.js";
 
 describe("K2TokenButton", () => {
-  it("is a native button named Hide Vex in both states, its state in aria-pressed", () => {
+  it("is a native button pressed while Vex is shown (the title chip's meaning), named by its press", () => {
     const { rerender } = render(<K2TokenButton tokenOnly={false} onPress={() => undefined} />);
-    const button = screen.getByRole("button", { name: TOKEN_BUTTON_NAME });
-    expect(TOKEN_BUTTON_NAME).toBe("Hide Vex");
+    const button = screen.getByRole("button", { name: "Hide Vex" });
+    expect(tokenButtonName(false)).toBe("Hide Vex");
+    expect(tokenButtonName(true)).toBe("Show Vex");
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("type")).toBe("button");
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    // Vex shown: pressed, as the title bar's chip is pressed while her sidebar shows.
+    expect(button.getAttribute("aria-pressed")).toBe("true");
     rerender(<K2TokenButton tokenOnly onPress={() => undefined} />);
-    expect(screen.getByRole("button", { name: "Hide Vex", pressed: true })).toBe(button);
-    expect(screen.queryByRole("button", { name: /show vex/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Show Vex", pressed: false })).toBe(button);
+    expect(screen.queryByRole("button", { name: /hide vex/i })).toBeNull();
   });
 
   it("a press reaches its caller, and the caller's box and class place it", () => {

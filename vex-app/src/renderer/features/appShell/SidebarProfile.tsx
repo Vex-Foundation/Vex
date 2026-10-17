@@ -157,6 +157,14 @@ export function SidebarProfile({
     result: profileQuery.data,
   });
 
+  // The row's accessible name is the name the row SHOWS (a screen reader
+  // user hears the account, not the product), then the runtime word. With no
+  // name set the row shows a question ("What should Vex call you?"), which is
+  // not a name, so the name falls back to the stable "Vex" the loading and
+  // error states already show.
+  const accountName =
+    nameLine.asksToPersonalize || nameLine.text.trim() === "" ? "Vex" : nameLine.text;
+
   const reducedMotion = useReducedMotion();
   const [menuPhase, setMenuPhase] = useState<"closed" | "open" | "closing">("closed");
   const open = menuPhase === "open";
@@ -320,7 +328,7 @@ export function SidebarProfile({
       type="button"
       aria-haspopup="menu"
       aria-expanded={open}
-      aria-label={`Vex - ${runtime.label}. Open menu`}
+      aria-label={`${accountName}, ${runtime.label}. Open menu`}
       // The collapsed rail renders no subtitle, so the tooltip is the only
       // carrier of the reason there: it speaks the sentence, not the word.
       title={sidebarOpen ? undefined : runtime.sentence}

@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -116,7 +117,8 @@ vi.mock("../../../wizard/steps/provider/ModelBrandIcon.js", () => ({
 }));
 
 const { SessionComposer } = await import("../../SessionComposer.js");
-const { LIGHTER_DESK_PLACEHOLDER, WELCOME_PLACEHOLDERS } = await import("../../composer-placeholders.js");
+const { APPROVAL_WAIT_PLACEHOLDER, LIGHTER_DESK_PLACEHOLDER, PLACEHOLDER_ROTATE_MS, WELCOME_PLACEHOLDERS } =
+  await import("../../composer-placeholders.js");
 
 // The capsule's chrome (border/shadow/pending dot) lives in console.css -
 // pseudo/keyframe rules jsdom cannot compute, so pin them against the raw
@@ -248,6 +250,49 @@ describe("composer capsule - chrome", () => {
     expect(tag.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
     expect(CONSOLE_CSS).toMatch(
       /\[data-vex-composer-state="approval"\]\s*\{[^}]*border-width:\s*1\.5px;[^}]*var\(--vex-alias-rule-ink\)/,
+    );
+  });
+});
+
+describe("composer capsule - a pending approval in an agent chat", () => {
+  it("draws the ink frame and the Waiting for approval tag from the session's pending approvals, with no mission run parked", () => {
+    runStatus = null;
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} pendingApproval />,
+    );
+    const form = container.querySelector('[data-vex-area="chat-composer"]');
+    expect(form?.getAttribute("data-vex-composer-state")).toBe("approval");
+    expect(form?.contains(screen.getByText("Waiting for approval"))).toBe(true);
+  });
+
+  it("rests on one phrase and never rotates an example order while the approval waits", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} pendingApproval />,
+      );
+      const overlay = (): string | null | undefined =>
+        container.querySelector("[data-vex-composer-placeholder]")?.textContent;
+      expect(overlay()).toBe(APPROVAL_WAIT_PLACEHOLDER);
+      act(() => {
+        vi.advanceTimersByTime(PLACEHOLDER_ROTATE_MS * 3);
+      });
+      expect(overlay()).toBe(APPROVAL_WAIT_PLACEHOLDER);
+      expect(WELCOME_PLACEHOLDERS).not.toContain(overlay());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("without a pending approval the agent chat keeps the plain field and the rotating prompts", () => {
+    const { container } = render(
+      <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
+    );
+    const form = container.querySelector('[data-vex-area="chat-composer"]');
+    expect(form?.getAttribute("data-vex-composer-state")).toBe("input");
+    expect(screen.queryByText("Waiting for approval")).toBeNull();
+    expect(container.querySelector("[data-vex-composer-placeholder]")?.textContent).toBe(
+      WELCOME_PLACEHOLDERS[0],
     );
   });
 });

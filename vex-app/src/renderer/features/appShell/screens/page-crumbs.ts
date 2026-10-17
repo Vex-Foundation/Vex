@@ -51,12 +51,26 @@ export function assetsPageName(scope: AssetsRouteScope): string {
   }
 }
 
+/** The words when a route carries no usable token identity at all. */
+export const UNNAMED_TOKEN = "Token";
+
 /**
  * A token's display name: the main-sanitized name, else the sanitized symbol,
  * else the truncated address. Never raw provider text.
+ *
+ * Total over whatever the route carries: the title bar renders this outside
+ * the centre's error boundary, so a malformed route (no token, a token
+ * without an address) degrades to "Token" instead of throwing in the title
+ * bar and taking the whole window down with it.
  */
-export function tokenDisplayName(token: ShellRouteToken): string {
-  return token.tokenName ?? sanitizeTokenSymbol(token.symbol) ?? truncateAddress(token.tokenAddress);
+export function tokenDisplayName(token: ShellRouteToken | null | undefined): string {
+  if (token === null || token === undefined) return UNNAMED_TOKEN;
+  const name = typeof token.tokenName === "string" && token.tokenName !== "" ? token.tokenName : null;
+  const address =
+    typeof token.tokenAddress === "string" && token.tokenAddress !== ""
+      ? truncateAddress(token.tokenAddress)
+      : null;
+  return name ?? sanitizeTokenSymbol(token.symbol) ?? address ?? UNNAMED_TOKEN;
 }
 
 /** The open page's title, or null with no page open. */
@@ -84,7 +98,8 @@ export function titleBarPageOf(route: ShellRoute): PageTitle | null {
       return { name: assetsPageName(assetsRouteScope(route)), parents: [PORTFOLIO_CRUMB] };
     case "tokenHistory": {
       const name = `${tokenDisplayName(route.token)} history`;
-      if (route.returnTo.kind !== "assets") return { name, parents: [PORTFOLIO_CRUMB] };
+      // A route without its return point reads as opened from Portfolio.
+      if (route.returnTo?.kind !== "assets") return { name, parents: [PORTFOLIO_CRUMB] };
       // Opened from a register: the crumb goes back to THAT scope, never the
       // global one (the same route a close returns to).
       const scope = assetsReturnToScope(route.returnTo);

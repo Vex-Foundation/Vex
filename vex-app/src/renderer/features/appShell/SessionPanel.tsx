@@ -63,6 +63,7 @@ import { useMissionUpdateLiveSync } from "../../lib/api/mission.js";
 import { useStreamPreviewSync } from "../../lib/api/streams.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
+import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { SessionErrorBanner } from "./SessionErrorBanner.js";
 import { SessionSleepBanner } from "./SessionSleepBanner.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
@@ -124,6 +125,17 @@ export function SessionPanel({
   const transcriptQuery = useTranscriptInfinite(activeSessionId ?? "");
   const preview = useStreamPreview(activeSessionId);
   const chatSubmitting = useIsChatSubmitting(activeSessionId ?? "");
+  // Shared with ApprovalsRegion and SessionTranscript (same query key, no
+  // extra IPC): a decision waiting in this session frames the composer
+  // "Waiting for approval", agent chats included (their runs never park as
+  // `paused_approval`). Every pending row counts, as the turn island's
+  // freeze counts them.
+  const pendingQuery = usePendingApprovals(activeSessionId);
+  const pendingApproval =
+    activeSessionId !== null &&
+    pendingQuery.data !== undefined &&
+    pendingQuery.data.ok &&
+    pendingQuery.data.data.length > 0;
 
   // THE FRESH-SESSION HANDOFF, as a phase input. `completeSessionCreate`
   // activates the new session and stores its first turn in ONE set, but the
@@ -337,6 +349,7 @@ export function SessionPanel({
               activeSession={activeSession}
               activeSessionId={activeSessionId}
               variant={phase === "hero" ? "hero" : "docked"}
+              pendingApproval={pendingApproval}
             />
           </div>
         </div>

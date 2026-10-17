@@ -125,7 +125,7 @@ export function globalEngineErrorNotification(
     severity: "error",
     scope: { kind: "global" },
     source: "engine",
-    title: `${globalScopeLabel(event.scope)} - ${copy.title}`,
+    title: `${globalScopeLabel(event.scope)}: ${copy.title}`,
     // The sanitized detail and the bounded codes travel WITH the sentence:
     // the center is one compact row per notification, and dropping them here
     // would lose exactly what a user quotes in a bug report - which the
@@ -156,7 +156,7 @@ export function sessionEngineErrorNotification(
     severity: "error",
     scope: { kind: "session", sessionId },
     source: "engine",
-    title: `${sessionScopeLabel(event.scope)} - ${copy.title}`,
+    title: `${sessionScopeLabel(event.scope)}: ${copy.title}`,
     message: copy.body,
     ...(event.correlationId === null ? {} : { correlationId: event.correlationId }),
   };

@@ -276,7 +276,7 @@ describe("an open chat", () => {
     vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     const { result } = present();
     expect(result.current.state).toBe("concerned");
-    expect(result.current.narration).toBe("Offline - waiting for the network to come back.");
+    expect(result.current.narration).toBe("Offline: waiting for the network to come back.");
   });
 
   it("is Error for a mission paused on an error and Sleeping for one parked on a wake", () => {
