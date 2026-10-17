@@ -1,5 +1,5 @@
 /**
- * shadcn-pattern Tabs primitive — owned source per skill §2 + codex
+ * shadcn-pattern Tabs primitive, owned source per skill §2 + codex
  * turn 8 answer #1. No Radix dependency. Pure CSS, pure React state,
  * full WAI-ARIA Tabs pattern: `role="tablist"`/`tab`/`tabpanel`,
  * `aria-selected`, `aria-controls`, roving tabindex, and keyboard
@@ -12,6 +12,11 @@
  * default; `keepMounted` keeps them in the DOM, hidden and inert, for panels
  * whose state must survive a tab switch. Both are additive: omitting them
  * reproduces the original behaviour exactly.
+ *
+ * Two looks (docs/design/R3-MINIMAL.md section 9): `underline` (default), a
+ * row of sentence case tabs over a quiet rule with the active one underlined
+ * in the blue; `segmented`, keys joined in one rule frame with the active key
+ * on the selection wash. Behaviour and ARIA are the same for both.
  */
 
 import {
@@ -38,7 +43,11 @@ interface TabsContextValue {
   readonly idPrefix: string;
   /** See {@link TabsProps.keepMounted}. */
   readonly keepMounted: boolean;
+  /** See {@link TabsProps.variant}. */
+  readonly variant: TabsVariant;
 }
+
+export type TabsVariant = "underline" | "segmented";
 
 const TabsContext = createContext<TabsContextValue | null>(null);
 
@@ -78,6 +87,8 @@ export interface TabsProps {
    * subscriptions that should stop while nobody is looking.
    */
   readonly keepMounted?: boolean;
+  /** The look: underlined tabs (default) or a segmented control. */
+  readonly variant?: TabsVariant;
 }
 
 export function Tabs({
@@ -88,6 +99,7 @@ export function Tabs({
   className,
   idScope,
   keepMounted = false,
+  variant = "underline",
 }: TabsProps): JSX.Element {
   const [internal, setInternal] = useState<string>(defaultValue ?? "");
   const isControlled = value !== undefined;
@@ -98,25 +110,33 @@ export function Tabs({
   };
   const idPrefix = idScope === undefined ? "" : `${idScope}-`;
   return (
-    <TabsContext.Provider value={{ value: current, setValue, idPrefix, keepMounted }}>
+    <TabsContext.Provider value={{ value: current, setValue, idPrefix, keepMounted, variant }}>
       <div className={cn("flex flex-col", className)}>{children}</div>
     </TabsContext.Provider>
   );
 }
 
 export const TabsList = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div
-      ref={ref}
-      role="tablist"
-      // A hairline under the row; the active tab is underlined in the blue.
-      className={cn(
-        "flex items-center gap-8 border-b border-rule text-ink-secondary",
-        className
-      )}
-      {...props}
-    />
-  )
+  ({ className, ...props }, ref) => {
+    // Read without the throwing guard: a list outside a root keeps rendering
+    // as it always has, in the default look.
+    const variant = useContext(TabsContext)?.variant ?? "underline";
+    return (
+      <div
+        ref={ref}
+        role="tablist"
+        // Underline: a quiet rule under the row, tabs 22 apart. Segmented:
+        // one rule frame around the joined keys.
+        className={cn(
+          variant === "segmented"
+            ? "inline-flex items-stretch self-start border border-rule text-ink-secondary"
+            : "flex items-stretch gap-[22px] border-b border-rule-quiet text-ink-secondary",
+          className
+        )}
+        {...props}
+      />
+    );
+  }
 );
 TabsList.displayName = "TabsList";
 
@@ -191,13 +211,23 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, TabsTriggerProps>(
         data-tab-value={value}
         onClick={() => ctx.setValue(value)}
         onKeyDown={handleKeyDown}
-        // Departure Mono caps, 44px target, a 1.5px underline that sits on the
-        // list's hairline when active.
+        // Sentence case at 13.5, a 38px row, a 1.5px underline that sits on
+        // the list's quiet rule when active; focus is the outline, never a
+        // shadow ring.
         className={cn(
-          "-mb-px inline-flex h-11 items-center gap-2 whitespace-nowrap border-b-[1.5px] font-mono text-[11px] uppercase tracking-status focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          isActive
-            ? "border-accent-primary text-accent-primary"
-            : "border-transparent text-ink-secondary hover:text-ink-primary",
+          ctx.variant === "segmented"
+            ? cn(
+                "inline-flex h-[30px] items-center gap-1.5 whitespace-nowrap border-r border-rule px-3 text-[13px] last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
+                isActive
+                  ? "bg-interactive-active font-medium text-accent-primary"
+                  : "text-ink-secondary hover:text-ink-primary",
+              )
+            : cn(
+                "-mb-px inline-flex h-[38px] items-center gap-1.5 whitespace-nowrap border-b-[1.5px] text-[13.5px] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
+                isActive
+                  ? "border-accent-primary font-medium text-accent-primary"
+                  : "border-transparent text-ink-secondary hover:text-ink-primary",
+              ),
           className
         )}
         {...props}

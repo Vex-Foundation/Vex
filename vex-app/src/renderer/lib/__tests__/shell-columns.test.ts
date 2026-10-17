@@ -1,101 +1,91 @@
 /**
- * The spread's column solver (docs/design/V10-SPREAD.md section 2), pinned at
- * the spec's own widths (1440, 1280, 1276, 1000), at both seams (1276 and
- * 1316) one pixel on each side, and through the concession chain.
+ * The frame's column solver (docs/design/R3-MINIMAL.md section 2), pinned at
+ * the spec's own widths (1440, 1280, 1024, 1000), at both seams (1180 and
+ * 1360) one pixel on each side, and through the concession chain.
  */
 
 import { describe, expect, it } from "vitest";
 import {
-  BOOK_COLLAPSED,
-  BOOK_DEFAULT,
-  BOOK_FULL_MIN,
-  BOOK_MAX,
-  BOOK_MIN,
   CENTER_MIN,
-  GUTTER_SM_WIDTH,
-  GUTTER_WIDTH,
-  PAGE_MIN,
-  RAIL_COLLAPSED,
-  SIDEBAR_DEFAULT,
-  SIDEBAR_MAX,
-  SIDEBAR_MIN,
-  SPINE_WIDTH,
-  SPREAD_MIN,
-  bookDragMax,
+  LEFT_WIDTH,
+  LEFT_WIDTH_MD,
+  LIGHTER_CHAT_MAX,
+  LIGHTER_CHAT_MIN,
+  RAIL_WIDTH,
+  SHELL_MEDIUM_MIN,
+  SHELL_WIDE_MIN,
+  VEX_WIDTH,
+  VEX_WIDTH_MD,
+  VEX_WIDTH_SM,
   clampWidth,
   computeShellColumns,
-  isBookResizable,
-  isSpreadNarrow,
-  pageDragMax,
+  isShellNarrow,
+  lighterChatDragMax,
+  shellTier,
   type ShellLayoutInput,
 } from "../shell-columns.js";
 
-/** The agent spread with the page and the BOOK open at their defaults. */
+/**
+ * An agent session with both sidebars asked open. Under the medium tier the
+ * shell hands in the narrow override, which starts closed.
+ */
 function agent(viewport: number, overrides: Partial<ShellLayoutInput> = {}) {
   return computeShellColumns({
     viewport,
     mode: "agent",
-    sidebar: SIDEBAR_DEFAULT,
-    book: BOOK_DEFAULT,
+    left: !isShellNarrow(viewport),
+    vex: true,
     ...overrides,
   });
 }
 
 /** Every track adds back up to the window. */
 function total(cols: ReturnType<typeof computeShellColumns>): number {
-  return cols.page + cols.gutter + cols.center + cols.book;
+  return cols.left + cols.center + cols.vex;
 }
 
 describe("the contract geometry", () => {
   it("states the spec's widths", () => {
-    expect([PAGE_MIN, SPINE_WIDTH, GUTTER_WIDTH, GUTTER_SM_WIDTH]).toEqual([300, 56, 36, 22]);
-    expect([CENTER_MIN, BOOK_DEFAULT, BOOK_MIN, BOOK_MAX, BOOK_COLLAPSED]).toEqual([
-      640, 340, 300, 520, 48,
-    ]);
-    expect([SPREAD_MIN, BOOK_FULL_MIN]).toEqual([1276, 1316]);
-    expect([SIDEBAR_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, RAIL_COLLAPSED]).toEqual([240, 240, 420, 56]);
+    expect([LEFT_WIDTH, LEFT_WIDTH_MD, RAIL_WIDTH]).toEqual([264, 224, 56]);
+    expect([VEX_WIDTH, VEX_WIDTH_MD, VEX_WIDTH_SM]).toEqual([256, 240, 224]);
+    expect([CENTER_MIN, SHELL_MEDIUM_MIN, SHELL_WIDE_MIN]).toEqual([640, 1180, 1360]);
+    expect([LIGHTER_CHAT_MIN, LIGHTER_CHAT_MAX]).toEqual([300, 520]);
   });
 
   it("clamps into a range and rounds", () => {
-    expect(clampWidth(280.4, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(280);
-    expect(clampWidth(100, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(SIDEBAR_MIN);
-    expect(clampWidth(9999, SIDEBAR_MIN, SIDEBAR_MAX)).toBe(SIDEBAR_MAX);
+    expect(clampWidth(310.4, LIGHTER_CHAT_MIN, LIGHTER_CHAT_MAX)).toBe(310);
+    expect(clampWidth(100, LIGHTER_CHAT_MIN, LIGHTER_CHAT_MAX)).toBe(LIGHTER_CHAT_MIN);
+    expect(clampWidth(9999, LIGHTER_CHAT_MIN, LIGHTER_CHAT_MAX)).toBe(LIGHTER_CHAT_MAX);
   });
 });
 
-describe("the agent spread at the spec's widths", () => {
-  it("1440: page 300, gutter 36, centre 764, BOOK 340", () => {
-    expect(agent(1440)).toEqual({ page: 300, gutter: 36, rail: 0, center: 764, book: 340 });
+describe("a session at the spec's widths", () => {
+  it("1440: left 264, centre 920, Vex 256", () => {
+    expect(agent(1440)).toEqual({ left: 264, center: 920, vex: 256 });
   });
 
-  it("1280: the BOOK holds its 300 floor, centre 644", () => {
-    expect(agent(1280)).toEqual({ page: 300, gutter: 36, rail: 0, center: 644, book: 300 });
+  it("1280: left 224, centre 816, Vex 240", () => {
+    expect(agent(1280)).toEqual({ left: 224, center: 816, vex: 240 });
   });
 
-  it("1276: the narrowest spread, centre exactly 640", () => {
-    expect(agent(1276)).toEqual({ page: 300, gutter: 36, rail: 0, center: 640, book: 300 });
+  it("1024: the rail, centre 744, Vex 224", () => {
+    expect(agent(1024)).toEqual({ left: 56, center: 744, vex: 224 });
   });
 
-  it("1000: the page closes to the spine, the gutter folds, centre 644", () => {
-    // Under the spread the shell hands in a closed page (0).
-    expect(agent(1000, { sidebar: 0 })).toEqual({
-      page: 56,
-      gutter: 0,
-      rail: 0,
-      center: 644,
-      book: 300,
-    });
+  it("1000 x 720, the window minimum: the rail, centre 720, Vex 224", () => {
+    expect(agent(1000)).toEqual({ left: 56, center: 720, vex: 224 });
   });
 
-  it("never lets the centre under its floor from 1000 up, in any agent state", () => {
+  it("never lets the centre under its floor from 1000 up, in any state", () => {
     for (let viewport = 1000; viewport <= 2560; viewport += 7) {
-      const narrow = isSpreadNarrow(viewport);
-      for (const book of [0, BOOK_MIN, BOOK_DEFAULT, BOOK_MAX]) {
-        for (const sidebar of narrow ? [0] : [0, SIDEBAR_DEFAULT, SIDEBAR_MAX]) {
-          const cols = agent(viewport, { sidebar, book });
-          expect(cols.center, `${String(viewport)} ${String(sidebar)} ${String(book)}`)
-            .toBeGreaterThanOrEqual(CENTER_MIN);
-          expect(total(cols)).toBe(viewport);
+      for (const left of [false, true]) {
+        for (const vex of [false, true]) {
+          for (const closedVex of [0, 48]) {
+            const cols = agent(viewport, { left, vex, closedVex });
+            const label = `${String(viewport)} ${String(left)} ${String(vex)} ${String(closedVex)}`;
+            expect(cols.center, label).toBeGreaterThanOrEqual(CENTER_MIN);
+            expect(total(cols), label).toBe(viewport);
+          }
         }
       }
     }
@@ -103,154 +93,132 @@ describe("the agent spread at the spec's widths", () => {
 });
 
 describe("the seams", () => {
-  it("the spread starts at exactly 1276", () => {
-    expect(isSpreadNarrow(SPREAD_MIN - 1)).toBe(true);
-    expect(isSpreadNarrow(SPREAD_MIN)).toBe(false);
-    expect(isSpreadNarrow(SPREAD_MIN + 1)).toBe(false);
-    // The gutter folds on the narrow side only.
-    expect(agent(SPREAD_MIN - 1, { sidebar: 0 }).gutter).toBe(0);
-    expect(agent(SPREAD_MIN).gutter).toBe(GUTTER_WIDTH);
+  it("the wide tier starts at exactly 1360", () => {
+    expect(shellTier(SHELL_WIDE_MIN - 1)).toBe("medium");
+    expect(shellTier(SHELL_WIDE_MIN)).toBe("wide");
+    expect(shellTier(SHELL_WIDE_MIN + 1)).toBe("wide");
+    expect(agent(1359)).toEqual({ left: 224, center: 1359 - 224 - 240, vex: 240 });
+    expect(agent(1360)).toEqual({ left: 264, center: 1360 - 264 - 256, vex: 256 });
   });
 
-  it("the BOOK takes its preference from exactly 1316", () => {
-    expect(isBookResizable(BOOK_FULL_MIN - 1, "agent")).toBe(false);
-    expect(isBookResizable(BOOK_FULL_MIN, "agent")).toBe(true);
-    expect(agent(BOOK_FULL_MIN - 1).book).toBe(BOOK_MIN);
-    expect(agent(BOOK_FULL_MIN).book).toBe(BOOK_DEFAULT);
-    expect(agent(BOOK_FULL_MIN).center).toBe(CENTER_MIN);
-    // Lighter's chat rail is free at every width.
-    expect(isBookResizable(1000, "lighter")).toBe(true);
+  it("the medium tier starts at exactly 1180; under it the left is the rail", () => {
+    expect(shellTier(SHELL_MEDIUM_MIN - 1)).toBe("narrow");
+    expect(shellTier(SHELL_MEDIUM_MIN)).toBe("medium");
+    expect(isShellNarrow(1179)).toBe(true);
+    expect(isShellNarrow(1180)).toBe(false);
+    expect(agent(1179)).toEqual({ left: 56, center: 1179 - 56 - 224, vex: 224 });
+    expect(agent(1180)).toEqual({ left: 224, center: 1180 - 224 - 240, vex: 240 });
   });
 });
 
-describe("the left page", () => {
-  it("reads any preference under its spec width as 300", () => {
-    expect(agent(1600, { sidebar: SIDEBAR_MIN }).page).toBe(PAGE_MIN);
-    expect(agent(1600, { sidebar: 280 }).page).toBe(PAGE_MIN);
+describe("the left sidebar", () => {
+  it("closed is the 56px rail at every tier", () => {
+    expect(agent(1440, { left: false }).left).toBe(RAIL_WIDTH);
+    expect(agent(1280, { left: false }).left).toBe(RAIL_WIDTH);
+    expect(agent(1000, { left: false }).left).toBe(RAIL_WIDTH);
   });
 
-  it("widens with a drag preference while the centre keeps its floor", () => {
-    expect(agent(1600, { sidebar: 380 })).toEqual({
-      page: 380,
-      gutter: 36,
-      rail: 0,
-      center: 844,
-      book: 340,
+  it("under 1180 an open Vex keeps it at the rail", () => {
+    expect(agent(1024, { left: false, vex: true })).toEqual({ left: 56, center: 744, vex: 224 });
+  });
+
+  it("under 1180 a re-opened left is 224 and closes Vex (derived)", () => {
+    expect(agent(1024, { left: true, vex: true })).toEqual({ left: 224, center: 800, vex: 0 });
+    // A closed Vex keeps what the caller asks for, here the 48px spine.
+    expect(agent(1024, { left: true, vex: true, closedVex: 48 })).toEqual({
+      left: 224,
+      center: 752,
+      vex: 48,
     });
-    expect(agent(1600, { sidebar: 9999 }).page).toBe(SIDEBAR_MAX);
+    expect(agent(1000, { left: true, vex: false })).toEqual({ left: 224, center: 776, vex: 0 });
   });
 
-  it("a closed page is the spine beside the small gutter", () => {
-    expect(agent(1440, { sidebar: 0 })).toEqual({
-      page: 56,
-      gutter: 22,
-      rail: 0,
-      center: 1440 - 56 - 22 - 340,
-      book: 340,
-    });
-  });
-
-  it("the narrow override's re-expanded page closes the BOOK instead of the centre", () => {
-    // 1000 - 300 - 0 = 700 leaves 60 for a BOOK, under its floor: it closes.
-    expect(agent(1000)).toEqual({ page: 300, gutter: 0, rail: 0, center: 652, book: 48 });
+  it("from 1180 up both stand open together", () => {
+    expect(agent(1180, { left: true, vex: true }).vex).toBe(VEX_WIDTH_MD);
+    expect(agent(1180, { left: true, vex: true }).left).toBe(LEFT_WIDTH_MD);
   });
 });
 
-describe("the concession chain", () => {
-  it("step 1: a widened page gives its extra back before the BOOK shrinks", () => {
-    // 1440 with a 420 page: 1440 - 420 - 36 - 340 = 644, fits.
-    expect(agent(1440, { sidebar: 420 }).page).toBe(420);
-    // 1400: the page gives back 4 and the BOOK keeps its preference.
-    expect(agent(1400, { sidebar: 420, book: 340 })).toEqual({
-      page: 384,
-      gutter: 36,
-      rail: 0,
-      center: 640,
-      book: 340,
+describe("the Vex sidebar", () => {
+  it("closed is 0 unless the caller asks for a spine", () => {
+    expect(agent(1440, { vex: false })).toEqual({ left: 264, center: 1176, vex: 0 });
+    expect(agent(1440, { vex: false, closedVex: 48 })).toEqual({
+      left: 264,
+      center: 1128,
+      vex: 48,
     });
   });
 
-  it("step 2: then the BOOK shrinks toward its floor", () => {
-    expect(agent(1400, { book: BOOK_MAX })).toEqual({
-      page: 300,
-      gutter: 36,
-      rail: 0,
-      center: 640,
-      book: 424,
-    });
-  });
-
-  it("step 3: then the BOOK closes to its spine (derived), and the centre absorbs the rest", () => {
-    const cols = computeShellColumns({ viewport: 900, mode: "agent", sidebar: 0, book: BOOK_DEFAULT });
-    expect(cols).toEqual({ page: 56, gutter: 0, rail: 0, center: 900 - 56 - 48, book: 48 });
-  });
-
-  it("a closed BOOK keeps its spine, or nothing where the caller says so", () => {
-    expect(agent(1440, { book: 0 }).book).toBe(BOOK_COLLAPSED);
-    expect(agent(1440, { book: 0, closedBook: 0 }).book).toBe(0);
-    expect(agent(1440, { book: 0, closedBook: 0 }).center).toBe(1440 - 300 - 36);
-  });
-
-  it("re-clamps a stale BOOK preference before solving", () => {
-    expect(agent(1920, { book: 1 }).book).toBe(BOOK_MIN);
-    expect(agent(1920, { book: 9999 }).book).toBe(BOOK_MAX);
+  it("the welcome stage has no right sidebar, open or closed", () => {
+    expect(agent(1440, { welcome: true })).toEqual({ left: 264, center: 1176, vex: 0 });
+    expect(agent(1440, { welcome: true, closedVex: 48 }).vex).toBe(0);
+    expect(agent(1024, { welcome: true })).toEqual({ left: 56, center: 968, vex: 0 });
   });
 });
 
 describe("Studio", () => {
-  const studio = (viewport: number, sidebar: number, book = BOOK_DEFAULT) =>
-    computeShellColumns({ viewport, mode: "studio", sidebar, book });
+  const studio = (viewport: number, left: boolean, vex = true) =>
+    computeShellColumns({ viewport, mode: "studio", left, vex });
 
-  it("always uses the spine, with the project rail carved out of the centre", () => {
-    expect(studio(1440, SIDEBAR_DEFAULT)).toEqual({
-      page: 56,
-      gutter: 22,
-      rail: 240,
-      center: 1440 - 56 - 22 - 340,
-      book: 340,
-    });
-  });
-
-  it("a closed rail is its icon spine", () => {
-    expect(studio(1440, 0).rail).toBe(RAIL_COLLAPSED);
-  });
-
-  it("at 1000 keeps the BOOK at its floor with the rail inside a 644 centre", () => {
-    expect(studio(1000, 0)).toEqual({ page: 56, gutter: 0, rail: 56, center: 644, book: 300 });
+  it("uses the same tiers: projects and explorer live in the left sidebar", () => {
+    expect(studio(1440, true)).toEqual({ left: 264, center: 920, vex: 256 });
+    expect(studio(1280, true)).toEqual({ left: 224, center: 816, vex: 240 });
+    expect(studio(1440, false).left).toBe(RAIL_WIDTH);
+    expect(studio(1000, false)).toEqual({ left: 56, center: 720, vex: 224 });
   });
 });
 
 describe("Lighter", () => {
-  it("always uses the spine and sizes its chat rail from its own share", () => {
-    expect(
-      computeShellColumns({ viewport: 1440, mode: "lighter", sidebar: 280, book: 400 }),
-    ).toEqual({ page: 56, gutter: 22, rail: 0, center: 1440 - 56 - 22 - 400, book: 400 });
+  const lighter = (viewport: number, overrides: Partial<ShellLayoutInput> = {}) =>
+    computeShellColumns({ viewport, mode: "lighter", left: true, vex: true, ...overrides });
+
+  it("always uses the rail and sizes its chat from its own share", () => {
+    expect(lighter(1440, { lighterChat: 400 })).toEqual({ left: 56, center: 984, vex: 400 });
+    expect(lighter(1440, { lighterChat: 9999 }).vex).toBe(LIGHTER_CHAT_MAX);
+    expect(lighter(1440, { lighterChat: 1 }).vex).toBe(LIGHTER_CHAT_MIN);
+  });
+
+  it("a closed chat keeps what the caller asks for", () => {
+    expect(lighter(1440, { vex: false, closedVex: 48 })).toEqual({
+      left: 56,
+      center: 1336,
+      vex: 48,
+    });
+  });
+
+  it("concedes the chat's share toward its floor before the centre", () => {
+    // 1000 - 56 - 320 = 624: the chat gives back 16 and keeps 304.
+    expect(lighter(1000, { lighterChat: 320 })).toEqual({ left: 56, center: 640, vex: 304 });
+  });
+
+  it("closes the chat (derived) when even its floor does not fit", () => {
+    expect(lighter(980, { lighterChat: 320, closedVex: 48 })).toEqual({
+      left: 56,
+      center: 980 - 56 - 48,
+      vex: 48,
+    });
   });
 
   it("Zen hands the chart the window", () => {
-    expect(
-      computeShellColumns({
-        viewport: 1440,
-        mode: "lighter",
-        sidebar: 0,
-        book: 0,
-        closedBook: 0,
-        zen: true,
-      }),
-    ).toEqual({ page: 0, gutter: 0, rail: 0, center: 1440, book: 0 });
+    expect(lighter(1440, { zen: true, closedVex: 48 })).toEqual({ left: 0, center: 1440, vex: 0 });
+  });
+
+  it("drags the chat only into room the centre does not need", () => {
+    expect(lighterChatDragMax(lighter(1440), 1440)).toBe(LIGHTER_CHAT_MAX);
+    expect(lighterChatDragMax(lighter(1100), 1100)).toBe(1100 - 56 - CENTER_MIN);
+    expect(lighterChatDragMax(lighter(980), 980)).toBe(LIGHTER_CHAT_MIN);
   });
 });
 
-describe("drag ranges", () => {
-  it("the page may widen only into room the centre does not need", () => {
-    expect(pageDragMax(agent(1400), 1400)).toBe(1400 - 36 - 340 - 640);
-    expect(pageDragMax(agent(1920), 1920)).toBe(SIDEBAR_MAX);
-    // 1276: no room at all, so the shell mounts no page handle.
-    expect(pageDragMax(agent(1276), 1276)).toBeLessThanOrEqual(PAGE_MIN);
-  });
-
-  it("the BOOK counts an open page at its floor, because the page concedes first", () => {
-    expect(bookDragMax(agent(1440, { sidebar: 420 }), 1440)).toBe(1440 - 300 - 36 - 640);
-    expect(bookDragMax(agent(1920), 1920)).toBe(BOOK_MAX);
+describe("the concession chain under the window minimum", () => {
+  it("Vex closes first, then the left folds to its rail, then the centre gives", () => {
+    expect(agent(900, { left: true, vex: false })).toEqual({ left: 224, center: 676, vex: 0 });
+    expect(agent(840, { left: true, vex: false })).toEqual({ left: 56, center: 784, vex: 0 });
+    expect(agent(800, { left: false, vex: true, closedVex: 48 })).toEqual({
+      left: 56,
+      center: 800 - 56 - 48,
+      vex: 48,
+    });
+    expect(agent(600, { left: false, vex: false })).toEqual({ left: 56, center: 544, vex: 0 });
   });
 });

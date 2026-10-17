@@ -18,7 +18,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach } from "vitest";
-import { Pill } from "../pill.js";
+import { PILL_ACTIVE_CLASS, Pill } from "../pill.js";
 
 afterEach(cleanup);
 
@@ -76,14 +76,20 @@ describe("Pill", () => {
     expect(className).not.toContain("border-0");
   });
 
-  it("leaves the pre-existing variants byte-identical", () => {
+  it("renders the exact R3 filter chip class string for the neutral pill", () => {
     render(
       <Pill variant="neutral" data-vex-area="probe">
         chip
       </Pill>,
     );
     expect(document.querySelector('[data-vex-area="probe"]')?.className).toBe(
-      "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap border border-rule text-ink-secondary h-6 px-2 text-[12px] leading-[18px]",
+      "inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap border bg-transparent border-rule-quiet text-ink-secondary h-[26px] px-[9px] text-[12.5px] leading-[18px]",
     );
+  });
+
+  it("marks the active filter with the blue line on the selection wash, never a solid fill", () => {
+    expect(PILL_ACTIVE_CLASS).toContain("border-accent-primary");
+    expect(PILL_ACTIVE_CLASS).toContain("text-accent-primary");
+    expect(PILL_ACTIVE_CLASS).not.toMatch(/(^| )bg-(accent-primary|button-accent|rule-ink)( |$)/);
   });
 });

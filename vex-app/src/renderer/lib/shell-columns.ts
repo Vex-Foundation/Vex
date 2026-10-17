@@ -1,127 +1,109 @@
 /**
- * Pure column solver for the spread (docs/design/V10-SPREAD.md section 2): the
- * window is an open book, laid out as
+ * Pure column solver for the shell frame (docs/design/R3-MINIMAL.md section
+ * 2): three calm columns,
  *
- *   left page | gutter | centre | BOOK
+ *   left sidebar | centre | Vex sidebar
  *
- * with Studio's project rail carved out of the centre's left edge.
+ * - The LEFT sidebar is 264 from SHELL_WIDE_MIN (1360) up and 224 from
+ *   SHELL_MEDIUM_MIN (1180) up. Closed it is the 56px icon rail; Lighter always
+ *   uses the rail, and Zen hands the chart the window (0).
+ * - The CENTRE takes the rest (1fr); the transcript inside it is capped at
+ *   760. It never drops under CENTER_MIN (640) at a supported window.
+ * - The VEX sidebar is 256, 240 and 224 across the same three tiers. Closed
+ *   it keeps what the caller asks for (0 by default), and the welcome stage
+ *   has no right sidebar at all. Lighter's desk chat follows its own share,
+ *   between LIGHTER_CHAT_MIN and LIGHTER_CHAT_MAX.
  *
- * - The left page is the print. In agent mode it opens at PAGE_MIN (300), or
- *   wider up to the drag preference; closed, and always in Lighter and Studio,
- *   it is the SPINE_WIDTH (56) print spine.
- * - The gutter is the binding that carries the spread caption: 36 beside an
- *   open page, 22 beside a spine. Under SPREAD_MIN (1276) it folds into the
- *   running head (0).
- * - The centre never drops under CENTER_MIN (640). In Studio the centre is the
- *   project rail plus the workspace, as the spec's table counts it.
- * - The BOOK takes its drag preference (300 to 520, default 340) from
- *   BOOK_FULL_MIN (1316) up and holds its 300 floor under it. Lighter's BOOK is
- *   the chat rail and follows its own share at every width.
+ * Under SHELL_MEDIUM_MIN the left and Vex never stand open together: an open
+ * Vex keeps the left at its rail, and a left the user re-opens there closes
+ * Vex (derived; the stored choice is never rewritten, so widening the window
+ * or opening Vex again restores it).
  *
- * Concession chain, applied only while the centre is under its floor: a page
- * wider than its floor gives its extra back first, then the BOOK shrinks to its
- * floor, then it closes to its spine (DERIVED: stored preferences are never
- * rewritten, so widening the window restores them), and the centre absorbs any
- * remaining deficit as the last resort.
+ * The widths are fixed: there is no drag preference for either sidebar. The
+ * only drag left in the frame is Lighter's chat share.
  *
- * The breakpoints live here because they are geometry. Whether the page is
- * OPEN is still the shell's call (the stored preference and the narrow
- * override), handed in as a width preference where 0 means closed.
+ * The breakpoints live here because they are geometry. Whether a sidebar is
+ * asked OPEN is still the shell's call (the stored preference, the narrow
+ * override, the page class), handed in as booleans.
  */
 
-/** Resolved widths for one frame. `center` includes the Studio `rail`. */
+/** Resolved widths for one frame. */
 export interface ShellColumns {
-  /** The left page: open, its spine, or 0 in Lighter's Zen mode. */
-  readonly page: number;
-  /** The gutter: 36 beside an open page, 22 beside a spine, 0 when folded. */
-  readonly gutter: number;
-  /** Studio's project rail, inside the centre; 0 outside Studio. */
-  readonly rail: number;
+  /** The left sidebar: open, its rail, or 0 in Lighter's Zen mode. */
+  readonly left: number;
   /** The centre region; only the final fallback may go below CENTER_MIN. */
   readonly center: number;
-  readonly book: number;
+  /** The Vex sidebar: open, what a closed one keeps, or 0. */
+  readonly vex: number;
 }
 
 export type ShellMode = "agent" | "studio" | "lighter";
+
+/** The three width tiers of section 2's table. */
+export type ShellTier = "wide" | "medium" | "narrow";
 
 export interface ShellLayoutInput {
   /** Available frame width in px. */
   readonly viewport: number;
   readonly mode: ShellMode;
   /**
-   * The first column's width preference, 0 = closed. Agent: the left page.
-   * Studio: the project rail. Ignored in Lighter, whose markets and sessions
-   * live in its top bar.
+   * Whether the left sidebar is asked open: the stored preference from
+   * SHELL_MEDIUM_MIN up, the narrow override under it. Ignored in Lighter,
+   * whose left is always the rail.
    */
-  readonly sidebar: number;
-  /** BOOK width preference in px, 0 = closed. */
-  readonly book: number;
-  /**
-   * What a closed BOOK keeps: its BOOK_COLLAPSED spine in a session (the
-   * default), 0 on the welcome stage and in Zen.
-   */
-  readonly closedBook?: number;
-  /** Lighter's Zen mode: the chart takes the window, no page and no gutter. */
+  readonly left: boolean;
+  /** Whether Vex is asked open for the current page. */
+  readonly vex: boolean;
+  /** The welcome stage: Vex sits in the centre, so the right column is 0. */
+  readonly welcome?: boolean;
+  /** What a closed Vex sidebar keeps; 0 unless the caller says otherwise. */
+  readonly closedVex?: number;
+  /** Lighter's desk chat width preference in px (its share of the window). */
+  readonly lighterChat?: number;
+  /** Lighter's Zen mode: the chart takes the window, no rail and no chat. */
   readonly zen?: boolean;
 }
 
 /** Centre floor; only the final fallback may go below it. */
 export const CENTER_MIN = 640;
 
-/** Under this width the left page closes to its spine and the gutter folds. */
-export const SPREAD_MIN = 1276;
-/** From this width up the BOOK takes its preference; under it, its floor. */
-export const BOOK_FULL_MIN = 1316;
+/** From this width up: left 264, Vex 256. */
+export const SHELL_WIDE_MIN = 1360;
+/** From this width up to SHELL_WIDE_MIN: left 224, Vex 240. Under it, the rail. */
+export const SHELL_MEDIUM_MIN = 1180;
 
-/** The open left page at its spec width, which is also its drag floor. */
-export const PAGE_MIN = 300;
-/** The closed left page: the print spine. */
-export const SPINE_WIDTH = 56;
-/** The gutter beside an open left page (the 22px spread caption). */
-export const GUTTER_WIDTH = 36;
-/** The gutter beside a spine (the 11px spread caption). */
-export const GUTTER_SM_WIDTH = 22;
+/** The open left sidebar at the wide tier. */
+export const LEFT_WIDTH = 264;
+/** The open left sidebar at the medium tier, and when re-opened under it. */
+export const LEFT_WIDTH_MD = 224;
+/** The closed left sidebar: the icon rail. */
+export const RAIL_WIDTH = 56;
 
-/**
- * Drag clamp floor of the stored first-column preference: Studio's rail at its
- * spec width. The left page reads any value under PAGE_MIN as PAGE_MIN.
- */
-export const SIDEBAR_MIN = 240;
-/** Drag clamp ceiling of the stored first-column preference. */
-export const SIDEBAR_MAX = 420;
-/**
- * The first column before any drag: Studio's rail at 240, which the left page
- * reads as its 300 floor.
- */
-export const SIDEBAR_DEFAULT = 240;
-/** Studio's closed project rail: its icon spine. */
-export const RAIL_COLLAPSED = 56;
+/** The open Vex sidebar at the wide tier. */
+export const VEX_WIDTH = 256;
+/** The open Vex sidebar at the medium tier. */
+export const VEX_WIDTH_MD = 240;
+/** The open Vex sidebar under the medium tier. */
+export const VEX_WIDTH_SM = 224;
 
-/** BOOK drag clamp floor, and its width under BOOK_FULL_MIN. */
-export const BOOK_MIN = 300;
-/** BOOK drag clamp ceiling. */
-export const BOOK_MAX = 520;
-/** BOOK width before any drag. */
-export const BOOK_DEFAULT = 340;
-/** Closed-BOOK spine (the collapse header and its toggle stay visible). */
-export const BOOK_COLLAPSED = 48;
+/** Lighter's desk chat: drag floor, also its width under pressure. */
+export const LIGHTER_CHAT_MIN = 300;
+/** Lighter's desk chat: drag ceiling. */
+export const LIGHTER_CHAT_MAX = 520;
 
 /**
- * Whether this width is under the spread: the left page and Studio's rail
- * close to their spines unless the user re-expands them, and the gutter folds
- * into the running head. Exactly SPREAD_MIN is WIDE (`<`, not `<=`); tested at
- * the seam and one pixel on each side.
+ * The tier for a window width. Each seam is exact and belongs to the WIDER
+ * side (`<`, not `<=`): 1360 is wide, 1359 medium, 1180 medium, 1179 narrow.
  */
-export function isSpreadNarrow(viewport: number): boolean {
-  return viewport < SPREAD_MIN;
+export function shellTier(viewport: number): ShellTier {
+  if (viewport >= SHELL_WIDE_MIN) return "wide";
+  if (viewport >= SHELL_MEDIUM_MIN) return "medium";
+  return "narrow";
 }
 
-/**
- * Whether the BOOK takes its drag preference at this width. Lighter's chat
- * rail always does; elsewhere the BOOK holds its floor under BOOK_FULL_MIN.
- */
-export function isBookResizable(viewport: number, mode: ShellMode): boolean {
-  return mode === "lighter" || viewport >= BOOK_FULL_MIN;
+/** Whether this width is under the medium tier, where the left folds to its rail. */
+export function isShellNarrow(viewport: number): boolean {
+  return viewport < SHELL_MEDIUM_MIN;
 }
 
 /** Clamp a panel width into its contract range and round to whole pixels. */
@@ -129,79 +111,77 @@ export function clampWidth(px: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(px)));
 }
 
+const LEFT_BY_TIER: Readonly<Record<ShellTier, number>> = {
+  wide: LEFT_WIDTH,
+  medium: LEFT_WIDTH_MD,
+  narrow: LEFT_WIDTH_MD,
+};
+
+const VEX_BY_TIER: Readonly<Record<ShellTier, number>> = {
+  wide: VEX_WIDTH,
+  medium: VEX_WIDTH_MD,
+  narrow: VEX_WIDTH_SM,
+};
+
 /**
  * Solve the tracks for one frame. Pure: the output is a function of the input
- * only (no hysteresis), so recovery on re-widening is automatic. Preferences
- * re-clamp here because they cross the store boundary and callers may still
- * supply stale ranges.
+ * only (no hysteresis), so recovery on re-widening is automatic.
+ *
+ * Concession chain, applied only while the centre is under its floor (with
+ * fixed widths it never runs at a supported window; it guards Lighter's chat
+ * share and anything under the window minimum): Lighter's chat shrinks toward
+ * its floor, then Vex closes (derived), then the left folds to its rail, and
+ * the centre absorbs any remaining deficit as the last resort.
  */
 export function computeShellColumns(input: ShellLayoutInput): ShellColumns {
   const { viewport, mode } = input;
-  const zen = input.zen === true;
-  const closedBook = input.closedBook ?? BOOK_COLLAPSED;
+  const lighter = mode === "lighter";
+  const zen = lighter && input.zen === true;
+  const welcome = input.welcome === true;
+  const tier = shellTier(viewport);
+  const closedVex = welcome || zen ? 0 : (input.closedVex ?? 0);
 
-  let page = zen
-    ? 0
-    : mode === "agent" && input.sidebar !== 0
-      ? clampWidth(input.sidebar, PAGE_MIN, SIDEBAR_MAX)
-      : SPINE_WIDTH;
-  const pageOpen = page > SPINE_WIDTH;
-  const gutter = zen || isSpreadNarrow(viewport)
-    ? 0
-    : pageOpen
-      ? GUTTER_WIDTH
-      : GUTTER_SM_WIDTH;
-  const rail = mode !== "studio"
-    ? 0
-    : input.sidebar === 0
-      ? RAIL_COLLAPSED
-      : clampWidth(input.sidebar, SIDEBAR_MIN, SIDEBAR_MAX);
+  // Under the medium tier a re-opened left closes Vex (see the module note).
+  const leftOpen = !lighter && input.left;
+  const vexOpen = !zen && !welcome && input.vex && !(tier === "narrow" && leftOpen);
 
-  const bookOpen = input.book !== 0;
-  let book = !bookOpen
-    ? closedBook
-    : isBookResizable(viewport, mode)
-      ? clampWidth(input.book, BOOK_MIN, BOOK_MAX)
-      : BOOK_MIN;
+  let left = zen ? 0 : leftOpen ? LEFT_BY_TIER[tier] : RAIL_WIDTH;
+  let vex = !vexOpen
+    ? closedVex
+    : lighter
+      ? clampWidth(input.lighterChat ?? VEX_WIDTH, LIGHTER_CHAT_MIN, LIGHTER_CHAT_MAX)
+      : VEX_BY_TIER[tier];
+  const vexFloor = vexOpen && lighter ? LIGHTER_CHAT_MIN : vex;
 
-  let center = viewport - page - gutter - book;
+  let center = viewport - left - vex;
 
-  // Step 1: a page wider than its floor gives its extra back first.
-  if (center < CENTER_MIN && pageOpen) {
-    const give = Math.min(page - PAGE_MIN, CENTER_MIN - center);
-    page -= give;
+  // Step 1: Lighter's chat gives back its extra share first.
+  if (center < CENTER_MIN && vex > vexFloor) {
+    const give = Math.min(vex - vexFloor, CENTER_MIN - center);
+    vex -= give;
     center += give;
   }
-  // Step 2: an open BOOK shrinks toward its floor.
-  if (center < CENTER_MIN && bookOpen) {
-    const give = Math.min(book - BOOK_MIN, CENTER_MIN - center);
-    book -= give;
-    center += give;
+  // Step 2: an open Vex closes (derived).
+  if (center < CENTER_MIN && vexOpen) {
+    center += vex - closedVex;
+    vex = closedVex;
   }
-  // Step 3: the BOOK closes (derived); the centre absorbs whatever is left.
-  if (center < CENTER_MIN && bookOpen) {
-    center += book - closedBook;
-    book = closedBook;
+  // Step 3: an open left folds to its rail; the centre absorbs the rest.
+  if (center < CENTER_MIN && left > RAIL_WIDTH) {
+    center += left - RAIL_WIDTH;
+    left = RAIL_WIDTH;
   }
 
-  return { page, gutter, rail, center: Math.max(0, center), book };
+  return { left, center: Math.max(0, center), vex };
 }
 
 /**
- * The widest the left page may be dragged in this frame without pushing the
- * centre under its floor: the owner's condition for keeping the drag handle.
- * At or under PAGE_MIN there is no room, and the shell mounts no handle.
+ * The widest Lighter's chat may be dragged in this frame without pushing the
+ * centre under its floor, and never under the chat's own floor.
  */
-export function pageDragMax(cols: ShellColumns, viewport: number): number {
-  return Math.min(SIDEBAR_MAX, viewport - cols.gutter - cols.book - CENTER_MIN);
-}
-
-/**
- * The widest the BOOK may be dragged in this frame without pushing the centre
- * under its floor. An open page concedes before the BOOK, so it counts at its
- * floor here.
- */
-export function bookDragMax(cols: ShellColumns, viewport: number): number {
-  const page = cols.page > SPINE_WIDTH ? PAGE_MIN : cols.page;
-  return Math.min(BOOK_MAX, viewport - page - cols.gutter - CENTER_MIN);
+export function lighterChatDragMax(cols: ShellColumns, viewport: number): number {
+  return Math.max(
+    LIGHTER_CHAT_MIN,
+    Math.min(LIGHTER_CHAT_MAX, viewport - cols.left - CENTER_MIN),
+  );
 }

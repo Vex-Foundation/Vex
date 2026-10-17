@@ -31,6 +31,9 @@
  * session-scoped register behind the user's back.
  */
 
+import type { SessionModeFilter } from "../uiStore.js";
+import type { RuntimeMode } from "./runtime-mode.js";
+
 /**
  * Viewport rect of the trigger control that opened the current shell screen —
  * the expand-from-trigger anchor for the screen's enter animation. Plain
@@ -111,13 +114,26 @@ export type SettingsSection =
  * All-assets register (global from the welcome Balances card, session-narrowed
  * from the rail's Balances card); `tokenHistory` is the per-token history
  * screen (the eye trigger on a token row), carrying the row's token identity
- * and the surface its close returns to. `none` = no screen open. NOT
- * persisted — launch-ephemeral, like activeSessionId.
+ * and the surface its close returns to; `portfolio`, `board` and `needsYou`
+ * are the R3 pages, opened from the left sidebar's nav and the title bar.
+ * `none` = no screen open. NOT persisted - launch-ephemeral, like
+ * activeSessionId.
  */
 export type ShellRoute =
   | { readonly kind: "none" }
+  /**
+   * The payload-free pages. `portfolio`, `board` and `needsYou` are the R3
+   * pages in the centre column (docs/design/R3-MINIMAL.md section 2): both
+   * sidebars stay standing beside them.
+   */
   | {
-      readonly kind: "memory" | "sessions" | "howItWorks";
+      readonly kind:
+        | "memory"
+        | "sessions"
+        | "howItWorks"
+        | "portfolio"
+        | "board"
+        | "needsYou";
       readonly origin: ShellScreenOrigin | null;
     }
   /**
@@ -321,4 +337,99 @@ export function assetsScopeKey(scope: AssetsRouteScope): string {
     case "project":
       return `project:${scope.projectId}`;
   }
+}
+
+/* ------------------------------ the nav ------------------------------------ */
+
+/**
+ * THE LEFT SIDEBAR'S NAV, as destinations (docs/design/R3-MINIMAL.md section
+ * 4). One `navigate(destination)` store action maps each onto the store's
+ * existing mechanisms, so the nav adds no state of its own:
+ *
+ *  - Chat: agent mode, no page.
+ *  - Missions: agent mode, no page, the sessions filter on its Mission tab.
+ *  - Portfolio, Board, Settings: their page routes, in the current mode.
+ *  - Lighter, Studio: their runtime modes, no page.
+ */
+export type NavDestination =
+  | "chat"
+  | "missions"
+  | "portfolio"
+  | "board"
+  | "lighter"
+  | "studio"
+  | "settings";
+
+/** What a destination asks of the store: a mode (null keeps it), a route, a filter. */
+export interface NavigationTarget {
+  readonly mode: RuntimeMode | null;
+  readonly route: ShellRoute;
+  readonly sessionModeFilter: SessionModeFilter;
+}
+
+const NO_ROUTE: ShellRoute = { kind: "none" };
+
+/**
+ * The store change one nav press stands for. Pure, so the mapping is tested
+ * without a store. Chat leaves the Mission tab (so the selected row moves back
+ * to Chat) but keeps an Agent tab the user picked.
+ */
+export function navigationTarget(
+  destination: NavDestination,
+  current: SessionModeFilter,
+  origin: ShellScreenOrigin | null = null,
+): NavigationTarget {
+  switch (destination) {
+    case "chat":
+      return {
+        mode: "agent",
+        route: NO_ROUTE,
+        sessionModeFilter: current === "mission" ? "all" : current,
+      };
+    case "missions":
+      return { mode: "agent", route: NO_ROUTE, sessionModeFilter: "mission" };
+    case "portfolio":
+      return { mode: null, route: { kind: "portfolio", origin }, sessionModeFilter: current };
+    case "board":
+      return { mode: null, route: { kind: "board", origin }, sessionModeFilter: current };
+    case "settings":
+      return {
+        mode: null,
+        route: { kind: "settings", origin, section: null },
+        sessionModeFilter: current,
+      };
+    case "lighter":
+      return { mode: "lighter", route: NO_ROUTE, sessionModeFilter: current };
+    case "studio":
+      return { mode: "studio", route: NO_ROUTE, sessionModeFilter: current };
+  }
+}
+
+/**
+ * The nav row that reads as selected: it follows the open page first, then the
+ * mode. Portfolio's subpages (Agent Scan, All assets, Token history) keep
+ * Portfolio selected; a page with no nav row of its own (Memory, Sessions, How
+ * Vex works, Needs you) leaves the mode's row selected.
+ */
+export function selectNavDestination(state: {
+  readonly runtimeMode: RuntimeMode;
+  readonly shellRoute: ShellRoute;
+  readonly sessionModeFilter: SessionModeFilter;
+}): NavDestination {
+  switch (state.shellRoute.kind) {
+    case "settings":
+      return "settings";
+    case "portfolio":
+    case "agentScan":
+    case "assets":
+    case "tokenHistory":
+      return "portfolio";
+    case "board":
+      return "board";
+    default:
+      break;
+  }
+  if (state.runtimeMode === "lighter") return "lighter";
+  if (state.runtimeMode === "studio") return "studio";
+  return state.sessionModeFilter === "mission" ? "missions" : "chat";
 }

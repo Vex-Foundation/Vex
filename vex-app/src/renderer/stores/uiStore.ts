@@ -46,7 +46,9 @@ import {
   clampStudioRailExplorerShare,
   DEFAULT_BOOK_WIDTH,
   DEFAULT_SIDEBAR_WIDTH,
+  selectVexOpen,
   STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
+  vexOpenPatch,
 } from "./uiStore/layout.js";
 import {
   mergeUiState,
@@ -112,15 +114,22 @@ export type SessionModeFilter = "all" | "agent" | "mission";
  * single public entry point for every consumer's import.
  */
 export type {
+  NavDestination,
   ShellRoute,
   ShellRouteReturnTo,
   ShellRouteToken,
   ShellScreenOrigin,
   SettingsSection,
 } from "./uiStore/shell-route.js";
-export { RETURN_TO_SHELL } from "./uiStore/shell-route.js";
+export { RETURN_TO_SHELL, selectNavDestination } from "./uiStore/shell-route.js";
+export { selectVexOpen, vexPageClass, type VexPageClass } from "./uiStore/layout.js";
 
-import type { ShellRoute } from "./uiStore/shell-route.js";
+import {
+  navigationTarget,
+  type NavDestination,
+  type ShellRoute,
+  type ShellScreenOrigin,
+} from "./uiStore/shell-route.js";
 
 /** The BOOK panel's two instruments. See `UiState.bookTab`. */
 export type BookTab = "portfolio" | "board";
@@ -178,24 +187,52 @@ export interface UiState {
    * session is not a location the welcome copy promises to restore.
    */
   readonly activeProjectId: string | null;
+  /**
+   * Legacy twin of `leftOpen`, kept in step by both setters: the sessions and
+   * Studio sidebars and the Studio chord still read and write this name.
+   */
   readonly sidebarOpen: boolean;
   /**
-   * Persisted sidebar drag width (px, clamped 264-420). The rendered track is
-   * solved by `lib/shell-columns.ts`; this is only the preference input.
+   * Whether the left sidebar is open (264, or 224 at the medium tier) or
+   * closed to its 56px rail, from the medium tier up. Under it the narrow
+   * override decides (`sidebarNarrowExpanded`). Persisted (v22, seeded from
+   * `sidebarOpen`). docs/design/R3-MINIMAL.md section 2.
+   */
+  readonly leftOpen: boolean;
+  /**
+   * Whether Vex's sidebar is open in chat, on approvals and in Studio. Open
+   * by default. Persisted (v22, seeded from `bookOpen`). Read it through
+   * `selectVexOpen`, which picks this or `vexOpenPages` by page class.
+   */
+  readonly vexOpenChat: boolean;
+  /**
+   * Whether Vex's sidebar is open on the table pages (Portfolio and its
+   * subpages, Board, Lighter, Settings). Hidden by default. Persisted (v22).
+   */
+  readonly vexOpenPages: boolean;
+  /**
+   * Whether Vex's sidebar shows her hologram. On by default; off, the sidebar
+   * keeps the state word and the rest. Persisted (v22).
+   */
+  readonly showAvatar: boolean;
+  /**
+   * @deprecated The previous frame's left page drag width. The R3 sidebars
+   * have fixed widths and the frame no longer reads it; it stays persisted
+   * and coerced this release (expand-only).
    */
   readonly sidebarWidth: number;
-  /** Persisted BOOK drag width (px, clamped 300-520). See `sidebarWidth`. */
+  /** @deprecated The previous frame's BOOK drag width. See `sidebarWidth`. */
   readonly bookWidth: number;
   /**
-   * Below the auto-collapse breakpoint the sidebar renders the rail unless
-   * the user manually re-expands it; this is that override. NOT persisted —
-   * a relaunch under a narrow window starts back at the rail.
+   * Below the medium tier the left sidebar renders the rail unless the user
+   * manually re-expands it; this is that override (and, in Lighter, the top
+   * bar's drawer). NOT persisted: a relaunch under a narrow window starts
+   * back at the rail.
    */
   readonly sidebarNarrowExpanded: boolean;
   /**
-   * The on-demand right-side BOOK panel (per-session instrument: MOVES /
-   * RUNTIME / SESSION / POSITION). Defaults CLOSED — unlike sidebarOpen — and is
-   * persisted so the user's choice survives relaunch.
+   * Legacy mirror of the last Vex show or hide (`vexOpenPatch`), and the slot
+   * `vexOpenChat` was seeded from. The frame reads `selectVexOpen` instead.
    */
   readonly bookOpen: boolean;
   readonly currentView: View;
@@ -374,14 +411,35 @@ export interface UiState {
   readonly setSessionOrdinals: (ledger: SessionOrdinalLedger) => void;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
+  /** Legacy name of `setLeftOpen`: writes both slots. */
   readonly setSidebarOpen: (value: boolean) => void;
-  /** Live drag write: clamps into the sidebar contract range. */
+  /** Open or close the left sidebar from the medium tier up. */
+  readonly setLeftOpen: (value: boolean) => void;
+  /** @deprecated Legacy width write; clamps into the old sidebar range. */
   readonly setSidebarWidth: (px: number) => void;
-  /** Live drag write: clamps into the BOOK contract range. */
+  /** @deprecated Legacy width write; clamps into the old BOOK range. */
   readonly setBookWidth: (px: number) => void;
   readonly setSidebarNarrowExpanded: (value: boolean) => void;
+  /**
+   * Show or hide Vex on the current page: writes the page class's slot
+   * (`vexOpenChat` or `vexOpenPages`). Showing her also clears the narrow
+   * override, so under the medium tier the left folds to its rail.
+   */
+  readonly setVexOpen: (value: boolean) => void;
+  /** Legacy name of `setVexOpen`. */
   readonly setBookOpen: (value: boolean) => void;
+  /** Flip the current page class's stored choice. */
   readonly toggleBook: () => void;
+  readonly setShowAvatar: (value: boolean) => void;
+  /**
+   * The left sidebar's nav: one press, one store change (see
+   * `navigationTarget`). `origin` is the pressed row's rect, for the page's
+   * expand-from-trigger entrance.
+   */
+  readonly navigate: (
+    destination: NavDestination,
+    origin?: ShellScreenOrigin | null,
+  ) => void;
   readonly setSessionModeFilter: (value: SessionModeFilter) => void;
   readonly setCurrentView: (value: View) => void;
   /** One-way: the boot gate unmounts for the rest of the process. */
@@ -488,6 +546,18 @@ export interface UiState {
   readonly clearLogs: () => void;
 }
 
+/**
+ * One runtime mode change, shared by `setRuntimeMode` and `navigate`. Leaving
+ * the desk drops any unconsumed Lighter setup request, so it can never fire on
+ * a later, unrelated desk entry.
+ */
+function runtimeModePatch(state: UiState, next: RuntimeMode): Partial<UiState> {
+  const patch = transitionRuntimeMode(state, next);
+  return state.runtimeMode === "lighter" && next !== "lighter"
+    ? { ...patch, lighterSetupRequested: false }
+    : patch;
+}
+
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
@@ -502,6 +572,10 @@ export const useUiStore = create<UiState>()(
         set({ themePreference, theme });
       },
       sidebarOpen: true,
+      leftOpen: true,
+      vexOpenChat: true,
+      vexOpenPages: false,
+      showAvatar: true,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,
       sidebarNarrowExpanded: false,
@@ -534,13 +608,26 @@ export const useUiStore = create<UiState>()(
       studioFileTabs: {},
       sessionOrdinals: EMPTY_ORDINAL_LEDGER,
       setSessionOrdinals: (sessionOrdinals) => set({ sessionOrdinals }),
-      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      setSidebarOpen: (value) => set({ sidebarOpen: value, leftOpen: value }),
+      setLeftOpen: (value) => set({ sidebarOpen: value, leftOpen: value }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
       setBookWidth: (px) => set({ bookWidth: clampBookWidth(px) }),
       setSidebarNarrowExpanded: (sidebarNarrowExpanded) =>
         set({ sidebarNarrowExpanded }),
-      setBookOpen: (bookOpen) => set({ bookOpen }),
-      toggleBook: () => set((state) => ({ bookOpen: !state.bookOpen })),
+      setVexOpen: (value) => set((state) => vexOpenPatch(state, value)),
+      setBookOpen: (value) => set((state) => vexOpenPatch(state, value)),
+      toggleBook: () =>
+        set((state) => vexOpenPatch(state, !selectVexOpen(state))),
+      setShowAvatar: (showAvatar) => set({ showAvatar }),
+      navigate: (destination, origin = null) =>
+        set((state) => {
+          const target = navigationTarget(destination, state.sessionModeFilter, origin);
+          return {
+            ...(target.mode === null ? {} : runtimeModePatch(state, target.mode)),
+            shellRoute: target.route,
+            sessionModeFilter: target.sessionModeFilter,
+          };
+        }),
       setSessionModeFilter: (sessionModeFilter) => set({ sessionModeFilter }),
       setCurrentView: (currentView) => set({ currentView }),
       dismissSetupGate: () => set({ setupGateActive: false }),
@@ -557,14 +644,7 @@ export const useUiStore = create<UiState>()(
         set({ currentView: "unlock", unlockReturnView }),
       setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
       setRuntimeMode: (runtimeMode) =>
-        set((state) => {
-          const patch = transitionRuntimeMode(state, runtimeMode);
-          // Leaving the desk drops any unconsumed Lighter setup request, so it
-          // can never fire on a later, unrelated desk entry.
-          return state.runtimeMode === "lighter" && runtimeMode !== "lighter"
-            ? { ...patch, lighterSetupRequested: false }
-            : patch;
-        }),
+        set((state) => runtimeModePatch(state, runtimeMode)),
       setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
       setShellRoute: (shellRoute) => set({ shellRoute }),
       openCreateSession: (initialMessage = null, reasoningEffort = null) => {
@@ -629,7 +709,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 21,
+      version: 22,
       // Re-stamp the document root once the coerced, resolved theme is
       // known - theme-boot.js painted the pre-bundle frame from the RAW
       // payload, and a tampered value must not survive on <html>.

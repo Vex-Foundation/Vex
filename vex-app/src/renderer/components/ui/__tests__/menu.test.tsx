@@ -1,6 +1,7 @@
 /**
  * Menu tests: entry rendering (item/separator/label), selection, the
- * check-not-fill selected marker, danger rows, outside-pointer + Escape
+ * selected marker (the selection wash AND a trailing check, never the fill
+ * alone), the shortcut slot, danger rows, outside-pointer + Escape
  * dismissal, and portal mode rendering into document.body.
  */
 
@@ -45,12 +46,20 @@ describe("Menu", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("marks the selected row with a trailing check, not a fill", () => {
+  it("marks the selected row with the wash seam and a trailing check", () => {
     renderMenu({ selectedId: "rename" });
     const item = screen.getByRole("menuitem", { name: "Rename" });
     expect(item.querySelector(".vex-menu-check")).not.toBeNull();
+    expect(item.hasAttribute("data-selected")).toBe(true);
     const other = screen.getByRole("menuitem", { name: "Delete" });
     expect(other.querySelector(".vex-menu-check")).toBeNull();
+    expect(other.hasAttribute("data-selected")).toBe(false);
+  });
+
+  it("shows a shortcut at the right without adding it to the name", () => {
+    renderMenu({ items: [{ id: "lock", label: "Lock Vex", shortcut: "Ctrl Shift L" }] });
+    const item = screen.getByRole("menuitem", { name: "Lock Vex" });
+    expect(item.querySelector(".vex-menu-shortcut")?.textContent).toBe("Ctrl Shift L");
   });
 
   it("styles danger rows", () => {

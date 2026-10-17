@@ -68,8 +68,9 @@ Three jobs, and nothing else:
 What motion is NOT for: decoration, idle loops, and anything that runs while
 the user is not acting. A looping animation needs a live pending state that
 ends it (`vex-badge--shimmer` is the one holder: it stops the moment the
-action is accepted). Motion never delays a committed result, an approval, a
-final error or a security decision.
+action is accepted). The one named exception is Vex's portrait, bound by its
+own section below ("The K2 portrait"). Motion never delays a committed result,
+an approval, a final error or a security decision.
 
 Prefer `transform` and `opacity`. Animating a size is reserved for the owner
 of that layout (`.vex-expand`, the shell's column tracks); nothing inside a
@@ -95,6 +96,30 @@ The single documented opt-out from the catch-all is `data-vex-motion-opacity`,
 whose contract is stated at the catch-all in `base.css`: an element may carry
 it only if it defines a reduced-motion rule that removes every transform and
 every movement and leaves at most an opacity change.
+
+### The K2 portrait
+
+Vex's portrait (`src/renderer/components/vex/k2/`, one canvas per placement)
+is a presence, not a decoration: she blinks, her hair moves in the wind, now
+and then she looks at you, and while the agent is idle she plays a gesture. It
+is bound four ways:
+
+- **A 10 fps step.** Her clock (`STEP_MS`, 100ms in `k2-time.ts`) steps at
+  10 fps; a frame whose dots, token and light did not change is never
+  repainted, and a settled frame's unchanging dots are drawn once and copied.
+- **A 250ms clock cap.** One animation frame never advances her clock by more
+  than 250ms (`CLOCK_CAP_MS` in `k2-engine.ts`), so a stalled or hidden window
+  resumes where it stopped instead of jumping through a wake or a gesture.
+- **The run gate.** `lib/motion/run-gate.ts` runs her loop only while her
+  canvas is on screen and the window is shown; a hidden window or a folded
+  sidebar paints no frame.
+- **The still frame.** Reduced motion and Save-Data
+  (`lib/motion/use-still-frame.ts`) paint one composed frame (awake, the token
+  flat, the beam still, no wind, no gestures) and repaint only when the theme,
+  the ground, the hover or the layout changes. The wake never plays then.
+
+Her idle gestures hold while the agent is anything but idle, so she never
+plays over a working turn or a pending approval.
 
 ### The CSP rule for motion
 

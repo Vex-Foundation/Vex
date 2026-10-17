@@ -26,7 +26,7 @@
  */
 
 import { useEffect, useRef, type JSX, type ReactNode } from "react";
-import { useReducedMotion } from "../../lib/motion/index.js";
+import { useStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import type { DeskAgentState } from "./agent-state.js";
 import {
@@ -37,20 +37,8 @@ import {
   type StagePose,
 } from "./flock-engine.js";
 
-type NetworkInformationLike = { readonly saveData?: boolean };
-
-/** The user asked the network to save data: the composed frame only. */
-export function prefersSaveData(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const nav: Navigator & { readonly connection?: NetworkInformationLike } = navigator;
-  return nav.connection?.saveData === true;
-}
-
-/** One composed frame instead of motion: reduced motion or Save-Data. */
-export function useStillFrame(): boolean {
-  const reduced = useReducedMotion();
-  return reduced || prefersSaveData();
-}
+// The still frame moved to `lib/motion/use-still-frame.ts`; re-exported for this module's callers.
+export { prefersSaveData, useStillFrame } from "../../lib/motion/use-still-frame.js";
 
 export interface PrintPlateProps {
   /** What the agent is doing; `paused` shows the empty print. */

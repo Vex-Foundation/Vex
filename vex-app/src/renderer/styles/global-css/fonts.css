@@ -2,34 +2,35 @@
  * public/fonts/ so publicDir copies them verbatim into dist/renderer/fonts/
  * (license text ships alongside under fonts/licenses/, OFL 1.1).
  *
- * THE REGISTER (V10, tokens.css --font-*):
- *   - Instrument Sans  = UI chrome and reading (variable wght 400-700, wdth
- *     75-100). Token --font-sans (and --font-display, the same stack).
- *   - Departure Mono   = labels, captions, data and every figure (one static
- *     400 weight: never set 500+, base.css turns weight synthesis off so a
- *     bold never fakes). Token --font-mono.
- *   - Instrument Serif = counters and titles (static 400 + italic, NO weight
- *     axis - see the note above its faces). Token --font-serif.
- *   - JetBrains Mono   = code only: xterm, code blocks, the file viewer, raw
- *     JSON. Token --font-code.
+ * THE REGISTER (R3, docs/design/R3-MINIMAL.md section 1; tokens.css
+ * --font-*):
+ *   - Instrument Sans  = every UI word: reading, rows, labels and status
+ *     words, in sentence case (variable wght 400-700, wdth 75-100). Token
+ *     --font-sans (and --font-display, the same stack).
+ *   - JetBrains Mono   = every figure, address, time and duration (token
+ *     --font-mono, with `.vex-num` for tabular figures), and code: xterm,
+ *     code blocks, the file viewer, raw JSON (token --font-code). Variable
+ *     wght 100-800.
+ *   - Instrument Serif = display only (static 400 + italic, NO weight axis -
+ *     see the note above its faces). Token --font-serif.
  *   - Inter Tight      = no longer a voice. It stays in the --font-sans stack
  *     right after Instrument Sans as per-glyph coverage (Instrument Sans ships
  *     latin only; Inter Tight carries latin-ext, so Polish still renders in a
- *     sans). JetBrains Mono plays the same part behind Departure Mono.
+ *     sans).
+ * There is no pixel face.
  * `font-display: block` - fonts are local files with zero-latency loads, so
  * blocking eliminates the fallback-swap flash.
  *
  * METRIC FALLBACKS. During the block period the browser lays text out in the
- * first local face of the stack, so each new face has a `<Family> Fallback`
- * twin: a local system face rescaled to the web face's metrics, so nothing
- * reflows when the woff2 lands. The numbers were computed from the shipped
- * files (fontTools): size-adjust is the ratio of the frequency-weighted
- * average advance of a-z and the space (English letter frequencies) of the
- * web face to that of the local face; ascent, descent and line-gap overrides
- * are the web face's typo metrics (USE_TYPO_METRICS is set in both) divided
- * by unitsPerEm and by the size-adjust. Arial and Liberation Sans, and Courier
- * New and Liberation Mono, are metric-compatible pairs and give the same
- * numbers, so each twin lists both. */
+ * first local face of the stack, so the sans has a `<Family> Fallback` twin:
+ * a local system face rescaled to the web face's metrics, so nothing reflows
+ * when the woff2 lands. The numbers were computed from the shipped file
+ * (fontTools): size-adjust is the ratio of the frequency-weighted average
+ * advance of a-z and the space (English letter frequencies) of the web face
+ * to that of the local face; ascent, descent and line-gap overrides are the
+ * web face's typo metrics (USE_TYPO_METRICS is set) divided by unitsPerEm and
+ * by the size-adjust. Arial and Liberation Sans are a metric-compatible pair
+ * and give the same numbers, so the twin lists both. */
 @font-face {
   font-family: "Inter Tight";
   src: url("/fonts/inter-tight-latin-wght.woff2") format("woff2");
@@ -158,27 +159,5 @@
   size-adjust: 102.53%;
   ascent-override: 94.6%;
   descent-override: 24.38%;
-  line-gap-override: 0%;
-}
-
-/* Departure Mono - the pixel mono for labels and data (OFL 1.1, license in
- * fonts/licenses/). ONE weight, 400; crispest at 11, 22 and 33px. */
-@font-face {
-  font-family: "Departure Mono";
-  src: url("/fonts/departure-mono-regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-/* Departure Mono: unitsPerEm 550, ascent 550, descent -150, line gap 0,
- * advance 350 (0.6364em) against Courier New's 1229/2048 (0.6001em). A mono
- * advance is exact, so the twin keeps every column where the web face puts
- * it. */
-@font-face {
-  font-family: "Departure Mono Fallback";
-  src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono");
-  size-adjust: 106.04%;
-  ascent-override: 94.3%;
-  descent-override: 25.72%;
   line-gap-override: 0%;
 }

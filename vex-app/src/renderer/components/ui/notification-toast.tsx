@@ -1,8 +1,11 @@
 /**
  * THE TOAST STACK - the model's ONE transient surface.
  *
- * Up to three notifications on the dark chrome plate, stacked top-center,
- * longest-waiting first. Since B2.2 this is the only floating toast region in
+ * Up to three notifications as flat paper panels with an ink rule, stacked
+ * top centre, longest-waiting first (docs/design/R3-MINIMAL.md section 12).
+ * Severity is the frame and the fill, never a hue: info has no swatch, a
+ * warning takes the concerned fill (ink hatch) and a 1.5px frame, a failure
+ * the error cross, a 1.5px frame and a hatch band. Since B2.2 this is the only floating toast region in
  * the app: the pre-model single slot and the separate bottom-right sticky card
  * were folded into it, so one owner answers "what is on screen", one cap
  * bounds it and one report ("+N more") covers everything it did not fit.
@@ -34,11 +37,12 @@ import type { NotificationView } from "../../lib/notifications/types.js";
 
 const ACTION_CLASS: Readonly<Record<"primary" | "secondary", string>> = {
   // The toast sits on paper, so the actions use the app's own two registers:
-  // the one blue fill, and the Departure Mono caps link.
+  // the small blue key (32 high, 0 12, 13 / 500, the night edge) and the
+  // blue word link (13.5 / 500).
   primary:
-    "h-9 bg-button-accent px-3.5 text-[14px] font-medium text-ink-on-button-accent transition-colors hover:bg-button-accent-hover disabled:cursor-not-allowed disabled:border disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary",
+    "h-8 border border-button-accent-edge bg-button-accent px-3 text-[13px] font-medium text-ink-on-button-accent transition-colors hover:bg-button-accent-hover focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary",
   secondary:
-    "vex-notification-ghost h-9 px-2.5 font-mono text-[11px] uppercase tracking-status text-accent-primary hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:text-ink-tertiary",
+    "vex-notification-ghost h-8 px-1 text-[13.5px] font-medium text-accent-primary hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed disabled:text-ink-tertiary",
 };
 
 /**
@@ -79,28 +83,28 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
         notifications.setToastInteraction(item.id, { focused: false });
       }}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         {item.severity === "info" ? null : (
           <span className="vex-notification-toast-icon" aria-hidden>
-            <Swatch state={item.severity === "error" ? "error" : "warning"} size={10} />
+            <Swatch state={item.severity === "error" ? "error" : "concerned"} size={10} />
           </span>
         )}
         <div className="min-w-0 flex-1">
           {item.title === null ? null : (
-            <p className="vex-micro-label uppercase">{item.title}</p>
+            <p className="text-[14px] font-medium leading-[20px]">{item.title}</p>
           )}
           <p
             className={
               item.title === null
-                ? "text-[15px] leading-[22px]"
-                : "mt-1 text-[14px] leading-[20px]"
+                ? "text-[14px] leading-[20px]"
+                : "mt-0.5 text-[13px] leading-[1.45] text-ink-secondary"
             }
           >
             {item.message}
           </p>
           {percent === null ? null : (
             <div
-              className="vex-notification-track mt-2 h-1 w-full overflow-hidden"
+              className="vex-notification-track mt-2 h-0.5 w-full overflow-hidden"
               role="progressbar"
               aria-valuenow={percent}
               aria-valuemin={0}
@@ -126,14 +130,14 @@ function NotificationToast({ item }: { readonly item: NotificationView }): JSX.E
             onClick={() => {
               notifications.close(item.id, "user");
             }}
-            className="vex-notification-ghost -mr-1 -mt-0.5 grid h-6 w-6 shrink-0 place-items-center text-ink-secondary hover:text-ink-primary"
+            className="vex-notification-ghost -mr-1 grid h-6 w-6 shrink-0 place-items-center text-ink-tertiary hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-focus"
           >
-            <IconClose size={12} />
+            <IconClose size={14} />
           </button>
         ) : null}
       </div>
       {item.actions.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+        <div className="flex flex-wrap items-center justify-end gap-x-2.5 gap-y-1">
           {item.actions.map((action) => (
             <button
               key={action.id}

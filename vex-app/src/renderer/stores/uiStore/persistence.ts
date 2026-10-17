@@ -19,6 +19,7 @@ import {
   persistRuntimeMode,
 } from "./runtime-mode.js";
 import {
+  coerceBooleanPreference,
   coerceBookWidth,
   coerceSidebarWidth,
   coerceStudioRailExplorerShare,
@@ -94,6 +95,10 @@ export const PERSISTED_UI_KEYS = [
   "studioRailExplorerShare",
   "studioFileTabs",
   "sessionOrdinals",
+  "leftOpen",
+  "vexOpenChat",
+  "vexOpenPages",
+  "showAvatar",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -227,6 +232,13 @@ export function coerceBookTab(value: unknown): BookTab {
 //   v21: `sessionOrdinals` added - the left page's stable `(02)` ledger, which
 //       used to keep its own localStorage key. Seed the empty ledger; it
 //       re-seeds from the session list. Expand-only like every hop above.
+//   v22: the R3 frame's four slots added (docs/design/R3-MINIMAL.md section
+//       2): `leftOpen` seeded from `sidebarOpen`, `vexOpenChat` seeded from
+//       `bookOpen` (the BOOK was the right column the user opened or
+//       closed), `vexOpenPages` false (Vex is hidden by default on the table
+//       pages) and `showAvatar` true. Expand-only: `bookWidth`, `bookTab`,
+//       `sidebarWidth` and `sessionOrdinals` stop being read by the frame
+//       but stay in the payload this release, untouched.
 //   v16: `studioRailExplorerShare` added (the Studio rail's vertical split
 //       between the PROJECTS list and the EXPLORER pane, which used to be a
 //       fixed 256px box). Seed the default so an upgrading install hydrates
@@ -301,6 +313,24 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   if (version < 21 && !("sessionOrdinals" in next)) {
     next = { ...next, sessionOrdinals: EMPTY_ORDINAL_LEDGER };
   }
+  if (version < 22) next = seedR3FrameSlots(next);
+  return next;
+}
+
+/**
+ * v22's seeds: each slot is added only when the payload does not carry it, so
+ * the hop never rewrites a stored value, old keys included.
+ */
+function seedR3FrameSlots(stored: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...stored };
+  if (!("leftOpen" in next)) {
+    next["leftOpen"] = coerceBooleanPreference(next["sidebarOpen"], true);
+  }
+  if (!("vexOpenChat" in next)) {
+    next["vexOpenChat"] = coerceBooleanPreference(next["bookOpen"], true);
+  }
+  if (!("vexOpenPages" in next)) next["vexOpenPages"] = false;
+  if (!("showAvatar" in next)) next["showAvatar"] = true;
   return next;
 }
 
@@ -400,5 +430,11 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     // tab exists.
     studioFileTabs: coerceStudioFileTabs(incoming?.studioFileTabs),
     sessionOrdinals: coerceSessionOrdinals(incoming?.sessionOrdinals),
+    // The R3 frame's booleans: a hand-edited non-boolean degrades to the
+    // value the store was constructed with, never reaching the solver.
+    leftOpen: coerceBooleanPreference(incoming?.leftOpen, current.leftOpen),
+    vexOpenChat: coerceBooleanPreference(incoming?.vexOpenChat, current.vexOpenChat),
+    vexOpenPages: coerceBooleanPreference(incoming?.vexOpenPages, current.vexOpenPages),
+    showAvatar: coerceBooleanPreference(incoming?.showAvatar, current.showAvatar),
   };
 }
