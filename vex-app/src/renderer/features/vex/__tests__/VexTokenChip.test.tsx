@@ -2,7 +2,9 @@
  * The token chip in the title bar (docs/design/R3-MINIMAL.md sections 2.4 and
  * 3): the open chat's state as a fill and a word, and the Vex toggle. The
  * presence is mocked here (its wiring is `useVexPresence.test.tsx`); this suite
- * pins what the chip draws from it and what a press does.
+ * pins what the chip draws from it, what a press does, the Cmd or Ctrl +
+ * Shift + Period shortcut that presses it, and where the one announcer of
+ * the state word sits.
  */
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -20,7 +22,8 @@ vi.mock("../useVexPresence.js", () => ({
   },
 }));
 
-const { VexTokenChip, vexToggleLabel } = await import("../VexTokenChip.js");
+const { VexTokenChip, vexToggleLabel, vexToggleTooltip } = await import("../VexTokenChip.js");
+const { registerVexCloser, setVexClosing } = await import("../vex-hide.js");
 
 function arrange(overrides: Partial<VexPresence> = {}): void {
   presence.current = {
@@ -29,6 +32,7 @@ function arrange(overrides: Partial<VexPresence> = {}): void {
     fill: "idle",
     scope: "This chat:",
     timerStartedAt: null,
+    live: false,
     narration: null,
     background: NO_BACKGROUND_WORK,
     needsYou: {
@@ -60,6 +64,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  setVexClosing(false);
+  for (const dialog of document.querySelectorAll("dialog")) dialog.remove();
 });
 
 describe("VexTokenChip: the state", () => {
@@ -136,14 +142,17 @@ describe("VexTokenChip: background work", () => {
 });
 
 describe("VexTokenChip: the toggle", () => {
-  it("is pressed while Vex is open, and its tooltip says what a press does", () => {
+  it("is pressed while Vex is open, and its tooltip says what a press does and its shortcut", () => {
     expect(vexToggleLabel(true)).toBe("Hide Vex");
     expect(vexToggleLabel(false)).toBe("Show Vex");
-    const { rerender } = render(<VexTokenChip open onToggle={() => undefined} />);
+    expect(vexToggleTooltip(true, "win32")).toBe("Hide Vex · Ctrl+Shift+.");
+    expect(vexToggleTooltip(false, "darwin")).toBe("Show Vex · ⇧⌘.");
+    const { rerender } = render(<VexTokenChip open onToggle={() => undefined} platform="linux" />);
     expect(chip().getAttribute("aria-pressed")).toBe("true");
+    expect(chip().getAttribute("aria-keyshortcuts")).toBe("Control+Shift+.");
     fireEvent.focus(chip());
-    expect(screen.getByText("Hide Vex")).not.toBeNull();
-    rerender(<VexTokenChip open={false} onToggle={() => undefined} />);
+    expect(screen.getByText("Hide Vex · Ctrl+Shift+.")).not.toBeNull();
+    rerender(<VexTokenChip open={false} onToggle={() => undefined} platform="linux" />);
     expect(chip().getAttribute("aria-pressed")).toBe("false");
   });
 
@@ -154,5 +163,136 @@ describe("VexTokenChip: the toggle", () => {
     const button = screen.getByRole("button", { name: /^Vex,\s*Working$/ });
     fireEvent.click(button);
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides through the open sidebar's close, and its write waits for it", () => {
+    const onToggle = vi.fn();
+    const pending: (() => void)[] = [];
+    const dispose = registerVexCloser({
+      close: (commit) => {
+        pending.push(commit);
+        return true;
+      },
+      keep: () => undefined,
+    });
+    try {
+      render(<VexTokenChip open onToggle={onToggle} />);
+      fireEvent.click(chip());
+      expect(onToggle).not.toHaveBeenCalled();
+      pending[0]?.();
+      expect(onToggle).toHaveBeenCalledTimes(1);
+    } finally {
+      dispose();
+    }
+  });
+
+  it("reads hidden while she closes, and a press then keeps her", () => {
+    const onToggle = vi.fn();
+    const keep = vi.fn();
+    const dispose = registerVexCloser({ close: () => true, keep });
+    try {
+      arrange({ background: ONE_RUNNING });
+      render(<VexTokenChip open onToggle={onToggle} platform="win32" />);
+      act(() => {
+        setVexClosing(true);
+      });
+      expect(chip().getAttribute("aria-pressed")).toBe("false");
+      expect(chip().querySelector("[data-vex-chip-background]")?.textContent).toBe(
+        "1 mission running",
+      );
+      fireEvent.focus(chip());
+      expect(screen.getByText("Show Vex · Ctrl+Shift+.")).not.toBeNull();
+      fireEvent.click(chip());
+      expect(keep).toHaveBeenCalledTimes(1);
+      expect(onToggle).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("VexTokenChip: the shortcut", () => {
+  function press(init: KeyboardEventInit, target: EventTarget = document.body): KeyboardEvent {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  it("presses the chip on Ctrl+Shift+Period off macOS, and takes the key", () => {
+    const onToggle = vi.fn();
+    render(<VexTokenChip open={false} onToggle={onToggle} platform="win32" />);
+    const event = press({ code: "Period", key: ">", ctrlKey: true, shiftKey: true });
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("presses it on Cmd+Shift+Period on macOS, from inside a text field too", () => {
+    const onToggle = vi.fn();
+    render(
+      <>
+        <textarea aria-label="Session draft" />
+        <VexTokenChip open={false} onToggle={onToggle} platform="darwin" />
+      </>,
+    );
+    const field = screen.getByRole("textbox", { name: "Session draft" });
+    press({ code: "Period", key: ">", metaKey: true, shiftKey: true }, field);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    // Ctrl is not the macOS chord.
+    press({ code: "Period", key: ">", ctrlKey: true, shiftKey: true }, field);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a held key's repeats, other chords and a key someone nearer already took", () => {
+    const onToggle = vi.fn();
+    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
+    press({ code: "Period", ctrlKey: true, shiftKey: true, repeat: true });
+    press({ code: "Period", ctrlKey: true, shiftKey: true, altKey: true });
+    press({ code: "KeyL", ctrlKey: true, shiftKey: true });
+    press({ code: "KeyV", ctrlKey: true, shiftKey: true });
+    const nearer = document.createElement("div");
+    document.body.append(nearer);
+    nearer.addEventListener("keydown", (event) => event.preventDefault());
+    press({ code: "Period", ctrlKey: true, shiftKey: true }, nearer);
+    nearer.remove();
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("is suspended while a modal dialog is open, and leaves the key alone", () => {
+    const onToggle = vi.fn();
+    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("open", "");
+    document.body.append(dialog);
+    const event = press({ code: "Period", ctrlKey: true, shiftKey: true });
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("hides through her close like the press, and is gone with the chip", () => {
+    const onToggle = vi.fn();
+    const close = vi.fn(() => true);
+    const dispose = registerVexCloser({ close, keep: () => undefined });
+    try {
+      const view = render(<VexTokenChip open onToggle={onToggle} platform="linux" />);
+      press({ code: "Period", ctrlKey: true, shiftKey: true });
+      expect(close).toHaveBeenCalledTimes(1);
+      view.unmount();
+      press({ code: "Period", ctrlKey: true, shiftKey: true });
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("VexTokenChip: the one announcer of the state word", () => {
+  it("sits beside the button, never inside it, so the button's name stays the state", () => {
+    arrange({ state: "working", word: "Working", fill: "done" });
+    render(<VexTokenChip open onToggle={() => undefined} />);
+    const announcer = document.querySelector("[data-vex-area='vex-state-announcer']");
+    expect(announcer).not.toBeNull();
+    expect(chip().contains(announcer)).toBe(false);
+    expect(chip().querySelector("[role='status']")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Vex,\s*Working$/ })).toBe(chip());
   });
 });
