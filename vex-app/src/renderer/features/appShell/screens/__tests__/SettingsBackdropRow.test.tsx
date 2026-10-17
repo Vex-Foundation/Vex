@@ -2,8 +2,9 @@
  * SettingsBackdropRow - the Background row of the Preferences group.
  *
  * Pins:
- *  - idle (shipped artwork): the limits line names PNG/JPEG, 8 MB and the
- *    640x360 floor; one "Choose image" pill; no preview, no remove;
+ *  - idle (shipped artwork): the limits line names PNG/JPEG, 8 MB, the
+ *    640x360 floor and where the image goes (the print window of Vex's
+ *    sidebar); one "Choose image" key; no preview, no remove;
  *  - "Choose image" asks main to pick (no argument: main owns the picker) and
  *    a picked record becomes the preview, "Replace", and the in-card remove;
  *  - the pick writes the record into the ONE cache entry the shell wall reads;
@@ -92,6 +93,9 @@ describe("SettingsBackdropRow", () => {
     expect(limits.textContent).toContain("8 MB");
     expect(limits.textContent).toContain("640x360");
     expect(limits.textContent).not.toMatch(/webp/i);
+    // The image now lives in the print window of Vex's sidebar, not under the glass.
+    expect(limits.textContent).toContain("in the print window of Vex's sidebar");
+    expect(limits.textContent).not.toMatch(/glass/i);
     expect(pickButton().textContent).toBe("Choose image");
     expect(document.querySelector("[data-vex-backdrop-preview]")).toBeNull();
     expect(screen.queryByRole("button", { name: "Remove background image" })).toBeNull();
@@ -205,7 +209,7 @@ describe("SettingsBackdropRow", () => {
     remove.focus();
     expect(document.activeElement).toBe(remove);
     // Hover-revealed on a pointer, always reachable by keyboard: the reveal
-    // is a focus-visible rule in overlay.css, never `hidden`.
+    // is a focus-visible rule in settings.css, never `hidden`.
     expect(remove.className).toContain("vex-backdrop-preview__remove");
     expect(remove.hasAttribute("hidden")).toBe(false);
   });
