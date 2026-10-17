@@ -51,9 +51,11 @@ import {
   vexOpenPatch,
 } from "./uiStore/layout.js";
 import {
+  EMPTY_ORDINAL_LEDGER,
   mergeUiState,
   migrateUiState,
   partializeUiState,
+  type SessionOrdinalLedger,
 } from "./uiStore/persistence.js";
 import {
   DEFAULT_RUNTIME_MODE,
@@ -68,10 +70,6 @@ import {
   type StudioFileTabsByProject,
 } from "./uiStore/studio-file-tabs.js";
 
-import {
-  EMPTY_ORDINAL_LEDGER,
-  type SessionOrdinalLedger,
-} from "./uiStore/session-ordinals.js";
 
 export type {
   PersistedFileTab,
@@ -409,13 +407,12 @@ export interface UiState {
    */
   readonly studioFileTabs: StudioFileTabsByProject;
   /**
-   * The stable session ordinals the left page prints, `(02)`: a ledger of ids
-   * and numbers, persisted so a number survives a reload. Cosmetic, never
-   * crosses IPC. Rules: `leftPage/sessionOrdinals.ts`; bounds and coercion:
-   * `uiStore/session-ordinals.ts`.
+   * The retired session ordinal ledger (the V10 left page's `(02)` numbers).
+   * Nothing writes it any more; it is read back and persisted unchanged this
+   * release so an older reader still finds it. Bounds and coercion:
+   * `uiStore/persistence.ts`.
    */
   readonly sessionOrdinals: SessionOrdinalLedger;
-  readonly setSessionOrdinals: (ledger: SessionOrdinalLedger) => void;
   /** Set the theme choice: resolves + writes documentElement in one step. */
   readonly setThemePreference: (value: VexThemePreference) => void;
   /** Legacy name of `setLeftOpen`: writes both slots. */
@@ -616,7 +613,6 @@ export const useUiStore = create<UiState>()(
       studioRailExplorerShare: STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
       studioFileTabs: {},
       sessionOrdinals: EMPTY_ORDINAL_LEDGER,
-      setSessionOrdinals: (sessionOrdinals) => set({ sessionOrdinals }),
       setSidebarOpen: (value) => set({ sidebarOpen: value, leftOpen: value }),
       setLeftOpen: (value) => set({ sidebarOpen: value, leftOpen: value }),
       setSidebarWidth: (px) => set({ sidebarWidth: clampSidebarWidth(px) }),
