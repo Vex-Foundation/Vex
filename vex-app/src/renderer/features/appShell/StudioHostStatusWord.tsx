@@ -1,7 +1,9 @@
 /**
- * The Studio shell's one live status surface - the centre of the status strip
- * while `runtimeMode === "studio"`, in the seat `DeskRuleTapeState` occupies in
- * agent mode.
+ * The Studio shell's one live status surface: a 32 high pill in the title
+ * bar's right cluster while `runtimeMode === "studio"`, before "Needs you"
+ * (docs/design/R3-MINIMAL.md section 3, "Running · {n} connected" as the host
+ * word). The card behind it is a flat popover: paper, a 1.5px ink frame, no
+ * shadow.
  *
  * It reads `EV.studio.hostStatus` through `useStudioHostStatus`, which is
  * event-driven: main pushes every transition, so this is a LEVEL and never a
@@ -55,7 +57,6 @@ import {
   STUDIO_HOST_PREVIEW_ENABLED,
 } from "./StudioHostStatusPreview.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { cn } from "../../lib/utils.js";
 import {
   STUDIO_HOST_CARD_LABEL,
   STUDIO_HOST_CAUSE_NEXT_STEPS,
@@ -332,15 +333,10 @@ export function StudioHostStatusPill({
         data-vex-studio-host-state={view.state ?? undefined}
         data-vex-studio-host-cause={view.cause ?? undefined}
         data-vex-studio-host-at-capacity={view.atCapacity ? "true" : undefined}
-        className={cn(
-          "vex-micro inline-flex items-center gap-1.5 rounded-capsule px-2 py-1 tracking-[0.24em]",
-          "hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          view.tone === "warning"
-            ? "text-warning"
-            : view.tone === "lit"
-              ? "text-[var(--vex-accent-text)]"
-              : "text-[var(--vex-text-3)]",
-        )}
+        // The word is ink in every tone: the swatch carries the state, never
+        // a colour on the word (docs/design/R3-MINIMAL.md rules).
+        data-tone={view.tone}
+        className="vex-tb-pill vex-tb-pill--quiet"
         onClick={() => {
           clearDwell();
           cancelClose();
@@ -366,7 +362,10 @@ export function StudioHostStatusPill({
           setOpen(true);
         }}
       >
-        <Swatch state={view.dot} size={8} />
+        <Swatch
+          state={view.dot}
+          className={view.tone === "quiet" ? "text-ink-tertiary" : "text-accent-primary"}
+        />
         {view.word}
       </button>
 
@@ -387,20 +386,20 @@ export function StudioHostStatusPill({
           role="group"
           aria-label={STUDIO_HOST_CARD_LABEL}
           data-vex-area="studio-host-status-card"
-          className="vex-surface-enter absolute top-full left-1/2 z-50 mt-2 flex w-[320px] max-w-[80vw] -translate-x-1/2 flex-col gap-2 rounded-xl border border-line-2 bg-surface-overlay p-3 text-left shadow-lg"
+          className="vex-surface-enter vex-tb-hostcard vex-no-drag"
         >
-          <p className="text-[13px] leading-[20px] font-medium text-ink-primary">
+          <p className="text-[14px] leading-5 font-medium text-ink-primary">
             {view.headline}
           </p>
           {view.reason !== null ? (
-            <p className="text-[12px] leading-[18px] text-ink-secondary">
+            <p className="text-[13px] leading-[1.45] text-ink-secondary">
               {view.reason}
             </p>
           ) : null}
           {view.instruction !== null ? (
             <p
               data-vex-host-next-step="instruction"
-              className="text-[12px] leading-[18px] text-ink-primary"
+              className="text-[13px] leading-[1.45] text-ink-primary"
             >
               {view.instruction}
             </p>

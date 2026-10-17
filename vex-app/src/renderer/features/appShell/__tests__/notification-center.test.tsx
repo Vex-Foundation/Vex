@@ -1,5 +1,6 @@
 /**
- * The notification center: the flank stays empty when idle, the panel lists
+ * The notification center ("Notices · N" in the title bar, docs/design/
+ * R3-MINIMAL.md section 3): the pill is absent when idle, the panel lists
  * what is retained, dismissal is per row, the retention cap REPORTS what it
  * evicted, a detached action renders inert with its reason, and the anchored
  * panel keeps the keyboard contract its two flank neighbours already have
@@ -64,10 +65,16 @@ describe("NotificationCenter", () => {
       badge: badge()?.textContent,
       rows: [...rows].map((row) => row.getAttribute("data-severity")),
       messages: [...rows].map((row) => row.textContent?.includes("Watcher stopped")),
+      // Status by fill, never colour: the failure is the ink cross, the info
+      // row draws no state at all.
+      fills: [...rows].map(
+        (row) => row.querySelector(".vex-swatch")?.getAttribute("data-s") ?? null,
+      ),
     }).toEqual({
-      badge: "NOTICES 2",
+      badge: "Notices · 2",
       rows: ["info", "error"],
       messages: [false, true],
+      fills: [null, "error"],
     });
   });
 
