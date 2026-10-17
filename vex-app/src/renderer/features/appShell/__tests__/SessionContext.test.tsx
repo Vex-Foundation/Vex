@@ -2,10 +2,10 @@
  * SessionContext tests (slice C — a11y labels + canonical selectors).
  *
  * Pins the `session-header` data selector + the labeled group for the active
- * session row. Stage 4 moved the runtime bar OUT into the BOOK panel; the
- * session-UI redesign (2026-07-29) then removed the register line itself — the
- * TITLE moved to the left rail and the Markdown EXPORT key to the status
- * strip, so this file no longer covers either. The export flow's
+ * session row. The runtime bar left the head long ago; the session-UI
+ * redesign (2026-07-29) then removed the register line itself - the TITLE
+ * moved to the left rail and the Markdown EXPORT key to the title bar, so this
+ * file no longer covers either. The export flow's
  * privacy-confirmation gate did not lose coverage: it moved WITH the control
  * to `SessionExportControl.test.tsx`.
  */
@@ -131,27 +131,27 @@ describe("SessionContext header (slice C)", () => {
     ).toBeNull();
   });
 
-  // ON THE SPREAD the session opens as a chapter (docs/design/V10-SPREAD.md
-  // section 1, reference d3): its name in the 56px serif. The access mode is
-  // not repeated: the composer's access-mode seat names it.
-  it("prints the session name as the chapter head on the spread, with no stamp", () => {
-    const { container } = renderCtx({ chapter: true });
-    const header = container.querySelector('[data-vex-area="session-header"]');
-    expect(header).not.toBeNull();
-    expect(header?.getAttribute("role")).toBe("group");
-    expect(header?.getAttribute("aria-label")).toBe("Session: Research session");
-    const title = screen.getByRole("heading", { level: 1 });
-    expect(title.textContent).toBe("Research session");
-    expect(title.className).toContain("vex-chapter__title");
+  // IN THE SHELL the title bar row names the session and its mode
+  // (docs/design/R3-MINIMAL.md section 3), so the chapter head is gone: no
+  // heading, no stamp, no row at all unless a trailing slot asks for one.
+  it("draws no head in the shell, where the title bar names the session", () => {
+    const { container } = renderCtx({ namedByTitleBar: true });
+    expect(
+      container.querySelector('[data-vex-area="session-header"]'),
+    ).toBeNull();
+    expect(screen.queryByRole("heading")).toBeNull();
+    expect(screen.queryByText("Research session")).toBeNull();
     expect(screen.queryByText("restricted")).toBeNull();
   });
 
-  it("keeps the trailing slot beside the chapter head", () => {
+  it("gives a supplied trailing slot its row in the shell, named for the session", () => {
     const { container } = renderCtx({
-      chapter: true,
+      namedByTitleBar: true,
       trailing: createElement("span", { "data-testid": "trailing-slot" }, "x"),
     });
     const header = container.querySelector('[data-vex-area="session-header"]');
+    expect(header?.getAttribute("aria-label")).toBe("Session: Research session");
     expect(header?.querySelector('[data-testid="trailing-slot"]')).not.toBeNull();
+    expect(screen.queryByRole("heading")).toBeNull();
   });
 });
