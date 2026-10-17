@@ -238,6 +238,13 @@ describe("the page close key", () => {
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
   });
 
+  it("closes the Needs you page in Studio, the key the page itself no longer draws", () => {
+    useUiStore.setState({ shellRoute: { kind: "needsYou", origin: null } });
+    renderHead("studio", SESSION);
+    fireEvent.click(screen.getByRole("button", { name: "Close Needs you" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
   it("is absent on a subpage, whose crumb parent is the way back", () => {
     useUiStore.setState({ shellRoute: { kind: "agentScan", origin: null, projectId: PROJECT } });
     renderHead("studio", SESSION);

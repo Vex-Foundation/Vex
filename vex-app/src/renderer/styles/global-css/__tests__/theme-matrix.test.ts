@@ -360,6 +360,15 @@ describe("pre-shell alias group", () => {
     // its Tailwind utility compile to NOTHING - no build error, no styling,
     // found only by eye. This walks the real call sites.
     const rendererDir = path.join(here, "..", "..", "..");
+    const gateUtility = /\b(?:bg|text|border)-(gate-[a-z]+)\b/g;
+    // The R3 first run and wizard (wave 5) dropped the last call sites, so the
+    // walk may find none; the scanner must still read every utility form, or
+    // a drifted regex would pass by finding nothing.
+    const sample = 'className="bg-gate-code text-gate-warn border-gate-rail"';
+    expect(
+      [...sample.matchAll(gateUtility)].map((match) => match[1]),
+      "the regex drifted",
+    ).toEqual(["gate-code", "gate-warn", "gate-rail"]);
     const used = new Set<string>();
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -369,9 +378,7 @@ describe("pre-shell alias group", () => {
             walk(full);
           }
         } else if (/\.tsx?$/.test(entry.name)) {
-          for (const match of readFileSync(full, "utf8").matchAll(
-            /\b(?:bg|text|border)-(gate-[a-z]+)\b/g,
-          )) {
+          for (const match of readFileSync(full, "utf8").matchAll(gateUtility)) {
             used.add(match[1] as string);
           }
         }
@@ -379,8 +386,6 @@ describe("pre-shell alias group", () => {
     };
     walk(rendererDir);
 
-    expect(used.size, "no gate utilities found - the regex drifted").
-      toBeGreaterThan(0);
     for (const utility of used) {
       expect(tokensCss, `--color-${utility} projection missing`).toContain(
         `--color-${utility}: var(--vex-alias-`,
@@ -425,10 +430,11 @@ describe("[data-vex-gate] scope", () => {
     // A class-keyed selector died silently once already when the radius
     // utility was renamed; the data hooks are owned by
     // components/ui/button.tsx (`data-vex-button` = variant,
-    // `data-vex-button-size` = size).
+    // `data-vex-button-size` = size). The bare-variant hook left with the old
+    // wizard leaf's step actions (R3 wave 5); the size hook stays.
     const declarations = gateCss.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(declarations).toContain('button[data-vex-button="bare"]');
     expect(declarations).toContain('button[data-vex-button-size="lg"]');
+    expect(declarations).not.toMatch(/\.vex-step-actions/);
     expect(declarations).not.toMatch(/button\.[a-z]/i);
   });
 });
