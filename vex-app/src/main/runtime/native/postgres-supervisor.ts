@@ -268,7 +268,8 @@ function spawnPostgres(command: string, args: readonly string[], env: Readonly<R
 
 const TOOL_OUTPUT_CAP = 1_048_576;
 
-const runPgTool: PgRunTool = (command, args, options) =>
+/** A bounded run of one of the tree's tools; also the data migration's pg_dump and pg_restore. */
+export const runPgTool: PgRunTool = (command, args, options) =>
   new Promise((resolve) => {
     const child = nodeSpawn(command, args, {
       cwd: path.dirname(command),
