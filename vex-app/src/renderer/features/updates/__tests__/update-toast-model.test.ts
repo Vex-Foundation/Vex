@@ -1,8 +1,7 @@
 /**
- * Pure update-toast projection: which statuses notify, the per-state copy,
+ * Pure update projection: which statuses surface, the per-state copy,
  * severity (which replaced the ARIA role), progress, action rows, dismissal
- * and Escape semantics - the contract `UpdateToastSurface` binds to the
- * notification model.
+ * and Escape semantics - the contract `UpdateCard` binds to.
  */
 
 import { describe, expect, it } from "vitest";

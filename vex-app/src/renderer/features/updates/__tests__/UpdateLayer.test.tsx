@@ -1,11 +1,11 @@
 /**
  * UpdateLayer (updater redesign Part A). Verifies the defensive no-op when
- * the updater bridge is absent, that the update notification renders through
- * the global ToastHost stack for an `available` status, that "Later" snoozes ONLY the current version
+ * the updater bridge is absent, that the update card renders for an
+ * `available` status, that "Later" snoozes ONLY the current version
  * while a NEWER version pushed over `onStatus` still surfaces (item 2 —
  * snooze must not suppress discovery of a newer release), that "Try again"
  * on `blockedByOperation` re-invokes the correct action per `blockedAction`,
- * and the error-toast dismiss/re-surface behavior.
+ * and the error card's dismiss/re-surface behavior.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,17 +16,11 @@ import { createElement } from "react";
 import type { UpdateStatus } from "@shared/schemas/updater.js";
 
 const { UpdateLayer } = await import("../UpdateLayer.js");
-const { ToastHost } = await import("../../../components/ui/toast-host.js");
 const { notifications } = await import("../../../lib/notifications/index.js");
 
-/** The layer raises the notification; the host renders the stack - mount both. */
-function layerWithHost(): ReactNode {
-  return createElement(
-    "div",
-    null,
-    createElement(UpdateLayer),
-    createElement(ToastHost),
-  );
+/** The layer renders the card itself (floating here: no sidebar mounts a slot). */
+function layerOnly(): ReactNode {
+  return createElement(UpdateLayer);
 }
 
 interface UpdaterBridgeStub {
@@ -89,9 +83,8 @@ function withClient(children: ReactNode): ReactNode {
 afterEach(() => {
   // @ts-expect-error — test cleanup
   delete window.vex;
-  // The notification model is module-level; a torn-down layer's cleanup
-  // already closed its handle, but reset defensively so one test can never
-  // leak a retained notification into the next.
+  // The card raises nothing on the notification model; reset anyway so one
+  // test can never leak a retained notification into the next.
   notifications.reset();
 });
 
@@ -101,14 +94,14 @@ describe("UpdateLayer", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows the toast when an update is available", async () => {
+  it("shows the card when an update is available", async () => {
     stubUpdater({
       kind: "available",
       currentVersion: "1.0.0",
       latestVersion: "1.1.0",
       severity: "normal",
     });
-    render(withClient(layerWithHost()));
+    render(withClient(layerOnly()));
     expect(await screen.findByText("Vex 1.1.0 available")).toBeTruthy();
   });
 
@@ -119,7 +112,7 @@ describe("UpdateLayer", () => {
       latestVersion: "1.1.0",
       severity: "normal",
     });
-    render(withClient(layerWithHost()));
+    render(withClient(layerOnly()));
     await screen.findByText("Vex 1.1.0 available");
 
     fireEvent.click(screen.getByText("Later"));
@@ -158,7 +151,7 @@ describe("UpdateLayer", () => {
       severity: "normal",
       wasDownloaded: false,
     });
-    render(withClient(layerWithHost()));
+    render(withClient(layerOnly()));
     fireEvent.click(await screen.findByText("Try again"));
     await waitFor(() =>
       expect(bridge.startUpdateNow).toHaveBeenCalledTimes(1),
@@ -176,7 +169,7 @@ describe("UpdateLayer", () => {
       severity: "normal",
       wasDownloaded: true,
     });
-    render(withClient(layerWithHost()));
+    render(withClient(layerOnly()));
     fireEvent.click(await screen.findByText("Try again"));
     await waitFor(() =>
       expect(bridge.restartAndInstallNow).toHaveBeenCalledTimes(1),
@@ -191,21 +184,21 @@ describe("UpdateLayer", () => {
       message: "Update failed. Check your connection and try again.",
       retryable: true,
     });
-    render(withClient(layerWithHost()));
+    render(withClient(layerOnly()));
     fireEvent.click(await screen.findByText("Try again"));
     await waitFor(() => expect(bridge.checkNow).toHaveBeenCalledTimes(1));
   });
 
-  it("dismissing the error toast hides it; a fresh error (after leaving the error state) reappears", async () => {
+  it("dismissing the error card hides it; a fresh error (after leaving the error state) reappears", async () => {
     const { push } = stubUpdater({
       kind: "error",
       currentVersion: "1.0.0",
       message: "Update failed. Check your connection and try again.",
       retryable: true,
     });
-    render(withClient(layerWithHost()));
-    await screen.findByLabelText("Dismiss notification: Update failed");
-    fireEvent.click(screen.getByLabelText("Dismiss notification: Update failed"));
+    render(withClient(layerOnly()));
+    await screen.findByText("Update failed");
+    fireEvent.click(screen.getByText("Dismiss"));
     await waitFor(() =>
       expect(screen.queryByText("Update failed")).toBeNull(),
     );
@@ -218,17 +211,13 @@ describe("UpdateLayer", () => {
     // distinct main-process IPC events actually land as separate renderer
     // ticks, not a single batched update.
     push({ kind: "checking", currentVersion: "1.0.0" });
-    await waitFor(() =>
-      expect(screen.queryByLabelText("Dismiss notification: Update failed")).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByText("Update failed")).toBeNull());
     push({
       kind: "error",
       currentVersion: "1.0.0",
       message: "Update failed. Check your connection and try again.",
       retryable: true,
     });
-    expect(
-      await screen.findByLabelText("Dismiss notification: Update failed"),
-    ).toBeTruthy();
+    expect(await screen.findByText("Update failed")).toBeTruthy();
   });
 });
