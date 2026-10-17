@@ -1,7 +1,7 @@
 # App Shell: the spread + the sessions index
 
 Exact behavior of the shell's column layout and the sessions index. The
-design values are `docs/design/V10-SPREAD.md` sections 2 to 5 and 8. A fresh
+design values are `docs/design/R3-MINIMAL.md` sections 2 to 5. A fresh
 agent should be able to rebuild these surfaces from this file.
 
 ## The spread (`AppShell.tsx` + `lib/shell-columns.ts`)
@@ -35,10 +35,7 @@ agent should be able to rebuild these surfaces from this file.
 - The left page (`ShellBackdrop.tsx`): the day or night print in place
   (window size from the column's corner, swapped on `data-vex-theme`), or the
   user's own image from `window.vex.shellBackdrop.read`; the spine adds a
-  44px paper cap. Its children slot carries the agent state canvas
-  (`PlateFlock` from `components/pixel/PrintPlate.tsx`, fed by
-  `useDeskAgentState`): the eagle and its flock in the band, or the eagle
-  alone on a spine. Lighter and Studio show the vx mark at the spine's top.
+  44px paper cap. Lighter and Studio show the vx mark at the spine's top.
 - The gutter (`ShellGutter.tsx`): the `aria-hidden` spread caption, context |
   tape word | connection, a drag column.
 - The running head (`RunningHead.tsx`, seam `shell-status-strip`): the
@@ -47,7 +44,7 @@ agent should be able to rebuild these surfaces from this file.
 
 ## The left page in agent mode (`SessionsList.tsx`)
 
-docs/design/V10-SPREAD.md section 3. Furniture on the print, styled in
+docs/design/R3-MINIMAL.md section 4. Furniture on the print, styled in
 `styles/global-css/left-page.css` (ink and blue on the sky by day, paper white
 on the night print, white on the ground).
 
