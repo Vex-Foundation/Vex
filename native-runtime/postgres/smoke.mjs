@@ -250,10 +250,29 @@ async function startServerWin(r, port) {
     srv.exitPromise = Promise.resolve(srv.exited);
     return { srv, ready: false, ms };
   }
-  const lines = (await r.readFile(path.join(r.dataDir, 'postmaster.pid')))?.split('\n') ?? [];
-  const pid = Number(lines[0]);
-  if (!(lines.length > 7 && lines[7].trim() === 'ready' && (await r.alive(pid)))) {
-    throw new SmokeError(`pg_ctl start succeeded but postmaster.pid is not ready: ${JSON.stringify(lines)}`);
+  // pg_ctl -w on Windows cannot know the postmaster's PID, so it accepts any
+  // "ready" postmaster.pid started within 2 s of itself (pg_ctl.c
+  // wait_for_postmaster_start): a file left by a postmaster killed moments
+  // ago passes before the new one has even replaced it. Ready therefore also
+  // means the file names a live process; wait for that.
+  let pid = null;
+  let stale = null;
+  for (const t1 = performance.now(); performance.now() - t1 < 30_000; await sleep(50)) {
+    const lines = (await r.readFile(path.join(r.dataDir, 'postmaster.pid')))?.split('\n') ?? [];
+    const p = Number(lines[0]);
+    if (lines.length > 7 && lines[7].trim() === 'ready' && (await r.alive(p))) {
+      pid = p;
+      break;
+    }
+    if (lines.length && !stale) stale = lines.slice(0, 3).join(' | ');
+  }
+  if (stale) log(`pg_ctl start returned 0 while postmaster.pid still named a dead postmaster (${stale})${pid ? '; the new one became ready after' : ''}`);
+  if (!pid) {
+    const late = fs.existsSync(r.pgctlLog) ? fs.readFileSync(r.pgctlLog).subarray(logOffset).toString('utf8') : '';
+    srv.stderr = `${res.stdout}${late}`;
+    srv.exited = { code: null, signal: null, via: 'pg_ctl start returned 0, but no live postmaster' };
+    srv.exitPromise = Promise.resolve(srv.exited);
+    return { srv, ready: false, ms: performance.now() - t0, staleReady: !!stale };
   }
   srv.pid = pid;
   srv.exitPromise = (async () => {
@@ -264,7 +283,7 @@ async function startServerWin(r, port) {
       : { code: null, signal: 'terminated' };
     return srv.exited;
   })();
-  return { srv, ready: true, ms };
+  return { srv, ready: true, ms: performance.now() - t0 };
 }
 
 // Container runner: ubuntu:22.04 linux/amd64, tree bind-mounted read-only at
