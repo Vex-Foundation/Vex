@@ -1,11 +1,11 @@
 /**
- * PremiumBadge — state → caption/aria/tone mapping + shimmer gating.
+ * PremiumBadge - state → caption/aria/tone mapping + shimmer gating.
  *
  * The badge is the DESK RULE header cluster's clickable status key (not the
  * presentational `Stamp`): a real <button> with aria-haspopup="dialog". These
  * tests pin the caption per state, that the shimmer class is applied ONLY in
  * `ready` (and only when opted in), and that the click handler + aria-expanded
- * work — for both the full (dialog-header) geometry and the `compact` header
+ * work - for both the full (dialog-header) geometry and the `compact` header
  * pill the cluster renders.
  */
 
@@ -45,7 +45,8 @@ describe("PremiumBadge", () => {
         ["ready", /Ready/i],
         ["accepted", /Accepted/i],
         ["stale", /Review again/i],
-        ["error", /Action needed/i],
+        ["error", /Paused on error/i],
+        ["ended", /Ended/i],
       ];
     for (const [state, caption] of cases) {
       const { unmount } = render(
@@ -63,7 +64,7 @@ describe("PremiumBadge", () => {
     const { container } = render(
       <PremiumBadge label="Mission" state="ready" interactive={false} />,
     );
-    // Not a focus target — no button role, no dialog popup semantics.
+    // Not a focus target - no button role, no dialog popup semantics.
     expect(screen.queryByRole("button")).toBeNull();
     expect(container.querySelector("[aria-haspopup]")).toBeNull();
     expect(container.querySelector("[aria-expanded]")).toBeNull();

@@ -10,8 +10,9 @@
  * contract + plan cards used to live inline in `SessionPanel`, which pushed
  * `MissionControls` + the Accept footer below the fold (the bug this cluster
  * resolves); the cluster keeps only the compact badges in the layout and moves
- * the full review surfaces into top-layer `<dialog>`s where the Accept action
- * is pinned and can never be scrolled away.
+ * the full review surfaces into top-layer `<dialog>`s (the contract as a sheet
+ * over the centre column) where the Accept action is pinned and can never be
+ * scrolled away.
  *
  * Render gate (decided in the redesign plan): the cluster renders only in the
  * active session view, and only when the session is mission-mode OR plan-mode
@@ -21,7 +22,9 @@
  *
  * Badge state derivation (§4 of the plan):
  *   - Mission badge mirrors the contract diff state machine
- *     (preparing / ready / accepted / stale), but "ready" additionally requires
+ *     (preparing / ready / accepted / stale), plus "error" while an active run
+ *     is paused on an error and "ended" for a terminal accepted mission, but
+ *     "ready" additionally requires
  *     the plan to be ready when plan-mode is on; a `plan_missing` plan keeps
  *     the mission at "preparing" with a plan-needed hint (matches the engine
  *     `plan_missing` block in the modal footer).
@@ -282,12 +285,15 @@ function deriveMissionBadge(
   // masked as "accepted" by a stale renewable source. hasActiveRun stays
   // unconditional: a live run is authoritative regardless of any draft.
   //
-  // Pass-1 trade-off: a failed/stopped/cancelled mission reuses the `accepted`
-  // badge whose caption reads "Accepted"; here it means "contract accepted /
-  // no accept action pending", not "mission succeeded". A dedicated
-  // RUNNING/DONE state is a deferred Stage-2 follow-up.
-  if (hasActiveRun || (draft === null && hasRenewable)) {
+  // A live run reads "Accepted" (its contract is accepted and nothing waits
+  // on the user); a terminal one reads "Ended" (completed, failed, stopped or
+  // cancelled: the word says the run is over, never that it succeeded, as the
+  // R3 badge draws it in docs/design/R3-MINIMAL.md section 3).
+  if (hasActiveRun) {
     return { state: "accepted", shimmer: false };
+  }
+  if (draft === null && hasRenewable) {
+    return { state: "ended", shimmer: false };
   }
   // Below the run-level overrides, the badge is a pure projection of THE shared
   // readiness selector, the same one `MissionControls` and the contract modal
