@@ -96,11 +96,13 @@ export const CLOCK_CAP_MS = 250;
 const ALL: readonly GestureName[] = ["blow", "bird", "giggle", "blush", "whistle", "hum"];
 const MAP_FREE: readonly GestureName[] = ["blush", "whistle", "hum"];
 /**
- * The beam's ink by the ground under her (`docs/design/R3-MINIMAL.md section 10.4`): white at the
- * print's clouds' alpha (0.9 by day, 0.46 at night, also on night paper; the blow's cloud too); on
- * day paper, where white light cannot show, the one blue at 0.4.
+ * The beam's ink by the ground under her (`docs/design/R3-MINIMAL.md section 10.4`): white on the
+ * print by day at 0.66, a step under the clouds' 0.9 so her tee reads (the web home's value); white
+ * at the clouds' night alpha 0.46 at night, also on night paper; on day paper, where white light
+ * cannot show, the one blue at 0.4. The blow's cloud keeps the clouds' alpha.
  */
 export const CLOUD_ALPHA = { light: 0.9, dark: 0.46 } as const;
+export const PRINT_BEAM_ALPHA = 0.66;
 export const PAPER_BEAM_ALPHA = 0.4;
 /** The host's blocks keep the actors out by this much air (map px), in order. */
 const AIR = [28, 16, 20] as const;
@@ -170,7 +172,8 @@ function inks(dark: boolean): Palette {
 export function beamInk(ground: K2Ground, dark: boolean, pal: Palette): InkStyle {
   if (ground === "paper" && !dark)
     return { color: readVar("--color-blue", "#0000c0"), alpha: PAPER_BEAM_ALPHA };
-  return { color: pal.white, alpha: CLOUD_ALPHA[dark || ground === "night" ? "dark" : "light"] };
+  if (dark || ground === "night") return { color: pal.white, alpha: CLOUD_ALPHA.dark };
+  return { color: pal.white, alpha: PRINT_BEAM_ALPHA };
 }
 
 export class K2Engine {

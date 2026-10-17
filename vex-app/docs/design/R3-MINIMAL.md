@@ -386,7 +386,7 @@ The stage plate with Vex per state and a crumb (13, gap 18): System check, Docke
 ### 10.4 The hologram
 Vex is the K2 halftone portrait projected from the vx token: a hex dot screen (about 7,000 dots stamped from an atlas), eyes, mouths, hands and wind, on a 10 fps step clock with a 250 ms clock cap. Idle animation is paused when the window is hidden or the plate is off screen; under reduced motion or Save-Data it paints one still frame. Her face stays at about 90 px or more wherever she is the subject (the nine state miniatures in the kit are smaller on purpose). Reference scales for the stills the design was cut from: 0.64 in the sidebar, 0.6 on the welcome, 1.0 on wake and unlock, 0.56 to 0.58 at 1024.
 
-Beam ink by ground: blue `#0000C0` at 0.4 alpha on paper (a quiet blue where white light cannot show), white at 0.9 on the print by day and at 0.46 at night. Poses are idle, listening, thinking, working, approval, done, concerned, error and sleeping; eye modes narrow, wide, worried, half and smile; mouths frown and pout; gaze targets composer, up side, work, aside, card and viewer; open and close episodes (collapse into the token, sleeping dim, re-wake) and one "look at you" chain.
+Beam ink by ground: blue `#0000C0` at 0.4 alpha on paper (a quiet blue where white light cannot show), white at 0.66 on the print by day (a step under the clouds' 0.9, so her tee reads; the web home's value) and at 0.46 at night. Poses are idle, listening, thinking, working, approval, done, concerned, error and sleeping; eye modes narrow, wide, worried, half and smile; mouths frown and pout; gaze targets composer, up side, work, aside, card and viewer; open and close episodes (collapse into the token, sleeping dim, re-wake) and one "look at you" chain.
 
 ---
 
