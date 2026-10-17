@@ -25,7 +25,7 @@ import { useBoardSurfaceStore } from "../Board/board-surface-store.js";
 import { ShellScreen } from "./ShellScreen.js";
 
 /** The page's word when no board can be bound (the old rail's copy, Vex spelt as the app spells her). */
-export const BOARD_PAGE_EMPTY = "No board yet - ask Vex to compose one";
+export const BOARD_PAGE_EMPTY = "No board yet. Ask Vex to compose one.";
 /** The next step under it: the chat is where a board is composed. */
 export const BOARD_PAGE_EMPTY_ACTION = "Open the chat";
 

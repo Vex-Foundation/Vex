@@ -743,7 +743,7 @@ describe("BalancesCard - the per-scope empty note, loading and error", () => {
   it("states the whole-inventory invitation for global", () => {
     mountScoped([], GLOBAL_SCOPE);
     expect(
-      screen.getByText("No balances yet - fund a wallet and your holdings appear here."),
+      screen.getByText("No balances yet. Fund a wallet and your holdings appear here."),
     ).not.toBeNull();
   });
 
@@ -756,7 +756,7 @@ describe("BalancesCard - the per-scope empty note, loading and error", () => {
     mountScoped([], SESSION_SCOPE);
     expect(
       screen.getByText(
-        "No balances in this session's wallets yet - fund them and your holdings appear here.",
+        "No balances in this session's wallets yet. Fund them and your holdings appear here.",
       ),
     ).not.toBeNull();
     expect(screen.queryByText(/No balances yet/)).toBeNull();
@@ -766,7 +766,7 @@ describe("BalancesCard - the per-scope empty note, loading and error", () => {
     mountScoped([], PROJECT_SCOPE);
     expect(
       screen.getByText(
-        "No balances in this project's wallets yet - fund them and your holdings appear here.",
+        "No balances in this project's wallets yet. Fund them and your holdings appear here.",
       ),
     ).not.toBeNull();
     expect(screen.queryByText(/this session's wallets/)).toBeNull();

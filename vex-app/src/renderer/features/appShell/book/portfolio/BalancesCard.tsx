@@ -104,13 +104,13 @@ export function BalancesCard({
 function emptyNote(scope: PortfolioPageScope): string {
   switch (scope.kind) {
     case "global":
-      return "No balances yet - fund a wallet and your holdings appear here.";
+      return "No balances yet. Fund a wallet and your holdings appear here.";
     case "wallet":
       return "No balances in this wallet yet.";
     case "session":
-      return "No balances in this session's wallets yet - fund them and your holdings appear here.";
+      return "No balances in this session's wallets yet. Fund them and your holdings appear here.";
     case "project":
-      return "No balances in this project's wallets yet - fund them and your holdings appear here.";
+      return "No balances in this project's wallets yet. Fund them and your holdings appear here.";
   }
 }
 

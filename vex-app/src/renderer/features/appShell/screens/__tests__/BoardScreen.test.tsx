@@ -115,6 +115,14 @@ describe("BoardScreen", () => {
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 
+  it("words the empty page with a full stop, never a hyphen standing in for a dash", () => {
+    expect(BOARD_PAGE_EMPTY).toBe("No board yet. Ask Vex to compose one.");
+    expect(BOARD_PAGE_EMPTY).not.toMatch(/ [-\u2013\u2014] /);
+    resetStores("s1");
+    mount();
+    expect(screen.getByText("No board yet. Ask Vex to compose one.")).toBeTruthy();
+  });
+
   it("never shows another session's board", () => {
     resetStores("s1");
     act(() => {

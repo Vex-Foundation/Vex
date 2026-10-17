@@ -189,8 +189,43 @@ describe("AssetsScreen", () => {
     useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
     render(<ShellScreens />);
     expect(
-      screen.getByText(/No balances yet - fund a wallet/i),
+      screen.getByText(/No balances yet\. Fund a wallet/i),
     ).not.toBeNull();
+  });
+});
+
+describe("AssetsScreen - copy", () => {
+  it("states every empty and dust line with full stops, never a hyphen standing in for a dash", () => {
+    const lines: string[] = [];
+    for (const route of [
+      { kind: "assets", origin: null, sessionId: null },
+      { kind: "assets", origin: null, sessionId: "00000000-0000-4000-8000-0000000000ab" },
+      { kind: "assets", origin: null, projectId: "9c1b0e8e-0000-4000-8000-0000000000ab" },
+    ] as const) {
+      mockUsePortfolio.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: { ok: true, data: portfolio([]) },
+      });
+      useUiStore.setState({ shellRoute: route });
+      const view = render(<ShellScreens />);
+      lines.push(view.container.querySelector(".vex-scan-note")?.textContent ?? "");
+      cleanup();
+    }
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: portfolio([token({ tokenName: "Seeyuh", balanceUsd: 0.001 })]) },
+    });
+    useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
+    const dust = render(<ShellScreens />);
+    lines.push(
+      [...dust.container.querySelectorAll(".vex-scan-note")].map((note) => note.textContent).join(" | "),
+    );
+
+    expect(lines[0]).toBe("No balances yet. Fund a wallet and every asset appears here.");
+    expect(lines[3]).toContain('Every asset here is dust. Uncheck "Hide dust" to view.');
+    for (const line of lines) expect(line).not.toMatch(/ [-\u2013\u2014] /);
   });
 });
 
