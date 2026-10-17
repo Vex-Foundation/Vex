@@ -66,6 +66,11 @@ export function runtimeStatePath(runtimeDir: string): string {
   return path.join(runtimeDir, "runtime-state.json");
 }
 
+/** The migration's dump and source facts (runtime/migration/). */
+export function migrationDir(runtimeDir: string): string {
+  return path.join(runtimeDir, "migration");
+}
+
 /** Where the verified embeddings model lives (model-store.ts). */
 export function modelsDir(runtimeDir: string): string {
   return path.join(runtimeDir, "models");
@@ -107,14 +112,47 @@ function developmentTree(repoRoot: string, target: string, component: string, pr
  * The absolute bin paths, or a named reason they are not there. Every option
  * is a test seam; production callers pass nothing.
  */
-export async function locatePostgresBinaries(options?: {
+export async function locatePostgresBinaries(options?: PostgresTreeOptions): Promise<PostgresBinariesLocation> {
+  const found = await locatePostgresPrograms(
+    { postgres: "postgres", initdb: "initdb", pgCtl: "pg_ctl", pgControldata: "pg_controldata" },
+    options,
+  );
+  return found.kind === "found" ? { kind: "found", binaries: found.paths } : found;
+}
+
+/** The bundled client tools the data migration runs (6.1, plan section 10). */
+export interface PostgresClientTools {
+  readonly pgDump: string;
+  readonly pgRestore: string;
+}
+
+export type PostgresClientToolsLocation =
+  | { readonly kind: "found"; readonly tools: PostgresClientTools }
+  | { readonly kind: "unavailable"; readonly detail: string };
+
+/** `pg_dump` and `pg_restore` from the same tree, by the same rules. */
+export async function locatePostgresClientTools(options?: PostgresTreeOptions): Promise<PostgresClientToolsLocation> {
+  const found = await locatePostgresPrograms({ pgDump: "pg_dump", pgRestore: "pg_restore" }, options);
+  return found.kind === "found" ? { kind: "found", tools: found.paths } : found;
+}
+
+export interface PostgresTreeOptions {
   readonly packaged?: boolean;
   readonly resourcesPath?: string;
   readonly repoRoot?: string;
   readonly platform?: NodeJS.Platform;
   readonly arch?: string;
   readonly env?: NodeJS.ProcessEnv;
-}): Promise<PostgresBinariesLocation> {
+}
+
+/** `programs` (key -> program name) in the Postgres tree's bin/, each checked X_OK. */
+async function locatePostgresPrograms<K extends string>(
+  programs: Readonly<Record<K, string>>,
+  options: PostgresTreeOptions | undefined,
+): Promise<
+  | { readonly kind: "found"; readonly paths: Record<K, string> }
+  | { readonly kind: "unavailable"; readonly detail: string }
+> {
   const platform = options?.platform ?? process.platform;
   const packaged = options?.packaged ?? app.isPackaged;
   const env = options?.env ?? process.env;
@@ -136,15 +174,12 @@ export async function locatePostgresBinaries(options?: {
     }
   }
 
-  const bin = (name: string): string =>
-    path.join(treeDir, "bin", platform === "win32" ? `${name}.exe` : name);
-  const binaries: PostgresBinaries = {
-    postgres: bin("postgres"),
-    initdb: bin("initdb"),
-    pgCtl: bin("pg_ctl"),
-    pgControldata: bin("pg_controldata"),
-  };
-  for (const candidate of Object.values(binaries)) {
+  const paths = {} as Record<K, string>;
+  for (const key of Object.keys(programs) as K[]) {
+    const name = programs[key];
+    paths[key] = path.join(treeDir, "bin", platform === "win32" ? `${name}.exe` : name);
+  }
+  for (const candidate of Object.values<string>(paths)) {
     try {
       await access(candidate, constants.X_OK);
     } catch {
@@ -156,7 +191,7 @@ export async function locatePostgresBinaries(options?: {
       };
     }
   }
-  return { kind: "found", binaries };
+  return { kind: "found", paths };
 }
 
 export type LlamaBinaryLocation =
