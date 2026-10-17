@@ -778,18 +778,19 @@ describe("ApprovalCard", () => {
  * desktop wallet is a real wallet, so no approval card may render without the
  * reversed stamp, the 1.5px ink frame and the hatch band - whatever its risk,
  * its action kind or its origin. The frame lives on `.vex-real-funds`
- * (chat-transcript.css); its values are pinned against the stylesheet.
+ * (approval.css, the approval card's own sheet); its values are pinned against
+ * the stylesheet.
  */
 describe("ApprovalCard REAL FUNDS treatment", () => {
-  const CHAT_TRANSCRIPT_CSS = readFileSync(
-    join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+  const APPROVAL_CSS = readFileSync(
+    join(process.cwd(), "src/renderer/styles/global-css/approval.css"),
     "utf8",
   );
 
   function ruleBody(selector: string): string {
-    const at = CHAT_TRANSCRIPT_CSS.indexOf(`${selector} {`);
+    const at = APPROVAL_CSS.indexOf(`${selector} {`);
     expect(at, `rule missing: ${selector}`).toBeGreaterThan(-1);
-    return CHAT_TRANSCRIPT_CSS.slice(at, CHAT_TRANSCRIPT_CSS.indexOf("}", at));
+    return APPROVAL_CSS.slice(at, APPROVAL_CSS.indexOf("}", at));
   }
 
   const CASES: ReadonlyArray<readonly [string, Partial<ApprovalSummaryDto>]> = [

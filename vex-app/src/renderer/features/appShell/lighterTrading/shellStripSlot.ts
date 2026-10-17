@@ -1,10 +1,10 @@
 /**
- * Where the shell strip's flank (notices, approvals, export) lands in Lighter
- * mode. The desk has no header row of its own: the market bar is the top
- * edge, exchange-style, so the strip portals its controls into the bar's
- * right end instead of drawing an empty 44px band above it. The strip stays
- * mounted once in `AppShell` (it owns the approvals live sync); only its DOM
- * output moves.
+ * Where the title bar's right cluster (export, Notices, Needs you, the token
+ * chip) lands in Lighter mode. The desk has no header row of its own: the
+ * market bar is the top edge, exchange-style, so the title bar portals its
+ * controls into the bar's right end instead of drawing an empty 44px band
+ * above it. The title bar stays mounted once in `AppShell` (it owns the
+ * approvals live sync, outside the cluster); only the cluster's DOM moves.
  */
 
 import { useSyncExternalStore } from "react";

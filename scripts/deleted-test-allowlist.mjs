@@ -37,6 +37,31 @@ export const DELETED_TEST_ALLOWLIST = [
     reason: "The R3 three-column frame retires the gutter and its spread caption; ShellGutter.tsx was deleted with it (R3 wave 1, W1-6).",
     coveredBy: "vex-app/src/renderer/features/appShell/__tests__/AppShell/shell-sidebar.test.tsx",
   },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/useDeskAgentState.test.tsx",
+    reason: "useDeskAgentState.ts was deleted (no consumer after the flock left in wave 1) and its agreement partner DeskRuleTapeState is replaced by the title bar's token chip (R3 wave 2, W2-1); the state and the chip agreement are covered by vex-state.test.ts, useVexPresence.test.tsx and session-activity-agreement.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/vex-state.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/leftPage/__tests__/sessionOrdinals.test.tsx",
+    reason: "R3 lists sessions by name: the ordinal ledger sessionOrdinals.ts was deleted with the left page (R3 wave 2, W2-2); the persisted key stays readable (uiStore-session-ordinals-v21.test.ts).",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/SessionRow.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/leftPage/__tests__/useIndexFold.test.tsx",
+    reason: "The print's horizon fold is gone: the R3 sidebar is paper and its session list one plain scroller; useIndexFold.ts was deleted (R3 wave 2, W2-2); also covered by SessionsList-nav.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/AppShell/shell-sidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/ui/__tests__/counter.test.tsx",
+    reason: "counter.tsx was deleted; its only consumer was the left page's giant ordinal, which R3 retires (R3 wave 2, W2-2); also covered by SessionsList-nav.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/SessionRow.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/ArenaCampaignNotice.test.tsx",
+    reason: "The Perps Trading Arena ended 2026-10-16: ArenaCampaignNotice.tsx and lighterTrading/arena-campaign.ts were deleted and the R3 welcome no longer carries the notice (R3 wave 2, W2-4); the Lighter row is covered by ComposerQuickActions.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/SessionWelcomeHero.test.tsx",
+  },
 ];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(

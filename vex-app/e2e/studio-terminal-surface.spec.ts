@@ -135,7 +135,8 @@ async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void
     });
   }
   if (!wasStudio) return;
-  await modes.getByRole("radio", { name: "Studio" }).click();
+  // Back in agent mode the way into Studio is the left sidebar nav's row.
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Studio" }).click();
   const surface = page.locator(".vex-terminal-surface--active");
   if ((await surface.count()) === 0) {
     await page

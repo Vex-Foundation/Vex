@@ -7,8 +7,9 @@
  *
  *  - the BOOK rail is `.vex-bk`: paper with one rule, no glass tier, no blur;
  *  - every reading surface in the rail (the PortfolioCard every section
- *    composes, the inspect panel, the Board module) is a `.vex-bs` section or
- *    the page's own body, never a boxed card: no glass class, no radius
+ *    composes, the Board module) is a `.vex-bs` section or the page's own
+ *    body, and the inspect panel (now in the Vex sidebar) is drawn on the
+ *    same paper; none is a boxed card: no glass class, no radius
  *    utility, no shadow utility, no surface or stroke token of its own.
  */
 
@@ -52,7 +53,9 @@ describe("the BOOK rail and its sections are drawn on the paper", () => {
     expectSection(screen.getByRole("region", { name: "Position" }), "vex-bs");
   });
 
-  it("the inspect panel is the page body", () => {
+  // The inspect view moved to the Vex sidebar (docs/design/R3-MINIMAL.md
+  // section 5.1); it is still drawn on the paper, never a boxed card.
+  it("the inspect panel is drawn on the paper", () => {
     render(
       <BookInspectPanel
         inspect={{
@@ -64,7 +67,7 @@ describe("the BOOK rail and its sections are drawn on the paper", () => {
         }}
       />,
     );
-    expectSection(document.querySelector('[data-vex-area="book-inspect"]'), "vex-bk__body");
+    expectSection(document.querySelector('[data-vex-area="book-inspect"]'), "vex-vs-inspect");
   });
 
   it("the Board module's empty state is a section", () => {

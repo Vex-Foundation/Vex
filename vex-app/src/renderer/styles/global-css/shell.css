@@ -191,54 +191,6 @@
   }
 }
 
-/* THE LEFT COLUMN'S PRINT, under the sessions sidebar. Each image is laid out
- * at window size from the column's top left corner, which is the window's, so
- * the open sidebar and the 56px rail are windows onto one picture, the one
- * the unlock stage shows full window. The plate
- * colour fills in while the photograph decodes: the night print's darkest
- * tone, and the day print's mid tone in celeris. */
-.vex-print {
-  background: #150f0d;
-}
-[data-vex-theme="celeris"] .vex-print {
-  background: #c7b6a6;
-}
-.vex-print__img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  object-fit: cover;
-  object-position: 60% 50%;
-}
-/* The user's own image: shown as it is, centred, in either room. */
-.vex-print__img--custom {
-  object-position: 50% 50%;
-}
-/* One print per room, swapped on data-vex-theme (stamped on the shell root
- * and documentElement), never by a JS theme read. */
-.vex-print__img--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-print__img--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-print__img--night {
-  display: none;
-}
-/* The print's grain (the print plate's own file): fractal noise, multiplied
- * at 10%, over the photograph only. */
-.vex-print__grain {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  opacity: 0.1;
-  mix-blend-mode: multiply;
-  background-image: url(/art/grain.svg);
-  background-size: 220px 220px;
-}
 /* The rail's paper cap: the head row runs across it, rule included, and the
  * rail's content starts under it, clear of the macOS traffic lights. A window
  * drag region like every head row. */
@@ -264,51 +216,7 @@
   padding-top: var(--head-h);
 }
 
-/* THE RUNNING HEAD (docs/design/R3-MINIMAL.md section 3): the centre's 44px
- * head row and the window's drag region. Its right padding reserves the
- * Windows and Linux caption buttons wherever the right column under them is
- * narrower than they are (`--vex-vex-track` is the solved right track, set by
- * the frame; `--overlay-w` is 0 on macOS and on a native frame).
- *
- * NO Z-INDEX, so the row is not a stacking context. The popovers its controls
- * open (the Studio host status card, the notification center, the approvals
- * inbox) then stack by their own z-index against the page under the row; a
- * z-index here capped all of them at the row's own, and at 10 the host status
- * card painted under the Studio welcome's z-10 column. */
-.vex-running-head {
-  position: relative;
-  display: grid;
-  flex-shrink: 0;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  height: var(--head-h);
-  padding-inline: 32px max(16px, calc(var(--overlay-w) + 8px - var(--vex-vex-track, 0px)));
-  border-bottom: 1px solid var(--vex-alias-rule);
-}
-/* The welcome stage: an empty head, so the rule under it is clear. */
-.vex-running-head[data-empty] {
-  border-bottom-color: transparent;
-}
-.vex-running-head__start {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-}
-.vex-running-head__centre {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-}
-.vex-running-head__flank {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
+/* The title bar's own rules live in title-bar.css. */
 /* The welcome stage's clear head row runs across the rail's cap too. */
 .vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {
   border-bottom-color: transparent;

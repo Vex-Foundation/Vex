@@ -18,7 +18,6 @@ import {
   gustAt,
   lerp,
   type MapName,
-  type MouthName,
   smooth,
 } from "./k2-time.js";
 
@@ -69,6 +68,8 @@ export interface K2Meta {
   readonly rest: readonly [number, number];
   readonly glance: readonly [number, number];
   readonly streamMaxX: number;
+  /** The shrug line (map px); without it the wide drawing's 372 (at scale k 1). */
+  readonly shoulder?: number;
 }
 
 /** A decoded map: per cell its tone, class, flags, colour and hair tip. */
@@ -107,6 +108,7 @@ export const INKS = [
   "inkTop",
   "rimHair",
   "blueArea",
+  "streak",
   "blue",
   "blush",
   "glint",
@@ -123,6 +125,7 @@ export class Dots {
     inkTop: [],
     rimHair: [],
     blueArea: [],
+    streak: [],
     blue: [],
     blush: [],
     glint: [],
@@ -139,6 +142,9 @@ export class Dots {
     this.count++;
   }
 }
+
+/** The blue streaks in her hair: 85% of the dot at 70% of the blue, quieter than her irises. */
+export const STREAK = { r: 0.85, alpha: 0.7 } as const;
 
 /** The theme's inks (CSS colours) and the white dots' alpha. */
 export interface Palette {
@@ -163,6 +169,8 @@ export function inkStyles(
     inkTop: { color: pal.ink, alpha: 1 },
     rimHair: { color: pal.rimHair, alpha: 1 },
     blueArea: { color: pal.blueArea, alpha: 1 },
+    // the hair streaks, a little quieter than the irises
+    streak: { color: pal.blue, alpha: STREAK.alpha },
     blue: { color: pal.blue, alpha: 1 },
     blush: { color: pal.blush, alpha: 1 },
     // the eye highlight sits on top of the iris
@@ -178,6 +186,26 @@ interface Mark {
   readonly rest: boolean;
 }
 
+/**
+ * The app drawing's cut (`k2-rig.ts`): below a line her bust dissolves into the beam through the
+ * Bayer dissolve on her own screen, and the frame's edges thin out. Without it (the wide drawing)
+ * her old cumulus line and the merge band apply.
+ */
+export interface PortraitCut {
+  /** Where the dissolve begins at x (map px). */
+  readonly top: (x: number) => number;
+  /** Its depth (map px): no dot stays below top + band. */
+  readonly band: number;
+  /** The Bayer threshold's gain across the band, and how much the dots shrink. */
+  readonly gain: number;
+  readonly shrink: number;
+  /** Dots thin out within `side` map px of the frame's edges (x 0 and `width`). */
+  readonly side: number;
+  readonly width: number;
+  /** Her lowest dot (the assembly rises from it). */
+  readonly bottom: number;
+}
+
 /** One frame of her, as the engine composes it from the clock and the inputs. */
 export interface PortraitFrame {
   readonly t: number;
@@ -191,22 +219,17 @@ export interface PortraitFrame {
   readonly gp: number;
   readonly smirk: boolean;
   readonly gust: number;
+  /** The hum's sway of her free hair, -1..1. */
+  readonly sway: number;
   readonly lid: number;
   readonly eyes: EyeMode | null;
   readonly gaze: GazeTarget;
   /** The assembly of the wake (1 when she is whole). */
   readonly asm: number;
-  /** The bust's cut (null: her whole drawing, down to its own cut). */
-  readonly cut: K2Cut | null;
-}
-
-/**
- * A bust: her figure dissolves into the beam through the Bayer screen over `band` map px above a
- * flat line at `y`, and nothing of her is drawn below it (`k2-rig.ts` places the token under it).
- */
-export interface K2Cut {
-  readonly y: number;
-  readonly band: number;
+  /** The app drawing's cut; null on the wide drawing. */
+  readonly cut: PortraitCut | null;
+  /** The eyes keep their mode in a still frame (an app mood shows under reduced motion too). */
+  readonly held?: boolean;
 }
 
 /** Which cells a pass draws: all of them, only those a settled frame never changes, or the rest. */
@@ -229,12 +252,14 @@ export class Portrait {
   readonly #eyes: { readonly e: K2Eye; readonly cells: number[] }[];
   readonly #static: Uint8Array;
   readonly #mouths: Record<
-    Exclude<MouthName, "rest" | "none">,
+    "calm" | "smile" | "pucker" | "o",
     Map<number, Mark>
   > & {
     readonly smirk: Map<number, Mark>;
     readonly soft: Map<number, Mark>;
   };
+  /** The app's mood mouths: never in the idle life, so a settled frame keeps their cells. */
+  readonly #moodMouths: Record<"frown" | "pout", Map<number, Mark>>;
   readonly #nose = new Map<number, Mark>();
   readonly #blush = new Map<number, number>();
   readonly #shoulder: number;
@@ -315,6 +340,7 @@ export class Portrait {
       pucker: this.#pucker(),
       o: this.#oRing(),
     };
+    this.#moodMouths = { frown: this.#frown(), pout: this.#poutMarks() };
     {
       const nose = meta.face.nose[0] ?? [0, 0];
       const nj = this.#rowOf(nose[1]);
@@ -327,7 +353,7 @@ export class Portrait {
     }
     this.#buildBlush();
     // the shoulders (gestures only): everything under one line just below the choker
-    this.#shoulder = 372 * meta.k + (1 - meta.k) * BY;
+    this.#shoulder = meta.shoulder ?? 372 * meta.k + (1 - meta.k) * BY;
     // a settled frame never changes these cells: the wind cannot move them, no eye, mark or blush
     this.#static = new Uint8Array(N);
     const marked = new Set<number>();
@@ -434,20 +460,6 @@ export class Portrait {
       }
     return out;
   }
-  /** Where the beam takes her over at x: her drawing's own cut, or the bust's when it is higher. */
-  cutAt(x: number, cut: K2Cut | null): number {
-    const own = this.ycutAt(x);
-    return cut === null ? own : Math.min(own, cut.y);
-  }
-
-  /** How far a cell is into the dissolve over her cut: 0 or less above it, 1 or more past it. */
-  #mergeQ(x: number, y: number, cut: K2Cut | null): number {
-    const KS = this.meta.k;
-    const own = (y - (this.ycutAt(x) - MERGE * KS)) / ((MERGE + 8) * KS);
-    if (cut === null) return own;
-    return Math.max(own, (y - (cut.y - cut.band)) / cut.band);
-  }
-
   /** Her cut at x: where her old cumulus began (the beam takes her over below it). */
   ycutAt(x: number): number {
     const yc = this.meta.ycut;
@@ -553,6 +565,47 @@ export class Portrait {
     return m;
   }
 
+  /** The frown (Concerned): her row, the corners turned down one row, half a pitch outward. */
+  #frown(): Map<number, Mark> {
+    const { gw: GW, pitch: P } = this.meta;
+    const { MJ, MI0, MI1 } = this.#mouthRow;
+    const RC = 0.88;
+    const m = new Map<number, Mark>();
+    for (let i = MI0; i <= MI1; i++) {
+      const e = Math.min(i - MI0, MI1 - i);
+      m.set(MJ * GW + i, {
+        kind: "ink",
+        r: RC * (e === 0 ? (i === MI1 ? 0.8 : 0.74) : e === 1 ? 0.84 : 1),
+        rest: true,
+      });
+    }
+    const corner = (end: number, dir: number) =>
+      (MJ + 1) * GW + this.#colOf(MJ + 1, this.#gx0(MJ, end) + dir * P * 0.5);
+    m.set(corner(MI1, 1), { kind: "ink", r: RC * 0.62, rest: true });
+    m.set(corner(MI0, -1), { kind: "ink", r: RC * 0.54, rest: true });
+    return m;
+  }
+
+  /** The pout (Error): a short full stroke toward her far side, a fuller lip under it. */
+  #poutMarks(): Map<number, Mark> {
+    const { gw: GW } = this.meta;
+    const { MJ } = this.#mouthRow;
+    const [MX] = this.#mouthPt;
+    const RC = 0.88;
+    const m = new Map<number, Mark>();
+    const c = this.#colOf(MJ, MX - 2.5);
+    for (let i = c - 1; i <= c + 1; i++)
+      m.set(MJ * GW + i, {
+        kind: "ink",
+        r: RC * (i === c ? 1.04 : 0.84),
+        rest: true,
+      });
+    const lc = this.#colOf(MJ + 1, MX - 3);
+    m.set((MJ + 1) * GW + lc, { kind: "ink", r: RC * 0.55, rest: true });
+    m.set((MJ + 1) * GW + lc + 1, { kind: "shade", r: 1, rest: true });
+    return m;
+  }
+
   #oRing(): Map<number, Mark> {
     const [MX, MY] = this.#mouthPt;
     const m = new Map<number, Mark>();
@@ -620,14 +673,36 @@ export class Portrait {
         ? (this.#maps[gs.hand.map] ?? null)
         : null;
     const hand = handMap !== null ? gs.hand : null;
+    // a mood change: the cells the dissolve has not reached show the drawing it leaves
+    const from = gs.from ?? null;
+    const AMAP = from === null ? null : (this.#maps[from.map] ?? null);
+    const handAMap =
+      from !== null && from.hand !== null
+        ? (this.#maps[from.hand.map] ?? null)
+        : null;
+    const handA = handAMap !== null ? (from?.hand ?? null) : null;
+    const cut = fr.cut;
     const skinR = RMAX * Math.sqrt(0.95);
     const ASM_SPAN = 540;
-    const assembleTop = meta.by + (600 - 56) * KS;
+    const assembleTop =
+      cut !== null ? cut.bottom : meta.by + (600 - 56) * KS;
     const dot = (ink: Ink, x: number, y: number, r: number) => {
       if (r < RMIN) return;
       let yy = y;
       let rr = r;
       let nm = ink;
+      if (cut !== null) {
+        // the app drawing's cut: the dissolve below her line, the frame's edges thinning out
+        const cj = Math.round((y - BY) / P);
+        const ci = Math.round((x - BX - (cj & 1) * P * 0.5) / P);
+        const q = (y - cut.top(x)) / cut.band;
+        if (q > 0) {
+          if (q >= 1 || bayerAt(ci, cj) < q * cut.gain) return;
+          rr *= 1 - cut.shrink * q;
+        }
+        const sd = Math.min(x - BX, cut.width - x);
+        if (sd < cut.side && bayerAt(ci, cj) < 1 - sd / cut.side) return;
+      }
       if (asm < 1) {
         // she assembles bottom up: each dot flies up into place as a white spark
         const arrive = clamp(
@@ -666,7 +741,7 @@ export class Portrait {
       }
       const r = RMAX * Math.sqrt(tn) * scale;
       if (c === CO.ink) dot("ink", x, y, r);
-      else if (c === CO.blue_w) dot("blue", x, y, r);
+      else if (c === CO.blue_w) dot("streak", x, y, r * STREAK.r);
       else if (c === CO.blue_i) dot("blueArea", x, y, r);
       else dot("white", x, y, r);
     };
@@ -674,7 +749,10 @@ export class Portrait {
     const putHand = (M: K2Map, s: number, k: number) => {
       const x = X[k] ?? 0;
       const y = Y[k] ?? 0;
-      const fy = clamp((this.cutAt(x, fr.cut) + 46 * KS - y) / (70 * KS), 0, 1);
+      const fy =
+        cut !== null
+          ? 1
+          : clamp((this.ycutAt(x) + 46 * KS - y) / (70 * KS), 0, 1);
       const tn = (M.tone[s] ?? 0) * smooth(fy);
       if (tn <= 0.02) return;
       const c = M.col[s];
@@ -689,7 +767,8 @@ export class Portrait {
     const sh = fr.still ? 0 : gs.sh;
     const eyeOn = new Uint8Array(this.#N);
     const gust = fr.gust;
-    const amp = 0.7 + 2.6 * gust;
+    // the wind (and the hum's sway, never past the strongest gust the cache allows for)
+    const amp = clamp(0.7 + 2.6 * gust + 1.6 * fr.sway, -3.3, 3.3);
     const lift = 1.2 * gust;
     const wave0 = t / 1400;
     const want = pass === "static" ? 1 : pass === "dynamic" ? 0 : -1;
@@ -710,7 +789,9 @@ export class Portrait {
             ? GMAP.cls[k] !== C.hand
               ? GMAP
               : B
-            : B;
+            : AMAP !== null && AMAP.cls[k] !== C.hand
+              ? AMAP
+              : B;
         const cls = M.cls[k];
         if (cls === C.eye) {
           eyeOn[k] = 1;
@@ -736,6 +817,18 @@ export class Portrait {
             const s = sj * GW + si;
             if (handMap.cls[s] === C.hand && hand.p > bay) {
               putHand(handMap, s, k);
+              continue;
+            }
+          }
+        }
+        // the hand of the drawing it leaves sinks back where the dissolve has not reached
+        if (handA !== null && handAMap !== null && !useG && !useH) {
+          const sj = j - handA.rise;
+          const si = i - handA.di;
+          if (sj >= 0 && si >= 0 && si < GW) {
+            const s = sj * GW + si;
+            if (handAMap.cls[s] === C.hand) {
+              putHand(handAMap, s, k);
               continue;
             }
           }
@@ -787,7 +880,11 @@ export class Portrait {
         const sc = M.cls[src];
         if (sc === C.eye || sc === C.hand || sc === C.cloud) continue;
         // her tee and hair dissolve into the beam over the band above her cut
-        const q = this.#mergeQ(X[k] ?? 0, Y[k] ?? 0, fr.cut);
+        const q =
+          cut !== null
+            ? 0
+            : ((Y[k] ?? 0) - (this.ycutAt(X[k] ?? 0) - MERGE * KS)) /
+              ((MERGE + 8) * KS);
         if (q > 0 && (q >= 1 || bay < q)) continue;
         put(M, src, X[k] ?? 0, (Y[k] ?? 0) - dyS, q > 0 ? 1 - 0.35 * q : 1);
       }
@@ -822,7 +919,7 @@ export class Portrait {
         const x0 = X[k0] ?? 0;
         const y0 = Y[k0] ?? 0;
         // a bust sheds nothing from hair it does not draw
-        if (fr.cut !== null && y0 > fr.cut.y - fr.cut.band) continue;
+        if (cut !== null && y0 > cut.top(x0)) continue;
         const v = (0.05 + hash01(c, s, 64) * 0.05) * KS;
         const ph = hash01(c, s, 65) * 6.28;
         const life = 1 - age / per;
@@ -855,6 +952,7 @@ export class Portrait {
     if (g !== null && hp < 0.5) {
       if (g === "none") return EMPTY;
       if (g === "rest") return this.#mouths.soft;
+      if (g === "frown" || g === "pout") return this.#moodMouths[g];
       return this.#mouths[g];
     }
     return fr.smirk ? this.#mouths.smirk : this.#mouths.soft;
@@ -876,7 +974,8 @@ export class Portrait {
   /**
    * The eyes, authored: ink lash line, white sclera, the iris (blue), ink pupil, one white
    * highlight; the lid closes as white skin with the lash line coming down. Gestures: `squeeze`
-   * (`> <`), `happy` (arcs), `soft`, the wake's `closed` and `drowsy`.
+   * (`> <`), `happy` (arcs), `soft`, the wake's `closed` and `drowsy`; the app's moods: `narrow`,
+   * `wide`, `worried` (the lid line tilting up to the inner corner), `half`, `smile`.
    */
   #emitEyes(
     fr: PortraitFrame,
@@ -892,10 +991,16 @@ export class Portrait {
     const X = this.X;
     const Y = this.Y;
     const GW = meta.gw;
-    const em = fr.eyes !== null && hp < 0.5 && !fr.still ? fr.eyes : null;
+    const em =
+      fr.eyes !== null && hp < 0.5 && (!fr.still || fr.held === true)
+        ? fr.eyes
+        : null;
     let lid = fr.lid;
     if (em === "closed" || em === "map") lid = 1;
     if (em === "drowsy") lid = Math.max(0.55, lid);
+    if (em === "narrow") lid = Math.max(0.36, lid);
+    if (em === "worried") lid = Math.max(0.16, lid);
+    if (em === "half") lid = Math.max(0.46, lid);
     const tgt = fr.gaze;
     for (const { e, cells } of this.#eyes) {
       const xl = e.top[0]?.[0] ?? 0;
@@ -965,7 +1070,9 @@ export class Portrait {
       const hlx = e.hl[0] + g.gx;
       const hly = e.hl[1] + g.gy;
       const hl2 = this.cellAt(e.hl2[0] + g.gx, e.hl2[1] + g.gy);
-      const smile = Math.max(hp, em === "soft" ? 1.4 : 0);
+      const lift =
+        em === "soft" ? 1.4 : em === "narrow" ? 1.5 : em === "smile" ? 1 : 0;
+      const smile = Math.max(hp, lift);
       for (const k of live) {
         const x = X[k] ?? 0;
         const y = Y[k] ?? 0;
@@ -974,11 +1081,19 @@ export class Portrait {
         const bot = bot0 - smile * (bot0 - top) * 0.12;
         const lidY = top + lid * (bot - top);
         const lash = e.lash;
-        if (y < lidY - lash) {
+        // worried: the lid line tilts up toward the inner corner
+        const tilt =
+          em === "worried"
+            ? (e.outer > 0 ? 1 : -1) *
+              ((x - (xl + xr) / 2) / (xr - xl)) *
+              3.2 *
+              KS
+            : 0;
+        if (y < lidY - lash + tilt) {
           dot("white", x, y, skinR);
           continue;
         }
-        if (y < lidY + (lid > 0.9 ? lash * 0.35 : 0)) {
+        if (y < lidY + tilt + (lid > 0.9 ? lash * 0.35 : 0)) {
           dot("ink", x, y, RMAX * 0.98);
           continue;
         }

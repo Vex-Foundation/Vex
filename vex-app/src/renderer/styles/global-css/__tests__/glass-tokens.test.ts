@@ -34,6 +34,7 @@ const read = (name: string): string => readFileSync(path.join(globalCssDir, name
 
 const shellCss = read("shell.css");
 const glassCss = read("glass.css");
+const vexSidebarCss = read("vex-sidebar.css");
 const baseCss = read("base.css");
 const tokensCss = read("tokens.css");
 const indicatorsCss = read("ui-primitives/indicators.css");
@@ -220,34 +221,54 @@ describe("the shape law", () => {
   });
 });
 
-describe("the left page's print (shell.css)", () => {
+describe("the Vex sidebar's print window (vex-sidebar.css)", () => {
   it("shows the print as it is: no veil, no filter, no motion over it", () => {
-    const source = stripComments(shellCss);
-    // The full-window wall and its veil are gone: the print lives on the
-    // left page only, and nothing dims it.
-    expect(source).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
-    expect(source).not.toContain("data-vex-backdrop-dimmed");
-    for (const selector of [".vex-print", ".vex-print__img", ".vex-print__grain"]) {
-      const body = ruleBody(shellCss, selector);
+    const shell = stripComments(shellCss);
+    // The full-window wall and its veil are gone, and so is the left page's
+    // print: the print lives in the Vex sidebar's plate only, and nothing
+    // dims it.
+    expect(shell).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
+    expect(shell).not.toContain("data-vex-backdrop-dimmed");
+    expect(shell).not.toContain(".vex-print");
+    for (const selector of [".vex-vs-plate", ".vex-vs-plate__img", ".vex-vs-plate__grain"]) {
+      const body = ruleBody(vexSidebarCss, selector);
       expect(body, selector).not.toMatch(/(?:^|[\s;])(filter|backdrop-filter|animation|transition):/);
     }
   });
 
-  it("lays the print out in place, at window size, from the column's corner", () => {
-    const body = ruleBody(shellCss, ".vex-print__img");
-    expect(declarationValue(body, "width")).toBe("100vw");
-    expect(declarationValue(body, "height")).toBe("100vh");
+  it("cuts the print into the plate at the sidebar's focal point", () => {
+    const body = ruleBody(vexSidebarCss, ".vex-vs-plate__img");
+    expect(declarationValue(body, "width")).toBe("100%");
+    expect(declarationValue(body, "height")).toBe("100%");
     expect(declarationValue(body, "object-fit")).toBe("cover");
-    expect(declarationValue(body, "object-position")).toBe("60% 50%");
+    expect(declarationValue(body, "object-position")).toBe("50% 82%");
+    // The user's own image is shown as it is, centred.
+    expect(
+      declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--custom"), "object-position"),
+    ).toBe("50% 50%");
+  });
+
+  it("keeps the plate 280 high, 220 at the least in a low window", () => {
+    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate"), "height")).toBe(
+      "clamp(220px, calc(24.4vh + 60px), 280px)",
+    );
   });
 
   it("swaps the day and night prints on the theme attribute", () => {
-    expect(declarationValue(ruleBody(shellCss, ".vex-print__img--day"), "display")).toBe("none");
+    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--day"), "display")).toBe(
+      "none",
+    );
     expect(
-      declarationValue(ruleBody(shellCss, '[data-vex-theme="celeris"] .vex-print__img--day'), "display"),
+      declarationValue(
+        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--day'),
+        "display",
+      ),
     ).toBe("block");
     expect(
-      declarationValue(ruleBody(shellCss, '[data-vex-theme="celeris"] .vex-print__img--night'), "display"),
+      declarationValue(
+        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--night'),
+        "display",
+      ),
     ).toBe("none");
   });
 });

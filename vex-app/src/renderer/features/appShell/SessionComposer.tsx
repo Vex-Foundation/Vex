@@ -1,13 +1,15 @@
 /**
- * Session composer - the white field with chips (docs/design/V10-SPREAD.md
- * section 1, reference d2 and d3): a square field on a 1px rule, the model and
- * reasoning chips leading, the access mode, the context meter and the send key
- * trailing, no focus ring. One component serves the welcome opening and the
- * docked session stage (`variant` names the stage; the textarea DOM survives a
+ * Session composer (docs/design/R3-MINIMAL.md section 7, references d2, d3
+ * and d5): a square white field on a 1px rule, and one bar under the text -
+ * the options control ("{model} · Reasoning: {effort}") leading, the
+ * permission as its promise, "Context N%" and the send or named stop key
+ * trailing; no focus ring. One component serves the welcome and the docked
+ * session stage (`variant` names the stage; the textarea DOM survives a
  * hero->docked move because the parent keeps the mount position stable). Owns
  * wiring only: drafts (per-session store), submit + queue (composer-submit),
- * slash commands (commands/), seats (SessionComposer/), and the starter
- * chips. Chrome lives in console.css.
+ * slash commands (commands/), seats (SessionComposer/), and the welcome's
+ * task rows. Chrome lives in console.css, the seat and the welcome in
+ * composer.css.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,7 +54,7 @@ import {
 import type { ComposerCommandContext } from "./commands/directory.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import {
-  ComposerModelChip,
+  ComposerOptions,
   ComposerPlanChip,
 } from "./SessionComposer/ComposerSeats.js";
 import { ComposerContextMeter } from "./SessionComposer/ComposerContextMeter.js";
@@ -61,7 +63,7 @@ import { ComposerQueueDock } from "./SessionComposer/ComposerQueueDock.js";
 import { ComposerMissionStrip } from "./SessionComposer/ComposerMissionStrip.js";
 import { SessionExportDialog } from "./SessionExportDialog.js";
 import { Swatch } from "../../components/ui/swatch.js";
-import { EASE_STANDARD } from "../../lib/motion/index.js";
+import { DURATION_BASE_MS, EASE_STANDARD } from "../../lib/motion/index.js";
 
 /**
  * The placeholder shown while a turn is running. It states what the Send key
@@ -222,6 +224,16 @@ export function SessionComposer({
     [setDraft, clearNotice, armCaretSeed],
   );
 
+  // "Create a mission": a mission is its own kind of session (a contract, not
+  // a chat message), so the row opens the new session form on the Missions
+  // view, where the form preselects Mission (`SessionCreator`).
+  const navigate = useUiStore((s) => s.navigate);
+  const openCreateSession = useUiStore((s) => s.openCreateSession);
+  const createMission = useCallback((): void => {
+    navigate("missions");
+    openCreateSession();
+  }, [navigate, openCreateSession]);
+
   const draftEmpty = draft.trim().length === 0;
   const submitDisabled = draftEmpty || submitPending;
   const stopping = stopAvailable && stopRequested;
@@ -281,30 +293,8 @@ export function SessionComposer({
     <>
       <div
         data-vex-composer-stage={stage}
-        className={cn("relative", stage === "hero" ? "mt-[26px]" : "mt-0")}
+        className="relative"
       >
-        {/* The field's status tag, square on the field's top rule: the target
-            swatch while a signature is pending (status by fill), the rule
-            outline while a stop is being acknowledged. */}
-        {awaitingApproval ? (
-          <span
-            data-vex-console-status="approval"
-            className="vex-micro-label absolute -top-[11px] right-4 z-20 inline-flex h-[22px] items-center gap-[7px] bg-surface-composer px-2 uppercase text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary"
-          >
-            <Swatch state="warning" size={9} />
-            AWAITING SIGNATURE
-          </span>
-        ) : stopping ? (
-          // Exact "Stopping…" text - the stop-acknowledgment contract pinned
-          // by the composer stop test (source casing stays).
-          <span
-            data-vex-console-status="stopping"
-            className="vex-micro-label absolute -top-[11px] right-4 z-20 inline-flex h-[22px] items-center bg-surface-composer px-2 uppercase text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
-          >
-            Stopping…
-          </span>
-        ) : null}
-
         {justStopped && !redirectHintDismissed ? (
           <PostStopRedirectHint
             onRedirect={() => {
@@ -353,7 +343,7 @@ export function SessionComposer({
                 onClick={onRetry}
                 disabled={submitPending}
                 aria-label="Retry sending the message"
-                className="ml-2 inline-flex h-6 shrink-0 items-center px-2 font-mono text-[11px] uppercase tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-rule transition-colors duration-100 hover:bg-interactive-hover disabled:cursor-not-allowed disabled:text-ink-tertiary"
+                className="ml-2 inline-flex h-7 shrink-0 items-center px-2.5 font-sans text-[13px] font-medium text-accent-primary outline outline-1 -outline-offset-1 outline-rule transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:text-ink-tertiary"
               >
                 Retry
               </button>
@@ -367,10 +357,7 @@ export function SessionComposer({
           data-vex-area="chat-composer"
           data-vex-composer-state={awaitingApproval ? "approval" : "input"}
           data-vex-drop={dropActive ? "active" : undefined}
-          className={cn(
-            "vex-composer-card flex w-full flex-col gap-2",
-            stage === "hero" ? "pb-3 pt-4" : "pb-2.5 pt-3",
-          )}
+          className="vex-composer-card w-full"
           onDragOver={(event) => {
             if (!dragHasFiles(event)) return;
             event.preventDefault();
@@ -384,6 +371,27 @@ export function SessionComposer({
             showToast("Attachments aren't supported yet.");
           }}
         >
+          {/* The field's tag on its top edge (section 7): the target swatch and
+              "Waiting for approval" while an approval waits (status by fill and
+              word), the rule outline while a stop is being acknowledged. */}
+          {awaitingApproval ? (
+            <span
+              data-vex-console-status="approval"
+              className="vex-composer-tag"
+            >
+              <Swatch state="awaiting" size={10} className="text-accent-primary" />
+              Waiting for approval
+            </span>
+          ) : stopping ? (
+            // Exact "Stopping…" text - the stop-acknowledgment contract pinned
+            // by the composer stop test.
+            <span
+              data-vex-console-status="stopping"
+              className="vex-composer-tag"
+            >
+              Stopping…
+            </span>
+          ) : null}
           <ComposerCommandMenu
             open={slashMenu.open}
             items={slashMenu.items}
@@ -391,7 +399,6 @@ export function SessionComposer({
             onPickAt={slashMenu.pickAt}
           />
           <ComposerField
-            hero={stage === "hero"}
             fieldSlotRef={fieldSlotRef}
             textareaRef={textareaRef}
             draft={draft}
@@ -409,8 +416,9 @@ export function SessionComposer({
             activeDescendant={activeDescendant}
           />
 
-          {/* Toolbar row (reference d3: chips leading, the access mode, the
-           * context meter and the send key trailing, 10px apart).
+          {/* The bar (section 7): the options control leading; the permission
+           * as its promise, "Context N%" and the send or named stop key
+           * trailing; 8 apart, 6 under the field.
            *
            * `@container` (container-type: inline-size) makes THIS row the
            * query container for the permission seat's label collapse, so the
@@ -418,57 +426,51 @@ export function SessionComposer({
            * - the composer follows the page column, and a viewport media
            * query would fire at the wrong moment.
            *
-           * SHRINK CHAIN (codex Bug 3, cross-check §2). Leading cluster:
-           * `min-w-0` and shrinkable, its chips' labels truncate first.
+           * SHRINK CHAIN (codex Bug 3, cross-check section 2). Leading cluster:
+           * `min-w-0` and shrinkable, the model name truncates first.
            * Trailing cluster: `flex-none` - the permission seat, the context
-           * meter and the send/stop key are the row's protected seats, and
-           * their glyphs never shrink. The permission LABEL collapses second,
+           * label and the send/stop key are the row's protected seats, and
+           * their icons never shrink. The permission LABEL collapses second,
            * at the 460px container threshold. Nothing is blanket-clipped:
            * every focusable control stays visible and focus-ringed. */}
-          <div
-            className={cn(
-              "@container flex items-center justify-between gap-2.5",
-              stage === "hero" ? "pl-[18px] pr-3" : "pl-4 pr-2.5",
-            )}
-          >
-            <div className="flex min-w-0 flex-1 items-center gap-2.5">
-              <ComposerModelChip modelId={globalModelId} />
+          <div className="vex-composer-bar @container flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <ComposerOptions
+                modelId={globalModelId}
+                effortResolved={modelsResolved}
+                effort={
+                  reasoningCapability !== null &&
+                  reasoningStageIsAgent &&
+                  effectiveReasoningEffort !== null ? (
+                    <ReasoningEffortSelect
+                      capability={reasoningCapability}
+                      value={effectiveReasoningEffort}
+                      onChange={handleReasoningPick}
+                    />
+                  ) : reasoningStageIsAgent && !modelsResolved ? (
+                    <ReasoningEffortPlaceholder />
+                  ) : null
+                }
+              />
               <ComposerPlanChip
                 sessionId={sessionId}
                 missionStatus={runStatus}
                 open={planOpen}
                 onOpenChange={setPlanOpen}
               />
-              {reasoningCapability !== null &&
-              reasoningStageIsAgent &&
-              effectiveReasoningEffort !== null ? (
-                <ReasoningEffortSelect
-                  capability={reasoningCapability}
-                  value={effectiveReasoningEffort}
-                  onChange={handleReasoningPick}
-                />
-              ) : reasoningStageIsAgent && !modelsResolved ? (
-                <ReasoningEffortPlaceholder />
-              ) : null}
             </div>
-            {/* Trailing cluster order: pending dot, access mode, context
-             * meter, send/stop key (owner: "ustawiony mode obok licznika
+            {/* Trailing cluster order: the promise, the context label, the
+             * send/stop key (owner: "ustawiony mode obok licznika
              * contextu"). */}
-            <div className="flex flex-none items-center gap-2.5">
-              {/* The in-flight mark beside the key - Stop occupies the key slot
-               * while a turn runs, so the ongoing swatch (the page's one state
-               * motion) sits next to it. */}
-              {submitPending ? (
-                <span
-                  aria-hidden
-                  data-vex-composer-pending
-                  className="inline-flex h-7 w-[9px] shrink-0 items-center justify-center text-accent-primary"
-                >
-                  <Swatch state="ongoing" size={9} />
-                </span>
-              ) : null}
+            <div className="flex flex-none items-center gap-2">
               <ComposerPermissionSeat
-                permission={activeSession?.permission ?? null}
+                permission={
+                  activeSession?.permission ??
+                  // The welcome has no session yet: the new session form's own
+                  // preselect is Restricted, and the form is where the grant
+                  // is chosen.
+                  (sessionId === null ? "restricted" : null)
+                }
               />
               {sessionId !== null ? (
                 <ComposerContextMeter
@@ -516,27 +518,28 @@ export function SessionComposer({
         }}
       />
 
-      {/* Starter chips - gone WHILE THE USER IS TYPING; fixed-height slot (two
-       * 32px rows, the 8px gap and the 14px above them) so the field never
-       * reflows. Transform/opacity only (MOTION-POLICY). */}
+      {/* The welcome's task rows - gone WHILE THE USER IS TYPING, inside a
+       * fixed-height slot (`.vex-starters`: 18 above four 42 high rows) so the
+       * field never reflows. Opacity only (MOTION-POLICY); nothing slides. */}
       {showQuickActions ? (
-        <div className="h-[86px]">
+        <div data-vex-composer-starters="" className="vex-starters">
           <AnimatePresence initial={false}>
             {draft.length === 0 ? (
               <motion.div
-                key="starter-chips"
-                initial={
-                  reducedMotion ? false : { opacity: 0, scale: 0.97, y: 4 }
-                }
-                animate={{ opacity: 1, scale: 1, y: 0 }}
+                key="starter-rows"
+                initial={reducedMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
                 exit={
                   reducedMotion
                     ? { opacity: 0, transition: { duration: 0 } }
-                    : { opacity: 0, scale: 0.97, y: 4 }
+                    : { opacity: 0 }
                 }
-                transition={{ duration: 0.16, ease: EASE_STANDARD }}
+                transition={{ duration: DURATION_BASE_MS / 1000, ease: EASE_STANDARD }}
               >
-                <ComposerQuickActions onPick={applyQuickAction} />
+                <ComposerQuickActions
+                  onPick={applyQuickAction}
+                  onCreateMission={createMission}
+                />
               </motion.div>
             ) : null}
           </AnimatePresence>

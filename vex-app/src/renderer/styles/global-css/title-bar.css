@@ -1,0 +1,492 @@
+/* THE TITLE BAR (docs/design/R3-MINIMAL.md sections 1.5, 2.2, 3 and 12): the
+ * centre column's 44px head row and the window's drag region. The left cell
+ * says where you are; the right cluster holds the page keys, the Studio host
+ * pill, Notices, "Needs you · N" and the token chip, 8 apart, each control 32
+ * high. Popovers are flat paper panels with a 1.5px ink frame and never a
+ * shadow. Paper, ink, one blue, radius 0, tokens only.
+ *
+ * The row's right padding reserves the Windows and Linux caption buttons
+ * wherever the Vex column under them is narrower than they are
+ * (`--vex-vex-track` is the solved right track, set by the frame;
+ * `--overlay-w` is 0 on macOS and on a native frame): the caption reserve plus
+ * the row's own 12, so 150 with Vex hidden (section 2.2).
+ *
+ * NO Z-INDEX on the row, so it is not a stacking context: the popovers its
+ * controls open stack by their own z-index against the page under the row. */
+
+.vex-running-head {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: var(--head-h);
+  padding-block: 0;
+  padding-inline: 22px max(16px, calc(var(--overlay-w) + 12px - var(--vex-vex-track, 0px)));
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-family: var(--font-sans);
+}
+/* The welcome: no title and no chip, so the rule under the row is clear. */
+.vex-running-head[data-empty] {
+  border-bottom-color: transparent;
+}
+.vex-running-head__start {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.vex-running-head__flank {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-family: var(--font-sans);
+}
+
+/* ── Left cell: the title (14 / 500) and its mode or count (13, muted) ───── */
+.vex-tb-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.vex-tb-title__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-tb-title__sub,
+.vex-tb-title__crumb {
+  flex: none;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── The mission badge: 26 high, a quiet rule, 12.5, the mark and a word ─── */
+.vex-tb-mission {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"] {
+  height: 26px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  border-radius: 0;
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"] > span {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: inherit;
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"] > span:nth-child(2)::after {
+  content: " ·";
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"]:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"][aria-expanded="true"] {
+  border-color: var(--vex-alias-rule);
+  background: var(--vex-alias-interactive-active);
+}
+/* The mark, a 10px state swatch by the badge's state (section 1.6): solid
+ * for accepted, the blue target while it waits for the user, the dot screen
+ * while it is prepared, the ink hatch when it needs another look, the ink
+ * cross on an error. */
+.vex-tb-mission [data-vex-action="open-mission-detail"] > span:first-child {
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
+  background: currentColor;
+}
+.vex-tb-mission [data-vex-state="ready"] > span:first-child {
+  border: 1px solid var(--vex-alias-accent-primary);
+  background: linear-gradient(var(--vex-alias-accent-primary), var(--vex-alias-accent-primary)) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+}
+.vex-tb-mission [data-vex-state="preparing"] > span:first-child {
+  border: 1px solid var(--vex-alias-accent-primary);
+  background: radial-gradient(var(--vex-alias-accent-primary) 0.8px, transparent 1px) 0 0 / 3px 3px;
+}
+.vex-tb-mission [data-vex-state="accepted"] > span:first-child {
+  background: var(--vex-alias-accent-primary);
+}
+.vex-tb-mission [data-vex-state="stale"] > span:first-child {
+  border: 1px solid currentColor;
+  background: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 3px);
+}
+.vex-tb-mission [data-vex-state="error"] > span:first-child {
+  border: 1.5px solid currentColor;
+  background:
+    linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, currentColor 44% 56%, transparent 56%);
+}
+
+/* ── Shared: the figure in a control, focus, motion ───────────────────────── */
+.vex-tb-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-needs__key,
+.vex-tb-needs__retry,
+.vex-tb-chip,
+.vex-tb-pill,
+.vex-tb-key {
+  transition:
+    background-color var(--vex-duration-fast) var(--vex-ease-standard),
+    border-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+:is(
+    .vex-tb-needs__key,
+    .vex-tb-needs__retry,
+    .vex-tb-chip,
+    .vex-tb-pill,
+    .vex-tb-key,
+    .vex-tb-mission [data-vex-action="open-mission-detail"],
+    .vex-tb-notice__action,
+    .vex-tb-notice__dismiss
+  ):focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-tb-needs__key,
+  .vex-tb-needs__retry,
+  .vex-tb-chip,
+  .vex-tb-pill,
+  .vex-tb-key {
+    transition: none;
+  }
+}
+
+/* ── Page keys (export): a 32 x 32 icon key, ink 2, and its status word ──── */
+.vex-tb-key {
+  display: inline-grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-tb-key:enabled:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-tb-key:disabled {
+  cursor: wait;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-key-status {
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── Pills: Notices and the Studio host status, 32 high, 13 ──────────────── */
+.vex-tb-notices {
+  display: inline-flex;
+}
+.vex-tb-pill {
+  display: inline-flex;
+  flex: none;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+}
+.vex-tb-pill--quiet {
+  border-color: var(--vex-alias-rule-quiet);
+}
+.vex-tb-pill:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tb-pill[aria-expanded="true"] {
+  border-color: var(--vex-alias-rule-ink);
+  background: var(--vex-alias-interactive-active);
+}
+
+/* ── Needs you · N: 32 high, 13 / 500; the frame is ink while N is above 0
+ * (or unknown), the quiet rule at 0 ─────────────────────────────────────── */
+.vex-tb-needs {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.vex-tb-needs__frame {
+  display: inline-flex;
+  height: 32px;
+  align-items: stretch;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-tb-needs__frame[data-pending] {
+  border-color: var(--vex-alias-rule-ink);
+}
+.vex-tb-needs__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.vex-tb-needs__key:hover,
+.vex-tb-needs__key[aria-expanded="true"] {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tb-needs__retry {
+  padding: 0 10px 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-accent-primary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.vex-tb-needs__retry:enabled:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-tb-needs__retry:disabled {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── The token chip: 32 high, 0 10 0 5, the quiet rule, 13; transparent by
+ * day, paper 2 at night; pressed (Vex open) takes the rule and the selection
+ * fill ───────────────────────────────────────────────────────────────────── */
+.vex-tb-chip {
+  display: inline-flex;
+  flex: none;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 5px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-field);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+[data-vex-theme="celeris"] .vex-tb-chip {
+  background: transparent;
+}
+.vex-tb-chip:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tb-chip[aria-pressed="true"] {
+  border-color: var(--vex-alias-rule);
+  background: var(--vex-alias-interactive-active);
+}
+.vex-tb-chip__state {
+  gap: 8px;
+  font-size: 13px;
+}
+.vex-tb-chip__tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-secondary);
+}
+
+/* ── Popovers: paper, a 1.5px ink frame, no shadow ───────────────────────── */
+.vex-tb-pop {
+  position: absolute;
+  z-index: 40;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+}
+.vex-tb-pop:focus-visible {
+  outline: none;
+}
+
+/* Needs you: 380 wide under its control, padding 6 0, a 12 / 500 muted head
+ * and the shared list's rows with a quiet rule between each. */
+.vex-tb-pop--needs {
+  top: calc(100% + 2px);
+  right: 0;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  padding: 6px 0;
+}
+.vex-tb-pop__head {
+  margin: 0;
+  padding: 6px 14px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-pop--needs [data-vex-needs-you-item] {
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-tb-pop--needs [data-vex-area="needs-you-list"] > :is(p, [role="status"]) {
+  padding: 6px 14px 4px;
+}
+
+/* Notices: 420 wide, 12 from the column's right edge and 6 under the row. */
+.vex-tb-pop--notices {
+  top: 50px;
+  right: 12px;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+}
+.vex-tb-pop__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 14px;
+  font-weight: 500;
+}
+.vex-tb-pop__hint {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-pop__list {
+  max-height: 60vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.vex-tb-pop__foot {
+  margin: 0;
+  padding: 10px 16px 12px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-notice {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 0 10px;
+  padding: 12px 16px 13px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-tb-pop__list:last-child > .vex-tb-notice:last-child {
+  border-bottom: 0;
+}
+.vex-tb-notice__mark {
+  padding-top: 4px;
+  line-height: 0;
+}
+.vex-tb-notice__scope {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-notice__title {
+  margin: 1px 0 2px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.vex-tb-notice__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+.vex-tb-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 7px;
+  font-size: 13px;
+}
+.vex-tb-notice__action {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-tb-notice__action[data-rank="primary"] {
+  color: var(--vex-alias-accent-primary);
+  font-weight: 500;
+}
+.vex-tb-notice__action:disabled {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-notice__dismiss {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tb-notice__dismiss:hover,
+.vex-tb-notice__action:enabled:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-tb-notice__gone {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The Studio host status card: 320 wide, padding 14 16. */
+.vex-tb-hostcard {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  display: flex;
+  width: 320px;
+  max-width: 80vw;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-base);
+  text-align: left;
+}

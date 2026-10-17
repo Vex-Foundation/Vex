@@ -207,9 +207,16 @@ export interface UiState {
   readonly vexOpenChat: boolean;
   /**
    * Whether Vex's sidebar is open on the table pages (Portfolio and its
-   * subpages, Board, Lighter, Settings). Hidden by default. Persisted (v22).
+   * subpages, Board, Settings). Hidden by default. Persisted (v22).
    */
   readonly vexOpenPages: boolean;
+  /**
+   * Whether Vex's sidebar (the desk chat) is open on the Lighter desk. Its
+   * own slot, so the desk opening its chat never opens Vex on the table
+   * pages. Hidden until the desk opens it; NOT persisted, like the desk mode
+   * itself, which is entered and never resumed into.
+   */
+  readonly vexOpenLighter: boolean;
   /**
    * Whether Vex's sidebar shows her hologram. On by default; off, the sidebar
    * keeps the state word and the rest. Persisted (v22).
@@ -422,8 +429,9 @@ export interface UiState {
   readonly setSidebarNarrowExpanded: (value: boolean) => void;
   /**
    * Show or hide Vex on the current page: writes the page class's slot
-   * (`vexOpenChat` or `vexOpenPages`). Showing her also clears the narrow
-   * override, so under the medium tier the left folds to its rail.
+   * (`vexOpenChat`, `vexOpenPages` or `vexOpenLighter`). Showing her also
+   * clears the narrow override, so under the medium tier the left folds to
+   * its rail.
    */
   readonly setVexOpen: (value: boolean) => void;
   /** Legacy name of `setVexOpen`. */
@@ -575,6 +583,7 @@ export const useUiStore = create<UiState>()(
       leftOpen: true,
       vexOpenChat: true,
       vexOpenPages: false,
+      vexOpenLighter: false,
       showAvatar: true,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,

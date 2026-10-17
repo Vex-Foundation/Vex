@@ -1,8 +1,9 @@
 /**
- * What K2 shows of the agent (`docs/design/R3-MINIMAL.md section 5`): one emotion per Vex state.
- * The poses (her drawing, eyes, mouth and gaze per emotion) are layered onto the engine on top of
- * this union; until an emotion has its own pose she shows her idle drawing, and any emotion but
- * `idle` holds her idle gestures back, so she never blows a cloud while the agent works or waits.
+ * What K2 shows of the agent (`docs/design/R3-MINIMAL.md section 5` and `section 10.4`): one
+ * emotion per Vex state, the agent's state as her face. Each emotion's pose (her drawing, whether
+ * its hand rises, her eyes, her mouth and where she looks) is in `k2-poses.ts`; the engine dissolves
+ * from one to the next on her clock. Only `idle` plays her idle life (the blow, the bird, the blush,
+ * the whistle, the hum); `waking` plays the wake and then hands her to idle.
  */
 
 export const K2_EMOTIONS = [
@@ -15,11 +16,7 @@ export const K2_EMOTIONS = [
   "concerned",
   "error",
   "sleeping",
+  "waking",
 ] as const;
 
 export type K2Emotion = (typeof K2_EMOTIONS)[number];
-
-/** Whether an emotion holds the idle gestures back (every one but `idle`). */
-export function holdsGestures(emotion: K2Emotion): boolean {
-  return emotion !== "idle";
-}

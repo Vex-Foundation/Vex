@@ -1,6 +1,8 @@
 /**
- * The art K2 ships (`public/art/vex-k2/`): her eight maps at 134 x 201 cells, her metadata, the
- * token's sheet layout and its four sprite sheets, at their exact byte sizes. A re-export, a
+ * The art K2 ships (`public/art/vex-k2/`): the wide drawing's eight maps at 134 x 201 cells, its
+ * metadata, the token's sheet layout and its four sprite sheets; the app drawing's thirteen maps
+ * (`app/`, the emotions' among them) at 162 x 217 cells and its metadata; all at their exact byte
+ * sizes. A re-export, a
  * swapped file, a stray file or a metadata the loader would refuse shows up here before it shows
  * up as a missing or half drawn portrait. Dimensions are read from the file headers (PNG IHDR,
  * WebP VP8X, VP8L or VP8).
@@ -17,6 +19,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const ART = path.join(here, "..", "..", "..", "..", "public", "art", "vex-k2");
 
 const fileOf = (name: string) => path.join(ART, name);
+const APP_DIR = "app";
 
 function pngSize(b: Buffer): [number, number] {
   expect(b.subarray(12, 16).toString("ascii")).toBe("IHDR");
@@ -48,6 +51,23 @@ const MAPS: readonly (readonly [string, number])[] = [
   ["yawn.png", 16_200],
 ];
 
+/** The app drawing (`app/`): her base, the wake's, the gestures' and the emotions' maps. */
+const APP_MAPS: readonly (readonly [string, number])[] = [
+  ["approve.png", 15_479],
+  ["asleep.png", 14_644],
+  ["base.png", 14_512],
+  ["blow.png", 14_629],
+  ["concern.png", 14_465],
+  ["focus.png", 14_469],
+  ["giggle.png", 15_610],
+  ["hover.png", 16_021],
+  ["palm.png", 15_170],
+  ["pout.png", 14_474],
+  ["rub.png", 16_529],
+  ["think.png", 15_040],
+  ["yawn.png", 15_425],
+];
+
 const SPRITES: readonly (readonly [string, number, number, number])[] = [
   ["token-flat-1x.webp", 100, 100, 2_298],
   ["token-flat-2x.webp", 200, 200, 4_116],
@@ -56,9 +76,18 @@ const SPRITES: readonly (readonly [string, number, number, number])[] = [
 ];
 
 describe("the K2 art", () => {
-  it("is exactly her maps, her metadata and the token's sheet (no phone drawing, no gesture notes)", () => {
+  it("is exactly her maps, her metadata, the token's sheet and the app drawing (no phone drawing, no gesture notes)", () => {
     expect(readdirSync(ART).sort()).toEqual(
-      [...MAPS.map(([n]) => n), ...SPRITES.map(([n]) => n), "meta.json", "token.json"].sort(),
+      [
+        ...MAPS.map(([n]) => n),
+        ...SPRITES.map(([n]) => n),
+        "meta.json",
+        "token.json",
+        APP_DIR,
+      ].sort(),
+    );
+    expect(readdirSync(fileOf(APP_DIR)).sort()).toEqual(
+      [...APP_MAPS.map(([n]) => n), "meta.json"].sort(),
     );
   });
 
@@ -68,6 +97,24 @@ describe("the K2 art", () => {
     // bit depth 8, colour type 2 (RGB): the loader reads R, G and B as data
     expect([b[24], b[25]]).toEqual([8, 2]);
     expect(statSync(fileOf(name)).size).toBe(bytes);
+  });
+
+  it.each(APP_MAPS)("app/%s is a 162 x 217 cell map of %i bytes, RGB at 8 bits", (name, bytes) => {
+    const file = fileOf(path.join(APP_DIR, name));
+    const b = readFileSync(file);
+    expect(pngSize(b)).toEqual([162, 217]);
+    expect([b[24], b[25]]).toEqual([8, 2]);
+    expect(statSync(file).size).toBe(bytes);
+  });
+
+  it("the app drawing's metadata is what the loader accepts, on its maps' grid, with no source notes", () => {
+    const meta = readJson(path.join(APP_DIR, "meta.json"));
+    expect(isK2Meta(meta)).toBe(true);
+    if (!isK2Meta(meta)) return;
+    expect([meta.gw, meta.gh, meta.pitch, meta.k, meta.bx, meta.by]).toEqual([162, 217, 3, 1, 0, 0]);
+    expect(meta.shoulder).toBe(317);
+    expect(Object.keys(meta)).not.toContain("source");
+    expect(statSync(fileOf(path.join(APP_DIR, "meta.json"))).size).toBe(3_621);
   });
 
   it("her metadata is what the loader accepts, on the maps' own grid", () => {
@@ -116,11 +163,17 @@ describe("the K2 art", () => {
     expect(isK2Meta({})).toBe(false);
     expect(isK2Meta({ ...meta, gw: "134" })).toBe(false);
     expect(isK2Meta({ ...meta, eyes: [{}] })).toBe(false);
+    expect(isK2Meta({ ...meta, shoulder: "317" })).toBe(false);
     expect(isTokenSheet({ td: 58, box: 80, cols: 8 })).toBe(false);
   });
 
-  it("all of it weighs under 340 KB", () => {
-    const total = readdirSync(ART).reduce((sum, n) => sum + statSync(fileOf(n)).size, 0);
-    expect(total).toBe(338_008);
+  it("the wide drawing and the token weigh 338,008 bytes, the app drawing 200,088 (under 540 KB)", () => {
+    const sum = (dir: string): number =>
+      readdirSync(dir).reduce((acc, n) => {
+        const st = statSync(path.join(dir, n));
+        return st.isFile() ? acc + st.size : acc;
+      }, 0);
+    expect(sum(ART)).toBe(338_008);
+    expect(sum(fileOf(APP_DIR))).toBe(200_088);
   });
 });

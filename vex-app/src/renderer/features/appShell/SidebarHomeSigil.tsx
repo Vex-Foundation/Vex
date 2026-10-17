@@ -1,16 +1,15 @@
 /**
- * Sidebar brand + home control: a small STATIC logo mark crowns the rail
- * header as the sole brand (no "VEX" wordmark): the vx script monogram as
- * inline SVG on currentColor, so it reads in both themes. No canvas, no
+ * Sidebar brand + home control: the vx wordmark crowns the left sidebar's
+ * head row as the sole brand (no "VEX" text): the vx script monogram as
+ * inline SVG in the one blue (periwinkle at night), 30 wide in the open head
+ * (docs/design/R3-MINIMAL.md section 4), 20 high on a rail. No canvas, no
  * animation.
  *
  * Doubles as the "Back to welcome" control. When a session is open the mark
  * is a real button that clears the active session and returns the panel to
- * the welcome stage. On the welcome stage itself (no active session: the
- * center panel is always the session panel since the Chronos screens
- * redesign) there is nowhere to navigate to, so it renders as an inert
- * decorative mark: the button semantics only exist when the action does
- * something.
+ * the welcome stage. On the welcome stage itself (no active session) there is
+ * nowhere to navigate to, so it renders as an inert decorative mark: the
+ * button semantics only exist when the action does something.
  */
 
 import type { JSX } from "react";
@@ -29,10 +28,9 @@ export function SidebarHomeSigil({
   const onWelcome = activeSessionId === null;
 
   // Height-driven size; width flows from the mark's native aspect: 30 x 24
-  // in the left page's mast (docs/design/V10-SPREAD.md section 3), 20 high
-  // in a collapsed rail.
+  // in the open head, 20 high on a rail.
   const mark = (
-    <span data-vex-home-mark className="select-none text-brand-mark">
+    <span data-vex-home-mark className="select-none text-accent-primary">
       <VexMark size={sidebarOpen ? 24 : 20} />
     </span>
   );

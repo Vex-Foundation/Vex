@@ -26,15 +26,15 @@ import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studi
 
 /* ===================== THE PAPER, measured on the built app ==================
  *
- * The BOOK's sections sit on the paper of the page (`.vex-bs` in book.css,
- * `PortfolioCard`; docs/design/V10-SPREAD.md sections 1 and 2: no box, no
- * fill, no radius, no shadow, no blur). They replaced the glass card tier,
- * and the claims are measured in the same shape studio-terminal-surface.spec.ts
- * proves its own for the pane, in the Studio rail and in the welcome
- * Portfolio stack, which renders the same component with no rail under it:
+ * Vex's column is paper (`.vex-vs` in vex-sidebar.css; docs/design/
+ * R3-MINIMAL.md section 5: one paper per room, no box, no fill, no radius, no
+ * shadow, no blur), and its sections (her state, Needs you, This project) sit
+ * on it. The claims are measured in the same shape
+ * studio-terminal-surface.spec.ts proves its own for the pane, in Studio, in
+ * both themes:
  *
- *  - THE PAGE IS PAPER. The rail (or the welcome stack's page) paints an
- *    opaque ground and blurs nothing behind it.
+ *  - THE PAGE IS PAPER. The column paints an opaque ground and blurs nothing
+ *    behind it.
  *  - A SECTION IS NOT A PLATE. Its background is fully transparent, and it
  *    carries no backdrop filter, no shadow and no radius.
  *  - LEGIBILITY. Every ink token the sections use is measured against the
@@ -44,7 +44,7 @@ import { enterStudio, sizeShellWindow, TOUR_SKIP_REASON } from "./fixtures/studi
  *    recorded (the numbers are what a token retune would be judged against).
  */
 
-/** The ink tokens the BOOK cards paint text with (grep of book/**). */
+/** The ink tokens text is painted with, read inside each section. */
 const INK_TOKENS = [
   "text-ink-primary",
   "text-ink-secondary",
@@ -77,9 +77,9 @@ interface CardGlaze {
 
 interface SurfaceGlaze {
   readonly theme: string;
-  readonly host: "studio-rail" | "welcome-stack";
+  readonly host: "vex-sidebar";
   readonly hostBackdropFilter: string;
-  /** The background of the page the sections sit on (the host's `.vex-bk`). */
+  /** The background of the page the sections sit on (the host's `.vex-vs`). */
   readonly hostPaper: string;
   readonly cards: readonly CardGlaze[];
 }
@@ -259,7 +259,7 @@ async function measureCard(
   };
 }
 
-/** Every BOOK section in a host, named by its region label. */
+/** Every section of Vex's column, named by its region label or its area. */
 async function measureSurface(
   page: Page,
   host: Locator,
@@ -271,18 +271,22 @@ async function measureSurface(
     (node) => window.getComputedStyle(node).backdropFilter,
   );
   const hostPaper = await host.evaluate((node) => {
-    const paper = node.matches(".vex-bk") ? node : node.querySelector(".vex-bk");
+    const paper = node.matches(".vex-vs") ? node : node.querySelector(".vex-vs");
     return paper === null ? "" : window.getComputedStyle(paper).backgroundColor;
   });
   const cards: CardGlaze[] = [];
-  const sections = host.locator(".vex-bs");
+  const sections = host.locator(".vex-vs__state, .vex-vs__sec");
   const count = await sections.count();
   expect(count, `${kind} has no cards to measure`).toBeGreaterThan(0);
   for (let index = 0; index < count; index += 1) {
     const card = sections.nth(index);
     // A card scrolled out of the rail's viewport photographs nothing.
     await card.scrollIntoViewIfNeeded();
-    const name = ((await card.getAttribute("aria-label")) ?? `card-${String(index)}`)
+    const name = (
+      (await card.getAttribute("aria-label")) ??
+      (await card.getAttribute("data-vex-area")) ??
+      `card-${String(index)}`
+    )
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-");
     const shotPath =
@@ -358,9 +362,9 @@ export function registerRailParityScenarios(
     test.setTimeout(300_000);
     const page = vexDb.shell;
     // A REAL 1440 x 900 window, not only an emulated viewport, and before
-    // `enterStudio` emulates one: the BOOK head asserted below reserves the
-    // caption buttons from the window's own title bar area, which an emulated
-    // viewport does not move (`sizeShellWindow`).
+    // `enterStudio` emulates one: the head rows reserve the caption buttons
+    // from the window's own title bar area, which an emulated viewport does
+    // not move (`sizeShellWindow`).
     await sizeShellWindow(vexDb.app, page, 1440, 900);
     const reached = await enterStudio(page);
     test.skip(!reached, TOUR_SKIP_REASON);
@@ -466,79 +470,35 @@ export function registerRailParityScenarios(
     await expect(treeEl).toHaveAttribute("aria-activedescendant", /.+/);
     await shot(page, `${theme}-28-explorer-keyboard-focus`);
 
-    /* ---- 30: the right rail, headed by the PROJECT (A3) ----------------- */
+    /* ---- 30: Vex's column, scoped to the PROJECT (A3) ------------------- */
 
-    const book = page.getByLabel("Project instrument");
-    await expect(book).toBeVisible();
-    await expect(book.getByText(projectName, { exact: true })).toBeVisible();
+    // R3 (docs/design/R3-MINIMAL.md section 5.1): the right column is Vex's.
+    // The Studio rail's money cards moved to the Portfolio page; the column
+    // says what it is about ("This project:"), then Needs you, then the
+    // project's own block: its facts (the Project card's rows, the path
+    // ending in the folder main actually created) and the two project-scoped
+    // pages, Project assets and Agent Scan. Then her plate.
+    const vex = page.locator('[data-vex-area="vex-sidebar"]');
+    await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
+    await expect(vex.locator('[data-vex-area="vex-state"]')).toContainText("This project:");
+    await expect(vex.locator('[data-vex-area="vex-needs-you"]')).toBeVisible();
+    const projectBlock = vex.locator('[data-vex-area="vex-this-project"]');
+    await expect(projectBlock).toBeVisible();
+    await expect(projectBlock.getByText("Mode", { exact: true })).toBeVisible();
+    await expect(projectBlock.getByText("Studio", { exact: true })).toBeVisible();
+    await expect(projectBlock.getByText("Access", { exact: true })).toBeVisible();
+    await expect(projectBlock.getByText(/^(Full|Restricted)$/)).toBeVisible();
+    await expect(projectBlock.getByText("Started", { exact: true })).toBeVisible();
+    await expect(projectBlock.getByTitle(new RegExp(`${projectName}$`))).toBeVisible();
+    await expect(projectBlock.getByRole("button", { name: "Project assets" })).toBeVisible();
+    await expect(projectBlock.getByRole("button", { name: "Agent Scan" })).toBeVisible();
+    await expect(vex.locator('[data-vex-area="vex-portrait-plate"]')).toBeVisible();
 
-    // THE PARITY CONTRACT (owner screenshots, 2026-09-04): the project rail IS
-    // the agent session rail. Each card is the shared `PortfolioCard` region,
-    // named by its eyebrow, in the agent rail's order.
-    const railCards = book.locator('[data-vex-book-section]');
-    await expect(railCards).toHaveCount(6);
-    await expect(railCards.nth(0)).toHaveAttribute("data-vex-book-section", "position");
-    await expect(railCards.nth(1)).toHaveAttribute("data-vex-book-section", "wallets");
-    await expect(railCards.nth(2)).toHaveAttribute("data-vex-book-section", "balances");
-    await expect(railCards.nth(3)).toHaveAttribute("data-vex-book-section", "activity");
-    await expect(railCards.nth(4)).toHaveAttribute("data-vex-book-section", "project");
-    await expect(railCards.nth(5)).toHaveAttribute("data-vex-book-section", "launchpads");
-    await expect(book.getByRole("region", { name: "Position", exact: true })).toBeVisible();
-    await expect(book.getByRole("region", { name: "Wallets", exact: true })).toBeVisible();
-
-    // BALANCES carries the same door the agent rail has. The register a fresh
-    // project can show is either its holdings with "View all assets" under
-    // them, or the PROJECT empty sentence; it is never the session's or the
-    // global one, and the door is never hidden behind a project scope.
-    const balances = book.getByRole("region", { name: "Balances", exact: true });
-    await expect(balances).toBeVisible();
-    await expect(
-      balances.getByText(/View all assets|No balances in this project's wallets yet/),
-    ).toBeVisible();
-    await expect(balances.getByText(/this session's wallets/)).toHaveCount(0);
-
-    // ACTIVITY carries "View all activity" unconditionally (the owner's
-    // screenshot was cropped under the card; the door is there).
-    const activity = book.getByRole("region", { name: "Activity", exact: true });
-    await expect(activity).toBeVisible();
-    await expect(
-      activity.getByRole("button", { name: "View all activity" }),
-    ).toBeVisible();
-
-    // PROJECT is the SESSION card's counterpart: the same rows, and the one row
-    // a project has that a session does not - its path, ending in the folder
-    // main actually created.
-    const projectCard = book.getByRole("region", { name: "Project", exact: true });
-    await expect(projectCard).toBeVisible();
-    await expect(projectCard.getByText("Mode", { exact: true })).toBeVisible();
-    await expect(projectCard.getByText("Studio", { exact: true })).toBeVisible();
-    await expect(projectCard.getByText("Access", { exact: true })).toBeVisible();
-    await expect(projectCard.getByText(/^(Full|Restricted)$/)).toBeVisible();
-    await expect(projectCard.getByText("Started", { exact: true })).toBeVisible();
-    await expect(projectCard.getByText("Path", { exact: true })).toBeVisible();
-    await expect(projectCard.getByTitle(new RegExp(`${projectName}$`))).toBeVisible();
-
-    // LAUNCHPAD is BROWSE-ONLY on a project rail (the fixed decision): it sees
-    // the same global locker, says where a launch is signed from, and offers
-    // no upload, no delete and no launch a project cannot attribute.
-    const launchpad = book.getByRole("region", { name: "Launchpad", exact: true });
-    await expect(launchpad).toBeVisible();
-    await expect(launchpad.locator('[data-vex-area="launchpad-browse-note"]')).toBeVisible();
-    await expect(launchpad.getByRole("button", { name: "Add image" })).toHaveCount(0);
-    await expect(launchpad.getByRole("button", { name: /^Remove / })).toHaveCount(0);
-    await expect(launchpad.getByRole("button", { name: /Launch/ })).toHaveCount(0);
-    await shot(page, `${theme}-30-workspace-right-rail`);
-
-    // PORTFOLIO ONLY (owner decision 2026-09-04: "in Vex Studio's right
-    // sidebar we show only Portfolio; Board disappears"). The project rail
-    // mounts no tab strip and no board surface; the stack is seated directly.
-    // The session rail's toggle is untouched (BookPanel-board-tab.test.tsx).
-    await expect(book.getByRole("tab")).toHaveCount(0);
-    await expect(book.getByRole("tablist")).toHaveCount(0);
-    await expect(book.locator('[data-vex-area="active-board"]')).toHaveCount(0);
-    await expect(
-      book.locator('[data-vex-area="book-instruments"][data-vex-rail-scope="project"]'),
-    ).toBeVisible();
+    // NO MONEY IN VEX'S COLUMN: no card, no tab strip, no board surface.
+    await expect(vex.locator("[data-vex-book-section]")).toHaveCount(0);
+    await expect(vex.getByRole("tab")).toHaveCount(0);
+    await expect(vex.locator('[data-vex-area="active-board"]')).toHaveCount(0);
+    await shot(page, `${theme}-30-workspace-vex-sidebar`);
 
     /* ---- 31: ONE search, over two kinds of thing (I2) ------------------- */
 
@@ -600,13 +560,13 @@ export function registerRailParityScenarios(
     // Rule 08 asks for a layout threshold at the seam and on both sides. The pure
     // comparison is unit-tested (`shell-columns.test.ts`); what a browser adds is
     // that the SHELL actually applies it.
-    // The seam is the spread's (docs/design/V10-SPREAD.md section 2): from
-    // 1276 up the rail keeps its preference, under it the rail closes.
-    await page.setViewportSize({ width: 1277, height: 900 });
+    // The seam is R3's (docs/design/R3-MINIMAL.md section 2.1): from 1180 up
+    // the sidebar keeps its preference, under it the sidebar folds to its rail.
+    await page.setViewportSize({ width: 1181, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    await page.setViewportSize({ width: 1276, height: 900 });
+    await page.setViewportSize({ width: 1180, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    await page.setViewportSize({ width: 1275, height: 900 });
+    await page.setViewportSize({ width: 1179, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "false");
     await page.setViewportSize({ width: 1000, height: 900 });
     await shot(page, `${theme}-33-narrow-1000px`);
@@ -617,57 +577,28 @@ export function registerRailParityScenarios(
     // constraint, so the sidebar's stored preference returns with the width.
     await page.setViewportSize({ width: 1440, height: 900 });
     await expect(sidebar).toHaveAttribute("data-vex-sidebar-open", "true");
-    if ((await book.getAttribute("data-vex-book-open")) === "false") {
-      await book.getByRole("button", { name: "Expand the BOOK panel" }).click();
-    }
-    await expect(book.getByRole("region", { name: "Position", exact: true })).toBeVisible();
+    await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
+    await expect(projectBlock).toBeVisible();
     const other: "chronos" | "celeris" = theme === "chronos" ? "celeris" : "chronos";
     const surfaces: SurfaceGlaze[] = [];
 
-    // The section stagger must have settled before the paper is photographed.
+    // The column's own motion (her canvas aside) must have settled before the
+    // paper is photographed.
     const settled = async (): Promise<void> => {
       await page.waitForTimeout(900);
     };
 
     await settled();
-    await shot(page, `${theme}-34-studio-rail-glaze`);
-    surfaces.push(await measureSurface(page, book, "studio-rail", theme, shotsDir));
+    await shot(page, `${theme}-34-vex-sidebar-paper`);
+    surfaces.push(await measureSurface(page, vex, "vex-sidebar", theme, shotsDir));
 
-    // The same sections standing alone: the Agent welcome's Portfolio stack.
-    const modes = page.getByRole("radiogroup", { name: "Runtime mode" });
-    await modes.getByRole("radio", { name: "Agent" }).click();
-    const welcome = page.locator('[data-vex-area="welcome-portfolio"]');
-    // The aside reserves no width while its tab is closed, so the tab is
-    // opened before anything in it is expected on screen.
-    const openTab = page.getByRole("button", { name: "Open the Portfolio tab" });
-    await expect(openTab.or(page.getByRole("button", { name: "Collapse the Portfolio tab" }))).toBeVisible();
-    if ((await openTab.count()) > 0) await openTab.click();
-    await expect(welcome.getByRole("region", { name: "Wallets", exact: true })).toBeVisible();
-    await settled();
-    await shot(page, `${theme}-35-welcome-stack-glaze`);
-    surfaces.push(await measureSurface(page, welcome, "welcome-stack", theme, shotsDir));
-
-    // The OTHER theme: the same class, the same measurement.
+    // The OTHER theme: the same column, the same measurement.
     await pickTheme(page, other);
-    await expect(welcome.getByRole("region", { name: "Wallets", exact: true })).toBeVisible();
+    await expect(vex).toHaveAttribute("data-vex-vex-open", "true");
+    await expect(projectBlock).toBeVisible();
     await settled();
-    await shot(page, `${other}-35-welcome-stack-glaze`);
-    surfaces.push(await measureSurface(page, welcome, "welcome-stack", other, shotsDir));
-
-    await page.getByRole("radiogroup", { name: "Runtime mode" })
-      .getByRole("radio", { name: "Studio" })
-      .click();
-    if ((await book.count()) === 0) {
-      await sidebar.getByRole("button", { name: new RegExp(projectName) }).first().click();
-    }
-    await expect(book).toBeVisible();
-    if ((await book.getAttribute("data-vex-book-open")) === "false") {
-      await book.getByRole("button", { name: "Expand the BOOK panel" }).click();
-    }
-    await expect(book.getByRole("region", { name: "Position", exact: true })).toBeVisible();
-    await settled();
-    await shot(page, `${other}-34-studio-rail-glaze`);
-    surfaces.push(await measureSurface(page, book, "studio-rail", other, shotsDir));
+    await shot(page, `${other}-34-vex-sidebar-paper`);
+    surfaces.push(await measureSurface(page, vex, "vex-sidebar", other, shotsDir));
 
     if (shotsDir !== "") {
       fs.writeFileSync(

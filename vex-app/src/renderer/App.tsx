@@ -10,15 +10,15 @@
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
- * THE STAGE (docs/design/V10-SPREAD.md sections 2 and 10): every pre-shell
- * screen stands on one picture, the plateau print with the eagle. It is
- * mounted ONCE here, behind the screens, so it never moves or restarts
- * while they change: their swaps ride ONE `AnimatePresence mode="wait"`
- * that crossfades only the type and the paper leaf over it. The app shell
- * is NEVER inside the stage. Unlock→shell plays the page turn
- * (`CurtainExit`, armed by a successful unlock): the print stays, the right
- * page arrives from the window edge, the view flips beneath it, and the
- * turn lifts away.
+ * THE STAGE (docs/design/R3-MINIMAL.md section 10): every pre-shell
+ * screen stands on one picture, the plateau print. For the wake and the
+ * unlock it is a 720 plate with Vex rising from the token and paper at the
+ * right. It is mounted ONCE here, behind the screens, so it never moves or
+ * restarts while they change: their swaps ride ONE `AnimatePresence
+ * mode="wait"` that crossfades only the type over it. The app shell is
+ * NEVER inside the stage. Unlock→shell is a 240ms crossfade (`CurtainExit`,
+ * armed by a successful unlock): the view flips beneath the plate and the
+ * plate lifts away.
  *
  * The legacy M0 capability/health/security cards are gated behind
  * `import.meta.env.DEV` and are reachable via a dev-only side panel —
@@ -36,7 +36,7 @@ import {
 import { ChronosGate } from "./features/setup/ChronosGate.js";
 import { SetupTour } from "./features/setup/SetupTour.js";
 import { CurtainExit } from "./features/setup/CurtainExit.js";
-import { StagePrint } from "./components/onboarding/PreShellStage.js";
+import { StagePlate } from "./components/onboarding/PreShellStage.js";
 import {
   DURATION_BASE_MS,
   DURATION_SLOW_MS,
@@ -129,12 +129,11 @@ export function App(): JSX.Element {
       {currentView === "appShell" || currentView === "splash"
         ? views[currentView]()
         : null}
-      {/* THE STAGE PRINT - one picture under every pre-shell screen and
+      {/* THE STAGE PLATE - one picture under every pre-shell screen and
           under the void the gate covers, mounted once so it never moves or
-          restarts while the screens change over it. */}
-      {PRE_SHELL_VIEWS.has(currentView) || currentView === "splash" ? (
-        <StagePrint className="fixed inset-0" />
-      ) : null}
+          restarts while the screens change over it. It renders nothing while
+          the shell stands, except under the crossfade to it. */}
+      <StagePlate className="fixed inset-0" />
       {/* Pre-shell screens over the print. `mode="wait"` sequences exit
           before enter so two screens never stack; the wrapper is
           `fixed inset-0` so an exiting screen overlays (not reflows) its
@@ -174,10 +173,10 @@ export function App(): JSX.Element {
           gate choreography only if the whole gate is a fresh mount. It
           stays 0 for the entire life of a real launch. */}
       <ChronosGate key={prologueReplayNonce} />
-      {/* Unlock-success page turn, armed by UnlockScreen after the
-          unlock IPC succeeds; the right page arrives over the print, the
-          view flips to unlockReturnView beneath it, and the turn lifts
-          away. Same z-band as the gate (below UpdateLayer). */}
+      {/* Unlock-success handoff, armed by UnlockScreen after the unlock
+          IPC succeeds; the view flips to unlockReturnView beneath the
+          plate and the plate lifts away. Same z-band as the gate (below
+          UpdateLayer). */}
       {unlockCurtainActive ? (
         <CurtainExit
           target={unlockReturnView}

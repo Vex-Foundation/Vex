@@ -10,9 +10,15 @@
  *   can change are drawn once into a scratch canvas and copied; only the hair in the wind, the
  *   eyes, the face marks and the strands are drawn per frame, and a frame whose dots and light did
  *   not change is never repainted. The ratio is capped at 2.
+ * - The emotion (`setEmotion`) is her face (`k2-poses.ts`): a change dissolves on her clock; asleep
+ *   and settled nothing of her moves, so she is painted once and left still, the beam and the token
+ *   dimmed with her.
+ * - Idle, by default she looks at you and now and then glances away; her idle pool (the blow, the
+ *   bird, the blush, the whistle, the hum) plays one action at a time; a long hover makes her
+ *   blush, a click (`poke`) makes her giggle.
  * - The still frame (reduced motion, Save-Data, or asked by the host) paints once (awake, the
- *   token flat, the beam on and still, no wind, no gestures) and repaints only on a hover, a theme,
- *   a ground or a layout change.
+ *   token flat, the beam on and still, no wind, no gestures, the emotion settled) and repaints only
+ *   on a hover, a theme, a ground, an emotion or a layout change.
  *
  * The host places her (`k2-rig.ts`, `setFit`); her map's px are drawn through one transform
  * (host = o + s * map). The maps and the token's sprites load from the renderer's own origin
@@ -20,7 +26,7 @@
  */
 import { RunGate } from "../../../lib/motion/run-gate.js";
 import { context2dOf, loadMap, loadMeta, type Scratch, scratchCanvas } from "./k2-assets.js";
-import { holdsGestures, type K2Emotion } from "./k2-emotion.js";
+import type { K2Emotion } from "./k2-emotion.js";
 import {
   Dots,
   INKS,
@@ -33,14 +39,24 @@ import {
   Portrait,
   type PortraitFrame,
 } from "./k2-portrait.js";
+import { MOOD_MAPS, type MoodChange, type MoodFace, type MoodLook, moodFace } from "./k2-poses.js";
 import { noise1 } from "./k2-rand.js";
-import { type Box, canvasBox, DRAWING, type Fit, TOKEN_SHEET } from "./k2-rig.js";
+import {
+  APP_LOOKS,
+  type Box,
+  beamScreen,
+  canvasBox,
+  type Fit,
+  type K2Drawing,
+  TOKEN_SHEET,
+} from "./k2-rig.js";
 import {
   actorPaths,
   type BeamScreen,
   drawBeam,
   drawBird,
   drawCloud,
+  drawNotes,
   drawPuff,
   type KeepRect,
 } from "./k2-scene.js";
@@ -52,17 +68,16 @@ import {
   canGiggle,
   clamp,
   type FaceState,
+  type GazeTarget,
   GestureChain,
   type GestureName,
+  type GlanceAway,
+  GlanceChain,
   gestureAt,
   gestureState,
   gustAt,
   hoverProgress,
-  LOOK,
-  type LookAt,
-  LookChain,
-  lookAt,
-  lookLid,
+  LONG_HOVER,
   type MapName,
   projector,
   ramp,
@@ -77,18 +92,26 @@ import { type PlacedToken, TokenSprite } from "./k2-token.js";
 const DPR_CAP = 2;
 /** A frame never advances her clock by more than this, ms. */
 export const CLOCK_CAP_MS = 250;
-/** The beam's screen in css px: the print's clouds' (pitch 5, the dot's radius up to 2.2). */
-const BEAM_SCREEN = { pitch: 5, rmax: 2.2 } as const;
+/** The idle actions: all once her gestures' drawings are in, the map-free ones before. */
+const ALL: readonly GestureName[] = ["blow", "bird", "giggle", "blush", "whistle", "hum"];
+const MAP_FREE: readonly GestureName[] = ["blush", "whistle", "hum"];
 /**
- * The print's clouds' white: 0.9 by day, 0.46 at night (the beam on the print or on night paper,
- * the blow's cloud); on day paper, where white light cannot show, the beam is the one blue at 0.4.
+ * The beam's ink by the ground under her (`docs/design/R3-MINIMAL.md section 10.4`): white on the
+ * print by day at 0.66, a step under the clouds' 0.9 so her tee reads (the web home's value); white
+ * at the clouds' night alpha 0.46 at night, also on night paper; on day paper, where white light
+ * cannot show, the one blue at 0.4. The blow's cloud keeps the clouds' alpha.
  */
 export const CLOUD_ALPHA = { light: 0.9, dark: 0.46 } as const;
+export const PRINT_BEAM_ALPHA = 0.66;
 export const PAPER_BEAM_ALPHA = 0.4;
 /** The host's blocks keep the actors out by this much air (map px), in order. */
 const AIR = [28, 16, 20] as const;
-/** A pointer that moved this recently (ms) holds her eyes over a look at you. */
+/** A pointer that moved this recently (ms) pulls her eyes from you. */
 const POINTER_FRESH = 2500;
+/** Each drawing's folder under the art root. */
+const DIR: Readonly<Record<K2Drawing, string>> = { wide: "", app: "app/" };
+/** The wide drawing has these of the emotions' drawings (the rest show on its base). */
+const WIDE_MOOD_MAPS: readonly MapName[] = ["hover", "asleep", "yawn", "rub"];
 
 /** What she stands on: the print, day paper or night paper (the beam's ink follows it). */
 export type K2Ground = "print" | "paper" | "night";
@@ -106,6 +129,8 @@ export interface K2EngineOptions {
   readonly onWoken: () => void;
   /** Review: plays that gesture 1 s after she is awake. */
   readonly force?: GestureName | null;
+  /** The composer she looks at while listening (by default her look goes down and to the side). */
+  readonly composer?: (() => HTMLElement | null) | undefined;
 }
 
 function readVar(name: string, fallback: string): string {
@@ -144,10 +169,11 @@ function inks(dark: boolean): Palette {
 }
 
 /** The beam's ink by the ground under her. */
-function beamInk(ground: K2Ground, dark: boolean, pal: Palette): InkStyle {
+export function beamInk(ground: K2Ground, dark: boolean, pal: Palette): InkStyle {
   if (ground === "paper" && !dark)
     return { color: readVar("--color-blue", "#0000c0"), alpha: PAPER_BEAM_ALPHA };
-  return { color: pal.white, alpha: CLOUD_ALPHA[dark || ground === "night" ? "dark" : "light"] };
+  if (dark || ground === "night") return { color: pal.white, alpha: CLOUD_ALPHA.dark };
+  return { color: pal.white, alpha: PRINT_BEAM_ALPHA };
 }
 
 export class K2Engine {
@@ -155,8 +181,8 @@ export class K2Engine {
   readonly #ac = new AbortController();
   readonly #token = new TokenSprite();
   readonly #stamper = new Stamper();
-  #portrait: Portrait | null = null;
-  #loading = false;
+  readonly #portraits: Partial<Record<K2Drawing, Portrait>> = {};
+  readonly #loading = new Set<K2Drawing>();
   #fit: Fit | null = null;
   #keep: readonly Box[] = [];
   #dark: boolean;
@@ -178,39 +204,48 @@ export class K2Engine {
   #gestures = false;
   readonly #chain: GestureChain;
   readonly #giggles: number[] = [];
+  /** When long hovers ended (each one makes her blush). */
+  readonly #blushes: number[] = [];
   #hover = false;
   #hoverAt = -1;
   #unhoverAt = -1;
   #hold = false;
   #holdAt = -1;
   #unholdAt = -1;
-  #emotion: K2Emotion = "idle";
   #pointer: { x: number; y: number } | null = null;
-  /** When the pointer last moved (her clock): a moving pointer wins over a look at you. */
-  #pointerAt = -1e9;
-  /** Her looks at rest (built for the wake's end), and the triggered ones: a gesture ending, the window back. */
-  #looks: { readonly awakeAt: number; readonly chain: LookChain } | null = null;
-  readonly #lookTriggers: number[] = [];
-  #lastGesture: ActiveGesture | null = null;
-  #hiddenAt = -1;
+  /**
+   * When the pointer last moved (her clock): a moving pointer pulls her eyes from you; a still one
+   * starts the whistle's wait.
+   */
+  #pointerAt = Number.NEGATIVE_INFINITY;
+  /** Her glances away from you (built for the wake's end). */
+  #glances: { readonly awakeAt: number; readonly chain: GlanceChain } | null = null;
+  /** Her emotion and when it last changed (null until the host sets one). */
+  #mood: MoodChange | null = null;
+  /** The last frozen frame painted (asleep and settled): the next identical one is skipped. */
+  #frozen: string | null = null;
 
   constructor(o: K2EngineOptions) {
     this.#o = o;
     this.#dark = o.dark;
     this.#ground = o.ground;
     this.#pal = inks(o.dark);
-    const force = o.force === "blow" || o.force === "bird" ? o.force : null;
+    const f = o.force;
+    const force = f === "blow" || f === "bird" || f === "blush" || f === "hum" ? f : null;
     this.#chain = new GestureChain(this.#awakeAt(), force);
-    if (o.force === "giggle") this.#giggles.push(this.#awakeAt() + 1000);
+    if (f === "giggle") this.#giggles.push(this.#awakeAt() + 1000);
   }
 
   /* ---------------------------------------------------------------- the host's inputs */
 
   /** Where the host placed her, and its blocks the actors keep out of (host px). */
   setFit(fit: Fit, keep: readonly Box[] = []): void {
+    const prev = this.#fit;
     this.#fit = fit;
     this.#keep = keep;
     this.#layout();
+    if (prev?.rig.drawing !== fit.rig.drawing && this.#started)
+      void this.#loadDrawing(fit.rig.drawing);
     this.#repaintIdle();
   }
 
@@ -219,31 +254,52 @@ export class K2Engine {
     this.#dark = dark;
     this.#pal = inks(dark);
     this.#cache = null;
+    this.#frozen = null;
     this.#repaintIdle();
   }
 
   setGround(ground: K2Ground): void {
     if (ground === this.#ground) return;
     this.#ground = ground;
+    this.#frozen = null;
     this.#repaintIdle();
   }
 
   setHover(on: boolean): void {
     if (on === this.#hover) return;
     this.#hover = on;
-    if (on) this.#hoverAt = this.#now();
-    else this.#unhoverAt = this.#now();
+    const now = this.#now();
+    if (on) this.#hoverAt = now;
+    else {
+      // a long hover, once it ends, makes her blush
+      if (!this.#o.still && now - this.#hoverAt >= LONG_HOVER && now >= this.#awakeAt()) {
+        this.#blushes.push(now);
+        if (this.#blushes.length > 8) this.#blushes.shift();
+      }
+      this.#unhoverAt = now;
+    }
     this.#repaintIdle();
   }
 
-  /** The agent's emotion: anything but idle holds her idle gestures back. */
+  /**
+   * The agent's state as her face. The first emotion she starts in is settled at once (a wake
+   * plays from now); every later change dissolves on her clock.
+   */
   setEmotion(emotion: K2Emotion): void {
-    this.#emotion = emotion;
+    const cur = this.#mood;
+    if (cur?.to === emotion) return;
+    this.#mood = {
+      from: cur?.to ?? emotion,
+      to: emotion,
+      at: cur === null && emotion !== "waking" ? -1e9 : this.#now(),
+    };
+    this.#repaintIdle();
   }
 
-  /** A click or a tap on her: a giggle, once she is awake and its cooldown is over. */
+  /** A click or a tap on her: a giggle, once she is awake, idle and its cooldown is over. */
   poke(): void {
     if (this.#o.still) return;
+    if (this.#mood !== null && this.#mood.to !== "idle") return;
     const t = this.#now();
     if (canGiggle(t, this.#giggles, this.#awakeAt())) this.#giggles.push(t);
   }
@@ -259,9 +315,12 @@ export class K2Engine {
     const fit = this.#fit;
     if (fit === null) return;
     // device px per css px of the sheet's coin
-    const coin = fit.token.d * fit.s;
+    const coin = fit.rig.token.d * fit.s;
     const density = (Math.min(window.devicePixelRatio || 1, DPR_CAP) * coin) / TOKEN_SHEET.td;
-    await Promise.all([this.#loadPortrait(), this.#token.load(this.#o.wake, density)]);
+    await Promise.all([
+      this.#loadDrawing(fit.rig.drawing),
+      this.#token.load(this.#o.wake, density),
+    ]);
     if (this.#stopped) return;
     this.#started = true;
     this.#paint(0, true);
@@ -288,46 +347,70 @@ export class K2Engine {
 
   /* ---------------------------------------------------------------- assets */
 
-  async #loadPortrait(): Promise<void> {
-    if (this.#portrait !== null || this.#loading) return;
-    this.#loading = true;
+  async #loadDrawing(drawing: K2Drawing): Promise<void> {
+    if (this.#portraits[drawing] !== undefined || this.#loading.has(drawing)) return;
+    this.#loading.add(drawing);
+    const dir = DIR[drawing];
     try {
-      const meta: K2Meta = await loadMeta();
+      const meta: K2Meta = await loadMeta(dir);
       const n = meta.gw * meta.gh;
-      const files: [MapName, string][] = [
-        ["base", "base.png"],
-        ["hover", "hover.png"],
-      ];
-      if (this.#o.wake && !this.#o.still)
-        files.push(["asleep", "asleep.png"], ["yawn", "yawn.png"], ["rub", "rub.png"]);
-      const maps = await Promise.all(files.map(([, f]) => loadMap(f, n)));
+      const files: MapName[] = ["base", "hover"];
+      if (this.#o.wake && !this.#o.still) files.push("asleep", "yawn", "rub");
+      const maps = await Promise.all(files.map((m) => loadMap(`${dir}${m}.png`, n)));
       const set: Partial<Record<MapName, K2Map>> = {};
-      files.forEach(([m], i) => {
+      files.forEach((m, i) => {
         const map = maps[i];
         if (map !== undefined) set[m] = map;
       });
-      this.#portrait = new Portrait(meta, set);
+      if (this.#stopped) return;
+      this.#portraits[drawing] = new Portrait(meta, set);
       this.#cache = null;
+      this.#frozen = null;
       if (this.#started) this.#repaintIdle();
+      void this.#loadMoods(drawing);
     } catch {
       // she stays away rather than half drawn
     } finally {
-      this.#loading = false;
+      this.#loading.delete(drawing);
     }
+  }
+
+  /** The emotions' drawings (until one arrives its emotion shows on the base drawing). */
+  async #loadMoods(drawing: K2Drawing): Promise<void> {
+    const portrait = this.#portraits[drawing];
+    if (portrait === undefined || this.#stopped) return;
+    const n = portrait.meta.gw * portrait.meta.gh;
+    const names = (drawing === "app" ? MOOD_MAPS : WIDE_MOOD_MAPS).filter(
+      (m) => !portrait.hasMap(m),
+    );
+    await Promise.all(
+      names.map(async (m) => {
+        try {
+          portrait.addMap(m, await loadMap(`${DIR[drawing]}${m}.png`, n));
+        } catch {
+          // that emotion stays on the base drawing
+        }
+      }),
+    );
+    if (this.#stopped || names.length === 0) return;
+    this.#cache = null;
+    this.#frozen = null;
+    this.#repaintIdle();
   }
 
   async #loadGestures(): Promise<void> {
     if (this.#stopped) return;
-    const portrait = this.#portrait;
-    if (portrait === null) {
-      // still loading: ask again; a portrait that failed to load takes no gestures
-      if (this.#loading) window.setTimeout(() => void this.#loadGestures(), 2000);
+    const drawing = this.#fit?.rig.drawing ?? "wide";
+    const portrait = this.#portraits[drawing];
+    if (portrait === undefined) {
+      // still loading: ask again; a drawing that failed to load takes no gestures
+      if (this.#loading.has(drawing)) window.setTimeout(() => void this.#loadGestures(), 2000);
       return;
     }
     try {
       const n = portrait.meta.gw * portrait.meta.gh;
       const names: MapName[] = ["blow", "palm", "giggle"];
-      const maps = await Promise.all(names.map((m) => loadMap(`${m}.png`, n)));
+      const maps = await Promise.all(names.map((m) => loadMap(`${DIR[drawing]}${m}.png`, n)));
       names.forEach((m, i) => {
         const map = maps[i];
         if (map !== undefined) portrait.addMap(m, map);
@@ -379,6 +462,7 @@ export class K2Engine {
     this.#box = box;
     this.#dpr = dpr;
     this.#lastSig = -1;
+    this.#frozen = null;
   }
 
   /** The map transform for a 2D context of the canvas's size. */
@@ -427,22 +511,6 @@ export class K2Engine {
       },
       { passive: true, signal },
     );
-    // back after 10 s or more away, she looks at you
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (document.hidden) this.#hiddenAt = performance.now();
-        else if (this.#hiddenAt >= 0 && performance.now() - this.#hiddenAt >= LOOK.away)
-          this.#trigger(this.#now());
-      },
-      { signal },
-    );
-  }
-
-  /** A look at you starts at t (her clock); only the last few are kept. */
-  #trigger(t: number): void {
-    this.#lookTriggers.push(t);
-    if (this.#lookTriggers.length > 8) this.#lookTriggers.shift();
   }
 
   #loop(): void {
@@ -470,10 +538,11 @@ export class K2Engine {
 
   #paint(t: number, force: boolean): void {
     const fit = this.#fit;
-    const portrait = this.#portrait;
-    if (fit === null || portrait === null || !this.#token.ready) return;
+    if (fit === null) return;
+    const portrait = this.#portraits[fit.rig.drawing];
+    if (portrait === undefined || !this.#token.ready) return;
     const meta = portrait.meta;
-    const still = this.#o.still;
+    const R = fit.rig;
     const mode = this.#mode();
     const awakeAt = wakeEnd(mode);
     if (mode !== "none" && t >= awakeAt && !this.#woken) {
@@ -483,30 +552,55 @@ export class K2Engine {
     const glance = { x: meta.glance[0], y: meta.glance[1] };
     const pj = projector(t, mode);
     const WS = wakeState(t, mode, meta.pitch, meta.k, glance);
+    // the emotion, after the wake: one set while she woke dissolves in from her waking smile when
+    // the wake hands her over (a wake already played is not played again)
+    const mood: MoodChange | null =
+      this.#mood !== null && awakeAt > 0 && this.#mood.at < awakeAt
+        ? { from: "idle", to: this.#mood.to === "waking" ? "idle" : this.#mood.to, at: awakeAt }
+        : this.#mood;
+    const mf: MoodFace | null =
+      WS === null && mood !== null
+        ? moodFace(mood, t, {
+            rise: meta.rise,
+            pitch: meta.pitch,
+            k: meta.k,
+            glance,
+            still: this.#o.still,
+          })
+        : null;
+    // asleep and settled nothing of her moves: she is painted as a still frame
+    const frozen = mf?.frozen === true;
+    const still = this.#o.still || frozen;
+    if (!force && frozen) {
+      const key = [R.drawing, R.palm, fit.s, fit.ox, fit.oy, this.#dark, this.#ground, this.#mood?.to]
+        .map(String)
+        .join("|");
+      if (key === this.#frozen) return;
+      this.#frozen = key;
+    } else this.#frozen = null;
 
-    // what holds the idle pool back: a hover, any emotion but idle
-    const hold = this.#hover || holdsGestures(this.#emotion);
+    // what holds the idle pool back: a hover, any emotion but idle (settled)
+    const hold = this.#hover || (mf !== null && !mf.gestures);
     if (hold !== this.#hold) {
       this.#hold = hold;
       if (hold) this.#holdAt = t;
       else this.#unholdAt = t;
     }
     const G: ActiveGesture | null =
-      WS === null
+      WS === null && (mf === null || mf.gestures)
         ? gestureAt(this.#chain, {
             t,
-            enabled: !still && this.#gestures,
+            allowed: still ? [] : this.#gestures ? ALL : MAP_FREE,
             awakeAt,
             giggles: this.#giggles,
+            blushes: this.#blushes,
+            stillSince: this.#pointerAt,
             hold,
             holdAge: hold ? t - this.#holdAt : -1,
             unholdAge: !hold && this.#unholdAt >= 0 ? t - this.#unholdAt : -1,
           })
         : null;
-    // a gesture just ended: she looks at you
-    if (this.#lastGesture !== null && G === null && WS === null && !still) this.#trigger(t);
-    this.#lastGesture = G;
-    const g0: FaceState = WS ?? gestureState(G);
+    const gs: FaceState = WS ?? (G !== null || mf === null ? gestureState(G) : mf.face);
     const giggle = G !== null && G.name === "giggle" ? G.age : -1;
     const gigW = giggle >= 0 ? ramp(giggle, 0, 150) * (1 - ramp(giggle, 1800, 2000)) : 0;
     let { hp, rp } = hoverProgress(
@@ -515,37 +609,35 @@ export class K2Engine {
       !this.#hover && this.#unhoverAt >= 0 ? t - this.#unhoverAt : -1,
       still,
     );
-    if (t < awakeAt) {
+    // no hover while she wakes, nor in an emotion that holds her face
+    if (t < awakeAt || (mf !== null && !mf.gestures)) {
       hp = 0;
       rp = 0;
     }
     hp *= 1 - gigW;
     rp *= 1 - gigW;
-    // she looks at you: at rest now and then, after a gesture, back from away (hover wins)
-    if (this.#looks?.awakeAt !== awakeAt)
-      this.#looks = { awakeAt, chain: new LookChain(awakeAt) };
-    const look: LookAt | null =
+    // by default she looks at you; now and then she glances away (never in an action or a hover)
+    if (this.#glances?.awakeAt !== awakeAt)
+      this.#glances = { awakeAt, chain: new GlanceChain(awakeAt) };
+    const away: GlanceAway | null =
       !still && G === null && WS === null && !this.#hover && hp === 0
-        ? lookAt(this.#looks.chain, t, awakeAt, this.#lookTriggers)
+        ? this.#glances.chain.at(t)
         : null;
-    // about one in three looks comes with the soft smile (or a slow blink, below)
-    const gs: FaceState = look?.flavour === "smile" ? { ...g0, eyes: "soft", mouth: "smile" } : g0;
     const rise = Math.round((1 - rp) ** 3 * meta.rise);
     const gp = gs.gp * (1 - hp);
-    const smirk =
-      G === null &&
-      WS === null &&
-      look === null &&
-      !still &&
-      !this.#hover &&
-      hp === 0 &&
-      smirking(t);
+    const smirk = G === null && WS === null && !still && !this.#hover && hp === 0 && smirking(t);
     const gust = still ? 0 : gustAt(t);
     const em = gs.eyes !== null && hp < 0.5 && !still ? gs.eyes : null;
     let lid = still ? 0 : em === "soft" ? Math.max(0.22, blinkAt(t)) : blinkAt(t);
     if (WS !== null && WS.lid > 0) lid = Math.max(lid, WS.lid);
-    lid = Math.max(lid, lookLid(look));
-    const gaze = this.#gaze(fit, t, gs, hp, look, glance, meta);
+    // the gestures look at their actors on the wide drawing's frame (`k2-rig.ts` shift)
+    const [sx, sy] = R.shift;
+    const seen =
+      G !== null && gs.gaze !== null
+        ? { ...gs, gaze: { x: gs.gaze.x - sx, y: gs.gaze.y - sy } }
+        : gs;
+    const look = this.#moodLook(fit, G === null ? mf?.look : undefined, glance, meta);
+    const gaze = this.#gaze(fit, seen, hp, away, glance, meta, look);
     const fr: PortraitFrame = {
       t,
       still,
@@ -556,16 +648,19 @@ export class K2Engine {
       gp,
       smirk,
       gust,
+      sway: still ? 0 : gs.sway,
       lid,
       eyes: gs.eyes,
       gaze,
       asm: pj.asm,
-      cut: fit.cut,
+      cut: R.cut,
+      held: mf !== null,
     };
+    // an emotion whose dissolve is done and whose hand is up settles like her own face
+    const moodSettled = mf !== null && G === null && mf.settled;
     const settled =
       pj.asm >= 1 &&
-      gp === 0 &&
-      !(gs.hand !== null && gs.hand.p > 0) &&
+      (moodSettled || (gp === 0 && !(gs.hand !== null && gs.hand.p > 0))) &&
       gs.sh === 0 &&
       gs.blush === 0 &&
       gs.dy === 0 &&
@@ -578,7 +673,7 @@ export class K2Engine {
     portrait.emit(fr, pal, dots, pass);
 
     // the token: face-on, pressed, turning flat, flat; it tilts to the pointer while face-on
-    const T = fit.token;
+    const T = R.token;
     const td = T.d;
     const p = this.#pointerMap(fit);
     const fl = pj.flip;
@@ -607,21 +702,18 @@ export class K2Engine {
     const base = placed?.base ?? null;
     const beam: number[] = [];
     if (base !== null) {
-      const screen: BeamScreen = {
-        pitch: BEAM_SCREEN.pitch / fit.s,
-        rmax: BEAM_SCREEN.rmax / fit.s,
-      };
+      const sc = beamScreen(fit);
+      const screen: BeamScreen = { pitch: sc.pitch / fit.s, rmax: sc.rmax / fit.s };
       const lift = MERGE * meta.k;
-      const cut = fit.cut;
+      const top = R.beam.top;
       drawBeam(
         beam,
         base,
         {
-          // the beam meets her where she dissolves: over her own cut, or over the bust's band
-          yAt: (x) =>
-            cut === null ? portrait.ycutAt(x) - lift : portrait.cutAt(x, cut) - cut.band,
-          left: DRAWING.beam.left,
-          right: DRAWING.beam.right,
+          // on the bust the beam rises to the top of her cut; on the wide drawing to her own
+          yAt: top !== null ? () => top : (x) => portrait.ycutAt(x) - lift,
+          left: R.beam.left,
+          right: R.beam.right,
         },
         screen,
         pj.cone,
@@ -629,6 +721,20 @@ export class K2Engine {
         still,
       );
     }
+    // the whistle's notes: the clouds' white dots (the beam's ink), over her
+    const notes: number[] = [];
+    const notesInk: number[] = [];
+    if (actors && G !== null && gs.actors === "notes")
+      drawNotes(
+        notes,
+        notesInk,
+        G.age,
+        Math.round(G.start / STEP_MS),
+        portrait.mouthPoint,
+        gust,
+        this.#keepRects(fit),
+        (x, y) => portrait.lightAt(x, y),
+      );
     const coneMoves = !still && pj.cone > 0;
     const sig =
       (dots.hash ^
@@ -646,7 +752,9 @@ export class K2Engine {
     // her dots and her beam's are stamped in device px (k2-stamp.ts)
     this.#stamper.build(this.#styles(pal));
     const { k, ox, oy } = this.#device(fit);
-    this.#stamper.stampInk(ctx, "beam", beam, k, ox, oy);
+    // asleep the beam and the token dim with her
+    const light = mf?.light ?? 1;
+    this.#stamper.stampInk(ctx, "beam", beam, k, ox, oy, light);
 
     // her: the settled frame's cached dots and this frame's changes, or every dot
     if (settled) {
@@ -654,17 +762,30 @@ export class K2Engine {
       if (cache !== null) ctx.drawImage(cache, 0, 0);
       this.#stamper.stamp(ctx, dots, INKS, k, ox, oy);
     } else this.#stamper.stamp(ctx, dots, INKS, k, ox, oy + gs.dy * k, gs.dim);
+    this.#stamper.stampInk(ctx, "beam", notes, k, ox, oy);
+    this.#stamper.stampInk(ctx, "ink", notesInk, k, ox, oy);
     this.#toMap(ctx, fit);
 
-    // the gestures' actors: the blow's cloud and puff, the bird
-    if (actors && G !== null) {
-      const keep = this.#keepRects(fit);
+    // the gestures' actors: the blow's cloud and puff, the bird (authored on the wide frame)
+    if (actors && G !== null && gs.actors !== "notes") {
+      ctx.translate(-sx, -sy);
+      const keep: KeepRect[] = this.#keepRects(fit).map(([a, b, c, d, m]) => [
+        a + sx,
+        b + sy,
+        c + sx,
+        d + sy,
+        m,
+      ]);
       const out = actorPaths();
       const g = gs.fade;
-      const light2 = (x: number, y: number): boolean => portrait.lightAt(x, y);
+      const mouth: readonly [number, number] = [
+        portrait.mouthPoint[0] + sx,
+        portrait.mouthPoint[1] + sy,
+      ];
+      const light2 = (x: number, y: number): boolean => portrait.lightAt(x - sx, y - sy);
       if (gs.actors === "cloud") {
-        drawCloud(g, G.age, portrait.mouthPoint, keep, out);
-        drawPuff(g, G.age, portrait.mouthPoint, keep, light2, out);
+        drawCloud(g, G.age, mouth, keep, out);
+        drawPuff(g, G.age, mouth, keep, light2, out);
       } else if (gs.actors === "bird") {
         const b = birdState(G.age);
         if (b !== null)
@@ -673,7 +794,7 @@ export class K2Engine {
             g,
             Math.floor(t / STEP_MS),
             keep,
-            (x, y) => portrait.lightAt(x, y, true),
+            (x, y) => portrait.lightAt(x - sx, y - sy, true),
             out,
           );
       }
@@ -690,14 +811,21 @@ export class K2Engine {
       ctx.globalAlpha = this.#dark ? 0.94 : 1;
       ctx.fill(out.white);
       ctx.globalAlpha = 1;
+      ctx.translate(sx, sy);
     }
-    if (placed !== null) this.#token.paint(ctx, placed);
+    if (placed !== null) {
+      if (light < 1) ctx.globalAlpha = light;
+      this.#token.paint(ctx, placed);
+      ctx.globalAlpha = 1;
+    }
   }
 
-  /** Her settled frame's unchanging dots, drawn once per layout, theme, cut and hover. */
+  /** Her settled frame's unchanging dots, drawn once per layout, theme, rig, emotion and hover. */
   #cached(portrait: Portrait, fr: PortraitFrame, fit: Fit, pal: Palette): Scratch | null {
-    const cut = fit.cut === null ? "-" : `${fit.cut.y}/${fit.cut.band}`;
-    const key = `${this.#dark}|${fr.hp}|${fit.s}|${fit.ox}|${fit.oy}|${cut}`;
+    const R = fit.rig;
+    const key = [R.drawing, R.palm, this.#dark, fr.hp, fit.s, fit.ox, fit.oy, this.#mood?.to ?? ""]
+      .map(String)
+      .join("|");
     if (this.#cache?.key === key) return this.#cache.canvas;
     const cv = scratchCanvas(this.#o.canvas.width, this.#o.canvas.height);
     const ctx = context2dOf(cv);
@@ -741,28 +869,66 @@ export class K2Engine {
   }
 
   /**
-   * Where she looks, strongest first: the pointer while it hovers her; a gesture's or the wake's
-   * own target (unless the pointer is moving); a moving pointer; a look at you; a resting pointer;
-   * her rest.
+   * Where she looks, strongest first: the pointer while it hovers her; an emotion's own look; an
+   * action's or the wake's own target (unless the pointer is moving): the blow's cloud, the bird, up
+   * to the side while she whistles; a moving pointer; a glance away (the composer, a cloud, the
+   * birds); and by default you.
    */
   #gaze(
     fit: Fit,
-    t: number,
     gs: FaceState,
     hp: number,
-    look: LookAt | null,
-    glance: { x: number; y: number },
+    away: GlanceAway | null,
+    glance: GazeTarget,
     meta: K2Meta,
-  ): { x: number; y: number } {
+    look: GazeTarget | null,
+  ): GazeTarget {
     const still = this.#o.still;
     const p = still ? null : this.#pointerMap(fit);
     const moving = p !== null && this.#now() - this.#pointerAt < POINTER_FRESH;
     if (p !== null && (this.#hover || hp > 0)) return { x: p[0], y: p[1] };
-    if (gs.gaze !== null && hp < 0.5 && !moving) return gs.gaze;
+    if (look !== null) return look;
+    const k = meta.k;
+    const own = gs.aside ? { x: glance.x + 100 * k, y: glance.y - 190 * k } : gs.gaze;
+    if (own !== null && hp < 0.5 && !moving) return own;
     if (moving && p !== null) return { x: p[0], y: p[1] };
-    if (look !== null) return glance;
-    if (p !== null) return { x: p[0], y: p[1] };
-    return { x: meta.rest[0], y: meta.rest[1] };
+    if (away !== null) {
+      const L = fit.rig.looks;
+      const [x, y] =
+        away.target === "composer" ? meta.rest : away.target === "cloud" ? L.cloud : L.birds;
+      return { x, y };
+    }
+    return glance;
+  }
+
+  /**
+   * An emotion's look on her map: you, the composer (the element when the host names it), up to
+   * the side, the work, away. The points are the app drawing's (`APP_LOOKS`), taken from where she
+   * looks at you, so the wide drawing finds them round its own glance.
+   */
+  #moodLook(
+    fit: Fit,
+    look: MoodLook | undefined,
+    glance: GazeTarget,
+    meta: K2Meta,
+  ): GazeTarget | null {
+    if (look === undefined || look === "free") return null;
+    if (look === "you") return glance;
+    if (look === "composer") {
+      const el = this.#o.composer?.() ?? null;
+      if (el !== null) {
+        const r = el.getBoundingClientRect();
+        const h = this.#o.host.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0)
+          return {
+            x: (r.left + r.width / 2 - h.left - fit.ox) / fit.s,
+            y: (r.top + r.height / 2 - h.top - fit.oy) / fit.s,
+          };
+      }
+    }
+    const [x, y] = APP_LOOKS[look];
+    const [yx, yy] = APP_LOOKS.you;
+    return { x: glance.x + (x - yx) * meta.k, y: glance.y + (y - yy) * meta.k };
   }
 
   /** The host's blocks on her map, each with its air (the actors keep out). */

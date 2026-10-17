@@ -1,18 +1,18 @@
 /**
- * ShellBackdrop - the left page's print, and the user's own image on it
- * (docs/design/V10-SPREAD.md section 3).
+ * VexPortraitPlate - the Vex sidebar's print window, and the user's own image
+ * in it (docs/design/R3-MINIMAL.md sections 5.1 and 10.1).
  *
  * Pins (the shipped prints are the fallback and a failed custom image never
  * leaves a hole):
  *  - no record, a read that has not answered, and a failed read all paint the
- *    two shipped prints, the day one and the night one, in place;
+ *    two shipped prints, the day one and the night one;
  *  - a custom record paints ONE `<img>` at its app:// URL instead of both
  *    prints, in the same place, under the same grain, with no theme class;
  *  - an `<img>` error on the custom URL falls back to the shipped prints;
  *  - a NEW pick (a different URL written into the shared cache entry) gets
  *    its own chance after an earlier failure;
- *  - nothing on the print moves, veils it or blurs it, and the agent state
- *    canvas slots in over the grain.
+ *  - nothing on the print veils it or blurs it, and Vex stands over the grain
+ *    as the K2 hologram on the print ground, in the sidebar placement.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,11 +22,10 @@ import type { ReactElement } from "react";
 import type { Result } from "@shared/ipc/result.js";
 import type { ShellBackdropReadResult } from "@shared/schemas/shell-backdrop.js";
 import { shellBackdropKeys } from "../../../lib/api/queryKeys.js";
-import { PLATE_ART } from "../../../components/pixel/flock-engine.js";
-import { ShellBackdrop } from "../ShellBackdrop.js";
+import { VEX_PRINT, VexPortraitPlate } from "../VexPortraitPlate.js";
 
-const PRINT_DAY_SRC = PLATE_ART.day;
-const PRINT_NIGHT_SRC = PLATE_ART.night;
+const PRINT_DAY_SRC = VEX_PRINT.day;
+const PRINT_NIGHT_SRC = VEX_PRINT.night;
 
 const ID = "bg_0123456789abcdef0123456789abcdef";
 const URL_A = `app://vex/user-backdrop/${ID}`;
@@ -56,8 +55,8 @@ function renderWall(ui: ReactElement): ReturnType<typeof render> {
 }
 
 function wall(container: HTMLElement): HTMLElement {
-  const el = container.querySelector<HTMLElement>("[data-vex-area='shell-backdrop']");
-  if (el === null) throw new Error("backdrop layer missing");
+  const el = container.querySelector<HTMLElement>("[data-vex-area='vex-portrait-plate']");
+  if (el === null) throw new Error("portrait plate missing");
   return el;
 }
 
@@ -80,18 +79,18 @@ afterEach(() => {
   client.clear();
 });
 
-describe("ShellBackdrop", () => {
+describe("VexPortraitPlate", () => {
   it("paints the shipped prints while the read has not answered and after it answers null", async () => {
     readMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
-    const view = renderWall(<ShellBackdrop />);
+    const view = renderWall(<VexPortraitPlate emotion="idle" />);
     expect(wall(view.container).getAttribute("data-vex-backdrop-source")).toBe("shipped");
     expect(imageSources(view.container)).toEqual(["/art/plateau.jpg", "/art/plateau-night.jpg"]);
     expect([PRINT_DAY_SRC, PRINT_NIGHT_SRC]).toEqual(imageSources(view.container));
-    // One print per room, swapped in CSS on data-vex-theme, laid out in place.
+    // One print per room, swapped in CSS on data-vex-theme.
     const [day, night] = Array.from(wall(view.container).querySelectorAll("img"));
-    expect(day?.className).toContain("vex-print__img--day");
-    expect(night?.className).toContain("vex-print__img--night");
-    for (const img of [day, night]) expect(img?.className).toContain("vex-print__img ");
+    expect(day?.className).toContain("vex-vs-plate__img--day");
+    expect(night?.className).toContain("vex-vs-plate__img--night");
+    for (const img of [day, night]) expect(img?.className).toContain("vex-vs-plate__img ");
     await waitFor(() => expect(readMock).toHaveBeenCalledTimes(1));
     expect(wall(view.container).getAttribute("data-vex-backdrop-source")).toBe("shipped");
     expect(imageSources(view.container)).toHaveLength(2);
@@ -110,7 +109,7 @@ describe("ShellBackdrop", () => {
         correlationId: "c1",
       },
     });
-    const view = renderWall(<ShellBackdrop />);
+    const view = renderWall(<VexPortraitPlate emotion="idle" />);
     await waitFor(() => expect(readMock).toHaveBeenCalledTimes(1));
     expect(wall(view.container).getAttribute("data-vex-backdrop-source")).toBe("shipped");
     expect(imageSources(view.container)).toEqual([PRINT_DAY_SRC, PRINT_NIGHT_SRC]);
@@ -118,47 +117,44 @@ describe("ShellBackdrop", () => {
 
   it("paints ONE custom image at its app:// URL instead of both prints, in the same place", async () => {
     readMock.mockResolvedValue(record(URL_A));
-    const view = renderWall(<ShellBackdrop />);
+    const view = renderWall(<VexPortraitPlate emotion="idle" />);
     await waitFor(() => {
       expect(wall(view.container).getAttribute("data-vex-backdrop-source")).toBe("custom");
     });
     expect(imageSources(view.container)).toEqual([URL_A]);
     const img = wall(view.container).querySelector("img");
-    expect(img?.className).toContain("vex-print__img ");
-    expect(img?.className).toContain("vex-print__img--custom");
+    expect(img?.className).toContain("vex-vs-plate__img ");
+    expect(img?.className).toContain("vex-vs-plate__img--custom");
     // A personal photo is not re-picked by theme: no theme class on it.
-    expect(img?.className).not.toContain("vex-print__img--day");
-    expect(img?.className).not.toContain("vex-print__img--night");
+    expect(img?.className).not.toContain("vex-vs-plate__img--day");
+    expect(img?.className).not.toContain("vex-vs-plate__img--night");
     // The grain still sits over it.
-    expect(wall(view.container).querySelector(".vex-print__grain")).not.toBeNull();
+    expect(wall(view.container).querySelector(".vex-vs-plate__grain")).not.toBeNull();
   });
 
-  it("is decorative and still: no pointer events, no motion, no veil", async () => {
+  it("is decorative: hidden from assistive tech, no veil, no blur", async () => {
     readMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
-    const view = renderWall(<ShellBackdrop />);
+    const view = renderWall(<VexPortraitPlate emotion="idle" />);
     const layer = wall(view.container);
     expect(layer.getAttribute("aria-hidden")).toBe("true");
-    expect(layer.className).toContain("pointer-events-none");
-    expect(layer.innerHTML).not.toMatch(/drift|veil|blur|animate/);
+    expect(layer.innerHTML).not.toMatch(/drift|veil|blur/);
     await waitFor(() => expect(readMock).toHaveBeenCalledTimes(1));
   });
 
-  it("slots the agent state canvas over the grain", async () => {
+  it("stands Vex over the grain: the K2 host in the sidebar placement, on the print", async () => {
     readMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
-    const view = renderWall(
-      <ShellBackdrop>
-        <canvas data-testid="flock" />
-      </ShellBackdrop>,
-    );
-    const layer = wall(view.container);
-    expect(layer.lastElementChild?.getAttribute("data-testid")).toBe("flock");
-    expect(layer.lastElementChild?.previousElementSibling?.className).toBe("vex-print__grain");
+    const view = renderWall(<VexPortraitPlate emotion="working" />);
+    const holo = wall(view.container).lastElementChild;
+    expect(holo?.getAttribute("data-vex-k2")).toBe("sidebar");
+    expect(holo?.getAttribute("data-vex-k2-ground")).toBe("print");
+    expect(holo?.className).toContain("pointer-events-none");
+    expect(holo?.previousElementSibling?.className).toBe("vex-vs-plate__grain");
     await waitFor(() => expect(readMock).toHaveBeenCalledTimes(1));
   });
 
   it("falls back to the shipped prints when the custom image fails to load", async () => {
     readMock.mockResolvedValue(record(URL_A));
-    const view = renderWall(<ShellBackdrop />);
+    const view = renderWall(<VexPortraitPlate emotion="idle" />);
     await waitFor(() => expect(imageSources(view.container)).toEqual([URL_A]));
     const img = wall(view.container).querySelector("img");
     if (img === null) throw new Error("custom image missing");
@@ -169,7 +165,7 @@ describe("ShellBackdrop", () => {
 
   it("gives a NEW pick its own chance after an earlier URL failed, through the shared cache entry", async () => {
     readMock.mockResolvedValue(record(URL_A));
-    const view = renderWall(<ShellBackdrop />);
+    const view = renderWall(<VexPortraitPlate emotion="idle" />);
     await waitFor(() => expect(imageSources(view.container)).toEqual([URL_A]));
     const img = wall(view.container).querySelector("img");
     if (img === null) throw new Error("custom image missing");

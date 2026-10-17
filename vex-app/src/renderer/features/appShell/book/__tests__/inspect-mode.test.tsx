@@ -1,49 +1,44 @@
 /**
- * BOOK inspect mode (A32/E13) — behavior pins for the additive tool-call
- * view: opening swaps the rail's stack for the inspect panel WITHOUT
- * unmounting a single card, closing restores the stack, a session switch or
- * a foreign-session payload never renders, and hostile payloads (BigInt,
- * circular) degrade instead of crashing. The transcript's tool row drives
- * `openToolInspect` (board contract, 2026-08-20); this suite drives the
- * store directly at the same seam.
+ * The inspect view (docs/design/R3-MINIMAL.md section 5.1): behaviour pins
+ * for the additive tool-call view, which takes over the Vex sidebar's body.
+ * Opening hides the body (her state, Needs you, the plate) WITHOUT
+ * unmounting it, Back restores it, a session switch or a foreign-session
+ * payload never renders, and hostile payloads (BigInt, circular) degrade
+ * instead of crashing. The transcript's tool row drives `openToolInspect`
+ * (board contract, 2026-08-20); this suite drives the store directly at the
+ * same seam. It moved here from the BOOK rail with the inspect view.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import type { VexPresence } from "../../../vex/useVexPresence.js";
 
-vi.mock("../PositionBlock.js", () => ({
-  PositionBlock: () => <div data-testid="card-position" />,
+const PRESENCE: VexPresence = {
+  state: "ready",
+  word: "Ready",
+  fill: "idle",
+  scope: "This chat:",
+  timerStartedAt: null,
+  narration: null,
+  background: { count: 0, items: [], label: null, summary: null },
+  needsYou: { status: "ready", count: 0, items: [], retry: () => {}, retrying: false },
+};
+
+vi.mock("../../../vex/useVexPresence.js", () => ({
+  useVexPresence: () => PRESENCE,
 }));
-vi.mock("../WalletPairCard.js", () => ({
-  WalletPairCard: () => <div data-testid="card-wallets" />,
-}));
-vi.mock("../portfolio/BalancesCard.js", () => ({
-  BalancesCard: () => <div data-testid="card-balances" />,
-}));
-vi.mock("../SessionActivityCard.js", () => ({
-  SessionActivityCard: () => <div data-testid="card-activity" />,
-}));
-vi.mock("../SessionBlock.js", () => ({
-  SessionBlock: () => <div data-testid="card-session" />,
-}));
-vi.mock("../ImageLockerCard.js", () => ({
-  ImageLockerCard: () => <div data-testid="card-images" />,
-}));
-vi.mock("../../../../lib/api/sessions.js", () => ({
-  useSession: () => ({ data: undefined }),
-}));
-vi.mock("../portfolio/WelcomePortfolioPanel.js", () => ({
-  WelcomePortfolioPanel: () => <div data-testid="welcome-portfolio-panel" />,
+vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
+  useShellBackdrop: () => ({ data: undefined }),
+  currentShellBackdrop: () => null,
 }));
 
-const { BookPanel } = await import("../../BookPanel.js");
+const { VexSidebar } = await import("../../../vex/VexSidebar.js");
 const { useUiStore } = await import("../../../../stores/uiStore.js");
 const { useToolInspectStore } = await import("../inspect/inspect-store.js");
 
-
-/** The box the inspect overlay hides: the BOOK's instruments, still mounted. */
-function instruments(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-vex-area="book-instruments"]');
+/** The box the inspect view hides: the sidebar's body, still mounted. */
+function body(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-vex-area="vex-sidebar-body"]');
 }
 
 const SESSION = "00000000-0000-4000-8000-00000000dddd";
@@ -66,13 +61,13 @@ function openCall(sessionId: string, overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
-  useUiStore.setState({ bookSectionOrder: [] });
+  useUiStore.setState({ runtimeMode: "agent", activeSessionId: SESSION, showAvatar: true });
   act(() => useToolInspectStore.getState().closeToolInspect());
 });
 
-describe("BOOK inspect mode", () => {
-  it("opening a tool call swaps in the inspect panel while every card stays mounted", () => {
-    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
+describe("the inspect view in the Vex sidebar", () => {
+  it("opening a tool call takes over the body while everything in it stays mounted", () => {
+    render(<VexSidebar open onHide={() => {}} />);
     expect(screen.queryByLabelText(/Tool call:/)).toBeNull();
 
     openCall(SESSION);
@@ -82,50 +77,37 @@ describe("BOOK inspect mode", () => {
     expect(panel.textContent).toContain("Done");
     expect(panel.textContent).toContain('"scope": "global"');
     expect(panel.textContent).toContain('"totalUsd": 12.5');
-    // Additive mode: the stack hides via CSS but no card unmounts.
-    for (const card of [
-      "card-position",
-      "card-wallets",
-      "card-balances",
-      "card-activity",
-          "card-session",
-      "card-images",
-    ]) {
-      expect(screen.getByTestId(card)).toBeTruthy();
-    }
-    // The BOOK's instruments (the Portfolio | Board tabs and the stack inside
-    // them) are the box that hides now; before the tabs it was the stack
-    // itself. Same contract, one level out: CSS hides, nothing unmounts.
-    expect(instruments()?.classList.contains("hidden")).toBe(true);
+    // Additive: the body hides but nothing in it unmounts, her plate included.
+    expect(body()?.hidden).toBe(true);
+    expect(body()?.querySelector('[data-vex-area="vex-state"]')).not.toBeNull();
+    expect(body()?.querySelector('[data-vex-area="vex-needs-you"]')).not.toBeNull();
+    expect(body()?.querySelector("[data-vex-k2]")).not.toBeNull();
   });
 
-  it("closing returns to the card stack with nothing missing", () => {
-    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
+  it("Back returns to the body with nothing missing", () => {
+    render(<VexSidebar open onHide={() => {}} />);
     openCall(SESSION);
-    fireEvent.click(screen.getByRole("button", { name: "Close inspect" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByLabelText(/Tool call:/)).toBeNull();
-    expect(instruments()?.classList.contains("hidden")).toBe(false);
-    expect(screen.getByTestId("card-position")).toBeTruthy();
+    expect(body()?.hidden).toBe(false);
+    expect(body()?.querySelector('[data-vex-area="vex-state"]')).not.toBeNull();
   });
 
   it("a payload from another session never renders, and a session switch closes the view", () => {
-    const view = render(
-      <BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />,
-    );
+    render(<VexSidebar open onHide={() => {}} />);
     openCall(OTHER_SESSION);
     expect(screen.queryByLabelText(/Tool call:/)).toBeNull();
+    expect(body()?.hidden).toBe(false);
 
     openCall(SESSION);
     expect(screen.getByLabelText("Tool call: portfolio_read")).toBeTruthy();
-    view.rerender(
-      <BookPanel activeSessionId={OTHER_SESSION} bookOpen onToggle={() => {}} />,
-    );
+    act(() => useUiStore.setState({ activeSessionId: OTHER_SESSION }));
     expect(screen.queryByLabelText(/Tool call:/)).toBeNull();
     expect(useToolInspectStore.getState().inspect).toBeNull();
   });
 
   it("running calls show the status word without a result section; hostile payloads degrade instead of crashing", () => {
-    render(<BookPanel activeSessionId={SESSION} bookOpen onToggle={() => {}} />);
+    render(<VexSidebar open onHide={() => {}} />);
     const circular: Record<string, unknown> = {};
     circular["self"] = circular;
     openCall(SESSION, {

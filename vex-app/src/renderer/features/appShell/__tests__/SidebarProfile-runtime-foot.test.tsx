@@ -176,19 +176,40 @@ describe("SidebarProfile foot", () => {
     ).not.toBeNull();
   });
 
-  it("sets the vx mark in its box on either ground, and names the ground it sits on", () => {
-    // docs/design/V10-SPREAD.md section 3: white on the left page's print,
-    // ink on the Studio rail's paper; the mark is the profile picture.
-    const { container, rerender } = render(<SidebarProfile sidebarOpen ground="print" />);
-    const root = (): Element | null => container.querySelector("[data-vex-area='sidebar-profile']");
-    expect(root()?.getAttribute("data-ground")).toBe("print");
+  it("sets the vx in its box as the profile picture, on paper", () => {
+    // docs/design/R3-MINIMAL.md section 4: the vx in blue in a 30px box on a
+    // 1px rule; the left page's print and its white ground are gone.
+    const { container } = render(<SidebarProfile sidebarOpen />);
+    const root = container.querySelector("[data-vex-area='sidebar-profile']");
+    expect(root).not.toBeNull();
+    expect(root?.hasAttribute("data-ground")).toBe(false);
     expect(container.querySelector(".vex-prof__av svg path")).not.toBeNull();
     expect(container.querySelector("img")).toBeNull();
-    rerender(<SidebarProfile sidebarOpen />);
-    expect(root()?.getAttribute("data-ground")).toBe("paper");
   });
 
-  it("gives the collapsed spine the sentence as its tooltip - no subtitle there", () => {
+  it("opens upward as the flat profile panel, with the runtime row's fill and word", () => {
+    render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    const menu = screen.getByRole("menu");
+    expect(menu.classList.contains("vex-profile-menu")).toBe(true);
+    expect(menu.classList.contains("vex-profile-menu--panel")).toBe(true);
+    // The runtime row: a solid fill beside "Runtime" and the short word.
+    const runtime = screen.getByRole("menuitem", { name: /Runtime/ });
+    expect(runtime.hasAttribute("disabled")).toBe(true);
+    expect(runtime.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
+    expect(runtime.textContent).toContain("Connected");
+    // Lock Vex shows its chord at the right.
+    const lock = screen.getByRole("menuitem", { name: /Lock Vex/ });
+    expect(lock.querySelector(".vex-menu-shortcut")?.textContent).toMatch(/L$/);
+  });
+
+  it("keeps the standard card when it opens downward from a top bar", () => {
+    render(<SidebarProfile sidebarOpen={false} menuSide="bottom" />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(screen.getByRole("menu").classList.contains("vex-profile-menu--panel")).toBe(false);
+  });
+
+  it("gives the collapsed rail the sentence as its tooltip - no subtitle there", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     render(<SidebarProfile sidebarOpen={false} />);
     const trigger = screen.getByRole("button", { name: /Open menu/ });

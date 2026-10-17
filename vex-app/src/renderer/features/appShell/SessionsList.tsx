@@ -1,75 +1,69 @@
 /**
- * THE LEFT PAGE, in agent mode (docs/design/V10-SPREAD.md section 3): the
- * furniture set on the print (`ShellBackdrop`, with the eagle and its flock in
- * the band). Width comes from the shell grid (AppShell + lib/shell-columns.ts):
- * the open 300px page, or the 56px spine when `collapsed`.
+ * THE LEFT SIDEBAR, in agent mode (docs/design/R3-MINIMAL.md section 4): it
+ * says where you are. Paper, a quiet rule on its right, and a width that is
+ * the shell track's (264, 224 at the medium tier, the 56px rail closed;
+ * `lib/shell-columns.ts`). Nothing in it is wider than the track: every row
+ * truncates, so the column reads the same at each seam of the solver.
  *
- * The open page, top to bottom:
+ * Open, top to bottom:
  *
- *   MAST    the 44px head row on the print: traffic lights, vx mark, the
- *           `Agent | Studio` capsule (`AgentSidebarHeader`).
- *   SKY     from the head row to just above the horizon: the 112px italic
- *           counter (the open session's ordinal; on the welcome stage the
- *           session count, captioned SESSIONS), New session, the All | Agent |
- *           Mission tabs with search and collapse at their right, and the
- *           session index. Only the index scrolls; a row the horizon would cut
- *           is not drawn, and the dotted fold counts the rows below it.
- *   BAND    the flock (painted by the print layer, not here).
- *   GROUND  $VEX and its spark, the white hairline, the profile row.
+ *   HEAD     44 high: the vx wordmark and the collapse key
+ *            (`AgentSidebarHeader`).
+ *   ACTIONS  New chat (500) and Search, as nav rows. Search turns the row
+ *            into the field with the All, Agent and Mission tabs under it;
+ *            Escape brings back New chat and the sections.
+ *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
+ *            with a 12px gap above and below (`SidebarNav`).
+ *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
+ *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`).
  *
- * The spine keeps New session, the ordinals, an open control and the profile
- * box. Ordinals come from `useSessionOrdinals` over the UNFILTERED agent
- * rows, so neither the tabs, the search, a pin nor a removal renumbers a
- * session. Row behaviour (pin, remove, inline rename, the hover preview) is
- * the shared `SessionRow`'s; the list model is `sessionListModel.ts`'s.
+ * The rail keeps the same order as 40 x 40 keys with their names as tooltips:
+ * New chat, Search, the Chats key (icon over the word) that opens the
+ * sidebar, the nav, and the account box at the foot.
  *
- * Scrollbars in the column follow the pointer: `useQuietScrollbars` rebinds
- * the scrollbar indirection pair away while the pointer is elsewhere.
+ * Row behaviour (pin, remove, inline rename, the hover preview) is the shared
+ * `SessionRow`'s; the list model is `sessionListModel.ts`'s. Scrollbars in
+ * the column follow the pointer: `useQuietScrollbars` rebinds the scrollbar
+ * indirection pair away while the pointer is elsewhere.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import {
-  IconClose,
-  IconPanelLeft,
-  IconPlus,
-  IconSearch,
-} from "../../components/icons/index.js";
-import { Counter } from "../../components/ui/counter.js";
+import { LineChat, LineNewChat, LineSearch } from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
 import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
-import { useUiStore } from "../../stores/uiStore.js";
-import { RailSearchField } from "../../components/ui/rail-list.js";
+import { useUiStore, type SessionModeFilter } from "../../stores/uiStore.js";
 import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
+import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
 import { SidebarProfile } from "./SidebarProfile.js";
 import { useSessionRowActions } from "./useSessionRowActions.js";
-import { VexTokenCardCompact } from "./market/VexTokenCardCompact.js";
 import {
   SessionsEmptyPlaceholder,
   SessionsErrorPlaceholder,
   SessionsLoadingPlaceholder,
+  SidebarSessionGroups,
 } from "./SessionRows.js";
-import { IndexFold, SessionIndex } from "./leftPage/SessionIndex.js";
-import { SpineIndex } from "./leftPage/SpineIndex.js";
-import { useIndexFold } from "./leftPage/useIndexFold.js";
-import { ordinalDigits, useSessionOrdinals } from "./leftPage/sessionOrdinals.js";
+import { SessionModeTabs, SessionSearchField } from "./SessionRows/SessionSearch.js";
+import { NavKey, SidebarNav } from "./SessionRows/SidebarNav.js";
 import {
   filterSessionsByMode,
   filterSessionsByTitle,
   filterSessionsByWorkspace,
   groupSessions,
-  SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
 
 interface SessionsListProps {
   readonly onCreate: () => void;
-  /** Page or spine, decided by the shell frame (breakpoint-aware). */
+  /** Open or rail, decided by the shell frame (breakpoint-aware). */
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
 }
+
+/** Proposal copy (section 4): the search mode's closing hint. */
+const SEARCH_HINT = "Esc closes search and brings back New chat and the sections.";
 
 export function SessionsList({
   onCreate,
@@ -93,38 +87,49 @@ export function SessionsList({
     handleConfirmRemove,
   } = useSessionRowActions();
 
-  const wide = !collapsed;
+  const rail = collapsed;
 
   const columnRef = useRef<HTMLElement | null>(null);
   const { quiet, onPointerEnter, onPointerLeave } =
     useQuietScrollbars(columnRef);
 
-  // Rail search: a title filter over the SAME resolved titles the rows
-  // render, toggled by the tabs row's magnifier. Local, launch-ephemeral.
+  // The search mode: a title filter over the SAME resolved titles the rows
+  // render. Local and launch-ephemeral; the mode tabs are the store's filter.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect((): void => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
+    if (searchOpen && !rail) searchInputRef.current?.focus();
+  }, [searchOpen, rail]);
 
-  // The agent workspace, unfiltered: what the ordinals, the counter and the
-  // spine read. The tabs and the search narrow only the open page's index.
+  // The agent workspace, unfiltered: the tabs count it, the search and the
+  // mode filter narrow it.
   const agentRows = useMemo(
     () => (query.data?.ok ? filterSessionsByWorkspace(query.data.data, null) : null),
     [query.data],
   );
-  const ordinals = useSessionOrdinals(agentRows);
 
-  const visibleRows = useMemo(() => {
+  const titleRows = useMemo(() => {
     if (agentRows === null) return [];
-    const byMode = filterSessionsByMode(agentRows, sessionModeFilter);
-    return searchOpen ? filterSessionsByTitle(byMode, searchText) : byMode;
-  }, [agentRows, sessionModeFilter, searchOpen, searchText]);
+    return searchOpen ? filterSessionsByTitle(agentRows, searchText) : agentRows;
+  }, [agentRows, searchOpen, searchText]);
+
+  const visibleRows = useMemo(
+    () => filterSessionsByMode(titleRows, sessionModeFilter),
+    [titleRows, sessionModeFilter],
+  );
+
+  const tabCounts = useMemo(
+    (): Readonly<Record<SessionModeFilter, number>> => ({
+      all: titleRows.length,
+      agent: filterSessionsByMode(titleRows, "agent").length,
+      mission: filterSessionsByMode(titleRows, "mission").length,
+    }),
+    [titleRows],
+  );
 
   const groups = useMemo(() => groupSessions(visibleRows), [visibleRows]);
-  const spineGroups = useMemo(() => groupSessions(agentRows ?? []), [agentRows]);
 
   const handleSelect = useCallback(
     (id: string): void => {
@@ -133,92 +138,53 @@ export function SessionsList({
     [setActiveSessionId],
   );
 
+  // Escape brings back New chat and the sections. The Agent tab is a search
+  // refinement and leaves with the search; the Mission tab stays, because the
+  // Missions nav row reads as selected while it holds.
   const closeSearch = useCallback((): void => {
     setSearchOpen(false);
     setSearchText("");
+    if (sessionModeFilter === "agent") setSessionModeFilter("all");
+  }, [sessionModeFilter, setSessionModeFilter]);
+
+  const openSearch = useCallback((): void => {
+    setSearchOpen(true);
+    if (rail) onToggleSidebar();
+  }, [rail, onToggleSidebar]);
+
+  const openMissions = useCallback((): void => {
+    setSearchOpen(true);
   }, []);
 
-  const toggleSearch = useCallback((): void => {
-    if (searchOpen) closeSearch();
-    else setSearchOpen(true);
-  }, [searchOpen, closeSearch]);
-
-  // The browsing region: the index on the open page, the ordinals on the
-  // spine. It is the column's one scroller and carries the overlay bar.
+  // The column's one scroller, carrying the overlay bar.
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   useScrollbarVisibility(listScrollRef);
-  const foldRevision = useMemo(
-    () => [wide, wide ? groups : spineGroups, query.isLoading, query.isError, searchOpen],
-    [wide, groups, spineGroups, query.isLoading, query.isError, searchOpen],
-  );
-  const fold = useIndexFold(listScrollRef, foldRevision, activeSessionId);
-
-  // The counter: the open session's ordinal; on the welcome stage the number
-  // of sessions. Nothing until the list has been read.
-  const counterNumber =
-    agentRows === null
-      ? null
-      : activeSessionId === null
-        ? agentRows.length
-        : (ordinals.get(activeSessionId) ?? null);
-  const counterValue = counterNumber === null ? null : ordinalDigits(counterNumber);
 
   const listBody = query.isLoading ? (
-    <SessionsLoadingPlaceholder sidebarOpen={wide} />
+    <SessionsLoadingPlaceholder sidebarOpen />
   ) : query.data && query.data.ok === false ? (
-    <SessionsErrorPlaceholder
-      sidebarOpen={wide}
-      message={query.data.error.message}
-    />
+    <SessionsErrorPlaceholder sidebarOpen message={query.data.error.message} />
   ) : query.isError ? (
     // A TRANSPORT rejection never produces a Result, so without this branch
-    // it fell through to `null` and the page went blank: a lie by omission
+    // it fell through to `null` and the column went blank: a lie by omission
     // (rule 08: failure is a distinct state, not emptiness).
-    <SessionsErrorPlaceholder
-      sidebarOpen={wide}
-      message="Vex could not read your sessions."
-    />
+    <SessionsErrorPlaceholder sidebarOpen message="Vex could not read your sessions." />
   ) : query.data && query.data.ok ? (
-    wide ? (
-      visibleRows.length === 0 ? (
-        <SessionsEmptyPlaceholder sidebarOpen />
-      ) : (
-        <SessionIndex
-          groups={groups}
-          activeSessionId={activeSessionId}
-          ordinals={ordinals}
-          onSelect={handleSelect}
-          onTogglePin={handleTogglePin}
-          onRequestRemove={handleRequestRemove}
-          onRename={handleRename}
-          pendingPinId={pendingPinId}
-        />
-      )
+    visibleRows.length === 0 ? (
+      <SessionsEmptyPlaceholder sidebarOpen />
     ) : (
-      <SpineIndex
-        groups={spineGroups}
+      <SidebarSessionGroups
+        groups={groups}
         activeSessionId={activeSessionId}
-        ordinals={ordinals}
         onSelect={handleSelect}
+        onTogglePin={handleTogglePin}
+        onRequestRemove={handleRequestRemove}
+        onRename={handleRename}
+        pendingPinId={pendingPinId}
+        highlight={searchOpen ? searchText : ""}
       />
     )
   ) : null;
-
-  const scroller = (
-    <div
-      ref={listScrollRef}
-      // `overflow-x-clip`: a bare `overflow-y-auto` computes overflow-x to
-      // `auto`, so a row that overshoots the page would draw a horizontal
-      // bar along the index's foot.
-      className={cn(
-        "vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip",
-        wide ? "vex-lp-index" : "vex-lp-spine__index",
-      )}
-      data-rail-control
-    >
-      {listBody}
-    </div>
-  );
 
   return (
     <aside
@@ -226,120 +192,93 @@ export function SessionsList({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       aria-label="Sessions and agent"
-      className={cn(
-        // No surface of its own: the left page's print is the ground.
-        "vex-sidebar vex-lp",
-        quiet && "vex-quiet-bars",
-      )}
+      className={cn("vex-sidebar vex-ls", quiet && "vex-quiet-bars")}
       data-vex-area="sessions-sidebar"
-      data-vex-sidebar-open={collapsed ? "false" : "true"}
+      data-vex-sidebar-open={rail ? "false" : "true"}
+      data-rail={rail || undefined}
     >
-      {wide ? (
+      {rail ? (
         <>
-          <AgentSidebarHeader />
-
-          <div className="vex-lp-sky">
-            <div className="vex-lp-head">
-              <Counter
-                value={counterValue ?? "00"}
-                className={cn("vex-lp-counter", counterValue === null && "invisible")}
-                data-digits={counterValue !== null && counterValue.length > 2 ? "3" : undefined}
-              />
-              {activeSessionId === null ? (
-                <span className="vex-lp-cap">Sessions</span>
-              ) : null}
-            </div>
-
-            <NewSessionKey onCreate={onCreate} />
-
-            <div className="vex-lp-tabs">
-              <div role="tablist" aria-label="Filter sessions" className="vex-lp-tabs__list">
-                {SESSION_MODE_FILTERS.map((filter) => (
-                  <button
-                    key={filter.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={sessionModeFilter === filter.value}
-                    onClick={() => setSessionModeFilter(filter.value)}
-                  >
-                    {filter.label}
-                  </button>
-                ))}
-              </div>
-              <span className="vex-lp-tabs__tools" data-rail-control>
-                <button
-                  type="button"
-                  aria-label={searchOpen ? "Close session search" : "Search sessions"}
-                  aria-pressed={searchOpen}
-                  onClick={toggleSearch}
-                  className="vex-lp-tool"
-                >
-                  <IconSearch size={16} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Collapse sessions sidebar"
-                  onClick={onToggleSidebar}
-                  className="vex-lp-tool"
-                >
-                  <IconPanelLeft size={16} />
-                </button>
-              </span>
-            </div>
-
-            {searchOpen ? (
-              <div className="vex-lp-search">
-                <RailSearchField
-                  value={searchText}
-                  onChange={setSearchText}
-                  onClose={closeSearch}
-                  placeholder="Search sessions"
-                  label="Search sessions"
-                  closeLabel="Close search"
-                  inputRef={(el) => {
-                    searchInputRef.current = el;
-                  }}
-                  icon={<IconSearch size={16} />}
-                  closeIcon={<IconClose size={16} />}
-                />
-              </div>
-            ) : null}
-
-            {scroller}
-            <IndexFold hidden={fold.hiddenBelow} onPageDown={fold.pageDown} />
+          {/* The rail's head row is the frame's paper cap; the mark sits on
+            * it where the OS draws no traffic lights. */}
+          <div className="vex-ls-railhead vex-no-drag">
+            <SidebarHomeSigil sidebarOpen={false} />
           </div>
-
-          {/* The ground: $VEX, the hairline, the profile row. */}
-          <div className="vex-lp-ground">
-            <VexTokenCardCompact />
-            <div aria-hidden className="vex-lp-ground__rule" />
-            <footer data-rail-foot>
-              <SidebarProfile sidebarOpen ground="print" />
-            </footer>
+          <div className="vex-ls-body">
+            <NewChatKey rail onCreate={onCreate} />
+            <NavKey
+              icon={<LineSearch className="vex-ls-nrow__i" />}
+              label="Search"
+              ariaLabel="Search sessions"
+              rail
+              onClick={openSearch}
+            />
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              aria-expanded={false}
+              className="vex-ls-chats"
+            >
+              <LineChat />
+              <span>Chats</span>
+            </button>
+            <div aria-hidden className="vex-ls-gap" />
+            <SidebarNav rail onMissions={openMissions} />
           </div>
         </>
       ) : (
-        <div className="vex-lp-spine">
-          <NewSessionKey onCreate={onCreate} compact />
-          <div className="vex-lp-spine__sky">
-            {scroller}
-            <IndexFold hidden={fold.hiddenBelow} onPageDown={fold.pageDown} compact />
-          </div>
-          <div className="vex-lp-spine__foot">
-            <button
-              type="button"
-              aria-label="Expand sessions sidebar"
-              onClick={onToggleSidebar}
-              className="vex-lp-tool vex-lp-tool--ground"
+        <>
+          <AgentSidebarHeader onCollapse={onToggleSidebar} />
+          <div className="vex-ls-body">
+            {searchOpen ? (
+              <div className="vex-ls-find">
+                <SessionSearchField
+                  value={searchText}
+                  onChange={setSearchText}
+                  onClose={closeSearch}
+                  inputRef={(el) => {
+                    searchInputRef.current = el;
+                  }}
+                />
+                <SessionModeTabs
+                  value={sessionModeFilter}
+                  counts={tabCounts}
+                  onChange={setSessionModeFilter}
+                />
+              </div>
+            ) : (
+              <>
+                <NewChatKey rail={false} onCreate={onCreate} />
+                <NavKey
+                  icon={<LineSearch className="vex-ls-nrow__i" />}
+                  label="Search"
+                  ariaLabel="Search sessions"
+                  rail={false}
+                  onClick={openSearch}
+                />
+                <div aria-hidden className="vex-ls-gap" />
+                <SidebarNav rail={false} onMissions={openMissions} />
+                <div aria-hidden className="vex-ls-gap" />
+              </>
+            )}
+            <div
+              ref={listScrollRef}
+              // `overflow-x-clip`: a bare `overflow-y-auto` computes overflow-x
+              // to `auto`, so a row that overshoots would draw a horizontal bar
+              // along the list's foot.
+              className="vex-scroll vex-scroll-overlay vex-ls-sessions min-h-0 flex-1 overflow-y-auto overflow-x-clip"
+              data-rail-control
             >
-              <IconPanelLeft size={16} />
-            </button>
-            <footer data-rail-foot>
-              <SidebarProfile sidebarOpen={false} ground="print" />
-            </footer>
+              {listBody}
+              {searchOpen ? <p className="vex-ls-hint">{SEARCH_HINT}</p> : null}
+            </div>
           </div>
-        </div>
+        </>
       )}
+
+      <footer className="vex-ls-foot" data-rail-foot>
+        <SidebarProfile sidebarOpen={!rail} />
+      </footer>
 
       <SessionDeleteDialog
         session={removeTarget}
@@ -355,38 +294,35 @@ export function SessionsList({
 }
 
 /**
- * NEW SESSION: a label box on the sky (36px across the page, 32 square on the
- * spine). Not a blue fill: each view keeps one blue fill, and that is the
- * centre's. The signing mechanics are unchanged: a hairline under the label
- * loops while SessionCreator's create is in flight, and the one-shot glint
- * marks success before the key returns to rest.
+ * NEW CHAT: the first nav row (500), never a blue fill (each view keeps one
+ * blue fill, and that is the centre's). The signing mechanics are unchanged:
+ * a hairline under the label loops while SessionCreator's create is in
+ * flight, and the one-shot glint marks success before the key returns to
+ * rest.
  */
-function NewSessionKey({
+function NewChatKey({
+  rail,
   onCreate,
-  compact = false,
 }: {
+  readonly rail: boolean;
   readonly onCreate: () => void;
-  readonly compact?: boolean;
 }): JSX.Element {
   // Signing-stroke state: SessionCreator drives the transitions; this key
   // only renders the stroke and the glint.
   const signingState = useUiStore((s) => s.signingState);
   const setSigningState = useUiStore((s) => s.setSigningState);
   return (
-    <button
-      type="button"
+    <NavKey
+      icon={<LineNewChat className="vex-ls-nrow__i" />}
+      label="New chat"
+      rail={rail}
       onClick={onCreate}
-      aria-label="New session"
-      title={compact ? "New session" : undefined}
-      className={compact ? "vex-lp-new vex-lp-new--compact" : "vex-lp-new"}
-      data-rail-control
+      className="vex-ls-nrow--new"
     >
-      <IconPlus size={16} />
-      {compact ? null : <span>New session</span>}
       <span
         aria-hidden
         className={cn(
-          "vex-sign-stroke vex-lp-new__stroke",
+          "vex-sign-stroke vex-ls-new__stroke",
           signingState === "signing" && "vex-sign-stroke--signing",
         )}
       />
@@ -394,9 +330,9 @@ function NewSessionKey({
         <span
           aria-hidden
           onAnimationEnd={() => setSigningState("idle")}
-          className="vex-intro-glint vex-lp-new__glint"
+          className="vex-intro-glint vex-ls-new__glint"
         />
       ) : null}
-    </button>
+    </NavKey>
   );
 }

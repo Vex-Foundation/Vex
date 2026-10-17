@@ -241,15 +241,24 @@ describe("pre-shell plate", () => {
     expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-night-1)");
     expect(celerisBlock).toContain("--vex-alias-gate-field: var(--color-paper)");
     // Every rule that sets type on the stage reads these aliases, never a
-    // literal colour.
+    // literal colour. The wake and unlock title is the room's one blue
+    // (`accent-primary`: the blue by day, the periwinkle at night, spec
+    // section 10.2); the first run screens' counter and numerals keep the V10
+    // aliases until they are restyled.
     const stage = stripComments(gateCss);
-    for (const selector of [".vex-stage-counter {", ".vex-unl__h1 {", ".vex-stage-step__n {"]) {
+    for (const selector of [
+      ".vex-stage-counter {",
+      ".vex-stage-title {",
+      ".vex-stage-step__n {",
+    ]) {
       const at = stage.indexOf(selector);
       expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
       const body = stage.slice(at, stage.indexOf("}", at));
-      expect(body).toMatch(/color: var\(--vex-alias-(?:gate-counter|title)\)/);
+      expect(body).toMatch(/color: var\(--vex-alias-(?:gate-counter|title|accent-primary)\)/);
       expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
     }
+    expect(chronosBlock).toContain("--vex-alias-accent-primary: var(--color-peri)");
+    expect(celerisBlock).toContain("--vex-alias-accent-primary: var(--color-blue)");
   });
 
   it("keeps the native title bar overlay on the page paper and its ink", () => {

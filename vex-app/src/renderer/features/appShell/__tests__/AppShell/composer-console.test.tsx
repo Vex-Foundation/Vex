@@ -1,15 +1,16 @@
 /**
- * Composer field contract (UIUX rebrand F3, drawn for V10 - docs/design/
- * V10-SPREAD.md section 1, reference d3). Mounts the real `SessionComposer`
- * with the lib/api hooks mocked and pins:
+ * Composer field contract (UIUX rebrand F3, drawn for R3 - docs/design/
+ * R3-MINIMAL.md section 7, references d2, d3 and d5). Mounts the real
+ * `SessionComposer` with the lib/api hooks mocked and pins:
  *
  *  - the field chrome (a square white field on the rule, NO focus treatment -
  *    the CSS pins scan the raw stylesheet, the jsdom pins the classNames);
- *  - the 40px square send key and its in-flight swatch;
- *  - the approval echo (the ink frame + the AWAITING SIGNATURE tag behind the
- *    target swatch);
+ *  - the 36px square send key, and the named stop key that replaces it;
+ *  - the approval echo (the ink frame + the "Waiting for approval" tag behind
+ *    the target swatch);
  *  - the rotating faux-placeholder overlay;
- *  - the starter chips (visible on welcome, gone while typing, fixed slot);
+ *  - the welcome's task rows (visible on welcome, gone while typing, fixed
+ *    slot);
  *  - the slash-command combobox (opens on "/", keyboard drive with focus
  *    held in the textarea, command execution -> toast/draft effects);
  *  - the submission policy (Enter vs Cmd/Ctrl+Enter via the persisted
@@ -233,16 +234,18 @@ describe("composer capsule - chrome", () => {
     expect(CONSOLE_CSS).toContain(".vex-composer-chip");
   });
 
-  it("draws the ink frame + the AWAITING SIGNATURE tag behind the target swatch while awaiting a signature", () => {
+  it("draws the ink frame + the Waiting for approval tag behind the target swatch while an approval waits", () => {
     runStatus = "paused_approval";
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     const form = container.querySelector('[data-vex-area="chat-composer"]');
     expect(form?.getAttribute("data-vex-composer-state")).toBe("approval");
-    const tag = screen.getByText("AWAITING SIGNATURE");
+    const tag = screen.getByText("Waiting for approval");
     expect(tag).toBeTruthy();
-    expect(tag.querySelector('.vex-swatch[data-s="warning"]')).not.toBeNull();
+    // The tag sits on the FIELD's top edge, so it rides inside the card.
+    expect(form?.contains(tag)).toBe(true);
+    expect(tag.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
     expect(CONSOLE_CSS).toMatch(
       /\[data-vex-composer-state="approval"\]\s*\{[^}]*border-width:\s*1\.5px;[^}]*var\(--vex-alias-rule-ink\)/,
     );
@@ -250,33 +253,47 @@ describe("composer capsule - chrome", () => {
 });
 
 describe("composer capsule - send key", () => {
-  it("the send key is the 40px square blue key: a dotted outline while empty, filled once typed", () => {
+  it("the send key is the 36px square blue key: a dotted outline while empty, filled once typed", () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     const send = screen.getByRole("button", {
       name: "Send message",
     }) as HTMLButtonElement;
-    expect(send.className).toContain("h-10");
-    expect(send.className).toContain("w-10");
+    expect(send.className).toContain("h-9");
+    expect(send.className).toContain("w-9");
     expect(send.className).not.toMatch(/rounded/);
-    expect(send.className).toContain("bg-button-accent");
-    expect(send.className).toContain("disabled:border-dotted");
+    expect(send.className).toContain("vex-composer-send");
     expect(send.disabled).toBe(true);
     typeDraft("buy the dip");
     expect(send.disabled).toBe(false);
   });
 
-  it("a turn in flight shows the ongoing swatch beside the key and swaps Send for Stop", () => {
+  it("raw-CSS contract: the send key fills blue with text and waits on a dotted blue outline", () => {
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send \{[^}]*background: var\(--vex-alias-button-accent-fill\);/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send:disabled \{[^}]*border: 1px dotted var\(--vex-alias-accent-primary\);[^}]*background: transparent;/,
+    );
+  });
+
+  it("a turn in flight swaps Send for the NAMED ink stop key, with no second state mark beside it", () => {
     mockSubmitChat.isPending = true;
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
-    const pending = container.querySelector("[data-vex-composer-pending]");
-    expect(pending).not.toBeNull();
-    expect(pending?.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    // The stop key carries the state in its words; the transcript's live row
+    // and the title bar's chip carry the timer.
+    expect(container.querySelector("[data-vex-composer-pending]")).toBeNull();
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Stop agent" })).toBeTruthy();
+    const stop = screen.getByRole("button", { name: "Stop agent" });
+    expect(stop.textContent).toBe("Stop agent");
+    expect(stop.className).toContain("vex-composer-stop");
+    expect(stop.querySelector(".vex-composer-stop__mark")).not.toBeNull();
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-stop \{[^}]*height: 36px;[^}]*background: var\(--vex-alias-rule-ink\);/,
+    );
   });
 });
 
@@ -314,14 +331,16 @@ describe("composer capsule - placeholder + starter chips", () => {
     ).toBeNull();
   });
 
-  it("starter chips greet the welcome stage inside a fixed-height slot that survives typing", () => {
+  it("task rows greet the welcome stage inside a fixed-height slot that survives typing", () => {
     const { container } = render(
       <SessionComposer activeSession={null} activeSessionId={null} />,
     );
-    const slot = container.querySelector(".h-\\[86px\\]");
+    const slot = container.querySelector("[data-vex-composer-starters]");
     expect(slot).not.toBeNull();
+    expect(slot?.className).toContain("vex-starters");
+    expect(screen.getByRole("button", { name: "Check wallet balances" })).toBeTruthy();
     typeDraft("typing now");
-    expect(container.querySelector(".h-\\[86px\\]")).not.toBeNull();
+    expect(container.querySelector("[data-vex-composer-starters]")).not.toBeNull();
   });
 });
 
@@ -465,18 +484,33 @@ describe("composer capsule - queue on busy (A27)", () => {
 });
 
 describe("composer capsule - seats", () => {
-  it("the permission chip names the session grant and never offers a toggle", () => {
+  it("the permission seat states the session grant as its promise and never offers a toggle", () => {
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
     const chip = container.querySelector(
       '[data-vex-area="composer-permission-chip"]',
     );
-    expect(chip?.textContent).toBe("Restricted");
+    expect(chip?.textContent).toBe("Funds require approval");
+    expect(chip?.getAttribute("aria-label")).toBe("Access mode: Restricted");
     expect(chip?.querySelector("button")).toBeNull();
   });
 
-  it("the context ring renders from real usage data and names its percentage", () => {
+  it("the welcome states the new session form's preselect (Restricted) before any session exists", () => {
+    const { container } = render(
+      <SessionComposer activeSession={null} activeSessionId={null} />,
+    );
+    const chip = container.querySelector(
+      '[data-vex-area="composer-permission-chip"]',
+    );
+    expect(chip?.textContent).toBe("Funds require approval");
+    // No session, no context: the label and meter wait for a real reading.
+    expect(
+      container.querySelector('[data-vex-area="composer-context-ring"]'),
+    ).toBeNull();
+  });
+
+  it("the context label renders from real usage data and names its percentage", () => {
     contextWindow = { tokensUsed: 45_000, contextLimit: 100_000 };
     const { container } = render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
@@ -485,6 +519,7 @@ describe("composer capsule - seats", () => {
       '[data-vex-area="composer-context-ring"]',
     );
     expect(ring?.getAttribute("aria-label")).toBe("Context 45% used");
+    expect(ring?.textContent).toBe("Context 45%");
   });
 
   it("no limit reported → no ring; no fabricated denominator", () => {

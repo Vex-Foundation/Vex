@@ -1,0 +1,500 @@
+/* THE LEFT SIDEBAR (docs/design/R3-MINIMAL.md sections 2.2 and 4): paper,
+ * a quiet rule on its right, and the width of its shell track (264, 224 at
+ * the medium tier, the 56px rail closed). Nothing here sets a width wider
+ * than the track: every row and label truncates inside it, so the column
+ * reads the same on both sides of each solver seam.
+ *
+ * Open: the 44px head (the vx wordmark, the collapse key), New chat and
+ * Search, the nav, the sessions by name, the account row at the foot. Rail:
+ * 40 x 40 keys centred, the Chats key (icon over an 11px word), the account
+ * box at the foot.
+ *
+ * The selection wash and the search mark are R3 values with no alias yet:
+ * blue at 7.5% and 14% by day, periwinkle at 10% and 22% at night. */
+
+.vex-ls {
+  --ls-sel: rgba(163, 171, 255, 0.1);
+  --ls-mark: rgba(163, 171, 255, 0.22);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-base);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+[data-vex-theme="celeris"] .vex-ls {
+  --ls-sel: rgba(0, 0, 192, 0.075);
+  --ls-mark: rgba(0, 0, 192, 0.14);
+}
+/* Keyboard focus: the focus ring, inside the control so the column's edge
+ * never clips it. The search field keeps its own blue border. */
+.vex-ls :focus-visible:not(input) {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* HEAD: 44 high, a quiet rule under it; macOS content starts at 92, clear of
+ * the traffic lights, 16 where the OS draws its buttons at the right. */
+.vex-ls-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: var(--head-h);
+  padding-inline-end: 14px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+html[data-os="mac"] .vex-ls-head.vex-lights-start {
+  padding-inline-start: 92px;
+}
+html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
+  padding-inline-start: 16px;
+}
+.vex-ls-ikey {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-ikey:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+
+/* BODY: padding 10 10 0; only the sessions scroll. */
+.vex-ls-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 10px 0;
+}
+.vex-ls-gap {
+  flex: none;
+  height: 12px;
+}
+
+/* NAV ROWS (New chat, Search and the nav): 34 high, padding 0 10, gap 11, a
+ * 16px icon in ink 2. Selected: the selection wash, blue type, weight 500,
+ * a blue icon. */
+.vex-ls-nav__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-ls-nrow {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-nrow:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-ls-nrow__i {
+  flex: none;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-nrow__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vex-ls-nrow[data-selected] {
+  background: var(--ls-sel);
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-ls-nrow[data-selected] .vex-ls-nrow__i {
+  color: var(--vex-alias-accent-primary);
+}
+.vex-ls-nrow--new {
+  font-weight: 500;
+}
+/* New chat's signing stroke (chronos-motion.css runs it) and its glint. */
+.vex-ls-new__stroke {
+  position: absolute;
+  right: 10px;
+  bottom: 5px;
+  left: 37px;
+  height: 1.5px;
+  background: currentColor;
+}
+.vex-ls-new__glint {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  background: currentColor;
+}
+
+/* SEARCH MODE: the 38px field with a blue border, then the tabs. */
+.vex-ls-find {
+  flex: none;
+}
+.vex-ls-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--vex-alias-accent-primary);
+  background: var(--vex-alias-field);
+  font-size: 14px;
+}
+.vex-ls-search__i {
+  flex: none;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-ls-search__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--vex-alias-label-primary);
+  outline: none;
+}
+.vex-ls-search__input::placeholder {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-search__input::-webkit-search-cancel-button {
+  display: none;
+  appearance: none;
+}
+.vex-ls-search__kbd {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--vex-alias-rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
+}
+/* All, Agent, Mission: gap 16, 13, the active one blue 500 with a 1.5px
+ * underline; counts in mono 11 muted. */
+.vex-ls-tabs {
+  display: flex;
+  gap: 16px;
+  padding: 10px 2px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-ls-tabs__tab {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: 0 0 7px;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-tabs__tab[aria-selected="true"] {
+  border-bottom-color: var(--vex-alias-accent-primary);
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-ls-tabs__n {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* SESSIONS: group heads 12 / 500 muted at padding 14 10 4, rows 34 high. */
+.vex-ls-group {
+  margin: 0;
+  padding: 14px 10px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-group__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-ls-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  min-width: 0;
+}
+.vex-ls-row:hover,
+.vex-ls-row:has(:focus-visible) {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-ls-row[data-selected] {
+  background: var(--ls-sel);
+}
+.vex-ls-row__select {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: left;
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-row__t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-ls-row[data-selected] .vex-ls-row__t {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-ls-row__t mark {
+  background: var(--ls-mark);
+  color: inherit;
+}
+.vex-ls-row__time {
+  flex: none;
+  font-size: 11.5px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-row__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-row__state .vex-swatch {
+  color: var(--vex-alias-accent-primary);
+}
+/* Pin and Remove (24 x 24) take the time's place on hover and focus. */
+.vex-ls-row__actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.vex-ls-row:hover .vex-ls-row__actions,
+.vex-ls-row:has(:focus-visible) .vex-ls-row__actions {
+  opacity: 1;
+}
+.vex-ls-row:hover .vex-ls-row__time,
+.vex-ls-row:hover .vex-ls-row__state,
+.vex-ls-row:has(:focus-visible) .vex-ls-row__time,
+.vex-ls-row:has(:focus-visible) .vex-ls-row__state {
+  visibility: hidden;
+}
+.vex-ls-row[data-editing] {
+  padding: 0 4px;
+}
+.vex-ls-row__input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--vex-alias-accent-primary);
+  background: var(--vex-alias-field);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--vex-alias-label-primary);
+  outline: none;
+}
+.vex-ls-hint {
+  margin: 14px 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* FOOT: the account row behind a quiet rule. */
+.vex-ls-foot {
+  flex: none;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* THE RAIL: icons only, 40 x 40 keys centred, the Chats key, the account box
+ * at the foot. Its head row is the frame's paper cap (shell.css), so the
+ * column's content starts under it; the vx sits on the cap where the OS
+ * draws no traffic lights there. */
+.vex-ls-railhead {
+  position: absolute;
+  z-index: 1;
+  top: calc(-1 * var(--head-h));
+  right: -1px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--head-h);
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+html[data-os="mac"] .vex-ls-railhead {
+  display: none;
+}
+.vex-ls[data-rail] .vex-ls-body {
+  align-items: center;
+  padding: 8px 0 0;
+  overflow-y: auto;
+}
+.vex-ls[data-rail] .vex-ls-nav {
+  display: flex;
+  justify-content: center;
+}
+.vex-ls[data-rail] .vex-ls-nrow {
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.vex-ls[data-rail] .vex-ls-new__stroke {
+  right: 8px;
+  bottom: 4px;
+  left: 8px;
+}
+.vex-ls-chats {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 48px;
+  height: 50px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-chats span {
+  font-size: 11px;
+  line-height: 1.2;
+}
+.vex-ls-chats:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls[data-rail] .vex-prof {
+  width: 100%;
+  padding: 12px 0 14px;
+}
+
+/* Lighter keeps the rail with the vx alone, and its top bar runs above the
+ * frame, so its rail has no cap to clear. */
+.vex-left-page__mark {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+  color: var(--vex-alias-accent-primary);
+}
+[data-vex-runtime-mode="lighter"] [data-vex-left-page="spine"] > .vex-left-page__content {
+  padding-top: 0;
+}
+
+/* The compact $VEX line, while the Studio sidebar still carries it: figures
+ * in mono, on paper. */
+.vex-tok {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-tok__k {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+.vex-tok__p {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.vex-tok--link:hover .vex-tok__p {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-tok__c {
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tok__stale {
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+.vex-tok__spark {
+  display: block;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 26px;
+  margin-top: 8px;
+  overflow: visible;
+}
+.vex-tok__note {
+  grid-column: 2 / -1;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-tok__wait {
+  grid-column: 2 / -1;
+  display: block;
+  width: 96px;
+  height: 12px;
+  background: var(--vex-alias-rule-quiet);
+}

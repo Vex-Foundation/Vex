@@ -171,18 +171,15 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   expect(shellNodeBeforeSwitch).not.toBeNull();
   await shot(page, testInfo, screenshots, "01-app-shell-agent");
 
-  /* ---- 2. the welcome hero's radio switches the whole shell to Studio -- */
+  /* ---- 2. the sidebar nav's Studio row switches the whole shell ------- */
 
-  // On the agent welcome the capsule sits under the vex wordmark (no session
-  // is active, so the rail header mounts none): the page-wide locator resolves
-  // to that one seat.
-
+  // In agent mode the way into Studio is the left sidebar nav's Studio row
+  // (docs/design/R3-MINIMAL.md section 4); no mode capsule is on the page.
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-current", "page");
   const modeGroup = page.getByRole("radiogroup", { name: "Runtime mode" });
-  await expect(modeGroup.getByRole("radio", { name: "Agent" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await modeGroup.getByRole("radio", { name: "Studio" }).click();
+  await expect(modeGroup).toHaveCount(0);
+  await nav.getByRole("button", { name: "Studio" }).click();
 
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   // Studio is NOT a one-way door, and the capsule has exactly ONE home per

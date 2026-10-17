@@ -16,11 +16,15 @@
 @import "./global-css/motion-primitives.css";
 @import "./global-css/chronos-motion.css";
 @import "./global-css/chat-transcript.css";
+@import "./global-css/composer.css";
+@import "./global-css/approval.css";
 @import "./global-css/board.css";
 @import "./global-css/board-layout.css";
 @import "./global-css/scrollbars.css";
 @import "./global-css/ui-primitives.css";
 @import "./global-css/profile-menu.css";
+@import "./global-css/title-bar.css";
+@import "./global-css/vex-sidebar.css";
 @import "./global-css/overlay.css";
 @import "./global-css/console.css";
 @import "./global-css/chronos-gate.css";
@@ -37,4 +41,4 @@
 @import "./global-css/trade-ticket-controls.css";
 @import "./global-css/terminal.css";
 @import "./global-css/superboard-key.css";
-@import "./global-css/left-page.css";
+@import "./global-css/left-sidebar.css";

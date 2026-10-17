@@ -23,11 +23,13 @@
  *  - the context meter's click panel: dialog semantics, Escape and outside
  *    dismissal, focus restoration, tooltip suppression while open, and the
  *    honest total-only bar;
- *  - starter chips are a function of the STAGE, not a second emptiness read.
+ *  - the welcome's task rows are a function of the STAGE, not a second
+ *    emptiness read.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReasoningCapability } from "@shared/schemas/reasoning.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { resetDraftsForTest } from "../../../../lib/composer-drafts.js";
 import { resetComposerQueueForTest } from "../../../../lib/composer-queue.js";
@@ -48,7 +50,10 @@ vi.mock("../../../../lib/api/runtime.js", () => ({
 }));
 // Reconfigurable: `undefined` is the cold-start case (the REASON control is a
 // quiet placeholder); a resolved model mounts the model chip.
-let models: ReadonlyArray<{ modelId: string; reasoning: null }> | null = null;
+let models: ReadonlyArray<{
+  modelId: string;
+  reasoning: ReasoningCapability | null;
+}> | null = null;
 vi.mock("../../../../lib/api/models.js", () => ({
   useAvailableModels: () => ({
     data: models === null ? undefined : { ok: true, data: { models } },
@@ -168,7 +173,7 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(cluster.className).toContain("min-w-0");
   });
 
-  it("labels own the ellipsis, on the mono chip the field draws", () => {
+  it("labels own the ellipsis, on the options control the bar draws", () => {
     models = [
       { modelId: "anthropic/claude-opus-4-1-20250805-extended", reasoning: null },
     ];
@@ -178,15 +183,43 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     expect(label.className).toContain("truncate");
     expect(label.className).toContain("min-w-0");
-    // V10 (reference d3): the chip is the model's name in Departure Mono on
-    // the rule outline - no brand glyph beside it, so the label is the only
-    // thing that concedes.
+    // R3 (section 7): the model's name is a sans word inside the one options
+    // frame - no brand glyph beside it, so the label is the only thing that
+    // concedes.
     const chip = container.querySelector(
       '[data-vex-area="composer-model-chip"]',
     ) as HTMLElement;
-    expect(chip.className).toContain("vex-composer-chip");
-    expect(chip.className).toContain("font-mono");
+    expect(chip.className).toContain("vex-composer-options__model");
+    expect(chip.className).toContain("font-sans");
+    expect(chip.className).not.toContain("font-mono");
+    expect(chip.closest('[data-vex-area="composer-options"]')?.className).toContain(
+      "vex-composer-options",
+    );
     expect(container.querySelector('[data-testid="model-brand-icon"]')).toBeNull();
+  });
+
+  it("the options control reads model · Reasoning: effort in one frame", () => {
+    models = [
+      {
+        modelId: "anthropic/claude-sonnet-4",
+        reasoning: {
+          supportedEfforts: ["low", "medium", "high"],
+          defaultEffort: "medium",
+          defaultEnabled: null,
+          mandatory: true,
+        },
+      },
+    ];
+    const { container } = mountDocked();
+    const frame = container.querySelector(
+      '[data-vex-area="composer-options"]',
+    ) as HTMLElement;
+    expect(frame).not.toBeNull();
+    expect(frame.textContent).toContain("claude-sonnet-4");
+    expect(frame.textContent).toContain("Reasoning:");
+    expect(
+      frame.querySelector('[role="combobox"][aria-label="Reasoning effort"]'),
+    ).not.toBeNull();
   });
 
   it("the chip shows the bare model name; the full routed id stays the accessible name", () => {
@@ -223,11 +256,16 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     const placeholder = container.querySelector(
       "[data-vex-reasoning-placeholder]",
     ) as HTMLElement;
-    // 6.5rem is a preferred width now, not a min-width the row must honour.
-    expect(placeholder.className).toContain("w-[6.5rem]");
+    // A preferred width inside the options frame, not a min-width the row
+    // must honour.
+    expect(placeholder.className).toContain("w-16");
     expect(placeholder.className).toContain("min-w-0");
-    expect(placeholder.className).not.toContain("min-w-[6.5rem]");
+    expect(placeholder.className).not.toMatch(/min-w-\[|min-w-16/);
     expect(placeholder.className).not.toContain("shrink-0");
+    // No "Reasoning:" before a value nobody has read yet.
+    expect(
+      container.querySelector('[data-vex-area="composer-options"]')?.textContent,
+    ).not.toContain("Reasoning:");
   });
 
   it("the trailing cluster is protected: it never concedes", () => {
@@ -294,7 +332,8 @@ describe("composer toolbar - the access-mode seat", () => {
     const seat = container.querySelector(
       '[data-vex-area="composer-permission-chip"]',
     ) as HTMLElement;
-    expect(seat.textContent).toBe("Restricted");
+    // R3: the grant as its promise.
+    expect(seat.textContent).toBe("Funds require approval");
     expect(seat.querySelector("button")).toBeNull();
     // Adjacency is the owner's requirement: mode next to the counter.
     expect(
@@ -306,7 +345,7 @@ describe("composer toolbar - the access-mode seat", () => {
 });
 
 describe("composer toolbar - the context meter panel", () => {
-  it("the trigger is a 28px button naming its percentage over the cell meter; no fabricated denominator", () => {
+  it("the trigger is a 30px labelled key naming its percentage over the five cell meter; no fabricated denominator", () => {
     contextWindow = { tokensUsed: 45_000, contextLimit: null };
     const { container, unmount } = mountDocked();
     expect(
@@ -322,14 +361,15 @@ describe("composer toolbar - the context meter panel", () => {
     expect(trigger.tagName).toBe("BUTTON");
     expect(trigger.getAttribute("aria-label")).toBe("Context 45% used");
     expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
-    expect(trigger.className).toContain("h-7");
-    // The drawing is the shared CellMeter (eight cells, 45% => four filled),
+    expect(trigger.className).toContain("vex-composer-context");
+    expect(trigger.textContent).toBe("Context 45%");
+    // The drawing is the shared CellMeter (five cells, 45% => two filled),
     // decoration to the button's own name.
     const meter = trigger.querySelector(".vex-cell-meter");
     expect(meter).not.toBeNull();
     expect(meter?.getAttribute("aria-hidden")).toBe("true");
-    expect(meter?.querySelectorAll("i")).toHaveLength(8);
-    expect(meter?.querySelectorAll("i[data-on]")).toHaveLength(4);
+    expect(meter?.querySelectorAll("i")).toHaveLength(5);
+    expect(meter?.querySelectorAll("i[data-on]")).toHaveLength(2);
     expect(trigger.querySelector("svg")).toBeNull();
   });
 
@@ -397,7 +437,7 @@ describe("composer toolbar - the context meter panel", () => {
   });
 });
 
-describe("composer - starter chips follow the STAGE", () => {
+describe("composer - the welcome's task rows follow the STAGE", () => {
   it("the hero stage carries the slot", () => {
     const { container } = render(
       <SessionComposer
@@ -406,11 +446,11 @@ describe("composer - starter chips follow the STAGE", () => {
         variant="hero"
       />,
     );
-    expect(container.querySelector(".h-\\[86px\\]")).not.toBeNull();
+    expect(container.querySelector("[data-vex-composer-starters]")).not.toBeNull();
   });
 
-  it("the docked stage carries NO slot - no 86px remnant under the card", () => {
+  it("the docked stage carries NO slot - no remnant under the card", () => {
     const { container } = mountDocked();
-    expect(container.querySelector(".h-\\[86px\\]")).toBeNull();
+    expect(container.querySelector("[data-vex-composer-starters]")).toBeNull();
   });
 });

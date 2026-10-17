@@ -236,10 +236,13 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const stopBtn = await screen.findByRole("button", { name: "Stop agent" });
+    // The title bar's token chip names the live turn (Thinking or Working).
     await waitFor(() =>
       expect(
-        container.querySelector('[data-vex-tape-state="live"]'),
-      ).not.toBeNull(),
+        container
+          .querySelector('[data-vex-area="vex-token-chip"]')
+          ?.getAttribute("data-vex-state"),
+      ).toMatch(/^(thinking|working)$/),
     );
     expect(screen.queryByText("Working…")).toBeNull();
     // Pins the fix: a submit-typed Stop would re-run onSubmit (re-sending the

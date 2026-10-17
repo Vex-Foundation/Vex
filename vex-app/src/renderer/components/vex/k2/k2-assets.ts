@@ -91,7 +91,8 @@ export function isK2Meta(v: unknown): v is K2Meta {
     hasNums(flags, ["ring", "strand", "in"]) &&
     isNums(v["ycut"]) &&
     isNums(v["rest"], 2) &&
-    isNums(v["glance"], 2)
+    isNums(v["glance"], 2) &&
+    (v["shoulder"] === undefined || isNum(v["shoulder"]))
   );
 }
 
@@ -135,9 +136,9 @@ async function json<T>(file: string, guard: (v: unknown) => v is T): Promise<T> 
   return raw;
 }
 
-/** Her metadata. */
-export function loadMeta(): Promise<K2Meta> {
-  return json("meta.json", isK2Meta);
+/** A drawing's metadata (`dir`: "" for the wide drawing, "app/" for the app drawing). */
+export function loadMeta(dir = ""): Promise<K2Meta> {
+  return json(`${dir}meta.json`, isK2Meta);
 }
 
 /** The token's sprite sheet layout. */

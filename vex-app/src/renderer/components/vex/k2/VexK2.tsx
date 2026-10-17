@@ -17,13 +17,13 @@ import { cn } from "../../../lib/utils.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import type { K2Emotion } from "./k2-emotion.js";
 import { K2Engine, type K2Ground } from "./k2-engine.js";
-import { fitOf, type K2PlacementName, placementFor } from "./k2-rig.js";
+import { fitFor, type K2PlacementName } from "./k2-rig.js";
 import type { GestureName } from "./k2-time.js";
 
 export interface VexK2Props {
   /** Where she stands: the Vex sidebar's plate, the welcome's stage, the pre-shell plate. */
   readonly placement: K2PlacementName;
-  /** What she shows of the agent; anything but idle holds her idle gestures back. */
+  /** What she shows of the agent (`k2-poses.ts`); only idle plays her idle life. */
   readonly emotion?: K2Emotion;
   /** What she stands on: the print, day paper or night paper. */
   readonly ground: K2Ground;
@@ -37,6 +37,8 @@ export interface VexK2Props {
   readonly hover?: boolean;
   /** Review only: plays that gesture 1 s after she is awake. */
   readonly force?: GestureName | null;
+  /** The composer she looks at while listening (by default her look goes down and to the side). */
+  readonly composer?: () => HTMLElement | null;
   readonly className?: string;
 }
 
@@ -49,6 +51,7 @@ export function VexK2({
   onWoken,
   hover = false,
   force = null,
+  composer,
   className,
 }: VexK2Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -56,8 +59,9 @@ export function VexK2({
   const engineRef = useRef<K2Engine | null>(null);
   const frame = useStillFrame() || still;
   const dark = useUiStore((s) => s.theme) === "chronos";
-  const live = useRef({ dark, ground, emotion, hover, onWoken });
-  live.current = { dark, ground, emotion, hover, onWoken };
+  const live = useRef({ dark, ground, emotion, hover, onWoken, composer });
+  live.current = { dark, ground, emotion, hover, onWoken, composer };
+  const placeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -73,20 +77,23 @@ export function VexK2({
       wake,
       onWoken: () => live.current.onWoken?.(),
       force,
+      composer: () => live.current.composer?.() ?? null,
     });
     engineRef.current = engine;
     engine.setEmotion(now.emotion);
     engine.setHover(now.hover);
     let started = false;
     const place = (): void => {
-      const w = host.clientWidth;
-      const h = host.clientHeight;
-      if (w === 0 || h === 0) return;
-      engine.setFit(fitOf(placement, placementFor(placement, w, h)));
+      // the bust's cut drops while the approval palm shows
+      const palm = placement !== "stage" && live.current.emotion === "approval";
+      const fit = fitFor(placement, host.clientWidth, host.clientHeight, palm);
+      if (fit === null) return;
+      engine.setFit(fit);
       if (started) return;
       started = true;
       void engine.start().catch(() => undefined);
     };
+    placeRef.current = place;
     place();
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => place());
@@ -95,6 +102,7 @@ export function VexK2({
       observer?.disconnect();
       engine.destroy();
       engineRef.current = null;
+      placeRef.current = null;
     };
   }, [placement, frame, wake, force]);
 
@@ -106,6 +114,7 @@ export function VexK2({
   }, [ground]);
   useEffect(() => {
     engineRef.current?.setEmotion(emotion);
+    placeRef.current?.();
   }, [emotion]);
   useEffect(() => {
     engineRef.current?.setHover(hover);

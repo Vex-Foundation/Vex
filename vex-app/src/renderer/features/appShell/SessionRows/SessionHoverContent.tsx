@@ -1,14 +1,20 @@
 /**
- * Hover-card body for a session row: the FULL title (the row truncates),
- * absolute started time, mode word, and the state facts that deviate from
- * the default (restricted permission, live/paused mission). Renders on the
- * HoverCard primitive's dark plate, so the inks are the fixed on-chrome
- * ladder, not theme labels.
+ * Hover-card body for a session row (docs/design/R3-MINIMAL.md sections 4
+ * and 12): the FULL title (the row truncates), the start time, the mode with
+ * the facts that deviate from the default (a restricted permission, the run's
+ * state word), and, where the row can be renamed, the line that says how the
+ * row's keys work. The card is the field with one ink rule, so the inks are
+ * the theme labels.
  */
 
 import type { JSX } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-import { getMissionActivity, getSessionTitle } from "../sessionListModel.js";
+import { getSessionTitle } from "../sessionListModel.js";
+import { sessionRowState } from "./session-row-state.js";
+
+/** How the sidebar row's keys work (proposal copy, section 4). */
+export const SESSION_ROW_HINT =
+  "Double-click a name to rename it. Pin keeps it on top; Remove hides it from the sidebar, the history stays on your disk.";
 
 function formatStartedAt(iso: string): string {
   const d = new Date(iso);
@@ -27,25 +33,32 @@ function formatStartedAt(iso: string): string {
 
 export function SessionHoverContent({
   row,
+  hint = false,
 }: {
   readonly row: SessionListItem;
+  /** Show the keys line (the sidebar, where a row can be renamed). */
+  readonly hint?: boolean;
 }): JSX.Element {
-  const activity = getMissionActivity(row);
+  const state = sessionRowState(row);
   const facts: string[] = [row.mode === "mission" ? "Mission" : "Agent"];
   if (row.permission !== "full") facts.push("Restricted");
-  if (activity?.tone === "active") facts.push("Live");
-  if (activity?.tone === "paused") facts.push("Paused");
+  if (state !== null) facts.push(state.word);
   return (
-    <div className="flex flex-col gap-2">
-      <p className="break-words text-[14px] leading-[20px] text-ink-on-chrome">
+    <div className="flex flex-col">
+      <p className="break-words text-[14px] font-medium leading-[20px] text-ink-primary">
         {getSessionTitle(row)}
       </p>
-      <p className="text-[12px] leading-[16px] text-[color-mix(in_oklab,var(--vex-alias-label-on-chrome)_80%,transparent)]">
+      <p className="mt-0.5 text-[12px] leading-[18px] text-ink-tertiary">
         Started {formatStartedAt(row.startedAt)}
       </p>
-      <p className="text-[12px] leading-[16px] text-[color-mix(in_oklab,var(--vex-alias-label-on-chrome)_65%,transparent)]">
+      <p className="text-[12px] leading-[18px] text-ink-tertiary">
         {facts.join(" · ")}
       </p>
+      {hint ? (
+        <p className="mt-2.5 text-[13.5px] leading-[1.5] text-ink-secondary">
+          {SESSION_ROW_HINT}
+        </p>
+      ) : null}
     </div>
   );
 }

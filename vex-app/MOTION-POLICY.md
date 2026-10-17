@@ -100,9 +100,10 @@ every movement and leaves at most an opacity change.
 ### The K2 portrait
 
 Vex's portrait (`src/renderer/components/vex/k2/`, one canvas per placement)
-is a presence, not a decoration: she blinks, her hair moves in the wind, now
-and then she looks at you, and while the agent is idle she plays a gesture. It
-is bound four ways:
+is a presence, not a decoration: she blinks, her hair moves in the wind, by
+default she looks at you and now and then glances away, and while the agent is
+idle she plays one action of her idle pool at a time (the blow, the bird, the
+giggle, the blush, the whistle, the hum). It is bound four ways:
 
 - **A 10 fps step.** Her clock (`STEP_MS`, 100ms in `k2-time.ts`) steps at
   10 fps; a frame whose dots, token and light did not change is never
@@ -115,11 +116,13 @@ is bound four ways:
   sidebar paints no frame.
 - **The still frame.** Reduced motion and Save-Data
   (`lib/motion/use-still-frame.ts`) paint one composed frame (awake, the token
-  flat, the beam still, no wind, no gestures) and repaint only when the theme,
-  the ground, the hover or the layout changes. The wake never plays then.
+  flat, the beam still, no wind, no gestures, the emotion settled) and repaint
+  only when the theme, the ground, the hover, the emotion or the layout
+  changes. The wake never plays then.
 
-Her idle gestures hold while the agent is anything but idle, so she never
-plays over a working turn or a pending approval.
+The agent's state is her pose (`k2-poses.ts`, a 300ms dissolve on her clock),
+and her idle pool plays only in the idle pose, so she never plays over a
+working turn or a pending approval.
 
 ### The CSP rule for motion
 

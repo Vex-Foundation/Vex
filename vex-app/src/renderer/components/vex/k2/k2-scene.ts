@@ -365,6 +365,62 @@ export function drawBird(
   }
 }
 
+/* ------------------------------------------------------------------ the whistle's notes */
+
+/** Small music notes on a dot screen: '#' a dot. An eighth note and a beamed pair. */
+const NOTES: readonly (readonly string[])[] = [
+  ["..##.", "..#.#", "..#..", "..#..", ".##..", "###..", ".#..."],
+  [".####", ".#..#", ".#..#", ".#..#", "##.##", "##.##"],
+];
+/** The notes' screen: her own pitch, the clouds' round white dots. */
+const NOTE_PITCH = 3;
+const NOTE_R = 1.3;
+
+/**
+ * The whistle's notes: 3 to 5 small notes in white dots rise from her lips one after another, drift
+ * downwind with the gust and fade (dot by dot), out of the host's blocks; over her white skin they
+ * print in ink. `seed` picks how many and which; dots go into `out` (white) and `outInk` as
+ * (x, y, r) triples.
+ */
+export function drawNotes(
+  out: number[],
+  outInk: number[],
+  age: number,
+  seed: number,
+  mouth: readonly [number, number],
+  gust: number,
+  keep: readonly KeepRect[],
+  light: (x: number, y: number) => boolean,
+): void {
+  const count = 3 + Math.floor(hash01(seed, 1, 171) * 3);
+  const LIFE = 1500;
+  for (let n = 0; n < count; n++) {
+    const born = 300 + n * Math.min(520, 2000 / count);
+    const a = age - born;
+    if (a < 0 || a > LIFE) continue;
+    const glyph =
+      NOTES[Math.floor(hash01(seed, n, 172) * NOTES.length)] ?? NOTES[0] ?? [];
+    const life = a / LIFE;
+    // up and away from her face, downwind, with a little wobble
+    const x =
+      mouth[0] + 10 + a * (0.06 + 0.04 * gust) + Math.sin(a / 260 + n) * 4;
+    const y = mouth[1] - 10 - a * 0.11;
+    for (let j = 0; j < glyph.length; j++) {
+      const row = glyph[j] ?? "";
+      for (let i = 0; i < row.length; i++) {
+        if (row[i] !== "#") continue;
+        // whole for its first half, then its dots drop out by the Bayer order
+        if (bayerAt(i + n * 3, j) < (life - 0.5) / 0.45) continue;
+        const px = x + i * NOTE_PITCH;
+        const py = y + j * NOTE_PITCH;
+        if (keepOut(keep, px, py) < 0.5) continue;
+        // over her white planes a note prints in ink, so it reads on her skin too
+        (light(px, py) ? outInk : out).push(px, py, NOTE_R * (1 - 0.25 * life));
+      }
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ the light */
 
 /** The flat token's face on her map: its centre and the ellipse of its rim. */

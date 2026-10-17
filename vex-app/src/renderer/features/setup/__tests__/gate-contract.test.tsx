@@ -37,10 +37,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   window.localStorage.clear();
+  resetStageVex();
 });
 
 const { ChronosGate } = await import("../ChronosGate.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
+const { getStageVex, resetStageVex } = await import(
+  "../../../components/onboarding/stage-vex.js"
+);
 
 function ok<T>(data: T): { ok: true; data: T } {
   return { ok: true, data };
@@ -175,6 +179,28 @@ describe("boot gate contract (reduced motion)", () => {
     await waitFor(() =>
       expect(useUiStore.getState().setupGateActive).toBe(false),
     );
+  });
+
+  it("tells the plate the pipeline is done, and keeps it for the screen it hands off to", async () => {
+    stubVex({ setupCompleteFlag: true, vaultConfigured: true, unlocked: false });
+    renderGate();
+    expect(getStageVex().pipelineReady).toBe(false);
+    await waitFor(() => expect(getStageVex().pipelineReady).toBe(true));
+    await waitFor(() =>
+      expect(useUiStore.getState().setupGateActive).toBe(false),
+    );
+    // The unlock stands on the same plate: nothing lifts away.
+    expect(getStageVex().exit).toBe("idle");
+  });
+
+  it("lifts the plate away with the gate when the launch lands on the shell", async () => {
+    stubVex({ setupCompleteFlag: true, vaultConfigured: true, unlocked: true });
+    renderGate();
+
+    await waitFor(() =>
+      expect(useUiStore.getState().currentView).toBe("appShell"),
+    );
+    await waitFor(() => expect(getStageVex().exit).toBe("reveal"));
   });
 
   it("renders nothing once dismissed", () => {
