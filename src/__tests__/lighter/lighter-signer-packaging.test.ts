@@ -368,16 +368,19 @@ describe("the release workflow's Lighter signer step order", () => {
     });
   }
 
-  it("stages the Linux helpers before packaging, and expects no signature step", () => {
+  it("stages the Linux helpers before packaging, and checks the payload only after it", () => {
     const block = jobBlock("linux");
     const staged = commandIndex(block, "node scripts/stage-lighter-signer.mjs --platform linux");
     const packaged = commandIndex(block, "pnpm exec electron-builder --linux");
 
     expect(staged).toBeGreaterThan(-1);
     expect(packaged).toBeGreaterThan(staged);
-    // Linux packages carry no platform signature, so the digest proven at
-    // staging and re-proven in afterPack is the whole of the evidence.
-    expect(commandIndex(block, "pnpm run check:package")).toBe(-1);
+    // Linux packages carry no platform signature, so for the helper the digest
+    // proven at staging and re-proven in afterPack is the whole of the
+    // evidence. `check:package` runs on Linux too since the native runtime
+    // (it re-reads the shipped runtime trees against the lock), and like every
+    // payload check it must read the package, so it follows packaging.
+    expect(commandIndex(block, "pnpm run check:package")).toBeGreaterThan(packaged);
   });
 });
 

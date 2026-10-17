@@ -552,6 +552,44 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
   });
 });
 
+/**
+ * THE RELEASE ORDER, read out of the workflow: fetch (bytes against the lock),
+ * stage (verified, per arch, the Windows pre-sign record), package (afterPack),
+ * then `check:package` over the shipped trees, in each of the three jobs, for
+ * every arch that job packages.
+ */
+describe("the release workflow's native runtime step order", () => {
+  const yaml = readFileSync(path.join(APP_ROOT, "..", ".github", "workflows", "release.yml"), "utf8");
+
+  function jobBlock(job: string): string {
+    const start = yaml.indexOf(`\n  ${job}:\n`);
+    expect(start).toBeGreaterThan(-1);
+    const rest = yaml.slice(start + 1);
+    const next = /\n {2}[a-z0-9_-]+:\n/.exec(rest.slice(1));
+    return next === null ? rest : rest.slice(0, next.index + 1);
+  }
+
+  const JOBS = [
+    ["macos", "--platform mac", "--platform mac --arch arm64 --arch x64", "pnpm exec electron-builder --mac --arm64 --x64"],
+    ["linux", "--platform linux", "--platform linux --arch x64", "pnpm exec electron-builder --linux"],
+    ["windows", "--platform win", "--platform win --arch x64 --arch arm64", "pnpm exec electron-builder --win --x64 --arm64"],
+  ] as const;
+
+  for (const [job, fetchArgs, stageArgs, packageCommand] of JOBS) {
+    it(`fetches, stages, packages, then checks the payload on ${job}`, () => {
+      const block = jobBlock(job);
+      const fetched = block.indexOf(`node scripts/fetch-native-runtime.mjs ${fetchArgs}`);
+      const staged = block.indexOf(`node scripts/stage-native-runtime.mjs ${stageArgs}`);
+      const packaged = block.indexOf(packageCommand);
+      const checked = block.indexOf("pnpm run check:package");
+      expect(fetched).toBeGreaterThan(-1);
+      expect(staged).toBeGreaterThan(fetched);
+      expect(packaged).toBeGreaterThan(staged);
+      expect(checked).toBeGreaterThan(packaged);
+    });
+  }
+});
+
 describe("the post-signing native runtime gate (check:package)", () => {
   function check(root: string, resources: string, target: TargetRow, inspectSignature: string, host: string): DriverResult {
     return call(

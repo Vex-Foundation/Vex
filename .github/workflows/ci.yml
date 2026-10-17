@@ -899,7 +899,12 @@ jobs:
       - name: Install vex-app dependencies
         run: pnpm install --frozen-lockfile
 
+      # `package` now also fetches the lock-pinned native runtime release and
+      # stages it (prepackage:native-runtime); the token reads that release
+      # while it lives on a private repository.
       - name: Package (--dir) and check the packaged payload
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
         run: pnpm run package
 
       # pnpm does not run the `electron` package's install script on this
