@@ -1,93 +1,145 @@
-# App Shell: the spread + the sessions index
+# App Shell: three columns, the title bar and the pages
 
-Exact behavior of the shell's column layout and the sessions index. The
-design values are `docs/design/R3-MINIMAL.md` sections 2 to 5. A fresh
-agent should be able to rebuild these surfaces from this file.
+Exact behavior of the shell frame: a left sidebar that says where you are, a
+centre that holds the conversation or one page, and Vex's own right sidebar.
+The design values are `docs/design/R3-MINIMAL.md` sections 2 to 5, 9.6 and 12.
+A fresh agent should be able to rebuild these surfaces from this file.
 
-## The spread (`AppShell.tsx` + `lib/shell-columns.ts`)
+## The frame (`AppShell.tsx` + `lib/shell-columns.ts`)
 
-- Five grid tracks: left page | gutter | Studio rail | centre | BOOK, solved
-  per frame by the pure `computeShellColumns({ viewport, mode, sidebar, book,
-  closedBook, zen })`. Every track is a length.
-- Contract geometry: CENTER_MIN 640. Left page 300 (wider by drag up to 420,
-  only into room the centre does not need), spine 56. Gutter 36 beside the
-  page, 22 beside a spine, 0 under the spread. BOOK 300-520 (default 340,
-  held at 300 under 1316, collapsed spine 48). Studio rail 240-420 inside the
-  centre, icon spine 56. First-column preference 240-420 (default 240).
-- Breakpoints: under SPREAD_MIN 1276 the left page and Studio's rail close to
-  their spines (a manual toggle there flips the launch-ephemeral
-  `sidebarNarrowExpanded` override) and the gutter folds into the running
-  head. Lighter and Studio always show the spine.
-- Concession chain: a widened page gives its extra back first; then the BOOK
-  shrinks to 300, then auto-closes to its 48px spine (DERIVED - the stored
-  `bookOpen` preference is never rewritten, widening restores it); the centre
-  absorbs the rest and may drop below its floor only in the final fallback.
-- Width preferences persist in `stores/uiStore` (`sidebarWidth`, `bookWidth`,
-  v10 migration, coerced on every rehydrate).
-- Drag handles (`ShellDragHandle.tsx`): 8px strips on the column borders,
-  pointer capture, rAF-throttled dx against the drag-start base (the RENDERED
-  width, so a concession-clamped panel does not jump). The page handle exists
-  only while the page can widen; the BOOK handle only while the BOOK is open
-  and free (1316 and up, or Lighter). Track transitions run 300ms on
-  `--vex-ease-inout` and pause under `data-dragging`.
-- Welcome stage: the Portfolio tab fills the BOOK track; closed, the track is
-  0 (no spine).
-- The left page (`ShellBackdrop.tsx`): the day or night print in place
-  (window size from the column's corner, swapped on `data-vex-theme`), or the
-  user's own image from `window.vex.shellBackdrop.read`; the spine adds a
-  44px paper cap. Lighter and Studio show the vx mark at the spine's top.
-- The gutter (`ShellGutter.tsx`): the `aria-hidden` spread caption, context |
-  tape word | connection, a drag column.
-- The running head (`RunningHead.tsx`, seam `shell-status-strip`): the
-  centre's 44px drag row, mounted once for the frame; it reserves the Windows
-  and Linux caption buttons over a narrow BOOK and carries the folded gutter.
+- Three grid tracks, `{left}px minmax(0, 1fr) {vex}px`, from the pure
+  `computeShellColumns({ viewport, mode, left, vex, welcome, closedVex,
+  lighterChat, zen })`; `ShellFrame` measures its own box (rAF-throttled
+  ResizeObserver). Every track is a length, so the 300ms
+  `--vex-duration-reveal` transition interpolates (`global-css/shell.css`).
+- Tiers (`shellTier`, a seam belongs to the wider side): wide from 1360, medium
+  1180 to 1359, narrow under 1180. Left 264 / 224 / 224, closed the 56px rail.
+  Vex 256 / 240 / 224, hidden 0. CENTER_MIN 640; the 760 transcript cap lives
+  inside the centre. Widths are fixed, no drag handle. Minimum window 1000 x 720.
+- Narrow tier: the left is asked by the launch-ephemeral `sidebarNarrowExpanded`
+  (its toggle flips it; reaching medium clears it), not by `leftOpen`. An open
+  Vex keeps the left at its rail; a left the user re-opens closes Vex (derived,
+  the stored choice is never rewritten; showing Vex clears the override).
+  Under a 640 centre Lighter's chat shrinks to 300 first, then Vex closes, then
+  the left folds.
+- Left column by mode: agent `SessionsList`, Studio `StudioSidebar`, Lighter the
+  same `SessionsList` always on its rail. Zen hands the chart the window.
+  `LighterSidebar.tsx` is the desk's title row, not a sidebar.
+- Lighter's chat share is the one drag left (`ShellDragHandle.tsx`): an 8px
+  strip on the column border while Vex is open there, rAF-throttled dx against
+  the RENDERED width at drag start, 300 to 520 and centre-safe
+  (`lighterChatDragMax`), stored as `desk.chatShare` (a window share).
+- Welcome stage: agent mode with no session, Studio with no project, no page
+  open, not Lighter. The Vex track is 0, `VexSidebar` is not mounted and the
+  title bar has no Vex toggle: she stands in the centre (`SessionWelcomeHero.tsx`,
+  serif greeting, no state word). Her token ("Hide Vex", `aria-pressed`) writes
+  `showAvatar`, shared with the sidebar switch and Settings.
+- Centre: `RunningHead` (once per frame), the mode's surface (`SessionPanel`,
+  `StudioCenter`, `LighterCenter`), then `ShellScreens`. Surface and pages share
+  one `ErrorBoundary` (`shell.centre`): "Something in Vex stopped rendering"
+  between two standing sidebars, "Close this page" while a page is open. The
+  title bar stays outside it. No veil (section 12): `SessionCreator` and the
+  mission contract are dialog sheets over the centre.
 
-## The left page in agent mode (`SessionsList.tsx`)
+## The left sidebar (`SessionsList.tsx`, section 4)
 
-docs/design/R3-MINIMAL.md section 4. Furniture on the print, styled in
-`styles/global-css/left-page.css` (ink and blue on the sky by day, paper white
-on the night print, white on the ground).
+Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
-- Mast (`AgentSidebarHeader.tsx`): the open page's 44px head row, a drag
-  region clear of the macOS traffic lights: the vx mark (`SidebarHomeSigil`,
-  "Back to welcome" in a session) and the `Agent | Studio` capsule
-  (`RuntimeModeToggle`), in every agent state. The welcome hero carries the
-  capsule only while the page is a spine (`leftPage/leftPageContext.ts`), so
-  the page holds one `Runtime mode` radiogroup.
-- Sky: the 112px italic `Counter` (the open session's ordinal; on the welcome
-  stage the session count, captioned SESSIONS), New session (a label box; the
-  signing stroke and glint unchanged), the All | Agent | Mission tabs with
-  search and collapse at their right, the optional search field, then the
-  index. Only the index scrolls; `leftPage/useIndexFold.ts` hides a row or
-  head the horizon would cut and the dotted fold counts the rows below
-  (`n more`, one page per press).
-- Ordinals (`leftPage/sessionOrdinals.ts`): a renderer-local ledger numbers
-  each agent session the first time it is seen, oldest first, and keeps the
-  number, so pinning, the tabs, the search, a removal or a row ageing out of
-  the bounded list never renumber anyone.
-- Rows (`SessionRows/SessionRow.tsx`, `index` setting, via
-  `leftPage/SessionIndex.tsx`): ordinal, swatch and title, time; the open
-  session solid and blue, a running mission the dot screen, a paused one the
-  hatch; Remove+Pin replace the time on hover or keyboard focus; HoverCard
-  preview; double-click inline rename persisted through `vex.sessions.rename`
-  (sessionTitleSchema-bounded; unknown/soft-deleted id -> ok(null)). The
-  Sessions library renders the same row in its `register` setting.
-- Ground: `$VEX` (`market/VexTokenCardCompact.tsx`: price, change with its
-  arrow, spark, one link out), the white hairline, and the profile row
-  (`SidebarProfile.tsx`, `ground="print"`): portal `Menu` primitive with six
-  action entries + a disabled runtime provenance footer row; screens expand
-  from the trigger row's rect.
-- Spine (under 1276, or closed by hand): New session, the ordinals
-  (`leftPage/SpineIndex.tsx`, the open one behind a 2px bar), the open
-  control and the profile box at the foot.
-- Quiet scrollbars (`lib/useQuietScrollbars.ts`): the column rebinds the
-  `--vex-scrollbar-thumb` pair to transparent while the pointer is outside
-  its box (document pointermove probe; 2s linger). Rebinding, not hiding,
-  keeps the gutter reservation.
+- Head, 44 high (`AgentSidebarHeader.tsx`): the vx mark (`SidebarHomeSigil`,
+  "Back to welcome" in a session) and the collapse key; content starts at 92 on
+  macOS, 16 elsewhere.
+- New chat and Search rows, then the nav (`SessionRows/SidebarNav.tsx`): Chat,
+  Missions, Portfolio, Board, Lighter, Studio, Settings. One action backs every
+  row, `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
+  Chat and Missions are agent mode (Missions on its Mission tab), Portfolio, Board
+  and Settings open pages, Lighter and Studio switch mode. The selected row is
+  `selectNavDestination`: the open page first, then the mode.
+- Search turns its row into the field with All, Agent and Mission tabs and
+  counts (local text, title filter). Escape closes it and drops the Agent tab.
+- Sessions by name in Pinned, Today, Yesterday, Older (`sessionListModel.ts`),
+  the one scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
+  (`sidebar` variant): 34 high, ellipsis name, then the time or a swatch and word
+  from the mission run (`session-row-state.ts`). Hover or focus swaps the time
+  for Pin and Remove; double-click renames via `vex.sessions.rename`
+  (`sessionTitleSchema`-bounded; an unknown id answers ok(null)). The Sessions
+  page reuses the row as `register`.
+- Update slot `vex-upd-slot` (`updates/update-card-slot.ts`): `UpdateCard`
+  portals into it above the account row; with no slot it floats at the lower left.
+- Account row (`SidebarProfile.tsx`): the vx box, the name or "What should Vex
+  call you?", a status sentence. Its upward menu: Personalize, Memory (when
+  enabled), Sessions, Agent Scan, How Vex works, Settings, Lock Vex, a disabled
+  Runtime row. Pages open from the trigger's rect (`origin`).
+- Rail: 40 x 40 keys with tooltips (New chat, Search, Chats, the nav, the
+  account box); Chats opens the sidebar, in Lighter the desk's Markets & sessions
+  drawer. No update slot.
+- Studio (`studio/sidebar/StudioSidebar.tsx`): same head, rows, nav and account;
+  under the nav New project, Projects with a Welcome row, and the open project's
+  explorer in a `SplitPane` sized by `studioRailExplorerShare` (0.2 to 0.8).
+
+## The title bar (`RunningHead.tsx`, section 3)
+
+- The centre's 44px drag row (seam `shell-status-strip`), mounted once because
+  `GlobalApprovalsSync` owns the approvals live subscription. It reserves the
+  Windows and Linux caption buttons over a narrow Vex column; on the Lighter desk
+  its right cluster portals into the desk's row (`lighterTrading/shellStripSlot.ts`).
+- Left cell: the page name from `screens/page-crumbs.ts` (`titleBarPageOf`); a
+  subpage is a crumb with parent links ("Portfolio / Agent Scan"), each going up
+  through `goUpToPage`. Else the Studio project or the session title with "Agent ·
+  Restricted" and the mission badge (`MissionRail`). The agent welcome has none.
+- Right cluster: a page close key (top-level page outside agent mode), export,
+  the Studio host word, Notices (while any exist), Needs you, the token chip.
+- `features/vex/NeedsYouControl.tsx`: on every screen and mode; checking, none,
+  some (count capped at 99+) and a failed read ("Needs you · ?", Retry). Its
+  panel is the Vex sidebar's `NeedsYouList`. Review never decides: an on-screen
+  card is scrolled to with Reject focused, other approvals open the Needs you page.
+- Token chip (`features/vex/VexTokenChip.tsx`): disc, state swatch, word, live
+  timer, and "n mission running" only while Vex is hidden. It toggles Vex
+  (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + Period
+  (`vex-toggle-shortcut.ts`, `KeyboardEvent.code`, never Alt) is the same press,
+  off under a modal. `VexStateAnnouncer` is the one live region of the word.
+
+## Pages in the centre (`screens/`, section 9.6)
+
+- A page is a `ShellRoute` (`uiStore/shell-route.ts`, launch-ephemeral): `memory`,
+  `sessions`, `howItWorks`, `portfolio`, `board`, `needsYou`, `settings`,
+  `agentScan` and `assets` (one session or one Studio project, never both),
+  `tokenHistory`. `ShellScreens.tsx` mounts the screen under `AnimatePresence`;
+  every close goes to `none`, except token history opened from All assets.
+- `ShellScreen.tsx` is the sheet: absolute inside the centre under the title bar
+  (never reflows a track), a 760 column or `wide` 1100, entering by a FLIP from
+  the trigger's `origin` (reduced motion is instant). Focus returns to the opener.
+- Escape goes back one page (`page-trail.ts`, 12 pages at most, `none` clears
+  it), else the host closes; it yields to a nearer handler or a dialog.
+
+## The Vex sidebar (`features/vex/VexSidebar.tsx`, section 5)
+
+- Props `open` and `onHide`; hidden is 0 width and renders nothing inside. Body:
+  head and hide key, state (swatch, scope, word, timer, narration, background
+  missions), Needs you, Studio's "This project", the page slot (`vex-sidebar-slot.ts`,
+  the Board's Ask Vex), the K2 plate, the "Show avatar" foot. Lighter puts the
+  desk chat under the plate. Avatar off: no plate, the 44px `VexStatus` token.
+  Words come from `useVexPresence` (precedence in `vex-state.ts`).
+- Open by page class (`vexPageClass`, `uiStore/layout.ts`): `chat` (`vexOpenChat`,
+  open by default: chat, Needs you, Memory, Sessions, How Vex works, Studio),
+  `pages` (`vexOpenPages`, hidden: Portfolio and subpages, Board, Settings),
+  `lighter` (`vexOpenLighter`, not persisted). `setVexOpen` writes only the
+  current class's slot; the frame hands her `vexEffectiveOpen`, the solved width.
+- She docks when the column shows after the shell came up (`vex-dock.ts`).
+  Hiding plays her close first (`vex-hide.ts`): hide key, chip and shortcut call
+  `requestVexHide(commit)`; the sidebar plays the K2 close, then commits (at once
+  under reduced motion, Save-Data, avatar off). A second press keeps her. Derived
+  closes (narrow tier, page default, Zen) go at once.
+
+## Persisted layout (`stores/uiStore.ts`, `uiStore/persistence.ts`)
+
+The shell reads `leftOpen` (twin `sidebarOpen`), `vexOpenChat`, `vexOpenPages`,
+`showAvatar`, `bookSectionOrder`, `studioRailExplorerShare`, `runtimeMode` and
+`activeProjectId`. Not persisted: `sidebarNarrowExpanded`, `vexOpenLighter`,
+`shellRoute`, `sessionModeFilter`. `bookOpen` mirrors the last Vex write.
 
 ## Known limitations and deferred work
 
 - Hover cards cannot show a wallet count: `SessionListItem` carries no wallet
   fields.
-- `BookPanel` still sets its own fixed widths (340px/48px); the grid track is
-  the intended width owner (`w-full` interface pending with the book owner).
+- `sidebarWidth`, `bookWidth`, `bookTab` and `sessionOrdinals` are still persisted
+  and coerced but nothing reads them (expand-only migrations); drop them later.
