@@ -3,7 +3,7 @@ import type {
   LighterTradingCandleConnectionStatus,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LineSplitHorizontal, LineSplitVertical } from "../../../components/icons/line/index.js";
 import {
   GROUP_MULTIPLIERS,
   bookInside,
@@ -191,7 +191,7 @@ export function MarketBookPanel({
     >
       {splitter}
       <header className="lit-panel-header lit-book-header">
-        {heading ?? <h3>Order Book</h3>}
+        {heading ?? <h3>Order book</h3>}
         {onToggleCollapse === undefined ? null : (
           <button
             type="button"
@@ -219,11 +219,14 @@ export function MarketBookPanel({
             <button type="button" aria-pressed={unit === "quote"} onClick={() => setUnit("quote")}>{quoteSymbol}</button>
           </div>
           <div className="lit-unit-switch lit-view-switch" role="group" aria-label="Book view">
+            {/* The words where the panel is wide (lighter-book.css), the icons at the column's floor. */}
             <button type="button" aria-pressed={view === "stack"} aria-label="Stacked" title="Asks over bids" onClick={() => setView("stack")}>
-              <PxIcon name="split-rows" />
+              <LineSplitHorizontal size={16} className="lit-view-icon" />
+              <span className="lit-view-word" aria-hidden="true">Stacked</span>
             </button>
             <button type="button" aria-pressed={view === "split"} aria-label="Side by side" title="Bids beside asks" onClick={() => setView("split")}>
-              <PxIcon name="split-cols" />
+              <LineSplitVertical size={16} className="lit-view-icon" />
+              <span className="lit-view-word" aria-hidden="true">Side by side</span>
             </button>
           </div>
         </div>

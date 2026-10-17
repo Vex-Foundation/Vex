@@ -6,7 +6,7 @@ import type {
   LighterTradingPublicStatsEvent,
   LighterTradingSnapshot,
 } from "@shared/schemas/lighter-trading.js";
-import { IconChevronDown, PxIcon } from "../../../components/icons/index.js";
+import { LineChevronDown, LineRefresh } from "../../../components/icons/line/index.js";
 import { useTickFlash } from "./useLiveFlash.js";
 import { classifyLighterMarket, marketProductLabel, type LighterMarketSection } from "./market-classification.js";
 import {
@@ -27,7 +27,11 @@ const SECTIONS: readonly { readonly value: LighterMarketSection; readonly label:
   { value: "spot", label: "Spot" },
 ];
 
-/** The desk's top strip: market picker trigger, section tabs, last price, live metrics. */
+/**
+ * The desk's market bar (docs/design/R3-MINIMAL.md section 9.3): the market
+ * picker key, the last price over its day change, the key figures, the
+ * section control and the Live word.
+ */
 export function MarketBar({
   environment,
   market,
@@ -109,7 +113,7 @@ export function MarketBar({
               ].filter((part): part is string => part !== null).join(" · ")}
           </small>
         </span>
-        <IconChevronDown size={16} className="lit-chevron" />
+        <LineChevronDown size={14} className="lit-chevron" />
       </button>
       <span className="lit-market-price" data-tone={tone} data-metric="last">
         <b key={lastFlash.tick} data-flash={lastFlash.direction ?? undefined}>{formatPrice(last, precision)}</b>
@@ -120,11 +124,11 @@ export function MarketBar({
           <>
             <MarketMetric metric="mark" label="Mark" value={formatPrice(liveStats?.markPrice ?? null, precision)} pending={liveOnlyPending} />
             <MarketMetric metric="index" label="Index" value={formatPrice(liveStats?.indexPrice ?? null, precision)} pending={liveOnlyPending} />
-            <MarketMetric metric="change" label="24h Change" value={changeText} tone={tone} />
-            <MarketMetric metric="high" label="24h High" value={formatPrice(high, precision)} />
-            <MarketMetric metric="low" label="24h Low" value={formatPrice(low, precision)} />
-            <MarketMetric metric="volume" label="24h Volume" value={formatQuoteVolume(quoteVolume, symbols?.quote ?? "USD")} />
-            <MarketMetric metric="open-interest" label="Open Interest" value={formatQuoteVolume(liveStats?.openInterestQuote ?? null, "USD")} pending={liveOnlyPending} />
+            <MarketMetric metric="change" label="24h change" value={changeText} tone={tone} />
+            <MarketMetric metric="high" label="24h high" value={formatPrice(high, precision)} />
+            <MarketMetric metric="low" label="24h low" value={formatPrice(low, precision)} />
+            <MarketMetric metric="volume" label="24h volume" value={formatQuoteVolume(quoteVolume, symbols?.quote ?? "USD")} />
+            <MarketMetric metric="open-interest" label="Open interest" value={formatQuoteVolume(liveStats?.openInterestQuote ?? null, "USD")} pending={liveOnlyPending} />
             <MarketMetric
               metric="funding"
               pending={liveOnlyPending}
@@ -141,10 +145,10 @@ export function MarketBar({
           <>
             <MarketMetric metric="index" label="Index" value={formatPrice(liveStats?.indexPrice ?? null, precision)} pending={liveOnlyPending} />
             <MarketMetric metric="mid" label="Mid" value={formatPrice(liveStats?.midPrice ?? null, precision)} pending={liveOnlyPending} />
-            <MarketMetric metric="change" label="24h Change" value={changeText} tone={tone} />
-            <MarketMetric metric="high" label="24h High" value={formatPrice(high, precision)} />
-            <MarketMetric metric="low" label="24h Low" value={formatPrice(low, precision)} />
-            <MarketMetric metric="volume" label={`24h Volume (${symbols?.quote ?? "quote"})`} value={formatQuoteVolume(quoteVolume, symbols?.quote ?? null)} />
+            <MarketMetric metric="change" label="24h change" value={changeText} tone={tone} />
+            <MarketMetric metric="high" label="24h high" value={formatPrice(high, precision)} />
+            <MarketMetric metric="low" label="24h low" value={formatPrice(low, precision)} />
+            <MarketMetric metric="volume" label={`24h volume (${symbols?.quote ?? "quote"})`} value={formatQuoteVolume(quoteVolume, symbols?.quote ?? null)} />
           </>
         )}
       </div>
@@ -178,7 +182,7 @@ export function MarketBar({
             )}
             {onReload === undefined ? null : (
               <button type="button" className="lit-live-reload" onClick={onReload} aria-label="Reload market data from Lighter" title="Reload from Lighter">
-                <PxIcon name="refresh" />
+                <LineRefresh size={16} />
               </button>
             )}
           </>
