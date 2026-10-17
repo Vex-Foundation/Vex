@@ -31,6 +31,7 @@ import { renderCompose, renderedComposePath, type RenderDeps } from "../../compo
 import { STALE_BIND_MOUNT_RE } from "../../compose/stale-secret-recovery.js";
 import { composeUpDetached } from "../../compose/up.js";
 import { resolvePgPort } from "../../paths/service-ports.js";
+import { chooseFreePort } from "../native/free-port.js";
 
 const DB_SERVICE = "db";
 const VOLUME_INSPECT_TIMEOUT_MS = 15_000;
@@ -100,11 +101,16 @@ async function dockerAnswers(signal: AbortSignal | undefined): Promise<string | 
 
 export function createDockerSource(options: {
   readonly renderDeps: RenderDeps;
-  /** The published Postgres port; defaults to this install's (VEX_PG_PORT, else 27432). */
+  /**
+   * The port to publish the old database on. Omitted: this install's
+   * (VEX_PG_PORT, else 27432) when it is free, otherwise any free loopback
+   * port. The migration only needs the database reachable, and the native
+   * release has no other use for the fixed port, so a neighbour holding it
+   * must not block the copy.
+   */
   readonly pgPort?: number;
 }): DockerSource {
   const { renderDeps } = options;
-  const pgPort = options.pgPort ?? resolvePgPort();
   const composePath = renderedComposePath(renderDeps.userDataDir);
 
   return {
@@ -137,6 +143,8 @@ export function createDockerSource(options: {
 
       // Re-rendered as composeUp does: same template, same install id, and on
       // Windows a fresh decrypted copy of the password for the stack to mount.
+      // A changed port only recreates the container; the volume is the same.
+      const pgPort = options.pgPort ?? (await chooseFreePort([resolvePgPort()]));
       const rendered = await renderCompose(renderDeps, { pgPort });
       if (rendered.installId !== installId) {
         return {
@@ -200,7 +208,7 @@ export function createDockerSource(options: {
         () => false,
       );
       if (!present) {
-        const rendered = await renderCompose(renderDeps, { pgPort });
+        const rendered = await renderCompose(renderDeps, { pgPort: options.pgPort ?? resolvePgPort() });
         if (rendered.installId !== installId) {
           return { kind: "failed", message: `This install's id is ${rendered.installId}, not ${installId}.` };
         }

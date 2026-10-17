@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   renderCompose: vi.fn(),
   composeUpDetached: vi.fn(),
   access: vi.fn(),
+  chooseFreePort: vi.fn(),
 }));
 
 vi.mock("../../docker/spawn-runner.js", () => ({ runSpawn: mocks.runSpawn }));
@@ -37,12 +38,14 @@ vi.mock("../../compose/render.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../compose/render.js")>()),
   renderCompose: mocks.renderCompose,
 }));
+vi.mock("../native/free-port.js", () => ({ chooseFreePort: mocks.chooseFreePort }));
 vi.mock("node:fs", async (importOriginal) => {
   const real = await importOriginal<typeof import("node:fs")>();
   return { ...real, promises: { ...real.promises, access: mocks.access } };
 });
 
 const { createDockerSource } = await import("../migration/docker-source.js");
+const { resolvePgPort } = await import("../../paths/service-ports.js");
 
 const ID = "0f5b8f8e-1111-2222-3333-444444444444";
 const CONFIG = path.join(path.sep, "cfg");
@@ -52,7 +55,8 @@ const PASSWORD = path.join(CONFIG, "local-infra", "secrets", "pg_password");
 const ok = (stdout = "", stderr = "") => ({ code: 0, signal: null, stdout, stderr, aborted: false, timedOut: false });
 const exit = (code: number, stderr: string) => ({ code, signal: null, stdout: "", stderr, aborted: false, timedOut: false });
 
-function source() {
+/** A source publishing on `pgPort`; null leaves the port to the source. */
+function source(pgPort: number | null = 27999) {
   return createDockerSource({
     renderDeps: {
       userDataDir: CONFIG,
@@ -61,7 +65,7 @@ function source() {
       randomAdapter: { uuid: () => "x", randomBytes: () => new Uint8Array() },
       cryptoAdapter: { base64url: () => "" },
     },
-    pgPort: 27999,
+    ...(pgPort !== null ? { pgPort } : {}),
   });
 }
 
@@ -129,6 +133,14 @@ describe("bringUpDb", () => {
     expect(mocks.waitForHealth).toHaveBeenCalledWith(
       expect.objectContaining({ pgPort: 27999, pgPasswordPath: PASSWORD, installId: ID }),
     );
+  });
+
+  it("without a fixed port, publishes on this install's port when free, else any free one", async () => {
+    mocks.chooseFreePort.mockResolvedValueOnce(41_234);
+    expect(await source(null).bringUpDb(ID, {})).toMatchObject({ kind: "ready", pgPort: 41_234 });
+    expect(mocks.chooseFreePort).toHaveBeenCalledWith([resolvePgPort()]);
+    expect(mocks.renderCompose).toHaveBeenCalledWith(expect.anything(), { pgPort: 41_234 });
+    expect(mocks.waitForHealth).toHaveBeenCalledWith(expect.objectContaining({ pgPort: 41_234 }));
   });
 
   it("NEVER runs `up` when the volume is gone: up would create an empty one", async () => {
