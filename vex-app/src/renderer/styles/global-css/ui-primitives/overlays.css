@@ -271,14 +271,10 @@ dialog.vex-dialog.vex-sheet {
 
 /* ── Connection banner ─────────────────────────────────────────────────────
  * Under the title bar: 40 high, the paper 2 step, an ink rule below, 14 in
- * the sans with the word; a trailing figure is muted. Fixed by default; the
- * inline form flows inside the column that mounts it. */
+ * the sans with the word; a trailing figure is muted. A row of the column
+ * that mounts it (the centre column), never a band over the frame. */
 .vex-connection-banner {
-  position: fixed;
-  top: var(--head-h, 44px);
-  left: 0;
-  right: 0;
-  z-index: 1200;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -290,11 +286,6 @@ dialog.vex-dialog.vex-sheet {
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 20px;
-}
-
-.vex-connection-banner[data-inline] {
-  position: static;
-  flex: none;
 }
 
 .vex-connection-banner__meta {

@@ -7,30 +7,25 @@
  * state and passes `reconnecting` and localized copy down; only an actual
  * outage shows the band.
  *
- * Fixed under the title bar by default; `inline` lets it flow in the column
- * that mounts it.
+ * Always a row in the column that mounts it (the centre column, under its
+ * head row): it never lies over the frame, so nothing beside or under it is
+ * covered.
  */
 
 import type { JSX } from "react";
 import { Swatch } from "./swatch.js";
 
-export function ConnectionBanner({ reconnecting, label, meta, inline = false }: {
+export function ConnectionBanner({ reconnecting, label, meta }: {
   /** True while the connection is in backoff/retry. */
   readonly reconnecting: boolean;
   /** Banner copy, resolved by the owner. */
   readonly label: string;
   /** A muted figure at the right, resolved by the owner. */
   readonly meta?: string;
-  /** Flow inside the mounting column instead of the fixed band. */
-  readonly inline?: boolean;
 }): JSX.Element | null {
   if (!reconnecting) return null;
   return (
-    <div
-      className="vex-connection-banner"
-      role="status"
-      data-inline={inline ? "" : undefined}
-    >
+    <div className="vex-connection-banner" role="status">
       <Swatch state="concerned" size={10} />
       <span>{label}</span>
       {meta === undefined || meta === "" ? null : (

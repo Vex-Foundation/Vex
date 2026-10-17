@@ -249,6 +249,32 @@ describe("AppShell runtime-mode dispatch", () => {
     expect(document.querySelector('[data-vex-area="shell-frame"]')).toBe(frame);
   });
 
+  it("offline, the connection banner is a row of the centre column under its head, not a band over the frame", () => {
+    renderShell();
+    expect(screen.queryByText("Offline: waiting for the network to come back")).toBeNull();
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    const banner = screen.getByText("Offline: waiting for the network to come back")
+      .closest(".vex-connection-banner");
+    expect(banner).not.toBeNull();
+    // A child of the centre column (its own row), never of the frame grid
+    // where it lay over all three columns.
+    const centre = banner?.parentElement;
+    expect(centre?.classList.contains("vex-shell-centre")).toBe(true);
+    expect(banner?.parentElement?.getAttribute("data-vex-area")).not.toBe("shell-frame");
+    // Under the head row: the running head comes first in the column.
+    const head = centre?.querySelector('[data-vex-area="shell-status-strip"]');
+    expect(head).not.toBeNull();
+    expect(
+      head!.compareDocumentPosition(banner!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(document.querySelector(".vex-connection-banner")).toBeNull();
+  });
+
   it("studio mode with no project shows the Studio welcome screen", async () => {
     renderShell();
     switchMode("studio");
