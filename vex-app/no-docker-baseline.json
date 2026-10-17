@@ -90,7 +90,6 @@
     "vex-app/src/renderer/features/setup/SetupTour.tsx": 1,
     "vex-app/src/renderer/features/setup/useSetupOrchestrator.ts": 19,
     "vex-app/src/renderer/features/systemCheck/SystemCheck.tsx": 19,
-    "vex-app/src/renderer/features/systemCheck/SystemCheck/Footer.tsx": 1,
     "vex-app/src/renderer/features/systemCheck/SystemCheck/format.ts": 6,
     "vex-app/src/renderer/features/systemCheck/SystemCheck/ProbeRows.tsx": 16,
     "vex-app/src/renderer/features/updates/UpdaterPreview.tsx": 1,
