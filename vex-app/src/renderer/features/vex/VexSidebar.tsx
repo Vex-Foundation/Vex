@@ -15,8 +15,13 @@
  *
  * On the Lighter desk the plate is followed by the desk chat, which takes the
  * rest of the column, and there is no foot. With the avatar off there is no
- * plate and no hologram: a 44px flat token stands beside the state instead,
- * and everything else stays.
+ * plate and no hologram: the 44px flat token in its state ring (`VexStatus`)
+ * stands beside the state instead, and everything else stays.
+ *
+ * SHE DOCKS: a column that shows after the shell came up (the first message
+ * off the welcome, where she stood in the centre, or the column shown again)
+ * plays her open episode in the plate; a column open from the start shows her
+ * as she is. Under reduced motion she simply appears.
  *
  * HIDDEN is zero width: the frame gives the column a 0px track and the aside
  * renders its head and body only while open, so nothing in a closed column
@@ -37,7 +42,6 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { LineBack, LinePanelRight } from "../../components/icons/line/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
-import { VxToken } from "../../components/ui/vx-token.js";
 import { useProject } from "../../lib/api/projects.js";
 import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
 import { cn } from "../../lib/utils.js";
@@ -54,6 +58,8 @@ import { NeedsYouList } from "./needs-you/NeedsYouList.js";
 import { useVexPresence, type VexPresence } from "./useVexPresence.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
+import { VexStatus } from "./VexStatus.js";
+import { takeVexDock, vexDockPending } from "./vex-dock.js";
 import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 
 export interface VexSidebarProps {
@@ -68,6 +74,15 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
   const theme = useUiStore((s) => s.theme);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
   const lighter = runtimeMode === "lighter";
+  // She docks when the column shows after the shell came up: from the
+  // welcome, or open again after a hide.
+  const [dock, setDock] = useState(() => !open || vexDockPending());
+  useEffect(() => {
+    takeVexDock();
+  }, []);
+  useEffect(() => {
+    if (!open) setDock(true);
+  }, [open]);
 
   return (
     <aside
@@ -81,12 +96,18 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
       data-lighter-environment={lighter ? environment : undefined}
       className={cn("vex-vs", lighter && "lit-chat-frame")}
     >
-      {open ? <VexSidebarContent onHide={onHide} /> : null}
+      {open ? <VexSidebarContent onHide={onHide} dock={dock} /> : null}
     </aside>
   );
 }
 
-function VexSidebarContent({ onHide }: { readonly onHide: () => void }): JSX.Element {
+function VexSidebarContent({
+  onHide,
+  dock,
+}: {
+  readonly onHide: () => void;
+  readonly dock: boolean;
+}): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
@@ -157,7 +178,9 @@ function VexSidebarContent({ onHide }: { readonly onHide: () => void }): JSX.Ele
           <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
         </div>
         {lighter ? null : <div className="vex-vs__spacer" />}
-        {showAvatar ? <VexPortraitPlate emotion={vexEmotionOf(presence.state)} /> : null}
+        {showAvatar ? (
+          <VexPortraitPlate emotion={vexEmotionOf(presence.state)} dock={dock} />
+        ) : null}
         {lighter ? (
           <div data-vex-area="vex-desk-chat" className="vex-vs__desk">
             <LighterChatRail />
@@ -190,26 +213,28 @@ function VexStateBlock({
   readonly avatar: boolean;
 }): JSX.Element {
   const { state, word, fill, scope, timerStartedAt, narration, background } = presence;
+  const main = (
+    <div className="vex-vs__state-main">
+      <div className="vex-vs__row">
+        <Swatch state={fill} size={12} className="vex-vs__sw text-accent-primary" />
+        <p className="vex-vs__word">
+          {scope === null ? null : <span className="vex-vs__scope">{`${scope} `}</span>}
+          {word}
+        </p>
+        {timerStartedAt === null ? null : <VexTimer startedAtMs={timerStartedAt} />}
+      </div>
+      {narration === null ? null : <p className="vex-vs__narr">{narration}</p>}
+      {background.summary === null ? null : (
+        <p data-vex-area="vex-background" className="vex-vs__bg">
+          <Swatch state="done" size={10} className="vex-vs__sw text-accent-primary" />
+          <span>{background.summary}</span>
+        </p>
+      )}
+    </div>
+  );
   return (
     <div data-vex-area="vex-state" data-vex-state={state} className="vex-vs__state">
-      {avatar ? null : <VxToken size={44} className="vex-vs__disc" />}
-      <div className="vex-vs__state-main">
-        <div className="vex-vs__row">
-          <Swatch state={fill} size={12} className="vex-vs__sw text-accent-primary" />
-          <p className="vex-vs__word">
-            {scope === null ? null : <span className="vex-vs__scope">{`${scope} `}</span>}
-            {word}
-          </p>
-          {timerStartedAt === null ? null : <VexTimer startedAtMs={timerStartedAt} />}
-        </div>
-        {narration === null ? null : <p className="vex-vs__narr">{narration}</p>}
-        {background.summary === null ? null : (
-          <p data-vex-area="vex-background" className="vex-vs__bg">
-            <Swatch state="done" size={10} className="vex-vs__sw text-accent-primary" />
-            <span>{background.summary}</span>
-          </p>
-        )}
-      </div>
+      {avatar ? main : <VexStatus state={state}>{main}</VexStatus>}
     </div>
   );
 }

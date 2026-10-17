@@ -7,9 +7,12 @@
  *  - the R3b ORDER: the state (scope, word, timer), the narration, the
  *    background missions, Needs you, then the portrait plate, then the
  *    avatar switch;
- *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token
- *    beside the state, and everything else stays; the switch writes the
- *    persisted preference;
+ *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token in
+ *    its state ring beside the state, and everything else stays; the switch
+ *    writes the persisted preference;
+ *  - SHE DOCKS: a column that shows after the shell came up (off the
+ *    welcome, or open again after a hide) plays her open episode; one open
+ *    from the start shows her as she is;
  *  - Needs you never decides: its key for an approval in the open chat says
  *    "Review ↓" and only closes a page over the chat;
  *  - STUDIO: the "This project" block opens the project's own Project assets
@@ -70,6 +73,7 @@ function PageBlock(): JSX.Element | null {
   return slot === null ? null : createPortal(<p data-testid="page-block">Ask Vex</p>, slot);
 }
 const { useUiStore } = await import("../../../stores/uiStore.js");
+const { noteVexOnWelcome, takeVexDock, vexDockPending } = await import("../vex-dock.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
 const PROJECT = "00000000-0000-4000-8000-0000000000b2";
@@ -116,6 +120,7 @@ function before(a: Element | null, b: Element | null): boolean {
 
 beforeEach(() => {
   window.localStorage.clear();
+  takeVexDock();
   presenceRef.current = presence();
   useUiStore.setState({
     runtimeMode: "agent",
@@ -236,6 +241,9 @@ describe("VexSidebar, avatar off", () => {
     expect(document.querySelector("[data-vex-k2]")).toBeNull();
     const state = area("vex-state");
     expect(state?.querySelector("[data-vex-vx-token] svg")?.getAttribute("width")).toBe("44");
+    expect(state?.querySelector("[data-vex-status-ring]")?.getAttribute("data-vex-status-ring")).toBe(
+      "working",
+    );
     expect(state?.textContent).toContain("This chat: Working");
     expect(state?.textContent).toContain("Calling Wallet balances");
     expect(area("vex-needs-you")).not.toBeNull();
@@ -249,6 +257,39 @@ describe("VexSidebar, avatar off", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
     expect(useUiStore.getState().showAvatar).toBe(true);
     expect(area("vex-portrait-plate")).not.toBeNull();
+  });
+});
+
+describe("VexSidebar, the dock", () => {
+  const holo = () => document.querySelector("[data-vex-k2]");
+
+  it("shows her as she is in a column open from the start", () => {
+    render(<VexSidebar open onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+  });
+
+  it("plays her open episode when the column shows again after a hide", () => {
+    const { rerender } = render(<VexSidebar open onHide={() => {}} />);
+    rerender(<VexSidebar open={false} onHide={() => {}} />);
+    expect(holo()).toBeNull();
+    rerender(<VexSidebar open onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+  });
+
+  it("docks her from the welcome on the first message, once", () => {
+    noteVexOnWelcome();
+    render(<VexSidebar open onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+    expect(vexDockPending()).toBe(false);
+  });
+
+  it("plays it when the avatar is switched on in an open column", () => {
+    useUiStore.setState({ showAvatar: false });
+    const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
+    rerender(<VexSidebar open onHide={() => {}} />);
+    expect(holo()).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
   });
 });
 
