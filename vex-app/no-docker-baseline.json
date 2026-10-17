@@ -1,8 +1,6 @@
 {
   "files": {
     "src/lib/diagnostics/bug-report-schema.ts": 2,
-    "src/vex-agent/scripts/_preflight.ts": 4,
-    "vex-app/resources/compose/docker-compose.e2e.yml": 1,
     "vex-app/resources/compose/docker-compose.template.yml": 10,
     "vex-app/src/main/compose/down.ts": 26,
     "vex-app/src/main/compose/health.ts": 8,

@@ -117,9 +117,10 @@ describe("assertSchemaUpToDate", () => {
     const stderrCall = stderrSpy.mock.calls[0]?.[0] as string;
     expect(stderrCall).toContain("knowledge_entries.supersedes_id column missing");
     expect(stderrCall).toContain("006_knowledge_lifecycle.sql");
-    // Wipe instructions are still included as a last-resort fallback.
-    expect(stderrCall).toContain("docker compose");
-    expect(stderrCall).toContain("down -v");
+    // Wipe instructions are still included as a last-resort fallback, and
+    // name the app's own reset rather than a Docker stack.
+    expect(stderrCall).toContain("Settings -> Local runtime -> Reset local data");
+    expect(stderrCall).not.toContain("docker");
   });
 
   it("exits with code 2 when query returns null (defensive)", async () => {
