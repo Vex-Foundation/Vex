@@ -31,6 +31,16 @@ export function isBundledEmbeddingSelection(env: NodeJS.ProcessEnv): boolean {
   return provider === EMBEDDING_PROVIDER && model === EMBEDDING_MODEL_ALIAS;
 }
 
+/**
+ * The endpoint the runtime host last published: the live llama-server URL
+ * and its per-launch key, or null while the server is down or not started.
+ * The embedding status probe reads it in native mode instead of `.env`, whose
+ * URL only names the bundled default and never the live port.
+ */
+export function liveNativeEmbeddings(): EmbeddingsEndpoint | null {
+  return live;
+}
+
 /** The runtime host's onEmbeddings publisher. */
 export function publishNativeEmbeddings(
   endpoint: EmbeddingsEndpoint | null,
