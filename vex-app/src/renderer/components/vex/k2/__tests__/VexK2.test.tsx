@@ -1,6 +1,7 @@
 /**
  * The K2 host (`VexK2.tsx`) in jsdom, where no canvas paints. Regressions this catches: a host that
- * is announced to assistive tech or takes the pointer, a lost placement or ground seam, and a mount
+ * is announced to assistive tech or takes the pointer, a lost placement or ground seam, a lost
+ * episode seam (the open dock, the closed token) or one that does not follow its prop, and a mount
  * that throws or starts fetching art while its host has no size.
  */
 
@@ -30,5 +31,19 @@ describe("VexK2", () => {
     expect(container.querySelector("[data-vex-k2-ready]")).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
     unmount();
+  });
+
+  it("names its episodes as seams: the open dock on mount, the closed token while closed", () => {
+    const { container, rerender } = render(
+      <VexK2 placement="sidebar" ground="print" open className="h-[280px]" />,
+    );
+    const host = () => container.querySelector("[data-vex-k2]");
+    expect(host()?.hasAttribute("data-vex-k2-open")).toBe(true);
+    expect(host()?.hasAttribute("data-vex-k2-closed")).toBe(false);
+    rerender(<VexK2 placement="sidebar" ground="print" open closed className="h-[280px]" />);
+    expect(host()?.hasAttribute("data-vex-k2-closed")).toBe(true);
+    rerender(<VexK2 placement="sidebar" ground="print" className="h-[280px]" />);
+    expect(host()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    expect(host()?.hasAttribute("data-vex-k2-closed")).toBe(false);
   });
 });

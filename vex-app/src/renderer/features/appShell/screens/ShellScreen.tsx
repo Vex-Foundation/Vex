@@ -1,37 +1,48 @@
 /**
- * ShellScreen: the reusable full-app overlay screen (docs/design/V10-SPREAD.md
- * sections 2 and 4). Memory, the sessions library, Settings, the asset
- * registers and the token history all mount inside this one sheet: a single
- * paper page laid over the centre and the BOOK, with the left page and the
- * gutter left standing. A 44px head (title in Departure Mono at the left,
- * close at the right, a drag region), a chapter title in Instrument Serif and
- * a `.vex-scroll` body capped at 760px. Radius 0, no shadow, no blur
- * (`styles/global-css/overlay.css`).
+ * ShellScreen: the shared page sheet (docs/design/R3-MINIMAL.md sections
+ * 2.3, 9.2, 9.6 and 12). Memory, the sessions library, Settings, Portfolio
+ * and its subpages (Agent Scan, All assets, token history), Board and Needs
+ * you all mount inside this one sheet: a paper page INSIDE the centre column,
+ * under the title bar row, with both sidebars standing. The title bar says
+ * where you are (the page's name, a subpage's crumb with its parents as
+ * links: `page-crumbs.ts`) and keeps Needs you and the token chip; the page
+ * itself draws no crumb and no close row, so its content starts right under
+ * the title bar, as the design draws it.
  *
- * The sheet is `absolute` inside the shell frame (the host mounts it there),
- * so it keeps the frame's columns and can never reflow them. `--vex-overlay-left`
- * (set by the frame) is where it starts.
+ *   - The title: the serif page head (`chapter`, Memory and the like), a
+ *     custom head (`header`, the token history's mark and name), or, when a
+ *     page draws neither, a visually hidden h1 so every page still has one.
+ *   - Escape returns to the PREVIOUS route: the page the user came from
+ *     (`page-trail.ts`), else the host's own close. Where a page has no other
+ *     way back, the title bar carries a close key that does the same.
+ *
+ * Radius 0, no shadow, no blur (`styles/global-css/overlay.css`). The sheet
+ * is `absolute` inside the centre column (the host mounts it there), so it
+ * never reflows a track.
  *
  * Motion: a FLIP of the sheet from the trigger row's rect (plumbed via the
  * route's per-kind `origin`), MOTION-POLICY compliant (no `layout` or
  * `layoutId`, which inject a runtime stylesheet the CSP bans; plain `animate`
- * on transform and opacity). On open, the trigger rect maps to an initial
- * center-translate plus a per-axis scale, then SPRING_PANEL carries the sheet
- * to identity. The body fades in on the ExpandableScreen timing (delay 0.15,
- * duration 0.4). EXIT morphs back onto the trigger rect (0.3s EASE_STANDARD).
- * `prefers-reduced-motion` renders and removes the final frame instantly.
+ * on transform and opacity). The trigger rect maps to an initial
+ * center-translate plus a per-axis scale against the sheet's own box (the
+ * centre column under the title bar), then SPRING_PANEL carries the sheet to
+ * identity. The body fades in on the ExpandableScreen timing (delay 0.15,
+ * duration 0.4). EXIT morphs back onto the trigger rect (0.3s
+ * EASE_STANDARD). `prefers-reduced-motion` renders and removes the final
+ * frame instantly.
  *
  * The host (`ShellScreens`) owns `AnimatePresence`; this component only
  * declares its own enter and exit.
  */
 
-import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { motion, type TargetAndTransition } from "motion/react";
-import { IconClose } from "../../../components/icons/index.js";
-import { Tooltip } from "../../../components/ui/tooltip.js";
 import { isDialogOnScreen } from "../../../components/ui/dialog.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion/index.js";
+import { closePageToPrevious, installPageTrail } from "./page-trail.js";
+
+/* ------------------------------ geometry ---------------------------------- */
 
 /** jsdom-safe reduced-motion probe (matchMedia may be absent in jsdom). */
 function prefersReducedMotion(): boolean {
@@ -41,20 +52,38 @@ function prefersReducedMotion(): boolean {
   );
 }
 
+interface SheetBox {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /**
- * Where the sheet sits: the frame's `--vex-overlay-left` (page plus gutter)
- * to the window's right edge. jsdom and a missing frame fall back to the whole
- * window.
+ * Where the sheet sits on screen: the centre column, under the title bar
+ * row. Measured from the column itself (never from the window), so an open
+ * Vex sidebar does not shift the morph's centre. jsdom and a missing column
+ * fall back to the whole window.
  */
-function sheetBox(): { readonly left: number; readonly width: number } {
-  const frame = document.querySelector('[data-vex-area="shell-frame"]');
-  const raw =
-    frame === null
-      ? ""
-      : getComputedStyle(frame).getPropertyValue("--vex-overlay-left");
-  const parsed = Number.parseFloat(raw);
-  const left = Number.isFinite(parsed) ? parsed : 0;
-  return { left, width: Math.max(window.innerWidth - left, 1) };
+function sheetBox(): SheetBox {
+  const column = document.querySelector('[data-vex-area="shell-frame"] .vex-shell-centre');
+  if (column === null) {
+    return {
+      left: 0,
+      top: 0,
+      width: Math.max(window.innerWidth, 1),
+      height: Math.max(window.innerHeight, 1),
+    };
+  }
+  const head = column.querySelector('[data-vex-area="shell-status-strip"]');
+  const rect = column.getBoundingClientRect();
+  const headHeight = head === null ? 0 : head.getBoundingClientRect().height;
+  return {
+    left: rect.left,
+    top: rect.top + headHeight,
+    width: Math.max(rect.width, 1),
+    height: Math.max(rect.height - headHeight, 1),
+  };
 }
 
 /**
@@ -64,14 +93,15 @@ function sheetBox(): { readonly left: number; readonly width: number } {
  */
 function morphToOrigin(origin: ShellScreenOrigin): TargetAndTransition {
   const box = sheetBox();
-  const vh = window.innerHeight;
   return {
     x: origin.x + origin.width / 2 - (box.left + box.width / 2),
-    y: origin.y + origin.height / 2 - vh / 2,
+    y: origin.y + origin.height / 2 - (box.top + box.height / 2),
     scaleX: Math.max(origin.width / box.width, 0.01),
-    scaleY: Math.max(origin.height / vh, 0.01),
+    scaleY: Math.max(origin.height / box.height, 0.01),
   };
 }
+
+/* ------------------------------- the page --------------------------------- */
 
 export function ShellScreen({
   title,
@@ -79,26 +109,35 @@ export function ShellScreen({
   onClose,
   header,
   chapter,
+  width = "reading",
   fill,
   children,
 }: {
   readonly title: string;
   /** Trigger-row rect captured by the opener; null falls back to center. */
   readonly origin: ShellScreenOrigin | null;
+  /**
+   * The host's close, used when there is no previous page to return to (the
+   * page was opened from the bare shell).
+   */
   readonly onClose: () => void;
   /**
-   * Optional custom header content replacing the default serif H1 (the
-   * token-history screen composes its own mark + name + chain cluster).
-   * `title` still names the dialog (aria-label) and
-   * the close key either way.
+   * Optional custom head replacing the serif page head (the token-history
+   * screen composes its own mark, name and chain). `title` still names the
+   * dialog (aria-label) and the close key either way.
    */
   readonly header?: ReactNode;
   /**
-   * The serif chapter title over the body. Defaults to `title` (decorative:
-   * the head's h1 already names the screen) and is absent when a custom
-   * `header` is given; `null` draws none.
+   * The serif page head over the body, the page's h1. Defaults to `title`
+   * and is absent when a custom `header` is given; `null` draws none (the h1
+   * then stays, for assistive tech only).
    */
   readonly chapter?: string | null;
+  /**
+   * The column: `reading` (760, the default) or `wide` (1100 with its
+   * padding, for the money ledgers).
+   */
+  readonly width?: "reading" | "wide";
   /**
    * The body fills the sheet's height and does not scroll itself, for a screen
    * that owns an inner scroller (the agent scan's virtual list).
@@ -107,7 +146,6 @@ export function ShellScreen({
   readonly children: ReactNode;
 }): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
-  const closeRef = useRef<HTMLButtonElement | null>(null);
   // Whether this instance has already asked to close. A ref, not effect-local
   // state: the listener re-registers whenever `onClose` changes identity, and
   // the fact it guards belongs to the screen, not to one registration.
@@ -115,6 +153,17 @@ export function ShellScreen({
   // Sampled once per mount: the enter/exit declaration must not flip
   // mid-animation if the OS preference changes while the screen is open.
   const [reduced] = useState(prefersReducedMotion);
+
+  useEffect(() => {
+    installPageTrail();
+  }, []);
+
+  // ONE close intent per screen instance: back to the previous page, else the
+  // host's close.
+  const close = useCallback((): void => {
+    closeAsked.current = true;
+    closePageToPrevious(onClose);
+  }, [onClose]);
 
   // Escape closes from anywhere - the screen is a modal layer over the shell -
   // but ONLY while this screen is the surface the key belongs to. The three
@@ -141,19 +190,18 @@ export function ShellScreen({
       // in the meantime. Measured: ~0.3s of exit during which a modal dialog
       // opened and its Escape was consumed here.
       if (closeAsked.current) return;
-      closeAsked.current = true;
       event.preventDefault();
-      onClose();
+      close();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [close]);
 
   // Capture the control that opened the screen (focus still rests on it at
-  // mount, unless a child effect already claimed focus — child effects run
+  // mount, unless a child effect already claimed focus; child effects run
   // first) and return focus to it when the screen unmounts, so a keyboard
   // user lands back on the trigger. Skipped when the trigger is gone (it
-  // lived inside a screen instance that itself closed — e.g. the eye row in
+  // lived inside a screen instance that itself closed, e.g. the eye row in
   // a replaced All-assets screen) or when another surface outside this
   // screen has already claimed focus (never steal it back).
   useEffect(() => {
@@ -176,14 +224,15 @@ export function ShellScreen({
     };
   }, []);
 
-  // Move focus into the screen on open — unless a child already claimed it
-  // (child effects run first: the Sessions screen focuses its search field).
+  // Move focus into the screen on open (the page itself, a focusable
+  // dialog), unless a child already claimed it (child effects run first: the
+  // Sessions screen focuses its search field).
   useEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && root.contains(active)) return;
-    closeRef.current?.focus();
+    root.focus({ preventScroll: true });
   }, []);
 
   const chapterText = chapter === undefined ? (header === undefined ? title : null) : chapter;
@@ -194,7 +243,9 @@ export function ShellScreen({
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      tabIndex={-1}
       data-vex-area="shell-screen"
+      data-width={width}
       // Morph contract pinned by ShellScreen.test.tsx: which start/end frame
       // the FLIP uses ("trigger" | "center" | "reduced" for the instant path).
       data-vex-morph={reduced ? "reduced" : origin !== null ? "trigger" : "center"}
@@ -236,31 +287,6 @@ export function ShellScreen({
         opacity: { duration: 0.25, ease: EASE_STANDARD },
       }}
     >
-      <header className="vex-ov__head vex-drag">
-        <div className="vex-ov__head-start">
-          {header ?? <h1 className="vex-ov__title">{title}</h1>}
-        </div>
-        {/* Keybinding hint (G9): Escape already closes - the tooltip only
-         * surfaces the existing shortcut, it defines nothing new. */}
-        <Tooltip label="Close · Esc" side="left">
-          <button
-            ref={closeRef}
-            type="button"
-            aria-label={`Close ${title}`}
-            onClick={() => {
-              // The same one close intent per instance the Escape listener
-              // takes: a screen closed by the key must not also be closable
-              // by Escape while it animates out.
-              closeAsked.current = true;
-              onClose();
-            }}
-            className="vex-ov__close"
-          >
-            <IconClose size={16} />
-          </button>
-        </Tooltip>
-      </header>
-
       {/* The body resolves in after the sheet lands (ExpandableScreen
        * grammar: delayed fade, never animating with the container scale). */}
       <motion.div
@@ -272,11 +298,15 @@ export function ShellScreen({
         transition={{ delay: 0.15, duration: 0.4 }}
       >
         <div className="vex-ov__body">
-          {chapterText !== null ? (
-            <p aria-hidden className="vex-ov__chapter" data-vex-chapter>
+          {header !== undefined ? (
+            header
+          ) : chapterText !== null ? (
+            <h1 className="vex-ov__chapter" data-vex-chapter>
               {chapterText}
-            </p>
-          ) : null}
+            </h1>
+          ) : (
+            <h1 className="sr-only">{title}</h1>
+          )}
           {children}
         </div>
       </motion.div>

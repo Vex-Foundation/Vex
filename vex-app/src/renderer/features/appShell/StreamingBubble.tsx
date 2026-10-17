@@ -1,12 +1,14 @@
 /**
- * THE IN-FLIGHT TURN — a thin mount point.
+ * THE IN-FLIGHT TURN - a thin mount point.
  *
  * Two responsibilities only, both about the ANSWER:
- *  1. mount the `TurnIsland` (which owns every live-state presentation:
- *     Working → Thinking → Calling → Writing, the elapsed counter, the
- *     awaiting-signature freeze, the sr-only announcements, the error branch);
- *  2. stream the answer markdown BELOW it, in the same gutter grammar as a
- *     persisted assistant row (relative pl-9).
+ *  1. mount the `TurnIsland` live row (which owns every live-state
+ *     presentation: Working, Thinking, Calling, Writing, the elapsed counter,
+ *     the awaiting-approval freeze, the sr-only announcements, the error
+ *     branch);
+ *  2. stream the answer markdown BELOW it, on the same 40px edge as a
+ *     persisted Vex row (`.vex-reply`, docs/design/R3-MINIMAL.md section 6),
+ *     with Vex's token when this is the first thing she writes in the turn.
  *
  * The `useMemo` on `preview.text` is load-bearing and must not be inlined: a
  * reasoning flush re-renders this component, and without the memo the ANSWER
@@ -15,27 +17,34 @@
  * through the same memoized `MarkdownContent`.
  *
  * When the canonical message DTO lands, `useStreamPreviewSync` clears the
- * whole preview and the persisted row takes over seamlessly — the island's
- * closing "Reasoned" stamp is the same grammar as the persisted
- * `ReasonedBlock` (`reasoning-stamp.ts`).
+ * whole preview and the persisted row takes over seamlessly - the live row's
+ * "Reasoned" stamp is the same grammar as the persisted `ReasonedBlock`
+ * (`reasoning-stamp.ts`).
  */
 
 import { useMemo, type JSX } from "react";
 import type { StreamPreview } from "../../stores/streamStore.js";
 import { StreamingMarkdownContent } from "../../lib/markdown/StreamingMarkdownContent.js";
 import { useFrameThrottledValue } from "../../lib/use-throttled-visual-update.js";
+import { VxToken } from "../../components/ui/vx-token.js";
 import { TurnIsland } from "./TurnIsland/index.js";
 
 export function StreamingBubble({
   preview,
   awaitingApproval = false,
   leaseHeld = false,
+  turnMark = false,
 }: {
   readonly preview: StreamPreview;
-  /** Pending approval in the active session — freezes the island (S5). */
+  /** Pending approval in the active session - freezes the live row (S5). */
   readonly awaitingApproval?: boolean;
   /** The engine reported the session's runner lease as held (U-3 caption). */
   readonly leaseHeld?: boolean;
+  /**
+   * Nothing in this turn has carried Vex's token yet, so the live row does
+   * (`turnMarks.ts`).
+   */
+  readonly turnMark?: boolean;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
@@ -48,7 +57,7 @@ export function StreamingBubble({
   const answerBody = useMemo(
     () =>
       throttledText.length > 0 ? (
-        // Resolves in once beneath the island — clarity "earned" by the
+        // Resolves in once beneath the live row - clarity "earned" by the
         // thinking. One-shot on first mount; text deltas reuse the same node
         // so it never re-triggers. The reading register arrives with
         // `.vex-chat-prose` inside the streaming renderer, so the live answer
@@ -66,8 +75,13 @@ export function StreamingBubble({
       data-vex-message-role="assistant"
       data-vex-stream-phase={preview.phase}
       aria-busy={streaming}
-      className="relative flex flex-col gap-2 pl-[30px]"
+      className="vex-reply flex flex-col gap-2"
     >
+      {turnMark ? (
+        <span data-vex-agent-avatar="" data-vex-mark-at="live" className="vex-reply__mark">
+          <VxToken size={24} />
+        </span>
+      ) : null}
       <TurnIsland
         preview={preview}
         awaitingApproval={awaitingApproval}

@@ -147,11 +147,6 @@
   font-size: 13px;
   line-height: 1.45;
 }
-/* Avatar off: the 44px flat token carries her, beside the state. */
-.vex-vs__disc {
-  flex: none;
-}
-
 /* ---- sections: Needs you, This project ---- */
 .vex-vs__sec {
   margin: 14px 18px 0;

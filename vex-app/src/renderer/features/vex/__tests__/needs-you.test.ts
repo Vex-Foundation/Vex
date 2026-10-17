@@ -128,6 +128,18 @@ describe("approvalActionWord", () => {
       },
       "Approve transfer",
     ],
+    ["the swap alias", { toolName: "SwapExecute", preview: null }, "Approve swap"],
+    ["the Uniswap swap alias", { toolName: "SwapExecuteUniswap", preview: null }, "Approve swap"],
+    [
+      "the wallet send confirm",
+      { toolName: "WalletSendConfirm", preview: { toolName: "WalletSendConfirm", criticalArgs: {} } },
+      "Approve transfer",
+    ],
+    [
+      "a signed transaction confirm of no named family",
+      { toolName: "WalletEvmTransactionConfirm", preview: null },
+      "Approve",
+    ],
     ["an unnamed tool", { toolName: null, preview: null }, "Approve"],
     ["a tool of no named family", { toolName: "memory_write", preview: null }, "Approve"],
     [

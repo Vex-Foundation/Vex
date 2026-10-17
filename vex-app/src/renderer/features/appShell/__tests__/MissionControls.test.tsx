@@ -1,5 +1,5 @@
 /**
- * MissionControls — runtime-gated mission control surface (Phase 4b-2).
+ * MissionControls - runtime-gated mission control surface (Phase 4b-2).
  * Verifies Start gating, the status-gated toolbar (Continue/Recover/Edit/Stop),
  * dispatch wiring to the mission IPC, the in-flight/pending disable, refusal
  * outcomes (ok:true non-success) surfacing a notice, the review-&-accept bar
@@ -24,6 +24,10 @@ import { useUiStore } from "../../../stores/uiStore.js";
 import { MissionControls } from "../MissionControls.js";
 import { MISSION_SETUP_STALL_PROMPT_MS } from "../MissionSetupProgress.js";
 import { resetMissionContractRequests } from "../mission-contract-request.js";
+import {
+  clearMissionStripCell,
+  setMissionStripCell,
+} from "../MissionControls/mission-strip-slot.js";
 
 const SESSION = "00000000-0000-4000-8000-0000000000d1";
 const MISSION = "mission-1";
@@ -157,7 +161,7 @@ function renderControls() {
  * Renders MissionControls against a CALLER-SUPPLIED client (instead of the
  * one-off client `Wrapper` creates internally) so a `useSubmitChat` hook
  * driven separately in the same test can share the mutation cache
- * `useIsChatSubmitting` reads — used by the turn-gated reveal test.
+ * `useIsChatSubmitting` reads - used by the turn-gated reveal test.
  */
 function renderControlsOnClient(client: QueryClient) {
   setVex();
@@ -183,7 +187,7 @@ afterEach(() => {
   // into the next test, and never resolves as anything but the truth.
   resetMissionContractRequests();
   useUiStore.setState({ reviewModal: "none" });
-  // @ts-expect-error — test cleanup
+  // @ts-expect-error - test cleanup
   delete window.vex;
 });
 
@@ -259,7 +263,7 @@ describe("MissionControls", () => {
   it("keeps the bar hidden while an enabled plan is still missing - MissionRail's Preparing state must win", async () => {
     // Shared readiness predicate (planMissing, exported by MissionRail): a
     // ready draft with plan-mode ON but an empty plan body is NOT the
-    // MISSION READY state — the rail says Preparing, and the bar must agree.
+    // MISSION READY state - the rail says Preparing, and the bar must agree.
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(false));
@@ -464,7 +468,10 @@ describe("MissionControls", () => {
     await screen.findByRole("button", { name: "Review & accept contract" });
   });
 
-  it("running: Stop + Edit enabled, Continue + Recover disabled", async () => {
+  // Owner decision (R3): only the controls that apply are drawn. A key its
+  // status rules out is absent, not a dotted dead key; the gates are the ones
+  // that used to disable it.
+  it("running: Stop mission + Edit contract enabled, Continue and Recover not drawn", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({
         hasActiveRun: true,
@@ -484,20 +491,15 @@ describe("MissionControls", () => {
     const stopBtn = await screen.findByRole("button", { name: "Stop mission" });
     expect((stopBtn as HTMLButtonElement).disabled).toBe(false);
     expect(
-      (screen.getByRole("button", { name: "Edit mission" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Edit contract" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
-    expect(
-      (screen.getByRole("button", { name: "Continue mission" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole("button", { name: "Recover mission" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Continue mission" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continue now" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Recover mission" })).toBeNull();
   });
 
-  it("paused_error: Recover enabled (dispatches mission.retry), Continue disabled", async () => {
+  it("paused_error: Recover enabled in the error callout (dispatches mission.retry), Continue not drawn", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({
         hasActiveRun: true,
@@ -516,10 +518,13 @@ describe("MissionControls", () => {
 
     const recoverBtn = await screen.findByRole("button", { name: "Recover mission" });
     expect((recoverBtn as HTMLButtonElement).disabled).toBe(false);
-    expect(
-      (screen.getByRole("button", { name: "Continue mission" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    // Recover is the callout's key, the one blue key of the paused state.
+    expect(recoverBtn.closest('[data-vex-area="mission-error-alert"]')).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Continue mission" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continue now" })).toBeNull();
+    // Edit contract and Stop mission still apply while paused on an error.
+    expect(screen.getByRole("button", { name: "Edit contract" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop mission" })).toBeTruthy();
     fireEvent.click(recoverBtn);
     await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
   });
@@ -657,7 +662,7 @@ describe("MissionControls", () => {
     await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
   });
 
-  it("paused_wake: Continue enabled (dispatches mission.continue)", async () => {
+  it("paused_wake: Continue now enabled (dispatches mission.continue)", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({ hasActiveRun: true, status: "paused_wake", missionRunId: "r1" }),
     );
@@ -666,7 +671,7 @@ describe("MissionControls", () => {
     continueMock.mockResolvedValue(ok({ outcome: "resumed", runId: "r1" }));
     renderControls();
 
-    const continueBtn = await screen.findByRole("button", { name: "Continue mission" });
+    const continueBtn = await screen.findByRole("button", { name: "Continue now" });
     expect((continueBtn as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(continueBtn);
     await waitFor(() =>
@@ -674,7 +679,25 @@ describe("MissionControls", () => {
     );
   });
 
-  it("paused_approval: Edit is disabled", async () => {
+  it("paused_user: Continue enabled (dispatches mission.continue)", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({ hasActiveRun: true, status: "paused_user", missionRunId: "r1" }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    continueMock.mockResolvedValue(ok({ outcome: "resumed", runId: "r1" }));
+    renderControls();
+
+    const continueBtn = await screen.findByRole("button", { name: "Continue mission" });
+    expect(continueBtn.textContent).toBe("Continue");
+    expect((continueBtn as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(continueBtn);
+    await waitFor(() =>
+      expect(continueMock).toHaveBeenCalledWith({ sessionId: SESSION }),
+    );
+  });
+
+  it("paused_approval: Edit contract is not drawn, Stop mission is", async () => {
     getStateMock.mockResolvedValue(
       runtimeState({
         hasActiveRun: true,
@@ -687,10 +710,7 @@ describe("MissionControls", () => {
     renderControls();
 
     await screen.findByRole("button", { name: "Stop mission" });
-    expect(
-      (screen.getByRole("button", { name: "Edit mission" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Edit contract" })).toBeNull();
   });
 
   it("disables every control while a control request is already pending", async () => {
@@ -706,12 +726,49 @@ describe("MissionControls", () => {
     getDiffMock.mockResolvedValue(diffAccepted(true));
     renderControls();
 
-    const continueBtn = await screen.findByRole("button", { name: "Continue mission" });
+    const continueBtn = await screen.findByRole("button", { name: "Continue now" });
     expect((continueBtn as HTMLButtonElement).disabled).toBe(true);
     expect(
       (screen.getByRole("button", { name: "Stop mission" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Edit contract" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("draws the run keys in the composer strip's cell when the strip publishes one", async () => {
+    // The strip (ComposerMissionStrip) publishes a cell per session; the keys
+    // stay owned here and only their DOM moves into it.
+    const cell = document.createElement("span");
+    document.body.appendChild(cell);
+    setMissionStripCell(SESSION, "controls", cell);
+    try {
+      getStateMock.mockResolvedValue(
+        runtimeState({
+          hasActiveRun: true,
+          status: "running",
+          missionRunId: "r1",
+          stoppable: true,
+          leaseActive: true,
+          activity: { kind: "running" },
+        }),
+      );
+      getDraftMock.mockResolvedValue(draftReady());
+      getDiffMock.mockResolvedValue(diffAccepted(true));
+      stopMock.mockResolvedValue(ok({ outcome: "stopped" }));
+      const { container } = renderControls();
+
+      const stopBtn = await screen.findByRole("button", { name: "Stop mission" });
+      expect(cell.contains(stopBtn)).toBe(true);
+      expect(container.contains(stopBtn)).toBe(false);
+      fireEvent.click(stopBtn);
+      await waitFor(() => expect(stopMock).toHaveBeenCalledWith({ sessionId: SESSION }));
+    } finally {
+      clearMissionStripCell(SESSION, "controls", cell);
+      cell.remove();
+    }
   });
 
   it("surfaces a refusal outcome (Start not_accepted → notice)", async () => {
@@ -729,7 +786,7 @@ describe("MissionControls", () => {
   it("renders the active-run toolbar even when getDraft is null (mission row is past 'ready' mid-run)", async () => {
     // Reality: a started mission's row is flipped to running/terminal, so
     // getDraft returns null for the whole active run. The toolbar must key off
-    // runtime alone — this pins the gate fix.
+    // runtime alone - this pins the gate fix.
     getStateMock.mockResolvedValue(
       runtimeState({
         hasActiveRun: true,
@@ -781,7 +838,7 @@ describe("MissionControls", () => {
   it("hides Renew once a fresh draft exists (post-renew) - no duplicate-draft loop", async () => {
     // After mission.renew, a fresh status='draft' mission exists, but
     // getRenewableSource STILL returns the old terminal accepted mission. Renew
-    // must NOT linger — else it looks like it "did nothing" and each extra click
+    // must NOT linger - else it looks like it "did nothing" and each extra click
     // clones another duplicate draft. The fresh draft's acceptance UI wins.
     getStateMock.mockResolvedValue(runtimeState({ hasActiveRun: false }));
     getDraftMock.mockResolvedValue(ok(draftInSetup()));
@@ -950,7 +1007,7 @@ describe("MissionControls - paused_error standing alert (issue #42)", () => {
     expect(recoverBtn.getAttribute("aria-label")).toBe("Recover mission");
     expect(recoverBtn.getAttribute("aria-busy")).toBe("true");
     // Accessible name (role+name query) stays stable while the visible label
-    // changes — the same element is found by its stable name.
+    // changes - the same element is found by its stable name.
     expect(
       screen.getByRole("button", { name: "Recover mission" }),
     ).toBe(recoverBtn);
@@ -973,7 +1030,7 @@ describe("MissionControls - paused_error standing alert (issue #42)", () => {
     getDraftMock.mockResolvedValue(draftReady());
     getDiffMock.mockResolvedValue(diffAccepted(true));
     // The mutation itself reports success, but the mission re-parks (or the
-    // recovery never actually cleared the pause) — the refetched runtime
+    // recovery never actually cleared the pause) - the refetched runtime
     // state getState keeps returning is still paused_error throughout.
     retryMock.mockResolvedValue(ok({ outcome: "resumed", runId: "r1" }));
     renderControls();
@@ -986,7 +1043,7 @@ describe("MissionControls - paused_error standing alert (issue #42)", () => {
 
     await waitFor(() => expect(retryMock).toHaveBeenCalledTimes(1));
     // No failure notice (the mutation "succeeded"), yet the standing alert is
-    // state-driven off runtime.status — it stays visible because the
+    // state-driven off runtime.status - it stays visible because the
     // refetched status is still paused_error.
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(

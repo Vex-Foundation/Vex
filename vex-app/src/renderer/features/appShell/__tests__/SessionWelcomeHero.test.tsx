@@ -1,7 +1,8 @@
 /**
  * SessionWelcomeHero - the R3 welcome (docs/design/R3-MINIMAL.md sections 7
  * and 10.1, references d2, d3x-first-welcome and d3x-database-down): Vex on
- * her welcome stage (or the flat token with the avatar off), the state line
+ * her welcome stage (or the flat token in its state ring with the avatar
+ * off, and the note that docks her into the Vex sidebar), the state line
  * under her from the presence model ("Ready · 1 mission running", no scope),
  * the serif greeting with the honest preview disclosure as its tooltip, and
  * the database-down callout. The retired V10 opening (the date eyebrow, the
@@ -18,6 +19,7 @@ import {
   backgroundWorkOf,
 } from "../../vex/background-work.js";
 import { NEEDS_YOU_UNKNOWN_COPY } from "../../vex/needs-you.js";
+import { takeVexDock, vexDockPending } from "../../vex/vex-dock.js";
 import type { VexPresence } from "../../vex/useVexPresence.js";
 import { session } from "../../vex/__tests__/fixtures.js";
 
@@ -102,6 +104,7 @@ beforeEach(() => {
   sessionsData = { ok: true, data: [] };
   presence = readyPresence();
   lastK2 = null;
+  takeVexDock();
 });
 
 describe("SessionWelcomeHero - Vex and the state line", () => {
@@ -158,8 +161,20 @@ describe("SessionWelcomeHero - Vex and the state line", () => {
     const { container } = render(<SessionWelcomeHero />);
     expect(container.querySelector("[data-vex-k2]")).toBeNull();
     expect(container.querySelector(".vex-vx-token")).not.toBeNull();
-    // The state line stays.
-    expect(container.querySelector("[data-vex-welcome-state]")?.textContent).toBe("Ready");
+    // The token in its state ring, over the state line, which stays.
+    const status = container.querySelector("[data-vex-status]");
+    expect(status?.getAttribute("data-vex-status-layout")).toBe("stack");
+    expect(status?.querySelector("[data-vex-status-ring]")?.getAttribute("data-vex-status-ring")).toBe(
+      "ready",
+    );
+    expect(status?.querySelector("[data-vex-welcome-state]")?.textContent).toBe("Ready");
+    // No hologram here, so nothing to dock into the sidebar.
+    expect(vexDockPending()).toBe(false);
+  });
+
+  it("leaves the note that docks her into the Vex sidebar on the first message", () => {
+    render(<SessionWelcomeHero />);
+    expect(vexDockPending()).toBe(true);
   });
 
   it("says Ready with its outline fill and no scope", () => {

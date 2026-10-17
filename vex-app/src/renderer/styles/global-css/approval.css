@@ -1,15 +1,17 @@
-/* The approval card's sheet (docs/design/R3-MINIMAL.md section 8). Split out
- * of chat-transcript.css with its values unchanged, so the transcript and the
- * approval card are owned apart; the R3 restyle of the card lands here.
+/* The approval card's sheet (docs/design/R3-MINIMAL.md section 8): the card
+ * inline in the session and on the Needs you page, its folded row, and the
+ * Needs you page itself.
  *
  * Every desktop wallet is a real wallet, so EVERY approval card wears the
- * REAL FUNDS treatment: the 1.5px ink frame, the 8px hatch band down the
- * leading edge and the reversed stamp in its header. Ink, never red and never
- * blue. */
+ * REAL FUNDS treatment: the 1.5px ink frame, the 10px hatch band down the
+ * leading edge with a 1px ink rule on its inner edge, and the reversed stamp
+ * in its top row. Ink, never red and never blue. No veil and no scrim: the
+ * card is the one framed thing on screen (section 12). Radius 0, no shadow,
+ * tokens only. */
 
 .vex-real-funds {
   position: relative;
-  padding-left: 8px;
+  padding-left: 10px;
   background: var(--vex-alias-bg-base);
   border: 1.5px solid var(--vex-alias-rule-ink);
 }
@@ -19,52 +21,343 @@
   top: 0;
   bottom: 0;
   left: 0;
-  width: 8px;
+  width: 10px;
   background: repeating-linear-gradient(
     45deg,
     var(--vex-alias-rule-ink) 0 1px,
     transparent 1px 4px
   );
+  border-right: 1px solid var(--vex-alias-rule-ink);
   pointer-events: none;
 }
 
-/* The risk and action tags: ink outline, mono caps. One ink for every level;
- * the level is a word, the REAL FUNDS stamp beside it is the weight. */
-.vex-risk-tag {
+/* ── The card ──────────────────────────────────────────────────────────── */
+
+.vex-appr {
+  margin: 12px 0 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__in {
+  padding: 16px 20px 18px;
+}
+
+/* 1. Top row: the target swatch, "Approval needed", the expiry at the right,
+ * then the REAL FUNDS stamp and the risk tag. */
+.vex-appr__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.vex-appr__pin {
   display: inline-flex;
   flex: none;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
-  white-space: nowrap;
   color: var(--vex-alias-label-primary);
-  outline: 1px solid var(--vex-alias-label-primary);
-  outline-offset: -1px;
+}
+.vex-appr__eyebrow {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__sp {
+  flex: 1;
+}
+.vex-appr__expiry {
+  margin-right: 4px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__expiry .vex-num {
+  font-size: 12px;
 }
 
-/* ── The paper dither veil ─────────────────────────────────────────────────
- * A pending approval is the one thing the run is waiting on, so the rest of
- * the session - the transcript, the composer and the BOOK body beside them -
- * sits under the 2px paper dither (`.vex-approval-mask` in
- * ui-primitives/overlays.css), while the left page, the running heads and the
- * card stay sharp. The mask covers the session panel; the rule below carries
- * the same veil onto the BOOK under its 44px head row. A visual cue only:
- * `pointer-events: none`, the run is already paused. */
-.vex-shell-frame:has(> section [data-vex-area="approval-focus-mask"])
-  aside[data-vex-area="book-panel"]::after {
-  content: "";
-  position: absolute;
-  inset: 44px 0 0;
-  z-index: 40;
-  background:
-    repeating-conic-gradient(var(--vex-alias-bg-base) 0 25%, transparent 0 50%)
-    0 0 / 2px 2px;
-  image-rendering: pixelated;
-  pointer-events: none;
+/* 2. The plain sentence. */
+.vex-appr__title {
+  margin: 0 0 8px;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  color: var(--vex-alias-label-primary);
+}
+
+/* Who asked, under the sentence. */
+.vex-appr__meta {
+  margin: -2px 0 12px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__meta > span {
+  color: var(--vex-alias-label-secondary);
+}
+
+/* 4. The money lines and the fact rows: a definition list in two columns,
+ * each row ruled quiet. */
+.vex-appr__dl {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  margin: 0;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-appr__dl dt,
+.vex-appr__dl dd {
+  margin: 0;
+  padding: 8px 0;
+  font-size: 14px;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-appr__dl dt {
+  padding-right: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__dl dd {
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__num {
+  font-size: 13px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__sub {
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A value the tool did not quote: the word, in muted type, never a figure. */
+.vex-appr__missing {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__wrap {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vex-appr__break {
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* 5. The risk sentences: each with a 2px ink rule at its left and a 600 lead. */
+.vex-appr__why {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+.vex-appr__why p {
+  margin: 0;
+  padding-left: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+  border-left: 2px solid var(--vex-alias-rule-ink);
+}
+.vex-appr__why b {
+  font-weight: 600;
+  color: var(--vex-alias-label-primary);
+}
+
+/* The agent's reason, in the reasoned register: italic, a rule at its left. */
+.vex-appr__reason {
+  margin: 12px 0 0;
+  padding-left: 12px;
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+  border-left: 1px solid var(--vex-alias-rule);
+}
+
+/* 6. "All signed fields": 38 high, blue 13.5 / 500, a chevron that turns
+ * when the well is open. */
+.vex-appr__more {
+  margin-top: 8px;
+}
+.vex-appr__more-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.vex-appr__more-key::-webkit-details-marker {
+  display: none;
+}
+.vex-appr__more-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+}
+.vex-appr__chev {
+  display: inline-flex;
+  flex: none;
+  transition: transform var(--vex-duration-base) var(--vex-ease-standard);
+}
+.vex-appr__more[open] .vex-appr__chev {
+  transform: rotate(90deg);
+}
+.vex-appr__more-sum {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The well: the second paper, the key in 12 muted, the value in mono 12. */
+.vex-appr__well {
+  display: grid;
+  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-appr__well dt {
+  margin: 0;
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__well dd {
+  margin: 0;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__well .vex-appr__num {
+  font-size: 12px;
+}
+.vex-appr__well--args {
+  padding-top: 4px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+
+.vex-appr__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+  border: 1px solid var(--vex-alias-rule-ink);
+}
+
+/* 7. The footer: the optional Reason, Reject, the action button. Sticky at
+ * short heights against the card's scrolling ancestor. */
+.vex-appr__foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 0 2px;
+  background: var(--vex-alias-bg-base);
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* ── The folded row (Needs you page, section 8.5) ──────────────────────── */
+
+.vex-appr-row-frame {
+  margin-bottom: 10px;
+  font-family: var(--font-sans);
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-appr-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 13px 16px;
+}
+.vex-appr-row__pin {
+  display: inline-flex;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr-row__title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr-row__go {
+  display: flex;
+  grid-row: 1 / span 2;
+  grid-column: 3;
+  align-items: center;
+  gap: 10px;
+}
+.vex-appr-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr-row__stamp.vex-stamp {
+  height: 18px;
+  font-size: 10px;
+}
+.vex-appr-row__error {
+  grid-column: 2 / span 2;
+}
+
+/* ── The Needs you page (route `needsYou`, section 8.5) ────────────────── */
+
+.vex-needs-page {
+  padding-bottom: 28px;
+  font-family: var(--font-sans);
+}
+.vex-needs-page__lead {
+  margin: 18px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-needs-page__group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 26px 0 6px;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-needs-page__group-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-needs-page__sp {
+  flex: 1;
+}
+.vex-needs-page__open {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-needs-page__open:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-needs-page__open:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+}
+.vex-needs-page .vex-appr {
+  margin-top: 0;
+  margin-bottom: 10px;
 }

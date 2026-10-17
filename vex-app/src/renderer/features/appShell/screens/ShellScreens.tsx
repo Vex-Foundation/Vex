@@ -92,7 +92,12 @@ export function ShellScreens(): JSX.Element {
       ) : route.kind === "board" ? (
         <BoardScreen key="board" origin={route.origin} onClose={close} />
       ) : route.kind === "needsYou" ? (
-        <NeedsYouScreen key="needsYou" origin={route.origin} onClose={close} />
+        <NeedsYouScreen
+          key="needsYou"
+          origin={route.origin}
+          approvalId={route.approvalId ?? null}
+          onClose={close}
+        />
       ) : route.kind === "tokenHistory" ? (
         <TokenHistoryScreen
           // Identity-keyed so switching tokens always remounts a fresh screen.

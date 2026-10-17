@@ -9,9 +9,9 @@
  *   - the panel lists the shared items newest first, says "Nothing needs you."
  *     at zero, closes on Escape (focus back on the control) and on an outside
  *     press;
- *   - Review opens the thing and never decides: an approval's full card over
- *     the window (in place, in Studio too), or the inline card when it is on
- *     screen, or a mission's session.
+ *   - Review opens the thing and never decides: the Needs you page on the
+ *     approval's full card (in place, in Studio too), or the inline card when
+ *     it is on screen, or a mission's session.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -254,31 +254,35 @@ describe("NeedsYouControl: the panel", () => {
 });
 
 describe("NeedsYouControl: Review opens, never decides", () => {
-  it("opens an approval's full card over the window, and returns focus on close", () => {
+  it("opens the Needs you page on the approval's card, deciding nothing", () => {
     const row = approval({ riskLevel: "info", actionKind: "read" });
     reads.pending = { data: { ok: true, data: [row] } };
     renderControl();
     const panel = openPanel();
     fireEvent.click(within(panel).getByRole("button", { name: /^Review:/ }));
     expect(screen.queryByRole("dialog", { name: "Needs you" })).toBeNull();
-    const review = document.querySelector<HTMLElement>("[data-vex-area='global-approvals-panel']");
-    expect(review).not.toBeNull();
-    expect(review?.querySelector(`[data-approval-id="${row.id}"]`)).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Reject" })).not.toBeNull();
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "needsYou",
+      origin: null,
+      approvalId: row.id,
+    });
+    // No card dialog over the window any more: the page holds the card.
+    expect(document.querySelector("[data-vex-area='global-approvals-panel']")).toBeNull();
     expect(mockApprove).not.toHaveBeenCalled();
     expect(mockReject).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close approval review" }));
-    expect(document.querySelector("[data-vex-area='global-approvals-panel']")).toBeNull();
-    expect(document.activeElement).toBe(control());
   });
 
-  it("opens the card in place in Studio, without leaving Studio", () => {
+  it("opens the page in place in Studio, without leaving Studio", () => {
     useUiStore.setState({ runtimeMode: "studio" });
-    reads.pending = { data: { ok: true, data: [approval({ riskLevel: "info", actionKind: "read" })] } };
+    const row = approval({ riskLevel: "info", actionKind: "read" });
+    reads.pending = { data: { ok: true, data: [row] } };
     renderControl();
     fireEvent.click(within(openPanel()).getByRole("button", { name: /^Review:/ }));
-    expect(document.querySelector("[data-vex-area='global-approvals-panel']")).not.toBeNull();
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "needsYou",
+      origin: null,
+      approvalId: row.id,
+    });
     expect(useUiStore.getState().runtimeMode).toBe("studio");
   });
 
@@ -299,11 +303,12 @@ describe("NeedsYouControl: Review opens, never decides", () => {
 
     renderControl();
     fireEvent.click(within(openPanel()).getByRole("button", { name: /^Review:/ }));
-    expect(document.querySelector("[data-vex-area='global-approvals-panel']")).toBeNull();
+    // The card is right here: no page opens over it.
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
     expect(document.activeElement).toBe(reject);
   });
 
-  it("opens the review when a page covers the inline card", () => {
+  it("opens the Needs you page when a page covers the inline card", () => {
     const row = approval({ riskLevel: "info", actionKind: "read" });
     useUiStore.setState({
       runtimeMode: "agent",
@@ -313,7 +318,11 @@ describe("NeedsYouControl: Review opens, never decides", () => {
     reads.pending = { data: { ok: true, data: [row] } };
     renderControl();
     fireEvent.click(within(openPanel()).getByRole("button", { name: /^Review:/ }));
-    expect(document.querySelector("[data-vex-area='global-approvals-panel']")).not.toBeNull();
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "needsYou",
+      origin: null,
+      approvalId: row.id,
+    });
   });
 
   it("opens a mission's session, in the agent shell, with no page over it", () => {

@@ -188,13 +188,61 @@ describe("the left cell", () => {
     cleanup();
 
     const scan: ShellRoute = { kind: "agentScan", origin: null, sessionId: null };
-    expect(titleBarPageOf(scan)).toEqual({ name: "Agent Scan", crumb: "Portfolio" });
+    expect(titleBarPageOf(scan)?.name).toBe("Agent Scan");
+    expect(titleBarPageOf(scan)?.parents.map((parent) => parent.label)).toEqual(["Portfolio"]);
+  });
+
+  it("draws a subpage's crumb: each parent a link up to it, the page itself current", () => {
+    useUiStore.setState({
+      shellRoute: {
+        kind: "tokenHistory",
+        origin: null,
+        token: { chainId: 8453, tokenAddress: "0xabc", symbol: "USDC", tokenName: "USD Coin" },
+        returnTo: { kind: "assets", sessionId: null },
+      },
+    });
+    renderHead("agent", SESSION);
+    const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(crumb.getAttribute("data-vex-area")).toBe("title-bar-title");
+    expect(title()).toBe("Portfolio/All assets/USD Coin history");
+    expect(screen.getByText("USD Coin history").getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(screen.getByRole("button", { name: "All assets" }));
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "assets",
+      origin: null,
+      sessionId: null,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
   });
 
   it("names the Studio project and its access, never the agent session", () => {
     useUiStore.setState({ activeProjectId: PROJECT });
     renderHead("studio", SESSION);
     expect(title()).toBe("vault-toolsStudio · Full access");
+  });
+});
+
+describe("the page close key", () => {
+  it("is absent in agent mode, where the nav is the way back", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    renderHead("agent", SESSION);
+    expect(screen.queryByRole("button", { name: "Close Settings" })).toBeNull();
+  });
+
+  it("closes a top-level page in Studio, where nothing else leads back", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    renderHead("studio", SESSION);
+    fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
+  it("is absent on a subpage, whose crumb parent is the way back", () => {
+    useUiStore.setState({ shellRoute: { kind: "agentScan", origin: null, projectId: PROJECT } });
+    renderHead("studio", SESSION);
+    expect(screen.queryByRole("button", { name: /^Close / })).toBeNull();
+    expect(screen.getByRole("button", { name: "Portfolio" })).not.toBeNull();
   });
 });
 

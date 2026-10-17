@@ -158,7 +158,7 @@ describe("SessionPanel - selected-session path mounts the approval card", () => 
     );
 
     // The card must appear in the active-session path.
-    expect(screen.getByText(/Approval needed:/)).toBeTruthy();
+    expect(screen.getByText("Approval needed")).toBeTruthy();
     expect(screen.getByText("wallet:send")).toBeTruthy();
     // And the stubs prove we rendered the active-session branch.
     expect(screen.getByTestId("transcript-stub")).toBeTruthy();

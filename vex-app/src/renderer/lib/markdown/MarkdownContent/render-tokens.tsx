@@ -120,9 +120,9 @@ export function renderBlock(
       return <p key={key}>{renderInline(token.tokens, opts)}</p>;
     case "heading": {
       // Article variant: long-form static docs earn REAL heading elements, the
-      // section head in the serif at its 32px floor (docs/design/V10-SPREAD.md
-      // section 1: the serif never sets a word under 32px). Chat keeps its
-      // original semantic decision (no h-tags in chat prose).
+      // section head in the serif at a display size (docs/design/R3-MINIMAL.md
+      // section 1.3: the serif is for display only). Chat keeps its original
+      // semantic decision (no h-tags in chat prose).
       if (opts.variant === "article") {
         if (token.depth <= 2) {
           return (
@@ -172,7 +172,7 @@ export function renderBlock(
         );
       }
       // Chat headings keep their original semantic decision (no h-tags in
-      // chat prose); the Inter Tight document scale carries the hierarchy
+      // chat prose); the Instrument Sans document scale carries the hierarchy
       // (h1 700 24/34, h2 600 20/28, h3+ 600 17/24 — design-language §4).
       return (
         <p
@@ -271,7 +271,7 @@ export function renderBlock(
                 {token.header.map((cell: Tokens.TableCell, i: number) => (
                   <th
                     key={i}
-                    className={`border-b border-rule px-2 py-1 font-mono text-[11px] uppercase tracking-chip text-ink-secondary ${alignClass(i)}`}
+                    className={`border-b border-rule px-2 py-1 text-[12px] font-medium text-ink-tertiary ${alignClass(i)}`}
                   >
                     {renderInline(cell.tokens, opts)}
                   </th>

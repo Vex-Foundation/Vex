@@ -71,34 +71,32 @@ export function ReasoningEffortSection({
   };
 
   return (
-    <div
-      className="rounded-xl border border-line-1 bg-surface-1 px-4 py-3"
-      data-vex-area="mission-reasoning-effort"
-    >
-      <div className="vex-micro-label uppercase text-ink-secondary">Reasoning effort</div>
-      <p className="mt-1 text-xs text-ink-secondary">
+    <div className="mt-[22px]" data-vex-area="mission-reasoning-effort">
+      <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
+        <b className="text-[14px] font-semibold text-ink-primary">Reasoning effort</b>
+        <span className="flex flex-wrap items-baseline gap-x-2 text-[12.5px] text-ink-tertiary">
+          <span>Current:</span>
+          <span data-vex-field="stored-reasoning-effort" className="font-medium text-ink-primary">
+            {EFFORT_LABEL[stored]}
+          </span>
+          {model !== null && runsAt !== stored ? (
+            <span data-vex-field="run-reasoning-effort" className="text-ink-secondary">
+              runs as <span className="font-medium text-ink-primary">{EFFORT_LABEL[runsAt]}</span> on{" "}
+              {modelLabel(model.modelId)}
+            </span>
+          ) : null}
+        </span>
+      </div>
+      <p className="mb-2.5 text-[14px] leading-[1.5] text-ink-secondary">
         How long the agent thinks before each step of this mission. Lower is faster
         and cheaper; higher is more careful. High is the default. If the model
         does not support your choice, the nearest higher level it supports is used.
       </p>
 
-      <div className="mt-2 flex flex-wrap gap-x-2 text-xs text-ink-secondary">
-        <span className="text-ink-tertiary">Current:</span>
-        <span data-vex-field="stored-reasoning-effort" className="font-semibold text-ink-primary">
-          {EFFORT_LABEL[stored]}
-        </span>
-        {model !== null && runsAt !== stored ? (
-          <span data-vex-field="run-reasoning-effort" className="text-ink-secondary">
-            runs as <span className="font-semibold text-ink-primary">{EFFORT_LABEL[runsAt]}</span> on{" "}
-            {modelLabel(model.modelId)}
-          </span>
-        ) : null}
-      </div>
-
       {editable ? (
-        <div className="mt-3 flex items-end gap-2">
-          <label className="block flex-1 text-xs text-ink-secondary">
-            <span className="text-ink-tertiary">Effort for this mission</span>
+        <div className="flex items-center gap-3">
+          <label className="flex h-10 w-[300px] max-w-full items-center gap-2.5 border border-rule bg-surface-field px-3 focus-within:border-accent-primary">
+            <span className="text-[13px] text-ink-tertiary">Effort for this mission</span>
             <select
               value={picked}
               aria-label="Mission reasoning effort"
@@ -107,7 +105,7 @@ export function ReasoningEffortSection({
                 const parsed = reasoningEffortSchema.safeParse(e.target.value);
                 if (parsed.success) setPicked(parsed.data);
               }}
-              className="mt-1 w-full rounded-xl border border-line-input bg-surface-deep px-2 py-1 text-xs text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+              className="min-w-0 flex-1 appearance-auto bg-transparent text-[14px] text-ink-primary focus-visible:outline-none"
             >
               {REASONING_EFFORT_VALUES.map((effort) => (
                 <option key={effort} value={effort}>
@@ -119,7 +117,6 @@ export function ReasoningEffortSection({
           <Button
             type="button"
             variant="quiet"
-            size="sm"
             disabled={setEffort.isPending || picked === stored}
             onClick={onSave}
             data-vex-action="save-reasoning-effort"
@@ -128,13 +125,17 @@ export function ReasoningEffortSection({
           </Button>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-ink-tertiary">
+        <p className="mt-2 text-[13px] leading-[1.45] text-ink-tertiary">
           This mission has started. Its run uses the effort frozen when it began.
         </p>
       )}
 
       {notice !== null ? (
-        <p role="alert" data-vex-state="reasoning-effort-notice" className="mt-2 text-xs text-warning">
+        <p
+          role="alert"
+          data-vex-state="reasoning-effort-notice"
+          className="mt-2 text-[13px] leading-5 text-ink-primary"
+        >
           {notice}
         </p>
       ) : null}

@@ -3,13 +3,17 @@
  *
  * Pins:
  *   - renders the rich DTO (toolName, namespace, risk + action chips, criticalArgs);
- *   - default focus on Reject when `focusOnMount` (Codex F3 default-focus / UI-UX
+ *   - default focus on Reject when `focusOnMount` (Codex F3 default-focus, UI-UX
  *     "least destructive default");
  *   - two-step confirm for high-risk (riskLevel in {high,critical} OR actionKind in
- *     {destructive,user_wallet_broadcast}) — first click arms, second click fires;
+ *     {destructive,user_wallet_broadcast}): first click arms, second click fires;
  *   - low-risk: single click fires;
- *   - Result.ok=false surfaces as inline error (Codex F3 constraint #1 — TanStack
- *     `isError` would not catch application-level Result failures).
+ *   - Result.ok=false surfaces as inline error (Codex F3 constraint #1: TanStack
+ *     `isError` would not catch application-level Result failures);
+ *   - the R3 card (docs/design/R3-MINIMAL.md section 8): the plain sentence,
+ *     the money lines with "Not available" where the tool quoted nothing, the
+ *     action-named key by tool family, and the row the Needs you page folds a
+ *     card to, whose Reject keeps the same two-step confirm.
  */
 
 import { readFileSync } from "node:fs";
@@ -130,11 +134,14 @@ describe("ApprovalCard", () => {
     expect(screen.getByTestId("critical-args").textContent).toContain(binding);
   });
 
-  it("renders toolName, namespace, risk + action chips, and criticalArgs", () => {
+  it("renders the plain sentence, the tool, the readable risk tag, the action kind and criticalArgs", () => {
     renderCard(makeSummary(), false);
-    expect(screen.getByText(/Approval needed:/)).toBeTruthy();
+    expect(screen.getByText("Approval needed")).toBeTruthy();
+    // The title is the plain sentence, built from the present arguments.
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Send 0.5 ETH on Ethereum to 0xabc.");
     expect(screen.getByText("wallet:send")).toBeTruthy();
-    expect(screen.getByTestId("risk-chip").textContent).toBe("high");
+    // Authored in sentence case; the style capitalises it.
+    expect(screen.getByTestId("risk-chip").textContent).toBe("High risk");
     expect(screen.getByTestId("action-chip").textContent).toBe(
       "user_wallet_broadcast",
     );
@@ -178,7 +185,7 @@ describe("ApprovalCard", () => {
       makeSummary({ riskLevel: "info", actionKind: "read" }),
       false,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
     expect(mockApproveMutate).toHaveBeenCalledTimes(1);
     expect(mockApproveMutate).toHaveBeenCalledWith(
       { id: "appr-1" },
@@ -186,7 +193,7 @@ describe("ApprovalCard", () => {
     );
   });
 
-  it("labels Lighter create approvals as approve-and-execute trades", () => {
+  it("names a Lighter create approval's key by its family: Approve order", () => {
     renderCard(
       makeSummary({
         riskLevel: "info",
@@ -207,7 +214,7 @@ describe("ApprovalCard", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /^approve and execute trade$/i }),
+      screen.getByRole("button", { name: /^approve order$/i }),
     );
 
     expect(screen.getByText("lighter:order.create")).toBeTruthy();
@@ -336,12 +343,13 @@ describe("ApprovalCard", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /^approve and execute trade$/i }),
+      screen.getByRole("button", { name: /^approve order$/i }),
     );
     expect(mockApproveMutate).not.toHaveBeenCalled();
     const confirm = screen.getByRole("button", { name: /confirm approve/i });
+    // The second press keeps the app's own words (section 8.4).
     expect(confirm.textContent).toContain(
-      "Click again to approve and execute trade",
+      "Click again to confirm approve",
     );
     fireEvent.click(confirm);
     expect(mockApproveMutate).toHaveBeenCalledWith(
@@ -469,7 +477,7 @@ describe("ApprovalCard", () => {
       screen.getByRole("textbox", { name: /reason for rejecting/i }),
       { target: { value: "not this one" } },
     );
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
 
     expect(mockApproveMutate).toHaveBeenCalledWith(
       { id: "appr-1" },
@@ -479,7 +487,7 @@ describe("ApprovalCard", () => {
 
   it("high-risk approve needs TWO clicks (first arms, second fires)", () => {
     renderCard(makeSummary(), false);
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
     expect(mockApproveMutate).not.toHaveBeenCalled();
     // After arming, the same button now has aria-label "Confirm approve".
     fireEvent.click(screen.getByRole("button", { name: /confirm approve/i }));
@@ -507,7 +515,7 @@ describe("ApprovalCard", () => {
         false,
       );
       // First approve click only arms — must NOT call onApprove yet.
-      fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
       expect(mockApproveMutate).not.toHaveBeenCalled();
       // The button now exposes the confirm label/aria-label.
       const confirm = screen.getByRole("button", {
@@ -527,7 +535,7 @@ describe("ApprovalCard", () => {
         makeSummary({ riskLevel, actionKind: "user_wallet_broadcast" }),
         false,
       );
-      fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
       expect(mockApproveMutate).not.toHaveBeenCalled();
       const confirm = screen.getByRole("button", {
         name: /confirm approve/i,
@@ -568,7 +576,7 @@ describe("ApprovalCard", () => {
       makeSummary({ riskLevel: "info", actionKind: "read" }),
       false,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
     expect(screen.getByRole("alert").textContent).toContain(
       "Wallet rejected the request.",
     );
@@ -592,7 +600,7 @@ describe("ApprovalCard", () => {
     });
 
     renderCard(makeSummary({ origin: "desk", riskLevel: "info", actionKind: "read" }), false);
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
 
     await waitFor(() => expect(invalidate).toHaveBeenCalled());
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "pending", SESSION] });
@@ -606,7 +614,7 @@ describe("ApprovalCard", () => {
       void options?.onSuccess?.({ ok: true, data: {} });
     });
     renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
-    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
     expect(document.querySelector("[data-vex-signed-glint]")).not.toBeNull();
   });
 
@@ -649,7 +657,7 @@ describe("ApprovalCard", () => {
       makeSummary({ riskLevel: "info", actionKind: "read" }),
       false,
     );
-    const approve = screen.getByRole("button", { name: /^approve$/i });
+    const approve = screen.getByRole("button", { name: /^approve transfer$/i });
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(false);
     expect(approve.querySelector(".vex-swatch")).toBeNull();
@@ -664,7 +672,7 @@ describe("ApprovalCard", () => {
       // The mutation never reports back, and the mocked `isPending` stays
       // false: the lock comes from the click alone.
       renderCard(makeSummary(LOW), false);
-      const approveKey = screen.getByRole("button", { name: /^approve$/i });
+      const approveKey = screen.getByRole("button", { name: /^approve transfer$/i });
       fireEvent.click(approveKey);
       fireEvent.click(approveKey);
       expect(mockApproveMutate).toHaveBeenCalledTimes(1);
@@ -685,7 +693,7 @@ describe("ApprovalCard", () => {
       const rejecting = screen.getByRole("button", { name: /rejecting, please wait/i });
       expect(rejecting.textContent).toBe("Rejecting");
       expect(rejecting.getAttribute("aria-busy")).toBe("true");
-      expect(screen.getByRole("button", { name: /^approve$/i }).getAttribute("disabled")).not.toBeNull();
+      expect(screen.getByRole("button", { name: /^approve transfer$/i }).getAttribute("disabled")).not.toBeNull();
     });
 
     it("hands the outcome over before the query refresh has finished", () => {
@@ -711,7 +719,7 @@ describe("ApprovalCard", () => {
           <ApprovalCard summary={makeSummary(LOW)} sessionId={SESSION} focusOnMount={false} onResolved={onResolved} />
         </QueryClientProvider>,
       );
-      fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
       expect(onResolved).toHaveBeenCalledWith("approved", data);
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ["approvals", "pending", SESSION] });
       // The card stays inert until the refreshed list removes it.
@@ -755,9 +763,9 @@ describe("ApprovalCard", () => {
         });
       });
       renderCard(makeSummary(LOW), false);
-      fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
       expect(screen.getByRole("alert").textContent).toContain("Dispatch failed.");
-      expect(screen.getByRole("button", { name: /^approve$/i }).getAttribute("disabled")).toBeNull();
+      expect(screen.getByRole("button", { name: /^approve transfer$/i }).getAttribute("disabled")).toBeNull();
       expect(screen.getByRole("button", { name: /^reject$/i }).getAttribute("disabled")).toBeNull();
     });
 
@@ -774,13 +782,152 @@ describe("ApprovalCard", () => {
 });
 
 /**
- * REAL FUNDS, ON EVERY CARD (docs/design/V10-SPREAD.md section 7). Every
+ * REAL FUNDS, ON EVERY CARD (docs/design/R3-MINIMAL.md section 8). Every
  * desktop wallet is a real wallet, so no approval card may render without the
  * reversed stamp, the 1.5px ink frame and the hatch band - whatever its risk,
  * its action kind or its origin. The frame lives on `.vex-real-funds`
  * (approval.css, the approval card's own sheet); its values are pinned against
  * the stylesheet.
  */
+const BRIDGE_PREVIEW = {
+  toolName: "BridgeExecute",
+  criticalArgs: {
+    fromChain: "8453",
+    toChain: "42161",
+    amountRaw: "1000000",
+    slippageBps: 50,
+    bridgeAmount: "1 USDC | 1000000 raw units | 6 decimals",
+    vexFee:
+      "Vex fee 0.25% (25 bps): 0.0025 USDC | 2500 raw units | 6 decimals, taken on the input token as a separate transfer after the bridge confirms.",
+    safety: "UNVERIFIED - audit unavailable",
+  },
+} as const;
+
+describe("ApprovalCard, the R3 card", () => {
+  it("titles a bridge with its plain sentence and names its key Approve bridge", () => {
+    renderCard(makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }), false);
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe(
+      "Bridge 1 USDC from Base to Arbitrum.",
+    );
+    expect(screen.getByRole("button", { name: "Approve bridge" })).toBeTruthy();
+  });
+
+  it("reads the money lines the tool bound and says Not available for the rest, never a figure", () => {
+    renderCard(makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }), false);
+    const money = document.querySelector<HTMLElement>("[data-vex-area='approval-money']");
+    expect(money).not.toBeNull();
+    const text = money?.textContent ?? "";
+    expect(text).toContain("You send");
+    expect(text).toContain("1 USDC");
+    expect(text).toContain("0.0025 USDC");
+    expect(text).toContain("slippage limit 0.5%");
+    // The bridge lane binds no expected output, no minimum and no network fee.
+    expect(money?.querySelectorAll("[data-vex-money-missing]")).toHaveLength(3);
+    expect(text).toContain("Not available");
+    // Total debit only when every part is known: the network fee is not.
+    expect(text).not.toContain("Total debit");
+  });
+
+  it("explains the risk in plain sentences: the high risk and the missing audit", () => {
+    renderCard(makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }), false);
+    expect(screen.getByText("High risk:")).toBeTruthy();
+    expect(screen.getByText("Unverified, audit unavailable:")).toBeTruthy();
+  });
+
+  it("keeps every raw field behind All signed fields, closed while the card has facts to read", () => {
+    renderCard(makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }), false);
+    const signed = screen.getByText("All signed fields").closest("details");
+    expect(signed).not.toBeNull();
+    expect(signed?.open).toBe(false);
+    expect(signed?.contains(screen.getByTestId("critical-args"))).toBe(true);
+    expect(signed?.contains(screen.getByTestId("approval-proposal"))).toBe(true);
+  });
+
+  it("opens the signed fields when they are the only facts the card has", () => {
+    renderCard(
+      makeSummary({
+        toolName: "WalletEvmTransactionConfirm",
+        preview: { toolName: "WalletEvmTransactionConfirm", criticalArgs: { chain: "base", recipient: "0xabc" } },
+      }),
+      false,
+    );
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toMatch(/: review the signed fields$/);
+    expect(screen.getByText("All signed fields").closest("details")?.open).toBe(true);
+  });
+
+  it("arms the second press as an ink key, never a second blue fill", () => {
+    renderCard(makeSummary(), false);
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
+    const armed = screen.getByRole("button", { name: /confirm approve/i });
+    expect(armed.className).toContain("border-rule-ink");
+    expect(armed.className).toContain("outline-rule-ink");
+    expect(armed.className).not.toContain("bg-button-accent ");
+  });
+});
+
+describe("ApprovalCard folded to its row (the Needs you page)", () => {
+  function renderRow(
+    summary: ApprovalSummaryDto,
+    onReview: () => void = () => undefined,
+  ): ReturnType<typeof render> {
+    return render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalCard
+          summary={summary}
+          sessionId={SESSION}
+          focusOnMount={false}
+          idVariant="global"
+          layout="row"
+          onReview={onReview}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("shows the sentence, REAL FUNDS, Reject and Review by family, and no approve key", () => {
+    renderRow(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    const card = document.querySelector("[data-vex-area='approval-card']");
+    expect(card?.getAttribute("data-vex-approval-layout")).toBe("row");
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Send 0.5 ETH on Ethereum to 0xabc.");
+    expect(screen.getByTestId("real-funds-stamp").textContent).toBe("Real funds");
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Review transfer" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^approve/i })).toBeNull();
+  });
+
+  it("Review opens the card and decides nothing", () => {
+    const onReview = vi.fn();
+    renderRow(makeSummary(), onReview);
+    fireEvent.click(screen.getByRole("button", { name: "Review transfer" }));
+    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the two-step reject on a high-risk row", () => {
+    renderRow(makeSummary());
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: /confirm reject/i });
+    expect(confirm.textContent).toBe("Click again to confirm reject");
+    fireEvent.click(confirm);
+    expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+  });
+
+  it("carries an armed key across the fold: the row and the card are one decision", () => {
+    const view = renderRow(makeSummary());
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalCard summary={makeSummary()} sessionId={SESSION} focusOnMount={false} idVariant="global" layout="card" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("button", { name: /confirm reject/i }).textContent).toBe(
+      "Click again to confirm reject",
+    );
+  });
+});
+
 describe("ApprovalCard REAL FUNDS treatment", () => {
   const APPROVAL_CSS = readFileSync(
     join(process.cwd(), "src/renderer/styles/global-css/approval.css"),
@@ -815,19 +962,21 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     });
   }
 
-  it("draws the target swatch where the amber pin used to be", () => {
+  it("draws the target swatch (waiting for approval) beside the eyebrow", () => {
     renderCard(makeSummary(), false);
     const header = document.querySelector('[data-vex-area="approval-card"] header');
-    expect(header?.querySelector('.vex-swatch[data-s="warning"]')).not.toBeNull();
+    expect(header?.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
+    expect(header?.textContent).toContain("Approval needed");
     expect(header?.innerHTML).not.toContain("--vex-pin");
   });
 
-  it("frames the card in the 1.5px ink with an 8px hatch band, never a hue", () => {
+  it("frames the card in the 1.5px ink with a 10px hatch band and its inner ink rule, never a hue", () => {
     const frame = ruleBody(".vex-real-funds");
     expect(frame).toContain("border: 1.5px solid var(--vex-alias-rule-ink)");
-    expect(frame).toContain("padding-left: 8px");
+    expect(frame).toContain("padding-left: 10px");
     const band = ruleBody(".vex-real-funds::before");
-    expect(band).toContain("width: 8px");
+    expect(band).toContain("width: 10px");
+    expect(band).toContain("border-right: 1px solid var(--vex-alias-rule-ink)");
     expect(band).toMatch(
       /repeating-linear-gradient\(\s*45deg,\s*var\(--vex-alias-rule-ink\) 0 1px,\s*transparent 1px 4px\s*\)/,
     );

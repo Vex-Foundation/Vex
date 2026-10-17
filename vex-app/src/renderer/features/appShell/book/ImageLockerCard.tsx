@@ -1,51 +1,46 @@
 /**
- * LAUNCHPAD - the image locker AND the launch opener, as ONE card.
+ * LAUNCHPAD on the Portfolio page: the image locker AND the launch opener, as
+ * ONE section (docs/design/R3-MINIMAL.md section 9.1; "Launchpad" with the
+ * venue's mark, the images as a grid of square tiles, "Add image" and the
+ * launch opener under it).
  *
  * This is the ONE place the user and the agent see the same library. A token
  * launch REQUIRES an image (our product rule), and an agent running a mission
- * cannot produce one. So this card is not a convenience: it is the only way a
- * fully autonomous launch can happen with nobody present, because the picture
- * has to be staged by a human in advance.
+ * cannot produce one. So this section is not a convenience: it is the only way
+ * a fully autonomous launch can happen with nobody present, because the
+ * picture has to be staged by a human in advance. The empty state says exactly
+ * that, rather than a decorative "no images yet".
  *
- * The empty state says exactly that, rather than a decorative "no images yet".
- * A user who does not understand why this card exists will not use it, and the
- * mission will stall at the point where it can no longer be fixed.
+ * THE MERGE (owner brief section 8): the locker and "Launch a token" are one
+ * section, under the mark of the launchpad a launch actually goes to. A launch
+ * REQUIRES an image from this locker, so two sections sent the user hunting for
+ * the reason a launch refused. `TokenLaunchButton` is composed unchanged; the
+ * agent-driven `AgentLaunchFormHost` path is a separate flow and keeps working.
  *
- * Card grammar is `PortfolioCard` (the shared glass chrome + eyebrow, which
- * uppercases to LAUNCHPAD). This file declares NO glass of its own: the
- * blur is inherited from that wrapper, which is the single design-guard
- * whitelisted entry, and a second one anywhere under `features/appShell` is a
- * red build. (The guard is a raw TEXT scan, so even naming the banned utility
- * in a comment trips it — hence the circumlocution.)
+ * THREE SCOPES, TWO MODES. The locker is GLOBAL (`useLockerImages` takes no
+ * scope), so every page scope SEES the same images.
  *
- * THE MERGE (owner brief §8): the locker and "Launch a token" are one card,
- * under the mark of the launchpad a launch actually goes to. A
- * launch REQUIRES an image from this locker, so two cards sent the user hunting
- * for the reason a launch refused. `TokenLaunchButton` is composed unchanged -
- * the agent-driven `AgentLaunchFormHost` path is a separate flow and keeps
- * working.
+ *  - session ("This chat"): read, upload, delete AND the launch action. A
+ *    user-origin launch is attributed to a session id on the signing path,
+ *    so the launch is offered only where there is one;
+ *  - global (the whole inventory, or one wallet): read, upload and delete;
+ *    the launch seat says where a launch is signed from, and, while a chat is
+ *    open, that its "This chat" scope launches from it;
+ *  - project ("This project"): BROWSE-ONLY by decision (Studio parity decree,
+ *    2026-09-04): the read alone, non-deletable tiles, and the sentence that
+ *    says where a launch is signed from. A project has no session of its own
+ *    that this section may borrow.
  *
- * TWO SCOPES, TWO COMPONENTS (Studio parity decree, 2026-09-04).
- * The locker is GLOBAL - `useLockerImages` takes no scope - so a
- * project rail SEES the same images a session rail does. It may do nothing
- * else with them. A user-origin launch is attributed to a session id on the
- * signing path, and a project has none of its own that this card may borrow
- * (its `backingSessionId` is an owner decision, not a rail's); and a project
- * LAUNCHPAD is BROWSE-ONLY by decision, so upload and delete are not offered
- * there either. The scope decides the card's MODE here, in one place:
- * `session` mounts `SessionLocker` (read, upload, delete and the launch
- * action); `project` mounts `ProjectLocker`, which calls ONLY
- * the read query, renders non-deletable tiles, and says where a launch is
- * signed from. The split is two components rather than one with branches
- * because hooks cannot be conditional: a browse-only rail must not instantiate
- * the upload and delete mutations at all, and the only way to prove that is
- * for the component it mounts not to call them.
+ * The modes are two components rather than one with branches because hooks
+ * cannot be conditional: a browse-only scope must not instantiate the upload
+ * and delete mutations at all, and the only way to prove that is for the
+ * component it mounts not to call them.
  */
 
 import { useState, type JSX, type ReactNode } from "react";
 import type { VexError } from "@shared/ipc/result.js";
 import type { ImageOnchainVariant } from "@shared/schemas/images.js";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LinePlus } from "../../../components/icons/line/index.js";
 import {
   useDeleteLockerImage,
   useLockerImages,
@@ -65,32 +60,63 @@ import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
 import { ImageThumb, type ImageThumbRemoval } from "./image-locker/ImageThumb.js";
 
 /**
- * What the rail is mounted for. Closed: the card has a real read for both,
- * and no host may hand it a scope it would have to invent a session for.
+ * What the section is shown for. Closed: no host may hand it a scope it would
+ * have to invent a session for.
  */
 export type ImageLockerScope =
+  | { readonly kind: "global" }
   | { readonly kind: "session"; readonly sessionId: string }
   | { readonly kind: "project"; readonly projectId: string };
 
-/** What a project rail says in the seat the launch action holds for a session. */
+/** What a scope without a session says in the seat the launch action holds. */
 export const LAUNCH_FROM_AGENT_SESSION_NOTE =
   "A token launch is signed from an Agent session. Images staged here are ready for one.";
 
-/** What an EMPTY locker says on a browse-only rail, where nothing can be added. */
+/** The global seat's second sentence, while a chat is open to launch from. */
+export const LAUNCH_FROM_THIS_CHAT_NOTE =
+  "Choose This chat above to launch from the open chat.";
+
+/** What an EMPTY locker says on a browse-only scope, where nothing can be added. */
 export const PROJECT_LOCKER_EMPTY_NOTE =
   "No images in the locker yet. A launch needs an image, and the agent can't make one; stage one from an Agent session's Launchpad.";
 
 export function ImageLockerCard({
   scope,
+  chatOpen = false,
 }: {
-  /** Decides the card's mode: `session` can launch, `project` browses. */
+  /** Decides the section's mode: `session` can launch, `global` stages, `project` browses. */
   readonly scope: ImageLockerScope;
+  /** A chat is open, so the global seat can say how to launch from it. */
+  readonly chatOpen?: boolean;
 }): JSX.Element {
-  return scope.kind === "session" ? (
-    <SessionLocker sessionId={scope.sessionId} />
-  ) : (
-    <ProjectLocker />
-  );
+  switch (scope.kind) {
+    case "session":
+      return (
+        <EditableLocker
+          launch={
+            // The ONLY way a user reaches the launch dialog, inside the section
+            // that holds the image every launch needs. There is no launchpad
+            // chooser any more: migration 108 retired Trench Express and
+            // pools.fun is the only lane.
+            <TokenLaunchButton sessionId={scope.sessionId} />
+          }
+        />
+      );
+    case "global":
+      return (
+        <EditableLocker
+          launch={
+            <p data-vex-area="launchpad-browse-note" className="vex-pf-note">
+              {chatOpen
+                ? `${LAUNCH_FROM_AGENT_SESSION_NOTE} ${LAUNCH_FROM_THIS_CHAT_NOTE}`
+                : LAUNCH_FROM_AGENT_SESSION_NOTE}
+            </p>
+          }
+        />
+      );
+    case "project":
+      return <ProjectLocker />;
+  }
 }
 
 /**
@@ -114,9 +140,9 @@ function LockerFrame({
 
   return (
     <PortfolioCard
-      eyebrow="Launchpad"
+      title="Launchpad"
       leading={<ProtocolMark mark={resolveProtocolMark(LAUNCHPAD)} size={16} />}
-      trailing={images.length > 0 ? `${images.length}` : undefined}
+      note={images.length > 0 ? ` · ${String(images.length)}` : undefined}
     >
       {query.isLoading ? (
         <CardStateNote tone="loading">Loading…</CardStateNote>
@@ -125,7 +151,7 @@ function LockerFrame({
       ) : images.length === 0 ? (
         <CardStateNote>{emptyNote}</CardStateNote>
       ) : (
-        <ul className="grid grid-cols-3 gap-2">
+        <ul className="vex-pf-thumbs">
           {images.map((image) => (
             <ImageThumb key={image.imageId} image={image} removal={removal} />
           ))}
@@ -148,13 +174,10 @@ function ProjectLocker(): JSX.Element {
       removal={null}
       emptyNote={PROJECT_LOCKER_EMPTY_NOTE}
     >
-      {/* The seat the launch action holds for a session. A PROJECT rail has
-          no session to sign from, so it carries the sentence that says so. */}
-      <div className="mt-2">
-        <p
-          data-vex-area="launchpad-browse-note"
-          className="vex-bs__empty"
-        >
+      {/* The seat the launch action holds for a session. A PROJECT has no
+          session to sign from, so it carries the sentence that says so. */}
+      <div className="vex-pf-launch">
+        <p data-vex-area="launchpad-browse-note" className="vex-pf-note">
           {LAUNCH_FROM_AGENT_SESSION_NOTE}
         </p>
       </div>
@@ -162,8 +185,12 @@ function ProjectLocker(): JSX.Element {
   );
 }
 
-/** The SESSION mode: the locker the user stages from, and the launch opener. */
-function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Element {
+/**
+ * The EDITABLE mode: the locker the user stages from (read, upload, delete),
+ * and in the launch seat whatever the scope hands in (the launch opener for a
+ * chat, the sentence that says where a launch is signed from otherwise).
+ */
+function EditableLocker({ launch }: { readonly launch: ReactNode }): JSX.Element {
   const query = useLockerImages();
   const upload = useUploadLockerImage();
   const remove = useDeleteLockerImage();
@@ -226,35 +253,25 @@ function SessionLocker({ sessionId }: { readonly sessionId: string }): JSX.Eleme
         </>
       }
     >
-      {notice !== null ? (
-        <p className="vex-bs__empty mt-1">
-          {notice}
-        </p>
-      ) : null}
+      {notice !== null ? <p className="vex-pf-note">{notice}</p> : null}
 
       <button
         type="button"
         onClick={runUpload}
         disabled={busy}
-        className="vex-bs__add disabled:opacity-50"
+        className="vex-pf-add"
       >
-        <PxIcon name="plus" />
+        <LinePlus size={14} />
         {busy ? "Adding…" : "Add image"}
       </button>
 
-      {/* The ONLY way a user reaches the launch dialog, inside the card that
-          holds the image every launch needs. There is no launchpad chooser any
-          more: migration 108 retired Trench Express and pools.fun is the only
-          lane, so a chooser with one chip would state a decision nobody makes. */}
-      <div className="mt-2 flex flex-col gap-2">
-        <TokenLaunchButton sessionId={sessionId} />
-      </div>
+      <div className="vex-pf-launch">{launch}</div>
     </LockerFrame>
   );
 }
 
 /**
- * A cancelled file picker is not a problem and must stay silent — the user
+ * A cancelled file picker is not a problem and must stay silent - the user
  * closed a dialog they opened. Everything else is main's already-public,
  * already-redacted message, which is more specific than anything this
  * component could invent.

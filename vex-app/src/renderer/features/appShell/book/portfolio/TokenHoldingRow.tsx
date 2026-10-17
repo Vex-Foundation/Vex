@@ -1,7 +1,8 @@
 /**
- * Token holding line — the ONE row grammar for the tab's token lists (the
- * BalancesCard top five and the All-assets screen's full register): the
- * address-verified `TokenMark` (`resolveTokenMark` — the security control;
+ * Token holding line: the row grammar of the All assets page's full register
+ * (the Portfolio page's Balances table shares its helpers below), drawn in
+ * the shared ledger grammar of book.css (`.vex-kv3`): the
+ * address-verified `TokenMark` (`resolveTokenMark` - the security control;
  * NEVER a symbol-keyed icon), the display name with the chain in
  * parentheses ("USD Coin (Base)"), and the tabular amount + USD
  * figures. Unpriced holdings keep the em-dash convention
@@ -9,22 +10,22 @@
  *
  * Trust boundary: `tokenName` arrives pre-sanitized from MAIN and is
  * re-validated by the output schema (`safeTokenNameSchema`), so it renders
- * as-is; `symbol` is provider-supplied and UNTRUSTED — it passes
+ * as-is; `symbol` is provider-supplied and UNTRUSTED - it passes
  * `sanitizeTokenSymbol` before it becomes display text or reaches the mark
  * resolver, mirroring PositionChains' boundary. A row with neither renders
  * the em-dash placeholder, never raw provider text.
  *
- * THE EYE (owner decree 2026-07-21): a small eye key beside the chain name
+ * THE HISTORY KEY (owner decree 2026-07-21): a small key beside the chain name
  * opens the per-token history screen (`shellRoute: tokenHistory`), measuring
  * its own rect as the morph origin and carrying the caller's return surface
  * (`historyReturnTo`). It renders ONLY for rows with EXACT `(chainId,
- * tokenAddress)` identity — name/symbol are display metadata, never a query
+ * tokenAddress)` identity - name/symbol are display metadata, never a query
  * input, so an identity-less row stays non-interactive (plan rule). The name
  * itself stays non-interactive.
  */
 
 import type { JSX, MouseEvent } from "react";
-import { PxIcon } from "../../../../components/icons/index.js";
+import { LineClock } from "../../../../components/icons/line/index.js";
 import type { PositionTokenDto } from "@shared/schemas/portfolio.js";
 import { chainDisplay } from "@shared/chains/display.js";
 import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
@@ -67,7 +68,7 @@ export const MIN_DISPLAY_USD = 0.005;
  * Hide-dust filter for the tab's token lists (owner report: Solana spam
  * airdrops price at $0.00 and clutter Balances + All-assets). Hides a row
  * only when it HAS a price and that price is sub-cent (`|balanceUsd| <
- * MIN_DISPLAY_USD`) — UNPRICED rows (`balanceUsd === null`) always stay
+ * MIN_DISPLAY_USD`) - UNPRICED rows (`balanceUsd === null`) always stay
  * visible, since "no price" is not the same claim as "zero value". A no-op
  * when `hideDust` is false. Non-mutating.
  */
@@ -84,7 +85,7 @@ export function filterDustTokens(
 }
 
 /**
- * Stable React key for one aggregated (chain, address, symbol) line — the
+ * Stable React key for one aggregated (chain, address, symbol) line - the
  * same composite `GlobalWalletSwitcher` keys the flat list on (the SQL
  * groups by exactly this triple, so no two rows share all three).
  */
@@ -103,7 +104,7 @@ export function TokenHoldingRow({
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const symbol = sanitizeTokenSymbol(token.symbol);
   // Name preference: the sanitized human name from main, else the sanitized
-  // symbol, else the em-dash placeholder — never raw provider text.
+  // symbol, else the em-dash placeholder - never raw provider text.
   const name = token.tokenName ?? symbol;
   const chainName =
     token.chainId !== null ? chainDisplay(token.chainId).name : null;
@@ -113,7 +114,7 @@ export function TokenHoldingRow({
     token.symbol,
   );
   const quantity = formatTokenQuantity(token.amount, symbol);
-  // The eye needs the EXACT query identity — a row without both a chain id
+  // The eye needs the EXACT query identity - a row without both a chain id
   // and a token address stays non-interactive (no eye at all).
   const tokenAddress = token.tokenAddress ?? null;
   const historyIdentity =
@@ -151,10 +152,9 @@ export function TokenHoldingRow({
             type="button"
             aria-label={`Token history: ${name ?? truncateAddress(historyIdentity.tokenAddress)}`}
             onClick={openHistory}
-            className="vex-bk__key"
-            style={{ minWidth: 20, height: 20 }}
+            className="vex-kv3__key"
           >
-            <PxIcon name="history" />
+            <LineClock size={14} />
           </button>
         ) : null}
       </span>

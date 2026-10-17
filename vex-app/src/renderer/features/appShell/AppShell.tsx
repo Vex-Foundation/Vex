@@ -59,6 +59,10 @@ import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
+import {
+  useActivityProgressInvalidation,
+  useActivityResolvedInvalidation,
+} from "../../lib/api/portfolio.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
@@ -78,6 +82,12 @@ function AppShellContent(): JSX.Element {
   // compact failure for a session the user is not currently looking at must
   // still be waiting for them when they select it.
   useEngineErrorRetentionSync();
+  // App-wide activity pushes (settled and progress) refresh the portfolio
+  // queries wherever the user is, not only on the Portfolio page. Mounted
+  // once, here (the page mounts none of its own), so each push invalidates
+  // the portfolio queries once.
+  useActivityResolvedInvalidation();
+  useActivityProgressInvalidation();
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
   const runtimeMode = useUiStore((s) => s.runtimeMode);
@@ -232,8 +242,11 @@ function ShellFrame({
 
   // WELCOME stage, per mode: no session (agent), no project (Studio); Lighter
   // has none, the desk is always resident. Vex sits in the centre there, so
-  // the right column is empty.
-  const welcomeStage = lighter
+  // the right column is empty. An open page covers the welcome and is not
+  // part of it: the title bar keeps the page's name and the token chip, and
+  // Vex's column follows the page's own default.
+  const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
+  const welcomeStage = lighter || pageOpen
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
@@ -380,7 +393,7 @@ function ShellFrame({
         <RunningHead
           runtimeMode={runtimeMode}
           activeSessionId={activeSessionId}
-          empty={runtimeMode === "agent" && activeSessionId === null}
+          empty={runtimeMode === "agent" && activeSessionId === null && !pageOpen}
           // The token chip toggles the column the frame SOLVED, not the stored
           // choice: a column the narrow tier closed reads closed, and its
           // press opens it (the store action also clears the narrow override).

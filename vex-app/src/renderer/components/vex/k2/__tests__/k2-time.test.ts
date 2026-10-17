@@ -4,12 +4,21 @@
  * blinks, the smile); a wake that plays when she starts awake; two idle actions at once or within
  * 15 s, an action during a hover, a giggle inside its cooldown, a blush that does not follow the
  * giggle or a long hover, a whistle before 40 s of a still pointer or crowding the pool; a gaze
- * that does not rest on the viewer by default; and a schedule that is not a pure function of the
- * clock.
+ * that does not rest on the viewer by default; an open episode that shows her before the token has
+ * turned flat or the beam has risen, a close that leaves her standing or the coin flat, an episode
+ * that plays under the still frame; a look at you that is missing after she comes back, runs out
+ * of its 1.5 to 3 s, or follows a return that has not happened yet; and a schedule that is not a
+ * pure function of the clock.
  */
 import { describe, expect, test } from "vitest";
 import {
+  CLOSE,
+  CLOSE_MS,
+  CLOSED,
   canGiggle,
+  type Episode,
+  episodeBusy,
+  episodeProjector,
   GESTURE_GAP,
   GESTURE_MS,
   GestureChain,
@@ -21,7 +30,12 @@ import {
   gestureAt,
   gestureState,
   hoverProgress,
+  LOOK,
+  lookAtYou,
+  OPEN,
+  OPEN_MS,
   projector,
+  slowBlink,
   T_ASM,
   T_CONE,
   T_FLIP,
@@ -389,5 +403,127 @@ describe("she looks at you", () => {
     const forward = [30000, 60000, 90000].map((t) => a.at(t));
     const backward = [90000, 60000, 30000].map((t) => b.at(t)).reverse();
     expect(backward).toEqual(forward);
+  });
+});
+
+describe("the episodes", () => {
+  const open: Episode = { kind: "open", at: 1000 };
+  const close: Episode = { kind: "close", at: 1000 };
+  const AWAKE = { press: 0, flip: 1, cone: 1, asm: 1 };
+
+  test("with none she stands as she is", () => {
+    expect(episodeProjector(null, 5000, false)).toEqual(AWAKE);
+    expect(episodeBusy(null, 5000)).toBe(false);
+  });
+
+  test("open: the token face-on and pressed, turned flat, the beam, then she assembles, awake", () => {
+    const at = (a: number) => episodeProjector(open, 1000 + a, false);
+    expect(at(0)).toEqual({ press: 0, flip: 0, cone: 0, asm: 0 });
+    expect(at(100).press).toBeCloseTo(1, 5);
+    expect(at(OPEN.flip[0]).flip).toBe(0);
+    expect(at((OPEN.flip[0] + OPEN.flip[1]) / 2).flip).toBeCloseTo(0.5, 5);
+    expect(at(OPEN.flip[1]).flip).toBe(1);
+    // nothing of her before the coin lies flat and the beam has started
+    expect(at(OPEN.flip[1]).asm).toBe(0);
+    expect(OPEN.cone[0]).toBeLessThan(OPEN.asm[0]);
+    expect(at(OPEN.asm[0]).cone).toBeGreaterThan(0.6);
+    expect(at(OPEN_MS - 100).asm).toBeLessThan(1);
+    expect(at(OPEN_MS)).toEqual(AWAKE);
+    expect(at(OPEN_MS + 60000)).toEqual(AWAKE);
+  });
+
+  test("open holds her life back until she has assembled, then lets go", () => {
+    expect(episodeBusy(open, 1000)).toBe(true);
+    expect(episodeBusy(open, 1000 + OPEN_MS - 100)).toBe(true);
+    expect(episodeBusy(open, 1000 + OPEN_MS)).toBe(false);
+  });
+
+  test("close: she collapses first, the beam sinks after, the coin turns face-on last; then the token alone", () => {
+    const at = (a: number) => episodeProjector(close, 1000 + a, false);
+    expect(at(-100)).toEqual(AWAKE);
+    expect(at(0)).toEqual(AWAKE);
+    // she goes before the beam, and the beam before the coin turns
+    expect(at(CLOSE.cone[0]).asm).toBeLessThan(0.6);
+    expect(at(CLOSE.cone[0]).cone).toBe(1);
+    expect(at(CLOSE.collapse).asm).toBe(0);
+    expect(at(CLOSE.flip[0]).cone).toBeLessThan(0.3);
+    expect(at(CLOSE.flip[0]).flip).toBe(1);
+    expect(at((CLOSE.flip[0] + CLOSE.flip[1]) / 2).flip).toBeCloseTo(0.5, 5);
+    expect(at(CLOSE_MS)).toEqual(CLOSED);
+    expect(CLOSED).toEqual({ press: 0, flip: 0, cone: 0, asm: 0 });
+    // closed there is nothing of her to live
+    expect(episodeBusy(close, 1000 + 60000)).toBe(true);
+  });
+
+  test("under the still frame an open shows her at once and a close leaves the token alone", () => {
+    expect(episodeProjector(open, 1000, true)).toEqual(AWAKE);
+    expect(episodeProjector(close, 1000, true)).toEqual(CLOSED);
+  });
+
+  test("the same moment gives the same frame", () => {
+    for (const a of [0, 300, 900, 1400, 2200]) {
+      expect(episodeProjector(open, 1000 + a, false)).toEqual(
+        episodeProjector({ kind: "open", at: 1000 }, 1000 + a, false),
+      );
+      expect(episodeProjector(close, 1000 + a, false)).toEqual(
+        episodeProjector({ kind: "close", at: 1000 }, 1000 + a, false),
+      );
+    }
+  });
+});
+
+describe("the look at you chain", () => {
+  test("nothing before she comes back, nor for a return still ahead", () => {
+    expect(lookAtYou(5000, [])).toBeNull();
+    expect(lookAtYou(5000, [6000])).toBeNull();
+  });
+
+  test("after a return she holds her eyes on you for 1.5 to 3 s, then her glances resume", () => {
+    const holds: number[] = [];
+    for (let r = 10000; r < 10000 + 400 * 100; r += 100) {
+      const look = lookAtYou(r, [r]);
+      expect(look?.age).toBe(0);
+      const hold = look?.hold ?? 0;
+      expect(hold).toBeGreaterThanOrEqual(LOOK.holdMin);
+      expect(hold).toBeLessThanOrEqual(LOOK.holdMax);
+      expect(lookAtYou(r + hold - 1, [r])).not.toBeNull();
+      expect(lookAtYou(r + hold, [r])).toBeNull();
+      holds.push(hold);
+    }
+    // the holds spread over the range, not one fixed length
+    expect(Math.max(...holds) - Math.min(...holds)).toBeGreaterThan(1000);
+  });
+
+  test("the latest return decides, whatever the order they were kept in", () => {
+    const look = lookAtYou(20500, [20000, 5000, 12000]);
+    expect(look?.start).toBe(20000);
+    expect(look?.age).toBe(500);
+    expect(lookAtYou(20500, [12000, 20000, 5000])).toEqual(look);
+  });
+
+  test("about one look in six smiles and one in six blinks slowly, never both", () => {
+    let smiles = 0;
+    let blinks = 0;
+    const n = 2000;
+    for (let k = 0; k < n; k++) {
+      const look = lookAtYou(k * 100, [k * 100]);
+      if (look?.smile === true) smiles++;
+      if (look?.blink === true) blinks++;
+      expect(look?.smile === true && look.blink).toBe(false);
+    }
+    expect(smiles / n).toBeGreaterThan(0.1);
+    expect(smiles / n).toBeLessThan(0.25);
+    expect(blinks / n).toBeGreaterThan(0.1);
+    expect(blinks / n).toBeLessThan(0.25);
+  });
+
+  test("the slow blink closes once, at 40% of the hold, over 600 ms", () => {
+    const look = { start: 0, age: 0, hold: 2000, smile: false, blink: true };
+    const at = (age: number) => slowBlink({ ...look, age });
+    expect(at(799)).toBe(0);
+    expect(at(800)).toBeCloseTo(0.4, 5);
+    expect(at(1000)).toBe(1);
+    expect(at(1350)).toBeCloseTo(0.4, 5);
+    expect(at(1400)).toBe(0);
   });
 });

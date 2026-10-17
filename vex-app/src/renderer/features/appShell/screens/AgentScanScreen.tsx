@@ -1,9 +1,12 @@
 /**
- * AGENT SCAN — the full-history ledger of everything Vex has executed
- * on-chain, opened from the profile menu (the whole feed) or from a BOOK
- * rail's Activity card, PRESET to that rail's scope: one session, or one Vex
- * Studio project's own wallets. The preset is a scope, not a user filter - it
- * survives Clear and shows as its own non-clearable chip.
+ * AGENT SCAN - the full-history ledger of everything Vex has executed
+ * on-chain, a Portfolio subpage (docs/design/R3-MINIMAL.md section 9.2:
+ * the title bar's "Portfolio / Agent Scan", the lead, four named filter
+ * menus, rows by day, every row ending in a word). Opened from the profile
+ * menu or Portfolio (the whole feed) or PRESET to a scope: one session, or
+ * one Vex Studio project's own wallets (the Vex sidebar's "This project"
+ * link). The preset is a scope, not a user filter - it survives Clear and
+ * shows as its own non-clearable chip.
  *
  * Where `TokenHistoryScreen` answers "what happened to THIS token?", this
  * screen answers "what has the agent DONE?": every `agent_activity` row AND
@@ -18,13 +21,13 @@
  * visible window (plus a small overscan) is mounted; row heights are MEASURED
  * rather than assumed, because a row grows when its audit detail expands.
  *
- * The screen is the GATE only — filters, query, states matrix, windowing.
+ * The screen is the GATE only - filters, query, states matrix, windowing.
  * Row rendering, the audit detail, and the honest field readers live beside it
  * in `agent-scan/`.
  *
  * FAIL-CLOSED STATES, following the token-history precedent exactly: a page
  * that timed out arrives as `"unavailable"` and renders the calm try-again
- * note, NEVER the empty state — a timeout must not read as "the agent has done
+ * note, NEVER the empty state - a timeout must not read as "the agent has done
  * nothing". An empty result while FILTERS ARE ACTIVE says so explicitly, so a
  * narrowed feed is never mistaken for an empty history.
  */
@@ -73,8 +76,8 @@ function screenSubtitle(scope: AgentScanRouteScope): string {
   }
 }
 
-/** Starting height guess per row; real heights are measured after mount. */
-const ESTIMATED_ROW_PX = 56;
+/** Starting height guess per row (the 52 min height plus its rule); real heights are measured after mount. */
+const ESTIMATED_ROW_PX = 60;
 
 /** Rows kept mounted beyond the visible window, to cover fast scrolling. */
 const OVERSCAN_ROWS = 8;
@@ -113,7 +116,7 @@ function availablePage(
 
 /**
  * Flatten entries into day-grouped rows. Grouping happens HERE, not in the
- * render tree, so the virtualizer can index dividers and rows uniformly —
+ * render tree, so the virtualizer can index dividers and rows uniformly -
  * a nested "group → rows" tree cannot be windowed.
  */
 function buildFeedRows(entries: readonly AgentScanEntry[]): readonly FeedRow[] {
@@ -187,7 +190,7 @@ export function AgentScanScreen({
   const entries = pages.flatMap((page) => availablePage(page)?.entries ?? []);
   const rows = useMemo(() => buildFeedRows(entries), [entries]);
 
-  // A LATER page can fail or time out after rows already rendered — pagination
+  // A LATER page can fail or time out after rows already rendered - pagination
   // stops and a quiet note appears instead of wiping the feed.
   const lastPage = pages.length > 1 ? pages[pages.length - 1] : undefined;
   const laterPageDegraded =
@@ -215,7 +218,7 @@ export function AgentScanScreen({
 
   const onFiltersChange = useCallback((next: AgentScanFilterState): void => {
     setFilterState(next);
-    // A new query means a new list — start it at the top rather than leaving
+    // A new query means a new list - start it at the top rather than leaving
     // the user mid-feed at an offset that no longer means anything. Plain
     // property assignment, not `scrollTo`: it needs no smooth-scroll support
     // and works in every environment the renderer is exercised in.
@@ -280,12 +283,7 @@ export function AgentScanScreen({
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               {row.kind === "day" ? (
-                <div className="flex items-center gap-3 pb-1.5 pt-4">
-                  <span className="vex-ov-label shrink-0">
-                    {row.label}
-                  </span>
-                  <span aria-hidden className="h-px flex-1 bg-line-2" />
-                </div>
+                <div className="vex-scan-day">{row.label}</div>
               ) : row.kind === "lighter" ? (
                 <AgentScanLighterRow entry={row.entry} />
               ) : (
@@ -303,12 +301,12 @@ export function AgentScanScreen({
       title={SCREEN_TITLE}
       origin={origin}
       onClose={onClose}
+      chapter={null}
+      width="wide"
       fill
     >
-      <div className="flex min-h-0 w-full flex-1 flex-col gap-3">
-        <p className="text-[13px] leading-[19px] text-ink-secondary">
-          {screenSubtitle(scope)}
-        </p>
+      <div className="flex min-h-0 w-full flex-1 flex-col">
+        <p className="vex-scan-lead">{screenSubtitle(scope)}</p>
         <AgentScanFilterBar
           state={filterState}
           onChange={onFiltersChange}
@@ -317,16 +315,14 @@ export function AgentScanScreen({
         <div ref={scrollRef} className="vex-scroll min-h-0 flex-1 overflow-y-auto">
           {body}
           {laterPageDegraded ? (
-            <p className="mt-2 text-[11px] text-ink-tertiary">
-              Couldn&apos;t load more activity right now.
-            </p>
+            <p className="vex-scan-note">Couldn&apos;t load more activity right now.</p>
           ) : null}
           {hasNextPage ? (
             <button
               type="button"
               onClick={() => void fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="mt-3 w-full border border-line-2 py-1.5 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:opacity-60"
+              className="vex-scan-more"
             >
               {isFetchingNextPage ? "Loading…" : "Load more"}
             </button>
@@ -337,7 +333,7 @@ export function AgentScanScreen({
   );
 }
 
-/** The screen's non-list states, in one voice. */
+/** The screen's non-list states, in one voice (a failure in ink, never a hue). */
 function FeedNote({
   tone,
   children,
@@ -345,18 +341,8 @@ function FeedNote({
   readonly tone: "quiet" | "calm" | "warn";
   readonly children: React.ReactNode;
 }): JSX.Element {
-  if (tone === "warn") {
-    return <p className="text-[12.5px] text-warning-label">{children}</p>;
-  }
-  if (tone === "calm") {
-    return (
-      <p className="text-[12.5px] leading-relaxed text-ink-secondary">
-        {children}
-      </p>
-    );
-  }
   return (
-    <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
+    <p className="vex-scan-note" data-tone={tone}>
       {children}
     </p>
   );

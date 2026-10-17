@@ -1,8 +1,8 @@
 /**
  * APV-1: the title bar's "Needs you · N" control (the successor of the
  * `AWAITING n` badge), DECIDED IN A REAL WINDOW while Studio is the runtime
- * mode: the control opens its list, Review opens the approval's full card in
- * place, and the decision lands.
+ * mode: the control opens its list, Review opens the Needs you page on the
+ * approval's full card in place, and the decision lands.
  *
  * ## The finding this exists to settle
  *
@@ -211,12 +211,12 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
   await expect(list).toBeVisible();
   await expect(badge).toHaveAttribute("aria-expanded", "true");
 
-  // The list never decides: its Review key opens the approval's full card,
-  // in place, without leaving Studio.
+  // The list never decides: its Review key opens the Needs you page on the
+  // approval's full card, in place, without leaving Studio.
   const review = list.getByRole("button", { name: /^Review:/ });
   await expect(review).toHaveCount(1);
   await review.click();
-  const panel = page.locator('[data-vex-area="global-approvals-panel"]');
+  const panel = page.locator('[data-vex-area="needs-you-page"]');
   await expect(panel).toBeVisible();
   await expect(page.locator('[data-vex-runtime-mode]').first()).toHaveAttribute(
     "data-vex-runtime-mode",
@@ -235,8 +235,8 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
   const reject = card.getByRole("button", { name: "Reject", exact: true });
   await expect(reject).toBeVisible();
   await expect(reject).toBeEnabled();
-  // The panel moves focus onto the safer action on open (rule 08), so this is
-  // also the proof that the keyboard user lands on Reject and not on a
+  // The page moves focus onto the open card's safer action (rule 08), so this
+  // is also the proof that the keyboard user lands on Reject and not on a
   // container.
   await expect(reject).toBeFocused();
 
@@ -288,7 +288,8 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
   });
 
   // The control counts down to zero (it never leaves the title bar), and the
-  // review closes by itself once its approval is no longer pending.
+  // card leaves the page once its approval is no longer pending.
   await expect(badge).toHaveText(/Needs you\s*·\s*0/, { timeout: 60_000 });
-  await expect(panel).toHaveCount(0);
+  await expect(card).toHaveCount(0);
+  await expect(panel).toContainText("Nothing needs you.");
 });

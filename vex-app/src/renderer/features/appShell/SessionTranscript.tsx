@@ -18,8 +18,9 @@
  * rhythm in either mode.
  *
  * THE PENDING TURN IS IN FLOW. A turn with nothing to show yet renders as
- * `TurnIsland`'s `vexing…` pill at the tail of the observed message column
- * (through `StreamingBubble`), exactly like any other row. The retired centred
+ * `TurnIsland`'s live row ("Working", with its timer) at the tail of the
+ * observed message column (through `StreamingBubble`), exactly like any other
+ * row. The retired centred
  * scene was a zero-height sticky slot with a VIEWPORT-TALL child: a zero-height
  * box adds no normal-flow height, but a positively overflowing child still
  * enlarges scrollable overflow, so the bottom-follow write pushed the sticky
@@ -37,7 +38,7 @@
  */
 
 import { useMemo, useRef, type JSX } from "react";
-import { IconChevronDown } from "../../components/icons/index.js";
+import { LineChevronDown } from "../../components/icons/line/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { useIsChatSubmitting } from "../../lib/api/chat.js";
@@ -71,8 +72,8 @@ import {
 import { TurnStatsLine } from "./SessionTranscript/TurnStatsLine.js";
 import { useMessageForkActions } from "./SessionTranscript/useMessageForkActions.js";
 import { useTranscriptScroll } from "./SessionTranscript/useTranscriptScroll.js";
+import { liveTurnNeedsMark } from "./SessionTranscript/turnMarks.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
-import { PAGE_COLUMN } from "./session-page-columns.js";
 
 // Same cadence as ApprovalsRegion — both observers share one query, so this
 // adds no IPC load; it only keeps the act-ledger stamps as fresh as the cards.
@@ -104,12 +105,15 @@ export function SessionTranscript({
     [items],
   );
   const workingAgentEntryKey = findWorkingAgentEntryKey(rows, chatSubmitting);
+  // The live row carries Vex's token only when it is the first thing she
+  // writes in this turn (docs/design/R3-MINIMAL.md section 6).
+  const liveMark = useMemo(() => liveTurnNeedsMark(rows), [rows]);
   // A14/A18 - branch + edit hover keys on prose rows.
   const forkActions = useMessageForkActions({ sessionId, rows });
 
-  // S5 — pending approvals drive two quiet signals: per-act "Awaiting
-  // signature" stamps (matched by toolCallId) and the working strip's
-  // circuit-break. Shares ApprovalsRegion's query key: no new IPC.
+  // S5 - pending approvals drive two quiet signals: per-step "Waiting for
+  // approval" links (matched by toolCallId) and the live row's freeze.
+  // Shares ApprovalsRegion's query key: no new IPC.
   const pendingQuery = usePendingApprovals(sessionId, {
     refetchInterval: PENDING_APPROVALS_REFETCH_MS,
   });
@@ -245,21 +249,19 @@ export function SessionTranscript({
         // `scrollbar-gutter: stable` reserves the track so content never
         // shifts when it appears, and the row padding moved INSIDE (`px-3` on
         // the content wrapper). `.vex-scroll` is the repo's thin treatment.
-        className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto py-4 [scrollbar-gutter:stable]"
+        className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 [scrollbar-gutter:stable]"
       >
       {/* THE READING COLUMN, re-applied INSIDE the scroller so the native
           scrollbar sits at the panel's right edge. Nesting the column here
           keeps the text measure byte-identical to when the column was the
           scroller; both wrappers size to content, so the outer scroll math is
           unchanged. */}
-      {/* The session page's column (`PAGE_COLUMN`): the rows share one left
-          edge with the chapter head above them and the field below them. The
-          18px column gap is the ONE vertical rhythm (reference d3) - no
-          per-element margins. */}
-      <div data-vex-transcript-column="" className={PAGE_COLUMN}>
+      {/* The reading column (`.vex-reading-col`, docs/design/R3-MINIMAL.md
+          section 6): centred, at most 760, the same column as the docked
+          composer below it. The 18px column gap is the ONE vertical rhythm -
+          no per-row margins. */}
+      <div data-vex-transcript-column="" className="vex-reading-col">
       <div ref={columnRef} className="relative flex flex-col gap-[18px]">
-        {/* The gutter hosts the live working mark (StreamingBubble, left-0) —
-            an indicator, not a wall. */}
         {query.isFetchingNextPage ? <OlderPageLoadingStrip /> : null}
         {olderError ? <OlderPageErrorStrip /> : null}
         <TranscriptRows
@@ -281,11 +283,12 @@ export function SessionTranscript({
             preview={preview}
             awaitingApproval={hasPendingApproval}
             leaseHeld={leaseHeld}
+            turnMark={liveMark}
           />
         ) : null}
         </div>
-      {/* "↓ LATEST" - the jump the transcript takes only for the reader's own
-          words; for everything else the pill offers it instead.
+      {/* The jump to the latest message - taken on its own only for the
+          reader's own words; for everything else the key offers it instead.
           A ZERO-HEIGHT STICKY SLOT (deepseek ChatView's idiom): it never
           extends `scrollHeight`, so raising the pill cannot itself move the
           floor the pill is measured against. It rides above the sticky
@@ -302,7 +305,7 @@ export function SessionTranscript({
             aria-label="Jump to latest message"
             className="pointer-events-auto -mt-8 inline-flex h-8 w-8 items-center justify-center border border-rule bg-surface-base text-accent-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
-            <IconChevronDown size={14} />
+            <LineChevronDown size={16} />
           </button>
         </div>
       ) : null}

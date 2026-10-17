@@ -8,8 +8,9 @@
  * greeting; that geometry lives in `composer.css`.
  *
  *   div[data-vex-area="welcome-opening"]
- *     div.vex-welcome__stage      her hologram (or the flat token with the
- *                                 avatar off) and the state line
+ *     div.vex-welcome__stage      her hologram (or, with the avatar off, the
+ *                                 flat token in its state ring) and the
+ *                                 state line
  *     h1.vex-welcome__greeting    the time-of-day greeting
  *     ErrorCallout?               a read that failed (the database down)
  *
@@ -17,10 +18,11 @@
  * never a scope (the welcome has none), plus the background missions. Her
  * face echoes the same state (`vexEmotionOf`): Listening while the user types
  * in the composer under her, where her eyes go. Every read is shared with a
- * surface that is mounted anyway; nothing here polls.
+ * surface that is mounted anyway; nothing here polls. Her hologram here
+ * leaves a note for the Vex sidebar, which docks her on the first message.
  */
 
-import { useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { pickGreeting } from "../../lib/greeting.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
@@ -28,11 +30,12 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
 import { ErrorCallout } from "../../components/ui/error-callout.js";
 import { StateWord } from "../../components/ui/state-word.js";
-import { VxToken } from "../../components/ui/vx-token.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import { NEEDS_YOU_UNKNOWN_COPY } from "../vex/needs-you.js";
 import { useVexPresence } from "../vex/useVexPresence.js";
+import { noteVexOnWelcome } from "../vex/vex-dock.js";
 import { vexEmotionOf } from "../vex/vex-emotion.js";
+import { VexStatus } from "../vex/VexStatus.js";
 
 /** The composer's root seam, under her on the welcome: where her eyes go while the user types. */
 function findComposer(): HTMLElement | null {
@@ -65,6 +68,10 @@ export function SessionWelcomeHero(): JSX.Element {
   const night = useUiStore((s) => s.theme) === "chronos";
   const presence = useVexPresence();
   const background = presence.background.label;
+  // She stood here: the Vex sidebar that shows next docks her.
+  useEffect(() => {
+    if (showAvatar) noteVexOnWelcome();
+  }, [showAvatar]);
 
   // The database down (reference d3x-database-down): the sessions read is the
   // one the sidebar already holds; when it failed, its own message heads the
@@ -76,33 +83,41 @@ export function SessionWelcomeHero(): JSX.Element {
     sessionsData !== undefined && !sessionsData.ok ? sessionsData.error.message : null;
   const needsYouUnknown = presence.needsYou.status === "unknown";
 
+  const stateLine = (
+    <p data-vex-welcome-state="" className="vex-welcome__state">
+      <StateWord state={presence.fill} word={presence.word} />
+      {background === null ? null : (
+        <>
+          <span aria-hidden="true" className="vex-welcome__dot">
+            ·
+          </span>
+          <StateWord state="done" word={background} />
+        </>
+      )}
+    </p>
+  );
+
   return (
     <div data-vex-area="welcome-opening" className="vex-welcome">
       <div data-vex-welcome-stage="" className="vex-welcome__stage">
         {showAvatar ? (
-          <VexK2
-            placement="welcome"
-            ground={night ? "night" : "paper"}
-            emotion={vexEmotionOf(presence.state)}
-            composer={findComposer}
-            className="vex-welcome__vex"
-          />
+          <>
+            <VexK2
+              placement="welcome"
+              ground={night ? "night" : "paper"}
+              emotion={vexEmotionOf(presence.state)}
+              composer={findComposer}
+              className="vex-welcome__vex"
+            />
+            {stateLine}
+          </>
         ) : (
-          // Avatar off: no hologram anywhere; the flat token stands alone over
-          // the state line (section 5.1).
-          <VxToken size={44} />
+          // Avatar off: no hologram anywhere; the flat token in its state ring
+          // stands alone over the state line (section 5.1).
+          <VexStatus state={presence.state} layout="stack">
+            {stateLine}
+          </VexStatus>
         )}
-        <p data-vex-welcome-state="" className="vex-welcome__state">
-          <StateWord state={presence.fill} word={presence.word} />
-          {background === null ? null : (
-            <>
-              <span aria-hidden="true" className="vex-welcome__dot">
-                ·
-              </span>
-              <StateWord state="done" word={background} />
-            </>
-          )}
-        </p>
       </div>
       <h1 className="vex-welcome__greeting" title={PREVIEW_TITLE}>
         {headline}

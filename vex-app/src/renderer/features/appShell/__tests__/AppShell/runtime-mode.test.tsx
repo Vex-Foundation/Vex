@@ -15,6 +15,8 @@
  *     silently steal the first's callbacks. The subscription COUNT through the
  *     mocked bridge is the assertion.
  *  3. Neither mode drops the frame-level hosts.
+ *  4. The activity pushes that refresh the portfolio queries are held once
+ *     for the whole app, in either mode (counted through the mocked bridge).
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -51,6 +53,8 @@ const { makeEngineBridgeStub } = await import(
 
 /** How many live `onControlState` subscriptions the bridge is holding. */
 let controlStateSubscriptions = 0;
+/** Live activity push subscriptions (settled and progress) on the bridge. */
+const activitySubscriptions = { resolved: 0, progress: 0 };
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
 const hostStatusMock = vi.fn<() => Promise<Result<StudioHostStatus>>>();
 
@@ -71,6 +75,8 @@ beforeAll(() => {
 beforeEach(() => {
   window.localStorage.clear();
   controlStateSubscriptions = 0;
+  activitySubscriptions.resolved = 0;
+  activitySubscriptions.progress = 0;
   projectsListMock.mockReset();
   hostStatusMock.mockReset();
   projectsListMock.mockResolvedValue({
@@ -142,6 +148,20 @@ beforeEach(() => {
         getVexSnapshot: () => Promise.resolve({ ok: true, data: null }),
         onVexUpdate: () => () => undefined,
       },
+      portfolio: {
+        onActivityResolved: () => {
+          activitySubscriptions.resolved += 1;
+          return () => {
+            activitySubscriptions.resolved -= 1;
+          };
+        },
+        onActivityProgress: () => {
+          activitySubscriptions.progress += 1;
+          return () => {
+            activitySubscriptions.progress -= 1;
+          };
+        },
+      },
       capabilities: {
         get: () => Promise.resolve({ ok: true, data: { features: { memory: true } } }),
       },
@@ -210,6 +230,15 @@ describe("AppShell runtime-mode dispatch", () => {
     expect(controlStateSubscriptions).toBe(agentCount);
     switchMode("agent");
     expect(controlStateSubscriptions).toBe(agentCount);
+  });
+
+  it("holds the activity pushes once for the whole app, in either mode", () => {
+    renderShell();
+    expect(activitySubscriptions).toEqual({ resolved: 1, progress: 1 });
+    switchMode("studio");
+    expect(activitySubscriptions).toEqual({ resolved: 1, progress: 1 });
+    switchMode("agent");
+    expect(activitySubscriptions).toEqual({ resolved: 1, progress: 1 });
   });
 
   it("keeps the frame-level hosts and the BOOK column in both modes", () => {

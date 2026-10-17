@@ -1,6 +1,7 @@
 /**
- * Presentational decision footer (Reject / Approve) for `ApprovalCard` (F3 —
- * SECURITY-relevant).
+ * Presentational decision footer (Reason, Reject, the action button) for
+ * `ApprovalCard` (F3, SECURITY-relevant; docs/design/R3-MINIMAL.md sections
+ * 8.1 to 8.4).
  *
  * This component ONLY renders the two buttons and forwards their clicks. The
  * security-critical logic stays in `ApprovalCard`:
@@ -12,8 +13,11 @@
  *   - `rejectRef` is forwarded so the parent's first-mount focus-on-Reject
  *     default (least-destructive) still lands on this button.
  *
- * No state, no effects, no decision logic here — moving this JSX must not, and
+ * No state, no effects, no decision logic here: moving this JSX must not, and
  * does not, weaken any confirm gate.
+ *
+ * The footer is sticky at short heights (bottom 0, paper, a quiet rule above),
+ * so Reject and the action button stay in view while a long card scrolls.
  */
 
 import type { JSX, RefObject } from "react";
@@ -33,7 +37,7 @@ export interface ApprovalDecisionActionsProps {
    * reason; nothing ever supplied one, so every refusal reached the model as
    * "No reason provided" and the agent had nothing to adapt to.
    *
-   * Bounded here as well as at both Zod gates — this text becomes model-visible
+   * Bounded here as well as at both Zod gates: this text becomes model-visible
    * transcript content, so the UI should not let a user paste an essay into the
    * agent's context by accident.
    */
@@ -70,17 +74,34 @@ export interface ApprovalDecisionActionsProps {
   readonly rejectReasonInput?: boolean;
 }
 
-// Shared key shape (reference d4): a square 40px key in 12px Departure Mono
-// caps. Reject is the INK key (the refusing choice), Approve the one blue
-// fill. Focus is the 2px focus outline, 3px out (section 7). The ARMED
-// (confirm) state draws a 2px ink ring around that key only - the second
-// click is the irreversible one, and ink is how this page says "weight".
+// THE KEYS (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
+// Reject is the ink outline (the refusing choice) and owns the first focus;
+// the action button is the view's one blue fill. Focus is the 2px focus
+// outline, 3px out. The ARMED (second click) key turns into an ink outline
+// with a 2px ink ring 3px out: the second press is the irreversible one, and
+// ink is how this card says weight.
 const KEY_BASE =
-  "inline-flex h-10 shrink-0 items-center justify-center border px-[18px] font-mono text-[12px] uppercase leading-none tracking-chip transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed";
-const ARMED_RING = "ring-2 ring-rule-ink ring-offset-2 ring-offset-surface-base";
+  "inline-flex h-10 shrink-0 items-center justify-center border px-[18px] font-sans text-[14px] font-medium leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed";
+const ARMED_RING = "outline outline-2 outline-offset-[3px] outline-rule-ink";
 
 const REASON_INPUT =
-  "h-10 min-w-0 flex-1 border border-rule bg-surface-field px-3 text-[14px] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:text-ink-tertiary";
+  "h-10 min-w-0 flex-1 border border-rule bg-surface-field px-3 font-sans text-[14px] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:border-accent-primary focus-visible:outline-none disabled:text-ink-tertiary";
+
+/**
+ * What the Reject key says and how it is named, in each of its states. One
+ * source for the card's footer and the Needs you row, so the two keys can never
+ * word a rejection differently.
+ */
+export function rejectKeyWords(input: {
+  readonly armed: boolean;
+  readonly pending: boolean;
+  readonly settled: "approved" | "rejected" | null;
+}): { readonly text: string; readonly aria: string } {
+  if (input.pending) return { text: "Rejecting", aria: "Rejecting, please wait" };
+  if (input.settled === "rejected") return { text: "Rejected", aria: "Rejected" };
+  if (input.armed) return { text: "Click again to confirm reject", aria: "Confirm reject" };
+  return { text: "Reject", aria: "Reject" };
+}
 
 export function ApprovalDecisionActions({
   isHighRisk,
@@ -102,16 +123,11 @@ export function ApprovalDecisionActions({
 }: ApprovalDecisionActionsProps): JSX.Element {
   const rejectArmed = isHighRisk && armedAction === "reject";
   const approveArmed = isHighRisk && armedAction === "approve";
-  const rejectText = rejectPending
-    ? "Rejecting"
-    : settledDecision === "rejected"
-      ? "Rejected"
-      : rejectArmed ? "Click again to confirm reject" : "Reject";
-  const rejectAria = rejectPending
-    ? "Rejecting, please wait"
-    : settledDecision === "rejected"
-      ? "Rejected"
-      : rejectArmed ? "Confirm reject" : "Reject";
+  const { text: rejectText, aria: rejectAria } = rejectKeyWords({
+    armed: rejectArmed,
+    pending: rejectPending,
+    settled: settledDecision,
+  });
   const approveIdleText = settledDecision === "approved"
     ? "Approved"
     : approveArmed ? confirmApproveLabel : approveLabel;
@@ -119,7 +135,10 @@ export function ApprovalDecisionActions({
     ? "Approved"
     : approveArmed ? "Confirm approve" : approveLabel;
   return (
-    <footer className={`flex items-center justify-end gap-2 border-t border-rule bg-surface-base px-3.5 py-3${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}>
+    <footer
+      data-vex-area="approval-foot"
+      className={`vex-appr__foot${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}
+    >
       {rejectReasonInput ? (
         <input
           type="text"
@@ -149,14 +168,14 @@ export function ApprovalDecisionActions({
         {...DIALOG_INITIAL_FOCUS}
         aria-busy={rejectPending}
         aria-label={rejectAria}
-        className={`${KEY_BASE} border-rule-ink text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary${
+        className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary${
           rejectArmed ? ` ${ARMED_RING}` : ""
         }`}
       >
         {rejectText}
       </button>
       {/* THE WORKING KEY. A desk order signs, submits and then waits on the
-          sequencer - fifteen-odd seconds in an app that is otherwise instant.
+          sequencer: fifteen-odd seconds in an app that is otherwise instant.
           While its own dispatch runs this button is the only live thing on
           screen, so it keeps its full blue fill and leads its label with the
           ONGOING SWATCH in its own ink (status by fill, the page's one state
@@ -176,11 +195,15 @@ export function ApprovalDecisionActions({
             : approveIdleAria
         }
         data-vex-approve-working={approvePending ? "" : undefined}
-        className={`${KEY_BASE} gap-2 border-transparent bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover${
+        className={`${KEY_BASE} gap-2 ${
+          approveArmed
+            ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
+            : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
+        }${
           approvePending
             ? ""
             : " disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary"
-        }${approveArmed ? ` ${ARMED_RING}` : ""}`}
+        }`}
       >
         {approvePending ? (
           <span aria-hidden className="inline-flex shrink-0">

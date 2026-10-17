@@ -3,14 +3,14 @@
  *
  * Pins: glyph resolution rules; ToolActRow disclosure semantics (collapsed
  * default, aria-expanded/aria-controls, sanitized strings rendered as TEXT,
- * Output section only when a result merged); the Awaiting-signature
- * stamp-link jump (scroll + focus to `[data-approval-id]`); ToolGroupRow
- * header grammar ("{N} tool calls", distinct-glyph overflow "+{k}") and the
- * group-level stamp when any member matches a pending approval.
+ * Output section only when a result merged); the Waiting-for-approval link
+ * jump (scroll + focus to `[data-approval-id]`); the ToolGroupRow fold
+ * grammar ("{N} tool calls · {titles}", docs/design/R3-MINIMAL.md section 6)
+ * and the fold-level link when any member matches a pending approval.
  *
  * The friendly-card presentation pins (human titles, venue marks, duration
  * chips, outcome-honest leg lines) live in `./ToolLedger/friendly-card.test.tsx`
- * — split by responsibility under the rules/04 550-line decree.
+ * - split by responsibility under the rules/04 550-line decree.
  */
 
 import { describe, expect, it } from "vitest";
@@ -204,7 +204,7 @@ describe("ToolActRow", () => {
     }
   });
 
-  it("Awaiting-signature stamp links to the approval card and focuses it", () => {
+  it("Waiting-for-approval link goes to the approval card and focuses it", () => {
     render(
       createElement(
         "div",
@@ -214,7 +214,7 @@ describe("ToolActRow", () => {
         createElement(ToolActRow, { act: act(), pendingApprovalId: "appr-1" }),
       ),
     );
-    const link = screen.getByRole("button", { name: /awaiting signature/i });
+    const link = screen.getByRole("button", { name: /waiting for approval/i });
     fireEvent.click(link);
     expect(document.activeElement).toBe(
       document.querySelector('[data-approval-id="appr-1"]'),
@@ -333,26 +333,46 @@ describe("ToolGroupRow", () => {
     ).toBe(4);
   });
 
-  it("shows at most 4 distinct glyphs and '+{k}' for the overflow", () => {
-    // 6 distinct glyph categories → 4 icons + "+2".
+  it("names each member's title once, in the order they ran", () => {
     render(
       createElement(ToolGroupRow, {
-        group: groupModel(
-          [
-            act({ toolCallId: "a", toolName: "web_search" }),
-            act({ toolCallId: "b", toolName: "browser:open" }),
-            act({ toolCallId: "c", toolName: "shell:exec" }),
-            act({ toolCallId: "d", toolName: "file:read" }),
-            act({ toolCallId: "e", toolName: "wallet:send" }),
-            act({ toolCallId: "f", toolName: "polymarket:order" }),
-          ],
-        ),
+        group: groupModel([
+          act({ toolCallId: "a", toolName: "search:web" }),
+          act({ toolCallId: "b", toolName: "file:read" }),
+          act({ toolCallId: "c", toolName: "search:web" }),
+        ]),
       }),
     );
-    expect(screen.getByText("+2")).not.toBeNull();
+    const header = screen.getByRole("button", { name: /3 tool calls/ });
+    expect(header.textContent).toBe("3 tool calls · Search web, File read");
   });
 
-  it("surfaces the Awaiting-signature stamp at group level when any member matches", () => {
+  it("prints the time spent only when every member was measured", () => {
+    const measured = render(
+      createElement(ToolGroupRow, {
+        group: groupModel([
+          act({ toolCallId: "a", durationMs: 300 }),
+          act({ toolCallId: "b", durationMs: 2000 }),
+        ]),
+      }),
+    );
+    expect(
+      measured.container.querySelector("[data-vex-tool-duration]")?.textContent,
+    ).toBe("2.3 s");
+    measured.unmount();
+    const partial = render(
+      createElement(ToolGroupRow, {
+        group: groupModel([
+          act({ toolCallId: "a", durationMs: 300 }),
+          act({ toolCallId: "b", durationMs: null }),
+        ]),
+      }),
+    );
+    // `null` is not zero: one unmeasured member makes the sum a guess.
+    expect(partial.container.querySelector("[data-vex-tool-duration]")).toBeNull();
+  });
+
+  it("surfaces the Waiting-for-approval link at fold level when any member matches", () => {
     render(
       createElement(ToolGroupRow, {
         group: groupModel([
@@ -363,9 +383,9 @@ describe("ToolGroupRow", () => {
         pendingApprovals: new Map([["b", "appr-9"]]),
       }),
     );
-    // Collapsed: exactly one stamp (the group-level surface).
+    // Collapsed: exactly one link (the fold-level surface).
     expect(
-      screen.getAllByRole("button", { name: /awaiting signature/i }),
+      screen.getAllByRole("button", { name: /waiting for approval/i }),
     ).toHaveLength(1);
   });
 
@@ -380,7 +400,7 @@ describe("ToolGroupRow", () => {
         pendingApprovals: new Map(),
       }),
     );
-    expect(screen.queryByText(/awaiting signature/i)).toBeNull();
+    expect(screen.queryByText(/waiting for approval/i)).toBeNull();
   });
 });
 

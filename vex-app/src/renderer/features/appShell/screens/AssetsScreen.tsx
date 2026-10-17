@@ -1,7 +1,8 @@
 /**
- * All-assets screen — the full-app ShellScreen listing EVERY token line of a
- * portfolio read (each Balances card shows only the top five; its "View all
- * assets" footer morphs into this screen from the pressed row's rect).
+ * All-assets screen - a Portfolio subpage ("Portfolio / All assets",
+ * docs/design/R3-MINIMAL.md section 9.2) listing EVERY token line of a
+ * portfolio read (the Balances section shows only the top lines; its "View
+ * all assets" link morphs into this page from the pressed row's rect).
  *
  * SCOPE (C4, project arm since the Studio parity decree 2026-09-04). The
  * route's closed `AssetsRouteScope` says which portfolio this register is:
@@ -14,15 +15,16 @@
  * narrowed register must never read as "everything you own".
  *
  * Same shared `TokenHoldingRow` grammar and
- * address-verified marks as the card, sorted largest USD first with
- * unpriced lines last. No search field (deferred by plan). Escape/close
- * behavior is the ShellScreen chrome's, identical to MemoryScreen.
+ * address-verified marks as the Balances section, sorted largest USD first
+ * with unpriced lines last. No search field (deferred by plan). The title
+ * bar draws the crumb; Escape (back to the page the user came from) is the
+ * ShellScreen's.
  *
  * This screen owns the ONLY "hide dust" control (`hideDustBalances` in
- * uiStore) — a quiet checkbox in the header row, right-aligned. BalancesCard
- * has no control of its own; it silently follows the same stored
- * preference. When the filter hides rows, a one-line muted note names the
- * hidden count so the list never reads as silently incomplete.
+ * uiStore): the kit checkbox in the register's control row, right-aligned.
+ * BalancesCard has no control of its own; it silently follows the same
+ * stored preference. When the filter hides rows, a one-line muted note names
+ * the hidden count so the list never reads as silently incomplete.
  */
 
 import type { JSX } from "react";
@@ -78,33 +80,31 @@ export function AssetsScreen({
       title={assetsScreenTitle(scope, projectName)}
       origin={origin}
       onClose={onClose}
+      chapter={null}
+      width="wide"
     >
-      {/* Comfortable ledger measure — the register never spans the full 4K
-       * screen width. */}
+      {/* The ledger column: the register never spans the full 4K window. */}
       <div className="w-full">
-        <div className="mb-4 flex items-center justify-end">
-          <label className="vex-ov-label flex cursor-pointer items-center gap-2">
+        <div className="vex-scan-tools">
+          <label className="vex-scan-check">
             <input
               type="checkbox"
               checked={hideDustBalances}
               onChange={(event) =>
                 setHideDustBalances(event.currentTarget.checked)
               }
-              className="h-3.5 w-3.5 accent-accent-primary"
             />
             Hide dust (&lt; $0.01)
           </label>
         </div>
         {query.isLoading ? (
-          <p className="vex-ov-label">
-            Loading…
-          </p>
+          <p className="vex-scan-note">Loading…</p>
         ) : (result !== undefined && !result.ok) || query.isError ? (
-          <p className="text-[12.5px] text-warning-label">
+          <p className="vex-scan-note" data-tone="warn">
             Couldn&apos;t load your assets.
           </p>
         ) : portfolio === null || portfolio.tokens.length === 0 ? (
-          <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
+          <p className="vex-scan-note">
             {scope.kind === "global"
               ? "No balances yet - fund a wallet and every asset appears here."
               : scope.kind === "session"
@@ -114,12 +114,12 @@ export function AssetsScreen({
         ) : (
           <>
             {hiddenCount > 0 ? (
-              <p className="mb-2 text-[11px] text-ink-tertiary">
+              <p className="vex-scan-note">
                 {hiddenCount} dust asset{hiddenCount === 1 ? "" : "s"} hidden
               </p>
             ) : null}
             {visible.length === 0 ? (
-              <p className="text-[12.5px] leading-relaxed text-ink-tertiary">
+              <p className="vex-scan-note">
                 Every asset here is dust - uncheck &quot;Hide dust&quot; to
                 view.
               </p>

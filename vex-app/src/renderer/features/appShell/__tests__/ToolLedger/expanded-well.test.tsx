@@ -2,9 +2,10 @@
  * ToolActRow EXPANDED WELL (owner QA 2026-08-26, BoardCompose screenshots).
  *
  * Three contracts, each a defect the screenshots showed:
- *  1. a section label is STATIC, rendered above its scroll surface - a sticky
- *     label inside the scroller let scrolled args show through the well's
- *     padding around "ARGS" and read as args overlapping the output;
+ *  1. a section label is STATIC, rendered beside (before) its scroll surface
+ *     - a sticky label inside the scroller let scrolled args show through
+ *     the well's padding around the label and read as args overlapping the
+ *     output;
  *  2. the Output section's ARRIVAL is a reveal: it rides its own ExpandRegion
  *     that opens when the result lands and stays mounted afterwards (the
  *     primitive's contract), instead of popping in;
@@ -92,8 +93,8 @@ describe("ToolActRow expanded well sections", () => {
     expect(region?.className).toContain("vex-expand");
     const body = container.querySelector("[data-vex-tool-section='output']");
     expect(body?.textContent).toContain("done");
-    // The hairline divider unfolds with the section: it lives inside the region.
-    expect(region?.querySelector("[aria-hidden]")).not.toBeNull();
+    // The section sits on the well's 64px key column beside its payload.
+    expect(body?.className).toContain("vex-step-well__section");
 
     // The well itself keeps its own region; closing it never unmounts the body.
     openRow();

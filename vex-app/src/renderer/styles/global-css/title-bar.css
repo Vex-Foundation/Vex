@@ -109,7 +109,7 @@
   background: var(--vex-alias-interactive-active);
 }
 /* The mark, a 10px state swatch by the badge's state (section 1.6): solid
- * for accepted, the blue target while it waits for the user, the dot screen
+ * for accepted or ended, the blue target while it waits for the user, the dot screen
  * while it is prepared, the ink hatch when it needs another look, the ink
  * cross on an error. */
 .vex-tb-mission [data-vex-action="open-mission-detail"] > span:first-child {
@@ -128,6 +128,9 @@
   background: radial-gradient(var(--vex-alias-accent-primary) 0.8px, transparent 1px) 0 0 / 3px 3px;
 }
 .vex-tb-mission [data-vex-state="accepted"] > span:first-child {
+  background: var(--vex-alias-accent-primary);
+}
+.vex-tb-mission [data-vex-state="ended"] > span:first-child {
   background: var(--vex-alias-accent-primary);
 }
 .vex-tb-mission [data-vex-state="stale"] > span:first-child {

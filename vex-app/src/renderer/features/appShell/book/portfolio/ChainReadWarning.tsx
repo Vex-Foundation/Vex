@@ -1,3 +1,9 @@
+/**
+ * Chain read uncertainty beside a cached total (docs/design/R3-MINIMAL.md
+ * section 9.1): which chains are stale or may be missing new tokens, since
+ * when, and what to do. Ink on the paper, 12.5 / 1.5, never a colour.
+ */
+
 import type { JSX } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
 import { chainDisplay } from "@shared/chains/display.js";
@@ -7,7 +13,7 @@ export function ChainReadWarning({ portfolio }: { readonly portfolio: PortfolioD
   const issues = portfolio.chainReadIssues ?? [];
   if (issues.length === 0 && !portfolio.snapshotPartial) return null;
   return (
-    <div role="status" className="vex-bs__sub">
+    <div role="status" className="vex-pf-warn">
       {portfolio.snapshotPartial ? <p>
         Latest snapshot is partial ({portfolio.snapshotUnresolvedChainCount ?? 0} unresolved chain reads).
         P&amp;L is unavailable for comparisons involving this snapshot.

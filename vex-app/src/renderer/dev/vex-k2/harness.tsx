@@ -19,16 +19,26 @@
  *   ?g=blow|bird|giggle|blush|hum         that gesture 1 s after she is awake
  *   ?hover=1                              the pointer on her
  *   ?still                                the still frame (reduced motion is the browser's own)
+ *   ?open=1                               the open episode from the token (the sidebar's dock)
+ *   ?closed=1                             she starts closed: the token alone, face-on
+ *   ?seq=sleep-wake                       from `emotion`, asleep at 4 s, the re-wake at 10 s
+ *   ?seq=open-close                       open at once, closed into the token at 6 s, open
+ *                                         again at 9 s
+ *   ?status=1                             the avatar off: the token and its ring with the word,
+ *                                         every state, beside (sidebar) and under (welcome)
  * The host carries `data-vex-k2-ready` once her first frame is painted.
  */
 
-import { StrictMode, type JSX } from "react";
+import { StrictMode, useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { K2_EMOTIONS, type K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import type { K2Ground } from "../../components/vex/k2/k2-engine.js";
 import type { K2PlacementName } from "../../components/vex/k2/k2-rig.js";
 import type { GestureName } from "../../components/vex/k2/k2-time.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
+import { StateWord } from "../../components/ui/state-word.js";
+import { VexStatus } from "../../features/vex/VexStatus.js";
+import { VEX_STATE_FILL, VEX_STATES, vexWordOf } from "../../features/vex/vex-state.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import "../../styles/globals.css";
 
@@ -53,6 +63,11 @@ const gesture = pick<GestureName | "none">(
   "none",
 );
 const chronos = params.get("theme") === "chronos";
+const seq = pick<"sleep-wake" | "open-close" | "none">(
+  "seq",
+  ["sleep-wake", "open-close", "none"],
+  "none",
+);
 
 document.documentElement.dataset["vexTheme"] = chronos ? "chronos" : "celeris";
 useUiStore.setState({ theme: chronos ? "chronos" : "celeris" });
@@ -70,7 +85,63 @@ function Ground(): JSX.Element {
   return <div className="absolute inset-0 bg-surface-base" />;
 }
 
+/** A sequence's emotion and closed flag over time (wall clock, a dev review only). */
+function useSequence(): { readonly emotion: K2Emotion; readonly closed: boolean } {
+  const [now, setNow] = useState<{ emotion: K2Emotion; closed: boolean }>({
+    emotion,
+    closed: params.get("closed") === "1",
+  });
+  useEffect(() => {
+    const steps: [number, Partial<{ emotion: K2Emotion; closed: boolean }>][] =
+      seq === "sleep-wake"
+        ? [
+            [4000, { emotion: "sleeping" }],
+            [10000, { emotion }],
+          ]
+        : seq === "open-close"
+          ? [
+              [6000, { closed: true }],
+              [9000, { closed: false }],
+            ]
+          : [];
+    const ids = steps.map(([at, change]) =>
+      window.setTimeout(() => setNow((cur) => ({ ...cur, ...change })), at),
+    );
+    return () => ids.forEach((id) => window.clearTimeout(id));
+  }, []);
+  return now;
+}
+
+/** The avatar off: every state's token, ring and word, as the sidebar and the welcome show them. */
+function StatusSheet(): JSX.Element {
+  return (
+    <div data-vex-harness-status="" className="grid grid-cols-2 gap-x-12 gap-y-4 bg-surface-base p-8">
+      {VEX_STATES.map((state) => (
+        <div key={state} className="contents">
+          <VexStatus state={state}>
+            <StateWord
+              state={VEX_STATE_FILL[state]}
+              word={vexWordOf(state)}
+              scope="This chat:"
+              size={12}
+              className="text-[15px] font-medium"
+            />
+          </VexStatus>
+          <VexStatus state={state} layout="stack">
+            <StateWord
+              state={VEX_STATE_FILL[state]}
+              word={vexWordOf(state)}
+              className="mt-2 text-[13px] text-ink-secondary"
+            />
+          </VexStatus>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Harness(): JSX.Element {
+  const { emotion: shown, closed } = useSequence();
   const stage = placement === "stage";
   const width = size("w", stage ? window.innerWidth : placement === "sidebar" ? 256 : 284);
   const height = size("h", stage ? window.innerHeight : placement === "sidebar" ? 280 : 284);
@@ -84,11 +155,13 @@ function Harness(): JSX.Element {
       <VexK2
         placement={placement}
         ground={ground}
-        emotion={emotion}
+        emotion={shown}
         still={params.has("still")}
         wake={params.get("wake") === "1"}
         hover={params.get("hover") === "1"}
         force={gesture === "none" ? null : gesture}
+        open={params.get("open") === "1" || seq === "open-close"}
+        closed={closed}
         className="absolute inset-0"
       />
     </div>
@@ -99,7 +172,7 @@ const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
     <StrictMode>
-      <Harness />
+      {params.get("status") === "1" ? <StatusSheet /> : <Harness />}
     </StrictMode>,
   );
 }

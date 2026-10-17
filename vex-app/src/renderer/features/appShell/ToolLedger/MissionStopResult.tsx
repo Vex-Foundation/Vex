@@ -15,6 +15,7 @@
 
 import type { JSX } from "react";
 
+import { Swatch } from "../../../components/ui/swatch.js";
 import type { ToolCallActView } from "../transcriptRowModel/act-ledger.js";
 
 export interface MissionStopResultView {
@@ -57,12 +58,15 @@ export function MissionStopResult({ result }: { readonly result: MissionStopResu
   return (
     <div
       data-vex-area="mission-stop-result"
-      className="my-2 border border-rule px-3 py-2"
+      className="mb-4 mt-1 border border-rule bg-surface-base px-[18px] py-4"
     >
-      <div className="font-mono text-[11px] uppercase tracking-status text-ink-secondary">
-        Mission ended · {missionStopReasonLabel(result.reason)}
+      <div className="flex items-center gap-[9px]">
+        <Swatch state="done" size={10} className="text-accent-primary" />
+        <b className="text-[16px] font-medium leading-6 text-ink-primary">
+          {`Mission ended · ${missionStopReasonLabel(result.reason)}`}
+        </b>
       </div>
-      <p className="mt-1 whitespace-pre-wrap text-[14px] leading-6 text-ink-primary">{result.summary}</p>
+      <p className="mt-2 whitespace-pre-wrap text-[14.5px] leading-[1.55] text-ink-primary">{result.summary}</p>
     </div>
   );
 }

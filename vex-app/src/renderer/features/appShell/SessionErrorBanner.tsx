@@ -1,5 +1,9 @@
 /**
- * Session-agnostic engine-error card, above the composer.
+ * Session-agnostic engine-error card: the turn error callout of
+ * docs/design/R3-MINIMAL.md section 6, drawn with the kit's `ErrorCallout`
+ * (1.5px ink frame, 8px hatch band, never red): the error fill and the scope
+ * title ("This turn failed"), the cause line, the hint, the remedy, the code
+ * trailer in the mono 11.5 muted, and Dismiss.
  *
  * Mounted by `SessionPanel` for EVERY session, mission or agent. The mission
  * paused_error alert lives inside `MissionControls`, which only renders when
@@ -35,6 +39,7 @@
 
 import type { JSX } from "react";
 import { engineErrorCopy } from "@shared/engine-error-copy.js";
+import { ErrorCallout } from "../../components/ui/error-callout.js";
 import {
   engineErrorActionHint,
   engineErrorCodeTrailer,
@@ -57,39 +62,33 @@ export function SessionErrorBanner({
   const codes = engineErrorCodeTrailer(event);
 
   return (
-    <div
+    <ErrorCallout
       data-vex-area="session-error-banner"
       data-vex-category={event.category}
-      className="vex-callout mb-3 w-full"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <p className="vex-micro text-ink-primary [--vex-micro-size:11px]">
-          {sessionScopeLabel(event.scope)} - {copy.title}
-        </p>
-        <button
-          type="button"
-          aria-label="Dismiss error"
-          onClick={() => {
-            clear(sessionId);
-          }}
-          className="vex-micro text-ink-secondary transition-colors hover:text-ink-primary [--vex-micro-size:11px]"
-        >
-          Dismiss
-        </button>
-      </div>
-      <p className="mt-1.5 text-[13px] leading-5 text-ink-primary">{copy.body}</p>
-      {/* Sanitized REAL cause (decree 2026-08-02) - technical register, mono. */}
-      {event.detail !== null ? (
-        <p className="mt-1 break-words font-code text-[11.5px] leading-4 text-ink-secondary">
-          {event.detail}
-        </p>
-      ) : null}
-      {actionHint !== null ? (
-        <p className="mt-1 text-[13px] font-medium leading-5 text-ink-primary">{actionHint}</p>
-      ) : null}
-      {codes !== null ? (
-        <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-ink-secondary">{codes}</p>
-      ) : null}
-    </div>
+      className="vex-turn-error"
+      title={sessionScopeLabel(event.scope)}
+      cause={copy.title}
+      hint={
+        <>
+          <span className="block">{copy.body}</span>
+          {/* Sanitized REAL cause (decree 2026-08-02) - technical register. */}
+          {event.detail !== null ? (
+            <span className="mt-1 block break-words font-code text-[12px] leading-[1.5] text-ink-tertiary">
+              {event.detail}
+            </span>
+          ) : null}
+          {actionHint !== null ? (
+            <span className="mt-1.5 block font-semibold text-ink-primary">
+              {actionHint}
+            </span>
+          ) : null}
+        </>
+      }
+      code={codes ?? undefined}
+      dismissLabel="Dismiss error"
+      onDismiss={() => {
+        clear(sessionId);
+      }}
+    />
   );
 }

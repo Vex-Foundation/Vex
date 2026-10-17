@@ -5,11 +5,16 @@
  *
  * ```
  * div[data-vex-k2=<placement>][data-vex-k2-ground][data-vex-k2-ready?]   her host, aria-hidden
+ *    [data-vex-k2-open?][data-vex-k2-closed?]                            her episodes
  *   canvas                                                               her, her light, her token
  * ```
  *
  * The art is decorative: the state word beside her carries the state for assistive tech. She
  * takes no pointer. The still frame (reduced motion, Save-Data, or `still`) paints once.
+ *
+ * Her episodes (`docs/design/R3-MINIMAL.md sections 10.4 and 11`): `open` assembles her from the
+ * token as she first shows (the Vex sidebar's dock from the welcome); `closed` collapses her into
+ * the token and, set back, opens her again. Under the still frame she simply appears or goes.
  */
 import { type JSX, useEffect, useRef } from "react";
 import { useStillFrame } from "../../../lib/motion/use-still-frame.js";
@@ -39,6 +44,10 @@ export interface VexK2Props {
   readonly force?: GestureName | null;
   /** The composer she looks at while listening (by default her look goes down and to the side). */
   readonly composer?: () => HTMLElement | null;
+  /** Play the open episode on mount: the token turns flat, her beam rises, she assembles. */
+  readonly open?: boolean;
+  /** She is closed into the token; a change plays the close or the open episode. */
+  readonly closed?: boolean;
   readonly className?: string;
 }
 
@@ -52,6 +61,8 @@ export function VexK2({
   hover = false,
   force = null,
   composer,
+  open = false,
+  closed = false,
   className,
 }: VexK2Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -59,8 +70,8 @@ export function VexK2({
   const engineRef = useRef<K2Engine | null>(null);
   const frame = useStillFrame() || still;
   const dark = useUiStore((s) => s.theme) === "chronos";
-  const live = useRef({ dark, ground, emotion, hover, onWoken, composer });
-  live.current = { dark, ground, emotion, hover, onWoken, composer };
+  const live = useRef({ dark, ground, emotion, hover, onWoken, composer, closed });
+  live.current = { dark, ground, emotion, hover, onWoken, composer, closed };
   const placeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -78,6 +89,8 @@ export function VexK2({
       onWoken: () => live.current.onWoken?.(),
       force,
       composer: () => live.current.composer?.() ?? null,
+      open,
+      closed: now.closed,
     });
     engineRef.current = engine;
     engine.setEmotion(now.emotion);
@@ -104,7 +117,7 @@ export function VexK2({
       engineRef.current = null;
       placeRef.current = null;
     };
-  }, [placement, frame, wake, force]);
+  }, [placement, frame, wake, force, open]);
 
   useEffect(() => {
     engineRef.current?.setDark(dark);
@@ -119,6 +132,9 @@ export function VexK2({
   useEffect(() => {
     engineRef.current?.setHover(hover);
   }, [hover]);
+  useEffect(() => {
+    engineRef.current?.setClosed(closed);
+  }, [closed]);
 
   return (
     <div
@@ -126,6 +142,8 @@ export function VexK2({
       aria-hidden="true"
       data-vex-k2={placement}
       data-vex-k2-ground={ground}
+      data-vex-k2-open={open ? "" : undefined}
+      data-vex-k2-closed={closed ? "" : undefined}
       className={cn("pointer-events-none relative overflow-hidden", className)}
     >
       <canvas ref={canvasRef} className="pointer-events-none absolute left-0 top-0 block" />

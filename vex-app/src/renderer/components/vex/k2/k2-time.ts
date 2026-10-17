@@ -9,7 +9,9 @@
  *   whistle, the hum), one at a time, never during a hover, 15 to 25 s apart; `GestureChain`,
  *   `whistleStarts`, `whistleAt`, `gestureAt`, `gestureState`;
  * - the idle life: by default she looks at you and now and then glances away (`GlanceChain`);
- *   blinks, gusts of wind, the smirk.
+ *   blinks, gusts of wind, the smirk;
+ * - the episodes: opening her from the token and closing her into it, awake (`episodeProjector`);
+ * - the "look at you" chain: when she comes back she holds her eyes on you a moment (`lookAtYou`).
  *
  * Nothing here reads a clock, the DOM or `Math.random()`: the engine passes t (ms of her own clock,
  * which stops while she is off screen) and the inputs (the hover, the clicks), so each frame follows
@@ -71,24 +73,108 @@ export interface Projector {
 
 const AWAKE: Projector = { press: 0, flip: 1, cone: 1, asm: 1 };
 
+/** The press like a key, `a` ms after it began: down in 100 ms, back up over 160 ms. */
+function pressAt(a: number): number {
+  if (a < 0 || a > 260) return 0;
+  return a < 100 ? 1 - (1 - a / 100) ** 3 : 1 - smooth((a - 100) / 160);
+}
+
+/** The cubic ease in and out the token turns on. */
+function easeIO(q: number): number {
+  return q < 0.5 ? 4 * q * q * q : 1 - (-2 * q + 2) ** 3 / 2;
+}
+
 /** The projector at t: the press, the turn to flat, the cone, the assembly (all done when awake). */
 export function projector(t: number, mode: WakeMode): Projector {
   if (mode === "none") return AWAKE;
-  const a = t - T_PRESS;
-  const press =
-    a < 0 || a > 260
-      ? 0
-      : a < 100
-        ? 1 - (1 - a / 100) ** 3
-        : 1 - smooth((a - 100) / 160);
-  const fr = ramp(t, T_FLIP[0], T_FLIP[1]);
-  const flip = fr < 0.5 ? 4 * fr * fr * fr : 1 - (-2 * fr + 2) ** 3 / 2;
   return {
-    press,
-    flip,
+    press: pressAt(t - T_PRESS),
+    flip: easeIO(ramp(t, T_FLIP[0], T_FLIP[1])),
     cone: ramp(t, T_CONE[0], T_CONE[1]),
     asm: ramp(t, T_ASM[0], T_ASM[1]),
   };
+}
+
+/* ------------------------------------------------------------------ the episodes */
+
+/**
+ * Opening and closing her from the token, awake (`docs/design/R3-MINIMAL.md sections 10.4 and
+ * 11`):
+ *
+ * - `open`: the token presses like a key, turns to lie flat, its beam of dots rises and she
+ *   assembles bottom up, about 2.6 s (no sleep beats: the wake is the gate's and the re-wake's);
+ *   then she looks at you. The Vex sidebar plays it when she docks into it from the welcome, or
+ *   when the column is shown again.
+ * - `close`: she collapses top first into the token (the assembly in reverse: her dots fall into
+ *   its light as sparks), the beam sinks back into the coin and the coin turns face-on again,
+ *   about 1.45 s; then the token stands alone.
+ *
+ * Reduced motion skips both: she simply appears, or the token simply stands alone.
+ */
+export type EpisodeKind = "open" | "close";
+
+/** An episode on her clock: which, and when it began (ms). */
+export interface Episode {
+  readonly kind: EpisodeKind;
+  readonly at: number;
+}
+
+/** The open episode's beats, ms from its start. */
+export const OPEN = {
+  press: 0,
+  flip: [260, 900],
+  cone: [750, 1350],
+  asm: [1150, 2600],
+} as const;
+/** The close episode's beats, ms from its start: the collapse, the beam sinking, the turn back. */
+export const CLOSE = {
+  collapse: 750,
+  cone: [450, 950],
+  flip: [850, 1450],
+} as const;
+export const OPEN_MS = OPEN.asm[1];
+export const CLOSE_MS = CLOSE.flip[1];
+
+/** The token alone, face-on: no beam, no her. */
+export const CLOSED: Projector = { press: 0, flip: 0, cone: 0, asm: 0 };
+
+/**
+ * The projector at t in an episode (awake when none). `still` settles it at once: an open shows
+ * her whole, a close leaves the token alone.
+ */
+export function episodeProjector(
+  ep: Episode | null,
+  t: number,
+  still: boolean,
+): Projector {
+  if (ep === null) return AWAKE;
+  const a = t - ep.at;
+  if (ep.kind === "open") {
+    if (still || a >= OPEN_MS) return AWAKE;
+    return {
+      press: pressAt(a - OPEN.press),
+      flip: easeIO(ramp(a, OPEN.flip[0], OPEN.flip[1])),
+      cone: ramp(a, OPEN.cone[0], OPEN.cone[1]),
+      asm: ramp(a, OPEN.asm[0], OPEN.asm[1]),
+    };
+  }
+  if (still || a >= CLOSE_MS) return CLOSED;
+  if (a < 0) return AWAKE;
+  return {
+    press: 0,
+    flip: 1 - easeIO(ramp(a, CLOSE.flip[0], CLOSE.flip[1])),
+    cone: 1 - ramp(a, CLOSE.cone[0], CLOSE.cone[1]),
+    asm: 1 - smooth(ramp(a, 0, CLOSE.collapse)),
+  };
+}
+
+/**
+ * Whether an episode still holds her life back at t: an open until she has assembled, a close
+ * from its start on (closed, there is nothing of her to live).
+ */
+export function episodeBusy(ep: Episode | null, t: number): boolean {
+  if (ep === null) return false;
+  return ep.kind === "close" || t < ep.at + OPEN_MS;
 }
 
 /**
@@ -928,6 +1014,51 @@ export class GlanceChain {
     }
     return null;
   }
+}
+
+/**
+ * The "look at you" chain: when she comes back (the wake or the re-wake ends, an open episode has
+ * assembled her, an emotion settles back to idle, an idle action ends, the window is shown again
+ * after 10 s or more away) she holds her eyes on you for 1.5 to 3 s before her glances resume;
+ * about one look in six adds the soft smile, about one in six a slow blink. The engine passes her
+ * returns (her clock); a moving pointer and a hover win over it.
+ */
+export const LOOK = {
+  holdMin: 1500,
+  holdMax: 3000,
+  /** The window away this long (ms of the wall clock) counts as a return. */
+  away: 10000,
+} as const;
+
+export interface LookAtYou {
+  readonly start: number;
+  readonly age: number;
+  readonly hold: number;
+  readonly smile: boolean;
+  readonly blink: boolean;
+}
+
+/** The look at you running at t, from the latest return at or before t, or null. */
+export function lookAtYou(t: number, returns: readonly number[]): LookAtYou | null {
+  let start = Number.NEGATIVE_INFINITY;
+  for (const r of returns) if (r <= t && r > start) start = r;
+  if (!Number.isFinite(start)) return null;
+  const k = Math.round(start / STEP_MS);
+  const hold = LOOK.holdMin + hash01(k, 41) * (LOOK.holdMax - LOOK.holdMin);
+  const age = t - start;
+  if (age >= hold) return null;
+  const h = hash01(k, 43);
+  return { start, age, hold, smile: h < 0.17, blink: h >= 0.17 && h < 0.34 };
+}
+
+/**
+ * A look's slow blink, 0..1: from 40% of its hold, the lids go down and up again in 100 ms
+ * steps over 600 ms (twice as slow as her own blink).
+ */
+export function slowBlink(look: LookAtYou): number {
+  const x = look.age - look.hold * 0.4;
+  if (x < 0 || x >= 600) return 0;
+  return [0.4, 0.75, 1, 1, 0.75, 0.4][Math.floor(x / 100)] ?? 0;
 }
 
 /** Every 20 to 40 s, for 1.5 s, the near mouth corner lifts. */

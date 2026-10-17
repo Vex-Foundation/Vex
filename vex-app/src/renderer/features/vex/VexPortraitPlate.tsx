@@ -20,6 +20,10 @@
  * or a custom image the renderer could not load (`onError`), so the plate is
  * never a hole. A new pick gets its own chance after an earlier failure.
  *
+ * SHE DOCKS. With `dock` the plate plays her open episode as it mounts: the
+ * token turns flat, her beam rises and she assembles (the sidebar asks for it
+ * when it shows after the shell came up); reduced motion shows her at once.
+ *
  * Decorative: the state word above carries the state for assistive tech, so
  * the plate is `aria-hidden` and takes no pointer.
  */
@@ -44,10 +48,16 @@ function findComposer(): HTMLElement | null {
 export interface VexPortraitPlateProps {
   /** What she shows of the agent's state. */
   readonly emotion: K2Emotion;
+  /** Play her open episode as the plate mounts (she docks into the sidebar). */
+  readonly dock?: boolean;
   readonly className?: string;
 }
 
-export function VexPortraitPlate({ emotion, className }: VexPortraitPlateProps): JSX.Element {
+export function VexPortraitPlate({
+  emotion,
+  dock = false,
+  className,
+}: VexPortraitPlateProps): JSX.Element {
   const backdropQuery = useShellBackdrop();
   const custom = currentShellBackdrop(backdropQuery.data);
   // A custom URL the renderer could not load. Keyed by URL so a NEW pick
@@ -98,6 +108,7 @@ export function VexPortraitPlate({ emotion, className }: VexPortraitPlateProps):
         ground="print"
         emotion={emotion}
         composer={findComposer}
+        open={dock}
         className="vex-vs-plate__holo"
       />
     </div>

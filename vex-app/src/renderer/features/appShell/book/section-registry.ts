@@ -1,15 +1,9 @@
 /**
- * THE BOOK RAIL'S SECTION MECHANISM - the pure algebra every rail registry
- * shares, with no opinion about which sections exist.
+ * THE SECTION ORDER MECHANISM: the pure algebra a reorderable page registry
+ * uses, with no opinion about which sections exist. The Portfolio page's ids,
+ * labels and defaults live in `section-order.ts`.
  *
- * The BOOK has TWO registries now: the agent rail (`section-order.ts`:
- * Position / Wallets / Balances / Activity / Session / Launchpad) and the Studio
- * rail (`studio-section-order.ts`: Portfolio Overview / Wallets / Balances).
- * They evolve INDEPENDENTLY - the ratified Studio v1 list deliberately omits
- * the agent-only cards, and either side can gain a card without the other -
- * so their ids, labels, defaults and stored keys stay in separate modules.
- *
- * What is shared is not the content but the CONTRACT for a stored order:
+ * What lives here is not the content but the CONTRACT for a stored order:
  * resolution is tolerant in exactly one documented way, and a move is
  * expressed by identity rather than index arithmetic. Those are one invariant
  * with one right answer, so they live here once. A second hand-written copy of
@@ -21,14 +15,14 @@
 export type DropEdge = "before" | "after";
 
 /**
- * What a rail must declare about its own sections: the ids it knows, the
+ * What a page must declare about its own sections: the ids it knows, the
  * default render order, the human name each id wears in the drag handle's
  * accessible label and the live announcement.
  */
 export interface SectionRegistry<Id extends string> {
   readonly defaults: readonly Id[];
   readonly label: Readonly<Record<Id, string>>;
-  /** Type guard over the ids THIS rail knows - never a shared id list. */
+  /** Type guard over the ids THIS page knows - never a shared id list. */
   readonly isId: (value: string) => value is Id;
 }
 
@@ -40,13 +34,13 @@ export interface SectionRegistry<Id extends string> {
  * Unknown ids are dropped. `[]` yields `defaults` unchanged.
  *
  * Append-at-end (not "restore its default slot") is deliberate: once the user
- * has reordered the rail there is no meaningful default slot left to restore a
+ * has reordered the page there is no meaningful default slot left to restore a
  * new section into, and guessing one would silently move a section the user
  * placed by hand. A new section arriving at the bottom is visible and undoable.
  *
  * Resolution is deliberately TOLERANT: the payload is user-writable
  * localStorage that outlives builds, so anything unrecognised degrades to the
- * default rather than to a blank rail.
+ * default rather than to a blank page.
  */
 export function resolveSectionOrder<Id extends string>(
   stored: readonly string[],

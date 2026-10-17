@@ -14,19 +14,23 @@
  * THE ROW SAYS WHAT WAS SETTLED. A fill has no lifecycle: the venue matched
  * it, the economics are final, and there is neither a settlement-chain
  * transaction nor an explorer link to offer - so this file renders NO link and
- * NO status chip. What it does render is the one thing a perp row can hide:
+ * no lifecycle word. What it does render is the one thing a perp row can hide:
  * that a fill was a LIQUIDATION, a deleverage or a market settlement, which is
  * the venue acting on the account and not a decision the user made.
  *
  * The drawer is always available, because the account half, the fee
  * provenance and the observed position are the audit answer this surface
  * exists to give.
+ *
+ * R3 (docs/design/R3-MINIMAL.md section 9.2): the same grid as the activity
+ * arm, and a last word like every row. A fill ends in "Filled", its own word:
+ * the venue matched it and the economics are final, so it neither waits nor
+ * reads as a chain confirmation. A fill the venue forced (a liquidation, a
+ * deleverage, a settlement) says so under the word.
  */
 
 import { useId, useRef, useState, type JSX } from "react";
 import type { AgentScanLighterFillEntry } from "@shared/schemas/agent-scan-lighter-entry.js";
-import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
-import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
 import { ActivityChip } from "../../ActivityBadge.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
 import { entryClockText } from "./agent-scan-display.js";
@@ -53,31 +57,24 @@ import {
   lighterUsdSettledText,
   lighterVenueLabel,
 } from "./agent-scan-lighter-display.js";
+import { ScanKind, ScanMeta, ScanState, type ScanOutcome } from "./ScanRowParts.js";
 
-/**
- * A labelled line in the expanded detail panel. The same grammar
- * `AgentScanRow` uses for its own drawer; it is duplicated rather than
- * exported across the two rows because it is four lines of layout with no
- * behaviour, and a shared "detail line" owner would be a seam with nothing
- * behind it.
- */
-function DetailLine({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex gap-2">
-      <span className="w-[92px] shrink-0 vex-micro-label uppercase text-ink-secondary">
-        {label}
-      </span>
-      <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-secondary">
-        {children}
-      </span>
-    </div>
-  );
+/** How a fill ends: the venue's own word, and who acted when it was not the user. */
+function fillOutcome(attention: string | null): ScanOutcome {
+  return {
+    state: "done",
+    word: "Filled",
+    notes:
+      attention === null
+        ? []
+        : [
+            {
+              text: attention,
+              title:
+                "The venue acted on this account - this fill was not a trade the user placed.",
+            },
+          ],
+  };
 }
 
 export function AgentScanLighterRow({
@@ -90,7 +87,6 @@ export function AgentScanLighterRow({
   const detailId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const protocolMark = resolveProtocolMark("lighter");
   const clock = entryClockText(entry.createdAt);
   // A SPOT fill has no position, so it wears no leverage and shows no position
   // lines anywhere - not "1x", not an empty section.
@@ -108,156 +104,164 @@ export function AgentScanLighterRow({
         base: entry.baseAsset.symbol,
         quote: entry.quoteAsset.symbol,
       });
+  const trade = lighterTradeText(entry);
+
+  const metaParts = [
+    { key: "venue", text: lighterVenueLabel(entry.environment) },
+    ...(clock !== null ? [{ key: "time", text: clock, figure: true }] : []),
+  ];
 
   // A plain <div>: the virtualized feed owns the <ul>/<li> structure, because
   // each row must sit in an absolutely-positioned measured wrapper.
   return (
-    <div className="border-b border-line-2 px-1 py-2">
-      <div className="flex items-center gap-2">
-        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-          <ProtocolMark mark={protocolMark} size={14} />
-        </span>
-        {/* The `ActivityBadge` chrome with LIGHTER's vocabulary: that
+    <div className="vex-scan-row" data-open={open ? "" : undefined}>
+      <ScanKind>
+        {/* The `ActivityBadge` words with LIGHTER's vocabulary: that
           * component's records are typed total over the `agent_activity`
           * database vocabulary, and a venue fill is not one of its rows. */}
         <ActivityChip
           tone="solid"
           text={`${lighterKindLabel(entry.spot)}·${lighterEffectLabel(entry.positionEffect)}`}
         />
-        {attention !== null ? (
-          // NOT a decision the user made. The word carries it, not the hue.
-          <ActivityChip
-            tone="accent"
-            text={attention}
-            title="The venue acted on this account - this fill was not a trade the user placed."
-          />
-        ) : null}
+      </ScanKind>
 
+      <div className="vex-scan-what">
         {/* The line may be clipped by the row's width; the title carries the
           * sentence whole and the drawer below repeats every figure on its own
           * wrapping line, so a narrow window hides nothing. */}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap font-mono text-[11.5px] leading-none text-ink-primary">
-          <span className="truncate" title={lighterTradeText(entry)}>{lighterTradeText(entry)}</span>
+        <span className="vex-scan-legs">
+          <span className="min-w-0 truncate" title={trade}>{trade}</span>
         </span>
+        <ScanMeta parts={metaParts}>
+          <button
+            type="button"
+            onClick={() => openCreateSession(lighterFillFollowUpMessage(entry))}
+            aria-label="Ask Vex about this fill"
+            className="vex-scan-link"
+          >
+            Ask Vex
+          </button>
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls={detailId}
+            aria-label={`${open ? "Hide" : "Show"} details for this fill`}
+            className="vex-scan-link"
+          >
+            {open ? "Hide" : "Details"}
+          </button>
+        </ScanMeta>
+      </div>
 
-        {/* SETTLED, not estimated: the venue's own USD notional for the match.
-          * The title carries the figure whole, so the two-decimal cell hides
-          * nothing. */}
-        <span
-          title={entry.usdAmount}
-          className="shrink-0 font-mono text-[11.5px] tabular-nums text-ink-primary"
-        >
-          {lighterUsdSettledText(entry.usdAmount)}
-        </span>
+      {/* SETTLED, not estimated: the venue's own USD notional for the match.
+        * The title carries the figure whole, so the two-decimal cell hides
+        * nothing. The leverage in force sits under it. */}
+      <span className="vex-scan-value">
+        <span title={entry.usdAmount}>{lighterUsdSettledText(entry.usdAmount)}</span>
         {leverageChip !== null ? (
-          <ActivityChip tone="paper" text={leverageChip} title="Leverage before this fill" />
+          <span className="vex-scan-value__sub" title="Leverage before this fill">
+            {leverageChip}
+          </span>
         ) : null}
-      </div>
+      </span>
 
-      <div className="mt-1 flex items-center gap-2 pl-[22px] font-mono text-[10px] tabular-nums text-ink-tertiary">
-        {clock !== null ? <span className="shrink-0">{clock}</span> : null}
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-controls={detailId}
-          aria-label={`${open ? "Hide" : "Show"} details for this fill`}
-          className="ml-auto shrink-0 uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-        >
-          {open ? "Hide" : "Details"}
-        </button>
-      </div>
+      <ScanState outcome={fillOutcome(attention)} />
 
       <ExpandRegion
         id={detailId}
         open={open}
         triggerRef={triggerRef}
-        className="mt-2 flex flex-col gap-1.5 rounded-xl border border-line-1 bg-surface-1 px-3 py-2.5"
+        outerClassName="vex-scan-expand"
       >
         {/* THE SETTLED ECONOMICS, WHOLE. The feed line clips to the row's
           * width and truncates the cents; these lines wrap, so every figure
           * the venue recorded is readable at any width. */}
-        <DetailLine label="Side">{lighterSideLabel(entry.side)}</DetailLine>
-        <DetailLine label="Size">
-          <span className="break-all">
+        <dl className="vex-scan-detail">
+          <dt>Side</dt>
+          <dd>{lighterSideLabel(entry.side)}</dd>
+          <dt>Size</dt>
+          <dd className="vex-num">
             {lighterDecimalText(entry.baseSize)} {entry.baseAsset.symbol}
-          </span>
-        </DetailLine>
-        <DetailLine label="Price">
-          <span className="break-all">
+          </dd>
+          <dt>Price</dt>
+          <dd className="vex-num">
             {lighterDecimalText(entry.price)} {entry.quoteAsset.symbol}
-          </span>
-        </DetailLine>
-        <DetailLine label="Quote notional">
-          <span className="break-all">
+          </dd>
+          <dt>Quote notional</dt>
+          <dd className="vex-num">
             {lighterDecimalText(entry.quoteNotional)} {entry.quoteAsset.symbol}
-          </span>
-        </DetailLine>
-        <DetailLine label="USD">
-          <span className="break-all">{lighterUsdFullText(entry.usdAmount)}</span>
-        </DetailLine>
-        {entry.spot ? null : (
-          <DetailLine label="Effect">{lighterEffectLabel(entry.positionEffect)}</DetailLine>
-        )}
-        {entry.spot ? null : (
-          <DetailLine label="Position before">
-            {lighterPositionBeforeText(entry)}
-          </DetailLine>
-        )}
-        {entryQuoteBefore !== null ? (
-          <DetailLine label="Entry quote before">{entryQuoteBefore}</DetailLine>
-        ) : null}
-        {realizedPnl !== null ? (
-          <DetailLine label="Realized PnL">{realizedPnl}</DetailLine>
-        ) : null}
-        {entry.spot ? null : (
-          // A HISTORICAL fact. `unknown` when the ledger holds this row without
-          // the fraction - never the account's current setting.
-          <DetailLine label="Leverage">
-            {lighterLeverageDrawerText(entry.leverage)}
-          </DetailLine>
-        )}
-        {integratorFee !== null ? (
-          <DetailLine label="Vex fee">{integratorFee}</DetailLine>
-        ) : null}
-        {exchangeFee !== null ? (
-          <DetailLine label="Exchange fee">{exchangeFee}</DetailLine>
-        ) : null}
-        <DetailLine label="Trade type">{lighterTradeTypeLabel(entry.tradeType)}</DetailLine>
-        <DetailLine label="Venue">{lighterVenueLabel(entry.environment)}</DetailLine>
-        <DetailLine label="Block">
-          <span className="font-mono text-[10px]">
-            {lighterBlockHeightText(entry.blockHeight)}
-          </span>
-        </DetailLine>
-        {entry.providerOrderId !== null ? (
-          <DetailLine label="Order">
-            <span className="font-mono text-[10px]">{entry.providerOrderId}</span>
-          </DetailLine>
-        ) : null}
-        <DetailLine label="Trade id">
-          <span className="font-mono text-[10px]">{entry.providerTradeId}</span>
-        </DetailLine>
-        <DetailLine label="Intent">
-          <span className="font-mono text-[10px]">{entry.intentId}</span>
-        </DetailLine>
-        {positionNowLines !== null ? (
-          <DetailLine label="Position now">
-            <span className="flex flex-wrap items-baseline gap-x-2">
-              {positionNowLines.map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-            </span>
-          </DetailLine>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => openCreateSession(lighterFillFollowUpMessage(entry))}
-          className="mt-1 inline-flex w-full items-center justify-center rounded-lg border border-line-2 px-3 py-2 vex-micro-label uppercase text-ink-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-        >
-          Ask Vex about this fill
-        </button>
+          </dd>
+          <dt>USD</dt>
+          <dd className="vex-num">{lighterUsdFullText(entry.usdAmount)}</dd>
+          {entry.spot ? null : (
+            <>
+              <dt>Effect</dt>
+              <dd>{lighterEffectLabel(entry.positionEffect)}</dd>
+              <dt>Position before</dt>
+              <dd>{lighterPositionBeforeText(entry)}</dd>
+            </>
+          )}
+          {entryQuoteBefore !== null ? (
+            <>
+              <dt>Entry quote before</dt>
+              <dd>{entryQuoteBefore}</dd>
+            </>
+          ) : null}
+          {realizedPnl !== null ? (
+            <>
+              <dt>Realized PnL</dt>
+              <dd>{realizedPnl}</dd>
+            </>
+          ) : null}
+          {entry.spot ? null : (
+            // A HISTORICAL fact. `unknown` when the ledger holds this row without
+            // the fraction - never the account's current setting.
+            <>
+              <dt>Leverage</dt>
+              <dd>{lighterLeverageDrawerText(entry.leverage)}</dd>
+            </>
+          )}
+          {integratorFee !== null ? (
+            <>
+              <dt>Vex fee</dt>
+              <dd>{integratorFee}</dd>
+            </>
+          ) : null}
+          {exchangeFee !== null ? (
+            <>
+              <dt>Exchange fee</dt>
+              <dd>{exchangeFee}</dd>
+            </>
+          ) : null}
+          <dt>Trade type</dt>
+          <dd>{lighterTradeTypeLabel(entry.tradeType)}</dd>
+          <dt>Block</dt>
+          <dd className="vex-num">{lighterBlockHeightText(entry.blockHeight)}</dd>
+          {entry.providerOrderId !== null ? (
+            <>
+              <dt>Order</dt>
+              <dd className="vex-num">{entry.providerOrderId}</dd>
+            </>
+          ) : null}
+          <dt>Trade id</dt>
+          <dd className="vex-num">{entry.providerTradeId}</dd>
+          <dt>Intent</dt>
+          <dd className="vex-num">{entry.intentId}</dd>
+          {positionNowLines !== null ? (
+            <>
+              <dt>Position now</dt>
+              <dd>
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  {positionNowLines.map((line) => (
+                    <span key={line}>{line}</span>
+                  ))}
+                </span>
+              </dd>
+            </>
+          ) : null}
+        </dl>
       </ExpandRegion>
     </div>
   );

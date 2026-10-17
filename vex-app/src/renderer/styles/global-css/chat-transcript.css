@@ -1,25 +1,21 @@
-/* The session page, V10 (docs/design/V10-SPREAD.md sections 1, 4 and 7): the
- * transcript's place in the RESIDENT SHELL, the transcript's chapter head, the
- * ruled turn island, the risk callout, hover-revealed timestamps and the chat
- * code tokens. The composer seat and the welcome live in composer.css, the
- * approval card in approval.css.
+/* The conversation (docs/design/R3-MINIMAL.md section 6): the transcript's
+ * place in the resident shell, the centred 760 column, the user block, Vex's
+ * turn hung off the flat token, the tool step rows and their fold, the live
+ * row, the Reasoned row, the turn stats on hover and the chat code tokens.
+ * The composer seat and the welcome live in composer.css, the approval card in
+ * approval.css, the ink callout in ui-primitives/indicators.css.
  *
- * Status is shown by fill (the shared swatch, ui-primitives/marks.css), never
- * by a colour, a shimmer or a sweep: the ongoing swatch's four-step dot screen
- * is the only state motion on the page, and it stops under reduced motion. */
+ * Status is a fill plus a word (the shared swatch, ui-primitives/marks.css),
+ * never a colour; failures are ink, never red. */
 
 /* ============================================================ *
  *  THE RESIDENT CONVERSATION SHELL                              *
  *                                                               *
- *  `SessionPanel` renders ONE persistent tree. The welcome hero *
- *  and the docked session view are the same DOM in the same     *
+ *  `SessionPanel` renders ONE persistent tree. The welcome and  *
+ *  the docked session view are the same DOM in the same         *
  *  positions, told apart only by `data-phase` on the panel root *
- *  (hero / settling / active). The composer's textarea node and *
- *  its caret survive the transition because nothing about it    *
- *  remounts - only these rules change.                          *
- *                                                               *
- *  There is NO crossfade and NO morph between phases: the       *
- *  position change of one persistent tree IS the transition.    *
+ *  (hero / settling / active). The phase geometry of the seat   *
+ *  is in composer.css; this sheet owns the transcript's part.   *
  * ============================================================ */
 
 /* Nested mode: the panel's scroll body owns overflow (it is the only box that
@@ -34,12 +30,6 @@
   scrollbar-gutter: auto;
 }
 
-/* In a side rail (the Lighter chat, `data-vex-session-surface="embedded"`) the
- * transcript keeps the rail's own 12px sides instead of the page's 32. */
-[data-vex-session-surface="embedded"] [data-vex-transcript-column] {
-  padding-inline: 12px;
-}
-
 /* FOLLOW OWNERSHIP IS THE SCROLL MODEL'S, NOT THE BROWSER'S. Chromium's scroll
  * anchoring silently adjusts `scrollTop` when content above the reader
  * resizes; `useTranscriptScroll` classifies any deviation from its own ledger
@@ -51,15 +41,10 @@
   overflow-anchor: none;
 }
 
-/* ── Zero-height sticky slot ──────────────────────────────────────────────
- * The one floating conversation surface left is a `height: 0` sticky box whose
- * child overflows. A zero-height box adds no scroll range, so it cannot move
- * the floor the follow model measures itself against. The pending turn is
- * `TurnIsland`'s in-flow box, never a centred scene. */
-
-/* The jump-to-latest key. Under the resident shell it clears the sticky seat
- * by the seat's LIVE height, so a growing draft or an opening queue dock
- * pushes the key up with it. z-8 keeps it above the seat (z-7). */
+/* The jump-to-latest key: a ZERO-HEIGHT sticky slot, so raising it never adds
+ * scroll range. Under the resident shell it clears the sticky seat by the
+ * seat's LIVE height, so a growing draft pushes the key up with it. z-8 keeps
+ * it above the seat (z-7). */
 [data-vex-latest-slot] {
   position: sticky;
   bottom: 16px;
@@ -74,103 +59,610 @@
 }
 
 /* ============================================================ *
- *  THE SESSION PAGE (reference d3)                              *
+ *  THE COLUMN                                                   *
  * ============================================================ */
 
-/* The chapter head: the session's own name, the 56px serif (48px under the
- * spread breakpoint, section 1). */
-.vex-chapter__title {
-  font-family: var(--font-serif);
-  font-size: 56px;
-  font-weight: 400;
-  line-height: 0.94;
-  letter-spacing: -0.014em;
-  text-wrap: balance;
-  overflow-wrap: anywhere;
-  color: var(--vex-alias-title);
+/* The reading column: centred, at most 760 (`--vex-transcript-max`), with 12
+ * clear on each side once the centre is narrower than that (744 at 1024 holds
+ * a 720 column). The transcript rows and the docked composer share it. */
+.vex-reading-col {
+  width: min(var(--vex-transcript-max, 760px), calc(100% - 24px));
+  margin-inline: auto;
 }
 
-@media (max-width: 1275px) {
-  .vex-chapter__title {
-    font-size: 48px;
+/* The day label: 12 muted, centred. The row stack's 18 gap plus 8 here is the
+ * 26 above it; the gap below is the 18. */
+.vex-day {
+  padding-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── The user block ──────────────────────────────────────────────────────
+ * Right anchored, text left aligned, max 560, 15 / 1.55, a 2px blue rule on
+ * its right edge (periwinkle at night, the accent token) with 14 clear; the
+ * "You · 12:28" caption above it, 12 muted, 5 below. */
+.vex-you {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.vex-you__cap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 5px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-you__body {
+  max-width: min(560px, 100%);
+  margin: 0;
+  padding: 1px 14px 1px 0;
+  border-right: 2px solid var(--vex-alias-accent-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+/* When an operator instruction reaches the agent, in words, under the block. */
+.vex-you__note {
+  margin-top: 6px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── Vex's turn ──────────────────────────────────────────────────────────
+ * A 28px column and a 12 gap: the flat token (24) hangs at the left, once per
+ * turn; every row of the turn (prose, steps, the live row, the stats) starts
+ * at the same 40 edge. Paragraphs 15 / 1.6, 10 between them. */
+.vex-reply {
+  position: relative;
+  padding-left: 40px;
+}
+.vex-reply__mark {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  display: flex;
+  width: 24px;
+  height: 24px;
+}
+/* The token centres on the first line of what heads the turn: a 36px
+ * Reasoned row, a 36px step row under its 4 + 1 top rule, a 30px fold, or the
+ * live row under its rule. */
+.vex-reply__mark[data-vex-mark-at="reasoned"] {
+  top: 6px;
+}
+.vex-reply__mark[data-vex-mark-at="step"] {
+  top: 11px;
+}
+.vex-reply__mark[data-vex-mark-at="fold"] {
+  top: 8px;
+}
+.vex-reply__mark[data-vex-mark-at="live"] {
+  top: 7px;
+}
+.vex-reply .vex-chat-prose {
+  font-size: 15px;
+  line-height: 1.6;
+  gap: 10px;
+}
+
+/* The turn's clock and message keys, under the prose, revealed on hover. */
+.vex-reply__tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  margin-top: 4px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* "Stopped": the outline swatch and the word, 13 muted. */
+.vex-reply__stopped {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ============================================================ *
+ *  TOOL STEPS                                                   *
+ * ============================================================ */
+
+/* The steps sit under a quiet top rule, 4 below the prose above them; the row
+ * stack's gap is the space after them. A row that only continues the run
+ * above it takes back that gap and its own top rule, so the steps of one run
+ * read as one ruled list. */
+.vex-steps {
+  margin-top: 4px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+[data-vex-run-continues] {
+  margin-top: -18px;
+}
+[data-vex-run-continues] .vex-steps {
+  margin-top: 0;
+  border-top: 0;
+}
+
+/* One step: 36 high, the quiet rule below; the fill, the title in 500, the
+ * word 13 muted, the duration in the mono 12 at the right, then the chevron. */
+.vex-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+.vex-step__key {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vex-step__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-step__fill {
+  display: inline-flex;
+  flex: none;
+  width: 10px;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-step__mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-step__title {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.vex-step__word {
+  flex: none;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-step[data-vex-step-state="failed"] .vex-step__word {
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-step__spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.vex-step__num {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-step__chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A failure's first line beside its title, 13 in the error ink (never red),
+ * truncated. */
+.vex-step__summary {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The fold: finished steps in one quiet row, 30 high, 13 muted. */
+.vex-step--quiet {
+  min-height: 30px;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-step--quiet .vex-step__title {
+  max-width: none;
+  flex: 0 1 auto;
+  font-weight: 400;
+}
+/* A failure inside a fold is never hidden by it: the count in ink 500. */
+.vex-step__failed {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+
+/* The members of an opened fold, under it. */
+.vex-steps__members {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A step's links under its row (explorer `tx` keys): 13 / 500 blue. */
+.vex-step__links {
+  padding: 4px 0 6px 20px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-step-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+  cursor: pointer;
+}
+.vex-step-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-step-link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+/* The well a step opens to: paper 2, padding 10 14, 20 in from the row, a 64
+ * and 1fr grid at 12.5; the key 12 muted. */
+.vex-step-well {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 20px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-field);
+  font-size: 12.5px;
+}
+[data-vex-theme="celeris"] .vex-step-well {
+  background: var(--color-paper-2);
+}
+.vex-step-well__section {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: start;
+}
+.vex-step-well__key {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-step-well__scroll {
+  max-height: 220px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* The money legs after the step's word, 12.5 ink 2, figures in the mono. */
+.vex-step__legs {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-secondary);
+}
+/* What a leg line was, when it is not a proven execution: 12 / 500 in a rule
+ * frame, 18 high; the pending broadcast in the blue. */
+.vex-leg-outcome {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--vex-alias-rule);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-leg-outcome[data-vex-tool-leg-outcome="pending"] {
+  border-color: var(--vex-alias-accent-primary);
+  color: var(--vex-alias-accent-primary);
+}
+
+/* A step waiting on the reader's decision links to its card: the target fill
+ * and the word in the blue, 13 / 500. A confirmed transfer says so in ink. */
+.vex-step-await,
+.vex-step-confirmed {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.vex-step-await {
+  color: var(--vex-alias-accent-primary);
+  cursor: pointer;
+}
+.vex-step-await:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-step-await:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-step-confirmed {
+  color: var(--vex-alias-label-primary);
+}
+
+/* ── The live row ─────────────────────────────────────────────────────────
+ * The turn in flight is one step row: the fill (working solid, thinking hatch,
+ * waiting the target), the title in blue 500, its scope 13 muted, the timer in
+ * the mono 12 blue at the right. A failure's title is ink. No box: the quiet
+ * rules above and below are its whole frame. */
+.vex-island {
+  border: 0;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+}
+.vex-live-row {
+  min-height: 36px;
+  border-bottom: 0;
+}
+.vex-live-row .vex-step__title {
+  max-width: none;
+  flex: 0 1 auto;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-live-row .vex-step__num {
+  color: var(--vex-alias-accent-primary);
+}
+.vex-island[data-vex-island-tone="error"] .vex-step__title {
+  color: var(--vex-alias-label-primary);
+}
+.vex-live-row--settled .vex-step__title {
+  font-weight: 400;
+  color: var(--vex-alias-label-secondary);
+}
+/* The live trace under a Thinking row, set as an opened Reasoned row. */
+.vex-live-trace {
+  margin-bottom: 10px;
+}
+/* What went wrong, under a failed live row. */
+.vex-live-error {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-live-error__detail {
+  margin-top: 4px;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The turn error callout (the kit's `.vex-callout`) after the last turn,
+ * hung on the turn's 40px edge, at most 600 wide; a side rail keeps it flush. */
+.vex-turn-error {
+  max-width: 600px;
+  margin: 0 0 12px 40px;
+}
+[data-vex-session-surface="embedded"] .vex-turn-error {
+  margin-left: 0;
+}
+
+/* ── Reasoned ──────────────────────────────────────────────────────────────
+ * A closed row, 36 high: the chevron and the word in 14 ink 2 at 400, then a
+ * one-line summary in 13 muted. Opened, the trace is italic 14 ink 2 on a 1px
+ * rule with 12 clear. */
+.vex-reasoned__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  min-width: 0;
+}
+.vex-reasoned__key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-reasoned__key:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-reasoned__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-reasoned__summary {
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-reasoned__body {
+  margin: 2px 0 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--vex-alias-rule);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--vex-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+/* The trace renders through the chat markdown, whose prose class would set
+ * the reading size; inside a trace it takes the trace's 14 / 1.6 instead. */
+.vex-reasoned__body .vex-chat-prose {
+  font-size: inherit;
+  line-height: inherit;
+  gap: 8px;
+}
+/* The folded thoughts of a turn in flight: quiet rows, 30 high, 13 muted. */
+.vex-reasoned--quiet .vex-reasoned__row {
+  min-height: 30px;
+}
+.vex-reasoned--quiet .vex-reasoned__key {
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── Turn stats, on hover only (11.5 muted) ──────────────────────────────── */
+.vex-turn-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+@media (hover: hover) {
+  .vex-turn-stats {
+    opacity: 0;
+    transition: opacity var(--vex-duration-fast) var(--vex-ease-standard);
+  }
+  .vex-turn-stats:hover,
+  .vex-turn-stats:focus-within,
+  [data-vex-entry-id]:hover + .vex-turn-stats {
+    opacity: 1;
   }
 }
 
-/* The operator's note: right-hung prose on a 2px blue rule, never a bubble. */
-.vex-note {
-  padding: 2px 16px 2px 0;
-  border-right: 2px solid var(--vex-alias-accent-primary);
-}
+/* ── Notices and markers ─────────────────────────────────────────────────── */
 
-/* The act ledger: a ruled list, one 32px line per act. The list opens on the
- * region rule and each line closes on the quiet rule inside the block. */
-.vex-ledger {
-  margin-top: 12px;
-  border-top: 1px solid var(--vex-alias-rule);
+/* A runtime notice: 12 muted, centred; never caps. */
+.vex-notice {
+  max-width: 80%;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-tertiary);
 }
-.vex-ledger__row {
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+/* A turn error in the flow: the ink cross, "Error" in ink 500, the message 13
+ * ink 2. Never red. */
+.vex-notice-error {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  font-size: 13px;
+  line-height: 1.45;
 }
-
-/* The turn island: a ruled box on the paper. Its awaiting row takes the blue
- * line, because the pen is with the reader. */
-.vex-island {
-  border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-bg-base);
-}
-.vex-island[data-vex-island-tone="pin"] {
-  border-color: var(--vex-alias-accent-primary);
-}
-
-/* The risk callout (section 1): the 1.5px ink frame with a 10px hatch band
- * down its leading edge, ink type, never blue and never red. A session error
- * and a paused mission speak in it: something needs the reader, and it is
- * not a colour that says so. */
-.vex-callout {
-  position: relative;
-  padding: 12px 14px 12px 26px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
+.vex-notice-error__word {
+  margin-right: 8px;
+  font-weight: 500;
   color: var(--vex-alias-label-primary);
 }
-.vex-callout::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 10px;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--vex-alias-rule-ink) 0 1px,
-    transparent 1px 4px
-  );
-  pointer-events: none;
+.vex-notice-error__text {
+  color: var(--vex-alias-label-secondary);
+}
+
+/* A context marker (compaction, recall): the quiet rule both sides, the label
+ * 12 muted with its blue line icon; injected text in a paper 2 well. */
+.vex-marker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vex-marker__rule {
+  flex: 1 1 0;
+  height: 1px;
+  background: var(--vex-alias-rule-quiet);
+}
+.vex-marker__label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+.vex-marker__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-marker__content {
+  display: block;
+  padding: 10px 14px;
+  background: var(--vex-alias-field);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-secondary);
+}
+[data-vex-theme="celeris"] .vex-marker__content {
+  background: var(--color-paper-2);
 }
 
 /* ============================================================ *
  *  HOVER REVEALS                                                *
  * ============================================================ */
 
-/* Hover-revealed timestamps. 80ms is the fastest transition in the system -
- * below the "animation" threshold. hover:hover guards touch (always visible
- * there); :focus-within keeps keyboard parity; opacity (never display) so
- * nothing shifts. */
+/* Hover-revealed clock and message keys. hover:hover guards touch (always
+ * visible there); :focus-within keeps keyboard parity; opacity (never
+ * display) so nothing shifts. */
 @media (hover: hover) {
-  [data-time-hover-root] .vex-time-reveal {
-    opacity: 0;
-    transition: opacity 80ms ease;
-  }
-  [data-time-hover-root]:hover .vex-time-reveal,
-  [data-time-hover-root]:focus-within .vex-time-reveal {
-    opacity: 1;
-  }
-}
-/* Same reveal for the per-message action row (copy). */
-@media (hover: hover) {
+  [data-time-hover-root] .vex-time-reveal,
   [data-time-hover-root] .vex-action-reveal {
     opacity: 0;
-    transition: opacity 80ms ease;
+    transition: opacity var(--vex-duration-fast) var(--vex-ease-standard);
   }
+  [data-time-hover-root]:hover .vex-time-reveal,
+  [data-time-hover-root]:focus-within .vex-time-reveal,
   [data-time-hover-root]:hover .vex-action-reveal,
   [data-time-hover-root]:focus-within .vex-action-reveal {
     opacity: 1;
@@ -178,15 +670,14 @@
 }
 
 /* ============================================================ *
- *  CODE TOKENS                                                  *
+ *  CODE                                                         *
  * ============================================================ */
 
 /* The chat highlighter's classes (lib/markdown/highlight.ts) read the SAME
  * code-token aliases the Studio viewer's shiki theme writes
  * (`--vex-alias-code-token-*`, tokens.css), so a snippet in chat and a file in
  * the viewer are one palette: keywords and figures in the blue, strings in the
- * second ink, comments receding to the third. No italic: a slanted comment at
- * this size only costs legibility. */
+ * second ink, comments in the muted step. No italic. */
 .vex-code-keyword {
   color: var(--vex-alias-code-token-keyword);
 }
@@ -201,4 +692,27 @@
 }
 .vex-code-property {
   color: var(--vex-alias-code-token-parameter);
+}
+
+/* A fenced block in chat: the paper 2 well with a quiet rule, its head 12
+ * muted (the language and Copy, sentence case), the code in the mono 12.5. */
+.vex-code-block {
+  overflow: hidden;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-field);
+}
+[data-vex-theme="celeris"] .vex-code-block {
+  background: var(--color-paper-2);
+}
+.vex-code-block__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: normal;
+  color: var(--vex-alias-label-tertiary);
 }

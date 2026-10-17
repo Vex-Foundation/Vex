@@ -161,7 +161,9 @@ describe("TranscriptRows - the animation must not sit on the anchored element", 
   });
 
   it("keeps the turn rhythm on the row element, where layout belongs", () => {
+    // docs/design/R3-MINIMAL.md section 6: the 18 gap plus 4 opens a turn at
+    // the reader's message (22 above the user block).
     const { container } = renderRows([row(1, "user")], new Set());
-    expect(entry(container, 1).className).toContain("mt-4");
+    expect(entry(container, 1).className).toContain("mt-1");
   });
 });

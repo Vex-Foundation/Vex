@@ -1,5 +1,5 @@
 /**
- * TokenHistoryScreen GATE — the per-token Vex-recorded activity screen (eye
+ * TokenHistoryScreen GATE - the per-token Vex-recorded activity screen (eye
  * trigger on Balances / All-assets rows), covering what the screen file
  * itself owns after the move-only split: chrome, the query identity, the
  * states matrix, and pagination. Per-entry display rules live in the sibling
@@ -8,19 +8,21 @@
  *
  * Pins (screen-states matrix from the harness plan):
  *   - `shellRoute: tokenHistory` mounts through ShellScreens as a modal
- *     dialog named "<display name> history" with the header identity cluster
- *     (name + chain) and the honest "Vex-recorded activity" disclosure —
- *     and NO serif H1 (the chrome's `header` slot replaces it);
+ *     dialog named "<display name> history" with the token head (mark, name,
+ *     chain, full address) and the honest "Vex-recorded activity" disclosure,
+ *     and NO h1 (the chrome's `header` slot replaces the serif chapter);
+ *   - the page draws no crumb and no close key of its own (the title bar
+ *     carries the crumb, `page-crumbs.test.ts` pins its words and routes);
  *   - status "unavailable" (query timeout) renders the calm try-again note
  *     and NEVER the empty-history copy;
  *   - empty available history renders the quiet "No Vex-recorded history"
- *     invitation;
+ *     invitation; a failed read renders the warn note;
  *   - Load more appears on hasNextPage, fires fetchNextPage, and appended
  *     pages' entries render;
  *   - Escape/close returns to `returnTo`: "shell" → none, "assets" → the
  *     assets route remounted with a NULL origin (no stale morph rect).
  *
- * `useTokenHistoryInfinite` is mocked — this suite owns screen states, not
+ * `useTokenHistoryInfinite` is mocked - this suite owns screen states, not
  * query wiring (the hook's pagination contract is pinned in the api layer).
  */
 
@@ -47,11 +49,11 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 
 // Sibling screens pull heavy registers; only the token-history branch is
 // under test (the assets-return route pin asserts STORE state, not the
-// remounted assets dialog — AssetsScreen.test owns that side).
+// remounted assets dialog - AssetsScreen.test owns that side).
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
 vi.mock("../SessionsScreen.js", () => ({ SessionsScreen: () => null }));
 vi.mock("../HowVexWorksScreen.js", () => ({ HowVexWorksScreen: () => null }));
-// Phase 2b: SettingsScreen hosts the wizard step forms — a heavy module
+// Phase 2b: SettingsScreen hosts the wizard step forms - a heavy module
 // graph this suite's partial mocks do not cover. Own suite covers it.
 vi.mock("../SettingsScreen.js", () => ({ SettingsScreen: () => null }));
 vi.mock("../AssetsScreen.js", () => ({ AssetsScreen: () => null }));
@@ -110,19 +112,16 @@ describe("TokenHistoryScreen - chrome and disclosure", () => {
 
     const dialog = screen.getByRole("dialog", { name: "USD Coin history" });
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    // Identity cluster: display name + chain.
+    // Token head: display name + chain, then the full address.
     expect(screen.getByText("USD Coin")).not.toBeNull();
     expect(screen.getByText("(Base)")).not.toBeNull();
-    // Honest scope disclosure — this is Vex-recorded activity, not a chain scan.
+    expect(screen.getByText(USDC_BASE)).not.toBeNull();
+    // Honest scope disclosure - this is Vex-recorded activity, not a chain scan.
     expect(screen.getByText(/Vex-recorded activity/)).not.toBeNull();
     expect(screen.getByText(/not locally known/)).not.toBeNull();
-    // Serif NOWHERE on this screen: the chrome's serif H1 is replaced by the
-    // header slot (the h1 element itself is absent).
+    // No serif chapter on this screen: it is replaced by the header slot (the
+    // h1 element itself is absent).
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
-    // Close key still named by the title.
-    expect(
-      screen.getByRole("button", { name: "Close USD Coin history" }),
-    ).not.toBeNull();
     // The hook received the EXACT route identity (never symbol/name).
     expect(mockUseTokenHistoryInfinite).toHaveBeenCalledWith({
       chainId: 8453,
@@ -160,6 +159,15 @@ describe("TokenHistoryScreen - chrome and disclosure", () => {
   });
 });
 
+describe("TokenHistoryScreen - no page chrome of its own", () => {
+  it("draws no crumb and no close key: the title bar carries the crumb, Escape the way back", () => {
+    mockQuery([availablePage([])]);
+    mountScreen({ kind: "assets", sessionId: null });
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Close / })).toBeNull();
+  });
+});
+
 describe("TokenHistoryScreen - states matrix", () => {
   it("status 'unavailable' renders the calm try-again note and NEVER the empty-history copy", () => {
     mockQuery([
@@ -167,9 +175,8 @@ describe("TokenHistoryScreen - states matrix", () => {
     ]);
     mountScreen();
 
-    expect(
-      screen.getByText(/History is unavailable right now - try again shortly/),
-    ).not.toBeNull();
+    const note = screen.getByText(/History is unavailable right now - try again shortly/);
+    expect(note.getAttribute("data-tone")).toBe("calm");
     expect(screen.queryByText(/No Vex-recorded history/)).toBeNull();
   });
 
@@ -200,9 +207,8 @@ describe("TokenHistoryScreen - states matrix", () => {
     ]);
     mountScreen();
 
-    expect(
-      screen.getByText(/Couldn't load this token's history/),
-    ).not.toBeNull();
+    const note = screen.getByText(/Couldn't load this token's history/);
+    expect(note.getAttribute("data-tone")).toBe("warn");
     expect(screen.queryByText(/No Vex-recorded history/)).toBeNull();
   });
 });
@@ -224,7 +230,7 @@ describe("TokenHistoryScreen - pagination", () => {
     );
     mountScreen();
 
-    // Both pages' entries render (flattened append) — identified by their own
+    // Both pages' entries render (flattened append) - identified by their own
     // leg text, which is independent of the badge vocabulary.
     expect(screen.getAllByText(/1\.5 TOKA/).length).toBe(2);
 

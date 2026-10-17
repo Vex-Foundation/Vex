@@ -1,10 +1,15 @@
 /**
- * The Turn Island's state machine, tested without rendering anything.
+ * The turn's live row state machine (docs/design/R3-MINIMAL.md section 6),
+ * tested without rendering anything.
  *
  * The precedence order is the safety property: an ERROR is never dressed as
- * work, and a pending signature FREEZES the island over whatever the stream
- * was doing — motion in this shell means verifiable work is happening, and
- * waiting on the user's pen is not work.
+ * work, and a pending approval FREEZES the row over whatever the stream was
+ * doing: motion in this shell means verifiable work is happening, and waiting
+ * on the reader's decision is not work.
+ *
+ * The words are the Vex state words ("Working", "Thinking", "Writing",
+ * "Waiting for approval"). Every visible state is the one `panel` row; only a
+ * settled turn with nothing to show is `hidden`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -34,20 +39,22 @@ function preview(overrides: Partial<StreamPreview> = {}): StreamPreview {
 }
 
 describe("resolveTurnIslandView - the four working states", () => {
-  it("working → the compact 'vexing…' pill (the legacy 'Working' word is retired)", () => {
+  it("working → the panel row worded 'Working' (the 'vexing…' word is retired), scoped by its detail", () => {
     const view = resolveTurnIslandView(preview({ status: "working" }), false);
     expect(view).toMatchObject({
       state: "working",
-      size: "pill",
-      label: "vexing\u2026",
-      // IN FLOW, unconditionally. The centred viewport scene this pill used
+      size: "panel",
+      label: "Working",
+      detail: WAITING_PROVIDER_DETAIL,
+      // IN FLOW, unconditionally. The centred viewport scene this row used
       // to stand down for is retired, so there is no suppression argument
       // left that could hide the only pending surface (round-3 QA item 7).
       showElapsed: true,
     });
+    expect(view.label).not.toContain("vexing");
   });
 
-  it("thinking → the expanded panel in the accent tone", () => {
+  it("thinking → the panel row in the accent tone, with no detail", () => {
     const view = resolveTurnIslandView(preview({ status: "thinking" }), false);
     expect(view).toMatchObject({
       state: "thinking",
@@ -55,6 +62,7 @@ describe("resolveTurnIslandView - the four working states", () => {
       label: "Thinking",
       tone: "accent",
     });
+    expect(view.detail).toBeUndefined();
   });
 
   // The label is the SAME human identity the persisted tool card shows, so the
@@ -67,7 +75,7 @@ describe("resolveTurnIslandView - the four working states", () => {
       false,
     );
     expect(view.state).toBe("calling");
-    expect(view.size).toBe("row");
+    expect(view.size).toBe("panel");
     expect(view.label).toBe("Calling Swap · Uniswap");
   });
 
@@ -91,16 +99,30 @@ describe("resolveTurnIslandView - the four working states", () => {
     );
   });
 
-  it("writing → the Reasoned stamp when reasoning happened, else 'Writing'", () => {
+  it("writing → always 'Writing', carrying the Reasoned stamp as its detail when reasoning happened", () => {
     const withTrace = resolveTurnIslandView(
       preview({ status: "writing", reasoningText: "t", reasoningTokens: 1234 }),
       false,
     );
-    expect(withTrace).toMatchObject({ state: "writing", size: "stamp" });
-    expect(withTrace.label).toBe("Reasoned · 1.2K tokens");
+    expect(withTrace).toMatchObject({ state: "writing", size: "panel" });
+    expect(withTrace.label).toBe("Writing");
+    expect(withTrace.detail).toBe("Reasoned · 1.2K tokens");
 
     const noTrace = resolveTurnIslandView(preview({ status: "writing" }), false);
+    expect(noTrace).toMatchObject({ state: "writing", size: "panel" });
     expect(noTrace.label).toBe("Writing");
+    expect(noTrace.detail).toBeUndefined();
+  });
+
+  it("writing after a settled thought counts the segment as reasoning for the stamp", () => {
+    // Reasoning is TURN-scoped: the active buffer is empty once the turn is
+    // writing, but a settled segment behind it still earns the stamp.
+    const view = resolveTurnIslandView(
+      preview({ status: "writing", reasoningSegments: ["earlier thought"], reasoningTokens: 900 }),
+      false,
+    );
+    expect(view.label).toBe("Writing");
+    expect(view.detail).toBe("Reasoned · 900 tokens");
   });
 });
 
@@ -112,19 +134,22 @@ describe("resolveTurnIslandView - precedence", () => {
     );
     expect(view).toMatchObject({
       state: "error",
+      size: "panel",
       label: "The provider call failed",
       tone: "error",
       animated: false,
     });
   });
 
-  it("a pending approval FREEZES the island over any working status", () => {
+  it("a pending approval FREEZES the row over any working status", () => {
     for (const status of ["working", "thinking", "calling", "writing"] as const) {
       const view = resolveTurnIslandView(preview({ status }), true);
       expect(view.state).toBe("awaiting");
-      expect(view.label).toBe("Awaiting signature");
+      expect(view.size).toBe("panel");
+      expect(view.label).toBe("Waiting for approval");
+      expect(view.label).not.toContain("signature");
       expect(view.tone).toBe("pin");
-      // Trust is stillness — nothing may move while we wait for the pen.
+      // Trust is stillness: nothing may move while we wait for the reader.
       expect(view.animated).toBe(false);
     }
   });
@@ -134,28 +159,28 @@ describe("resolveTurnIslandView - precedence", () => {
       preview({ phase: "done", reasoningText: "t", reasoningTokens: 900 }),
       false,
     );
-    expect(withTrace).toMatchObject({ state: "settled", size: "stamp" });
+    expect(withTrace).toMatchObject({ state: "settled", size: "panel" });
     expect(withTrace.label).toBe("Reasoned · 900 tokens");
 
     const bare = resolveTurnIslandView(preview({ phase: "done" }), false);
     expect(bare).toMatchObject({ state: "settled", size: "hidden", label: "" });
   });
 
-  it("a DONE turn with a pending signature is awaiting, not settled", () => {
+  it("a DONE turn with a pending approval is awaiting, not settled", () => {
     // The stream ends the moment a tool call needs approval, so `done` +
     // pending is the ORDINARY shape of a blocked turn. Ranking settled first
-    // dressed it as finished and dropped the one label that says the pen is
-    // with the user.
+    // dressed it as finished and dropped the one label that says the decision
+    // is the reader's.
     const view = resolveTurnIslandView(
       preview({ phase: "done", reasoningText: "t", reasoningTokens: 900 }),
       true,
     );
     expect(view.state).toBe("awaiting");
-    expect(view.label).toBe("Awaiting signature");
+    expect(view.label).toBe("Waiting for approval");
     expect(view.animated).toBe(false);
   });
 
-  it("an error still outranks a pending signature", () => {
+  it("an error still outranks a pending approval", () => {
     expect(
       resolveTurnIslandView(preview({ phase: "error" }), true).state,
     ).toBe("error");
@@ -182,7 +207,7 @@ describe("resolveTurnIslandView - the turn phase (U-3)", () => {
     );
     expect(view.state).toBe("working");
     expect(view.phase).toBe("preparing");
-    expect(view.label).toBe("vexing…");
+    expect(view.label).toBe("Working");
     expect(view.detail).toBe(PREPARING_DETAIL);
   });
 
@@ -194,7 +219,7 @@ describe("resolveTurnIslandView - the turn phase (U-3)", () => {
     );
     expect(view.phase).toBe("waiting_provider");
     expect(view.detail).toBe(WAITING_PROVIDER_DETAIL);
-    expect(view.label).toBe("vexing…");
+    expect(view.label).toBe("Working");
   });
 
   it("a real round that has not spoken yet (after a tool batch) waits for the model, lease or not", () => {
@@ -204,7 +229,7 @@ describe("resolveTurnIslandView - the turn phase (U-3)", () => {
     }
   });
 
-  it("reasoning, calling and writing map to their phases, with no caption", () => {
+  it("reasoning, calling and writing map to their phases, with no detail when nothing was reasoned", () => {
     const thinking = resolveTurnIslandView(preview({ status: "thinking" }), false, true);
     expect(thinking.phase).toBe("reasoning");
     expect(thinking.detail).toBeUndefined();
@@ -220,6 +245,7 @@ describe("resolveTurnIslandView - the turn phase (U-3)", () => {
       true,
     );
     expect(writing.phase).toBe("writing");
+    expect(writing.detail).toBeUndefined();
   });
 
   it("a tool round whose stream is done is RUNNING the named tool, with the clock", () => {
@@ -232,6 +258,8 @@ describe("resolveTurnIslandView - the turn phase (U-3)", () => {
     expect(view.phase).toBe("running_tool");
     expect(view.label.startsWith("Running ")).toBe(true);
     expect(view.label.length).toBeGreaterThan("Running ".length);
+    expect(view.size).toBe("panel");
+    expect(view.detail).toBeUndefined();
     expect(view.showElapsed).toBe(true);
     expect(view.animated).toBe(true);
   });

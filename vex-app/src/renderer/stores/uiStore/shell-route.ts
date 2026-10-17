@@ -122,9 +122,9 @@ export type SettingsSection =
 export type ShellRoute =
   | { readonly kind: "none" }
   /**
-   * The payload-free pages. `portfolio`, `board` and `needsYou` are the R3
-   * pages in the centre column (docs/design/R3-MINIMAL.md section 2): both
-   * sidebars stay standing beside them.
+   * The payload-free pages. `portfolio` and `board` are R3 pages in the centre
+   * column (docs/design/R3-MINIMAL.md section 2): both sidebars stay standing
+   * beside them.
    */
   | {
       readonly kind:
@@ -132,9 +132,20 @@ export type ShellRoute =
         | "sessions"
         | "howItWorks"
         | "portfolio"
-        | "board"
-        | "needsYou";
+        | "board";
       readonly origin: ShellScreenOrigin | null;
+    }
+  /**
+   * NEEDS YOU, the R3 page of every decision that waits for the user
+   * (docs/design/R3-MINIMAL.md section 8.5). `approvalId` names the decision
+   * a Review key asked to open as the full card; absent or `null`, the page
+   * opens its first decision. The page never decides anything by itself: the
+   * card it opens carries the same two-step confirm as everywhere else.
+   */
+  | {
+      readonly kind: "needsYou";
+      readonly origin: ShellScreenOrigin | null;
+      readonly approvalId?: string | null;
     }
   /**
    * AGENT SCAN, in its two mutually exclusive narrowings. TWO members rather
