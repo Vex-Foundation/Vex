@@ -6,7 +6,9 @@
  * action a trader takes least often and put a destructive key one stray click
  * from Protect. They collapse into a single ✕ that opens this card, where the
  * two questions a close actually asks (how much, and at what kind of price)
- * are asked together and answered in one place.
+ * are asked together and answered in one place. The card is a flat popover:
+ * paper, a 1.5px ink frame, never a shadow (docs/design/R3-MINIMAL.md
+ * section 12).
  *
  * NOTHING HERE DECIDES ANYTHING. Both keys call the same `AccountActions`
  * handlers the row called before, with the same arguments, so every approval
@@ -29,7 +31,7 @@ import {
   type JSX,
 } from "react";
 import { createPortal } from "react-dom";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LineClose } from "../../../components/icons/line/index.js";
 import { CLOSE_PORTIONS, type ClosePortion, type LighterPositionRow } from "./account-model.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -64,8 +66,8 @@ export function ClosePositionPopover({
   // first build shipped without them and every `var(--lit-…)` resolved to
   // nothing: `border: 1px solid var(--lit-line)` is an invalid shorthand at
   // computed-value time, so the card lost its border, its panel and its ink
-  // and drew as bare text over the chart. `DeskApprovalDialog` answers the
-  // same problem the same way for its own portaled surface.
+  // and drew as bare text over the chart. `LighterAccountSetupModal` answers
+  // the same problem the same way for its own top-layer surface.
   const theme = useUiStore((state) => state.theme);
   const environment = useLighterAnalysisStore((state) => state.desk.environment);
   const [open, setOpen] = useState(false);
@@ -232,8 +234,8 @@ export function ClosePositionPopover({
         title={disabled ? "A close is already pending for this position." : undefined}
         onClick={() => (open ? close(true) : setOpen(true))}
       >
-        {/* The pixel close mark, not a multiplication sign standing in for an icon. */}
-        <PxIcon name="close" />
+        {/* The calm line close mark, not a multiplication sign standing in for an icon. */}
+        <LineClose size={14} />
       </button>
       {open && !disabled ? createPortal(card, document.body) : null}
     </>

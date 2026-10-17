@@ -128,26 +128,22 @@ export function LighterTradingSetupSection({
   return (
     <section
       aria-label={TRADING_SETUP_TITLE}
-      className="vex-ov-frame"
+      className="vex-set__sec"
       data-vex-lighter-trading-setup={walletAddress}
     >
-      <h2 className="vex-micro-label uppercase text-ink-secondary">
-        {TRADING_SETUP_TITLE}
-      </h2>
-      <p className="mt-1 text-[12px] leading-[18px] text-ink-secondary">
-        {TRADING_SETUP_INTRO}
-      </p>
-
-      <div className="mt-4">
-        <LighterCapitalShareCard
-          read={read}
-          write={write}
-          onSave={onSaveShare}
-          onReload={onReloadShare}
-        />
+      <div className="vex-set__sh">
+        <h3 className="vex-set__sh-title">{TRADING_SETUP_TITLE}</h3>
       </div>
+      <p className="vex-set__note">{TRADING_SETUP_INTRO}</p>
 
-      <div className="mt-5 border-t border-line-1 pt-4">
+      <LighterCapitalShareCard
+        read={read}
+        write={write}
+        onSave={onSaveShare}
+        onReload={onReloadShare}
+      />
+
+      <div className="mt-5">
         {overview.isPending ? (
           <p className="text-[13px] leading-[20px] text-ink-secondary" data-vex-lighter-leverage-loading>
             {LEVERAGE_LOADING}
@@ -236,11 +232,11 @@ function LighterUnresolvedChanges({
   return (
     <section
       aria-label={UNRESOLVED_TITLE}
-      className="mt-5 border-t border-line-1 pt-4"
+      className="mt-5 border-t border-rule-quiet pt-4"
       data-vex-lighter-leverage-unresolved
     >
-      <h3 className="vex-micro-label uppercase text-ink-secondary">{UNRESOLVED_TITLE}</h3>
-      <p className="mt-1 text-[12px] leading-[18px] text-ink-secondary">{UNRESOLVED_INTRO}</p>
+      <h3 className="vex-set__sh-title">{UNRESOLVED_TITLE}</h3>
+      <p className="vex-set__note mt-1">{UNRESOLVED_INTRO}</p>
       <ul className="mt-3 flex flex-col gap-2">
         {unresolved.rows.map((intent) => {
           const outcome = outcomes.get(intent.marketId) ?? null;

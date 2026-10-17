@@ -1,6 +1,9 @@
 /**
- * The PROJECTS list inside the Studio sidebar: the rows, their action menu, and
- * the four states the list itself can be in.
+ * The PROJECTS list inside the Studio body of the left sidebar
+ * (docs/design/R3-MINIMAL.md section 4): the "Projects" group head (12 / 500
+ * muted), the rows, their action menu, and the four states the list itself
+ * can be in, each said in the sidebar's sentence register (13 / 1.5 muted, a
+ * failure in ink with a blue Retry).
  *
  * Split out of `StudioSidebar.tsx` because it owns a different thing: the rail
  * owns the column (collapse choreography, the sections, the footer), this owns
@@ -22,10 +25,9 @@
 
 import { useCallback, useState, type JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
-import { IconArchive, IconEllipsis, IconWarning } from "../../../../components/icons/index.js";
-import { DotmSquare3 } from "../../../../components/ui/dotm-square-3.js";
+import { LineMore, LineWarning } from "../../../../components/icons/line/index.js";
 import { Menu, type MenuEntry } from "../../../../components/ui/menu.js";
-import { RailGroup } from "../../../../components/ui/rail-list.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { ListPlaceholder } from "../../SessionRows/ListPlaceholder.js";
 import {
   openProjectDelete,
@@ -49,13 +51,21 @@ import { ProjectRailRow } from "./ProjectRailRow.js";
 
 /**
  * The three row actions. Ids are the contract between this list and the
- * dispatch below; a `MenuEntry` carries no handler of its own.
+ * dispatch below; a `MenuEntry` carries no handler of its own. Exported with
+ * the dispatch so the welcome's rows raise the same three requests.
  */
-const ROW_MENU_ENTRIES: readonly MenuEntry[] = [
+export const PROJECT_ROW_MENU_ENTRIES: readonly MenuEntry[] = [
   { id: "settings", label: STUDIO_PROJECT_MENU_SETTINGS },
   { id: "repair", label: STUDIO_PROJECT_MENU_REPAIR },
   { id: "delete", label: STUDIO_PROJECT_MENU_DELETE, danger: true },
 ];
+
+/** Publish the dialog intent a row menu item names; unknown ids do nothing. */
+export function runProjectRowAction(projectId: string, itemId: string): void {
+  if (itemId === "settings") openProjectSettings(projectId);
+  else if (itemId === "repair") openProjectRepair(projectId);
+  else if (itemId === "delete") openProjectDelete(projectId);
+}
 
 /**
  * Rows shown before the list offers the rest.
@@ -66,6 +76,9 @@ const ROW_MENU_ENTRIES: readonly MenuEntry[] = [
  * many exist - nothing is hidden, and one click shows everything.
  */
 export const STUDIO_PROJECTS_COLLAPSED_ROWS = 5;
+
+/** The group head's id, for the section's `aria-labelledby`. */
+const PROJECTS_HEADING_ID = "studio-sidebar-projects";
 
 export interface StudioProjectsSectionProps {
   readonly projects: readonly ProjectDto[];
@@ -106,28 +119,30 @@ export function StudioProjectsSection({
   const onMenuSelect = useCallback(
     (projectId: string, itemId: string): void => {
       closeMenu();
-      if (itemId === "settings") openProjectSettings(projectId);
-      else if (itemId === "repair") openProjectRepair(projectId);
-      else if (itemId === "delete") openProjectDelete(projectId);
+      runProjectRowAction(projectId, itemId);
     },
     [closeMenu],
   );
 
+  // The group head is words, so the rail has none; the open sidebar names the
+  // list with it in every state, the way the session groups are named.
+  const head = collapsed ? null : (
+    <h2 id={PROJECTS_HEADING_ID} className="vex-ls-group">
+      {STUDIO_PROJECTS_SECTION}
+    </h2>
+  );
+
   if (isLoading) {
     return (
-      <ListPlaceholder
-        sidebarOpen={!collapsed}
-        register="sentence"
-        text={STUDIO_PROJECTS_LOADING}
-        icon={
-          <DotmSquare3
-            size={26}
-            dotSize={4}
-            color="var(--vex-accent)"
-            ariaLabel={STUDIO_PROJECTS_LOADING}
-          />
-        }
-      />
+      <>
+        {head}
+        <ListPlaceholder
+          sidebarOpen={!collapsed}
+          register="sentence"
+          text={STUDIO_PROJECTS_LOADING}
+          icon={<Swatch state="listening" size={10} />}
+        />
+      </>
     );
   }
 
@@ -145,37 +160,38 @@ export function StudioProjectsSection({
           role="status"
           aria-label={STUDIO_PROJECTS_ERROR}
           title={STUDIO_PROJECTS_ERROR}
-          className="flex items-center justify-center p-3 text-warning"
+          className="vex-st-fail vex-st-fail--rail"
         >
-          <IconWarning size={16} />
+          <LineWarning size={16} />
         </div>
       );
     }
     return (
-      <div role="status" className="flex flex-col items-start gap-2 p-3">
-        <span className="flex items-center gap-2 text-[12px] leading-[18px] text-warning">
-          <IconWarning size={14} />
-          {STUDIO_PROJECTS_ERROR}
-        </span>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="px-1 text-[12px] leading-[18px] text-ink-secondary underline underline-offset-2 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-        >
-          {STUDIO_PROJECTS_RETRY}
-        </button>
-      </div>
+      <>
+        {head}
+        <div role="status" className="vex-st-fail">
+          <span className="vex-st-fail__line">
+            <Swatch state="error" size={10} />
+            {STUDIO_PROJECTS_ERROR}
+          </span>
+          <button type="button" onClick={onRetry} className="vex-st-link">
+            {STUDIO_PROJECTS_RETRY}
+          </button>
+        </div>
+      </>
     );
   }
 
   if (projects.length === 0) {
     return (
-      <ListPlaceholder
-        sidebarOpen={!collapsed}
-        register="sentence"
-        text={STUDIO_PROJECTS_EMPTY}
-        icon={<IconArchive size={18} />}
-      />
+      <>
+        {head}
+        <ListPlaceholder
+          sidebarOpen={!collapsed}
+          register="sentence"
+          text={STUDIO_PROJECTS_EMPTY}
+        />
+      </>
     );
   }
 
@@ -185,68 +201,65 @@ export function StudioProjectsSection({
       : projects.slice(0, STUDIO_PROJECTS_COLLAPSED_ROWS);
 
   return (
-    // `collapsed` here suppresses RailGroup's own eyebrow and gives the group
-    // an `aria-label` instead: the visible "PROJECTS" title is the enclosing
-    // DisclosureRow's, and printing it twice would give the section two
-    // headings that a screen reader reads back-to-back. The ROW collapse state
-    // is a separate prop and rides on each row below.
-    <RailGroup
-      title={STUDIO_PROJECTS_SECTION}
-      collapsed
-      headingId="studio-sidebar-projects"
+    <section
+      aria-labelledby={collapsed ? undefined : PROJECTS_HEADING_ID}
+      aria-label={collapsed ? STUDIO_PROJECTS_SECTION : undefined}
     >
-      {bounded.map((project) => (
-        <li key={project.id}>
-          <ProjectRailRow
-            project={project}
-            selected={project.id === activeProjectId}
-            collapsed={collapsed}
-            onSelect={() => onSelect(project.id)}
-            actionsPinned={openMenuProjectId === project.id}
-            actions={
-              <Menu
-                open={openMenuProjectId === project.id}
-                portal
-                onClose={closeMenu}
-                onSelect={(itemId) => onMenuSelect(project.id, itemId)}
-                items={ROW_MENU_ENTRIES}
-                anchor={
-                  <button
-                    type="button"
-                    aria-label={projectRowMenuLabel(project.name)}
-                    aria-haspopup="menu"
-                    aria-expanded={openMenuProjectId === project.id}
-                    onClick={() =>
-                      setOpenMenuProjectId((current) =>
-                        current === project.id ? null : project.id,
-                      )
-                    }
-                    className="flex h-6 w-6 items-center justify-center text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-                  >
-                    <IconEllipsis size={14} />
-                  </button>
-                }
-              />
-            }
-          />
-        </li>
-      ))}
-      {/* The bound, said out loud, with the whole count in it. Collapsed the
-        * rail carries no words at all, so the rows are simply all shown there
-        * (the spine scrolls). */}
-      {collapsed || projects.length <= STUDIO_PROJECTS_COLLAPSED_ROWS ? null : (
-        <li>
-          <button
-            type="button"
-            onClick={() => onShowAllChange(!showAll)}
-            className="mt-0.5 flex h-7 w-full items-center px-2 text-left text-[12px] leading-[18px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-          >
-            {showAll
-              ? STUDIO_SHOW_FEWER_PROJECTS
-              : studioShowAllProjectsLabel(projects.length)}
-          </button>
-        </li>
-      )}
-    </RailGroup>
+      {head}
+      <ol className="vex-st-rows">
+        {bounded.map((project) => (
+          <li key={project.id}>
+            <ProjectRailRow
+              project={project}
+              selected={project.id === activeProjectId}
+              collapsed={collapsed}
+              onSelect={() => onSelect(project.id)}
+              actionsPinned={openMenuProjectId === project.id}
+              actions={
+                <Menu
+                  open={openMenuProjectId === project.id}
+                  portal
+                  onClose={closeMenu}
+                  onSelect={(itemId) => onMenuSelect(project.id, itemId)}
+                  items={PROJECT_ROW_MENU_ENTRIES}
+                  anchor={
+                    <button
+                      type="button"
+                      aria-label={projectRowMenuLabel(project.name)}
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuProjectId === project.id}
+                      onClick={() =>
+                        setOpenMenuProjectId((current) =>
+                          current === project.id ? null : project.id,
+                        )
+                      }
+                      className="vex-st-dots"
+                    >
+                      <LineMore size={14} />
+                    </button>
+                  }
+                />
+              }
+            />
+          </li>
+        ))}
+        {/* The bound, said out loud, with the whole count in it. Collapsed the
+          * rail carries no words at all, so the rows are simply all shown there
+          * (the spine scrolls). */}
+        {collapsed || projects.length <= STUDIO_PROJECTS_COLLAPSED_ROWS ? null : (
+          <li>
+            <button
+              type="button"
+              onClick={() => onShowAllChange(!showAll)}
+              className="vex-st-more"
+            >
+              {showAll
+                ? STUDIO_SHOW_FEWER_PROJECTS
+                : studioShowAllProjectsLabel(projects.length)}
+            </button>
+          </li>
+        )}
+      </ol>
+    </section>
   );
 }

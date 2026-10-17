@@ -3,7 +3,7 @@
  *
  * Whether a budgeted string then fits its region is a layout fact and belongs
  * to `e2e/board-layout.spec.ts`, which measures it in a real engine over the
- * schema-extreme board at the compact floor. What this file owns is the
+ * schema-extreme board at the tile floor. What this file owns is the
  * contract every one of those measurements depends on: the value that leaves
  * this module is never longer than the budget, and it always reports whether
  * it is the whole value.
@@ -22,10 +22,10 @@ import {
 
 describe("boardCardValue", () => {
   it("prints a realistic value whole and does not claim a cut", () => {
-    // The four strings the floors in `board-layout.css` were derived from.
-    // If any of these ever reported `shortened`, the card would be accusing
-    // itself of a cut it did not make, and the budget would be wrong rather
-    // than the value.
+    // The strings the floor in `board-layout.css` was derived from. If any of
+    // these ever reported `shortened`, the tile would be accusing itself of a
+    // cut it did not make, and the budget would be wrong rather than the
+    // value.
     for (const [text, budget] of [
       ["$0.000001230", BOARD_CARD_PRICE_MAX_SLOTS],
       ["$104238.92", BOARD_CARD_PRICE_MAX_SLOTS],
@@ -172,14 +172,17 @@ describe("boardCardValue over non-Latin tickers", () => {
 
 /**
  * THE PROPORTIONAL SURFACE. The ticker is not `tabular-nums`: it renders in
- * uppercase Inter Tight, whose advances measured at the ticker's own 13px run
- * from `I` at 2.95px to `W` at 11.82px against a slot of 8.8px. Counting
- * characters there is not measuring width, and this is what says so.
+ * Instrument Sans regular at 12.5px, whose advances run from `I` at 3.18px to
+ * `W` at 13.61px against a slot of 9.1px (the widest glyph the allowlist
+ * admits, `V` and `A`). Counting characters there is not measuring width, and
+ * this is what says so.
  */
 describe("boardCardValue on the proportional surface", () => {
   it("charges a wide Latin glyph two slots and a narrow one one", () => {
-    // Measured: W 11.82, M 10.84, % 9.85, C/D/G/H/N/O/Q/U 8.86 - every one
-    // past the 8.8px slot. E 6.90, A 7.88, I 2.95 - every one inside it.
+    // Measured at 12.5px: W 13.61, M 11.32, Q 9.84, % and O 9.82, G 9.56,
+    // D 9.40, C 9.26, H and N 9.20 - every one past the 9.1px slot. (U, at
+    // 8.90, is charged two as well: over-charging is the safe direction.)
+    // E 7.97, A 9.10, I 3.18 - every one inside it.
     for (const wide of ["W", "M", "C", "D", "G", "H", "N", "O", "Q", "U", "%"]) {
       expect(boardCardValueSlots(wide, "proportional")).toBe(2);
     }
@@ -192,9 +195,10 @@ describe("boardCardValue on the proportional surface", () => {
   });
 
   it("shortens WWWWWWWW, which a character count let through", () => {
-    // THE DEFECT: eight characters, eight of ten slots under the old model,
-    // and 94.56px of glyphs inside an 88px column - clipped, with `shortened`
-    // false and a neutral affordance saying nothing had been cut.
+    // THE DEFECT: eight characters, eight of ten slots under a count, and
+    // 107px of glyphs against the 91px a ten-slot ticker may take - clipped,
+    // with `shortened` false and a neutral affordance saying nothing had been
+    // cut.
     expect(boardCardValueSlots("WWWWWWWW", "proportional")).toBe(16);
     const printed = boardCardValue(
       "WWWWWWWW",
@@ -203,16 +207,19 @@ describe("boardCardValue on the proportional surface", () => {
     );
     expect(printed.shortened).toBe(true);
     expect(printed.text).toBe("WWWW…");
-    // 4 x 11.82 is 47.28px, comfortably inside the column.
+    // 4 x 13.61 is 54.4px and the ellipsis 8.2px: inside the 91px a ten-slot
+    // ticker may take, and inside the 120px identity column.
     expect(
       boardCardValueSlots(printed.text.slice(0, -1), "proportional"),
     ).toBeLessThanOrEqual(BOARD_CARD_TICKER_MAX_SLOTS - 2);
   });
 
-  it("uppercases before weighing, because the CSS does", () => {
-    // `text-transform: uppercase` means a lowercase `w` occupies a `W`. A
-    // model that weighed the SOURCE string would charge it as narrow and let
-    // the rendered glyph overflow anyway.
+  it("weighs a lowercase glyph as its capital, which is the safe direction", () => {
+    // The tile no longer forces capitals, but a lowercase glyph is still
+    // weighed as its capital, which is never narrower than what renders: the
+    // widest lowercase among the one-slot capitals is 7.6px against the 9.1px
+    // slot, and `w` (9.6px) and `m` (11.5px), which ARE wider than a slot,
+    // land in the two-slot class as `W` and `M`.
     expect(boardCardValueSlots("wwwwwwww", "proportional")).toBe(16);
     expect(
       boardCardValue("wwwwwwww", BOARD_CARD_TICKER_MAX_SLOTS, "proportional")
@@ -257,5 +264,56 @@ describe("anyShortened", () => {
     expect(anyShortened([whole, whole])).toBe(false);
     expect(anyShortened([whole, cut])).toBe(true);
     expect(anyShortened([])).toBe(false);
+  });
+});
+
+/**
+ * THE BUDGETS AGREE WITH THE FLOOR. Each budget is a number of slots, and each
+ * region of the tile has a column the floor leaves it. This is the arithmetic
+ * of `board-layout.css` and `board-layout-measurements.md`, in the one place a
+ * change to a budget constant would otherwise slip past: raise a budget past
+ * its column and the tile cuts a figure with `shortened` still false.
+ *
+ * The advances are computed from the shipped font files (JetBrains Mono
+ * advances 0.6em; Instrument Sans measured with kerning), so they are the
+ * browser's numbers to within a pixel and the e2e matrix re-measures them in
+ * a real engine.
+ */
+describe("the budgets fit the columns the tile floor leaves", () => {
+  /** The tile's inner floor: the header binds, see board-layout.css. */
+  const FLOOR_INNER = 282;
+  /** JetBrains Mono 13 with `.vex-num` at -.01em: 7.8 - 0.13. */
+  const MONO_13 = 7.67;
+  /** JetBrains Mono 26 / 500 at -.03em: 15.6 - 0.78. */
+  const MONO_26 = 14.82;
+  /** `24h` in Instrument Sans 12. */
+  const WINDOW_24H = 20.51;
+  /** The widest glyph the proportional allowlist admits, at 12.5px. */
+  const SLOT = 9.1;
+
+  it("fits the widest price, delta and window on one row at the floor", () => {
+    const row =
+      BOARD_CARD_PRICE_MAX_SLOTS * MONO_26 +
+      10 +
+      BOARD_CARD_DELTA_MAX_SLOTS * MONO_13 +
+      10 +
+      WINDOW_24H;
+    expect(row).toBeLessThanOrEqual(FLOOR_INNER);
+    // And it is the row the floor was derived from, not slack: one more slot
+    // on the price would push the row past it.
+    expect(row + MONO_26).toBeGreaterThan(FLOOR_INNER);
+  });
+
+  it("fits the widest stat value in a column of four, and one more slot would not", () => {
+    const column = (FLOOR_INNER - 3 * 6) / 4;
+    expect(BOARD_CARD_STAT_MAX_SLOTS * MONO_13).toBeLessThanOrEqual(column);
+    expect((BOARD_CARD_STAT_MAX_SLOTS + 1) * MONO_13).toBeGreaterThan(column);
+  });
+
+  it("keeps a ten-slot ticker inside the identity column", () => {
+    // 34 photo + 11 + [identity] + 11 + (26 key + 6 + 74 chip).
+    const identity = FLOOR_INNER - (34 + 11 + 11 + 26 + 6 + 74);
+    expect(identity).toBe(120);
+    expect(BOARD_CARD_TICKER_MAX_SLOTS * SLOT).toBeLessThanOrEqual(identity);
   });
 });

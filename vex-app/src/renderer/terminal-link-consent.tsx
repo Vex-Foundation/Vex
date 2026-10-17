@@ -14,6 +14,9 @@ if (root !== null) {
       void window.terminalLinkConsent.answer({ proposalId: proposal.id, choice, rememberHost });
     }} />);
   } catch {
+    // The fallback is a sentence on the paper: sans 14 / 1.45 in ink, padded
+    // off the window edge (docs/design/R3-MINIMAL.md section 1.3).
+    root.className = "p-6 text-[14px] leading-[1.45] text-ink-primary";
     root.textContent = "Vex could not display this link request. Close this window and try again.";
   }
 }

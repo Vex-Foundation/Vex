@@ -1,6 +1,8 @@
-/* Market picker (docs/design/V10-SPREAD.md section 1): a paper sheet hung
- * from the market bar, the desk's register throughout: Departure Mono 11px
- * caps tabs and heads, 12px figures right-aligned, the chosen market blue. */
+/* Market picker (docs/design/R3-MINIMAL.md sections 9.3 and 12): a popover
+ * hung from the market bar. Paper, a 1.5px ink frame, never a shadow. Words
+ * are the sans in sentence case; figures are the mono, tabular and right
+ * aligned. The chosen market is a pressed row with its ticker in the blue,
+ * and the 24h change is the one trading colour in it (section 1.2). */
 
 .lit-market-picker-layer {
   position: absolute;
@@ -19,9 +21,12 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--lit-line-strong);
+  border: 1.5px solid var(--lit-rule-ink);
   background: var(--lit-panel);
   color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
   pointer-events: auto;
 }
 
@@ -39,13 +44,19 @@
 .lit-picker-heading h2 {
   margin: 0;
   color: var(--lit-ink);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--lit-tr-eyebrow);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
-.lit-picker-heading p { margin: 0; color: var(--lit-ink-secondary); font-size: 11px; }
+.lit-picker-heading p {
+  margin: 0;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
+}
 
 .lit-picker-search {
   display: flex;
@@ -60,7 +71,7 @@
   color: var(--lit-ink-secondary);
 }
 
-.lit-picker-search:focus-within { border-color: var(--lit-positive); }
+.lit-picker-search:focus-within { border-color: var(--lit-accent); }
 
 .lit-picker-search input {
   width: 100%;
@@ -68,8 +79,9 @@
   border: 0;
   background: transparent;
   color: var(--lit-ink);
-  font: inherit;
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: normal;
 }
 
 .lit-picker-search input::placeholder { color: var(--lit-ink-muted); }
@@ -90,9 +102,12 @@
 .lit-picker-search button:hover { background: var(--lit-hover); color: var(--lit-ink); }
 .lit-picker-search button svg { width: 16px; height: 16px; }
 
+/* Section tabs: 13.5 sans ink 2, a 1.5px bottom rule that turns blue on the
+ * chosen one. The favourites star is a key, not a tab: blue when on, no
+ * underline. */
 .lit-picker-tabs {
   display: flex;
-  min-height: 34px;
+  min-height: 36px;
   flex: 0 0 auto;
   align-items: stretch;
   gap: 16px;
@@ -107,22 +122,31 @@
   background: transparent;
   padding: 0;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  letter-spacing: normal;
 }
 
 .lit-picker-tabs button:hover { color: var(--lit-ink); }
-.lit-picker-tabs button[aria-pressed="true"] { border-bottom-color: var(--lit-positive); color: var(--lit-positive); }
+
+.lit-picker-tabs button[aria-pressed="true"] {
+  border-bottom-color: var(--lit-accent);
+  color: var(--lit-accent);
+  font-weight: 500;
+}
+
 .lit-picker-tabs .lit-picker-favorites-filter { display: grid; width: 24px; place-items: center; }
 .lit-picker-tabs .lit-picker-favorites-filter svg { width: 16px; height: 16px; }
+.lit-picker-tabs .lit-picker-favorites-filter[aria-pressed="true"] { border-bottom-color: transparent; font-weight: 400; }
 
 .lit-picker-tabs > span {
   align-self: center;
   margin-inline-start: auto;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
 }
 
 .lit-picker-scroll {
@@ -142,11 +166,13 @@
   padding-inline: 10px;
 }
 
+/* The head row: 11.5 sans 500 muted, a 1px rule quiet under it. */
 .lit-picker-columns {
   position: sticky;
   z-index: 1;
   top: 0;
   min-height: var(--lit-picker-header-height);
+  border-bottom: 1px solid var(--lit-line-quiet);
   background: var(--lit-panel);
 }
 
@@ -160,24 +186,27 @@
   border: 0;
   background: transparent;
   padding: 0 8px;
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-caps-data);
-  text-transform: uppercase;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
 .lit-picker-columns button:nth-child(2) { justify-content: flex-start; }
-.lit-picker-columns button:hover,
-.lit-picker-columns button[aria-pressed="true"] { color: var(--lit-positive); }
+.lit-picker-columns button:hover { color: var(--lit-ink); }
+.lit-picker-columns button[aria-pressed="true"] { color: var(--lit-accent); }
 .lit-picker-columns button svg { width: 16px; height: 16px; flex-shrink: 0; visibility: hidden; }
 .lit-picker-columns button[aria-pressed="true"] svg { visibility: visible; }
 .lit-picker-columns button[data-direction="asc"] svg { transform: rotate(180deg); }
 
-.lit-picker-row { min-height: 44px; }
-.lit-picker-row + .lit-picker-row { border-top: 1px solid var(--lit-line-quiet); }
+.lit-picker-row { min-height: 34px; }
 .lit-picker-row:hover,
 .lit-picker-row[data-highlighted="true"] { background: var(--lit-hover); }
+
+/* The chosen market: the selection fill across the whole row. */
+.lit-picker-row:has(> .lit-picker-option[aria-selected="true"]) { background: var(--lit-pressed); }
 
 .lit-picker-star {
   display: grid;
@@ -191,11 +220,13 @@
 
 .lit-picker-star svg { width: 16px; height: 16px; }
 .lit-picker-star:hover { color: var(--lit-ink); }
-.lit-picker-star[aria-pressed="true"] { color: var(--lit-positive); }
+.lit-picker-star[aria-pressed="true"] { color: var(--lit-accent); }
 
+/* Figures: mono 12 ink, tabular, right aligned. The ticker cell below sets
+ * the sans for its words. */
 .lit-picker-option {
   display: grid;
-  min-height: 44px;
+  min-height: 34px;
   grid-column: 2 / -1;
   grid-template-columns: subgrid;
   align-items: center;
@@ -203,25 +234,47 @@
   background: transparent;
   padding: 0;
   color: var(--lit-ink);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
   text-align: right;
   scroll-margin-block-end: 8px;
 }
 
 .lit-picker-option > span { min-width: 0; overflow: hidden; padding-inline: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.lit-picker-option[aria-selected="true"] .lit-picker-identity b { color: var(--lit-positive); }
-.lit-picker-option > span[data-tone="positive"] { color: var(--lit-positive); }
-.lit-picker-option > span[data-tone="negative"] { color: var(--lit-negative); }
-.lit-picker-identity { display: flex; align-items: center; gap: 10px; text-align: left; }
-.lit-picker-identity > span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
-.lit-picker-identity b { overflow: hidden; color: var(--lit-ink); font-size: 13px; font-weight: 400; text-overflow: ellipsis; }
+.lit-picker-option[aria-selected="true"] .lit-picker-identity b { color: var(--lit-accent); }
+.lit-picker-option > span[data-tone="positive"] { color: var(--lit-trade-up); }
+.lit-picker-option > span[data-tone="negative"] { color: var(--lit-trade-down); }
+
+.lit-picker-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+  text-align: left;
+}
+
+.lit-picker-identity > span { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+
+.lit-picker-identity b {
+  overflow: hidden;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
 
 .lit-picker-identity small {
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  letter-spacing: normal;
+  line-height: 1.2;
 }
 
 .lit-picker-empty {
@@ -243,21 +296,21 @@
   gap: 6px 16px;
   border-top: 1px solid var(--lit-line-quiet);
   padding: 6px 16px;
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
 }
 
 .lit-picker-footer > span { display: inline-flex; align-items: center; gap: 4px; }
 
 .lit-picker-footer kbd {
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
-  padding: 1px 4px;
+  border: 1px solid var(--lit-line);
+  padding: 0 5px;
   color: var(--lit-ink);
-  font-family: inherit;
-  font-size: inherit;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
 .lit-picker-storage {
@@ -273,7 +326,7 @@
 .lit-market-picker .lit-picker-search input:focus-visible { outline: none; }
 
 /* The market's mark: a reviewed token mark when there is one, else the
- * ticker set in mono caps inside a rule frame. */
+ * ticker as the provider writes it, in the mono, inside a rule frame. */
 .lit-market-symbol {
   --lit-market-symbol-size: 24px;
   display: inline-flex;

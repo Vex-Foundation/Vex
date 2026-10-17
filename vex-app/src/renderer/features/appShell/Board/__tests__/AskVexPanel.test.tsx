@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { AskVexPanel } from "../AskVexPanel.js";
+import { AskVexPanel, BOARD_ASK_HEADING } from "../AskVexPanel.js";
 import { useBoardAskIntentStore } from "../board-ask-intent.js";
 import { useBoardSurfaceStore } from "../board-surface-store.js";
 import {
@@ -96,6 +96,17 @@ describe("AskVexPanel", () => {
     const chip = document.querySelector('[data-vex-area="board-ask-context"]');
     expect(chip?.textContent).toBe(`UBERCAT · Solana · snapshot ${FIXTURE_CLOCK}`);
     expect(chip?.getAttribute("data-live")).toBe("false");
+  });
+
+  it("heads the block in the sidebar's words and keeps the field labelled", () => {
+    render(<AskVexPanel board={boardRef()} poolIndex={0} />, { wrapper });
+    expect(
+      screen.getByRole("heading", { name: BOARD_ASK_HEADING }).tagName,
+    ).toBe("H3");
+    expect(screen.getByRole("textbox", { name: "Your question" })).toBeTruthy();
+    expect(
+      document.querySelector('[data-vex-area="board-ask-panel"]')?.classList.contains("vex-bd-ask"),
+    ).toBe(true);
   });
 
   it("pre-fills the field from a quick question and leaves it editable", () => {
@@ -185,7 +196,7 @@ describe("AskVexPanel", () => {
     useBoardSurfaceStore.setState({ askPanelOpen: true });
     render(<AskVexPanel board={boardRef()} poolIndex={0} />, { wrapper });
     fireEvent.click(
-      screen.getByRole("button", { name: "Close the Ask VEX panel" }),
+      screen.getByRole("button", { name: "Close Ask Vex" }),
     );
     expect(useBoardSurfaceStore.getState().askPanelOpen).toBe(false);
   });

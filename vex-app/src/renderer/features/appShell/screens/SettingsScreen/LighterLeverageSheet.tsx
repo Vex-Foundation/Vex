@@ -189,7 +189,7 @@ export function LighterLeverageSheet({
             <>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px] leading-[20px]">
                 <dt className="text-ink-secondary">{LEVERAGE_SHEET_CURRENT}</dt>
-                <dd className="text-ink-primary">
+                <dd className="vex-num font-mono text-ink-primary">
                   {currentLeverageLine(
                     row.current.leverageDisplay,
                     row.current.marginMode,
@@ -202,7 +202,7 @@ export function LighterLeverageSheet({
                   )}
                 </dd>
                 <dt className="text-ink-secondary">{LEVERAGE_SHEET_MAX}</dt>
-                <dd className="text-ink-primary">{maxLeverage === null ? "-" : `${maxLeverage}x`}</dd>
+                <dd className="vex-num font-mono text-ink-primary">{maxLeverage === null ? "-" : `${maxLeverage}x`}</dd>
               </dl>
 
               {maxLeverage === null ? (

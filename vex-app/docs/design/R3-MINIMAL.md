@@ -533,8 +533,10 @@ Drawn on a 16 x 16 grid, stroke 1.5, square caps, mitre joins, no fill. Each row
 | `question` | `<circle cx="8" cy="8" r="6"/><path d="M6.3 6.4a1.8 1.8 0 0 1 3.5.5c0 1.1-1.8 1.4-1.8 2.6M8 11.4v.1"/>` |
 | `user` | `<circle cx="8" cy="5.5" r="2.5"/><path d="M3.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4"/>` |
 | `archive` | `<path d="M1.5 3h13v3h-13z"/><path d="M2.5 6v7.5h11V6M6.5 9h3"/>` |
+| `branch` | `<path d="M4.5 2v8.9"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="4.5" r="1.6"/><path d="M11.5 6.1a5.4 5.4 0 0 1-5.4 6.4"/>` |
+| `thumbsDown` | `<path d="M2.5 2.5h3v7h-3z"/><path d="M5.5 2.5h6.8l1.2 5.5v1.5H9.3l.5 3c.1 1-.6 1.8-1.5 1.5-.5-.2-.8-.6-1-1L5.5 9.5"/>` |
 
-`chevU`, `chevL`, `warning`, `question`, `user` and `archive` were derived in the same grid and stroke when the app's chrome needed them (the mirrored chevrons and four icons the mockups never drew).
+`chevU`, `chevL`, `warning`, `question`, `user`, `archive`, `branch` and `thumbsDown` were derived in the same grid and stroke when the app's chrome needed them (the mirrored chevrons and six icons the mockups never drew; `branch` and `thumbsDown` are the transcript's message keys).
 
 ---
 

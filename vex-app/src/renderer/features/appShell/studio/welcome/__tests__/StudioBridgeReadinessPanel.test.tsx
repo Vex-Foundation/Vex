@@ -99,6 +99,9 @@ describe("a packaged app with a missing bridge", () => {
     const alert = await findPanel();
     expect(alert.textContent).toContain("missing from this installation");
     expect(alert.textContent).toContain("Reinstall Vex");
+    // A damaged installation is the ink cross callout, and the callout is the
+    // one live region.
+    expect(screen.getByRole("alert").getAttribute("data-vex-callout")).toBe("error");
   });
 
   it("NEVER mentions Go, a toolchain, or a build command", async () => {
@@ -124,6 +127,8 @@ describe("a from-source run with no built bridge", () => {
     );
     renderPanel();
     const alert = await findPanel();
+    // A state the user can fix from here is the ink hatch (concerned).
+    expect(screen.getByRole("alert").getAttribute("data-vex-callout")).toBe("concerned");
     expect(alert.textContent).toContain("has not been built yet");
     expect(alert.textContent).toContain(
       `Go ${PIN} is installed, so all that is missing is the build`,

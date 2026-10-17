@@ -104,7 +104,7 @@ describe("the second action", () => {
 });
 
 describe("a row's state", () => {
-  it("hears the drift sentence where the dot is the only signal", async () => {
+  it("says the drift sentence beside the name, with the concerned fill", async () => {
     projectsListMock.mockResolvedValue({
       ok: true,
       data: [
@@ -119,11 +119,18 @@ describe("a row's state", () => {
       ],
     });
     renderWelcome({});
-    // The dot is colour-only and aria-hidden, so the words are what assistive
-    // technology gets - and they are the SAME sentence the rail row uses.
+    // The sentence is visible now (the welcome reference), so the fill
+    // carries no second, invisible copy of it; the open control's description
+    // names the project with the SAME sentence the sidebar row uses.
+    const note = await screen.findByText("Edited since Vex wrote it");
+    const row = note.closest("[data-vex-project-drift]");
+    expect(row?.getAttribute("data-vex-project-drift")).toBe("drifted");
+    expect(row?.querySelector('.vex-swatch[data-s="concerned"]')).not.toBeNull();
     expect(
-      await screen.findByText("vex-core: Edited since Vex wrote it"),
-    ).not.toBeNull();
+      row?.querySelector("button")?.getAttribute("aria-description"),
+    ).toContain("vex-core: Edited since Vex wrote it");
+    // Repair is offered on the row itself, under its own name.
+    expect(screen.getByRole("button", { name: "Repair vex-core" })).not.toBeNull();
   });
 
   it("says so when Vex's files are untouched", async () => {
@@ -168,9 +175,11 @@ describe("the project list", () => {
     await screen.findByText("vex-core");
 
     // Scoped to the LIST: the hero's second action is also a button naming a
-    // project, and it is not part of the list's order.
+    // project, and it is not part of the list's order. Each row's open control
+    // carries its permission description; the row menus beside them do not.
     const titles = within(screen.getByRole("list"))
       .getAllByRole("button")
+      .filter((el) => el.hasAttribute("aria-description"))
       .map((el) => el.textContent ?? "");
     expect(titles[0]).toContain("vex-core");
     expect(titles[1]).toContain("trading-agent");
@@ -207,28 +216,40 @@ describe("the project list", () => {
 });
 
 describe("the way back to the agent shell", () => {
-  it("is the mode capsule itself, seated directly under the wordmark, and NOT a plain button", () => {
-    // Owner decree 2026-09-04: the Agent | Studio switch sits under the vex
-    // wordmark on the welcome screen. This screen renders only while no
-    // project is active, and the Studio rail header mounts its capsule only
-    // while one is, so the page keeps exactly one radiogroup named "Runtime
-    // mode" (e2e/studio.spec.ts pins the count). The stand-in button is gone.
-    const { container } = renderWelcome({});
-    const group = screen.getByRole("radiogroup", { name: "Runtime mode" });
-    expect(
-      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
-    ).toBe("true");
-    // The seat, not merely the presence: mark -> capsule -> heading.
-    const heading = container.querySelector('[data-vex-area="studio-welcome"] h1');
-    expect(heading?.previousElementSibling).toBe(group);
-    expect(group.previousElementSibling?.tagName.toLowerCase()).toBe("svg");
+  it("is no longer a capsule on this screen: the left sidebar's nav carries it", () => {
+    // R3 (docs/design/R3-MINIMAL.md section 4): the nav's Chat row is the way
+    // back, from every Studio screen; the pointer line stays as the third hero
+    // line.
+    renderWelcome({});
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Back to Agent mode" })).toBeNull();
+    expect(screen.getByText(STUDIO_WELCOME_AGENT_POINTER)).not.toBeNull();
   });
 
-  it("the capsule leaves Studio - without it the screen is a one-way door", () => {
+  it("titles the page in the serif display register, in blue", () => {
+    const { container } = renderWelcome({});
+    const heading = container.querySelector('[data-vex-area="studio-welcome"] h1');
+    expect(heading?.textContent).toBe("Vex Studio");
+    expect(heading?.className).toContain("font-serif");
+    expect(heading?.className).toContain("text-[52px]");
+    expect(heading?.className).toContain("text-accent-primary");
+  });
+});
+
+describe("the project count and the host line", () => {
+  it("counts the projects beside the Projects head", async () => {
+    projectsListMock.mockResolvedValue({
+      ok: true,
+      data: [makeProject({ name: "vex-core" }), makeProject({ name: "trading-agent" })],
+    });
     renderWelcome({});
-    fireEvent.click(screen.getByRole("radio", { name: "Agent" }));
-    expect(useUiStore.getState().runtimeMode).toBe("agent");
+    expect(await screen.findByText("2 projects")).not.toBeNull();
+  });
+
+  it("draws no host line until the title bar has read the host", async () => {
+    const { container } = renderWelcome({});
+    await screen.findByText("No projects yet.");
+    expect(container.querySelector("[data-vex-studio-host-line]")).toBeNull();
   });
 });
 

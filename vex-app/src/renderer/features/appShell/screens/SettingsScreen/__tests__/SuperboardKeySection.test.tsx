@@ -220,10 +220,11 @@ describe("SuperboardKeySection", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(SHARE));
   });
 
-  it("uses the Settings section chrome", async () => {
+  it("draws the body only: the head belongs to the Settings page, the privacy link stays", async () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "missing" }));
     renderSection();
-    expect(await screen.findByRole("heading", { name: "Superboard key" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Generate" })).toBeTruthy();
+    expect(screen.queryByRole("heading")).toBeNull();
     const privacy = screen.getByText("Your data stays yours").closest("a");
     expect(privacy).not.toBeNull();
     // The anchor and main's allowlist share one declaration; the href here is
@@ -388,7 +389,6 @@ describe("SuperboardKeySection", () => {
   it("hides Generate when not ready and keeps the row empty", async () => {
     getSuperboardKey.mockResolvedValue(ok({ kind: "not_ready" }));
     const { container } = renderSection();
-    expect(await screen.findByRole("heading", { name: "Superboard key" })).toBeTruthy();
     const line = await screen.findByText(
       "Connect AgentScan first. The Superboard key is minted against that identity.",
     );

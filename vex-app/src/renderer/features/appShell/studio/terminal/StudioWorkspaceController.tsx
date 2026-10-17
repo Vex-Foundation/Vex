@@ -1967,14 +1967,15 @@ export function StudioWorkspaceController({
   });
 
   return (
-    // THE WORKSPACE SHEET (docs/design/V10-SPREAD.md section 1): the strip
-    // sits on the paper and the body below it is the field, inset 12px from
-    // the rail and the BOOK. Nothing under the glyphs is translucent: the
-    // palette's opaque reading surface is the field itself, and the contrast
-    // is measured on it in `e2e/studio-terminal-surface.spec.ts`.
+    // THE WORKSPACE draws no box (docs/design/R3-MINIMAL.md section 9.5): the
+    // strip and the pane head sit on the paper under a quiet rule each and run
+    // edge to edge of the centre column, and only the terminal panes are the
+    // field. Nothing under the glyphs is translucent: the palette's opaque
+    // reading surface is the field itself, and the contrast is measured on it
+    // in `e2e/studio-terminal-surface.spec.ts`.
     <div
       ref={cardRef}
-      className={cn("flex h-full min-h-0 flex-col px-3 pt-2 pb-3", className)}
+      className={cn("flex h-full min-h-0 flex-col", className)}
       data-vex-workspace-card=""
     >
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -2058,7 +2059,7 @@ export function StudioWorkspaceController({
           lostTerminalIds.size > 0 ? (
             <div
               role="alert"
-              className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
+              className="flex shrink-0 items-start gap-2 border-b border-rule-quiet bg-surface-3 px-[18px] py-2.5 text-[13.5px] leading-[1.45] text-ink-primary"
             >
               <span className="flex-1">
                 {`The terminal service stopped and ${String(lostTerminalIds.size)} `
@@ -2069,7 +2070,7 @@ export function StudioWorkspaceController({
                 type="button"
                 onClick={handleRestoreLost}
                 disabled={restoring}
-                className="px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+                className="px-1 font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:text-ink-tertiary disabled:no-underline"
               >
                 {restoring ? "Restoring..." : "Restore terminals"}
               </button>
@@ -2081,7 +2082,7 @@ export function StudioWorkspaceController({
               // running. `alert` is what makes a screen reader say so without
               // waiting for the next focus move.
               role={closeIsFailed(closePhase) ? "alert" : "status"}
-              className="flex shrink-0 items-start gap-2 border-b border-line-3 bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
+              className="flex shrink-0 items-start gap-2 border-b border-rule-quiet bg-surface-3 px-[18px] py-2.5 text-[13.5px] leading-[1.45] text-ink-primary"
             >
               <span className="flex-1">
                 {restoreNotice === null ? null : (
@@ -2109,7 +2110,7 @@ export function StudioWorkspaceController({
                     }
                     onRetryClose();
                   }}
-                  className="px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="px-1 font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
                 >
                   Try closing again
                 </button>
@@ -2123,7 +2124,7 @@ export function StudioWorkspaceController({
                   setNotice(null);
                   setRestoreNotice(null);
                 }}
-                className="px-1 text-ink-tertiary hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="px-1 text-ink-secondary hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
               >
                 Dismiss
               </button>

@@ -1,40 +1,43 @@
 /**
  * The token photo, its loading skeleton, the monogram that stands in for it,
- * or the quiet disc that says the read failed - ONE component for the 64px
- * grid card and the 88px Spotlight hero, so the fetch policy, the fallback
+ * or the quiet square that says the read failed - ONE component for the 34px
+ * grid tile and the 52px Spotlight hero, so the fetch policy, the fallback
  * and the browser-decode guard cannot drift between surfaces.
  *
  * FIVE STATES, and the last two are the reason there are five:
  *
  *   loading      a handle exists and its read has not answered. A pulsing
- *                skeleton disc, no letters: a letter here would claim the
+ *                skeleton square, no letters: a letter here would claim the
  *                token has no picture before anyone has looked.
  *   image        the bytes are in hand and the browser could draw them.
  *   monogram     settled absent, and ONLY that: `iconId === null` (nothing was
  *                asked, the common case) or the read settled `absent` (the
  *                provider was asked and has no picture). ONE leading letter,
  *                the same treatment the market provider's own cards use for a
- *                token with no artwork, and the slot SAYS so: a title and a
- *                screen-reader sentence on the card, a visible line on the
- *                hero.
+ *                token with no artwork, drawn as the blue initial (sans 14 /
+ *                600 on the tile, 20 on the hero) on the page paper, and the
+ *                slot SAYS so: a title and a screen-reader sentence on the
+ *                tile, a visible line on the hero.
  *   refused      the provider HAS published artwork and main declined it -
  *                bytes it could not identify, or past the byte ceiling. The
- *                static disc with its own copy, never a letter: a monogram
+ *                static square with its own copy, never a letter: a monogram
  *                would claim the token has no picture, which is false, and
  *                "could not be loaded" would invite a retry that will fetch the
  *                same refused bytes.
  *   unavailable  the read did not answer about the picture: a transport
  *                failure, a busy queue, an unmounted service, a rejected
  *                `Result`, a thrown query, or bytes the browser could not
- *                decode. The same quiet disc as `loading` but STATIC, with a
+ *                decode. The same quiet square as `loading` but STATIC, with a
  *                title and a screen-reader sentence saying the image could not
  *                be loaded. Never a letter and never the "no image" claim:
  *                the provider was not heard, so nothing about the token is
  *                known. Recovery is the hook's own cadence, not this frame's.
  *
- * NO RING ON ANY STATE. The photo sits on the `surface-2` disc and nothing
- * else; that disc is the one round container the board keeps, because it IS
- * the photo placeholder rather than decoration around an icon.
+ * ONE FRAME ON EVERY STATE (docs/design/R3-MINIMAL.md section 9.4): a square
+ * box with a 1px rule border, 34 on the tile and 52 on the hero. The picture
+ * fills it (`object-cover`), the monogram sits in it, the skeleton and the
+ * two quiet states are painted inside it, so the slot never changes size
+ * between states. Nothing on the photo is round (radius 0).
  *
  * A PICTURE THE BROWSER CANNOT DRAW IS UNAVAILABLE, NOT ABSENT. Main validates
  * icon bytes by reading magic bytes and header dimensions with NO decode - no
@@ -79,9 +82,14 @@ export const BOARD_IMAGE_UNAVAILABLE_TITLE = "Image could not be loaded";
 export const BOARD_IMAGE_REFUSED_TITLE =
   "Published image was not accepted by Vex's image checks";
 
+/**
+ * The frame is the same box in every state: a 1px rule border around a square
+ * (34 on the tile, 52 on the hero). `border-rule` is the shared rule alias,
+ * so the Night Ledger repoints it with no branch here.
+ */
 const SIZE_CLASS: Record<TokenPhotoSize, { readonly frame: string; readonly glyph: string }> = {
-  card: { frame: "h-16 w-16", glyph: "text-[18px]" },
-  hero: { frame: "h-[88px] w-[88px]", glyph: "text-[24px]" },
+  card: { frame: "h-[34px] w-[34px] border border-rule", glyph: "text-[14px]" },
+  hero: { frame: "h-[52px] w-[52px] border border-rule", glyph: "text-[20px]" },
 };
 
 export interface TokenPhotoView {
@@ -178,7 +186,7 @@ export function TokenPhotoFrame({
         alt=""
         aria-hidden
         onError={view.onUndecodable}
-        className={`${sizing.frame} shrink-0 bg-surface-2 object-cover`}
+        className={`${sizing.frame} shrink-0 object-cover`}
       />
     );
   }
@@ -193,7 +201,7 @@ export function TokenPhotoFrame({
     );
   }
   if (view.state === "refused") {
-    // The static disc again, because there IS artwork and a monogram would say
+    // The static square again, because there IS artwork and a monogram would say
     // there is not. Its own copy, and no cadence behind it: the verdict is
     // settled for these bytes.
     return (
@@ -212,7 +220,7 @@ export function TokenPhotoFrame({
     );
   }
   if (view.state === "unavailable") {
-    // The loading disc held still. Said on EVERY surface, because no
+    // The loading square held still. Said on EVERY surface, because no
     // surface prints this fact anywhere else: the hero's visible line is
     // reserved for a settled absence.
     return (
@@ -237,7 +245,7 @@ export function TokenPhotoFrame({
         data-state="monogram"
         aria-hidden
         title={announceAbsence ? BOARD_NO_IMAGE_TITLE : undefined}
-        className={`flex ${sizing.frame} shrink-0 items-center justify-center bg-surface-2 font-mono ${sizing.glyph} leading-none text-ink-tertiary`}
+        className={`flex ${sizing.frame} shrink-0 items-center justify-center font-sans font-semibold ${sizing.glyph} leading-none text-accent-primary`}
       >
         {monogram(symbol)}
       </span>

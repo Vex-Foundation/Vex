@@ -267,7 +267,7 @@ function latestLegend(
   };
 }
 
-/** Volume bars carry the candle pair at this opacity (docs/design/V10-SPREAD.md section 1). */
+/** Volume bars carry the candle pair at this opacity (docs/design/R3-MINIMAL.md section 9.3). */
 const VOLUME_ALPHA = 0.42;
 
 /**

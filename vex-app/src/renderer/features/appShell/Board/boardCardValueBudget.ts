@@ -1,7 +1,7 @@
 /**
  * WHAT A TOKEN CARD IS WILLING TO PRINT, and how it says when it printed less.
  *
- * WHY THIS EXISTS. `global-css/board-layout.css` sizes both card modes against
+ * WHY THIS EXISTS. `global-css/board-layout.css` sizes the tile floor against
  * the widest REALISTIC output (section 1 of `board-layout-measurements.md`).
  * The schema, however, permits far more than realistic: a 40-character decimal
  * (`BOARD_DECIMAL_MAX_CHARS`) and a 512-character symbol
@@ -17,17 +17,18 @@
  * on every card of every board. A CSS ellipsis would hide the cut without
  * reporting it, which is the defect rather than the fix. A slot count is a
  * property of the DATA, decided before layout exists, and it takes no
- * threshold away from the stylesheet: it does not decide a column count, a
- * mode or a floor. It decides how much of a string is worth printing.
+ * threshold away from the stylesheet: it does not decide a column count or a
+ * floor. It decides how much of a string is worth printing.
  *
  * WHERE EACH NUMBER COMES FROM. Each is the widest realistic string the
  * measurement matrix records for that region, in characters - which is exactly
- * the string the region's floor was derived from. A value longer than that is,
+ * the string the region's floor was derived from (or, for the stat values and
+ * the ticker, the column the floor leaves). A value longer than that is,
  * by construction, past what the floor was sized for, so it is the value that
  * concedes rather than the layout. Section 5 of
  * `board-layout-measurements.md` carries the derivation, and the overflow
  * assertions in `e2e/board-layout.spec.ts` are what prove the budgets hold:
- * they run over the SCHEMA-EXTREME board at the compact floor and fail if any
+ * they run over the SCHEMA-EXTREME board at the tile floor and fail if any
  * financial, stat, badge or action region scrolls.
  *
  * NOTHING IS LOST. A shortened value is marked `data-shortened` where it
@@ -68,32 +69,32 @@
  * definition of the feature, so a count of clusters IS a width and one slot
  * is one digit.
  *
- * PROPORTIONAL (`"proportional"`) is the ticker. The model was measured in
- * the face the ticker used to render in, uppercase Inter Tight at 13px, where
- * glyph advances differ by more than a factor of four and one slot was 8.8px:
+ * PROPORTIONAL (`"proportional"`) is the ticker. The model is measured in the
+ * face the ticker renders in, Instrument Sans regular at 12.5px (not
+ * uppercased and not tracked), where glyph advances differ by more than a
+ * factor of four. ONE SLOT IS 9.1px: the widest glyph the allowlist below
+ * admits (`V` and `A`). The advances that matter, at 12.5px:
  *
- *   W 11.82   M 10.84   % 9.85   C D G H N O Q U 8.86
- *   A B K P R S T V X Y Z $ + 0 3 4 7.88   E F L 2 5 6 7 8 9 6.90
- *   J 5.91   1 - 4.93   I . , : 2.95
+ *   W 13.61   M 11.32   Q 9.84   % O 9.82   G 9.56   D 9.40   C 9.26
+ *   H N 9.20   A V 9.10   U 8.90   K 8.65   X 8.60   Y 8.45   0 8.32
+ *   P R 8.20   T 8.10   E 7.97   B 7.95   Z 7.79   1 4.89   I 3.18   . , : 3.19
  *
- * So a count of characters was NOT a width there, and treating it as one was
- * a defect: `WWWWWWWW` is eight characters, cost eight of ten slots, and
- * rendered 94.56px into an 88px column - clipped, with nothing reporting it.
- * Anything measuring wider than a slot is charged two.
- *
- * The V10 ticker (`TokenCardV3.tsx`) is Departure Mono at 11px, uppercase,
- * tracked 0.14em: every Latin-1 glyph, the ellipsis included, is one 7px
- * cell plus 1.54px of tracking, 8.54px. That is under one slot of the 95px
- * identity column, so a glyph charged one still fits one, and a glyph the
- * table above charges two (`W`, `M`, `%`) is now over-charged - the safe
- * direction, so the model stands as it was measured.
+ * So a count of characters is NOT a width here, and treating it as one was a
+ * defect: `WWWWWWWW` is eight characters, cost eight of ten slots, and renders
+ * 107px - more than the 91px a ten-slot ticker is allowed. A glyph charged one
+ * slot is at most 9.1px and a glyph charged two is at most 18.2px (`W`, the
+ * widest Latin one, is 13.6px), so a string that costs ten slots renders in at
+ * most 91px. Anything measuring wider than a slot is charged two.
  *
  * THE PROPORTIONAL CLASS IS AN ALLOWLIST OF NARROW GLYPHS, not a blocklist of
  * wide ones, and that direction is the point: a character nobody measured -
  * and the schema admits any of Latin-1 - is charged the wide weight rather
- * than assumed innocent. The ticker also renders through `text-transform:
- * uppercase`, so classification uppercases first: a lowercase `w` occupies a
- * `W`.
+ * than assumed innocent. Classification uppercases first. The tile no longer
+ * forces capitals, but weighing a lowercase glyph as its capital is the safe
+ * direction: every capital the allowlist charges one slot is at least as wide
+ * as its lowercase (the widest lowercase among them, `p` and `b`, is 7.6px
+ * against the 9.1px slot), and `m` and `w` land in the two-slot class, whose
+ * 18.2px covers both.
  *
  * ABOVE LATIN-1, both surfaces charge two. That over-charges a Greek letter
  * or a base character carrying a combining mark, and under-charges nothing.
@@ -114,11 +115,11 @@ const NARROW_CODE_POINT_MAX = 0x00ff;
 const WIDE_SLOTS = 2;
 
 /**
- * The glyphs measured at or under one slot (8.8px) in the ticker's former
- * proportional type, after its `uppercase` transform. Everything else on that
- * surface - measured wider, or never measured - is charged
- * {@link WIDE_SLOTS}. See the head note for why the table still holds in the
- * V10 mono face.
+ * The glyphs measured at or under one slot (9.1px) in the ticker's type,
+ * Instrument Sans 12.5px. Everything else on that surface - measured wider,
+ * or never measured - is charged {@link WIDE_SLOTS}. `U` (8.9px) is left out
+ * on purpose: the table is the one the budget tests pin, and charging it two
+ * slots is the safe direction.
  */
 const PROPORTIONAL_NARROW = new Set(
   [..."ABEFIJKLPRSTVXYZ0123456789.,:-$+ "],
@@ -142,30 +143,37 @@ const ELLIPSIS = "…";
 const ELLIPSIS_SLOTS = 2;
 
 /**
- * Hero price. `$0.000001230` is 12 characters and 197.29px, which is the
- * string the 316px compact price row was derived from.
+ * Price. `$0.000001230` is 12 characters and 177.84px in JetBrains Mono 26 /
+ * 500 at -.03em (12 x 14.82), which is the string the tile's 280px price row
+ * was derived from.
  */
 export const BOARD_CARD_PRICE_MAX_SLOTS = 12;
 
-/** Signed 24h delta. `+661.00%` is 8 characters and 76px. */
+/** Signed 24h delta. `+661.00%` is 8 characters and 61.36px (8 x 7.67). */
 export const BOARD_CARD_DELTA_MAX_SLOTS = 8;
 
 /**
- * A stat value. The binding mode is WIDE, not compact: four equal columns of
- * a 460px inner width leave `(460 - 3 x 12) / 4 = 106px` per column, and a
- * stat value renders at roughly 9px per character.
+ * A stat value, in JetBrains Mono 13 where a character advances 7.67px. The
+ * four stats share one row at every width, so the binding column is the one
+ * the floor leaves: `(282 - 3 x 6) / 4 = 66px`, and `8 x 7.67 = 61.4px` fits
+ * it where nine characters (69px) would not. The widest value the formatters
+ * can produce for a real market is 8 characters (`$1234.5B`), so a realistic
+ * figure is never cut.
  */
-export const BOARD_CARD_STAT_MAX_SLOTS = 11;
+export const BOARD_CARD_STAT_MAX_SLOTS = 8;
 
 /**
- * The ticker under the name, and the one PROPORTIONAL surface.
+ * The ticker on the line under the name, and the one PROPORTIONAL surface.
  *
- * The compact header spends its inner 316px on the 64px photo, two 16px gaps
- * and the action cluster, which STACKS in compact mode (`board-layout.css`)
- * so it is the 125px Spotlight button alone. That leaves the identity column
- * 95px at the compact floor. The widest a ten-slot string can render in the
- * V10 mono face is ten cells of 8.54px, or 85.4px, so the budget keeps 9px in
- * hand against its own column.
+ * The header spends the floor's 282px on the 34px photo, two 11px gaps, the
+ * 26px key, a 6px gap and the 74px Spotlight chip, which leaves the identity
+ * column 120px. A ten-slot string renders in at most ten slots of 9.1px, or
+ * 91px, so the budget keeps the ticker inside its own column with 29px to
+ * spare for the separator and the chain name. The chain name is what concedes
+ * when a ten-slot ticker meets a long chain (it ellipsizes, whole in its
+ * `title` and in the disclosure); the ticker itself is never cut by CSS.
+ * Realistic tickers (`BITCOIN` is 50px) leave the widest known chain name,
+ * `Robinhood`, its whole 63px.
  */
 export const BOARD_CARD_TICKER_MAX_SLOTS = 10;
 
@@ -220,8 +228,9 @@ function slotsOf(grapheme: string, surface: BoardCardSurface): number {
     if (value === undefined || value > NARROW_CODE_POINT_MAX) return WIDE_SLOTS;
   }
   if (surface === "tabular") return 1;
-  // Uppercased first: the ticker renders through `text-transform: uppercase`,
-  // so a lowercase `w` occupies a `W` and must be charged as one.
+  // Uppercased first: a lowercase `w` is charged as the `W` it would be if
+  // capitals were forced, which is never narrower than the glyph that
+  // renders (see the head note).
   for (const character of grapheme.toUpperCase()) {
     if (!PROPORTIONAL_NARROW.has(character)) return WIDE_SLOTS;
   }

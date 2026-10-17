@@ -95,7 +95,9 @@ export function StudioHostStatusPreview(): JSX.Element {
       // assertion caught it because a clipped element still has a layout box.
       // Sixteen rows fit the capture viewport unscrolled; a panel that needed
       // to scroll would have to move the card to a portal first.
-      className="fixed top-12 left-1/2 z-50 flex w-[380px] -translate-x-1/2 flex-col gap-1 rounded-xl border border-line-2 bg-surface-overlay p-3"
+      // A popover (docs/design/R3-MINIMAL.md section 12): paper, a 1.5px ink
+      // frame, square.
+      className="fixed top-12 left-1/2 z-50 flex w-[380px] -translate-x-1/2 flex-col gap-1 border-[1.5px] border-rule-ink bg-surface-base p-3"
     >
       {cases.map((entry) => (
         <div
@@ -103,7 +105,7 @@ export function StudioHostStatusPreview(): JSX.Element {
           data-vex-host-preview-case={entry.key}
           className="flex items-center justify-between gap-3"
         >
-          <span className="font-mono text-[11px] text-ink-tertiary">
+          <span className="vex-num text-[12px] text-ink-tertiary">
             {entry.key}
           </span>
           <StudioHostStatusPill

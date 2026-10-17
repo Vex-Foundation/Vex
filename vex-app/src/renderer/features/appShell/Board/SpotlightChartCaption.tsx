@@ -1,5 +1,7 @@
 /**
- * THE SPOTLIGHT CHART'S CAPTION, and the home of the licence notice.
+ * THE SPOTLIGHT CHART'S CAPTION, and the home of the licence notice. It sits
+ * at the bottom left of the chart frame: the notes in 12 muted, the credit
+ * "Charting by TradingView Lightweight Charts" in 11 muted.
  *
  * IT RENDERS IN EVERY STATE - pending, ready with caveats, ready with none,
  * degraded and absent - because the TradingView credit inside it is the
@@ -47,7 +49,7 @@ export function SpotlightChartCaption({
   return (
     <figcaption
       data-vex-area="spotlight-chart-caption"
-      className="flex flex-col gap-0.5 text-[12px] leading-[16px] text-ink-tertiary"
+      className="flex flex-col gap-0.5 px-3 pb-2.5 pt-2 text-[12px] leading-[16px] text-ink-tertiary"
     >
       <ChartNotes page={page} drawing={drawing} resolution={resolution} />
       <ChartAttribution />
@@ -135,13 +137,16 @@ function ChartNotes({
 
 function ChartAttribution(): JSX.Element {
   return (
-    <span data-vex-area="spotlight-chart-attribution" className="text-[10px] text-ink-caption">
+    <span
+      data-vex-area="spotlight-chart-attribution"
+      className="text-[11px] leading-[1.4] text-ink-tertiary"
+    >
       Charting by{" "}
       <a
         href={CHART_ATTRIBUTION_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="underline decoration-dotted underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        className="underline underline-offset-2 hover:text-ink-primary"
       >
         {CHART_ATTRIBUTION_LABEL}
       </a>

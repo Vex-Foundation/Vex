@@ -142,6 +142,24 @@ describe("ClosePositionPopover", () => {
     expect(card.parentElement).toBe(document.body);
   });
 
+  it("draws the R3 card: a line cross on the key, sentence case words, Limit quiet and Market destructive", () => {
+    renderCard();
+    // The trigger holds the calm line cross at 14, and stays the dangerous key.
+    const icon = trigger().querySelector("svg");
+    expect(icon?.getAttribute("width")).toBe("14");
+    expect(trigger().hasAttribute("data-danger")).toBe(true);
+
+    fireEvent.click(trigger());
+    const card = screen.getByRole("dialog", { name: "Close BTC long" });
+    expect(card.querySelector(".lit-close-card-title")?.textContent).toBe("Close BTC long");
+    expect(screen.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["100%", "75%", "50%", "25%"]);
+    // The chosen portion is the segment that carries the selection mark.
+    expect(screen.getByRole("radio", { name: "100%" }).hasAttribute("data-selected")).toBe(true);
+    expect(screen.getByRole("radio", { name: "25%" }).hasAttribute("data-selected")).toBe(false);
+    expect(screen.getByRole("button", { name: "Limit" }).hasAttribute("data-danger")).toBe(false);
+    expect(screen.getByRole("button", { name: "Market" }).hasAttribute("data-danger")).toBe(true);
+  });
+
   it("reports its state on the trigger and toggles shut on a second press", () => {
     renderCard();
     expect(trigger().getAttribute("aria-expanded")).toBe("false");

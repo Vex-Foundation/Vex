@@ -1,12 +1,18 @@
 /**
- * SettingsPreferences - the Appearance theme switcher, the composer
- * Enter-key row, and the notifications toggle on the Settings register.
+ * SettingsPreferences - the Preferences section of the Settings page
+ * (docs/design/R3-MINIMAL.md section 9.6): the Appearance choice, Show avatar,
+ * Open Vex's sidebar in chats, the Session permission explainer, the
+ * Background row, the composer Enter-key row and the two switches.
  *
  * Pins:
- *   - clicking a theme cube writes the persisted preference AND stamps the
+ *   - clicking a theme choice writes the persisted preference AND stamps the
  *     resolved theme onto `documentElement[data-vex-theme]`,
- *   - cube selection follows the PREFERENCE, never the resolved theme
+ *   - choice selection follows the PREFERENCE, never the resolved theme
  *     ("system" stays pressed while the OS resolves the paint),
+ *   - Show avatar round-trips through `showAvatar`, Open Vex's sidebar in
+ *     chats through `vexOpenChat` alone (never the table pages' slot),
+ *   - the Session permission row explains Restricted and Full access in plain
+ *     words and offers no control,
  *   - the Enter-key choice round-trips through the composer submission
  *     policy's public API,
  *   - the notifications row round-trips through the typed uiStore slot.
@@ -37,6 +43,7 @@ beforeEach(async () => {
   window.localStorage.clear();
   await resetSubmitKeyBehaviorForTest();
   useUiStore.getState().setThemePreference("chronos");
+  useUiStore.setState({ showAvatar: true, vexOpenChat: true, vexOpenPages: false });
   shellBackdropReadMock.mockReset();
   shellBackdropReadMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
   Object.defineProperty(window, "vex", {
@@ -100,6 +107,7 @@ describe("SettingsPreferences", () => {
       "data-vex-settings-backdrop",
       "data-vex-settings-enter",
     ]);
+    expect(screen.getByText(/in the print window of Vex's sidebar/)).not.toBeNull();
     expect(await screen.findByRole("button", { name: "Choose image" })).not.toBeNull();
     expect(shellBackdropReadMock).toHaveBeenCalledTimes(1);
   });
@@ -129,4 +137,73 @@ describe("SettingsPreferences", () => {
     useUiStore.getState().setTerminalPasteWarning(true);
   });
 
+
+  it("draws the head and every row in the design's order", () => {
+    renderGroup(<SettingsPreferences />);
+    expect(screen.getByRole("heading", { level: 2, name: "Preferences" })).not.toBeNull();
+    expect(screen.getByText("How Vex looks and behaves on this machine.")).not.toBeNull();
+    const titles = Array.from(document.querySelectorAll(".vex-pref__title")).map(
+      (title) => title.textContent,
+    );
+    expect(titles).toEqual([
+      "Appearance",
+      "Show avatar",
+      "Open Vex's sidebar in chats",
+      "Session permission",
+      "Background",
+      "Enter key",
+      "Notifications",
+      "Multi-line paste warning",
+    ]);
+  });
+
+  it("names the three themes with their words", () => {
+    renderGroup(<SettingsPreferences />);
+    expect(cube("chronos").textContent).toBe("Chronos \u00b7 Dark");
+    expect(cube("celeris").textContent).toBe("Celeris \u00b7 Light");
+    expect(cube("system").textContent).toBe("System \u00b7 Match OS");
+  });
+
+  it("Show avatar reads showAvatar and a click round-trips through its setter", () => {
+    renderGroup(<SettingsPreferences />);
+    const toggle = screen.getByRole("switch", { name: "Show avatar" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(useUiStore.getState().showAvatar).toBe(false);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(useUiStore.getState().showAvatar).toBe(true);
+  });
+
+  it("Open Vex's sidebar in chats writes vexOpenChat only, never the table pages' slot", () => {
+    useUiStore.setState({ vexOpenPages: false, bookOpen: true });
+    renderGroup(<SettingsPreferences />);
+    const toggle = screen.getByRole("switch", { name: "Open Vex's sidebar in chats" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    const off = useUiStore.getState();
+    expect(off.vexOpenChat).toBe(false);
+    expect(off.vexOpenPages).toBe(false);
+    expect(off.bookOpen).toBe(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+  });
+
+  it("explains Restricted and Full access in plain words and offers no control", () => {
+    renderGroup(<SettingsPreferences />);
+    const row = document.querySelector("[data-vex-settings-permission]");
+    if (!(row instanceof HTMLElement)) throw new Error("permission row missing");
+    expect(row.textContent).toContain(
+      "Restricted: funds require approval. Vex asks before every transaction and nothing signs until you approve.",
+    );
+    expect(row.textContent).toContain(
+      "Full access: Vex runs approved tools without asking each time, including moves of funds. Mode and permission are locked once the session is created.",
+    );
+    expect(row.textContent).toContain("Chosen per session");
+    expect(row.querySelector("button, input, [role='switch']")).toBeNull();
+    // The word is beside a fill swatch, never a hue alone.
+    expect(row.querySelector(".vex-pref__word .vex-swatch")?.getAttribute("data-s")).toBe("awaiting");
+  });
 });

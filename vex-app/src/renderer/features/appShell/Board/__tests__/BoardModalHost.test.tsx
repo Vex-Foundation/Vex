@@ -1,15 +1,17 @@
 /**
- * THE ONE BOARD MODAL (A3).
+ * THE ONE BOARD HOST (A3), presented as the Board page.
  *
- * The experiment that matters here is the one a native `<dialog>` makes easy
- * to get wrong: closing the dialog does NOT unmount its children, so a board
- * that "closed" could keep a chart subscribed and a tape polling behind an
- * invisible surface. The probe child below is the instrument - it reports its
- * own mount and unmount, and it registers a feed the store must cut.
+ * The experiment that matters here is the one a long-lived surface makes easy
+ * to get wrong: a board that "closed" could keep a chart subscribed and a
+ * tape polling behind a page nobody is looking at. The probe child below is
+ * the instrument - it reports its own mount and unmount, and it registers a
+ * feed the store must cut. The page and the Vex sidebar only lend the host
+ * their elements (`board-page-slot.ts`, `vex-sidebar-slot.ts`); the stand-ins
+ * below are those elements.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { useEffect, type JSX } from "react";
 import { BoardModalHost } from "../BoardModalHost.js";
 import {
@@ -18,8 +20,20 @@ import {
   useBoardSurfaceStore,
 } from "../board-surface-store.js";
 import { boardRefOf, type BoardRef } from "../board-surface-contracts.js";
+import { setBoardPageSlot } from "../board-page-slot.js";
+import { setVexSidebarSlot } from "../../../vex/vex-sidebar-slot.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { boardSpec } from "./boardFixture.js";
+
+/** The page's element and, when asked, the open Vex sidebar's slot. */
+function Places({ sidebar = true }: { readonly sidebar?: boolean }): JSX.Element {
+  return (
+    <>
+      <div data-testid="page" ref={setBoardPageSlot} />
+      {sidebar ? <aside data-testid="sidebar" ref={setVexSidebarSlot} /> : null}
+    </>
+  );
+}
 
 function ref(sessionId: string, messageId: number): BoardRef {
   return boardRefOf(
@@ -51,7 +65,7 @@ function resetStores(sessionId: string | null): void {
     modalGeneration: 0,
     spotlightGeneration: 0,
   });
-  useUiStore.setState({ activeSessionId: sessionId });
+  useUiStore.setState({ activeSessionId: sessionId, shellRoute: { kind: "none" } });
 }
 
 /** A slot that records its own lifetime and owns a feed the store must cut. */
@@ -81,7 +95,7 @@ function newLifetime(): { mounted: number; unmounted: number; cut: () => void } 
   return { mounted: 0, unmounted: 0, cut: vi.fn() };
 }
 
-/** The title the header PAINTS, told apart from the sr-only dialog title. */
+/** The title the head row PAINTS. */
 function visibleTitle(text: string): HTMLElement {
   const header = document.querySelector('[data-vex-area="board-header"]');
   const found = screen
@@ -99,14 +113,24 @@ afterEach(() => {
 describe("BoardModalHost mounting", () => {
   it("renders nothing about a board until one is bound", () => {
     resetStores("s1");
-    render(<BoardModalHost gridSlot={probeSlot(newLifetime())} />);
+    render(
+      <>
+        <BoardModalHost gridSlot={probeSlot(newLifetime())} />
+        <Places />
+      </>,
+    );
     expect(screen.queryByTestId("probe")).toBeNull();
   });
 
   it("mounts the grid slot when a board is bound, and UNMOUNTS it on close", () => {
     resetStores("s1");
     const lifetime = newLifetime();
-    render(<BoardModalHost gridSlot={probeSlot(lifetime)} />);
+    render(
+      <>
+        <BoardModalHost gridSlot={probeSlot(lifetime)} />
+        <Places />
+      </>,
+    );
 
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
@@ -117,8 +141,8 @@ describe("BoardModalHost mounting", () => {
     act(() => {
       useBoardSurfaceStore.getState().closeBoardModal();
     });
-    // The `<dialog>` element itself survives (it still owns focus restore);
-    // its CHILDREN must not, or the feed would live on invisibly.
+    // The page's element survives; what the host rendered into it must not,
+    // or the feed would live on invisibly.
     expect(screen.queryByTestId("probe")).toBeNull();
     expect(lifetime.unmounted).toBe(1);
     expect(lifetime.cut).toHaveBeenCalledTimes(1);
@@ -128,10 +152,13 @@ describe("BoardModalHost mounting", () => {
     resetStores("s1");
     const lifetime = newLifetime();
     render(
-      <BoardModalHost
-        subtitleSlot={probeSlot(lifetime)}
-        gridSlot={probeSlot(newLifetime())}
-      />,
+      <>
+        <BoardModalHost
+          subtitleSlot={probeSlot(lifetime)}
+          gridSlot={probeSlot(newLifetime())}
+        />
+        <Places />
+      </>,
     );
 
     act(() => {
@@ -139,11 +166,9 @@ describe("BoardModalHost mounting", () => {
     });
     const probes = screen.getAllByTestId("probe");
     expect(probes).toHaveLength(2);
-    // POSITION IS THE CONTRACT: the subtitle sits inside the header's own
-    // left column, directly after the title. A slot that rendered anywhere
+    // POSITION IS THE CONTRACT: the subtitle sits inside the head row's own
+    // title cell, directly after the title. A slot that rendered anywhere
     // else would satisfy "it appears" and still be the wrong line.
-    // The PAINTED title, not the sr-only `DialogTitle` that carries the
-    // accessible name: both say the same words, and only one is the header.
     const title = visibleTitle("board 12");
     const subtitle = probes[0];
     expect(title.parentElement?.contains(subtitle ?? null)).toBe(true);
@@ -161,7 +186,12 @@ describe("BoardModalHost mounting", () => {
 
   it("renders the header without a subtitle when no slot is given", () => {
     resetStores("s1");
-    render(<BoardModalHost gridSlot={probeSlot(newLifetime())} />);
+    render(
+      <>
+        <BoardModalHost gridSlot={probeSlot(newLifetime())} />
+        <Places />
+      </>,
+    );
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
     });
@@ -173,12 +203,15 @@ describe("BoardModalHost mounting", () => {
     resetStores("s1");
     const grid = newLifetime();
     render(
-      <BoardModalHost
-        gridSlot={probeSlot(grid)}
-        spotlightSlot={({ poolIndex }) => (
-          <p data-testid="spotlight">pool {String(poolIndex)}</p>
-        )}
-      />,
+      <>
+        <BoardModalHost
+          gridSlot={probeSlot(grid)}
+          spotlightSlot={({ poolIndex }) => (
+            <p data-testid="spotlight">pool {String(poolIndex)}</p>
+          )}
+        />
+        <Places />
+      </>,
     );
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
@@ -195,11 +228,14 @@ describe("BoardModalHost mounting", () => {
   it("clamps a stored selection the bound board cannot address", () => {
     resetStores("s1");
     render(
-      <BoardModalHost
-        spotlightSlot={({ poolIndex }) => (
-          <p data-testid="spotlight">pool {String(poolIndex)}</p>
-        )}
-      />,
+      <>
+        <BoardModalHost
+          spotlightSlot={({ poolIndex }) => (
+            <p data-testid="spotlight">pool {String(poolIndex)}</p>
+          )}
+        />
+        <Places />
+      </>,
     );
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
@@ -209,9 +245,14 @@ describe("BoardModalHost mounting", () => {
     expect(screen.getByTestId("spotlight").textContent).toBe("pool 1");
   });
 
-  it("mounts the Ask panel only while it is open", () => {
+  it("mounts the Ask block in the Vex sidebar only while it is open", () => {
     resetStores("s1");
-    render(<BoardModalHost askSlot={() => <p data-testid="ask">ask</p>} />);
+    render(
+      <>
+        <BoardModalHost askSlot={() => <p data-testid="ask">ask</p>} />
+        <Places />
+      </>,
+    );
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
     });
@@ -219,27 +260,132 @@ describe("BoardModalHost mounting", () => {
     act(() => {
       useBoardSurfaceStore.getState().setBoardAskOpen(true);
     });
-    expect(screen.getByTestId("ask")).toBeTruthy();
-    // Closing the board closes the panel with it: an unsent question is not
+    // In Vex's column, never in the page.
+    expect(screen.getByTestId("sidebar").contains(screen.getByTestId("ask"))).toBe(true);
+    expect(screen.getByTestId("page").contains(screen.queryByTestId("ask"))).toBe(false);
+    // Closing the board closes the block with it: an unsent question is not
     // state worth restoring beside figures that have since moved.
     act(() => {
       useBoardSurfaceStore.getState().closeBoardModal();
     });
     expect(useBoardSurfaceStore.getState().askPanelOpen).toBe(false);
+    expect(screen.queryByTestId("ask")).toBeNull();
   });
-});
 
-describe("every close path converges on the one close action", () => {
-  it("the X control closes through the store", () => {
+  it("draws no Ask block while the Vex sidebar is hidden", () => {
+    resetStores("s1");
+    render(
+      <>
+        <BoardModalHost askSlot={() => <p data-testid="ask">ask</p>} />
+        <Places sidebar={false} />
+      </>,
+    );
+    act(() => {
+      useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
+      useBoardSurfaceStore.getState().setBoardAskOpen(true);
+    });
+    expect(screen.queryByTestId("ask")).toBeNull();
+  });
+
+  it("renders nothing while the page is not mounted, so no slot holds a feed", () => {
     resetStores("s1");
     const lifetime = newLifetime();
     render(<BoardModalHost gridSlot={probeSlot(lifetime)} />);
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
     });
+    expect(screen.queryByTestId("probe")).toBeNull();
+    expect(lifetime.mounted).toBe(0);
+  });
+});
+
+describe("the page and the binding move together", () => {
+  it("binding a board opens the Board page", () => {
+    resetStores("s1");
+    render(
+      <>
+        <BoardModalHost gridSlot={probeSlot(newLifetime())} />
+        <Places />
+      </>,
+    );
+    act(() => {
+      useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
+    });
+    expect(useUiStore.getState().shellRoute.kind).toBe("board");
+    expect(useBoardSurfaceStore.getState().modalBoard).not.toBeNull();
+  });
+
+  it("the page binds the pinned board before a newer one", () => {
+    resetStores("s1");
+    render(
+      <>
+        <BoardModalHost />
+        <Places />
+      </>,
+    );
+    act(() => {
+      const store = useBoardSurfaceStore.getState();
+      store.noteBoardRow(ref("s1", 14), "settled");
+      store.pinBoard(ref("s1", 12));
+      useUiStore.setState({ shellRoute: { kind: "board", origin: null } });
+    });
+    expect(useBoardSurfaceStore.getState().modalBoard?.messageId).toBe(12);
+    expect(visibleTitle("board 12")).toBeTruthy();
+  });
+
+  it("the page binds the latest board when none is pinned", () => {
+    resetStores("s1");
+    render(
+      <>
+        <BoardModalHost />
+        <Places />
+      </>,
+    );
+    act(() => {
+      const store = useBoardSurfaceStore.getState();
+      store.noteBoardRow(ref("s1", 12), "settled");
+      store.noteBoardRow(ref("s1", 14), "settled");
+      useUiStore.setState({ shellRoute: { kind: "board", origin: null } });
+    });
+    expect(useBoardSurfaceStore.getState().modalBoard?.messageId).toBe(14);
+  });
+
+  it("the page binds nothing from another session, and nothing at all with no board", () => {
+    resetStores("s1");
+    render(
+      <>
+        <BoardModalHost />
+        <Places />
+      </>,
+    );
+    act(() => {
+      useUiStore.setState({ shellRoute: { kind: "board", origin: null } });
+    });
+    expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
+    act(() => {
+      useBoardSurfaceStore.setState({ latestBoard: ref("s9", 3) });
+    });
+    expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
+  });
+});
+
+describe("every close path converges on the one close action", () => {
+  it("leaving the page closes through the store", () => {
+    resetStores("s1");
+    const lifetime = newLifetime();
+    render(
+      <>
+        <BoardModalHost gridSlot={probeSlot(lifetime)} />
+        <Places />
+      </>,
+    );
+    act(() => {
+      useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
+    });
+    expect(useUiStore.getState().shellRoute.kind).toBe("board");
 
     act(() => {
-      fireEvent.click(screen.getByRole("button", { name: "Close the board" }));
+      useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
     });
 
     expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
@@ -247,28 +393,15 @@ describe("every close path converges on the one close action", () => {
     expect(lifetime.unmounted).toBe(1);
   });
 
-  it("Escape (the dialog's native cancel) closes through the store", () => {
-    resetStores("s1");
-    const lifetime = newLifetime();
-    const { container } = render(<BoardModalHost gridSlot={probeSlot(lifetime)} />);
-    act(() => {
-      useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
-    });
-    const dialog = container.querySelector("dialog");
-    if (dialog === null) throw new Error("dialog did not render");
-
-    act(() => {
-      fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
-    });
-
-    expect(useBoardSurfaceStore.getState().modalBoard).toBeNull();
-    expect(lifetime.cut).toHaveBeenCalledTimes(1);
-  });
-
   it("a session switch cuts the feeds and forgets the other session's boards", () => {
     resetStores("s1");
     const lifetime = newLifetime();
-    render(<BoardModalHost gridSlot={probeSlot(lifetime)} />);
+    render(
+      <>
+        <BoardModalHost gridSlot={probeSlot(lifetime)} />
+        <Places />
+      </>,
+    );
     act(() => {
       const store = useBoardSurfaceStore.getState();
       store.openBoardModal(ref("s1", 12));
@@ -305,16 +438,20 @@ describe("every close path converges on the one close action", () => {
   });
 });
 
-describe("the dialog's accessible name", () => {
-  it("comes from a real title and description, not from the painted header", () => {
+describe("the page's heading", () => {
+  it("is the model's own title, as the head row's heading", () => {
     resetStores("s1");
-    const { container } = render(<BoardModalHost />);
+    render(
+      <>
+        <BoardModalHost />
+        <Places />
+      </>,
+    );
     act(() => {
       useBoardSurfaceStore.getState().openBoardModal(ref("s1", 12));
     });
-    const dialog = container.querySelector("dialog");
     const heading = screen.getByRole("heading", { name: "board 12" });
-    expect(dialog?.getAttribute("aria-labelledby")).toBe(heading.id);
-    expect(dialog?.getAttribute("aria-describedby")).not.toBeNull();
+    expect(heading.getAttribute("data-vex-area")).toBe("board-title");
+    expect(heading.closest('[data-vex-area="board-header"]')).not.toBeNull();
   });
 });

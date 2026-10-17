@@ -20,6 +20,7 @@ import {
   Loading,
   PILL,
   SECTION,
+  SectionHead,
   fmtDate,
 } from "./MemoryPanelShared.js";
 
@@ -40,13 +41,10 @@ export function JobsSection(): JSX.Element {
 
   return (
     <section data-vex-section="memory-jobs" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">Memory jobs</h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          The memory manager&apos;s work queue - consolidation sweeps and
-          reconcile passes. Retries are handled automatically by the manager.
-        </p>
-      </div>
+      <SectionHead
+        title="Memory jobs"
+        lead="The memory manager's work queue - consolidation sweeps. Retries are handled automatically by the manager. Reconcile jobs from earlier versions are counted as retired."
+      />
 
       <JobsBody query={query} />
     </section>
@@ -69,12 +67,9 @@ function JobsBody({
   }
   return (
     <>
-      <div
-        data-vex-jobs-counts
-        className="flex flex-wrap items-center gap-2"
-      >
+      <div data-vex-jobs-counts className="vex-mem-sec__counts">
         {STATUS_COUNTERS.map((s) => (
-          <span key={s.key} className={PILL} data-vex-jobs-count={s.key}>
+          <span key={s.key} className={PILL} data-vex-jobs-count={s.key} data-figure>
             {s.label} {res.data.countsByStatus[s.key]}
           </span>
         ))}
@@ -82,7 +77,7 @@ function JobsBody({
       {res.data.recentJobs.length === 0 ? (
         <Empty label="No memory jobs yet." />
       ) : (
-        <ul className="flex flex-col">
+        <ul className="vex-mem-list">
           {res.data.recentJobs.map((j) => (
             <JobRow key={j.id} job={j} />
           ))}
@@ -97,18 +92,21 @@ function JobRow({ job }: { readonly job: MemoryJobDto }): JSX.Element {
     <li
       data-vex-job-id={job.id}
       data-status={job.status}
-      className="border-b border-line-2 px-1 py-2 last:border-b-0"
+      className="vex-mem-row"
+      data-untitled=""
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs text-ink-primary">#{job.id}</span>
+      <span className="vex-mem-row__m">
+        <span className={PILL} data-figure>
+          #{job.id}
+        </span>
         <span className={PILL}>{job.jobKind}</span>
         <span className={PILL} data-vex-job-status>
           {job.status}
         </span>
-        <span className={PILL}>
+        <span className={PILL} data-figure>
           attempts {job.attemptCount}/{job.maxAttempts}
         </span>
-        <span className={PILL}>
+        <span className={PILL} data-figure>
           items {job.itemsDone} done / {job.itemsFailed} failed /{" "}
           {job.itemsTotal} total
         </span>
@@ -117,16 +115,14 @@ function JobRow({ job }: { readonly job: MemoryJobDto }): JSX.Element {
             wake pending
           </span>
         ) : null}
-        <span
-          data-vex-created
-          title={
-            job.completedAt ?? job.startedAt ?? job.createdAt
-          }
-          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
-        >
-          {fmtDate(job.completedAt ?? job.startedAt ?? job.createdAt)}
-        </span>
-      </div>
+      </span>
+      <span
+        data-vex-created
+        title={job.completedAt ?? job.startedAt ?? job.createdAt}
+        className="vex-mem-row__r"
+      >
+        {fmtDate(job.completedAt ?? job.startedAt ?? job.createdAt)}
+      </span>
     </li>
   );
 }

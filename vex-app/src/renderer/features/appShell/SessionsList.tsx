@@ -39,6 +39,7 @@ import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
 import { SidebarProfile } from "./SidebarProfile.js";
+import { setUpdateCardSlot } from "../updates/update-card-slot.js";
 import { useSessionRowActions } from "./useSessionRowActions.js";
 import {
   SessionsEmptyPlaceholder,
@@ -274,6 +275,12 @@ export function SessionsList({
             </div>
           </div>
         </>
+      )}
+
+      {/* The update card stands here, above the account row (section 4); the
+       * rail has no room for it, so the card floats clear of the rail. */}
+      {rail ? null : (
+        <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
       )}
 
       <footer className="vex-ls-foot" data-rail-foot>

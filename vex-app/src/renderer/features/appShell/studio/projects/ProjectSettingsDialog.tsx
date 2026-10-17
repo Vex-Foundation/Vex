@@ -453,13 +453,13 @@ export function ProjectSettingsDialog({
     >
       <DialogContent className="max-w-2xl" closeOnBackdropClick={false}>
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="gap-2.5 border-line-2 px-8 py-5">
-            <DialogTitle className="vex-eyebrow">
+          <DialogHeader className="gap-1.5 px-8 py-5">
+            <DialogTitle>
               {showingConflict
                 ? PROJECT_SCOPE_CONFLICT_TITLE
                 : PROJECT_SETTINGS_TITLE}
             </DialogTitle>
-            <DialogDescription className="text-xs text-ink-tertiary">
+            <DialogDescription>
               {showingConflict
                 ? PROJECT_SCOPE_CONFLICT_BODY
                 : project === null
@@ -513,22 +513,16 @@ export function ProjectSettingsDialog({
             </DialogPinnedSlot>
           ) : null}
 
-          <DialogFooter className="border-line-2 px-8 py-4">
+          <DialogFooter className="px-8">
             {showingConflict ? (
               <>
-                <Button
-                  type="button"
-                  variant="bare"
-                  onClick={onClose}
-                  className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
-                >
+                <Button type="button" variant="quiet" onClick={onClose}>
                   {PROJECT_CLOSE}
                 </Button>
                 <Button
                   type="button"
                   onClick={() => void reload()}
                   disabled={reloading}
-                  className="h-10 px-6"
                   autoFocus
                 >
                   {reloading
@@ -540,17 +534,15 @@ export function ProjectSettingsDialog({
               <>
                 <Button
                   type="button"
-                  variant="bare"
+                  variant="quiet"
                   onClick={onClose}
                   disabled={pending}
-                  className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
                 >
                   {PROJECT_CANCEL}
                 </Button>
                 <Button
                   type="submit"
                   disabled={!dirty || consentMissing || pending}
-                  className="h-10 px-6"
                 >
                   {pending ? PROJECT_SETTINGS_PENDING : PROJECT_SETTINGS_SUBMIT}
                 </Button>
@@ -591,15 +583,16 @@ function SettingsBody({
   // Collapsing them would report a deleted project as a loading spinner.
   if (projectId === null) return null;
   if (queryFailed) {
+    // Ink, never red: a read that failed is a sentence, not a hue.
     return (
-      <p role="alert" className="text-sm text-danger">
+      <p role="alert" className="text-[14px] leading-[1.45] text-ink-primary">
         {PROJECT_SETTINGS_UNREADABLE}
       </p>
     );
   }
   if (project === null || draft === null) {
     return (
-      <p role="status" className="text-sm text-ink-tertiary">
+      <p role="status" className="text-[14px] leading-[1.45] text-ink-tertiary">
         {PROJECT_SETTINGS_LOADING}
       </p>
     );
@@ -633,7 +626,9 @@ function SettingsBody({
         * render report it would say nothing had changed above the account of
         * what Vex just changed. See `showUnchangedNotice` at the owner. */}
       {showUnchangedNotice ? (
-        <p className="text-xs text-ink-tertiary">{PROJECT_SETTINGS_UNCHANGED}</p>
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+          {PROJECT_SETTINGS_UNCHANGED}
+        </p>
       ) : null}
     </>
   );

@@ -3,14 +3,14 @@
  *
  * WHY A BROWSER PROJECT AND NOT THE ELECTRON FIXTURE. `smoke.spec.ts` says it
  * itself: nothing past SystemCheck is reachable without a live Docker daemon,
- * a migrated Postgres and an unlocked vault, so the board modal cannot be
+ * a migrated Postgres and an unlocked vault, so the Board page cannot be
  * opened there at all. Board geometry is decided entirely by the renderer's
  * own container queries over the real production stylesheet, and
  * `vite.board-layout.config.ts` serves exactly that against the real
  * `BoardModalHost` / `BoardGrid` / `TokenCardV3`. The only thing faked is the
  * preload bridge, which is the process boundary and nothing above it.
  *
- * WHAT THESE ASSERTIONS ARE. Contract-level and mode-independent: they say
+ * WHAT THESE ASSERTIONS ARE. Contract-level and layout-independent: they say
  * what a reader must never be shown, not which threshold produces it. A
  * threshold is CSS's to own (`global-css/board-layout.css`); these tests are
  * what makes that ownership falsifiable.
@@ -28,12 +28,16 @@ import { test, expect, type Page } from "@playwright/test";
  * `sr-only` and the photo's absence line are one-pixel boxes on purpose: they
  * carry text for assistive technology and are not meant to be seen. The token
  * NAME keeps its ellipsis by product decision (the whole string stays in the
- * `title` and in the card's accessible name), so it is exempt too - and it is
- * the ONLY visible element that is.
+ * `title` and in the card's accessible name), and so does the CHAIN NAME on
+ * the ticker line (the R3 tile's "TICKER · Chain"): the ticker keeps its
+ * budgeted width and the chain concedes, its whole string in the `title` and
+ * in the full-value disclosure's "Chain" row. Those two are the ONLY visible
+ * elements that are exempt.
  */
 const CLIPPED_BY_DESIGN = [
   "board-token-photo-absence",
   "board-token-name",
+  "board-token-chain",
 ];
 
 interface OverflowingRegion {
@@ -75,44 +79,16 @@ async function open(
       ? '[data-vex-area="board-spotlight-hero"]'
       : '[data-vex-area="board-token-card-v3"]',
   );
-  // THE FONT, THEN THE DIALOG'S OWN ANIMATION, THEN THE FRAME.
+  // THE FONT, THEN THE FRAME.
   //
   // Every number this file asserts is a text measurement, and the display
   // face arrives asynchronously: measuring before `document.fonts.ready`
   // reads the fallback's metrics and produces heights that differ between
-  // cards purely by load timing.
-  //
-  // The board dialog also opens with a scale, and a residual
-  // `matrix(0.998275, ...)` on the `<dialog>` scales every
-  // `getBoundingClientRect` beneath it while `getComputedStyle`'s grid tracks
-  // stay unscaled - which reads as a card that misses its track by two
-  // pixels, invented entirely by WHEN the measurement happened.
-  //
-  // So the gate is the PRECONDITION ITSELF - the dialog carrying no transform
-  // - polled per frame, and not a clock and not `Animation.finished`: the
-  // page also runs animations that never finish by design, and awaiting those
-  // hangs until the test times out. The deadline below is a safety net that
-  // turns a hang into a measured failure, never the thing being waited on.
-  // Two frames after that, so the container query and the layout it triggers
-  // have both landed.
+  // cards purely by load timing. The Board is a page in the harness (no
+  // dialog, no entrance scale), so two frames after the fonts are enough for
+  // the container query and the layout it triggers to have landed.
   await page.evaluate(async () => {
     await document.fonts.ready;
-    await new Promise<void>((resolve) => {
-      const deadline = performance.now() + 2000;
-      const settled = (): void => {
-        const dialog = document.querySelector("dialog");
-        if (
-          dialog === null ||
-          getComputedStyle(dialog).transform === "none" ||
-          performance.now() > deadline
-        ) {
-          resolve();
-          return;
-        }
-        requestAnimationFrame(settled);
-      };
-      requestAnimationFrame(settled);
-    });
     await new Promise((resolve) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -236,16 +212,15 @@ async function verticallyClippedRegions(page: Page): Promise<readonly string[]> 
 async function modeOf(
   page: Page,
   selector: string,
-): Promise<{ readonly tracks: number; readonly mode: string }> {
+): Promise<{ readonly tracks: number }> {
   return page.evaluate((sel) => {
     const element = document.querySelector(sel);
-    if (element === null) return { tracks: -1, mode: "missing" };
+    if (element === null) return { tracks: -1 };
     const style = getComputedStyle(element);
     return {
       tracks: style.gridTemplateColumns
         .split(" ")
         .filter((part) => part !== "" && part !== "none").length,
-      mode: style.getPropertyValue("--vex-board-mode").trim(),
     };
   }, selector);
 }
@@ -254,27 +229,27 @@ async function modeOf(
  * THE LADDER, AS ADVERTISED. This table is the head comment of
  * `global-css/board-layout.css` transcribed into assertions - not a second
  * owner of the numbers, but the thing that makes the stylesheet's ownership
- * falsifiable. A permanent one-column regression, or a mode that stopped
- * switching, fails every row of it.
+ * falsifiable. A permanent one-column regression fails every row of it.
+ * The R3 tile has ONE anatomy (no chart, four stats in a row), so the only
+ * thing a width decides is the number of columns.
  */
 const COLUMN_LADDER: readonly {
   readonly min: number;
   readonly columns: number;
-  readonly mode: string;
 }[] = [
-  { min: 1538, columns: 3, mode: "wide" },
-  { min: 1106, columns: 3, mode: "compact" },
-  { min: 1020, columns: 2, mode: "wide" },
-  { min: 732, columns: 2, mode: "compact" },
-  { min: 502, columns: 1, mode: "wide" },
-  { min: 0, columns: 1, mode: "compact" },
+  { min: 958, columns: 3 },
+  { min: 639, columns: 2 },
+  { min: 0, columns: 1 },
 ];
 
-function expectedAt(container: number): { columns: number; mode: string } {
+/** The tile floor: the header's 282 inner width, 36 of padding, a 1px rule. */
+const TILE_FLOOR = 319;
+
+function expectedAt(container: number): { columns: number } {
   for (const step of COLUMN_LADDER) {
-    if (container >= step.min) return { columns: step.columns, mode: step.mode };
+    if (container >= step.min) return { columns: step.columns };
   }
-  return { columns: 1, mode: "compact" };
+  return { columns: 1 };
 }
 
 /** Exact, minus one, plus one, and a fractional hair under the threshold. */
@@ -282,14 +257,14 @@ function seamsOf(threshold: number): readonly number[] {
   return [threshold - 1, threshold, threshold + 1, threshold - 0.02];
 }
 
-const GRID_THRESHOLDS = [358, 502, 732, 1020, 1106, 1538] as const;
+const GRID_THRESHOLDS = [320, 639, 958] as const;
 
 const WIDTHS = [800, 1000, 1280, 1366, 1440, 1920] as const;
 
 test.describe("board grid geometry", () => {
   for (const width of WIDTHS) {
     for (const drawer of [false, true]) {
-      const label = `${String(width)}px${drawer ? " with the Ask VEX drawer" : ""}`;
+      const label = `${String(width)}px${drawer ? " with the Vex sidebar open" : ""}`;
 
       test(`cuts no figure, label, badge or action at ${label}`, async ({ page }) => {
         await open(page, { width, drawer });
@@ -311,7 +286,7 @@ test.describe("board grid geometry", () => {
         expect(new Set(cardHeights).size).toBe(1);
         // Within one pixel, because a fractional container divided by three
         // leaves the engine rounding the track and the card's border box
-        // independently (1280 with the drawer gives a 371.6px track). The
+        // independently (a fractional track with the Vex sidebar open). The
         // assertion that matters is the two above: one width, one height.
         expect(
           Math.abs((cardWidths[0] ?? 0) - (tracks[0] ?? 0)),
@@ -321,7 +296,7 @@ test.describe("board grid geometry", () => {
   }
 
   test("picks columns from the container, not the viewport", async ({ page }) => {
-    // The defect this arc exists for: the drawer removes 360px from the
+    // The defect this arc exists for: the Vex sidebar removes 256px from the
     // CONTAINER while a viewport ladder keeps asking for the same columns.
     await open(page, { width: 1440, drawer: false });
     const wide = await geometry(page);
@@ -331,33 +306,32 @@ test.describe("board grid geometry", () => {
     // columns at a width that still clears every region floor. What must
     // never happen is the tracks staying put while the cards are squeezed
     // below what their content needs.
-    expect(narrow.cardWidths[0]).toBeGreaterThanOrEqual(358);
-    expect(wide.cardWidths[0]).toBeGreaterThanOrEqual(358);
+    expect(narrow.cardWidths[0]).toBeGreaterThanOrEqual(TILE_FLOOR);
+    expect(wide.cardWidths[0]).toBeGreaterThanOrEqual(TILE_FLOOR);
+    // 1440 with Vex hidden is three tiles; the sidebar takes it to two.
+    expect(wide.tracks.length).toBe(3);
+    expect(narrow.tracks.length).toBe(2);
   });
 
-  // BOTH MODES, because the footer is a term in both floors. The drawer case
-  // lands in compact mode; the wide floor is the narrowest card that keeps
-  // the wide anatomy, so it is where the verdict has the least room there.
+  // With the sidebar open, and at the tile floor, where the verdict has the
+  // least room.
   for (const at of [
-    { label: "with the drawer open", width: 1440, drawer: true, mode: "compact" },
-    { label: "at the wide floor", width: 1920, plate: 502, mode: "wide" },
+    { label: "with the Vex sidebar open", width: 1440, drawer: true },
+    { label: "at the tile floor", width: 1920, plate: 320 },
   ] as const) {
     test(`survives the longest safety verdict landing late, ${at.label}`, async ({
       page,
     }) => {
-      // The async overlay case. Every card starts on "Checking" (83px) and
-      // settles on "Checks unavailable in this response" (308px), which is
-      // the widest string the frozen chip table can produce. Neither state
-      // may cut a label or an action, and the grid must not reflow the
-      // reader's cards under them.
+      // The async overlay case. Every card starts on "Checking" (about 71px)
+      // and settles on "Checks unavailable in this response" (about 218px with
+      // its swatch), the widest string the frozen chip table can produce.
+      // Neither state may cut a label or an action, and the grid must not
+      // reflow the reader's cards under them.
       await open(page, {
         width: at.width,
         ...("drawer" in at ? { drawer: at.drawer } : {}),
         ...("plate" in at ? { plate: at.plate } : {}),
       });
-      expect((await modeOf(page, "ul[data-vex-area='board-grid']")).mode).toBe(
-        at.mode,
-      );
       const before = await geometry(page);
       expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
 
@@ -396,7 +370,7 @@ test.describe("board grid geometry", () => {
 
   for (const at of [
     { label: "1440px", width: 1440 },
-    { label: "the compact floor", width: 1440, plate: 358 },
+    { label: "the tile floor", width: 1440, plate: 320 },
   ]) {
     test(`cuts no extreme figure silently at ${at.label}`, async ({ page }) => {
       // THE EXTREME CASE RUNS THE SAME ASSERTION SET AS EVERY OTHER WIDTH.
@@ -442,7 +416,7 @@ test.describe("board grid geometry", () => {
 
   for (const at of [
     { label: "1440px", width: 1440 },
-    { label: "the compact floor", width: 1440, plate: 358 },
+    { label: "the tile floor", width: 1440, plate: 320 },
   ]) {
     test(`cuts no wide-glyph ticker silently at ${at.label}`, async ({
       page,
@@ -464,8 +438,8 @@ test.describe("board grid geometry", () => {
       // And EVERY one of them says it shortened, rather than being silently
       // clipped by the card. All four rows are over their budget: the CJK
       // ticker, the emoji sequences, the combining marks, and `WWWWWWWW` -
-      // which is plain Latin-1, eight characters long, and still 94.56px of
-      // glyphs in an 88px column.
+      // which is plain Latin-1, eight characters long, and still about 107px
+      // of glyphs in a 91px ticker column.
       const tickers = await page.evaluate(() =>
         [
           ...document.querySelectorAll('[data-vex-area="board-token-ticker"]'),
@@ -482,8 +456,8 @@ test.describe("board grid geometry", () => {
         "true",
       ]);
       // The wide-Latin row exactly, because it is the one whose width a
-      // character count claimed to know: four `W`s at 11.82px is 47.28px,
-      // where eight would have been 94.56 in an 88px column.
+      // character count claimed to know: a `W` is about 13.61px in Instrument
+      // Sans at 12.5, so four fit where eight (about 107px) would not.
       expect(tickers[2]?.text).toBe("WWWW…");
     });
   }
@@ -697,10 +671,10 @@ test.describe("board grid geometry", () => {
       ),
     ).toBe("board-token-full-value");
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
-    // The board `<dialog>` listens for the same key and must not have taken
-    // it: closing a panel is not closing the board.
+    // The page listens for the same key (Escape goes back one page) and must
+    // not have taken it: closing a panel is not closing the board.
     await expect(
-      page.locator('[data-vex-surface="board-modal"]'),
+      page.locator('[data-vex-surface="board-page"]'),
     ).toBeVisible();
   });
 
@@ -729,34 +703,31 @@ test.describe("board grid geometry", () => {
  * Driven through `?plate=`, which pins the container's CONTENT box - the box
  * `container-type: inline-size` measures - so a case can sit one hundredth of
  * a pixel under a threshold instead of wherever a viewport width happened to
- * land after the dialog cap and two paddings.
+ * land after the shell's columns and the page padding.
  */
 test.describe("board grid threshold seams", () => {
   for (const threshold of GRID_THRESHOLDS) {
     for (const container of seamsOf(threshold)) {
       const want = expectedAt(container);
-      test(`gives ${String(container)}px ${String(want.columns)} ${want.mode} column(s)`, async ({
+      test(`gives ${String(container)}px ${String(want.columns)} column(s)`, async ({
         page,
       }) => {
         await open(page, { width: 1920, plate: container });
         const measured = await modeOf(page, "ul[data-vex-area='board-grid']");
-        expect(measured).toEqual({
-          tracks: want.columns,
-          mode: want.mode,
-        });
+        expect(measured).toEqual({ tracks: want.columns });
       });
     }
   }
 
-  test("pins the track at the compact floor below it and side-scrolls", async ({
+  test("pins the track at the tile floor below it and side-scrolls", async ({
     page,
   }) => {
     await open(page, { width: 1920, plate: 300 });
     const { tracks, cardWidths } = await geometry(page);
     expect(tracks.length).toBe(1);
-    // The track REFUSES to shrink below the compact floor; the scroller takes
+    // The track REFUSES to shrink below the tile floor; the scroller takes
     // over rather than a figure being cut.
-    expect(cardWidths[0]).toBeGreaterThanOrEqual(358);
+    expect(cardWidths[0]).toBeGreaterThanOrEqual(TILE_FLOOR);
     expect(await ellipsizedRegions(page, CLIPPED_BY_DESIGN)).toEqual([]);
     const scrolls = await page.evaluate(() => {
       const scroller = document.querySelector(
@@ -779,31 +750,37 @@ test.describe("board spotlight region seams", () => {
   const REGIONS = [
     {
       area: "board-spotlight-hero",
-      threshold: 884,
-      below: 2,
-      above: 4,
-    },
-    {
-      area: "board-spotlight-chart-row",
-      threshold: 856,
-      below: 1,
-      above: 2,
-    },
-    {
-      area: "board-spotlight-factual-row",
-      threshold: 576,
-      below: 1,
-      above: 2,
-    },
-    {
-      area: "board-spotlight-factual-row",
-      threshold: 872,
+      threshold: 600,
       below: 2,
       above: 3,
     },
     {
+      area: "board-spotlight-chart-row",
+      threshold: 764,
+      below: 1,
+      above: 2,
+    },
+    {
+      area: "board-spotlight-assess-row",
+      threshold: 628,
+      below: 1,
+      above: 2,
+    },
+    {
+      area: "board-spotlight-factual-row",
+      threshold: 628,
+      below: 1,
+      above: 2,
+    },
+    {
       area: "board-spotlight-plus-row",
-      threshold: 656,
+      threshold: 628,
+      below: 1,
+      above: 2,
+    },
+    {
+      area: "board-spotlight-context-row",
+      threshold: 628,
       below: 1,
       above: 2,
     },
@@ -826,14 +803,14 @@ test.describe("board spotlight region seams", () => {
     }
   }
 
-  test("stacks the compact hero instead of crushing the price into 88px", async ({
+  test("stacks the compact hero instead of crushing the price into 52px", async ({
     page,
   }) => {
-    // THE DEFECT: below 884 the hero is `88px 1fr` and its four children are
-    // auto-placed, which puts the price block in row 2 COLUMN 1 - the 88px
-    // photo track - and the Spotlight toggle beside it. The price is the
-    // largest type on the surface; 88px is not a price.
-    await open(page, { width: 1920, view: "spotlight", spotlightPlate: 800 });
+    // THE DEFECT: below 600 the hero is `52px 1fr` and its three children
+    // would be auto-placed, which puts the price block in row 2 COLUMN 1 -
+    // the 52px photo track. The price is the largest type on the surface;
+    // 52px is not a price.
+    await open(page, { width: 1920, view: "spotlight", spotlightPlate: 560 });
     const boxes = await page.evaluate(() => {
       const read = (area: string): { left: number; width: number } | null => {
         const element = document.querySelector(`[data-vex-area="${area}"]`);
@@ -844,26 +821,28 @@ test.describe("board spotlight region seams", () => {
       return {
         photo: read("board-spotlight-photo"),
         price: read("board-spotlight-price-block"),
-        toggle: read("board-spotlight-toggle"),
       };
     });
     expect(boxes.photo).not.toBeNull();
     expect(boxes.price).not.toBeNull();
-    expect(boxes.toggle).not.toBeNull();
-    // Both stacked rows start at the hero's own left edge and the price gets
+    // The stacked row starts at the hero's own left edge and the price gets
     // the whole inline size, not the photo's track.
     expect(boxes.price?.left).toBe(boxes.photo?.left);
-    expect(boxes.toggle?.left).toBe(boxes.photo?.left);
-    expect(boxes.price?.width ?? 0).toBeGreaterThan(600);
+    expect(boxes.price?.width ?? 0).toBeGreaterThan(500);
   });
 
-  test("keeps the four-track hero above the threshold", async ({ page }) => {
+  test("keeps the three-track hero above the threshold", async ({ page }) => {
     await open(page, { width: 1920, view: "spotlight", spotlightPlate: 1000 });
     const boxes = await page.evaluate(() => {
-      const read = (area: string): { left: number } | null => {
+      const read = (area: string): { left: number; bottom: number; top: number } | null => {
         const element = document.querySelector(`[data-vex-area="${area}"]`);
         if (!(element instanceof HTMLElement)) return null;
-        return { left: Math.round(element.getBoundingClientRect().left) };
+        const rect = element.getBoundingClientRect();
+        return {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          bottom: Math.round(rect.bottom),
+        };
       };
       return {
         photo: read("board-spotlight-photo"),
@@ -871,14 +850,17 @@ test.describe("board spotlight region seams", () => {
         toggle: read("board-spotlight-toggle"),
       };
     });
-    // Wide mode puts all four on ONE row, so nothing shares the photo's left.
+    // Wide mode puts all three on ONE row, so nothing shares the photo's
+    // left; the pressed Spotlight chip sits in the back row above the hero.
     expect(boxes.price?.left ?? 0).toBeGreaterThan(boxes.photo?.left ?? 0);
-    expect(boxes.toggle?.left ?? 0).toBeGreaterThan(boxes.price?.left ?? 0);
+    expect(boxes.toggle?.bottom ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+      boxes.photo?.top ?? 0,
+    );
   });
 });
 
 test.describe("board paint", () => {
-  test("draws square tiles with a blue sparkline and a fill status chip", async ({
+  test("draws square tiles with a fill status chip and figures in JetBrains Mono", async ({
     page,
   }) => {
     await open(page, { width: 1440 });
@@ -901,7 +883,7 @@ test.describe("board paint", () => {
     expect(paint?.priceFont).toContain("JetBrains Mono");
   });
 
-  test("sets the modal header in JetBrains Mono on a ruled paper sheet", async ({
+  test("sets the page's head row title in Instrument Sans over a quiet rule", async ({
     page,
   }) => {
     await open(page, { width: 1440 });
@@ -914,7 +896,7 @@ test.describe("board paint", () => {
         rule: getComputedStyle(head).borderBottomWidth,
       };
     });
-    expect(header?.font).toContain("JetBrains Mono");
+    expect(header?.font).toContain("Instrument Sans");
     expect(header?.rule).toBe("1px");
   });
 });

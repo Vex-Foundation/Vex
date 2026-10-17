@@ -19,19 +19,21 @@ import type { FileNodeKind } from "@shared/schemas/files.js";
 import type { FileOpenMode } from "../workspace/types.js";
 import type { ExplorerRowPending } from "./explorer-rows.js";
 import {
-  IconChevronRight,
-  IconFile,
-  IconFolderClose,
-  IconFolderOpen,
-  IconLink,
-  IconLoading,
-  IconWarning,
-} from "../../../../components/icons/index.js";
+  LineChevronRight,
+  LineFile,
+  LineFolder,
+  LineLink,
+  LineWarning,
+} from "../../../../components/icons/line/index.js";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { cn } from "../../../../lib/utils.js";
 
-/** Row height in pixels. A file tree is denser than the 32px rail row. */
-export const EXPLORER_ROW_HEIGHT = 24;
+/**
+ * Row height in pixels: 28, denser than the 34px project row
+ * (docs/design/R3-MINIMAL.md section 4, "Studio": explorer rows 28 high, 13.5,
+ * line icons 14 in ink 2).
+ */
+export const EXPLORER_ROW_HEIGHT = 28;
 
 /** Indent per depth level, in pixels. */
 const INDENT_PER_LEVEL = 12;
@@ -136,17 +138,16 @@ function LeadingGlyph({
   // A notice is marked only when it reports a FAILURE. "This project has no
   // files yet" is information, and a warning mark on it would say otherwise.
   // The slot is kept either way so the text stays on the tree's indent grid.
-  if (rowKind === "notice") return errored ? <IconWarning size={14} /> : null;
+  if (rowKind === "notice") return errored ? <LineWarning size={14} /> : null;
   if (rowKind === "loadMore") return null;
-  if (errored) return <IconWarning size={14} />;
-  if (nodeKind === "directory") {
-    return expanded === true ? <IconFolderOpen size={14} /> : <IconFolderClose size={14} />;
-  }
+  if (errored) return <LineWarning size={14} />;
+  // One folder glyph open or closed: the twistie beside it carries the state.
+  if (nodeKind === "directory") return <LineFolder size={14} />;
   // A symlink shows the LINK mark rather than a file mark: main refuses to
   // follow it, so a row that looked like an ordinary file would be a promise
   // the product does not keep.
-  if (nodeKind === "symlink") return <IconLink size={14} />;
-  return <IconFile size={14} />;
+  if (nodeKind === "symlink") return <LineLink size={14} />;
+  return <LineFile size={14} />;
 }
 
 export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): JSX.Element {
@@ -194,7 +195,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
             }
       }
       className={cn(
-        "flex w-full cursor-pointer select-none items-center gap-1 pr-2 text-[13px] leading-[24px]",
+        "flex w-full cursor-pointer select-none items-center gap-[7px] pr-2 text-[13.5px] leading-[28px]",
         // Hover fill and selected fill are the same tint, as the rail rows are.
         // `vex-tint` settles that fill over the fast step instead of snapping
         // it. COLOUR ONLY, and that is a constraint rather than a preference:
@@ -219,25 +220,31 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         // ONE ROW carries both marks, because one row is both: the selection
         // fill and the focus ring belong to the keyboard cursor in a
         // single-select tree.
+        // The selection is the left sidebar's: the selection wash and blue type,
+        // with the focus ring inside the row for the keyboard cursor.
         props.focused
-          ? "bg-interactive-hover ring-1 ring-inset ring-ring"
+          ? "bg-[var(--ls-sel)] text-accent-primary ring-1 ring-inset ring-focus"
           : "hover:bg-interactive-hover",
-        props.rowKind === "notice" ? "text-ink-tertiary" : "text-ink-primary",
+        props.focused
+          ? null
+          : props.rowKind === "notice" ? "text-ink-tertiary" : "text-ink-primary",
       )}
     >
       <span
         aria-hidden="true"
-        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-tertiary"
+        className="flex h-4 w-3.5 shrink-0 items-center justify-center text-ink-tertiary"
       >
         {/* A PENDING WRITE takes the twistie slot, so a row waiting on main is
           * visibly busy without the list reflowing. It outranks the directory's
           * own loading spinner: a folder being renamed while its children load
           * is one row the user is waiting on, not two. */}
         {props.loading || props.pending !== null ? (
-          <IconLoading size={12} />
+          // Busy is a state, so it is the stepping dot screen, the one swatch
+          // that moves; the word is the row's description or the list's own.
+          <Swatch state="ongoing" size={10} />
         ) : isDirectory ? (
-          <IconChevronRight
-            size={12}
+          <LineChevronRight
+            size={14}
             // `vex-twistie` replaced a hand-written
             // `transition-transform duration-150 motion-reduce:transition-none`:
             // same behaviour, but the 150 is now the `--vex-duration-base`
@@ -249,7 +256,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       </span>
       <span
         aria-hidden="true"
-        className="flex h-4 w-4 shrink-0 items-center justify-center text-accent-primary"
+        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-secondary"
       >
         <LeadingGlyph
           rowKind={props.rowKind}
@@ -273,11 +280,11 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
         // more than a colour: the dot itself is aria-hidden, and this row has
         // no visible word saying the file drifted.
         <span
-          className="flex shrink-0 items-center text-warning"
+          className="flex shrink-0 items-center text-ink-primary"
           title={props.driftLabel}
           data-vex-file-drift="true"
         >
-          <Swatch state="warning" size={8} label={props.driftLabel} />
+          <Swatch state="concerned" size={10} label={props.driftLabel} />
         </span>
       )}
       {props.describedById === null || props.description === null ? null : (

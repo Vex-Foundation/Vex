@@ -117,9 +117,9 @@ export function ProjectRepairDialog({
       }}
     >
       <DialogContent className="max-w-lg" closeOnBackdropClick={false}>
-        <DialogHeader className="border-line-2">
+        <DialogHeader>
           <DialogTitle>{PROJECT_REPAIR_TITLE}</DialogTitle>
-          <DialogDescription className="text-ink-secondary">
+          <DialogDescription>
             {project === null
               ? PROJECT_REPAIR_BODY
               : projectFolderLine(project.displayPath)}
@@ -135,10 +135,14 @@ export function ProjectRepairDialog({
           * and a strip still promising a rewrite would be describing the past
           * in the future tense. */}
         {render === null ? (
-          <DialogConsequence tone="notice" data-vex-consent="repair">
+          <DialogConsequence
+            tone="notice"
+            data-vex-consent="repair"
+            className="text-[13px] leading-[1.45]"
+          >
             <span className="font-medium">{PROJECT_REPAIR_CONSEQUENCE_WHAT}</span>
             {project !== null ? (
-              <span className="truncate font-mono text-[11px] text-ink-secondary">
+              <span className="vex-num truncate text-[12px] text-ink-secondary">
                 {projectFolderLine(project.displayPath)}
               </span>
             ) : null}
@@ -179,18 +183,17 @@ export function ProjectRepairDialog({
           </DialogPinnedSlot>
         ) : null}
 
-        <DialogFooter className="border-line-2">
+        <DialogFooter>
           {render === null ? (
             <>
               <Button
                 type="button"
-                variant="bare"
+                variant="quiet"
                 onClick={onClose}
                 disabled={pending}
                 // The safer choice takes focus (rule 08); `DialogContent`
                 // moves focus here after `showModal()`.
                 {...DIALOG_INITIAL_FOCUS}
-                className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
               >
                 {PROJECT_CANCEL}
               </Button>

@@ -1,21 +1,28 @@
-/* Lighter desk tokens (docs/design/V10-SPREAD.md sections 1 and 2). The desk
- * components consume stable semantic roles (`--lit-*`); every role points at
- * the app's alias tier, so the desk is the room's own paper, ink, rules and
+/* Lighter desk tokens (docs/design/R3-MINIMAL.md sections 1.2 and 9.3). The
+ * desk components consume stable semantic roles (`--lit-*`); every role points
+ * at the app's alias tier, so the desk is the room's own paper, ink, rules and
  * the one blue in both themes.
  *
  * The deployment never repaints the desk: Core and Robinhood Chain are named
- * by the environment switch's logo and label, and `--lit-environment-mark` is
- * the blue in both. Direction follows the law every status follows: up is the
- * blue, down the ink, and a glyph (the arrow, the sign) carries the word.
+ * by the environment switch's words, and `--lit-environment-mark` is the blue
+ * in both. `--lit-positive` and `--lit-negative` stay the blue and the ink for
+ * whatever is not a trading value (price lines, studies, drawings, the order
+ * handle, the splitters).
  *
- * THE ONE HUE PAIR. Green and red appear on the candlesticks and their volume
- * bars only, and only through `--lit-candle-*`, which is declared on the chart
- * canvas host alone (below). Price lines, fill markers, studies, the depth
- * bars and every label around the chart stay blue and ink.
+ * THE TRADING PAIR. Trading values (bids and asks, the B and S ratio, a
+ * position's side, the day change beside the last price) take
+ * `--lit-trade-up` and `--lit-trade-down`, the app's trading aliases; a solid
+ * Long or Short key carries `--lit-trade-ink` type. Never a status, never a
+ * state word.
  *
- * DENSITY. The desk is a pro surface: Departure Mono 11px caps for labels,
- * 11 to 12px for data, Instrument Sans only for the order actions, the check
- * labels and the chat. No counters, no serif inside the desk. */
+ * THE CANDLE PAIR. The candlesticks and their volume bars keep their own
+ * green and red, through `--lit-candle-*`, declared on the chart canvas host
+ * alone (below).
+ *
+ * TYPE. Words are Instrument Sans in sentence case (labels 11.5 to 13.5,
+ * tabs 13.5); figures are JetBrains Mono, tabular, at -0.01em. The desk's
+ * base stays the mono so a figure never falls back to the sans; each word
+ * sets the sans on its own rule. Caps live only on tags. */
 .lit-desk,
 .lit-chat-frame {
   /* Ground and rules: one paper; regions are told apart by a 1px rule. */
@@ -34,9 +41,19 @@
   --lit-ink-secondary: var(--vex-alias-label-secondary);
   --lit-ink-muted: var(--vex-alias-label-tertiary);
 
-  /* Direction: up and bids are the blue, down and asks the ink. */
+  /* Direction off the trading values: the blue and the ink. */
   --lit-positive: var(--vex-alias-accent-primary);
   --lit-negative: var(--vex-alias-label-primary);
+  /* The blue of type: a selected tab, an on toggle, a link. */
+  --lit-accent: var(--vex-alias-accent-primary);
+  /* The selection fill: a pressed segment, a selected row. */
+  --lit-pressed: var(--vex-alias-interactive-active);
+  /* The ink frame of a popover. */
+  --lit-rule-ink: var(--vex-alias-rule-ink);
+  /* The trading pair, and the type on its solid keys. */
+  --lit-trade-up: var(--vex-alias-trade-up);
+  --lit-trade-down: var(--vex-alias-trade-down);
+  --lit-trade-ink: var(--vex-alias-trade-ink);
   /* Attention (an approval waiting, a delayed feed) is the blue as well:
    * its fill pattern, not a hue, tells it from a live state. */
   --lit-warning: var(--vex-alias-state-warn);
@@ -53,28 +70,22 @@
   --lit-ink-fill-ink: var(--vex-alias-label-on-primary);
   --lit-ink-fill-hover: var(--vex-alias-button-primary-hover);
 
-  /* Book depth: bids a solid blue wash, asks an ink hatch (45deg, 1px in 3). */
-  --lit-depth-bid: color-mix(in srgb, var(--lit-positive) 14%, transparent);
-  --lit-depth-ask: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--lit-ink) 32%, transparent) 0 1px,
-    transparent 1px 3px
-  );
+  /* Book depth: each side a wash of its trading colour, 14% and 12%. */
+  --lit-depth-bid: color-mix(in srgb, var(--lit-trade-up) 14%, transparent);
+  --lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 12%, transparent);
 
   --lit-focus: var(--vex-alias-focus);
   --lit-hover: var(--vex-alias-interactive-hover);
   --lit-selection: color-mix(in srgb, var(--vex-alias-accent-primary) 24%, transparent);
   --lit-scrollbar: var(--vex-alias-scrollbar-l1);
 
-  /* Registers: Departure Mono caps tracking (labels, status words) and the
-   * data tracking for figures. */
+  /* Tracking: caps on tags only, and the figures' -0.01em. */
   --lit-tr-label: var(--tracking-chip, 0.12em);
   --lit-tr-status: var(--tracking-status, 0.14em);
   --lit-tr-eyebrow: var(--tracking-eyebrow, 0.18em);
   --lit-tr-caps-data: 0.1em;
-  --lit-tr-data: 0.02em;
-  /* The chart library sizes its own axis text in px; 11 is the desk's data
-   * size and one of Departure Mono's crisp sizes. */
+  --lit-tr-data: -0.01em;
+  /* The chart library sizes its own axis text in px: the desk's 11. */
   --lit-chart-font-size: 11;
 
   background: var(--lit-bg);
@@ -85,13 +96,20 @@
   caret-color: var(--lit-focus);
 }
 
-/* The desk and its top bar speak Departure Mono; the chat rail and the
- * dialogs that share the scope keep the room's sans for reading. */
-.lit-desk,
-.lit-desk-topbar {
+/* The desk's base is the figure face (JetBrains Mono, tabular); every word
+ * sets the sans on its own rule. The title row and the desk chat are words
+ * first, so they start from the sans. */
+.lit-desk {
   font-family: var(--font-mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   letter-spacing: var(--lit-tr-data);
+}
+
+.lit-desk-topbar {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
 
 .lit-desk[data-lighter-theme="celeris"],
@@ -145,24 +163,25 @@
   outline-offset: 3px;
 }
 
-/* The desk's square check box: a 1.5px ink frame on the field, an ink fill
- * and a paper tick when checked. Native, so keyboard and forms behave as
- * before. */
+/* The desk's square check box (docs/design/R3-MINIMAL.md section 1.5, at
+ * the desk's density): 14 x 14 with a 1px ink frame on the field; checked is
+ * the fill blue with a white tick, the ink frame kept so the silhouette holds
+ * on night paper. Native, so keyboard and forms behave as before. */
 .lit-desk input[type="checkbox"],
 .lit-environment-dialog input[type="checkbox"] {
   appearance: none;
   display: inline-grid;
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   flex: 0 0 auto;
   place-items: center;
   margin: 0;
-  border: 1.5px solid var(--lit-ink);
+  border: 1px solid var(--lit-rule-ink);
   background: var(--lit-field);
 }
 
 .lit-desk input[type="checkbox"]:checked,
-.lit-environment-dialog input[type="checkbox"]:checked { background: var(--lit-ink); }
+.lit-environment-dialog input[type="checkbox"]:checked { background: var(--lit-action); }
 
 .lit-desk input[type="checkbox"]:checked::after,
 .lit-environment-dialog input[type="checkbox"]:checked::after {
@@ -170,7 +189,7 @@
   width: 4px;
   height: 8px;
   margin-top: -2px;
-  border: solid var(--lit-bg);
+  border: solid var(--lit-action-ink);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }
@@ -179,15 +198,16 @@
 .lit-environment-dialog input[type="checkbox"]:disabled { border-style: dotted; opacity: 0.6; }
 
 /* Status by fill on the desk's live marks (the market bar's Live word, the
- * book and tape marks, the chart's lag word): solid = live, dot screen =
+ * book and tape marks, the chart's lag word), 10px state swatches
+ * (docs/design/R3-MINIMAL.md section 1.6): solid = live, dot screen =
  * connecting, target = delayed, ink cross = unavailable, outline = waiting.
  * The patterns are the swatch's (ui-primitives/marks.css). */
 .lit-live-status i,
 .lit-live-dot,
 .lit-chart-connection i {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   flex: 0 0 auto;
   box-sizing: border-box;
   background: currentColor;

@@ -26,6 +26,7 @@
 @import "./global-css/title-bar.css";
 @import "./global-css/vex-sidebar.css";
 @import "./global-css/overlay.css";
+@import "./global-css/settings.css";
 @import "./global-css/console.css";
 @import "./global-css/chronos-gate.css";
 @import "./global-css/lighter-tokens.css";
@@ -42,3 +43,5 @@
 @import "./global-css/terminal.css";
 @import "./global-css/superboard-key.css";
 @import "./global-css/left-sidebar.css";
+@import "./global-css/update-card.css";
+@import "./global-css/memory.css";

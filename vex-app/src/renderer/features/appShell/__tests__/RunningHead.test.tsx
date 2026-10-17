@@ -250,7 +250,7 @@ describe("the Studio host pill", () => {
   it("sits in the cluster in Studio, and nowhere else", () => {
     renderHead("studio");
     expect(screen.getByLabelText(/Vex Studio host status$/).textContent).toContain(
-      "Running 2 connected",
+      "Running · 2 connected",
     );
     cleanup();
     renderHead("agent", SESSION);
@@ -271,7 +271,7 @@ describe("the Studio host pill", () => {
   });
 
   it.each([
-    [makeHostStatus({ connectionCount: 0 }), "Running 0 connected", null],
+    [makeHostStatus({ connectionCount: 0 }), "Running · 0 connected", null],
     [makeHostStatus({ connectionCount: 16, atCapacity: true }), "Running at capacity", null],
     [makeHostStatus({ state: "locked" }), "Locked", null],
     [makeHostStatus({ state: "starting" }), "Starting", null],

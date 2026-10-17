@@ -127,6 +127,9 @@ describe("CompactionApplyButton - state table", () => {
   it("summary_ready → enabled, shimmering, with the consequence in the label", () => {
     renderButton(prep("summary_ready"));
     const button = screen.getByRole("button");
+    // The small blue outline key of the kit (never a fill: send stays the one).
+    expect(button.getAttribute("data-vex-button")).toBe("ghost");
+    expect(button.getAttribute("data-vex-button-size")).toBe("sm");
     expect((button as HTMLButtonElement).disabled).toBe(false);
     expect(button.textContent).toBe("Compact now");
     expect(button.className).toContain("vex-badge--shimmer");
@@ -167,6 +170,8 @@ describe("CompactionApplyButton - state table", () => {
     renderButton(prep("failed"));
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Preparation failed");
+    // A failure is the ink cross and a word, never a hue.
+    expect(screen.getByRole("status").getAttribute("data-s")).toBe("error");
   });
 
   it("no shimmer in any state other than summary_ready", () => {

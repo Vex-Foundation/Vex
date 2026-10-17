@@ -1,13 +1,16 @@
 /* ---------------------------------------------------------------------------
- * Chart panel (docs/design/V10-SPREAD.md section 1). The candles and their
- * volume are the one place green and red appear (lighter-tokens.css scopes
- * the pair to the canvas); everything drawn around them is blue and ink.
+ * Chart panel (docs/design/R3-MINIMAL.md section 9.3). Words are Instrument
+ * Sans in sentence case, figures are JetBrains Mono; every rule that sets a
+ * word sets the sans, because the desk's own base is the mono. The candles
+ * and their volume are the one place green and red appear (lighter-tokens.css
+ * scopes the pair to the canvas host); everything drawn around them is blue
+ * and ink, and the chrome carries no trading colour.
  * ------------------------------------------------------------------------- */
 
 .lit-chart-body {
   /* The analysis toolbar above and the drawing rail beside the canvas. */
   --lit-chart-toolbar: 36px;
-  --lit-chart-rail: 36px;
+  --lit-chart-rail: 34px;
   position: relative;
   min-height: 260px;
   flex: 1 1 auto;
@@ -23,32 +26,51 @@
   left: var(--lit-chart-rail);
 }
 
-/* Intervals: plain mono figures; the chosen one is blue in a blue frame. */
+/* Intervals: 24 high mono keys; the chosen one is blue in a 1px blue frame.
+ * The strip ends in the 1 x 16 rule that sets the chart controls apart. */
 .lit-resolution-tabs {
   display: flex;
   min-width: 0;
+  align-items: center;
   overflow: auto hidden;
   scrollbar-width: none;
 }
 
 .lit-resolution-tabs::-webkit-scrollbar { display: none; }
 
+.lit-resolution-tabs::after {
+  width: 1px;
+  height: 16px;
+  flex: 0 0 1px;
+  align-self: center;
+  margin: 0 8px;
+  background: var(--lit-line-quiet);
+  content: "";
+}
+
 .lit-resolution-tabs button {
-  min-width: 28px;
+  min-width: 30px;
   height: 24px;
   flex: 0 0 auto;
   border: 0;
   background: transparent;
   padding: 0 6px;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
 }
 
-.lit-resolution-tabs button:hover { color: var(--lit-ink); }
+.lit-resolution-tabs button:hover {
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
 
 .lit-resolution-tabs button[aria-pressed="true"] {
-  color: var(--lit-positive);
-  outline: 1px solid var(--lit-positive);
+  color: var(--lit-accent);
+  font-weight: 500;
+  outline: 1px solid var(--lit-accent);
   outline-offset: -1px;
 }
 
@@ -72,9 +94,9 @@
   align-items: center;
   gap: 6px;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-status);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
@@ -83,7 +105,7 @@
   position: absolute;
   z-index: 3;
   bottom: 34px;
-  left: calc(var(--lit-chart-rail, 36px) + 10px);
+  left: calc(var(--lit-chart-rail, 34px) + 10px);
   display: flex;
   gap: 0;
   border: 1px solid var(--lit-line);
@@ -104,7 +126,7 @@
 .lit-chart-tools button + button { border-left: 1px solid var(--lit-line-quiet); }
 
 .lit-chart-tools button:hover {
-  background: var(--lit-panel-raised);
+  background: var(--lit-hover);
   color: var(--lit-ink);
 }
 
@@ -119,12 +141,12 @@
   padding: 5px 7px;
   color: var(--vex-alias-label-on-chrome);
   content: attr(data-label);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   line-height: 1;
   opacity: 0;
   pointer-events: none;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -133,26 +155,31 @@
   opacity: 1;
 }
 
-/* OHLC readout: the letters in ink, the figures one step back. */
+/* OHLC readout: mono figures in ink 2, the letters a step back in muted. It
+ * leaves the right-hand room to the TradingView credit, so the two never
+ * overlap. */
 .lit-chart-legend {
   position: absolute;
   z-index: 2;
   top: calc(var(--lit-chart-toolbar, 0px) + 8px);
   left: calc(var(--lit-chart-rail, 0px) + 10px);
   display: flex;
-  max-width: calc(100% - 130px);
+  max-width: calc(100% - 300px);
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 4px 10px;
   pointer-events: none;
   color: var(--lit-ink-secondary);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
   line-height: 1.35;
 }
 
 .lit-chart-legend span { white-space: nowrap; }
-.lit-chart-legend b { color: var(--lit-ink); font-weight: 400; }
+.lit-chart-legend b { color: var(--lit-ink-muted); font-weight: 500; }
 
+/* The history note: a quiet sans sentence in a rule frame. */
 .lit-chart-history-boundary {
   position: absolute;
   z-index: 3;
@@ -164,13 +191,13 @@
   transform: translateX(-50%);
   border: 1px solid var(--lit-line);
   background: var(--lit-panel);
-  padding: 4px 8px;
+  padding: 5px 8px;
   pointer-events: none;
   color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-caps-data);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   line-height: 1;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -182,19 +209,19 @@
   flex-direction: column;
   gap: 8px;
   color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
   text-align: center;
 }
 
 .lit-chart-empty > b {
   color: var(--lit-ink);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--lit-tr-status);
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .lit-chart-empty > span:not(.lit-chart-empty-actions) {
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
   font-family: var(--font-sans);
   font-size: 13px;
   letter-spacing: normal;
@@ -207,17 +234,18 @@
   margin-top: 8px;
 }
 
+/* Quiet keys: a 1px rule frame, 28 high, the sans in ink. */
 .lit-chart-empty-actions button {
   height: 28px;
   border: 0;
   outline: 1px solid var(--lit-line);
   outline-offset: -1px;
   background: transparent;
-  padding: 0 10px;
+  padding: 0 12px;
   color: var(--lit-ink);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
 }
 
 .lit-chart-empty-actions button:hover { background: var(--lit-hover); }
@@ -281,19 +309,21 @@
   align-items: center;
   flex-direction: column;
   gap: 6px;
+  font-family: var(--font-sans);
+  letter-spacing: normal;
   text-align: center;
 }
 
 .lit-chart-loading > span b {
   color: var(--lit-ink);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--lit-tr-status);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
 .lit-chart-loading > span small {
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
   font-family: var(--font-sans);
   font-size: 13px;
   letter-spacing: normal;
@@ -309,19 +339,23 @@
   .lit-chart-loading-candle { animation: none; opacity: 0.6; }
 }
 
+/* The TradingView credit rides the chart as an overlay under the toolbar, on
+ * the legend's row (the panel is its positioning context). */
 .lit-chart-footer {
-  display: flex;
-  min-height: 22px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: flex-end;
-  border-top: 1px solid var(--lit-line-quiet);
-  padding: 0 10px;
+  position: absolute;
+  z-index: 3;
+  top: 44px;
+  right: 80px;
+  min-height: 0;
+  border: 0;
+  padding: 0;
 }
 
 .lit-chart-footer a {
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: normal;
   text-decoration: none;
 }
 
@@ -332,8 +366,8 @@
 @container (max-width: 560px) {
   .lit-chart-history-boundary {
     bottom: 70px;
-    left: calc(var(--lit-chart-rail, 36px) + 10px);
-    max-width: calc(100% - var(--lit-chart-rail, 36px) - 80px);
+    left: calc(var(--lit-chart-rail, 34px) + 10px);
+    max-width: calc(100% - var(--lit-chart-rail, 34px) - 80px);
     transform: none;
   }
 }

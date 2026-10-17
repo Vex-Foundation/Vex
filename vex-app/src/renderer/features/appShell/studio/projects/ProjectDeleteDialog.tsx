@@ -17,13 +17,14 @@
  * ## The checkbox upgrades the whole dialog
  *
  * Unchecked, the copy states plainly that the folder stays on disk. Checked,
- * the dialog takes the warning treatment - a warning wash behind the
- * consequence, a warning hairline - because the action stopped being "Vex
- * forgets this project" and became "your files move to the trash". The
- * treatment is built from the existing state tokens rather than by adding a
- * variant to the Dialog primitive: `components/ui/dialog.tsx` has no variant
- * prop, one surface needing a warning register is not evidence that it should,
- * and a fork of the primitive would be a second dialog language.
+ * the dialog takes the warning treatment - the trash choice moves to an ink
+ * frame on the paper 2 plate and its label goes to weight 500 (never a hue,
+ * docs/design/R3-MINIMAL.md section 1) - because the action stopped being
+ * "Vex forgets this project" and became "your files move to the trash". The
+ * treatment is built from the existing tokens rather than by adding a variant
+ * to the Dialog primitive: `components/ui/dialog.tsx` has no variant prop, one
+ * surface needing a warning register is not evidence that it should, and a
+ * fork of the primitive would be a second dialog language.
  *
  * ## The running-terminal line comes from the RENDERER's own state
  *
@@ -135,13 +136,14 @@ import {
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
-import { IconWarning } from "../../../../components/icons/index.js";
+import { LineWarning } from "../../../../components/icons/line/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { showToast } from "../../../../lib/toast.js";
 import { useDeleteProject } from "../../../../lib/api/projects.js";
 import { peekProjectTerminals } from "../workspace/workspace-handles.js";
 import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
 import { SubmitError } from "../../../../components/ui/submit-error.js";
+import { CONSENT_CHECKBOX_CLASS } from "./FullAccessConsent.js";
 import { ArtifactOutcomeList } from "./RenderOutcomePanel.js";
 import {
   PROJECT_CANCEL,
@@ -450,14 +452,14 @@ export function ProjectDeleteDialog({
       }}
     >
       <DialogContent
-        className={cn("max-w-md", warned && "border-warning/40")}
+        className="max-w-md"
         // An explicit choice, never a stray backdrop click.
         closeOnBackdropClick={false}
         data-vex-delete-warned={warned ? "true" : undefined}
       >
-        <DialogHeader className="border-line-2">
+        <DialogHeader>
           <DialogTitle>{PROJECT_DELETE_TITLE}</DialogTitle>
-          <DialogDescription className="text-ink-secondary">
+          <DialogDescription>
             {projectDeleteBody(name)}
           </DialogDescription>
         </DialogHeader>
@@ -470,12 +472,15 @@ export function ProjectDeleteDialog({
           * COUNT stays below with its own rule - it is omitted, never guessed,
           * when this window cannot see the project's shells - while the strip's
           * sentence is true at any count. */}
-        <DialogConsequence data-vex-consent="delete">
+        <DialogConsequence
+          data-vex-consent="delete"
+          className="text-[13px] leading-[1.45]"
+        >
           <span className="font-medium">
             {projectDeleteConsequenceWhat(name)}
           </span>
           {row !== null ? (
-            <span className="truncate font-mono text-[11px] text-ink-secondary">
+            <span className="vex-num truncate text-[12px] text-ink-secondary">
               {projectFolderLine(row.displayPath)}
             </span>
           ) : null}
@@ -493,21 +498,23 @@ export function ProjectDeleteDialog({
 
         <DialogBody className="gap-4">
           {liveTerminalCount !== null ? (
-            <p className="flex items-start gap-1.5 text-xs text-warning">
-              <IconWarning size={13} className="mt-0.5 shrink-0" />
+            <p className="flex items-start gap-1.5 text-[13px] leading-[1.45] text-ink-primary">
+              <LineWarning size={14} className="mt-[3px] shrink-0" />
               <span>{projectDeleteTerminalsLine(liveTerminalCount)}</span>
             </p>
           ) : null}
 
           <label
             className={cn(
-              "flex items-start gap-2.5 border px-3 py-2.5 transition-colors",
+              "flex items-start gap-2.5 border px-3.5 py-3 transition-colors",
               trashFrozen ? "cursor-default" : "cursor-pointer",
+              // Warned is the ink frame on the paper 2 plate: the choice now
+              // touches the user's files, so it reads in ink, never a hue.
               warned
-                ? "border-warning/40 bg-warning-wash"
+                ? "border-rule-ink bg-surface-3"
                 : trashFrozen
-                  ? "border-line-2"
-                  : "border-line-2 hover:bg-interactive-hover",
+                  ? "border-rule"
+                  : "border-rule hover:bg-interactive-hover",
             )}
             data-vex-delete-trash-frozen={trashFrozen ? "true" : undefined}
           >
@@ -519,28 +526,28 @@ export function ProjectDeleteDialog({
               // it can no longer carry.
               disabled={pending || trashFrozen}
               onChange={(event) => setAlsoTrashFolder(event.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-warning)]"
+              className={CONSENT_CHECKBOX_CLASS}
             />
             <span className="flex flex-col gap-1">
               <span
                 className={cn(
-                  "text-sm",
-                  warned ? "text-warning-label" : "text-ink-primary",
+                  "text-[14px] leading-[1.45] text-ink-primary",
+                  warned && "font-medium",
                 )}
               >
                 {PROJECT_DELETE_TRASH_LABEL}
               </span>
-              <span className="text-xs text-ink-tertiary">
+              <span className="text-[12.5px] leading-[1.45] text-ink-tertiary">
                 {PROJECT_DELETE_TRASH_HELP}
               </span>
               {trashFrozen ? (
-                <span className="text-xs text-ink-tertiary">
+                <span className="text-[12.5px] leading-[1.45] text-ink-tertiary">
                   {PROJECT_DELETE_TRASH_LOCKED_NOTE}
                 </span>
               ) : null}
               {trashRecordedElsewhere ? (
                 <span
-                  className="text-xs text-warning"
+                  className="text-[12.5px] leading-[1.45] text-ink-primary"
                   data-vex-delete-trash-elsewhere="true"
                 >
                   {PROJECT_DELETE_TRASH_ELSEWHERE_NOTE}
@@ -550,7 +557,10 @@ export function ProjectDeleteDialog({
           </label>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="vex-project-delete-confirm" className="text-xs">
+            <Label
+              htmlFor="vex-project-delete-confirm"
+              className="text-[13px] leading-[1.45]"
+            >
               {projectDeleteConfirmPrompt(name)}
             </Label>
             <Input
@@ -566,7 +576,7 @@ export function ProjectDeleteDialog({
               className="h-10"
             />
             {typedName.length > 0 && !nameMatches ? (
-              <p className="text-xs text-ink-tertiary">
+              <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
                 {PROJECT_DELETE_CONFIRM_MISMATCH}
               </p>
             ) : null}
@@ -589,10 +599,10 @@ export function ProjectDeleteDialog({
 
         {liveRegion}
 
-        <DialogFooter className="border-line-2">
+        <DialogFooter>
           <Button
             type="button"
-            variant="bare"
+            variant="quiet"
             onClick={onClose}
             disabled={pending}
             // The safer choice takes focus (rule 08). `DialogContent` moves
@@ -600,7 +610,6 @@ export function ProjectDeleteDialog({
             // because React never renders it as the attribute the focusing
             // steps read.
             {...DIALOG_INITIAL_FOCUS}
-            className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             {PROJECT_CANCEL}
           </Button>
@@ -638,20 +647,20 @@ function DeleteOutcome({
     <section
       role="status"
       data-vex-delete-outcome={outcome.outcome}
-      className="flex flex-col gap-2 border border-line-2 px-3 py-2.5"
+      className="flex flex-col gap-2 border border-rule-quiet px-3.5 py-3"
     >
-      <p className="text-sm text-ink-primary">
+      <p className="text-[14px] leading-[1.45] text-ink-primary">
         {PROJECT_DELETE_OUTCOME_SENTENCES[outcome.outcome]}
       </p>
 
       {outcome.outcome === "blocked_active_calls" ? (
-        <p className="text-xs text-ink-tertiary">
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
           {projectDeleteActiveCallsLine(outcome.count)}
         </p>
       ) : null}
 
       {outcome.outcome === "cleanup_pending" ? (
-        <p className="flex flex-col gap-0.5 text-xs text-ink-tertiary">
+        <p className="flex flex-col gap-0.5 text-[12.5px] leading-[1.45] text-ink-tertiary">
           <span>{projectDeleteAttemptsLine(outcome.attempts)}</span>
           <span>{PROJECT_DELETE_ATTEMPTS_NOTE}</span>
         </p>
@@ -663,13 +672,18 @@ function DeleteOutcome({
         <>
           <p
             className={cn(
-              "text-xs",
-              outcome.trash === "failed" ? "text-warning" : "text-ink-tertiary",
+              "flex items-start gap-1.5 text-[13px] leading-[1.45]",
+              outcome.trash === "failed" ? "text-ink-primary" : "text-ink-tertiary",
             )}
             data-vex-delete-trash={outcome.trash}
           >
-            {PROJECT_TRASH_SENTENCES[outcome.trash]}
-            {outcome.trashFailure ? ` ${trashRemediation(outcome.trashFailure)}` : ""}
+            {outcome.trash === "failed" ? (
+              <LineWarning size={14} className="mt-[3px] shrink-0" />
+            ) : null}
+            <span>
+              {PROJECT_TRASH_SENTENCES[outcome.trash]}
+              {outcome.trashFailure ? ` ${trashRemediation(outcome.trashFailure)}` : ""}
+            </span>
           </p>
           {outcome.cleanup.length > 0 ? (
             <div className="flex flex-col gap-1.5">

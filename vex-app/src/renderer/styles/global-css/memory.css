@@ -1,0 +1,365 @@
+/* THE MEMORY PAGE AND THE HOW VEX WORKS ARTICLE (docs/design/R3-MINIMAL.md
+ * sections 9.6 and 12): pages in the centre column with both sidebars
+ * standing, a 760 reading column under the serif page head (the page sheet
+ * draws the head, `overlay.css`). Hairline ledger groups, no boxes except the
+ * advisory card; sentence case sans, figures in the mono face. Radius 0, no
+ * shadow, no blur, tokens only.
+ *
+ *   .vex-mem                   the register (the seven sections)
+ *   .vex-mem-lead              the page's lead line (14.5, ink 2, max 640)
+ *   .vex-mem-card              the advisory-only guarantee: a 1px rule frame
+ *   .vex-mem-more              "How memory works", a native disclosure
+ *   .vex-mem-sec               one section of the register
+ *     __head                   title 15 / 600, the count, the actions
+ *     __lead                   13.5 ink 2
+ *   .vex-mem-tool              the search field and the segmented filter
+ *   .vex-mem-list / -row       hairline rows: title, tags and summary, date
+ *   .vex-mem-tag               20 high, 12, a quiet rule frame
+ *   .vex-article               the How Vex works column (680) and its table
+ *                              of contents */
+
+.vex-mem {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-mem-lead {
+  max-width: 640px;
+  margin: 0 0 22px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+
+.vex-mem-card {
+  box-sizing: border-box;
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+}
+.vex-mem-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mem-card__text {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* "How memory works": the longer explainer, one click away so the register
+ * starts under the card. */
+.vex-mem-more {
+  margin: 0 0 24px;
+  border-top: 1px solid var(--vex-alias-rule);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-mem-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+  cursor: pointer;
+  list-style: none;
+}
+.vex-mem-more > summary::-webkit-details-marker {
+  display: none;
+}
+.vex-mem-more > summary:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-mem-more__chev {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mem-more[open] .vex-mem-more__chev {
+  transform: rotate(90deg);
+}
+.vex-mem-more__body {
+  max-width: 680px;
+  padding: 2px 0 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--vex-alias-label-secondary);
+}
+
+.vex-mem-sec {
+  margin: 0 0 24px;
+}
+.vex-mem-sec__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+.vex-mem-sec__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mem-sec__count {
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mem-sec__lead {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mem-sec__facts {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mem-sec__facts b {
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mem-sec__facts .vex-mem-model {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mem-sec__facts[data-quiet] {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mem-sec__counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+/* The search field and the segmented filter. */
+.vex-mem-tool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.vex-mem-field {
+  box-sizing: border-box;
+  height: 36px;
+  min-width: 160px;
+  max-width: 340px;
+  flex: 1 1 200px;
+  padding: 0 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--vex-alias-label-primary);
+  caret-color: var(--vex-alias-accent-primary);
+}
+.vex-mem-field::placeholder {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mem-field:focus-visible {
+  border-color: var(--vex-alias-accent-primary);
+  outline: none;
+}
+.vex-mem-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-mem-seg > button {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mem-seg > button:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-mem-seg > button[aria-pressed="true"] {
+  background: var(--vex-alias-interactive-active);
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-mem-seg > button:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+/* Hairline rows: no card boxes, no gaps. */
+.vex-mem-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mem-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 16px;
+  padding: 10px 0 11px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-mem-row__t {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mem-row__m {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mem-row__m > span:not(.vex-mem-tag) {
+  min-width: 0;
+}
+.vex-mem-row__r {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A row with no title (a decision, a job, a compaction) is its tags. */
+.vex-mem-row[data-untitled] .vex-mem-row__m {
+  grid-row: 1;
+}
+.vex-mem-row__act {
+  display: inline-flex;
+  align-items: center;
+}
+.vex-mem-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mem-tag[data-figure] {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The states of a section: a word and a quiet line while it loads, one
+ * muted sentence when it is empty, the ink callout when it fails. */
+.vex-mem-loading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  font-size: 14px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mem-loading .vex-loader {
+  width: 120px;
+}
+.vex-mem-empty {
+  margin: 0;
+  padding: 10px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* HOW VEX WORKS: a 680 column of long-form text beside "On this page" at the
+ * right (reading width 15 / 1.65, section heads 20 / 500). */
+.vex-article {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(0, 230px);
+  gap: 48px;
+  align-items: start;
+}
+.vex-article__col {
+  min-width: 0;
+}
+.vex-article__col :where(h2) {
+  scroll-margin-top: 24px;
+}
+.vex-article__toc {
+  position: sticky;
+  top: 8px;
+  min-width: 0;
+}
+.vex-article__eyebrow {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-article__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-article__list li {
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-article__list button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--vex-alias-label-primary);
+}
+.vex-article__list button:hover {
+  color: var(--vex-alias-accent-primary);
+}
+.vex-article__list button[aria-current="true"] {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-article__list button:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+/* Under about 1000 the contents sit above the text instead of beside it. */
+@media (max-width: 1099px) {
+  .vex-article {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .vex-article__toc {
+    position: static;
+    order: -1;
+  }
+}

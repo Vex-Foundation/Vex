@@ -1,5 +1,6 @@
 /**
- * THE LINE UNDER THE BOARD'S TITLE - derived, never authored.
+ * THE LINE BESIDE THE BOARD'S TITLE - derived, never authored (13 muted
+ * on the Board page's head row, docs/design/R3-MINIMAL.md section 9.4).
  *
  * `board.title` above it is the MODEL's own words. This line is the RUNTIME's,
  * and it carries only facts the runtime owns: how many pools this board has
@@ -10,8 +11,8 @@
  * WHY IT IS A HOST SLOT AND NOT PART OF THE GRID. It used to ride a sticky bar
  * at the top of the grid, which put a fact about the BOARD inside a view the
  * spotlight replaces, and got it into position by sticking rather than by
- * layout. As the host's subtitle slot it is beneath the title because that is
- * where the header puts it, and it is the same line in both views.
+ * layout. As the host's subtitle slot it sits beside the title because that
+ * is where the head row puts it, and it is the same line in both views.
  *
  * THE CLOCK FOLLOWS THE FIGURES. The model is rebuilt from the persisted spec
  * with the live overlay drawn over it, exactly as the grid does it, so a board
@@ -50,7 +51,7 @@ export function BoardSubtitle({ board }: BoardSubtitleSlotProps): JSX.Element {
   return (
     <p
       data-vex-area="board-subtitle"
-      className="mt-1 font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em] text-ink-tertiary"
+      className="vex-bd-head__sub"
     >
       {boardSubtitle(model)}
     </p>

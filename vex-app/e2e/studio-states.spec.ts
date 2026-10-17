@@ -617,12 +617,16 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   // reachable states are modelled).
   await expect(welcome.getByRole("button", { name: /^Open / })).toHaveCount(0);
   await expect(welcome).toContainText("No projects yet.");
-  // The way back is a real control here, not a sentence about one: the
-  // Agent | Studio capsule itself, under the wordmark (owner decree
-  // 2026-09-04). It has exactly one home per page, so the rail header mounts
-  // none while this welcome is on screen; the stand-in button is gone.
-  await expect(welcome.getByRole("radiogroup", { name: "Runtime mode" })).toBeVisible();
-  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
+  // The way back is a real control, not a sentence about one: the left
+  // sidebar nav's Chat row, beside this welcome (docs/design/R3-MINIMAL.md
+  // section 4). No capsule anywhere, and the stand-in button is gone.
+  await expect(
+    page
+      .locator('[data-vex-area="studio-sidebar"]')
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("button", { name: "Chat" }),
+  ).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
   await shot(page, `${theme}-01-studio-welcome-empty`);
 

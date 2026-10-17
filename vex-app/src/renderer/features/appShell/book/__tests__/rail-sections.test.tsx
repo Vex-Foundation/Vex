@@ -20,7 +20,6 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { CardStateNote, PortfolioCard, SectionLink } from "../portfolio/PortfolioCard.js";
 import { BookInspectPanel } from "../inspect/BookInspectPanel.js";
-import { ActiveBoardModule } from "../board/ActiveBoardModule.js";
 
 /** A section is drawn on the paper: no glass, no box, no radius, no shadow. */
 function expectSection(node: Element | null, cls: string): void {
@@ -168,10 +167,5 @@ describe("the Portfolio page and its sections are drawn on the paper", () => {
       />,
     );
     expectSection(document.querySelector('[data-vex-area="book-inspect"]'), "vex-vs-inspect");
-  });
-
-  it("the Board module's empty state is a section", () => {
-    render(<ActiveBoardModule />);
-    expectSection(document.querySelector('[data-vex-area="active-board"]'), "vex-bs");
   });
 });

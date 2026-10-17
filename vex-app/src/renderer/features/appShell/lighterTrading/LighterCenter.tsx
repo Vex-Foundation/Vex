@@ -10,7 +10,6 @@ import { MarketBar, streamStatusLabel } from "./MarketBar.js";
 import { MarketChart } from "./MarketChart.js";
 import { MarketPicker } from "./MarketPicker.js";
 import { MarketBookPanel, TradesPanel } from "./OrderBook.js";
-import { setShellStripSlot } from "./shellStripSlot.js";
 import { TradeTicket } from "./TradeTicket.js";
 import {
   LIGHTER_BOOK_COLUMN_DEFAULT_SHARE,
@@ -35,7 +34,12 @@ import { useSplitter } from "./useSplitter.js";
 
 const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
 
-/** The Lighter desk: chart, book over trades, ticket, account dock — the shell's center column. */
+/**
+ * The Lighter desk under its title row (docs/design/R3-MINIMAL.md section
+ * 9.3): the market bar, then the chart, the book and the ticket, with the
+ * account dock below. The title bar's cluster rides in the title row
+ * (`LighterSidebar`), not here.
+ */
 export function LighterCenter({ zenMode, onOpenZenAssistant }: {
   readonly zenMode?: boolean;
   readonly onOpenZenAssistant?: () => void;
@@ -85,8 +89,6 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           onReload={desk.reloadMarketData}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
         />
-        {/* The shell strip's notices/approvals/export land here; see shellStripSlot.ts. */}
-        <div className="lit-desk-top-shell" ref={setShellStripSlot} />
         {marketPickerOpen ? (
           <MarketPicker
             environment={environment}
@@ -254,7 +256,7 @@ function DeskBody({ desk, theme }: {
   const symbols = marketSymbols(market.symbol, market.marketType);
   const bookTabs = stacked ? (
     <div className="lit-panel-tabs" role="tablist" aria-label="Book panel">
-      <button type="button" role="tab" aria-selected={bookTab === "book"} onClick={() => setBookTab("book")}>Order Book</button>
+      <button type="button" role="tab" aria-selected={bookTab === "book"} onClick={() => setBookTab("book")}>Order book</button>
       <button type="button" role="tab" aria-selected={bookTab === "trades"} onClick={() => setBookTab("trades")}>Trades</button>
     </div>
   ) : undefined;

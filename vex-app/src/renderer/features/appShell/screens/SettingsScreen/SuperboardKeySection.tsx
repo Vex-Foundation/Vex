@@ -1,7 +1,8 @@
 /**
- * Settings → Superboard key. Same chrome as wizard-hosted Settings
- * sections (icon badge, serif title, lede, footer actions, trailing
- * meta) without joining the wizard step union.
+ * Settings -> Superboard key. The section sheet draws its head (name, status
+ * word, lead; docs/design/R3-MINIMAL.md section 9.6); this view is the body: the
+ * key in a framed row with Show and Copy, the status line, the actions and the
+ * privacy link, without joining the wizard step union.
  *
  * One status row (the only live region and the only activity indicator):
  * its sentence is resolved from the structured failure, never parsed out
@@ -17,7 +18,7 @@
  */
 
 import { useEffect, useState, type JSX } from "react";
-import { IconArrowUpRight } from "../../../../components/icons/index.js";
+import { LineExternal } from "../../../../components/icons/line/index.js";
 import { Button } from "../../../../components/ui/button.js";
 import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
 import { useCopyFeedback } from "../../../../lib/use-copy-feedback.js";
@@ -25,13 +26,11 @@ import {
   useGenerateSuperboardKey,
   useSuperboardKey,
 } from "../../../../lib/api/superboard-key.js";
-import { cn } from "../../../../lib/utils.js";
 import { VEX_PRIVACY_DOC_LABEL, VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 import type {
   ShareTokenAttempt,
   SuperboardKeyStatus,
 } from "@shared/schemas/superboard-key.js";
-import { SUPERBOARD_KEY_ICON } from "./settings-sections.js";
 import {
   superboardFailureCopy,
   type SuperboardFailureContext,
@@ -39,11 +38,6 @@ import {
 import { superboardAttemptTime } from "./superboard-attempt-time.js";
 
 const MASK = "••••••••••••••••••••••••";
-
-const ICON_CIRCLE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden",
-  "border border-[var(--color-border)] text-ink-primary",
-);
 
 function statusFromQuery(
   query: ReturnType<typeof useSuperboardKey>,
@@ -143,25 +137,31 @@ export function SuperboardKeySection(): JSX.Element {
       data-vex-superboard-attempt={attemptKind}
       aria-busy={busy || undefined}
     >
-      <header className="vex-step-header flex items-start gap-4">
-        <span aria-hidden className={ICON_CIRCLE_CHROME}>
-          <SUPERBOARD_KEY_ICON size={36} />
-        </span>
-        <div className="flex flex-col gap-1.5 pt-0.5">
-          <h1 className="font-serif text-2xl font-normal leading-tight text-ink-primary">
-            Superboard key
-          </h1>
-          <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
-            One code, generated once. Paste it in Superboard.
-          </p>
+      {showKeyBlock ? (
+        <div className="vex-set__keyrow">
+          <code className="vex-set__key">
+            <span key={revealed ? "revealed" : "masked"} className="vex-superboard-key-swap">
+              {revealed ? shareToken : MASK}
+            </span>
+          </code>
+          {readFailed || mutationFailed ? null : (
+            <div className="vex-set__keys">
+              <Button variant="quiet" size="sm" onClick={() => setRevealed((value) => !value)}>
+                {revealed ? "Hide" : "Show"}
+              </Button>
+              <Button variant="quiet" size="sm" disabled={!copyEnabled} onClick={onCopy}>
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          )}
         </div>
-      </header>
+      ) : null}
 
-      <div className="mt-7 flex flex-col gap-4">
+      <div className="mt-4 flex flex-col gap-3">
         {/* The only live region. Mounted persistently; empty when there is
             nothing to say. The inner content remounts per sentence so the
             entrance replays and the change is announced. */}
-        <div role="status" aria-live="polite" className="min-h-[22px] text-sm leading-relaxed">
+        <div role="status" aria-live="polite" className="min-h-[22px] text-[14px] leading-[22px]">
           {row === null ? null : (
             <span key={row.rowKey} className="vex-animate-status-settle inline-flex items-center gap-2">
               {row.dot === null ? null : (
@@ -180,9 +180,9 @@ export function SuperboardKeySection(): JSX.Element {
         {failedAttempt !== null && failureCopy !== null ? (
           <div className="flex flex-col gap-1.5">
             {failureCopy.reassurance === null ? null : (
-              <p className="text-sm leading-relaxed text-ink-secondary">{failureCopy.reassurance}</p>
+              <p className="text-[13px] leading-[19px] text-ink-secondary">{failureCopy.reassurance}</p>
             )}
-            <p className="font-mono text-[13px] leading-[20px] text-ink-tertiary">
+            <p className="vex-num font-mono text-[12px] leading-[18px] text-ink-tertiary">
               {failedAttempt.attempt.detail}
               {" · "}
               {superboardAttemptTime(failedAttempt.attempt.at)}
@@ -192,7 +192,7 @@ export function SuperboardKeySection(): JSX.Element {
           </div>
         ) : null}
         {readFailed ? (
-          <p role="alert" className="text-sm leading-relaxed text-danger">
+          <p role="alert" className="text-[14px] leading-[22px] text-ink-primary">
             Couldn't load the Superboard key.{" "}
             {readError?.message ?? "Try loading it again."}
             {readError?.correlationId ? (
@@ -201,7 +201,7 @@ export function SuperboardKeySection(): JSX.Element {
           </p>
         ) : null}
         {mutationFailed ? (
-          <p role="alert" className="text-sm leading-relaxed text-danger">
+          <p role="alert" className="text-[14px] leading-[22px] text-ink-primary">
             Couldn't confirm key generation.{" "}
             {generationError !== null ? `${generationError.message} ` : ""}
             Reload status to check whether a key was created.
@@ -211,33 +211,25 @@ export function SuperboardKeySection(): JSX.Element {
           </p>
         ) : null}
         {kind === "not_ready" ? (
-          <p className="inline-flex items-center gap-2 text-sm leading-relaxed text-ink-secondary">
+          <p className="inline-flex items-center gap-2 text-[14px] leading-[22px] text-ink-secondary">
             <Swatch state="warning" size={10} />
             Connect AgentScan first. The Superboard key is minted against that identity.
           </p>
         ) : null}
         {kind === "missing" && !mutationFailed ? (
-          <p className="text-sm leading-relaxed text-ink-secondary">
+          <p className="text-[13px] leading-[19px] text-ink-secondary">
             Generate the code, then paste it in Superboard. This install mints
             only one.
           </p>
         ) : null}
-        {showKeyBlock ? (
-          <div className="flex flex-col gap-2">
-            <code className="break-all border border-line-2 px-3 py-2.5 font-mono text-[13px] leading-[20px] text-ink-primary">
-              <span key={revealed ? "revealed" : "masked"} className="vex-superboard-key-swap">
-                {revealed ? shareToken : MASK}
-              </span>
-            </code>
-          </div>
-        ) : null}
       </div>
 
-      {readFailed || mutationFailed || kind === "missing" || showKeyBlock ? (
-        <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
+      {readFailed || mutationFailed || kind === "missing" || showRetry ? (
+        <div className="mt-4 flex items-center gap-2">
           {readFailed || mutationFailed ? (
             <Button
               variant="quiet"
+              size="sm"
               disabled={busy}
               onClick={() => {
                 generate.reset();
@@ -250,54 +242,25 @@ export function SuperboardKeySection(): JSX.Element {
             <Button disabled={busy} onClick={() => generate.mutate()}>
               {generate.isPending ? "Generating…" : "Generate"}
             </Button>
-          ) : showRetry ? (
-            <>
-              <Button
-                variant="quiet"
-                onClick={() => setRevealed((value) => !value)}
-              >
-                {revealed ? "Hide" : "Show"}
-              </Button>
-              <Button disabled={!copyEnabled} onClick={onCopy}>
-                {copied ? "Copied" : "Copy"}
-              </Button>
-              <Button disabled={busy} onClick={() => generate.mutate()}>
-                {generate.isPending ? "Retrying..." : "Retry"}
-              </Button>
-            </>
           ) : (
-            <>
-              <Button
-                variant="quiet"
-                onClick={() => setRevealed((value) => !value)}
-              >
-                {revealed ? "Hide" : "Show"}
-              </Button>
-              <Button disabled={!copyEnabled} onClick={onCopy}>
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </>
+            <Button disabled={busy} onClick={() => generate.mutate()}>
+              {generate.isPending ? "Retrying..." : "Retry"}
+            </Button>
           )}
         </div>
       ) : null}
 
-      <div className="mt-6 border-t border-[var(--color-border)] pt-4">
-        <div className="flex items-center gap-3 vex-micro text-ink-tertiary">
-          <a
-            href={VEX_PRIVACY_DOC_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              "inline-flex items-center gap-1 text-ink-secondary transition-colors",
-              "hover:text-ink-primary",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-            )}
-          >
-            {VEX_PRIVACY_DOC_LABEL}
-            <IconArrowUpRight size={10} />
-          </a>
-        </div>
-      </div>
+      <p className="mt-4">
+        <a
+          href={VEX_PRIVACY_DOC_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="vex-set__link"
+        >
+          {VEX_PRIVACY_DOC_LABEL}
+          <LineExternal size={14} />
+        </a>
+      </p>
     </div>
   );
 }

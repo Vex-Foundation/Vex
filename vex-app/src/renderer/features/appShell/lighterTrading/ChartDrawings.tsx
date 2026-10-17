@@ -4,18 +4,29 @@ import type { DrawingChartApi, DrawingSeriesApi } from "./chart-analysis-api.js"
 import { drawingHistory, logicalToTime, MAX_DRAWINGS, timeToLogical, type Anchor, type Drawing, type DrawingKind } from "./chart-drawings.js";
 import { NO_VALUE } from "./format.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
-import { PxIcon, type PxName } from "../../../components/icons/index.js";
+import {
+  LineCursor,
+  LineFib,
+  LineHLine,
+  LineRectangle,
+  LineRedo,
+  LineRuler,
+  LineTrash,
+  LineTrendLine,
+  LineUndo,
+  type LineIconComponent,
+} from "../../../components/icons/line/index.js";
 const TOOLS: {
   kind: DrawingKind | "cursor";
   label: string;
-  icon: PxName;
+  icon: LineIconComponent;
 }[] = [
-    { kind: "cursor", label: "Cursor", icon: "cursor" },
-    { kind: "horizontal", label: "Horizontal line", icon: "h-line" },
-    { kind: "trend", label: "Trend line", icon: "trend-line" },
-    { kind: "rectangle", label: "Rectangle", icon: "rectangle" },
-    { kind: "fib", label: "Fibonacci retracement", icon: "fib" },
-    { kind: "measure", label: "Measure price and time", icon: "measure" },
+    { kind: "cursor", label: "Cursor", icon: LineCursor },
+    { kind: "horizontal", label: "Horizontal line", icon: LineHLine },
+    { kind: "trend", label: "Trend line", icon: LineTrendLine },
+    { kind: "rectangle", label: "Rectangle", icon: LineRectangle },
+    { kind: "fib", label: "Fibonacci retracement", icon: LineFib },
+    { kind: "measure", label: "Measure price and time", icon: LineRuler },
   ];
 interface Props {
   chart: DrawingChartApi;
@@ -179,7 +190,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
         aria-pressed={mode === tool.kind}
         onClick={() => chooseTool(tool.kind)}
       >
-        <PxIcon name={tool.icon} />
+        <tool.icon />
       </button>)}
       <span className="lit-drawing-divider" />
       <button
@@ -192,7 +203,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
           cancel();
         }}
       >
-        <PxIcon name="undo" />
+        <LineUndo />
       </button>
       <button
         type="button"
@@ -204,7 +215,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
           cancel();
         }}
       >
-        <PxIcon name="redo" />
+        <LineRedo />
       </button>
       <button
         type="button"
@@ -217,7 +228,7 @@ export function ChartDrawings({ chart, series, host, times, scope, precision, mi
           cancel();
         }}
       >
-        <PxIcon name="trash" />
+        <LineTrash />
       </button>
     </div>
     <svg

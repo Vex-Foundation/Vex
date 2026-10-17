@@ -17,9 +17,11 @@ import { useInspectorDecisions } from "../../lib/api/memory-inspector.js";
 import {
   Empty,
   ErrorState,
+  FilterKeys,
   Loading,
   PILL,
   SECTION,
+  SectionHead,
   fmtDate,
 } from "./MemoryPanelShared.js";
 
@@ -52,30 +54,18 @@ export function DecisionsSection(): JSX.Element {
 
   return (
     <section data-vex-section="memory-decisions" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">Manager decisions</h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          The memory manager&apos;s decision audit - every promote, merge,
-          reject, or reconcile verdict, append-only and immutable.
-        </p>
-      </div>
+      <SectionHead
+        title="Manager decisions"
+        lead="The memory manager's decision audit - every promote, merge, reject, or reconcile verdict, append-only and immutable."
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        {DECISION_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setDecisionType(f.value)}
-            data-active={decisionType === f.value}
-            className={`rounded-[3px] px-2 py-1 vex-micro-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
-              decisionType === f.value
-                ? "bg-accent-wash text-accent-primary"
-                : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="vex-mem-tool">
+        <FilterKeys
+          label="Filter manager decisions by verdict"
+          options={DECISION_FILTERS}
+          value={decisionType}
+          onChange={setDecisionType}
+        />
       </div>
 
       <DecisionsList query={query} />
@@ -103,7 +93,7 @@ function DecisionsList({
     return <Empty label="No decisions match." />;
   }
   return (
-    <ul className="flex flex-col">
+    <ul className="vex-mem-list">
       {res.data.map((d) => (
         <DecisionRow key={d.id} decision={d} />
       ))}
@@ -120,9 +110,10 @@ function DecisionRow({
     <li
       data-vex-decision-id={decision.id}
       data-decision-type={decision.decisionType}
-      className="border-b border-line-2 px-1 py-2 last:border-b-0"
+      className="vex-mem-row"
+      data-untitled=""
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <span className="vex-mem-row__m">
         <span className={PILL} data-vex-decision-type>
           {decision.decisionType}
         </span>
@@ -130,35 +121,35 @@ function DecisionRow({
           <span className={PILL}>{decision.rejectReason}</span>
         ) : null}
         {decision.candidateId !== null ? (
-          <span className={PILL} title={decision.candidateId}>
+          <span className={PILL} title={decision.candidateId} data-figure>
             cand {shortId(decision.candidateId)}
           </span>
         ) : null}
         {decision.promotedKnowledgeId !== null ? (
-          <span className={PILL}>→ memory #{decision.promotedKnowledgeId}</span>
+          <span className={PILL} data-figure>
+            → memory #{decision.promotedKnowledgeId}
+          </span>
         ) : null}
         {decision.supersedesKnowledgeId !== null ? (
-          <span className={PILL}>
+          <span className={PILL} data-figure>
             supersedes #{decision.supersedesKnowledgeId}
           </span>
         ) : null}
         {decision.mergeTargetKnowledgeId !== null ? (
-          <span className={PILL}>
+          <span className={PILL} data-figure>
             merged into #{decision.mergeTargetKnowledgeId}
           </span>
         ) : null}
         <span className={PILL}>by {decision.decidedBy}</span>
         {decision.costUsd !== null ? (
-          <span className={PILL}>${decision.costUsd.toFixed(4)}</span>
+          <span className={PILL} data-figure>
+            ${decision.costUsd.toFixed(4)}
+          </span>
         ) : null}
-        <span
-          data-vex-decided
-          title={decision.decidedAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
-        >
-          {fmtDate(decision.decidedAt)}
-        </span>
-      </div>
+      </span>
+      <span data-vex-decided title={decision.decidedAt} className="vex-mem-row__r">
+        {fmtDate(decision.decidedAt)}
+      </span>
     </li>
   );
 }

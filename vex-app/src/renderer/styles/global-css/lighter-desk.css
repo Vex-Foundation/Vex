@@ -1,21 +1,29 @@
-/* Lighter desk frame (docs/design/V10-SPREAD.md sections 1 and 2): the top
- * bar, then the market bar over chart and depth beside a full-height order
- * ticket, with the account dock below. The desk is dense paper: regions are
- * told apart by 1px rules, labels are Departure Mono 11px caps. The chat rail
- * lives in the shell's BOOK column (LighterChatRail).
+/* Lighter desk frame (docs/design/R3-MINIMAL.md sections 3 and 9.3): the
+ * title row at the head of the centre column, then the market bar over the
+ * chart, the book and the ticket, with the account dock below. Regions are
+ * told apart by 1px quiet rules; words are Instrument Sans in sentence case,
+ * figures JetBrains Mono. The desk chat lives in the Vex sidebar under the
+ * plate (LighterChatRail), hidden by default.
  *
- * The top bar is the window's first 44px head row while the shell keeps it
- * full width: a drag region with the traffic lights' inset on the left and
- * the native controls' width on the right (window-chrome.css). Moving it into
- * the title bar row beside the spine waits for the shell layout. */
+ * The title row is the centre's 44px head row on the desk and a window drag
+ * region (window-chrome.css): the left rail leaves the macOS traffic lights
+ * their row, so the title steps right there; the right end reserves the
+ * Windows and Linux caption buttons wherever the Vex column under them is
+ * narrower than they are, as the title bar does (title-bar.css). */
 
 /* ---------------------------------------------------------------------------
- * Top bar
+ * The title row
  * ------------------------------------------------------------------------- */
 
+/* Over a page sheet (30) and under the title bar's own popovers (40), so the
+ * row and its cluster stay reachable while a page is open. */
 .lit-desk-topbar {
+  position: relative;
+  z-index: 31;
+  flex: 0 0 auto;
+  height: var(--head-h);
   container-type: inline-size;
-  border-bottom: 1px solid var(--lit-line);
+  border-bottom: 1px solid var(--lit-line-quiet);
   background: var(--lit-bg);
   color: var(--lit-ink);
 }
@@ -26,135 +34,108 @@
   height: 100%;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+  padding-inline: 22px max(16px, calc(var(--overlay-w) + 12px - var(--vex-vex-track, 0px)));
   white-space: nowrap;
 }
 
-.lit-topbar-button,
-.lit-topbar-primary {
-  display: inline-flex;
+/* The rail leaves the traffic lights their row; the title steps right. Zen
+ * has no rail, so the row clears the lights in full there. */
+html[data-os="mac"] .lit-desk-topbar-header { padding-inline-start: 38px; }
+html[data-os="mac"] .lit-desk-topbar[data-lighter-zen] .lit-desk-topbar-header { padding-inline-start: 96px; }
+
+/* The left cell: "Lighter" (14 / 500) and the section and network (13, muted). */
+.lit-topbar-title { flex: 0 1 auto; min-width: 0; }
+.lit-topbar-title > .vex-tb-title__sub {
   min-width: 0;
-  height: 30px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  padding: 0 10px;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
-  white-space: nowrap;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.lit-topbar-button:hover {
-  background: var(--lit-hover);
-  color: var(--lit-ink);
-}
-
-/* The Back key: the route out of the desk, the status register. */
-.lit-desk-topbar-header > .lit-topbar-button:first-child {
-  gap: 4px;
-  padding: 0 8px 0 0;
-  letter-spacing: var(--lit-tr-status);
-}
-
-/* New session is an outline, never a fill: the desk's one blue fill is Long. */
-.lit-topbar-primary {
-  color: var(--lit-positive);
-  outline: 1px solid var(--lit-positive);
-  outline-offset: -1px;
-}
-
-.lit-topbar-primary:hover { background: var(--lit-hover); }
-
-.lit-topbar-brand {
-  display: inline-flex;
-  min-width: 0;
-  height: 22px;
-  align-items: center;
-  border-inline: 1px solid var(--lit-line);
-  padding: 0 12px;
-  color: var(--lit-ink);
-}
-
-.lit-topbar-brand b {
-  font-size: 13px;
-  font-weight: 400;
-  letter-spacing: var(--lit-tr-eyebrow);
-  text-transform: uppercase;
-}
-
-.lit-desk-topbar .lit-environment-switch { margin-right: 6px; }
 .lit-topbar-spacer { min-width: 4px; flex: 1 1 auto; }
 
-.lit-topbar-center {
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 50%;
+/* The right cluster: the desk's keys, then the title bar's cluster. */
+.lit-topbar-keys {
   display: flex;
-  gap: 4px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
-.lit-zen-toggle,
-.lit-zen-controls-hide,
-.lit-topbar-ask {
+/* A title bar pill (32 high, a quiet rule, 13): Markets & sessions, New
+ * session, and Zen's Ask Vex. */
+.lit-topbar-pill {
   display: inline-flex;
-  height: 30px;
+  height: 32px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 0;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
-  background: var(--lit-bg);
+  border: 1px solid var(--lit-line-quiet);
+  background: transparent;
   padding: 0 10px;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
-.lit-zen-toggle { pointer-events: auto; }
-.lit-zen-controls-hide { width: 30px; padding-inline: 0; pointer-events: auto; }
+.lit-topbar-pill:hover { background: var(--lit-hover); }
 
-.lit-zen-toggle:hover,
-.lit-zen-controls-hide:hover,
-.lit-topbar-ask:hover {
+.lit-topbar-pill[aria-expanded="true"] {
+  border-color: var(--lit-line);
+  background: var(--lit-pressed);
+}
+
+.lit-topbar-ask[aria-pressed="true"] {
+  border-color: var(--lit-accent);
+  color: var(--lit-accent);
+}
+
+/* An icon key (32 x 32): Zen and Zen's hide key. */
+.lit-topbar-key {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+  color: var(--lit-ink-secondary);
+}
+
+.lit-topbar-key:hover {
   background: var(--lit-hover);
   color: var(--lit-ink);
 }
 
-.lit-zen-toggle[aria-pressed="true"],
-.lit-topbar-ask[aria-pressed="true"] {
-  outline-color: var(--lit-positive);
-  color: var(--lit-positive);
-}
+.lit-topbar-key[aria-pressed="true"] { color: var(--lit-accent); }
 
-.lit-topbar-zen-market {
-  overflow: hidden;
-  max-width: 140px;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
+.lit-topbar-zen-market { max-width: 160px; }
 
 .lit-desk-topbar svg { width: 16px; height: 16px; flex: 0 0 auto; }
 
+/* The title bar's cluster, portalled in from RunningHead; nothing to show
+ * means no gap either, and a folded Zen row hides it without unmounting it. */
+.lit-desk-top-shell { display: flex; flex: 0 0 auto; align-items: center; }
+.lit-desk-top-shell:empty,
+.lit-desk-top-shell[hidden] { display: none; }
+
+/* Zen: the chart owns the whole window and the row returns as an overlay
+ * over it, without changing the chart's bounds. Folded, the row is only the
+ * small handle at the top edge, and it is no drag region, so it never
+ * swallows a click on the chart. */
+.lit-desk-topbar[data-lighter-zen] {
+  position: absolute;
+  inset: 0 0 auto;
+}
+
 .lit-desk-topbar[data-lighter-zen] .lit-topbar-distraction { display: none; }
 
-/* The chart owns the whole viewport in Zen. Its shell controls are progressive
- * disclosure: the closed state contributes only this small top-edge handle,
- * and the full bar returns as an overlay without changing the chart's bounds.
- * A closed bar is no drag region, so it never swallows a click on the chart. */
 .lit-desk-topbar[data-lighter-zen][data-zen-controls="closed"] {
   border-bottom-color: transparent;
   background: transparent;
@@ -181,20 +162,13 @@
 
 .lit-zen-controls-reveal:hover,
 .lit-zen-controls-reveal:focus-visible {
-  border-color: var(--lit-positive);
-  color: var(--lit-positive);
+  border-color: var(--lit-accent);
+  color: var(--lit-accent);
 }
 
-.lit-topbar-profile { width: 36px; flex: 0 0 36px; }
-.lit-topbar-profile [data-vex-area="sidebar-profile"] {
-  width: 36px;
-  border-top: 0;
-  background: transparent;
-}
-.lit-topbar-profile [data-vex-area="sidebar-profile"] button { height: 36px; }
-
-/* Markets and sessions: a paper sheet hung from the bar's rule. Its session
- * rows are the shell's own and read in the room's sans. */
+/* Markets and sessions: a flat paper panel hung from the row's rule, a 1.5px
+ * ink frame, never a shadow (docs/design/R3-MINIMAL.md section 12). Its
+ * session rows are the shell's own. */
 .lit-desk-nav-drawer {
   position: absolute;
   top: calc(100% + 6px);
@@ -205,7 +179,7 @@
   max-height: calc(100vh - 60px);
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--lit-line-strong);
+  border: 1.5px solid var(--lit-rule-ink);
   background: var(--lit-bg);
   color: var(--lit-ink);
   font-family: var(--font-sans);
@@ -213,18 +187,114 @@
   -webkit-app-region: no-drag;
 }
 
-.lit-desk-nav-drawer h2 {
+.lit-desk-nav-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: clip;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* Group heads: 12 / 500 muted, sentence case. */
+.lit-desk-nav-heading {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.lit-watchlist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lit-watchlist-empty {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--lit-ink-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.lit-watchlist-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A watched market: the ticker (13 / 500), then its last price and day
+ * change in the figure face; the change is a trading value. */
+.lit-watchlist-row {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.lit-watchlist-row:hover { background: var(--lit-hover); }
+
+.lit-watchlist-row[aria-current="true"] {
+  background: var(--lit-pressed);
+  color: var(--lit-accent);
+}
+
+.lit-watchlist-row:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: -2px;
+}
+
+.lit-watchlist-ticker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lit-watchlist-figures {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--lit-ink);
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-eyebrow);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
 }
 
-/* Mono caps run wide: under 1320px the two desk keys (Markets & sessions,
- * New session) fold to their icons so the centred Zen key never meets them,
- * even behind the macOS traffic lights. The words stay in the accessibility
- * tree, only out of sight. */
-@container (max-width: 1320px) {
-  .lit-topbar-distraction .lit-topbar-button-label {
+.lit-watchlist-change {
+  min-width: 56px;
+  color: var(--lit-ink-secondary);
+  text-align: right;
+}
+
+.lit-watchlist-change[data-tone="up"] { color: var(--lit-trade-up); }
+.lit-watchlist-change[data-tone="down"] { color: var(--lit-trade-down); }
+
+/* The row answers to its own width (the centre column, which the Vex column
+ * narrows): the two desk pills fold to their icons first, then the muted
+ * place words go. The words stay in the accessibility tree, out of sight. */
+@container (max-width: 1060px) {
+  .lit-topbar-pill .lit-topbar-button-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -232,38 +302,17 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .lit-topbar-button.lit-topbar-distraction,
-  .lit-topbar-primary.lit-topbar-distraction { width: 30px; padding-inline: 0; }
+  .lit-topbar-pill { width: 32px; padding-inline: 0; }
 }
 
-@container (max-width: 720px) {
-  .lit-topbar-button-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  .lit-topbar-button,
-  .lit-topbar-primary { width: 30px; padding-inline: 0; }
-  .lit-desk-topbar-header > .lit-topbar-button:first-child { width: auto; }
-  .lit-zen-toggle span,
-  .lit-topbar-ask span,
-  .lit-topbar-zen-market { display: none; }
-  .lit-zen-toggle,
-  .lit-topbar-ask { width: 30px; padding-inline: 0; }
-}
-
-@container (max-width: 520px) {
-  .lit-topbar-brand { display: none; }
+@container (max-width: 760px) {
+  .lit-topbar-title > .vex-tb-title__sub { display: none; }
 }
 
 /* Dialogs in the desk's scope (`.lit-environment-dialog`: the setup modal,
- * the leverage sheet, the desk approval) are the shared dialog primitive
- * as is: its paper, its rule and the paper dither veil (docs/design/
- * V10-SPREAD.md section 7). The class remains the scope hook for the desk's
- * check box (lighter-tokens.css). */
+ * the leverage sheet, the desk approval) are the shared dialog primitive as
+ * is. The class remains the scope hook for the desk's check box
+ * (lighter-tokens.css). */
 
 /* ---------------------------------------------------------------------------
  * Desk frame
@@ -278,30 +327,28 @@
   overflow: hidden;
 }
 
+/* The market bar: 58 high, padding 0 18 (docs/design/R3-MINIMAL.md section
+ * 9.3). The market picker layer hangs off this bar (`top: 100%`). */
 .lit-desk-top {
-  /* The market picker layer hangs off this bar (`top: 100%`), not the shell. */
   position: relative;
   container-type: inline-size;
   display: flex;
-  min-height: 50px;
+  min-height: 58px;
   flex: 0 0 auto;
   align-items: center;
-  border-bottom: 1px solid var(--lit-line);
+  border-bottom: 1px solid var(--lit-line-quiet);
   background: var(--lit-bg);
-  padding: 0 8px 0 12px;
+  padding: 0 18px;
 }
 
-/* Shell strip flank (notices, approvals, export), portaled in from
- * `RunningHead`; nothing to show means no gap either. */
-.lit-desk-top-shell { display: flex; flex: 0 0 auto; align-items: center; margin-left: 12px; }
-.lit-desk-top-shell:empty { display: none; }
-
+/* The seams between the desk's regions are the 1px quiet rule: the body's
+ * ground shows through each 1px gap once (the nested grids are clear). */
 .lit-desk-body {
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
   grid-template-rows: minmax(0, 1fr) 190px;
-  background: var(--lit-line);
+  background: var(--lit-line-quiet);
   gap: 1px;
 }
 
@@ -313,7 +360,7 @@
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) 260px 300px;
-  background: var(--lit-line);
+  background: transparent;
   gap: 1px;
 }
 
@@ -325,7 +372,7 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  background: var(--lit-line);
+  background: transparent;
   gap: 1px;
 }
 
@@ -451,15 +498,16 @@
 }
 
 .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant .lit-chat-frame {
-  border-left: 1px solid var(--lit-line-strong);
+  border-left: 1px solid var(--lit-rule-ink);
   background: var(--lit-bg);
 }
 
 /* The chart column is the grid's flexible track; as a query container its
- * toolbar can shed the study readout and two intervals before they clip. */
-.lit-chart-panel { container-type: inline-size; }
+ * toolbar can shed the study readout and two intervals before they clip. It
+ * anchors the chart's credit overlay (lighter-chart.css). */
+.lit-chart-panel { position: relative; container-type: inline-size; }
 
-/* Pixel icons draw on their own 16px grid; the desk never scales them. */
+/* Icons draw on their own 16px grid; the desk never scales them. */
 .lit-desk svg.lit-chevron,
 .lit-chat-frame .lit-chat-starters svg,
 .lit-desk .lit-chart-tools svg {
@@ -481,27 +529,30 @@
 
 .lit-panel-header {
   display: flex;
-  min-height: 34px;
+  min-height: 36px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--lit-line-quiet);
-  padding: 0 10px;
+  padding: 0 14px;
 }
 
+/* A panel's name: 13 / 500 in ink, sentence case. */
 .lit-panel-header h3 {
   margin: 0;
   color: var(--lit-ink);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
 .lit-panel-header small {
   color: var(--lit-ink-muted);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
 }
 
 .lit-panel-tabs,
@@ -516,14 +567,15 @@
 .lit-book-header > .lit-panel-tabs,
 .lit-bottom-tabs { flex: 0 0 auto; }
 
-.lit-panel-tabs,
-.lit-bottom-tabs { gap: 16px; }
+/* Book or trades: 18 apart at 13; the account dock's tabs: 22 apart at 13.5. */
+.lit-panel-tabs { gap: 18px; }
+.lit-bottom-tabs { gap: 22px; }
 
 .lit-panel-tabs button,
 .lit-bottom-tabs button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   border: 0;
   border-bottom: 1.5px solid transparent;
   margin-bottom: -1px;
@@ -531,31 +583,41 @@
   padding: 0;
   white-space: nowrap;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
+
+.lit-bottom-tabs button { font-size: 13.5px; }
 
 .lit-panel-tabs button:hover,
 .lit-bottom-tabs button:hover { color: var(--lit-ink); }
 
 .lit-panel-tabs button[aria-selected="true"],
 .lit-bottom-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--lit-positive);
-  color: var(--lit-positive);
+  border-bottom-color: var(--lit-accent);
+  color: var(--lit-accent);
+  font-weight: 500;
 }
 
-/* Exchange register: the count rides inline, "Positions (1)". */
+/* A tab's count rides after its word, in the figure face and muted. */
 .lit-bottom-tabs button i {
-  color: inherit;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   font-style: normal;
   font-variant-numeric: tabular-nums;
+  font-weight: 400;
 }
 
 /* ---------------------------------------------------------------------------
  * Loading and error states
  * ------------------------------------------------------------------------- */
 
+/* A desk that cannot open, or is still loading, says so as the empty block
+ * does (docs/design/R3-MINIMAL.md section 12): loading is a word beside the
+ * ongoing swatch; a failure is a 15 / 500 sentence, a 13.5 / 1.5 line and,
+ * when a retry can help, the key. */
 .lit-workspace-state {
   display: flex;
   min-height: 0;
@@ -563,34 +625,29 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 10px;
   padding: 24px;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-status);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  letter-spacing: normal;
   text-align: center;
-  text-transform: uppercase;
 }
 
-/* A desk that cannot open says so in the chat rail's serif, once. */
+.lit-workspace-state[role="status"] { flex-direction: row; }
+
 .lit-workspace-state b {
-  color: var(--vex-alias-title);
-  font-family: var(--font-serif);
-  font-size: 36px;
-  font-weight: 400;
-  letter-spacing: -0.012em;
-  line-height: 1;
-  text-transform: none;
+  color: var(--lit-ink);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .lit-workspace-state span {
   max-width: 520px;
   color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  letter-spacing: normal;
+  font-size: 13.5px;
   line-height: 1.5;
-  text-transform: none;
 }
 
 /* The loader is the ongoing swatch: a dot screen stepping through four

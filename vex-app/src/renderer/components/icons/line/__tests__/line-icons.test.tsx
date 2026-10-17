@@ -15,7 +15,7 @@ import { LINE_GLYPHS } from "../line-glyphs.js";
 
 const EXPECTED_NAMES = [
   "activity", "archive", "arrow-down", "arrow-up", "arrows", "attach", "back", "bars", "bell",
-  "board", "book", "camera", "candles", "chat", "check", "chevron-down", "chevron-left",
+  "board", "book", "branch", "camera", "candles", "chat", "check", "chevron-down", "chevron-left",
   "chevron-right", "chevron-up", "chevrons-up-down", "clock", "close", "copy", "cursor",
   "database", "desktop", "docker", "download", "drop", "edit", "external", "fib", "file",
   "flame", "folder", "gear", "h-line", "home", "inbox", "info", "key", "lighter", "link", "lock",
@@ -23,20 +23,21 @@ const EXPECTED_NAMES = [
   "panel-right", "pause", "percent", "pin", "play", "plus", "portfolio", "preferences",
   "question", "rectangle", "redo", "refresh", "rocket", "ruler", "scan", "search", "send",
   "settings", "shield", "spark", "split-horizontal", "split-vertical", "stop", "strategies",
-  "studio", "sun", "swap", "terminal", "trash", "trend-line", "tuning", "undo", "update", "user",
+  "studio", "sun", "swap", "terminal", "thumbs-down", "trash", "trend-line", "tuning", "undo", "update", "user",
   "users", "vault", "wallet", "warning", "watchlist", "wifi", "wifi-off", "zen",
 ];
 
-/** The names the navigation, title bar, composer, Vex sidebar and pages draw with. */
+/** The names the navigation, title bar, composer, transcript, Vex sidebar and pages draw with. */
 const CHROME_NAMES = [
-  "chat", "missions", "portfolio", "board", "lighter", "studio", "settings", "new-chat", "search",
+  "branch", "thumbs-down", "chat", "missions", "portfolio", "board", "lighter", "studio", "settings", "new-chat", "search",
   "panel-left", "panel-right", "close", "chevron-up", "chevron-down", "chevron-left",
   "chevron-right", "send", "stop", "attach", "lock", "bell", "more",
 ];
 
 /**
- * Drawings without an appendix A row. None today: the six derived ones
- * (archive, chevron-left, chevron-up, question, user, warning) have rows.
+ * Drawings without an appendix A row. None today: the derived ones (archive,
+ * branch, chevron-left, chevron-up, question, thumbs-down, user, warning) all
+ * have rows.
  */
 const DERIVED: string[] = [];
 
@@ -131,7 +132,7 @@ describe("line icon catalogue", () => {
     expect([...line.LINE_ICON_NAMES]).toEqual(names);
   });
 
-  it("covers every icon the nav, title bar, composer, Vex sidebar and pages use", () => {
+  it("covers every icon the nav, title bar, composer, transcript, Vex sidebar and pages use", () => {
     for (const name of CHROME_NAMES) expect(namesOf(), name).toContain(name);
   });
 

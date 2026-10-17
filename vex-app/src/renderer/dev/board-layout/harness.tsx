@@ -6,7 +6,7 @@
  * (`src/renderer/index.html`), so no byte of this file can reach a packaged
  * build. It exists because board geometry is decided by the renderer's own
  * container queries and can only be MEASURED in a real engine at real widths;
- * the Electron smoke fixture cannot reach the board modal at all (its head
+ * the Electron smoke fixture cannot reach the Board page at all (its head
  * note: everything past SystemCheck needs a live Docker daemon and an
  * unlocked vault).
  *
@@ -21,7 +21,8 @@
  * `?pools=N`), which view is mounted (`?view=grid|spotlight`) and, for the
  * seam matrix, the EXACT inline size of a query container (`?plate=C`,
  * `?spotlightPlate=C`). `window.__vexBoardLayoutHarness` decides what changes
- * DURING a test: the drawer, and the moment the safety read settles. The async
+ * DURING a test: the drawer (the Vex sidebar with the Ask block, which takes
+ * its 256 from the centre), and the moment the safety read settles. The async
  * verdict case is the whole reason the settle is a control rather than a
  * fixture - a verdict that lands late is the layout event the production
  * screenshot caught mid-flight.
@@ -29,7 +30,7 @@
  * WHY THE CONTAINER IS DRIVEN DIRECTLY AND NOT THROUGH THE VIEWPORT. Every
  * threshold in `global-css/board-layout.css` is a question about a container's
  * inline size, and the chain from a viewport width to that number runs through
- * the dialog's `min(94vw, ...)` cap, the modal body and two paddings. A seam
+ * the shell's columns, the page padding and the open Vex sidebar. A seam
  * case has to land ON the number - 727.98px, not "whatever 1100px of window
  * happened to leave" - so `?plate=` pins the container's CONTENT box with
  * `box-sizing: content-box`, which is the box `container-type: inline-size`
@@ -48,6 +49,8 @@ import type {
 import { BOARD_STALE_AFTER_MS } from "@vex-lib/board/index.js";
 import { BoardGrid } from "../../features/appShell/Board/BoardGrid.js";
 import { BoardModalHost } from "../../features/appShell/Board/BoardModalHost.js";
+import { setBoardPageSlot } from "../../features/appShell/Board/board-page-slot.js";
+import { setVexSidebarSlot } from "../../features/vex/vex-sidebar-slot.js";
 import { BoardSpotlight } from "../../features/appShell/Board/BoardSpotlight.js";
 import { boardRefOf } from "../../features/appShell/Board/board-surface-contracts.js";
 import { useBoardSurfaceStore } from "../../features/appShell/Board/board-surface-store.js";
@@ -102,15 +105,6 @@ function installFakeBridge(pools: readonly BoardPoolInput[]): void {
               icon: { kind: "absent", reason: "not_found" },
             },
           }),
-      },
-      boardSparkline: {
-        hydrate: () => ({
-          promise: Promise.resolve({
-            ok: true,
-            data: { entries: [], deadlineHit: false },
-          }),
-          cancel: () => undefined,
-        }),
       },
       boardDetails: {
         prefetch: () => ({ promise: safetyPromise, cancel: () => undefined }),
@@ -378,11 +372,11 @@ function harnessSpec(kind: string, poolCount: number): BoardSpecV1 {
 /* The page                                                            */
 /* ------------------------------------------------------------------ */
 
-/** A drawer body of the real width, with none of the panel's own channels. */
+/** An Ask block stand-in in the Vex sidebar, with none of the block's own channels. */
 function AskStub(): JSX.Element {
   return (
-    <div data-vex-area="board-ask-stub" className="pt-6 text-[13px] text-ink-secondary">
-      Ask VEX
+    <div data-vex-area="board-ask-stub" className="vex-bd-ask">
+      Ask Vex
     </div>
   );
 }
@@ -393,7 +387,7 @@ function AskStub(): JSX.Element {
  * `content-box` because `container-type: inline-size` measures the CONTENT
  * box: with it, `width: 727.98px` IS the number the `@container` query sees,
  * so a seam case can sit one hundredth of a pixel below a threshold. `flex:
- * none` and `max-width: none` stop the modal's own flex column from taking
+ * none` and `max-width: none` stop the page's own flex column from taking
  * the width back. Absent the parameter, not one byte of this is emitted.
  */
 function containerOverride(
@@ -456,8 +450,23 @@ function Harness(): JSX.Element {
     return unsubscribe;
   }, [openBoardModal]);
 
+  const drawer = useHarnessDrawer();
   return (
     <>
+      {/* THE SHELL'S TWO PLACES, as the product lays them out: the centre
+        * column holding the Board page (its element is the host's slot) and,
+        * with `?drawer=1`, the Vex sidebar at its 256 width holding the Ask
+        * block. The sidebar takes its width out of the centre without moving
+        * the window by a pixel, which is the event the container queries are
+        * for. */}
+      <div className="vex-board-harness" data-drawer={drawer ? "open" : "closed"}>
+        <main className="vex-board-harness__centre">
+          <div className="vex-bd" ref={setBoardPageSlot} />
+        </main>
+        {drawer ? (
+          <aside className="vex-board-harness__vex" ref={setVexSidebarSlot} />
+        ) : null}
+      </div>
       <BoardModalHost
         gridSlot={BoardGrid}
         spotlightSlot={BoardSpotlight}
@@ -466,6 +475,11 @@ function Harness(): JSX.Element {
       {ready ? <div data-vex-area="board-harness-ready" /> : null}
     </>
   );
+}
+
+/** The drawer control: the Vex sidebar is up exactly while the Ask block is open. */
+function useHarnessDrawer(): boolean {
+  return useBoardSurfaceStore((s) => s.askPanelOpen);
 }
 
 declare global {

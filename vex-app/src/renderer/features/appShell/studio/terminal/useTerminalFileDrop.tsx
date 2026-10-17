@@ -45,9 +45,9 @@ export function useTerminalFileDrop(visible: boolean, insertFiles: (files: reado
       },
     },
     overlay: active ? (
-      <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 border border-accent-primary bg-surface-2 text-ink-primary" role="status">
-        <span className="text-sm font-medium">Drop files to insert their paths</span>
-        <span className="text-xs text-ink-secondary">Up to 32 files. Press Enter yourself to run.</span>
+      <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 border border-accent-primary bg-surface-field text-ink-primary" role="status">
+        <span className="text-[15px] font-medium">Drop files to insert their paths</span>
+        <span className="text-[13px] text-ink-secondary">Up to 32 files. Press Enter yourself to run.</span>
       </div>
     ) : null,
   };

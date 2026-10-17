@@ -242,7 +242,7 @@ function Row({
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <dt className="text-ink-secondary">{label}</dt>
-      <dd className="text-right font-mono text-[12px] leading-[18px] text-ink-primary">
+      <dd className="vex-num text-right font-mono text-[12px] leading-[18px] text-ink-primary">
         {value}
       </dd>
     </div>

@@ -21,8 +21,10 @@
  *   width; the title bar's token chip brings her back.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
- * stays the e2e/test selector. Lighter moves navigation into its top bar above
- * the grid, so its left column is always the rail.
+ * stays the e2e/test selector. On the Lighter desk the left sidebar is always
+ * its rail and the centre opens with the desk's own title row
+ * (`LighterSidebar`, docs/design/R3-MINIMAL.md section 9.3), which carries the
+ * title bar's cluster.
  */
 
 import {
@@ -57,17 +59,21 @@ import { BoardSubtitle } from "./Board/BoardSubtitle.js";
 import { BoardSpotlightWithChart } from "./Board/BoardSpotlightWithChart.js";
 import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
+import {
+  ErrorBoundary,
+  ErrorBoundaryFallback,
+  type ErrorBoundaryAction,
+} from "../../components/ui/error-boundary.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import {
   useActivityProgressInvalidation,
   useActivityResolvedInvalidation,
 } from "../../lib/api/portfolio.js";
-import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
-import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
+import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
 import { VexSidebar } from "../vex/VexSidebar.js";
 
@@ -128,6 +134,21 @@ function AppShellContent(): JSX.Element {
 }
 
 /**
+ * The centre boundary's way out of a page that throws: close it. Module-level
+ * so the array identity is stable across renders; offered only while a page is
+ * open (the base surfaces have no page to close).
+ */
+const CLOSE_PAGE_ACTIONS: readonly ErrorBoundaryAction[] = [
+  {
+    label: "Close this page",
+    onSelect: () => {
+      useUiStore.getState().setShellRoute({ kind: "none" });
+    },
+  },
+];
+const NO_ACTIONS: readonly ErrorBoundaryAction[] = [];
+
+/**
  * The frame: measures its own box (rAF-throttled ResizeObserver), decides
  * what each sidebar is asked to be, solves the tracks, and hosts Lighter's
  * chat share handle. The Vex auto-close is DERIVED from the solve (the stored
@@ -153,6 +174,7 @@ function ShellFrame({
   const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
   const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
+  const shellRouteKind = useUiStore((s) => s.shellRoute.kind);
   const [lighterZen, setLighterZen] = useState(false);
   const [zenAssistantOpen, setZenAssistantOpen] = useState(false);
   const [zenControlsOpen, setZenControlsOpen] = useState(false);
@@ -296,7 +318,6 @@ function ShellFrame({
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     gridTemplateColumns: `${cols.left}px minmax(0, 1fr) ${cols.vex}px`,
-    paddingTop: lighter && !lighterZen ? LIGHTER_TOPBAR_HEIGHT : undefined,
     // The running head reserves the caption buttons wherever the right column
     // under them is narrower than they are (shell.css).
     "--vex-vex-track": `${cols.vex}px`,
@@ -326,24 +347,8 @@ function ShellFrame({
         reconnecting={!networkOnline}
         label="Offline - waiting for the network to come back"
       />
-      {lighter ? (
-        <LighterSidebar
-          collapsed={sidebarCollapsed}
-          onToggleSidebar={toggleSidebar}
-          zenMode={lighterZen}
-          zenAssistantOpen={zenAssistantOpen}
-          zenControlsOpen={zenControlsOpen}
-          onToggleZen={() => setZenMode(!lighterZen)}
-          onToggleZenControls={() => setZenControlsOpen((current) => !current)}
-          onToggleZenAssistant={() => {
-            if (zenAssistantOpen) setZenAssistantOpen(false);
-            else openZenAssistant();
-          }}
-        />
-      ) : null}
-
       {/* TRACK 1 - the left sidebar: the sessions sidebar (agent), the
-        * projects and explorer (Studio), the vx mark on the rail (Lighter).
+        * projects and explorer (Studio), its rail on the Lighter desk.
         * The column stays overflow-visible so nothing the sidebar opens is
         * cut at its edge. */}
       <div
@@ -351,7 +356,7 @@ function ShellFrame({
         data-vex-area="left-page"
         data-vex-left-page={rail ? "spine" : "page"}
       >
-        {rail && !lighter ? (
+        {rail ? (
           <div aria-hidden className="vex-left-page__cap vex-drag" />
         ) : null}
         {runtimeMode === "agent" ? (
@@ -373,11 +378,16 @@ function ShellFrame({
             />
           </div>
         ) : cols.left > 0 ? (
-          // Lighter keeps the rail: the vx mark at the top of the print.
-          <div aria-hidden className="vex-left-page__content">
-            <span className="vex-left-page__mark">
-              <VexMark size={22} />
-            </span>
+          // Lighter keeps the left sidebar on its rail: New chat, Search, the
+          // Chats key (it opens the desk's Markets & sessions drawer), the
+          // nav and the account. Keyed, so the agent sidebar's own state
+          // never carries across a mode switch.
+          <div key="lighter-rail" className="vex-left-page__content">
+            <SessionsList
+              onCreate={onCreate}
+              collapsed
+              onToggleSidebar={toggleSidebar}
+            />
           </div>
         ) : null}
       </div>
@@ -405,21 +415,62 @@ function ShellFrame({
           }
         />
 
-        <div className="min-h-0 flex-1">
-          {/* In Lighter mode the conversation lives in the right column
-           * (`LighterChatRail`), so the center is the desk alone. */}
-          {lighter ? (
-            <LighterCenter
-              zenMode={lighterZen}
-              onOpenZenAssistant={openZenAssistant}
-            />
-          ) : studio ? <StudioCenter /> : <SessionPanel />}
-        </div>
+        {/* The Lighter desk's title row: the centre's head row on the desk,
+          * with the title bar's cluster portalled into its right end. In Zen
+          * it folds to a handle over the chart. */}
+        {lighter ? (
+          <LighterSidebar
+            collapsed={sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+            zenMode={lighterZen}
+            zenAssistantOpen={zenAssistantOpen}
+            zenControlsOpen={zenControlsOpen}
+            onToggleZen={() => setZenMode(!lighterZen)}
+            onToggleZenControls={() => setZenControlsOpen((current) => !current)}
+            onToggleZenAssistant={() => {
+              if (zenAssistantOpen) setZenAssistantOpen(false);
+              else openZenAssistant();
+            }}
+          />
+        ) : null}
 
-        {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you, the
-          * money registers): one paper sheet over the centre, absolute inside
-          * this column so it never reflows a track. */}
-        <ShellScreens />
+        {/* The centre's own error boundary (R3-MINIMAL.md section 12): a
+          * surface or page that throws is replaced by the recovery card
+          * between the two sidebars, which stay standing. The running head
+          * stays outside it (it owns the approvals live sync). Reset by the
+          * mode, the session and the page, so a healthy subject is never
+          * blacked out by the one that failed. */}
+        <ErrorBoundary
+          surface="shell.centre"
+          extent="region"
+          resetKey={`${runtimeMode}:${activeSessionId ?? ""}:${shellRouteKind}`}
+          actions={shellRouteKind === "none" ? NO_ACTIONS : CLOSE_PAGE_ACTIONS}
+          fallback={(props) => (
+            <div className="min-h-0 flex-1">
+              <ErrorBoundaryFallback
+                {...props}
+                title="Something in Vex stopped rendering"
+                extent="region"
+              />
+            </div>
+          )}
+        >
+          <div className="min-h-0 flex-1">
+            {/* In Lighter mode the conversation lives in the right column
+             * (`LighterChatRail`), so the center is the desk alone. */}
+            {lighter ? (
+              <LighterCenter
+                zenMode={lighterZen}
+                onOpenZenAssistant={openZenAssistant}
+              />
+            ) : studio ? <StudioCenter /> : <SessionPanel />}
+          </div>
+
+          {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you,
+            * the money registers): one paper sheet over the centre, absolute
+            * inside this column so it never reflows a track. */}
+          <ShellScreens />
+        </ErrorBoundary>
       </section>
 
       {/* TRACK 3 - Vex's column. Empty on the welcome stage, where she

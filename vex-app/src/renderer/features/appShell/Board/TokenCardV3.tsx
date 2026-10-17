@@ -1,79 +1,96 @@
 /**
- * TOKEN CARD (v3) - one pool, in the anatomy the owner's mockup fixes.
+ * TOKEN TILE (v3) - one pool, in the R3 Minimal anatomy
+ * (docs/design/R3-MINIMAL.md section 9.4).
  *
- * Read top to bottom, the card is: a 64px round token photo, the token's name
- * over its ticker over its bare chain mark, a hero price with a signed 24h
- * delta and a bare sparkline in the right third of that row, a hairline, four
- * equal stat columns, and a footer of the status chip above Ask VEX. The two
- * actions - Spotlight and Ask VEX - are real buttons.
+ * Read top to bottom, the tile is: a 34px framed token photo, the token's
+ * name over "TICKER - Chain name", and at the right the full-value key and the
+ * Spotlight chip; the price in mono 26 with the signed 24h change in the
+ * trading colour and the window printed after it; a quiet rule over four stats
+ * in one row; and a footer of the checks word on a row of its own over the two
+ * links, DexScreener and Ask Vex. The two actions - Spotlight and Ask Vex -
+ * are real buttons.
  *
- * EQUAL CARDS ARE A CONTRACT, NOT A CONSEQUENCE. A grid of cards whose
- * heights follow their content reads as damage. So the identity block, the
- * price row and the stat block each carry a FIXED height, names are clamped
- * to one line rather than allowed to wrap a card taller, and the footer is
- * pushed to the bottom with `mt-auto`. A token with a long name, no photo
- * and no sparkline occupies exactly the same box as one with all three.
+ * THE GRID DRAWS THE FRAME, THE TILE DRAWS ITS OWN HALF. The grid carries a
+ * 1px quiet rule on its top and left edge and each tile a 1px quiet rule on
+ * its right and bottom edge, with no gap between tiles, so the board reads as
+ * one ruled sheet (`global-css/board-layout.css`). The tile has no fill of its
+ * own: it is the page paper, and a hover is the interactive wash.
+ *
+ * EQUAL TILES ARE A CONTRACT, NOT A CONSEQUENCE. A grid of tiles whose heights
+ * follow their content reads as damage. So every region is one line of fixed
+ * line height: the name is clamped to one line rather than allowed to wrap a
+ * tile taller, the price row carries a fixed height, the checks word never
+ * wraps (the widest verdict the frozen safety table can produce fits one row
+ * at the floor), and the footer is pushed to the bottom with `mt-auto`. A
+ * token with a long name and no photo occupies exactly the same box as one
+ * with a picture.
  *
  * SPOTLIGHT IS A BUTTON, NOT A SWITCH (owner's correction over the mockup's
  * own control). It navigates: pressing it changes which view the modal is
- * showing. A switch would claim the card carries a persistent per-token
+ * showing. A switch would claim the tile carries a persistent per-token
  * setting, and a reader who found it "on" would have no idea what it was
- * doing. `aria-pressed` still reports which card the spotlight is currently
- * about, so the selected state is not left to a border colour.
+ * doing. `aria-pressed` still reports which tile the spotlight is currently
+ * about, so the selected state is not left to an outline colour; the selected
+ * tile also wears the 1.5px blue outline `board.css` draws inside it.
  *
  * THREE DATA STATES, and each is a designed state of the SAME elements, never
  * a missing element: a pool with no hydration row, a row whose price the
  * provider did not report, and a priced row. A board is never a run of gaps -
- * dropping a card would misrepresent the board the model actually composed.
+ * dropping a tile would misrepresent the board the model actually composed.
  *
  * THE LIVE TICK. When `priceUsd` or the 24h delta changes under a held lease
  * the price row is stamped with a fresh `data-tick`, and `board.css` flashes
  * the accent wash off it once. An unchanged rerender stamps nothing, so a
- * board that repaints for an unrelated reason does not blink. The chip and
- * the delta colour are never animated: a tone is a fact, not a flash.
+ * board that repaints for an unrelated reason does not blink. The change's
+ * colour is never animated: a tone is a fact, not a flash.
  *
- * NO ICON SITS ON A DISC. The chain mark, the chip's glyph and the Ask VEX
- * sparkle are bare `currentColor` glyphs; the one round container on the
- * card is the token photo itself.
+ * TRADING COLOUR IS ON ONE ELEMENT. The 24h change takes `text-trade-up` or
+ * `text-trade-down`, and flat is muted. Status is never a hue: the checks word
+ * is a swatch plus its word, and the swatch is a fill (R3 section 1.6).
  *
- * TWO ANATOMIES, ONE CARD, AND CSS PICKS. The board plate is a container
- * query container and `global-css/board-layout.css` owns every threshold; the
- * card carries the classes and reads the mode's values out of custom
- * properties. In WIDE mode the sparkline sits in the price row, the stats are
- * four columns and the header's two actions share one row. In COMPACT mode
- * the sparkline moves to its own full-width slot, the stats go 2x2 and the
- * header's actions stack, which keeps the identity column wide enough for
- * the ticker budget. In both, the footer stacks the chip above the actions,
- * because the widest verdict and the two actions do not share one row at
- * either floor. Nothing here knows a pixel: there is no solver,
- * no ResizeObserver and no window read, so opening the Ask VEX drawer changes
- * the layout in the same paint that changes the container.
+ * NO CHART ON THE TILE. The R3 tile has no sparkline: the spotlight carries
+ * the chart, and the tile spends its width on the figures. Nothing here
+ * fetches, draws or reserves room for a line.
+ *
+ * ONE ANATOMY AT EVERY WIDTH. The board plate is a container query container
+ * and `global-css/board-layout.css` owns every threshold: how many columns the
+ * grid has, and the single floor under which a tile does not shrink. The
+ * floor is derived from this anatomy (the price row, the four stats in a row
+ * and the header with its widest realistic ticker line), so there is no
+ * second layout to switch to. Nothing here knows a pixel: there is no solver,
+ * no ResizeObserver and no window read, so opening the Vex sidebar changes the
+ * layout in the same paint that changes the container.
  *
  * NOTHING IS RECOVERED BY HOVER. `title` is a pointer convenience and never
- * the only way back to a cut string, so every card carries one always-present
- * `FullValueDisclosure` button: a real `<button>` with `aria-expanded` and
+ * the only way back to a cut string, so every tile carries one always-present
+ * `FullValueDisclosure` key: a real `<button>` with `aria-expanded` and
  * `aria-controls`, in the tab order, that opens the whole name, the whole
- * ticker and the RAW provider decimals. A DISCLOSURE and never a dialog - the
- * long form of why is on the component itself. It is present unconditionally
- * on purpose - a card is always rounding something - but it is not SILENT
- * about the difference between rounding and cutting: when the card printed a
- * shortened copy of a value it says so, in the button's accessible name, in
- * the button's own treatment, and again at the top of the panel.
+ * ticker, the whole chain name and the RAW provider decimals. A DISCLOSURE and
+ * never a dialog - the long form of why is on the component itself. It is
+ * present unconditionally on purpose - a tile is always rounding something -
+ * but it is not SILENT about the difference between rounding and cutting: when
+ * the tile printed a shortened copy of a value it says so, in the key's
+ * accessible name, in the key's own treatment (blue edge, blue glyph), and
+ * again at the top of the panel.
  *
  * WHAT DECIDES "SHORTENED" IS THE DATA, NOT THE LAYOUT. `boardCardValueBudget
  * .ts` owns a per-region budget in SLOTS - grapheme clusters weighted by the
- * width class of their code points - derived from the same measurement matrix
- * the CSS floors come from, and it runs before layout exists. No
+ * width class of their code points - derived from the same measurement
+ * the CSS floor comes from, and it runs before layout exists. No
  * JavaScript here reads a width back, and no threshold leaves the stylesheet:
  * a budget decides how much of a string is worth printing, never how many
- * columns the board has or which anatomy a card wears.
+ * columns the board has.
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
-import { PxIcon } from "../../../components/icons/index.js";
-import { ChainSlugIcon } from "../../../components/common/ChainIcon.js";
+import { chainDisplayBySlug } from "@shared/chains/display.js";
+import {
+  LineClose,
+  LineExternal,
+  LineInfo,
+  LineSpark,
+} from "../../../components/icons/line/index.js";
 import { cn } from "../../../lib/utils.js";
-import { BoardSparkline, type BoardSparklineData } from "./BoardSparkline.js";
 import { TokenPhoto } from "./TokenPhoto.js";
 import {
   BoardStatusChip,
@@ -102,23 +119,24 @@ import type { BoardCardModel } from "./boardModel.js";
 import type { BoardSafetyVerdict } from "./board-surface-contracts.js";
 
 /**
- * The card plate.
+ * The tile plate.
  *
- * The hover treatment moves COLOUR and ELEVATION only, never geometry: a card
- * that scaled or lifted on hover would reflow the grid under the pointer.
- * `motion-reduce:transition-none` stills it outright, which a decorative
- * transition must survive - the card is fully legible with no transition at
- * all. The focus ring is on the card's own INTERACTIVE children, not on the
- * plate: the plate is not focusable, and a ring around a non-target is noise.
+ * `vex-board-card` is the selected-tile seam (`board.css` draws the 1.5px blue
+ * outline inside it) and `vex-bd-tile` is the frame (`board-layout.css`: the
+ * tile's right and bottom rule, its padding 16 18 14, no fill, the hover
+ * wash). The hover moves COLOUR only, never geometry: a tile that scaled or
+ * lifted on hover would reflow the grid under the pointer. `vex-tint` settles
+ * the wash on the motion scale and stills it under reduced motion. The focus
+ * ring is on the tile's own INTERACTIVE children (`board-layout.css`), not on
+ * the plate: the plate is not focusable, and a ring around a non-target is
+ * noise.
  */
 const CARD_CLASS =
-  "vex-board-card group relative flex h-full w-full min-w-0 flex-col overflow-hidden border border-rule bg-board-card px-5 py-5 " +
-  "transition-colors duration-150 hover:bg-board-card-hover motion-reduce:transition-none";
+  "vex-board-card vex-bd-tile vex-tint group relative flex h-full w-full min-w-0 flex-col overflow-hidden";
 
 export interface TokenCardV3Props {
   readonly card: BoardCardModel;
   readonly verdict: BoardSafetyVerdict;
-  readonly sparkline: BoardSparklineData;
   /** True when the modal's spotlight is currently about THIS pool. */
   readonly selected: boolean;
   /** True while the board holds a live lease: only then may a change tick. */
@@ -130,7 +148,6 @@ export interface TokenCardV3Props {
 export function TokenCardV3({
   card,
   verdict,
-  sparkline,
   selected,
   live = false,
   onSpotlight,
@@ -142,19 +159,23 @@ export function TokenCardV3({
   const symbol = row?.baseTokenSymbol ?? null;
   const heading = row?.baseTokenName ?? symbol ?? card.pairAddress;
   const ticker = symbol ?? card.pairAddress;
+  // The chain as a reader names it ("Base"), from the one shared catalogue.
+  // An uncatalogued slug is named after itself and never blank.
+  const chainName = chainDisplayBySlug(card.chain).name;
   const priceLabel = formatBoardPriceUsd(row?.priceUsd ?? null);
   const deltaLabel = formatBoardPercent(row?.priceChange.h24 ?? null);
   const statusLabel = boardStatusChipLabel(verdict, row?.pairAgeSeconds ?? null);
   const tick = useLiveTick(live, row?.priceUsd ?? null, row?.priceChange.h24 ?? null);
 
-  // WHAT THE CARD WILL PRINT, and what it had to shorten to print it. The
+  // WHAT THE TILE WILL PRINT, and what it had to shorten to print it. The
   // budgets belong to `boardCardValueBudget.ts`; the accessible name below
   // and the disclosure panel both keep the WHOLE strings, so nothing here
   // removes a value from the reader - it decides which copy is on the plate.
-  // The ticker is the card's one PROPORTIONAL surface: it renders in uppercase
-  // Inter Tight, where `W` advances four times as far as `I`, so it is weighed
-  // per glyph rather than counted. Everything below renders `tabular-nums`,
-  // where a count of digits genuinely is a width.
+  // The ticker is the tile's one PROPORTIONAL surface: it renders in
+  // Instrument Sans, where `W` advances well over twice as far as `I`, so it
+  // is weighed per glyph rather than counted. Everything below renders in
+  // JetBrains Mono with `tabular-nums`, where a count of characters genuinely
+  // is a width.
   const printedTicker = boardCardValue(
     ticker,
     BOARD_CARD_TICKER_MAX_SLOTS,
@@ -203,8 +224,10 @@ export function TokenCardV3({
     },
   ];
   // The NAME is deliberately not in this list: it keeps its CSS ellipsis by
-  // product decision, and its whole string is in the `title`, in the card's
-  // accessible name and in the disclosure.
+  // product decision, and its whole string is in the `title`, in the tile's
+  // accessible name and in the disclosure. The chain name is not budgeted
+  // either: it is a short catalogue name, it concedes width to the ticker, and
+  // its whole string is in the `title` and in the disclosure.
   const shortened = anyShortened([
     printedTicker,
     printedPrice,
@@ -213,13 +236,13 @@ export function TokenCardV3({
   ]);
 
   /**
-   * THE DISCLOSURE'S STATE LIVES ON THE CARD, and it has to.
+   * THE DISCLOSURE'S STATE LIVES ON THE TILE, and it has to.
    *
-   * The panel is opaque and covers the whole card, so while it is open every
+   * The panel is opaque and covers the whole tile, so while it is open every
    * interactive element underneath it is INVISIBLE - and an invisible control
    * that can still be reached by Tab is exactly what rule 08 forbids ("focus
-   * is visible and not obscured"). Withdrawing them is therefore the CARD's
-   * job, because the card is what owns them; a component inside the header
+   * is visible and not obscured"). Withdrawing them is therefore the TILE's
+   * job, because the tile is what owns them; a component inside the header
    * could not reach the footer's buttons without reaching up out of itself.
    *
    * `tabIndex={-1}` AND NOT `inert`, deliberately. `inert` removes a subtree
@@ -241,41 +264,57 @@ export function TokenCardV3({
       aria-label={`${ticker} on ${card.chain}, price ${priceLabel}, 24 hour change ${deltaLabel}, ${statusLabel}`}
       className={CARD_CLASS}
     >
-      {/* IDENTITY. Fixed height so a two-line name in one card cannot push
-        * every price row in its row of cards out of alignment. */}
-      <header className="flex h-16 items-center gap-4">
+      {/* IDENTITY. One fixed row: the 34px photo, the name over the ticker
+        * line (18 + 16 = the photo's 34), and the two controls at the right.
+        * A two-line name in one tile cannot push every price row in its row
+        * of tiles out of alignment, because the name is clamped to one line. */}
+      <header className="vex-bd-tile-id">
         <TokenPhoto iconId={row?.iconId ?? null} symbol={symbol} />
-        <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        <div className="min-w-0 flex-1">
           <span
             data-vex-area="board-token-name"
-            className="truncate text-[17px] font-semibold leading-[24px] text-ink-primary"
+            className="block truncate text-[15px] font-semibold leading-[18px] text-ink-primary"
             // The WHOLE name: the visual clamp is CSS, the string is intact
             // here and in the accessible name.
             title={heading}
           >
             {heading}
           </span>
+          {/* THE TICKER LINE: "TICKER - Chain name", 12.5 muted. The ticker
+            * keeps its budgeted width (`shrink-0`) and the chain name is what
+            * concedes, with an ellipsis and its whole string in the title,
+            * so a cut can only ever land on the part that is whole in the
+            * disclosure and never on the token's own symbol. The chain mark is
+            * gone: the name is the chain. */}
           <span
-            data-vex-area="board-token-ticker"
-            data-shortened={printedTicker.shortened ? "true" : undefined}
-            className="truncate font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] text-ink-tertiary"
-            title={ticker}
+            data-vex-area="board-token-meta"
+            className="flex min-w-0 items-baseline text-[12.5px] leading-[16px] text-ink-tertiary"
           >
-            {printedTicker.text}
-          </span>
-          <span
-            data-vex-area="board-token-chain"
-            className="flex h-[18px] items-center"
-            title={card.chain}
-          >
-            <ChainSlugIcon chainSlug={card.chain} size={18} />
-            <span className="sr-only">{card.chain}</span>
+            <span
+              data-vex-area="board-token-ticker"
+              data-shortened={printedTicker.shortened ? "true" : undefined}
+              className="shrink-0 whitespace-nowrap"
+              title={ticker}
+            >
+              {printedTicker.text}
+            </span>
+            <span aria-hidden className="shrink-0 whitespace-pre">
+              {" · "}
+            </span>
+            <span
+              data-vex-area="board-token-chain"
+              className="min-w-0 truncate"
+              title={chainName}
+            >
+              {chainName}
+            </span>
           </span>
         </div>
-        <div className="vex-board-card-actions">
+        <div className="vex-bd-tile-actions">
           <FullValueDisclosure
             ticker={ticker}
             heading={heading}
+            chainName={chainName}
             row={row}
             shortened={shortened}
             open={fullValueOpen}
@@ -290,29 +329,28 @@ export function TokenCardV3({
         </div>
       </header>
 
-      {/* PRICE. The hero numeral, the qualified delta, and the sparkline in
-        * the right third - one row, fixed height, three things that are read
-        * together. The window ("24h") is printed beside the figure rather
-        * than left to a legend, so "+661.00%" cannot be read as a lifetime
-        * move. */}
+      {/* PRICE. The mono 26 price, the qualified 24h change in its trading
+        * colour, and the window ("24h") printed after it rather than left to
+        * a legend, so "+661.00%" cannot be read as a lifetime move. One row,
+        * fixed height, three things that are read together. */}
       <div
         data-vex-area="board-token-price-row"
         data-tick={tick}
-        className="mt-4 flex h-[44px] items-end gap-3"
+        className="vex-bd-tile-px"
       >
         {/* NOWRAP, and that is the fix for a defect the matrix caught at
           * 1920px with no drawer at all: with `flex-wrap` the browser pushed
           * the delta and its `24h` window onto a second line rather than
-          * shrinking the price, and the row's fixed 44px had no room for it.
-          * Nowrap makes the price the one element that concedes width - the
-          * right priority, because the delta and the window are short, fixed
-          * and meaningless apart, and because the disclosure in the header
-          * carries the whole decimal string either way. */}
+          * shrinking the price, and the row's fixed height had no room for
+          * it. Nowrap makes the price the one element that concedes width -
+          * the right priority, because the delta and the window are short,
+          * fixed and meaningless apart, and because the disclosure in the
+          * header carries the whole decimal string either way. */}
         <div className="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-2.5">
           <span
             data-vex-area="board-token-price"
             data-shortened={printedPrice.shortened ? "true" : undefined}
-            className="min-w-0 truncate font-mono text-[22px] leading-[34px] tabular-nums text-ink-primary"
+            className="vex-bd-tile-price vex-num min-w-0 truncate font-mono text-[26px] font-medium leading-[32px] text-ink-primary"
             // The WHOLE decimal string, so no digit the provider reported is
             // lost to the display precision above it. The KEYBOARD path to
             // the same string is the header's disclosure; this is the
@@ -326,7 +364,7 @@ export function TokenCardV3({
             data-trend={card.trendH24}
             data-shortened={printedDelta.shortened ? "true" : undefined}
             className={cn(
-              "shrink-0 font-mono text-[13px] leading-[20px] tabular-nums",
+              "vex-num shrink-0 font-mono text-[13px] leading-[20px]",
               deltaToneClass(card.trendH24),
             )}
             title={printedDelta.shortened ? deltaLabel : undefined}
@@ -335,42 +373,20 @@ export function TokenCardV3({
           </span>
           <span
             data-vex-area="board-token-delta-window"
-            className="shrink-0 font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em] text-ink-tertiary"
+            className="shrink-0 text-[12px] leading-[18px] text-ink-tertiary"
           >
             24h
           </span>
         </div>
-        {/* WIDE mode only. `board-layout.css` gives this a fixed 132px rather
-          * than a percentage: a percentage shrinks the figures' budget faster
-          * than the card shrinks, which is what pushed the delta out of the
-          * row in the first place. */}
-        <div
-          data-vex-area="board-token-sparkline-inline"
-          className="vex-board-card-sparkline-inline"
-        >
-          <BoardSparkline data={sparkline} trend={card.trendH24} />
-        </div>
       </div>
 
-      {/* COMPACT mode only, and this is why compact loses no data: the line
-        * is not deleted when it will not fit beside the figures, it moves
-        * under them into a slot of its own. */}
-      <div
-        data-vex-area="board-token-sparkline-slot"
-        className="vex-board-card-sparkline-slot w-full"
-      >
-        <BoardSparkline data={sparkline} trend={card.trendH24} />
-      </div>
-
-      <div className="mt-4 h-px w-full bg-rule" aria-hidden />
-
-      {/* THE FOUR FIGURES. A `dl` with four equal columns: the label sits
-        * ABOVE its value, as the mockup has it, and `grid-cols-4` keeps the
-        * columns aligned across every card in the grid regardless of how wide
-        * any one value renders. */}
+      {/* THE FOUR FIGURES. A `dl` with four equal columns under a quiet rule
+        * (`board-layout.css`): the label sits ABOVE its value, as the mockup
+        * has it, and the equal columns keep the figures aligned across every
+        * tile in the grid regardless of how wide any one value renders. */}
       <dl
         data-vex-area="board-token-stats"
-        className="vex-board-card-stats mt-4"
+        className="vex-board-card-stats"
       >
         {stats.map((stat) => (
           <Stat
@@ -382,40 +398,41 @@ export function TokenCardV3({
         ))}
       </dl>
 
-      {/* FOOTER. `mt-auto` pins this row to the bottom of the plate, so a
-        * row of cards has its chips and its buttons on one line whatever
-        * happens above them. */}
-      {/* STACKED in both modes, which is what lets the chip print
-        * "Checks unavailable in this response" - 308px, the widest string the
-        * frozen safety table can produce - on a row of its own instead of
-        * cutting the two buttons beside it. `board-layout.css` owns it. */}
+      {/* FOOTER. `mt-auto` (in `board-layout.css`) pins this block to the
+        * bottom of the plate, so a row of tiles has its checks word and its
+        * links on one line whatever happens above them. The checks word is
+        * ALWAYS its own full-width row: "Checks unavailable in this
+        * response" is the widest string the frozen safety table can produce
+        * and it fits one row of the floor, so the links below it are never
+        * what gives way. */}
       <div
         data-vex-area="board-token-footer"
-        className="vex-board-card-footer mt-auto pt-4"
+        className="vex-board-card-footer"
       >
         <BoardStatusChip
           verdict={verdict}
           pairAgeSeconds={row?.pairAgeSeconds ?? null}
+          className="vex-bd-tile-check"
         />
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="vex-bd-tile-links">
           <DexscreenerLink
             chain={card.chain}
             pairAddress={card.pairAddress}
             ticker={ticker}
             covered={fullValueOpen}
           />
-            <button
+          <button
             type="button"
             data-vex-area="board-card-ask"
             onClick={onAsk}
-            aria-label={`Ask VEX about ${ticker}`}
+            aria-label={`Ask Vex about ${ticker}`}
             // Covered by the full-value panel: out of the tab order, still in
             // the accessibility tree. See `fullValueOpen` above.
             tabIndex={fullValueOpen ? -1 : undefined}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 border border-rule px-2.5 font-mono text-[11px] uppercase tracking-[0.14em] text-accent-primary transition-colors duration-150 hover:border-rule-ink hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            className="vex-bd-link"
           >
-            <PxIcon name="models" size={16} />
-            Ask VEX
+            <LineSpark size={14} />
+            Ask Vex
           </button>
         </div>
       </div>
@@ -426,7 +443,8 @@ export function TokenCardV3({
 /**
  * The provider's own page for this pool, ALWAYS present.
  *
- * A passive external link: `target="_blank"` never opens a child window
+ * A passive external link, painted as the board's blue link (`vex-bd-link`,
+ * 13 / 500 with its glyph after the word). `target="_blank"` never opens a child window
  * here, because main's window-open handler denies it and routes allowlisted
  * hosts (dexscreener.com is on the list) through `shell.openExternal`. The
  * href is built from the board's own chain slug and pair address and from
@@ -454,13 +472,10 @@ export function DexscreenerLink({
       data-vex-area="board-token-dexscreener-link"
       aria-label={`Open ${ticker} on DexScreener`}
       tabIndex={covered ? -1 : undefined}
-      className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1 px-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-tertiary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-        className,
-      )}
+      className={cn("vex-bd-link", className)}
     >
       DexScreener
-      <PxIcon name="external" size={16} />
+      <LineExternal size={14} />
     </a>
   );
 }
@@ -502,9 +517,12 @@ function useLiveTick(
  * The Spotlight trigger.
  *
  * ALWAYS VISIBLE, never hover-revealed. A hover-only affordance is
- * unreachable by keyboard and by touch, and this is the card's primary
- * action. What hover does change is its emphasis, which is decoration a
- * reduced-motion reader loses nothing by not seeing.
+ * unreachable by keyboard and by touch, and this is the tile's primary
+ * action. It is the board's chip (`vex-bd-chip` in `board.css`: 26 high, 12.5,
+ * a quiet rule) with the word and no icon; `aria-pressed="true"` gives it the
+ * pressed look (blue edge, blue type at 500 on the selection fill), so the
+ * selected state is carried by the attribute and by the paint, never by the
+ * paint alone.
  */
 function SpotlightAction({
   symbol,
@@ -527,22 +545,21 @@ function SpotlightAction({
       aria-label={`Spotlight ${symbol}`}
       tabIndex={covered ? -1 : undefined}
       onClick={onSpotlight}
-      className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-1.5 self-start border px-3 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-        selected
-          ? "border-accent-primary bg-accent-wash text-accent-primary"
-          : "border-rule text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
-      )}
+      className="vex-bd-chip"
     >
-      <PxIcon name="fullscreen" size={16} />
       Spotlight
     </button>
   );
 }
 
+/**
+ * The 24h change is the ONE element on the tile that takes a trading colour
+ * (R3 section 1.2): up and down are the two trading aliases, flat is muted.
+ * A change that is absent reads as flat, so it is never painted as a move.
+ */
 function deltaToneClass(trend: BoardTrend): string {
-  if (trend === "up") return "text-accent-primary";
-  if (trend === "down") return "text-ink-primary";
+  if (trend === "up") return "text-trade-up";
+  if (trend === "down") return "text-trade-down";
   return "text-ink-tertiary";
 }
 
@@ -557,20 +574,22 @@ function Stat({
 }): JSX.Element {
   // NEITHER LINE ELLIPSIZES IN CSS, and that is why the value arrives already
   // decided. A stat label is fixed product copy and a stat value is a figure
-  // a reader is about to act on; the mode floors in `board-layout.css` are
-  // sized so every realistic pair fits whole (binding label "24h Volume" at
-  // 66px, binding value "$998.8K" at 63px). A schema extreme that cannot fit
-  // is shortened by `boardCardValueBudget.ts` BEFORE it gets here, so what
-  // reaches this cell always fits and always says whether it is the whole
-  // figure - rather than being clipped by the card with nothing reporting it.
+  // a reader is about to act on; the floor in `board-layout.css` is sized so
+  // every realistic pair fits whole (binding label "24h Volume" at 63px in
+  // sans 11.5, widest value "$1234.5B" at 62px in mono 13). A schema extreme
+  // that cannot fit is shortened by `boardCardValueBudget.ts` BEFORE it gets
+  // here, so what reaches this cell always fits and always says whether it
+  // is the whole figure - rather than being clipped by the tile with nothing
+  // reporting it. The label is a word (sans, sentence case, muted); the value
+  // is a figure (mono, tabular).
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <dt className="whitespace-nowrap font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] text-ink-tertiary">
+    <div className="min-w-0">
+      <dt className="whitespace-nowrap text-[11.5px] leading-[16px] text-ink-tertiary">
         {label}
       </dt>
       <dd
         data-shortened={printed.shortened ? "true" : undefined}
-        className="whitespace-nowrap font-mono text-[14px] leading-[20px] tabular-nums text-ink-primary"
+        className="vex-num whitespace-nowrap font-mono text-[13px] leading-[18px] text-ink-primary"
         title={title}
       >
         {printed.text}
@@ -587,6 +606,8 @@ function Stat({
 interface FullValueEntry {
   readonly label: string;
   readonly value: string;
+  /** A figure: set in the mono face, as everywhere else on the tile. */
+  readonly figure: boolean;
 }
 
 export const BOARD_FULL_VALUE_LABEL = "Show the full values";
@@ -660,6 +681,7 @@ export const BOARD_FULL_VALUE_SHORTENED_LABEL =
 function FullValueDisclosure({
   ticker,
   heading,
+  chainName,
   row,
   shortened,
   open,
@@ -667,12 +689,14 @@ function FullValueDisclosure({
 }: {
   readonly ticker: string;
   readonly heading: string;
+  /** The chain's display name, which the ticker line may cut. */
+  readonly chainName: string;
   readonly row: BoardCardModel["row"];
   /** True when the card printed a shortened copy of at least one value. */
   readonly shortened: boolean;
   /**
    * CONTROLLED BY THE CARD, because the card is what has to react to it: the
-   * panel covers the Spotlight button, the DexScreener link and Ask VEX, and
+   * panel covers the Spotlight button, the DexScreener link and Ask Vex, and
    * those have to leave the tab order while they cannot be seen. State owned
    * privately here could not reach them.
    */
@@ -697,12 +721,27 @@ function FullValueDisclosure({
   };
 
   const entries: readonly FullValueEntry[] = [
-    { label: "Name", value: heading },
-    { label: "Ticker", value: ticker },
-    { label: "Price, USD", value: row?.priceUsd ?? BOARD_EMPTY },
-    { label: "24h change, percent", value: row?.priceChange.h24 ?? BOARD_EMPTY },
-    { label: "Liquidity, USD", value: row?.liquidityUsd ?? BOARD_EMPTY },
-    { label: "24h volume, USD", value: row?.volumeH24Usd ?? BOARD_EMPTY },
+    { label: "Name", value: heading, figure: false },
+    { label: "Ticker", value: ticker, figure: false },
+    // The chain name is on the ticker line, where it concedes width, so the
+    // whole of it is owed here like every other string the tile may cut.
+    { label: "Chain", value: chainName, figure: false },
+    { label: "Price, USD", value: row?.priceUsd ?? BOARD_EMPTY, figure: true },
+    {
+      label: "24h change, percent",
+      value: row?.priceChange.h24 ?? BOARD_EMPTY,
+      figure: true,
+    },
+    {
+      label: "Liquidity, USD",
+      value: row?.liquidityUsd ?? BOARD_EMPTY,
+      figure: true,
+    },
+    {
+      label: "24h volume, USD",
+      value: row?.volumeH24Usd ?? BOARD_EMPTY,
+      figure: true,
+    },
   ];
 
   return (
@@ -732,18 +771,15 @@ function FullValueDisclosure({
         onClick={() => {
           setOpen(true);
         }}
-        className={cn(
-          "inline-flex h-7 w-7 shrink-0 items-center justify-center border text-ink-tertiary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-          // The cut is VISIBLE on the control itself, in the one treatment
-          // the card already uses to mean "this needs your attention", so a
-          // reader who never opens the panel still sees that this card is
-          // showing them less than the provider sent.
-          shortened
-            ? "border-accent-primary bg-accent-wash text-accent-primary"
-            : "border-rule",
-        )}
+        // THE KEY: 26 x 26, a quiet rule, the info glyph at 14
+        // (`vex-bd-tile-key` in `board-layout.css`). The cut is VISIBLE on
+        // the control itself - `data-shortened` gives it the blue edge and
+        // the blue glyph, the one treatment the board uses for "this needs
+        // your attention" - so a reader who never opens the panel still sees
+        // that this tile is showing them less than the provider sent.
+        className="vex-bd-tile-key vex-tint"
       >
-        <PxIcon name="info" size={16} />
+        <LineInfo size={14} />
       </button>
       {open ? (
         <div
@@ -763,10 +799,10 @@ function FullValueDisclosure({
             event.preventDefault();
             dismiss();
           }}
-          className="absolute inset-0 z-10 flex flex-col gap-3 overflow-y-auto border border-rule bg-board-card px-5 py-5"
+          className="absolute inset-0 z-10 flex flex-col gap-3 overflow-y-auto bg-board-surface px-[18px] pb-[14px] pt-4"
         >
           <div className="flex items-start justify-between gap-3">
-            <p className="font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-primary">
+            <p className="text-[12px] font-medium leading-[26px] text-ink-tertiary">
               {BOARD_FULL_VALUE_TITLE}
             </p>
             <button
@@ -775,15 +811,15 @@ function FullValueDisclosure({
               data-vex-area="board-token-full-value-close"
               onClick={dismiss}
               aria-label={`Close the full values for ${ticker}`}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="vex-bd-tile-key vex-tint"
             >
-              <PxIcon name="close" size={16} />
+              <LineClose size={14} />
             </button>
           </div>
           {shortened ? (
             <p
               data-vex-area="board-token-full-value-notice"
-              className="text-[12px] leading-[16px] text-ink-secondary"
+              className="text-[12.5px] leading-[18px] text-ink-secondary"
             >
               {BOARD_FULL_VALUE_SHORTENED_LABEL}. Every value below is the
               whole one.
@@ -798,7 +834,12 @@ function FullValueDisclosure({
                 {/* `break-all` and no clamp of any kind: this is the one place
                   * on the card where the WHOLE string is the point, so a
                   * 512-character symbol wraps and the panel scrolls. */}
-                <dd className="break-all text-[13px] leading-[18px] text-ink-primary">
+                <dd
+                  className={cn(
+                    "break-all text-[13px] leading-[18px] text-ink-primary",
+                    entry.figure && "vex-num font-mono",
+                  )}
+                >
                   {entry.value}
                 </dd>
               </div>

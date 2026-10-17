@@ -1,17 +1,14 @@
 /**
- * THE SPOTLIGHT SECTION - the one frame every block under the hero wears.
+ * THE SPOTLIGHT SECTION - the one head every block under the hero wears
+ * (docs/design/R3-MINIMAL.md sections 1.3 and 9.4).
  *
- * Section = label + content. The header is an 18px BARE glyph in the
- * tertiary ink (positive and danger tones repoint it), a 14/20 semibold
- * title, and a right-hand meta in the 12/16 tertiary register, optionally
- * followed by one trailing action. There is no disc, no medallion and no
- * wash behind the glyph: an icon is coloured by the row's ink and sits in
- * its leading slot, which is the whole of the reference set's icon language.
+ * Section = head + body. The head is the page's `.sec-h`: a 15 / 600 title at
+ * the left, a 12.5 muted meta at the right, optionally one trailing action,
+ * over a 1px rule with 6px under the words. There is no frame, no card fill
+ * and no icon: the page is paper and the rule is the only line.
  *
- * ONE LEVEL OF FRAME. The plate holds sections; a section holds hairline
- * dividers and borderless grids. Nothing inside a section draws another
- * rounded, bordered or filled box - the card-in-card the previous design
- * shipped is exactly what this file exists to prevent.
+ * ONE LEVEL OF LINE. The page holds sections; a section holds a head rule and
+ * quiet row rules. Nothing inside a section draws a box.
  *
  * THREE DESIGNED STATES for a section over a channel read. Pending draws the
  * skeleton register, unavailable prints the sentence for the reason, and the
@@ -45,23 +42,13 @@ export function unavailableCopy(reason: string): string {
   return UNAVAILABLE_COPY[reason] ?? "Unavailable in this response.";
 }
 
-export type SpotlightSectionTone = "neutral" | "positive" | "danger";
-
-const ICON_TONE: Readonly<Record<SpotlightSectionTone, string>> = {
-  neutral: "text-ink-tertiary",
-  positive: "text-accent-primary",
-  danger: "text-ink-primary",
-};
-
 export interface SpotlightSectionProps {
   readonly area: string;
-  readonly icon: ReactNode;
   readonly title: string;
   /** Right-hand meta: a figure pair, a window label, a chip. */
   readonly meta?: ReactNode;
-  /** One trailing header action (the assessment's Ask VEX). */
+  /** One trailing header action (the assessment's Ask Vex). */
   readonly action?: ReactNode;
-  readonly tone?: SpotlightSectionTone;
   /** Passed through as `data-state` for the tests that key on it. */
   readonly state?: string;
   readonly className?: string;
@@ -70,11 +57,9 @@ export interface SpotlightSectionProps {
 
 export function SpotlightSection({
   area,
-  icon,
   title,
   meta,
   action,
-  tone = "neutral",
   state,
   className,
   children,
@@ -83,30 +68,27 @@ export function SpotlightSection({
     <section
       data-vex-area={area}
       data-state={state}
-      className={cn(
-        "flex min-w-0 flex-col gap-3 border border-rule bg-board-card p-4",
-        className,
-      )}
+      className={cn("flex min-w-0 flex-col", className)}
     >
-      <div className="flex h-6 items-center gap-2.5">
-        <span
-          aria-hidden
-          data-vex-area="board-spotlight-section-icon"
-          className={cn("flex shrink-0 items-center", ICON_TONE[tone])}
-        >
-          {icon}
-        </span>
-        <h3 className="min-w-0 flex-1 truncate font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-primary">
+      {/* THE HEAD WRAPS RATHER THAN CUTS. A column can be as narrow as 300px
+        * and a meta such as "Checks unavailable in this response" is a whole
+        * sentence; dropping to a second line keeps every word. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-rule pb-1.5">
+        <h3 className="min-w-0 text-[15px] font-semibold leading-[1.3] text-ink-primary">
           {title}
         </h3>
         {meta === undefined ? null : (
-          <span className="flex shrink-0 items-center font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] tabular-nums text-ink-tertiary">
+          <span className="ml-auto flex min-w-0 items-center gap-1.5 text-[12.5px] leading-[1.3] text-ink-tertiary">
             {meta}
           </span>
         )}
-        {action}
+        {action === undefined ? null : (
+          <span className={cn("flex shrink-0 items-center", meta === undefined && "ml-auto")}>
+            {action}
+          </span>
+        )}
       </div>
-      {children}
+      <div className="mt-2.5 flex min-w-0 flex-col">{children}</div>
     </section>
   );
 }
@@ -123,10 +105,7 @@ export function SpotlightPendingBody({
     <p
       data-state="pending"
       aria-label={`${title} loading`}
-      className={cn(
-        "h-[52px] w-full bg-surface-skeleton",
-        className,
-      )}
+      className={cn("h-[52px] w-full bg-surface-skeleton", className)}
     />
   );
 }
@@ -138,7 +117,7 @@ export function SpotlightUnavailableBody({
   readonly reason: string;
 }): JSX.Element {
   return (
-    <p data-state="unavailable" className="text-[13px] leading-[18px] text-ink-tertiary">
+    <p data-state="unavailable" className="text-[14px] leading-[1.45] text-ink-tertiary">
       {unavailableCopy(reason)}
     </p>
   );

@@ -90,9 +90,9 @@ export function StudioKeepAliveDialog({
       }}
     >
       <DialogContent className="max-w-md">
-        <DialogHeader className="border-line-2">
+        <DialogHeader>
           <DialogTitle>{STUDIO_KEEP_ALIVE_TITLE}</DialogTitle>
-          <DialogDescription className="text-ink-secondary">
+          <DialogDescription>
             {requestedProject === null
               ? ""
               : studioKeepAliveDescription(
@@ -108,7 +108,10 @@ export function StudioKeepAliveDialog({
           * project whose workspace this window cannot see. The strip states the
           * consequence once, above the rows, so it holds for every button in
           * the list including the ones with no count beside them. */}
-        <DialogConsequence data-vex-consent="close-workspace">
+        <DialogConsequence
+          data-vex-consent="close-workspace"
+          className="text-[13px] leading-[1.45]"
+        >
           <span className="font-medium">{PROJECT_CLOSE_CONSEQUENCE_WHAT}</span>
           <span className="text-ink-secondary">
             {PROJECT_CLOSE_CONSEQUENCE_SCOPE}
@@ -119,11 +122,11 @@ export function StudioKeepAliveDialog({
         </DialogConsequence>
 
         <DialogBody className="gap-2">
-          <ul aria-label={STUDIO_KEEP_ALIVE_LIST_LABEL} className="flex flex-col gap-1">
+          <ul aria-label={STUDIO_KEEP_ALIVE_LIST_LABEL} className="flex flex-col">
             {openProjects.map((project) => (
               <li
                 key={project.id}
-                className="flex min-h-9 items-center gap-2 px-2 py-1"
+                className="flex min-h-[42px] items-center gap-3 border-b border-rule-quiet py-1.5 last:border-b-0"
               >
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-[14px] leading-[20px] text-ink-primary">
@@ -136,15 +139,16 @@ export function StudioKeepAliveDialog({
                   {(() => {
                     const count = terminalCounts.get(project.id);
                     return count === null || count === undefined ? null : (
-                      <span className="truncate text-[12px] leading-4 text-ink-secondary">
+                      <span className="truncate text-[12.5px] leading-4 text-ink-tertiary">
                         {studioKeepAliveTerminalsLine(count)}
                       </span>
                     );
                   })()}
                 </span>
+                {/* Ink: closing a workspace ends the shells running in it. */}
                 <Button
                   type="button"
-                  variant="quiet"
+                  variant="ink"
                   size="sm"
                   aria-label={studioKeepAliveCloseLabel(project.name)}
                   onClick={() => onCloseWorkspace(project.id)}
@@ -156,16 +160,15 @@ export function StudioKeepAliveDialog({
           </ul>
         </DialogBody>
 
-        <DialogFooter className="border-line-2">
+        <DialogFooter>
           <Button
             type="button"
-            variant="bare"
+            variant="quiet"
             onClick={onCancel}
             // The safer choice takes focus (rule 08). Without this the dialog
             // opens on the first project's `Close` button - a control that ends
             // every shell running in that project. See `DIALOG_INITIAL_FOCUS`.
             {...DIALOG_INITIAL_FOCUS}
-            className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             {STUDIO_KEEP_ALIVE_CANCEL}
           </Button>
