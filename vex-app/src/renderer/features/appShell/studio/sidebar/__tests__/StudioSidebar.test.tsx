@@ -9,13 +9,14 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
 import { ExplorerRegistry } from "../../explorer/index.js";
+import { useUpdateCardSlot } from "../../../../updates/update-card-slot.js";
 import {
   installStudioDomStubs,
   makeArtifact,
@@ -525,6 +526,24 @@ describe("the other sections", () => {
     renderSidebar();
     const profile = await screen.findByTestId("sidebar-profile");
     expect(profile.closest("[data-rail-foot]")?.classList.contains("vex-ls-foot")).toBe(true);
+  });
+
+  it("offers the update card its slot above the account row, and none on the rail", async () => {
+    const probe = renderHook(() => useUpdateCardSlot());
+    renderSidebar();
+    const profile = await screen.findByTestId("sidebar-profile");
+    const slot = document.querySelector("[data-vex-area='update-slot']");
+    expect(slot?.classList.contains("vex-upd-slot")).toBe(true);
+    expect(slot?.nextElementSibling).toBe(profile.closest("[data-rail-foot]"));
+    expect(probe.result.current).toBe(slot);
+
+    // Closed to its rail there is no room: no slot, and the card floats clear.
+    cleanup();
+    const railProbe = renderHook(() => useUpdateCardSlot());
+    renderSidebar({ collapsed: true });
+    await screen.findByTestId("sidebar-profile");
+    expect(document.querySelector("[data-vex-area='update-slot']")).toBeNull();
+    expect(railProbe.result.current).toBeNull();
   });
 });
 

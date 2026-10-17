@@ -75,6 +75,7 @@ import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.j
 import { cn } from "../../../../lib/utils.js";
 import { projectKeys, useProjects } from "../../../../lib/api/projects.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
+import { setUpdateCardSlot } from "../../../updates/update-card-slot.js";
 import { SidebarHomeSigil } from "../../SidebarHomeSigil.js";
 import { SidebarProfile } from "../../SidebarProfile.js";
 import { NavKey, SidebarNav } from "../../SessionRows/SidebarNav.js";
@@ -668,6 +669,12 @@ export function StudioSidebar({
 
         {body}
       </div>
+
+      {/* The update card stands here, above the account row, as in the agent
+        * sidebar; the rail has no room for it, so the card floats clear. */}
+      {wide ? (
+        <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
+      ) : null}
 
       <footer className="vex-ls-foot" data-rail-foot>
         <SidebarProfile sidebarOpen={wide} />
