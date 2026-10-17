@@ -1,5 +1,5 @@
 /**
- * `MissionErrorAlert` — the standing paused_error alert.
+ * `MissionErrorAlert` - the standing paused_error alert.
  *
  * Extracted from `MissionControls.tsx` when it gained real classification
  * logic: turning durable failure evidence into user-facing copy is its own
@@ -8,7 +8,7 @@
  * Behaviour is unchanged by the move.
  */
 
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import {
   classifyEngineFailure,
   classifyEngineRemedy,
@@ -18,6 +18,7 @@ import {
   engineErrorRemedyHint,
 } from "@shared/engine-error-copy.js";
 import type { RuntimeStateDto } from "@shared/schemas/runtime.js";
+import { ErrorCallout } from "../../../components/ui/error-callout.js";
 
 interface CauseCopy {
   /** Rendered as `Mission paused - <title>`, so it completes that sentence. */
@@ -61,20 +62,31 @@ const CAUSE_COPY: Readonly<Record<string, CauseCopy>> = {
 
 /**
  * Standing paused_error alert (issue #42): while the recover-eligible pause
- * persists, the mission is silently NOT monitoring the market or positions —
+ * persists, the mission is silently NOT monitoring the market or positions -
  * that has to be visible, not inferred from an agent reply. Persistent,
  * state-driven UI: no timers, no dismissal. If a recovery settles and the
- * refetched runtime is still paused_error, this simply stays/reappears — the
+ * refetched runtime is still paused_error, this simply stays/reappears - the
  * visible-failure signal the operator needs.
+ *
+ * Drawn as the kit's ink callout (docs/design/R3-MINIMAL.md sections 6 and
+ * 7): the error swatch and "Mission paused - {cause}", the body, the remedy
+ * and the not-monitoring line, then the keys the owner passes (Recover, the
+ * one blue key) with the bounded code trailer at the right of that row.
  */
 export function MissionErrorAlert({
   stopReason,
   lastError,
+  actions,
+  notes,
 }: {
   readonly stopReason: string | null;
   readonly lastError: RuntimeStateDto["lastError"];
+  /** The keys under the text: Recover, owned by `MissionControls`. */
+  readonly actions?: ReactNode;
+  /** Status lines under the keys (why Recover is unavailable). */
+  readonly notes?: ReactNode;
 }): JSX.Element {
-  // `provider_error` names the stop reason, not the cause — it covers both
+  // `provider_error` names the stop reason, not the cause - it covers both
   // inference and runtime errors, so the generic copy must not claim a
   // connection failure. The state is recoverable via the Recover button, so
   // never say "unrecoverable".
@@ -82,7 +94,7 @@ export function MissionErrorAlert({
   // `lastError` is the DURABLE evidence persisted with the paused run, so this
   // survives an app restart, when the live `EV.engine.error` event is long
   // gone. It is classified through the SAME classifier as the push event and
-  // the chat IPC mapper — one vocabulary, one mapping table — and degrades to
+  // the chat IPC mapper - one vocabulary, one mapping table - and degrades to
   // the generic wording when the run paused before the evidence was written or
   // for a reason with nothing classifiable to say.
   const signals =
@@ -118,7 +130,7 @@ export function MissionErrorAlert({
           ? "The mission paused after an inference or runtime error."
           : "The mission paused after an unexpected error.";
 
-  // Bounded codes for a bug report — never prose. `errorMessage` and
+  // Bounded codes for a bug report - never prose. `errorMessage` and
   // `stop_summary` stay server-side by construction; the DTO has no field for
   // them.
   const codes =
@@ -132,33 +144,50 @@ export function MissionErrorAlert({
         ]
           .filter((part): part is string => part !== undefined)
           .join(" · ");
+  const code = codes !== null && codes.length > 0 ? codes : null;
+  const hasActions = actions !== undefined && actions !== null;
+  const hasNotes = notes !== undefined && notes !== null;
 
   return (
-    <div
+    <ErrorCallout
       role="alert"
       data-vex-area="mission-error-alert"
       data-vex-category={classified ?? undefined}
-      className="vex-callout mb-3 w-full"
-    >
-      <p className="vex-micro text-ink-primary [--vex-micro-size:11px]">
-        {causeCopy !== null
+      className="mb-4 mt-1 w-full"
+      title={
+        causeCopy !== null
           ? `Mission paused - ${causeCopy.title}`
           : copy !== null
             ? `Mission paused - ${copy.title}`
-            : "Mission paused - error"}
-      </p>
-      <p className="mt-1.5 text-[13px] leading-5 text-ink-primary">{body}</p>
-      {remedyHint !== null ? (
-        <p className="mt-1 text-[13px] font-medium leading-5 text-ink-primary">{remedyHint}</p>
-      ) : null}
-      <p className="mt-1 text-[13px] leading-5 text-ink-secondary">
-        The mission is not monitoring the market or your positions until you
-        recover it.
-      </p>
-      {codes !== null && codes.length > 0 ? (
-        <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-ink-secondary">{codes}</p>
-      ) : null}
-    </div>
+            : "Mission paused - error"
+      }
+      cause={<span className="text-[14px] font-normal leading-[1.45]">{body}</span>}
+      hint={
+        <>
+          {remedyHint !== null ? (
+            <span className="block font-medium text-ink-primary">{remedyHint}</span>
+          ) : null}
+          <span className="block">
+            The mission is not monitoring the market or your positions until you
+            recover it.
+          </span>
+        </>
+      }
+      actions={
+        hasActions || hasNotes ? (
+          <>
+            {actions}
+            {code !== null ? (
+              <span className="ml-auto font-mono vex-num text-[11.5px] tracking-[-0.01em] text-ink-tertiary">
+                {code}
+              </span>
+            ) : null}
+            {hasNotes ? <div className="basis-full">{notes}</div> : null}
+          </>
+        ) : undefined
+      }
+      // Without keys the trailer takes the callout's own code line.
+      code={hasActions || hasNotes || code === null ? undefined : code}
+    />
   );
 }
-
