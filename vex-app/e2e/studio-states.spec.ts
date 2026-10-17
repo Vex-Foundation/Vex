@@ -1747,8 +1747,8 @@ test("HL-1 viewer: a line that outruns the highlight budget is reported, not hid
  *
  * ## The three relaunches, and why they are one test
  *
- * Each `vexDb` fixture starts its own Postgres container and migrates a fresh
- * schema, so three tests would be three containers and three migrations to
+ * Each `vexDb` fixture starts its own Postgres cluster and migrates a fresh
+ * schema, so three tests would be three clusters and three migrations to
  * prove three facts about one profile. They run in one test, in the order the
  * profile allows: everything comes back, then a file deleted between sessions
  * is counted, then an invented project id fails closed. The numbering in the
@@ -1769,7 +1769,7 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   vexDb: VexDatabaseFixture;
 }, testInfo: TestInfo) => {
   // Three boots, three shutdowns and a project create. The fixture's own
-  // container work is budgeted separately.
+  // database work is budgeted separately.
   test.setTimeout(900_000);
   let page = vexDb.shell;
   const reached = await enterStudio(page);

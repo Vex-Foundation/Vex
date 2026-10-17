@@ -1,13 +1,13 @@
 /**
- * The isolated-stack guards, asserted without Docker.
+ * The isolated-stack guards, asserted without starting a database.
  *
  * These are the checks that stand between an e2e run and the developer's real
  * Vex install. They are pure decisions on purpose: a guard that only runs when
- * a container happens to start is a guard nobody can trust, so each one is
+ * a database happens to start is a guard nobody can trust, so each one is
  * exercised here directly, in the same lane the stack itself runs in.
  *
- * The container path, the password file layout and teardown are proven by the
- * runs that actually use the fixture (`./vex-app-with-database.ts`).
+ * The bundled Postgres, the password file layout and teardown are proven by
+ * the runs that actually use the fixture (`./vex-app-with-database.ts`).
  */
 
 import path from "node:path";
@@ -25,7 +25,7 @@ import {
 } from "./vex-stack.js";
 
 test.describe("isolated stack guards", () => {
-  test("refuses the developer's own compose Postgres port", () => {
+  test("refuses the previous release's Docker Postgres port", () => {
     expect(() => assertIsolatedPgPort(DEFAULT_PG_PORT)).toThrow(/refusing port/);
   });
 
@@ -40,8 +40,9 @@ test.describe("isolated stack guards", () => {
   });
 
   test("refuses anything that is not exactly an e2e identity", () => {
-    // The first is the REAL compose project name of the developer stack this
-    // worktree runs beside; the rest are near misses.
+    // The first is the REAL install id (the previous release's compose
+    // project name) of the developer install this worktree runs beside; the
+    // rest are near misses.
     for (const identity of [
       "vex-724bb237-5a0d-4862-ab36-6c4a9d39852e",
       "vex",
@@ -66,12 +67,13 @@ test.describe("isolated stack guards", () => {
 });
 
 test.describe("isolated stack layout", () => {
-  test("puts the password where the compose stack would have put it", () => {
+  test("puts the password where the app keeps its own", () => {
     expect(pgPasswordPathFor("/tmp/run-config")).toBe(
       path.join("/tmp/run-config", PG_PASSWORD_RELATIVE_PATH),
     );
-    // The layout the app reads is `<configDir>/local-infra/secrets/pg_password`
-    // (`main/compose/render.ts`); a drift here silently un-isolates a run.
+    // The layout the app uses is `<configDir>/local-infra/secrets/pg_password`
+    // (`PG_PASSWORD_FILE`, `main/paths/config-dir.ts`); a drift here silently
+    // un-isolates a run.
     expect(PG_PASSWORD_RELATIVE_PATH).toBe(path.join("local-infra", "secrets", "pg_password"));
   });
 
