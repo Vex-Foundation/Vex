@@ -45,7 +45,6 @@ vi.mock("../../lighterTrading/LighterCenter.js", () => ({
 }));
 
 vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
-  LIGHTER_TOPBAR_HEIGHT: 44,
   LighterSidebar: ({
     collapsed,
     onToggleSidebar,
@@ -739,7 +738,7 @@ describe("AppShell", () => {
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
-  it("places Lighter navigation above the grid and keeps the content columns full-height", () => {
+  it("places the Lighter title row in the centre column and keeps the content columns full-height", () => {
     useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
     const view = renderShell();
     const topbar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
@@ -748,10 +747,16 @@ describe("AppShell", () => {
     const vexColumn = view.container.querySelector("[data-vex-area='vex-sidebar']")?.parentElement;
     const columns = [centerColumn, vexColumn];
 
-    expect(topbar?.parentElement).toBe(frame);
-    expect(frame?.style.paddingTop).toBe("44px");
-    // Lighter always uses the left rail.
+    // The title row is the centre's head row, under the running head (W4-2).
+    expect(topbar?.parentElement?.classList.contains("vex-shell-centre")).toBe(true);
+    expect(frame?.style.paddingTop).toBe("");
+    // Lighter always uses the left rail, and it mounts the real sidebar on it.
     expect(frame?.style.gridTemplateColumns).toMatch(/^56px minmax\(0, 1fr\) /);
+    expect(
+      view.container
+        .querySelector("[data-vex-area='left-page'] [data-vex-area='sessions-sidebar']")
+        ?.getAttribute("data-rail"),
+    ).toBe("true");
 
     for (const column of columns) {
       expect(column).not.toBeNull();
