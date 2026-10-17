@@ -4,17 +4,20 @@
  *   2) `engine.state.kind === "permission_denied"` - the engine socket
  *      exists and refused this process
  *   3) `engine.state.kind === "error"` - probe error, or endpoint rejected
- *      (context misconfigured, remote context, …)
+ *      (context misconfigured, remote context, ...)
  *
  * Each case states its own real cause and remediation; none is reduced to
- * "unexpected error". Recheck lives in the orchestrator footer.
+ * "unexpected error". It is the ink callout (a failure is ink, never a hue).
+ * Recheck lives in the orchestrator's actions.
  */
+
+import type { JSX } from "react";
 
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { DocsLink } from "../../../../components/onboarding/DocsLink.js";
 import { OpenLogsLink } from "../../../../components/common/OpenLogsLink.js";
 import { DOCKER_ENGINE_LINUX_URL } from "../constants.js";
-// Type-only import — `useDockerStatus` is referenced solely as
+// Type-only import - `useDockerStatus` is referenced solely as
 // `typeof useDockerStatus` to derive the data shape. `verbatimModuleSyntax`
 // in tsconfig.base.json elides this import at compile time so no runtime
 // hook gets pulled into a presentational branch (codex non-blocking cleanup).
@@ -46,10 +49,10 @@ export function FailureBody({ status }: FailureBodyProps): JSX.Element {
             ? (status.data.endpoint.message ?? "Docker endpoint rejected.")
             : "Docker check did not complete.";
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <SetupStatusCard tone="error" title={title} detail={message} />
 
-      <ul className="flex list-disc flex-col gap-1 pl-5 text-xs leading-relaxed text-ink-secondary">
+      <ul className="vex-fr-steps list-disc">
         <li>Ensure your user has access to the local Docker socket.</li>
         <li>
           Use a local Docker Engine or Docker Desktop endpoint - remote
@@ -57,8 +60,10 @@ export function FailureBody({ status }: FailureBodyProps): JSX.Element {
         </li>
       </ul>
 
-      <DocsLink href={DOCKER_ENGINE_LINUX_URL} label="View Docker install docs" />
-      <OpenLogsLink />
-    </div>
+      <div className="vex-fr-row vex-fr-row--links">
+        <DocsLink href={DOCKER_ENGINE_LINUX_URL} label="View Docker install docs" />
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
+    </>
   );
 }

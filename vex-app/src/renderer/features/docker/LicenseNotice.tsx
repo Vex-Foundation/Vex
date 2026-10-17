@@ -1,24 +1,24 @@
 /**
- * Docker Desktop license notice modal — shown BEFORE the user triggers
+ * Docker Desktop license notice modal - shown BEFORE the user triggers
  * an installer download (skill Appendix A + codex turn 4 YELLOW #1).
  *
- * Plain inline modal (no Radix Portal yet — that primitive needs its
+ * Plain inline modal (no Radix Portal yet - that primitive needs its
  * own CSP audit per MOTION-POLICY.md before adoption). Backdrop
  * deny-clicks outside the dialog so the user must explicitly accept or
  * dismiss.
  *
- * Visual: the V10 dialog language: a solid panel (--color-surface-1)
- * behind a hairline rule, the mask behind it with NO blur, no shadow; a
- * mono caps title; square actions from the Button primitive (the quiet
- * outlined Cancel, the one blue fill on Continue).
+ * Visual (`docs/design/R3-MINIMAL.md section 12`): a paper panel in the 1.5px ink
+ * frame, no shadow, on the flat paper scrim (a download must be agreed to, so it
+ * blocks); a 21 / 500 sans title; square actions from the Button primitive (the
+ * quiet outlined Cancel, the one blue fill on Continue).
  *
- * No "I have a license" toggle — Vex cannot verify legal state and
+ * No "I have a license" toggle - Vex cannot verify legal state and
  * presenting one would imply a verification it doesn't perform.
  */
 
 import { Button } from "../../components/ui/button.js";
-import { useCallback, useEffect, useRef } from "react";
-import { IconArrowUpRight } from "../../components/icons/index.js";
+import { useCallback, useEffect, useRef, type JSX } from "react";
+import { LineExternal } from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 
 interface LicenseNoticeProps {
@@ -53,7 +53,7 @@ export function LicenseNotice({
         return;
       }
       // Focus cycle: keep Tab navigation contained inside the dialog
-      // while it's open (codex post-impl SHOULD-FIX #5 — Vex UI rules
+      // while it's open (codex post-impl SHOULD-FIX #5 - Vex UI rules
       // require actual focus containment, not just initial focus).
       if (event.key !== "Tab" || dialog === null) return;
       const focusable = dialog.querySelectorAll<HTMLElement>(
@@ -67,7 +67,7 @@ export function LicenseNotice({
       // Initial open focuses the dialog container itself (tabIndex=-1).
       // Without this branch, the first Tab/Shift+Tab from there would
       // escape to the page behind. Move focus into the dialog instead
-      // (codex post-impl SHOULD-FIX — focus trap escape on dialog body).
+      // (codex post-impl SHOULD-FIX - focus trap escape on dialog body).
       if (active === dialog) {
         event.preventDefault();
         (event.shiftKey ? last : first).focus();
@@ -91,7 +91,7 @@ export function LicenseNotice({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-mask-1 px-6"
+      className="vex-scrim fixed inset-0 z-50 flex items-center justify-center px-6"
       onClick={onDismiss}
     >
       <div
@@ -105,33 +105,33 @@ export function LicenseNotice({
           // One-shot rise-and-settle on mount (the landing dialog law:
           // modals never pop); reduced motion collapses it globally.
           "vex-entry-settle",
-          "border border-[var(--color-border)] bg-surface-1 p-6 text-ink-primary",
+          "border-[1.5px] border-rule-ink bg-surface-base px-6 pb-5 pt-[22px] text-ink-primary",
         )}
         onClick={(event) => event.stopPropagation()}
       >
         <h2
           id="vex-license-title"
-          className="mb-4 font-mono text-[11px] uppercase tracking-[var(--tracking-eyebrow)]"
+          className="mb-3 text-[21px] font-medium leading-[1.3] tracking-[-0.005em]"
         >
           Docker Desktop license
         </h2>
-        <p className="mb-3 text-sm leading-relaxed text-ink-secondary">
+        <p className="mb-3 text-[14px] leading-relaxed text-ink-secondary">
           Docker Desktop is a third-party product distributed by Docker, Inc.
           Larger commercial and government use may require a paid Docker
           subscription. By downloading and installing it you agree to
           Docker&rsquo;s terms.
         </p>
-        <p className="mb-4 text-sm leading-relaxed text-ink-secondary">
+        <p className="mb-4 text-[14px] leading-relaxed text-ink-secondary">
           Vex does not manage your Docker license - it only starts and stops
           its own local services through Docker&rsquo;s public CLI.
         </p>
         <button
           type="button"
           onClick={openDocs}
-          className="mb-5 inline-flex items-center gap-1 text-sm text-[var(--vex-accent-text,var(--color-accent-primary))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-onboarding-accent,var(--color-accent-primary))] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1"
+          className="vex-fr-link mb-5 inline-flex items-center gap-1.5"
         >
           Docker Desktop license terms
-          <IconArrowUpRight size={14} />
+          <LineExternal size={14} />
         </button>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="quiet" size="sm" onClick={onDismiss}>
