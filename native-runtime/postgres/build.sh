@@ -21,7 +21,14 @@
 #
 # darwin-arm64 builds natively; darwin-x64 is a meson cross build from Apple
 # Silicon (clang -arch x86_64, x64 binaries run under Rosetta); linux-x64 runs
-# inside linux/build-in-container.sh. Every run starts from a clean tree.
+# inside linux/build-in-container.sh. win32-x64 builds under Git Bash in an
+# MSVC x64 developer environment (cl, /MD) with a static zlib from the pin;
+# the layout is the same (bin/*.exe with libpq.dll and the app-local MSVC
+# runtime, lib/postgresql/*.dll, share/postgresql), and Postgres on Windows
+# resolves lib/postgresql and share/postgresql from its executable the same
+# way. win32-arm64 has no Postgres build of its own: PG 18 cannot be built
+# with MSVC for ARM64 (upstream support is PG 19), so that runtime ships this
+# x64 tree under the OS's x64 emulation. Every run starts from a clean tree.
 
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
@@ -31,6 +38,8 @@ trap 'nr_log "ERROR: build.sh failed at line $LINENO: $BASH_COMMAND"' ERR
 
 target="${1:-}"
 nr_require_target "$target"
+[ "$target" = win32-arm64 ] &&
+  nr_die "win32-arm64 ships the win32-x64 Postgres tree (PG 18 has no MSVC ARM64 build); build win32-x64"
 build_started=$SECONDS
 
 work="$NR_ROOT/.work/$target/postgres"
@@ -39,6 +48,14 @@ tarball="$NR_ROOT/.work/downloads/postgresql-$PG_VERSION.tar.bz2"
 prefix=/vex-unrelocated
 stage="$work/stage"
 root="$stage$prefix"
+exe=
+if [ "$target" = win32-x64 ]; then
+  # An absolute prefix with a drive, so it does not depend on the Python
+  # version's idea of a rooted path; meson's --destdir drops the drive.
+  prefix=C:/vex-unrelocated
+  root="$stage/vex-unrelocated"
+  exe=.exe
+fi
 src="$work/src/postgresql-$PG_VERSION"
 
 nr_fetch_verified "$PG_URL" "$PG_SHA256" "$tarball"
@@ -111,6 +128,43 @@ EOF
     export CFLAGS="${CFLAGS:-} $prefix_map"
     meson setup "$work/build" "$src" "${pg_opts[@]}"
     ;;
+  win32-x64)
+    nr_win_env "$target"
+    # flex/bison from the pinned winflexbison, perl from Strawberry (what
+    # upstream's Windows CI uses; Git Bash's msys perl must not be picked).
+    wfb="$NR_ROOT/.work/tools/winflexbison-$WINFLEXBISON_VERSION"
+    wfb_zip="$NR_ROOT/.work/downloads/win_flex_bison-$WINFLEXBISON_VERSION.zip"
+    if [ ! -f "$wfb/win_flex.exe" ]; then
+      nr_fetch_verified "$WINFLEXBISON_URL" "$WINFLEXBISON_SHA256" "$wfb_zip"
+      rm -rf "$wfb" && mkdir -p "$wfb"
+      "$NR_VENV_PYTHON" -I -m zipfile -e "$wfb_zip" "$wfb"
+    fi
+    perl_exe=/c/Strawberry/perl/bin/perl.exe
+    [ -f "$perl_exe" ] || nr_die "Strawberry Perl not found at $perl_exe"
+    nr_log "$("$perl_exe" -e 'print "perl $^V"'), $("$wfb/win_flex.exe" --version | head -1), $("$wfb/win_bison.exe" --version | head -1)"
+
+    # zlib: a static zlib.lib (win32/Makefile.msc builds it with /MD, the same
+    # CRT as Postgres), found by meson's zlib lookup through INCLUDE/LIB.
+    zsrc="$work/src/zlib-$ZLIB_VERSION"
+    nr_fetch_verified "$ZLIB_URL" "$ZLIB_SHA256" "$NR_ROOT/.work/downloads/zlib-$ZLIB_VERSION.tar.gz"
+    tar -xzf "$NR_ROOT/.work/downloads/zlib-$ZLIB_VERSION.tar.gz" -C "$work/src"
+    (cd "$zsrc" && nmake -nologo -f win32/Makefile.msc zlib.lib >"$work/zlib-build.log" 2>&1) ||
+      { tail -30 "$work/zlib-build.log" >&2; nr_die "zlib build failed"; }
+    mkdir -p "$work/zlib/include" "$work/zlib/lib"
+    cp "$zsrc/zlib.h" "$zsrc/zconf.h" "$work/zlib/include/"
+    cp "$zsrc/zlib.lib" "$work/zlib/lib/"
+    INCLUDE="$(cygpath -w "$work/zlib/include");$INCLUDE"
+    LIB="$(cygpath -w "$work/zlib/lib");$LIB"
+    CMAKE_PREFIX_PATH="$(cygpath -w "$work/zlib")"
+    export INCLUDE LIB CMAKE_PREFIX_PATH
+
+    CC=cl meson setup "$work/build" "$src" "${pg_opts[@]}" -Db_vscrt=md \
+      -DPERL="$(cygpath -m "$perl_exe")" -DPYTHON="$(cygpath -m "$NR_VENV_PYTHON")" \
+      -DFLEX="$(cygpath -m "$wfb/win_flex.exe")" -DBISON="$(cygpath -m "$wfb/win_bison.exe")"
+    grep -qE "dependency zlib found: YES $ZLIB_VERSION" "$work/build/meson-logs/meson-log.txt" ||
+      nr_die "meson did not pick the pinned zlib $ZLIB_VERSION: $(grep -i 'dependency zlib' "$work/build/meson-logs/meson-log.txt")"
+    grep -q '^#define HAVE_LIBZ 1' "$work/build/src/include/pg_config.h" || nr_die "configured without zlib"
+    ;;
 esac
 
 ninja -C "$work/build"
@@ -118,18 +172,35 @@ meson install -C "$work/build" --destdir "$stage" --quiet
 
 # pgvector against the staged server. OPTFLAGS="" is mandatory: the default
 # is -march=native, which would tie the module to the build machine's CPU.
-pg_config="$root/bin/pg_config"
-[ "$("$pg_config" --pkglibdir)" = "$root/lib/postgresql" ] ||
-  nr_die "staged pg_config does not relocate: $("$pg_config" --pkglibdir)"
-make -C "$work/pgvector" -j"$(nr_jobs)" OPTFLAGS="" PG_CONFIG="$pg_config"
-make -C "$work/pgvector" install OPTFLAGS="" PG_CONFIG="$pg_config"
+pg_config="$root/bin/pg_config$exe"
+if [ "$target" != win32-x64 ]; then
+  [ "$("$pg_config" --pkglibdir)" = "$root/lib/postgresql" ] ||
+    nr_die "staged pg_config does not relocate: $("$pg_config" --pkglibdir)"
+  make -C "$work/pgvector" -j"$(nr_jobs)" OPTFLAGS="" PG_CONFIG="$pg_config"
+  make -C "$work/pgvector" install OPTFLAGS="" PG_CONFIG="$pg_config"
+else
+  # Windows: the same relocation check (pg_config prints C:/... with forward
+  # slashes), then pgvector's own Makefile.win. Its include/lib defaults
+  # assume the EDB layout, so the meson layout's directories are passed in;
+  # OPTFLAGS=-MD links it against the same dynamic CRT as postgres.exe (cl's
+  # default is the static one). The files are copied below, no nmake install.
+  got="$("$pg_config" --pkglibdir | tr -d '\r')"
+  want="$(cygpath -m "$root/lib/postgresql")"
+  [ "${got,,}" = "${want,,}" ] || nr_die "staged pg_config does not relocate: $got (expected $want)"
+  [ -f "$root/lib/postgres.lib" ] || nr_die "postgres.lib (the import library modules link against) was not installed"
+  (cd "$work/pgvector" && nmake -nologo -f Makefile.win all OPTFLAGS=-MD \
+    PGROOT="$(cygpath -w "$root")" INCLUDEDIR="$(cygpath -w "$root/include")" \
+    INCLUDEDIR_SERVER="$(cygpath -w "$root/include/postgresql/server")" LIBDIR="$(cygpath -w "$root/lib")")
+  cp "$work/pgvector/vector.dll" "$root/lib/postgresql/"
+  cp "$work/pgvector/vector.control" "$work/pgvector"/sql/vector--*.sql "$root/share/postgresql/extension/"
+fi
 
 # ---- Assemble the shipped tree ---------------------------------------------
 
 mkdir -p "$out/bin" "$out/lib/postgresql" "$out/share/licenses/postgresql" "$out/share/licenses/pgvector"
 
 for b in postgres initdb pg_ctl pg_controldata pg_dump pg_restore; do
-  cp "$root/bin/$b" "$out/bin/$b"
+  cp "$root/bin/$b$exe" "$out/bin/$b$exe"
 done
 
 # libpq under the name the binaries load it by, dereferenced: no symlinks in
@@ -143,9 +214,17 @@ case "$target" in
     libpq_name="$(readelf -d "$root/lib/libpq.so" | sed -nE 's/.*\(SONAME\).*\[(.*)\]/\1/p')"
     dlsuffix=.so
     ;;
+  win32-*)
+    # libpq.dll (meson installs DLLs into bin/) and the MSVC runtime go into
+    # bin/, beside the executables that load them: the import closure below.
+    libpq_name=
+    dlsuffix=.dll
+    ;;
 esac
-[ -n "$libpq_name" ] || nr_die "could not read libpq's install name / SONAME"
-cp -L "$root/lib/$libpq_name" "$out/lib/$libpq_name"
+if [[ "$target" != win32-* ]]; then
+  [ -n "$libpq_name" ] || nr_die "could not read libpq's install name / SONAME"
+  cp -L "$root/lib/$libpq_name" "$out/lib/$libpq_name"
+fi
 
 modules=(plpgsql dict_snowball vector)
 for d in "$src"/src/backend/utils/mb/conversion_procs/*/; do
@@ -211,12 +290,23 @@ case "$target" in
       fi
     done < <(find "$out" -type f -print0)
     ;;
+  win32-*)
+    # No rpaths on Windows: every PE here runs in, or is loaded by, a process
+    # whose executable is in bin/, and that directory is where DLLs are
+    # searched. Nothing to strip: release links carry no debug info.
+    nr_win_closure "$out/bin" "$out" "$root/bin" "$(nr_win_crt_dir x64)"
+    ls "$out/bin" >&2
+    ;;
 esac
 
-# No build-machine path may ship, except inside the recorded compiler flags
-# (the pg_config view), which carry the -ffile-prefix-map argument itself.
-leaks="$(find "$out" -type f -exec strings -a {} + | grep -F "$NR_ROOT" | grep -vF -- "$prefix_map" || true)"
-[ -z "$leaks" ] || nr_die "build paths leaked into the tree:"$'\n'"$leaks"
+if [[ "$target" == win32-* ]]; then
+  nr_win_no_build_paths "$out"
+else
+  # No build-machine path may ship, except inside the recorded compiler flags
+  # (the pg_config view), which carry the -ffile-prefix-map argument itself.
+  leaks="$(find "$out" -type f -exec strings -a {} + | grep -F "$NR_ROOT" | grep -vF -- "$prefix_map" || true)"
+  [ -z "$leaks" ] || nr_die "build paths leaked into the tree:"$'\n'"$leaks"
+fi
 
 "$NR_ROOT/lib/verify-tree.sh" "$out" "$target"
 
