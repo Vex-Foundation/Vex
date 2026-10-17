@@ -61,8 +61,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  // @ts-expect-error - test cleanup
-  delete window.vex;
+  Reflect.deleteProperty(window, "vex");
 });
 
 function renderScreen() {

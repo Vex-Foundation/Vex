@@ -43,8 +43,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   Element.prototype.getBoundingClientRect = realRect;
-  // @ts-expect-error - jsdom has no scrollIntoView; the stub is removed again
-  delete Element.prototype.scrollIntoView;
+  // jsdom has no scrollIntoView; the stub is removed again.
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
 function renderPage() {
