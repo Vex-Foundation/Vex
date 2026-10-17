@@ -156,7 +156,8 @@ export async function createPreviousRelease(options: {
     const result = await withClient(sourcePort, async (c) => {
       await c.query("BEGIN");
       for (let s = 0; s < SEED.sessions; s++) {
-        const sessionId = `session-${String(s)}-${randomUUID()}`;
+        // The app writes UUID session ids, and its session list validates them.
+        const sessionId = randomUUID();
         await c.query("INSERT INTO sessions (id, mode, scope, summary, initial_goal) VALUES ($1, $2, 'vex_app', $3, $4)", [
           sessionId,
           s % 3 === 0 ? "mission" : "agent",
