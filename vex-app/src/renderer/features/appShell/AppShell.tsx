@@ -6,19 +6,19 @@
  * on grid tracks solved by `lib/shell-columns.ts`, plus the new-session modal.
  * The frame owns viewport measurement, the narrow override, the derived Vex
  * auto-close and Lighter's chat share drag; column CONTENT belongs to
- * SessionsList / StudioSidebar / SessionPanel / BookPanel.
+ * SessionsList / StudioSidebar / SessionPanel / VexSidebar.
  *
- * - The LEFT column hosts the sessions sidebar over its print in agent mode,
- *   the Studio projects and explorer in Studio, and the vx mark on the rail in
- *   Lighter. Its widths are fixed (264, 224 at the medium tier, the 56px rail
- *   closed); there is no drag handle.
+ * - The LEFT column hosts the sessions sidebar in agent mode, the Studio
+ *   projects and explorer in Studio, and the vx mark on the rail in Lighter.
+ *   Its widths are fixed (264, 224 at the medium tier, the 56px rail closed);
+ *   there is no drag handle.
  * - The CENTRE opens with the RUNNING HEAD (`RunningHead`), the 44px drag row,
  *   then the mode's surface. Pages (Memory, Settings, Portfolio and the rest)
  *   open INSIDE the centre (`ShellScreens`), so both sidebars stay standing.
- * - The RIGHT column is Vex's: open in chat by default, hidden by default on
- *   the table pages, and absent on the welcome stage. It still mounts the
- *   BOOK panel, which keeps its 48px collapse spine in a session so it can be
- *   reopened from the column itself.
+ * - The RIGHT column is Vex's (`VexSidebar`, docs/design/R3-MINIMAL.md
+ *   section 5): open in chat by default, hidden by default on the table pages
+ *   and on the Lighter desk, and absent on the welcome stage. Hidden is zero
+ *   width; the title bar's token chip brings her back.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
  * stays the e2e/test selector. Lighter moves navigation into its top bar above
@@ -43,7 +43,6 @@ import {
   shellTier,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
-import { BookPanel } from "./BookPanel.js";
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
@@ -60,7 +59,6 @@ import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
-import { ShellBackdrop } from "./ShellBackdrop.js";
 import { LeftPageOpenContext } from "./leftPage/leftPageContext.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
@@ -68,6 +66,7 @@ import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
 import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
+import { VexSidebar } from "../vex/VexSidebar.js";
 
 import { LockVexControl } from "./LockVexControl.js";
 
@@ -118,12 +117,6 @@ function AppShellContent(): JSX.Element {
     </main>
   );
 }
-
-/**
- * The BOOK panel's collapse spine: what a closed right column keeps in a
- * session while the BOOK still hosts it, so its toggle stays on screen.
- */
-const BOOK_SPINE = 48;
 
 /**
  * The frame: measures its own box (rAF-throttled ResizeObserver), decides
@@ -245,21 +238,20 @@ function ShellFrame({
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
-  const closedVex = welcomeStage || zen ? 0 : BOOK_SPINE;
+  // A hidden Vex keeps nothing: her column closes to zero width.
   const cols: ShellColumns = computeShellColumns({
     viewport,
     mode: runtimeMode,
     left: leftAsked,
     vex: vexOpen,
     welcome: welcomeStage,
-    closedVex,
     lighterChat: Math.max(1, viewport * lighterChatShare),
     zen,
   });
   const colsRef = useRef(cols);
   colsRef.current = cols;
   // Derived auto-close: the stored choice stays `true`, the column collapses.
-  const vexEffectiveOpen = !zen && vexOpen && cols.vex > closedVex;
+  const vexEffectiveOpen = !zen && vexOpen && cols.vex > 0;
   const rail = cols.left <= RAIL_WIDTH;
   // What the left column's content renders: Lighter's drawer state, or the
   // solved column (open, or its rail).
@@ -338,16 +330,15 @@ function ShellFrame({
         />
       ) : null}
 
-      {/* TRACK 1 - the left sidebar: the sessions sidebar over its print
-        * (agent), the projects and explorer (Studio), the vx mark on the rail
-        * (Lighter). The column stays overflow-visible so nothing the sidebar
-        * opens is cut at its edge. */}
+      {/* TRACK 1 - the left sidebar: the sessions sidebar (agent), the
+        * projects and explorer (Studio), the vx mark on the rail (Lighter).
+        * The column stays overflow-visible so nothing the sidebar opens is
+        * cut at its edge. */}
       <div
         className="vex-left-page relative z-20 h-full min-h-0 min-w-0"
         data-vex-area="left-page"
         data-vex-left-page={rail ? "spine" : "page"}
       >
-        {studio || cols.left === 0 ? null : <ShellBackdrop />}
         {rail && !lighter ? (
           <div aria-hidden className="vex-left-page__cap vex-drag" />
         ) : null}
@@ -416,23 +407,19 @@ function ShellFrame({
         <ShellScreens />
       </section>
 
-      {/* TRACK 3 - the right column. Empty on the welcome stage. */}
+      {/* TRACK 3 - Vex's column. Empty on the welcome stage, where she
+        * stands in the centre; in Lighter's Zen it is the assistant overlay. */}
       <div className="lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
-        {/* Mounted in every session - the panel owns its collapsed rendering,
-         * so a derived auto-close never remounts it. `vexEffectiveOpen` folds
-         * the solve into the open flag WITHOUT touching the stored choice. */}
+        {/* Mounted in every session - the sidebar owns its hidden rendering,
+         * so a derived auto-close never remounts the column. `vexEffectiveOpen`
+         * folds the solve into the open flag WITHOUT touching the stored
+         * choice. */}
         {welcomeStage ? null : (
-          <BookPanel
-            activeSessionId={activeSessionId}
-            bookOpen={zen ? zenAssistantOpen : vexEffectiveOpen}
-            onToggle={() => {
-              if (zen) {
-                setZenAssistantOpen(false);
-                return;
-              }
-              // Opening also clears the narrow override (the store action),
-              // so a column the solve closed opens again on the first press.
-              setVexOpen(!vexEffectiveOpen);
+          <VexSidebar
+            open={zen ? zenAssistantOpen : vexEffectiveOpen}
+            onHide={() => {
+              if (zen) setZenAssistantOpen(false);
+              else setVexOpen(false);
             }}
           />
         )}

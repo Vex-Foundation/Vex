@@ -191,54 +191,6 @@
   }
 }
 
-/* THE LEFT COLUMN'S PRINT, under the sessions sidebar. Each image is laid out
- * at window size from the column's top left corner, which is the window's, so
- * the open sidebar and the 56px rail are windows onto one picture, the one
- * the unlock stage shows full window. The plate
- * colour fills in while the photograph decodes: the night print's darkest
- * tone, and the day print's mid tone in celeris. */
-.vex-print {
-  background: #150f0d;
-}
-[data-vex-theme="celeris"] .vex-print {
-  background: #c7b6a6;
-}
-.vex-print__img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  object-fit: cover;
-  object-position: 60% 50%;
-}
-/* The user's own image: shown as it is, centred, in either room. */
-.vex-print__img--custom {
-  object-position: 50% 50%;
-}
-/* One print per room, swapped on data-vex-theme (stamped on the shell root
- * and documentElement), never by a JS theme read. */
-.vex-print__img--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-print__img--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-print__img--night {
-  display: none;
-}
-/* The print's grain (the print plate's own file): fractal noise, multiplied
- * at 10%, over the photograph only. */
-.vex-print__grain {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  opacity: 0.1;
-  mix-blend-mode: multiply;
-  background-image: url(/art/grain.svg);
-  background-size: 220px 220px;
-}
 /* The rail's paper cap: the head row runs across it, rule included, and the
  * rail's content starts under it, clear of the macOS traffic lights. A window
  * drag region like every head row. */
