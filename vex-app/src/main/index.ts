@@ -111,6 +111,7 @@ import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
 import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
 import { disposeStudioDispatchPoisonRetry } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
+import { getMainWindow } from "./windows/main-window-ref.js";
 import { installMinimalMenu } from "./menu.js";
 import {
   disableSentry,
@@ -709,9 +710,10 @@ app.whenReady().then(async () => {
 
 app.on("activate", async () => {
   if (!bootRuntimeInitialized) return;
-  // macOS: re-create window when dock icon clicked + no windows open
-  const { BrowserWindow } = await import("electron");
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // macOS: re-create the main window when the dock icon is clicked after it
+  // was closed. "No main window", not "no windows": the DexScreener bridge's
+  // hidden window outlives it (windows/main-window-ref.ts).
+  if (getMainWindow() === null) {
     await createMainWindow();
   }
 });
