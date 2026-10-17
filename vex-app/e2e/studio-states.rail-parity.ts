@@ -377,16 +377,11 @@ export function registerRailParityScenarios(
 
     /* ---- 01: the welcome rail, and the way back to Agent ---------------- */
 
-    // With no project open the capsule is the WELCOME's, under its wordmark, and
-    // the rail header mounts none (owner decree 2026-09-04; one radiogroup per
-    // page). Its rail half is asserted below, once a project is open.
+    // No capsule anywhere: the Studio sidebar is the left sidebar, and its
+    // nav's Chat row is the way back (docs/design/R3-MINIMAL.md section 4).
+    await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
     await expect(
-      sidebar.getByRole("radiogroup", { name: "Runtime mode" }),
-    ).toHaveCount(0);
-    await expect(
-      page
-        .locator('[data-vex-area="studio-welcome"]')
-        .getByRole("radiogroup", { name: "Runtime mode" }),
+      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Chat" }),
     ).toBeVisible();
     await shot(page, `${theme}-01-studio-welcome-empty`);
 
@@ -409,19 +404,25 @@ export function registerRailParityScenarios(
     const explorerPane = sidebar.locator('[data-vex-rail-pane="explorer"]');
     await expect(explorerPane).toBeVisible();
 
-    // I9's rail half: once a project is open the welcome is gone and the capsule
-    // is IN the rail, so Studio is never a one-way door; still exactly one.
+    // I9's rail half: once a project is open the welcome is gone and the nav
+    // stays in the sidebar, so Studio is never a one-way door.
     await expect(
-      sidebar.getByRole("radiogroup", { name: "Runtime mode" }),
+      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Chat" }),
     ).toBeVisible();
-    await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
+    await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
 
     // THE I6 ASSERTION, and it is a number on purpose. The pane was a fixed 256px
-    // box (`h-64`) inside a scrolling rail. At this viewport the rail is 900px
-    // tall, so a pane that still measures anywhere near 256 has not become a pane.
+    // box (`h-64`) inside a scrolling rail. The R3 column puts the nav above
+    // the Studio body (docs/design/R3-MINIMAL.md section 4), so at 900px the
+    // split holds about 420px: the explorer's default share (0.55) gives it
+    // more than the projects pane above it and well over 200px, which a fixed
+    // box could not do at every window height.
     const paneBox = await explorerPane.boundingBox();
+    const projectsBox = await sidebar.locator('[data-vex-rail-pane="projects"]').boundingBox();
     expect(paneBox, "the explorer pane has no layout box").not.toBeNull();
-    expect(paneBox?.height ?? 0).toBeGreaterThan(300);
+    expect(projectsBox, "the projects pane has no layout box").not.toBeNull();
+    expect(paneBox?.height ?? 0).toBeGreaterThan(200);
+    expect(paneBox?.height ?? 0).toBeGreaterThan(projectsBox?.height ?? 0);
     await shot(page, `${theme}-18-explorer-root`);
 
     /* ---- the seam: a real separator the user can move -------------------- */

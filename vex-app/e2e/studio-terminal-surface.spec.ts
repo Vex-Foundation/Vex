@@ -101,7 +101,8 @@ async function withTourHidden<T>(page: Page, run: () => Promise<T>): Promise<T> 
 /**
  * Flip the theme through Settings (the product path: the appearance cubes),
  * from whatever mode the shell is in. The menu that reaches Settings lives in
- * the Agent rail, so a Studio caller is switched there and back; the project
+ * the Agent sidebar, so a Studio caller is switched there through the nav's
+ * Chat row and back through its Studio row; the project
  * stays selected across the switch, and is reopened from the rail when it did
  * not.
  */
@@ -110,8 +111,8 @@ async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void
   if ((await html.getAttribute("data-vex-theme")) === theme) return;
   const shell = page.locator('[data-vex-screen="appShell"]');
   const wasStudio = (await shell.getAttribute("data-vex-runtime-mode")) === "studio";
-  const modes = page.getByRole("radiogroup", { name: "Runtime mode" });
-  if (wasStudio) await modes.getByRole("radio", { name: "Agent" }).click();
+  const nav = page.getByRole("navigation", { name: "Main" });
+  if (wasStudio) await nav.getByRole("button", { name: "Chat" }).click();
   // The tour navigator is docked over the rail's menu button; it is QA
   // scaffolding and is taken out of the way for the click, as qa-screenshots
   // does.
