@@ -31,7 +31,13 @@
  * collapse choreography and the rail glass tier) were consumed when PR #212
  * merged.
  */
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/ShellGutter.test.tsx",
+    reason: "The R3 three-column frame retires the gutter and its spread caption; ShellGutter.tsx was deleted with it (R3 wave 1, W1-6).",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/AppShell/shell-sidebar.test.tsx",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),
