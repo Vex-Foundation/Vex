@@ -193,7 +193,15 @@ nr_win_closure() {
 # Fail if any file under $1 contains a path of this checkout, in any of the
 # three spellings a Windows build can bake in (/d/a/..., D:\a\..., D:/a/...).
 nr_win_no_build_paths() {
-  local leaks
-  leaks="$(grep -rlaiF -e "$NR_ROOT" -e "$(cygpath -w "$NR_ROOT")" -e "$(cygpath -m "$NR_ROOT")" "$1" || true)"
-  [ -z "$leaks" ] || nr_die "build paths leaked into:"$'\n'"$leaks"
+  local leaks f p re=
+  for p in "$NR_ROOT" "$(cygpath -w "$NR_ROOT")" "$(cygpath -m "$NR_ROOT")"; do
+    re="${re:+$re|}$(printf '%s' "$p" | sed 's/[][\.*^$+?(){}|]/\\&/g')"
+  done
+  leaks="$(LC_ALL=C grep -rlaiE "$re" "$1" || true)"
+  [ -z "$leaks" ] && return 0
+  while read -r f; do
+    nr_log "build path in $f:"
+    LC_ALL=C grep -aoiE "[ -~]{0,60}($re)[ -~]{0,60}" "$f" | sort -u | head -15 >&2
+  done <<<"$leaks"
+  nr_die "build paths leaked into the tree"
 }

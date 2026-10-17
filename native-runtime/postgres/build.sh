@@ -157,6 +157,9 @@ EOF
     LIB="$(cygpath -w "$work/zlib/lib");$LIB"
     CMAKE_PREFIX_PATH="$(cygpath -w "$work/zlib")"
     export INCLUDE LIB CMAKE_PREFIX_PATH
+    # The image has MinGW and Strawberry pkg-configs (and zlibs) on PATH; no
+    # dependency may come from them.
+    export PKG_CONFIG=pkg-config-disabled-for-msvc
 
     CC=cl meson setup "$work/build" "$src" "${pg_opts[@]}" -Db_vscrt=md \
       -DPERL="$(cygpath -m "$perl_exe")" -DPYTHON="$(cygpath -m "$NR_VENV_PYTHON")" \
@@ -164,6 +167,7 @@ EOF
     grep -qE "dependency zlib found: YES $ZLIB_VERSION" "$work/build/meson-logs/meson-log.txt" ||
       nr_die "meson did not pick the pinned zlib $ZLIB_VERSION: $(grep -i 'dependency zlib' "$work/build/meson-logs/meson-log.txt")"
     grep -q '^#define HAVE_LIBZ 1' "$work/build/src/include/pg_config.h" || nr_die "configured without zlib"
+    ! grep -qiE 'libz\.(a|dll)|zlib1' "$work/build/build.ninja" || nr_die "build links a zlib other than the pinned static one"
     ;;
 esac
 
@@ -188,9 +192,13 @@ else
   want="$(cygpath -m "$root/lib/postgresql")"
   [ "${got,,}" = "${want,,}" ] || nr_die "staged pg_config does not relocate: $got (expected $want)"
   [ -f "$root/lib/postgres.lib" ] || nr_die "postgres.lib (the import library modules link against) was not installed"
+  # The include directories are relative to the pgvector checkout: cl spells
+  # __FILE__ of a header (Postgres' inline functions call elog) the way it
+  # found it, so absolute -I paths would bake the build directory in.
+  [ "$root" = "$work/stage/vex-unrelocated" ] || nr_die "unexpected staging root $root"
   (cd "$work/pgvector" && nmake -nologo -f Makefile.win all OPTFLAGS=-MD \
-    PGROOT="$(cygpath -w "$root")" INCLUDEDIR="$(cygpath -w "$root/include")" \
-    INCLUDEDIR_SERVER="$(cygpath -w "$root/include/postgresql/server")" LIBDIR="$(cygpath -w "$root/lib")")
+    PGROOT="$(cygpath -w "$root")" INCLUDEDIR='..\stage\vex-unrelocated\include' \
+    INCLUDEDIR_SERVER='..\stage\vex-unrelocated\include\postgresql\server' LIBDIR="$(cygpath -w "$root/lib")")
   cp "$work/pgvector/vector.dll" "$root/lib/postgresql/"
   cp "$work/pgvector/vector.control" "$work/pgvector"/sql/vector--*.sql "$root/share/postgresql/extension/"
 fi
