@@ -24,6 +24,7 @@ beforeEach(() => {
     sidebarOpen: true,
     vexOpenChat: true,
     vexOpenPages: false,
+    vexOpenLighter: false,
     showAvatar: true,
     bookOpen: true,
     sidebarNarrowExpanded: false,
@@ -114,6 +115,7 @@ describe("where Vex opens", () => {
     expect(
       selectVexOpen({ ...state, shellRoute: { kind: "settings", origin: null, section: null } }),
     ).toBe(false);
+    // The desk chat is hidden until the desk opens it.
     expect(selectVexOpen({ ...state, runtimeMode: "lighter" })).toBe(false);
     // Needs you and the reading pages keep the chat's choice.
     expect(selectVexOpen({ ...state, shellRoute: { kind: "needsYou", origin: null } })).toBe(true);
@@ -143,7 +145,30 @@ describe("where Vex opens", () => {
     expect(useUiStore.getState().bookOpen).toBe(true);
     useUiStore.setState({ runtimeMode: "lighter" });
     useUiStore.getState().setBookOpen(true);
-    expect(useUiStore.getState().vexOpenPages).toBe(true);
+    expect(useUiStore.getState().vexOpenLighter).toBe(true);
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+  });
+
+  it("gives the Lighter desk chat its own slot, so a desk visit never opens Vex on the table pages", () => {
+    // What entering the desk does (`enterLighterMode`): the mode, then the chat.
+    useUiStore.getState().setRuntimeMode("lighter");
+    useUiStore.getState().setBookOpen(true);
+    expect(selectVexOpen(useUiStore.getState())).toBe(true);
+    expect(useUiStore.getState().vexOpenLighter).toBe(true);
+    // Back on a table page, Vex keeps its hidden default.
+    useUiStore.getState().setRuntimeMode("agent");
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    expect(selectVexOpen(useUiStore.getState())).toBe(false);
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+    // Hiding the desk chat leaves the chat's choice alone.
+    useUiStore.getState().setRuntimeMode("lighter");
+    useUiStore.getState().setVexOpen(false);
+    expect(useUiStore.getState().vexOpenLighter).toBe(false);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+  });
+
+  it("never persists the desk chat's slot: the desk is entered, never resumed into", () => {
+    expect(PERSISTED_UI_KEYS).not.toContain("vexOpenLighter");
   });
 
   it("keeps the legacy left writer and the new one in step", () => {

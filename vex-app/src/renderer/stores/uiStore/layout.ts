@@ -16,14 +16,19 @@ import type { ShellRoute } from "./shell-route.js";
 /**
  * Which stored choice opens the Vex sidebar on the current page. Vex is open
  * by default in chat (and on approvals) and hidden by default on the table
- * pages, so the two classes keep two preferences: `vexOpenChat` and
+ * pages, so those two classes keep two preferences: `vexOpenChat` and
  * `vexOpenPages`. Hiding Vex on Portfolio never closes her in a chat.
+ *
+ * The Lighter desk is a class of its own: its column is the desk chat, which
+ * the desk opens by itself (entering the desk, asking Vex from the ticket),
+ * so it keeps its own slot, `vexOpenLighter`. Sharing the table pages' slot
+ * meant one desk visit left Vex open on Portfolio, Board and Settings.
  */
-export type VexPageClass = "chat" | "pages";
+export type VexPageClass = "chat" | "pages" | "lighter";
 
 /**
  * The table pages: Portfolio and its subpages (Agent Scan, All assets, Token
- * history), Board and Settings, plus the Lighter desk as a mode.
+ * history), Board and Settings.
  */
 const TABLE_PAGE_ROUTES: ReadonlySet<ShellRoute["kind"]> = new Set<ShellRoute["kind"]>([
   "portfolio",
@@ -38,21 +43,31 @@ export function vexPageClass(state: {
   readonly runtimeMode: RuntimeMode;
   readonly shellRoute: ShellRoute;
 }): VexPageClass {
-  return state.runtimeMode === "lighter" || TABLE_PAGE_ROUTES.has(state.shellRoute.kind)
-    ? "pages"
-    : "chat";
+  if (state.runtimeMode === "lighter") return "lighter";
+  return TABLE_PAGE_ROUTES.has(state.shellRoute.kind) ? "pages" : "chat";
 }
+
+/** Each page class's stored slot. */
+const VEX_OPEN_SLOT = {
+  chat: "vexOpenChat",
+  pages: "vexOpenPages",
+  lighter: "vexOpenLighter",
+} as const satisfies Readonly<Record<VexPageClass, keyof UiState>>;
 
 /** Whether Vex is ASKED open on the current page; the solver decides the width. */
 export function selectVexOpen(
-  state: Pick<UiState, "runtimeMode" | "shellRoute" | "vexOpenChat" | "vexOpenPages">,
+  state: Pick<
+    UiState,
+    "runtimeMode" | "shellRoute" | "vexOpenChat" | "vexOpenPages" | "vexOpenLighter"
+  >,
 ): boolean {
-  return vexPageClass(state) === "pages" ? state.vexOpenPages : state.vexOpenChat;
+  return state[VEX_OPEN_SLOT[vexPageClass(state)]];
 }
 
 /**
  * The store patch for showing or hiding Vex on the current page: it writes the
- * current class's slot only.
+ * current class's slot only (the Lighter desk writes `vexOpenLighter`, never
+ * the table pages' slot).
  *
  * Opening also clears the narrow override, because under the medium tier an
  * open Vex folds the left sidebar to its rail (docs/design/R3-MINIMAL.md
@@ -65,9 +80,12 @@ export function vexOpenPatch(
   state: Pick<UiState, "runtimeMode" | "shellRoute">,
   open: boolean,
 ): Partial<
-  Pick<UiState, "vexOpenChat" | "vexOpenPages" | "bookOpen" | "sidebarNarrowExpanded">
+  Pick<
+    UiState,
+    "vexOpenChat" | "vexOpenPages" | "vexOpenLighter" | "bookOpen" | "sidebarNarrowExpanded"
+  >
 > {
-  const slot = vexPageClass(state) === "pages" ? { vexOpenPages: open } : { vexOpenChat: open };
+  const slot = { [VEX_OPEN_SLOT[vexPageClass(state)]]: open };
   return open
     ? { ...slot, bookOpen: true, sidebarNarrowExpanded: false }
     : { ...slot, bookOpen: false };
