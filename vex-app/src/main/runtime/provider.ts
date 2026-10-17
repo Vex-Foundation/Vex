@@ -20,8 +20,8 @@ export type RuntimeProviderId = "docker" | "native";
 
 /**
  * Outcome of a start, in the compose-up vocabulary the renderer already maps,
- * plus `disk_full`: only the native provider produces it (plan 8.4/8.5, its
- * own remediation copy), the Docker provider never does.
+ * plus `disk_full`, which only the native provider produces (plan 8.4/8.5,
+ * with its own remediation copy).
  */
 export type RuntimeStartKind =
   | "running"

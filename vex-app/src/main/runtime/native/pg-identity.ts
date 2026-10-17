@@ -6,17 +6,15 @@
  *   (SELECT system_identifier FROM pg_control_system()) = the value recorded
  *   in runtime-state.json at bootstrap.
  *
- * Any mismatch is `foreign_listener`. This replaces the Docker branch of
- * `compose/pg-listener-identity.ts` (the `docker exec` corroboration); the
- * pure error classification there is reused as is, so a socket errno is never
- * mistaken for a SQLSTATE here either.
+ * Any mismatch is `foreign_listener`. This is the native replacement for the
+ * container corroboration in the compose identity probe, and deliberately
+ * imports nothing from that module, which is deleted with the compose stack.
  *
  * The password is read by the caller from this install's own secret file and
  * never appears in a message.
  */
 
 import pg from "pg";
-import { classifyPgConnectError } from "../../compose/pg-listener-identity.js";
 import { LOOPBACK_DB_HOST } from "../../database/connection-state.js";
 
 export const VEX_DATABASE = "vex";
@@ -72,27 +70,29 @@ export async function withPgClient<T>(
   }
 }
 
+/**
+ * The SQLSTATE of an error the SERVER sent, or null for a socket error.
+ * node-postgres puts both in `code` (`28P01` and `EPIPE` alike); only a
+ * server error carries `severity` ("FATAL", "ERROR", ...).
+ */
+function serverSqlState(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { code, severity } = error as { code?: unknown; severity?: unknown };
+  if (typeof severity !== "string" || severity.length === 0) return null;
+  return typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null;
+}
+
 export function describePgError(error: unknown): Exclude<PgIdentityResult, { readonly kind: "usable" }> {
-  const evidence = classifyPgConnectError(error);
-  switch (evidence.kind) {
-    case "auth_rejected":
-      // Our credentials reached a server that has no `vex` database:
-      // whatever that is, it is not this install's cluster.
-      if (evidence.sqlState === "3D000") {
-        return { kind: "foreign_listener", detail: "the server on this port has no vex database" };
-      }
-      return {
-        kind: "auth_rejected",
-        detail: `the server rejected this install's credentials (SQLSTATE ${evidence.sqlState})`,
-      };
-    case "server_transient":
-    case "no_usable_answer":
-      return { kind: "unreachable", detail: evidence.detail };
-    case "identity_ok":
-    case "identity_mismatch":
-      // classifyPgConnectError never produces these for an error.
-      return { kind: "unreachable", detail: evidence.kind };
+  const message = error instanceof Error ? error.message : "unknown error";
+  const state = serverSqlState(error);
+  // Our credentials reached a server that has no `vex` database: whatever
+  // that is, it is not this install's cluster.
+  if (state === "3D000") return { kind: "foreign_listener", detail: "the server on this port has no vex database" };
+  if (state === "28000" || state === "28P01") {
+    return { kind: "auth_rejected", detail: `the server rejected this install's credentials (SQLSTATE ${state})` };
   }
+  // Starting up, too many connections, a refused or closed socket: retryable.
+  return { kind: "unreachable", detail: state === null ? message : `SQLSTATE ${state}: ${message}` };
 }
 
 interface IdentityRow {
