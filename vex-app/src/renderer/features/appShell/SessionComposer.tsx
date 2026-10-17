@@ -75,7 +75,7 @@ import { DURATION_BASE_MS, EASE_STANDARD } from "../../lib/motion/index.js";
  * rotating an idle suggestion the key would not honour.
  */
 export const STEER_QUEUE_PLACEHOLDER =
-  "Steer the running turn - or queue this for next.";
+  "Steer the running turn, or queue this for next.";
 
 /** jsdom-safe reduced-motion probe (the SidebarProfile pattern). */
 function prefersReducedMotion(): boolean {
