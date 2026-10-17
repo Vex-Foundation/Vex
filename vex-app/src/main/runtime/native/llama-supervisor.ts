@@ -244,7 +244,11 @@ export class LlamaSupervisor {
     return this.live?.child.pid;
   }
 
+  /** Idempotent: while a server is live, report it instead of launching another. */
   async start(): Promise<LlamaStartResult> {
+    if (this.live !== null && this.live.child.exitCode === null && this.live.child.signalCode === null) {
+      return { kind: "ready", endpoint: this.live.endpoint };
+    }
     this.stopping = false;
     const result = await launch(this.options.launch, this.spawnFn, this.threads);
     if (result.kind === "failed") return result;

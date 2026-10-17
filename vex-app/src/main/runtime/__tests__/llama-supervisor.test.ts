@@ -110,7 +110,11 @@ describe.skipIf(!haveRuntime)("llama supervisor against the bundled server", () 
     expect((await embed(endpoint, null)).status).toBe(401);
     expect((await embed(endpoint, "wrong")).status).toBe(401);
 
+    // A second start while it runs reports the same server, never a second one.
     const pid = supervisor.pid;
+    await expect(supervisor.start()).resolves.toEqual({ kind: "ready", endpoint });
+    expect(supervisor.pid).toBe(pid);
+
     await supervisor.stop();
     expect(endpoints).toEqual([endpoint, null]);
     expect(() => process.kill(pid ?? -1, 0)).toThrow();
