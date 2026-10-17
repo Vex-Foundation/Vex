@@ -136,7 +136,8 @@ describe("MemoryScreen", () => {
 
   it("has no em dash, en dash or caps label in its own words", () => {
     const { container } = renderScreen();
-    expect(container.textContent).not.toMatch(/[–—]/);
+    const dashes = new RegExp(`[${String.fromCharCode(0x2013)}${String.fromCharCode(0x2014)}]`);
+    expect(container.textContent).not.toMatch(dashes);
     expect(container.querySelector(".uppercase, .vex-eyebrow, .vex-micro-label")).toBeNull();
   });
 });
