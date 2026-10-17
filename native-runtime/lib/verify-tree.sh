@@ -67,7 +67,9 @@ verify_elf() {
   machine="$(readelf -h "$f" | awk -F: '/Machine:/{gsub(/^ +/,"",$2); print $2}')"
   [ "$machine" = "Advanced Micro Devices X86-64" ] || fail "$f: machine '$machine', expected x86-64"
 
-  glibc="$(readelf -V "$f" 2>/dev/null | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sed 's/GLIBC_//' | sort -V | tail -1)"
+  # A binary may reference no versioned glibc symbol at all; grep finding
+  # nothing must not abort the script under pipefail.
+  glibc="$(readelf -V "$f" 2>/dev/null | { grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' || true; } | sed 's/GLIBC_//' | sort -V | tail -1)"
   [ -z "$glibc" ] || version_le "$glibc" "$LINUX_GLIBC_MAX" ||
     fail "$f: needs GLIBC_$glibc, above the $LINUX_GLIBC_MAX ceiling"
 

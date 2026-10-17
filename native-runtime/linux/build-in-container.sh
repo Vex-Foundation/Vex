@@ -21,7 +21,7 @@ exec docker run --rm --platform linux/amd64 \
   -e NR_PYTHON=/opt/python/cp312-cp312/bin/python3 \
   "$LINUX_BUILD_IMAGE" \
   bash -c 'set -euo pipefail
-    dnf install -y -q bison flex perl-FindBin perl-File-Compare zlib-devel git >/dev/null
+    dnf install -y -q bison flex perl-interpreter zlib-devel git >/dev/null
     # The bind mount is owned by the host user, not root.
     git config --global --add safe.directory "*"
     exec "./$0/build.sh" linux-x64 "$@"' "$component" "$@"
