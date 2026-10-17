@@ -108,7 +108,17 @@ const tmpRoot = fs.mkdtempSync(path.join(win ? fs.realpathSync.native(os.tmpdir(
 cleanups.push(() => fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
 const home = win ? path.join(tmpRoot, "vex ünïcode test") : tmpRoot;
 const relocated = path.join(home, "runtime dir", "llama");
-fs.cpSync(tree, relocated, { recursive: true, verbatimSymlinks: true });
+// Windows: fs.cpSync (Node 22) copies nothing into a destination whose path
+// has non-ASCII characters, without an error; copy file by file instead.
+function copyTree(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (e.isDirectory()) copyTree(path.join(src, e.name), path.join(dst, e.name));
+    else fs.copyFileSync(path.join(src, e.name), path.join(dst, e.name));
+  }
+}
+if (win) copyTree(tree, relocated);
+else fs.cpSync(tree, relocated, { recursive: true, verbatimSymlinks: true });
 const exe = path.join(relocated, exeName);
 const cacheDir = path.join(tmpRoot, "llama cache");
 // Windows: the model too, as it will sit under the user's profile.

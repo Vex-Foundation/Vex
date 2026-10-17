@@ -93,6 +93,16 @@ async function runOk(cmd, args, opts) {
   return r;
 }
 
+// Windows: fs.cpSync (Node 22) copies nothing into a destination whose path
+// has non-ASCII characters, without an error; copy file by file instead.
+function copyTree(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (e.isDirectory()) copyTree(path.join(src, e.name), path.join(dst, e.name));
+    else fs.copyFileSync(path.join(src, e.name), path.join(dst, e.name));
+  }
+}
+
 function freeHostPort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -546,7 +556,8 @@ async function main() {
   let r;
   try {
     const tree = path.join(home, 'Vex Runtime', 'postgres');
-    fs.cpSync(srcTree, tree, { recursive: true, verbatimSymlinks: true });
+    if (win) copyTree(srcTree, tree);
+    else fs.cpSync(srcTree, tree, { recursive: true, verbatimSymlinks: true });
     log(`relocated tree to "${tree}"`);
 
     if (target === 'linux-x64') {
