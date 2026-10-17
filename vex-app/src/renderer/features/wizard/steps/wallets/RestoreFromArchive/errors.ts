@@ -28,7 +28,7 @@ export function restoreErrorMessage(
     case "onboarding.env_persist_failed":
       // In the archive-restore flow this code is AUTO_BACKUP_FAILED: C1 aborts
       // BEFORE any live write because it could not snapshot the current wallets
-      // first. So NOTHING was changed — the copy must say so (not "restored").
+      // first. So NOTHING was changed - the copy must say so (not "restored").
       return "Couldn't snapshot your current wallets before restoring, so nothing was changed. Free up disk space (and check folder permissions), then try again.";
     case "wallet.keystore_locked":
       return "Vault session locked. Unlock Vex again, then retry the restore.";

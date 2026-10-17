@@ -1,9 +1,9 @@
 /**
- * RestoreFromArchive — renderer parity for the C3 full-archive restore screen.
+ * RestoreFromArchive - renderer parity for the C3 full-archive restore screen.
  *
  * Mocks `window.vex.onboarding.{listBackups,restoreArchive}` (skill §12).
  * Validates:
- *  - lists available backups (metadata only — counts + truncated addresses),
+ *  - lists available backups (metadata only - counts + truncated addresses),
  *  - empty state when there are no backups,
  *  - restore happy path → restored summary + cache invalidation,
  *  - `vaultLocked: true` → prominent re-unlock note,
@@ -114,7 +114,7 @@ afterEach(() => {
 describe("RestoreFromArchive", () => {
   it("renders collapsed, then lists backups with counts and addresses on expand", async () => {
     const { view } = renderPanel();
-    // Collapsed by default — only the trigger is present.
+    // Collapsed by default - only the trigger is present.
     expect(view.container.querySelector("[data-vex-restore-open]")).toBeTruthy();
     expect(view.container.querySelector("[data-vex-restore-list]")).toBeNull();
 
@@ -129,7 +129,7 @@ describe("RestoreFromArchive", () => {
     expect(items.length).toBe(2);
     expect(list.textContent).toMatch(/2 wallets/);
     expect(list.textContent).toMatch(/1 wallet/);
-    // Truncated EVM address (AddressDisplay) is shown — no key material.
+    // Truncated EVM address (AddressDisplay) is shown - no key material.
     expect(list.textContent).toMatch(/0x1111/);
   });
 
@@ -197,7 +197,7 @@ describe("RestoreFromArchive", () => {
     });
     expect(summary.textContent).toMatch(/Restored 1 wallet/);
     expect(summary.textContent).toMatch(/3 files/);
-    // Password field is cleared after submit — secret not retained in the DOM.
+    // Password field is cleared after submit - secret not retained in the DOM.
     expect(password.value).toBe("");
     // Restore form is gone once the summary renders.
     expect(view.container.querySelector("[data-vex-restore-submit]")).toBeNull();

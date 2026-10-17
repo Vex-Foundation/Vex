@@ -2,7 +2,7 @@
  * Shared per-chain display copy for the Wallets step family.
  *
  * `chainLabel` and `importHint` were previously duplicated verbatim in
- * `ChainActions.tsx` and `WalletInventoryPanel.tsx` — one source now,
+ * `ChainActions.tsx` and `WalletInventoryPanel.tsx` - one source now,
  * so a future copy edit cannot drift the two import forms apart.
  */
 

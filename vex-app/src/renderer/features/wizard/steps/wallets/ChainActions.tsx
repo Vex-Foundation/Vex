@@ -3,7 +3,7 @@
  *
  * Renders the 3-action menu (Generate / Import / Restore) when no wallet
  * exists for this chain, OR the address summary + Restore-only affordance
- * when one does. Import is the only secret-handling action — its raw key
+ * when one does. Import is the only secret-handling action - its raw key
  * is read from an uncontrolled DOM ref, the input value is cleared
  * synchronously BEFORE the IPC await, and the import call uses a plain
  * async function (not `useMutation`) so the secret never lands in any
@@ -136,15 +136,15 @@ export function ChainActions({
   if (address !== null) {
     return (
       <div
-        className="flex flex-col gap-4"
+        className="vex-wz-stack"
         data-vex-wallet-state="configured"
         data-vex-wallet-chain={chain}
       >
-        <div>
-          <p className="vex-micro text-ink-tertiary">
-            {chainLabel(chain)} wallet
-          </p>
-          <AddressDisplay address={address} className="mt-1" />
+        <div className="vex-wz-kvl">
+          <div className="vex-wz-kv">
+            <p className="vex-wz-kv__k">{chainLabel(chain)} wallet</p>
+            <AddressDisplay address={address} className="col-span-2" />
+          </div>
         </div>
         {backupDir !== null ? (
           <div className={cn("py-1", RAIL_WARNING_CHROME)}>
@@ -154,7 +154,7 @@ export function ChainActions({
             <p className="mt-1 text-xs text-ink-tertiary">
               Losing this device <em>and</em> your master password means
               your wallet is unrecoverable. The backup at{" "}
-              <code className="font-mono">.../backups/&lt;timestamp&gt;</code>{" "}
+              <code className="font-mono vex-num">.../backups/&lt;timestamp&gt;</code>{" "}
               is your only safety net.
             </p>
             <Button
@@ -202,33 +202,42 @@ export function ChainActions({
         data-vex-wallet-state="empty"
         data-vex-wallet-chain={chain}
       >
-        <p className="text-sm text-ink-tertiary">
-          Set up your {chainLabel(chain)} wallet by generating fresh keys,
-          importing an existing private key, or restoring from a backup
-          file. Keys are created and encrypted locally - Vex never sends
-          them anywhere.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={() => {
-              void handleGenerate();
-            }}
-            disabled={generateMutation.isPending}
-          >
-            {generateMutation.isPending ? "Generating…" : "Generate new"}
-          </Button>
-          <Button variant="ghost" onClick={() => setView("import")}>
-            Import existing
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void handleRestore();
-            }}
-            disabled={restoreMutation.isPending}
-          >
-            {restoreMutation.isPending ? "Restoring…" : "Restore from backup"}
-          </Button>
+        <div className="vex-wz-card">
+          <p className="vex-wz-text">
+            Set up your {chainLabel(chain)} wallet by generating fresh keys,
+            importing an existing private key, or restoring from a backup
+            file. Keys are created and encrypted locally - Vex never sends
+            them anywhere.
+          </p>
+          <div className="vex-wz-card__acts">
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={() => {
+                void handleGenerate();
+              }}
+              disabled={generateMutation.isPending}
+            >
+              {generateMutation.isPending ? "Generating…" : "Generate new"}
+            </Button>
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={() => setView("import")}
+            >
+              Import existing
+            </Button>
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={() => {
+                void handleRestore();
+              }}
+              disabled={restoreMutation.isPending}
+            >
+              {restoreMutation.isPending ? "Restoring…" : "Restore from backup"}
+            </Button>
+          </div>
         </div>
         {actionError !== null ? (
           <p className="text-sm text-danger" role="alert">
@@ -247,7 +256,7 @@ export function ChainActions({
       onSubmit={(e) => {
         void handleImportSubmit(e);
       }}
-      className="flex flex-col gap-3"
+      className="vex-wz-card flex flex-col gap-3"
       data-vex-wallet-state="import"
       data-vex-wallet-chain={chain}
       noValidate
@@ -264,7 +273,7 @@ export function ChainActions({
           aria-invalid={importError !== null ? true : undefined}
           aria-describedby={importError !== null ? importErrorId : undefined}
         />
-        <p className="text-xs text-ink-tertiary">{importHint(chain)}</p>
+        <p className="vex-wz-hint">{importHint(chain)}</p>
       </div>
       {importError !== null ? (
         <p
@@ -279,12 +288,13 @@ export function ChainActions({
         <Button
           type="button"
           variant="quiet"
+          size="sm"
           onClick={handleCancelImport}
           disabled={importing}
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={importing}>
+        <Button type="submit" size="sm" disabled={importing}>
           {importing ? "Importing…" : "Import"}
         </Button>
       </div>
