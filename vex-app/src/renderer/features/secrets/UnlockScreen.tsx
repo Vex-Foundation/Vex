@@ -301,7 +301,10 @@ export function UnlockScreen(): JSX.Element {
 
             {/* ARMED CTA - the dotted blue outline while the field is empty,
               the one blue fill the moment anything is typed and while the
-              unlock is in flight. `data-armed` carries only the boolean. */}
+              unlock is in flight. `data-armed` carries only the boolean.
+              While the throttle window runs the key is disabled and draws
+              the dotted outline again, though `data-armed` stays true
+              (`.vex-unl__go:disabled:not([data-busy])` in chronos-gate.css). */}
             <Button
               type="submit"
               variant="armed"
