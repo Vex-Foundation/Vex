@@ -21,6 +21,7 @@ import {
 import { WalletRemovalSection } from "../../../wallets/WalletRemovalSection.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
 import { LighterSection } from "./LighterSection.js";
+import { LocalRuntimeSection } from "./LocalRuntimeSection.js";
 import type { SectionMeta } from "./settings-sections.js";
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
 import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
@@ -68,6 +69,8 @@ function renderSectionContent(
       return <SuperboardKeySection />;
     case "lighterPoints":
       return <LighterSection />;
+    case "localRuntime":
+      return <LocalRuntimeSection />;
   }
   switch (meta.stepId) {
     case undefined:

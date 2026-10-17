@@ -22,8 +22,9 @@ import type {
 import { EASE_STANDARD } from "../../../lib/motion/index.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useWizardState } from "../../../lib/api/wizard.js";
+import { useIsNativeRuntime } from "../../../lib/api/system.js";
 import { ShellScreen } from "./ShellScreen.js";
-import { SETTINGS_SECTIONS } from "./SettingsScreen/settings-sections.js";
+import { visibleSettingsSections } from "./SettingsScreen/settings-sections.js";
 import { SettingsRegister } from "./SettingsScreen/SettingsRegister.js";
 import { SettingsSectionView } from "./SettingsScreen/SettingsSectionView.js";
 
@@ -61,10 +62,13 @@ export function SettingsScreen({
       ? wizardStateQuery.data.data.completedSteps
       : [];
 
+  // A section this install does not list (the native-only one elsewhere) lands
+  // on the register, deep link or not.
+  const native = useIsNativeRuntime();
   const activeMeta =
     section === null
       ? null
-      : (SETTINGS_SECTIONS.find((s) => s.id === section) ?? null);
+      : (visibleSettingsSections(native).find((s) => s.id === section) ?? null);
 
   return (
     <ShellScreen

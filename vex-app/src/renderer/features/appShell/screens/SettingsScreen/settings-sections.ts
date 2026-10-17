@@ -8,6 +8,7 @@
 import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import {
   IconSuperboard,
@@ -18,6 +19,10 @@ import {
   LIGHTER_SECTION_HINT,
   LIGHTER_SECTION_NAME,
 } from "./lighter-trading-setup-copy.js";
+import {
+  LOCAL_RUNTIME_SECTION_HINT,
+  LOCAL_RUNTIME_SECTION_NAME,
+} from "./local-runtime-copy.js";
 
 /** Superboard wordmark for the section header. */
 export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
@@ -27,6 +32,8 @@ export interface SectionMeta {
   readonly stepId?: Exclude<WizardStepId, "review">;
   readonly name: string;
   readonly hint: string;
+  /** Listed only when main runs the bundled native runtime. */
+  readonly nativeOnly?: true;
 }
 
 /** Register order is the custody gradient: secrets first, tuning next, integrations last. */
@@ -77,7 +84,18 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     name: LIGHTER_SECTION_NAME,
     hint: LIGHTER_SECTION_HINT,
   },
+  {
+    id: "localRuntime",
+    name: LOCAL_RUNTIME_SECTION_NAME,
+    hint: LOCAL_RUNTIME_SECTION_HINT,
+    nativeOnly: true,
+  },
 ];
+
+/** The rows this install lists: the native-only ones only on the native runtime. */
+export function visibleSettingsSections(native: boolean): ReadonlyArray<SectionMeta> {
+  return SETTINGS_SECTIONS.filter((meta) => native || meta.nativeOnly !== true);
+}
 
 export type SettingsStatusTone = "success" | "neutral" | "warning";
 
@@ -114,12 +132,36 @@ export function superboardRegisterStatus(
   }
 }
 
+/**
+ * The local runtime's word, from main's live status: running, on its way up
+ * (a start or a restart), stopped, or failed. Null before the first status.
+ */
+export function localRuntimeRegisterStatus(
+  status: NativeRuntimeStatus | null,
+): SettingsStatus {
+  if (status === null) return { word: "-", tone: "neutral" };
+  switch (status.phase) {
+    case "ready":
+      return { word: "Running", tone: "success" };
+    case "failed":
+      return { word: "Stopped with an error", tone: "warning" };
+    case "idle":
+      return { word: "Stopped", tone: "neutral" };
+    case "postgres":
+    case "model":
+    case "embeddings":
+      return { word: "Starting", tone: "neutral" };
+  }
+}
+
 export function settingsSectionStatus(
   section: SettingsSection,
   env: EnvState | null,
   superboard: SuperboardKeyStatus | null = null,
+  runtime: NativeRuntimeStatus | null = null,
 ): SettingsStatus {
   if (section === "superboardKey") return superboardRegisterStatus(superboard);
+  if (section === "localRuntime") return localRuntimeRegisterStatus(runtime);
   if (env === null) return { word: "-", tone: "neutral" };
   switch (section) {
     case "vault":
