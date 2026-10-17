@@ -29,6 +29,12 @@
   padding: 13.5px 13.5px 9.5px 17.5px;
 }
 
+/* Right under the mission strip (open at its foot) the field's top edge is
+ * the strip's floor, drawn in the quiet rule (R3 d2x mission renders). */
+[data-vex-area="composer-mission-strip"] + .vex-composer-card {
+  border-top-color: var(--vex-alias-rule-quiet);
+}
+
 /* The tag on the field's top edge: 22 high, field ground, a 1px ink border,
  * 12 / 500 (section 7). The stop acknowledgement wears the same shape on the
  * rule. */
