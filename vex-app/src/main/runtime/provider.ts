@@ -18,14 +18,19 @@ import type { DbConnection } from "../database/connection-state.js";
 /** Which implementation runs the local services. */
 export type RuntimeProviderId = "docker" | "native";
 
-/** Outcome of a start, in the compose-up vocabulary the renderer already maps. */
+/**
+ * Outcome of a start, in the compose-up vocabulary the renderer already maps,
+ * plus `disk_full`: only the native provider produces it (plan 8.4/8.5, its
+ * own remediation copy), the Docker provider never does.
+ */
 export type RuntimeStartKind =
   | "running"
   | "reused"
   | "port_collision"
   | "foreign_listener"
   | "unhealthy"
-  | "failed";
+  | "failed"
+  | "disk_full";
 
 /** Where the running services can be reached. Main-process only. */
 export interface RuntimeEndpoints {
