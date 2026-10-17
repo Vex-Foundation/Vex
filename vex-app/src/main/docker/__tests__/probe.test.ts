@@ -1,7 +1,7 @@
 /**
- * Unit tests for the pure parser helpers in `probe.ts`. Exercises the
- * positive + negative cases that the M2 docker.detect IPC handler will
- * trip over in the wild — no Docker required.
+ * Unit tests for the pure parser and version helpers under `probe/`. The
+ * compose pre-flight the migration runs depends on them - no Docker
+ * required.
  */
 
 import { describe, expect, it } from "vitest";
@@ -10,10 +10,8 @@ import {
   parseDaemonRunning,
   parseDockerVersion,
   parseModelStatus,
-  parseSemver,
-  semverGte,
-  COMPOSE_VERSION_FLOOR,
-} from "../probe.js";
+} from "../probe/parsers.js";
+import { COMPOSE_VERSION_FLOOR, parseSemver, semverGte } from "../probe/version.js";
 
 describe("parseDockerVersion", () => {
   it.each([
