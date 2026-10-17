@@ -1,5 +1,5 @@
 /**
- * Custom Dialog primitive (M12) — native `<dialog>` element + Tailwind.
+ * Custom Dialog primitive (M12): native `<dialog>` element + Tailwind.
  *
  * vex-app deliberately avoids Radix Dialog: the Portal-based primitive
  * needs a CSP audit before adoption (see `MOTION-POLICY.md`), and shipping
@@ -23,7 +23,7 @@
  *
  * Sub-components mirror shadcn naming so application code reads the
  * same as the rest of the project (`<DialogContent>`, `<DialogHeader>`,
- * `<DialogTitle>`, etc.). They are pure Tailwind wrappers — no Radix
+ * `<DialogTitle>`, etc.). They are pure Tailwind wrappers, no Radix
  * Slot or asChild composition.
  */
 
@@ -72,7 +72,7 @@ export interface DialogProps {
  * (DialogContent, DialogClose) can read open state and invoke close
  * intent without prop drilling.
  *
- * Renders nothing on its own — descendant `<DialogContent>` paints the
+ * Renders nothing on its own; descendant `<DialogContent>` paints the
  * actual native `<dialog>` element.
  */
 export function Dialog({ open, onOpenChange, children }: DialogProps): JSX.Element {
@@ -216,7 +216,7 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
  * Native `<dialog>` element wrapper. Owns:
  *  - `showModal()` / `close()` lifecycle keyed off context.open
  *  - ESC handling (the browser fires `cancel` → we route to onOpenChange)
- *  - Backdrop click handling — `mousedown` on the dialog itself (not
+ *  - Backdrop click handling: `mousedown` on the dialog itself (not
  *    children, courtesy of e.target === e.currentTarget check)
  *  - INITIAL FOCUS after `showModal()` (see `DIALOG_INITIAL_FOCUS` and
  *    `resolveDialogInitialFocus`): the dialog decides where focus lands, so
@@ -305,7 +305,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
     }, []);
 
     // ESC: browser fires `cancel` on the dialog. Preventing default
-    // keeps the controlled state authoritative — we send the close
+    // keeps the controlled state authoritative: we send the close
     // intent through the same path as a backdrop click.
     const handleCancel = useCallback(
       (event: React.SyntheticEvent<HTMLDialogElement, Event>): void => {
@@ -343,7 +343,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
         onCancel={handleCancel}
         onClick={handleClick}
         className={cn(
-          // Center the dialog box itself — keeps backdrop-target clicks
+          // Center the dialog box itself: keeps backdrop-target clicks
           // on the dialog element, not the inner content (so the
           // currentTarget check above is reliable). A sheet is placed by
           // its owner instead.

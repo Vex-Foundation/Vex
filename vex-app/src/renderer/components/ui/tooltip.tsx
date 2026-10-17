@@ -1,5 +1,6 @@
 /**
- * Tooltip: hover/focus label bubble (dark plate, white text in both themes).
+ * Tooltip: hover/focus label bubble on the reversed chrome plate (ink by
+ * day, paper at night; docs/design/R3-MINIMAL.md section 12).
  * The anchor is the child element itself (cloneElement, no wrapper node), so
  * attaching a tooltip never changes the anchor's layout context. The bubble
  * is position:fixed with coordinates from the anchor's rect at show time, so

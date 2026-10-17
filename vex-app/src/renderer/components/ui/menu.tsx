@@ -34,6 +34,8 @@ export interface MenuItem {
   readonly danger?: boolean;
   /** Nested card opened to the right on hover/focus. */
   readonly submenu?: readonly MenuItem[];
+  /** A keyboard shortcut shown at the right of the row, for reading only. */
+  readonly shortcut?: string;
 }
 
 /** Hairline between item groups (not selectable). */
@@ -85,7 +87,11 @@ export interface MenuProps {
   readonly portal?: boolean;
   /** Close once the pointer has left trigger + list for the pointer grace. */
   readonly closeOnPointerLeave?: boolean;
-  /** Reduced row spacing, standard typography. */
+  /**
+   * Reduced row spacing, standard typography. Under R3 every row is already
+   * the 32px dense row, so this only stamps `vex-menu-dense` for callers
+   * that key on it.
+   */
   readonly dense?: boolean;
   /** Reduced typography and spacing. */
   readonly compact?: boolean;
@@ -248,6 +254,7 @@ export function Menu({
           type="button"
           role="menuitem"
           className={cn("vex-menu-item", entry.danger === true && "vex-menu-danger")}
+          data-selected={selected ? "" : undefined}
           disabled={entry.disabled}
           // Both, deliberately. `disabled` is the enforcement (not clickable,
           // not activatable); `aria-disabled` is the ANNOUNCEMENT, and some
@@ -270,7 +277,11 @@ export function Menu({
             <span className="vex-menu-item-icon">{entry.icon}</span>
           )}
           <span className="vex-menu-item-label">{entry.label}</span>
-          {/* Selection marker is a trailing check, never a fill. */}
+          {entry.shortcut !== undefined && (
+            <span className="vex-menu-shortcut" aria-hidden="true">{entry.shortcut}</span>
+          )}
+          {/* Selection: the selection wash on the row (the sheet) and a
+           * trailing check, so the state never rests on the fill alone. */}
           {selected && <IconCheck size={16} className="vex-menu-check" />}
         </button>
         {subOpen && entry.submenu !== undefined && (

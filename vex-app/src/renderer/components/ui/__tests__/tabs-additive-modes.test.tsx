@@ -12,7 +12,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState, type JSX } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../tabs.js";
 
@@ -168,5 +168,38 @@ describe("roving focus survives both modes", () => {
     // `aria-controls` follows the scope, so the moved focus still announces
     // the panel that actually belongs to this set.
     expect(beta.getAttribute("aria-controls")).toBe("tabpanel-book-beta");
+  });
+});
+
+describe("Tabs looks (R3)", () => {
+  it("underline is the default: a quiet rule under sentence case tabs", () => {
+    render(
+      <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">Alpha</TabsTrigger>
+          <TabsTrigger value="b">Beta</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+    const list = screen.getByRole("tablist");
+    expect(list.className).toContain("border-rule-quiet");
+    const active = screen.getByRole("tab", { name: "Alpha" });
+    expect(active.className).toContain("border-accent-primary");
+    expect(active.className).not.toMatch(/uppercase|font-mono|ring/);
+  });
+
+  it("segmented joins the keys in one frame with the active key on the wash", () => {
+    render(
+      <Tabs defaultValue="a" variant="segmented">
+        <TabsList>
+          <TabsTrigger value="a">Alpha</TabsTrigger>
+          <TabsTrigger value="b">Beta</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+    expect(screen.getByRole("tablist").className).toContain("border-rule");
+    expect(screen.getByRole("tab", { name: "Alpha" }).className).toContain("bg-interactive-active");
+    expect(screen.getByRole("tab", { name: "Beta" }).className).not.toContain("bg-interactive-active");
+    expect(screen.getByRole("tab", { name: "Alpha" }).getAttribute("aria-selected")).toBe("true");
   });
 });

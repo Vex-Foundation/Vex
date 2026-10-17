@@ -39,4 +39,14 @@ describe("ConnectionBanner", () => {
     rerender(<ConnectionBanner reconnecting label="Reconnecting" />);
     expect(screen.getByRole("status").textContent).toBe("Reconnecting");
   });
+
+  it("pairs the word with the concerned fill, flows inline when asked, and shows the figure", () => {
+    const { rerender } = render(<ConnectionBanner reconnecting label="Offline" />);
+    const banner = screen.getByRole("status");
+    expect(banner.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("concerned");
+    expect(banner.hasAttribute("data-inline")).toBe(false);
+    rerender(<ConnectionBanner reconnecting inline label="Offline" meta="Last online 12:31" />);
+    expect(screen.getByRole("status").hasAttribute("data-inline")).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("OfflineLast online 12:31");
+  });
 });

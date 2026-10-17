@@ -19,10 +19,14 @@
  *
  * The visibility half is `DialogPinnedSlot`'s: the slot renders outside the
  * body's scroll container, next to the button the user just pressed.
+ *
+ * R3 draws it as the compact ink alert (docs/design/R3-MINIMAL.md section
+ * 12): the ink frame and hatch band, the error swatch, the sentence. Never
+ * red. `ErrorCallout` sets no live role, which keeps the rule above.
  */
 
 import type { JSX } from "react";
-import { Swatch } from "./swatch.js";
+import { ErrorCallout } from "./error-callout.js";
 
 export interface SubmitErrorProps {
   /** Main's already sanitized message, or `null` when there is no refusal. */
@@ -31,10 +35,5 @@ export interface SubmitErrorProps {
 
 export function SubmitError({ submitError }: SubmitErrorProps): JSX.Element | null {
   if (submitError === null) return null;
-  return (
-    <p className="flex items-start gap-2 text-sm text-ink-primary" data-vex-submit-error="">
-      <Swatch state="error" size={10} className="mt-1.5" />
-      <span>{submitError}</span>
-    </p>
-  );
+  return <ErrorCallout compact title={submitError} data-vex-submit-error="" />;
 }
