@@ -268,7 +268,17 @@ function spawnPostgres(command: string, args: readonly string[], env: Readonly<R
 
 const TOOL_OUTPUT_CAP = 1_048_576;
 
-/** A bounded run of one of the tree's tools; also the data migration's pg_dump and pg_restore. */
+/**
+ * A bounded run of one of the tree's tools; also the data migration's pg_dump
+ * and pg_restore.
+ *
+ * Settles on EXIT, then gives stdout/stderr a bounded drain, rather than
+ * waiting for `close`: `close` waits until every holder of the pipes' write
+ * ends is gone, and `pg_ctl start` on Windows leaves its `cmd.exe` (and the
+ * postmaster under it) holding them for the life of the server. Waiting for
+ * `close` there never returned, so the first run hung on a server that had
+ * been ready for minutes.
+ */
 export const runPgTool: PgRunTool = (command, args, options) =>
   new Promise((resolve) => {
     const child = nodeSpawn(command, args, {
@@ -291,16 +301,24 @@ export const runPgTool: PgRunTool = (command, args, options) =>
     const timer = setTimeout(terminate, options.timeoutMs);
     options.signal?.addEventListener("abort", terminate, { once: true });
     let settled = false;
+    let drain: NodeJS.Timeout | undefined;
     const settle = (code: number | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(drain);
       options.signal?.removeEventListener("abort", terminate);
+      // Our ends of pipes a grandchild may still hold open.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
       resolve({ code, stdout, stderr });
     };
     child.once("error", (error) => {
       stderr += error.message;
       settle(null);
+    });
+    child.once("exit", (code) => {
+      drain = setTimeout(() => settle(code), STDIO_DRAIN_AFTER_EXIT_MS);
     });
     child.once("close", (code) => settle(code));
   });
