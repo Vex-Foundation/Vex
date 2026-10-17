@@ -22,10 +22,10 @@
  * seam matrix, the EXACT inline size of a query container (`?plate=C`,
  * `?spotlightPlate=C`). `window.__vexBoardLayoutHarness` decides what changes
  * DURING a test: the drawer (the Vex sidebar with the Ask block, which takes
- * its 256 from the centre), and the moment the safety read settles. The async
- * verdict case is the whole reason the settle is a control rather than a
- * fixture - a verdict that lands late is the layout event the production
- * screenshot caught mid-flight.
+ * its 224 to 256 from the centre), and the moment the safety read settles.
+ * The async verdict case is the whole reason the settle is a control rather
+ * than a fixture - a verdict that lands late is the layout event the
+ * production screenshot caught mid-flight.
  *
  * WHY THE CONTAINER IS DRIVEN DIRECTLY AND NOT THROUGH THE VIEWPORT. Every
  * threshold in `global-css/board-layout.css` is a question about a container's
@@ -453,13 +453,18 @@ function Harness(): JSX.Element {
   const drawer = useHarnessDrawer();
   return (
     <>
-      {/* THE SHELL'S TWO PLACES, as the product lays them out: the centre
+      {/* THE SHELL'S THREE PLACES, as the product lays them out
+        * (docs/design/R3-MINIMAL.md section 2.1): the left sidebar (an empty
+        * track here, 264 / 224 / the 56 rail by window width), the centre
         * column holding the Board page (its element is the host's slot) and,
-        * with `?drawer=1`, the Vex sidebar at its 256 width holding the Ask
-        * block. The sidebar takes its width out of the centre without moving
-        * the window by a pixel, which is the event the container queries are
+        * with `?drawer=1`, the Vex sidebar (256 / 240 / 224) holding the Ask
+        * block. Without the left track the harness gave the board 264px the
+        * product never does, and 1440 with Vex open read as three columns.
+        * The Vex sidebar takes its width out of the centre without moving the
+        * window by a pixel, which is the event the container queries are
         * for. */}
       <div className="vex-board-harness" data-drawer={drawer ? "open" : "closed"}>
+        <aside className="vex-board-harness__left" aria-hidden="true" />
         <main className="vex-board-harness__centre">
           <div className="vex-bd" ref={setBoardPageSlot} />
         </main>
