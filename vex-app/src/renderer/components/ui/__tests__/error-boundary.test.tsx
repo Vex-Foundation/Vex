@@ -151,6 +151,46 @@ describe("containment", () => {
   });
 });
 
+describe("the recovery surface (docs/design/R3-MINIMAL.md section 12)", () => {
+  it("draws the flat vx token, the title, the sentence, the two keys and the technical card", () => {
+    render(
+      <ErrorBoundary
+        surface="test.surface"
+        title="Vex could not finish rendering this screen"
+        actions={[{ label: "Reload window", onSelect: vi.fn() }]}
+      >
+        <Boom throwing label="never" />
+      </ErrorBoundary>,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert.querySelector("[data-vex-vx-token]")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Vex could not finish rendering this screen" })).not.toBeNull();
+    expect(alert.textContent).toContain("The rest of Vex is still running. Nothing was lost");
+    expect(screen.getByRole("button", { name: "Try again" }).getAttribute("data-vex-button")).toBe("primary");
+    expect(screen.getByRole("button", { name: "Reload window" }).getAttribute("data-vex-button")).toBe("quiet");
+    // The technical card is a definition list: error, then id.
+    const terms = [...alert.querySelectorAll("dt")].map((node) => node.textContent);
+    expect(terms).toEqual(["error", "id"]);
+  });
+
+  it("states its extent for the sheet: the whole window at the root, its box elsewhere", () => {
+    const { unmount } = render(
+      <ErrorBoundary surface="test.surface" extent="screen">
+        <Boom throwing label="never" />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole("alert").getAttribute("data-extent")).toBe("screen");
+    unmount();
+    render(
+      <ErrorBoundary surface="test.surface">
+        <Boom throwing label="never" />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole("alert").getAttribute("data-extent")).toBe("region");
+  });
+});
+
 describe("the report that crosses IPC", () => {
   it("is a valid payload naming the surface, the error and bounded frames", () => {
     render(

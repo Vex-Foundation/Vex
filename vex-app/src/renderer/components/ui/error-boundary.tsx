@@ -48,7 +48,7 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "./button.js";
-import { cn } from "../../lib/utils.js";
+import { VxToken } from "./vx-token.js";
 import {
   describeThrown,
   reportRendererFailure,
@@ -168,12 +168,13 @@ export class ErrorBoundary extends Component<
 }
 
 /**
- * The default recovery surface.
+ * The default recovery surface (docs/design/R3-MINIMAL.md section 12).
  *
  * It states the failure in the user's terms, names the error, shows the
  * correlation id that ties the screen to the local log, and offers the routes
  * out. `role="alert"` announces it; focus moves to the first action so a
- * keyboard user is not stranded inside the subtree that just died.
+ * keyboard user is not stranded inside the subtree that just died. Drawn in
+ * the centre only: the sidebars are outside the boundary and stay live.
  */
 export function ErrorBoundaryFallback({
   error,
@@ -196,10 +197,8 @@ export function ErrorBoundaryFallback({
     <div
       role="alert"
       data-vex-error-boundary=""
-      className={cn(
-        "flex w-full flex-col items-center justify-center gap-4 p-8",
-        extent === "screen" ? "h-screen" : "h-full min-h-0",
-      )}
+      data-extent={extent}
+      className="vex-eb"
     >
       {/* The CARD carries the entrance, not the alert container: the container
         * is what `role="alert"` announces and what the focus effect above
@@ -208,30 +207,14 @@ export function ErrorBoundaryFallback({
         * replaced - which is one of the three jobs MOTION-POLICY gives motion.
         * A single opacity-plus-rise pass, no loop: an error surface that keeps
         * moving is decoration on top of a failure. */}
-      <div className="vex-surface-enter flex w-full max-w-lg flex-col gap-3">
-        <h2 className="text-[16px] font-medium leading-[24px] text-ink-primary">
-          {title}
-        </h2>
-        <p className="text-[13px] leading-[20px] text-ink-secondary">
+      <div className="vex-surface-enter vex-eb__card">
+        <VxToken size={56} />
+        <h2 className="vex-eb__title">{title}</h2>
+        <p className="vex-eb__text">
           The rest of Vex is still running. Nothing was lost: open terminals,
           running shells and unsaved work in other areas are untouched.
         </p>
-        <dl className="flex flex-col gap-1 border border-line-1 p-3 font-mono text-[12px] leading-[18px]">
-          <div className="flex gap-2">
-            <dt className="text-ink-tertiary">error</dt>
-            <dd className="min-w-0 break-words text-ink-primary">
-              {described.name}
-              {described.message === "" ? "" : `: ${described.message}`}
-            </dd>
-          </div>
-          <div className="flex gap-2">
-            <dt className="text-ink-tertiary">id</dt>
-            <dd className="min-w-0 select-all break-all text-ink-primary">
-              {correlationId ?? "not reported"}
-            </dd>
-          </div>
-        </dl>
-        <div className="flex flex-wrap gap-2">
+        <div className="vex-eb__row">
           <Button ref={firstActionRef} type="button" onClick={retry}>
             Try again
           </Button>
@@ -246,6 +229,15 @@ export function ErrorBoundaryFallback({
             </Button>
           ))}
         </div>
+        <dl className="vex-eb__tech">
+          <dt>error</dt>
+          <dd>
+            {described.name}
+            {described.message === "" ? "" : `: ${described.message}`}
+          </dd>
+          <dt>id</dt>
+          <dd data-selectable="">{correlationId ?? "not reported"}</dd>
+        </dl>
       </div>
     </div>
   );
