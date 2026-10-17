@@ -1,36 +1,27 @@
 /**
- * Agent | Studio segmented capsule - THE control that switches the shell's
- * runtime mode. LIVE since stage B4a.
+ * Agent | Studio segmented control - switches the shell's runtime mode.
  *
- * It lives here, at the appShell root, rather than inside either welcome
- * screen, because BOTH shells mount it: the agent hero
- * (`SessionWelcomeHero`) and the Studio welcome
- * (`studio/welcome/StudioWelcome`). One module means the two mounts cannot
- * drift into two different affordances, two labels or two orderings for one
- * decision, and it is why Studio is not a one-way door: whichever welcome
- * screen the user is on, the way back is the same capsule in the same words.
+ * It lives at the appShell root because more than one surface mounts it: the
+ * agent welcome (`SessionWelcomeHero`), the Studio welcome
+ * (`studio/welcome/StudioWelcome`) and the Studio sidebar. One module means
+ * the mounts cannot drift into two different affordances, two labels or two
+ * orderings for one decision. The agent's left sidebar no longer mounts it:
+ * its nav carries Studio and Lighter as rows (docs/design/R3-MINIMAL.md
+ * section 4).
  *
- * CONTRACT, stated because two tests pinned an older one: the Studio segment
- * used to be a disabled button wearing a lock and a "coming soon" title, and
- * the Agent segment used to be an inert `<span aria-current>`. Both are now
- * real radios in a `role="radiogroup"`, the current one carries `aria-checked`,
- * and choosing one dispatches the shell.
- *
+ * CONTRACT: both segments are real radios in a `role="radiogroup"`, the
+ * current one carries `aria-checked`, and choosing one dispatches the shell.
  * A radiogroup rather than a tablist: the two segments select a MODE for the
- * whole shell, not a panel this capsule labels, and neither segment is the
- * accessible owner of the columns it switches. The choice is a UI intent and
+ * whole shell, not a panel this control labels. The choice is a UI intent and
  * nothing more (rule 08) - it decides which surfaces mount and grants no
  * authority; every privileged Studio call is still checked in main.
  *
  * It takes the mode and the setter as props rather than reading the store
- * itself: each mount already holds the store subscription it needs, and a
- * component that renders a choice is not the owner of where that choice is
- * kept.
+ * itself: each mount already holds the store subscription it needs.
  *
- * LOOK (docs/design/V10-SPREAD.md section 3): two 24px words in Departure
- * Mono caps, the chosen one in a box. On paper (the Studio rail, a welcome
- * hero) the box is the paper-2 step under the blue word; on the left page's
- * print the mast restyles it as a label box (left-page.css).
+ * LOOK (docs/design/R3-MINIMAL.md sections 1.3 and 1.5): the kit's segmented
+ * control, two 28px segments in sentence case at 12.5 on one 1px rule; the
+ * chosen one takes the selection wash, blue type and weight 500.
  */
 
 import { useRef, type JSX } from "react";
@@ -75,7 +66,7 @@ export function RuntimeModeToggle({
     <div
       role="radiogroup"
       aria-label="Runtime mode"
-      className={cn("vex-mode-seg inline-flex items-center gap-0.5", className)}
+      className={cn("vex-mode-seg inline-flex items-stretch border border-line-2", className)}
     >
       {RUNTIME_MODE_SEGMENTS.map((segment, index) => {
         const current = runtimeMode === segment.mode;
@@ -100,10 +91,10 @@ export function RuntimeModeToggle({
             }}
             onClick={() => onChange(segment.mode)}
             className={cn(
-              "inline-flex h-6 items-center px-2 font-mono text-[11px] font-normal uppercase tracking-[var(--tracking-chip)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--vex-alias-focus)]",
+              "inline-flex h-7 items-center whitespace-nowrap px-2.5 text-[12.5px] leading-none border-l border-line-2 first:border-l-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--vex-alias-focus)]",
               current
-                ? "bg-accent-wash text-accent-primary"
-                : "text-ink-secondary hover:text-accent-primary",
+                ? "bg-interactive-active font-medium text-accent-primary"
+                : "text-ink-secondary hover:bg-interactive-hover",
             )}
           >
             {segment.label}

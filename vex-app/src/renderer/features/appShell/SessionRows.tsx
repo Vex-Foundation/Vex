@@ -1,18 +1,18 @@
 /**
- * Public session-list building blocks: the Sessions library's grouped
- * register (`SessionGroups`, sessions on the generic RailGroup/RailRow
- * primitives), the loading / error / empty placeholders the left page's index
- * shows, and the small `SidebarIconButton`. The left page's own index lives in
- * `leftPage/SessionIndex.tsx` and renders the same `SessionRow` in its
- * `index` setting. The presentational internals (the row, its trash/pin
- * actions, the hover-card body, and the shared placeholder strip) live as
- * co-located subcomponents under `./SessionRows/`.
+ * Public session-list building blocks: the left sidebar's grouped sessions
+ * (`SidebarSessionGroups`, docs/design/R3-MINIMAL.md section 4), the Sessions
+ * library's grouped register (`SessionGroups`, on the generic RailGroup and
+ * RailRow primitives), the loading, error and empty placeholders, and the
+ * small `SidebarIconButton`. Both lists render the shared `SessionRow`, in
+ * its `sidebar` and `register` settings. The presentational internals (the
+ * row, its pin and remove keys, the hover-card body, the search mode, the
+ * nav and the shared placeholder strip) live as co-located subcomponents
+ * under `./SessionRows/`.
  */
 
 import type { JSX } from "react";
-import { IconArchive, IconWarning } from "../../components/icons/index.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-import { DotmSquare3 } from "../../components/ui/dotm-square-3.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { RailGroup } from "../../components/ui/rail-list.js";
 import { type SessionGroup } from "./sessionListModel.js";
 import { ListPlaceholder } from "./SessionRows/ListPlaceholder.js";
@@ -34,6 +34,66 @@ interface SessionGroupsProps {
    * with the same group keys (pinned/today/yesterday/older).
    */
   readonly idPrefix: string;
+}
+
+interface SidebarSessionGroupsProps {
+  readonly groups: readonly SessionGroup[];
+  readonly activeSessionId: string | null;
+  readonly onSelect: (id: string) => void;
+  readonly onTogglePin: (id: string, nextPinned: boolean) => void;
+  readonly onRequestRemove: (row: SessionListItem) => void;
+  readonly onRename: (id: string, name: string) => void;
+  readonly pendingPinId: string | null;
+  /** The sidebar search's text, marked in each title. */
+  readonly highlight: string;
+}
+
+/**
+ * The left sidebar's sessions: "Pinned", "Today", "Yesterday", "Older", each
+ * a 12 / 500 muted head over its 34px rows. Empty groups are not drawn.
+ */
+export function SidebarSessionGroups({
+  groups,
+  activeSessionId,
+  onSelect,
+  onTogglePin,
+  onRequestRemove,
+  onRename,
+  pendingPinId,
+  highlight,
+}: SidebarSessionGroupsProps): JSX.Element {
+  return (
+    <div className="vex-ls-groups">
+      {groups.map((group) => {
+        if (group.rows.length === 0) return null;
+        const headingId = `ls-${group.key}`;
+        return (
+          <section key={group.key} aria-labelledby={headingId}>
+            <h2 id={headingId} className="vex-ls-group">
+              {group.title}
+            </h2>
+            <ul className="vex-ls-group__rows">
+              {group.rows.map((row) => (
+                <li key={row.id}>
+                  <SessionRow
+                    row={row}
+                    variant="sidebar"
+                    selected={row.id === activeSessionId}
+                    highlight={highlight}
+                    onSelect={onSelect}
+                    onTogglePin={onTogglePin}
+                    onRequestRemove={onRequestRemove}
+                    onRename={onRename}
+                    pinPending={pendingPinId === row.id}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
 }
 
 export function SessionGroups({
@@ -86,15 +146,9 @@ export function SessionsLoadingPlaceholder({
   return (
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
+      register="sentence"
       text="Loading sessions"
-      icon={
-        <DotmSquare3
-          size={26}
-          dotSize={4}
-          color="var(--vex-accent)"
-          ariaLabel="Loading sessions"
-        />
-      }
+      icon={<Swatch state="listening" size={10} />}
     />
   );
 }
@@ -109,9 +163,10 @@ export function SessionsErrorPlaceholder({
   return (
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
+      register="sentence"
       text={message}
       tone="error"
-      icon={<IconWarning size={18} />}
+      icon={<Swatch state="error" size={10} />}
     />
   );
 }
@@ -124,8 +179,8 @@ export function SessionsEmptyPlaceholder({
   return (
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
+      register="sentence"
       text="No sessions"
-      icon={<IconArchive size={18} />}
     />
   );
 }

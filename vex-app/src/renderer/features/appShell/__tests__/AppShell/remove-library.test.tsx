@@ -303,7 +303,9 @@ describe("AppShell", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "Remove session" }))[0]!);
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
 
-    await screen.findByText(/pending approval/i);
+    // The dialog's own sentence: the shell's Needs you control also speaks of
+    // "pending approvals" when its read fails.
+    await screen.findByText(/this session has a pending approval/i);
     expect(useUiStore.getState().activeSessionId).toBe(row.id);
   });
 

@@ -59,7 +59,6 @@ import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
-import { LeftPageOpenContext } from "./leftPage/leftPageContext.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
@@ -401,13 +400,7 @@ function ShellFrame({
               zenMode={lighterZen}
               onOpenZenAssistant={openZenAssistant}
             />
-          ) : studio ? <StudioCenter /> : (
-            // The welcome hero seats the mode capsule only while the left
-            // sidebar is its rail; the open sidebar's mast carries it otherwise.
-            <LeftPageOpenContext.Provider value={!rail}>
-              <SessionPanel />
-            </LeftPageOpenContext.Provider>
-          )}
+          ) : studio ? <StudioCenter /> : <SessionPanel />}
         </div>
 
         {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you, the

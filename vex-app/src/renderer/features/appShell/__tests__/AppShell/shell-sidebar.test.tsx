@@ -345,7 +345,7 @@ describe("AppShell", () => {
           ),
       }),
     ).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: /New session/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /New chat/i }).length).toBeGreaterThan(0);
     // Healthy runtime → the profile subtitle speaks the Chronos hallmark.
     await screen.findByText("The night shift is active.");
     // The bare version stamp lives in the SESSION rail's collapse header;
@@ -568,7 +568,9 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Search sessions/i }));
     const input = screen.getByRole("searchbox", { name: /Search sessions/i });
     fireEvent.change(input, { target: { value: "arbitrum" } });
-    expect(screen.getAllByText("Arbitrum LP Rebalance").length).toBeGreaterThan(0);
+    // The match is marked, so the title is the mark plus the rest: the row's
+    // select button still carries the whole name.
+    expect(screen.getByRole("button", { name: /Arbitrum LP Rebalance/ })).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
 
     // Escape closes the field AND clears the filter.
@@ -637,7 +639,9 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Portfolio Check");
 
-    fireEvent.click(screen.getByRole("tab", { name: "Mission" }));
+    // The Missions nav row opens the search on its Mission tab.
+    fireEvent.click(screen.getByRole("button", { name: "Missions" }));
+    expect(screen.getByRole("tab", { name: "Mission" }).getAttribute("aria-selected")).toBe("true");
 
     expect(screen.getAllByText("Arbitrum LP Rebalance").length).toBeGreaterThan(0);
     expect(screen.queryByText("Portfolio Check")).toBeNull();
@@ -700,7 +704,7 @@ describe("AppShell", () => {
     expect(root?.getAttribute("data-vex-theme")).toBe("chronos");
   });
 
-  it("closes the left page to its spine and opens it again", async () => {
+  it("closes the left sidebar to its rail and opens it again from the Chats key", async () => {
     const view = renderShell();
     const sidebar = view.container.querySelector("[data-vex-area='sessions-sidebar']");
     const page = view.container.querySelector("[data-vex-area='left-page']");
@@ -712,9 +716,7 @@ describe("AppShell", () => {
     );
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
     expect(page?.getAttribute("data-vex-left-page")).toBe("spine");
-    fireEvent.click(
-      screen.getByRole("button", { name: /Expand sessions sidebar/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
     expect(page?.getAttribute("data-vex-left-page")).toBe("page");
   });
@@ -843,25 +845,50 @@ describe("AppShell", () => {
     expect(mark?.textContent).toBe("");
   });
 
-  it("mounts the compact $VEX widget in the sidebar rail, not on the welcome stage", async () => {
+  it("keeps the $VEX widget out of the left sidebar and off the welcome stage", async () => {
+    // The left sidebar says where you are (docs/design/R3-MINIMAL.md section
+    // 4); the $VEX line moves to the Portfolio page.
     const view = renderShell();
+    await screen.findByText("The night shift is active.");
     const sidebar = view.container.querySelector(
       "[data-vex-area='sessions-sidebar']",
     );
-    // The market bridge mock returns null → the widget shows its loading
-    // skeleton, proving it lives in the rail.
-    await waitFor(() => {
-      expect(
-        sidebar?.querySelector("[data-vex-area='vex-token-compact']"),
-      ).not.toBeNull();
-    });
-    // The welcome panel no longer carries any market card — the stage is clean.
+    expect(sidebar).not.toBeNull();
+    expect(
+      sidebar?.querySelector("[data-vex-area='vex-token-compact']"),
+    ).toBeNull();
     const panel = view.container.querySelector(
       "[data-vex-area='session-panel']",
     );
     expect(
       panel?.querySelector("[data-vex-area='vex-token-compact']"),
     ).toBeNull();
+  });
+
+  it("keeps the open sidebar inside its track at the 1279, 1280, 1359 and 1360 seams", () => {
+    // The wave 1 defect: at 1280 the left track is 224 and the V10 page
+    // content ran past it. The R3 column fills its track (left-sidebar.css,
+    // pinned in SessionsList-nav.test.tsx) and is never given a width here.
+    useUiStore.setState({ activeSessionId: "s-1" });
+    const at = (width: number): { columns: string | undefined; open: string | null; inline: string } => {
+      setWindowWidth(width);
+      const view = renderShell();
+      const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+      const sidebar = view.container.querySelector<HTMLElement>("[data-vex-area='sessions-sidebar']");
+      const result = {
+        columns: frame?.style.gridTemplateColumns,
+        open: sidebar?.getAttribute("data-vex-sidebar-open") ?? null,
+        inline: sidebar?.style.width ?? "",
+      };
+      view.unmount();
+      return result;
+    };
+    expect(at(1279)).toEqual({ columns: "224px minmax(0, 1fr) 240px", open: "true", inline: "" });
+    expect(at(1280)).toEqual({ columns: "224px minmax(0, 1fr) 240px", open: "true", inline: "" });
+    expect(at(1359)).toEqual({ columns: "224px minmax(0, 1fr) 240px", open: "true", inline: "" });
+    expect(at(1360)).toEqual({ columns: "264px minmax(0, 1fr) 256px", open: "true", inline: "" });
+    // Under the medium tier an open Vex keeps the left at its rail.
+    expect(at(1179)).toEqual({ columns: "56px minmax(0, 1fr) 224px", open: "false", inline: "" });
   });
 
   it("solves the three tracks from the solver (left 264, centre, Vex 256 at 1440)", () => {
@@ -1014,54 +1041,34 @@ describe("AppShell", () => {
     expect(frame?.style.gridTemplateColumns).toBe("264px minmax(0, 1fr) 256px");
   });
 
-  it("keeps exactly ONE way into Studio on screen across the welcome<->session edge", () => {
+  it("keeps the way into Studio on screen across the welcome<->session edge", () => {
     // THE DEFECT, at the seat where it was measured (UX after-audit N1). The
-    // `Agent | Studio` capsule used to render on the welcome HERO only, so
-    // selecting a session unmounted the hero and took the only control out of
-    // agent mode off the screen entirely. Close-range suites cannot see this,
-    // because each of them mounts one component; only the assembled shell can
-    // show that the control survives a stage change.
-    //
-    // The seat is decided by the LEFT PAGE (docs/design/V10-SPREAD.md
-    // section 3): open, its mast carries the capsule beside the vx mark on
-    // the welcome stage and in a session alike; a spine has no mast, and the
-    // welcome hero carries it. The COUNT is the invariant either way
-    // (`e2e/studio.spec.ts` pins it page-wide). Make either seat
-    // unconditional and one half below reads 2.
+    // way out of agent mode once rendered on the welcome HERO only, so
+    // selecting a session unmounted the hero and took it off the screen.
+    // Close-range suites cannot see this; only the assembled shell can show
+    // that the control survives a stage change. The R3 sidebar's nav carries
+    // Studio as a row (docs/design/R3-MINIMAL.md section 4), open and on the
+    // rail alike, whatever the centre shows; the sidebar carries no capsule.
     const view = renderShell();
-    const rail = (): HTMLElement | null =>
+    const sidebar = (): HTMLElement | null =>
       view.container.querySelector("[data-vex-area='sessions-sidebar']");
-    const centre = (): HTMLElement | null =>
-      view.container.querySelector("[data-vex-area='session-panel']");
+    const studioRow = (): HTMLElement | undefined =>
+      Array.from(
+        sidebar()?.querySelectorAll<HTMLElement>("nav[aria-label='Main'] button") ?? [],
+      ).find((button) => (button.getAttribute("aria-label") ?? button.textContent) === "Studio");
 
-    const welcomeGroups = screen.getAllByRole("radiogroup", {
-      name: "Runtime mode",
-    });
-    expect(welcomeGroups).toHaveLength(1);
-    // The open page's mast, not the hero.
-    expect(rail()?.contains(welcomeGroups[0] ?? null)).toBe(true);
-    expect(centre()?.contains(welcomeGroups[0] ?? null)).toBe(false);
+    expect(studioRow()).toBeDefined();
+    expect(sidebar()?.querySelector("[role='radiogroup']")).toBeNull();
 
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
+    expect(studioRow()).toBeDefined();
+    expect(sidebar()?.querySelector("[role='radiogroup']")).toBeNull();
 
-    const sessionGroups = screen.getAllByRole("radiogroup", {
-      name: "Runtime mode",
-    });
-    expect(sessionGroups).toHaveLength(1);
-    expect(rail()?.contains(sessionGroups[0] ?? null)).toBe(true);
-    expect(
-      screen.getByRole("radio", { name: "Studio" }).getAttribute("aria-checked"),
-    ).toBe("false");
-
-    // Back on the welcome stage with the page closed to its spine: the mast
-    // is gone and the hero takes the capsule.
-    act(() => useUiStore.getState().setActiveSessionId(null));
+    // Closed to its rail the row is a named key, still there (the switch
+    // itself is pinned close range in SessionsList-nav.test.tsx).
     fireEvent.click(screen.getByRole("button", { name: /Collapse sessions sidebar/i }));
-    const spineGroups = screen.getAllByRole("radiogroup", {
-      name: "Runtime mode",
-    });
-    expect(spineGroups).toHaveLength(1);
-    expect(centre()?.contains(spineGroups[0] ?? null)).toBe(true);
+    expect(sidebar()?.getAttribute("data-vex-sidebar-open")).toBe("false");
+    expect(studioRow()?.getAttribute("aria-label")).toBe("Studio");
   });
 });
 
