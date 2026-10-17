@@ -24,9 +24,11 @@ vi.mock("@shared/lock-button.js", () => ({ get LOCK_BUTTON() { return feature.en
 
 const healthMock = vi.fn();
 const profileMock = vi.fn();
+const runtimeInfoMock = vi.fn();
 
 vi.mock("../../../lib/api/system.js", () => ({
   useSystemHealth: () => healthMock(),
+  useRuntimeInfo: () => runtimeInfoMock(),
 }));
 vi.mock("../../../lib/api/user-profile.js", () => ({
   useUserProfile: () => profileMock(),
@@ -37,7 +39,8 @@ vi.mock("../../../lib/api/capabilities.js", () => ({
 vi.mock("../VexSetupDialog.js", () => ({ VexSetupDialog: () => null }));
 vi.mock("@thesvg/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@thesvg/react")>();
-  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
+  // Each brand mark is a bare marker naming itself, so provenance is checkable.
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => <i data-brand={name} />]));
 });
 
 const {
@@ -73,6 +76,7 @@ function health(overall: HealthReport["overall"]): Result<HealthReport> {
 beforeEach(() => {
   feature.enabled = true;
   healthMock.mockReturnValue({ isLoading: false, data: health("ok") });
+  runtimeInfoMock.mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
   profileMock.mockReturnValue({
     isLoading: false,
     isError: false,
@@ -186,6 +190,21 @@ describe("SidebarProfile foot", () => {
     expect(container.querySelector("img")).toBeNull();
     rerender(<SidebarProfile sidebarOpen />);
     expect(root()?.getAttribute("data-ground")).toBe("paper");
+  });
+
+  it("the menu's provenance row marks what runs: the bundled database alone on the native runtime", () => {
+    runtimeInfoMock.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+    const view = render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(document.querySelector("[data-brand='Postgresql']")).not.toBeNull();
+    expect(document.querySelector("[data-brand='Docker']")).toBeNull();
+    view.unmount();
+
+    runtimeInfoMock.mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
+    render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(document.querySelector("[data-brand='Postgresql']")).not.toBeNull();
+    expect(document.querySelector("[data-brand='Docker']")).not.toBeNull();
   });
 
   it("gives the collapsed spine the sentence as its tooltip - no subtitle there", () => {
