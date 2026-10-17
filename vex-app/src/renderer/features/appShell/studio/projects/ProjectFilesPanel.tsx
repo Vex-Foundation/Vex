@@ -28,8 +28,8 @@
 
 import type { JSX } from "react";
 import type { StudioFilesStatus } from "@shared/schemas/studio-installer.js";
-import { IconWarning } from "../../../../components/icons/index.js";
-import { Pill } from "../../../../components/ui/pill.js";
+import { LineWarning } from "../../../../components/icons/line/index.js";
+import { Tag } from "../../../../components/ui/stamp.js";
 import {
   Swatch,
   type SwatchState,
@@ -51,12 +51,12 @@ import {
  * THE ROW'S STATE GLYPH, one per file state (audit finding I4).
  *
  * The same leading slot `RenderOutcomePanel` uses, over THIS panel's vocabulary
- * - what a file IS, not what a run did to it. `unreadable` is the only ERROR:
- * Vex tried to inspect the file and could not. `drifted`, `missing` and `stale`
- * are true statements about a file that a repair fixes, which is the warning
- * register, and `unsupported` is a design decision that
- * `ARTIFACT_STATE_WANTS_ATTENTION` deliberately does not badge - so its glyph
- * must not badge it either.
+ * - what a file IS, not what a run did to it. `unreadable` is the only ERROR
+ * (the ink cross): Vex tried to inspect the file and could not. `drifted`,
+ * `missing` and `stale` are true statements about a file that a repair fixes,
+ * which is CONCERNED (the ink hatch, docs/design/R3-MINIMAL.md section 1.6),
+ * and `unsupported` is a design decision that `ARTIFACT_STATE_WANTS_ATTENTION`
+ * deliberately does not badge - so its glyph must not badge it either.
  *
  * `Record` over the closed union, so a new wire state is a compile error rather
  * than a row with no glyph.
@@ -65,9 +65,9 @@ const ARTIFACT_STATE_DOTS: Readonly<
   Record<StudioFilesStatus["artifacts"][number]["state"], SwatchState>
 > = {
   current: "done",
-  drifted: "warning",
-  missing: "warning",
-  stale: "warning",
+  drifted: "concerned",
+  missing: "concerned",
+  stale: "concerned",
   unsupported: "done",
   unreadable: "error",
 };
@@ -107,7 +107,7 @@ export function ProjectFilesPanel({
         type="button"
         onClick={onRepair}
         data-vex-project-files-repair=""
-        className="self-start px-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className="self-start px-1 text-[13.5px] font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
       >
         {PROJECT_FILES_REPAIR_ACTION}
       </button>
@@ -118,8 +118,11 @@ export function ProjectFilesPanel({
       <div className="flex flex-col gap-1">
         <h3 className="vex-eyebrow">{PROJECT_FILES_TITLE}</h3>
         {neverRendered ? (
-          <p role="status" className="flex items-start gap-1.5 text-xs text-warning">
-            <IconWarning size={13} className="mt-0.5 shrink-0" />
+          <p
+            role="status"
+            className="flex items-start gap-1.5 text-[13px] leading-[1.45] text-ink-primary"
+          >
+            <LineWarning size={14} className="mt-[3px] shrink-0" />
             <span>{PROJECT_FILES_NEVER_RENDERED}</span>
           </p>
         ) : null}
@@ -127,7 +130,9 @@ export function ProjectFilesPanel({
       </div>
 
       {files.artifacts.length === 0 ? (
-        <p className="text-xs text-ink-tertiary">{PROJECT_FILES_EMPTY}</p>
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+          {PROJECT_FILES_EMPTY}
+        </p>
       ) : (
         <ul
           aria-label={PROJECT_FILES_LIST_LABEL}
@@ -145,41 +150,45 @@ export function ProjectFilesPanel({
                 key={`${artifact.kind}:${artifact.agentId ?? "-"}:${String(index)}`}
                 data-vex-artifact-state={artifact.state}
                 data-vex-artifact-kind={artifact.kind}
-                className="flex flex-col gap-1 border border-line-2 px-3 py-2"
+                className="flex flex-col gap-1 border border-rule-quiet px-3.5 py-2.5"
               >
                 <div className="flex items-center justify-between gap-2">
-                  {/* The leading state slot. No `label`: the Pill on the same
+                  {/* The leading state slot. No `label`: the Tag on the same
                     * line carries the verdict word already. */}
                   <Swatch
                     state={ARTIFACT_STATE_DOTS[artifact.state]}
-                    size={8}
-                    className="shrink-0"
+                    size={10}
+                    className="shrink-0 text-accent-primary"
                   />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-xs text-ink-primary">
+                    <span className="truncate text-[13px] text-ink-primary">
                       {agentName === null
                         ? ARTIFACT_KIND_LABELS[artifact.kind]
                         : `${ARTIFACT_KIND_LABELS[artifact.kind]} - ${agentName}`}
                     </span>
                     {/* Repo-relative text for a label, never a capability. */}
                     {artifact.path !== null ? (
-                      <span className="truncate font-mono text-[10px] text-ink-tertiary">
+                      <span className="vex-num truncate text-[12px] text-ink-tertiary">
                         {artifact.path}
                       </span>
                     ) : null}
                   </span>
-                  <Pill size="sm" variant={attention ? "caution" : "neutral"}>
+                  {/* An ink tag for a file that wants attention, the quiet one
+                    * for a file that does not; the only caps in the panel. */}
+                  <Tag quiet={!attention} className="shrink-0">
                     {ARTIFACT_STATE_LABELS[artifact.state]}
-                  </Pill>
+                  </Tag>
                 </div>
                 <span
-                  className={`text-xs ${attention ? "text-warning" : "text-ink-tertiary"}`}
+                  className={`text-[13px] leading-[1.45] ${attention ? "text-ink-primary" : "text-ink-tertiary"}`}
                 >
                   {ARTIFACT_STATE_SENTENCES[artifact.state]}
                 </span>
                 {/* Main's own sanitized explanation, whenever it sent one. */}
                 {artifact.detail !== null ? (
-                  <span className="text-xs text-ink-tertiary">{artifact.detail}</span>
+                  <span className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+                    {artifact.detail}
+                  </span>
                 ) : null}
               </li>
             );

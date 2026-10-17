@@ -131,8 +131,12 @@ export function ProjectWalletFieldset({
     return (
       <fieldset className="flex flex-col gap-2.5" data-vex-project-wallets="empty">
         <legend className="vex-eyebrow">{PROJECT_WALLETS_LEGEND}</legend>
-        <p className="text-sm text-ink-primary">{PROJECT_WALLETS_NONE_TITLE}</p>
-        <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_NONE_HELP}</p>
+        <p className="text-[14px] leading-[1.45] text-ink-primary">
+          {PROJECT_WALLETS_NONE_TITLE}
+        </p>
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+          {PROJECT_WALLETS_NONE_HELP}
+        </p>
       </fieldset>
     );
   }
@@ -149,7 +153,9 @@ export function ProjectWalletFieldset({
       data-vex-project-wallets-selection={noneSelected ? "none" : "some"}
     >
       <legend className="vex-eyebrow">{PROJECT_WALLETS_LEGEND}</legend>
-      <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_HELP}</p>
+      <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+        {PROJECT_WALLETS_HELP}
+      </p>
       <div className="grid grid-cols-2 gap-2">
         <WalletSelect
           label={PROJECT_WALLET_EVM_LABEL}
@@ -169,7 +175,9 @@ export function ProjectWalletFieldset({
         />
       </div>
       {noneSelected ? (
-        <p className="text-xs text-ink-tertiary">{PROJECT_WALLETS_UNSELECTED}</p>
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+          {PROJECT_WALLETS_UNSELECTED}
+        </p>
       ) : null}
     </fieldset>
   );

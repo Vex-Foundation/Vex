@@ -34,6 +34,8 @@
 
 import { useId, type JSX } from "react";
 import { DialogConsequence } from "../../../../components/ui/dialog.js";
+import { Tag } from "../../../../components/ui/stamp.js";
+import { cn } from "../../../../lib/utils.js";
 import {
   FULL_ACCESS_ACKNOWLEDGEMENT,
   FULL_ACCESS_CONSEQUENCE_UNDO,
@@ -41,6 +43,22 @@ import {
   fullAccessFolderLine,
   fullAccessWalletsLine,
 } from "./projects-copy.js";
+
+/**
+ * THE KIT CHECKBOX, drawn on the native input (docs/design/R3-MINIMAL.md
+ * section 1.5): 16 x 16, a 1.5px ink border, and when it is on the blue fill
+ * with a white tick; focus is the kit's 2px outline, 3px clear. The input keeps
+ * its checkbox semantics, its label and its `disabled` behaviour; only the
+ * paint changed. Shared with the delete dialog's trash choice, which is the
+ * other consent checkbox in this folder, so the two cannot drift.
+ */
+export const CONSENT_CHECKBOX_CLASS = cn(
+  "relative mt-0.5 h-4 w-4 shrink-0 cursor-pointer appearance-none border-[1.5px] border-rule-ink bg-transparent",
+  "checked:border-button-accent-edge checked:bg-button-accent",
+  "checked:after:absolute checked:after:top-0 checked:after:left-[3.5px] checked:after:h-2 checked:after:w-1 checked:after:rotate-45 checked:after:border-solid checked:after:border-r-2 checked:after:border-b-2 checked:after:border-ink-on-button-accent checked:after:content-['']",
+  "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus",
+  "disabled:cursor-not-allowed disabled:border-dotted",
+);
 
 export interface FullAccessConsentProps {
   /** The project's folder, or `null` in the creator where it does not exist yet. */
@@ -62,12 +80,21 @@ export function FullAccessConsent({
 }: FullAccessConsentProps): JSX.Element {
   const checkboxId = useId();
   return (
-    <DialogConsequence tone="warning" data-vex-consent="full-access">
+    <DialogConsequence
+      tone="warning"
+      data-vex-consent="full-access"
+      // 13 / 1.45 on the dialog's own 32px gutter (the creator and the settings
+      // editor both pad their header and body at 32).
+      className="px-8 text-[13px] leading-[1.45]"
+    >
+      {/* The mark of the grant: the one outlined caps tag. The words below are
+        * the consent; this only names what is being granted. */}
+      <Tag className="self-start">Full access</Tag>
       <span className="font-medium">{FULL_ACCESS_CONSEQUENCE_WHAT}</span>
       {/* TO WHAT. Both lines always render: an empty wallet selection is a fact
         * about the grant, not a reason to say nothing about wallets. */}
       <span className="flex flex-col gap-0.5 text-ink-secondary">
-        <span className="truncate font-mono text-[11px]">
+        <span className="vex-num truncate text-[12px]">
           {fullAccessFolderLine(displayPath)}
         </span>
         <span>{fullAccessWalletsLine(walletLabels)}</span>
@@ -84,7 +111,7 @@ export function FullAccessConsent({
           disabled={disabled}
           data-vex-consent-acknowledge=""
           onChange={(event) => onAcknowledgedChange(event.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-warning)]"
+          className={CONSENT_CHECKBOX_CLASS}
         />
         <span>{FULL_ACCESS_ACKNOWLEDGEMENT}</span>
       </label>

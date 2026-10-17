@@ -1,10 +1,10 @@
 /**
  * THE DIAGNOSTIC THAT APPEARS WHEN VEX STUDIO HAS NO BRIDGE (B1.6).
  *
- * The Docker bootstrap flow is the shape this follows, deliberately: a
- * `SetupStatusCard` states what is wrong in a colored word plus one sentence,
- * a body gives the ONE remedy for that exact state, and a re-check button
- * re-asks the question. `docker/bootstrap/branches/DaemonStoppedBody.tsx` is
+ * The Docker bootstrap flow is the shape this follows, deliberately: an ink
+ * callout states what is wrong in a state word plus one sentence (never red,
+ * docs/design/R3-MINIMAL.md sections 10.2 and 12), a body gives the ONE remedy
+ * for that exact state, and a re-check button re-asks the question. `docker/bootstrap/branches/DaemonStoppedBody.tsx` is
  * the direct precedent, including the copy-paste command block.
  *
  * ## It renders nothing at all when the bridge is ready
@@ -28,8 +28,8 @@
  *
  * The panel appears without the user asking and is the reason the screen looks
  * different, so it has to be announced. The announcement belongs to the
- * `SetupStatusCard` inside it, which since B2.2 carries `role="alert"` for its
- * alert tones - the word, the title and the sentence ARE the diagnosis. This
+ * `ErrorCallout` inside it, which carries `role="alert"` here - the word, the
+ * sentence and the detail ARE the diagnosis. This
  * section therefore carries a LABEL and no live role of its own: two nested
  * live regions over one appearance is how a screen reader ends up saying the
  * same failure twice, and the outer one would additionally re-announce every
@@ -43,9 +43,10 @@
 
 import type { JSX, ReactNode } from "react";
 import type { StudioBridgeReadiness } from "@shared/schemas/studio-bridge-readiness.js";
+import { LineRefresh } from "../../../../components/icons/line/index.js";
 import { Button } from "../../../../components/ui/button.js";
+import { ErrorCallout } from "../../../../components/ui/error-callout.js";
 import { DocsLink } from "../../../../components/onboarding/DocsLink.js";
-import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { useStudioBridgeReadiness } from "../../../../lib/api/studio.js";
 import {
   needsGoInstallGuidance,
@@ -153,13 +154,13 @@ export function StudioBridgeReadinessPanel(): JSX.Element | null {
       rechecking={rechecking}
       onRecheck={recheck}
     >
-      <p className="text-xs leading-relaxed text-ink-secondary">
+      <p className="text-[13px] leading-[1.45] text-ink-secondary">
         {studioBridgeGoSentence(readiness.go, readiness.requiredGoVersion)}
       </p>
 
       {guidance !== null ? (
         <div className="flex flex-col gap-1">
-          <p className="text-xs leading-relaxed text-ink-secondary">
+          <p className="text-[13px] leading-[1.45] text-ink-secondary">
             {guidance.pinned.text}
           </p>
           {/* The addresses are ANCHORS, not text inside the sentence: an
@@ -170,7 +171,7 @@ export function StudioBridgeReadinessPanel(): JSX.Element | null {
             <DocsLink key={link.href} href={link.href} label={link.label} />
           ))}
           {guidance.packaged !== null ? (
-            <p className="text-xs leading-relaxed text-ink-tertiary">
+            <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
               {guidance.packaged}
             </p>
           ) : null}
@@ -178,10 +179,11 @@ export function StudioBridgeReadinessPanel(): JSX.Element | null {
       ) : null}
 
       <div className="flex flex-col gap-1">
-        <p className="vex-micro text-ink-secondary">
+        <p className="text-[13px] leading-[1.45] text-ink-secondary">
           Then build the bridge from the repository root
         </p>
-        <pre className="overflow-auto border border-[var(--color-border)] bg-gate-code p-3 font-mono text-xs leading-relaxed text-ink-primary">
+        {/* The command sits in the paper 2 code well, mono 12.5. */}
+        <pre className="overflow-auto border border-rule-quiet bg-surface-3 px-3.5 py-2.5 font-mono text-[12.5px] leading-[1.5] text-ink-primary">
           <code>{STUDIO_BRIDGE_BUILD_COMMAND}</code>
         </pre>
       </div>
@@ -226,21 +228,34 @@ function ReadinessShell({
       // text change and gets no motion of its own.
       className="vex-surface-enter flex flex-col gap-4"
     >
-      <SetupStatusCard tone={tone} word={word} title={title} detail={detail} />
+      {/* The diagnosis is the ink callout: the state word beside its swatch,
+        * the sentence as the cause, the detail as the hint. A damaged
+        * installation reads as the ink cross; every state that can be fixed or
+        * re-checked from here reads as the ink hatch (concerned). */}
+      <ErrorCallout
+        compact
+        role="alert"
+        state={tone === "error" ? "error" : "concerned"}
+        title={word}
+        cause={title}
+        hint={detail}
+      />
       {children}
       <div className="flex items-center gap-3">
         <Button
-          variant="bare"
+          variant="quiet"
+          size="sm"
           disabled={rechecking}
           onClick={onRecheck}
-          className="self-start text-ink-secondary"
+          className="self-start"
         >
+          <LineRefresh size={14} />
           {rechecking
             ? STUDIO_BRIDGE_RECHECKING_LABEL
             : STUDIO_BRIDGE_RECHECK_LABEL}
         </Button>
         {rechecking ? (
-          <span role="status" className="text-xs text-ink-tertiary">
+          <span role="status" className="text-[12.5px] text-ink-tertiary">
             {STUDIO_BRIDGE_RECHECKING_LABEL}
           </span>
         ) : null}

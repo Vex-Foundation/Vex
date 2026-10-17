@@ -4,9 +4,9 @@
  * CHECKBOXES, not radios, because a project may enable several agents at once -
  * the stored value is a SET (`studioAgentsSchema`), so the control has to be
  * one the user can leave empty and one they can fill. The visual grammar is
- * `SessionCreator/RadioCard`'s trust-zone card, adapted rather than forked: the
- * cards are wider, they carry a brand mark, and their selection marker is the
- * same 3px accent bar, because a project's agent list and a session's mode grid
+ * `SessionCreator/RadioCard`'s card, adapted rather than forked: the cards are
+ * wider, they carry a brand mark, and the selected one is a 1.5px blue frame
+ * with a solid swatch, because a project's agent list and a session's mode grid
  * should read as the same product.
  *
  * ## An unsupported agent is NOT RENDERED (owner decision, 2026-09-01)
@@ -45,7 +45,8 @@
 
 import type { JSX } from "react";
 import type { StudioAgentId } from "@shared/schemas/studio-agent-ids.js";
-import { IconBrainCircuit } from "../../../../components/icons/index.js";
+import { LineModel } from "../../../../components/icons/line/index.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   agentBrandMark,
@@ -92,7 +93,9 @@ export function AgentPicker({
   return (
     <fieldset className="flex flex-col gap-2.5">
       <legend className="vex-eyebrow">{PROJECT_AGENTS_LEGEND}</legend>
-      <p className="text-xs text-ink-tertiary">{PROJECT_AGENTS_HELP}</p>
+      <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+        {PROJECT_AGENTS_HELP}
+      </p>
       <div
         role="group"
         aria-label={PROJECT_AGENT_LIST_LABEL}
@@ -126,7 +129,7 @@ export function AgentPicker({
 const MARK_SIZE = 16;
 
 function AgentMark({ mark }: { readonly mark: AgentBrandMark | null }): JSX.Element {
-  if (mark === null) return <IconBrainCircuit size={MARK_SIZE} />;
+  if (mark === null) return <LineModel size={MARK_SIZE} />;
   if (mark.kind === "per-theme") {
     return (
       <>
@@ -164,7 +167,9 @@ function AgentCard({
       data-vex-agent={agent.id}
       className={cn(
         "relative flex cursor-pointer flex-col gap-1.5 border-[1.5px] px-3.5 py-3 transition-colors",
-        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
+        // Keyboard focus on the sr-only checkbox lights the card with the
+        // kit focus outline (2px, 3px clear), never a ring or a glow.
+        "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
         checked
           ? "border-accent-primary"
           : "border-rule hover:bg-interactive-hover",
@@ -183,18 +188,24 @@ function AgentCard({
         }}
         className="sr-only"
       />
-      {/* The selection marker is the 1.5px frame, never a fill
-        * (docs/design/V10-SPREAD.md section 1: "--frame 1.5px for the
-        * selected tile"). */}
+      {/* The selection marker is the 1.5px blue frame (docs/design/
+        * R3-MINIMAL.md section 9.4, the selected tile) plus the swatch: a
+        * solid fill when the agent is on, an outline when it is off, so the
+        * state is never colour alone (section 1.6). */}
       <span className="flex items-center gap-2">
         <AgentMark mark={mark} />
-        <span className="flex-1 truncate font-display text-[14px] font-medium tracking-[-0.01em] text-ink-primary">
+        <span className="flex-1 truncate text-[14px] font-medium text-ink-primary">
           {agent.displayName}
         </span>
+        <Swatch
+          state={checked ? "done" : "idle"}
+          size={10}
+          className="shrink-0 text-accent-primary"
+        />
       </span>
 
       {agent.launchInstruction !== null ? (
-        <span className="text-[11px] leading-relaxed text-ink-tertiary">
+        <span className="text-[12.5px] leading-[1.45] text-ink-tertiary">
           {agentLaunchSentence(agent.launchInstruction)}
         </span>
       ) : null}

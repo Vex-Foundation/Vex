@@ -39,8 +39,17 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import { IconCopy, IconFolderOpen } from "../../../../components/icons/index.js";
+import {
+  LineChevronDown,
+  LineCopy,
+  LineFolder,
+  LineWarning,
+} from "../../../../components/icons/line/index.js";
+import { Button } from "../../../../components/ui/button.js";
+import { EmptyBlock } from "../../../../components/ui/empty-block.js";
+import { ErrorCallout } from "../../../../components/ui/error-callout.js";
 import { Menu } from "../../../../components/ui/menu.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import { revealProjectNodeInFileManager } from "../../../../lib/api/files.js";
 import { notify } from "../../../../lib/notifications/index.js";
 import { cn } from "../../../../lib/utils.js";
@@ -328,8 +337,8 @@ export function FileViewer({
       data-vex-key-surface="viewer"
       className={cn("flex h-full min-h-0 flex-col bg-surface-field", className)}
     >
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-rule-quiet px-3 text-[12px] leading-4">
-        <span className="truncate font-mono text-ink-secondary" title={tab.relativePath}>
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-rule-quiet pr-2 pl-4 text-[12px] leading-4">
+        <span className="vex-num truncate text-ink-secondary" title={tab.relativePath}>
           {tab.relativePath}
         </span>
         <KindMenu
@@ -339,19 +348,22 @@ export function FileViewer({
           onReveal={handleReveal}
         />
         {size === null ? null : (
-          <span className="shrink-0 text-ink-tertiary">{formatBytes(size)}</span>
+          <span className="vex-num shrink-0 text-ink-tertiary">{formatBytes(size)}</span>
         )}
         <span className="flex-1" />
-        <button
-          type="button"
+        {/* The icon key (32 x 32); it widens to carry the word "Copied" while
+          * the confirmation shows, then returns to the bare key. */}
+        <Button
+          variant="bare"
+          size="icon"
           onClick={handleCopy}
           disabled={!hasContent}
           aria-label={COPY_FILE_LABEL}
-          className="flex shrink-0 items-center gap-1 px-1 py-0.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40"
+          className={cn("shrink-0", copied && "w-auto gap-1.5 px-2 text-[12px]")}
         >
-          <IconCopy size={12} />
+          <LineCopy size={14} />
           {copied ? <span>{COPY_FILE_DONE}</span> : null}
-        </button>
+        </Button>
       </div>
 
       {state.kind === "orphaned" ? (
@@ -398,24 +410,40 @@ function Body({
     case "disposed":
       return <Centered />;
     case "reading":
-      return <Centered>{VIEWER_LOADING}</Centered>;
-    case "refused":
+      // A word and a quiet line, never a skeleton (docs/design/R3-MINIMAL.md
+      // section 12, empty and loading blocks).
       return (
-        <Centered testId="file-viewer-refusal">
-          {refusalText(state.code, state.size)}
+        <Centered>
+          <EmptyBlock loading title={VIEWER_LOADING} className={BLOCK_CLASS} />
+        </Centered>
+      );
+    case "refused":
+      // The refusal is an answer about the file, drawn as the empty block's
+      // one plain sentence. There is no next step to offer: main decided.
+      return (
+        <Centered>
+          <EmptyBlock
+            data-testid="file-viewer-refusal"
+            title={refusalText(state.code, state.size)}
+            className={BLOCK_CLASS}
+          />
         </Centered>
       );
     case "failed":
+      // A read that never got an answer is the ink callout; Retry is real.
       return (
-        <Centered testId="file-viewer-failure">
-          <span>{TRANSPORT_FAILED}</span>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-2 px-2 py-1 font-medium text-accent-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            {RETRY_LABEL}
-          </button>
+        <Centered>
+          <ErrorCallout
+            compact
+            data-testid="file-viewer-failure"
+            title={TRANSPORT_FAILED}
+            actions={
+              <Button variant="quiet" size="sm" onClick={onRetry}>
+                {RETRY_LABEL}
+              </Button>
+            }
+            className={BLOCK_CLASS}
+          />
         </Centered>
       );
     case "ready":
@@ -512,15 +540,18 @@ function Chip({
         <div
           data-testid="file-viewer-chip"
           role="status"
-          className="shrink-0 border-b border-rule-quiet bg-surface-field px-3 py-1 text-[11px] leading-4 text-ink-tertiary"
+          className="flex shrink-0 items-start gap-2 border-b border-rule-quiet bg-surface-field px-4 py-1.5 text-[12.5px] leading-[1.45] text-ink-secondary"
         >
-          {notes.join(" ")}
+          {/* A bound Vex hit is a fill and a word: the ink hatch beside the
+            * sentence (docs/design/R3-MINIMAL.md section 1.6). */}
+          <Swatch state="concerned" size={10} className="mt-[5px]" />
+          <span>{notes.join(" ")}</span>
         </div>
       )}
       {secondary.length === 0 ? null : (
         <div
           data-testid="file-viewer-secondary-note"
-          className="shrink-0 px-3 py-1 text-[11px] leading-4 text-ink-dimmed"
+          className="shrink-0 px-4 py-1 text-[12px] leading-[1.45] text-ink-tertiary"
         >
           {secondary.join(" ")}
         </div>
@@ -567,7 +598,7 @@ function KindMenu({
         {
           id: "reveal",
           label: REVEAL_IN_FILE_MANAGER_LABEL,
-          icon: <IconFolderOpen size={14} />,
+          icon: <LineFolder size={14} />,
         },
       ]}
       onSelect={(id) => {
@@ -589,9 +620,10 @@ function KindMenu({
           onClick={() => {
             onOpenChange(!open);
           }}
-          className="shrink-0 px-1 py-0.5 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="inline-flex shrink-0 items-center gap-1 px-1.5 py-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
         >
           {label}
+          <LineChevronDown size={14} />
         </button>
       }
     />
@@ -611,25 +643,20 @@ function Notice({
     <div
       role={tone}
       {...(testId === undefined ? {} : { "data-testid": testId })}
-      className="shrink-0 border-b border-rule-quiet bg-warning-wash px-3 py-2 text-[12px] leading-4 text-ink-primary"
+      className="flex shrink-0 items-start gap-2 border-b border-rule-quiet bg-surface-3 px-4 py-2 text-[13px] leading-[1.45] text-ink-primary"
     >
-      {children}
+      <LineWarning size={14} className="mt-[3px] shrink-0" />
+      <span className="min-w-0">{children}</span>
     </div>
   );
 }
 
-function Centered({
-  children,
-  testId,
-}: {
-  readonly children?: ReactNode;
-  readonly testId?: string;
-}): JSX.Element {
+/** The width of the empty, refusal and failure blocks inside the viewer. */
+const BLOCK_CLASS = "w-full max-w-[460px]";
+
+function Centered({ children }: { readonly children?: ReactNode }): JSX.Element {
   return (
-    <div
-      {...(testId === undefined ? {} : { "data-testid": testId })}
-      className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center text-[12px] leading-5 text-ink-tertiary"
-    >
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6">
       {children}
     </div>
   );

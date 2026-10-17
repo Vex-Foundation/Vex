@@ -218,19 +218,19 @@ describe("the per-row state glyph", () => {
       "done",
       "done",
       "done",
-      // `refused` is the ONE error: Vex tried and could not. The other two
-      // declines are decisions, and read in the same warning register as the
-      // `caution` pill already beside them.
+      // `refused` is the ONE error (the ink cross): Vex tried and could not.
+      // The other two declines are decisions, and read as concerned (the ink
+      // hatch) beside the ink tag that names them.
       "error",
-      "warning",
-      "warning",
+      "concerned",
+      "concerned",
     ]);
   });
 
   it("does not repeat the verdict word for a screen reader", () => {
     render(<RenderOutcomePanel render={outcome()} />);
     const row = document.querySelector("[data-vex-artifact-status]");
-    // The Pill on the same line carries "Created"; an sr-only copy inside the
+    // The Tag on the same line carries "Created"; an sr-only copy inside the
     // glyph would announce every row's status twice.
     expect(row?.querySelector(".sr-only")).toBeNull();
     expect(
