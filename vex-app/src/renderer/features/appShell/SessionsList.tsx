@@ -116,6 +116,15 @@ export function SessionsList({
     return searchOpen ? filterSessionsByTitle(agentRows, searchText) : agentRows;
   }, [agentRows, searchOpen, searchText]);
 
+  // The chat in view, for the nav: a mission chat selects Missions.
+  const activeSessionMode = useMemo(
+    () =>
+      activeSessionId === null || !query.data?.ok
+        ? null
+        : (query.data.data.find((row) => row.id === activeSessionId)?.mode ?? null),
+    [activeSessionId, query.data],
+  );
+
   const visibleRows = useMemo(
     () => filterSessionsByMode(titleRows, sessionModeFilter),
     [titleRows, sessionModeFilter],
@@ -224,7 +233,11 @@ export function SessionsList({
               <span>Chats</span>
             </button>
             <div aria-hidden className="vex-ls-gap" />
-            <SidebarNav rail onMissions={openMissions} />
+            <SidebarNav
+              rail
+              onMissions={openMissions}
+              activeSessionMode={activeSessionMode}
+            />
           </div>
         </>
       ) : (
@@ -258,7 +271,11 @@ export function SessionsList({
                   onClick={openSearch}
                 />
                 <div aria-hidden className="vex-ls-gap" />
-                <SidebarNav rail={false} onMissions={openMissions} />
+                <SidebarNav
+                  rail={false}
+                  onMissions={openMissions}
+                  activeSessionMode={activeSessionMode}
+                />
                 <div aria-hidden className="vex-ls-gap" />
               </>
             )}

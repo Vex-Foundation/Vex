@@ -7,9 +7,11 @@
  * accessible name.
  *
  * One `navigate(destination)` store action backs every row, so the nav adds no
- * state of its own; the selected row follows the open page first, then the
- * mode (`selectNavDestination`). Missions also opens the sidebar's search on
- * its Mission tab (the owner's `onMissions`). Lighter enters the desk through
+ * state of its own; the selected row follows the real destination
+ * (`selectNavDestination`): the open page first (a page with no row of its
+ * own, Memory or Sessions, selects none), then the mode, and Missions for a
+ * mission chat. Missions also opens the sidebar's search on its Mission tab
+ * (the owner's `onMissions`). Lighter enters the desk through
  * its own command, so the desk entry is the same from every door.
  *
  * `NavKey` is the one row or key shape, shared with New chat and Search.
@@ -104,12 +106,19 @@ function originOf(target: HTMLButtonElement): {
 export function SidebarNav({
   rail,
   onMissions,
+  activeSessionMode = null,
 }: {
   readonly rail: boolean;
   /** Missions opens the sidebar's search on its Mission tab. */
   readonly onMissions: () => void;
+  /**
+   * The mode of the chat in view, when the caller has the session rows: a
+   * mission chat selects Missions. `null` (a desk, an unknown session) leaves
+   * the Mission tab to decide.
+   */
+  readonly activeSessionMode?: "agent" | "mission" | null;
 }): JSX.Element {
-  const selected = useUiStore(selectNavDestination);
+  const selected = useUiStore((s) => selectNavDestination(s, activeSessionMode));
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const navigate = useUiStore((s) => s.navigate);
 

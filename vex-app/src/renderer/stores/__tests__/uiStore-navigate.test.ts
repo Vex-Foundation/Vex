@@ -95,10 +95,58 @@ describe("the selected nav row", () => {
     expect(select({ sessionModeFilter: "mission" })).toBe("missions");
     expect(select({ runtimeMode: "lighter" })).toBe("lighter");
     expect(select({ runtimeMode: "studio" })).toBe("studio");
-    // A page with no row of its own leaves the mode's row selected.
-    expect(select({ runtimeMode: "studio", shellRoute: { kind: "memory", origin: null } })).toBe(
-      "studio",
+  });
+
+  it("selects Missions for a mission chat, Chat for an agent chat, and lets the tab decide when unknown", () => {
+    const none = { runtimeMode: "agent", sessionModeFilter: "all" } as const;
+    expect(selectNavDestination({ ...none, shellRoute: { kind: "none" } }, "mission")).toBe(
+      "missions",
     );
+    expect(selectNavDestination({ ...none, shellRoute: { kind: "none" } }, "agent")).toBe("chat");
+    expect(selectNavDestination({ ...none, shellRoute: { kind: "none" } }, null)).toBe("chat");
+    // The Mission tab still selects Missions with a chat of another mode open
+    // (Missions was just pressed), and an unknown session leaves it to the tab.
+    expect(
+      selectNavDestination(
+        { ...none, sessionModeFilter: "mission", shellRoute: { kind: "none" } },
+        "agent",
+      ),
+    ).toBe("missions");
+    // A desk or Studio is never a mission chat, whatever session is remembered.
+    expect(
+      selectNavDestination({ ...none, runtimeMode: "studio", shellRoute: { kind: "none" } }, "mission"),
+    ).toBe("studio");
+    expect(
+      selectNavDestination({ ...none, runtimeMode: "lighter", shellRoute: { kind: "none" } }, "mission"),
+    ).toBe("lighter");
+    // A page with its own row wins over the chat behind it.
+    expect(
+      selectNavDestination(
+        { ...none, shellRoute: { kind: "portfolio", origin: null } },
+        "mission",
+      ),
+    ).toBe("portfolio");
+  });
+
+  it("selects nothing on a page with no row of its own, in every mode and for a mission chat", () => {
+    const pages = [
+      { kind: "memory", origin: null },
+      { kind: "sessions", origin: null },
+      { kind: "howItWorks", origin: null },
+      { kind: "needsYou", origin: null },
+    ] as const;
+    for (const shellRoute of pages) {
+      for (const runtimeMode of ["agent", "lighter", "studio"] as const) {
+        expect(select({ shellRoute, runtimeMode })).toBeNull();
+        expect(select({ shellRoute, runtimeMode, sessionModeFilter: "mission" })).toBeNull();
+      }
+      expect(
+        selectNavDestination(
+          { runtimeMode: "agent", sessionModeFilter: "all", shellRoute },
+          "mission",
+        ),
+      ).toBeNull();
+    }
   });
 
   it("is what navigate leaves behind for every destination", () => {
