@@ -101,7 +101,10 @@ function stubVex(overrides: {
     ],
   };
   vi.stubGlobal("vex", {
-    system: { health: vi.fn().mockResolvedValue(ok(HEALTH)) },
+    system: {
+      health: vi.fn().mockResolvedValue(ok(HEALTH)),
+      runtime: vi.fn().mockResolvedValue(ok({ native: false })),
+    },
     docker: {
       detect: vi.fn().mockResolvedValue(ok(DOCKER_READY)),
       composeUpAbortable: vi.fn(() => ({

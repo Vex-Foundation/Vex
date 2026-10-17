@@ -31,7 +31,7 @@ import { useMemo } from "react";
 
 import { useDockerStatus } from "../../lib/api/docker.js";
 import { useEnvState } from "../../lib/api/onboarding.js";
-import { useSystemHealth } from "../../lib/api/system.js";
+import { useRuntimeInfo, useSystemHealth } from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { type StepStatus } from "./StepRow.js";
@@ -42,6 +42,7 @@ import { Footer } from "./SystemCheck/Footer.js";
 export function SystemCheck(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const health = useSystemHealth();
+  const runtime = useRuntimeInfo();
   const docker = useDockerStatus();
   const env = useEnvState();
 
@@ -80,7 +81,9 @@ export function SystemCheck(): JSX.Element {
         ? "ok"
         : "warn";
 
-  const anyLoading = health.isPending || docker.isPending || env.isPending;
+  const anyLoading = health.isPending || docker.isPending || env.isPending || runtime.isPending;
+  // The native runtime is started by main; setup goes straight to the schema.
+  const nativeRuntime = runtime.data?.ok === true && runtime.data.data.native;
 
   return (
     <SetupFrame
@@ -116,7 +119,7 @@ export function SystemCheck(): JSX.Element {
 
       <Footer
         disabled={anyLoading}
-        onContinue={() => setCurrentView("dockerBootstrap")}
+        onContinue={() => setCurrentView(nativeRuntime ? "migrations" : "dockerBootstrap")}
       />
     </SetupFrame>
   );

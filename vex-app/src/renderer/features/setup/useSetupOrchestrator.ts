@@ -136,33 +136,40 @@ export function useSetupOrchestrator(): SetupOrchestrator {
         setHandoff({ kind: "view", view: "systemCheck" });
         return;
       }
-      const dockerReady =
-        docker.ok &&
-        docker.data.endpoint.accepted &&
-        docker.data.engine.present &&
-        docker.data.daemon.running;
-      if (!dockerReady) {
-        setHandoff({ kind: "view", view: "dockerBootstrap" });
-        return;
-      }
+      // The native runtime is started by main at boot and joined by the
+      // migrate call below, so there is no container to detect or start.
+      const runtime = await window.vex.system.runtime();
+      const nativeRuntime = runtime.ok && runtime.data.native;
 
-      // ---- 2. Compose up (returning user only) ----------------------
-      setStatus(statusLine("services"));
-      // Deliberately NOT cancelled on unmount — see the header contract.
-      const composeInvocation = window.vex.docker.composeUpAbortable({});
-      let compose: Awaited<typeof composeInvocation.promise>;
-      try {
-        compose = await composeInvocation.promise;
-      } catch {
-        setHandoff({ kind: "view", view: "composeBootstrap" });
-        return;
-      }
-      if (!compose.ok || (compose.data.kind !== "running" && compose.data.kind !== "reused")) {
-        // port_collision / unhealthy / failed / IPC error — the classic
-        // compose screen owns every remediation branch (incl. the
-        // "previous Vex install holds the ports" special case).
-        setHandoff({ kind: "view", view: "composeBootstrap" });
-        return;
+      if (!nativeRuntime) {
+        const dockerReady =
+          docker.ok &&
+          docker.data.endpoint.accepted &&
+          docker.data.engine.present &&
+          docker.data.daemon.running;
+        if (!dockerReady) {
+          setHandoff({ kind: "view", view: "dockerBootstrap" });
+          return;
+        }
+
+        // ---- 2. Compose up (returning user only) --------------------
+        setStatus(statusLine("services"));
+        // Deliberately NOT cancelled on unmount — see the header contract.
+        const composeInvocation = window.vex.docker.composeUpAbortable({});
+        let compose: Awaited<typeof composeInvocation.promise>;
+        try {
+          compose = await composeInvocation.promise;
+        } catch {
+          setHandoff({ kind: "view", view: "composeBootstrap" });
+          return;
+        }
+        if (!compose.ok || (compose.data.kind !== "running" && compose.data.kind !== "reused")) {
+          // port_collision / unhealthy / failed / IPC error — the classic
+          // compose screen owns every remediation branch (incl. the
+          // "previous Vex install holds the ports" special case).
+          setHandoff({ kind: "view", view: "composeBootstrap" });
+          return;
+        }
       }
 
       // ---- 3. Migrations -------------------------------------------

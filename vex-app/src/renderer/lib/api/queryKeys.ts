@@ -13,6 +13,7 @@ export const systemKeys = {
   health: () => ["system", "health"] as const,
   osInfo: () => ["system", "osInfo"] as const,
   network: () => ["system", "network"] as const,
+  runtime: () => ["system", "runtime"] as const,
 };
 
 export const dockerKeys = {

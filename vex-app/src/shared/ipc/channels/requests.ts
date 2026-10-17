@@ -17,6 +17,8 @@ export const CH = {
     health: "vex:system:health",
     osInfo: "vex:system:osInfo",
     network: "vex:system:network",
+    /** Which local runtime main runs: the native one (bundled binaries) or not. */
+    runtime: "vex:system:runtime",
     /** OS-native turn-complete notification (A34); main checks focus itself. */
     notifyTurnComplete: "vex:system:notifyTurnComplete",
     /** Recolour the Windows/Linux title bar overlay on a theme change. */

@@ -10,12 +10,14 @@ import { cleanup, render, act, fireEvent } from "@testing-library/react";
 
 const mockHooks = vi.hoisted(() => ({
   useSystemHealth: vi.fn(),
+  useRuntimeInfo: vi.fn(),
   useDockerStatus: vi.fn(),
   useEnvState: vi.fn(),
 }));
 
 vi.mock("../../../lib/api/system.js", () => ({
   useSystemHealth: mockHooks.useSystemHealth,
+  useRuntimeInfo: mockHooks.useRuntimeInfo,
 }));
 vi.mock("../../../lib/api/docker.js", () => ({
   useDockerStatus: mockHooks.useDockerStatus,
@@ -109,6 +111,7 @@ describe("SystemCheck", () => {
       logBuffer: [],
     });
     mockHooks.useSystemHealth.mockReturnValue(happyHealth());
+    mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
     mockHooks.useDockerStatus.mockReturnValue(happyDocker("active"));
     mockHooks.useEnvState.mockReturnValue(happyEnv());
     openLogsFolder.mockReset().mockResolvedValue({
@@ -125,6 +128,7 @@ describe("SystemCheck", () => {
     vi.useRealTimers();
     cleanup();
     mockHooks.useSystemHealth.mockReset();
+    mockHooks.useRuntimeInfo.mockReset();
     mockHooks.useDockerStatus.mockReset();
     mockHooks.useEnvState.mockReset();
     Reflect.deleteProperty(window, "vex");
@@ -152,6 +156,18 @@ describe("SystemCheck", () => {
     expect(useUiStore.getState().currentView).toBe("dockerBootstrap");
     fireEvent.click(getByRole("button", { name: "Open logs folder" }));
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
+  });
+
+  it("Continue goes straight to migrations when main runs the native runtime", () => {
+    mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+    const { getByRole } = render(<SystemCheck />);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    act(() => {
+      getByRole("button", { name: /continue/i }).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(useUiStore.getState().currentView).toBe("migrations");
   });
 
   it("renders an adjacent translocation warning without adding a probe or blocking Continue", () => {

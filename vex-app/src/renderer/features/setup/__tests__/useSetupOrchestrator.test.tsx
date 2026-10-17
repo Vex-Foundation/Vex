@@ -75,6 +75,7 @@ const WIZARD_DONE = {
 
 interface VexMock {
   readonly health: ReturnType<typeof vi.fn>;
+  readonly runtime: ReturnType<typeof vi.fn>;
   readonly detect: ReturnType<typeof vi.fn>;
   readonly getEnvState: ReturnType<typeof vi.fn>;
   readonly composeUpAbortable: ReturnType<typeof vi.fn>;
@@ -87,6 +88,7 @@ interface VexMock {
 function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
   const mock: VexMock = {
     health: vi.fn(async () => ok(HEALTH)),
+    runtime: vi.fn(async () => ok({ native: false })),
     detect: vi.fn(async () => ok(DOCKER_READY)),
     getEnvState: vi.fn(async () => ok({ setupCompleteFlag: true })),
     composeUpAbortable: vi.fn(() => ({
@@ -105,7 +107,7 @@ function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
     configurable: true,
     writable: true,
     value: {
-      system: { health: mock.health },
+      system: { health: mock.health, runtime: mock.runtime },
       docker: {
         detect: mock.detect,
         composeUpAbortable: mock.composeUpAbortable,
@@ -206,6 +208,29 @@ describe("useSetupOrchestrator", () => {
     // subscribe-before-invoke is a documented contract of the progress bus.
     expect(calls).toEqual(["compose", "subscribe", "migrate"]);
     expect(mock.getWizardState).toHaveBeenCalledTimes(1);
+  });
+
+  it("native runtime: no container gate or compose; migrate joins main's start → appShell", async () => {
+    const calls: string[] = [];
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      // A machine without Docker: the gate would have sent us to bootstrap.
+      detect: vi.fn(async () => ok({ ...DOCKER_READY, daemon: { ...DOCKER_READY.daemon, running: false } })),
+      onProgress: vi.fn(() => {
+        calls.push("subscribe");
+        return vi.fn();
+      }),
+      migrate: vi.fn(async () => {
+        calls.push("migrate");
+        return ok({ kind: "noop", message: "current" });
+      }),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
+    );
+    expect(mock.composeUpAbortable).not.toHaveBeenCalled();
+    expect(calls).toEqual(["subscribe", "migrate"]);
   });
 
   it("port_collision hands off to the classic compose screen", async () => {

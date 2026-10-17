@@ -32,6 +32,17 @@ export const networkProbeSchema = z
   .strict();
 export type NetworkProbe = z.infer<typeof networkProbeSchema>;
 
+/**
+ * `native`: main runs the bundled local runtime and starts it itself, so setup
+ * skips the container bootstrap screens and goes straight to migrations.
+ */
+export const runtimeInfoSchema = z
+  .object({
+    native: z.boolean(),
+  })
+  .strict();
+export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
+
 export const healthReportSchema = z
   .object({
     os: osInfoSchema,

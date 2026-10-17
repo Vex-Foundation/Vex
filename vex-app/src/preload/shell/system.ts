@@ -12,6 +12,9 @@ export const system = {
   network() {
     return invokeWithSchema(CH.system.network, {});
   },
+  runtime() {
+    return invokeWithSchema(CH.system.runtime, {});
+  },
   notifyTurnComplete(input) {
     return invokeWithSchema(CH.system.notifyTurnComplete, input);
   },

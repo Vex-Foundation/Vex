@@ -12,11 +12,14 @@ import {
   healthReportSchema,
   networkProbeSchema,
   osInfoSchema,
+  runtimeInfoSchema,
   type HealthReport,
   type NetworkProbe,
   type OsInfo,
   type OsPlatform,
+  type RuntimeInfo,
 } from "@shared/schemas/system.js";
+import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { registerHandler } from "./register-handler.js";
 import { registerSystemNotifyTurnCompleteHandler } from "./system/notify-turn-complete.js";
@@ -105,6 +108,16 @@ export function registerSystemHandlers(): Array<() => void> {
       inputSchema: empty,
       outputSchema: osInfoSchema,
       handle: async (): Promise<Result<OsInfo>> => ok(await gatherOsInfo()),
+    })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.system.runtime,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: runtimeInfoSchema,
+      handle: async (): Promise<Result<RuntimeInfo>> => ok({ native: getRuntimeMode() === "native" }),
     })
   );
 
