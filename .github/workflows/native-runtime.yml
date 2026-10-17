@@ -13,6 +13,12 @@ on:
         type: choice
         options: [all, windows]
         default: all
+      release:
+        description: >-
+          Publish the five gated trees as a GitHub release with this name
+          (native-runtime-<yyyy.mm.dd>-<n>); empty = build and gate only
+        type: string
+        default: ""
   push:
     branches: [native-runtime]
     paths:
@@ -337,3 +343,52 @@ jobs:
           name: runtime-win32-arm64
           path: runtime-win32-arm64.tar.gz
           retention-days: 14
+
+  publish:
+    # Only on an explicit dispatch with a release name, and only when every
+    # target built AND passed its gates on its own hardware (the default
+    # `needs` semantics). The name can never match release.yml's `v*` tags.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release != '' && inputs.targets == 'all' }}
+    needs: [darwin-arm64, darwin-x64-smoke, linux-x64, win32-x64, win32-arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RELEASE: ${{ inputs.release }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the release name
+        run: |
+          [[ "$RELEASE" =~ ^native-runtime-[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]+$ ]] ||
+            { echo "release must look like native-runtime-2026.10.17-1, got '$RELEASE'"; exit 1; }
+          if gh release view "$RELEASE" >/dev/null 2>&1; then echo "$RELEASE already exists"; exit 1; fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runtime-*
+          path: artifacts
+      - name: Repack one canonical tarball per target
+        run: |
+          set -euo pipefail
+          mkdir -p staged dist
+          for target in darwin-arm64 darwin-x64 linux-x64 win32-x64 win32-arm64; do
+            tar -xzf "artifacts/runtime-$target/runtime-$target.tar.gz" -C staged
+            for component in postgres llama; do
+              [ -d "staged/$target/$component" ] || { echo "$target has no $component tree"; exit 1; }
+            done
+            # Reproducible: sorted entries, fixed owner and mtime, the two
+            # trees only (no gate reports).
+            tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='@0' \
+              -C staged -cf - "$target/postgres" "$target/llama" |
+              xz -9e -T0 > "dist/vex-native-runtime-$target.tar.xz"
+          done
+          (cd dist && sha256sum vex-native-runtime-*.tar.xz > SHA256SUMS)
+          cp native-runtime/sources.env dist/sources.env
+          cat dist/SHA256SUMS
+      - name: Publish the release
+        run: |
+          gh release create "$RELEASE" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE" \
+            --notes "Vex native runtime trees (Postgres + pgvector, llama-server) built from native-runtime/sources.env at $GITHUB_SHA. Every target passed its build, verify-tree, smoke and (linux-x64) parity gates in run $GITHUB_RUN_ID."
