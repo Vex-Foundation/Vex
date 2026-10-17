@@ -3,9 +3,10 @@
  *
  * Contract: the status is the progress tracker's current state, whole; Retry
  * starts the native runtime again only after a failed start (never while one
- * is in flight, never over a ready runtime, never outside native mode) and
- * answers with the status after the call; every tracker change reaches every
- * window on EV.system.runtimeProgress.
+ * is in flight, never over a ready runtime, never outside native mode), and
+ * only through the migration gate, which starts nothing while an install's
+ * data must still be moved. It answers with the status after the call; every
+ * tracker change reaches every window on EV.system.runtimeProgress.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,8 +44,11 @@ vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 vi.mock("../system/notify-turn-complete.js", () => ({ registerSystemNotifyTurnCompleteHandler: () => () => {} }));
 vi.mock("../system/title-bar-overlay.js", () => ({ registerSystemTitleBarOverlayHandler: () => () => {} }));
 vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => mocks.mode }));
-vi.mock("../../runtime/native/native-runtime.js", () => ({ startNativeRuntime: mocks.startNativeRuntime }));
 vi.mock("../../runtime/native/local-runtime-check.js", () => ({ checkLocalRuntime: mocks.checkLocalRuntime }));
+vi.mock("../system/runtime-migration.js", () => ({ registerSystemRuntimeMigrationHandlers: () => [] }));
+vi.mock("../../runtime/migration/native-start-gate.js", () => ({
+  nativeStartGate: () => ({ startNative: mocks.startNativeRuntime }),
+}));
 
 const { registerSystemHandlers } = await import("../system.js");
 const { nativeRuntimeProgress } = await import("../../runtime/native/native-runtime-progress.js");

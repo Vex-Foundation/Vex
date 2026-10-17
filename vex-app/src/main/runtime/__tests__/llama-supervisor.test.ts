@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,6 +28,7 @@ describe("llama launch contract", () => {
     expect(llamaArgs("/m/model.gguf", 2)).toEqual([
       "--model", "/m/model.gguf", "--embeddings", "--alias", "ai/embeddinggemma:300M-Q8_0",
       "--host", "127.0.0.1", "--port", "0", "--device", "none", "-ngl", "0", "-np", "1",
+      "-c", "2048", "-b", "2048", "-ub", "2048",
       "-t", "2", "-tb", "2", "--no-webui", "--offline",
     ]);
   });
@@ -119,6 +121,40 @@ describe.skipIf(!haveRuntime)("llama supervisor against the bundled server", () 
     expect(endpoints).toEqual([endpoint, null]);
     expect(() => process.kill(pid ?? -1, 0)).toThrow();
     expect(supervisor.pid).toBeUndefined();
+  }, 120_000);
+
+  it("embeds the engine's largest input even at its densest, past the default 512-token batch", async () => {
+    supervisor = new LlamaSupervisor({
+      launch: { binaryPath, modelPath, cacheDir },
+      onEndpoint: () => {},
+      onUnhealthy: () => {},
+      threads: 2,
+    });
+    const result = await supervisor.start();
+    if (result.kind !== "ready") throw new Error(result.reason);
+    const { endpoint } = result;
+    // Session-memory scaffolding (UUIDs, ISO timestamps) at the engine's
+    // 1440-character budget: ~1.5 characters per token, so far over 512.
+    let input = "";
+    for (let i = 0; input.length < 1440; i++) {
+      input += `- [${randomUUID()}] ${new Date(Date.UTC(2026, 9, 17, 10, i)).toISOString()} open: wallet ${randomUUID().slice(0, 8)}\n`;
+    }
+    input = input.slice(0, 1440);
+    const auth = { "Content-Type": "application/json", Authorization: `Bearer ${endpoint.apiKey}` };
+    const tokenized = await fetch(`http://127.0.0.1:${endpoint.port}/tokenize`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ content: input }),
+    });
+    expect(((await tokenized.json()) as { tokens: number[] }).tokens.length).toBeGreaterThan(512);
+    const response = await fetch(`${endpoint.baseUrl}/embeddings`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ input, model: "ai/embeddinggemma:300M-Q8_0" }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { data: Array<{ embedding: number[] }> };
+    expect(body.data[0]?.embedding).toHaveLength(768);
   }, 120_000);
 
   it("restarts a crashed server on a new port and key", async () => {

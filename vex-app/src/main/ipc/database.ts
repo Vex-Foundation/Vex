@@ -28,17 +28,19 @@ import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
 import { CRITICAL_OP, trackCriticalOp } from "../updates/critical-ops.js";
 import { log } from "../logger/index.js";
 import { ensureEmbeddingDefaults } from "../onboarding/ensure-embedding-defaults.js";
-import { startNativeRuntime } from "../runtime/native/native-runtime.js";
+import { nativeStartGate } from "../runtime/migration/native-start-gate.js";
 import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { registerHandler } from "./register-handler.js";
 
 /**
  * Native mode: main started the runtime at boot; join that start (or retry a
  * failed one) before migrating, and report the runtime's own reason when it
- * is not usable instead of a missing-connection failure.
+ * is not usable instead of a missing-connection failure. The start goes
+ * through the migration gate: while an install's data must still be moved,
+ * nothing starts and the reason is reported.
  */
 async function migrateOnNativeRuntime(): Promise<MigrateRunResult> {
-  const started = await startNativeRuntime();
+  const started = await nativeStartGate().startNative();
   if (started.kind !== "running" && started.kind !== "reused") {
     return { kind: "failed", message: `The local database could not start: ${started.message}`, failedAt: null };
   }

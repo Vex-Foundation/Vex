@@ -25,6 +25,9 @@
  *      instead: ready → migrate as above; a failed start, or a model
  *      download or re-hash long enough to deserve its progress, hands off
  *      to runtimeBootstrap (which advances to migrations once ready).
+ *      First, though: while this install's data must still be moved from
+ *      the previous release, main has NOT started it, and the gate hands
+ *      off to runtimeMigration (which hands off to runtimeBootstrap).
  *
  * Contract notes carried over from the screens this fast path bypasses:
  *  - compose: `composeUpAbortable` is NEVER cancelled from effect cleanup
@@ -63,6 +66,7 @@ export type SetupHandoff =
         | "systemCheck"
         | "dockerBootstrap"
         | "composeBootstrap"
+        | "runtimeMigration"
         | "runtimeBootstrap"
         | "migrations"
         | "wizard"
@@ -183,6 +187,14 @@ export function useSetupOrchestrator(): SetupOrchestrator {
       // migrate call below, so there is no container to detect or start.
       if (nativeRuntime) {
         setStatus(statusLine("services"));
+        // Main starts nothing while data must be moved: waiting for the
+        // runtime would wait forever. Any answer but not_needed (an IPC
+        // failure included) is the migration screen's to explain.
+        const migration = await window.vex.system.runtimeMigrationStatus();
+        if (!migration.ok || migration.data.kind !== "not_needed") {
+          setHandoff({ kind: "view", view: "runtimeMigration" });
+          return;
+        }
         if (!(await nativeRuntimeReady())) {
           setHandoff({ kind: "view", view: "runtimeBootstrap" });
           return;

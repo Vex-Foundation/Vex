@@ -5,6 +5,7 @@
 
 import { queryOptions, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
+import type { RuntimeMigrationStatus } from "@shared/schemas/runtime-migration.js";
 import type { HealthReport, OsInfo, NetworkProbe, RuntimeInfo } from "@shared/schemas/system.js";
 import { systemKeys } from "./queryKeys.js";
 import type { LocalRuntimeCheck } from "@shared/schemas/system.js";
@@ -61,5 +62,19 @@ export function useRuntimeInfo(): UseQueryResult<Result<RuntimeInfo>> {
     queryKey: systemKeys.runtime(),
     queryFn: () => window.vex.system.runtime(),
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/**
+ * Whether this install's data must be moved before the native runtime
+ * starts. Read fresh: main re-detects while it is pending. Only asked on the
+ * native runtime (`enabled`); elsewhere main answers not_needed anyway.
+ */
+export function useRuntimeMigrationStatus(enabled: boolean): UseQueryResult<Result<RuntimeMigrationStatus>> {
+  return useQuery({
+    queryKey: systemKeys.runtimeMigration(),
+    queryFn: () => window.vex.system.runtimeMigrationStatus(),
+    enabled,
+    staleTime: 0,
   });
 }

@@ -26,9 +26,9 @@
  * present locally (no pull from a test), or the native tree is not built.
  */
 
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import pg from "pg";
@@ -45,36 +45,18 @@ vi.mock("../../logger/index.js", () => ({
 const { createDockerMigration } = await import("../migration/docker-to-native.js");
 const { createDockerSource } = await import("../migration/docker-source.js");
 const { createPostgresSupervisor, runPgTool } = await import("../native/postgres-supervisor.js");
-const { chooseFreePort } = await import("../native/free-port.js");
 const { locatePostgresBinaries, locatePostgresClientTools, pgDataDir, runtimeStatePath } = await import("../runtime-paths.js");
 const { readRuntimeState } = await import("../runtime-state.js");
 const { getPgPassword } = await import("../secrets/pg-password.js");
-const { makeElectronSecretAdapter } = await import("../secrets/electron-secret-adapter.js");
-const { renderCompose } = await import("../../compose/render.js");
-const { composeUpDetached } = await import("../../compose/up.js");
-const { waitForHealth } = await import("../../compose/health.js");
-const { composeDown } = await import("../../compose/lifecycle.js");
-const { runMigrationsWithProgress } = await import("../../../../../src/lib/db/migrate-runner.js");
 const { __resetCriticalOpsForTests } = await import("../../updates/critical-ops.js");
+const { runMigrationsWithProgress } = await import("../../../../../src/lib/db/migrate-runner.js");
+const { createPreviousRelease, dockerAnswers, IMAGE, MIGRATIONS_DIR, REPO_ROOT, SEED } = await import("./support/previous-release.js");
 
 type Deps = Parameters<typeof createDockerMigration>[0];
 type MigrateResult = Awaited<ReturnType<ReturnType<typeof createDockerMigration>["migrate"]>>;
+type PreviousRelease = Awaited<ReturnType<typeof createPreviousRelease>>;
 
-const REPO_ROOT = path.resolve(import.meta.dirname, "../../../../..");
-const RESOURCES_DIR = path.join(REPO_ROOT, "vex-app", "resources", "compose");
-const MIGRATIONS_DIR = path.join(REPO_ROOT, "src", "vex-agent", "db", "migrations");
-const TEMPLATE = readFileSync(path.join(RESOURCES_DIR, "docker-compose.template.yml"), "utf8");
-const IMAGE = /image: (pgvector\/pgvector:[^\s]+)/.exec(TEMPLATE)?.[1] ?? "";
 const STEP_TIMEOUT_MS = 300_000;
-
-const SEED = { sessions: 60, messagesPerSession: 250, knowledge: 3_000, walletIntents: 40, dim: 768 } as const;
-
-function dockerAnswers(): string | null {
-  const info = spawnSync("docker", ["info", "--format", "{{.ServerVersion}}"], { encoding: "utf8", timeout: 20_000 });
-  if (info.status !== 0) return `docker does not answer (${(info.stderr || info.error?.message || "").trim().split("\n")[0] ?? ""})`;
-  const image = spawnSync("docker", ["image", "inspect", "--format", "{{.Id}}", IMAGE], { encoding: "utf8", timeout: 20_000 });
-  return image.status === 0 ? null : `the pinned image ${IMAGE} is not present locally (docker pull it once)`;
-}
 
 const pgLocation = await locatePostgresBinaries({ packaged: false, repoRoot: REPO_ROOT });
 const toolsLocation = await locatePostgresClientTools({ packaged: false, repoRoot: REPO_ROOT });
@@ -91,12 +73,12 @@ const unavailable =
 const TITLE = "the Docker-to-native migration, end to end on this machine";
 
 describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (skipped: ${unavailable})`, () => {
-  const installId = `migtest-${randomUUID()}`;
-  const project = `vex-${installId}`;
-  const volumes = [`vex-postgres-data-${installId}`, `vex-embed-models-${installId}`];
+  let release: PreviousRelease | undefined;
+  let installId = "";
+  let project = "";
+  let volumes: readonly string[] = [];
   let root: string;
   let configDir: string;
-  let composeDir: string;
   let sourcePort = 0;
   let password = "";
   const orphans: ChildProcess[] = [];
@@ -104,54 +86,21 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
   let seededVectors: Map<number, string>;
   let seededMessages = 0;
 
+  const prev = (): PreviousRelease => {
+    if (release === undefined) throw new Error("the previous release was not set up");
+    return release;
+  };
   const binaries = (): Extract<typeof pgLocation, { kind: "found" }>["binaries"] => {
     if (pgLocation.kind !== "found") throw new Error("unreachable");
     return pgLocation.binaries;
   };
-
-  function renderDeps(): Parameters<typeof renderCompose>[0] {
-    return {
-      userDataDir: configDir,
-      resourcesDir: RESOURCES_DIR,
-      secretAdapter: makeElectronSecretAdapter(),
-      randomAdapter: { uuid: () => randomUUID(), randomBytes: (n) => randomBytes(n) },
-      cryptoAdapter: { base64url: (b) => Buffer.from(b).toString("base64url") },
-    };
-  }
-
-  function docker(args: readonly string[]): { status: number | null; stdout: string; stderr: string } {
-    const r = spawnSync("docker", args, { encoding: "utf8", timeout: 120_000 });
-    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
-  }
-
-  const volumeExists = (name: string): boolean => docker(["volume", "inspect", name]).status === 0;
-  const runningContainers = (): string[] =>
-    docker(["ps", "--filter", `label=com.docker.compose.project=${project}`, "--filter", "status=running", "--format", "{{.Names}}"])
-      .stdout.split("\n")
-      .filter(Boolean);
-
-  async function withClient<T>(port: number, body: (c: pg.Client) => Promise<T>): Promise<T> {
-    const c = new pg.Client({ host: "127.0.0.1", port, user: "vex", password, database: "vex", connectionTimeoutMillis: 10_000 });
-    await c.connect();
-    try {
-      return await body(c);
-    } finally {
-      await c.end();
-    }
-  }
-
-  async function bringSourceUp(): Promise<void> {
-    const rendered = await renderCompose(renderDeps(), { pgPort: sourcePort, embedPort: await chooseFreePort([]) });
-    const up = await composeUpDetached({ composeDir: path.dirname(rendered.outPath), services: ["db"] });
-    expect(up.code, up.stderr).toBe(0);
-    const health = await waitForHealth({ pgPort: sourcePort, pgPasswordPath: rendered.pgPasswordComposePath, installId });
-    expect(health.verdict, health.message).toBe("usable");
-  }
-
-  async function stopSource(): Promise<void> {
-    const down = await composeDown(path.join(composeDir, "docker-compose.yml"), installId);
-    expect(down.kind, down.message).toBe("stopped");
-  }
+  const renderDeps = (): ReturnType<PreviousRelease["renderDeps"]> => prev().renderDeps();
+  const docker = (args: readonly string[]): ReturnType<PreviousRelease["docker"]> => prev().docker(args);
+  const volumeExists = (name: string): boolean => prev().volumeExists(name);
+  const runningContainers = (): string[] => prev().runningContainers();
+  const withClient = <T,>(port: number, body: (c: pg.Client) => Promise<T>): Promise<T> => prev().withClient(port, body);
+  const bringSourceUp = (): Promise<void> => prev().bringUp();
+  const stopSource = (): Promise<void> => prev().stop();
 
   function migration(runtimeDir: string, overrides: Partial<Deps> = {}): ReturnType<typeof createDockerMigration> {
     __resetCriticalOpsForTests();
@@ -182,104 +131,22 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
     return { port: started.connection?.pgPort ?? 0, stop: () => s.stop() };
   }
 
-  function vectorLiteral(seed: number): string {
-    // Deterministic, varied magnitudes and signs, including tiny values that
-    // print with exponents.
-    const values: string[] = [];
-    let x = seed >>> 0;
-    for (let i = 0; i < SEED.dim; i++) {
-      x = (Math.imul(x, 1_664_525) + 1_013_904_223) >>> 0;
-      const v = (x / 2 ** 32 - 0.5) * (i % 97 === 0 ? 1e-6 : 1);
-      values.push(Math.fround(v).toString());
-    }
-    return `[${values.join(",")}]`;
-  }
-
   beforeAll(async () => {
     root = mkdtempSync(path.join(os.tmpdir(), "vex migration ë-"));
     configDir = path.join(root, "config");
-    composeDir = path.join(configDir, "compose");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(path.join(configDir, ".install-id"), installId);
-    sourcePort = await chooseFreePort([]);
 
     // ── The previous release: db up, 169 migrations, data, stopped. ──
     const startedAt = Date.now();
-    await bringSourceUp();
-    password = readFileSync(path.join(configDir, "local-infra", "secrets", "pg_password"), "utf8").trim();
-    const pool = new pg.Pool({ host: "127.0.0.1", port: sourcePort, user: "vex", password, database: "vex", max: 2 });
-    try {
-      const applied = await runMigrationsWithProgress({ pool, migrationsDir: MIGRATIONS_DIR });
-      evidence["migrationsApplied"] = applied.applied;
-    } finally {
-      await pool.end();
-    }
-
-    seededVectors = new Map();
-    await withClient(sourcePort, async (c) => {
-      await c.query("BEGIN");
-      for (let s = 0; s < SEED.sessions; s++) {
-        const sessionId = `session-${String(s)}-${randomUUID()}`;
-        await c.query("INSERT INTO sessions (id, mode, scope, summary, initial_goal) VALUES ($1, $2, 'vex_app', $3, $4)", [
-          sessionId,
-          s % 3 === 0 ? "mission" : "agent",
-          `Résumé ${String(s)}: swapped ⚡ SOL → USDC, «quotes» and \\backslashes\\`,
-          s % 2 === 0 ? null : `goal\nwith newline ${String(s)}`,
-        ]);
-        const rows: string[] = [];
-        const params: unknown[] = [];
-        for (let m = 0; m < SEED.messagesPerSession; m++) {
-          const base = params.length;
-          rows.push(`($${String(base + 1)}, $${String(base + 2)}, $${String(base + 3)}, $${String(base + 4)}::jsonb, now() - ($${String(base + 5)} || ' seconds')::interval)`);
-          params.push(
-            sessionId,
-            m % 2 === 0 ? "user" : "assistant",
-            `message ${String(m)} 🦊 ${"x".repeat(m % 50)}`,
-            m % 5 === 0 ? JSON.stringify([{ id: `call_${String(m)}`, type: "function", function: { name: "wallet.send", arguments: { amount: "0.000001", to: "0xAbC", nested: { a: [1, 2.5, null, true] } } } }]) : null,
-            String(m * 7),
-          );
-        }
-        await c.query(`INSERT INTO messages (session_id, role, content, tool_calls, created_at) VALUES ${rows.join(",")}`, params);
-        seededMessages += SEED.messagesPerSession;
-        if (s < SEED.walletIntents) {
-          await c.query(
-            `INSERT INTO wallet_intents (intent_id, session_id, wallet_address, network, to_address, amount, preview_json, status, expires_at)
-             VALUES ($1, $2, '0xWallet', 'eip155', '0xdest', '1.000000000000000001', $3::jsonb, 'pending', now() + interval '10 minutes')`,
-            [`intent-${randomUUID()}`, sessionId, JSON.stringify({ label: "send", criticalArgs: { chainId: 8453, gas: 21000 } })],
-          );
-        }
-      }
-      for (let k = 0; k < SEED.knowledge; k++) {
-        const literal = vectorLiteral(k + 1);
-        const r = await c.query<{ id: number; v: string }>(
-          `INSERT INTO knowledge_entries (kind, title, summary, content_md, content_hash, embedding_model, embedding_dim, embedding, tags, source_refs, confidence)
-           VALUES ('risk_rule', $1, $2, $3, $4, 'ai/embeddinggemma:300M-Q8_0', 768, $5::vector, $6, $7::jsonb, $8)
-           RETURNING id, embedding::text AS v`,
-          [
-            `rule ${String(k)}`,
-            `summary ${String(k)} — ünïcödé`,
-            `# Content ${String(k)}\n\n${"lorem ipsum ".repeat(k % 40)}`,
-            `hash-${String(k)}-${randomUUID()}`,
-            literal,
-            [`tag${String(k % 7)}`, "π"],
-            JSON.stringify({ protocol_execution_ids: [k, k + 1], instrument_key: `sol:${String(k)}` }),
-            k % 4 === 0 ? null : (k % 100) / 100,
-          ],
-        );
-        const row = r.rows[0];
-        if (row !== undefined) seededVectors.set(row.id, row.v);
-      }
-      await c.query("COMMIT");
-      const counts = await c.query<{ t: string; n: string }>(
-        `SELECT 'sessions' AS t, count(*)::text AS n FROM sessions UNION ALL SELECT 'messages', count(*)::text FROM messages
-         UNION ALL SELECT 'knowledge_entries', count(*)::text FROM knowledge_entries UNION ALL SELECT 'wallet_intents', count(*)::text FROM wallet_intents`,
-      );
-      evidence["seeded"] = Object.fromEntries(counts.rows.map((r) => [r.t, Number(r.n)]));
-      const size = await c.query<{ s: string }>("SELECT pg_size_pretty(pg_database_size('vex')) AS s");
-      evidence["sourceDatabaseSize"] = size.rows[0]?.s;
-    });
+    release = await createPreviousRelease({ configDir });
+    ({ installId, project, volumes, sourcePort } = release);
+    const seeded = await release.seed();
+    password = release.password();
+    evidence["migrationsApplied"] = seeded.migrationsApplied;
+    seededVectors = seeded.vectors;
+    seededMessages = seeded.messages;
+    evidence["seeded"] = seeded.counts;
+    evidence["sourceDatabaseSize"] = seeded.databaseSize;
     evidence["sourceSetupMs"] = Date.now() - startedAt;
-    await stopSource();
     expect(volumeExists(volumes[0] as string)).toBe(true);
   }, 600_000);
 
@@ -288,12 +155,7 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGQUIT");
     }
     // Only this test's own project and volumes, by their migtest- names.
-    if (installId.startsWith("migtest-")) {
-      if (existsSync(path.join(composeDir, "docker-compose.yml"))) {
-        spawnSync("docker", ["compose", "-p", project, "down", "--volumes", "--remove-orphans"], { cwd: composeDir, timeout: 120_000 });
-      }
-      for (const v of volumes) if (v.includes("-migtest-")) spawnSync("docker", ["volume", "rm", "-f", v], { timeout: 60_000 });
-    }
+    release?.removeAll();
     // The measurements, for whoever runs this by hand (sizes, timings, the report).
     const evidenceFile = process.env["VEX_MIGRATION_E2E_EVIDENCE"];
     if (evidenceFile !== undefined && path.isAbsolute(evidenceFile)) {

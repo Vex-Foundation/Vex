@@ -7,7 +7,8 @@
  * unchanged:
  *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
  *   composeBootstrap → migrations → wizard → unlock → appShell —
- * (on the native runtime, systemCheck → runtimeBootstrap → migrations);
+ * (on the native runtime, systemCheck → runtimeBootstrap → migrations, with
+ * runtimeMigration first while an install's data must still be moved);
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
@@ -47,6 +48,7 @@ import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
 import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
 import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
 import { RuntimeBootstrap } from "./features/runtime/RuntimeBootstrap.js";
+import { RuntimeMigration } from "./features/runtime/RuntimeMigration.js";
 import { Migrations } from "./features/database/Migrations.js";
 import { WizardShell } from "./features/wizard/WizardShell.js";
 import { AppShell } from "./features/appShell/AppShell.js";
@@ -66,6 +68,7 @@ const PRE_SHELL_VIEWS: ReadonlySet<View> = new Set<View>([
   "systemCheck",
   "dockerBootstrap",
   "composeBootstrap",
+  "runtimeMigration",
   "runtimeBootstrap",
   "migrations",
   "wizard",
@@ -96,6 +99,7 @@ export function App(): JSX.Element {
     systemCheck: () => <SystemCheck />,
     dockerBootstrap: () => <BootstrapPanel />,
     composeBootstrap: () => <ComposeBootstrap />,
+    runtimeMigration: () => <RuntimeMigration />,
     runtimeBootstrap: () => <RuntimeBootstrap />,
     migrations: () => <Migrations />,
     wizard: () => <WizardShell />,

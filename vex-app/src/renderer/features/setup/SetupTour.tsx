@@ -35,7 +35,7 @@ export const SETUP_TOUR_ENABLED =
 /** The tour's order: the first view, the runtime's own, then the rest. */
 const FIRST_VIEWS: ReadonlyArray<View> = ["systemCheck"];
 const CONTAINER_RUNTIME_VIEWS: ReadonlyArray<View> = ["dockerBootstrap", "composeBootstrap"];
-const NATIVE_RUNTIME_VIEWS: ReadonlyArray<View> = ["runtimeBootstrap"];
+const NATIVE_RUNTIME_VIEWS: ReadonlyArray<View> = ["runtimeMigration", "runtimeBootstrap"];
 const LAST_VIEWS: ReadonlyArray<View> = ["migrations", "wizard", "unlock", "appShell"];
 
 export function tourViews(native: boolean | null): ReadonlyArray<View> {

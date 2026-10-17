@@ -15,7 +15,9 @@
  *    that owns that remediation;
  *  - a completed setup with a locked vault hands off to unlock;
  *  - on the native runtime the gate waits for main's start: ready →
- *    migrate; a failure or a model download → runtimeBootstrap.
+ *    migrate; a failure or a model download → runtimeBootstrap. Before
+ *    that, any migration status but not_needed → runtimeMigration (main has
+ *    not started the runtime, so waiting for it would never end).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,6 +82,7 @@ interface VexMock {
   readonly health: ReturnType<typeof vi.fn>;
   readonly runtime: ReturnType<typeof vi.fn>;
   readonly runtimeStatus: ReturnType<typeof vi.fn>;
+  readonly runtimeMigrationStatus: ReturnType<typeof vi.fn>;
   readonly onRuntimeProgress: ReturnType<typeof vi.fn>;
   readonly detect: ReturnType<typeof vi.fn>;
   readonly getEnvState: ReturnType<typeof vi.fn>;
@@ -101,6 +104,7 @@ function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
     health: vi.fn(async () => ok(HEALTH)),
     runtime: vi.fn(async () => ok({ native: false })),
     runtimeStatus: vi.fn(async () => ok({ seq: 6, phase: "ready" })),
+    runtimeMigrationStatus: vi.fn(async () => ok({ kind: "not_needed" })),
     onRuntimeProgress: vi.fn((cb: (status: NativeRuntimeStatus) => void) => {
       runtimeListeners.add(cb);
       return () => runtimeListeners.delete(cb);
@@ -127,6 +131,7 @@ function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
         health: mock.health,
         runtime: mock.runtime,
         runtimeStatus: mock.runtimeStatus,
+        runtimeMigrationStatus: mock.runtimeMigrationStatus,
         onRuntimeProgress: mock.onRuntimeProgress,
       },
       docker: {
@@ -276,6 +281,26 @@ describe("useSetupOrchestrator", () => {
     expect(mock.runtime).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["a pending move", ok({ kind: "pending", resumeStep: null, lastFailure: null })],
+    ["a move whose source is offline", ok({ kind: "pending_source_offline", detail: "x", resumeStep: null, lastFailure: null })],
+    ["an unreadable runtime state", ok({ kind: "state_unreadable", message: "does not parse" })],
+    ["a move in progress", ok({ kind: "in_progress", op: "migrate", progress: null })],
+    ["an IPC failure", { ok: false, error: { code: "internal.unexpected", message: "x" } }],
+  ])("native runtime: %s hands off to runtimeMigration without waiting or migrating", async (_label, answer) => {
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      runtimeMigrationStatus: vi.fn(async () => answer),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "runtimeMigration" }),
+    );
+    expect(mock.runtimeStatus).not.toHaveBeenCalled();
+    expect(mock.migrate).not.toHaveBeenCalled();
+    expect(runtimeListeners.size).toBe(0);
+  });
+
   it("native runtime: the gate waits through a start in flight, then migrates", async () => {
     const mock = installVexMock({
       runtime: vi.fn(async () => ok({ native: true })),
@@ -354,6 +379,7 @@ describe("useSetupOrchestrator", () => {
       expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
     );
     expect(mock.runtimeStatus).not.toHaveBeenCalled();
+    expect(mock.runtimeMigrationStatus).not.toHaveBeenCalled();
     expect(mock.onRuntimeProgress).not.toHaveBeenCalled();
   });
 
