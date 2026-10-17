@@ -37,6 +37,11 @@ vi.mock("../statusCache.js", () => ({
   currentVersion: () => "1.0.0",
 }));
 
+let runtimeMode: "docker" | "native" = "docker";
+const stopNativeRuntime = vi.fn(async () => {});
+vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => runtimeMode }));
+vi.mock("../../runtime/native/native-runtime.js", () => ({ stopNativeRuntime: () => stopNativeRuntime() }));
+
 const canRestartForUpdate = vi.fn();
 const prepareForUpdateRestart = vi.fn();
 let restartInProgress = false;
@@ -220,6 +225,28 @@ describe("restartAndInstallNow (step 2: explicit restart)", () => {
     expect(setStatus).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "installing" }),
     );
+  });
+
+  it("stops the native runtime BEFORE handing over to the installer, and only in native mode", async () => {
+    const order: string[] = [];
+    stopNativeRuntime.mockImplementation(async () => {
+      order.push("stop-native-runtime");
+    });
+    autoUpdater.quitAndInstall.mockImplementation(() => {
+      order.push("quitAndInstall");
+    });
+
+    currentStatus = DOWNLOADED;
+    runtimeMode = "docker";
+    await actions.restartAndInstallNow("req");
+    expect(order).toEqual(["quitAndInstall"]);
+
+    order.length = 0;
+    currentStatus = DOWNLOADED;
+    runtimeMode = "native";
+    await actions.restartAndInstallNow("req");
+    expect(order).toEqual(["stop-native-runtime", "quitAndInstall"]);
+    runtimeMode = "docker";
   });
 
   it("blocks (no install) when the gate fails", async () => {
