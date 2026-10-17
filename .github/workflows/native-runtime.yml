@@ -9,14 +9,21 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: Targets to build (windows = only the two Windows targets)
+        description: Targets to build (windows = only the two Windows targets, none = no build)
         type: choice
-        options: [all, windows]
+        options: [all, windows, none]
         default: all
       release:
         description: >-
           Publish the five gated trees as a GitHub release with this name
           (native-runtime-<yyyy.mm.dd>-<n>); empty = build and gate only
+        type: string
+        default: ""
+      clean_machine:
+        description: >-
+          Also run the clean-machine gate (clean-machine.yml) on these legs:
+          "all" or a comma-separated list of darwin-arm64, darwin-x64,
+          linux-x64, win32-x64; empty = do not run it
         type: string
         default: ""
   push:
@@ -39,7 +46,7 @@ env:
 
 jobs:
   darwin-arm64:
-    if: inputs.targets != 'windows'
+    if: inputs.targets != 'windows' && inputs.targets != 'none'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -82,7 +89,7 @@ jobs:
   darwin-x64-build:
     # Cross-built on Apple Silicon (the same recipe as a local build), run on
     # a real Intel Mac below.
-    if: inputs.targets != 'windows'
+    if: inputs.targets != 'windows' && inputs.targets != 'none'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -137,7 +144,7 @@ jobs:
         run: node native-runtime/postgres/bench-durability.mjs native-runtime/out/darwin-x64/postgres fsync fsync_writethrough
 
   linux-x64:
-    if: inputs.targets != 'windows'
+    if: inputs.targets != 'windows' && inputs.targets != 'none'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -184,6 +191,7 @@ jobs:
   # Visual Studio on the image). The runners are elevated, which is what makes
   # the Postgres smoke exercise the pg_ctl path.
   win32-x64:
+    if: inputs.targets != 'none'
     runs-on: windows-2025
     timeout-minutes: 120
     defaults:
@@ -249,6 +257,7 @@ jobs:
   win32-arm64-llama:
     # Cross-built on x64 with clang for arm64-pc-windows-msvc, as upstream's
     # release workflow does; run on a real arm64 machine below.
+    if: inputs.targets != 'none'
     runs-on: windows-2025
     timeout-minutes: 90
     defaults:
@@ -343,6 +352,15 @@ jobs:
           name: runtime-win32-arm64
           path: runtime-win32-arm64.tar.gz
           retention-days: 14
+
+  clean-machine:
+    # The packaged app against the lock-pinned runtime release, on machines
+    # with no Docker (plan D12). Independent of the builds above.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_machine != '' }}
+    uses: ./.github/workflows/clean-machine.yml
+    with:
+      legs: ${{ inputs.clean_machine }}
+    secrets: inherit
 
   publish:
     # Only on an explicit dispatch with a release name, and only when every
