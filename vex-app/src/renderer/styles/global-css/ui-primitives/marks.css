@@ -45,13 +45,14 @@
   border: 1.5px solid currentColor;
 }
 
-/* Ink cross: ink on both paper and night, never a hue. */
+/* Ink cross: two diagonals 12% wide, ink on both paper and night, never a
+ * hue. */
 .vex-swatch[data-s="error"] {
   border: 1.5px solid var(--vex-alias-label-primary);
   color: var(--vex-alias-label-primary);
   background:
-    linear-gradient(45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(-45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+    linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, currentColor 44% 56%, transparent 56%);
 }
 
 /* Listening: the dot screen, still (the composer has text). */
@@ -202,18 +203,19 @@ html[data-still] .vex-swatch {
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
   vertical-align: middle;
 }
 
 .vex-stamp {
+  letter-spacing: 0.1em;
   background: var(--vex-alias-rule-ink);
   color: var(--vex-alias-label-on-primary);
 }
 
 .vex-tag {
+  letter-spacing: 0.08em;
   border: 1px solid var(--vex-alias-rule-ink);
   color: var(--vex-alias-label-primary);
 }
@@ -251,10 +253,13 @@ html[data-still] .vex-swatch {
 
 /* ── Loading line ──────────────────────────────────────────────────────────
  * A word and a quiet line, never a skeleton of fake numbers: a 2px track in
- * the quiet rule with one blue segment. Still: nothing loops. Width comes
- * inline from the component; the inline `--vex-loader-stroke` sets the
- * thickness. `ink` is the accent on the shell; `paper` is paper on the dark
- * pre-shell plate. */
+ * the quiet rule with one blue segment 34% wide. It loops only while it is
+ * mounted, and consumers mount it only for a real pending state: the segment
+ * walks the track in four even steps on the swatch's frame clock (the same
+ * rhythm as the dot screen beside it) and rests at 22% when motion is
+ * reduced or the page is still. Width comes inline from the component; the
+ * inline `--vex-loader-stroke` sets the thickness. `ink` is the accent on the
+ * shell; `paper` is paper on the dark pre-shell plate. */
 .vex-loader {
   position: relative;
   display: block;
@@ -271,6 +276,25 @@ html[data-still] .vex-swatch {
   left: 22%;
   width: 34%;
   background: var(--vex-loader-ink);
+  animation: vex-loader-step calc(var(--vex-frame-step, 200ms) * 4) steps(1, end) infinite;
+}
+
+/* Four even stops across the free travel (100% less the 34% segment). */
+@keyframes vex-loader-step {
+  0% { left: 0%; }
+  25% { left: 22%; }
+  50% { left: 44%; }
+  75% { left: 66%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-loader__segment {
+    animation: none;
+  }
+}
+
+html[data-still] .vex-loader__segment {
+  animation: none;
 }
 
 .vex-loader--ink {

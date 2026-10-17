@@ -1,10 +1,14 @@
 /**
- * VEX LOADER: the quiet loading line (docs/design/R3-MINIMAL.md sections 5
- * and 11). A word and a quiet line, never a skeleton of fake numbers and
- * never a spinner: a 2px track in the quiet rule with one blue segment, still.
- * The pattern lives in `ui-primitives/marks.css`. The visible word belongs to
- * the caller (a swatch and a word beside the line); this primitive announces
- * its label once and draws the line.
+ * VEX LOADER: the quiet loading line (docs/design/R3-MINIMAL.md sections 11
+ * and 12). A word and a quiet line, never a skeleton of fake numbers and
+ * never a spinner: a 2px track in the quiet rule with one blue segment that
+ * steps along it. The pattern lives in `ui-primitives/marks.css`. The visible
+ * word belongs to the caller (a swatch and a word beside the line); this
+ * primitive announces its label once and draws the line.
+ *
+ * Motion contract: the segment loops ONLY while mounted, and consumers mount
+ * it only for real in-flight work, never decoratively. `prefers-reduced-motion`
+ * and `data-still` rest it in place via CSS; no JS branch is needed.
  *
  * `size` is the line's length in px (120 by default, the R3 loading line) and
  * `stroke` its thickness (2 by default). The V10 centre slot is gone: a line
