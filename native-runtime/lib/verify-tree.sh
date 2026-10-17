@@ -6,7 +6,9 @@
 # symbol above LINUX_GLIBC_MAX, an absolute rpath or install name that points
 # at the build machine, or a dependency on a system library a clean install
 # does not have. Runs on the build platform (otool/lipo on macOS, readelf on
-# Linux).
+# Linux). Windows trees are checked by lib/pe.mjs (machine type, imports
+# resolvable on a clean Windows 10/11 without the VC++ redistributable, no
+# PDB path); it needs only Node.
 
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
@@ -89,6 +91,17 @@ verify_elf() {
     esac
   done < <(readelf -d "$f" | sed -nE 's/.*\(NEEDED\).*\[(.*)\]/\1/p')
 }
+
+# Windows: delegate to pe.mjs. The win32-arm64 runtime ships the x64 Postgres
+# tree (PG 18 cannot be built with MSVC for ARM64), run under the OS's x64
+# emulation, so a Postgres tree is x64 on both Windows targets.
+case "$target" in
+  win32-*)
+    machine=x64
+    [ "$target" = win32-arm64 ] && [ ! -f "$tree/bin/postgres.exe" ] && machine=arm64
+    exec node "$NR_ROOT/lib/pe.mjs" verify "$tree" "$machine"
+    ;;
+esac
 
 checked=0
 case "$target" in
