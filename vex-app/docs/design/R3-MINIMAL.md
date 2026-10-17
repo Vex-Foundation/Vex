@@ -456,6 +456,8 @@ Drawn on a 16 x 16 grid, stroke 1.5, square caps, mitre joins, no fill. Each row
 | `panelR` | `<path d="M1.5 2.5h13v11h-13z"/><path d="M10 2.5v11"/>` |
 | `chevD` | `<path d="M4 6l4 4 4-4"/>` |
 | `chevR` | `<path d="M6 4l4 4-4 4"/>` |
+| `chevU` | `<path d="M4 10l4-4 4 4"/>` |
+| `chevL` | `<path d="M10 4l-4 4 4 4"/>` |
 | `chevUD` | `<path d="M5 6l3-3 3 3M5 10l3 3 3-3"/>` |
 | `lock` | `<path d="M3.5 7.5h9v6h-9z"/><path d="M5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/>` |
 | `shield` | `<path d="M8 1.5l5.5 2v4.5c0 3.2-2.4 5.5-5.5 6.5-3.1-1-5.5-3.3-5.5-6.5V3.5z"/>` |
@@ -527,6 +529,12 @@ Drawn on a 16 x 16 grid, stroke 1.5, square caps, mitre joins, no fill. Each row
 | `gear` | `<circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>` |
 | `offline` | `<path d="M1.5 6a9 9 0 0 1 13 0M6 11.1a2.8 2.8 0 0 1 4 0"/><path d="M2 2l12 12"/>` |
 | `dl` | `<path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M2.5 13.5h11"/>` |
+| `warning` | `<path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3.5M8 11.8v.1"/>` |
+| `question` | `<circle cx="8" cy="8" r="6"/><path d="M6.3 6.4a1.8 1.8 0 0 1 3.5.5c0 1.1-1.8 1.4-1.8 2.6M8 11.4v.1"/>` |
+| `user` | `<circle cx="8" cy="5.5" r="2.5"/><path d="M3.5 13.5c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4"/>` |
+| `archive` | `<path d="M1.5 3h13v3h-13z"/><path d="M2.5 6v7.5h11V6M6.5 9h3"/>` |
+
+`chevU`, `chevL`, `warning`, `question`, `user` and `archive` were derived in the same grid and stroke when the app's chrome needed them (the mirrored chevrons and four icons the mockups never drew).
 
 ---
 

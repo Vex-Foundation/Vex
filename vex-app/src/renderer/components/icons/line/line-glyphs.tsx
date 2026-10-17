@@ -4,8 +4,8 @@
  * paint lives on the root in `LineSvg`), keyed by the name the app uses.
  *
  * `spec` is the row id in appendix A, or null for a drawing the appendix does
- * not list yet (derived in the same grid and stroke: the mirrored chevrons and
- * a few chrome icons the px sprite had that the design never needed to draw).
+ * not list yet. The mirrored chevrons, warning, question, user and archive
+ * were derived in the same grid and stroke and now have their own rows.
  * Several names may share one spec row (`send` is the `up` arrow).
  */
 
@@ -103,7 +103,7 @@ export const LINE_GLYPHS = {
     ),
   },
   "chevron-up": {
-    spec: null,
+    spec: "chevU",
     draw: <path d="M4 10l4-4 4 4" />,
   },
   "chevron-down": {
@@ -111,7 +111,7 @@ export const LINE_GLYPHS = {
     draw: <path d="M4 6l4 4 4-4" />,
   },
   "chevron-left": {
-    spec: null,
+    spec: "chevL",
     draw: <path d="M10 4l-4 4 4 4" />,
   },
   "chevron-right": {
@@ -289,7 +289,7 @@ export const LINE_GLYPHS = {
     ),
   },
   warning: {
-    spec: null,
+    spec: "warning",
     draw: (
       <>
         <path d="M8 2l6.5 11.5h-13z" />
@@ -298,7 +298,7 @@ export const LINE_GLYPHS = {
     ),
   },
   question: {
-    spec: null,
+    spec: "question",
     draw: (
       <>
         <circle cx="8" cy="8" r="6" />
@@ -422,7 +422,7 @@ export const LINE_GLYPHS = {
     ),
   },
   user: {
-    spec: null,
+    spec: "user",
     draw: (
       <>
         <circle cx="8" cy="5.5" r="2.5" />
@@ -466,7 +466,7 @@ export const LINE_GLYPHS = {
     ),
   },
   archive: {
-    spec: null,
+    spec: "archive",
     draw: (
       <>
         <path d="M1.5 3h13v3h-13z" />

@@ -34,8 +34,11 @@ const CHROME_NAMES = [
   "chevron-right", "send", "stop", "attach", "lock", "bell", "more",
 ];
 
-/** Drawn in the same grid and stroke because appendix A has no row for them yet. */
-const DERIVED = ["archive", "chevron-left", "chevron-up", "question", "user", "warning"];
+/**
+ * Drawings without an appendix A row. None today: the six derived ones
+ * (archive, chevron-left, chevron-up, question, user, warning) have rows.
+ */
+const DERIVED: string[] = [];
 
 type Glyph = (props: { size?: 14 | 16 | 20; className?: string }) => JSX.Element;
 type Name = keyof typeof LINE_GLYPHS;
