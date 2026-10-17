@@ -10,9 +10,12 @@ Docker and into the app bundle:
 
 Everything is built from pinned sources (`sources.env`: tarball sha256, git tag
 + commit, build-tool versions, platform floors) into relocatable trees that
-`lib/verify-tree.sh` must accept. Nothing here is wired into the app yet; the
-trees are what the packaging step will stage into `Resources/postgres` and
-`Resources/llama`.
+`lib/verify-tree.sh` must accept. The workflow publishes the gated trees as a
+release; the app packages the one `vex-app/native-runtime.lock.json` pins
+(`vex-app/scripts/fetch-native-runtime.mjs` and `stage-native-runtime.mjs`)
+into `Resources/postgres` and `Resources/llama`. Bumping it:
+`node vex-app/scripts/fetch-native-runtime.mjs --update-lock <release>` from
+`vex-app/`, which measures the release and rewrites the lock.
 
 ## Targets
 
