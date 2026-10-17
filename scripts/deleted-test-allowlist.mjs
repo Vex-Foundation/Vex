@@ -75,7 +75,7 @@ export const DELETED_TEST_ALLOWLIST = [
   {
     path: "vex-app/src/renderer/features/appShell/__tests__/BookPanel-board-tab.test.tsx",
     reason: "The Board tab went with the deleted BOOK; the Board becomes a page in W4-1 (R3 wave 3, W3-4).",
-    coveredBy: "vex-app/src/renderer/features/appShell/book/board/__tests__/ActiveBoardModule.test.tsx",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/BoardScreen.test.tsx",
   },
   {
     path: "vex-app/src/renderer/features/appShell/__tests__/WelcomePortfolioPanel.test.tsx",
@@ -121,6 +121,31 @@ export const DELETED_TEST_ALLOWLIST = [
     path: "vex-app/src/renderer/features/appShell/book/__tests__/ProjectBlock.test.tsx",
     reason: "ProjectBlock.tsx was deleted; its facts are in the Vex sidebar's \"This project\" block (R3 wave 3, W3-4).",
     coveredBy: "vex-app/src/renderer/features/vex/__tests__/VexSidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/board/__tests__/ActiveBoardModule.test.tsx",
+    reason: "The BOOK Board tab is gone with ActiveBoardModule.tsx and ActiveBoardRow.tsx; its title, live word and live region fold into the Board page head (R3 wave 4, W4-1).",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/BoardScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/Board/__tests__/BoardSparkline.test.tsx",
+    reason: "The R3 board tile has no chart (spec 9.4), so BoardSparkline.tsx was deleted; the spotlight carries the chart (R3 wave 4, W4-1).",
+    coveredBy: "vex-app/src/renderer/features/appShell/Board/__tests__/TokenCardV3.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/Board/__tests__/board-sparkline-source.test.tsx",
+    reason: "The renderer hook board-sparkline-source.ts was deleted with the tile sparkline; the main side service keeps its own test (R3 wave 4, W4-1).",
+    coveredBy: "vex-app/src/main/market/__tests__/board-sparkline-service.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/RuntimeModeToggle.test.tsx",
+    reason: "The Agent and Studio capsule RuntimeModeToggle.tsx was deleted: the left sidebar nav replaces it in every mode; setRuntimeMode and the data-vex-runtime-mode seam stay (R3 wave 4, W4-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/studio/sidebar/__tests__/StudioSidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/updates/__tests__/update-toast-surface.test.tsx",
+    reason: "UpdateToastSurface.tsx was deleted: the update is a card in the left sidebar and no longer rides the notification model (R3 wave 4, W4-6); also covered by UpdateLayer.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/updates/__tests__/update-card.test.tsx",
   },
 ];
 
