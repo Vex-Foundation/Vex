@@ -52,6 +52,8 @@
     "vex-app/src/main/paths/config-dir.ts": 1,
     "vex-app/src/main/paths/service-ports.ts": 1,
     "vex-app/src/main/runtime/docker/docker-provider.ts": 11,
+    "vex-app/src/main/runtime/migration/docker-source.ts": 56,
+    "vex-app/src/main/runtime/migration/docker-to-native.ts": 56,
     "vex-app/src/main/runtime/provider.ts": 4,
     "vex-app/src/main/runtime/runtime-mode.ts": 1,
     "vex-app/src/main/updates/critical-ops.ts": 3,

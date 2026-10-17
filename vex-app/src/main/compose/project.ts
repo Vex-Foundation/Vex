@@ -32,6 +32,14 @@ export function projectName(installId: string): string {
 }
 
 /**
+ * The named volume holding this install's Postgres data, exactly as the
+ * template's `volumes:` block names it.
+ */
+export function postgresVolumeName(installId: string): string {
+  return `vex-postgres-data-${installId}`;
+}
+
+/**
  * Label selector for `docker ps --filter` matching the project's
  * containers (label survives daemon restarts; less brittle than parsing
  * `docker compose ls` JSON).

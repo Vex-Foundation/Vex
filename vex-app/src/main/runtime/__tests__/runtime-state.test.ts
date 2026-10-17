@@ -59,6 +59,37 @@ describe("runtime-state.json", () => {
     expect(readdirSync(path.dirname(file))).toEqual(["runtime-state.json"]);
   });
 
+  const migration = {
+    installId: "11111111-2222-3333-4444-555555555555",
+    step: "dumped" as const,
+    outcome: null,
+    dump: { sha256: "0".repeat(64), bytes: 1234 },
+    attempts: 1,
+    lastFailure: { kind: "restore_failed", message: "boom", at: "2026-10-17T00:00:00.000Z" },
+    oldStackStopped: null,
+    startedAt: "2026-10-17T00:00:00.000Z",
+    updatedAt: "2026-10-17T00:00:01.000Z",
+  };
+
+  it("round-trips the provider marker and the migration record", async () => {
+    const file = stateFile();
+    await writeRuntimeState(file, { pg: null, provider: "native", migration });
+    expect(await readRuntimeState(file)).toEqual({ pg: null, provider: "native", migration });
+  });
+
+  it.each([
+    ["an unknown migration step", JSON.stringify({ pg: null, migration: { ...migration, step: "halfway" } })],
+    ["a migration with no install id", JSON.stringify({ pg: null, migration: { ...migration, installId: "" } })],
+    ["a malformed dump digest", JSON.stringify({ pg: null, migration: { ...migration, dump: { sha256: "xyz", bytes: 1 } } })],
+    ["an unknown provider", JSON.stringify({ pg: null, provider: "docker" })],
+  ])("REFUSES %s rather than guessing where the migration stands", async (_label, content) => {
+    const file = stateFile();
+    await writeRuntimeState(file, EMPTY_RUNTIME_STATE);
+    writeFileSync(file, content);
+    await expect(readRuntimeState(file)).rejects.toBeInstanceOf(RuntimeStateCorruptError);
+    expect(readFileSync(file, "utf8")).toBe(content);
+  });
+
   it.each([
     ["not JSON", "{ \"pg\": "],
     ["a wrong major", JSON.stringify({ pg: { ...recorded.pg, major: 17 } })],

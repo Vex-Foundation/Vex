@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: { isPackaged: false, getAppPath: () => "" } }));
 
-const { locateLlamaBinary, locatePostgresBinaries, pgDataDir, resolveRuntimeDir } = await import("../runtime-paths.js");
+const { locateLlamaBinary, locatePostgresBinaries, locatePostgresClientTools, pgDataDir, resolveRuntimeDir } = await import(
+  "../runtime-paths.js"
+);
 
 const roots: string[] = [];
 afterEach(() => {
@@ -149,6 +151,56 @@ describe("locatePostgresBinaries", () => {
   it("names .exe binaries on Windows", async () => {
     const found = await locatePostgresBinaries({ packaged: true, resourcesPath: tempRoot(), platform: "win32", env: {} });
     expect(found.kind === "unavailable" && found.detail).toMatch(/postgres\.exe/);
+  });
+});
+
+describe("locatePostgresClientTools", () => {
+  function clientTools(root: string, names: readonly string[] = ["pg_dump", "pg_restore"]): string {
+    const bin = path.join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    for (const name of names) {
+      writeFileSync(path.join(bin, name), "#!/bin/sh\n");
+      chmodSync(path.join(bin, name), 0o755);
+    }
+    return root;
+  }
+
+  it("packaged: pg_dump and pg_restore beside the server, in <resources>/postgres/bin", async () => {
+    const resources = tempRoot();
+    clientTools(path.join(resources, "postgres"));
+    expect(await locatePostgresClientTools({ packaged: true, resourcesPath: resources, platform: "linux", env: {} })).toEqual({
+      kind: "found",
+      tools: {
+        pgDump: path.join(resources, "postgres", "bin", "pg_dump"),
+        pgRestore: path.join(resources, "postgres", "bin", "pg_restore"),
+      },
+    });
+  });
+
+  it("development: the same tree the server comes from", async () => {
+    const repo = tempRoot();
+    clientTools(path.join(repo, "native-runtime", "out", "linux-x64", "postgres"));
+    const found = await locatePostgresClientTools({ packaged: false, repoRoot: repo, platform: "linux", arch: "x64", env: {} });
+    expect(found.kind === "found" && found.tools.pgRestore).toBe(
+      path.join(repo, "native-runtime", "out", "linux-x64", "postgres", "bin", "pg_restore"),
+    );
+  });
+
+  it("Windows names carry .exe", async () => {
+    const resources = tempRoot();
+    clientTools(path.join(resources, "postgres"), ["pg_dump.exe", "pg_restore.exe"]);
+    const found = await locatePostgresClientTools({ packaged: true, resourcesPath: resources, platform: "win32", env: {} });
+    expect(found.kind === "found" && found.tools.pgDump).toBe(path.join(resources, "postgres", "bin", "pg_dump.exe"));
+  });
+
+  it("a tree without pg_restore is unavailable, named", async () => {
+    const resources = tempRoot();
+    clientTools(path.join(resources, "postgres"), ["pg_dump"]);
+    const found = await locatePostgresClientTools({ packaged: true, resourcesPath: resources, platform: "linux", env: {} });
+    expect(found).toEqual({
+      kind: "unavailable",
+      detail: "The bundled Postgres is missing or not executable (pg_restore). Reinstall Vex.",
+    });
   });
 });
 

@@ -86,6 +86,7 @@ export async function recreateProjectNonDestructively(
     composeDir,
     ...(signal !== undefined ? { signal } : {}),
     ...(onLogLine !== undefined ? { onLogLine } : {}),
+    ...(ctx.services !== undefined ? { services: ctx.services } : {}),
   });
   return { downResult, upResult };
 }
