@@ -36,6 +36,8 @@ import {
   useEngineErrorRetentionSync,
 } from "../../../lib/api/engine-errors.js";
 import { useEngineErrorStore } from "../../../stores/engineErrorStore.js";
+import { useUiStore } from "../../../stores/uiStore.js";
+import { isSessionOnScreen } from "../../../stores/session-on-screen.js";
 import { sessionNotificationId } from "../../../stores/engine-error-notice.js";
 import { notifications, HISTORY_CAP } from "../../../lib/notifications/index.js";
 import { makeEngineBridgeStub } from "../../../test/engine-bridge-stub.js";
@@ -70,6 +72,7 @@ beforeEach(() => {
   subscribers = [];
   offError.mockReset();
   useEngineErrorStore.setState({ bySessionId: {} });
+  useUiStore.setState({ activeSessionId: null, runtimeMode: "agent", shellRoute: { kind: "none" } });
   notifications.reset();
   Object.defineProperty(window, "vex", {
     configurable: true,
@@ -234,6 +237,72 @@ describe("session-scoped failures: card and notification, bound", () => {
     });
     expect(cardOrNull()).toBeNull();
     expect(useEngineErrorStore.getState().bySessionId[SESSION_A]).toBeUndefined();
+  });
+});
+
+describe("a failure in the session on screen is reported once, by the inline card", () => {
+  it("raises no toast and no Notices row while that session's panel is in front of the user", () => {
+    useUiStore.setState({ activeSessionId: SESSION_A });
+    mountRetention();
+    render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
+    emit(memoryFailure({ sessionId: SESSION_A, scope: "turn" }));
+
+    expect(cardOrNull()).not.toBeNull();
+    expect(notifications.getSnapshot().items).toHaveLength(0);
+    // Dismissing the card still clears it, with no notice left behind.
+    act(() => {
+      screen.getByLabelText("Dismiss error").click();
+    });
+    expect(cardOrNull()).toBeNull();
+    expect(notifications.getSnapshot().items).toHaveLength(0);
+  });
+
+  it("retires an older notice for the session once a newer failure lands on screen", () => {
+    mountRetention();
+    emit(memoryFailure({ sessionId: SESSION_A, scope: "turn" }));
+    expect(notifications.getSnapshot().items).toHaveLength(1);
+    act(() => {
+      useUiStore.setState({ activeSessionId: SESSION_A });
+    });
+    emit(memoryFailure({ sessionId: SESSION_A, scope: "turn", category: "context" }));
+    expect(notifications.getSnapshot().items).toHaveLength(0);
+    // ...and that retirement is not a user dismiss: the card keeps the newest.
+    expect(useEngineErrorStore.getState().bySessionId[SESSION_A]?.category).toBe("context");
+  });
+
+  it("off screen the notice stays: another session open, or a page over the centre", () => {
+    useUiStore.setState({ activeSessionId: "00000000-0000-4000-8000-00000000000b" });
+    mountRetention();
+    emit(memoryFailure({ sessionId: SESSION_A, scope: "turn" }));
+    expect(notifications.getSnapshot().items.map((item) => item.id)).toEqual([
+      sessionNotificationId(SESSION_A),
+    ]);
+
+    notifications.reset();
+    act(() => {
+      useUiStore.setState({ activeSessionId: SESSION_A, shellRoute: { kind: "memory", origin: null } });
+    });
+    emit(memoryFailure({ sessionId: SESSION_A, scope: "turn", category: "context" }));
+    expect(notifications.getSnapshot().items).toHaveLength(1);
+  });
+
+  it("on screen means the active session, its panel showing and the window visible", () => {
+    const base = {
+      activeSessionId: SESSION_A,
+      runtimeMode: "agent" as const,
+      shellRoute: { kind: "none" as const },
+      vexOpenChat: true,
+      vexOpenPages: false,
+      vexOpenLighter: false,
+    };
+    expect(isSessionOnScreen(SESSION_A, base, true)).toBe(true);
+    expect(isSessionOnScreen(SESSION_A, base, false)).toBe(false);
+    expect(isSessionOnScreen(SESSION_A, { ...base, activeSessionId: null }, true)).toBe(false);
+    expect(isSessionOnScreen(SESSION_A, { ...base, runtimeMode: "studio" }, true)).toBe(false);
+    expect(isSessionOnScreen(SESSION_A, { ...base, runtimeMode: "lighter" }, true)).toBe(false);
+    expect(
+      isSessionOnScreen(SESSION_A, { ...base, runtimeMode: "lighter", vexOpenLighter: true }, true),
+    ).toBe(true);
   });
 });
 
