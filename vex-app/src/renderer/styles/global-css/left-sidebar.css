@@ -5,7 +5,8 @@
  * reads the same on both sides of each solver seam.
  *
  * Open: the 44px head (the vx wordmark, the collapse key), New chat and
- * Search, the nav, the sessions by name, the account row at the foot. Rail:
+ * Search, the nav, the sessions by name (in Studio: the Studio body, at the
+ * end of this sheet), the account row at the foot. Rail:
  * 40 x 40 keys centred, the Chats key (icon over an 11px word), the account
  * box at the foot.
  *
@@ -438,63 +439,259 @@ html[data-os="mac"] .vex-ls-railhead {
   padding-top: 0;
 }
 
-/* The compact $VEX line, while the Studio sidebar still carries it: figures
- * in mono, on paper. */
-.vex-tok {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: 10px;
+/* STUDIO (docs/design/R3-MINIMAL.md section 4, "Studio"): the same column
+ * in Studio mode. The body under the nav holds New project, the "Projects"
+ * group (rows 34 high, the selected one in blue on the selection wash, the
+ * outlined "Full access" tag at the right), the Welcome row, then the
+ * explorer pane ("Explorer · {project}" head; rows 28 high, 13.5, line icons
+ * 14 in ink 2), with a quiet 1px seam between the two panes. */
+.vex-st-find {
+  flex: none;
+  margin-bottom: 8px;
+}
+.vex-st-search__clear {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-st-search__clear:hover {
   color: var(--vex-alias-label-primary);
 }
-.vex-tok__k {
+.vex-st-search__esc {
+  background: transparent;
+  cursor: pointer;
+}
+.vex-st-search__esc:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-body {
+  width: 100%;
+}
+.vex-st-body [role="separator"] {
+  background: var(--vex-alias-rule-quiet);
+}
+.vex-st-body [role="separator"]:hover,
+.vex-st-body [role="separator"][data-dragging] {
+  background: var(--vex-alias-accent-primary);
+}
+.vex-st-pane,
+.vex-st-xpane {
+  padding-bottom: 8px;
+}
+.vex-st-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-st-proj {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  min-width: 0;
+}
+.vex-st-proj:hover,
+.vex-st-proj:has(:focus-visible),
+.vex-st-proj[data-rail-row-pinned] {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-st-proj[data-selected] {
+  background: var(--ls-sel);
+}
+.vex-st-proj__select {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: left;
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-proj__t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-st-proj[data-selected] .vex-st-proj__t {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-st-proj__state {
   display: inline-flex;
-  align-items: baseline;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.vex-st-proj__drift,
+.vex-st-perm-mark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-tag {
+  flex: none;
+  height: 20px;
+  font-size: 10px;
+}
+/* The ellipsis takes no room at rest, so the tag keeps the row's right edge;
+ * it opens on hover, on keyboard focus and while its menu is open. */
+.vex-st-proj__acts {
+  display: flex;
+  align-items: center;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+.vex-st-proj:hover .vex-st-proj__acts,
+.vex-st-proj:focus-within .vex-st-proj__acts,
+.vex-st-proj__acts--pinned {
+  max-width: 40px;
+  padding-right: 6px;
+  opacity: 1;
+}
+.vex-st-dots {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-st-dots:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-more {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-st-more:hover {
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-welcome {
+  margin-top: 6px;
+}
+.vex-st-fail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-fail__line {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  font-family: var(--font-sans);
+}
+.vex-st-fail--rail {
+  align-items: center;
+  padding: 10px 0;
+}
+.vex-st-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-st-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* The explorer head: the group head register with the keys at the right. */
+.vex-st-xhead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 14px 4px 4px 10px;
+}
+.vex-st-xhead__t {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   font-size: 12px;
   font-weight: 500;
-}
-.vex-tok__p {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-.vex-tok--link:hover .vex-tok__p {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.vex-tok__c {
-  justify-self: end;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-tok__stale {
-  font-family: var(--font-sans);
-  font-size: 12px;
+.vex-st-xkey {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
 }
-.vex-tok__spark {
-  display: block;
-  grid-column: 1 / -1;
-  width: 100%;
-  height: 26px;
-  margin-top: 8px;
-  overflow: visible;
+.vex-st-xkey:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
 }
-.vex-tok__note {
-  grid-column: 2 / -1;
-  font-family: var(--font-sans);
-  font-size: 12px;
-  color: var(--vex-alias-label-tertiary);
+/* The Studio rail: a 40 x 40 folder key per project, centred like the nav. */
+.vex-st[data-rail] .vex-st-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.vex-tok__wait {
-  grid-column: 2 / -1;
-  display: block;
-  width: 96px;
-  height: 12px;
-  background: var(--vex-alias-rule-quiet);
+.vex-st-proj[data-rail] {
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+.vex-st-proj[data-rail] .vex-st-proj__select {
+  justify-content: center;
+  padding: 0;
+}
+.vex-st-proj__key {
+  position: relative;
+  display: inline-flex;
+}
+.vex-st-proj__overlay {
+  position: absolute;
+  right: -7px;
+  bottom: -5px;
+  display: inline-flex;
+  gap: 1px;
+  background: var(--vex-alias-bg-base);
+}
+.vex-st-proj__overlay:empty {
+  display: none;
 }
