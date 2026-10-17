@@ -114,13 +114,15 @@
   inset: 0;
   z-index: 2;
 }
-/* Her state word, under the token's foot: white on the print, 13 / 500. */
+/* Her state word, under the token's foot: white on the print, 13 / 500. The
+ * foot stands at 776 of 900 (k2-rig.ts STAGE_TOKEN, scaled with the plate);
+ * the word sits 23 px under it, at the wake still's bottom 84 on 900. */
 .vex-stage-plate__word {
   position: absolute;
   z-index: 3;
   left: 0;
   right: 0;
-  top: calc(75% + 30px);
+  top: calc(86.22% + 23px);
   display: flex;
   justify-content: center;
   font-family: var(--font-sans);

@@ -1,7 +1,7 @@
 /**
  * Where K2 stands (`k2-rig.ts`), without a canvas. Regressions this catches: a stage that no longer
- * draws the wide drawing as on its own frame (scale 1 at 900 px, the token at 652 of 900) or lets
- * her scale run past its bounds; a bust that leaves the app drawing, loses its cut under the
+ * draws the wide drawing as on its own frame (scale 1 at 900 px, anchored at 652 of 900), loses the
+ * wake still's token (97.5 px, its foot at 776 of 900) or lets her scale run past its bounds; a bust that leaves the app drawing, loses its cut under the
  * necklace, its 0.6 scale, its short beam or its token's foot; an approval bust whose cut does not
  * drop for the palm; a host too small for her dots that still draws; and any placement that pushes
  * her hair or her token out of the plate at the sidebar's three widths.
@@ -17,6 +17,7 @@ import {
   type Fit,
   fitFor,
   type K2PlacementName,
+  STAGE_TOKEN,
   TOKEN_SHEET,
   toHost,
 } from "../k2-rig.js";
@@ -42,16 +43,31 @@ function placed(name: K2PlacementName, w: number, h: number, palm = false) {
 }
 
 describe("the stage", () => {
-  test("at 720 x 900 the wide drawing stands as drawn: scale 1, the token at 652 of 900, centred", () => {
-    const { fit, R, tx, ty } = placed("stage", 720, 900);
+  test("at 720 x 900 the wide drawing stands as drawn: scale 1, anchored at 652 of 900, centred", () => {
+    const { fit, R, tx } = placed("stage", 720, 900);
     expect(R.drawing).toBe("wide");
     expect(fit.s).toBe(1);
-    expect(R.token).toEqual(DRAWING.token);
+    expect(fit.ox).toBeCloseTo(360 - DRAWING.token.x, 6);
+    expect(fit.oy).toBeCloseTo(0, 6);
     expect(tx).toBeCloseTo(360, 6);
-    expect(ty).toBeCloseTo(652, 6);
     expect(R.cut).toBeNull();
     expect(R.beam.top).toBeNull();
     expect(R.shift).toEqual([0, 0]);
+  });
+
+  test("the token stands where the wake still puts it: 97.5 px, the flat face at 743, the foot at 776", () => {
+    const { fit, R, ty, foot, flatMapY } = placed("stage", 720, 900);
+    expect(R.token).toEqual({ x: STAGE_TOKEN.x, y: STAGE_TOKEN.y, d: STAGE_TOKEN.d });
+    expect(R.token.d * fit.s).toBeCloseTo(APP.coin * APP.w, 6);
+    expect(R.token.d * fit.s).toBeCloseTo(97.5, 6);
+    expect(toHost(fit, 0, flatMapY)[1]).toBeCloseTo(742.85, 2);
+    expect(foot).toBeCloseTo(776, 6);
+    expect(ty).toBeLessThan(foot);
+    // the canvas reaches under the token's foot
+    expect(canvasBox(fit).bottom).toBeGreaterThan(foot);
+    // a lower plate scales the whole composition with her
+    const low = placed("stage", 720, 720);
+    expect(low.foot).toBeCloseTo(776 * 0.8, 6);
   });
 
   test("her scale follows the plate's height between 0.6 and 1.2", () => {

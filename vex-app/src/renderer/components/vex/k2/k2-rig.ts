@@ -7,8 +7,10 @@
  *
  * - the wide drawing (`public/art/vex-k2/`): her whole figure over a long beam, laid out on a 900 px
  *   high frame (she spans 1040 to 1442 by 56 to 659 map px, her token at 1252, 652); the pre-shell
- *   print plate (`stage`) shows it, the token at the share of the height it has on that frame (652
- *   of 900), centred, her scale following the plate's height (1 at 900 px) between 0.6 and 1.2;
+ *   print plate (`stage`) shows it, anchored at the share of the height that token has on that
+ *   frame (652 of 900), centred, her scale following the plate's height (1 at 900 px) between 0.6
+ *   and 1.2. The stage draws its token where the approved wake still puts it (`STAGE_TOKEN`):
+ *   larger and lower, under a longer beam;
  * - the app drawing (`public/art/vex-k2/app/`, 487.5 x 651 map px, origin 0, 0): the same K2 with
  *   the emotion maps (`k2-poses.ts`). The Vex sidebar's 280 px plate (`sidebar`) and the welcome's
  *   stage (`welcome`, 240 to 300 px high) show her bust: cut under her necklace (map y 370) through
@@ -103,21 +105,6 @@ export const DRAWING = {
 /** The stage: scale bounds. */
 export const STAGE = { sMin: 0.6, sMax: 1.2 } as const;
 
-const WIDE_RIG: Rig = {
-  drawing: "wide",
-  token: DRAWING.token,
-  hairTop: DRAWING.hairTop,
-  tokenFoot: DRAWING.tokenFoot,
-  figure: DRAWING.figure,
-  face: DRAWING.face,
-  beam: { top: null, left: DRAWING.beam.left, right: DRAWING.beam.right },
-  cut: null,
-  palm: false,
-  shift: [0, 0],
-  looks: { cloud: [900, 140], birds: [300, 600] },
-  canvas: DRAWING.canvas,
-};
-
 /* ------------------------------------------------------------------ the app drawing */
 
 /** The app drawing's constants (map px, its `meta.json`). */
@@ -136,6 +123,36 @@ export const APP = {
   /** The token's face-on diameter against the frame's width. */
   coin: 0.2,
 } as const;
+
+/**
+ * The stage's token (wide map px, at scale 1 css px on a 900 px plate), as the approved wake still
+ * draws it (the MK `d1-wake` render: the app drawing's coin at scale 1 over a beam 1.2 coins long):
+ * a coin a fifth of the app frame's width (97.5), its foot 124 px over the plate's foot (776 of
+ * 900), its flat face 0.34 of a coin over the foot. Her own drawing keeps its place on the frame;
+ * only the beam grows to reach the token.
+ */
+export const STAGE_TOKEN = (() => {
+  const d = APP.coin * APP.w;
+  const foot = DRAWING.frameH - 124;
+  const flatCy = foot - 0.34 * d;
+  return { x: DRAWING.token.x, y: flatCy - FLAT_DROP * d, d, foot } as const;
+})();
+
+const WIDE_RIG: Rig = {
+  drawing: "wide",
+  token: { x: STAGE_TOKEN.x, y: STAGE_TOKEN.y, d: STAGE_TOKEN.d },
+  hairTop: DRAWING.hairTop,
+  tokenFoot: STAGE_TOKEN.foot,
+  figure: DRAWING.figure,
+  face: DRAWING.face,
+  beam: { top: null, left: DRAWING.beam.left, right: DRAWING.beam.right },
+  cut: null,
+  palm: false,
+  shift: [0, 0],
+  looks: { cloud: [900, 140], birds: [300, 600] },
+  // down to the face-on token's frame under the foot, as it floats and turns flat
+  canvas: [DRAWING.canvas[0], DRAWING.canvas[1], DRAWING.canvas[2], STAGE_TOKEN.foot + 44],
+};
 
 /** Where her eyes go in an emotion (`k2-poses.ts` `MoodLook`), on the app drawing. */
 export const APP_LOOKS = {
