@@ -51,7 +51,8 @@ if (platform === "win32") {
 const appEndpoints = defaultDockerEngineEndpoints({ platform, homedir: home });
 const reach = await probeDockerEngineEndpoint({ platform, homedir: home });
 checked.push(`the app's engine probe of ${appEndpoints.join(", ")}`);
-if (reach.kind !== "unreachable") found.push(`the app's engine probe: ${JSON.stringify(reach)}`);
+// `not_running` is the probe's "nothing listens there" (ENOENT, ECONNREFUSED).
+if (reach.kind !== "not_running") found.push(`the app's engine probe: ${JSON.stringify(reach)}`);
 
 // ── 2. The machine ─────────────────────────────────────────────────────────
 
