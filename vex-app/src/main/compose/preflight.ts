@@ -9,12 +9,9 @@
  */
 
 import { runSpawn } from "../docker/spawn-runner.js";
-import {
-  isPortFree,
-  parseComposeVersion,
-  semverGte,
-  COMPOSE_VERSION_FLOOR,
-} from "../docker/probe.js";
+import { parseComposeVersion } from "../docker/probe/parsers.js";
+import { isPortFree } from "../docker/probe/ports.js";
+import { COMPOSE_VERSION_FLOOR, semverGte } from "../docker/probe/version.js";
 import { ensureDockerDaemonReady } from "../docker/daemon.js";
 import { inspectDockerEndpointPolicy } from "../docker/endpoint-policy.js";
 import { composeArgs } from "./project.js";

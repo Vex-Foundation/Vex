@@ -17,7 +17,7 @@ import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { type RenderDeps } from "./render.js";
 import { composeArgs, projectName } from "./project.js";
 
-export const STALE_BIND_MOUNT_RE = /docker-desktop-bind-mounts.*no such file/i;
+export { STALE_BIND_MOUNT_RE } from "./recreate.js";
 
 export interface ClearStaleSecretCacheResult {
   readonly wiped: boolean;

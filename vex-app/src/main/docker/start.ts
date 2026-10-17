@@ -14,7 +14,18 @@
 import { runSpawn } from "./spawn-runner.js";
 import { isExistingFile, locateDockerDesktopExe } from "./locate.js";
 import { markDockerEngineStartAttempt } from "./engine-start-window.js";
-import type { StartResult } from "@shared/schemas/docker.js";
+
+export type StartResultKind =
+  | "started"
+  | "already_running"
+  | "user_action_required"
+  | "unsupported"
+  | "failed";
+
+export interface StartResult {
+  readonly kind: StartResultKind;
+  readonly message: string;
+}
 
 export async function performStart(
   signal?: AbortSignal

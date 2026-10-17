@@ -24,15 +24,17 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../docker/spawn-runner.js", () => ({ runSpawn: mocks.runSpawn }));
 vi.mock("../../docker/daemon.js", () => ({ checkDockerDaemon: mocks.checkDockerDaemon }));
-vi.mock("../../compose/lifecycle.js", () => ({ composeDown: mocks.composeDown }));
+vi.mock("../../compose/down.js", () => ({ composeDown: mocks.composeDown }));
 vi.mock("../../compose/health.js", () => ({ waitForHealth: mocks.waitForHealth }));
 vi.mock("../../compose/preflight.js", () => ({
   checkComposeFloor: mocks.checkComposeFloor,
   ensureDockerDaemonReady: mocks.ensureDockerDaemonReady,
   inspectDockerEndpointPolicy: mocks.inspectDockerEndpointPolicy,
 }));
-vi.mock("../../compose/recreate.js", () => ({ recreateProjectNonDestructively: mocks.recreateProjectNonDestructively }));
-vi.mock("../../compose/stale-secret-recovery.js", () => ({ STALE_BIND_MOUNT_RE: /docker-desktop-bind-mounts.*no such file/i }));
+vi.mock("../../compose/recreate.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../compose/recreate.js")>()),
+  recreateProjectNonDestructively: mocks.recreateProjectNonDestructively,
+}));
 vi.mock("../../compose/up.js", () => ({ composeUpDetached: mocks.composeUpDetached }));
 vi.mock("../../compose/render.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../compose/render.js")>()),

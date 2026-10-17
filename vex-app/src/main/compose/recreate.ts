@@ -1,8 +1,8 @@
 /**
  * Non-destructive project recreation — issue #26. After a Docker Desktop
  * restart the daemon can reference a wiped bind-mount cache hash, so
- * `up -d` fails with "no such file or directory" (`STALE_BIND_MOUNT_RE` in
- * `stale-secret-recovery.ts`). That module's wipe (`down --volumes` +
+ * `up -d` fails with "no such file or directory" ({@link STALE_BIND_MOUNT_RE}).
+ * `stale-secret-recovery.ts`'s wipe (`down --volumes` +
  * regenerated password + reset install state) is destructive and gated to
  * PRE-SETUP only. This module is the POST-SETUP-safe alternative: recreating
  * the containers forces Docker Desktop to rebuild the bind-mount cache for
@@ -13,6 +13,9 @@
 import { runSpawn, type SpawnRunnerResult } from "../docker/spawn-runner.js";
 import { composeArgs, projectName } from "./project.js";
 import { composeUpDetached, type ComposeSpawnContext } from "./up.js";
+
+/** The `up -d` failure a stale Docker Desktop bind-mount cache produces. */
+export const STALE_BIND_MOUNT_RE = /docker-desktop-bind-mounts.*no such file/i;
 
 /** `compose down --remove-orphans` (no `--volumes`) budget. */
 export const RECREATE_DOWN_TIMEOUT_MS = 30_000;

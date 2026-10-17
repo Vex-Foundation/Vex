@@ -9,8 +9,7 @@
  */
 
 import { runSpawn } from "./spawn-runner.js";
-import { performStart } from "./start.js";
-import type { StartResult } from "@shared/schemas/docker.js";
+import { performStart, type StartResult } from "./start.js";
 
 const DAEMON_CHECK_TIMEOUT_MS = 15_000;
 const DAEMON_READY_POLL_INTERVAL_MS = 3_000;
