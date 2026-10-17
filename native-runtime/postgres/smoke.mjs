@@ -516,7 +516,11 @@ async function main() {
     // Both Windows runtimes ship the x64 tree (win32-arm64: under emulation).
     const machine = peInfo(pgExe)?.machine;
     check(machine === 'x64', `bin/postgres.exe is an x64 PE (${machine})`);
-    results.host = { arch: os.arch(), cpu: os.cpus()[0]?.model, emulated: os.arch() !== 'x64' };
+    const acp = (await run('reg', ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage', '/v', 'ACP'])).stdout;
+    results.host = {
+      arch: os.arch(), cpu: os.cpus()[0]?.model, emulated: os.arch() !== 'x64',
+      systemAnsiCodePage: /ACP\s+REG_SZ\s+(\d+)/.exec(acp)?.[1] ?? null,
+    };
     log(`host ${os.arch()} (${results.host.cpu}): ${os.arch() === 'x64' ? 'native x64' : 'x64 binaries run under Windows x64 emulation'}`);
   } else {
     const fileOut = (await runOk('file', ['-b', pgExe])).stdout.trim();
@@ -544,12 +548,14 @@ async function main() {
     log(`tree size: ${(du / 1024).toFixed(1)} MiB on disk, tar.gz -9 ${(gz / 1048576).toFixed(1)} MiB, tar.xz -9 ${(xz / 1048576).toFixed(1)} MiB`);
   }
 
-  // Relocate: a fresh directory whose path contains spaces. On Windows also a
-  // non-ASCII component (a user profile path like C:\Users\Zoë\...), with
-  // the 8.3 short form %TEMP% often has on CI expanded to the long one.
+  // Relocate: a fresh directory whose path contains spaces. On Windows the
+  // tree and the data dir also sit under a non-ASCII component (a profile
+  // like C:\Users\Zoë\...: Vex installs per user under %LOCALAPPDATA%), with
+  // characters both inside the machine's ANSI code page (ü, ï on a Western
+  // one) and outside it (Greek), and %TEMP%'s 8.3 short form expanded.
   const tmp = win ? fs.realpathSync.native(os.tmpdir()) : os.tmpdir();
   const base = fs.mkdtempSync(path.join(tmp, 'vex pg smoke '));
-  const home = win ? path.join(base, 'vex ünïcode test') : base;
+  const home = win ? path.join(base, 'vex ünïcode δοκιμή test') : base;
   const cleanup = [];
   cleanup.push(async () => fs.rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
   const servers = [];
@@ -702,17 +708,11 @@ async function main() {
 
     let c = await connect(r, port, 'postgres', password);
     const who = await one(c, `SELECT current_setting('data_directory') AS dir, current_setting('port') AS port`);
-    // Windows: the server reports data_directory with forward slashes, and in
-    // the ANSI code page (Postgres uses the -A file APIs), so to a UTF8 client
-    // each non-ASCII character of the path arrives as U+FFFD.
+    // Windows reports it with forward slashes. Its non-ASCII characters come
+    // back intact only because the executables run with the UTF-8 code page
+    // (lib/utf8.manifest); in the legacy code page they arrive as U+FFFD.
     const wantDir = win ? r.dataDir.replace(/\\/g, '/') : r.dataDir;
-    const acpDir = wantDir.replace(/[^\x00-\x7f]/g, '\ufffd');
-    check((who.dir === wantDir || (win && who.dir === acpDir)) && who.port === String(port),
-      `connected to the smoke server ("${who.dir}", port ${who.port})`);
-    if (who.dir !== wantDir) {
-      results.data_directory_as_reported = who.dir;
-      log('note: data_directory comes back in the ANSI code page, not UTF-8 (non-ASCII characters arrive as U+FFFD)');
-    }
+    check(who.dir === wantDir && who.port === String(port), `connected to the smoke server ("${who.dir}", port ${who.port})`);
     const authRow = await one(c, `SELECT rolpassword LIKE 'SCRAM-SHA-256$%' AS scram FROM pg_authid WHERE rolname = 'vex'`);
     check(authRow.scram === true, 'vex password is stored as a SCRAM-SHA-256 verifier');
     const hba = await c.query('SELECT type, user_name, address, auth_method FROM pg_hba_file_rules ORDER BY rule_number');
@@ -906,24 +906,6 @@ async function main() {
       const leaked = (await runOk('ipcs', ['-m', '-p'])).stdout.split('\n')
         .filter((l) => l.startsWith('m')).filter((l) => ours.has(Number(l.trim().split(/\s+/)[6])));
       check(leaked.length === 0, `no SysV shared memory left behind by our postmasters${leaked.length ? `: ${leaked}` : ''}`);
-    }
-
-    if (r instanceof WindowsRunner) {
-      // Not a gate, a measurement for the app: Postgres reaches files through
-      // the ANSI code page, so a data dir path with characters outside it
-      // (here Greek, on a Western code page) is the case to know about.
-      const acp = (await run('reg', ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Nls\\CodePage', '/v', 'ACP'])).stdout;
-      const odd = path.join(base, 'δοκιμή', 'pg18');
-      fs.mkdirSync(path.dirname(odd), { recursive: true });
-      const pw2 = path.join(path.dirname(odd), 'pwfile');
-      fs.writeFileSync(pw2, `${password}\n`);
-      const res = await r.exec('initdb', ['-D', odd, '-U', PG_USER, `--pwfile=${pw2}`, '-E', 'UTF8',
-        '--locale=C', '--locale-provider=builtin', '--builtin-locale=C.UTF-8', '-A', 'scram-sha-256']);
-      results.non_acp_path_initdb = {
-        acp: /ACP\s+REG_SZ\s+(\d+)/.exec(acp)?.[1] ?? null, exit: res.code,
-        tail: `${res.stdout}${res.stderr}`.trim().split('\n').slice(-3).join(' | '),
-      };
-      log(`note: initdb under a path outside the ANSI code page (ACP ${results.non_acp_path_initdb.acp}): exit ${res.code}: ${results.non_acp_path_initdb.tail}`);
     }
 
     log('RESULTS ' + JSON.stringify(results, null, 2));

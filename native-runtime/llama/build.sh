@@ -147,6 +147,7 @@ if [[ "$target" == win32-* ]]; then
   arch=x64
   [ "$target" = win32-arm64 ] && arch=arm64
   nr_win_closure "$out" "$out" "$bin" "$(nr_win_crt_dir "$arch")"
+  nr_win_utf8_manifest "$out/llama-server.exe"
   cp "$src/LICENSE" "$out/LICENSE"
   mkdir -p "$out/licenses"
   cp "$src/vendor/cpp-httplib/LICENSE" "$out/licenses/cpp-httplib-LICENSE"

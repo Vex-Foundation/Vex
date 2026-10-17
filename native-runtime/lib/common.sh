@@ -190,6 +190,28 @@ nr_win_closure() {
   nr_die "import closure of $tree did not converge"
 }
 
+# Make the process code page of each executable UTF-8 (lib/utf8.manifest says
+# why): merge the manifest into the one the linker embedded, or embed it if
+# there is none, then read it back to check.
+nr_win_utf8_manifest() {
+  local exe w m tmp
+  m="$(cygpath -w "$NR_ROOT/lib/utf8.manifest")"
+  tmp="$(mktemp -d)"
+  for exe in "$@"; do
+    w="$(cygpath -w "$exe")"
+    if mt.exe -nologo -inputresource:"$w;#1" -out:"$(cygpath -w "$tmp/old.manifest")" >/dev/null 2>&1; then
+      mt.exe -nologo -manifest "$(cygpath -w "$tmp/old.manifest")" "$m" -outputresource:"$w;#1" >/dev/null
+    else
+      mt.exe -nologo -manifest "$m" -outputresource:"$w;#1" >/dev/null
+    fi
+    rm -f "$tmp/new.manifest"
+    mt.exe -nologo -inputresource:"$w;#1" -out:"$(cygpath -w "$tmp/new.manifest")" >/dev/null
+    grep -q 'activeCodePage[^>]*>UTF-8<' "$tmp/new.manifest" || nr_die "$(basename "$exe"): UTF-8 code page manifest not embedded"
+    rm -f "$tmp/old.manifest"
+  done
+  rm -rf "$tmp"
+}
+
 # Fail if any file under $1 contains a path of this checkout, in any of the
 # three spellings a Windows build can bake in (/d/a/..., D:\a\..., D:/a/...).
 nr_win_no_build_paths() {

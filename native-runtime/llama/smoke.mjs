@@ -106,7 +106,7 @@ function freePort() {
 
 const tmpRoot = fs.mkdtempSync(path.join(win ? fs.realpathSync.native(os.tmpdir()) : os.tmpdir(), "vex llama smoke "));
 cleanups.push(() => fs.rmSync(tmpRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
-const home = win ? path.join(tmpRoot, "vex ünïcode test") : tmpRoot;
+const home = win ? path.join(tmpRoot, "vex ünïcode δοκιμή test") : tmpRoot;
 const relocated = path.join(home, "runtime dir", "llama");
 // Windows: fs.cpSync (Node 22) copies nothing into a destination whose path
 // has non-ASCII characters, without an error; copy file by file instead.

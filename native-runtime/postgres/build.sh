@@ -305,6 +305,7 @@ case "$target" in
     # whose executable is in bin/, and that directory is where DLLs are
     # searched. Nothing to strip: release links carry no debug info.
     nr_win_closure "$out/bin" "$out" "$root/bin" "$(nr_win_crt_dir x64)"
+    nr_win_utf8_manifest "$out"/bin/*.exe
     ls "$out/bin" >&2
     ;;
 esac
