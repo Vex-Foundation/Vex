@@ -65,6 +65,16 @@ export function runtimeStatePath(runtimeDir: string): string {
   return path.join(runtimeDir, "runtime-state.json");
 }
 
+/** Where the verified embeddings model lives (model-store.ts). */
+export function modelsDir(runtimeDir: string): string {
+  return path.join(runtimeDir, "models");
+}
+
+/** LLAMA_CACHE for llama-server: required by b9115, never written (--offline). */
+export function llamaCacheDir(runtimeDir: string): string {
+  return path.join(runtimeDir, "llama-cache");
+}
+
 /** The binaries the supervisor runs. pg_ctl is used on Windows only. */
 export interface PostgresBinaries {
   readonly postgres: string;
@@ -133,4 +143,55 @@ export async function locatePostgresBinaries(options?: {
     }
   }
   return { kind: "found", binaries };
+}
+
+export type LlamaBinaryLocation =
+  | { readonly kind: "found"; readonly binaryPath: string }
+  | { readonly kind: "unavailable"; readonly detail: string };
+
+/**
+ * The bundled llama-server, by the same rules as the Postgres binaries:
+ * `<resources>/llama/` when packaged; `<repo>/native-runtime/out/<target>/llama/`
+ * or an absolute `VEX_NATIVE_LLAMA_DIR` in development (ignored when packaged).
+ */
+export async function locateLlamaBinary(options?: {
+  readonly packaged?: boolean;
+  readonly resourcesPath?: string;
+  readonly repoRoot?: string;
+  readonly platform?: NodeJS.Platform;
+  readonly arch?: string;
+  readonly env?: NodeJS.ProcessEnv;
+}): Promise<LlamaBinaryLocation> {
+  const platform = options?.platform ?? process.platform;
+  const packaged = options?.packaged ?? app.isPackaged;
+  const env = options?.env ?? process.env;
+
+  let treeDir: string;
+  if (packaged) {
+    treeDir = path.join(options?.resourcesPath ?? process.resourcesPath, "llama");
+  } else {
+    const override = absoluteEnv(env["VEX_NATIVE_LLAMA_DIR"], path);
+    const arch = TARGET_ARCH[options?.arch ?? process.arch];
+    if (override !== null) {
+      treeDir = override;
+    } else if (arch === undefined) {
+      return { kind: "unavailable", detail: `Vex builds no llama-server for ${platform}/${options?.arch ?? process.arch}.` };
+    } else {
+      const repoRoot = options?.repoRoot ?? path.resolve(app.getAppPath(), "..");
+      treeDir = path.join(repoRoot, "native-runtime", "out", `${platform}-${arch}`, "llama");
+    }
+  }
+
+  const binaryPath = path.join(treeDir, platform === "win32" ? "llama-server.exe" : "llama-server");
+  try {
+    await access(binaryPath, constants.X_OK);
+  } catch {
+    return {
+      kind: "unavailable",
+      detail: packaged
+        ? "The bundled embeddings server is missing or not executable. Reinstall Vex."
+        : `No executable ${binaryPath}. Build it with native-runtime/llama/build.sh, or set VEX_NATIVE_LLAMA_DIR.`,
+    };
+  }
+  return { kind: "found", binaryPath };
 }

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("electron", () => ({ app: { isPackaged: false, getAppPath: () => "" } }));
 
-const { locatePostgresBinaries, pgDataDir, resolveRuntimeDir } = await import("../runtime-paths.js");
+const { locateLlamaBinary, locatePostgresBinaries, pgDataDir, resolveRuntimeDir } = await import("../runtime-paths.js");
 
 const roots: string[] = [];
 afterEach(() => {
@@ -137,5 +137,48 @@ describe("locatePostgresBinaries", () => {
   it("names .exe binaries on Windows", async () => {
     const found = await locatePostgresBinaries({ packaged: true, resourcesPath: tempRoot(), platform: "win32", env: {} });
     expect(found.kind === "unavailable" && found.detail).toMatch(/postgres\.exe/);
+  });
+});
+
+describe("locateLlamaBinary", () => {
+  function llamaTree(dir: string, mode = 0o755): string {
+    mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "llama-server");
+    writeFileSync(file, "#!/bin/sh\n");
+    chmodSync(file, mode);
+    return dir;
+  }
+
+  it("packaged: <resources>/llama, and VEX_NATIVE_LLAMA_DIR is ignored", async () => {
+    const resources = tempRoot();
+    llamaTree(path.join(resources, "llama"));
+    const other = llamaTree(path.join(tempRoot(), "elsewhere"));
+    await expect(
+      locateLlamaBinary({ packaged: true, resourcesPath: resources, platform: "linux", env: { VEX_NATIVE_LLAMA_DIR: other } }),
+    ).resolves.toEqual({ kind: "found", binaryPath: path.join(resources, "llama", "llama-server") });
+  });
+
+  it("development: native-runtime/out/<platform>-<arch>/llama, or an absolute override", async () => {
+    const repo = tempRoot();
+    llamaTree(path.join(repo, "native-runtime", "out", "linux-x64", "llama"));
+    await expect(
+      locateLlamaBinary({ packaged: false, repoRoot: repo, platform: "linux", arch: "x64", env: {} }),
+    ).resolves.toEqual({ kind: "found", binaryPath: path.join(repo, "native-runtime", "out", "linux-x64", "llama", "llama-server") });
+    const override = llamaTree(path.join(tempRoot(), "custom"));
+    await expect(
+      locateLlamaBinary({ packaged: false, repoRoot: repo, platform: "linux", arch: "x64", env: { VEX_NATIVE_LLAMA_DIR: override } }),
+    ).resolves.toEqual({ kind: "found", binaryPath: path.join(override, "llama-server") });
+  });
+
+  it("is unavailable when missing (build hint in development) or not executable", async () => {
+    const missing = await locateLlamaBinary({ packaged: false, repoRoot: tempRoot(), platform: "darwin", arch: "arm64", env: {} });
+    expect(missing.kind === "unavailable" && missing.detail).toMatch(/llama\/build\.sh/);
+    if (process.platform !== "win32") {
+      const resources = tempRoot();
+      llamaTree(path.join(resources, "llama"), 0o644);
+      await expect(locateLlamaBinary({ packaged: true, resourcesPath: resources, platform: "linux", env: {} })).resolves.toMatchObject({
+        kind: "unavailable",
+      });
+    }
   });
 });
