@@ -19,6 +19,12 @@
 # release lives on a private repository, the VEX_NATIVE_RUNTIME_TOKEN secret
 # must be a token that can read it.
 #
+# No job publishes before the CLEAN-MACHINE GATE has passed on every leg
+# (clean-machine.yml, plan D12): an unsigned package of this commit for
+# macOS arm64 and x64, Linux x64, Windows x64 and arm64 completes its first
+# run, quit and relaunch on a runner with Docker removed. The three build
+# jobs `need` it, so a red leg means no signing and no upload to the draft.
+#
 # electron-updater (GitHub provider) consumes latest-mac.yml / latest-linux.yml
 # / latest.yml (Windows) that electron-builder emits into each release. The packaged app auto-loads the
 # app-update.yml electron-builder generates from the `publish` block in
@@ -123,6 +129,26 @@ jobs:
         working-directory: vex-app
         run: pnpm test
 
+  # THE CLEAN-MACHINE GATE (plan D12), on every leg the release ships:
+  # darwin-arm64, darwin-x64, linux-x64, win32-x64, win32-arm64. Each leg
+  # packages this commit unsigned with the lock-pinned native runtime, removes
+  # Docker from its runner and proves it is gone, then drives the packaged app
+  # through its first run (System Check, initdb and every migration, the model
+  # download, the wizard), a user's quit and a relaunch
+  # (e2e/native-runtime.spec.ts, --retries=0). It runs beside the unit gate;
+  # every job that publishes needs it, so a red leg stops the release before
+  # anything is signed or uploaded. It gets one secret, the token that reads
+  # the native runtime release, and none of the signing secrets.
+  clean-machine:
+    name: Clean-machine gate (all legs)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/clean-machine.yml
+    with:
+      legs: all
+    secrets:
+      VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN }}
+
   # Serialize DRAFT-RELEASE CREATION only (Codex review finding): electron-publish
   # has no retry-on-422 for simultaneous createRelease() calls, so two parallel
   # jobs racing to create the same draft can fail. This job creates the draft
@@ -168,7 +194,7 @@ jobs:
 
   macos:
     name: Build, sign, notarize & publish macOS (arm64 + x64)
-    needs: create-release
+    needs: [create-release, clean-machine]
     runs-on: macos-latest
     # 120 (not 60): Apple's FIRST notarization on a new account is held for
     # "additional analysis", and notarytool --wait has no timeout — the initial
@@ -469,7 +495,7 @@ jobs:
 
   linux:
     name: Build & publish Linux (x64)
-    needs: create-release
+    needs: [create-release, clean-machine]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -575,7 +601,7 @@ jobs:
     # @parcel/watcher ship win32-arm64 prebuilds, and pnpm's
     # supportedArchitectures installs the arm64 optional packages on x64.
     name: Build, sign & publish Windows (x64 + arm64)
-    needs: create-release
+    needs: [create-release, clean-machine]
     runs-on: windows-latest
     # 120 (not 60): with the native runtime every .exe and .dll of two arches
     # is signed, one serialized Trusted Signing call per file (app-builder-lib
