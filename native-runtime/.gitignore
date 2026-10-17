@@ -1,0 +1,4 @@
+# Source checkouts, build trees and tool venvs.
+/.work/
+# Built runtime trees and tarballs.
+/out/
