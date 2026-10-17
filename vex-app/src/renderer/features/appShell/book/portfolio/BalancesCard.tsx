@@ -24,6 +24,12 @@
  * the full register. The token history opens from a row's menu, only for a row with an
  * exact `(chainId, tokenAddress)` identity.
  *
+ * THE VALUE NEVER CLIPS. The table sits in the narrower column of the Wallets
+ * band, so what gives way when it is tight is decided in the markup: the Value
+ * column (`vex-pf-v`) is nowrap and keeps its whole figure, while a muted "Not
+ * available" (`vex-pf-wrap`), the network and the asset name may wrap
+ * (book.css, `.vex-pf-t--balances`).
+ *
  * "View all assets" opens the All assets page carrying the SAME scope, so the
  * register is never wider than the table that led to it; a single wallet has
  * no register of its own, so under that scope the link is not offered.
@@ -114,14 +120,14 @@ export function BalancesCard({
       ) : top.length === 0 ? (
         <CardStateNote>{emptyNote(scope)}</CardStateNote>
       ) : (
-        <table className="vex-pf-t" data-vex-area="portfolio-balances">
+        <table className="vex-pf-t vex-pf-t--balances" data-vex-area="portfolio-balances">
           <thead>
             <tr>
               <th scope="col">Asset</th>
               <th scope="col">Network</th>
               <th scope="col" className="vex-pf-r">Quantity</th>
               <th scope="col" className="vex-pf-r">Price</th>
-              <th scope="col" className="vex-pf-r">Value</th>
+              <th scope="col" className="vex-pf-r vex-pf-v">Value</th>
               <th scope="col" className="vex-pf-act">
                 <span className="sr-only">Actions</span>
               </th>
@@ -170,6 +176,16 @@ function assetsScopeOf(scope: PortfolioPageScope): AssetsRouteScope | null {
   }
 }
 
+/**
+ * "Not available", in the muted word a figure the read does not carry says.
+ * It is the one piece of a figure cell that may wrap: the two words stack
+ * before the table scrolls sideways, so a figure that IS carried (the Value
+ * above all) keeps its whole width (`.vex-pf-wrap`, book.css).
+ */
+function NotAvailable(): JSX.Element {
+  return <span className="vex-pf-muted vex-pf-wrap">{NOT_AVAILABLE}</span>;
+}
+
 function BalanceRow({ token }: { readonly token: PositionTokenDto }): JSX.Element {
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const symbol = sanitizeTokenSymbol(token.symbol);
@@ -201,19 +217,15 @@ function BalanceRow({ token }: { readonly token: PositionTokenDto }): JSX.Elemen
           <span>{name}</span>
         </span>
       </td>
-      <td className="vex-pf-muted">{network ?? ""}</td>
+      <td className="vex-pf-muted vex-pf-net">{network ?? ""}</td>
       <td className="vex-pf-r vex-num">
-        {quantity ?? <span className="vex-pf-muted">{NOT_AVAILABLE}</span>}
+        {quantity ?? <NotAvailable />}
         {quantity !== null && symbol !== null ? (
           <span className="vex-pf-u">{` ${symbol}`}</span>
         ) : null}
       </td>
-      <td className="vex-pf-r vex-num">
-        {price ?? <span className="vex-pf-muted">{NOT_AVAILABLE}</span>}
-      </td>
-      <td className="vex-pf-r vex-num">
-        {value ?? <span className="vex-pf-muted">{NOT_AVAILABLE}</span>}
-      </td>
+      <td className="vex-pf-r vex-num">{price ?? <NotAvailable />}</td>
+      <td className="vex-pf-r vex-num vex-pf-v">{value ?? <NotAvailable />}</td>
       <td className="vex-pf-act">
         <RowActions
           label={`Actions for ${name}`}

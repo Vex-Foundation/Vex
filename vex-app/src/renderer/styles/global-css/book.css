@@ -427,6 +427,35 @@
   color: var(--vex-alias-label-tertiary);
 }
 
+/* BALANCES keeps its Value whole. The table sits in the narrower column of the
+ * Wallets band (460 of the 920 page at 1440, Vex open or hidden) and its
+ * cells are nowrap, so a row of two "Not available" words used to out-grow
+ * the column and the section's sideways scroll cut Value to "Valu". The
+ * auto table layout never takes a column below its min-content width, so the
+ * fix is in what each column is allowed to give up:
+ *   - Value (`.vex-pf-v`) is the one column that never gives: nowrap, so its
+ *     min-content IS its max-content, the whole figure, at every width;
+ *   - the words may wrap: a muted "Not available" (`.vex-pf-wrap`) stacks its
+ *     two words, the network name (`.vex-pf-net`) and the asset name wrap at
+ *     spaces; a figure the read carries has no space to break at;
+ *   - the columns therefore shrink toward their longest word and Value alone
+ *     keeps its width. No `table-layout: fixed`, no percentage track. */
+.vex-pf-t--balances .vex-pf-v {
+  white-space: nowrap;
+}
+.vex-pf-t--balances .vex-pf-net {
+  white-space: normal;
+}
+.vex-pf-t--balances .vex-pf-asset > span:last-child {
+  white-space: normal;
+}
+.vex-pf-wrap {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.25;
+}
+
 /* Trading values only: the Lighter uPnL, Long and Short, the $VEX change. */
 .vex-pf [data-trade="up"],
 .vex-pf-vex [data-trade="up"] {
