@@ -21,8 +21,10 @@
  *   width; the title bar's token chip brings her back.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
- * stays the e2e/test selector. Lighter moves navigation into its top bar above
- * the grid, so its left column is always the rail.
+ * stays the e2e/test selector. On the Lighter desk the left sidebar is always
+ * its rail and the centre opens with the desk's own title row
+ * (`LighterSidebar`, docs/design/R3-MINIMAL.md section 9.3), which carries the
+ * title bar's cluster.
  */
 
 import {
@@ -63,11 +65,10 @@ import {
   useActivityProgressInvalidation,
   useActivityResolvedInvalidation,
 } from "../../lib/api/portfolio.js";
-import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
-import { LIGHTER_TOPBAR_HEIGHT, LighterSidebar } from "./lighterTrading/LighterSidebar.js";
+import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
 import { VexSidebar } from "../vex/VexSidebar.js";
 
@@ -296,7 +297,6 @@ function ShellFrame({
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     gridTemplateColumns: `${cols.left}px minmax(0, 1fr) ${cols.vex}px`,
-    paddingTop: lighter && !lighterZen ? LIGHTER_TOPBAR_HEIGHT : undefined,
     // The running head reserves the caption buttons wherever the right column
     // under them is narrower than they are (shell.css).
     "--vex-vex-track": `${cols.vex}px`,
@@ -326,24 +326,8 @@ function ShellFrame({
         reconnecting={!networkOnline}
         label="Offline - waiting for the network to come back"
       />
-      {lighter ? (
-        <LighterSidebar
-          collapsed={sidebarCollapsed}
-          onToggleSidebar={toggleSidebar}
-          zenMode={lighterZen}
-          zenAssistantOpen={zenAssistantOpen}
-          zenControlsOpen={zenControlsOpen}
-          onToggleZen={() => setZenMode(!lighterZen)}
-          onToggleZenControls={() => setZenControlsOpen((current) => !current)}
-          onToggleZenAssistant={() => {
-            if (zenAssistantOpen) setZenAssistantOpen(false);
-            else openZenAssistant();
-          }}
-        />
-      ) : null}
-
       {/* TRACK 1 - the left sidebar: the sessions sidebar (agent), the
-        * projects and explorer (Studio), the vx mark on the rail (Lighter).
+        * projects and explorer (Studio), its rail on the Lighter desk.
         * The column stays overflow-visible so nothing the sidebar opens is
         * cut at its edge. */}
       <div
@@ -351,7 +335,7 @@ function ShellFrame({
         data-vex-area="left-page"
         data-vex-left-page={rail ? "spine" : "page"}
       >
-        {rail && !lighter ? (
+        {rail ? (
           <div aria-hidden className="vex-left-page__cap vex-drag" />
         ) : null}
         {runtimeMode === "agent" ? (
@@ -373,11 +357,16 @@ function ShellFrame({
             />
           </div>
         ) : cols.left > 0 ? (
-          // Lighter keeps the rail: the vx mark at the top of the print.
-          <div aria-hidden className="vex-left-page__content">
-            <span className="vex-left-page__mark">
-              <VexMark size={22} />
-            </span>
+          // Lighter keeps the left sidebar on its rail: New chat, Search, the
+          // Chats key (it opens the desk's Markets & sessions drawer), the
+          // nav and the account. Keyed, so the agent sidebar's own state
+          // never carries across a mode switch.
+          <div key="lighter-rail" className="vex-left-page__content">
+            <SessionsList
+              onCreate={onCreate}
+              collapsed
+              onToggleSidebar={toggleSidebar}
+            />
           </div>
         ) : null}
       </div>
@@ -404,6 +393,25 @@ function ShellFrame({
               : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) }
           }
         />
+
+        {/* The Lighter desk's title row: the centre's head row on the desk,
+          * with the title bar's cluster portalled into its right end. In Zen
+          * it folds to a handle over the chart. */}
+        {lighter ? (
+          <LighterSidebar
+            collapsed={sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+            zenMode={lighterZen}
+            zenAssistantOpen={zenAssistantOpen}
+            zenControlsOpen={zenControlsOpen}
+            onToggleZen={() => setZenMode(!lighterZen)}
+            onToggleZenControls={() => setZenControlsOpen((current) => !current)}
+            onToggleZenAssistant={() => {
+              if (zenAssistantOpen) setZenAssistantOpen(false);
+              else openZenAssistant();
+            }}
+          />
+        ) : null}
 
         <div className="min-h-0 flex-1">
           {/* In Lighter mode the conversation lives in the right column

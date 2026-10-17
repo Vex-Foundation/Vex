@@ -39,6 +39,64 @@ vi.mock("../../SessionRows.js", () => ({
   ),
 }));
 
+describe("LighterSidebar title row", () => {
+  beforeEach(() => {
+    useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7 });
+  });
+
+  it("is the centre's head row: Lighter and its network, the desk keys, then the title bar's slot", () => {
+    const { container } = render(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode={false}
+        zenAssistantOpen={false}
+        zenControlsOpen={false}
+        onToggleZen={vi.fn()}
+        onToggleZenControls={vi.fn()}
+        onToggleZenAssistant={vi.fn()}
+      />,
+    );
+
+    const navigation = screen.getByRole("complementary", { name: "Lighter navigation" });
+    expect(within(navigation).getByText("Lighter")).toBeTruthy();
+    expect(within(navigation).getByText("Robinhood Chain")).toBeTruthy();
+    expect(within(navigation).getByRole("button", { name: "Markets & sessions" }).getAttribute("aria-expanded")).toBe("false");
+    expect(within(navigation).getByRole("button", { name: "New session" })).toBeTruthy();
+    // The route back, Settings, the theme and the account live in the left rail now.
+    expect(within(navigation).queryByRole("button", { name: /^(Agent|Studio)$/ })).toBeNull();
+    expect(within(navigation).queryByRole("button", { name: "Settings" })).toBeNull();
+    expect(within(navigation).queryByRole("button", { name: /Switch to the (light|dark) theme/ })).toBeNull();
+    // The title bar's cluster lands at the row's right end.
+    const slot = container.querySelector(".lit-desk-top-shell");
+    expect(slot?.parentElement?.classList.contains("lit-desk-topbar-header")).toBe(true);
+    expect(slot?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("keeps the title bar's slot mounted, only hidden, while Zen folds the row", () => {
+    const props = {
+      collapsed: true,
+      onToggleSidebar: vi.fn(),
+      zenAssistantOpen: false,
+      onToggleZen: vi.fn(),
+      onToggleZenControls: vi.fn(),
+      onToggleZenAssistant: vi.fn(),
+    } as const;
+    const { container, rerender } = render(
+      <LighterSidebar {...props} zenMode={false} zenControlsOpen={false} />,
+    );
+    const slot = container.querySelector(".lit-desk-top-shell");
+
+    rerender(<LighterSidebar {...props} zenMode zenControlsOpen={false} />);
+    expect(container.querySelector(".lit-desk-top-shell")).toBe(slot);
+    expect(slot?.hasAttribute("hidden")).toBe(true);
+
+    rerender(<LighterSidebar {...props} zenMode zenControlsOpen />);
+    expect(container.querySelector(".lit-desk-top-shell")).toBe(slot);
+    expect(slot?.hasAttribute("hidden")).toBe(false);
+  });
+});
+
 describe("LighterSidebar environment switch", () => {
   beforeEach(() => {
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7 });

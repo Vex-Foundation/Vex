@@ -1,27 +1,39 @@
 /**
- * Lighter's horizontal navigation bar. It keeps the route back, desk actions,
- * profile and a drop-down market/session navigator above the trading grid so
- * the chart never pays for a permanent left rail.
+ * THE LIGHTER TITLE ROW (docs/design/R3-MINIMAL.md sections 3 and 9.3): the
+ * centre column's 44px head row on the desk, and the window's drag region.
+ *
+ *   - the LEFT cell says where you are: "Lighter", then the desk's section
+ *     and network in muted ("Perps · Robinhood Chain"); in Zen, the market
+ *     and interval the chart shows;
+ *   - the RIGHT cluster (gap 8): Markets & sessions, New session, Core | RHC
+ *     and the Zen key, then the title bar's own cluster (export, Notices,
+ *     Needs you, the token chip), portalled in from `RunningHead` through
+ *     `shellStripSlot.ts`. The slot stays mounted in every state, so the
+ *     cluster never remounts when Zen folds the row.
+ *
+ * Navigation, Settings and the account live in the left rail, which the desk
+ * always uses; the rail's Chats key and Markets & sessions open the same
+ * drawer (a paper sheet hung from the row's rule: the watchlist and the
+ * desk's sessions).
+ *
+ * Zen keeps the chart in the whole window: the row folds to a small handle
+ * and comes back as an overlay without moving the chart.
  */
 
 import { useEffect, useId, useMemo, useRef, type JSX } from "react";
 import type { LighterTradingEnvironment } from "@shared/schemas/lighter-trading.js";
+import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
 import {
-  IconChevronDown,
-  IconChevronLeft,
-  IconChevronUp,
-  IconFullscreen,
-  IconPanelLeft,
-  IconPlus,
-  IconSettings,
-  IconThemeDark,
-  IconThemeLight,
-} from "../../../components/icons/index.js";
+  LineChevronDown,
+  LineChevronUp,
+  LinePanelLeft,
+  LinePlus,
+  LineZen,
+} from "../../../components/icons/line/index.js";
 import { VexMark } from "../../../components/common/VexMark.js";
 import { useLighterTradingMarkets } from "../../../lib/api/lighter-trading.js";
 import { useSessionsList } from "../../../lib/api/sessions.js";
 import { useScrollbarVisibility } from "../../../lib/useScrollbarVisibility.js";
-import { cn } from "../../../lib/utils.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { SessionDeleteDialog } from "../SessionDeleteDialog.js";
@@ -30,17 +42,21 @@ import {
   SessionsEmptyPlaceholder,
   SessionsErrorPlaceholder,
   SessionsLoadingPlaceholder,
-  SidebarIconButton,
 } from "../SessionRows.js";
-import { SidebarProfile } from "../SidebarProfile.js";
 import { filterSessionsByWorkspace, groupSessions } from "../sessionListModel.js";
 import { useSessionRowActions } from "../useSessionRowActions.js";
 import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { NO_VALUE, formatNumber, formatPrice } from "./format.js";
-import { classifyLighterMarket } from "./market-classification.js";
+import { classifyLighterMarket, type LighterMarketSection } from "./market-classification.js";
 import { marketIdentity } from "./market-selection.js";
+import { setShellStripSlot } from "./shellStripSlot.js";
 
-export const LIGHTER_TOPBAR_HEIGHT = 44;
+/** The section words of the market bar's Perps | Stocks | Spot control. */
+const SECTION_WORDS: Readonly<Record<LighterMarketSection, string>> = {
+  perp: "Perps",
+  stocks: "Stocks",
+  spot: "Spot",
+};
 
 export function LighterSidebar({
   collapsed,
@@ -63,12 +79,8 @@ export function LighterSidebar({
 }): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
-  const returnMode = useUiStore((s) => s.lighterReturn?.mode ?? "agent");
-  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
-  const setShellRoute = useUiStore((s) => s.setShellRoute);
   const theme = useUiStore((s) => s.theme);
-  const setThemePreference = useUiStore((s) => s.setThemePreference);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
   const marketId = useLighterAnalysisStore((s) => s.desk.marketId);
   const resolution = useLighterAnalysisStore((s) => s.desk.resolution);
@@ -109,11 +121,18 @@ export function LighterSidebar({
     };
   }, [collapsed, onToggleSidebar]);
 
+  // The left cell's muted words: the section and the network; in Zen, the
+  // chart's market and interval instead.
+  const section = activeMarket === null ? null : classifyLighterMarket(environment, activeMarket).section;
+  const place = [section === null ? null : SECTION_WORDS[section], LIGHTER_ENVIRONMENT_NAMES[environment]]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
+  const zenFolded = zenMode && !zenControlsOpen;
+
   return (
     <aside
       ref={rootRef}
-      className="lit-chat-frame lit-desk-topbar absolute inset-x-0 top-0 z-40"
-      style={{ height: LIGHTER_TOPBAR_HEIGHT }}
+      className="lit-chat-frame lit-desk-topbar"
       data-vex-area="lighter-sidebar"
       data-vex-sidebar-open={collapsed ? "false" : "true"}
       data-lighter-theme={theme}
@@ -122,12 +141,8 @@ export function LighterSidebar({
       data-zen-controls={zenMode ? zenControlsOpen ? "open" : "closed" : undefined}
       aria-label="Lighter navigation"
     >
-      {/* Lighter's running head: the window drag region, clear of the
-        * macOS traffic lights and the Windows and Linux caption buttons
-        * (docs/design/V10-SPREAD.md section 8). Still full width: it moves
-        * into the title bar row beside the spine in a later step. */}
-      <header className="lit-desk-topbar-header vex-drag vex-lights-start vex-overlay-end">
-        {zenMode && !zenControlsOpen ? (
+      <header className="lit-desk-topbar-header vex-drag">
+        {zenFolded ? (
           <button
             type="button"
             className="lit-zen-controls-reveal"
@@ -136,113 +151,96 @@ export function LighterSidebar({
             title="Show Zen controls"
             onClick={onToggleZenControls}
           >
-            <IconChevronDown size={16} />
+            <LineChevronDown size={16} />
           </button>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={() => setRuntimeMode(returnMode)}
-              className="lit-topbar-button"
-            >
-              <IconChevronLeft size={16} />
-              <span className="lit-topbar-button-label">{returnMode === "studio" ? "Studio" : "Agent"}</span>
-            </button>
-            <span className="lit-topbar-brand">
-              <b>Lighter</b>
+            <span className="vex-tb-title lit-topbar-title">
+              <span className="vex-tb-title__name">Lighter</span>
+              {zenMode && activeMarket !== null ? (
+                <span
+                  className="vex-tb-title__sub lit-topbar-zen-market"
+                  aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}
+                >
+                  {activeMarket.symbol} · {resolution}
+                </span>
+              ) : (
+                <span className="vex-tb-title__sub">{place}</span>
+              )}
             </span>
-            {zenMode && activeMarket !== null ? (
-              <span className="lit-topbar-zen-market" aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}>
-                {activeMarket.symbol} · {resolution}
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className="lit-topbar-button lit-topbar-distraction"
-              aria-expanded={!collapsed}
-              aria-controls={drawerId}
-              onClick={onToggleSidebar}
-            >
-              <IconPanelLeft size={16} />
-              <span className="lit-topbar-button-label">Markets & sessions</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openCreateSession()}
-              className="lit-topbar-primary lit-topbar-distraction"
-            >
-              <IconPlus size={16} />
-              <span className="lit-topbar-button-label">New session</span>
-            </button>
-            <div className="lit-topbar-center">
+            <span className="lit-topbar-spacer" />
+            <div className="lit-topbar-keys">
               <button
                 type="button"
-                className="lit-zen-toggle"
+                className="lit-topbar-pill lit-topbar-distraction"
+                aria-expanded={!collapsed}
+                aria-controls={drawerId}
+                onClick={onToggleSidebar}
+              >
+                <LinePanelLeft size={16} />
+                <span className="lit-topbar-button-label">Markets & sessions</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openCreateSession()}
+                className="lit-topbar-pill lit-topbar-distraction"
+              >
+                <LinePlus size={16} />
+                <span className="lit-topbar-button-label">New session</span>
+              </button>
+              <EnvironmentSwitch
+                environment={environment}
+                onSelect={(next) => saveDesk({ environment: next, marketId: null })}
+              />
+              <button
+                type="button"
+                className="lit-topbar-key lit-zen-toggle"
                 aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
                 aria-pressed={zenMode}
-                title={zenMode ? "Exit Zen Mode · Esc" : "Open a distraction-free chart"}
+                title={zenMode ? "Exit Zen Mode · Esc" : "Zen Mode: a distraction-free chart"}
                 onClick={onToggleZen}
               >
-                <IconFullscreen size={16} />
-                <span>{zenMode ? "Exit Zen" : "Zen Mode"}</span>
+                <LineZen size={16} />
               </button>
               {zenMode ? (
-                <button
-                  type="button"
-                  className="lit-zen-controls-hide"
-                  aria-label="Hide Zen controls"
-                  aria-expanded="true"
-                  title="Hide Zen controls · Esc"
-                  onClick={onToggleZenControls}
-                >
-                  <IconChevronUp size={16} />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="lit-topbar-key lit-zen-controls-hide"
+                    aria-label="Hide Zen controls"
+                    aria-expanded="true"
+                    title="Hide Zen controls · Esc"
+                    onClick={onToggleZenControls}
+                  >
+                    <LineChevronUp size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="lit-topbar-pill lit-topbar-ask"
+                    aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+                    aria-pressed={zenAssistantOpen}
+                    title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
+                    onClick={onToggleZenAssistant}
+                  >
+                    <VexMark size={16} />
+                    <span className="lit-topbar-button-label">{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
+                  </button>
+                </>
               ) : null}
-            </div>
-            <span className="lit-topbar-spacer" />
-            {zenMode ? (
-              <button
-                type="button"
-                className="lit-topbar-ask"
-                aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-                aria-pressed={zenAssistantOpen}
-                title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
-                onClick={onToggleZenAssistant}
-              >
-                <VexMark size={16} />
-                <span>{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
-              </button>
-            ) : null}
-            <EnvironmentSwitch
-              environment={environment}
-              onSelect={(next) => saveDesk({ environment: next, marketId: null })}
-            />
-            <span className="lit-topbar-distraction">
-              <SidebarIconButton
-                label="Settings"
-                onClick={() => { setShellRoute({ kind: "settings", origin: null, section: null }); }}
-              >
-                <IconSettings size={16} />
-              </SidebarIconButton>
-            </span>
-            <SidebarIconButton
-              label={theme === "chronos" ? "Switch to the light theme" : "Switch to the dark theme"}
-              onClick={() => { setThemePreference(theme === "chronos" ? "celeris" : "chronos"); }}
-            >
-              {theme === "chronos" ? <IconThemeLight size={16} /> : <IconThemeDark size={16} />}
-            </SidebarIconButton>
-            <div className="lit-topbar-profile lit-topbar-distraction">
-              <SidebarProfile sidebarOpen={false} menuSide="bottom" />
             </div>
           </>
         )}
+        {/* The title bar's cluster lands here (see shellStripSlot.ts). The
+          * slot keeps its place in the row in every state, so a folded Zen
+          * row hides the cluster without remounting it. */}
+        <div className="lit-desk-top-shell" ref={setShellStripSlot} hidden={zenFolded} />
       </header>
 
       {!collapsed ? (
         <div id={drawerId} className="lit-desk-nav-drawer">
           <div
             ref={listScrollRef}
-            className="vex-scroll vex-scroll-overlay flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-clip p-3"
+            className="vex-scroll vex-scroll-overlay lit-desk-nav-list"
           >
             <Watchlist environment={environment} onSelect={onToggleSidebar} />
             <RailHeading>Sessions</RailHeading>
@@ -286,8 +284,9 @@ export function LighterSidebar({
   );
 }
 
+/** A group head of the drawer: 12 / 500 muted, sentence case. */
 function RailHeading({ children }: { readonly children: string }): JSX.Element {
-  return <h2 className="px-2 font-mono text-[10px] uppercase tracking-eyebrow text-ink-primary">{children}</h2>;
+  return <h2 className="lit-desk-nav-heading">{children}</h2>;
 }
 
 /** Starred markets for the current environment; a row swaps the desk's market. */
@@ -305,14 +304,14 @@ function Watchlist({ environment, onSelect }: {
     return marketsQuery.data.data.markets.filter((market) => starred.has(marketIdentity(environment, market)));
   }, [environment, favorites, marketsQuery.data]);
   return (
-    <section aria-label="Watchlist" className="flex flex-col gap-1">
+    <section aria-label="Watchlist" className="lit-watchlist">
       <RailHeading>Watchlist</RailHeading>
       {rows.length === 0 ? (
-        <p className="px-2 text-[13px] leading-[19px] text-ink-secondary">
+        <p className="lit-watchlist-empty">
           Star markets in the market picker to keep them here.
         </p>
       ) : (
-        <ul className="flex flex-col">
+        <ul className="lit-watchlist-rows">
           {rows.map((market) => {
             const change = market.statistics?.priceChange24h ?? null;
             const active = market.marketId === marketId;
@@ -320,24 +319,19 @@ function Watchlist({ environment, onSelect }: {
               <li key={market.marketId}>
                 <button
                   type="button"
+                  className="lit-watchlist-row"
                   aria-current={active ? "true" : undefined}
                   onClick={() => {
                     saveDesk({ marketId: market.marketId });
                     onSelect();
                   }}
-                  className={cn(
-                    "flex h-8 w-full items-center justify-between gap-2 px-2 font-mono text-[12px] hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-                    active ? "bg-interactive-hover text-accent-primary" : "text-ink-primary",
-                  )}
                 >
-                  <span className="truncate">{classifyLighterMarket(environment, market).ticker}</span>
-                  <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums">
+                  <span className="lit-watchlist-ticker">{classifyLighterMarket(environment, market).ticker}</span>
+                  <span className="lit-watchlist-figures">
                     <span>{formatPrice(market.statistics?.lastTradePrice ?? null, market.decimals.price)}</span>
                     <span
-                      className={cn(
-                        "min-w-[52px] text-right",
-                        change === null ? "text-ink-secondary" : change >= 0 ? "text-accent-primary" : "text-ink-primary",
-                      )}
+                      className="lit-watchlist-change"
+                      data-tone={change === null ? undefined : change >= 0 ? "up" : "down"}
                     >
                       {change === null ? NO_VALUE : `${change >= 0 ? "+" : ""}${formatNumber(change)}%`}
                     </span>

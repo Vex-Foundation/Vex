@@ -229,7 +229,7 @@ describe("LighterCenter", () => {
     expect(useLighterAnalysisStore.getState().desk.layout.compactBookShare).toBeCloseTo(240 / 719);
   });
 
-  it("pops the desk's own cards in a dialog and leaves the agent's to the chat rail", () => {
+  it("shows the desk's own cards in the ticket's place and leaves the agent's to the chat rail", () => {
     mocks.useLighterDesk.mockReturnValue(desk({
       approvals: [
         { id: "a1", origin: "desk", preview: { namespace: "lighter", toolName: "order.create", criticalArgs: {} } },
