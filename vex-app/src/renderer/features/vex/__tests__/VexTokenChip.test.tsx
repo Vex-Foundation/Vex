@@ -63,18 +63,19 @@ afterEach(() => {
 });
 
 describe("VexTokenChip: the state", () => {
-  it("draws the flat token, the fill, the scope and the word", () => {
+  it("draws the flat token, the fill and the word, without the scope (as the core renders)", () => {
     arrange({ state: "working", word: "Working", fill: "done" });
     render(<VexTokenChip open onToggle={() => undefined} />);
     const el = chip();
     expect(el.querySelector("[data-vex-vx-token]")).not.toBeNull();
     expect(el.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
-    expect(el.querySelector(".vex-state-word__scope")?.textContent).toBe("This chat: ");
+    expect(el.querySelector(".vex-state-word__scope")).toBeNull();
+    expect(el.textContent).not.toContain("This chat:");
     expect(el.textContent).toContain("Working");
     expect(el.getAttribute("data-vex-state")).toBe("working");
   });
 
-  it("omits the scope where there is none (the welcome)", () => {
+  it("draws the word alone where the presence has no scope either (the welcome)", () => {
     arrange({ scope: null });
     render(<VexTokenChip open={false} onToggle={() => undefined} />);
     expect(chip().querySelector(".vex-state-word__scope")).toBeNull();
@@ -150,7 +151,7 @@ describe("VexTokenChip: the toggle", () => {
     const onToggle = vi.fn();
     arrange({ state: "working", word: "Working", fill: "done" });
     render(<VexTokenChip open onToggle={onToggle} />);
-    const button = screen.getByRole("button", { name: /^Vex,\s*This chat:\s*Working$/ });
+    const button = screen.getByRole("button", { name: /^Vex,\s*Working$/ });
     fireEvent.click(button);
     expect(onToggle).toHaveBeenCalledTimes(1);
   });

@@ -195,7 +195,7 @@ The title bar is the centre column's 44px head row. Padding `0 16 0 22`.
 
 **Right cluster** (gap 8): page keys (refresh, export), then Notices (only while notices exist), then Needs you, then the token chip.
 - *Needs you · N*: 32 high, padding 0 10, gap 8, 13 / 500, border 1px rule (ink when N is above zero); swatch idle at zero and target above zero; the count in mono 12 muted. Always visible, on every screen, independent of Vex. A failed read shows "Needs you · ?" with Retry.
-- *Token chip*: 32 high, padding 0 10 0 5, gap 8, border 1px rule quiet, 13, transparent (night: paper 2). Contents: the flat disc (22), the state swatch, the scope in muted, the state word, the timer in mono 12 muted when live, then "1 mission running" after a 1px rule quiet divider (margin-left 4, padding-left 10, ink 2). Pressed (Vex open): border rule, background selection. It keeps the fill, the word and the timer when Vex is hidden.
+- *Token chip*: 32 high, padding 0 10 0 5, gap 8, border 1px rule quiet, 13, transparent (night: paper 2). Contents: the flat disc (22), the state swatch, the state word (no scope: the Vex sidebar carries "This chat:"), the timer in mono 12 muted when live, then "1 mission running" after a 1px rule quiet divider (margin-left 4, padding-left 10, ink 2). Pressed (Vex open): border rule, background selection. It keeps the fill, the word and the timer when Vex is hidden.
 - *Notices · N*: a 32 high pill, border rule, 13, sentence case.
 
 **The flat token.** The vx in a `#0000C0` disc, an SVG circle (night: radius 48.5 of 100 with a 3 stroke in `#A3ABFF`); the glyph is white, 60 x 48 at (20, 26) in a 100 box. Sizes: 22 in the chip, 24 beside Vex's messages, 44 when the avatar is off. The 3D coin appears only on wake, unlock and the welcome.

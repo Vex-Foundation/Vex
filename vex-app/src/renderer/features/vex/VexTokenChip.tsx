@@ -4,9 +4,10 @@
  * also the Vex toggle: pressing it shows or hides the Vex sidebar
  * (`aria-pressed`, tooltip "Hide Vex" or "Show Vex").
  *
- * Contents, in order: the disc (22), the state swatch, the scope in muted
- * ("This chat:"), the word, the live timer, and, while the sidebar is hidden,
- * the background work after a quiet rule ("1 mission running"). With the
+ * Contents, in order: the disc (22), the state swatch, the word, the live
+ * timer, and, while the sidebar is hidden, the background work after a quiet
+ * rule ("1 mission running"). No scope: the approved core renders draw the
+ * chip without it (the Vex sidebar carries "This chat:"). With the
  * sidebar open that line is the sidebar's own, so the chip does not repeat it.
  * Hidden or not, the chip keeps the fill, the word and the timer: the state
  * never disappears with the portrait.
@@ -80,7 +81,6 @@ export function VexTokenChip({ open, onToggle }: VexTokenChipProps): JSX.Element
           className="vex-tb-chip__state"
           state={presence.fill}
           word={presence.word}
-          scope={presence.scope ?? undefined}
           timer={timer}
         />
         {tail === null ? null : (
