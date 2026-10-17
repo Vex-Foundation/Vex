@@ -388,7 +388,7 @@ describe("TranscriptMessage agent activity avatar", () => {
     // The row still sits on the turn's 40px edge, and is still named.
     expect(
       container.querySelector('[data-vex-message-role="assistant"]')?.className,
-    ).toContain("vex-turn");
+    ).toContain("vex-reply");
     expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
   });
 });

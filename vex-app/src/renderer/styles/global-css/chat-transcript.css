@@ -122,11 +122,11 @@
  * A 28px column and a 12 gap: the flat token (24) hangs at the left, once per
  * turn; every row of the turn (prose, steps, the live row, the stats) starts
  * at the same 40 edge. Paragraphs 15 / 1.6, 10 between them. */
-.vex-turn {
+.vex-reply {
   position: relative;
   padding-left: 40px;
 }
-.vex-turn__mark {
+.vex-reply__mark {
   position: absolute;
   top: 1px;
   left: 0;
@@ -137,26 +137,26 @@
 /* The token centres on the first line of what heads the turn: a 36px
  * Reasoned row, a 36px step row under its 4 + 1 top rule, a 30px fold, or the
  * live row under its rule. */
-.vex-turn__mark[data-vex-mark-at="reasoned"] {
+.vex-reply__mark[data-vex-mark-at="reasoned"] {
   top: 6px;
 }
-.vex-turn__mark[data-vex-mark-at="step"] {
+.vex-reply__mark[data-vex-mark-at="step"] {
   top: 11px;
 }
-.vex-turn__mark[data-vex-mark-at="fold"] {
+.vex-reply__mark[data-vex-mark-at="fold"] {
   top: 8px;
 }
-.vex-turn__mark[data-vex-mark-at="live"] {
+.vex-reply__mark[data-vex-mark-at="live"] {
   top: 7px;
 }
-.vex-turn .vex-chat-prose {
+.vex-reply .vex-chat-prose {
   font-size: 15px;
   line-height: 1.6;
   gap: 10px;
 }
 
 /* The turn's clock and message keys, under the prose, revealed on hover. */
-.vex-turn__tail {
+.vex-reply__tail {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -166,7 +166,7 @@
 }
 
 /* "Stopped": the outline swatch and the word, 13 muted. */
-.vex-turn__stopped {
+.vex-reply__stopped {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -536,6 +536,13 @@
   line-height: 1.6;
   color: var(--vex-alias-label-secondary);
   overflow-wrap: anywhere;
+}
+/* The trace renders through the chat markdown, whose prose class would set
+ * the reading size; inside a trace it takes the trace's 14 / 1.6 instead. */
+.vex-reasoned__body .vex-chat-prose {
+  font-size: inherit;
+  line-height: inherit;
+  gap: 8px;
 }
 /* The folded thoughts of a turn in flight: quiet rows, 30 high, 13 muted. */
 .vex-reasoned--quiet .vex-reasoned__row {

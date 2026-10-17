@@ -63,7 +63,7 @@ describe("TurnStatsLine", () => {
     const line = container.querySelector("[data-vex-turn-stats]");
     expect(line).not.toBeNull();
     expect(line?.className).toContain("vex-turn-stats");
-    expect(line?.className).toContain("vex-turn");
+    expect(line?.className).toContain("vex-reply");
     // Size, colour, tracking and case belong to the class alone; these are
     // VALUES, not an eyebrow.
     for (const redeclared of [
@@ -84,7 +84,7 @@ describe("TurnStatsLine", () => {
     expect(stats).toContain("font-size: 11.5px;");
     expect(stats).toContain("color: var(--vex-alias-label-tertiary);");
     expect(stats).toContain("font-variant-numeric: tabular-nums;");
-    expect(ruleBody(".vex-turn")).toContain("padding-left: 40px;");
+    expect(ruleBody(".vex-reply")).toContain("padding-left: 40px;");
   });
 
   it("shows on hover or focus only, and always on touch", () => {

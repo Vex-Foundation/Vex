@@ -78,7 +78,7 @@ function TapeClock({
  * Vex's flat vx token at the head of her turn (docs/design/R3-MINIMAL.md
  * section 6): the 24px disc in the 28px column, drawn ONCE per turn - only on
  * the row that heads the turn (`turnMark`). Every member of the turn (prose,
- * steps, the live row, the stats) sits on the same 40px edge (`.vex-turn`).
+ * steps, the live row, the stats) sits on the same 40px edge (`.vex-reply`).
  *
  * The state of a turn in flight is the live row's word and timer, never a
  * mark under the token; `data-vex-agent-avatar-state` still says which mark
@@ -110,7 +110,7 @@ function AssistantMark({
       data-vex-agent-avatar=""
       data-vex-agent-avatar-state={working ? "working" : "settled"}
       data-vex-mark-at={at === "prose" ? undefined : at}
-      className="vex-turn__mark"
+      className="vex-reply__mark"
     >
       <VxToken size={24} />
     </span>
@@ -166,7 +166,7 @@ function AssistantActionsTail({
     // (`.vex-micro`) - mono is reserved for figures and technical strings.
     <span
       data-vex-message-tail=""
-      className="vex-micro vex-turn__tail tabular-nums"
+      className="vex-micro vex-reply__tail tabular-nums"
     >
       {/* A15 — the clock is hover-revealed chrome (80ms, hover:hover +
           focus-within; always visible on touch). */}
@@ -191,7 +191,7 @@ function AssistantActionsTail({
  * copy is the sans reading register, Instrument Sans 15 / 1.6 with 10 between
  * paragraphs. The serif is a display face and never sets a paragraph. The face
  * is declared on `.vex-chat-prose` (landing-motifs.css) and the turn's metric
- * on `.vex-turn .vex-chat-prose` (chat-transcript.css); this wrapper only owns
+ * on `.vex-reply .vex-chat-prose` (chat-transcript.css); this wrapper only owns
  * the tone and wrapping.
  */
 function AssistantBody({ content }: { readonly content: string }): JSX.Element {
@@ -331,7 +331,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         <div
           data-vex-message-role="assistant"
           data-time-hover-root=""
-          className="vex-turn"
+          className="vex-reply"
         >
           {turnMark ? (
             <AssistantMark working={agentWorking} at={proseMarkAt(row.reasoning)} />
@@ -364,7 +364,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-vex-message-role="assistant"
           data-vex-stopped=""
           data-time-hover-root=""
-          className="vex-turn"
+          className="vex-reply"
         >
           {turnMark ? (
             <AssistantMark working={agentWorking} at={proseMarkAt(row.reasoning)} />
@@ -382,7 +382,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
                 : undefined
             }
           />
-          <div className="vex-turn__stopped">
+          <div className="vex-reply__stopped">
             <Swatch state="idle" size={10} />
             <span>Stopped</span>
           </div>
@@ -395,7 +395,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // call, and two or more finished steps fold into one quiet row.
       if (row.toolKind === "result") {
         return (
-          <div data-vex-message-role="tool" className="vex-turn">
+          <div data-vex-message-role="tool" className="vex-reply">
             {turnMark ? <AssistantMark at="step" /> : null}
             <div className="vex-steps">
               <ToolDisclosure
@@ -412,7 +412,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         );
       }
       return (
-        <div data-vex-message-role="tool" className="vex-turn">
+        <div data-vex-message-role="tool" className="vex-reply">
           {turnMark ? (
             <AssistantMark
               working={agentWorking}
@@ -446,7 +446,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // the list is a fixed, ordered projection of the group model, never
       // reordered or spliced.
       return (
-        <div className="vex-turn">
+        <div className="vex-reply">
           {turnMark ? (
             <AssistantMark
               at={(row.reasonings ?? []).length === 0 ? "fold" : "reasoned"}

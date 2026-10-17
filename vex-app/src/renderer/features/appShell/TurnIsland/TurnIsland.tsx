@@ -75,26 +75,24 @@ function islandSwatch(view: TurnIslandView): SwatchState {
   return "done";
 }
 
+/** The fill that leads the live row; the word after it repeats the state. */
+function StatusFill({ view }: { readonly view: TurnIslandView }): JSX.Element {
+  return (
+    <span aria-hidden className="vex-step__fill">
+      <Swatch state={islandSwatch(view)} size={10} />
+    </span>
+  );
+}
+
 /**
  * THE WORD behind its fill: the title of the live row in blue 500 (ink for a
- * failure). The fill carries the state; the word repeats it.
+ * failure).
  */
-function StatusWord({
-  label,
-  view,
-}: {
-  readonly label: string;
-  readonly view: TurnIslandView;
-}): JSX.Element {
+function StatusWord({ label }: { readonly label: string }): JSX.Element {
   return (
-    <>
-      <span aria-hidden className="vex-step__fill">
-        <Swatch state={islandSwatch(view)} size={10} />
-      </span>
-      <span data-vex-island-label="" className="vex-step__title">
-        {label}
-      </span>
-    </>
+    <span data-vex-island-label="" className="vex-step__title">
+      {label}
+    </span>
   );
 }
 
@@ -153,6 +151,7 @@ function IslandBody({
         view.state === "settled" && "vex-live-row--settled",
       )}
     >
+      <StatusFill view={view} />
       {(view.state === "calling" || view.state === "running")
       && preview.toolName !== null ? (
         <span className="vex-step__mark">
@@ -165,7 +164,6 @@ function IslandBody({
           trailing punctuation is noise. */}
       <StatusWord
         label={view.state === "thinking" ? `${view.label}:` : view.label}
-        view={view}
       />
       <IslandScope detail={view.detail} />
       <span aria-hidden className="vex-step__spacer" />

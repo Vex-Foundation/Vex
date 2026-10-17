@@ -28,7 +28,7 @@ export function TurnStatsLine({
   return (
     // Values ("88.1K in"), tabular, on the turn's 40px edge. Hidden until
     // the turn or the line itself is hovered or focused.
-    <div data-vex-turn-stats="" className="vex-turn vex-turn-stats">
+    <div data-vex-turn-stats="" className="vex-reply vex-turn-stats">
       {groups.map((group, i) => (
         <span key={group} className="flex items-center gap-2">
           {i > 0 ? (

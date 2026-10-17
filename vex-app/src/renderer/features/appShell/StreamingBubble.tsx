@@ -7,7 +7,7 @@
  *     the awaiting-approval freeze, the sr-only announcements, the error
  *     branch);
  *  2. stream the answer markdown BELOW it, on the same 40px edge as a
- *     persisted Vex row (`.vex-turn`, docs/design/R3-MINIMAL.md section 6),
+ *     persisted Vex row (`.vex-reply`, docs/design/R3-MINIMAL.md section 6),
  *     with Vex's token when this is the first thing she writes in the turn.
  *
  * The `useMemo` on `preview.text` is load-bearing and must not be inlined: a
@@ -75,10 +75,10 @@ export function StreamingBubble({
       data-vex-message-role="assistant"
       data-vex-stream-phase={preview.phase}
       aria-busy={streaming}
-      className="vex-turn flex flex-col gap-2"
+      className="vex-reply flex flex-col gap-2"
     >
       {turnMark ? (
-        <span data-vex-agent-avatar="" data-vex-mark-at="live" className="vex-turn__mark">
+        <span data-vex-agent-avatar="" data-vex-mark-at="live" className="vex-reply__mark">
           <VxToken size={24} />
         </span>
       ) : null}
