@@ -33,7 +33,7 @@
     "prepackage:bridge": "node scripts/stage-bridge.mjs --arch x64 --arch arm64",
     "package": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && pnpm run prepackage:lighter-signer && electron-builder --dir --publish never && pnpm run check:package",
     "make": "pnpm run build && pnpm run build:bridge && pnpm run prepackage:bridge && pnpm run prepackage:lighter-signer && electron-builder --publish never",
-    "lint": "pnpm run lint:tsc && pnpm run lint:tsc:ratchet && pnpm run check:boundaries",
+    "lint": "pnpm run lint:tsc && pnpm run lint:tsc:ratchet && pnpm run check:boundaries && pnpm run check:no-docker",
     "lint:tsc": "tsc --noEmit -p tsconfig.shared.json && tsc --noEmit -p tsconfig.pty-host.json && tsc --noEmit -p tsconfig.renderer-worker.json && tsc --noEmit -p tsconfig.e2e.json",
     "lint:tsc:ratchet": "node scripts/check-type-baseline.mjs",
     "lint:tsc:ratchet:update": "node scripts/check-type-baseline.mjs --update",
@@ -52,6 +52,8 @@
     "probe:node-pty:packaged": "electron scripts/probe-node-pty.mjs --packaged",
     "probe:pg-connect": "node scripts/probes/pg-connect-latency.mjs",
     "check:boundaries": "node scripts/check-process-boundaries.mjs",
+    "check:no-docker": "node scripts/check-no-docker.mjs",
+    "check:no-docker:update": "node scripts/check-no-docker.mjs --update",
     "build:assets": "node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
     "dev:assets": "node scripts/doctor.mjs && node scripts/copy-migrations.mjs && node ../scripts/build-lighter-signer-runtime.mjs",
     "prepackage:lighter-signer": "node scripts/stage-lighter-signer.mjs"
