@@ -62,12 +62,32 @@ export async function tourIsPresent(page: Page): Promise<boolean> {
   return present;
 }
 
+/**
+ * PARK THE TOUR ONCE THE SHELL IS UP. The navigator docks bottom-left, and in
+ * R3 that is the left sidebar: Studio's projects and explorer and the account
+ * row sit under it (docs/design/R3-MINIMAL.md sections 2.1 and 4), so a click
+ * meant for a tree row or a project key landed on a tour button. It is QA
+ * scaffolding (a build flag, never shipped), so in the shell it lets the
+ * pointer through: still drawn, as captures always showed it, but no longer a
+ * hit target. An inline `pointer-events` survives the renderer CSP (no
+ * injected sheet) and the inline display or visibility restores some specs
+ * make around a capture. {@link tourTo} unparks it before every jump.
+ */
+export async function setTourParked(page: Page, parked: boolean): Promise<void> {
+  await page.evaluate((park: boolean) => {
+    const tour = document.querySelector("[data-vex-setup-tour]");
+    if (tour instanceof HTMLElement) tour.style.pointerEvents = park ? "none" : "";
+  }, parked);
+}
+
 /** Jump to a view through the diagnostic setup tour. */
 export async function tourTo(page: Page, view: string): Promise<void> {
   const tour = page.locator("[data-vex-setup-tour]");
   await expect(tour).toBeVisible();
+  await setTourParked(page, false);
   await tour.getByRole("button", { name: view, exact: true }).click();
   await expect(page.locator(`[data-vex-screen="${view}"]`)).toBeVisible();
+  if (view === "appShell") await setTourParked(page, true);
 }
 
 /**
