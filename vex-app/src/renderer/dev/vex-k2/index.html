@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en" data-vex-theme="celeris">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The product CSP, verbatim: the renderer dev server relaxes it for HMR
+      exactly as it does for index.html, and fails loudly if it is missing. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    />
+    <title>Vex K2 harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./harness.tsx"></script>
+  </body>
+</html>
