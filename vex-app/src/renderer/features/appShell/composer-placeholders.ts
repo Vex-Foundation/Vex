@@ -46,6 +46,13 @@ export const WELCOME_PLACEHOLDERS = [
  */
 export const LIGHTER_DESK_PLACEHOLDER = "Ask about this market, or describe an order.";
 
+/**
+ * The resting phrase while a decision waits in the session (the d5-approval
+ * mockup): no example order rotates beside a pending approval, so a "Bridge
+ * 200 USDC..." suggestion never sits next to a bridge waiting to be signed.
+ */
+export const APPROVAL_WAIT_PLACEHOLDER = "What do you want Vex to do?";
+
 /** ~6s per phrase — long enough to read, matched to the pill's calm cadence. */
 export const PLACEHOLDER_ROTATE_MS = 6000;
 
