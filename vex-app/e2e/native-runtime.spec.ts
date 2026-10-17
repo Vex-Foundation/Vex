@@ -1,8 +1,9 @@
 /**
  * The native runtime, end to end, against the BUILT app: a first run with
  * `VEX_RUNTIME=native` gets from System Check through migrations on the
- * bundled Postgres to the setup wizard, without any container, and quitting
- * the app stops the bundled servers cleanly.
+ * bundled Postgres to the setup wizard, without any container, quitting the
+ * app stops the bundled servers cleanly, and a relaunch on the same profile
+ * comes back up on the same cluster without downloading the model again.
  *
  * Two modes:
  *
@@ -197,7 +198,7 @@ test.afterEach(async ({}, testInfo) => {
   running = undefined;
 });
 
-test("native runtime: a first run reaches the wizard on the bundled Postgres, and quit stops it", async ({}, testInfo) => {
+test("native runtime: a first run reaches the wizard on the bundled Postgres, quit stops it, and a relaunch resumes it", async ({}, testInfo) => {
   // An installed app downloads the 333 MB model on its first run.
   test.setTimeout(INSTALLED_APP === undefined ? 240_000 : 900_000);
   configDir = mkdtempSync(path.join(tmpdir(), "vex-e2e-native-"));
@@ -222,8 +223,15 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, an
   }, 250);
 
   const env = { ...process.env, VEX_CONFIG_DIR: configDir, VEX_RUNTIME: "native" };
+  const launch = (): Promise<RunningApp> =>
+    INSTALLED_APP === undefined ? launchDevelopment(env) : launchInstalled(INSTALLED_APP, env);
+  const readState = (): { pg: { systemIdentifier: string; lastPort: number } | null } =>
+    JSON.parse(readFileSync(path.join(runtimeDir, "runtime-state.json"), "utf8")) as {
+      pg: { systemIdentifier: string; lastPort: number } | null;
+    };
+  let systemIdentifier: string | undefined;
   try {
-    running = INSTALLED_APP === undefined ? await launchDevelopment(env) : await launchInstalled(INSTALLED_APP, env);
+    running = await launch();
     const { window } = running;
     await window.waitForLoadState("domcontentloaded");
 
@@ -264,10 +272,8 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, an
     timings["wizard"] = seconds(Date.now());
 
     // The cluster was created under this config dir and its identity recorded.
-    const state = JSON.parse(readFileSync(path.join(runtimeDir, "runtime-state.json"), "utf8")) as {
-      pg: { systemIdentifier: string; lastPort: number } | null;
-    };
-    expect(state.pg?.systemIdentifier).toMatch(/^\d+$/);
+    systemIdentifier = readState().pg?.systemIdentifier;
+    expect(systemIdentifier).toMatch(/^\d+$/);
     expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(true);
     expect(existsSync(modelPath)).toBe(true);
   } finally {
@@ -284,6 +290,28 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, an
 
   // The ordered quit stopped Postgres with a fast shutdown.
   expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(false);
+
+  // Relaunch on the same profile. The second boot runs on what the first
+  // left behind: the same cluster (its identity unchanged), the verified model
+  // (no second download), and a schema already up to date, so migrations have
+  // nothing to apply and hand over to the wizard on their own.
+  const modelWritten = statSync(modelPath).mtimeMs;
+  running = await launch();
+  const second = running.window;
+  await second.waitForLoadState("domcontentloaded");
+  await expect(second.locator('[data-vex-screen="systemCheck"]')).toBeVisible({ timeout: 30_000 });
+  const continueAgain = second.getByRole("button", { name: "Continue setup" });
+  await expect(continueAgain).toBeEnabled({ timeout: 30_000 });
+  await continueAgain.click();
+  await expect(second.locator('[data-vex-screen="wizard"]')).toBeVisible({ timeout: 120_000 });
+  expect(readState().pg?.systemIdentifier).toBe(systemIdentifier);
+  expect(existsSync(`${modelPath}.part`)).toBe(false);
+  expect(statSync(modelPath).mtimeMs).toBe(modelWritten);
+  expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(true);
+  await running.quit();
+  running = undefined;
+  expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(false);
+
   rmSync(configDir, { recursive: true, force: true });
   configDir = undefined;
 });
