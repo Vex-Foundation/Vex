@@ -13,8 +13,9 @@
  * resolves to something visible: the label with "Loading…" while the first
  * read is out, the label with a line while the read fails, or the data.
  *
- * The component keeps its name and its `vex-token-compact` seam: the Studio
- * sidebar still mounts it until that sidebar is rebuilt.
+ * The component keeps its name and its `vex-token-compact` seam. The Portfolio
+ * page (`screens/PortfolioScreen.tsx`) is its one mount: the Studio sidebar
+ * no longer carries it.
  */
 
 import type { JSX } from "react";

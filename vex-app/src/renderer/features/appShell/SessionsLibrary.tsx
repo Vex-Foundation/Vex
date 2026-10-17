@@ -3,9 +3,9 @@
  * page (docs/design/R3-MINIMAL.md section 9.6). The page sheet owns the title
  * bar crumb and the serif page head, so this is pure flow content: a count
  * line, the title search with the All, Agent and Mission filter, and the
- * register by day. Renders the full session list (DB cap 100): the sidebar's
- * fit-to-height hides anything past the visible budget, so this page is the
- * canonical way to reach an older session that did not make the cut.
+ * register by day. Renders the full session list (DB cap 100), the same
+ * bounded read the sidebar scrolls over: the sidebar is one scroller by name,
+ * so this page is the register to search, filter and read by day.
  * Selecting a row closes the page and opens that session.
  *
  * The rows (`SessionsLibrary/LibraryRows.tsx`) share the sidebar row's

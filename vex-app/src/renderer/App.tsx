@@ -6,22 +6,25 @@
  * view beneath itself and lifts away. The view machine itself is
  * unchanged:
  *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
- *   composeBootstrap → migrations → wizard → unlock → appShell —
+ *   composeBootstrap → migrations → wizard → unlock → appShell:
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
  * THE STAGE (docs/design/R3-MINIMAL.md section 10): every pre-shell
- * screen stands on one picture, the plateau print. For the wake and the
- * unlock it is a 720 plate with Vex rising from the token and paper at the
- * right. It is mounted ONCE here, behind the screens, so it never moves or
- * restarts while they change: their swaps ride ONE `AnimatePresence
- * mode="wait"` that crossfades only the type over it. The app shell is
+ * screen stands on one picture, the plateau print. For the wake, the unlock
+ * and the first run screens (system check, Docker, services, database;
+ * `stageLayoutFor` in `components/onboarding/PreShellStage.tsx`) it is a 720
+ * plate with Vex rising from the token and paper at the right. The wizard
+ * stands on the print at window size and draws its own R3 frame over it
+ * (`WizardShell`). The stage is mounted ONCE here, behind the screens, so it
+ * never moves or restarts while they change: their swaps ride ONE
+ * `AnimatePresence mode="wait"` that crossfades only the type over it. The app shell is
  * NEVER inside the stage. Unlock→shell is a 240ms crossfade (`CurtainExit`,
  * armed by a successful unlock): the view flips beneath the plate and the
  * plate lifts away.
  *
  * The legacy M0 capability/health/security cards are gated behind
- * `import.meta.env.DEV` and are reachable via a dev-only side panel —
+ * `import.meta.env.DEV` and are reachable via a dev-only side panel:
  * they are not part of the user-facing flow.
  */
 
@@ -167,8 +170,9 @@ export function App(): JSX.Element {
       </AnimatePresence>
       {/* Boot overlay (z-50): covers every view until the launch pipeline
           resolves and the gate has lifted away, then unmounts for the
-          rest of the process. Mounted BELOW UpdateLayer (z-[60]) so a
-          critical update toast stays visible over the boot ritual. */}
+          rest of the process. It stands BELOW the floating update card
+          (`.vex-upd[data-floating]`, z 60, projected by UpdateLayer) so a
+          critical update stays visible over the boot ritual. */}
       {/* The nonce is a REMOUNT key: the dev tour's replay re-runs the
           gate choreography only if the whole gate is a fresh mount. It
           stays 0 for the entire life of a real launch. */}
@@ -176,7 +180,7 @@ export function App(): JSX.Element {
       {/* Unlock-success handoff, armed by UnlockScreen after the unlock
           IPC succeeds; the view flips to unlockReturnView beneath the
           plate and the plate lifts away. Same z-band as the gate (below
-          UpdateLayer). */}
+          the floating update card). */}
       {unlockCurtainActive ? (
         <CurtainExit
           target={unlockReturnView}
@@ -186,12 +190,14 @@ export function App(): JSX.Element {
           onDone={dismissUnlockCurtain}
         />
       ) : null}
-      {/* Global, view-independent: a user-triggered update prompt can appear
-          over any screen. No-ops when the updater bridge is absent. */}
+      {/* Global, view-independent: projects the updater's status onto the
+          update card (the sidebar's slot, or a floating card where there is
+          no sidebar), so a prompt can appear over any screen. No-ops when the
+          updater bridge is absent. */}
       <UpdateLayer />
       {/* Single mount of the notification toast stack. Every floating signal -
-          feature showToast calls, engine failures, the update prompt - renders
-          through this one region. */}
+          feature showToast calls, engine failures - renders through this one
+          region. The update prompt is not one of them: it is the update card. */}
       <ToastHost />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
       {/* Diagnostic screen tour — renders only when VITE_VEX_SETUP_TOUR=1

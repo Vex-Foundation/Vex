@@ -4,12 +4,15 @@
  * plateau print, mounted ONCE by `App` (`components/onboarding/PreShellStage.tsx`,
  * `StagePlate`). It never moves; only the type over it changes. Two layouts:
  *
- *   plate  the wake (the boot gate) and the unlock: a 720 plate at the left at
- *          the full window height with Vex rising from the VEX token and her
- *          state word on the print, paper at the right with the type.
- *   print  the first run screens and the wizard, which keep their V10
- *          composition (the leaf below) until they are restyled: the print at
- *          window size, no animal on it.
+ *   plate  the wake (the boot gate), the unlock and the first run screens
+ *          (system check, Docker, services, database): a 720 plate at the left
+ *          at the full window height with Vex rising from the VEX token and
+ *          her state word on the print, paper at the right with the type.
+ *   print  the wizard only: the print at window size, no animal on it, under
+ *          the wizard's own R3 frame (`WizardShell`), which draws its plate
+ *          and its step page itself.
+ *
+ * `stageLayoutFor` (`PreShellStage.tsx`) picks the layout per view.
  *
  * Owns: the stage layout, the wake and unlock type, the stage to shell
  * crossfade, and the `[data-vex-gate="true"]` token scope every pre-shell
@@ -140,8 +143,8 @@
   opacity: 0.82;
   font-size: 12.5px;
 }
-/* The first run screens' layout: the print at window size, no animal on it,
- * the print's own position (V10). It develops out of the paper over 240ms. */
+/* The wizard's layout: the print at window size, no animal on it, the print's
+ * own position (V10). It develops out of the paper over 240ms. */
 .vex-stage-plate__full {
   position: absolute;
   inset: 0;
@@ -297,7 +300,7 @@
  *  the unlock (spec section 10.2)                               *
  * ============================================================ */
 /* The unlock stands on the plate and the paper: no ground row, no caption
- * hairline (the first run screens' `.vex-stage--leaf` keeps its own). */
+ * hairline (the `.vex-stage--leaf` layout, which has no caller now, keeps its own). */
 .vex-stage:not(.vex-stage--leaf) .vex-stage-ground {
   display: none;
 }

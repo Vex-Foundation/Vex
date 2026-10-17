@@ -58,14 +58,14 @@
   }
 }
 
-/* Session-enter — the SessionPanel welcome↔session (and session↔session)
+/* Session-enter: the SessionPanel welcome↔session (and session↔session)
  * fluid resolve, owner-decreed removal of the distorted-glass regression
  * (2026-07-20): the previous round's SVG feDisplacementMap filter warped
  * CONTENT (profile menu + dialog text) into illegible squiggles, so the
  * whole displacement/dither system is retired in favor of a plain opacity
  * and translate enter. This is the SessionPanel idiom's
  * one-shot enter, replayed on every session switch via a `key` remount
- * (same idiom as `.vex-rise` / `.vex-book-enter`). */
+ * (same idiom as `.vex-rise`). */
 @keyframes vex-session-enter {
   from {
     opacity: 0;
