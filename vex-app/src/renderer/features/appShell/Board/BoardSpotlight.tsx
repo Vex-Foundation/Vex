@@ -1,18 +1,23 @@
 /**
- * THE SPOTLIGHT - one pool, at the size the owner's second mockup fixes.
+ * THE SPOTLIGHT - one pool, at full size, as a page in the centre column
+ * (docs/design/R3-MINIMAL.md sections 1.2, 1.3, 1.6, 1.7 and 9.4).
  *
- * Read top to bottom: a breadcrumb back to the grid, a hero (88px photo, the
- * token's identity, a 40px price with its signed 24h delta and an honest
- * freshness line, the pressed Spotlight button), the price chart beside a
- * five-row metrics column, the model's assessment as its OWN PRIMARY
- * SECTION, a row of three factual sections, and the SPOTLIGHT+ sections in
- * the same grammar.
+ * Read top to bottom: a back row (the quiet "All tokens" link and the pressed
+ * Spotlight chip), a hero (the 52px photo, the name over its
+ * "{TICKER} · {Chain} · ..." line, and at the right the price, its signed 24h
+ * change and an honest freshness line), the price chart beside a five-row
+ * stat column (a 260px track), and then the sections in two columns: the
+ * model's assessment beside the safety checks, Buy / Sell beside the
+ * liquidity lock, Smart money beside the tape, Momentum beside Promotion, and
+ * Other pools across the full width.
  *
- * ONE PLATE, ONE LEVEL OF FRAME. The plate holds sections in the frame
- * `SpotlightSection` owns; inside a section only hairlines and borderless
- * grids. The three files beside this one hold the sections
- * (`SpotlightFactualSections`, `SpotlightChannelSections`) and the primitive
- * (`SpotlightSection`); this file is the layout owner and the public entry.
+ * PAPER, RULES AND WORDS. The page frame (its 28px side padding, the head row)
+ * is the host's. The plate owns no border, no padding and no fill: a section
+ * is a head with a rule and a body, a stat is a row with a quiet rule, and
+ * the chart is the one framed block. The three files beside this one hold the
+ * sections (`SpotlightFactualSections`, `SpotlightChannelSections`) and the
+ * primitive (`SpotlightSection`); this file is the layout owner and the public
+ * entry.
  *
  * EVERY SECTION IS A DESIGNED STATE OF THE SAME ELEMENT. A chain the provider
  * does not cover, a read still in flight, a pool with no lock index: each
@@ -31,6 +36,10 @@
  * teardown registry under the `spotlight` scope. Leaving the spotlight,
  * closing the modal and turning Live off all cut them.
  *
+ * ASK VEX LIVES IN THE VEX SIDEBAR. The assessment's key hands over to
+ * `openBoardAsk(null)`: it asks about the token already selected, opens the
+ * Ask block and shows Vex.
+ *
  * THE CHART IS A SLOT, and deliberately so. `SpotlightChart` is the only
  * imperative writer of a lightweight-charts series (A8) and has a lifecycle
  * of its own; mounting it through a slot keeps that lifecycle out of this
@@ -39,9 +48,16 @@
 
 import { Swatch } from "../../../components/ui/swatch.js";
 import { useMemo, useState, type JSX, type ReactNode } from "react";
-import { PxIcon } from "../../../components/icons/index.js";
-import { ChainSlugIcon } from "../../../components/common/ChainIcon.js";
-import { PILL_ACTIVE_CLASS, Pill } from "../../../components/ui/pill.js";
+import { chainDisplayBySlug } from "@shared/chains/display.js";
+import {
+  LineArrows,
+  LineBars,
+  LineChevronLeft,
+  LineClock,
+  LineDrop,
+  LineSpark,
+  LineUsers,
+} from "../../../components/icons/line/index.js";
 import { cn } from "../../../lib/utils.js";
 import { DexscreenerLink } from "./TokenCardV3.js";
 import { TokenPhotoFrame, useTokenPhoto } from "./TokenPhoto.js";
@@ -58,6 +74,7 @@ import {
   type BoardSurfaceSlot,
   type PairSubject,
 } from "./board-surface-contracts.js";
+import { openBoardAsk } from "./board-ask-open.js";
 import { useBoardSurfaceStore } from "./board-surface-store.js";
 import {
   BOARD_EMPTY,
@@ -104,7 +121,7 @@ export const SPOTLIGHT_BACK_LABEL = "All tokens";
 export const SPOTLIGHT_PILL_LABEL = "Spotlight";
 export const SPOTLIGHT_LIVE_LABEL = "updated now";
 export const SPOTLIGHT_NO_ANALYSIS = "No saved analysis";
-export const SPOTLIGHT_ASSESSMENT_TITLE = "VEX assessment";
+export const SPOTLIGHT_ASSESSMENT_TITLE = "Vex assessment";
 export const SPOTLIGHT_NO_IMAGE_LINE = "No image published on DexScreener yet";
 /**
  * The hero's line for artwork this app declined. A DIFFERENT sentence from the
@@ -156,7 +173,6 @@ export function BoardSpotlight({
   );
   const readout = boardLiveReadout(publication);
   const setBoardView = useBoardSurfaceStore((s) => s.setBoardView);
-  const setBoardAskOpen = useBoardSurfaceStore((s) => s.setBoardAskOpen);
   const view = useBoardSurfaceStore((s) => s.view);
   const modalBoard = useBoardSurfaceStore((s) => s.modalBoard);
 
@@ -218,7 +234,7 @@ export function BoardSpotlight({
     // defensive branch rather than a reachable state; it says so instead of
     // rendering an empty frame.
     return (
-      <p data-vex-area="board-spotlight-missing" className="p-6 text-[13px] text-ink-tertiary">
+      <p data-vex-area="board-spotlight-missing" className="py-6 text-[14px] text-ink-tertiary">
         This board has no pool at that position.
       </p>
     );
@@ -237,40 +253,48 @@ export function BoardSpotlight({
       data-vex-area="board-spotlight"
       data-pool-index={poolIndex}
       aria-label={`Spotlight on ${ticker}`}
-      className="flex min-h-0 flex-col gap-4"
+      className="flex min-h-0 flex-col"
     >
-      {/* BREADCRUMB. A real button, because it navigates; the pill beside it
-        * names where the reader is, in the same active treatment every
-        * selected pill wears. Returning to the grid does NOT forget this
-        * token (A1): the store keeps the selection. */}
-      <div className="flex items-center gap-3">
+      {/* THE BACK ROW. "All tokens" is a real button, because it navigates,
+        * and beside it the Spotlight chip says where the reader is, pressed.
+        * Pressing either returns to the grid, and neither forgets this token
+        * (A1): the store keeps the selection. */}
+      <div className="mb-3.5 flex items-center gap-2.5">
         <button
           type="button"
           data-vex-area="board-spotlight-back"
           onClick={() => {
             setBoardView("grid");
           }}
-          className="inline-flex items-center gap-1.5 px-1.5 py-1 font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-secondary transition-colors duration-150 hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="inline-flex items-center gap-1 text-[13.5px] leading-[1.4] text-ink-primary hover:underline hover:underline-offset-4"
         >
-          <PxIcon name="chevron-left" size={16} />
+          <LineChevronLeft size={14} />
           {SPOTLIGHT_BACK_LABEL}
         </button>
-        <Pill
-          variant="neutral"
-          size="md"
-          data-vex-area="board-spotlight-pill"
-          className={cn(PILL_ACTIVE_CLASS, "font-mono uppercase tracking-[0.14em]")}
+        {/* THE SPOTLIGHT CHIP, PRESSED. The same chip the tile carries,
+          * reporting through `aria-pressed` that this view is about this
+          * token; pressing it again returns to the grid. */}
+        <button
+          type="button"
+          data-vex-area="board-spotlight-toggle"
+          aria-pressed
+          aria-label={`Leave the spotlight on ${ticker}`}
+          onClick={() => {
+            setBoardView("grid");
+          }}
+          className="vex-bd-chip"
         >
           {SPOTLIGHT_PILL_LABEL}
-        </Pill>
+        </button>
       </div>
 
       {/* THE SPOTLIGHT PLATE IS ITS OWN CONTAINER, and every region below
         * carries a class whose threshold `global-css/board-layout.css` names
-        * for the content that binds it. A TokenCard threshold never decides a
+        * for the content that binds it. A tile threshold never decides a
         * region here: the two surfaces hold different content in the same
-        * shrinking container, and the Ask VEX drawer shrinks this one too. */}
-      <div className="vex-board-surface vex-board-spotlight-plate flex min-h-0 flex-col gap-4 border border-rule-quiet p-4">
+        * shrinking container, and the Ask Vex block shrinks the page too. The
+        * plate draws nothing of its own: no border, no padding, no fill. */}
+      <div className="vex-board-spotlight-plate flex min-h-0 flex-col">
         <Hero
           heading={heading}
           ticker={ticker}
@@ -285,26 +309,23 @@ export function BoardSpotlight({
           live={live}
           lastTickAtMs={readout.lastTickAtMs}
           clockMs={clockMs}
-          onLeave={() => {
-            setBoardView("grid");
-          }}
         />
 
-        {/* CHART beside the metrics column, as the mockup has them. The
-          * chart's FRAME is this file's; its canvas, tabs and caption are the
-          * chart's own. */}
+        {/* CHART beside the stat column. The chart's FRAME is this file's (one
+          * 1px quiet rule, no fill); its canvas, range keys and caption are
+          * the chart's own. */}
         <div
           data-vex-area="board-spotlight-chart-row"
           className="vex-board-spotlight-chart-row"
         >
           <div
             data-vex-area="board-spotlight-chart-card"
-            className="min-h-[340px] min-w-0 border border-rule bg-board-card p-4"
+            className="min-w-0 border border-rule-quiet"
           >
             {ChartSlot === undefined ? (
               <p
                 data-vex-area="board-spotlight-chart-absent"
-                className="flex h-[280px] items-center justify-center text-center text-[13px] text-ink-tertiary"
+                className="flex h-[280px] items-center justify-center px-6 text-center text-[14px] leading-[1.45] text-ink-tertiary"
               >
                 {SPOTLIGHT_CHART_ABSENT}
               </p>
@@ -325,52 +346,61 @@ export function BoardSpotlight({
           />
         </div>
 
-        {/* THE MODEL'S ASSESSMENT, primary and whole, with Ask VEX beside
-          * its title. */}
-        <AssessmentSection
-          analysis={pool.analysis ?? null}
-          composedAtMs={spec.hydration.analysisCreatedAt}
-          ticker={ticker}
-          onAsk={() => {
-            setBoardAskOpen(true);
-          }}
-        />
+        {/* THE SECTIONS, two columns each. Row gap 24, column gap 28; the
+          * pair rows stack under the pair threshold in `board-layout.css`. */}
+        <div className="mt-4 flex flex-col gap-y-6">
+          {/* THE MODEL'S ASSESSMENT, primary and whole, with Ask Vex in its
+            * head, beside the provider's safety checks. */}
+          <div
+            data-vex-area="board-spotlight-assess-row"
+            className="vex-board-spotlight-pair"
+          >
+            <AssessmentSection
+              analysis={pool.analysis ?? null}
+              composedAtMs={spec.hydration.analysisCreatedAt}
+              ticker={ticker}
+              onAsk={() => {
+                openBoardAsk(null);
+              }}
+            />
+            <SafetyChecksSection
+              verdict={verdict}
+              pairAgeSeconds={row?.pairAgeSeconds ?? null}
+              details={details}
+            />
+          </div>
 
-        {/* THE FACTUAL ROW. */}
-        <div
-          data-vex-area="board-spotlight-factual-row"
-          className="vex-board-spotlight-row-3"
-        >
-          <BuySellSection buys={row?.txns.buys ?? null} sells={row?.txns.sells ?? null} />
-          <LockSection details={details} />
-          <SafetyChecksSection
-            verdict={verdict}
-            pairAgeSeconds={row?.pairAgeSeconds ?? null}
-            details={details}
-          />
-        </div>
+          {/* THE REMAINING FACTS. */}
+          <div
+            data-vex-area="board-spotlight-factual-row"
+            className="vex-board-spotlight-pair"
+          >
+            <BuySellSection buys={row?.txns.buys ?? null} sells={row?.txns.sells ?? null} />
+            <LockSection details={details} />
+          </div>
 
-        {/* SPOTLIGHT+ - the same grammar, one row of context per section. */}
-        <div
-          data-vex-area="board-spotlight-plus-row"
-          className="vex-board-spotlight-row-2"
-        >
-          <SmartMoneySection read={traders} />
-          <TapeSection
-            read={tape}
-            paused={tapePaused}
-            onPaused={setTapePaused}
-            live={live}
-          />
+          {/* SPOTLIGHT+ - the same grammar, one pair of context per row. */}
+          <div
+            data-vex-area="board-spotlight-plus-row"
+            className="vex-board-spotlight-pair"
+          >
+            <SmartMoneySection read={traders} />
+            <TapeSection
+              read={tape}
+              paused={tapePaused}
+              onPaused={setTapePaused}
+              live={live}
+            />
+          </div>
+          <div
+            data-vex-area="board-spotlight-context-row"
+            className="vex-board-spotlight-pair"
+          >
+            <MomentumSection read={momentum} />
+            <PromotionSection read={context} />
+          </div>
+          <OtherPoolsSection read={otherPools} />
         </div>
-        <div
-          data-vex-area="board-spotlight-context-row"
-          className="vex-board-spotlight-row-2"
-        >
-          <MomentumSection read={momentum} />
-          <PromotionSection read={context} />
-        </div>
-        <OtherPoolsSection read={otherPools} />
       </div>
     </section>
   );
@@ -379,6 +409,11 @@ export function BoardSpotlight({
 /* ------------------------------------------------------------------ */
 /* Hero                                                                */
 /* ------------------------------------------------------------------ */
+
+/** The quiet dot between the parts of the identity line. */
+function LineDot(): JSX.Element {
+  return <span aria-hidden>{"·"}</span>;
+}
 
 function Hero(props: {
   readonly heading: string;
@@ -395,7 +430,6 @@ function Hero(props: {
   readonly live: boolean;
   readonly lastTickAtMs: number | null;
   readonly clockMs: number;
-  readonly onLeave: () => void;
 }): JSX.Element {
   // THE DOT FOLLOWS THE FETCH, NOT THE TOGGLE (chart contract 5.3). A lease
   // that is connecting, or one whose last poll failed, is not "now"; it shows
@@ -409,6 +443,7 @@ function Hero(props: {
       ? "as of an unknown time"
       : `as of ${stamp}`;
   const photo = useTokenPhoto(props.iconId);
+  const chainName = chainDisplayBySlug(props.chain).name;
 
   return (
     <header
@@ -422,58 +457,51 @@ function Hero(props: {
         area="board-spotlight-photo"
         announceAbsence={false}
       />
-      <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-col">
         <span
           data-vex-area="board-spotlight-name"
-          className="truncate text-[26px] font-semibold leading-[36px] text-ink-primary"
+          className="block truncate text-[24px] font-semibold leading-[1.15] text-ink-primary"
           title={props.heading}
         >
           {props.heading}
         </span>
-        <span
-          data-vex-area="board-spotlight-ticker"
-          className="truncate text-[14px] uppercase leading-[18px] text-ink-tertiary"
-        >
-          {props.ticker}
-        </span>
-        <span
-          data-vex-area="board-spotlight-chain"
-          className="flex h-5 items-center"
-          title={props.chain}
-        >
-          <ChainSlugIcon chainSlug={props.chain} size={20} />
-          <span className="sr-only">{props.chain}</span>
-        </span>
-        {/* A settled absence is SAID, and ONLY a settled absence: not while
-          * the read is in flight, and not when it failed (`unavailable`),
-          * because in both the provider has not been heard and a claim of
-          * absence would be untrue. The frame itself names a failed read. */}
-        {photo.state === "monogram" ? (
-          <span
-            data-vex-area="board-spotlight-no-image"
-            className="text-[12px] leading-[16px] text-ink-tertiary"
-          >
-            {SPOTLIGHT_NO_IMAGE_LINE}
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[13px] leading-[1.4] text-ink-tertiary">
+          <span data-vex-area="board-spotlight-ticker">{props.ticker}</span>
+          <LineDot />
+          <span data-vex-area="board-spotlight-chain" title={props.chain}>
+            {chainName}
           </span>
-        ) : null}
-        {/* Also settled, also said - and deliberately NOT the sentence above:
-          * the provider published artwork, so claiming it did not would be
-          * false, and the reader has nothing to retry. */}
-        {photo.state === "refused" ? (
-          <span
-            data-vex-area="board-spotlight-image-refused"
-            className="text-[12px] leading-[16px] text-ink-tertiary"
-          >
-            {SPOTLIGHT_IMAGE_REFUSED_LINE}
-          </span>
-        ) : null}
+          {/* A settled absence is SAID, and ONLY a settled absence: not while
+            * the read is in flight, and not when it failed (`unavailable`),
+            * because in both the provider has not been heard and a claim of
+            * absence would be untrue. The frame itself names a failed read. */}
+          {photo.state === "monogram" ? (
+            <>
+              <LineDot />
+              <span data-vex-area="board-spotlight-no-image">
+                {SPOTLIGHT_NO_IMAGE_LINE}
+              </span>
+            </>
+          ) : null}
+          {/* Also settled, also said - and deliberately NOT the sentence above:
+            * the provider published artwork, so claiming it did not would be
+            * false, and the reader has nothing to retry. */}
+          {photo.state === "refused" ? (
+            <>
+              <LineDot />
+              <span data-vex-area="board-spotlight-image-refused">
+                {SPOTLIGHT_IMAGE_REFUSED_LINE}
+              </span>
+            </>
+          ) : null}
+        </div>
         {/* The provider's description, WHOLE: plain React text (never
-          * markup), no cap, no truncation. Absent on the card, which stays
+          * markup), no cap, no truncation. Absent on the tile, which stays
           * equal-height; present here where there is room to read it. */}
         {props.description === null ? null : (
           <p
             data-vex-area="board-spotlight-description"
-            className="max-w-[72ch] whitespace-pre-line text-[13px] leading-[18px] text-ink-secondary"
+            className="mt-2 max-w-[72ch] whitespace-pre-line text-[13.5px] leading-[1.45] text-ink-secondary"
           >
             {props.description}
           </p>
@@ -481,18 +509,18 @@ function Hero(props: {
       </div>
 
       {/* THE PRICE BLOCK IS PLACED, NOT AUTO-PLACED. Below the hero's own
-        * threshold the grid is `88px 1fr` and auto-placement would drop this
-        * into row 2 COLUMN 1 - the 88px photo track - with the toggle beside
-        * it. `board-layout.css` spans both stacked rows across the hero and
-        * resets the placement in the four-track window. */}
+        * threshold the grid is `52px 1fr` and auto-placement would drop this
+        * into row 2 COLUMN 1 - the 52px photo track. `board-layout.css` spans
+        * both columns across the hero and resets the placement, and the
+        * alignment, in the three-track window. */}
       <div
         data-vex-area="board-spotlight-price-block"
-        className="vex-board-spotlight-hero-price flex min-w-0 flex-col gap-1.5"
+        className="vex-board-spotlight-hero-price"
       >
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span
             data-vex-area="board-spotlight-price"
-            className="min-w-0 font-mono text-[33px] leading-[46px] tabular-nums text-ink-primary"
+            className="vex-board-spotlight-price min-w-0 font-mono vex-num text-[30px] font-medium leading-[1.1] text-ink-primary"
             // The WHOLE decimal string the provider sent, so the display
             // precision above never becomes the only copy of the figure.
             title={props.priceTitle}
@@ -503,58 +531,41 @@ function Hero(props: {
             data-vex-area="board-spotlight-delta"
             data-trend={props.trend}
             className={cn(
-              "text-[18px] font-semibold leading-[24px] tabular-nums",
+              "font-mono vex-num text-[15px] leading-[1.3]",
               props.trend === "up"
-                ? "text-accent-primary"
+                ? "text-trade-up"
                 : props.trend === "down"
-                  ? "text-ink-primary"
+                  ? "text-trade-down"
                   : "text-ink-tertiary",
             )}
           >
             {props.deltaLabel}
           </span>
-          <span className="text-[14px] leading-[20px] text-ink-tertiary">24h</span>
+          <span className="text-[12px] leading-[1.3] text-ink-tertiary">24h</span>
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[1.4] text-ink-tertiary">
           <span
             data-vex-area="board-spotlight-freshness"
             data-live={streaming ? "true" : "false"}
-            className="flex items-center gap-2 text-[13px] leading-[18px] text-ink-tertiary"
+            className="inline-flex items-center gap-1.5"
           >
-            {streaming ? (
-              <Swatch state="ongoing" size={9} />
-            ) : null}
+            {streaming ? <Swatch state="ongoing" size={10} /> : null}
             {freshness}
           </span>
+          <LineDot />
           <DexscreenerLink
             chain={props.chain}
             pairAddress={props.pairAddress}
             ticker={props.ticker}
-            className="h-6 px-1 text-[13px]"
           />
         </div>
       </div>
-
-      {/* THE SPOTLIGHT BUTTON, PRESSED. The same control the card carries,
-        * reporting through `aria-pressed` that this view is about this
-        * token; pressing it again returns to the grid. */}
-      <button
-        type="button"
-        data-vex-area="board-spotlight-toggle"
-        aria-pressed
-        aria-label={`Leave the spotlight on ${props.ticker}`}
-        onClick={props.onLeave}
-        className="vex-board-spotlight-hero-action inline-flex h-7 shrink-0 items-center gap-1.5 self-start border border-accent-primary bg-accent-wash px-3 font-mono text-[11px] uppercase tracking-[0.14em] text-accent-primary transition-colors duration-150 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
-      >
-        <PxIcon name="fullscreen" size={16} />
-        {SPOTLIGHT_PILL_LABEL}
-      </button>
     </header>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Metrics column                                                      */
+/* Stat column                                                         */
 /* ------------------------------------------------------------------ */
 
 function StatPanel(props: {
@@ -573,24 +584,21 @@ function StatPanel(props: {
         : BOARD_EMPTY;
 
   return (
-    <dl
-      data-vex-area="board-spotlight-stats"
-      className="flex flex-col border border-rule bg-board-card px-4"
-    >
+    <dl data-vex-area="board-spotlight-stats" className="flex min-w-0 flex-col">
       <StatRow
-        icon={<PxIcon name="liquidity" size={16} />}
+        icon={<LineDrop size={16} />}
         label="Liquidity"
         value={formatBoardUsdCompact(row?.liquidityUsd ?? null)}
         title={props.liquidityTitle}
       />
       <StatRow
-        icon={<PxIcon name="volume" size={16} />}
+        icon={<LineBars size={16} />}
         label="24h Volume"
         value={formatBoardUsdCompact(row?.volumeH24Usd ?? null)}
         title={props.volumeTitle}
       />
       <StatRow
-        icon={<PxIcon name="trades" size={16} />}
+        icon={<LineArrows size={16} />}
         label="Trades"
         value={
           row === null
@@ -599,23 +607,22 @@ function StatPanel(props: {
         }
       />
       <StatRow
-        icon={<PxIcon name="clock" size={16} />}
+        icon={<LineClock size={16} />}
         label="Pair age"
         value={formatBoardAge(row?.pairAgeSeconds ?? null)}
       />
       <StatRow
-        icon={<PxIcon name="users" size={16} />}
+        icon={<LineUsers size={16} />}
         label="Holders"
         value={holdersValue}
-        last
       />
     </dl>
   );
 }
 
 /**
- * One icon row of the metrics column: a bare 18px glyph in the tertiary
- * ink, the label, the figure.
+ * One row of the stat column: 40 high under a quiet rule, a muted 16px line
+ * glyph, the label in ink, the figure at the right in the mono.
  *
  * `value === null` is the PENDING state and draws the app's skeleton register
  * rather than a dash: a dash is the settled fact "the provider reported
@@ -626,26 +633,22 @@ function StatRow(props: {
   readonly label: string;
   readonly value: string | null;
   readonly title?: string | undefined;
-  readonly last?: boolean;
 }): JSX.Element {
   return (
     <div
       data-vex-area="board-spotlight-stat"
       data-label={props.label}
-      className={cn(
-        "flex items-center gap-3 py-[13px]",
-        props.last === true ? null : "border-b border-rule",
-      )}
+      className="flex h-10 items-center gap-2.5 border-b border-rule-quiet"
     >
       <span aria-hidden className="flex shrink-0 items-center text-ink-tertiary">
         {props.icon}
       </span>
-      {/* NOT TRUNCATED. The metrics track is a fixed 360px whenever it is
-        * beside the chart, and the widest label in it is "24h Volume"; below
-        * that threshold the column takes the full plate width. Either way
-        * there is room, so an ellipsis here could only ever hide a label a
-        * reader needs to know which figure they are looking at. */}
-      <dt className="min-w-0 flex-1 whitespace-nowrap text-[14px] leading-[20px] text-ink-secondary">
+      {/* NOT TRUNCATED. The stat track is a fixed 260px whenever it is beside
+        * the chart, and the widest label in it is "24h Volume"; below that
+        * threshold the column takes the full plate width. Either way there is
+        * room, so an ellipsis here could only ever hide a label a reader
+        * needs to know which figure they are looking at. */}
+      <dt className="min-w-0 flex-1 whitespace-nowrap text-[14px] leading-[1.3] text-ink-primary">
         {props.label}
       </dt>
       {props.value === null ? (
@@ -656,7 +659,7 @@ function StatRow(props: {
         />
       ) : (
         <dd
-          className="shrink-0 text-[15px] font-semibold leading-[20px] tabular-nums text-ink-primary"
+          className="shrink-0 font-mono vex-num text-[13.5px] leading-[1.3] text-ink-primary"
           title={props.title}
         >
           {props.value}
@@ -682,7 +685,7 @@ function StatRow(props: {
  * the compose tool teaches them to be written, and joining them back into
  * one paragraph would lose the writer's own separation.
  *
- * Ask VEX lives in this header because a question about the token is a
+ * Ask Vex lives in this head because a question about the token is a
  * question about this reading.
  */
 function AssessmentSection({
@@ -702,7 +705,6 @@ function AssessmentSection({
     <SpotlightSection
       area="board-spotlight-assessment"
       state={fragments.length === 0 ? "absent" : "present"}
-      icon={<PxIcon name="models" size={16} />}
       title={SPOTLIGHT_ASSESSMENT_TITLE}
       meta={stamp === null ? "composed at an unknown time" : `composed ${stamp}`}
       action={
@@ -710,27 +712,27 @@ function AssessmentSection({
           type="button"
           data-vex-area="board-spotlight-ask"
           onClick={onAsk}
-          aria-label={`Ask VEX about ${ticker}`}
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 border border-rule px-2.5 text-[12.5px] font-medium text-ink-secondary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          aria-label={`Ask Vex about ${ticker}`}
+          className="vex-bd-link"
         >
-          <PxIcon name="models" size={16} />
-          Ask VEX
+          <LineSpark size={14} />
+          Ask Vex
         </button>
       }
     >
       {fragments.length === 0 ? (
-        <p className="text-[13px] leading-[18px] text-ink-tertiary">
+        <p className="text-[14px] leading-[1.45] text-ink-tertiary">
           {SPOTLIGHT_NO_ANALYSIS}
         </p>
       ) : (
-        <div className="flex max-w-[72ch] flex-col gap-2">
+        <div className="flex max-w-[72ch] flex-col gap-2.5">
           {fragments.map((fragment, index) => (
             <p
               key={`${String(index)}:${fragment}`}
               data-vex-area="board-spotlight-assessment-fragment"
               // `whitespace-pre-line` so a line break the writer put inside a
               // fragment survives to the reader.
-              className="whitespace-pre-line text-[15px] leading-[22px] text-ink-primary"
+              className="whitespace-pre-line text-[15px] leading-[1.6] text-ink-primary"
             >
               {fragment}
             </p>
