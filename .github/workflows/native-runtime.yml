@@ -185,8 +185,9 @@ jobs:
         shell: bash
     steps:
       # The image's git has core.autocrlf=true; the pgvector and llama.cpp
-      # checkouts must stay byte-identical to their pinned commits.
-      - run: git config --global core.autocrlf false
+      # checkouts must stay byte-identical to their pinned commits, and
+      # llama.cpp has paths past MAX_PATH.
+      - run: git config --global core.autocrlf false && git config --global core.longpaths true
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
@@ -199,32 +200,44 @@ jobs:
         with:
           arch: x64
 
+      # The two trees are independent: each build and its smoke runs whatever
+      # happened to the other one, and the job fails if any step does.
       - name: Build Postgres
+        id: pg
         run: native-runtime/postgres/build.sh win32-x64
       - name: Build llama-server
+        id: llama
+        if: ${{ !cancelled() }}
         run: native-runtime/llama/build.sh win32-x64
       - name: Pack the trees
+        if: ${{ !cancelled() && steps.pg.outcome == 'success' }}
         run: |
           tar -czf runtime-win32-x64.tar.gz -C native-runtime/out win32-x64
           for t in postgres llama; do
             d=native-runtime/out/win32-x64/$t
+            [ -d "$d" ] || continue
             echo "$t: $(du -sk "$d" | cut -f1) KiB, tar.gz -9 $(tar -C "$d" -cf - . | gzip -9 | wc -c) B, tar.xz -9 $(tar -C "$d" -cf - . | xz -9 | wc -c) B"
           done
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.pg.outcome == 'success' }}
         with:
           name: runtime-win32-x64
           path: runtime-win32-x64.tar.gz
           retention-days: 14
 
       - name: Smoke Postgres
+        if: ${{ !cancelled() && steps.pg.outcome == 'success' }}
         run: node native-runtime/postgres/smoke.mjs native-runtime/out/win32-x64/postgres win32-x64
       - uses: actions/cache@v4
+        if: ${{ !cancelled() && steps.llama.outcome == 'success' }}
         with:
           path: native-runtime/.work/models
           key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
       - name: Fetch the embeddings model
+        if: ${{ !cancelled() && steps.llama.outcome == 'success' }}
         run: native-runtime/llama/fetch-model.sh
       - name: Smoke llama-server
+        if: ${{ !cancelled() && steps.llama.outcome == 'success' }}
         run: node native-runtime/llama/smoke.mjs win32-x64 native-runtime/out/win32-x64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
 
   win32-arm64-llama:
@@ -236,7 +249,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - run: git config --global core.autocrlf false
+      - run: git config --global core.autocrlf false && git config --global core.longpaths true
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
@@ -270,7 +283,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - run: git config --global core.autocrlf false
+      - run: git config --global core.autocrlf false && git config --global core.longpaths true
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
@@ -304,12 +317,15 @@ jobs:
       - name: Smoke Postgres (x64 under emulation)
         run: node native-runtime/postgres/smoke.mjs native-runtime/out/win32-arm64/postgres win32-arm64
       - uses: actions/cache@v4
+        if: ${{ !cancelled() }}
         with:
           path: native-runtime/.work/models
           key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
       - name: Fetch the embeddings model
+        if: ${{ !cancelled() }}
         run: native-runtime/llama/fetch-model.sh
       - name: Smoke llama-server
+        if: ${{ !cancelled() }}
         run: node native-runtime/llama/smoke.mjs win32-arm64 native-runtime/out/win32-arm64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
 
       - name: Pack the runtime
