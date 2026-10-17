@@ -31,8 +31,8 @@ vi.mock("../../logger/index.js", () => ({
 const { locatePostgresBinaries, pgDataDir, runtimeStatePath } = await import("../runtime-paths.js");
 const { createPostgresSupervisor } = await import("../native/postgres-supervisor.js");
 const { checkPgIdentity } = await import("../native/pg-identity.js");
-const { getPgPassword } = await import("../../compose/render.js");
-const { makeElectronSecretAdapter } = await import("../../compose/electron-secret-adapter.js");
+const { getPgPassword } = await import("../secrets/pg-password.js");
+const { makeElectronSecretAdapter } = await import("../secrets/electron-secret-adapter.js");
 type Supervisor = ReturnType<typeof createPostgresSupervisor>;
 type Health = Parameters<Parameters<Supervisor["onHealthChange"]>[0]>[0];
 

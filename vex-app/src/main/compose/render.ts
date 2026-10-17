@@ -12,35 +12,17 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { DEFAULT_EMBED_PORT } from "../onboarding/embedding-defaults.js";
 import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
+import {
+  getPgPassword,
+  type CryptoAdapter,
+  type RandomAdapter,
+  type SecretAdapter,
+} from "../runtime/secrets/pg-password.js";
 
-export interface SecretAdapter {
-  /** Returns the absolute path that compose should mount via `secrets:`. */
-  readonly write: (
-    targetPath: string,
-    value: string
-  ) => Promise<{ composePath: string }>;
-  /** Reads back the (decrypted, if applicable) secret value. */
-  readonly read: (targetPath: string) => Promise<string | null>;
-  /** Best-effort cleanup of any transient/decrypted artifacts. */
-  readonly cleanup: () => Promise<void>;
-  /**
-   * Boot-time cleanup of stale transient artifacts. The host can pass a
-   * predicate that returns `true` if the corresponding compose project
-   * is *running*; if not, the transient is removed.
-   */
-  readonly bootCleanup: (
-    isProjectActive: () => Promise<boolean>
-  ) => Promise<void>;
-}
-
-export interface RandomAdapter {
-  readonly uuid: () => string;
-  readonly randomBytes: (size: number) => Uint8Array;
-}
-
-export interface CryptoAdapter {
-  readonly base64url: (input: Uint8Array) => string;
-}
+// The secret plumbing is shared with the native runtime and lives with it;
+// re-exported so compose callers keep one import.
+export { getPgPassword };
+export type { CryptoAdapter, PgPasswordDeps, RandomAdapter, SecretAdapter } from "../runtime/secrets/pg-password.js";
 
 export interface RenderDeps {
   readonly userDataDir: string;
@@ -71,8 +53,6 @@ const TEMPLATE_NAME = "docker-compose.template.yml";
 const COMPOSE_OUT_DIR_NAME = "compose";
 const COMPOSE_OUT_FILE_NAME = "docker-compose.yml";
 const INSTALL_ID_FILE_NAME = ".install-id";
-const SECRETS_DIR_NAME = path.join("local-infra", "secrets");
-const PG_PASSWORD_FILE_NAME = "pg_password";
 
 async function fileExists(p: string): Promise<boolean> {
   try {
@@ -100,34 +80,6 @@ export async function getInstallId(deps: RenderDeps): Promise<string> {
   return id;
 }
 
-/**
- * What the pg_password generator needs: no template, no resources dir. The
- * native runtime's initdb (`runtime/native/postgres-supervisor.ts`) reuses
- * this exact secret, so it must be callable without a compose render.
- */
-export type PgPasswordDeps = Pick<
-  RenderDeps,
-  "userDataDir" | "secretAdapter" | "randomAdapter" | "cryptoAdapter"
->;
-
-export async function getPgPassword(
-  deps: PgPasswordDeps
-): Promise<{ composePath: string }> {
-  const targetDir = path.join(deps.userDataDir, SECRETS_DIR_NAME);
-  const targetPath = path.join(targetDir, PG_PASSWORD_FILE_NAME);
-
-  const existing = await deps.secretAdapter.read(targetPath);
-  if (existing !== null && existing.length > 0) {
-    // Re-write so the secret adapter has a fresh transient file (the
-    // previous transient may have been cleaned up by `bootCleanup`).
-    return deps.secretAdapter.write(targetPath, existing);
-  }
-
-  const password = deps.cryptoAdapter.base64url(
-    deps.randomAdapter.randomBytes(32)
-  );
-  return deps.secretAdapter.write(targetPath, password);
-}
 
 export async function renderCompose(
   deps: RenderDeps,

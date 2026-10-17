@@ -36,7 +36,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { safeStorage as SafeStorage } from "electron";
-import type { SecretAdapter } from "./render.js";
+import type { SecretAdapter } from "./pg-password.js";
 
 const TRANSIENT_SUFFIX = ".transient";
 
