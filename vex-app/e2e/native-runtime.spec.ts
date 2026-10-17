@@ -4,10 +4,16 @@
  * bundled Postgres to the setup wizard, without any container, and quitting
  * the app stops the bundled servers cleanly.
  *
- * Uses the trees `native-runtime/<component>/build.sh` produced and the
- * gates' verified model, hard-linked into the fresh config dir so the run
- * does not download 333 MB (the download itself is covered by the model
- * store's tests). Skipped, visibly, when any of them is missing.
+ * Two modes:
+ *
+ *   - Development (default): the built `dist/` bundle with the trees
+ *     `native-runtime/<component>/build.sh` produced, and the gates' verified
+ *     model hard-linked into the fresh config dir so the run does not
+ *     download 333 MB (the download is covered by the model store's tests).
+ *     Skipped, visibly, when any of them is missing.
+ *   - Installed app (`VEX_E2E_APP_EXECUTABLE=<path to the packaged app's
+ *     executable>`): the clean-machine release gate. The app uses only the
+ *     binaries it ships and downloads the model like a user's first run.
  */
 
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -22,30 +28,31 @@ const PG_DIR = path.join(REPO, "native-runtime/out", TARGET, "postgres");
 const LLAMA_DIR = path.join(REPO, "native-runtime/out", TARGET, "llama");
 const MODEL_FILE = "embeddinggemma-300M-Q8_0.gguf";
 const MODEL = path.join(REPO, "native-runtime/.work/models", MODEL_FILE);
+const INSTALLED_APP = process.env["VEX_E2E_APP_EXECUTABLE"];
 
 test.skip(
-  !existsSync(PG_DIR) || !existsSync(LLAMA_DIR) || !existsSync(MODEL),
-  `needs ${PG_DIR}, ${LLAMA_DIR} and ${MODEL} (native-runtime build + llama/fetch-model.sh)`,
+  INSTALLED_APP === undefined && (!existsSync(PG_DIR) || !existsSync(LLAMA_DIR) || !existsSync(MODEL)),
+  `needs ${PG_DIR}, ${LLAMA_DIR} and ${MODEL} (native-runtime build + llama/fetch-model.sh), or VEX_E2E_APP_EXECUTABLE`,
 );
 
 test("native runtime: a first run reaches the wizard on the bundled Postgres, and quit stops it", async () => {
-  test.setTimeout(240_000);
+  // An installed app downloads the 333 MB model on its first run.
+  test.setTimeout(INSTALLED_APP === undefined ? 240_000 : 900_000);
   const configDir = mkdtempSync(path.join(tmpdir(), "vex-e2e-native-"));
   const runtimeDir = path.join(configDir, "runtime");
-  mkdirSync(path.join(runtimeDir, "models"), { recursive: true });
-  linkSync(MODEL, path.join(runtimeDir, "models", MODEL_FILE));
+  if (INSTALLED_APP === undefined) {
+    mkdirSync(path.join(runtimeDir, "models"), { recursive: true });
+    linkSync(MODEL, path.join(runtimeDir, "models", MODEL_FILE));
+  }
 
-  const app = await _electron.launch({
-    args: [MAIN_BUNDLE],
-    env: {
-      ...process.env,
-      VEX_CONFIG_DIR: configDir,
-      VEX_E2E_LOAD_BUILT: "1",
-      VEX_RUNTIME: "native",
-      VEX_NATIVE_PG_DIR: PG_DIR,
-      VEX_NATIVE_LLAMA_DIR: LLAMA_DIR,
-    },
-  });
+  const env = { ...process.env, VEX_CONFIG_DIR: configDir, VEX_RUNTIME: "native" };
+  const app =
+    INSTALLED_APP === undefined
+      ? await _electron.launch({
+          args: [MAIN_BUNDLE],
+          env: { ...env, VEX_E2E_LOAD_BUILT: "1", VEX_NATIVE_PG_DIR: PG_DIR, VEX_NATIVE_LLAMA_DIR: LLAMA_DIR },
+        })
+      : await _electron.launch({ executablePath: INSTALLED_APP, env });
   try {
     const window = await selectShellWindow(app);
     await window.waitForLoadState("domcontentloaded");
@@ -65,7 +72,7 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, an
     // the full chain to the bundled cluster.
     await expect(window.locator('[data-vex-screen="migrations"]')).toBeVisible({ timeout: 30_000 });
     const toWizard = window.getByRole("button", { name: "Continue to setup wizard" });
-    await expect(toWizard).toBeVisible({ timeout: 180_000 });
+    await expect(toWizard).toBeVisible({ timeout: INSTALLED_APP === undefined ? 180_000 : 840_000 });
     await toWizard.click();
     await expect(window.locator('[data-vex-screen="wizard"]')).toBeVisible({ timeout: 30_000 });
 
