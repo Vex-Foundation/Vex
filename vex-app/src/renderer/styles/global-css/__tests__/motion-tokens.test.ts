@@ -192,9 +192,9 @@ describe("motion primitives", () => {
 });
 
 describe("cross-file timing invariants", () => {
-  it("opens and closes the spread on the track transition alone, never a JS timer", () => {
-    // The page and the spine swap in one commit; only the grid tracks move,
-    // on the reveal duration, and a drag pauses them.
+  it("opens and closes the frame's columns on the track transition alone, never a JS timer", () => {
+    // A sidebar and its rail swap in one commit; only the grid tracks move,
+    // on the reveal duration, and the chat share drag pauses them.
     expect(shellCss).toContain(
       "transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);",
     );

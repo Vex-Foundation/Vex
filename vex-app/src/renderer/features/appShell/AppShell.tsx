@@ -1,29 +1,28 @@
 /**
- * Main app shell: the window as an open book (docs/design/V10-SPREAD.md
- * sections 2 to 5). The frame lays out
+ * Main app shell: three calm columns (docs/design/R3-MINIMAL.md section 2),
  *
- *   left page | gutter | (Studio rail) | centre | BOOK
+ *   left sidebar | centre | Vex sidebar
  *
- * on grid tracks solved by `lib/shell-columns.ts`, plus the full-app overlay
- * screens and the new-session modal. The frame owns viewport measurement, the
- * page and rail narrow breakpoint, the drag handles, and the derived BOOK
- * auto-close; column CONTENT belongs to SessionsList / StudioSidebar /
- * SessionPanel / BookPanel.
+ * on grid tracks solved by `lib/shell-columns.ts`, plus the new-session modal.
+ * The frame owns viewport measurement, the narrow override, the derived Vex
+ * auto-close and Lighter's chat share drag; column CONTENT belongs to
+ * SessionsList / StudioSidebar / SessionPanel / BookPanel.
  *
- * - The LEFT PAGE is the print (`ShellBackdrop`), with the sessions index over
- *   it in agent mode. Closed, and always in Lighter and Studio, it is the 56px
- *   spine: a paper cap in the head row, then the print.
- * - The GUTTER carries the spread caption (`ShellGutter`), an `aria-hidden`
- *   echo of the running head, the session and the connection.
- * - The CENTRE opens with the RUNNING HEAD (`RunningHead`), the 44px drag row
- *   that holds the mission rail, the tape word, the notices, the approvals
- *   inbox and the export key. Under the spread the gutter folds into it.
- * - The BOOK is the outer column; on the welcome stage the Portfolio tab
- *   fills the same track.
+ * - The LEFT column hosts the sessions sidebar over its print in agent mode,
+ *   the Studio projects and explorer in Studio, and the vx mark on the rail in
+ *   Lighter. Its widths are fixed (264, 224 at the medium tier, the 56px rail
+ *   closed); there is no drag handle.
+ * - The CENTRE opens with the RUNNING HEAD (`RunningHead`), the 44px drag row,
+ *   then the mode's surface. Pages (Memory, Settings, Portfolio and the rest)
+ *   open INSIDE the centre (`ShellScreens`), so both sidebars stay standing.
+ * - The RIGHT column is Vex's: open in chat by default, hidden by default on
+ *   the table pages, and absent on the welcome stage. It still mounts the
+ *   BOOK panel, which keeps its 48px collapse spine in a session so it can be
+ *   reopened from the column itself.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
  * stays the e2e/test selector. Lighter moves navigation into its top bar above
- * the grid, so its page is always the spine.
+ * the grid, so its left column is always the rail.
  */
 
 import {
@@ -34,22 +33,14 @@ import {
   type CSSProperties,
   type JSX,
 } from "react";
-import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { selectVexOpen, useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
-  BOOK_COLLAPSED,
-  BOOK_MAX,
-  BOOK_MIN,
-  PAGE_MIN,
-  RAIL_COLLAPSED,
-  SIDEBAR_MAX,
-  SIDEBAR_MIN,
-  SPINE_WIDTH,
-  bookDragMax,
+  LIGHTER_CHAT_MIN,
+  RAIL_WIDTH,
   computeShellColumns,
-  isBookResizable,
-  isSpreadNarrow,
-  pageDragMax,
+  lighterChatDragMax,
+  shellTier,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
 import { BookPanel } from "./BookPanel.js";
@@ -57,7 +48,6 @@ import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
 import { RunningHead } from "./RunningHead.js";
-import { ShellGutter, SpreadCaptionFold } from "./ShellGutter.js";
 import { StudioCenter } from "./studio/StudioCenter.js";
 import { StudioSidebar } from "./studio/sidebar/StudioSidebar.js";
 import { AgentLaunchFormHost } from "./token-launch/AgentLaunchFormHost.js";
@@ -72,8 +62,6 @@ import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { ShellBackdrop } from "./ShellBackdrop.js";
 import { LeftPageOpenContext } from "./leftPage/leftPageContext.js";
-import { PlateFlock } from "../../components/pixel/PrintPlate.js";
-import { useDeskAgentState } from "../../components/pixel/useDeskAgentState.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
@@ -132,11 +120,16 @@ function AppShellContent(): JSX.Element {
 }
 
 /**
- * The spread: measures its own box (rAF-throttled ResizeObserver), decides
- * whether the first column is open, solves the tracks, and hosts the drag
- * handles. The BOOK auto-close is DERIVED from the solve (the stored
- * `bookOpen` preference is never rewritten, so widening the window restores
- * an open BOOK).
+ * The BOOK panel's collapse spine: what a closed right column keeps in a
+ * session while the BOOK still hosts it, so its toggle stays on screen.
+ */
+const BOOK_SPINE = 48;
+
+/**
+ * The frame: measures its own box (rAF-throttled ResizeObserver), decides
+ * what each sidebar is asked to be, solves the tracks, and hosts Lighter's
+ * chat share handle. The Vex auto-close is DERIVED from the solve (the stored
+ * choice is never rewritten, so widening the window restores an open Vex).
  */
 function ShellFrame({
   runtimeMode,
@@ -149,17 +142,12 @@ function ShellFrame({
   readonly activeProjectId: string | null;
   readonly onCreate: (initialMessage?: string) => void;
 }): JSX.Element {
-  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
+  const leftOpen = useUiStore((s) => s.leftOpen);
+  const setLeftOpen = useUiStore((s) => s.setLeftOpen);
   const sidebarNarrowExpanded = useUiStore((s) => s.sidebarNarrowExpanded);
   const setSidebarNarrowExpanded = useUiStore((s) => s.setSidebarNarrowExpanded);
-  const sidebarWidth = useUiStore((s) => s.sidebarWidth);
-  const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
-  const bookOpen = useUiStore((s) => s.bookOpen);
-  const toggleBook = useUiStore((s) => s.toggleBook);
-  const setBookOpen = useUiStore((s) => s.setBookOpen);
-  const bookWidth = useUiStore((s) => s.bookWidth);
-  const setBookWidth = useUiStore((s) => s.setBookWidth);
+  const vexOpen = useUiStore(selectVexOpen);
+  const setVexOpen = useUiStore((s) => s.setVexOpen);
   const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
   const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
@@ -234,110 +222,84 @@ function ShellFrame({
     return () => window.removeEventListener("keydown", onZenKey);
   }, [lighter, lighterZen, setZenMode, zenAssistantOpen, zenControlsOpen]);
 
-  // Under the spread the left page (agent) and the project rail (Studio)
-  // close to their spines; a manual toggle there flips the ephemeral
-  // re-expand override instead of the persisted preference, and the BOOK
-  // concedes to make room. Crossing back into the spread clears the override
-  // so the next narrow entry starts closed again. Lighter has no first column;
-  // the same ephemeral flag opens its desk-navigation tray.
-  const narrow = isSpreadNarrow(viewport);
+  // Under the medium tier the left sidebar (agent and Studio) closes to its
+  // rail; a manual toggle there flips the ephemeral re-expand override instead
+  // of the persisted preference. Crossing back into the medium tier clears the
+  // override so the next narrow entry starts at the rail again. Lighter has no
+  // left sidebar of its own; the same ephemeral flag opens its top bar drawer.
+  const tier = shellTier(viewport);
+  const narrow = tier === "narrow";
   useEffect(() => {
     if (!lighter && !narrow) setSidebarNarrowExpanded(false);
   }, [lighter, narrow, setSidebarNarrowExpanded]);
-  const sidebarCollapsed = lighter
-    ? !sidebarNarrowExpanded
-    : narrow ? !sidebarNarrowExpanded : !sidebarOpen;
+  const leftAsked = narrow ? sidebarNarrowExpanded : leftOpen;
   const toggleSidebar = useCallback((): void => {
     if (lighter || narrow) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
-    else setSidebarOpen(!sidebarOpen);
-  }, [
-    lighter,
-    narrow,
-    sidebarNarrowExpanded,
-    setSidebarNarrowExpanded,
-    setSidebarOpen,
-    sidebarOpen,
-  ]);
+    else setLeftOpen(!leftOpen);
+  }, [lighter, narrow, sidebarNarrowExpanded, setSidebarNarrowExpanded, setLeftOpen, leftOpen]);
 
   // WELCOME stage, per mode: no session (agent), no project (Studio); Lighter
-  // has none, the desk is always resident. The Portfolio tab fills the BOOK
-  // track there, and closed it gives the whole track back (no spine).
+  // has none, the desk is always resident. Vex sits in the centre there, so
+  // the right column is empty.
   const welcomeStage = lighter
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
-  const closedBook = welcomeStage || zen ? 0 : BOOK_COLLAPSED;
-  const requestedBookWidth = zen || !bookOpen
-    ? 0
-    : lighter ? Math.max(1, viewport * lighterChatShare) : bookWidth;
+  const closedVex = welcomeStage || zen ? 0 : BOOK_SPINE;
   const cols: ShellColumns = computeShellColumns({
     viewport,
     mode: runtimeMode,
+    left: leftAsked,
+    vex: vexOpen,
+    welcome: welcomeStage,
+    closedVex,
+    lighterChat: Math.max(1, viewport * lighterChatShare),
     zen,
-    sidebar: sidebarCollapsed ? 0 : sidebarWidth,
-    book: requestedBookWidth,
-    closedBook,
   });
   const colsRef = useRef(cols);
   colsRef.current = cols;
-  // Derived auto-close: preference stays `true`, the rendered panel collapses.
-  const bookEffectiveOpen = !zen && bookOpen && cols.book > closedBook;
-  const spine = cols.page <= SPINE_WIDTH;
+  // Derived auto-close: the stored choice stays `true`, the column collapses.
+  const vexEffectiveOpen = !zen && vexOpen && cols.vex > closedVex;
+  const rail = cols.left <= RAIL_WIDTH;
+  // What the left column's content renders: Lighter's drawer state, or the
+  // solved column (open, or its rail).
+  const sidebarCollapsed = lighter ? !sidebarNarrowExpanded : rail;
 
-  // The drag base is the rendered width captured at drag start (grabbing a
-  // concession-clamped panel must not jump back to the stored preference);
-  // it stays frozen for the whole gesture so dx deltas do not compound.
-  const sidebarBase = useRef(0);
-  const bookBase = useRef(0);
+  // The chat share drag base is the rendered width captured at drag start
+  // (grabbing a concession-clamped chat must not jump back to the stored
+  // share); it stays frozen for the whole gesture so dx deltas do not compound.
+  const chatBase = useRef(0);
   const [dragging, setDragging] = useState(false);
   const onDragEnd = useCallback(() => setDragging(false), []);
-  const onSidebarStart = useCallback(() => {
-    // Studio drags its rail; agent mode drags the left page.
-    sidebarBase.current = studio ? colsRef.current.rail : colsRef.current.page;
-    setDragging(true);
-  }, [studio]);
-  const onBookStart = useCallback(() => {
-    bookBase.current = colsRef.current.book;
+  const onChatStart = useCallback(() => {
+    chatBase.current = colsRef.current.vex;
     setDragging(true);
   }, []);
-  const onSidebarDrag = useCallback(
-    (dx: number) => setSidebarWidth(sidebarBase.current + dx),
-    [setSidebarWidth],
-  );
-  const onBookDrag = useCallback(
+  const onChatDrag = useCallback(
     (dx: number) => {
-      const width = bookBase.current - dx;
-      if (lighter && viewport > 0) saveLighterDesk({ chatShare: width / viewport });
-      else setBookWidth(width);
+      if (viewport > 0) saveLighterDesk({ chatShare: (chatBase.current - dx) / viewport });
     },
-    [lighter, viewport, saveLighterDesk, setBookWidth],
+    [viewport, saveLighterDesk],
   );
+  // The sidebars have fixed widths; the one drag left is Lighter's chat share.
+  const chatHandle = lighter && vexEffectiveOpen;
 
-  // The left page keeps its drag handle only while it can widen without
-  // pushing the centre under its floor (owner decision 2026-10-12).
-  const pageMax = pageDragMax(cols, viewport);
-  const pageHandle = runtimeMode === "agent" && !spine && pageMax > PAGE_MIN;
-  const railHandle = studio && cols.rail > RAIL_COLLAPSED;
-  const bookHandle = bookEffectiveOpen && !welcomeStage
-    && isBookResizable(viewport, runtimeMode);
-
-  const captionSource = { runtimeMode, activeSessionId, activeProjectId };
   const networkOnline = useNetworkOnline();
 
   // Every track is a LENGTH: the 300ms track transition then only ever
   // interpolates length-to-length (`auto` <-> length is not interpolable and
-  // once swept the BOOK through the centre column on the welcome edge).
+  // once swept the right column through the centre on the welcome edge).
   const frameStyle: CSSProperties &
-    Record<"--vex-book-track" | "--vex-overlay-left", string> = {
-    gridTemplateColumns:
-      `${cols.page}px ${cols.gutter}px ${cols.rail}px minmax(0, 1fr) ${cols.book}px`,
+    Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
+    gridTemplateColumns: `${cols.left}px minmax(0, 1fr) ${cols.vex}px`,
     paddingTop: lighter && !lighterZen ? LIGHTER_TOPBAR_HEIGHT : undefined,
-    // The running head reserves the caption buttons wherever the BOOK below
-    // them is narrower than they are (shell.css).
-    "--vex-book-track": `${cols.book}px`,
-    // Where an overlay sheet starts: past the left page and the gutter, which
-    // stay standing (docs/design/V10-SPREAD.md section 2, Overlay row).
-    "--vex-overlay-left": `${cols.page + cols.gutter}px`,
+    // The running head reserves the caption buttons wherever the right column
+    // under them is narrower than they are (shell.css).
+    "--vex-vex-track": `${cols.vex}px`,
+    // Where a page starts in the window: past the left column. The page
+    // itself sits inside the centre (shell.css resets it there); this value
+    // is the frame-level box its entrance morph measures against.
+    "--vex-overlay-left": `${cols.left}px`,
   };
 
   return (
@@ -346,8 +308,7 @@ function ShellFrame({
       className="vex-shell-frame relative z-10 h-full min-w-0 flex-1"
       style={frameStyle}
       data-vex-area="shell-frame"
-      data-vex-spread={spine ? "spine" : "page"}
-      data-vex-spread-narrow={narrow || undefined}
+      data-vex-tier={tier}
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
       data-lighter-zen={zen ? "true" : undefined}
@@ -377,19 +338,17 @@ function ShellFrame({
         />
       ) : null}
 
-      {/* TRACK 1 - the left page: the print, the eagle and its flock in the
-        * band, and in agent mode the sessions page over it. The print layer
-        * clips itself; the column stays overflow-visible so nothing the page
+      {/* TRACK 1 - the left sidebar: the sessions sidebar over its print
+        * (agent), the projects and explorer (Studio), the vx mark on the rail
+        * (Lighter). The column stays overflow-visible so nothing the sidebar
         * opens is cut at its edge. */}
       <div
         className="vex-left-page relative z-20 h-full min-h-0 min-w-0"
         data-vex-area="left-page"
-        data-vex-left-page={spine ? "spine" : "page"}
+        data-vex-left-page={rail ? "spine" : "page"}
       >
-        <ShellBackdrop>
-          <LeftPageFlock />
-        </ShellBackdrop>
-        {spine && !lighter ? (
+        {studio || cols.left === 0 ? null : <ShellBackdrop />}
+        {rail && !lighter ? (
           <div aria-hidden className="vex-left-page__cap vex-drag" />
         ) : null}
         {runtimeMode === "agent" ? (
@@ -400,9 +359,18 @@ function ShellFrame({
               onToggleSidebar={toggleSidebar}
             />
           </div>
-        ) : cols.page > 0 ? (
-          // Lighter and Studio keep the closed page: the vx mark at the top of
-          // the print, the eagle alone in the band.
+        ) : studio ? (
+          <div className="vex-left-page__content">
+            <StudioSidebar
+              collapsed={sidebarCollapsed}
+              onToggleSidebar={toggleSidebar}
+              activeProjectId={activeProjectId}
+              onSelectProject={setActiveProjectId}
+              onSelectWelcome={() => setActiveProjectId(null)}
+            />
+          </div>
+        ) : cols.left > 0 ? (
+          // Lighter keeps the rail: the vx mark at the top of the print.
           <div aria-hidden className="vex-left-page__content">
             <span className="vex-left-page__mark">
               <VexMark size={22} />
@@ -411,26 +379,9 @@ function ShellFrame({
         ) : null}
       </div>
 
-      {/* TRACK 2 - the gutter and its spread caption. */}
-      <ShellGutter {...captionSource} width={cols.gutter} />
-
-      {/* TRACK 3 - Studio's project rail, the centre's left edge; empty and
-        * zero-wide in the other modes. */}
-      <div className="vex-rail-slot relative z-20 h-full min-h-0 min-w-0 overflow-visible">
-        {studio ? (
-          <StudioSidebar
-            collapsed={sidebarCollapsed}
-            onToggleSidebar={toggleSidebar}
-            activeProjectId={activeProjectId}
-            onSelectProject={setActiveProjectId}
-            onSelectWelcome={() => setActiveProjectId(null)}
-          />
-        ) : null}
-      </div>
-
-      {/* TRACK 4 - the centre page: its running head, then the mode's
-        * surface. */}
-      <section className="relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+      {/* TRACK 2 - the centre: its running head, then the mode's surface, and
+        * the pages over both inside this column. */}
+      <section className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         {/* THE RUNNING HEAD, mounted ONCE for the whole frame regardless of
           * mode. It carries `GlobalApprovals`, which owns the approvals live
           * sync, and preload allows one subscriber per event kind per window -
@@ -439,12 +390,11 @@ function ShellFrame({
         <RunningHead
           runtimeMode={runtimeMode}
           activeSessionId={activeSessionId}
-          fold={cols.gutter === 0 && !zen ? <SpreadCaptionFold {...captionSource} /> : null}
           empty={runtimeMode === "agent" && activeSessionId === null}
         />
 
         <div className="min-h-0 flex-1">
-          {/* In Lighter mode the conversation lives in the BOOK column
+          {/* In Lighter mode the conversation lives in the right column
            * (`LighterChatRail`), so the center is the desk alone. */}
           {lighter ? (
             <LighterCenter
@@ -453,83 +403,58 @@ function ShellFrame({
             />
           ) : studio ? <StudioCenter /> : (
             // The welcome hero seats the mode capsule only while the left
-            // page is a spine; the open page's mast carries it otherwise.
-            <LeftPageOpenContext.Provider value={!spine}>
+            // sidebar is its rail; the open sidebar's mast carries it otherwise.
+            <LeftPageOpenContext.Provider value={!rail}>
               <SessionPanel />
             </LeftPageOpenContext.Provider>
           )}
         </div>
+
+        {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you, the
+          * money registers): one paper sheet over the centre, absolute inside
+          * this column so it never reflows a track. */}
+        <ShellScreens />
       </section>
 
-      {/* TRACK 5 - the BOOK. */}
+      {/* TRACK 3 - the right column. Empty on the welcome stage. */}
       <div className="lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
-        {/* Always mounted - the panel owns its collapsed rendering, so a
-         * derived auto-close never remounts it. `bookEffectiveOpen` folds the
-         * concession solve into the open flag WITHOUT touching the stored
-         * preference. */}
-        <BookPanel
-          activeSessionId={activeSessionId}
-          bookOpen={zen ? zenAssistantOpen : bookEffectiveOpen}
-          onToggle={() => {
-            if (zen) {
-              setZenAssistantOpen(false);
-              return;
-            }
-            if (lighter && !bookEffectiveOpen) {
-              setBookOpen(true);
-              setSidebarNarrowExpanded(false);
-            }
-            else toggleBook();
-          }}
-        />
+        {/* Mounted in every session - the panel owns its collapsed rendering,
+         * so a derived auto-close never remounts it. `vexEffectiveOpen` folds
+         * the solve into the open flag WITHOUT touching the stored choice. */}
+        {welcomeStage ? null : (
+          <BookPanel
+            activeSessionId={activeSessionId}
+            bookOpen={zen ? zenAssistantOpen : vexEffectiveOpen}
+            onToggle={() => {
+              if (zen) {
+                setZenAssistantOpen(false);
+                return;
+              }
+              // Opening also clears the narrow override (the store action),
+              // so a column the solve closed opens again on the first press.
+              setVexOpen(!vexEffectiveOpen);
+            }}
+          />
+        )}
       </div>
 
-      {/* A closed first column is fixed-width: no resize handle while closed.
-       * The BOOK handle exists only while the panel is open AND free to move
-       * (it holds its floor under the full spread). */}
-      {pageHandle ? (
+      {chatHandle ? (
         <ShellDragHandle
-          side="sidebar"
-          left={cols.page}
-          label="Resize the sessions sidebar"
-          value={cols.page}
-          min={PAGE_MIN}
-          max={pageMax}
-          onStart={onSidebarStart}
-          onDrag={onSidebarDrag}
-          onEnd={onDragEnd}
-        />
-      ) : null}
-      {railHandle ? (
-        <ShellDragHandle
-          side="sidebar"
-          left={cols.page + cols.gutter + cols.rail}
-          label="Resize the sessions sidebar"
-          value={cols.rail}
-          min={SIDEBAR_MIN}
-          max={SIDEBAR_MAX}
-          onStart={onSidebarStart}
-          onDrag={onSidebarDrag}
-          onEnd={onDragEnd}
-        />
-      ) : null}
-      {bookHandle ? (
-        <ShellDragHandle
-          side="book"
-          left={viewport - cols.book}
-          label={lighter ? "Resize the Vex panel" : "Resize the BOOK panel"}
-          value={cols.book}
-          min={BOOK_MIN}
-          max={lighter ? BOOK_MAX : Math.max(BOOK_MIN, bookDragMax(cols, viewport))}
-          onStart={onBookStart}
-          onDrag={onBookDrag}
+          left={viewport - cols.vex}
+          label="Resize the Vex panel"
+          value={cols.vex}
+          min={LIGHTER_CHAT_MIN}
+          max={lighterChatDragMax(cols, viewport)}
+          onStart={onChatStart}
+          onDrag={onChatDrag}
           onEnd={onDragEnd}
         />
       ) : null}
 
       {/* §C3b - when the AGENT asks the user to launch a token, the consent
         * dialog opens ITSELF, centered, over the whole shell. Mounted at
-        * frame level because the agent can ask while the BOOK is collapsed. */}
+        * frame level because the agent can ask while the right column is
+        * collapsed. */}
       <AgentLaunchFormHost sessionId={activeSessionId} />
 
       {/* THE board modal, mounted once for the whole shell. A transcript card
@@ -543,21 +468,6 @@ function ShellFrame({
         spotlightSlot={BoardSpotlightWithChart}
         askSlot={AskVexPanel}
       />
-
-      {/* Full-app overlay screens (Memory, Sessions, Settings, assets, agent
-        * scan, token history): one paper sheet over the centre and the BOOK,
-        * absolute inside the frame so it never reflows a column. */}
-      <ShellScreens />
     </div>
   );
-}
-
-/**
- * The agent state on the left page: the eagle and its flock, over the print
- * and under the page's furniture (docs/design/V10-SPREAD.md section 6). The
- * engine composes the open page or, under 120 wide, the spine.
- */
-function LeftPageFlock(): JSX.Element {
-  const { state } = useDeskAgentState();
-  return <PlateFlock state={state} layout="page" />;
 }

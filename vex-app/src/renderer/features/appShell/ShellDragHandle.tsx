@@ -1,13 +1,13 @@
 /**
- * One column drag handle for the shell grid: pointer capture, rAF-throttled
- * dx reports against the drag-start origin. `side` keys the hover-reveal CSS
- * to the owning column (styles/global-css/shell.css).
+ * The shell grid's column drag handle: pointer capture, rAF-throttled dx
+ * reports against the drag-start origin. The sidebars have fixed widths
+ * (docs/design/R3-MINIMAL.md section 2), so the one handle left is Lighter's
+ * chat share; its hover and drag feedback live in styles/global-css/shell.css.
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX, type PointerEvent } from "react";
 
 export function ShellDragHandle({
-  side,
   left,
   label,
   value,
@@ -17,7 +17,6 @@ export function ShellDragHandle({
   onDrag,
   onEnd,
 }: {
-  readonly side: "sidebar" | "book";
   /** Handle strip position: the column border's x offset inside the frame. */
   readonly left: number;
   readonly label: string;
@@ -91,7 +90,6 @@ export function ShellDragHandle({
       title="Drag to resize · arrow keys to adjust"
       className="vex-shell-handle"
       style={{ left }}
-      data-side={side}
       data-dragging={dragging || undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
