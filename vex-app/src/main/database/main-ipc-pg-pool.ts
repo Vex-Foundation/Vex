@@ -5,9 +5,9 @@
  * WHY. Every main-process `withClient` opened a FRESH `pg.Client` per call:
  * TCP connect, startup, SCRAM handshake, one query, `end()`. A window focus
  * refetches every active renderer query (`refetchOnWindowFocus`), so a focus
- * fired a burst of those handshakes into Docker at once (on Windows through
- * the WSL2 port proxy). `scripts/probes/pg-connect-latency.mjs` measures that
- * per-call cost on the owner's machine.
+ * fired a burst of those handshakes into the local Postgres at once.
+ * `scripts/probes/pg-connect-latency.mjs` measures that per-call cost on the
+ * owner's machine.
  *
  * WHO USES IT. Every IPC connection wrapper in `src/main/database` (the
  * sessions, messages and bug-reports `withClient`, the private `withClient`
@@ -41,9 +41,9 @@
  * timeout.
  *
  * LIFECYCLE. The pool is closed on app quit (ordered quit stage, before
- * Compose stops Postgres), and retired whenever the DB connection handoff
- * changes (`setDbConnection`: compose up/reuse after a Docker or Postgres
- * restart, compose down) or the resolved config differs from the live pool's
+ * the local runtime stops Postgres), and retired whenever the DB connection
+ * handoff changes (`setDbConnection`: a runtime start, a supervised restart
+ * on a new port, a stop) or the resolved config differs from the live pool's
  * (port or password changed). Retiring waits for checked-out clients, so an
  * in-flight transaction finishes on its own connection; new callers get a new
  * pool.
@@ -201,8 +201,8 @@ function retire(pool: Pool): void {
 function ensureConnectionSubscription(): void {
   if (unsubscribeConnection !== null) return;
   unsubscribeConnection = subscribeDbConnection(() => {
-    // Any handoff (compose up/reuse after a restart, compose down) may mean
-    // the server behind every idle connection is gone. Start clean.
+    // Any handoff (a runtime start, a restart, a stop) may mean the server
+    // behind every idle connection is gone. Start clean.
     resetMainIpcPgPool();
   });
 }
@@ -291,8 +291,8 @@ export function resetMainIpcPgPool(): void {
 /**
  * Close the pool and wait for every retiring pool to finish. Checked-out
  * clients are released by their callers first, so an in-flight transaction
- * completes on its own connection. Used by the ordered quit, before Compose
- * stops Postgres.
+ * completes on its own connection. Used by the ordered quit, before the
+ * local runtime stops Postgres.
  */
 export async function closeMainIpcPgPool(): Promise<void> {
   resetMainIpcPgPool();

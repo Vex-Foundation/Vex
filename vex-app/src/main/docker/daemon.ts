@@ -1,10 +1,10 @@
 /**
- * Daemon lifecycle helpers for the compose flow (codex turn 6 fix).
+ * Daemon lifecycle helpers for the migration's compose start (codex turn 6
+ * fix).
  *
- * `composeUp` cannot trust `dockerBootstrap → Continue` to mean the
- * daemon will still be up when compose lands — the user could have
- * stopped Docker Desktop, the macOS reboot may have killed the engine,
- * Docker Desktop on Linux might still be initializing. So we re-probe
+ * The migration cannot assume the daemon is up when compose lands — the
+ * user could have stopped Docker Desktop, the macOS reboot may have killed
+ * the engine, Docker Desktop on Linux might still be initializing. So we re-probe
  * here and, if needed, kick `performStart()` and poll for readiness.
  */
 

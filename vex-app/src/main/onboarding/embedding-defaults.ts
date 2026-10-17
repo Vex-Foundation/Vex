@@ -43,7 +43,10 @@ export const EMBEDDING_MODEL_SHA256 =
 export const EMBEDDING_MODEL_DOWNLOAD_URL =
   "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf";
 
-/** Image references used by the compose template (digest-pinned). */
+/**
+ * Image references used by the previous release's compose template
+ * (digest-pinned), which the migration still renders.
+ */
 export const COMPOSE_IMAGES = {
   llamaServer: {
     tag: "ghcr.io/ggml-org/llama.cpp:server-b9115",

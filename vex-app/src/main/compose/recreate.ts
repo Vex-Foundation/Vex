@@ -2,8 +2,8 @@
  * Non-destructive project recreation — issue #26. After a Docker Desktop
  * restart the daemon can reference a wiped bind-mount cache hash, so
  * `up -d` fails with "no such file or directory" ({@link STALE_BIND_MOUNT_RE}).
- * `stale-secret-recovery.ts`'s wipe (`down --volumes` +
- * regenerated password + reset install state) is destructive and gated to
+ * The previous release's stale-secret wipe (`down --volumes` +
+ * regenerated password + reset install state) was destructive and gated to
  * PRE-SETUP only. This module is the POST-SETUP-safe alternative: recreating
  * the containers forces Docker Desktop to rebuild the bind-mount cache for
  * the UNCHANGED secret file, so `pg_authid` still matches and nothing is

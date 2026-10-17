@@ -1,6 +1,6 @@
 /**
  * Generic in-process pub/sub primitives used by domain progress streams
- * (docker install, compose logs, database migrations). Two flavors:
+ * (database migrations, the local runtime). Two flavors:
  *
  *  - `Bus<T>`: forward-only — subscribers receive future emissions.
  *  - `ReplayBus<T>`: tracks the last emitted event and replays it to
@@ -14,9 +14,9 @@
  * to that renderer's webContents explicitly. The bus exposes `peek()`
  * for exactly this hop.
  *
- * Domain modules (`docker/progress-bus.ts`, `database/progress-bus.ts`)
- * keep typed singleton instances so consumers import a named bus, not
- * a generic factory call site (better grep, better signal in stacks).
+ * Domain modules (`database/progress-bus.ts`) keep typed singleton
+ * instances so consumers import a named bus, not a generic factory call
+ * site (better grep, better signal in stacks).
  */
 
 class Bus<T> {

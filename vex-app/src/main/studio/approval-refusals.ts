@@ -10,7 +10,8 @@
  *   lock      Vex was locked. Called from `secrets/session.ts`, after the
  *             synchronous scrub and after the dispatch generation advanced.
  *   vex_quit  the application is shutting down. Called by the ordered quit
- *             cleanup, BEFORE Compose stops and takes Postgres with it.
+ *             cleanup, BEFORE the local runtime stops and takes Postgres
+ *             with it.
  *   cancelled the MCP client cancelled the request (stage A4's handler).
  *   disconnect the MCP transport reached EOF (stage A4's handler). A1 showed
  *             no installed client sends cancellation, so EOF is the

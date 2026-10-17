@@ -1,5 +1,8 @@
 /**
- * Host ports THIS install publishes for the local Docker stack.
+ * Host ports THIS install published for the previous release's local stack,
+ * which the migration still brings up to read its data. The native runtime
+ * picks free ports at launch and reads neither; `resolveEmbedPort` still
+ * names the port in the bundled `.env` default (`ensure-embedding-defaults`).
  *
  * The constants in `@shared/local-service-ports.js` and
  * `onboarding/embedding-defaults.js` stay fixed: the compose template

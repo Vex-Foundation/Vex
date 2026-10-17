@@ -9,8 +9,8 @@
  * else has and which stops being true the moment the checkout moves.
  *
  * No Electron imports here: this module must remain consumable from plain Node
- * and tsx contexts so the compose render module (also pure) can derive shared
- * paths without dragging Electron in.
+ * and tsx contexts so pure modules (the migration's compose render among them)
+ * can derive shared paths without dragging Electron in.
  */
 
 import { homedir } from "node:os";
@@ -119,7 +119,7 @@ export const ELECTRON_STATE_DIR = path.join(CONFIG_DIR, ".electron-state");
  *     keystore.json                     EVM keystore
  *     solana-keystore.json              Solana keystore
  *     config.json                       wallet addresses, chain config
- *     compose/docker-compose.yml        rendered compose (M5)
+ *     compose/docker-compose.yml        rendered compose (M5; previous release)
  *     local-infra/secrets/pg_password   PG password (M5)
  *     .electron-state/                  Electron-only (window state, cache)
  *

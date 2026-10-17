@@ -10,7 +10,7 @@
  * network namespace: the port belonged to a foreign (Windows-side)
  * Docker Desktop Postgres. Every connection the app opened landed on
  * another install's database. A reachability probe cannot see this:
- * `isPortFree` answers "busy" for our own listener and for a foreign
+ * a port-free check answers "busy" for our own listener and for a foreign
  * one alike, and Compose answers about ITS containers, not about who
  * owns the host port. The only authority is the app's own connection
  * path - connect with THIS install's credentials and check who
@@ -18,8 +18,8 @@
  *
  * Ownership split: this module owns the vocabulary and the
  * classification policy (pure, table-tested); `pg-health.ts` owns the
- * connection mechanics; `health.ts` owns the poll loop; `lifecycle.ts`
- * owns the declaration that a stack is usable to the app.
+ * connection mechanics; `health.ts` owns the poll loop; the migration
+ * owns the declaration that the previous release's stack is usable.
  */
 
 import { runSpawn } from "../docker/spawn-runner.js";
@@ -34,11 +34,9 @@ const CORROBORATION_TIMEOUT_MS = 10_000;
  * What the published Postgres port turned out to be.
  *
  * The fifth outcome of the port vocabulary, "the port was already bound
- * by something else BEFORE we published it", is not produced here: it is
- * the pre-existing compose pre-flight outcome (`isPortFree` false with no
- * project of ours running) and is reported as `ComposeUpKind:
- * "port_collision"` by `lifecycle.composeUp`. This probe only ever runs
- * against a port we believe we published.
+ * by something else BEFORE we published it", is not produced here: the
+ * migration picks a free port before it publishes one. This probe only
+ * ever runs against a port we believe we published.
  *
  * - `usable`: authenticated with this install's secret and the server
  *   reports this install's database and role.
@@ -60,7 +58,7 @@ export type PgIdentityVerdict =
  * Raw evidence from one connection attempt, before corroboration.
  * `auth_rejected` is deliberately NOT a verdict on its own: our own
  * stack produces it too when the secret file was regenerated while the
- * data volume survived (see `stale-secret-recovery.ts`).
+ * data volume survived (the previous release's stale-secret recovery did).
  */
 export type PgConnectEvidence =
   | { readonly kind: "identity_ok" }
@@ -146,8 +144,8 @@ export type PgOwnContainerEvidence =
  * - our container authenticates the same secret, or is not running at
  *   all: the rejecting listener on our port is not ours.
  * - our container rejects it too: our own cluster holds an older
- *   password than the secret file (the state
- *   `stale-secret-recovery.ts` documents). Accusing a foreign install
+ *   password than the secret file (the state the previous release's
+ *   stale-secret recovery left behind). Accusing a foreign install
  *   here would send the operator hunting for a stack that does not
  *   exist.
  * - corroboration unavailable: report the honest, weaker outcome.

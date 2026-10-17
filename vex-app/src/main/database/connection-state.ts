@@ -1,20 +1,20 @@
 /**
- * Module-level handoff between the compose lifecycle (writer) and the
+ * Module-level handoff between the local runtime host (writer) and the
  * database migration handler (reader). The host + pgPort + pgPasswordPath
  * triple is sensitive enough that it MUST stay main-process-only — never
  * crosses the preload boundary, never reaches the renderer.
  *
- * The compose handler calls `setDbConnection(...)` after a successful
- * `running` / `reused` result. The database handler calls
- * `getDbConnection()` to derive a per-call `pg.Pool` (no shared global
- * pool — migrate runs are short-lived and the pool is closed after).
+ * The runtime host (`runtime/runtime-host.ts`) calls `setDbConnection(...)`
+ * after a `running` / `reused` start, and the e2e door in an unpackaged e2e
+ * run. The database handler calls `getDbConnection()` to derive a per-call
+ * `pg.Pool` (no shared global pool — migrate runs are short-lived and the
+ * pool is closed after).
  */
 
 /**
- * Where every local database Vex runs today listens: the compose stack
- * publishes on loopback, and the native runtime will listen on loopback TCP
- * too (one transport on every OS; node-postgres cannot use AF_UNIX on
- * Windows).
+ * Where every local database Vex runs listens: the native runtime listens on
+ * loopback TCP (one transport on every OS; node-postgres cannot use AF_UNIX
+ * on Windows).
  */
 export const LOOPBACK_DB_HOST = "127.0.0.1";
 

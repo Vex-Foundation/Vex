@@ -8,8 +8,8 @@
  * renderer exists to invoke it. That made "nothing executes during start-up
  * reconciliation" an ordering fact, but it cost a cold launch up to the whole
  * barrier deadline of blank screen: the barrier waits for the engine database,
- * and on a cold start the database only comes up once the RENDERER asks for
- * Docker, which it cannot do before the window exists.
+ * and on a cold start the database only came up once the RENDERER asked for
+ * it, which it cannot do before the window exists.
  *
  * The window now opens at once, and this gate carries the property instead.
  * It is CLOSED BY CONSTRUCTION: the state below is initialised closed when the

@@ -1,8 +1,9 @@
 /**
  * CleanupRegistry per skill §11.
  *
- * Every external handle is a lease — timers, streams, IPC listeners, Docker logs,
- * pg clients, BrowserWindow refs. Each registers an idempotent cleanup task.
+ * Every external handle is a lease — timers, streams, IPC listeners, child
+ * processes, pg clients, BrowserWindow refs. Each registers an idempotent
+ * cleanup task.
  * runAll() invoked on app quit; failures don't block other cleanups.
  *
  * EVERY TASK CARRIES A NAME AND A DEADLINE. The tasks run concurrently, so one

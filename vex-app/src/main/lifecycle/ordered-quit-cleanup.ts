@@ -1,16 +1,16 @@
 /**
  * Ordered quit cleanup — sequence a long-lived worker's drain BEFORE the
- * compose/secret teardown.
+ * local runtime stop and the secret sweep.
  *
  * `globalCleanup.runAll()` invokes its tasks CONCURRENTLY
  * (`Promise.allSettled`, see `cleanup-registry.ts`). Registering a worker's
- * `stop()` as an independent task would race `cleanupOnQuit()`, which stops
- * the local Postgres compose project (`secret-cleanup.ts`) — pulling the DB
- * out from under an in-flight Track-2 job the worker is still draining.
+ * `stop()` as an independent task would race the quit cleanup, which stops
+ * the local runtime's Postgres — pulling the DB out from under an in-flight
+ * Track-2 job the worker is still draining.
  *
  * Composing the two into ONE ordered task guarantees the worker drains
- * first. The `finally` keeps compose + secret hygiene running even if the
- * worker's stop throws, so a stuck worker can never block secret cleanup.
+ * first. The `finally` keeps the runtime stop and the secret sweep running
+ * even if the worker's stop throws, so a stuck worker can never block them.
  */
 export function makeOrderedQuitCleanup(
   stopWorker: () => Promise<void>,

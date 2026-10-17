@@ -51,8 +51,9 @@ const EMBEDDING_KEYS = [
 
 export interface EnsureEmbeddingDefaultsOptions {
   /**
-   * Embed port published by the compose stack. Defaults to the validated
-   * VEX_EMBED_PORT override, or DEFAULT_EMBED_PORT (27134).
+   * Embed port the bundled default URL names. Defaults to the validated
+   * VEX_EMBED_PORT override, or DEFAULT_EMBED_PORT (27134). The native
+   * runtime replaces the URL in the process environment with its live one.
    */
   readonly embedPort?: number;
   /** Override env file path (tests only). */

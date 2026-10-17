@@ -7,8 +7,9 @@
  *   Linux  → systemctl --user start docker-desktop only. Docker Engine
  *             daemon startup requires user/admin action outside Vex.
  *
- * Returns a `StartResult` describing what we attempted; the renderer
- * polls `vex.docker.detect()` afterwards to verify daemon comes up.
+ * Returns a `StartResult` describing what we attempted; the migration's
+ * daemon readiness check (`daemon.ts`) polls afterwards to verify the
+ * daemon comes up.
  */
 
 import { runSpawn } from "./spawn-runner.js";

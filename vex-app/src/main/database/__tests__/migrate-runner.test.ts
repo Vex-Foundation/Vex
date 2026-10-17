@@ -86,7 +86,7 @@ afterEach(() => {
 });
 
 describe("runMigrationsForIpc", () => {
-  it("returns failed when pool config unavailable (compose not bootstrapped)", async () => {
+  it("returns failed when pool config unavailable (no runtime started)", async () => {
     mockBuildPoolConfig.mockResolvedValue(null);
 
     const result = await runMigrationsForIpc();
@@ -94,7 +94,7 @@ describe("runMigrationsForIpc", () => {
     expect(result.kind).toBe("failed");
     if (result.kind === "failed") {
       expect(result.failedAt).toBeNull();
-      expect(result.message).toMatch(/Compose/i);
+      expect(result.message).toMatch(/local runtime/i);
     }
     expect(mockRunMigrationsWithProgress).not.toHaveBeenCalled();
     expect(PoolCtor).not.toHaveBeenCalled();
