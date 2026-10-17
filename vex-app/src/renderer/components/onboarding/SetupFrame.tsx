@@ -1,21 +1,27 @@
 /**
  * SetupFrame: the shared pre-shell scaffold, a screen on the stage
- * (docs/design/V10-SPREAD.md sections 2 and 3; the d1 and d8 references).
+ * (docs/design/R3-MINIMAL.md section 10).
  *
- * The print itself is not here: App mounts one `StagePrint` behind every
+ * The picture itself is not here: App mounts one `StagePlate` behind every
  * pre-shell screen, so the picture holds still while screens change and
  * this frame paints only what stands on it.
  *
- *   leaf  (default) a paper page laid on the stage from the right, 600 wide
- *         at 1440: the serif title, the lead and the screen's body, which
- *         scrolls inside the page. The sky to its left shows the release as
- *         the giant counter, or what the screen passes as `sky` (the
- *         wizard's step number and index).
- *   open  the body stands on the print itself (the unlock).
+ *   plate  the first run (system check, Docker, services, database): paper at
+ *          the right of the 720 plate with the crumb, the serif title, the
+ *          lead and the screen's body, and the small version stamp. The
+ *          screen names its `step` and its `mood`: the crumb's current step
+ *          and what Vex shows on the plate follow the mood (a fill and a word).
+ *   open   the body stands on the stage itself (the unlock draws its own
+ *          side column).
+ *   leaf   (default, the wizard until it is restyled) a paper page laid on
+ *          the stage from the right, 600 wide at 1440: the serif title, the
+ *          lead and the screen's body, which scrolls inside the page. The sky
+ *          to its left shows the release as the giant counter, or what the
+ *          screen passes as `sky` (the wizard's step number and index).
  *
- * The 44px head row carries the vx mark and is the hidden title bar's drag
- * region (section 8); the ground row along the bottom edge takes `groundStart`
- * and `groundEnd` (white mono on the dark ground).
+ * The 44px head row carries nothing but the hidden title bar's drag region
+ * (section 8); the leaf's ground row along the bottom edge takes
+ * `groundStart` and `groundEnd`.
  *
  * Contracts:
  *   - `data-vex-screen={screen}` is the stable e2e/test selector.
@@ -30,7 +36,13 @@
 import { useEffect, type JSX, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils.js";
-import { ReleaseCounter, StageGround, StageHead } from "./PreShellStage.js";
+import {
+  FirstRunCrumb,
+  StageFace,
+  type FirstRunMood,
+  type FirstRunStep,
+} from "./FirstRunStage.js";
+import { ReleaseCounter, StageGround, StageHead, VersionStamp } from "./PreShellStage.js";
 
 /**
  * Live SetupFrame count. The pre-shell stage crossfades screens through
@@ -72,11 +84,15 @@ function useGateDocumentScope(): void {
 interface SetupFrameProps {
   /** Value for data-vex-screen (stable e2e/test selector). */
   readonly screen: string;
-  /** `leaf` (default): a paper page on the stage; `open`: on the print. */
-  readonly layout?: "leaf" | "open";
-  /** Leaf: the serif page title (sentence case, one per surface). */
+  /** `plate`: a first run screen at the right of the plate; `open`: on the stage; `leaf` (default): a paper page. */
+  readonly layout?: "plate" | "leaf" | "open";
+  /** Plate: the first run stage the crumb marks as current. */
+  readonly step?: FirstRunStep;
+  /** Plate: what the screen is doing, which says what Vex shows on the plate. */
+  readonly mood?: FirstRunMood;
+  /** Plate and leaf: the serif page title (sentence case, one per surface). */
   readonly title?: string;
-  /** Leaf: the lead under the title. */
+  /** Plate and leaf: the lead under the title. */
   readonly subline?: string;
   /** Leaf: a mono line above the title. */
   readonly eyebrow?: ReactNode;
@@ -91,6 +107,8 @@ interface SetupFrameProps {
 export function SetupFrame({
   screen,
   layout = "leaf",
+  step,
+  mood,
   title,
   subline,
   eyebrow,
@@ -111,6 +129,19 @@ export function SetupFrame({
       <StageHead />
       {layout === "open" ? (
         children
+      ) : layout === "plate" ? (
+        <>
+          {mood !== undefined ? <StageFace mood={mood} /> : null}
+          <div className="vex-stage-side vex-fr-side">
+            {step !== undefined ? (
+              <FirstRunCrumb step={step} mood={mood ?? "working"} />
+            ) : null}
+            {title !== undefined ? <h1 className="vex-stage-title">{title}</h1> : null}
+            {subline !== undefined ? <p className="vex-stage-lead">{subline}</p> : null}
+            {children}
+          </div>
+          <VersionStamp />
+        </>
       ) : (
         <>
           {sky ?? (
@@ -142,7 +173,7 @@ export function SetupFrame({
           </div>
         </>
       )}
-      <StageGround start={groundStart} end={groundEnd} />
+      {layout === "plate" ? null : <StageGround start={groundStart} end={groundEnd} />}
     </main>
   );
 }

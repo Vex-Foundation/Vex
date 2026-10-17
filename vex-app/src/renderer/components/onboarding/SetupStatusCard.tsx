@@ -1,12 +1,11 @@
 /**
- * SetupStatusCard — the status stanza for pre-shell branch bodies
- * (docker / compose / migrations).
+ * SetupStatusCard: the status stanza for the first run's branch bodies
+ * (Docker, services, database; `docs/design/R3-MINIMAL.md` sections 1.6, 10.3 and 12).
  *
- * Grammar (docs/design/V10-SPREAD.md section 1): status is shown by fill, a
- * swatch beside a mono WORD, above quiet sans copy. Calm tones (`ok` /
- * `info` / `muted`) sit on the page unboxed. Alert tones (`warn` / `error`)
- * are the risk callout: a 1.5px ink frame with a hatched edge, ink type,
- * never a status hue.
+ * Grammar: a state is a fill and a word. A calm tone (`ok`, `info`, `warn`, `muted`) is a card on
+ * the paper: a 1px rule frame, the title at the left and the state word at the right (swatch and
+ * word), the detail under them. A failure (`error`) is the ink callout: a 1.5px ink frame with a
+ * hatch band, the ink cross beside the title and the detail under it, never a hue.
  *
  * ## It is a LIVE REGION, and it has to be its own
  *
@@ -18,23 +17,26 @@
  * it lives inside the shell, which does not exist yet on these screens.
  *
  * The role follows the tone, and the split is the component's own `isAlert`:
- * an alert tone (`warn` / `error`) is a failure the user has to act on and
- * interrupts (`alert`), while a calm tone is progress and waits its turn
- * (`status`). One rule, so no call site has to decide, and the visual rail and
- * the announcement can never disagree about which one this is.
+ * `warn` and `error` are a state the user has to act on and interrupt
+ * (`alert`), while a calm tone is progress and waits its turn (`status`).
+ * One rule, so no call site has to decide, and the visual frame and the
+ * announcement can never disagree about which one this is.
  */
 
 import { type JSX, type ReactNode } from "react";
 
-import { cn } from "../../lib/utils.js";
-import { Swatch, type SwatchState } from "../ui/swatch.js";
+import { type SwatchState } from "../ui/swatch.js";
+import { ErrorCallout } from "../ui/error-callout.js";
+import { StateWord } from "../ui/state-word.js";
 
 export type SetupStatusTone = "ok" | "info" | "warn" | "error" | "muted";
 
 interface SetupStatusCardProps {
   readonly tone: SetupStatusTone;
-  /** Colored mono status word; falls back to a per-tone default. */
+  /** The state word; falls back to a per-tone default. */
   readonly word?: string;
+  /** The fill beside the word; falls back to a per-tone default. */
+  readonly state?: SwatchState;
   readonly title: string;
   readonly detail?: string | null;
   readonly children?: ReactNode;
@@ -48,15 +50,7 @@ const defaultWord: Record<SetupStatusTone, string> = {
   muted: "Waiting",
 };
 
-const wordInk: Record<SetupStatusTone, string> = {
-  ok: "text-[var(--color-success)]",
-  info: "text-ink-secondary",
-  warn: "text-[var(--color-warning)]",
-  error: "text-[var(--color-danger)]",
-  muted: "text-ink-tertiary",
-};
-
-/** Status by fill. */
+/** State by fill. */
 const toneSwatch: Record<SetupStatusTone, SwatchState> = {
   ok: "done",
   info: "idle",
@@ -65,41 +59,31 @@ const toneSwatch: Record<SetupStatusTone, SwatchState> = {
   muted: "idle",
 };
 
-const alertRail: Partial<Record<SetupStatusTone, string>> = {
-  warn: "vex-callout",
-  error: "vex-callout",
-};
-
 export function SetupStatusCard({
   tone,
   word,
+  state,
   title,
   detail,
   children,
 }: SetupStatusCardProps): JSX.Element {
-  // The frame follows the tone, so no call site has to decide: a calm
-  // stanza is page prose, an alert is the callout. Both read from the
-  // page's left edge, under the page title.
-  const isAlert = alertRail[tone] !== undefined;
+  const isAlert = tone === "warn" || tone === "error";
+  const role = isAlert ? "alert" : "status";
+
+  if (tone === "error") {
+    // The failure is the ink callout: the title says what failed, the detail is the cause.
+    return (
+      <ErrorCallout role={role} title={title} hint={detail ?? undefined} actions={children} />
+    );
+  }
+
   return (
-    <div
-      role={isAlert ? "alert" : "status"}
-      className={cn("flex flex-col gap-1", isAlert && alertRail[tone])}
-    >
-      <span
-        className={cn("flex items-center gap-2 vex-micro", wordInk[tone])}
-      >
-        <Swatch state={toneSwatch[tone]} size={9} />
-        {word ?? defaultWord[tone]}
-      </span>
-      <span className="text-lg font-medium text-ink-primary">
-        {title}
-      </span>
-      {detail ? (
-        <span className="text-xs leading-relaxed text-ink-secondary">
-          {detail}
-        </span>
-      ) : null}
+    <div role={role} className="vex-fr-card" data-tone={tone}>
+      <div className="vex-fr-card__head">
+        <span className="vex-fr-card__title">{title}</span>
+        <StateWord state={state ?? toneSwatch[tone]} word={word ?? defaultWord[tone]} />
+      </div>
+      {detail ? <p className="vex-fr-card__detail">{detail}</p> : null}
       {children}
     </div>
   );
