@@ -34,7 +34,7 @@
  *
  * THE CENTRED-SCENE LATCH IS RETIRED (round 3). The synthetic preview above is
  * what makes the pending turn visible before the first engine delta; it is now
- * rendered by `TurnIsland`'s in-flow `vexing…` pill at the tail of the message
+ * rendered by `TurnIsland`'s in-flow live row ("Working") at the tail of the message
  * column, so there is no longer a viewport-covering surface whose mount needs
  * transcript evidence to justify itself. The whole eligibility machine
  * (baseline row id, send-edge observation, open/closed latch) went with it.

@@ -1,14 +1,14 @@
 /**
- * "Awaiting signature" stamp-link (S5). Rendered next to a tool act (or its
- * group header) whose `toolCallId` matches a PENDING approval. Clicking jumps
- * to the matching `ApprovalCard` (`[data-approval-id]`) and focuses it —
- * a sibling of the disclosure button, never nested inside it (nested buttons
- * are invalid HTML and break both contracts' aria semantics).
+ * "Waiting for approval" link (S5). Rendered next to a step (or its fold)
+ * whose `toolCallId` matches a PENDING approval. Clicking jumps to the
+ * matching `ApprovalCard` (`[data-approval-id]`) and focuses it - a sibling of
+ * the disclosure button, never nested inside it (nested buttons are invalid
+ * HTML and break both contracts' aria semantics).
  *
- * The stamp is quiet by design (reference d4): the target swatch and the
- * caps word in the blue on a blue outline, no fill, no pulse - the card
- * itself is the place that asks for the pen. Status by fill: the target is
- * the same mark the card's own header and the island's awaiting row carry.
+ * Quiet by design (docs/design/R3-MINIMAL.md section 6): the word in the blue
+ * at 13 / 500 with the target fill, no frame, no pulse - the card itself is
+ * the place that asks for the decision. The target is the same fill the card,
+ * the live row and the Vex sidebar carry for this state.
  */
 
 import type { JSX } from "react";
@@ -67,14 +67,12 @@ export function ApprovalLinkStamp({
     <button
       type="button"
       data-vex-approval-link={approvalId}
-      aria-label="Awaiting signature - go to approval"
+      aria-label="Waiting for approval: go to the approval"
       onClick={(event) => jumpToApproval(approvalId, event.currentTarget)}
-      className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      className="vex-step-await"
     >
-      <span className="inline-flex h-[22px] items-center gap-[7px] px-2 font-mono text-[11px] uppercase leading-none tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary">
-        <Swatch state="warning" size={9} />
-        Awaiting signature
-      </span>
+      <Swatch state="awaiting" size={10} />
+      Waiting for approval
     </button>
   );
 }

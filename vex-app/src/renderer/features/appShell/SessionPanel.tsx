@@ -1,15 +1,15 @@
 /**
  * THE RESIDENT CONVERSATION SHELL - orchestration only.
  *
- * ONE persistent tree, not two layouts. The welcome hero and the docked
- * session view are the same DOM in the same positions, told apart only by
+ * ONE persistent tree, not two layouts. The welcome and the docked session
+ * view are the same DOM in the same positions, told apart only by
  * `data-phase` on this panel's root:
  *
  *   hero      no session, or a session whose transcript is provably empty and
- *             whose turn is not in flight. The chapter opening is anchored at
- *             the head of the scroll body with flex (never transformed - a
- *             transform would become the containing block for every
- *             `position: fixed` descendant).
+ *             whose turn is not in flight. The welcome stands centred in the
+ *             scroll body with flex (never transformed - a transform would
+ *             become the containing block for every `position: fixed`
+ *             descendant).
  *   settling  a session is opening and its transcript is still unknown, so
  *             hero-vs-docked is unknowable. The seat stays MOUNTED but
  *             invisible, so no wrong layout flashes before the phase lands.
@@ -25,27 +25,29 @@
  * and everything in it now live OUTSIDE the keyed region entirely.
  *
  * The `.vex-session-enter` one-shot moved with the key onto the SESSION
- * CONTENT wrapper (header, banners, transcript, controls), which is the part
- * that genuinely swaps between sessions. Phase transitions themselves carry no
- * crossfade and no morph: the position change of one persistent tree IS the
- * transition. Geometry lives in `styles/global-css/chat-transcript.css`.
+ * CONTENT wrapper (transcript, banners, approvals, mission controls), which is
+ * the part that genuinely swaps between sessions. Phase transitions themselves
+ * carry no crossfade and no morph: the position change of one persistent tree
+ * IS the transition. The seat's phase geometry lives in
+ * `styles/global-css/composer.css`; the reading column (centred, at most 760,
+ * docs/design/R3-MINIMAL.md section 6) in `chat-transcript.css`.
  *
  * WHO SCROLLS. This panel's scroll body (`[data-vex-conversation-scroll]`) is
  * the conversation scrollport, because it is the only box that can hold both
  * the transcript and a sticky composer seat. `SessionTranscript` is ordinary
  * flow content inside it and resolves the scrollport through `scrollportOf`.
  *
- * The mission contract + action plan are NOT in this column - they live in the
- * DESK RULE header's badge cluster (`MissionRail`) as badges that open
- * `MissionContractModal` / `PlanDisplayModal`, so the transcript owns the full
- * column height and the Accept action stays reachable.
+ * The session's title and mode are NOT in this column: the title bar row says
+ * them ("Agent · Restricted"), and the mission contract + action plan open
+ * from the title bar's mission badge (`MissionRail`), so the transcript owns
+ * the full column height and the Accept action stays reachable.
  *
  * Sub-components keep this file small:
- *   - hero (date + greeting + Arena notice) → `SessionWelcomeHero`
- *   - chapter head          → `SessionContext` (runtime bar now lives in BOOK)
- *   - mission controls     → `MissionControls` (mission sessions only)
- *   - transcript          → `SessionTranscript`
- *   - composer + slash     → `SessionComposer`
+ *   - the welcome           → `SessionWelcomeHero`
+ *   - loading / error lines → `SessionContext` (the side rail's head too)
+ *   - mission controls      → `MissionControls` (mission sessions only)
+ *   - transcript            → `SessionTranscript`
+ *   - composer + slash      → `SessionComposer`
  */
 
 import { useMemo, useRef } from "react";
@@ -77,7 +79,6 @@ import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
 import { SessionTranscript } from "./SessionTranscript.js";
 import { SessionWelcomeHero } from "./SessionWelcomeHero.js";
-import { OPENING_COLUMN, PAGE_COLUMN } from "./session-page-columns.js";
 
 export interface SessionPanelProps {
   /**
@@ -129,7 +130,7 @@ export function SessionPanel({
   // chat mutation does not start until the composer's passive handoff effect
   // fires a commit later. In that gap the transcript is loading, there is no
   // preview and no pending submit, so the phase resolved to `settling` - which
-  // hides the resident composer (`chat-transcript.css`) and flashed a seatless
+  // hides the resident composer (`composer.css`) and flashed a seatless
   // frame on every newly created session. A stored initial turn with the
   // create modal already closed IS that turn starting, so the phase goes
   // straight to `active`.
@@ -223,16 +224,18 @@ export function SessionPanel({
         : hero
           ? "hero"
           : "active";
+  // The reading column (docs/design/R3-MINIMAL.md section 6): centred, at
+  // most 760, shared by the banners, the transcript, the approvals and the
+  // docked composer. A side rail keeps its own 12px sides.
   const readingColumn =
-    surface === "embedded" ? "mx-auto w-full px-3" : PAGE_COLUMN;
+    surface === "embedded" ? "mx-auto w-full px-3" : "vex-reading-col";
 
   const showMissionCard =
     activeSession !== null && activeSession.mode === "mission";
 
   return (
-    // The panel is the stage frame: relative + overflow-hidden, and
-    // TRANSPARENT - the Eclipse backdrop mounted behind the shell is the
-    // backdrop on every phase. NOT keyed: residency is the point.
+    // The panel is the stage frame: relative + overflow-hidden, on the
+    // centre column's own paper. NOT keyed: residency is the point.
     <div
       data-vex-area="session-panel"
       data-vex-state={panelState}
@@ -261,10 +264,11 @@ export function SessionPanel({
             // `flex-[1_0_auto]`: fills the viewport when the conversation is
             // short (so the seat sits at the floor) and overflows it when the
             // conversation is long (so the seat sticks).
-            className="vex-session-enter flex w-full flex-[1_0_auto] flex-col pb-4 pt-6"
+            className="vex-session-enter flex w-full flex-[1_0_auto] flex-col pb-4 pt-[18px]"
           >
-            {/* Header + banners keep the reading column; only the transcript
-                goes full-bleed, so its rows reach the panel's width. */}
+            {/* The head lines keep the reading column; the transcript applies
+                the same column inside its own frame, so its scroller can span
+                the panel. */}
             <div className={readingColumn}>
               <SessionContext
                 activeSession={activeSession}
@@ -272,19 +276,22 @@ export function SessionPanel({
                 loading={detailQuery.isLoading}
                 error={detailError}
                 trailing={headerTrailing}
-                chapter={surface === "shell"}
+                namedByTitleBar={surface === "shell"}
               />
-              {activeSession !== null ? (
-                <SessionSleepBanner sessionId={activeSession.id} />
-              ) : null}
-              {activeSession !== null ? (
-                <SessionErrorBanner sessionId={activeSession.id} />
-              ) : null}
             </div>
             {activeSession !== null ? (
               <SessionTranscript sessionId={activeSession.id} />
             ) : null}
+            {/* After the last turn, where the reader is (docs/design/
+                R3-MINIMAL.md section 6): the turn error callout, the mission
+                sleep card, then the approvals and the mission controls. */}
             <div className={readingColumn}>
+              {activeSession !== null ? (
+                <SessionErrorBanner sessionId={activeSession.id} />
+              ) : null}
+              {activeSession !== null ? (
+                <SessionSleepBanner sessionId={activeSession.id} />
+              ) : null}
               {activeSession !== null ? (
                 <ApprovalsRegion sessionId={activeSession.id} />
               ) : null}
@@ -296,11 +303,11 @@ export function SessionPanel({
         )}
 
         {/* THE COMPOSER SEAT - resident on every phase, at one stable tree
-            position. In hero the scroll body flex-centres it; in active
-            `chat-transcript.css` makes it sticky and paints the fade mask. The
-            hero chrome renders INSIDE it so the whole opening moves as one
-            unit, and its conditional keeps the composer's child index stable
-            either way. */}
+            position. In hero the scroll body centres it; in active
+            `composer.css` makes it the sticky floor on the page's paper. The
+            welcome renders INSIDE it so the whole opening moves as one unit,
+            and its conditional keeps the composer's child index stable either
+            way. */}
         <div
           // The scroll model's ResizeObserver finds this by attribute and
           // republishes its live height as `--vex-composer-height`, so the
@@ -313,16 +320,17 @@ export function SessionPanel({
           {/* GROWTH BAND (owner smoothness decree 2026-07-22, carried into
               residency): in hero this wrapper's layout height is pinned to the
               composer's RESTING stack, so an auto-growing field overflows
-              DOWNWARD and never moves the greeting above it. In active it is
-              plain flow. See `chat-transcript.css`. */}
+              DOWNWARD and never moves the greeting above it, and its width is
+              the welcome's 720 column. In active it is the reading column in
+              plain flow. See `composer.css`. */}
           <div
             data-vex-composer-dock=""
             className={cn(
               surface === "embedded"
                 ? "mx-auto w-full px-3 pb-3"
                 : phase === "hero"
-                  ? OPENING_COLUMN
-                  : `${PAGE_COLUMN} pb-[18px] pt-0.5`,
+                  ? "vex-reading-col"
+                  : "vex-reading-col pb-[18px] pt-0.5",
             )}
           >
             <SessionComposer

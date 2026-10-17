@@ -1,11 +1,12 @@
 /**
  * Non-list transcript surfaces: the loading, initial-error and empty states,
- * plus the small in-flow older-page loading/error strips. V10 (docs/design/
- * V10-SPREAD.md section 1): loading is the brand loader (the ongoing swatch at
- * size), an error speaks in ink behind the ink cross, never red.
+ * plus the small in-flow older-page loading/error strips
+ * (docs/design/R3-MINIMAL.md sections 6 and 12): loading is a word and the
+ * quiet bar, a failure is the ink callout behind the ink cross, never red.
  */
 
 import type { JSX } from "react";
+import { ErrorCallout } from "../../../components/ui/error-callout.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { VexLoader } from "../../../components/ui/vex-loader.js";
 
@@ -32,13 +33,7 @@ export function TranscriptErrorState({
       data-state="error"
       className="flex min-h-0 flex-1 items-center justify-center px-4"
     >
-      <div
-        role="alert"
-        className="flex items-start gap-2 border border-rule px-3 py-2 text-[13px] leading-5 text-ink-primary"
-      >
-        <Swatch state="error" size={9} className="mt-[5px]" />
-        <span>{message}</span>
-      </div>
+      <ErrorCallout role="alert" compact title={message} className="max-w-[560px]" />
     </div>
   );
 }
@@ -50,7 +45,7 @@ export function TranscriptEmptyState(): JSX.Element {
       data-state="empty"
       className="flex min-h-0 flex-1 items-center justify-center px-4"
     >
-      <p className="text-center text-[14px] text-ink-secondary">
+      <p className="text-center text-[13.5px] leading-[1.5] text-ink-tertiary">
         Start the conversation - your messages and Vex&apos;s replies appear
         here.
       </p>
@@ -70,9 +65,9 @@ export function OlderPageErrorStrip(): JSX.Element {
   return (
     <div
       role="alert"
-      className="mx-auto flex items-center gap-2 font-mono text-[11px] uppercase tracking-status text-ink-primary"
+      className="mx-auto flex items-center gap-2 text-[13px] text-ink-primary"
     >
-      <Swatch state="error" size={9} />
+      <Swatch state="error" size={10} />
       Couldn&apos;t load older messages.
     </div>
   );
