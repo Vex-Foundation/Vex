@@ -17,7 +17,8 @@
  *
  * Nothing here reads a clock, the DOM or `Math.random()`: the engine passes t (ms of her own clock,
  * which stops while she is off screen) and the inputs (the hover, the clicks), so each frame follows
- * from them and the tests can step through any moment. Coordinates are her map's px (the wide
+ * from them and the tests can step through any moment. Episodes run at 30 fps and her idle life at
+ * 10 fps (`frameTime`, `idleTime`), as on the web app. Coordinates are her map's px (the wide
  * drawing's own frame, `k2-rig.ts`).
  */
 import { hash01, noise1, schedule } from "./k2-rand.js";
@@ -31,8 +32,64 @@ export const lerp = (a: number, b: number, q: number): number =>
 export const ramp = (t: number, a: number, b: number): number =>
   clamp((t - a) / (b - a), 0, 1);
 
-/** Her clock steps at 10 fps (the brief): a frame's time is a whole step. */
+/**
+ * Her idle life steps at 10 fps (the brief): the blink, the gaze and its glances, the wind, the
+ * beam's life, the hover and the moods (a sleeping dim) read the idle step of a frame's time.
+ */
 export const STEP_MS = 100;
+
+/* ------------------------------------------------------------------ the frame clock */
+
+/**
+ * An episode (the wake, the token toggle's open and the open episode, the close and the coin's
+ * turn, a gesture) steps at 30 fps (the owner 2026-10-17: the rise looked choppy): three frames to
+ * an idle step, 33, 33 and 34 ms, so every third lands on the idle grid and a frame on the grid is
+ * the 10 fps frame. The same numbers as the web app's K2, so both apps move alike.
+ */
+export const EPISODE_FPS = 30;
+const SUB = (EPISODE_FPS * STEP_MS) / 1000;
+
+/** The 30 fps frame at or before `clock` (whole ms: 0, 33, 66, 100, 133, ...). */
+export function fineTime(clock: number): number {
+  return Math.floor((Math.floor((clock * SUB) / STEP_MS) * STEP_MS) / SUB);
+}
+
+/** The idle step at or before t: the time her idle life reads. */
+export function idleTime(t: number): number {
+  return Math.floor(t / STEP_MS) * STEP_MS;
+}
+
+/**
+ * The frame to paint at `clock` after the last one painted at `last`, or null: a 30 fps frame while
+ * an episode plays at it, otherwise the idle step (each once, never behind the last). A clock that
+ * jumped past an idle step outside an episode still paints that step. Pure in its inputs: the same
+ * clock, last frame and episodes give the same frame.
+ */
+export function frameTime(
+  clock: number,
+  last: number,
+  episodeAt: (t: number) => boolean,
+): number | null {
+  const t = fineTime(clock);
+  if (t <= last) return null;
+  const g = idleTime(t);
+  if (t === g || episodeAt(t)) return t;
+  return g > last ? g : null;
+}
+
+/**
+ * Whether an episode plays at a frame: the wake (the gate's, a re-open's, the open episode, the
+ * waking mood), the close (her dissolve and the coin's turn) or a gesture of her pool (fading out
+ * too). Idle (a blink, the gaze, a glance, the wind, the hover, a mood, the coin at rest) is not.
+ */
+export function inEpisode(e: {
+  readonly still: boolean;
+  readonly waking: boolean;
+  readonly closing: boolean;
+  readonly gesture: boolean;
+}): boolean {
+  return !e.still && (e.waking || e.closing || e.gesture);
+}
 
 /* ------------------------------------------------------------------ the wake */
 

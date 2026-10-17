@@ -4,8 +4,10 @@
  * loads a 3D renderer. Without the wake or an episode she loads the flat coin alone (4 KB); they load
  * every pose: face-on with its tilts, the press, the turn to flat.
  *
- * `frameFor` picks the pose nearest to the projector's state (pure); `TokenSprite` loads the sheets
- * and draws a frame on her map, answering the flat face's ellipse for the cone.
+ * `frameFor` picks the pose nearest to the projector's state (pure); `turnGeometry` gives the face's
+ * ellipse between the turn's poses, so a 30 fps turn glides (the nearest pose is drawn stretched
+ * onto it, `stretchOnto`); `TokenSprite` loads the sheets and draws a frame on her map, answering
+ * the face's ellipse for the cone.
  *
  * The coin's states (`docs/design/R3-MINIMAL.md sections 5.2 and 10.4`): face-on it floats, tilts
  * toward the pointer and lifts a little under it (`liftOf`); it presses like a key and turns to lie
@@ -67,6 +69,59 @@ export function frameFor(
   return best;
 }
 
+/** The face's centre and rim ellipse in a frame's css px. */
+export interface FaceEllipse {
+  readonly cx: number;
+  readonly cy: number;
+  readonly rx: number;
+  readonly ry: number;
+}
+
+/**
+ * The face's ellipse at a turn between face on (0) and flat (1): linear between the two poses round
+ * it (the face-on rest, the sheet's turn poses, the flat coin), so it meets each pose at its own turn.
+ */
+export function turnGeometry(
+  sheet: Pick<TokenSheet, "frames" | "flat">,
+  flip: number,
+): FaceEllipse {
+  const rest =
+    sheet.frames.find((f) => f.kind === "tilt" && f.tiltX === 0 && f.tiltY === 0) ??
+    sheet.frames.find((f) => f.kind === "tilt");
+  const keys: TokenFrame[] = [
+    ...(rest !== undefined ? [{ ...rest, flip: 0 }] : []),
+    ...sheet.frames.filter((f) => f.kind === "flip").sort((a, b) => a.flip - b.flip),
+    { ...sheet.flat, flip: 1 },
+  ];
+  const f = Math.max(0, Math.min(1, flip));
+  let a = keys[0] ?? sheet.flat;
+  let b = a;
+  for (const k of keys) {
+    if (k.flip <= f) a = k;
+    if (k.flip >= f) {
+      b = k;
+      break;
+    }
+  }
+  const q = b.flip > a.flip ? (f - a.flip) / (b.flip - a.flip) : 0;
+  const mix = (u: number, v: number): number => u + (v - u) * q;
+  return { cx: mix(a.cx, b.cx), cy: mix(a.cy, b.cy), rx: mix(a.rx, b.rx), ry: mix(a.ry, b.ry) };
+}
+
+/**
+ * Where a pose's frame (`box` css px square, its face's ellipse `from`) is drawn so its face lands on
+ * the ellipse `to`: the frame's box in the same css px, stretched about the face.
+ */
+export function stretchOnto(
+  from: FaceEllipse,
+  to: FaceEllipse,
+  box: number,
+): { readonly x: number; readonly y: number; readonly w: number; readonly h: number } {
+  const sx = from.rx > 0 ? to.rx / from.rx : 1;
+  const sy = from.ry > 0 ? to.ry / from.ry : 1;
+  return { x: to.cx - from.cx * sx, y: to.cy - from.cy * sy, w: box * sx, h: box * sy };
+}
+
 /** Face-on under the pointer the coin lifts by this much of its diameter and grows a little. */
 export const LIFT = { rise: 0.035, grow: 0.025, up: 220, down: 260 } as const;
 
@@ -91,12 +146,16 @@ export function tokenBrightness(dim: number): number {
 /** What painting a coin needs of a 2D context (her canvas's, or a scratch one). */
 export type CoinCanvas = Pick<Scratch2D, "drawImage" | "filter" | "save" | "restore">;
 
-/** A coin placed on her map: its pose (-1 flat), its frame box, its face's ellipse. */
+/**
+ * A coin placed on her map: its pose (-1 flat), its frame box (stretched onto the turn's ellipse
+ * while it turns), its face's ellipse.
+ */
 export interface PlacedToken {
   readonly n: number;
   readonly x: number;
   readonly y: number;
-  readonly size: number;
+  readonly w: number;
+  readonly h: number;
   readonly base: TokenBase;
 }
 
@@ -176,19 +235,23 @@ export class TokenSprite {
         : frameFor(sheet.frames, pose.flip, pose.press, pose.tiltX, pose.tiltY);
     const frame = n < 0 ? sheet.flat : sheet.frames[n];
     if (frame === undefined) return null;
-    // the frame box: centred on the coin's resting centre, 6 css px low (token-sprite.mjs)
+    // the frame box: centred on the coin's resting centre, 6 css px low (as the sheet was made)
     const bx = x - (sheet.box / 2) * q;
     const by = y - (sheet.box / 2 - 6) * q + dy - LIFT.rise * d * lift;
+    // turning, the nearest pose is stretched onto the turn's own ellipse (between the poses)
+    const g: FaceEllipse = frame.kind === "flip" ? turnGeometry(sheet, pose.flip) : frame;
+    const r = stretchOnto(frame, g, sheet.box);
     return {
       n,
-      x: bx,
-      y: by,
-      size: sheet.box * q,
+      x: bx + r.x * q,
+      y: by + r.y * q,
+      w: r.w * q,
+      h: r.h * q,
       base: {
-        cx: bx + frame.cx * q,
-        cy: by + frame.cy * q,
-        rx: frame.rx * q,
-        ry: frame.ry * q,
+        cx: bx + g.cx * q,
+        cy: by + g.cy * q,
+        rx: g.rx * q,
+        ry: g.ry * q,
       },
     };
   }
@@ -204,7 +267,7 @@ export class TokenSprite {
       ctx.filter = `brightness(${tokenBrightness(dim).toFixed(3)})`;
     }
     if (p.n < 0 || this.#wake === null)
-      ctx.drawImage(this.#flat, 0, 0, fw, fw, p.x, p.y, p.size, p.size);
+      ctx.drawImage(this.#flat, 0, 0, fw, fw, p.x, p.y, p.w, p.h);
     else {
       const col = p.n % sheet.cols;
       const row = Math.floor(p.n / sheet.cols);
@@ -216,8 +279,8 @@ export class TokenSprite {
         fw,
         p.x,
         p.y,
-        p.size,
-        p.size,
+        p.w,
+        p.h,
       );
     }
     if (dimmed) ctx.restore();

@@ -2,14 +2,21 @@
  * K2's canvas (`docs/design/R3-MINIMAL.md section 10`): one canvas in her host for her portrait,
  * the beam of her token (the sky's own halftone dots), the token and the gestures' actors.
  *
- * - Her clock runs only while she is on screen and the window is shown (`RunGate`) and steps at
- *   10 fps; a frame never advances it by more than 250 ms, so a stall or a hidden window resumes
- *   where it stopped. Each frame is a pure function of that clock and the inputs (the hover, the
- *   clicks, the pointer, the emotion), so the wake and the gestures play the same on every launch.
+ * - Her clock runs only while she is on screen and the window is shown (`RunGate`). It steps at
+ *   30 fps while an episode plays (the wake, the token toggle's open, the open and close episodes
+ *   with the coin's turn, a gesture) and at 10 fps otherwise (`frameTime`, the same numbers as the
+ *   web app's K2); her idle life (the blink, the gaze and its glances, the look at you, the wind,
+ *   the beam's life, the hover, an emotion other than the waking one) reads the idle step even
+ *   inside an episode, so idle looks as it did. A frame never advances her clock by more than
+ *   250 ms, so a stall or a hidden window resumes where it stopped. Each frame is a pure function
+ *   of that clock and the inputs (the hover, the clicks, the pointer, the emotion), so the wake and
+ *   the gestures play the same on every launch.
  * - Her dots in a settled frame (no dissolve, no gesture, no wake) that no wind, blink or mouth
- *   can change are drawn once into a scratch canvas and copied; only the hair in the wind, the
- *   eyes, the face marks and the strands are drawn per frame, and a frame whose dots and light did
- *   not change is never repainted. The ratio is capped at 2.
+ *   can change are emitted once and kept as a pixel layer; only the hair in the wind, the eyes,
+ *   the face marks and the strands are emitted per frame. Every dot is blended in memory and put
+ *   on the canvas in one call (`k2-stamp.ts`), a 30 fps frame that repeats its idle step reuses
+ *   its dots, beam and pixels, and a frame whose dots, light and coin did not change is never
+ *   repainted. The ratio is capped at 2.
  * - The emotion (`setEmotion`) is her face (`k2-poses.ts`): a change dissolves on her clock; asleep
  *   and settled nothing of her moves, so she is painted once and left still, the beam and the token
  *   dimmed with her.
@@ -42,7 +49,7 @@
  * (`k2-assets.ts`).
  */
 import { RunGate } from "../../../lib/motion/run-gate.js";
-import { context2dOf, loadMap, loadMeta, type Scratch, scratchCanvas } from "./k2-assets.js";
+import { loadMap, loadMeta } from "./k2-assets.js";
 import type { K2Emotion } from "./k2-emotion.js";
 import {
   Dots,
@@ -100,6 +107,7 @@ import {
   episodeBusy,
   episodeProjector,
   type FaceState,
+  frameTime,
   type GazeTarget,
   GestureChain,
   type GestureName,
@@ -109,6 +117,8 @@ import {
   gestureState,
   gustAt,
   hoverProgress,
+  idleTime,
+  inEpisode,
   LONG_HOVER,
   LOOK,
   type LookAtYou,
@@ -233,6 +243,88 @@ export function beamInk(ground: K2Ground, dark: boolean, pal: Palette): InkStyle
   return { color: pal.white, alpha: PRINT_BEAM_ALPHA };
 }
 
+/** Everything a frame's dots are emitted from (`Portrait.emit`): the same key, the same dots. */
+function dotsKey(fr: PortraitFrame, pass: Pass, epoch: number): string {
+  const f = fr.face;
+  const h = f.hand;
+  const a = f.from;
+  const ah = a?.hand;
+  return [
+    epoch,
+    pass,
+    fr.t,
+    fr.still,
+    fr.dark,
+    fr.hp,
+    fr.rise,
+    fr.gp,
+    fr.smirk,
+    fr.gust,
+    fr.sway,
+    fr.lid,
+    fr.eyes,
+    fr.gaze.x,
+    fr.gaze.y,
+    fr.asm,
+    fr.held,
+    f.map,
+    f.gp,
+    h?.map,
+    h?.rise,
+    h?.di,
+    h?.p,
+    f.sh,
+    f.eyes,
+    f.mouth,
+    f.blush,
+    f.aside,
+    f.sway,
+    f.nose,
+    f.lid,
+    f.tear,
+    f.dy,
+    f.dim,
+    f.fade,
+    a?.map,
+    ah?.map,
+    ah?.rise,
+    ah?.di,
+    ah?.p,
+  ].join("|");
+}
+
+/** One frame's state (`K2Engine.#frame`): what its paint commits and draws. */
+interface K2Frame {
+  /** The frame's time (30 fps in an episode) and its idle step (10 fps). */
+  readonly t: number;
+  readonly ti: number;
+  /** An episode plays (the wake, an open, the close, a gesture): the loop paints at 30 fps. */
+  readonly episode: boolean;
+  readonly fit: Fit;
+  readonly portrait: Portrait;
+  /** The wake playing hands her over at `awakeAt`; it has (`woken`). */
+  readonly awakeAt: number;
+  readonly woken: boolean;
+  readonly tokenState: K2TokenState;
+  /** The close has settled: the coin upright and at rest. */
+  readonly rest: boolean;
+  readonly pj: Projector;
+  readonly mf: MoodFace | null;
+  readonly frozen: boolean;
+  readonly still: boolean;
+  /** The idle pool's hold, and when it began and ended (committed with the paint). */
+  readonly hold: boolean;
+  readonly holdAt: number;
+  readonly unholdAt: number;
+  readonly G: ActiveGesture | null;
+  /** An idle action ended at this frame: a return (committed with the paint). */
+  readonly ended: boolean;
+  readonly gs: FaceState;
+  readonly gust: number;
+  readonly fr: PortraitFrame;
+  readonly settled: boolean;
+}
+
 export class K2Engine {
   readonly #o: K2EngineOptions;
   readonly #ac = new AbortController();
@@ -256,7 +348,17 @@ export class K2Engine {
   /** The canvas's box in host px and its device ratio. */
   #box = { x: 0, y: 0, w: 1, h: 1 };
   #dpr = 1;
-  #cache: { key: string; canvas: Scratch } | null = null;
+  /** Her settled frame's unchanging dots (emitted once per layout, theme, emotion and hover). */
+  #cache: { key: string; dots: Dots } | null = null;
+  /** The frame the loop computed to ask whether an episode plays (reused by its paint). */
+  #pending: K2Frame | null = null;
+  /** Bumped when what her dots come from changes outside a frame (a layout, the theme, a drawing). */
+  #epoch = 0;
+  /** The last frame's dots and the beam's, by what they were made from (a 30 fps frame often repeats them). */
+  #dotsMemo: { key: string; dots: Dots } | null = null;
+  #beamMemo: { key: string; dots: number[] } | null = null;
+  /** What the frame last blended in memory was made of (the same again is put again, not blended). */
+  #rasterKey = "";
   #lastSig = -1;
   #gestures = false;
   readonly #chain: GestureChain;
@@ -341,6 +443,7 @@ export class K2Engine {
     const prev = this.#fit;
     this.#fit = fit;
     this.#keep = keep;
+    this.#epoch++;
     this.#layout();
     if (prev?.rig.drawing !== fit.rig.drawing && this.#started)
       void this.#loadDrawing(fit.rig.drawing);
@@ -351,7 +454,7 @@ export class K2Engine {
     if (dark === this.#dark) return;
     this.#dark = dark;
     this.#pal = inks(dark);
-    this.#cache = null;
+    this.#invalidate();
     this.#frozen = null;
     this.#repaintIdle();
   }
@@ -359,6 +462,8 @@ export class K2Engine {
   setGround(ground: K2Ground): void {
     if (ground === this.#ground) return;
     this.#ground = ground;
+    // the beam's ink changes: no blended frame of the old ground is put again
+    this.#invalidate();
     this.#frozen = null;
     this.#repaintIdle();
   }
@@ -523,7 +628,7 @@ export class K2Engine {
       });
       if (this.#stopped) return;
       this.#portraits[drawing] = new Portrait(meta, set);
-      this.#cache = null;
+      this.#invalidate();
       this.#frozen = null;
       if (this.#started) this.#repaintIdle();
       void this.#loadMoods(drawing);
@@ -546,13 +651,14 @@ export class K2Engine {
       names.map(async (m) => {
         try {
           portrait.addMap(m, await loadMap(`${DIR[drawing]}${m}.png`, n));
+          this.#epoch++;
         } catch {
           // that emotion stays on the base drawing
         }
       }),
     );
     if (this.#stopped || names.length === 0) return;
-    this.#cache = null;
+    this.#invalidate();
     this.#frozen = null;
     this.#repaintIdle();
   }
@@ -574,6 +680,7 @@ export class K2Engine {
         const map = maps[i];
         if (map !== undefined) portrait.addMap(m, map);
       });
+      this.#epoch++;
       this.#gestures = true;
     } catch {
       this.#gestures = false;
@@ -617,11 +724,17 @@ export class K2Engine {
       box.h !== this.#box.h ||
       dpr !== this.#dpr
     )
-      this.#cache = null;
+      this.#invalidate();
     this.#box = box;
     this.#dpr = dpr;
     this.#lastSig = -1;
     this.#frozen = null;
+  }
+
+  /** Drops her cached dots: the settled frame's, and every memo of a frame's (`#epoch`). */
+  #invalidate(): void {
+    this.#cache = null;
+    this.#epoch++;
   }
 
   /** The map transform for a 2D context of the canvas's size. */
@@ -686,7 +799,7 @@ export class K2Engine {
         this.#return(t + OPEN_MS);
       }
     } else return;
-    this.#cache = null;
+    this.#invalidate();
     this.#frozen = null;
     this.#lastSig = -1;
   }
@@ -747,13 +860,24 @@ export class K2Engine {
       if (this.#last < 0) this.#last = now;
       this.#clock += Math.min(CLOCK_CAP_MS, now - this.#last);
       this.#last = now;
-      const t = Math.floor(this.#clock / STEP_MS) * STEP_MS;
-      if (t === this.#stepT) return;
-      this.#stepT = t;
-      this.#paint(t, false);
+      // 30 fps while an episode plays, the idle step (10 fps) otherwise
+      this.#pending = null;
+      const t = frameTime(this.#clock, this.#stepT, this.#episodeAt);
+      if (t !== null) {
+        this.#stepT = t;
+        this.#paint(t, false);
+      }
+      this.#pending = null;
     };
     this.#raf = requestAnimationFrame(tick);
   }
+
+  /** Whether an episode plays at t (the frame it computes is kept for the paint that follows). */
+  readonly #episodeAt = (t: number): boolean => {
+    const f = this.#frame(t);
+    this.#pending = f;
+    return f?.episode === true;
+  };
 
   /** A paint outside the loop: a still frame, or a change while she rests off screen. */
   #repaintIdle(): void {
@@ -764,11 +888,17 @@ export class K2Engine {
 
   /* ---------------------------------------------------------------- one frame */
 
-  #paint(t: number, force: boolean): void {
+  /**
+   * One frame's state at t, written to nothing but the toggle (an episode it starts here) and the
+   * glances' cache: an episode (the wake, an open, the close, a gesture) reads t, her idle life
+   * (the blink, the gaze, the glances, the look at you, the wind, the beam's life, the hover, an
+   * emotion other than the waking one) reads t's idle step.
+   */
+  #frame(t: number): K2Frame | null {
     const fit = this.#fit;
-    if (fit === null) return;
+    if (fit === null) return null;
     const portrait = this.#portraits[fit.rig.drawing];
-    if (portrait === undefined || !this.#token.ready) return;
+    if (portrait === undefined || !this.#token.ready) return null;
     const meta = portrait.meta;
     const R = fit.rig;
     // the token toggle: an episode it asked for starts once the coin's poses are in
@@ -777,14 +907,9 @@ export class K2Engine {
       (this.#o.still || this.#token.posed || this.#posesTried)
     )
       this.#advance(t);
+    const ti = idleTime(t);
     const mode = this.#mode();
     const awakeAt = this.#wake0 + wakeEnd(mode);
-    if (mode !== "none" && t >= awakeAt && !this.#woken) {
-      this.#woken = true;
-      // a re-open's wake left its own return; the gate's wake tells its host
-      if (this.#rewake === null) this.#return(awakeAt);
-      if (this.#o.wake) this.#o.onWoken();
-    }
     const glance = { x: meta.glance[0], y: meta.glance[1] };
     // closed (or closing) she is the coin's: her face, her gestures and her hover hold
     const ep = this.#episode;
@@ -796,22 +921,19 @@ export class K2Engine {
       veiled || opened !== null
         ? episodeProjector(ep, t, this.#o.still)
         : projector(t - this.#wake0, mode);
-    const busy = veiled || episodeBusy(opened, t);
+    const opening = episodeBusy(opened, t);
+    const busy = veiled || opening;
     const WS = veiled ? null : wakeState(t - this.#wake0, mode, meta.pitch, meta.k, glance);
-    const tokenState = this.#tokenAt(t, awakeAt);
-    if (tokenState !== this.#tokenState) {
-      this.#tokenState = tokenState;
-      if (this.#reported) this.#o.onToken?.(tokenState);
-    }
     // the emotion, after the wake: one set while she woke dissolves in from her waking smile when
     // the wake hands her over (a wake already played is not played again)
     const mood: MoodChange | null =
       this.#mood !== null && awakeAt > 0 && this.#mood.at < awakeAt
         ? { from: "idle", to: this.#mood.to === "waking" ? "idle" : this.#mood.to, at: awakeAt }
         : this.#mood;
+    // an emotion is her idle life (the idle step); the waking emotion's beats are an episode (t)
     const mf: MoodFace | null =
       WS === null && mood !== null
-        ? moodFace(mood, t, {
+        ? moodFace(mood, mood.to === "waking" ? t : ti, {
             rise: meta.rise,
             pitch: meta.pitch,
             k: meta.k,
@@ -823,22 +945,13 @@ export class K2Engine {
     // playing over her sleep keeps the frame live)
     const frozen = mf?.frozen === true && !busy;
     const still = this.#o.still || frozen;
-    if (!force && frozen) {
-      const key = [R.drawing, R.palm, fit.s, fit.ox, fit.oy, this.#dark, this.#ground, this.#mood?.to]
-        .map(String)
-        .join("|");
-      if (key === this.#frozen) return;
-      this.#frozen = key;
-    } else this.#frozen = null;
 
     // what holds the idle pool back: a hover, an episode, a wake, any emotion but idle (settled);
     // a slot due meanwhile is skipped, never shown half way
     const hold = this.#hover || busy || t < awakeAt || (mf !== null && !mf.gestures);
-    if (hold !== this.#hold) {
-      this.#hold = hold;
-      if (hold) this.#holdAt = t;
-      else this.#unholdAt = t;
-    }
+    const changed = hold !== this.#hold;
+    const holdAt = changed && hold ? t : this.#holdAt;
+    const unholdAt = changed && !hold ? t : this.#unholdAt;
     const G: ActiveGesture | null =
       WS === null && !busy && (mf === null || mf.gestures)
         ? gestureAt(this.#chain, {
@@ -849,20 +962,20 @@ export class K2Engine {
             blushes: this.#blushes,
             stillSince: this.#pointerAt,
             hold,
-            holdAge: hold ? t - this.#holdAt : -1,
-            unholdAge: !hold && this.#unholdAt >= 0 ? t - this.#unholdAt : -1,
+            holdAge: hold ? t - holdAt : -1,
+            unholdAge: !hold && unholdAt >= 0 ? t - unholdAt : -1,
           })
         : null;
-    // an idle action that ends is a return: she looks at you
-    if (this.#lastG && G === null && !hold && WS === null) this.#return(t);
-    this.#lastG = G !== null;
+    // an idle action that ends is a return: she looks at you from this frame
+    const ended = this.#lastG && G === null && !hold && WS === null;
+    const returns = ended ? [...this.#returns, t] : this.#returns;
     let gs: FaceState = WS ?? (G !== null || mf === null ? gestureState(G) : mf.face);
     const giggle = G !== null && G.name === "giggle" ? G.age : -1;
     const gigW = giggle >= 0 ? ramp(giggle, 0, 150) * (1 - ramp(giggle, 1800, 2000)) : 0;
     let { hp, rp } = hoverProgress(
       this.#hover,
-      this.#hover ? t - this.#hoverAt : -1,
-      !this.#hover && this.#unhoverAt >= 0 ? t - this.#unhoverAt : -1,
+      this.#hover ? ti - this.#hoverAt : -1,
+      !this.#hover && this.#unhoverAt >= 0 ? ti - this.#unhoverAt : -1,
       still,
     );
     // no hover while she wakes or an episode plays, nor in an emotion that holds her face
@@ -879,16 +992,16 @@ export class K2Engine {
     const free = !still && !busy && G === null && WS === null && !this.#hover && hp === 0;
     const moving = this.#pointer !== null && this.#now() - this.#pointerAt < POINTER_FRESH;
     const atYou: LookAtYou | null =
-      free && !moving && (mf === null || mf.gestures) ? lookAtYou(t, this.#returns) : null;
+      free && !moving && (mf === null || mf.gestures) ? lookAtYou(ti, returns) : null;
     if (atYou?.smile === true) gs = { ...gs, eyes: "soft", mouth: "smile" };
-    const away: GlanceAway | null = free && atYou === null ? this.#glances.chain.at(t) : null;
+    const away: GlanceAway | null = free && atYou === null ? this.#glances.chain.at(ti) : null;
     const rise = Math.round((1 - rp) ** 3 * meta.rise);
     const gp = gs.gp * (1 - hp);
     const smirk =
-      G === null && WS === null && !veiled && !still && !this.#hover && hp === 0 && smirking(t);
-    const gust = still ? 0 : gustAt(t);
+      G === null && WS === null && !veiled && !still && !this.#hover && hp === 0 && smirking(ti);
+    const gust = still ? 0 : gustAt(ti);
     const em = gs.eyes !== null && hp < 0.5 && !still ? gs.eyes : null;
-    let lid = still ? 0 : em === "soft" ? Math.max(0.22, blinkAt(t)) : blinkAt(t);
+    let lid = still ? 0 : em === "soft" ? Math.max(0.22, blinkAt(ti)) : blinkAt(ti);
     if (WS !== null && WS.lid > 0) lid = Math.max(lid, WS.lid);
     if (atYou?.blink === true) lid = Math.max(lid, slowBlink(atYou));
     // the gestures look at their actors on the wide drawing's frame (`k2-rig.ts` shift)
@@ -900,7 +1013,8 @@ export class K2Engine {
     const look = this.#moodLook(fit, G === null ? mf?.look : undefined, glance, meta);
     const gaze = this.#gaze(fit, seen, hp, away, glance, meta, look);
     const fr: PortraitFrame = {
-      t,
+      // the wind and the strands live on the idle step
+      t: ti,
       still,
       dark: this.#dark,
       hp,
@@ -917,22 +1031,98 @@ export class K2Engine {
       cut: R.cut,
       held: mf !== null,
     };
-    // an emotion whose dissolve is done and whose hand is up settles like her own face
+    // an emotion whose dissolve is done and whose hand is up settles like her own face; a blush
+    // draws no other drawing (its cells, like the eyes and the marks, are all of the dynamic pass),
+    // so she settles under it too
     const moodSettled = mf !== null && G === null && mf.settled;
     const settled =
       pj.asm >= 1 &&
       (moodSettled || (gp === 0 && !(gs.hand !== null && gs.hand.p > 0))) &&
       gs.sh === 0 &&
-      gs.blush === 0 &&
       gs.dy === 0 &&
       gs.dim === 1 &&
       (hp === 0 || (hp === 1 && rise === 0));
+    return {
+      t,
+      ti,
+      episode: inEpisode({
+        still: this.#o.still,
+        waking: (!veiled && t < awakeAt) || mf?.wake === true || opening,
+        closing: veiled && !rest,
+        gesture: G !== null,
+      }),
+      fit,
+      portrait,
+      awakeAt,
+      woken: mode !== "none" && t >= awakeAt,
+      tokenState: this.#tokenAt(t, awakeAt),
+      rest,
+      pj,
+      mf,
+      frozen,
+      still,
+      hold,
+      holdAt,
+      unholdAt,
+      G,
+      ended,
+      gs,
+      gust,
+      fr,
+      settled,
+    };
+  }
 
+  /** Paints the frame at t: its state (`#frame`), its callbacks, returns and holds, then its pixels. */
+  #paint(t: number, force: boolean): void {
+    const pending = this.#pending;
+    this.#pending = null;
+    const f = pending !== null && pending.t === t ? pending : this.#frame(t);
+    if (f === null) return;
+    if (f.woken && !this.#woken) {
+      this.#woken = true;
+      // a re-open's wake left its own return; the gate's wake tells its host
+      if (this.#rewake === null) this.#return(f.awakeAt);
+      if (this.#o.wake) this.#o.onWoken();
+    }
+    if (f.tokenState !== this.#tokenState) {
+      this.#tokenState = f.tokenState;
+      if (this.#reported) this.#o.onToken?.(f.tokenState);
+    }
+    if (f.ended) this.#return(t);
+    this.#lastG = f.G !== null;
+    this.#hold = f.hold;
+    this.#holdAt = f.holdAt;
+    this.#unholdAt = f.unholdAt;
+    if (!force && f.frozen) {
+      const fit = f.fit;
+      const R = fit.rig;
+      const key = [R.drawing, R.palm, fit.s, fit.ox, fit.oy, this.#dark, this.#ground, this.#mood?.to]
+        .map(String)
+        .join("|");
+      if (key === this.#frozen) return;
+      this.#frozen = key;
+    } else this.#frozen = null;
+    this.#draw(f, force);
+  }
+
+  /** A frame's pixels: her dots and her beam's (blended in memory), the actors and the token. */
+  #draw(f: K2Frame, force: boolean): void {
+    const { fit, portrait, t, ti, pj, gs, G, fr, settled, still, mf, rest } = f;
+    const meta = portrait.meta;
+    const R = fit.rig;
     const pal = this.#pal;
-    const dots = new Dots();
     const pass: Pass = settled ? "dynamic" : "all";
-    // closed into the token there is nothing of her to draw
-    if (pj.asm > 0) portrait.emit(fr, pal, dots, pass);
+    // the same inputs emit the same dots (a 30 fps frame often repeats its idle step's)
+    const dk = `${dotsKey(fr, pass, this.#epoch)}|${pj.asm > 0}`;
+    let dots: Dots;
+    if (this.#dotsMemo?.key === dk) dots = this.#dotsMemo.dots;
+    else {
+      dots = new Dots();
+      // closed into the token there is nothing of her to draw
+      if (pj.asm > 0) portrait.emit(fr, pal, dots, pass);
+      this.#dotsMemo = { key: dk, dots };
+    }
 
     // the token: face-on, pressed, turning flat, flat; it tilts to the pointer while face-on in a
     // wake or an open; upright after a close it rests (no bob, no tilt)
@@ -975,28 +1165,35 @@ export class K2Engine {
     });
 
     const actors = G !== null && gs.actors !== null && !still;
-    // the beam: the sky's own dots, from the token up into her (under her)
+    // the beam: the sky's own dots, from the token up into her (under her); its life on the idle
+    // step, its growth (the wake, the close) on the frame's time
     const base = placed?.base ?? null;
-    const beam: number[] = [];
-    if (base !== null) {
+    const bk =
+      base === null
+        ? ""
+        : `${this.#epoch}|${ti}|${pj.cone}|${still}|${base.cx}|${base.cy}|${base.rx}|${base.ry}`;
+    const memo = this.#beamMemo?.key === bk ? this.#beamMemo.dots : null;
+    const beam: number[] = memo ?? [];
+    if (base !== null && memo === null) {
       const sc = beamScreen(fit);
       const screen: BeamScreen = { pitch: sc.pitch / fit.s, rmax: sc.rmax / fit.s };
-      const lift = MERGE * meta.k;
+      const merge = MERGE * meta.k;
       const top = R.beam.top;
       drawBeam(
         beam,
         base,
         {
           // on the bust the beam rises to the top of her cut; on the wide drawing to her own
-          yAt: top !== null ? () => top : (x) => portrait.ycutAt(x) - lift,
+          yAt: top !== null ? () => top : (x) => portrait.ycutAt(x) - merge,
           left: R.beam.left,
           right: R.beam.right,
         },
         screen,
         pj.cone,
-        t,
+        ti,
         still,
       );
+      this.#beamMemo = { key: bk, dots: beam };
     }
     // the whistle's notes: the clouds' white dots (the beam's ink), over her
     const notes: number[] = [];
@@ -1008,46 +1205,66 @@ export class K2Engine {
         G.age,
         Math.round(G.start / STEP_MS),
         portrait.mouthPoint,
-        gust,
+        f.gust,
         this.#keepRects(fit),
         (x, y) => portrait.lightAt(x, y),
       );
     const coneMoves = !still && pj.cone > 0;
-    // a coin face-on or turning floats and tilts: every step is a new frame; at rest only its lift
-    // changes it
-    const coinMoves = !still && fl < 1 && !rest;
-    const sig =
-      (dots.hash ^
-        (coneMoves || actors || coinMoves ? t : 0) ^
-        ((placed?.n ?? -2) * 7919) ^
-        (Math.round(lift * 64) * 104729) ^
-        (settled ? 1 : 2)) >>>
-      0;
+    let sig = dots.hash ^ (settled ? 1 : 2);
+    if (coneMoves) sig = Math.imul(sig ^ ti, 16777619) ^ Math.round(pj.cone * 65536);
+    if (actors) sig = Math.imul(sig ^ t, 16777619);
+    // her light and her rows down (the wake's rise and brightening, a sleeping dim)
+    sig = Math.imul(sig ^ Math.round(gs.dim * 4096), 16777619);
+    sig = Math.imul(sig ^ gs.dy, 16777619);
+    sig = Math.imul(sig ^ Math.round((mf?.light ?? 1) * 4096), 16777619);
+    // the coin's pose and place (it bobs, lifts and glides while it turns; at rest it holds)
+    sig = Math.imul(sig ^ ((placed?.n ?? -2) * 7919), 16777619);
+    if (placed !== null)
+      for (const v of [placed.x, placed.y, placed.w, placed.h])
+        sig = Math.imul(sig ^ Math.round(v * 16), 16777619);
+    sig >>>= 0;
     if (!force && sig === this.#lastSig) return;
     this.#lastSig = sig;
 
-    const ctx = this.#o.canvas.getContext("2d");
+    const canvas = this.#o.canvas;
+    const ctx = canvas.getContext("2d");
     if (ctx === null) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.#o.canvas.width, this.#o.canvas.height);
-    // her dots and her beam's are stamped in device px (k2-stamp.ts)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // her dots and her beam's are stamped in device px, blended in memory (k2-stamp.ts)
     this.#stamper.build(this.#styles(pal));
     const { k, ox, oy } = this.#device(fit);
     // asleep the beam and the token dim with her
     const light = mf?.light ?? 1;
-    this.#stamper.stampInk(ctx, "beam", beam, k, ox, oy, light);
-
-    // her: the settled frame's cached dots and this frame's changes, or every dot
-    if (settled) {
-      const cache = this.#cached(portrait, fr, fit, pal);
-      if (cache !== null) ctx.drawImage(cache, 0, 0);
-      this.#stamper.stamp(ctx, dots, INKS, k, ox, oy);
-    } else this.#stamper.stamp(ctx, dots, INKS, k, ox, oy + gs.dy * k, gs.dim);
-    this.#stamper.stampInk(ctx, "beam", notes, k, ox, oy);
-    this.#stamper.stampInk(ctx, "ink", notesInk, k, ox, oy);
+    const static0 = settled ? this.#cached(portrait, fr, fit, pal) : null;
+    // the same dots, beam and notes as the frame blended last: put it again (only the coin or an
+    // actor moved)
+    const rk = `${dk}|${bk}|${light}|${this.#cache?.key}|${notes.length > 0 ? t : -1}|${k}|${ox}|${oy}|${gs.dy}|${gs.dim}`;
+    const W = canvas.width;
+    const H = canvas.height;
+    if (rk !== this.#rasterKey || !this.#stamper.again(ctx, W, H)) {
+      this.#stamper.begin(W, H);
+      // her: the settled frame's unchanging dots (kept as pixels) and this frame's changes, or
+      // every dot
+      if (static0 !== null) {
+        const lk = `${this.#cache?.key}|${k}|${ox}|${oy}|${W}x${H}`;
+        if (!this.#stamper.restore(lk)) {
+          this.#stamper.stamp(ctx, static0, INKS, k, ox, oy);
+          this.#stamper.keep(lk);
+        }
+        this.#stamper.stamp(ctx, dots, INKS, k, ox, oy);
+      } else this.#stamper.stamp(ctx, dots, INKS, k, ox, oy + gs.dy * k, gs.dim);
+      // her beam under her (her tee dissolves into it), the notes over her
+      this.#stamper.stampInk(ctx, "beam", beam, k, ox, oy, light, true);
+      this.#stamper.stampInk(ctx, "beam", notes, k, ox, oy);
+      this.#stamper.stampInk(ctx, "ink", notesInk, k, ox, oy);
+      this.#stamper.end(ctx);
+      this.#rasterKey = rk;
+    }
     this.#toMap(ctx, fit);
 
     // the gestures' actors: the blow's cloud and puff, the bird (authored on the wide frame)
+    const [sx, sy] = R.shift;
     if (actors && G !== null && gs.actors !== "notes") {
       ctx.translate(-sx, -sy);
       const keep: KeepRect[] = this.#keepRects(fit).map(([a, b, c, d, m]) => [
@@ -1069,11 +1286,12 @@ export class K2Engine {
         drawPuff(g, G.age, mouth, keep, light2, out);
       } else if (gs.actors === "bird") {
         const b = birdState(G.age);
+        // its wings and trail keep their own steps (10 fps); it flies on the frame's time
         if (b !== null)
           drawBird(
             b,
             g,
-            Math.floor(t / STEP_MS),
+            Math.floor(ti / STEP_MS),
             keep,
             (x, y) => portrait.lightAt(x - sx, y - sy, true),
             out,
@@ -1098,22 +1316,17 @@ export class K2Engine {
     if (placed !== null) this.#token.paint(ctx, placed, (1 - light) / (1 - SLEEP.light));
   }
 
-  /** Her settled frame's unchanging dots, drawn once per layout, theme, rig, emotion and hover. */
-  #cached(portrait: Portrait, fr: PortraitFrame, fit: Fit, pal: Palette): Scratch | null {
+  /** Her settled frame's unchanging dots, emitted once per layout, theme, rig, emotion and hover. */
+  #cached(portrait: Portrait, fr: PortraitFrame, fit: Fit, pal: Palette): Dots {
     const R = fit.rig;
     const key = [R.drawing, R.palm, this.#dark, fr.hp, fit.s, fit.ox, fit.oy, this.#mood?.to ?? ""]
       .map(String)
       .join("|");
-    if (this.#cache?.key === key) return this.#cache.canvas;
-    const cv = scratchCanvas(this.#o.canvas.width, this.#o.canvas.height);
-    const ctx = context2dOf(cv);
-    if (ctx === null) return null;
+    if (this.#cache?.key === key) return this.#cache.dots;
     const d = new Dots();
     portrait.emit(fr, pal, d, "static");
-    const { k, ox, oy } = this.#device(fit);
-    this.#stamper.stamp(ctx, d, INKS, k, ox, oy);
-    this.#cache = { key, canvas: cv };
-    return cv;
+    this.#cache = { key, dots: d };
+    return d;
   }
 
   /** Her transform in the canvas's device px: device = o + k * map. */
