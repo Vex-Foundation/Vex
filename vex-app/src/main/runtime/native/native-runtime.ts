@@ -56,10 +56,7 @@ async function buildHost(): Promise<NativeHost | NativeRuntimeStart> {
   const pg = await locatePostgresBinaries();
   if (pg.kind === "unavailable") return { kind: "unavailable", message: pg.detail };
   const llama = await locateLlamaBinary();
-  if (llama.kind === "unavailable") {
-    progress.fail("unavailable", llama.detail, "embeddings");
-    return { kind: "unavailable", message: llama.detail };
-  }
+  if (llama.kind === "unavailable") return { kind: "unavailable", message: llama.detail };
 
   const cacheDir = llamaCacheDir(RUNTIME_DIR);
   await mkdir(cacheDir, { recursive: true });

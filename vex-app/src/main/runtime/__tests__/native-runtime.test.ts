@@ -194,7 +194,8 @@ describe("native runtime start, as the runtime screen sees it", () => {
       () => {
         mocks.llamaBinary = false;
       },
-      { step: "embeddings", kind: "unavailable", message: "The bundled llama-server is missing." },
+      // Nothing ran: the start stops at its first step whichever tree is missing.
+      { step: "postgres", kind: "unavailable", message: "The bundled llama-server is missing." },
     ],
     [
       "a start that throws",
