@@ -11,6 +11,7 @@ import { cleanup, render, act, fireEvent } from "@testing-library/react";
 const mockHooks = vi.hoisted(() => ({
   useSystemHealth: vi.fn(),
   useRuntimeInfo: vi.fn(),
+  useRuntimeMigrationStatus: vi.fn(),
   useDockerStatus: vi.fn(),
   useEnvState: vi.fn(),
 }));
@@ -18,6 +19,7 @@ const mockHooks = vi.hoisted(() => ({
 vi.mock("../../../lib/api/system.js", () => ({
   useSystemHealth: mockHooks.useSystemHealth,
   useRuntimeInfo: mockHooks.useRuntimeInfo,
+  useRuntimeMigrationStatus: mockHooks.useRuntimeMigrationStatus,
 }));
 vi.mock("../../../lib/api/docker.js", () => ({
   useDockerStatus: mockHooks.useDockerStatus,
@@ -112,6 +114,7 @@ describe("SystemCheck", () => {
     });
     mockHooks.useSystemHealth.mockReturnValue(happyHealth());
     mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
+    mockHooks.useRuntimeMigrationStatus.mockReturnValue({ isPending: false, data: { ok: true, data: { kind: "not_needed" } } });
     mockHooks.useDockerStatus.mockReturnValue(happyDocker("active"));
     mockHooks.useEnvState.mockReturnValue(happyEnv());
     openLogsFolder.mockReset().mockResolvedValue({
@@ -129,6 +132,7 @@ describe("SystemCheck", () => {
     cleanup();
     mockHooks.useSystemHealth.mockReset();
     mockHooks.useRuntimeInfo.mockReset();
+    mockHooks.useRuntimeMigrationStatus.mockReset();
     mockHooks.useDockerStatus.mockReset();
     mockHooks.useEnvState.mockReset();
     Reflect.deleteProperty(window, "vex");
@@ -168,6 +172,34 @@ describe("SystemCheck", () => {
       getByRole("button", { name: /continue/i }).dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(useUiStore.getState().currentView).toBe("runtimeBootstrap");
+    expect(mockHooks.useRuntimeMigrationStatus).toHaveBeenCalledWith(true);
+  });
+
+  it.each([
+    ["pending", { ok: true, data: { kind: "pending", resumeStep: null, lastFailure: null } }],
+    ["unreadable", { ok: true, data: { kind: "state_unreadable", message: "x" } }],
+    ["an IPC failure", { ok: false, error: { code: "internal.unexpected", message: "x" } }],
+  ])("Continue goes to the migration screen first when the move is %s", (_label, data) => {
+    mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+    mockHooks.useRuntimeMigrationStatus.mockReturnValue({ isPending: false, data });
+    const { getByRole } = render(<SystemCheck />);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    act(() => {
+      getByRole("button", { name: /continue/i }).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(useUiStore.getState().currentView).toBe("runtimeMigration");
+  });
+
+  it("holds Continue until the migration status has answered on the native runtime", () => {
+    mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+    mockHooks.useRuntimeMigrationStatus.mockReturnValue({ isPending: true, data: undefined });
+    const { getByRole } = render(<SystemCheck />);
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(getByRole("button", { name: /continue/i }).hasAttribute("disabled")).toBe(true);
   });
 
   it("renders an adjacent translocation warning without adding a probe or blocking Continue", () => {

@@ -1053,7 +1053,8 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
 
 let production: DockerMigration | null = null;
 
-function productionMigration(): DockerMigration {
+/** This install's migration, process-wide; the boot gate (`native-start-gate.ts`) drives it. */
+export function productionMigration(): DockerMigration {
   production ??= createDockerMigration({
     configDir: CONFIG_DIR,
     runtimeDir: RUNTIME_DIR,
