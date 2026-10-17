@@ -24,7 +24,9 @@ let scrollTop = 0;
 /** jsdom lays nothing out: give each section head its own place down the page. */
 function layOutHeads(this: Element): DOMRect {
   const top =
-    this.tagName === "H2" ? [...document.querySelectorAll("h2")].indexOf(this) * 500 - scrollTop : 0;
+    this.tagName === "H2"
+      ? Array.from<Element>(document.querySelectorAll("h2")).indexOf(this) * 500 - scrollTop
+      : 0;
   return { top, bottom: top + 30, left: 0, right: 600, width: 600, height: 30, x: 0, y: top, toJSON: () => ({}) };
 }
 
