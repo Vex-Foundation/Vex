@@ -1,5 +1,5 @@
 /**
- * MissionContractModal — the relocated contract review/accept surface.
+ * MissionContractModal - the relocated contract review/accept surface.
  *
  * These tests pin the wiring that MUST survive the move out of the inline card:
  *   - Accept dispatches `mission.acceptContract` with the rendered `currentHash`.
@@ -141,6 +141,23 @@ describe("MissionContractModal", () => {
     expect((accept as HTMLButtonElement).disabled).toBe(false);
     // Body rendered the goal.
     expect(screen.queryByText(/tighter range/i)).not.toBeNull();
+  });
+
+  it("opens as a sheet without a veil, and Not now dismisses without accepting", async () => {
+    mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
+    mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
+    const onOpenChange = vi.fn();
+    renderModal(onOpenChange);
+    await screen.findByRole("button", { name: /^Accept contract$/i });
+    // docs/design/R3-MINIMAL.md section 12: a sheet over the centre column,
+    // the native dialog kept, nothing dims the window.
+    const sheet = document.querySelector('[data-vex-area="mission-contract-modal"]');
+    expect(sheet?.tagName).toBe("DIALOG");
+    expect(sheet?.getAttribute("data-vex-backdrop")).toBe("none");
+    expect(sheet?.classList.contains("vex-sheet")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^Not now$/i }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(mockBridge.acceptContract).not.toHaveBeenCalled();
   });
 
   it("Accept posts the rendered currentHash (round-trip safety)", async () => {
