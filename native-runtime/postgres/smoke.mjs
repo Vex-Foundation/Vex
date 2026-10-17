@@ -913,10 +913,17 @@ async function main() {
     }
     check(!conflict.ready && conflict.srv.exited.code !== 0,
       `start on a taken port fails: exit ${JSON.stringify(conflict.srv.exited)}`);
-    const conflictLog = await r.readLogs();
     const msgRe = win
       ? /could not bind IPv4 address "127\.0\.0\.1": [^\n]*[\s\S]*could not create any TCP\/IP sockets/
       : /could not bind IPv4 address "127\.0\.0\.1": Address already in use[\s\S]*could not create any TCP\/IP sockets/;
+    // The logging collector is its own process and flushes after the failed
+    // postmaster has already exited (seen under x64 emulation on Windows
+    // arm64), so wait a bounded moment for the message, as the supervisor does.
+    let conflictLog = await r.readLogs();
+    for (const t0 = performance.now(); !msgRe.test(conflict.srv.stderr + conflictLog) && performance.now() - t0 < 10_000; ) {
+      await sleep(200);
+      conflictLog = await r.readLogs();
+    }
     results.port_conflict = {
       exit: conflict.srv.exited,
       stderr: conflict.srv.stderr.trim(),
