@@ -17,7 +17,7 @@
     "vex-app/src/main/compose/stale-secret-recovery.ts": 7,
     "vex-app/src/main/compose/up.ts": 6,
     "vex-app/src/main/database/dim-lock.ts": 1,
-    "vex-app/src/main/database/e2e-connection-door.ts": 4,
+    "vex-app/src/main/database/e2e-connection-door.ts": 3,
     "vex-app/src/main/database/engine-db-readiness.ts": 2,
     "vex-app/src/main/database/main-ipc-pg-pool.ts": 2,
     "vex-app/src/main/docker/cli-env.ts": 10,
