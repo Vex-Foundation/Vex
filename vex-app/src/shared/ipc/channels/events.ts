@@ -11,6 +11,12 @@ export const EV = {
   system: {
     logLine: "vex:event:system:logLine",
     resume: "vex:event:system:resume",
+    /**
+     * Every change of the native runtime's start (`NativeRuntimeStatus`),
+     * broadcast; download progress is throttled in main. A late screen reads
+     * `CH.system.runtimeStatus` too and keeps whichever has the higher seq.
+     */
+    runtimeProgress: "vex:event:system:runtimeProgress",
   },
   docker: {
     installProgress: "vex:event:docker:installProgress",

@@ -294,6 +294,13 @@ describe("preload bridge surface", () => {
     }
   });
 
+  it("exposes EV.system.runtimeProgress and re-validates it in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus).toContain("EV.system.runtimeProgress");
+    expect(corpus).toContain("onRuntimeProgress");
+    expect(corpus).toContain("nativeRuntimeStatusSchema");
+  });
+
   it("exposes EV.studio.hostStatus and the host-status bridge method (B0)", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     expect(
