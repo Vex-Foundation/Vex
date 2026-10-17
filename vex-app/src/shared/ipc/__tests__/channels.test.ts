@@ -131,6 +131,14 @@ describe("CH / EV channel constants", () => {
     expect(CH.system.runtimeReset).toBe("vex:system:runtimeReset");
   });
 
+  it("ships the runtime migration surface with its canonical names", () => {
+    expect(CH.system.runtimeMigrationStatus).toBe("vex:system:runtimeMigrationStatus");
+    expect(CH.system.runtimeMigrationMove).toBe("vex:system:runtimeMigrationMove");
+    expect(CH.system.runtimeMigrationStartFresh).toBe("vex:system:runtimeMigrationStartFresh");
+    expect(CH.system.runtimeMigrationRemoveOldData).toBe("vex:system:runtimeMigrationRemoveOldData");
+    expect(EV.system.runtimeMigrationProgress).toBe("vex:event:system:runtimeMigrationProgress");
+  });
+
   it("channels are unique (no duplicate values across namespaces)", () => {
     const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
     const seen = new Set<string>();

@@ -93,6 +93,7 @@ export type View =
   | "systemCheck"
   | "dockerBootstrap"
   | "composeBootstrap"
+  | "runtimeMigration"
   | "runtimeBootstrap"
   | "migrations"
   | "wizard"

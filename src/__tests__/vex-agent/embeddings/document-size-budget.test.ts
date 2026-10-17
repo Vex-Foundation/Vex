@@ -12,8 +12,8 @@ import { describe, it, expect } from "vitest";
 
 import {
   EMBEDDING_DOCUMENT_MAX_CHARS,
+  EMBEDDING_BATCH_RESERVE_TOKENS,
   EMBEDDING_PHYSICAL_BATCH_TOKENS,
-  EMBEDDING_CONSERVATIVE_CHARS_PER_TOKEN,
   MEMORY_CHUNK_MODEL_BUDGET_CHARS,
   embeddingDocumentInputChars,
   exceedsEmbeddingDocumentBudget,
@@ -45,10 +45,12 @@ describe("embedding document size budget", () => {
     expect(exceedsEmbeddingDocumentBudget("t", body)).toBe(true);
   });
 
-  it("stays inside the provider's physical batch under the conservative ratio", () => {
-    expect(
-      EMBEDDING_DOCUMENT_MAX_CHARS / EMBEDDING_CONSERVATIVE_CHARS_PER_TOKEN,
-    ).toBeLessThan(EMBEDDING_PHYSICAL_BATCH_TOKENS);
+  it("stays inside the provider's physical batch even at one token per character", () => {
+    // Session-memory scaffolding (UUIDs, ISO timestamps) runs ~1.5 characters
+    // per token; 3 was assumed until a 1330-character chunk hit 544 tokens.
+    expect(EMBEDDING_DOCUMENT_MAX_CHARS).toBeLessThanOrEqual(
+      EMBEDDING_PHYSICAL_BATCH_TOKENS - EMBEDDING_BATCH_RESERVE_TOKENS,
+    );
   });
 
   it("leaves room for the worst-case rendered body a compliant chunk produces", () => {

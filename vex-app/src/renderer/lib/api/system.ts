@@ -12,6 +12,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
+import type { RuntimeMigrationStatus } from "@shared/schemas/runtime-migration.js";
 import type {
   HealthReport,
   LOCAL_DATA_RESET_PHRASE,
@@ -102,5 +103,19 @@ export function useResetLocalData(): UseMutationResult<Result<RuntimeResetResult
   return useMutation({
     mutationFn: (typed: string) =>
       window.vex.system.runtimeReset({ confirmation: typed as typeof LOCAL_DATA_RESET_PHRASE }),
+  });
+}
+
+/**
+ * Whether this install's data must be moved before the native runtime
+ * starts. Read fresh: main re-detects while it is pending. Only asked on the
+ * native runtime (`enabled`); elsewhere main answers not_needed anyway.
+ */
+export function useRuntimeMigrationStatus(enabled: boolean): UseQueryResult<Result<RuntimeMigrationStatus>> {
+  return useQuery({
+    queryKey: systemKeys.runtimeMigration(),
+    queryFn: () => window.vex.system.runtimeMigrationStatus(),
+    enabled,
+    staleTime: 0,
   });
 }

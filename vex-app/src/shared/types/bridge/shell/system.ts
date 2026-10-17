@@ -1,5 +1,13 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
+  RuntimeMigrationProgress,
+  RuntimeMigrationRemoveOldDataInput,
+  RuntimeMigrationRemoveOldDataResult,
+  RuntimeMigrationResult,
+  RuntimeMigrationStartFreshResult,
+  RuntimeMigrationStatus,
+} from "../../../schemas/runtime-migration.js";
+import type {
   HealthReport,
   LocalRuntimeInfo,
   NativeRuntimeStatus,
@@ -49,6 +57,30 @@ export interface SystemBridge {
    * Main checks the typed phrase too; on `reset` the app relaunches into setup.
    */
   readonly runtimeReset: (input: RuntimeResetInput) => Promise<Result<RuntimeResetResult>>;
+  /**
+   * Whether this install's data must be moved from the previous release
+   * before the native runtime starts (`not_needed` on any other runtime).
+   * While it must, main starts nothing; `in_progress` means a move or a
+   * start-fresh is running and calling it again joins it.
+   */
+  readonly runtimeMigrationStatus: () => Promise<Result<RuntimeMigrationStatus>>;
+  /**
+   * Move the data, or resume or join a move. Resolves when it settles;
+   * on success main starts the native runtime. Subscribe to
+   * `onRuntimeMigrationProgress` first.
+   */
+  readonly runtimeMigrationMove: () => Promise<Result<RuntimeMigrationResult>>;
+  /**
+   * A fresh native database instead of the move (the old data stays where
+   * it is). Only after the UI's typed confirmation.
+   */
+  readonly runtimeMigrationStartFresh: () => Promise<Result<RuntimeMigrationStartFreshResult>>;
+  /** Remove the previous release's data once the move completed. No UI yet. */
+  readonly runtimeMigrationRemoveOldData: (
+    input: RuntimeMigrationRemoveOldDataInput,
+  ) => Promise<Result<RuntimeMigrationRemoveOldDataResult>>;
+  /** Every step of a move. Returns idempotent unsubscribe; keep the highest `seq`. */
+  readonly onRuntimeMigrationProgress: (cb: (progress: RuntimeMigrationProgress) => void) => () => void;
   /**
    * OS-native turn-complete notification (A34). Main shows it only while no
    * app window has focus - it checks focus itself and reports the outcome.

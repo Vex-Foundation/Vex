@@ -1,7 +1,6 @@
 {
   "files": {
     "src/lib/diagnostics/bug-report-schema.ts": 2,
-    "src/vex-agent/embeddings/document-size-budget.ts": 1,
     "src/vex-agent/scripts/_preflight.ts": 4,
     "vex-app/resources/compose/docker-compose.e2e.yml": 1,
     "vex-app/resources/compose/docker-compose.template.yml": 10,
@@ -54,6 +53,7 @@
     "vex-app/src/main/runtime/docker/docker-provider.ts": 11,
     "vex-app/src/main/runtime/migration/docker-source.ts": 56,
     "vex-app/src/main/runtime/migration/docker-to-native.ts": 56,
+    "vex-app/src/main/runtime/migration/native-start-gate.ts": 5,
     "vex-app/src/main/runtime/provider.ts": 4,
     "vex-app/src/main/runtime/runtime-mode.ts": 1,
     "vex-app/src/main/updates/critical-ops.ts": 3,
@@ -89,6 +89,7 @@
     "vex-app/src/renderer/features/docker/InstallProgress.tsx": 3,
     "vex-app/src/renderer/features/docker/LicenseNotice.tsx": 12,
     "vex-app/src/renderer/features/docker/LinuxManualInstructions.tsx": 2,
+    "vex-app/src/renderer/features/runtime/migration/copy.ts": 22,
     "vex-app/src/renderer/features/setup/SetupTour.tsx": 1,
     "vex-app/src/renderer/features/setup/useSetupOrchestrator.ts": 19,
     "vex-app/src/renderer/features/systemCheck/SystemCheck.tsx": 19,

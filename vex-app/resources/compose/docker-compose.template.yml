@@ -88,6 +88,9 @@ services:
   # `--alias` flag makes `/v1/models` report the public model id
   # (`ai/embeddinggemma:300M-Q8_0`) regardless of GGUF filename so
   # client code does not need to know about the cache layout.
+  # `--ctx-size/--batch-size/--ubatch-size 2048` (EMBEDDING_CONTEXT_TOKENS):
+  # an input is encoded in one physical batch, and at the default 512 any
+  # longer session memory is an HTTP 500.
   #
   # Healthcheck is intentionally minimal (`true`) — the runtime image
   # is not guaranteed to ship `curl`/`wget`/`nc`, so real readiness
@@ -115,6 +118,12 @@ services:
       - --embeddings
       - --alias
       - "ai/embeddinggemma:300M-Q8_0"
+      - --ctx-size
+      - "2048"
+      - --batch-size
+      - "2048"
+      - --ubatch-size
+      - "2048"
       - --host
       - "0.0.0.0"
       - --port

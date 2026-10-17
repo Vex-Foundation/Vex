@@ -31,7 +31,7 @@ import { useMemo } from "react";
 
 import { useDockerStatus } from "../../lib/api/docker.js";
 import { useEnvState } from "../../lib/api/onboarding.js";
-import { useRuntimeInfo, useSystemHealth } from "../../lib/api/system.js";
+import { useRuntimeInfo, useRuntimeMigrationStatus, useSystemHealth } from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { type StepStatus } from "./StepRow.js";
@@ -81,9 +81,15 @@ export function SystemCheck(): JSX.Element {
         ? "ok"
         : "warn";
 
-  const anyLoading = health.isPending || docker.isPending || env.isPending || runtime.isPending;
-  // The native runtime is started by main; setup watches it come up.
+  // The native runtime is started by main; setup watches it come up. Main
+  // holds it back while this install's data must still be moved, and the
+  // migration screen comes first then.
   const nativeRuntime = runtime.data?.ok === true && runtime.data.data.native;
+  const migration = useRuntimeMigrationStatus(nativeRuntime);
+  const anyLoading =
+    health.isPending || docker.isPending || env.isPending || runtime.isPending || (nativeRuntime && migration.isPending);
+  const nativeView =
+    migration.data?.ok === true && migration.data.data.kind === "not_needed" ? "runtimeBootstrap" : "runtimeMigration";
 
   return (
     <SetupFrame
@@ -119,7 +125,7 @@ export function SystemCheck(): JSX.Element {
 
       <Footer
         disabled={anyLoading}
-        onContinue={() => setCurrentView(nativeRuntime ? "runtimeBootstrap" : "dockerBootstrap")}
+        onContinue={() => setCurrentView(nativeRuntime ? nativeView : "dockerBootstrap")}
       />
     </SetupFrame>
   );

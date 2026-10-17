@@ -311,6 +311,14 @@ describe("preload bridge surface", () => {
     );
   });
 
+  it("exposes EV.system.runtimeMigrationProgress and re-validates it, and the remove input, in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus).toContain("EV.system.runtimeMigrationProgress");
+    expect(corpus).toContain("onRuntimeMigrationProgress");
+    expect(corpus).toContain("runtimeMigrationProgressSchema");
+    expect(corpus).toContain("runtimeMigrationRemoveOldDataInputSchema");
+  });
+
   it("exposes EV.studio.hostStatus and the host-status bridge method (B0)", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     expect(
