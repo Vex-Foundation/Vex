@@ -57,6 +57,7 @@ function formatObservedAt(iso: string): string {
   return Number.isNaN(at.getTime()) ? iso : at.toLocaleString();
 }
 
+/** One label and value row of the points list: a muted label, then the value. */
 function Field({
   label,
   children,
@@ -65,9 +66,9 @@ function Field({
   readonly children: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="vex-micro-label uppercase text-ink-secondary">{label}</span>
-      <span className="text-[13px] leading-[20px] text-ink-primary">{children}</span>
+    <div className="vex-set__kv">
+      <span className="vex-set__k">{label}</span>
+      <span className="vex-set__v">{children}</span>
     </div>
   );
 }
@@ -94,7 +95,7 @@ function RankField({
       <Field label={label}>
         {rank.kind === "rank" ? (
           <>
-            {formatPoints(rank.points)}
+            <span className="vex-num font-mono text-[13px]">{formatPoints(rank.points)}</span>
             <span className="text-ink-tertiary"> points</span>
             <span className="text-ink-secondary"> - rank {rank.position.toLocaleString()}</span>
           </>
@@ -118,7 +119,9 @@ function ReferralField({
       <Field label="Referral rewards">
         {referral.kind === "value" ? (
           <>
-            {formatPoints(referral.value.rewardPoints)}
+            <span className="vex-num font-mono text-[13px]">
+              {formatPoints(referral.value.rewardPoints)}
+            </span>
             <span className="text-ink-tertiary">
               {" "}
               points at multiplier {referral.value.multiplier}
@@ -147,46 +150,47 @@ function WalletCard({
     // the Trading setup card are its contents. The wallet list has ONE owner
     // (this read), so the trading card can never enumerate a different set of
     // accounts than the points card beside it.
-    <li className="flex flex-col gap-3" data-vex-lighter-wallet={row.walletAddress}>
-      <div
-        className="vex-ov-frame"
-        data-vex-lighter-points-card={row.walletAddress}
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="font-mono text-[12px] leading-[18px] text-ink-secondary">
-            {row.walletAddress}
-          </span>
-          <span className="vex-micro-label uppercase text-ink-secondary">
-            {LIGHTER_ENVIRONMENT_NAMES[row.environment]} - account {row.accountIndex}
-          </span>
-        </div>
-        {row.kind === "unavailable" ? (
-          <p
-            className="mt-3 text-[13px] leading-[20px] text-warning"
-            data-vex-lighter-points-unavailable={row.reason}
-          >
-            {AUTH_REASON_COPY[row.reason] ?? row.detail}
-          </p>
-        ) : (
-          <>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <li className="vex-set__sec" data-vex-lighter-wallet={row.walletAddress}>
+      <div data-vex-lighter-points-card={row.walletAddress}>
+        <div className="vex-set__kvl">
+          <Field label="Wallet">
+            <span className="vex-num font-mono text-[13px]">{row.walletAddress}</span>
+            <span className="vex-set__sub">
+              {LIGHTER_ENVIRONMENT_NAMES[row.environment]} - account {row.accountIndex}
+            </span>
+          </Field>
+          {row.kind === "unavailable" ? (
+            <Field label="Points">
+              <span
+                className="text-warning"
+                data-vex-lighter-points-unavailable={row.reason}
+              >
+                {AUTH_REASON_COPY[row.reason] ?? row.detail}
+              </span>
+            </Field>
+          ) : (
+            <>
               <RankField label="All-time" rank={row.allTime} testId="allTime" />
               <RankField label="This week" rank={row.weekly} testId="weekly" />
               <div data-vex-lighter-points-field="livePoints">
                 <Field label="Live points">
                   {row.livePoints.kind === "value" ? (
-                    formatPoints(row.livePoints.value)
+                    <span className="vex-num font-mono text-[13px]">
+                      {formatPoints(row.livePoints.value)}
+                    </span>
                   ) : (
                     <Unavailable reason={row.livePoints.reason} />
                   )}
                 </Field>
               </div>
               <ReferralField referral={row.referral} />
-            </div>
-            <p className="mt-3 text-[12px] leading-[18px] text-ink-tertiary">
-              Read {formatObservedAt(row.observedAt)}
-            </p>
-          </>
+            </>
+          )}
+        </div>
+        {row.kind === "unavailable" ? null : (
+          <p className="mt-2 text-[12px] leading-[18px] text-ink-tertiary">
+            Read {formatObservedAt(row.observedAt)}
+          </p>
         )}
       </div>
       {renderTradingSetup(row)}
@@ -210,25 +214,26 @@ export function LighterPointsSection({
   const { state, refreshing, refresh } = useLighterPoints();
   return (
     <section aria-label="Lighter Points" data-vex-lighter-points>
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-[12px] leading-[18px] text-ink-secondary">
-          Lighter awards campaign points for trading on Robinhood Chain. Vex
-          reads them for every wallet with a Lighter account registered here,
-          using that wallet&apos;s own read-only authorization. Points are
-          Lighter&apos;s numbers, not Vex&apos;s, and they are not funds.
-        </p>
+      <div className="vex-set__sh">
+        <h3 className="vex-set__sh-title">Points</h3>
         <button
           type="button"
           onClick={refresh}
           disabled={refreshing}
           data-vex-lighter-points-refresh
-          className="h-7 shrink-0 border border-line-2 px-3 text-[12px] leading-[18px] text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:opacity-40"
+          className="vex-set__sh-link"
         >
           {refreshing ? "Reading…" : "Refresh"}
         </button>
       </div>
+      <p className="vex-set__note">
+        Lighter awards campaign points for trading on Robinhood Chain. Vex
+        reads them for every wallet with a Lighter account registered here,
+        using that wallet&apos;s own read-only authorization. Points are
+        Lighter&apos;s numbers, not Vex&apos;s, and they are not funds.
+      </p>
 
-      <div className="mt-4" aria-busy={refreshing} aria-live="polite">
+      <div aria-busy={refreshing} aria-live="polite">
         {state.kind === "idle" || state.kind === "loading" ? (
           <p
             className="text-[13px] leading-[20px] text-ink-secondary"
@@ -263,7 +268,7 @@ export function LighterPointsSection({
           </p>
         ) : (
           <>
-            <ul className="flex flex-col gap-3" data-vex-lighter-points-list>
+            <ul className="flex flex-col" data-vex-lighter-points-list>
               {state.result.rows.map((row) => (
                 <WalletCard
                   key={`${row.environment}:${row.walletAddress}`}
