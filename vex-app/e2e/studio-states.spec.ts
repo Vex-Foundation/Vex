@@ -864,8 +864,8 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // "bound is not the same as answerable" rule states, and step 44 below proves
   // the other half of it.
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
 
@@ -1898,8 +1898,8 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   await shot(page, "restore2-03-agent-mode-focus-in-draft");
 
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   await expect(fileTab).toBeVisible({ timeout: 60_000 });

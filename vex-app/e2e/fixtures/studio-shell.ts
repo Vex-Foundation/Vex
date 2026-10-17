@@ -104,11 +104,12 @@ export async function enterStudio(page: Page): Promise<boolean> {
   // renders only while the mode is `studio`. So there is nothing listening in
   // an Agent session yet: the chord into Studio needs the hook mounted in a
   // seat that survives the mode switch, which belongs to `AppShell` and not to
-  // the keyboard module. When that mount lands, the two lines below become
-  // `await page.keyboard.press("Control+Shift+A")`.
+  // the keyboard module. When that mount lands, the click below becomes
+  // `await page.keyboard.press("Control+Shift+A")`. Until then the way in is
+  // the left sidebar nav's Studio row (docs/design/R3-MINIMAL.md section 4).
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   return true;
@@ -215,8 +216,8 @@ export async function openFirstProjectWithATerminal(
 ): Promise<string> {
   await tourTo(page, "appShell");
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(page.locator('[data-vex-screen="appShell"]')).toHaveAttribute(
     "data-vex-runtime-mode",
