@@ -35,11 +35,11 @@ const CHROME_NAMES = [
 ];
 
 /**
- * Drawings without an appendix A row: the two message keys of the transcript
- * (branch, thumbs-down), drawn in the same grid and stroke. The six derived
- * ones (archive, chevron-left, chevron-up, question, user, warning) have rows.
+ * Drawings without an appendix A row. None today: the derived ones (archive,
+ * branch, chevron-left, chevron-up, question, thumbs-down, user, warning) all
+ * have rows.
  */
-const DERIVED: string[] = ["branch", "thumbs-down"];
+const DERIVED: string[] = [];
 
 type Glyph = (props: { size?: 14 | 16 | 20; className?: string }) => JSX.Element;
 type Name = keyof typeof LINE_GLYPHS;

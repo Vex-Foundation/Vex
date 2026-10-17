@@ -4,10 +4,9 @@
  * paint lives on the root in `LineSvg`), keyed by the name the app uses.
  *
  * `spec` is the row id in appendix A, or null for a drawing the appendix does
- * not list yet. The mirrored chevrons, warning, question, user and archive
- * were derived in the same grid and stroke and now have their own rows; branch
- * and thumbs-down (the transcript's message keys) were drawn the same way and
- * wait for theirs.
+ * not list yet (none today). The mirrored chevrons, warning, question, user,
+ * archive, branch and thumbs-down (the transcript's message keys) were derived
+ * in the same grid and stroke and have their own rows.
  * Several names may share one spec row (`send` is the `up` arrow).
  */
 
@@ -468,9 +467,9 @@ export const LINE_GLYPHS = {
     ),
   },
   // Message actions. Drawn in the same grid and stroke for the transcript's
-  // hover keys; no appendix A row yet (see the catalogue test).
+  // hover keys; their rows were added to appendix A with W4-6.
   branch: {
-    spec: null,
+    spec: "branch",
     draw: (
       <>
         <path d="M4.5 2v8.9" />
@@ -481,7 +480,7 @@ export const LINE_GLYPHS = {
     ),
   },
   "thumbs-down": {
-    spec: null,
+    spec: "thumbsDown",
     draw: (
       <>
         <path d="M2.5 2.5h3v7h-3z" />
