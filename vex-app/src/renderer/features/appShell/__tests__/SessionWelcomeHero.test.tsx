@@ -119,6 +119,7 @@ function readyPresence(over: Partial<VexPresence> = {}): VexPresence {
     fill: "idle",
     scope: null,
     timerStartedAt: null,
+    live: false,
     narration: null,
     background: NO_BACKGROUND_WORK,
     needsYou: {
