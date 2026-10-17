@@ -41,7 +41,7 @@ function deferred<T>(): Deferred<T> {
 function fakeProvider(stopKind: RuntimeStopKind = "stopped") {
   const starts: Array<{ input: string; signal: AbortSignal; result: Deferred<RuntimeStartOutcome<string>> }> = [];
   const provider: LocalRuntimeProvider<string, string, string> = {
-    id: "docker",
+    id: "native",
     start: vi.fn((input: string, options: { signal: AbortSignal }) => {
       const result = deferred<RuntimeStartOutcome<string>>();
       starts.push({ input, signal: options.signal, result });

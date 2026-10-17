@@ -3,7 +3,7 @@
  * production writer of the database connection (`setDbConnection`). The e2e
  * door is the one other writer, and it is inert in a packaged build.
  *
- * Two rules it owns, whichever provider runs the services:
+ * Two rules it owns for the provider that runs the services:
  *
  *   - Publication. A start that settles `running` / `reused` publishes its
  *     endpoints; any other outcome publishes nothing, so no consumer is ever
@@ -35,8 +35,7 @@ export interface RuntimeHostOptions {
   /**
    * Receives the embeddings endpoint whenever the database connection is
    * published, and null when it is withdrawn. The native runtime routes it
-   * into the engine's EMBEDDING_* environment; the compose path configures
-   * embeddings through `.env` instead and passes nothing.
+   * into the engine's EMBEDDING_* environment.
    */
   readonly onEmbeddings?: (embeddings: RuntimeEndpoints["embeddings"] | null) => void;
 }

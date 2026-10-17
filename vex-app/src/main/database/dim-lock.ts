@@ -11,8 +11,8 @@
  * connections to the long-lived process pool.
  *
  * Reads connection metadata from the same `buildPoolConfig()` the
- * M6 migrate runner uses (compose-state-derived password file). If
- * compose hasn't run yet (`buildPoolConfig` returns null) or the
+ * M6 migrate runner uses (the connection the local runtime published). If
+ * no runtime is up yet (`buildPoolConfig` returns null) or the
  * connect/query throws, returns `embedding.db_unavailable` so the
  * renderer can surface a retry + System Check link.
  */
@@ -31,7 +31,7 @@ function dbUnavailable(): Result<never, VexError> {
     code: "embedding.db_unavailable",
     domain: "embedding",
     message:
-      "Database unavailable. Verify Docker services are running and retry.",
+      "Database unavailable. Check that the local runtime is running and retry.",
     retryable: true,
     userActionable: true,
     redacted: true,

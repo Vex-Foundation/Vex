@@ -58,8 +58,6 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   "app.tavily.com",
   "openrouter.ai",
   "releases.electronjs.org",
-  "desktop.docker.com",
-  "docs.docker.com",
   // Go toolchain guidance (Studio bridge readiness panel, from-source runs
   // only). Path-scoped: the download page and the install doc, nothing else
   // on go.dev.

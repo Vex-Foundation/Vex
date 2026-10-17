@@ -43,11 +43,11 @@ describe("canRestartForUpdate", () => {
     });
   });
 
-  it("blocks on an in-flight docker lifecycle op", async () => {
-    beginCriticalOp(CRITICAL_OP.dockerLifecycle);
+  it("blocks on an in-flight local runtime op", async () => {
+    beginCriticalOp(CRITICAL_OP.localRuntime);
     const result = await canRestartForUpdate();
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.message).toMatch(/Docker/);
+    if (!result.ok) expect(result.message).toMatch(/local database/);
   });
 
   it("blocks on an in-flight db migration op", async () => {

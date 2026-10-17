@@ -1,27 +1,24 @@
 /**
- * The seam between Vex and whatever runs its local services (Postgres +
+ * The seam between Vex and what runs its local services (Postgres +
  * pgvector, the embeddings server).
  *
- * Today the only provider is Docker Compose (`docker/docker-provider.ts`). The
- * native runtime - bundled binaries supervised by main - will be the second
- * implementation of this same interface, and the runtime host
- * (`runtime-host.ts`) is the one place that turns a provider's outcome into
- * process-wide state, so neither provider writes `setDbConnection` itself.
+ * The one provider is the native runtime: bundled binaries supervised by
+ * main (`native/native-provider.ts`). The runtime host (`runtime-host.ts`) is
+ * the one place that turns a provider's outcome into process-wide state, so
+ * the provider never writes `setDbConnection` itself.
  *
- * The start vocabulary deliberately reuses today's compose-up kinds so the
- * renderer's remediation screens keep mapping one-to-one whichever provider
- * produced the outcome.
+ * The start vocabulary keeps the kinds the renderer's remediation screens
+ * already map one-to-one.
  */
 
 import type { DbConnection } from "../database/connection-state.js";
 
 /** Which implementation runs the local services. */
-export type RuntimeProviderId = "docker" | "native";
+export type RuntimeProviderId = "native";
 
 /**
- * Outcome of a start, in the compose-up vocabulary the renderer already maps,
- * plus `disk_full`, which only the native provider produces (plan 8.4/8.5,
- * with its own remediation copy).
+ * Outcome of a start, in the vocabulary the renderer already maps, including
+ * `disk_full` (plan 8.4/8.5, with its own remediation copy).
  */
 export type RuntimeStartKind =
   | "running"
@@ -72,8 +69,8 @@ export interface LocalRuntimeProvider<Input, StartDetail, StopDetail> {
   readonly id: RuntimeProviderId;
   /**
    * Start (or reuse) the services. Rejects with an `AbortError` when
-   * `options.signal` aborted before the start settled, so cancellation is one
-   * contract for every provider rather than a provider-specific failure kind.
+   * `options.signal` aborted before the start settled, so cancellation is a
+   * contract of the seam rather than a provider-specific failure kind.
    */
   start(input: Input, options: RuntimeStartOptions): Promise<RuntimeStartOutcome<StartDetail>>;
   stop(): Promise<RuntimeStopOutcome<StopDetail>>;

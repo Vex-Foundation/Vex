@@ -25,10 +25,10 @@ describe("critical-ops registry", () => {
   });
 
   it("ref-counts begin/end for the same label", () => {
-    const end1 = beginCriticalOp(CRITICAL_OP.dockerLifecycle);
-    const end2 = beginCriticalOp(CRITICAL_OP.dockerLifecycle);
+    const end1 = beginCriticalOp(CRITICAL_OP.localRuntime);
+    const end2 = beginCriticalOp(CRITICAL_OP.localRuntime);
     expect(criticalOpInFlight()).toBe(true);
-    expect(activeCriticalOps()).toEqual([CRITICAL_OP.dockerLifecycle]);
+    expect(activeCriticalOps()).toEqual([CRITICAL_OP.localRuntime]);
     end1();
     expect(criticalOpInFlight()).toBe(true); // still one outstanding
     end2();
@@ -53,7 +53,7 @@ describe("critical-ops registry", () => {
   });
 
   it("trackCriticalOp releases on throw", async () => {
-    const fn = trackCriticalOp(CRITICAL_OP.dockerLifecycle, async () => {
+    const fn = trackCriticalOp(CRITICAL_OP.localRuntime, async () => {
       throw new Error("boom");
     });
     await expect(fn()).rejects.toThrow("boom");

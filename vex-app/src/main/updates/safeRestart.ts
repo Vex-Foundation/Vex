@@ -5,7 +5,7 @@
  * corrupt (skill §"Safe restart gate"). Two signals:
  *   - agent/mission execution — a DB-backed query (`hasActiveAgentWork`), the
  *     only correct signal since runs outlive the IPC handler that starts them;
- *   - local destructive ops (docker lifecycle / db migration) — the in-memory
+ *   - local destructive ops (local runtime / db migration) — the in-memory
  *     `critical-ops` registry.
  *
  * `prepareForUpdateRestart()` is intentionally lightweight: it only flags the
@@ -13,12 +13,12 @@
  * remove updater event listeners (electron-updater can emit `error`
  * synchronously from install(), and Node throws on a listener-less 'error'
  * event); they are torn down by the normal quit cleanup. The heavy teardown
- * (drain workers -> `compose stop` WITHOUT
- * `--volumes` -> lock secrets) is done by the existing `will-quit` ->
+ * (drain workers -> stop the local runtime, its data kept -> lock secrets)
+ * is done by the existing `will-quit` ->
  * `globalCleanup` path that `quitAndInstall`'s `app.quit()` triggers;
  * electron-updater spawns the detached installer in `install()` BEFORE
  * `app.quit()`, so it survives the subsequent hard exit. We deliberately do
- * NOT pre-drain `globalCleanup` or reset Docker/volumes here.
+ * NOT pre-drain `globalCleanup` or reset the local runtime's data here.
  */
 
 import { hasActiveAgentWork } from "../database/mission-runs-db.js";
@@ -68,8 +68,6 @@ export function prepareForUpdateRestart(): void {
 }
 
 const CRITICAL_OP_REASONS: Record<string, string> = {
-  [CRITICAL_OP.dockerLifecycle]:
-    "Docker setup is still running. Wait for it to finish, then update.",
   [CRITICAL_OP.localRuntime]:
     "The local database is still starting. Wait for it to finish, then update.",
   [CRITICAL_OP.dbMigration]:

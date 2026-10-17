@@ -3,7 +3,7 @@
  * duration operations that must not be interrupted by an update restart
  * (skill vex-user-triggered-updates §"Safe restart gate").
  *
- * Recon confirmed no queryable in-flight signal exists today (the docker/db
+ * Recon confirmed no queryable in-flight signal exists today (the runtime/db
  * single-flight vars are module-local), so the few destructive, handler-
  * duration handlers register here via `beginCriticalOp`/end and the
  * safe-restart gate consults `criticalOpInFlight()`.
@@ -15,9 +15,9 @@
  */
 
 export const CRITICAL_OP = {
-  dockerLifecycle: "docker_lifecycle",
-  // The native runtime coming up: initdb, the first-run model download and
-  // the server starts. An update must not restart the app in the middle.
+  // The native runtime coming up or changing: initdb, the first-run model
+  // download, the server starts, and the move of a previous release's data.
+  // An update must not restart the app in the middle.
   localRuntime: "local_runtime",
   dbMigration: "db_migration",
   // Keystore / secret-vault writes + private-key decrypt (wallet generate /
