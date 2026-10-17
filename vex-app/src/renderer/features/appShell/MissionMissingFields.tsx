@@ -33,12 +33,12 @@ export function MissionMissingFields({
     <ul
       data-vex-state="mission-missing-fields"
       data-vex-surface={surface}
-      className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-tertiary"
+      className="mt-1 flex flex-wrap gap-1.5"
     >
       {fields.map((field) => (
         <li
           key={field}
-          className="inline-flex h-[22px] items-center px-2 font-mono text-[11px] uppercase tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
+          className="inline-flex h-[22px] items-center border border-rule-quiet px-2 text-[12px] text-ink-secondary"
         >
           {missionDraftFieldLabel(field)}
         </li>
