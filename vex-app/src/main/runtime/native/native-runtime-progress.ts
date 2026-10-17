@@ -5,7 +5,8 @@
  * arrives late.
  *
  * `native-runtime.ts` is the only writer. A start walks postgres -> model ->
- * embeddings and settles `ready` or `failed`:
+ * embeddings and settles `ready` or `failed`; a deliberate stop (restart,
+ * reset) returns it to `idle`:
  *
  *   - An attempt keeps its FIRST failure. It comes from the code closest to
  *     it: the model store tells a full disk from an unreachable source, while
@@ -43,6 +44,12 @@ export interface NativeRuntimeProgress {
   ready(): void;
   /** Ignored once this attempt has failed. `step` defaults to the current one. */
   fail(kind: NativeRuntimeFailureKind, message: string, step?: NativeRuntimeStep): void;
+  /**
+   * The servers were stopped on purpose (a restart or a reset from Settings):
+   * back to `idle`, so the start that follows walks every step again instead
+   * of being a quiet re-check of a ready runtime.
+   */
+  stopped(): void;
 }
 
 export function createNativeRuntimeProgress(options: {
@@ -118,6 +125,10 @@ export function createNativeRuntimeProgress(options: {
     fail(kind, message, step) {
       if (status.phase === "failed") return;
       set({ phase: "failed", step: step ?? currentStep(), kind, message });
+    },
+
+    stopped() {
+      if (status.phase !== "idle") set({ phase: "idle" });
     },
   };
 }

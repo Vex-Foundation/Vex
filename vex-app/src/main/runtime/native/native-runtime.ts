@@ -9,6 +9,12 @@
  * Retry). The first run's model download happens inside the embeddings
  * half, before llama-server may launch. Every step is reported to
  * `native-runtime-progress.ts`, which the runtime screen watches.
+ *
+ * A HOLD gives one caller exclusive use of the runtime: Settings' restart and
+ * reset (`local-runtime-maintenance.ts`) stop the servers and start them again
+ * (or, for a reset, leave them stopped until the relaunch) without another
+ * start slipping in between. While a hold is out, `startNativeRuntime()`
+ * waits for its release and then starts, joins or reuses as usual.
  */
 
 import { existsSync } from "node:fs";
@@ -27,7 +33,7 @@ import {
 } from "../runtime-paths.js";
 import { getPgPassword } from "../secrets/pg-password.js";
 import { productionPgPasswordDeps } from "../secrets/production-deps.js";
-import type { RuntimeStartKind } from "../provider.js";
+import type { RuntimeStartKind, RuntimeStopKind } from "../provider.js";
 import { publishNativeEmbeddings } from "./embedding-env.js";
 import { LlamaSupervisor, type LlamaStartResult } from "./llama-supervisor.js";
 import { EMBEDDING_MODEL_SPEC, ensureModel } from "./model-store.js";
@@ -45,12 +51,29 @@ export interface NativeRuntimeStart {
   readonly message: string;
 }
 
+export interface NativeRuntimeStop {
+  readonly kind: RuntimeStopKind;
+  readonly message: string;
+}
+
+/** Exclusive use of the runtime; see the header. */
+export interface NativeRuntimeHold {
+  /** Stop both servers. A stop that did not fail returns the progress to `idle`. */
+  stop(): Promise<NativeRuntimeStop>;
+  /** The ordinary start, reported on the progress bus; never rejects. */
+  start(): Promise<NativeRuntimeStart>;
+  /** Let waiting and later starts through. Idempotent. */
+  release(): void;
+}
+
 type NativeHost = RuntimeHost<void, NativeStartDetail, NativeStopDetail>;
 
 let host: NativeHost | null = null;
 let starting: Promise<NativeRuntimeStart> | null = null;
 /** Aborted by stop(): an in-flight model download must not outlive the app. */
 let lifetime = new AbortController();
+/** The hold that is out, if any; `released` settles when it is given back. */
+let hold: { readonly released: Promise<void> } | null = null;
 
 async function buildHost(): Promise<NativeHost | NativeRuntimeStart> {
   const pg = await locatePostgresBinaries();
@@ -128,10 +151,51 @@ async function buildHost(): Promise<NativeHost | NativeRuntimeStart> {
  * being built joins that start instead of building a second one.
  */
 export function startNativeRuntime(): Promise<NativeRuntimeStart> {
+  const held = hold;
+  if (held !== null) return held.released.then(() => startNativeRuntime());
+  return startUnheld();
+}
+
+function startUnheld(): Promise<NativeRuntimeStart> {
   starting ??= runStart().finally(() => {
     starting = null;
   });
   return starting;
+}
+
+/** Whether a start is in flight: the boot start, a Retry, the migrate handler's. */
+export function nativeRuntimeStarting(): boolean {
+  return starting !== null;
+}
+
+/**
+ * Take exclusive use of the runtime, or null while another hold is out or a
+ * start is in flight: a restart must never stop a start halfway through.
+ */
+export function acquireNativeRuntimeHold(): NativeRuntimeHold | null {
+  if (hold !== null || starting !== null) return null;
+  let open: () => void = () => {};
+  const entry = {
+    released: new Promise<void>((resolve) => {
+      open = resolve;
+    }),
+  };
+  hold = entry;
+  let released = false;
+  return {
+    async stop() {
+      const outcome = await stopNativeRuntime();
+      if (outcome.kind !== "failed") progress.stopped();
+      return outcome;
+    },
+    start: () => startUnheld(),
+    release() {
+      if (released) return;
+      released = true;
+      if (hold === entry) hold = null;
+      open();
+    },
+  };
 }
 
 async function runStart(): Promise<NativeRuntimeStart> {
@@ -172,11 +236,12 @@ function settle(start: NativeRuntimeStart): NativeRuntimeStart {
   return start;
 }
 
-/** Stop both servers (quit). Postgres gets its fast-stop window. */
-export async function stopNativeRuntime(): Promise<void> {
+/** Stop both servers (quit, or a hold's stop). Postgres gets its fast-stop window. */
+export async function stopNativeRuntime(): Promise<NativeRuntimeStop> {
   lifetime.abort();
   lifetime = new AbortController();
-  if (host === null) return;
+  if (host === null) return { kind: "not_running", message: "The local runtime was never started." };
   const outcome = await host.stop();
   log.info(`[runtime:native] stop ${outcome.kind}: ${outcome.detail.postgres.message}`);
+  return { kind: outcome.kind, message: outcome.detail.postgres.message };
 }

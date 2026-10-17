@@ -265,3 +265,66 @@ describe("native runtime start, as the runtime screen sees it", () => {
     expect(progress.current()).toMatchObject({ phase: "failed", step: "postgres", kind: "unhealthy" });
   });
 });
+
+describe("native runtime hold (Settings' restart and reset)", () => {
+  it("stops to idle and starts again through every step, so the progress shows the restart", async () => {
+    const { startNativeRuntime, acquireNativeRuntimeHold, progress, seen } = await load();
+    await startNativeRuntime();
+    expect(progress.current().phase).toBe("ready");
+
+    const hold = acquireNativeRuntimeHold();
+    expect(hold).not.toBeNull();
+    expect(await hold?.stop()).toEqual({ kind: "stopped", message: "" });
+    expect(progress.current().phase).toBe("idle");
+    expect(await hold?.start()).toMatchObject({ kind: "running" });
+    hold?.release();
+    expect(seen.map((s) => s.phase)).toEqual([
+      "postgres", "model", "embeddings", "ready",
+      "idle",
+      "postgres", "model", "embeddings", "ready",
+    ]);
+  });
+
+  it("makes a start that arrives while held wait for the release", async () => {
+    const { startNativeRuntime, acquireNativeRuntimeHold, nativeRuntimeStarting } = await load();
+    await startNativeRuntime();
+    const hold = acquireNativeRuntimeHold();
+    await hold?.stop();
+    let settled = false;
+    const waiting = startNativeRuntime().then((result) => {
+      settled = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    expect(nativeRuntimeStarting()).toBe(false);
+    hold?.release();
+    expect(await waiting).toMatchObject({ kind: "running" });
+  });
+
+  it("is not handed out twice, nor while a start is in flight", async () => {
+    let release: () => void = () => {};
+    mocks.pgStart = () => new Promise((resolve) => (release = () => resolve(pgRunning)));
+    const { startNativeRuntime, acquireNativeRuntimeHold, nativeRuntimeStarting } = await load();
+    const boot = startNativeRuntime();
+    expect(nativeRuntimeStarting()).toBe(true);
+    expect(acquireNativeRuntimeHold()).toBeNull();
+    await vi.waitFor(() => expect(mocks.builds).toBe(1));
+    release();
+    await boot;
+
+    const first = acquireNativeRuntimeHold();
+    expect(first).not.toBeNull();
+    expect(acquireNativeRuntimeHold()).toBeNull();
+    first?.release();
+    first?.release();
+    const second = acquireNativeRuntimeHold();
+    expect(second).not.toBeNull();
+    second?.release();
+  });
+
+  it("reports the stop of a runtime that never started as not running", async () => {
+    const { stopNativeRuntime } = await load();
+    expect(await stopNativeRuntime()).toMatchObject({ kind: "not_running" });
+  });
+});

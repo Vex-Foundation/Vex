@@ -175,4 +175,17 @@ describe("native runtime progress", () => {
     expect(seen.map((s) => s.phase)).toEqual(["model", "embeddings"]);
     off();
   });
+
+  it("returns to idle on a deliberate stop, so the next start walks every step again", () => {
+    const { progress, phases } = tracker();
+    progress.begin(false);
+    progress.ready();
+    progress.stopped();
+    progress.stopped();
+    progress.begin(false);
+    progress.modelChecking();
+    progress.embeddingsStarting();
+    progress.ready();
+    expect(phases()).toEqual(["postgres", "ready", "idle", "postgres", "model", "embeddings", "ready"]);
+  });
 });
