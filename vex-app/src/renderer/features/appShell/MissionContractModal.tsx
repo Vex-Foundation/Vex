@@ -214,8 +214,11 @@ export function MissionContractModal({
           </SheetTitle>
           {/* Status marker only - the sheet is already open, so this is a
            * non-interactive `<span>` (no dead focus target), not the rail's
-           * clickable badge. */}
-          <span data-vex-state={badgeState} className="shrink-0">
+           * clickable badge. The wrapper carries no state seam of its own:
+           * the badge's span already names it, and a second
+           * `data-vex-state` here matched the title bar's swatch rules and
+           * painted the whole badge as a blue block. */}
+          <span className="shrink-0">
             <PremiumBadge
               label="Mission"
               state={badgeState}
