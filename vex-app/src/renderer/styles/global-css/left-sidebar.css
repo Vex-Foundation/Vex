@@ -427,18 +427,6 @@ html[data-os="mac"] .vex-ls-railhead {
   padding: 12px 0 14px;
 }
 
-/* Lighter keeps the rail with the vx alone, and its top bar runs above the
- * frame, so its rail has no cap to clear. */
-.vex-left-page__mark {
-  display: flex;
-  justify-content: center;
-  margin-top: 12px;
-  color: var(--vex-alias-accent-primary);
-}
-[data-vex-runtime-mode="lighter"] [data-vex-left-page="spine"] > .vex-left-page__content {
-  padding-top: 0;
-}
-
 /* STUDIO (docs/design/R3-MINIMAL.md section 4, "Studio"): the same column
  * in Studio mode. The body under the nav holds New project, the "Projects"
  * group (rows 34 high, the selected one in blue on the selection wash, the
