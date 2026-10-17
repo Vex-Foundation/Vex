@@ -66,7 +66,6 @@ vi.mock("../NotificationCenter.js", () => ({
 }));
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovalsSync: () => <div data-testid="approvals-sync" />,
-  GlobalApprovalsReview: () => null,
 }));
 vi.mock("../../vex/NeedsYouControl.js", () => ({
   NeedsYouControl: () => <div data-testid="needs-you" />,

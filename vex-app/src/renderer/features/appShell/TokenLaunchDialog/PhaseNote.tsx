@@ -1,6 +1,6 @@
 /**
- * The phase note - the one line under the form that says where the launch
- * stands, shared by every platform lane.
+ * The phase notes: the lines under the form that say where the launch stands,
+ * shared by the lane, the fingerprint card and the form.
  *
  * It renders MAIN's own sentence verbatim in every terminal case. The lane
  * appends nothing: main knows the status, the hash and the redaction rules, and
@@ -20,11 +20,9 @@
  */
 
 import type { JSX, ReactNode } from "react";
-import { Button } from "../../../components/ui/button.js";
 import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
 import { cn } from "../../../lib/utils.js";
-import { RE_REVIEW_NOTE, type TerminalTone } from "../token-launch/launch-display.js";
-import type { DialogPhase } from "./phase.js";
+import type { TerminalTone } from "../token-launch/launch-display.js";
 
 /**
  * A flat state row: the swatch, then the sentence. `children` is the sentence
@@ -121,40 +119,4 @@ export function DoneNote({
       {message}
     </NoteRow>
   );
-}
-
-export function PhaseNote({
-  phase,
-  onRePrice,
-}: {
-  readonly phase: DialogPhase;
-  readonly onRePrice: () => void;
-}): JSX.Element | null {
-  if (phase.kind === "re_review") {
-    return (
-      <NoteRow
-        state="concerned"
-        role="alert"
-        detail={RE_REVIEW_NOTE}
-        action={
-          <Button variant="quiet" size="sm" onClick={onRePrice}>
-            Review new price
-          </Button>
-        }
-      >
-        {phase.message}
-      </NoteRow>
-    );
-  }
-  if (phase.kind === "refused") {
-    return (
-      <NoteRow state="error" role="alert">
-        {phase.message}
-      </NoteRow>
-    );
-  }
-  if (phase.kind === "done") {
-    return <DoneNote tone={phase.tone} message={phase.message} />;
-  }
-  return null;
 }
