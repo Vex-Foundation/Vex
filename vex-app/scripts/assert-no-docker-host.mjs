@@ -128,7 +128,7 @@ checked.push(`${String(processes.length)} running processes`);
 
 console.log(`Checked:\n${checked.map((line) => `  - ${line}`).join("\n")}`);
 if (found.length > 0) {
-  console.error(`\nDocker is still on this machine:\n${found.map((line) => `  - ${line}`).join("\n")}`);
+  console.log(`\nDocker is still on this machine:\n${found.map((line) => `  - ${line}`).join("\n")}`);
   process.exit(1);
 }
 console.log("\nNo Docker on this machine: no CLI, no engine endpoint, no service, no process.");
