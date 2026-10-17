@@ -495,7 +495,7 @@ export function registerRailParityScenarios(
     await expect(vex.locator('[data-vex-area="vex-portrait-plate"]')).toBeVisible();
 
     // NO MONEY IN VEX'S COLUMN: no card, no tab strip, no board surface.
-    await expect(vex.locator("[data-vex-book-section]")).toHaveCount(0);
+    await expect(vex.locator("[data-vex-portfolio-section]")).toHaveCount(0);
     await expect(vex.getByRole("tab")).toHaveCount(0);
     await expect(vex.locator('[data-vex-area="active-board"]')).toHaveCount(0);
     await shot(page, `${theme}-30-workspace-vex-sidebar`);
