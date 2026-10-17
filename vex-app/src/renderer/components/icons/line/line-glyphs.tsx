@@ -5,7 +5,9 @@
  *
  * `spec` is the row id in appendix A, or null for a drawing the appendix does
  * not list yet. The mirrored chevrons, warning, question, user and archive
- * were derived in the same grid and stroke and now have their own rows.
+ * were derived in the same grid and stroke and now have their own rows; branch
+ * and thumbs-down (the transcript's message keys) were drawn the same way and
+ * wait for theirs.
  * Several names may share one spec row (`send` is the `up` arrow).
  */
 
@@ -462,6 +464,28 @@ export const LINE_GLYPHS = {
       <>
         <path d="M3.5 1.5h6l3 3v10h-9z" />
         <path d="M9.5 1.5v3h3" />
+      </>
+    ),
+  },
+  // Message actions. Drawn in the same grid and stroke for the transcript's
+  // hover keys; no appendix A row yet (see the catalogue test).
+  branch: {
+    spec: null,
+    draw: (
+      <>
+        <path d="M4.5 2v8.9" />
+        <circle cx="4.5" cy="12.5" r="1.6" />
+        <circle cx="11.5" cy="4.5" r="1.6" />
+        <path d="M11.5 6.1a5.4 5.4 0 0 1-5.4 6.4" />
+      </>
+    ),
+  },
+  "thumbs-down": {
+    spec: null,
+    draw: (
+      <>
+        <path d="M2.5 2.5h3v7h-3z" />
+        <path d="M5.5 2.5h6.8l1.2 5.5v1.5H9.3l.5 3c.1 1-.6 1.8-1.5 1.5-.5-.2-.8-.6-1-1L5.5 9.5" />
       </>
     ),
   },

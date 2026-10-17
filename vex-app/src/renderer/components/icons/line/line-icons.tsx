@@ -99,6 +99,8 @@ export const LineZen = make("zen");
 export const LineHome = make("home");
 export const LineFolder = make("folder");
 export const LineFile = make("file");
+export const LineBranch = make("branch");
+export const LineThumbsDown = make("thumbs-down");
 export const LineArchive = make("archive");
 export const LineTerminal = make("terminal");
 export const LineSplitVertical = make("split-vertical");
@@ -197,6 +199,8 @@ export const LINE_ICONS: { readonly [K in LineIconName]: LineIconComponent } = {
   home: LineHome,
   folder: LineFolder,
   file: LineFile,
+  branch: LineBranch,
+  "thumbs-down": LineThumbsDown,
   archive: LineArchive,
   terminal: LineTerminal,
   "split-vertical": LineSplitVertical,
