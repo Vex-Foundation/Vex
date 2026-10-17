@@ -133,7 +133,7 @@ describe("session-less failures become notifications", () => {
       severity: item?.severity,
       scope: item?.scope,
     }).toEqual({
-      title: "Memory maintenance - Provider rate-limited or unavailable",
+      title: "Memory maintenance: Provider rate-limited or unavailable",
       source: "engine",
       severity: "error",
       scope: { kind: "global" },
@@ -277,6 +277,10 @@ describe("a failure in the session on screen is reported once, by the inline car
     expect(notifications.getSnapshot().items.map((item) => item.id)).toEqual([
       sessionNotificationId(SESSION_A),
     ]);
+    // A colon joins the framing and the cause, never a hyphen used as a dash.
+    expect(notifications.getSnapshot().items[0]?.title).toBe(
+      "This turn failed: Provider rate-limited or unavailable",
+    );
 
     notifications.reset();
     act(() => {

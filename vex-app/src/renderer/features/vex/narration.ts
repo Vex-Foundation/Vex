@@ -122,7 +122,7 @@ export function vexNarration(state: VexState, situation: VexSituation): string |
     case "concerned": {
       const concern = situation.concern;
       if (concern === null) return null;
-      if (concern.kind === "offline") return "Offline - waiting for the network to come back.";
+      if (concern.kind === "offline") return "Offline: waiting for the network to come back.";
       if (concern.kind === "stale_balances") return STALE_BALANCES_LINE;
       const hint = engineErrorRetryHint("capacity", concern.retryAfterSeconds);
       const title = `${engineErrorCopy("capacity").title}.`;
