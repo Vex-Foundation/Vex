@@ -27,8 +27,14 @@ import { SPREAD_TEST_WIDTH, setWindowWidth } from "./_appshell-render.js";
 // module graph (icons, RHF, brand marks) is far beyond this suite's
 // partial mocks. The screen has its own suite; a stub keeps THIS suite's
 // AppShell import light.
+// `screenFault.on` makes the stub throw while rendering: the centre boundary
+// test below needs a page that fails.
+const screenFault = vi.hoisted(() => ({ on: false }));
 vi.mock("../../screens/SettingsScreen.js", () => ({
-  SettingsScreen: () => null,
+  SettingsScreen: () => {
+    if (screenFault.on) throw new Error("settings page fault");
+    return null;
+  },
 }));
 
 // Same reason: the Agent Scan ShellScreen pulls the virtualizer and the whole
@@ -1095,6 +1101,37 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Collapse sessions sidebar/i }));
     expect(sidebar()?.getAttribute("data-vex-sidebar-open")).toBe("false");
     expect(studioRow()?.getAttribute("aria-label")).toBe("Studio");
+  });
+});
+
+describe("the centre error boundary", () => {
+  it("replaces a page that throws with the recovery card, both sidebars stay, and closing the page clears it", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      screenFault.on = true;
+      const view = renderShell();
+      act(() =>
+        useUiStore.getState().setShellRoute({ kind: "settings", origin: null, section: null }),
+      );
+
+      const card = view.container.querySelector("[data-vex-error-boundary]");
+      expect(card).not.toBeNull();
+      expect(card?.getAttribute("data-extent")).toBe("region");
+      // The card stands inside the centre column, between the two sidebars.
+      expect(card?.closest(".vex-shell-centre")).not.toBeNull();
+      expect(view.container.querySelector("[data-vex-area='sessions-sidebar']")).not.toBeNull();
+      expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Try again" })).not.toBeNull();
+
+      // The page's own way out: closing it moves the route, which resets the boundary.
+      screenFault.on = false;
+      fireEvent.click(screen.getByRole("button", { name: "Close this page" }));
+      expect(useUiStore.getState().shellRoute.kind).toBe("none");
+      expect(view.container.querySelector("[data-vex-error-boundary]")).toBeNull();
+    } finally {
+      screenFault.on = false;
+      consoleError.mockRestore();
+    }
   });
 });
 

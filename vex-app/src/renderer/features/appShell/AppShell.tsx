@@ -59,6 +59,11 @@ import { BoardSubtitle } from "./Board/BoardSubtitle.js";
 import { BoardSpotlightWithChart } from "./Board/BoardSpotlightWithChart.js";
 import { AskVexPanel } from "./Board/AskVexPanel.js";
 import { ConnectionBanner } from "../../components/ui/connection-banner.js";
+import {
+  ErrorBoundary,
+  ErrorBoundaryFallback,
+  type ErrorBoundaryAction,
+} from "../../components/ui/error-boundary.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import {
@@ -129,6 +134,21 @@ function AppShellContent(): JSX.Element {
 }
 
 /**
+ * The centre boundary's way out of a page that throws: close it. Module-level
+ * so the array identity is stable across renders; offered only while a page is
+ * open (the base surfaces have no page to close).
+ */
+const CLOSE_PAGE_ACTIONS: readonly ErrorBoundaryAction[] = [
+  {
+    label: "Close this page",
+    onSelect: () => {
+      useUiStore.getState().setShellRoute({ kind: "none" });
+    },
+  },
+];
+const NO_ACTIONS: readonly ErrorBoundaryAction[] = [];
+
+/**
  * The frame: measures its own box (rAF-throttled ResizeObserver), decides
  * what each sidebar is asked to be, solves the tracks, and hosts Lighter's
  * chat share handle. The Vex auto-close is DERIVED from the solve (the stored
@@ -154,6 +174,7 @@ function ShellFrame({
   const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
   const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
   const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
+  const shellRouteKind = useUiStore((s) => s.shellRoute.kind);
   const [lighterZen, setLighterZen] = useState(false);
   const [zenAssistantOpen, setZenAssistantOpen] = useState(false);
   const [zenControlsOpen, setZenControlsOpen] = useState(false);
@@ -413,21 +434,43 @@ function ShellFrame({
           />
         ) : null}
 
-        <div className="min-h-0 flex-1">
-          {/* In Lighter mode the conversation lives in the right column
-           * (`LighterChatRail`), so the center is the desk alone. */}
-          {lighter ? (
-            <LighterCenter
-              zenMode={lighterZen}
-              onOpenZenAssistant={openZenAssistant}
-            />
-          ) : studio ? <StudioCenter /> : <SessionPanel />}
-        </div>
+        {/* The centre's own error boundary (R3-MINIMAL.md section 12): a
+          * surface or page that throws is replaced by the recovery card
+          * between the two sidebars, which stay standing. The running head
+          * stays outside it (it owns the approvals live sync). Reset by the
+          * mode, the session and the page, so a healthy subject is never
+          * blacked out by the one that failed. */}
+        <ErrorBoundary
+          surface="shell.centre"
+          extent="region"
+          resetKey={`${runtimeMode}:${activeSessionId ?? ""}:${shellRouteKind}`}
+          actions={shellRouteKind === "none" ? NO_ACTIONS : CLOSE_PAGE_ACTIONS}
+          fallback={(props) => (
+            <div className="min-h-0 flex-1">
+              <ErrorBoundaryFallback
+                {...props}
+                title="Something in Vex stopped rendering"
+                extent="region"
+              />
+            </div>
+          )}
+        >
+          <div className="min-h-0 flex-1">
+            {/* In Lighter mode the conversation lives in the right column
+             * (`LighterChatRail`), so the center is the desk alone. */}
+            {lighter ? (
+              <LighterCenter
+                zenMode={lighterZen}
+                onOpenZenAssistant={openZenAssistant}
+              />
+            ) : studio ? <StudioCenter /> : <SessionPanel />}
+          </div>
 
-        {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you, the
-          * money registers): one paper sheet over the centre, absolute inside
-          * this column so it never reflows a track. */}
-        <ShellScreens />
+          {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you,
+            * the money registers): one paper sheet over the centre, absolute
+            * inside this column so it never reflows a track. */}
+          <ShellScreens />
+        </ErrorBoundary>
       </section>
 
       {/* TRACK 3 - Vex's column. Empty on the welcome stage, where she
