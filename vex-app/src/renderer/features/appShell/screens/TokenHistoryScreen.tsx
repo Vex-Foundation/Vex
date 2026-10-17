@@ -2,10 +2,11 @@
  * Token-history screen - the full-app ShellScreen showing one token's
  * Vex-recorded activity (owner decree 2026-07-21: the eye key on a token row
  * in Balances / All assets opens this). R3 grammar (docs/design/R3-MINIMAL.md
- * section 9.2): a wide page with a crumb ("Portfolio / All assets / USD Coin
- * history" when it was opened from a register), the token head in the body
- * (the `header` slot, so no serif chapter), the scope sentence, then the
- * Activity ledger drawn by the shared `.vex-scan-*` rules.
+ * section 9.2): a wide page whose crumb the title bar draws ("Portfolio / All
+ * assets / USD Coin history" when it was opened from a register:
+ * `page-crumbs.ts`), the token head in the body (the `header` slot, so no
+ * serif chapter), the scope sentence, then the Activity ledger drawn by the
+ * shared `.vex-scan-*` rules.
  *
  * This file is the SCREEN GATE only - identity, query, the states matrix,
  * and pagination. The row, the bridge per-leg audit, and the
@@ -45,22 +46,15 @@ import type { JSX } from "react";
 import type { TokenHistoryDto } from "@shared/schemas/token-history.js";
 import type { Result } from "@shared/ipc/result.js";
 import { chainDisplay } from "@shared/chains/display.js";
-import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
 import { TokenMark } from "../../../components/common/TokenIcon.js";
 import { useTokenHistoryInfinite } from "../../../lib/api/portfolio.js";
-import { truncateAddress } from "../../../lib/format.js";
 import { resolveTokenMark } from "../../../lib/token-marks.js";
-import {
-  useUiStore,
-  type ShellRouteToken,
-  type ShellScreenOrigin,
+import type {
+  ShellRouteToken,
+  ShellScreenOrigin,
 } from "../../../stores/uiStore.js";
-import {
-  assetsReturnToScope,
-  assetsRouteFor,
-  type AssetsRouteScope,
-} from "../../../stores/uiStore/shell-route.js";
-import { PORTFOLIO_CRUMB, ShellScreen, type PageCrumb } from "./ShellScreen.js";
+import { tokenDisplayName } from "./page-crumbs.js";
+import { ShellScreen } from "./ShellScreen.js";
 import { EntryRow } from "./token-history/TokenHistoryRow.js";
 
 /** One available page of the DTO union (the shape the list renders). */
@@ -72,18 +66,6 @@ function availablePage(
 ): TokenHistoryPage | null {
   if (page === undefined || !page.ok) return null;
   return page.data.status === "available" ? page.data : null;
-}
-
-/** The register's own title as a crumb (the words AssetsScreen titles itself with). */
-function assetsCrumbLabel(scope: AssetsRouteScope): string {
-  switch (scope.kind) {
-    case "global":
-      return "All assets";
-    case "session":
-      return "Session assets";
-    case "project":
-      return "Project assets";
-  }
 }
 
 export function TokenHistoryScreen({
@@ -101,25 +83,12 @@ export function TokenHistoryScreen({
   });
 
   // Display identity: main-sanitized name, else the sanitized symbol, else
-  // the truncated address - never raw provider text.
-  const symbol = sanitizeTokenSymbol(token.symbol);
-  const displayName =
-    token.tokenName ?? symbol ?? truncateAddress(token.tokenAddress);
+  // the truncated address - never raw provider text (the title bar names the
+  // page with the same words).
+  const displayName = tokenDisplayName(token);
   const chainName = chainDisplay(token.chainId).name;
   const mark = resolveTokenMark(token.chainId, token.tokenAddress, token.symbol);
   const title = `${displayName} history`;
-
-  // Opened from a register: the crumb goes back to THAT scope, never the
-  // global one (the same route the close key returns to).
-  const route = useUiStore((state) => state.shellRoute);
-  const crumbs: PageCrumb[] = [PORTFOLIO_CRUMB];
-  if (route.kind === "tokenHistory" && route.returnTo.kind === "assets") {
-    const scope = assetsReturnToScope(route.returnTo);
-    crumbs.push({
-      label: assetsCrumbLabel(scope),
-      route: assetsRouteFor(scope, null),
-    });
-  }
 
   const pages = query.data?.pages ?? [];
   const firstPage = pages[0];
@@ -190,7 +159,6 @@ export function TokenHistoryScreen({
       title={title}
       origin={origin}
       onClose={onClose}
-      crumbs={crumbs}
       width="wide"
       header={
         <div className="vex-scan-token">

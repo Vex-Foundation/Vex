@@ -1,19 +1,20 @@
 /**
- * ShellScreen: the shared page chrome (docs/design/R3-MINIMAL.md sections
+ * ShellScreen: the shared page sheet (docs/design/R3-MINIMAL.md sections
  * 2.3, 9.2, 9.6 and 12). Memory, the sessions library, Settings, Portfolio
  * and its subpages (Agent Scan, All assets, token history), Board and Needs
  * you all mount inside this one sheet: a paper page INSIDE the centre column,
- * under the title bar row, with both sidebars standing. The title bar keeps
- * the page's name, Needs you and the token chip; this chrome adds what the
- * page itself needs:
+ * under the title bar row, with both sidebars standing. The title bar says
+ * where you are (the page's name, a subpage's crumb with its parents as
+ * links: `page-crumbs.ts`) and keeps Needs you and the token chip; the page
+ * itself draws no crumb and no close row, so its content starts right under
+ * the title bar, as the design draws it.
  *
- *   - the crumb of a subpage ("Portfolio / All assets / USD Coin history"),
- *     each parent a link that goes up to it;
- *   - the title: the serif page head (`chapter`, Memory and the like), a
+ *   - The title: the serif page head (`chapter`, Memory and the like), a
  *     custom head (`header`, the token history's mark and name), or, when a
- *     page draws neither, a visually hidden h1 so every page still has one;
- *   - the close key (and Escape), which returns to the PREVIOUS route: the
- *     page the user came from, else the host's own close.
+ *     page draws neither, a visually hidden h1 so every page still has one.
+ *   - Escape returns to the PREVIOUS route: the page the user came from
+ *     (`page-trail.ts`), else the host's own close. Where a page has no other
+ *     way back, the title bar carries a close key that does the same.
  *
  * Radius 0, no shadow, no blur (`styles/global-css/overlay.css`). The sheet
  * is `absolute` inside the centre column (the host mounts it there), so it
@@ -36,105 +37,10 @@
 
 import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { motion, type TargetAndTransition } from "motion/react";
-import { LineClose } from "../../../components/icons/line/index.js";
-import { Tooltip } from "../../../components/ui/tooltip.js";
 import { isDialogOnScreen } from "../../../components/ui/dialog.js";
-import { useUiStore, type ShellScreenOrigin } from "../../../stores/uiStore.js";
-import type { ShellRoute } from "../../../stores/uiStore/shell-route.js";
+import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EASE_STANDARD, SPRING_PANEL } from "../../../lib/motion/index.js";
-
-/* ----------------------------- the crumb ---------------------------------- */
-
-/** One parent in a subpage's crumb: its words and the route it goes up to. */
-export interface PageCrumb {
-  readonly label: string;
-  readonly route: ShellRoute;
-}
-
-/** Portfolio, the parent of every money subpage. */
-export const PORTFOLIO_CRUMB: PageCrumb = {
-  label: "Portfolio",
-  route: { kind: "portfolio", origin: null },
-};
-
-/* ------------------------- the previous route ----------------------------- */
-
-/**
- * WHERE A CLOSE RETURNS: the pages the user walked through, newest last.
- *
- * Fed by one store subscription (installed by the first page that mounts):
- * opening a page from another page pushes the one being left; going back
- * pops it; any return to the bare shell (`none`: the nav's Chat, a mode
- * switch, the host's own close) clears it. A move within one page (another
- * Settings section) replaces rather than pushes, so a close never steps
- * through a page's own sub-states. Launch-ephemeral like the route itself;
- * never persisted.
- */
-const pageTrail: ShellRoute[] = [];
-/** A trail that long has stopped meaning "where I came from". */
-const PAGE_TRAIL_MAX = 12;
-let trailInstalled = false;
-/** Set while this module moves the route itself (back, or up the crumb). */
-let movingBack = false;
-
-function installPageTrail(): void {
-  if (trailInstalled) return;
-  trailInstalled = true;
-  useUiStore.subscribe((state, previous) => {
-    const next = state.shellRoute;
-    const from = previous.shellRoute;
-    if (next === from) return;
-    if (next.kind === "none" || from.kind === "none") {
-      pageTrail.length = 0;
-      return;
-    }
-    if (movingBack || next.kind === from.kind) return;
-    pageTrail.push(from);
-    if (pageTrail.length > PAGE_TRAIL_MAX) pageTrail.shift();
-  });
-}
-
-/** A route without its trigger rect: that row is gone, so the return expands from the centre. */
-function withoutOrigin(route: ShellRoute): ShellRoute {
-  return route.kind === "none" ? route : { ...route, origin: null };
-}
-
-function moveTo(route: ShellRoute): void {
-  movingBack = true;
-  try {
-    useUiStore.getState().setShellRoute(withoutOrigin(route));
-  } finally {
-    movingBack = false;
-  }
-}
-
-/**
- * Close the open page: back to the page the user came from, else the host's
- * own close (`fallback`). A page calls it through its close key and Escape.
- */
-export function closePageToPrevious(fallback: () => void): void {
-  const previous = pageTrail.pop();
-  if (previous === undefined) {
-    fallback();
-    return;
-  }
-  moveTo(previous);
-}
-
-/**
- * Go UP the crumb to a parent: the trail is cut back to where that parent
- * stood (when the user came through it), so a later close does not walk back
- * down into the page just left.
- */
-function goUpTo(route: ShellRoute): void {
-  for (let index = pageTrail.length - 1; index >= 0; index -= 1) {
-    if (pageTrail[index]?.kind === route.kind) {
-      pageTrail.length = index;
-      break;
-    }
-  }
-  moveTo(route);
-}
+import { closePageToPrevious, installPageTrail } from "./page-trail.js";
 
 /* ------------------------------ geometry ---------------------------------- */
 
@@ -197,45 +103,12 @@ function morphToOrigin(origin: ShellScreenOrigin): TargetAndTransition {
 
 /* ------------------------------- the page --------------------------------- */
 
-function Crumb({
-  parents,
-  current,
-}: {
-  readonly parents: readonly PageCrumb[];
-  readonly current: string;
-}): JSX.Element {
-  return (
-    <nav aria-label="Breadcrumb" className="vex-ov__crumb">
-      <ol>
-        {parents.map((parent) => (
-          <li key={`${parent.route.kind}:${parent.label}`}>
-            <button
-              type="button"
-              className="vex-ov__crumb-link"
-              onClick={() => goUpTo(parent.route)}
-            >
-              {parent.label}
-            </button>
-            <span aria-hidden>/</span>
-          </li>
-        ))}
-        <li>
-          <span className="vex-ov__crumb-current" aria-current="page">
-            {current}
-          </span>
-        </li>
-      </ol>
-    </nav>
-  );
-}
-
 export function ShellScreen({
   title,
   origin,
   onClose,
   header,
   chapter,
-  crumbs,
   width = "reading",
   fill,
   children,
@@ -261,11 +134,6 @@ export function ShellScreen({
    */
   readonly chapter?: string | null;
   /**
-   * A subpage's parents, outermost first. With any, the chrome draws the
-   * crumb: each parent a link up to it, then `title` as the current page.
-   */
-  readonly crumbs?: readonly PageCrumb[];
-  /**
    * The column: `reading` (760, the default) or `wide` (1100 with its
    * padding, for the money ledgers).
    */
@@ -278,7 +146,6 @@ export function ShellScreen({
   readonly children: ReactNode;
 }): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
-  const closeRef = useRef<HTMLButtonElement | null>(null);
   // Whether this instance has already asked to close. A ref, not effect-local
   // state: the listener re-registers whenever `onClose` changes identity, and
   // the fact it guards belongs to the screen, not to one registration.
@@ -291,8 +158,8 @@ export function ShellScreen({
     installPageTrail();
   }, []);
 
-  // ONE close intent per screen instance, whichever way it comes (the key or
-  // Escape): back to the previous page, else the host's close.
+  // ONE close intent per screen instance: back to the previous page, else the
+  // host's close.
   const close = useCallback((): void => {
     closeAsked.current = true;
     closePageToPrevious(onClose);
@@ -357,18 +224,18 @@ export function ShellScreen({
     };
   }, []);
 
-  // Move focus into the screen on open, unless a child already claimed it
-  // (child effects run first: the Sessions screen focuses its search field).
+  // Move focus into the screen on open (the page itself, a focusable
+  // dialog), unless a child already claimed it (child effects run first: the
+  // Sessions screen focuses its search field).
   useEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && root.contains(active)) return;
-    closeRef.current?.focus();
+    root.focus({ preventScroll: true });
   }, []);
 
   const chapterText = chapter === undefined ? (header === undefined ? title : null) : chapter;
-  const parents = crumbs ?? [];
 
   return (
     <motion.section
@@ -376,6 +243,7 @@ export function ShellScreen({
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      tabIndex={-1}
       data-vex-area="shell-screen"
       data-width={width}
       // Morph contract pinned by ShellScreen.test.tsx: which start/end frame
@@ -419,23 +287,6 @@ export function ShellScreen({
         opacity: { duration: 0.25, ease: EASE_STANDARD },
       }}
     >
-      <div className="vex-ov__bar">
-        {parents.length > 0 ? <Crumb parents={parents} current={title} /> : null}
-        {/* Keybinding hint (G9): Escape already closes; the tooltip only
-         * surfaces the existing shortcut, it defines nothing new. */}
-        <Tooltip label="Close · Esc" side="left">
-          <button
-            ref={closeRef}
-            type="button"
-            aria-label={`Close ${title}`}
-            onClick={close}
-            className="vex-ov__close"
-          >
-            <LineClose size={16} />
-          </button>
-        </Tooltip>
-      </div>
-
       {/* The body resolves in after the sheet lands (ExpandableScreen
        * grammar: delayed fade, never animating with the container scale). */}
       <motion.div

@@ -11,9 +11,8 @@
  *     dialog named "<display name> history" with the token head (mark, name,
  *     chain, full address) and the honest "Vex-recorded activity" disclosure,
  *     and NO h1 (the chrome's `header` slot replaces the serif chapter);
- *   - the crumb: "Portfolio" always, plus the register the page was opened
- *     from ("All assets", "Session assets", "Project assets"), each a link up
- *     to that scope's own route; no register crumb when opened from the shell;
+ *   - the page draws no crumb and no close key of its own (the title bar
+ *     carries the crumb, `page-crumbs.test.ts` pins its words and routes);
  *   - status "unavailable" (query timeout) renders the calm try-again note
  *     and NEVER the empty-history copy;
  *   - empty available history renders the quiet "No Vex-recorded history"
@@ -28,7 +27,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { TokenHistoryDto } from "@shared/schemas/token-history.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
@@ -95,7 +94,6 @@ function mountScreen(
 }
 
 const SESSION = "00000000-0000-4000-8000-0000000000aa";
-const PROJECT = "00000000-0000-4000-8000-0000000000bb";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -124,10 +122,6 @@ describe("TokenHistoryScreen - chrome and disclosure", () => {
     // No serif chapter on this screen: it is replaced by the header slot (the
     // h1 element itself is absent).
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
-    // Close key still named by the title.
-    expect(
-      screen.getByRole("button", { name: "Close USD Coin history" }),
-    ).not.toBeNull();
     // The hook received the EXACT route identity (never symbol/name).
     expect(mockUseTokenHistoryInfinite).toHaveBeenCalledWith({
       chainId: 8453,
@@ -165,56 +159,12 @@ describe("TokenHistoryScreen - chrome and disclosure", () => {
   });
 });
 
-describe("TokenHistoryScreen - crumb", () => {
-  function crumbButtons(): readonly string[] {
-    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
-    return within(nav)
-      .getAllByRole("button")
-      .map((button) => button.textContent ?? "");
-  }
-
-  it("opened from the shell: Portfolio is the only parent and the page itself is current", () => {
-    mockQuery([availablePage([])]);
-    mountScreen({ kind: "shell" });
-    expect(crumbButtons()).toEqual(["Portfolio"]);
-    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(nav).getByText("USD Coin history").getAttribute("aria-current")).toBe("page");
-  });
-
-  it("opened from the global register: Portfolio then All assets, and All assets goes up to the global register with a NULL origin", () => {
+describe("TokenHistoryScreen - no page chrome of its own", () => {
+  it("draws no crumb and no close key: the title bar carries the crumb, Escape the way back", () => {
     mockQuery([availablePage([])]);
     mountScreen({ kind: "assets", sessionId: null });
-    expect(crumbButtons()).toEqual(["Portfolio", "All assets"]);
-    fireEvent.click(screen.getByRole("button", { name: "All assets" }));
-    expect(useUiStore.getState().shellRoute).toEqual({
-      kind: "assets",
-      origin: null,
-      sessionId: null,
-    });
-  });
-
-  it("opened from a session register: the crumb names and returns to THAT session, never the global register", () => {
-    mockQuery([availablePage([])]);
-    mountScreen({ kind: "assets", sessionId: SESSION });
-    expect(crumbButtons()).toEqual(["Portfolio", "Session assets"]);
-    fireEvent.click(screen.getByRole("button", { name: "Session assets" }));
-    expect(useUiStore.getState().shellRoute).toEqual({
-      kind: "assets",
-      origin: null,
-      sessionId: SESSION,
-    });
-  });
-
-  it("opened from a project register: the crumb names and returns to THAT project", () => {
-    mockQuery([availablePage([])]);
-    mountScreen({ kind: "assets", projectId: PROJECT });
-    expect(crumbButtons()).toEqual(["Portfolio", "Project assets"]);
-    fireEvent.click(screen.getByRole("button", { name: "Project assets" }));
-    expect(useUiStore.getState().shellRoute).toEqual({
-      kind: "assets",
-      origin: null,
-      projectId: PROJECT,
-    });
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Close / })).toBeNull();
   });
 });
 

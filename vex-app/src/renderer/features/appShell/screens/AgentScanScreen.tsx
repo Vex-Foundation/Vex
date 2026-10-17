@@ -1,12 +1,12 @@
 /**
  * AGENT SCAN - the full-history ledger of everything Vex has executed
  * on-chain, a Portfolio subpage (docs/design/R3-MINIMAL.md section 9.2:
- * "Portfolio / Agent Scan", the lead, four named filter menus, rows by day,
- * every row ending in a word). Opened from the profile menu or Portfolio
- * (the whole feed) or PRESET to a scope: one session, or one Vex Studio
- * project's own wallets (the Vex sidebar's "This project" link). The preset
- * is a scope, not a user filter - it survives Clear and shows as its own
- * non-clearable chip.
+ * the title bar's "Portfolio / Agent Scan", the lead, four named filter
+ * menus, rows by day, every row ending in a word). Opened from the profile
+ * menu or Portfolio (the whole feed) or PRESET to a scope: one session, or
+ * one Vex Studio project's own wallets (the Vex sidebar's "This project"
+ * link). The preset is a scope, not a user filter - it survives Clear and
+ * shows as its own non-clearable chip.
  *
  * Where `TokenHistoryScreen` answers "what happened to THIS token?", this
  * screen answers "what has the agent DONE?": every `agent_activity` row AND
@@ -45,7 +45,7 @@ import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import { useProject } from "../../../lib/api/projects.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import type { AgentScanRouteScope } from "../../../stores/uiStore/shell-route.js";
-import { PORTFOLIO_CRUMB, ShellScreen } from "./ShellScreen.js";
+import { ShellScreen } from "./ShellScreen.js";
 import {
   activeFilterCount,
   AgentScanFilterBar,
@@ -301,7 +301,6 @@ export function AgentScanScreen({
       title={SCREEN_TITLE}
       origin={origin}
       onClose={onClose}
-      crumbs={[PORTFOLIO_CRUMB]}
       chapter={null}
       width="wide"
       fill

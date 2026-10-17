@@ -4,11 +4,14 @@
  *
  *   - the LEFT cell says where you are: the session title with its mode
  *     ("Agent · Restricted", and the mission badge for a mission), the page
- *     name when a page is open ("Portfolio", "Needs you" with its count, a
- *     crumb for a subpage), or the Studio project with its access;
- *   - the RIGHT cluster (gap 8): the page keys (export), the Studio host
- *     status, Notices (only while notices exist), "Needs you · N" (always),
- *     then the token chip, which also shows and hides the Vex sidebar.
+ *     name when a page is open ("Portfolio", "Needs you" with its count, and
+ *     for a subpage its crumb, "Portfolio / Agent Scan", each parent a link
+ *     up to it: `screens/page-crumbs.ts`), or the Studio project with its
+ *     access. The page itself draws no crumb or close row;
+ *   - the RIGHT cluster (gap 8): the page keys (export, and a close key for a
+ *     page with no other way back), the Studio host status, Notices (only
+ *     while notices exist), "Needs you · N" (always), then the token chip,
+ *     which also shows and hides the Vex sidebar.
  *
  * The row is a window drag region (`.vex-drag`); every control inside it opts
  * out on its own (window-chrome.css). Its right padding reserves the Windows
@@ -43,10 +46,11 @@
  * moves in the DOM. `data-vex-area="shell-status-strip"` stays the test seam.
  */
 
-import type { JSX } from "react";
+import { Fragment, type JSX } from "react";
 import { createPortal } from "react-dom";
-import type { ShellRoute } from "../../stores/uiStore/shell-route.js";
 import { selectVexOpen, useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { LineClose } from "../../components/icons/line/index.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
 import { useProject } from "../../lib/api/projects.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
@@ -60,6 +64,10 @@ import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 import { getSessionTitle } from "./sessionListModel.js";
 import { useShellStripSlot } from "./lighterTrading/shellStripSlot.js";
+import { titleBarPageOf, type PageTitle } from "./screens/page-crumbs.js";
+import { closePageToPrevious, goUpToPage } from "./screens/page-trail.js";
+
+export { titleBarPageOf };
 
 /** The Vex toggle as the frame solved it: open, and the press that flips it. */
 export interface VexToggle {
@@ -83,36 +91,6 @@ export interface RunningHeadProps {
 /** The access word of a session or a project. */
 function accessWord(permission: "restricted" | "full"): string {
   return permission === "full" ? "Full access" : "Restricted";
-}
-
-/** The page name in the left cell, or null with no page open. */
-export function titleBarPageOf(
-  route: ShellRoute,
-): { readonly name: string; readonly crumb: string | null } | null {
-  switch (route.kind) {
-    case "none":
-      return null;
-    case "memory":
-      return { name: "Memory", crumb: null };
-    case "sessions":
-      return { name: "Sessions", crumb: null };
-    case "howItWorks":
-      return { name: "How Vex works", crumb: null };
-    case "portfolio":
-      return { name: "Portfolio", crumb: null };
-    case "board":
-      return { name: "Board", crumb: null };
-    case "needsYou":
-      return { name: "Needs you", crumb: null };
-    case "settings":
-      return { name: "Settings", crumb: null };
-    case "agentScan":
-      return { name: "Agent Scan", crumb: "Portfolio" };
-    case "assets":
-      return { name: "All assets", crumb: "Portfolio" };
-    case "tokenHistory":
-      return { name: "Token history", crumb: "Portfolio" };
-  }
 }
 
 function TitleText({
@@ -154,6 +132,59 @@ function ProjectTitle({ projectId }: { readonly projectId: string | null }): JSX
   return <TitleText name={project.name} sub={`Studio · ${accessWord(project.permission)}`} />;
 }
 
+/**
+ * A subpage's crumb (docs/design/R3-MINIMAL.md section 3): each parent a
+ * link up to it (13, muted), the page itself current (14 / 500). Going up
+ * goes through the page trail, so a later Escape does not walk back down.
+ */
+function PageCrumbTitle({ page }: { readonly page: PageTitle }): JSX.Element {
+  return (
+    <nav aria-label="Breadcrumb" className="vex-tb-title" data-vex-area="title-bar-title">
+      {page.parents.map((parent) => (
+        <Fragment key={`${parent.route.kind}:${parent.label}`}>
+          <button
+            type="button"
+            className="vex-tb-title__crumb underline-offset-[3px] hover:text-ink-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
+            onClick={() => goUpToPage(parent.route)}
+          >
+            {parent.label}
+          </button>
+          <span aria-hidden className="vex-tb-title__crumb">/</span>
+        </Fragment>
+      ))}
+      <span className="vex-tb-title__name" aria-current="page">
+        {page.name}
+      </span>
+    </nav>
+  );
+}
+
+/**
+ * The page's close key, ONLY where the page has no other way back: a page
+ * without a crumb parent outside agent mode, where no nav stands beside it
+ * (Studio and Lighter reach Settings from their own bars). Escape does the
+ * same everywhere; this key is its pointer twin. It returns to the previous
+ * page, else to the bare shell.
+ */
+function PageCloseKey({ runtimeMode }: { readonly runtimeMode: RuntimeMode }): JSX.Element | null {
+  const route = useUiStore((s) => s.shellRoute);
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
+  const page = titleBarPageOf(route);
+  if (page === null || page.parents.length > 0 || runtimeMode === "agent") return null;
+  return (
+    <Tooltip label="Close · Esc">
+      <button
+        type="button"
+        aria-label={`Close ${page.name}`}
+        className="vex-tb-key"
+        onClick={() => closePageToPrevious(() => setShellRoute({ kind: "none" }))}
+      >
+        <LineClose size={16} />
+      </button>
+    </Tooltip>
+  );
+}
+
 /** The left cell's words: the page, else the project or the session. */
 function TitleBarContext({
   runtimeMode,
@@ -167,13 +198,10 @@ function TitleBarContext({
   const page = titleBarPageOf(route);
   if (page !== null) {
     if (route.kind === "needsYou") return <NeedsYouPageTitle />;
-    return page.crumb === null ? (
+    return page.parents.length === 0 ? (
       <TitleText name={page.name} sub={null} />
     ) : (
-      <span className="vex-tb-title" data-vex-area="title-bar-title">
-        <span className="vex-tb-title__crumb">{page.crumb} /</span>
-        <span className="vex-tb-title__name">{page.name}</span>
-      </span>
+      <PageCrumbTitle page={page} />
     );
   }
   if (runtimeMode === "studio") return <ProjectTitle projectId={activeProjectId} />;
@@ -207,6 +235,7 @@ export function RunningHead({
 
   const flank = (
     <div className="vex-running-head__flank">
+      <PageCloseKey runtimeMode={runtimeMode} />
       <SessionExportControl activeSessionId={sessionScopedId} />
       {runtimeMode === "studio" ? <StudioHostStatusWord /> : null}
       {/* Session-LESS failures (memory maintenance) reach the user here too:

@@ -964,6 +964,27 @@ describe("AppShell", () => {
     expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
   });
 
+  it("a page opened from the welcome keeps its name and the token chip in the title bar", () => {
+    const view = renderShell();
+    const head = (): Element | null =>
+      view.container.querySelector("[data-vex-area='shell-status-strip']");
+    // The bare welcome: nothing to say, no chip (Vex stands in the centre).
+    expect(head()?.hasAttribute("data-empty")).toBe(true);
+    expect(view.container.querySelector("[data-vex-area='vex-token-chip']")).toBeNull();
+
+    // A page covers the welcome and is not part of it.
+    act(() => useUiStore.getState().navigate("portfolio"));
+    expect(head()?.hasAttribute("data-empty")).toBe(false);
+    expect(
+      view.container.querySelector("[data-vex-area='title-bar-title']")?.textContent,
+    ).toBe("Portfolio");
+    expect(view.container.querySelector("[data-vex-area='vex-token-chip']")).not.toBeNull();
+
+    // Back on the welcome, the stage is as it was.
+    act(() => useUiStore.getState().navigate("chat"));
+    expect(head()?.hasAttribute("data-empty")).toBe(true);
+  });
+
   it("retires the gutter; every head row stays a drag region", () => {
     const view = renderShell();
     expect(view.container.querySelector("[data-vex-area='shell-gutter']")).toBeNull();

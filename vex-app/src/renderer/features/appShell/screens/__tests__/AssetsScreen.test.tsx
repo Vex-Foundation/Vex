@@ -9,8 +9,8 @@
  *     row grammar, sorted largest USD first,
  *   - Escape closes back to `{ kind: "none" }` (the ShellScreen chrome's
  *     window-level listener, identical to MemoryScreen's shape), or to the
- *     page it was opened from (Portfolio), and the crumb's "Portfolio" goes
- *     up to it (docs/design/R3-MINIMAL.md section 9.2),
+ *     page it was opened from (Portfolio); the crumb is the title bar's
+ *     (docs/design/R3-MINIMAL.md section 9.2),
  *   - the quiet empty state invites rather than errors,
  *   - hide-dust: the screen's checkbox (default checked, `hideDustBalances`
  *     in uiStore) filters sub-cent priced rows and names the hidden count;
@@ -145,7 +145,7 @@ describe("AssetsScreen", () => {
       screen.getByRole("heading", { level: 1, name: "All assets" }),
     ).not.toBeNull();
     // All six lines render - the card's top-5 cut does not apply here.
-    const rows = [...view.container.querySelectorAll("ul > li")].map(
+    const rows = [...view.container.querySelectorAll("li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
@@ -153,7 +153,7 @@ describe("AssetsScreen", () => {
     expect(rows[5]).toContain("Token F");
   });
 
-  it("closes back to the page it was opened from, and the crumb goes up to Portfolio", () => {
+  it("closes on Escape back to the page it was opened from, and draws no crumb of its own", () => {
     render(<ShellScreens />);
     act(() => {
       useUiStore.getState().setShellRoute({ kind: "portfolio", origin: null });
@@ -161,21 +161,13 @@ describe("AssetsScreen", () => {
     act(() => {
       useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
     });
-    // The crumb names the parent as a link and the page itself as current.
-    const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(crumb.textContent).toContain("Portfolio");
-    expect(screen.getByText("All assets", { selector: "[aria-current='page']" })).not.toBeNull();
+    // The title bar carries the crumb; the page starts with its register.
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
 
     act(() => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
     // Back where the user came from, never the bare shell.
-    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
-
-    act(() => {
-      useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
   });
 
@@ -307,7 +299,7 @@ describe("AssetsScreen - hide dust", () => {
     const checkbox = screen.getByRole("checkbox", { name: /Hide dust/i });
     expect(checkbox).toHaveProperty("checked", true);
 
-    const rows = [...view.container.querySelectorAll("ul > li")].map(
+    const rows = [...view.container.querySelectorAll("li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -327,7 +319,7 @@ describe("AssetsScreen - hide dust", () => {
     );
     expect(persisted.state.hideDustBalances).toBe(false);
 
-    let rows = [...view.container.querySelectorAll("ul > li")].map(
+    let rows = [...view.container.querySelectorAll("li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
@@ -337,7 +329,7 @@ describe("AssetsScreen - hide dust", () => {
 
     fireEvent.click(checkbox);
     expect(useUiStore.getState().hideDustBalances).toBe(true);
-    rows = [...view.container.querySelectorAll("ul > li")].map(
+    rows = [...view.container.querySelectorAll("li")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);

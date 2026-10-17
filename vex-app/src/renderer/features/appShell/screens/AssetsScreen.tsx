@@ -16,9 +16,9 @@
  *
  * Same shared `TokenHoldingRow` grammar and
  * address-verified marks as the Balances section, sorted largest USD first
- * with unpriced lines last. No search field (deferred by plan). The crumb,
- * the close (back to the page the user came from) and Escape are the
- * ShellScreen chrome's.
+ * with unpriced lines last. No search field (deferred by plan). The title
+ * bar draws the crumb; Escape (back to the page the user came from) is the
+ * ShellScreen's.
  *
  * This screen owns the ONLY "hide dust" control (`hideDustBalances` in
  * uiStore): the kit checkbox in the register's control row, right-aligned.
@@ -43,7 +43,7 @@ import {
   tokenLineKey,
   TokenHoldingRow,
 } from "../book/portfolio/TokenHoldingRow.js";
-import { PORTFOLIO_CRUMB, ShellScreen } from "./ShellScreen.js";
+import { ShellScreen } from "./ShellScreen.js";
 
 export function AssetsScreen({
   origin,
@@ -80,7 +80,6 @@ export function AssetsScreen({
       title={assetsScreenTitle(scope, projectName)}
       origin={origin}
       onClose={onClose}
-      crumbs={[PORTFOLIO_CRUMB]}
       chapter={null}
       width="wide"
     >

@@ -2,13 +2,12 @@
  *
  * A page (Memory, Sessions, Settings, Portfolio and its subpages, Board,
  * Needs you, How Vex works) is ONE paper sheet inside the centre column, under
- * the title bar row: the title bar keeps the page's name, Needs you and the
- * token chip, and both sidebars stay standing. The sheet opens with the page
- * chrome (the crumb of a subpage at the left, the close key at the right),
- * then a centred column: 760 for reading pages (padding 30 40), 1100 with
- * its padding for the money ledgers (padding 18 44). Radius 0, no shadow, no
- * blur; every colour is an alias, so the Night Ledger needs no second rule
- * set.
+ * the title bar row: the title bar keeps the page's name (a subpage's crumb),
+ * Needs you and the token chip, and both sidebars stay standing. The page
+ * draws no head of its own: a centred column starts right under the title
+ * bar, 760 for reading pages (padding 30 40), 1100 with its padding for the
+ * money ledgers (padding 18 44). Radius 0, no shadow, no blur; every colour
+ * is an alias, so the Night Ledger needs no second rule set.
  *
  * Stacking: the sheet sits over the mode's surface (the composer console is
  * 20) and UNDER the title bar's popovers (40), so the Needs you and Notices
@@ -17,7 +16,7 @@
 .vex-ov {
   --vex-ov-max: 840px;
   --vex-ov-pad: 40px;
-  --vex-ov-top: 14px;
+  --vex-ov-top: 30px;
   position: absolute;
   top: var(--head-h);
   right: 0;
@@ -25,7 +24,7 @@
   left: var(--vex-overlay-left, 0px);
   z-index: 30;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--vex-alias-bg-base);
@@ -37,7 +36,12 @@
 .vex-ov[data-width="wide"] {
   --vex-ov-max: 1100px;
   --vex-ov-pad: 44px;
-  --vex-ov-top: 6px;
+  --vex-ov-top: 18px;
+}
+/* The page takes focus on open (a dialog the keyboard lands in); the focus
+ * ring belongs to its controls, not to the whole sheet. */
+.vex-ov:focus {
+  outline: none;
 }
 @media (max-width: 1179px) {
   .vex-ov {
@@ -48,79 +52,6 @@
  * sit under. */
 .vex-shell-centre > [data-vex-area="shell-status-strip"][data-collapsed] ~ .vex-ov {
   top: 0;
-}
-
-/* The page chrome: the crumb of a subpage, the close key. One 32px row at
- * the top of the column, never a second drag bar (the title bar is it). */
-.vex-ov__bar {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  max-width: var(--vex-ov-max);
-  min-width: 0;
-  margin-inline: auto;
-  padding: 12px var(--vex-ov-pad) 0;
-}
-.vex-ov__crumb {
-  min-width: 0;
-}
-.vex-ov__crumb > ol {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-  line-height: 20px;
-  white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-ov__crumb li {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-.vex-ov__crumb-link {
-  color: var(--vex-alias-label-tertiary);
-  text-underline-offset: 3px;
-}
-.vex-ov__crumb-link:hover {
-  color: var(--vex-alias-label-primary);
-  text-decoration: underline;
-}
-.vex-ov__crumb-link:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
-}
-.vex-ov__crumb-current {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
-  color: var(--vex-alias-label-primary);
-}
-/* The icon key (32 x 32): the close that returns to the previous route. */
-.vex-ov__close {
-  display: inline-grid;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  margin-left: auto;
-  place-items: center;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-ov__close:hover {
-  background: var(--vex-alias-interactive-hover);
-  color: var(--vex-alias-label-primary);
-}
-.vex-ov__close:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
 }
 
 .vex-ov__scroll {

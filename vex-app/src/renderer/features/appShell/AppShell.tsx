@@ -232,8 +232,11 @@ function ShellFrame({
 
   // WELCOME stage, per mode: no session (agent), no project (Studio); Lighter
   // has none, the desk is always resident. Vex sits in the centre there, so
-  // the right column is empty.
-  const welcomeStage = lighter
+  // the right column is empty. An open page covers the welcome and is not
+  // part of it: the title bar keeps the page's name and the token chip, and
+  // Vex's column follows the page's own default.
+  const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
+  const welcomeStage = lighter || pageOpen
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
@@ -380,7 +383,7 @@ function ShellFrame({
         <RunningHead
           runtimeMode={runtimeMode}
           activeSessionId={activeSessionId}
-          empty={runtimeMode === "agent" && activeSessionId === null}
+          empty={runtimeMode === "agent" && activeSessionId === null && !pageOpen}
           // The token chip toggles the column the frame SOLVED, not the stored
           // choice: a column the narrow tier closed reads closed, and its
           // press opens it (the store action also clears the narrow override).
