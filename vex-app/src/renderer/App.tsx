@@ -261,7 +261,7 @@ function DevDiagnostics(): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md border border-border bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-ink-secondary hover:text-foreground"
+        className="rounded-md border border-border bg-card px-2 py-1 text-[12px] text-ink-secondary hover:text-foreground"
       >
         dev · {open ? "hide" : "diagnostics"}
       </button>

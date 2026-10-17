@@ -1,5 +1,5 @@
-// Brand fonts (Instrument Sans, Departure Mono, Instrument Serif and
-// JetBrains Mono for code) are self-hosted via @font-face in
+// Brand fonts (Instrument Sans for words, Instrument Serif for display and
+// JetBrains Mono for figures and code) are self-hosted via @font-face in
 // styles/global-css/fonts.css (CSP font-src 'self').
 import "./styles/globals.css";
 
