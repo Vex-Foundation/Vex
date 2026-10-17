@@ -117,7 +117,7 @@ export type DockerMigrationStatus =
       readonly resumeStep: Exclude<MigrationStep, "completed"> | null;
       readonly lastFailure: MigrationFailureRecord | null;
     }
-  /** runtime-state.json does not parse; it was left untouched. */
+  /** runtime-state.json does not parse or cannot be read; it was left untouched. */
   | { readonly kind: "state_unreadable"; readonly message: string };
 
 export type MigrationPhase = "preparing" | "starting_source" | "dumping" | "restoring" | "verifying" | "finishing";
@@ -984,8 +984,9 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
       try {
         state = await readRuntimeState(statePath);
       } catch (error: unknown) {
-        if (error instanceof RuntimeStateCorruptError) return { kind: "state_unreadable", message: error.message };
-        throw error;
+        // Corrupt, or unreadable (permissions, I/O): either way nothing may
+        // be decided from it, and the boot screen needs an answer, not a throw.
+        return { kind: "state_unreadable", message: messageOf(error) };
       }
       const migration = state.migration;
       if (migration?.step === "completed") {
