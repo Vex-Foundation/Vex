@@ -1,0 +1,41 @@
+{
+  "release": "native-runtime-2026.10.17-1",
+  "baseUrl": "https://github.com/mandatedisrael/vex-native-runtime-ci/releases/download/native-runtime-2026.10.17-1",
+  "targets": {
+    "darwin-arm64": {
+      "asset": "vex-native-runtime-darwin-arm64.tar.xz",
+      "sha256": "19aab2ccf5352ec72d35261bcd298dde9806ec6087abd5d5173a0158cc8e0d93",
+      "bytes": 6109912,
+      "treeSha256": "4f21550f2aa3a0baf388c543f2667001b14431ef468067e880a3d76f389e55ce",
+      "files": 738
+    },
+    "darwin-x64": {
+      "asset": "vex-native-runtime-darwin-x64.tar.xz",
+      "sha256": "a34f74af11c416f0306cb0a4f5bfb4fe9f67ea42503b32ade15d8034bbccb109",
+      "bytes": 8683748,
+      "treeSha256": "4b943ae206cf21acaa7e1488e23af4d3e58c1ee883dcd0e437e4a81186cf5ff1",
+      "files": 751
+    },
+    "linux-x64": {
+      "asset": "vex-native-runtime-linux-x64.tar.xz",
+      "sha256": "74e711a754d39f055ca7c1632487982b7070d4f1433c59c43a4e8431af088154",
+      "bytes": 9329968,
+      "treeSha256": "9da18db19387d8dabc211334ed6b6183a41a882433b43c6f642c3cc1cd1c7850",
+      "files": 751
+    },
+    "win32-x64": {
+      "asset": "vex-native-runtime-win32-x64.tar.xz",
+      "sha256": "603d23111d5b9c6e9d63da694c3882512b85013d4fd4ca8cf452134c516ed289",
+      "bytes": 8709104,
+      "treeSha256": "ae301457a463f781187c8478c0b8809d4e6dc4222c8c625af4de363e007a808d",
+      "files": 755
+    },
+    "win32-arm64": {
+      "asset": "vex-native-runtime-win32-arm64.tar.xz",
+      "sha256": "33f1fee9ecf0191f4bd8f8c38c9bddf7b6feb0233eb02a12bb6ff26bcc827dbb",
+      "bytes": 7333380,
+      "treeSha256": "fe908610c927beeeb84ff03948c063f8a1a6c5fa644bdc8570b7d6f3cac12b3f",
+      "files": 741
+    }
+  }
+}

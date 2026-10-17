@@ -44,6 +44,8 @@
  *   12. Lighter signer helper resources exist for every supported packaged
  *      Electron platform/arch pair, so live order signing cannot ship without
  *      its privileged helper.
+ *   13. The native runtime lock (native-runtime.lock.json) is well formed and
+ *      pins every target the app packages.
  *
  * Exit non-zero on any violation.
  */
@@ -61,6 +63,7 @@ import {
   builtLighterSignerDir,
   evaluateBuiltLighterSigners,
 } from "./lighter-signer-artifact.mjs";
+import { NATIVE_RUNTIME_TARGETS, readNativeRuntimeLock } from "./native-runtime-artifact.mjs";
 
 const root = path.resolve(process.cwd());
 const distRendererHtml = path.join(root, "dist", "renderer", "index.html");
@@ -597,6 +600,19 @@ check("lighter signer helpers - built, correct machine, digests match SHA256SUMS
   // graph, and a build log nobody can compare proves nothing later.
   for (const helper of verified) {
     console.log(`    ${helper.name} ${helper.format} sha256 ${helper.digest}`);
+  }
+});
+
+// 13. The native runtime lock pins every target the app packages. A build
+//     needs no network, so the trees themselves are fetched and verified by
+//     the packaging preflight (prepackage:native-runtime) and the afterPack
+//     gate; this is the part a build can own: a lock that is missing a target,
+//     or whose digests are malformed, fails here rather than at release time.
+check("native runtime lock - pins every packaged target", () => {
+  const lock = readNativeRuntimeLock(root);
+  for (const target of NATIVE_RUNTIME_TARGETS) {
+    const entry = lock.targets[target.name];
+    console.log(`    ${target.name} ${entry.asset} sha256 ${entry.sha256} tree ${entry.treeSha256} (${lock.release})`);
   }
 });
 
