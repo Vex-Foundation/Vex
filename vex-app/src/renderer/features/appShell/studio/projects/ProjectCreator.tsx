@@ -64,7 +64,7 @@ import {
   DialogHeader,
   DialogPinnedSlot,
   DialogTitle,
-  DIALOG_INITIAL_FOCUS,
+  useInitialFocusRef,
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
@@ -146,6 +146,9 @@ export function ProjectCreator({
   /** Set on success. Its presence IS the result phase. */
   const [created, setCreated] = useState<ProjectCreateResult | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  // The name field is both this dialog's initial focus and the field the
+  // effects below focus and select: one ref does both.
+  const nameFieldRef = useInitialFocusRef(nameRef);
   // Announced from the SUBMIT PATH, not from a role on a node that may be
   // scrolled out of view - see `components/ui/live-region.tsx`.
   const { announce, region: liveRegion } = useLiveAnnouncer();
@@ -291,12 +294,12 @@ export function ProjectCreator({
                     {PROJECT_NAME_LABEL}
                   </Label>
                   <Input
-                    ref={nameRef}
+                    // Where this dialog opens (`nameFieldRef` names it the
+                    // initial focus): a form the user came here to type
+                    // into, and a field that arms nothing.
+                    ref={nameFieldRef}
                     id="vex-project-name"
                     type="text"
-                    // Where this dialog opens: a form the user came here to
-                    // type into, and a field that arms nothing.
-                    {...DIALOG_INITIAL_FOCUS}
                     required
                     maxLength={PROJECT_NAME_MAX_LENGTH}
                     value={name}

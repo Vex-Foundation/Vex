@@ -22,7 +22,7 @@
 
 import type { JSX, RefObject } from "react";
 import { APPROVAL_REJECT_REASON_MAX } from "@shared/schemas/approvals.js";
-import { DIALOG_INITIAL_FOCUS } from "../../../components/ui/dialog.js";
+import { useInitialFocusRef } from "../../../components/ui/dialog.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 
 export interface ApprovalDecisionActionsProps {
@@ -121,6 +121,9 @@ export function ApprovalDecisionActions({
   wrapReasonOnNarrow = false,
   rejectReasonInput = true,
 }: ApprovalDecisionActionsProps): JSX.Element {
+  // The Reject key keeps its own ref (the card's first-mount focus) and names
+  // itself the initial focus: one ref does both, see `useInitialFocusRef`.
+  const rejectKeyRef = useInitialFocusRef(rejectRef);
   const rejectArmed = isHighRisk && armedAction === "reject";
   const approveArmed = isHighRisk && armedAction === "approve";
   const { text: rejectText, aria: rejectAria } = rejectKeyWords({
@@ -156,16 +159,17 @@ export function ApprovalDecisionActions({
           `autofocus` content attribute every dialog in this app names its
           initial focus with (`components/ui/dialog.tsx`), so a card mounted
           inside a dialog and a card mounted inside the global approvals panel
-          resolve to the SAME element by one rule rather than two. Measured
+          resolve to the SAME element by one rule rather than two. The
+          attribute is written by the ref, not passed as a prop, because React
+          warns on a lowercase `autofocus` prop. Measured
           defect this closes: the panel moved focus to its own container, so a
           keyboard user landed on nothing and the "least destructive default"
           existed only in the inline card's mount effect. */}
       <button
-        ref={rejectRef}
+        ref={rejectKeyRef}
         type="button"
         onClick={onReject}
         disabled={inFlight}
-        {...DIALOG_INITIAL_FOCUS}
         aria-busy={rejectPending}
         aria-label={rejectAria}
         className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary${
