@@ -10,11 +10,13 @@ import { CH, EV } from "@shared/ipc/channels.js";
 import { ok, type Result } from "@shared/ipc/result.js";
 import {
   healthReportSchema,
+  localRuntimeCheckSchema,
   nativeRuntimeStatusSchema,
   networkProbeSchema,
   osInfoSchema,
   runtimeInfoSchema,
   type HealthReport,
+  type LocalRuntimeCheck,
   type NativeRuntimeStatus,
   type NetworkProbe,
   type OsInfo,
@@ -22,6 +24,7 @@ import {
   type RuntimeInfo,
 } from "@shared/schemas/system.js";
 import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
+import { checkLocalRuntime } from "../runtime/native/local-runtime-check.js";
 import { nativeStartGate } from "../runtime/migration/native-start-gate.js";
 import {
   nativeRuntimeProgress,
@@ -159,6 +162,17 @@ export function registerSystemHandlers(): Array<() => void> {
         }
         return ok(nativeRuntimeProgress.current());
       },
+    })
+  );
+
+  // Read-only: locating the binaries and measuring the disk start nothing.
+  handlers.push(
+    registerHandler({
+      channel: CH.system.localRuntimeCheck,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: localRuntimeCheckSchema,
+      handle: async (): Promise<Result<LocalRuntimeCheck>> => ok(await checkLocalRuntime()),
     })
   );
 

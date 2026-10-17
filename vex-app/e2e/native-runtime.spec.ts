@@ -346,6 +346,16 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
     const continueSetup = window.getByRole("button", { name: "Continue setup" });
     await expect(continueSetup).toBeEnabled({ timeout: 30_000 });
     timings["systemCheckPassed"] = seconds(Date.now());
+    // The native rows replace the container engine's: the app's own runtime
+    // is found for this OS and arch, and the disk and memory are measured
+    // (their verdicts depend on the machine, so only that they answered).
+    const rows = window.locator('[data-vex-screen="systemCheck"] [data-step-status]');
+    await expect(rows).toHaveCount(6);
+    await expect(window.getByText("Docker Engine")).toHaveCount(0);
+    await expect(rows.filter({ hasText: "Local runtime" })).toHaveAttribute("data-step-status", "ok");
+    for (const label of ["Disk space", "Memory"]) {
+      await expect(rows.filter({ hasText: label })).not.toHaveAttribute("data-step-status", "loading");
+    }
     // Record every state the runtime screen's model row shows: once the
     // runtime is ready the screen moves on within a second, which a
     // visibility poll can miss. And when the migrations report progress, for

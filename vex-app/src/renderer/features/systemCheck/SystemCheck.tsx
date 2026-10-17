@@ -5,16 +5,20 @@
  *
  * Visual system (docs/design/V10-SPREAD.md section 2): the screen is a
  * paper page on the stage (`SetupFrame`), a serif sentence-case title above
- * the four probe rows, separated by hairlines. Status is shown by fill: a
+ * the probe rows, separated by hairlines. Status is shown by fill: a
  * swatch beside the mono word; a probe in flight shows the ongoing swatch at
  * size (the VexLoader). The rows rise once (`.vex-rise` ladder) and rest
  * still.
  *
- * Data flow is unchanged: three TanStack Query hooks (`useSystemHealth`,
- * `useDockerStatus`, `useEnvState`) feed four probe rows, each row
- * computes its `StepStatus` from the Result envelope. Continue stays
- * disabled until every probe resolves; the translocation banner stays
- * loud (the macOS quarantine warning owns this screen).
+ * Data flow: TanStack Query hooks feed the probe rows, each row computing
+ * its `StepStatus` from the Result envelope. `useRuntimeInfo` decides which
+ * runtime rows show, and only that runtime's probe runs:
+ *   - native: `useLocalRuntimeCheck` (bundle, disk, memory; six rows). It
+ *     starts nothing, and a disk that cannot take the first run keeps
+ *     Continue disabled.
+ *   - container: `useDockerStatus` (the Docker Engine row; four rows).
+ * Continue stays disabled until every probe resolves; the translocation
+ * banner stays loud (the macOS quarantine warning owns this screen).
  *
  * M11.5.4 — DMR (Docker Model Runner) is no longer surfaced here.
  * vex-app ships its own bundled embeddings runtime via Compose
@@ -31,19 +35,29 @@ import { useMemo } from "react";
 
 import { useDockerStatus } from "../../lib/api/docker.js";
 import { useEnvState } from "../../lib/api/onboarding.js";
-import { useRuntimeInfo, useRuntimeMigrationStatus, useSystemHealth } from "../../lib/api/system.js";
+import {
+  useLocalRuntimeCheck,
+  useRuntimeInfo,
+  useRuntimeMigrationStatus,
+  useSystemHealth,
+} from "../../lib/api/system.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { type StepStatus } from "./StepRow.js";
 import { platformOf, type Platform } from "./SystemCheck/OperatingSystemIcon.js";
-import { ProbeRows } from "./SystemCheck/ProbeRows.js";
+import { ProbeRows, type RuntimeRows } from "./SystemCheck/ProbeRows.js";
+import { localRuntimeView } from "./SystemCheck/localRuntime.js";
 import { Footer } from "./SystemCheck/Footer.js";
 
 export function SystemCheck(): JSX.Element {
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const health = useSystemHealth();
   const runtime = useRuntimeInfo();
-  const docker = useDockerStatus();
+  // The native runtime is started by main; setup watches it come up.
+  const nativeRuntime = runtime.data?.ok === true && runtime.data.data.native;
+  // Each runtime's probe runs only once the mode is known, and only its own.
+  const docker = useDockerStatus({ enabled: !runtime.isPending && !nativeRuntime });
+  const localRuntime = useLocalRuntimeCheck(nativeRuntime);
   const env = useEnvState();
 
   const platform = useMemo<Platform>(
@@ -81,21 +95,28 @@ export function SystemCheck(): JSX.Element {
         ? "ok"
         : "warn";
 
-  // The native runtime is started by main; setup watches it come up. Main
-  // holds it back while this install's data must still be moved, and the
-  // migration screen comes first then.
-  const nativeRuntime = runtime.data?.ok === true && runtime.data.data.native;
+  // Main holds the native runtime back while this install's data must still
+  // be moved, and the migration screen comes first then.
   const migration = useRuntimeMigrationStatus(nativeRuntime);
-  const anyLoading =
-    health.isPending || docker.isPending || env.isPending || runtime.isPending || (nativeRuntime && migration.isPending);
   const nativeView =
     migration.data?.ok === true && migration.data.data.kind === "not_needed" ? "runtimeBootstrap" : "runtimeMigration";
+
+  const localRuntimeRows = localRuntimeView(localRuntime);
+  const runtimeRows: RuntimeRows = nativeRuntime
+    ? { kind: "native", view: localRuntimeRows }
+    : { kind: "container", status: dockerStatus, docker };
+
+  const anyLoading =
+    health.isPending
+    || env.isPending
+    || runtime.isPending
+    || (nativeRuntime ? localRuntime.isPending || migration.isPending : docker.isPending);
 
   return (
     <SetupFrame
       screen="systemCheck"
       title="System check"
-      subline="Four quick checks before setup begins."
+      subline={nativeRuntime ? "Six quick checks before setup begins." : "Four quick checks before setup begins."}
     >
       {/* Probe rows on the leaf, separated by hairline only. */}
       <div className="vex-rise vex-rise-d1">
@@ -103,10 +124,9 @@ export function SystemCheck(): JSX.Element {
           platform={platform}
           osStatus={osStatus}
           networkStatus={networkStatus}
-          dockerStatus={dockerStatus}
           envStatus={envStatus}
           health={health}
-          docker={docker}
+          runtime={runtimeRows}
           env={env}
         />
       </div>
@@ -124,7 +144,7 @@ export function SystemCheck(): JSX.Element {
       ) : null}
 
       <Footer
-        disabled={anyLoading}
+        disabled={anyLoading || (nativeRuntime && localRuntimeRows.blocksContinue)}
         onContinue={() => setCurrentView(nativeRuntime ? nativeView : "dockerBootstrap")}
       />
     </SetupFrame>

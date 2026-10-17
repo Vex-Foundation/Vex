@@ -46,7 +46,7 @@ import { cn } from "../../lib/utils.js";
 import { VexMark } from "../../components/common/VexMark.js";
 import { useReducedMotion } from "../../lib/motion/index.js";
 import { Menu, type MenuEntry } from "../../components/ui/menu.js";
-import { useSystemHealth } from "../../lib/api/system.js";
+import { useRuntimeInfo, useSystemHealth } from "../../lib/api/system.js";
 import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -131,6 +131,10 @@ export function SidebarProfile({
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const memoryEnabled = useMemoryFeatureEnabled();
   const healthQuery = useSystemHealth();
+  // Provenance names what actually runs: the bundled database alone on the
+  // native runtime, the container engine and its database otherwise.
+  const runtimeInfo = useRuntimeInfo();
+  const nativeRuntime = runtimeInfo.data?.ok === true && runtimeInfo.data.data.native;
   const runtime = getRuntimeStatus({
     loading: healthQuery.isLoading,
     result: healthQuery.data,
@@ -218,7 +222,7 @@ export function SidebarProfile({
             {runtime.label}
           </span>
           <span className="flex shrink-0 items-center gap-2 text-ink-tertiary">
-            <Docker width={14} height={14} aria-hidden focusable={false} />
+            {nativeRuntime ? null : <Docker width={14} height={14} aria-hidden focusable={false} />}
             <Postgresql width={14} height={14} aria-hidden focusable={false} />
           </span>
         </span>

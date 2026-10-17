@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-query";
 import type { JSX } from "react";
 import type { Result } from "@shared/ipc/result.js";
+import { DEFAULT_EMBED_PORT } from "@shared/embedding-defaults.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type {
   EmbeddingConfigureInput,
@@ -36,6 +37,11 @@ const mockOnAdvance = vi.fn();
 
 vi.mock("../../../../lib/api/onboarding.js", () => ({
   useEnvState: () => mockUseEnvState(),
+}));
+
+const mockUseRuntimeInfo = vi.fn();
+vi.mock("../../../../lib/api/system.js", () => ({
+  useRuntimeInfo: () => mockUseRuntimeInfo(),
 }));
 
 vi.mock("../../../../lib/api/embedding.js", () => ({
@@ -120,6 +126,7 @@ beforeEach(() => {
   mockConfigureMutate.mockReset();
   mockSetWizardMutate.mockReset();
   mockOnAdvance.mockReset();
+  mockUseRuntimeInfo.mockReset().mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
 });
 
 afterEach(() => {
@@ -274,5 +281,61 @@ describe("EmbeddingStep", () => {
         container.querySelector('[data-vex-embedding-warning="db-unavailable"]'),
       ).not.toBeNull();
     });
+    expect(container.textContent).toContain("Verify Docker services are running, then retry.");
+  });
+
+  describe("on the native runtime", () => {
+    beforeEach(() => {
+      mockUseRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+    });
+
+    it("names no fixed address: the bundled server's port is chosen at launch", () => {
+      mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
+      const { container, getByLabelText } = renderWithQuery(
+        <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+      );
+      expect(container.textContent).toContain(
+        "runs entirely on this machine, on a local port Vex picks each time it starts - nothing leaves it.",
+      );
+      expect(container.textContent).not.toContain(String(DEFAULT_EMBED_PORT));
+      expect(getByLabelText("Base URL").getAttribute("placeholder")).toBe("https://embeddings.example.com/v1");
+    });
+
+    it("the database-unavailable hint speaks of Vex's own database", async () => {
+      mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
+      mockConfigureMutate.mockResolvedValue({
+        ok: false,
+        error: {
+          code: "embedding.db_unavailable",
+          domain: "embedding",
+          message: "Database unavailable.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+        },
+      });
+      const { container, getByLabelText } = renderWithQuery(
+        <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+      );
+      fireEvent.change(getByLabelText("Base URL"), { target: { value: "http://x.example/v1" } });
+      fireEvent.change(getByLabelText("Model"), { target: { value: "m" } });
+      fireEvent.change(getByLabelText("Dim"), { target: { value: "768" } });
+      fireEvent.change(getByLabelText("Provider tag"), { target: { value: "local" } });
+      fireEvent.submit(container.querySelector('[data-vex-wizard-embedding="form"] form')!);
+      await waitFor(() => {
+        expect(container.querySelector('[data-vex-embedding-warning="db-unavailable"]')).not.toBeNull();
+      });
+      expect(container.textContent).toContain("Vex restarts its local database on its own.");
+      expect(container.textContent).not.toMatch(/docker/i);
+    });
+  });
+
+  it("on the container runtime keeps the bundled server's fixed address", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
+    const { container, getByLabelText } = renderWithQuery(
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    expect(container.textContent).toContain(`runs entirely on this machine at 127.0.0.1:${String(DEFAULT_EMBED_PORT)} - nothing leaves it.`);
+    expect(getByLabelText("Base URL").getAttribute("placeholder")).toBe(`http://127.0.0.1:${String(DEFAULT_EMBED_PORT)}/v1`);
   });
 });

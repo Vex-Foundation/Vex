@@ -9,10 +9,14 @@
  * naturally).
  *
  * Scope guarantees:
- *  - Renderer view-routing ONLY. No IPC, no main-process behavior, no
- *    gating bypassed anywhere that matters: screens still fetch real
- *    state and render their real branches; unlock still requires the
- *    real password to actually unlock. This is a viewer, not a skip.
+ *  - Renderer view-routing ONLY. No main-process behavior, no gating
+ *    bypassed anywhere that matters: screens still fetch real state and
+ *    render their real branches; unlock still requires the real password
+ *    to actually unlock. This is a viewer, not a skip.
+ *  - It lists only the views of the runtime main runs (one read of
+ *    `system.runtime`): the bootstrap screens of the other runtime would
+ *    probe a runtime this process does not use. Until the answer arrives,
+ *    only the views both runtimes share.
  *  - The flag is baked at build time by Vite; release builds are made
  *    without it, so the navigator is unreachable in production.
  *  - WizardShell honors the same flag by pinning its entry to the
@@ -22,30 +26,35 @@
  */
 
 import type { JSX } from "react";
+import { useRuntimeInfo } from "../../lib/api/system.js";
 import { useUiStore, type View } from "../../stores/uiStore.js";
 
 export const SETUP_TOUR_ENABLED =
   import.meta.env.VITE_VEX_SETUP_TOUR === "1";
 
-const TOUR_VIEWS: ReadonlyArray<View> = [
-  "systemCheck",
-  "dockerBootstrap",
-  "composeBootstrap",
-  "runtimeMigration",
-  "runtimeBootstrap",
-  "migrations",
-  "wizard",
-  "unlock",
-  "appShell",
-];
+/** The tour's order: the first view, the runtime's own, then the rest. */
+const FIRST_VIEWS: ReadonlyArray<View> = ["systemCheck"];
+const CONTAINER_RUNTIME_VIEWS: ReadonlyArray<View> = ["dockerBootstrap", "composeBootstrap"];
+const NATIVE_RUNTIME_VIEWS: ReadonlyArray<View> = ["runtimeMigration", "runtimeBootstrap"];
+const LAST_VIEWS: ReadonlyArray<View> = ["migrations", "wizard", "unlock", "appShell"];
+
+export function tourViews(native: boolean | null): ReadonlyArray<View> {
+  const runtimeViews = native === null ? [] : native ? NATIVE_RUNTIME_VIEWS : CONTAINER_RUNTIME_VIEWS;
+  return [...FIRST_VIEWS, ...runtimeViews, ...LAST_VIEWS];
+}
 
 export function SetupTour(): JSX.Element | null {
+  // The panel reads the runtime mode; a production build never mounts it.
+  return SETUP_TOUR_ENABLED ? <SetupTourPanel /> : null;
+}
+
+function SetupTourPanel(): JSX.Element {
   const currentView = useUiStore((s) => s.currentView);
   const setCurrentView = useUiStore((s) => s.setCurrentView);
   const dismissSetupGate = useUiStore((s) => s.dismissSetupGate);
   const replayPrologue = useUiStore((s) => s.replayPrologue);
-
-  if (!SETUP_TOUR_ENABLED) return null;
+  const runtime = useRuntimeInfo();
+  const views = tourViews(runtime.data?.ok === true ? runtime.data.data.native : null);
 
   return (
     <div
@@ -55,7 +64,7 @@ export function SetupTour(): JSX.Element | null {
       <span className="px-1 text-[9px] text-ink-tertiary">
         Setup tour
       </span>
-      {TOUR_VIEWS.map((view) => (
+      {views.map((view) => (
         <button
           key={view}
           type="button"

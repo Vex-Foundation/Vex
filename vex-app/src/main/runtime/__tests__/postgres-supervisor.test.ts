@@ -29,6 +29,7 @@ type Supervisor = ReturnType<typeof createPostgresSupervisor>;
 type Health = Parameters<Parameters<Supervisor["onHealthChange"]>[0]>[0];
 import type { PgChild, ProcessProbe } from "../native/postgres-supervisor.js";
 import type { PgIdentityResult } from "../native/pg-identity.js";
+import { RESTART_DISK_FULL_LOG, RESTART_DISK_FULL_STDERR, RESTART_POSTMASTER_PID } from "./pg-disk-full-logs.js";
 
 const SYSID = "7697576143254888004";
 
@@ -74,6 +75,11 @@ type Script =
   | { readonly kind: "ready" }
   /** Exits before ready, after writing `log` lines (prefixed with its pid) or `stderr`. */
   | { readonly kind: "fail"; readonly log?: string; readonly stderr?: string }
+  /**
+   * Exits before ready, after writing a REAL server log whose postmaster PID
+   * (`realPid`) is rewritten to this child's; the children it names keep theirs.
+   */
+  | { readonly kind: "real-fail"; readonly log: string; readonly stderr: string; readonly realPid: number }
   /** Never writes postmaster.pid, then exits. */
   | { readonly kind: "silent-exit" };
 
@@ -128,6 +134,11 @@ class FakePostmaster implements PgChild {
         writeFileSync(path.join(dataDir, "log", `postgresql-${String(this.pid)}.log`), `${lines.join("\n")}\n`);
       }
     }
+    if (script.kind === "real-fail") {
+      const ours = (text: string): string => text.replaceAll(`[${String(script.realPid)}]`, `[${String(this.pid)}]`);
+      this.stderr = ours(script.stderr);
+      writeFileSync(path.join(dataDir, "log", `postgresql-${String(this.pid)}.log`), ours(script.log));
+    }
     setTimeout(() => this.exit(), 5);
   }
 
@@ -138,6 +149,14 @@ class FakePostmaster implements PgChild {
     this.resolveClosed();
   }
 }
+
+/** `postgres -D` on a full volume, as PG 18.6 logged it. */
+const restartOnFullDisk: Script = {
+  kind: "real-fail",
+  log: RESTART_DISK_FULL_LOG,
+  stderr: RESTART_DISK_FULL_STDERR,
+  realPid: RESTART_POSTMASTER_PID,
+};
 
 interface Harness {
   readonly supervisor: Supervisor;
@@ -256,6 +275,13 @@ describe("start", () => {
       scripts: [{ kind: "fail", log: 'FATAL:  could not write to file "pg_wal/xlogtemp.1": No space left on device' }],
     });
     expect((await h.supervisor.start()).kind).toBe("disk_full");
+  });
+
+  it("a start on a full disk is disk_full though only the startup process says so (real PG 18.6 log)", async () => {
+    const h = harness({ scripts: [restartOnFullDisk] });
+    const result = await h.supervisor.start();
+    expect(result).toMatchObject({ kind: "disk_full", connection: null });
+    expect(h.children).toHaveLength(1);
   });
 
   it("a lock still held by a crashed postmaster's children is retried on the same port", async () => {
@@ -408,6 +434,24 @@ describe("supervision", () => {
     h.children[0]?.crash();
     await until(() => h.health.some((x) => x.kind === "unhealthy"));
     expect(h.children).toHaveLength(1 + RESTARTS_ALLOWED);
+  });
+
+  it("a running server that fills its disk exits; when every restart dies on the full disk, the outage says disk_full", async () => {
+    const h = harness({ scripts: [{ kind: "ready" }, ...Array.from({ length: 10 }, () => restartOnFullDisk)] });
+    await h.supervisor.start();
+    h.children[0]?.crash();
+    await until(() => h.health.some((x) => x.kind === "unhealthy"));
+    expect(h.children).toHaveLength(1 + RESTARTS_ALLOWED);
+    expect(h.health.at(-1)).toMatchObject({ kind: "unhealthy", failure: "disk_full" });
+  });
+
+  it("an outage for any other reason says unhealthy", async () => {
+    const fail: Script = { kind: "fail", stderr: "FATAL:  could not open file \"global/pg_control\"\n" };
+    const h = harness({ scripts: [{ kind: "ready" }, ...Array.from({ length: 10 }, () => fail)] });
+    await h.supervisor.start();
+    h.children[0]?.crash();
+    await until(() => h.health.some((x) => x.kind === "unhealthy"));
+    expect(h.health.at(-1)).toMatchObject({ kind: "unhealthy", failure: "unhealthy" });
   });
 
   it("an ordered stop is not a crash: no restart", async () => {

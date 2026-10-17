@@ -18,6 +18,7 @@ type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 const mocks = vi.hoisted(() => ({
   mode: "native" as "native" | "docker",
   startNativeRuntime: vi.fn(),
+  checkLocalRuntime: vi.fn(),
   send: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -44,6 +45,7 @@ vi.mock("../system/notify-turn-complete.js", () => ({ registerSystemNotifyTurnCo
 vi.mock("../system/title-bar-overlay.js", () => ({ registerSystemTitleBarOverlayHandler: () => () => {} }));
 vi.mock("../system/local-runtime.js", () => ({ registerSystemLocalRuntimeHandlers: () => [] }));
 vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => mocks.mode }));
+vi.mock("../../runtime/native/local-runtime-check.js", () => ({ checkLocalRuntime: mocks.checkLocalRuntime }));
 vi.mock("../system/runtime-migration.js", () => ({ registerSystemRuntimeMigrationHandlers: () => [] }));
 vi.mock("../../runtime/migration/native-start-gate.js", () => ({
   nativeStartGate: () => ({ startNative: mocks.startNativeRuntime }),
@@ -107,5 +109,23 @@ describe("system.runtimeStatus / runtimeRetry IPC", () => {
     mocks.mode = "docker";
     await invoke(CH.system.runtimeRetry);
     expect(mocks.startNativeRuntime).not.toHaveBeenCalled();
+  });
+});
+
+describe("system.localRuntimeCheck IPC", () => {
+  it("answers with the facts, validated, and starts nothing", async () => {
+    const facts = {
+      bundle: { kind: "present", platform: "darwin", arch: "arm64" },
+      disk: { kind: "measured", freeBytes: 1, totalBytes: 2, modelVerified: false, modelBytesToWrite: 333_590_944 },
+      memory: { totalBytes: 3, freeBytes: 1 },
+    };
+    mocks.checkLocalRuntime.mockResolvedValue(facts);
+    expect(await invoke(CH.system.localRuntimeCheck)).toEqual({ ok: true, data: facts });
+    expect(mocks.startNativeRuntime).not.toHaveBeenCalled();
+  });
+
+  it("refuses facts that break the contract", async () => {
+    mocks.checkLocalRuntime.mockResolvedValue({ bundle: { kind: "present" }, disk: {}, memory: {} });
+    expect(await invoke(CH.system.localRuntimeCheck)).toMatchObject({ ok: false });
   });
 });

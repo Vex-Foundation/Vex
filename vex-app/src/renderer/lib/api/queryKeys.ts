@@ -11,6 +11,7 @@ import type { PortfolioReadInput } from "@shared/schemas/portfolio.js";
 export const systemKeys = {
   all: ["system"] as const,
   health: () => ["system", "health"] as const,
+  localRuntimeCheck: () => ["system", "localRuntimeCheck"] as const,
   osInfo: () => ["system", "osInfo"] as const,
   network: () => ["system", "network"] as const,
   runtime: () => ["system", "runtime"] as const,

@@ -26,6 +26,9 @@ export const system = {
   runtimeRetry() {
     return invokeWithSchema(CH.system.runtimeRetry, {});
   },
+  localRuntimeCheck() {
+    return invokeWithSchema(CH.system.localRuntimeCheck, {});
+  },
   onRuntimeProgress(cb) {
     return subscribe(EV.system.runtimeProgress, nativeRuntimeStatusSchema, cb);
   },

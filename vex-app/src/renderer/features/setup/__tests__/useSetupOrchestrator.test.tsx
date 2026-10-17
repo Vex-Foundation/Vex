@@ -241,7 +241,8 @@ describe("useSetupOrchestrator", () => {
     const calls: string[] = [];
     const mock = installVexMock({
       runtime: vi.fn(async () => ok({ native: true })),
-      // A machine without Docker: the gate would have sent us to bootstrap.
+      // A stopped engine would send the container gate to bootstrap; on the
+      // native runtime it must not even be probed.
       detect: vi.fn(async () => ok({ ...DOCKER_READY, daemon: { ...DOCKER_READY.daemon, running: false } })),
       onProgress: vi.fn(() => {
         calls.push("subscribe");
@@ -257,8 +258,27 @@ describe("useSetupOrchestrator", () => {
       expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
     );
     expect(mock.composeUpAbortable).not.toHaveBeenCalled();
+    expect(mock.detect).not.toHaveBeenCalled();
     expect(calls).toEqual(["subscribe", "migrate"]);
     expect(runtimeListeners.size).toBe(0);
+  });
+
+  it("native runtime: a first run hands off to systemCheck without probing the container engine", async () => {
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ok({ native: true })),
+      getEnvState: vi.fn(async () => ok({ setupCompleteFlag: false })),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "systemCheck" }));
+    expect(mock.detect).not.toHaveBeenCalled();
+  });
+
+  it("container runtime: the engine is probed once, alongside the other probes", async () => {
+    const mock = installVexMock();
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }));
+    expect(mock.detect).toHaveBeenCalledTimes(1);
+    expect(mock.runtime).toHaveBeenCalledTimes(1);
   });
 
   it.each([

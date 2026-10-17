@@ -131,6 +131,10 @@ describe("CH / EV channel constants", () => {
     expect(CH.system.runtimeReset).toBe("vex:system:runtimeReset");
   });
 
+  it("ships System Check's native-runtime facts under the system domain", () => {
+    expect(CH.system.localRuntimeCheck).toBe("vex:system:localRuntimeCheck");
+  });
+
   it("ships the runtime migration surface with its canonical names", () => {
     expect(CH.system.runtimeMigrationStatus).toBe("vex:system:runtimeMigrationStatus");
     expect(CH.system.runtimeMigrationMove).toBe("vex:system:runtimeMigrationMove");

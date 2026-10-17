@@ -7,6 +7,11 @@
  * embedding constants. `form` + `setForm` are threaded from the parent so
  * the controlled-input semantics (and the `{ ...form, ... }` spread on each
  * change) stay identical to the inlined version.
+ *
+ * The Base URL placeholder is the bundled server's address where it has a
+ * fixed one. The native runtime's server takes a port chosen at launch, and
+ * Vex points itself at it, so there the placeholder only shows the shape of
+ * an endpoint of your own.
  */
 
 import type { Dispatch, JSX, SetStateAction } from "react";
@@ -27,11 +32,17 @@ import type { FormState } from "./form.js";
 export interface EmbeddingFieldsProps {
   readonly form: FormState;
   readonly setForm: Dispatch<SetStateAction<FormState>>;
+  /** Main runs the native runtime, whose embeddings port is chosen at launch. */
+  readonly nativeRuntime?: boolean;
 }
+
+/** An endpoint of the user's own, by shape only. */
+export const OWN_ENDPOINT_PLACEHOLDER = "https://embeddings.example.com/v1";
 
 export function EmbeddingFields({
   form,
   setForm,
+  nativeRuntime = false,
 }: EmbeddingFieldsProps): JSX.Element {
   return (
     <>
@@ -40,7 +51,7 @@ export function EmbeddingFields({
         <Input
           id="vex-embed-baseurl"
           type="url"
-          placeholder={buildEmbeddingBaseUrl()}
+          placeholder={nativeRuntime ? OWN_ENDPOINT_PLACEHOLDER : buildEmbeddingBaseUrl()}
           autoComplete="off"
           value={form.baseUrl}
           onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}

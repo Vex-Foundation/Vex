@@ -29,6 +29,8 @@ export const CH = {
     runtimeRestart: "vex:system:runtimeRestart",
     /** Delete the local database after a typed confirmation, then relaunch into setup. */
     runtimeReset: "vex:system:runtimeReset",
+    /** System Check's native-runtime facts: bundled binaries, disk, memory. Starts nothing. */
+    localRuntimeCheck: "vex:system:localRuntimeCheck",
     /**
      * Whether this install's data must first be moved from the previous
      * release's stack; the native runtime does not start until it is not.

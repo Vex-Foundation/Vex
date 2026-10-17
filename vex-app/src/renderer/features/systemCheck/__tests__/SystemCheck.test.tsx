@@ -11,6 +11,7 @@ import { cleanup, render, act, fireEvent } from "@testing-library/react";
 const mockHooks = vi.hoisted(() => ({
   useSystemHealth: vi.fn(),
   useRuntimeInfo: vi.fn(),
+  useLocalRuntimeCheck: vi.fn(),
   useRuntimeMigrationStatus: vi.fn(),
   useDockerStatus: vi.fn(),
   useEnvState: vi.fn(),
@@ -19,6 +20,7 @@ const mockHooks = vi.hoisted(() => ({
 vi.mock("../../../lib/api/system.js", () => ({
   useSystemHealth: mockHooks.useSystemHealth,
   useRuntimeInfo: mockHooks.useRuntimeInfo,
+  useLocalRuntimeCheck: mockHooks.useLocalRuntimeCheck,
   useRuntimeMigrationStatus: mockHooks.useRuntimeMigrationStatus,
 }));
 vi.mock("../../../lib/api/docker.js", () => ({
@@ -104,6 +106,44 @@ function happyEnv() {
   };
 }
 
+const GiB = 1024 ** 3;
+const MODEL_BYTES = 333_590_944;
+
+function localCheck(
+  overrides: {
+    bundle?: unknown;
+    disk?: Partial<{ freeBytes: number; totalBytes: number; modelVerified: boolean; modelBytesToWrite: number }>;
+    memory?: Partial<{ totalBytes: number; freeBytes: number }>;
+  } = {},
+) {
+  return {
+    isPending: false,
+    data: {
+      ok: true,
+      data: {
+        bundle: overrides.bundle ?? { kind: "present", platform: "darwin", arch: "arm64" },
+        disk: {
+          kind: "measured",
+          freeBytes: 120 * GiB,
+          totalBytes: 500 * GiB,
+          modelVerified: false,
+          modelBytesToWrite: MODEL_BYTES,
+          ...overrides.disk,
+        },
+        memory: { totalBytes: 16 * GiB, freeBytes: 3 * GiB, ...overrides.memory },
+      },
+    },
+  };
+}
+
+function rowByLabel(container: HTMLElement, label: string): HTMLElement | null {
+  return (
+    [...container.querySelectorAll<HTMLElement>("[data-step-status]")].find(
+      (row) => row.querySelector("span.text-sm")?.textContent === label,
+    ) ?? null
+  );
+}
+
 describe("SystemCheck", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -114,6 +154,8 @@ describe("SystemCheck", () => {
     });
     mockHooks.useSystemHealth.mockReturnValue(happyHealth());
     mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
+    // A disabled query: pending, never fetched (what TanStack returns).
+    mockHooks.useLocalRuntimeCheck.mockReturnValue({ isPending: true, data: undefined });
     mockHooks.useRuntimeMigrationStatus.mockReturnValue({ isPending: false, data: { ok: true, data: { kind: "not_needed" } } });
     mockHooks.useDockerStatus.mockReturnValue(happyDocker("active"));
     mockHooks.useEnvState.mockReturnValue(happyEnv());
@@ -132,6 +174,7 @@ describe("SystemCheck", () => {
     cleanup();
     mockHooks.useSystemHealth.mockReset();
     mockHooks.useRuntimeInfo.mockReset();
+    mockHooks.useLocalRuntimeCheck.mockReset();
     mockHooks.useRuntimeMigrationStatus.mockReset();
     mockHooks.useDockerStatus.mockReset();
     mockHooks.useEnvState.mockReset();
@@ -162,8 +205,15 @@ describe("SystemCheck", () => {
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
   });
 
+  it("on the container runtime, only the container probe runs", () => {
+    render(<SystemCheck />);
+    expect(mockHooks.useDockerStatus).toHaveBeenLastCalledWith({ enabled: true });
+    expect(mockHooks.useLocalRuntimeCheck).toHaveBeenLastCalledWith(false);
+  });
+
   it("Continue goes to the runtime screen when main runs the native runtime", () => {
     mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+    mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck());
     const { getByRole } = render(<SystemCheck />);
     act(() => {
       vi.advanceTimersByTime(400);
@@ -182,6 +232,7 @@ describe("SystemCheck", () => {
   ])("Continue goes to the migration screen first when the move is %s", (_label, data) => {
     mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
     mockHooks.useRuntimeMigrationStatus.mockReturnValue({ isPending: false, data });
+    mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck());
     const { getByRole } = render(<SystemCheck />);
     act(() => {
       vi.advanceTimersByTime(400);
@@ -195,6 +246,7 @@ describe("SystemCheck", () => {
   it("holds Continue until the migration status has answered on the native runtime", () => {
     mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
     mockHooks.useRuntimeMigrationStatus.mockReturnValue({ isPending: true, data: undefined });
+    mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck());
     const { getByRole } = render(<SystemCheck />);
     act(() => {
       vi.advanceTimersByTime(400);
@@ -237,5 +289,104 @@ describe("SystemCheck", () => {
     expect(
       queryByText(/Docker Model Runner is not active on this Linux host/)
     ).toBeNull();
+  });
+
+  describe("on the native runtime", () => {
+    beforeEach(() => {
+      mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: true } } });
+      mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck());
+      // What a disabled query returns: pending, never fetched.
+      mockHooks.useDockerStatus.mockReturnValue({ isPending: true, data: undefined });
+    });
+
+    it("shows six rows: Local runtime, Disk space and Memory replace the container row", () => {
+      const { container, getByText, queryByText } = render(<SystemCheck />);
+      const rows = [...container.querySelectorAll("[data-step-status]")];
+      expect(rows).toHaveLength(6);
+      expect(rows.map((row) => row.querySelector("span.text-sm")?.textContent)).toEqual([
+        "Operating system",
+        "Network connectivity",
+        "Local runtime",
+        "Disk space",
+        "Memory",
+        "Vex configuration",
+      ]);
+      expect(queryByText("Docker Engine")).toBeNull();
+      expect(getByText("Six quick checks before setup begins.")).toBeDefined();
+      expect(rowByLabel(container, "Local runtime")?.textContent).toContain("Database and embeddings server · macOS arm64");
+      expect(rowByLabel(container, "Local runtime")?.textContent).toContain("READY");
+      expect(rowByLabel(container, "Disk space")?.getAttribute("data-step-status")).toBe("ok");
+      expect(rowByLabel(container, "Disk space")?.textContent).toContain("129 GB free of 537 GB");
+      expect(rowByLabel(container, "Memory")?.textContent).toContain("16 GB · 3.0 GB free");
+    });
+
+    it("never runs the container probe, and asks main for the native facts", () => {
+      render(<SystemCheck />);
+      expect(mockHooks.useDockerStatus).toHaveBeenLastCalledWith({ enabled: false });
+      expect(mockHooks.useLocalRuntimeCheck).toHaveBeenLastCalledWith(true);
+    });
+
+    it("does not run the container probe while the runtime mode is still unknown", () => {
+      mockHooks.useRuntimeInfo.mockReturnValue({ isPending: true, data: undefined });
+      render(<SystemCheck />);
+      expect(mockHooks.useDockerStatus).toHaveBeenLastCalledWith({ enabled: false });
+      expect(mockHooks.useLocalRuntimeCheck).toHaveBeenLastCalledWith(false);
+    });
+
+    it("blocks Continue when a first run cannot fit the embeddings model and the database", () => {
+      mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck({ disk: { freeBytes: 300_000_000, totalBytes: 64 * GiB } }));
+      const { container, getByRole } = render(<SystemCheck />);
+      const disk = rowByLabel(container, "Disk space");
+      expect(disk?.getAttribute("data-step-status")).toBe("fail");
+      expect(disk?.textContent).toContain("NO SPACE");
+      expect(disk?.textContent).toContain("300 MB free · setup needs 938 MB");
+      expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).not.toBeNull();
+    });
+
+    it("only warns on the same low disk once the model is verified, and Continue stays enabled", () => {
+      mockHooks.useLocalRuntimeCheck.mockReturnValue(
+        localCheck({ disk: { freeBytes: 300_000_000, totalBytes: 64 * GiB, modelVerified: true, modelBytesToWrite: 0 } }),
+      );
+      const { container, getByRole } = render(<SystemCheck />);
+      const disk = rowByLabel(container, "Disk space");
+      expect(disk?.getAttribute("data-step-status")).toBe("warn");
+      expect(disk?.textContent).toContain("300 MB free of 68.7 GB · running low");
+      expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).toBeNull();
+    });
+
+    it("warns under 10% free while under 20 GiB", () => {
+      mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck({ disk: { freeBytes: 16 * GiB, totalBytes: 228 * GiB } }));
+      const { container } = render(<SystemCheck />);
+      const disk = rowByLabel(container, "Disk space");
+      expect(disk?.getAttribute("data-step-status")).toBe("warn");
+      expect(disk?.textContent).toContain("17.2 GB free of 245 GB (7%) · running low");
+    });
+
+    it("warns under 4 GB of memory without blocking", () => {
+      mockHooks.useLocalRuntimeCheck.mockReturnValue(localCheck({ memory: { totalBytes: 3 * GiB, freeBytes: 0.5 * GiB } }));
+      const { container, getByRole } = render(<SystemCheck />);
+      const memory = rowByLabel(container, "Memory");
+      expect(memory?.getAttribute("data-step-status")).toBe("warn");
+      expect(memory?.textContent).toContain("3.0 GB · under 4 GB · 0.5 GB free");
+      expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).toBeNull();
+    });
+
+    it("a missing bundle fails its row with main's reason; the runtime screen takes it from there", () => {
+      mockHooks.useLocalRuntimeCheck.mockReturnValue(
+        localCheck({ bundle: { kind: "missing", detail: "The bundled Postgres is missing or not executable (postgres). Reinstall Vex." } }),
+      );
+      const { container, getByRole } = render(<SystemCheck />);
+      const bundle = rowByLabel(container, "Local runtime");
+      expect(bundle?.getAttribute("data-step-status")).toBe("fail");
+      expect(bundle?.textContent).toContain("Reinstall Vex.");
+      expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).toBeNull();
+    });
+
+    it("waits for the native facts before Continue enables", () => {
+      mockHooks.useLocalRuntimeCheck.mockReturnValue({ isPending: true, data: undefined });
+      const { container, getByRole } = render(<SystemCheck />);
+      expect(rowByLabel(container, "Disk space")?.getAttribute("data-step-status")).toBe("loading");
+      expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).not.toBeNull();
+    });
   });
 });

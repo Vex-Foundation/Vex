@@ -1,6 +1,6 @@
 /**
- * SetupStatusCard — the status stanza for pre-shell branch bodies
- * (docker / compose / migrations).
+ * SetupStatusCard — the status stanza for pre-shell branch bodies (the local
+ * runtime's start, the container bootstrap screens, the migrations).
  *
  * Grammar (docs/design/V10-SPREAD.md section 1): status is shown by fill, a
  * swatch beside a mono WORD, above quiet sans copy. Calm tones (`ok` /
@@ -10,8 +10,9 @@
  *
  * ## It is a LIVE REGION, and it has to be its own
  *
- * These cards are the only thing that reports a pre-shell branch: Docker not
- * running, a compose bootstrap failing, a migration finishing. All of it
+ * These cards are the only thing that reports a pre-shell branch: the local
+ * database failing to start, a disk too full for the embeddings model, a
+ * migration finishing. All of it
  * arrives while the user is watching a screen that changes under them without
  * any focus moving, so a sighted user sees the word change and nobody else is
  * told anything. The app-wide notification announcer is NOT the owner here -
