@@ -110,6 +110,22 @@ const RESERVED_UNREGISTERED: Readonly<Record<string, string>> = {
   [CH.onboarding.providerTest]:
     "Reserved provider connection-test responder - verify is folded into providerPersist; standalone test is not wired yet.",
 
+  // The Docker runtime is gone from main: the bundled native runtime is the
+  // only one Vex runs, so nothing answers the container channels any more.
+  // The constants stay until the shared `docker.*` contract and its preload
+  // and renderer callers are removed in their own step.
+  [CH.docker.detect]:
+    "Docker runtime removed from main - the shared docker.* contract is removed in a later step.",
+  [CH.docker.install]:
+    "Docker runtime removed from main - the shared docker.* contract is removed in a later step.",
+  [CH.docker.start]:
+    "Docker runtime removed from main - the shared docker.* contract is removed in a later step.",
+  [CH.docker.composeUp]:
+    "Docker runtime removed from main - the shared docker.* contract is removed in a later step.",
+  [CH.docker.composeDown]:
+    "Docker runtime removed from main - the shared docker.* contract is removed in a later step.",
+  [CH.docker.stopPreviousInstallStacks]:
+    "Docker runtime removed from main - the shared docker.* contract is removed in a later step.",
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

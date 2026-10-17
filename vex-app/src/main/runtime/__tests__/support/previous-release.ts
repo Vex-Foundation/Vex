@@ -21,7 +21,7 @@ import pg from "pg";
 import { renderCompose } from "../../../compose/render.js";
 import { composeUpDetached } from "../../../compose/up.js";
 import { waitForHealth } from "../../../compose/health.js";
-import { composeDown } from "../../../compose/lifecycle.js";
+import { composeDown } from "../../../compose/down.js";
 import { runMigrationsWithProgress } from "../../../../../../src/lib/db/migrate-runner.js";
 import { chooseFreePort } from "../../native/free-port.js";
 import { makeElectronSecretAdapter } from "../../secrets/electron-secret-adapter.js";
