@@ -43,6 +43,53 @@ export const runtimeInfoSchema = z
   .strict();
 export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
 
+const byteCountSchema = z.number().int().nonnegative();
+
+/**
+ * System Check's facts for the native runtime. Read-only: nothing is started.
+ *
+ * - `bundle`: the bundled Postgres and embeddings server are present and
+ *   executable for this OS and arch, where main would run them from.
+ * - `disk`: the volume that holds the runtime directory, and what the
+ *   embeddings model still needs from it. `unreadable` when `statfs` failed.
+ * - `memory`: `os.totalmem()` / `os.freemem()`.
+ *
+ * The verdicts over these facts are `shared/local-runtime-requirements.ts`.
+ */
+export const localRuntimeCheckSchema = z
+  .object({
+    bundle: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("present"),
+          platform: osPlatformSchema,
+          arch: z.enum(["x64", "arm64"]),
+        })
+        .strict(),
+      z.object({ kind: z.literal("missing"), detail: z.string() }).strict(),
+    ]),
+    disk: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("measured"),
+          freeBytes: byteCountSchema,
+          totalBytes: byteCountSchema,
+          modelVerified: z.boolean(),
+          modelBytesToWrite: byteCountSchema,
+        })
+        .strict(),
+      z.object({ kind: z.literal("unreadable"), message: z.string() }).strict(),
+    ]),
+    memory: z
+      .object({
+        totalBytes: byteCountSchema,
+        freeBytes: byteCountSchema,
+      })
+      .strict(),
+  })
+  .strict();
+export type LocalRuntimeCheck = z.infer<typeof localRuntimeCheckSchema>;
+
 /**
  * The native runtime's start, as the "Preparing local runtime" screen shows
  * it: the database, then the embeddings model (checked, downloaded on first

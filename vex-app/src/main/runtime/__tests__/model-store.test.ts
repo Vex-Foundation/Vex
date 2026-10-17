@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ensureModel, type ModelSpec } from "../native/model-store.js";
+import { ensureModel, modelDiskNeed, type ModelSpec } from "../native/model-store.js";
 
 const BLOB = randomBytes(3 * 1024 * 1024 + 123);
 const SHA = createHash("sha256").update(BLOB).digest("hex");
@@ -181,5 +181,38 @@ describe("model store", () => {
     controller.abort();
     await expect(run(spec("a"), { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
     expect(existsSync(path.join(dir, "model.gguf.part"))).toBe(true);
+  });
+});
+
+describe("what the model still needs from the disk (System Check)", () => {
+  it("nothing yet: the whole model", async () => {
+    await expect(modelDiskNeed(dir, spec("a"))).resolves.toEqual({ verified: false, bytesToWrite: BLOB.length });
+  });
+
+  it("an interrupted download: only the rest", async () => {
+    behaviour.a = { dropAfter: 1024 * 1024 };
+    await run(spec("a"));
+    const partial = (await stat(path.join(dir, "model.gguf.part"))).size;
+    expect(partial).toBeGreaterThan(0);
+    await expect(modelDiskNeed(dir, spec("a"))).resolves.toEqual({
+      verified: false,
+      bytesToWrite: BLOB.length - partial,
+    });
+  });
+
+  it("a model the store verified: nothing, without hashing it again", async () => {
+    await run(spec("a"));
+    await expect(modelDiskNeed(dir, spec("a"))).resolves.toEqual({ verified: true, bytesToWrite: 0 });
+  });
+
+  it("a file under the model's name the store never stamped is not verified, but takes no new space", async () => {
+    await writeFile(path.join(dir, "model.gguf"), BLOB);
+    await expect(modelDiskNeed(dir, spec("a"))).resolves.toEqual({ verified: false, bytesToWrite: 0 });
+  });
+
+  it("a model changed after it was stamped is no longer verified", async () => {
+    await run(spec("a"));
+    await writeFile(path.join(dir, "model.gguf"), Buffer.from(BLOB).fill(1, 0, 10));
+    await expect(modelDiskNeed(dir, spec("a"))).resolves.toMatchObject({ verified: false });
   });
 });

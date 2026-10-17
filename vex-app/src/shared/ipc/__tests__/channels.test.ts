@@ -125,6 +125,10 @@ describe("CH / EV channel constants", () => {
     expect(EV.system.runtimeProgress).toBe("vex:event:system:runtimeProgress");
   });
 
+  it("ships System Check's native-runtime facts under the system domain", () => {
+    expect(CH.system.localRuntimeCheck).toBe("vex:system:localRuntimeCheck");
+  });
+
   it("channels are unique (no duplicate values across namespaces)", () => {
     const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
     const seen = new Set<string>();

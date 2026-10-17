@@ -1,6 +1,7 @@
 import type { Result } from "../../../ipc/result.js";
 import type {
   HealthReport,
+  LocalRuntimeCheck,
   NativeRuntimeStatus,
   NetworkProbe,
   NotifyTurnCompleteInput,
@@ -24,6 +25,12 @@ export interface SystemBridge {
    * is in flight or once it is ready. Answers with the status after the call.
    */
   readonly runtimeRetry: () => Promise<Result<NativeRuntimeStatus>>;
+  /**
+   * System Check's facts for the native runtime: whether its binaries are
+   * bundled for this OS and arch, the free space where it keeps its data, and
+   * the machine's memory. Read-only; starts nothing.
+   */
+  readonly localRuntimeCheck: () => Promise<Result<LocalRuntimeCheck>>;
   /**
    * Every change of the native runtime's start. Returns idempotent
    * unsubscribe. Nothing is replayed across IPC: read `runtimeStatus` after

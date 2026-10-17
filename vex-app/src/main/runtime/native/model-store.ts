@@ -107,6 +107,35 @@ async function sizeOf(file: string): Promise<number | null> {
   }
 }
 
+export interface ModelDiskNeed {
+  /** The pinned model is in place and its stamp matches it: no hashing, no download. */
+  readonly verified: boolean;
+  /**
+   * How many more bytes the next `ensureModel` may put on this volume: the
+   * model less what `.part` already holds and less a file under the model's
+   * name, which is either the model or deleted before the download.
+   */
+  readonly bytesToWrite: number;
+}
+
+/**
+ * What the model still needs from the disk, without hashing anything: the
+ * same stamp test `ensureModel` passes on a cheap start. For System Check.
+ */
+export async function modelDiskNeed(dir: string, spec: ModelSpec = EMBEDDING_MODEL_SPEC): Promise<ModelDiskNeed> {
+  const target = path.join(dir, spec.fileName);
+  const existing = await stat(target).catch(() => null);
+  if (existing?.isFile() === true && existing.size === spec.bytes) {
+    const stamp = await readStamp(`${target}.verified`);
+    if (stamp?.sha256 === spec.sha256 && stamp.size === existing.size && stamp.mtimeMs === existing.mtimeMs) {
+      return { verified: true, bytesToWrite: 0 };
+    }
+  }
+  const partial = Math.min((await sizeOf(`${target}.part`)) ?? 0, spec.bytes);
+  const reclaimed = existing?.isFile() === true ? existing.size : 0;
+  return { verified: false, bytesToWrite: Math.max(0, spec.bytes - partial - reclaimed) };
+}
+
 async function hashFile(file: string, hash = createHash("sha256")): Promise<ReturnType<typeof createHash>> {
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
   return hash;
