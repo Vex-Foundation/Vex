@@ -34,7 +34,7 @@ describe("StepRow", () => {
   it("renders explicit badgeLabel overriding the default for the status", () => {
     const { getByText, queryByText } = render(
       <StepRow
-        label="Docker"
+        label="Local runtime"
         status="ok"
         detail={null}
         icon={dummyIcon()}

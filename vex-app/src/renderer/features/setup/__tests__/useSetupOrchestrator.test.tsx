@@ -3,21 +3,23 @@
  * The pipeline re-sequences the classic screens' IPC contracts, so these
  * tests pin the contract-critical properties:
  *  - first run (`setupCompleteFlag=false`) hands off to systemCheck and
- *    NEVER auto-starts compose or migrate;
+ *    NEVER waits on the runtime or migrates;
  *  - macOS translocation forces systemCheck even for a returning user;
- *  - a broken Docker state hands off to dockerBootstrap before compose;
- *  - the happy returning path runs compose → migrate → wizard-entry in
- *    order and lands on appShell;
+ *  - the gate waits for main's start of the native runtime: ready →
+ *    migrate → wizard-entry → appShell; a failure or a model download →
+ *    runtimeBootstrap. Before that, any migration status but not_needed →
+ *    runtimeMigration (main has not started the runtime, so waiting for it
+ *    would never end);
+ *  - an e2e door run (`native: false`) starts and waits on nothing: its
+ *    database is already published, so it goes straight to migrate;
  *  - `database.onProgress` is subscribed BEFORE `database.migrate` is
  *    invoked (the push bus replays to late subscribers — ordering is a
  *    documented contract, not style);
- *  - non-happy compose/migrate outcomes hand off to the classic screen
- *    that owns that remediation;
- *  - a completed setup with a locked vault hands off to unlock;
- *  - on the native runtime the gate waits for main's start: ready →
- *    migrate; a failure or a model download → runtimeBootstrap. Before
- *    that, any migration status but not_needed → runtimeMigration (main has
- *    not started the runtime, so waiting for it would never end).
+ *  - a non-happy migrate outcome hands off to the classic migrations screen;
+ *  - a completed setup with a locked vault hands off to unlock.
+ *
+ * `window.vex` carries no `docker` namespace: any call into one would throw
+ * and fail the pipeline.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,24 +48,6 @@ const HEALTH = {
   overall: "ok",
 };
 
-const DOCKER_READY = {
-  endpoint: { accepted: true, blockReason: null },
-  engine: { present: true, version: "27.0.0", runtimeOK: true, failure: null },
-  compose: { present: true, version: "2.29.0" },
-  modelRunner: { present: false, status: "absent", tcpReachable: false },
-  daemon: { running: true, startable: true },
-  ports: { vexPgFree: true },
-  disk: { availableGB: 100 },
-};
-
-const COMPOSE_RUNNING = {
-  kind: "running",
-  composeOutPath: "/tmp/compose.yml",
-  installId: "install-1",
-  message: "up",
-  previousInstallHoldingPorts: false,
-};
-
 const WIZARD_DONE = {
   schemaVersion: 2,
   currentStepId: "review",
@@ -84,9 +68,7 @@ interface VexMock {
   readonly runtimeStatus: ReturnType<typeof vi.fn>;
   readonly runtimeMigrationStatus: ReturnType<typeof vi.fn>;
   readonly onRuntimeProgress: ReturnType<typeof vi.fn>;
-  readonly detect: ReturnType<typeof vi.fn>;
   readonly getEnvState: ReturnType<typeof vi.fn>;
-  readonly composeUpAbortable: ReturnType<typeof vi.fn>;
   readonly onProgress: ReturnType<typeof vi.fn>;
   readonly migrate: ReturnType<typeof vi.fn>;
   readonly getWizardState: ReturnType<typeof vi.fn>;
@@ -102,19 +84,14 @@ function emitRuntime(status: NativeRuntimeStatus): void {
 function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
   const mock: VexMock = {
     health: vi.fn(async () => ok(HEALTH)),
-    runtime: vi.fn(async () => ok({ native: false })),
+    runtime: vi.fn(async () => ok({ native: true })),
     runtimeStatus: vi.fn(async () => ok({ seq: 6, phase: "ready" })),
     runtimeMigrationStatus: vi.fn(async () => ok({ kind: "not_needed" })),
     onRuntimeProgress: vi.fn((cb: (status: NativeRuntimeStatus) => void) => {
       runtimeListeners.add(cb);
       return () => runtimeListeners.delete(cb);
     }),
-    detect: vi.fn(async () => ok(DOCKER_READY)),
     getEnvState: vi.fn(async () => ok({ setupCompleteFlag: true })),
-    composeUpAbortable: vi.fn(() => ({
-      promise: Promise.resolve(ok(COMPOSE_RUNNING)),
-      cancel: vi.fn(),
-    })),
     onProgress: vi.fn(() => vi.fn()),
     migrate: vi.fn(async () => ok({ kind: "noop", message: "current" })),
     getWizardState: vi.fn(async () => ok(WIZARD_DONE)),
@@ -134,10 +111,6 @@ function installVexMock(overrides: Partial<VexMock> = {}): VexMock {
         runtimeMigrationStatus: mock.runtimeMigrationStatus,
         onRuntimeProgress: mock.onRuntimeProgress,
       },
-      docker: {
-        detect: mock.detect,
-        composeUpAbortable: mock.composeUpAbortable,
-      },
       onboarding: {
         getEnvState: mock.getEnvState,
         getWizardState: mock.getWizardState,
@@ -156,6 +129,9 @@ function wrapper({ children }: { readonly children: ReactNode }) {
   return createElement(QueryClientProvider, { client }, children);
 }
 
+/** The door run's answer: main starts no runtime. */
+const door = (): Pick<VexMock, "runtime"> => ({ runtime: vi.fn(async () => ok({ native: false })) });
+
 beforeEach(() => {
   vi.restoreAllMocks();
   runtimeListeners.clear();
@@ -167,7 +143,7 @@ afterEach(() => {
 });
 
 describe("useSetupOrchestrator", () => {
-  it("first run hands off to systemCheck and never touches compose/migrate", async () => {
+  it("first run hands off to systemCheck and never waits on the runtime or migrates", async () => {
     const mock = installVexMock({
       getEnvState: vi.fn(async () => ok({ setupCompleteFlag: false })),
     });
@@ -178,7 +154,8 @@ describe("useSetupOrchestrator", () => {
         view: "systemCheck",
       }),
     );
-    expect(mock.composeUpAbortable).not.toHaveBeenCalled();
+    expect(mock.runtimeMigrationStatus).not.toHaveBeenCalled();
+    expect(mock.runtimeStatus).not.toHaveBeenCalled();
     expect(mock.migrate).not.toHaveBeenCalled();
   });
 
@@ -193,31 +170,20 @@ describe("useSetupOrchestrator", () => {
         view: "systemCheck",
       }),
     );
-    expect(mock.composeUpAbortable).not.toHaveBeenCalled();
+    expect(mock.runtimeStatus).not.toHaveBeenCalled();
+    expect(mock.migrate).not.toHaveBeenCalled();
   });
 
-  it("a stopped daemon hands off to dockerBootstrap before compose", async () => {
-    const mock = installVexMock({
-      detect: vi.fn(async () =>
-        ok({ ...DOCKER_READY, daemon: { running: false, startable: true } }),
-      ),
-    });
-    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
-    await waitFor(() =>
-      expect(result.current.handoff).toEqual({
-        kind: "view",
-        view: "dockerBootstrap",
-      }),
-    );
-    expect(mock.composeUpAbortable).not.toHaveBeenCalled();
-  });
-
-  it("happy returning path runs compose → migrate → appShell in order", async () => {
+  it("happy returning path: the runtime is ready, migrate joins main's start → appShell", async () => {
     const calls: string[] = [];
     const mock = installVexMock({
-      composeUpAbortable: vi.fn(() => {
-        calls.push("compose");
-        return { promise: Promise.resolve(ok(COMPOSE_RUNNING)), cancel: vi.fn() };
+      runtimeMigrationStatus: vi.fn(async () => {
+        calls.push("migrationStatus");
+        return ok({ kind: "not_needed" });
+      }),
+      runtimeStatus: vi.fn(async () => {
+        calls.push("runtimeStatus");
+        return ok({ seq: 6, phase: "ready" });
       }),
       onProgress: vi.fn(() => {
         calls.push("subscribe");
@@ -233,52 +199,28 @@ describe("useSetupOrchestrator", () => {
       expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
     );
     // subscribe-before-invoke is a documented contract of the progress bus.
-    expect(calls).toEqual(["compose", "subscribe", "migrate"]);
+    expect(calls).toEqual(["migrationStatus", "runtimeStatus", "subscribe", "migrate"]);
     expect(mock.getWizardState).toHaveBeenCalledTimes(1);
-  });
-
-  it("native runtime: no container gate or compose; migrate joins main's start → appShell", async () => {
-    const calls: string[] = [];
-    const mock = installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
-      // A stopped engine would send the container gate to bootstrap; on the
-      // native runtime it must not even be probed.
-      detect: vi.fn(async () => ok({ ...DOCKER_READY, daemon: { ...DOCKER_READY.daemon, running: false } })),
-      onProgress: vi.fn(() => {
-        calls.push("subscribe");
-        return vi.fn();
-      }),
-      migrate: vi.fn(async () => {
-        calls.push("migrate");
-        return ok({ kind: "noop", message: "current" });
-      }),
-    });
-    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
-    await waitFor(() =>
-      expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
-    );
-    expect(mock.composeUpAbortable).not.toHaveBeenCalled();
-    expect(mock.detect).not.toHaveBeenCalled();
-    expect(calls).toEqual(["subscribe", "migrate"]);
     expect(runtimeListeners.size).toBe(0);
   });
 
-  it("native runtime: a first run hands off to systemCheck without probing the container engine", async () => {
-    const mock = installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
-      getEnvState: vi.fn(async () => ok({ setupCompleteFlag: false })),
-    });
-    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
-    await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "systemCheck" }));
-    expect(mock.detect).not.toHaveBeenCalled();
-  });
-
-  it("container runtime: the engine is probed once, alongside the other probes", async () => {
+  it("the runtime mode is probed once, alongside the other probes", async () => {
     const mock = installVexMock();
     const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
     await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }));
-    expect(mock.detect).toHaveBeenCalledTimes(1);
     expect(mock.runtime).toHaveBeenCalledTimes(1);
+    expect(mock.health).toHaveBeenCalledTimes(1);
+    expect(mock.getEnvState).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unreadable runtime mode takes the native path, not the door's", async () => {
+    const mock = installVexMock({
+      runtime: vi.fn(async () => ({ ok: false, error: { code: "internal.unexpected", message: "x" } })),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }));
+    expect(mock.runtimeMigrationStatus).toHaveBeenCalledTimes(1);
+    expect(mock.runtimeStatus).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -287,9 +229,8 @@ describe("useSetupOrchestrator", () => {
     ["an unreadable runtime state", ok({ kind: "state_unreadable", message: "does not parse" })],
     ["a move in progress", ok({ kind: "in_progress", op: "migrate", progress: null })],
     ["an IPC failure", { ok: false, error: { code: "internal.unexpected", message: "x" } }],
-  ])("native runtime: %s hands off to runtimeMigration without waiting or migrating", async (_label, answer) => {
+  ])("%s hands off to runtimeMigration without waiting or migrating", async (_label, answer) => {
     const mock = installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
       runtimeMigrationStatus: vi.fn(async () => answer),
     });
     const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
@@ -301,9 +242,8 @@ describe("useSetupOrchestrator", () => {
     expect(runtimeListeners.size).toBe(0);
   });
 
-  it("native runtime: the gate waits through a start in flight, then migrates", async () => {
+  it("the gate waits through a start in flight, then migrates", async () => {
     const mock = installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
       runtimeStatus: vi.fn(async () => ok({ seq: 2, phase: "postgres", initializing: false })),
     });
     const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
@@ -332,9 +272,8 @@ describe("useSetupOrchestrator", () => {
     ],
     ["a model re-hash", { seq: 3, phase: "model", model: { state: "verifying" } }],
     ["a failed start", { seq: 3, phase: "failed", step: "postgres", kind: "port_collision", message: "No port." }],
-  ])("native runtime: %s hands off to runtimeBootstrap without migrating", async (_label, status) => {
+  ])("%s hands off to runtimeBootstrap without migrating", async (_label, status) => {
     const mock = installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
       runtimeStatus: vi.fn(async () => ok(status)),
     });
     const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
@@ -345,10 +284,9 @@ describe("useSetupOrchestrator", () => {
     expect(runtimeListeners.size).toBe(0);
   });
 
-  it("native runtime: a status reply older than an event already seen is ignored", async () => {
+  it("a status reply older than an event already seen is ignored", async () => {
     let answer: (value: unknown) => void = () => {};
     const mock = installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
       runtimeStatus: vi.fn(() => new Promise((resolve) => (answer = resolve))),
     });
     const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
@@ -361,47 +299,13 @@ describe("useSetupOrchestrator", () => {
     expect(mock.migrate).toHaveBeenCalledTimes(1);
   });
 
-  it("native runtime: an unreadable status hands off to runtimeBootstrap", async () => {
+  it("an unreadable status hands off to runtimeBootstrap", async () => {
     installVexMock({
-      runtime: vi.fn(async () => ok({ native: true })),
       runtimeStatus: vi.fn(async () => ({ ok: false, error: { code: "internal.unexpected", message: "x" } })),
     });
     const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
     await waitFor(() =>
       expect(result.current.handoff).toEqual({ kind: "view", view: "runtimeBootstrap" }),
-    );
-  });
-
-  it("compose provider: never reads the native runtime's status", async () => {
-    const mock = installVexMock();
-    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
-    await waitFor(() =>
-      expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
-    );
-    expect(mock.runtimeStatus).not.toHaveBeenCalled();
-    expect(mock.runtimeMigrationStatus).not.toHaveBeenCalled();
-    expect(mock.onRuntimeProgress).not.toHaveBeenCalled();
-  });
-
-  it("port_collision hands off to the classic compose screen", async () => {
-    installVexMock({
-      composeUpAbortable: vi.fn(() => ({
-        promise: Promise.resolve(
-          ok({
-            ...COMPOSE_RUNNING,
-            kind: "port_collision",
-            previousInstallHoldingPorts: true,
-          }),
-        ),
-        cancel: vi.fn(),
-      })),
-    });
-    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
-    await waitFor(() =>
-      expect(result.current.handoff).toEqual({
-        kind: "view",
-        view: "composeBootstrap",
-      }),
     );
   });
 
@@ -421,6 +325,21 @@ describe("useSetupOrchestrator", () => {
     );
   });
 
+  it("a migrate call that throws hands off to the classic migrations screen", async () => {
+    const unsubscribe = vi.fn();
+    installVexMock({
+      onProgress: vi.fn(() => unsubscribe),
+      migrate: vi.fn(async () => {
+        throw new Error("bridge gone");
+      }),
+    });
+    const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.handoff).toEqual({ kind: "view", view: "migrations" }),
+    );
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it("a completed setup with a locked vault hands off to unlock", async () => {
     installVexMock({
       secretsStatus: vi.fn(async () =>
@@ -434,5 +353,73 @@ describe("useSetupOrchestrator", () => {
         returnView: "appShell",
       }),
     );
+  });
+
+  describe("in an e2e door run (native: false)", () => {
+    it("starts and waits on nothing: subscribe → migrate → appShell", async () => {
+      const calls: string[] = [];
+      const statuses: string[] = [];
+      const mock = installVexMock({
+        ...door(),
+        onProgress: vi.fn(() => {
+          calls.push("subscribe");
+          return vi.fn();
+        }),
+        migrate: vi.fn(async () => {
+          calls.push("migrate");
+          return ok({ kind: "noop", message: "current" });
+        }),
+      });
+      const { result } = renderHook(
+        () => {
+          const orchestrator = useSetupOrchestrator();
+          statuses.push(orchestrator.status.key);
+          return orchestrator;
+        },
+        { wrapper },
+      );
+      await waitFor(() =>
+        expect(result.current.handoff).toEqual({ kind: "view", view: "appShell" }),
+      );
+      expect(calls).toEqual(["subscribe", "migrate"]);
+      expect(mock.runtimeMigrationStatus).not.toHaveBeenCalled();
+      expect(mock.runtimeStatus).not.toHaveBeenCalled();
+      expect(mock.onRuntimeProgress).not.toHaveBeenCalled();
+      // No "Starting services" line: nothing is started.
+      expect(statuses).not.toContain("services");
+    });
+
+    it("a first run still hands off to systemCheck without migrating", async () => {
+      const mock = installVexMock({
+        ...door(),
+        getEnvState: vi.fn(async () => ok({ setupCompleteFlag: false })),
+      });
+      const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+      await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "systemCheck" }));
+      expect(mock.migrate).not.toHaveBeenCalled();
+    });
+
+    it("a migrate failure hands off to the classic migrations screen", async () => {
+      installVexMock({
+        ...door(),
+        migrate: vi.fn(async () => ({
+          ok: false as const,
+          error: { domain: "database", code: "database.migrate_failed", message: "boom" },
+        })),
+      });
+      const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+      await waitFor(() => expect(result.current.handoff).toEqual({ kind: "view", view: "migrations" }));
+    });
+
+    it("a locked vault hands off to unlock", async () => {
+      installVexMock({
+        ...door(),
+        secretsStatus: vi.fn(async () => ok({ vaultConfigured: true, unlocked: false })),
+      });
+      const { result } = renderHook(() => useSetupOrchestrator(), { wrapper });
+      await waitFor(() =>
+        expect(result.current.handoff).toEqual({ kind: "unlock", returnView: "appShell" }),
+      );
+    });
   });
 });
