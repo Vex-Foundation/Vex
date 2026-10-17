@@ -1,10 +1,11 @@
 /**
- * BOARD MODAL CHROME - the header controls, and the ONE holder of the live
- * lease.
+ * BOARD CHROME - the Board page's head controls (docs/design/R3-MINIMAL.md
+ * section 9.4: Snapshot, the Live data switch, the live word, the pin), and
+ * the ONE holder of the live lease.
  *
- * WHY THE LEASE LIVES HERE. `selectBoardLiveOwnerKey` derives that only an
- * open modal may hold one (A1), and this component is mounted exactly as long
- * as a board is bound to that modal. Holding it here rather than in the grid
+ * WHY THE LEASE LIVES HERE. `selectBoardLiveOwnerKey` derives that only a
+ * bound board may hold one (A1), and this component is mounted exactly as
+ * long as a board is bound and its page is up. Holding it here rather than in the grid
  * means the toggle and the subscription are the same object's business, and a
  * board with no grid rendered (a spotlight view) keeps its lease without any
  * special case. The figures are PUBLISHED to `board-live-overlay` so the grid
@@ -19,21 +20,23 @@
  * an unsupported build: that mode is not retryable, and a reconciler that
  * treated it as "not held yet" would loop.
  *
- * THE DOT IS DRIVEN BY THE FETCH, NOT BY THE SWITCH (the chart contract's own
- * rule). A reader who flips Live on and sees a green LIVE dot before a single
- * tick has landed has been told something untrue. So the switch reports the
- * request and the dot reports `live-connected`.
+ * THE WORD IS DRIVEN BY THE FETCH, NOT BY THE SWITCH (the chart contract's
+ * own rule). A reader who flips Live on and reads "Live" before a single tick
+ * has landed has been told something untrue. So the switch reports the
+ * request, "Connecting" or "Reconnecting" the lease, and "Live" only
+ * `live-connected`. The same state is spoken once in a polite live region.
  *
- * PIN IS NOT SELECTION. Pinning binds the BOOK to this board and deliberately
- * does not follow a newer one; the unseen dot is how the reader learns a newer
- * board exists (A1/A3).
+ * PIN IS NOT SELECTION. Pinning binds the Board page to this board and
+ * deliberately does not follow a newer one: the page opens the pinned board,
+ * else the latest (A1/A3).
  */
 
 import { useEffect, useMemo, useRef, type JSX } from "react";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LinePin } from "../../../components/icons/line/index.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { useBoardLive } from "../../../lib/api/board-live.js";
 import { cn } from "../../../lib/utils.js";
+import { formatBoardUtcClock } from "./boardFormat.js";
 import {
   isBoardLiveHeld,
   useBoardLiveOverlayStore,
@@ -165,32 +168,29 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
 
   const pinned = pinnedBoard !== null && boardKeyOf(pinnedBoard) === boardKey;
   const connected = live.mode === "live-connected";
+  // HOLDING A LEASE IS NOT A LANDED TICK. `held` decides whether this is the
+  // live path at all; the mode decides what is said: a lease asking for a
+  // socket and a lease whose socket dropped are not figures arriving now.
+  const liveState: BoardLiveState = !held
+    ? "snapshot"
+    : connected
+      ? "live"
+      : live.mode === "live-degraded"
+        ? "reconnecting"
+        : "connecting";
+  const clock = formatBoardUtcClock(
+    live.fetchedAtMs ?? board.spec.hydration.marketDataFetchedAt,
+  );
 
   return (
-    <div
-      data-vex-area="board-chrome"
-      className="flex flex-col items-end gap-1"
-    >
-      <div className="flex h-8 items-center gap-3">
+    <div data-vex-area="board-chrome" data-live-state={liveState} className="vex-bd-chrome">
+      <div className="vex-bd-chrome__row">
         <span
           data-vex-area="board-mode-snapshot"
-          className={cn(
-            "font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em]",
-            held ? "text-ink-tertiary" : "text-ink-primary",
-          )}
+          data-on={held ? "false" : "true"}
+          className="vex-bd-chrome__word"
         >
           Snapshot
-        </span>
-        <span aria-hidden className="h-4 w-px bg-rule" />
-        <span
-          id={`board-live-label-${boardKey}`}
-          data-vex-area="board-mode-live"
-          className={cn(
-            "font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em]",
-            held ? "text-accent-primary" : "text-ink-tertiary",
-          )}
-        >
-          Live data
         </span>
         <LiveSwitch
           labelId={`board-live-label-${boardKey}`}
@@ -205,53 +205,92 @@ export function BoardModalChrome({ board }: BoardHeaderSlotProps): JSX.Element {
             setBoardLive(next);
           }}
         />
+        <span
+          id={`board-live-label-${boardKey}`}
+          data-vex-area="board-mode-live"
+          data-on={held ? "true" : "false"}
+          className="vex-bd-chrome__word"
+        >
+          Live data
+        </span>
+        {/* Status by fill, always with its word: a solid square is figures
+          * arriving, the dot screen a socket still connecting or dropped. The
+          * word is the meaning; nothing is said while the board is a snapshot
+          * (the switch says that). */}
         {connected ? (
-          <span
-            data-vex-area="board-live-dot"
-            className="flex items-center gap-1.5 font-mono text-[11px] uppercase leading-[18px] tracking-[0.14em] text-accent-primary"
-          >
+          <span data-vex-area="board-live-dot" className="vex-bd-chrome__live">
             <Swatch state="done" size={9} />
-            LIVE
+            Live
+          </span>
+        ) : held ? (
+          <span data-vex-area="board-live-state" className="vex-bd-chrome__live">
+            <Swatch state="listening" size={9} />
+            {liveState === "reconnecting" ? "Reconnecting" : "Connecting"}
           </span>
         ) : null}
         <button
           type="button"
           data-vex-area="board-pin"
           aria-pressed={pinned}
-          aria-label={pinned ? "Unpin this board" : "Pin this board to the sidebar"}
+          aria-label={pinned ? "Unpin this board" : "Pin this board"}
+          title={
+            pinned
+              ? "Unpin this board"
+              : "Pin this board: the Board page keeps opening it until you unpin it"
+          }
           onClick={() => {
             if (pinned) unpinBoard();
             else pinBoard(board);
           }}
-          className={cn(
-            "inline-flex h-8 w-8 items-center justify-center border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-            pinned
-              ? "border-accent-primary bg-accent-wash text-accent-primary"
-              : "border-rule text-ink-secondary hover:border-rule-ink hover:text-ink-primary",
-          )}
+          className="vex-bd-key"
         >
-          <PxIcon name="knowledge" size={16} />
+          <LinePin size={16} />
         </button>
       </div>
-      <p
-        data-vex-area="board-live-helper"
-        className="text-right font-mono text-[11px] uppercase leading-[16px] tracking-[0.14em] text-ink-tertiary"
-      >
+      <p data-vex-area="board-live-helper" className="vex-bd-chrome__helper">
         {/* The lease's own sentence wins when it has one to say: an
           * unsupported build or a terminal close is a fact about THIS board,
           * and it must not be overwritten by the ordinary helper copy. */}
         {live.notice ?? (held ? BOARD_LIVE_HELPER_ON : BOARD_LIVE_HELPER_OFF)}
       </p>
+      {/* The live state is a fact about the figures on the page, so it is
+        * SPOKEN as well as painted: whether prices are updating changes what
+        * they mean. */}
+      <p aria-live="polite" className="sr-only" data-vex-area="board-live-region">
+        {liveRegionText(board.title, liveState, clock)}
+      </p>
     </div>
   );
 }
 
+/** What the board's figures are doing right now, in the four words the page uses. */
+type BoardLiveState = "snapshot" | "connecting" | "reconnecting" | "live";
+
+/** The polite announcement for a live state change (the old rail's sentences). */
+export function liveRegionText(
+  title: string,
+  state: BoardLiveState,
+  clock: string | null,
+): string {
+  switch (state) {
+    case "live":
+      return `${title}: live figures`;
+    case "connecting":
+      return `${title}: connecting to live figures, still showing figures${clock === null ? "" : ` read at ${clock}`}`;
+    case "reconnecting":
+      return `${title}: reconnecting, figures may be behind${clock === null ? "" : `, last read at ${clock}`}`;
+    case "snapshot":
+      return `${title}: snapshot figures${clock === null ? "" : ` read at ${clock}`}`;
+  }
+}
+
 /**
- * The Live data switch.
+ * The Live data switch: the kit switch (docs/design/R3-MINIMAL.md section
+ * 1.5, `.vex-switch`, 32 x 18).
  *
  * `role="switch"` with `aria-checked`, because this is a persistent on/off
  * state rather than an action - which is exactly the distinction the owner
- * drew between this control and the card's Spotlight BUTTON. A real `<button>`
+ * drew between this control and the tile's Spotlight BUTTON. A real `<button>`
  * underneath, so it is in the tab order and Enter and Space operate it with no
  * key handler of ours. The name comes from the visible "Live data" text
  * through `aria-labelledby`, so the label and the control cannot drift apart.
@@ -281,27 +320,7 @@ function LiveSwitch({
       onClick={() => {
         onChange(!checked);
       }}
-      className={cn(
-        "relative inline-flex h-[22px] w-[42px] shrink-0 items-center border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-        checked
-          ? "border-accent-primary bg-accent-primary"
-          : "border-rule bg-surface-3",
-        disabled && "cursor-not-allowed opacity-50",
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          // The knob's fill is SEMANTIC, not a white literal. On the accent
-          // track it is the ink that belongs on an accent button, which the
-          // light theme repoints to a dark value because its accent fill is
-          // pale; off, it is the neutral tertiary ink. A hardcoded white would
-          // be invisible on the light theme's own track.
-          "block h-[16px] w-[16px] transition-transform duration-150 motion-reduce:transition-none",
-          checked ? "bg-board-surface" : "bg-ink-tertiary",
-          checked ? "translate-x-[23px]" : "translate-x-[3px]",
-        )}
-      />
-    </button>
+      className={cn("vex-switch", disabled && "cursor-not-allowed opacity-50")}
+    />
   );
 }

@@ -43,6 +43,7 @@ import { BoardModalChrome } from "../BoardModalChrome.js";
 import { BOARD_FILTER_NONE, useBoardSurfaceStore } from "../board-surface-store.js";
 import { useBoardLiveOverlayStore } from "../board-live-overlay.js";
 import { boardKeyOf, boardRefOf, type BoardRef } from "../board-surface-contracts.js";
+import { setBoardPageSlot } from "../board-page-slot.js";
 import { boardSpec, hydratedRow } from "./boardFixture.js";
 
 const capability = vi.fn();
@@ -170,6 +171,8 @@ function mount(): JSX.Element {
   return (
     <QueryClientProvider client={client}>
       <BoardModalHost headerSlot={BoardModalChrome} />
+      {/* The Board page's element: the host renders the board into it. */}
+      <div ref={setBoardPageSlot} />
     </QueryClientProvider>
   );
 }

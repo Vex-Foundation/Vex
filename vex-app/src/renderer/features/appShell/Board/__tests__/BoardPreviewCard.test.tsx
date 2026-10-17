@@ -213,7 +213,7 @@ describe("BoardPreviewCard", () => {
     expect(badge.textContent).toContain("UTC");
   });
 
-  it("reads LIVE only once a tick has actually landed", () => {
+  it("reads Live only once a tick has actually landed", () => {
     // The dot follows the FETCH, not the switch: a green LIVE beside figures
     // that have not arrived is a claim the data does not support.
     const { rerender } = render(
@@ -236,7 +236,7 @@ describe("BoardPreviewCard", () => {
       ),
     );
     expect(area("board-preview-mode").getAttribute("data-mode")).toBe("live");
-    expect(area("board-preview-mode").textContent).toContain("LIVE");
+    expect(area("board-preview-mode").textContent).toContain("Live");
   });
 
   it("offers Ask VEX only where an intent can actually be received", () => {

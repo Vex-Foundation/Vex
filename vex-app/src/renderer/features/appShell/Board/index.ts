@@ -11,8 +11,9 @@
 export { BoardBlock, type BoardBlockProps } from "./BoardBlock.js";
 
 /**
- * BOARD SURFACES (v3). `BoardModalHost` is the shell-level host; the store and
- * the contracts are the seam every later surface codes against.
+ * BOARD SURFACES (v3). `BoardModalHost` is the shell-level host that presents
+ * the Board page (route `board`); the store and the contracts are the seam
+ * every later surface codes against.
  *
  * `BoardPreviewCardProps` is exported ahead of its component on purpose: it
  * is the shape the transcript row's one-line change site will pass, frozen
@@ -23,9 +24,9 @@ export { BoardModalHost, type BoardModalHostProps } from "./BoardModalHost.js";
 /**
  * BOARD SURFACES (v3), the product side. `BoardRowCard` is the transcript's
  * one-line mount; `BoardModalChrome` and `BoardGrid` are the components the
- * shell hands the host as its header and grid slots. Everything below them -
- * the card, the chip, the sparkline, the data-notes disclosure, the derived
- * model - is an implementation detail owned in this directory.
+ * shell hands the host as its head and grid slots. Everything below them -
+ * the tile, the chip, the data-notes disclosure, the derived model - is an
+ * implementation detail owned in this directory.
  */
 export { BoardRowCard, type BoardRowCardProps } from "./BoardRowCard.js";
 export {
@@ -35,8 +36,9 @@ export {
 export { BoardGrid, boardGridLabel } from "./BoardGrid.js";
 export { BoardSubtitle } from "./BoardSubtitle.js";
 /**
- * ASK VEX (T3). The panel is the host's `askSlot`; the intent channel is the
- * seam the RESIDENT composer consumes from. Nothing here submits a turn.
+ * ASK VEX (T3). The block is the host's `askSlot`, rendered in the Vex
+ * sidebar; the intent channel is the seam the RESIDENT composer consumes
+ * from. Nothing here submits a turn.
  */
 export { AskVexPanel, BOARD_ASK_SENT_NOTICE } from "./AskVexPanel.js";
 export {
@@ -63,14 +65,8 @@ export {
   BOARD_DETAILS_RETRY_MS,
   BOARD_SAFETY_EVIDENCE_UNREAD,
 } from "./board-safety-surface.js";
-export {
-  useBoardSparklines,
-  boardSparklineDataFrom,
-  BOARD_SPARKLINE_PENDING,
-  BOARD_SPARKLINE_RESOLUTION,
-} from "./board-sparkline-source.js";
 /**
- * BOARD SPOTLIGHT (v3, T2). The modal's second view: one pool at full size.
+ * BOARD SPOTLIGHT (v3, T2). The page's second view: one pool at full size.
  * `BoardSpotlightChartSlotProps` is the seam the live chart mounts through -
  * the chart owns its own series, channel and teardown, so the surface hands it
  * a subject rather than data.

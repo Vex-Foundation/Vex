@@ -1,40 +1,330 @@
-/* BOARD SURFACE - the plate the Token Radar is painted on.
+/* THE BOARD PAGE (docs/design/R3-MINIMAL.md section 9.4): the board a turn
+ * composed, as a page in the centre column under the title bar, both
+ * sidebars standing. Ask Vex about a token lives in the Vex sidebar.
  *
- * ONE PAPER, TWO THEMES. Every colour below resolves through a
- * `--vex-alias-board-*` token, so the light theme repoints the same aliases
- * and nothing in this file branches on the theme attribute. V10 paints the
- * plate flat: no vignette, no gradient, no inner highlight. A card is told
- * from the plate by its rule (the card's own border utility).
+ * ONE PAPER, TWO THEMES. Every colour below resolves through an alias
+ * (`--vex-alias-board-*` for the page ground, the shared rule, label and
+ * accent aliases for the rest), so the Night Ledger repoints the same names
+ * and nothing in this file branches on the theme attribute. Radius 0, no
+ * shadow, no ramp: a block is told from the page by its rule.
+ *
+ * This sheet owns the page frame, the head row (the board's own title, the
+ * Snapshot and Live data switch, the pin), the meta line, the data notes,
+ * the footnote, the empty state, the Ask Vex block in the Vex sidebar and
+ * the small parts every board surface shares (the chip, the link, the icon
+ * key). The tile and the spotlight geometry live in `board-layout.css`.
  *
  * ONE THING ANIMATES here, and the reduced-motion block stills it outright:
- * the tick wash a card's price row flashes when a live figure changes. A
+ * the tick wash a tile's price row flashes when a live figure changes. A
  * changed figure is still a changed figure without the flash. */
 
 .vex-board-surface {
   background-color: var(--vex-alias-board-surface);
 }
 
-/* THE SHEET. The Board is one paper sheet over the paper-dither backdrop
- * (`.vex-dialog` in `ui-primitives/overlays.css`): the sheet keeps the rule
- * edge the dialog gives it and nothing more, no shadow, no radius, no wash
- * (docs/design/V10-SPREAD.md section 1). */
-.vex-board-dialog {
+/* ------------------------------------------------------------------ */
+/* The page frame                                                      */
+/* ------------------------------------------------------------------ */
+
+/* The page asks the sheet for the whole centre (the grid is three tiles
+ * across at 1440 with Vex hidden) and the design's page padding, 20 28. */
+.vex-ov:has(.vex-bd) {
+  --vex-ov-max: none;
+  --vex-ov-pad: 28px;
+  --vex-ov-top: 20px;
+}
+
+.vex-bd {
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
   background-color: var(--vex-alias-board-surface);
 }
 
-/* THE SELECTED TILE wears the 1.5px ink frame, drawn as an inset outline so
- * the card's box and every figure inside it stay where they were. */
+.vex-bd :is(button, a, textarea):focus-visible,
+.vex-bd-ask :is(button, a, textarea):focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+.vex-bd-muted {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared parts                                                        */
+/* ------------------------------------------------------------------ */
+
+/* The chip (Spotlight, the chart ranges, the filters): 26 high, padding 0 9,
+ * 12.5, ink 2, a 1px quiet rule. Pressed: the blue edge, blue type at 500 on
+ * the selection fill. */
+.vex-bd-chip {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vex-bd-chip:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-bd-chip[aria-pressed="true"],
+.vex-bd-chip[aria-checked="true"],
+.vex-bd-chip[data-on="true"] {
+  border-color: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-accent-primary);
+  font-weight: 500;
+}
+.vex-bd-chip:disabled {
+  cursor: default;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The link (DexScreener, Ask Vex, the source session, Data notes): blue
+ * 13 / 500 type with its glyph, no frame. */
+.vex-bd-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-accent-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.vex-bd-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-bd-link:disabled {
+  cursor: default;
+  color: var(--vex-alias-label-tertiary);
+  text-decoration: none;
+}
+
+/* The icon key (the pin, a close): 32 x 32, a clear edge until hover or
+ * pressed. */
+.vex-bd-key {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+}
+.vex-bd-key:hover {
+  border-color: var(--vex-alias-rule);
+  color: var(--vex-alias-label-primary);
+}
+.vex-bd-key[aria-pressed="true"] {
+  border-color: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-accent-primary);
+}
+
+/* ------------------------------------------------------------------ */
+/* The head row                                                        */
+/* ------------------------------------------------------------------ */
+
+/* The board's own title (the model's words) with the runtime's subtitle,
+ * and the controls at the right: Snapshot, the switch, Live data, the live
+ * word, the pin. A quiet rule under it, as under every head. */
+.vex-bd-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 24px;
+  margin: 0 0 14px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-bd-head__title {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 320px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding-top: 6px;
+}
+/* WRAPS, never truncates: every word of the model's title is shown. */
+.vex-bd-head__name {
+  max-width: 60ch;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-bd-head__sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+
+.vex-bd-chrome {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.vex-bd-chrome__row {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.vex-bd-chrome__word {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-bd-chrome__word[data-on="true"] {
+  color: var(--vex-alias-label-primary);
+}
+.vex-bd-chrome__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 12.5px;
+}
+.vex-bd-chrome__helper {
+  margin: 0;
+  max-width: 360px;
+  text-align: right;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ------------------------------------------------------------------ */
+/* The meta line, the data notes, the footnote                         */
+/* ------------------------------------------------------------------ */
+
+.vex-bd-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+.vex-bd-meta__sp {
+  flex: 1 1 auto;
+}
+
+/* The composed analysis and the data notes, opened from the meta line: a
+ * quiet block between the line and the grid. */
+.vex-bd-notes {
+  margin: 0 0 16px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-bd-notes__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 0;
+}
+.vex-bd-notes__h {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-bd-notes__text {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.vex-bd-notes__text b {
+  font-weight: 600;
+  color: var(--vex-alias-label-primary);
+}
+.vex-bd-notes__kv {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
+  gap: 2px 16px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.vex-bd-notes__kv > dt {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-bd-notes__kv > dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--vex-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.vex-bd-foot {
+  margin: 14px 0 0;
+  max-width: 920px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* No board bound: the empty block, with the one next step. */
+.vex-bd-empty {
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The selected tile and the live tick                                 */
+/* ------------------------------------------------------------------ */
+
+/* THE SELECTED TILE wears a 1.5px blue outline drawn inside, so the tile's
+ * box and every figure in it stay where they were. */
 .vex-board-card[data-selected="true"] {
-  outline: 1.5px solid var(--vex-alias-rule-ink);
+  outline: 1.5px solid var(--vex-alias-accent-primary);
   outline-offset: -1.5px;
 }
 
-/* THE LIVE TICK. A card's price row is stamped `data-tick` (a fresh value
- * per change) when `priceUsd` or the 24h delta moves under a held lease; the
+/* THE LIVE TICK. A tile's price row is stamped `data-tick` (a fresh value
+ * per change) when `priceUsd` or the 24h change moves under a held lease; the
  * attribute change restarts this one-shot wash from the accent alias down to
  * transparent. Keyframes live here rather than in a React `style` attribute
- * because the renderer's CSP has no `unsafe-inline`. The chip and the delta
- * colour are never animated: a tone is a fact, not a flash. */
+ * because the renderer's CSP has no `unsafe-inline`. The change's colour is
+ * never animated: a tone is a fact, not a flash. */
 @keyframes vex-board-tick {
   from {
     background-color: var(--vex-alias-accent-wash);
@@ -46,6 +336,140 @@
 
 [data-tick] {
   animation: vex-board-tick 600ms ease-out 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ask Vex, in the Vex sidebar                                         */
+/* ------------------------------------------------------------------ */
+
+/* Under Needs you, in the sidebar's section rhythm (section 5.1): the head
+ * "Ask Vex about this token", the note, the context chip, four quick
+ * questions as rows, the field and the one blue key. */
+.vex-bd-ask {
+  margin: 14px 18px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+.vex-bd-ask__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vex-bd-ask__h {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-bd-ask__note {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-bd-ask__close {
+  width: 24px;
+  height: 24px;
+  margin: -4px -4px 0 0;
+}
+/* The context chip wraps in the narrow column rather than cutting a fact
+ * the question will carry. */
+.vex-bd-ask__ctx {
+  display: block;
+  box-sizing: border-box;
+  min-height: 26px;
+  margin: 0;
+  padding: 3px 9px;
+  border: 1px solid var(--vex-alias-rule);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+.vex-bd-ask__quick {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-bd-ask__q {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: none;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--vex-alias-label-primary);
+  cursor: pointer;
+}
+.vex-bd-ask__q:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-bd-ask__q > svg {
+  flex: none;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-bd-ask__field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+  resize: vertical;
+}
+.vex-bd-ask__field::placeholder {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-bd-ask__send {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 0 18px;
+  border: 1px solid var(--vex-alias-button-accent-edge);
+  background: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.vex-bd-ask__send:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+.vex-bd-ask__send:disabled {
+  border-color: var(--vex-alias-rule);
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+.vex-bd-ask__sent {
+  min-height: 18px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
 }
 
 @media (prefers-reduced-motion: reduce) {
