@@ -339,7 +339,7 @@ describe("SystemCheck", () => {
       const disk = rowByLabel(container, "Disk space");
       expect(disk?.getAttribute("data-step-status")).toBe("fail");
       expect(disk?.textContent).toContain("NO SPACE");
-      expect(disk?.textContent).toContain("Needs 938 MB free for the embeddings model and the database · 300 MB free");
+      expect(disk?.textContent).toContain("300 MB free · setup needs 938 MB");
       expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).not.toBeNull();
     });
 
@@ -367,7 +367,7 @@ describe("SystemCheck", () => {
       const { container, getByRole } = render(<SystemCheck />);
       const memory = rowByLabel(container, "Memory");
       expect(memory?.getAttribute("data-step-status")).toBe("warn");
-      expect(memory?.textContent).toContain("3.0 GB · under 4 GB, Vex may run slowly · 0.5 GB free");
+      expect(memory?.textContent).toContain("3.0 GB · under 4 GB · 0.5 GB free");
       expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).toBeNull();
     });
 

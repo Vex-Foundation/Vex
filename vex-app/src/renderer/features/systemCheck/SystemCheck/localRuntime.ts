@@ -88,7 +88,9 @@ function diskView(disk: LocalRuntimeCheck["disk"]): { readonly row: RowView; rea
         row: {
           status: "fail",
           badgeLabel: "NO SPACE",
-          detail: `Needs ${formatDiskBytes(verdict.requiredBytes)} free for the embeddings model and the database · ${free} free`,
+          // The row truncates: what is free, then what the embeddings model
+          // and the database need, and nothing the row would cut off.
+          detail: `${free} free · setup needs ${formatDiskBytes(verdict.requiredBytes)}`,
         },
         blocks: true,
       };
@@ -112,7 +114,8 @@ function memoryView(memory: LocalRuntimeCheck["memory"]): RowView {
     return {
       status: "warn",
       badgeLabel: "LOW",
-      detail: `${total} · under ${String(MEMORY_WARN_TOTAL_BYTES / 1e9)} GB, Vex may run slowly · ${free}`,
+      // The LOW word says it may run slowly; the row keeps room for the numbers.
+      detail: `${total} · under ${String(MEMORY_WARN_TOTAL_BYTES / 1e9)} GB · ${free}`,
     };
   }
   return { status: "ok", detail: `${total} · ${free}` };
