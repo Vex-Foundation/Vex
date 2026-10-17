@@ -5,16 +5,19 @@
  * this button over the box `VexK2` reports through `onTokenBox` (`tokenBox`: the flat coin and the
  * upright one together), and the engine plays the close and the open (`K2Engine.setTokenOnly`).
  *
- * The button keeps one name, "Hide Vex", and says its state through `aria-pressed` (pressed: Vex
- * is hidden, the coin stands alone): a toggle button whose name changed with its state would be
- * read as "Show Vex, pressed" (the WAI-ARIA toggle button rule). It is a native button, so Enter
- * and Space press it; the caller's class draws it transparent with the square focus ring.
+ * `aria-pressed` means what it means on the title bar's token chip, the app's other Vex toggle:
+ * pressed while Vex is shown, not pressed while only the coin stands. The name says the press, in
+ * the chip's tooltip words: "Hide Vex" while she is shown, "Show Vex" once only the coin stands.
+ * It is a native button, so Enter and Space press it; the caller's class draws it transparent with
+ * the square focus ring.
  */
 import type { CSSProperties, JSX } from "react";
 import type { Box } from "./k2-rig.js";
 
-/** The button's accessible name, the same in both states. */
-export const TOKEN_BUTTON_NAME = "Hide Vex";
+/** The button's accessible name: the press it makes ("Hide Vex" or "Show Vex"). */
+export function tokenButtonName(tokenOnly: boolean): string {
+  return tokenOnly ? "Show Vex" : "Hide Vex";
+}
 
 /** The smallest target round the coin, css px. */
 export const TOKEN_TARGET_MIN = 44;
@@ -29,7 +32,7 @@ export function targetBox(box: Box, min: number = TOKEN_TARGET_MIN): Box {
 }
 
 export interface K2TokenButtonProps {
-  /** Vex is hidden: the coin stands alone (the button reads as pressed). */
+  /** Vex is hidden: the coin stands alone (the button reads as not pressed). */
   readonly tokenOnly: boolean;
   readonly onPress: () => void;
   /** Its box over the token, in its positioned parent's px. */
@@ -50,8 +53,8 @@ export function K2TokenButton({
       data-vex-k2-token-button=""
       className={className}
       style={style}
-      aria-label={TOKEN_BUTTON_NAME}
-      aria-pressed={tokenOnly}
+      aria-label={tokenButtonName(tokenOnly)}
+      aria-pressed={!tokenOnly}
       onClick={onPress}
     />
   );

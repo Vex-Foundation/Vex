@@ -2,7 +2,8 @@
  * SessionWelcomeHero - the R3 welcome (docs/design/R3-MINIMAL.md sections 7
  * and 10.1, references d2, d3x-first-welcome and d3x-database-down): Vex on
  * her welcome stage with no state word under her (the owner, 2026-10-17),
- * her token as a toggle ("Hide Vex", aria-pressed, stored as Show avatar:
+ * her token as a toggle ("Hide Vex" / "Show Vex", pressed while she shows,
+ * stored as the welcome's own `welcomeVexShown`, never as Show avatar:
  * a press closes her into the upright coin, the stage collapses to the coin
  * once she has settled, the next press gives the stage its size back and
  * then opens her; the seat glides, never under reduced motion), the note
@@ -139,6 +140,7 @@ beforeEach(() => {
     runtimeMode: "agent",
     activeSessionId: null,
     showAvatar: true,
+    welcomeVexShown: true,
     theme: "celeris",
   });
   profileWithName(null);
@@ -239,14 +241,15 @@ describe("SessionWelcomeHero - the token toggle", () => {
     container.querySelector("[data-vex-welcome-stage]")?.getAttribute("data-vex-welcome-vex");
   const clipOf = (container: HTMLElement) =>
     container.querySelector<HTMLElement>("[data-vex-welcome-clip]");
-  const token = () => screen.getByRole("button", { name: "Hide Vex" });
+  const token = () => screen.getByRole("button", { name: /^(Hide|Show) Vex$/ });
 
-  it("the token under her is a real button named Hide Vex, not pressed while she shows, keyboard reachable", () => {
+  it("the token under her is a real button named Hide Vex, pressed while she shows, keyboard reachable", () => {
     render(<SessionWelcomeHero />);
     const button = token();
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("type")).toBe("button");
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.getAttribute("aria-label")).toBe("Hide Vex");
+    expect(button.getAttribute("aria-pressed")).toBe("true");
     expect(button.className).toContain("vex-welcome__token");
     act(() => {
       button.focus();
@@ -279,14 +282,25 @@ describe("SessionWelcomeHero - the token toggle", () => {
     expect(Number.parseFloat(token().style.top)).toBeCloseTo(box.top, 5);
   });
 
-  it("a press hides Vex: Show avatar off, the button pressed, her hologram closes into the token", () => {
+  it("a press hides Vex on the welcome only: the welcome key off, Show avatar untouched, the button not pressed", () => {
     render(<SessionWelcomeHero />);
     fireEvent.click(token());
-    expect(useUiStore.getState().showAvatar).toBe(false);
-    expect(token().getAttribute("aria-pressed")).toBe("true");
-    // one name in both states: the state is aria-pressed
-    expect(screen.queryByRole("button", { name: "Show Vex" })).toBeNull();
+    expect(useUiStore.getState().welcomeVexShown).toBe(false);
+    // the global avatar switch (Settings, the Vex sidebar) is not written
+    expect(useUiStore.getState().showAvatar).toBe(true);
+    expect(token().getAttribute("aria-pressed")).toBe("false");
+    expect(token().getAttribute("aria-label")).toBe("Show Vex");
     expect(lastK2?.tokenOnly).toBe(true);
+  });
+
+  it("Show avatar off elsewhere (Settings) never hides her on the welcome, and the welcome key never follows it", () => {
+    const { container } = render(<SessionWelcomeHero />);
+    act(() => {
+      useUiStore.getState().setShowAvatar(false);
+    });
+    expect(useUiStore.getState().welcomeVexShown).toBe(true);
+    expect(stageOf(container)).toBe("portrait");
+    expect(lastK2?.tokenOnly).toBe(false);
   });
 
   it("the stage keeps its size while she closes and collapses to the coin's box once she has settled", () => {
@@ -314,16 +328,18 @@ describe("SessionWelcomeHero - the token toggle", () => {
   });
 
   it("a second press gives the stage its size back first, then she opens (the wake from the token)", () => {
-    useUiStore.setState({ showAvatar: false });
+    useUiStore.setState({ welcomeVexShown: false, showAvatar: false });
     const { container } = render(<SessionWelcomeHero />);
     expect(stageOf(container)).toBe("token");
-    expect(token().getAttribute("aria-pressed")).toBe("true");
+    expect(token().getAttribute("aria-pressed")).toBe("false");
     k2Renders.length = 0;
     fireEvent.click(token());
-    expect(useUiStore.getState().showAvatar).toBe(true);
+    expect(useUiStore.getState().welcomeVexShown).toBe(true);
+    // the welcome press never turns the global avatar switch back on
+    expect(useUiStore.getState().showAvatar).toBe(false);
     expect(stageOf(container)).toBe("portrait");
     expect(lastK2?.tokenOnly).toBe(false);
-    expect(token().getAttribute("aria-pressed")).toBe("false");
+    expect(token().getAttribute("aria-pressed")).toBe("true");
     // the first render that tells her to open sees a stage that already has its size back
     const opened = k2Renders.find((r) => !r.tokenOnly);
     expect(opened?.stageBefore).toBe("portrait");
@@ -331,8 +347,8 @@ describe("SessionWelcomeHero - the token toggle", () => {
     expect(stageOf(container)).toBe("portrait");
   });
 
-  it("with the avatar off at mount only the coin stands, the stage collapsed, no ring and no word", () => {
-    useUiStore.setState({ showAvatar: false });
+  it("with the welcome key off at mount only the coin stands, the stage collapsed, no ring and no word", () => {
+    useUiStore.setState({ welcomeVexShown: false });
     const { container } = render(<SessionWelcomeHero />);
     expect(lastK2?.tokenOnly).toBe(true);
     expect(container.querySelector("[data-vex-k2]")?.hasAttribute("data-token-only")).toBe(true);
@@ -343,12 +359,12 @@ describe("SessionWelcomeHero - the token toggle", () => {
     expect(vexDockPending()).toBe(false);
   });
 
-  it("the avatar switched back on elsewhere (the sidebar, Settings) gives the stage its size back", () => {
-    useUiStore.setState({ showAvatar: false });
+  it("the welcome key switched back on (another welcome mount) gives the stage its size back", () => {
+    useUiStore.setState({ welcomeVexShown: false });
     const { container } = render(<SessionWelcomeHero />);
     expect(stageOf(container)).toBe("token");
     act(() => {
-      useUiStore.setState({ showAvatar: true });
+      useUiStore.setState({ welcomeVexShown: true });
     });
     expect(stageOf(container)).toBe("portrait");
     expect(lastK2?.tokenOnly).toBe(false);
@@ -359,7 +375,7 @@ describe("SessionWelcomeHero - the token toggle", () => {
     fireEvent.click(token());
     report("closing");
     fireEvent.click(token());
-    expect(useUiStore.getState().showAvatar).toBe(true);
+    expect(useUiStore.getState().welcomeVexShown).toBe(true);
     // the engine lets the close settle, then opens her
     report("token");
     expect(stageOf(container)).toBe("portrait");

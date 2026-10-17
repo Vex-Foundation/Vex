@@ -24,6 +24,7 @@ function resetStoreToDefaults(): void {
     vexOpenChat: true,
     vexOpenPages: false,
     showAvatar: true,
+    welcomeVexShown: true,
     bookOpen: true,
     currentView: "splash",
     setupGateActive: true,
@@ -331,6 +332,8 @@ describe("uiStore", () => {
       vexOpenChat: true,
       vexOpenPages: false,
       showAvatar: true,
+      // The welcome token's own choice (Vex shown on the welcome).
+      welcomeVexShown: true,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -686,6 +689,8 @@ describe("uiStore", () => {
       vexOpenChat: true,
       vexOpenPages: false,
       showAvatar: true,
+      // The welcome token's own choice (Vex shown on the welcome).
+      welcomeVexShown: true,
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

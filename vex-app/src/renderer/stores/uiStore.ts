@@ -221,6 +221,14 @@ export interface UiState {
    */
   readonly showAvatar: boolean;
   /**
+   * Whether the welcome shows Vex's hologram on her stage (true) or only her
+   * coin (false): the welcome token's own choice, a "make room on this
+   * screen" press. It never writes `showAvatar` (the global avatar switch in
+   * Settings and the Vex sidebar) and `showAvatar` never writes it. On by
+   * default. Persisted; a payload without it hydrates to the default.
+   */
+  readonly welcomeVexShown: boolean;
+  /**
    * @deprecated The previous frame's left page drag width. The R3 sidebars
    * have fixed widths and the frame no longer reads it; it stays persisted
    * and coerced this release (expand-only).
@@ -436,6 +444,8 @@ export interface UiState {
   /** Flip the current page class's stored choice. */
   readonly toggleBook: () => void;
   readonly setShowAvatar: (value: boolean) => void;
+  /** Show (true) or hide (false) Vex's hologram on the welcome only. */
+  readonly setWelcomeVexShown: (value: boolean) => void;
   /**
    * The left sidebar's nav: one press, one store change (see
    * `navigationTarget`). `origin` is the pressed row's rect, for the page's
@@ -582,6 +592,7 @@ export const useUiStore = create<UiState>()(
       vexOpenPages: false,
       vexOpenLighter: false,
       showAvatar: true,
+      welcomeVexShown: true,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,
       sidebarNarrowExpanded: false,
@@ -624,6 +635,7 @@ export const useUiStore = create<UiState>()(
       toggleBook: () =>
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),
       setShowAvatar: (showAvatar) => set({ showAvatar }),
+      setWelcomeVexShown: (welcomeVexShown) => set({ welcomeVexShown }),
       navigate: (destination, origin = null) =>
         set((state) => {
           const target = navigationTarget(destination, state.sessionModeFilter, origin);

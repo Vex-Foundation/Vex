@@ -145,8 +145,11 @@ function useSeatGlide(place: RefObject<HTMLElement | null>, collapsed: boolean):
 
 /**
  * Vex on her stage and her token as a toggle (the owner, 2026-10-17). The
- * choice is `showAvatar`; her host keeps its full size inside a clip that
- * collapses to the coin's box once she has settled as the coin.
+ * choice is the welcome's own, `welcomeVexShown`: a press makes room on this
+ * screen and never touches `showAvatar`, the global avatar switch in
+ * Settings and the Vex sidebar (the coordinator, 2026-10-17). Her host keeps
+ * its full size inside a clip that collapses to the coin's box once she has
+ * settled as the coin.
  */
 function WelcomeVex({
   emotion,
@@ -155,9 +158,9 @@ function WelcomeVex({
   readonly emotion: K2Emotion;
   readonly night: boolean;
 }): JSX.Element {
-  const showAvatar = useUiStore((s) => s.showAvatar);
-  const setShowAvatar = useUiStore((s) => s.setShowAvatar);
-  const tokenOnly = !showAvatar;
+  const welcomeVexShown = useUiStore((s) => s.welcomeVexShown);
+  const setWelcomeVexShown = useUiStore((s) => s.setWelcomeVexShown);
+  const tokenOnly = !welcomeVexShown;
   // the engine's state (null until she reports)
   const [k2, setK2] = useState<K2TokenState | null>(null);
   // the stage got its size back and waits one commit before she opens
@@ -181,7 +184,7 @@ function WelcomeVex({
   }, []);
   const onPress = (): void => {
     if (!tokenOnly) {
-      setShowAvatar(false);
+      setWelcomeVexShown(false);
       return;
     }
     capture();
@@ -190,9 +193,9 @@ function WelcomeVex({
   // the stage has its size again: now she opens
   useEffect(() => {
     if (!reopening) return;
-    setShowAvatar(true);
+    setWelcomeVexShown(true);
     setReopening(false);
-  }, [reopening, setShowAvatar]);
+  }, [reopening, setWelcomeVexShown]);
 
   const box = reported ?? stageTokenBox();
   const top = Math.floor(box.top);
@@ -254,13 +257,13 @@ export function SessionWelcomeHero(): JSX.Element {
   const [hour] = useState(() => new Date().getHours());
   const headline = pickGreeting(hour, displayName, rand01);
 
-  const showAvatar = useUiStore((s) => s.showAvatar);
+  const welcomeVexShown = useUiStore((s) => s.welcomeVexShown);
   const night = useUiStore((s) => s.theme) === "chronos";
   const presence = useVexPresence();
   // She stood here: the Vex sidebar that shows next docks her.
   useEffect(() => {
-    if (showAvatar) noteVexOnWelcome();
-  }, [showAvatar]);
+    if (welcomeVexShown) noteVexOnWelcome();
+  }, [welcomeVexShown]);
 
   // The database down (reference d3x-database-down): the sessions read is the
   // one the sidebar already holds; when it failed, its own message heads the
