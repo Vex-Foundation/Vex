@@ -48,11 +48,6 @@
     --vex-ov-pad: 28px;
   }
 }
-/* Lighter folds the title bar row into its desk bar, so there is no row to
- * sit under. */
-.vex-shell-centre > [data-vex-area="shell-status-strip"][data-collapsed] ~ .vex-ov {
-  top: 0;
-}
 
 .vex-ov__scroll {
   min-height: 0;
