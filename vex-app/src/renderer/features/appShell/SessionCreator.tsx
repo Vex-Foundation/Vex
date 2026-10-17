@@ -43,6 +43,10 @@ import {
   WalletFieldset,
 } from "./SessionCreator/FormSections.js";
 
+/** The foot's word while Mission is preselected: true from every door that sets the tab. */
+const MISSION_PRESELECTED_NOTE =
+  "The sidebar is on Missions, so Mission is preselected.";
+
 interface SessionCreatorProps {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
@@ -225,9 +229,12 @@ export function SessionCreator({
   // may have opened or folded since the shell mounted).
   const anchor = useCallback((): Element | null => centreColumn(), [open]);
 
-  // The form opens on Mission when the Missions nav row set the sidebar
-  // filter; the foot says so while Mission is the chosen mode.
-  const preselectedFromMissions =
+  // The form opens on Mission when the sidebar is on its Mission tab. The
+  // store does not say which door set it (the Missions nav row, the welcome's
+  // "Create a mission" and the search's Mission tab all do), so the foot names
+  // only what is known, the sidebar, and says so while Mission is the chosen
+  // mode.
+  const preselectedFromMissionsTab =
     !lighter && sessionModeFilter === "mission" && mode === "mission";
 
   return (
@@ -292,9 +299,7 @@ export function SessionCreator({
                 ) : null}
                 <div className="flex items-center gap-2.5 border-t border-rule-quiet pb-6 pt-4">
                   <span className="min-w-0 text-[12.5px] leading-[1.45] text-ink-tertiary">
-                    {preselectedFromMissions
-                      ? "Opened from Missions, so Mission is preselected."
-                      : null}
+                    {preselectedFromMissionsTab ? MISSION_PRESELECTED_NOTE : null}
                   </span>
                   <span className="flex-1" />
                   <Button
