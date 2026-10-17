@@ -1,14 +1,24 @@
 /**
- * Memory screen — the Memory ShellScreen: a plain-words explainer of how
- * Vex's memory works (static repo markdown, `?raw` + article-variant
- * MarkdownContent) above the read-only MemoryPanel register.
+ * Memory screen - the Memory page (docs/design/R3-MINIMAL.md sections 9.6 and
+ * 12): the serif page head from the sheet, a lead line, the advisory-only
+ * guarantee in its own card, "How memory works" one click away (static repo
+ * markdown, `?raw` + article-variant MarkdownContent), then the read-only
+ * MemoryPanel register. Both sidebars stand.
  */
 
 import type { JSX } from "react";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
+import { LineChevronRight } from "../../../components/icons/line/index.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { MarkdownContent } from "../../../lib/markdown/MarkdownContent.js";
 import { MemoryPanel } from "../MemoryPanel.js";
 import { ShellScreen } from "./ShellScreen.js";
+import {
+  MEMORY_ADVISORY_TEXT,
+  MEMORY_ADVISORY_TITLE,
+  MEMORY_LEAD,
+  MEMORY_MORE_TITLE,
+} from "./memory-explainer.js";
 import memoryExplainerMd from "./memory-explainer-content.md?raw";
 
 export function MemoryScreen({
@@ -20,11 +30,23 @@ export function MemoryScreen({
 }): JSX.Element {
   return (
     <ShellScreen title="Memory" origin={origin} onClose={onClose}>
-      {/* Comfortable reading measure for the intro; the register below keeps
-       * the sheet's 760px ledger width. */}
-      <div className="mb-8 w-full max-w-[72ch] text-[14.5px] leading-[1.7] text-ink-secondary">
-        <MarkdownContent text={memoryExplainerMd} variant="article" />
-      </div>
+      <p className="vex-mem-lead">{MEMORY_LEAD}</p>
+      <section className="vex-mem-card" aria-label={MEMORY_ADVISORY_TITLE}>
+        <h2 className="vex-mem-card__head">
+          <Swatch state="done" size={10} className="text-accent-primary" />
+          {MEMORY_ADVISORY_TITLE}
+        </h2>
+        <p className="vex-mem-card__text">{MEMORY_ADVISORY_TEXT}</p>
+      </section>
+      <details className="vex-mem-more">
+        <summary>
+          <LineChevronRight size={14} className="vex-mem-more__chev" />
+          {MEMORY_MORE_TITLE}
+        </summary>
+        <div className="vex-mem-more__body">
+          <MarkdownContent text={memoryExplainerMd} variant="article" />
+        </div>
+      </details>
       <MemoryPanel />
     </ShellScreen>
   );
