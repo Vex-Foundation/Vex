@@ -22,6 +22,7 @@ const PRESENCE: VexPresence = {
   narration: null,
   background: { count: 0, items: [], label: null, summary: null },
   needsYou: { status: "ready", count: 0, items: [], retry: () => {}, retrying: false },
+  live: false,
 };
 
 vi.mock("../../../vex/useVexPresence.js", () => ({
