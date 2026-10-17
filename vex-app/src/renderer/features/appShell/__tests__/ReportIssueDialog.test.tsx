@@ -1,7 +1,7 @@
 /**
  * Renderer-side tests for the ReportIssueDialog form.
  *
- * Mocks `window.vex.support.createBugReport` (per vex-testing-quality-gates §3 —
+ * Mocks `window.vex.support.createBugReport` (per vex-testing-quality-gates §3 -
  * never mock ipcRenderer in renderer tests).
  */
 
@@ -102,5 +102,41 @@ describe("ReportIssueDialog", () => {
       name: /Save report/i,
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
+  });
+
+  it("is a panel, not a blocker, and sends the chosen category and severity", async () => {
+    createBugReportMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        reportId: "00000000-0000-0000-0000-000000000000",
+        recorded: true,
+        uploadState: "not_configured",
+      },
+    });
+    renderOpen();
+    expect(
+      document.querySelector("dialog[data-vex-backdrop='none']"),
+    ).not.toBeNull();
+
+    // The native radios stay the real controls behind the Category cards and
+    // the Severity segments.
+    const bug = screen.getByRole("radio", { name: /Bug/ }) as HTMLInputElement;
+    expect(bug.checked).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: /Confusion/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "Critical" }));
+    expect((screen.getByRole("radio", { name: "Critical" }) as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/Title/i), {
+      target: { value: "Unclear" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save report/i }));
+
+    await waitFor(() => expect(createBugReportMock).toHaveBeenCalledTimes(1));
+    const arg = createBugReportMock.mock.calls[0]?.[0] as {
+      category: string;
+      severity: string;
+    };
+    expect(arg.category).toBe("user_reported_confusion");
+    expect(arg.severity).toBe("critical");
   });
 });
