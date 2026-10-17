@@ -4,6 +4,8 @@
  * bundled Postgres to the setup wizard, without any container, quitting the
  * app stops the bundled servers cleanly, and a relaunch on the same profile
  * comes back up on the same cluster without downloading the model again.
+ * While it runs, the OS must show the postmaster and llama-server as the
+ * app's own binaries; after each quit, nothing the app ships may still run.
  *
  * Two modes:
  *
@@ -28,7 +30,7 @@
  * closed.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   linkSync,
@@ -36,6 +38,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
 } from "node:fs";
@@ -54,6 +57,95 @@ const INSTALLED_APP = process.env["VEX_E2E_APP_EXECUTABLE"];
 
 /** How long a quit may take before the app counts as wedged on the way out. */
 const QUIT_DEADLINE_MS = 60_000;
+
+/**
+ * Where the servers the app runs must come from: the packaged app's resources
+ * (`postgres/`, `llama/`), or in development the trees the build produced.
+ */
+const BUNDLE_DIR =
+  INSTALLED_APP === undefined
+    ? path.join(REPO, "native-runtime/out", TARGET)
+    : process.platform === "darwin"
+      ? path.resolve(INSTALLED_APP, "..", "..", "Resources")
+      : path.join(path.dirname(INSTALLED_APP), "resources");
+
+interface OsProcess {
+  readonly pid: number;
+  readonly executable: string;
+}
+
+/** Every running process whose executable lives under `dir`, as the OS reports it. */
+function processesUnder(dir: string): OsProcess[] {
+  let all: OsProcess[];
+  if (process.platform === "win32") {
+    const listing = spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Where-Object ExecutablePath | ForEach-Object { \"$($_.ProcessId)`t$($_.ExecutablePath)\" }",
+      ],
+      { encoding: "utf8" },
+    ).stdout;
+    all = listing.split(/\r?\n/).flatMap((line) => {
+      const [pid, executable] = line.split("\t");
+      return pid !== undefined && executable !== undefined ? [{ pid: Number(pid), executable }] : [];
+    });
+  } else if (process.platform === "linux") {
+    all = readdirSync("/proc")
+      .filter((name) => /^\d+$/.test(name))
+      .flatMap((pid) => {
+        try {
+          return [{ pid: Number(pid), executable: readlinkSync(`/proc/${pid}/exe`) }];
+        } catch {
+          return []; // gone, or not ours to read
+        }
+      });
+  } else {
+    // macOS `comm` is the executable's path (Postgres retitles its argv, not this).
+    all = spawnSync("ps", ["-A", "-o", "pid=,comm="], { encoding: "utf8" })
+      .stdout.split("\n")
+      .flatMap((line) => {
+        const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+        return match?.[1] !== undefined && match[2] !== undefined ? [{ pid: Number(match[1]), executable: match[2] }] : [];
+      });
+  }
+  const fold = (p: string): string => (process.platform === "win32" ? p.toLowerCase() : p);
+  const root = fold(path.resolve(dir) + path.sep);
+  return all.filter((entry) => fold(path.resolve(entry.executable)).startsWith(root));
+}
+
+const programName = (executable: string): string => path.basename(executable).replace(/\.exe$/i, "");
+
+/**
+ * The servers running are the app's own: postmaster.pid says the postmaster
+ * is up and ready, and that PID is the bundled `postgres`; a bundled
+ * `llama-server` is running too. Nothing on the machine's PATH could pass.
+ */
+function expectBundledRuntimeUp(runtimeDir: string): void {
+  const pidFile = readFileSync(path.join(runtimeDir, "pg18", "postmaster.pid"), "utf8").split(/\r?\n/);
+  expect(pidFile[7]?.trim(), "postmaster.pid line 8 (status)").toBe("ready");
+  const running = processesUnder(BUNDLE_DIR);
+  const postmaster = running.find((entry) => entry.pid === Number(pidFile[0]));
+  expect(postmaster && programName(postmaster.executable), `postmaster ${String(pidFile[0])} is the bundled postgres`).toBe(
+    "postgres",
+  );
+  expect(
+    running.some((entry) => programName(entry.executable) === "llama-server"),
+    `a bundled llama-server is running (bundled processes: ${JSON.stringify(running)})`,
+  ).toBe(true);
+}
+
+/** After a quit, nothing the app ships is still running (bounded grace for the OS to reap). */
+async function expectNoBundledProcess(): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  let left = processesUnder(BUNDLE_DIR);
+  while (left.length > 0 && Date.now() < deadline) {
+    await delay(500);
+    left = processesUnder(BUNDLE_DIR);
+  }
+  expect(left, "bundled processes still running after the app quit").toEqual([]);
+}
 
 test.skip(
   INSTALLED_APP === undefined && (!existsSync(PG_DIR) || !existsSync(LLAMA_DIR) || !existsSync(MODEL)),
@@ -274,8 +366,8 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
     // The cluster was created under this config dir and its identity recorded.
     systemIdentifier = readState().pg?.systemIdentifier;
     expect(systemIdentifier).toMatch(/^\d+$/);
-    expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(true);
     expect(existsSync(modelPath)).toBe(true);
+    expectBundledRuntimeUp(runtimeDir);
   } finally {
     clearInterval(modelWatch);
     const summary = `first run (s since launch): ${JSON.stringify(timings)}`;
@@ -288,8 +380,10 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
   running = undefined;
   console.log(`quit took ${String(Math.round((Date.now() - quitting) / 100) / 10)} s`);
 
-  // The ordered quit stopped Postgres with a fast shutdown.
+  // The ordered quit stopped Postgres with a fast shutdown, and left nothing
+  // the app ships running.
   expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(false);
+  await expectNoBundledProcess();
 
   // Relaunch on the same profile. The second boot runs on what the first
   // left behind: the same cluster (its identity unchanged), the verified model
@@ -307,10 +401,11 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
   expect(readState().pg?.systemIdentifier).toBe(systemIdentifier);
   expect(existsSync(`${modelPath}.part`)).toBe(false);
   expect(statSync(modelPath).mtimeMs).toBe(modelWritten);
-  expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(true);
+  expectBundledRuntimeUp(runtimeDir);
   await running.quit();
   running = undefined;
   expect(existsSync(path.join(runtimeDir, "pg18", "postmaster.pid"))).toBe(false);
+  await expectNoBundledProcess();
 
   rmSync(configDir, { recursive: true, force: true });
   configDir = undefined;
