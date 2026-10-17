@@ -22,6 +22,7 @@
  * `postgres` is first on the user's PATH run with Vex's authority.
  */
 
+import { existsSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -91,6 +92,18 @@ export type PostgresBinariesLocation =
 const TARGET_ARCH: Readonly<Record<string, string>> = { x64: "x64", arm64: "arm64" };
 
 /**
+ * A development tree: a local build (`native-runtime/out/<target>/`) wins,
+ * else the lock-pinned release `pnpm dev:assets` fetched
+ * (`vex-app/resources/native-runtime/<target>/`). `probe` names a file that
+ * exists only in a complete tree.
+ */
+function developmentTree(repoRoot: string, target: string, component: string, probe: string): string {
+  const built = path.join(repoRoot, "native-runtime", "out", target, component);
+  const fetched = path.join(repoRoot, "vex-app", "resources", "native-runtime", target, component);
+  return !existsSync(path.join(built, probe)) && existsSync(path.join(fetched, probe)) ? fetched : built;
+}
+
+/**
  * The absolute bin paths, or a named reason they are not there. Every option
  * is a test seam; production callers pass nothing.
  */
@@ -118,7 +131,8 @@ export async function locatePostgresBinaries(options?: {
       return { kind: "unavailable", detail: `Vex builds no Postgres tree for ${platform}/${options?.arch ?? process.arch}.` };
     } else {
       const repoRoot = options?.repoRoot ?? path.resolve(app.getAppPath(), "..");
-      treeDir = path.join(repoRoot, "native-runtime", "out", `${platform}-${arch}`, "postgres");
+      const exe = platform === "win32" ? "postgres.exe" : "postgres";
+      treeDir = developmentTree(repoRoot, `${platform}-${arch}`, "postgres", path.join("bin", exe));
     }
   }
 
@@ -138,7 +152,7 @@ export async function locatePostgresBinaries(options?: {
         kind: "unavailable",
         detail: packaged
           ? `The bundled Postgres is missing or not executable (${path.basename(candidate)}). Reinstall Vex.`
-          : `No executable ${candidate}. Build it with native-runtime/postgres/build.sh, or set VEX_NATIVE_PG_DIR.`,
+          : `No executable ${candidate}. Run pnpm dev:assets (fetches the pinned release), build it with native-runtime/postgres/build.sh, or set VEX_NATIVE_PG_DIR.`,
       };
     }
   }
@@ -178,7 +192,8 @@ export async function locateLlamaBinary(options?: {
       return { kind: "unavailable", detail: `Vex builds no llama-server for ${platform}/${options?.arch ?? process.arch}.` };
     } else {
       const repoRoot = options?.repoRoot ?? path.resolve(app.getAppPath(), "..");
-      treeDir = path.join(repoRoot, "native-runtime", "out", `${platform}-${arch}`, "llama");
+      const exe = platform === "win32" ? "llama-server.exe" : "llama-server";
+      treeDir = developmentTree(repoRoot, `${platform}-${arch}`, "llama", exe);
     }
   }
 
@@ -190,7 +205,7 @@ export async function locateLlamaBinary(options?: {
       kind: "unavailable",
       detail: packaged
         ? "The bundled embeddings server is missing or not executable. Reinstall Vex."
-        : `No executable ${binaryPath}. Build it with native-runtime/llama/build.sh, or set VEX_NATIVE_LLAMA_DIR.`,
+        : `No executable ${binaryPath}. Run pnpm dev:assets (fetches the pinned release), build it with native-runtime/llama/build.sh, or set VEX_NATIVE_LLAMA_DIR.`,
     };
   }
   return { kind: "found", binaryPath };

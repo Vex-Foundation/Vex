@@ -100,6 +100,18 @@ describe("locatePostgresBinaries", () => {
     }
   });
 
+  it("development: falls back to the tree dev:assets fetched, and a local build wins over it", async () => {
+    const repo = tempRoot();
+    const fetched = tree(path.join(repo, "vex-app", "resources", "native-runtime", "linux-x64", "postgres"));
+    const opts = { packaged: false, repoRoot: repo, platform: "linux" as const, arch: "x64", env: {} };
+    const fromFetch = await locatePostgresBinaries(opts);
+    expect(fromFetch.kind === "found" && fromFetch.binaries.postgres).toBe(path.join(fetched, "bin", "postgres"));
+
+    const built = tree(path.join(repo, "native-runtime", "out", "linux-x64", "postgres"));
+    const fromBuild = await locatePostgresBinaries(opts);
+    expect(fromBuild.kind === "found" && fromBuild.binaries.postgres).toBe(path.join(built, "bin", "postgres"));
+  });
+
   it("development: an absolute VEX_NATIVE_PG_DIR wins; a relative one is ignored", async () => {
     const repo = tempRoot();
     const override = tree(path.join(tempRoot(), "custom"));
