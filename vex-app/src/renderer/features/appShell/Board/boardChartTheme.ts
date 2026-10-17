@@ -54,7 +54,7 @@ function readVar(
 /**
  * Resolve the board chart palette against `element`. Candles and their volume
  * are the one place green and red survive (`--color-candle-up` and
- * `--color-candle-down`, docs/design/V10-SPREAD.md section 1); the grid, the
+ * `--color-candle-down`, docs/design/R3-MINIMAL.md section 1.2); the grid, the
  * text and the price zone are ink and the one blue. Call this from inside
  * the chart effect (the element is in the document by then) and again when
  * the theme changes, applying the result through `applyOptions` rather than

@@ -223,7 +223,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   ).toBeNull();
   // Every row carries a glyph. The rows were a wall of sentences with nothing
   // to scan (audit I4). In V10 the glyph is the status swatch, a fill rather
-  // than a colour (docs/design/V10-SPREAD.md section 1): exactly one per row,
+  // than a colour (docs/design/R3-MINIMAL.md section 1.6): exactly one per row,
   // and it names one of the swatch states.
   const outcomeRows = report.locator("[data-vex-artifact-status]");
   const outcomeCount = await outcomeRows.count();

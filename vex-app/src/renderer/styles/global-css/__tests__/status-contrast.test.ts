@@ -287,7 +287,7 @@ describe("every text tier reads on every surface it sits on", () => {
 
 /**
  * The REAL FUNDS card's keys (ApprovalCard/ApprovalDecisionActions.tsx,
- * docs/design/V10-SPREAD.md section 7). Approve is the one blue fill with its
+ * docs/design/R3-MINIMAL.md section 8.2). Approve is the one blue fill with its
  * own ink; Reject is the ink key, an ink outline on the card's paper that
  * fills with ink on hover. Every state a hand can put either key in must carry
  * its label at AA body contrast, in both rooms.

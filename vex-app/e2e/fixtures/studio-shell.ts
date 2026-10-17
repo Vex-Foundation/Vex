@@ -120,7 +120,7 @@ export async function enterStudio(page: Page): Promise<boolean> {
  *
  * `setViewportSize` alone emulates a layout viewport; it does not move the
  * window. That was harmless until the title bar went hidden (Window Controls
- * Overlay on Windows and Linux, docs/design/V10-SPREAD.md section 8): every
+ * Overlay on Windows and Linux, docs/design/R3-MINIMAL.md section 2.2): every
  * head row now reserves the caption buttons as
  * `100vw - env(titlebar-area-width) - env(titlebar-area-x)`
  * (`window-chrome.css`), and `env()` describes the real window while `100vw`

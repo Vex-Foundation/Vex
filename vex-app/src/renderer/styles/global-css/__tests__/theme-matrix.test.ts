@@ -226,7 +226,7 @@ describe("pre-shell plate", () => {
   });
 
   it("sets the stage type on the print per room: paper at night, the blues by day", () => {
-    // docs/design/V10-SPREAD.md section 1: on the night print every type is
+    // docs/design/R3-MINIMAL.md section 1.1: on the night print every type is
     // paper and blue never sits on dark ground. The giant counter was the
     // one exception the design measured at 1.34:1 (peri-hi on the night
     // sky); it is paper there now. By day the counter is the numeral blue

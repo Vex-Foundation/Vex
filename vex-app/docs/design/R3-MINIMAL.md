@@ -10,7 +10,7 @@ VEX Desktop is a calm agent chat app in three columns: a left sidebar that says 
 - Instrument Sans for every word, JetBrains Mono for every figure, Instrument Serif at display sizes only. No pixel font.
 - One paper per room: the left sidebar, the centre and the Vex sidebar sit on the same ground and are told apart by 1px rules.
 - One blue fill per view (send, Approve, Confirm, Unlock).
-- Where this document and `V10-SPREAD.md` disagree, this document wins. Where the three sheets of the design source disagree on a shared component, the core screens (welcome, chat, approval, portfolio) win; the work and system screens follow their own sheet for components only they use.
+- This document replaces the V10 spread document (retired; it stays in git history). Where the three sheets of the design source disagree on a shared component, the core screens (welcome, chat, approval, portfolio) win; the work and system screens follow their own sheet for components only they use.
 
 Every value in this document is the source of truth for the renderer. Code comments cite it as `docs/design/R3-MINIMAL.md section N`.
 
