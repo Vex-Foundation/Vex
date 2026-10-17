@@ -1,39 +1,39 @@
 /**
- * Sessions library — the full session register, mounted inside the Sessions
- * ShellScreen (Chronos screens redesign, 2026-07-20 — the screen owns the
- * title/close chrome and the scroll well, so this is pure flow content).
- * Renders the full session list (DB cap 100): the sidebar's fit-to-height
- * hides anything past the visible budget, so this screen is the canonical
- * way to reach an older session that did not make the cut. Selecting a row
- * closes the screen and opens that session.
+ * Sessions library: the full session register, mounted inside the Sessions
+ * page (docs/design/R3-MINIMAL.md section 9.6). The page sheet owns the title
+ * bar crumb and the serif page head, so this is pure flow content: a count
+ * line, the title search with the All, Agent and Mission filter, and the
+ * register by day. Renders the full session list (DB cap 100): the sidebar's
+ * fit-to-height hides anything past the visible budget, so this page is the
+ * canonical way to reach an older session that did not make the cut.
+ * Selecting a row closes the page and opens that session.
  *
- * Re-uses `SessionGroups` so stamps, mission status, and pin toggles
- * stay visually consistent with the sidebar rows.
+ * The rows (`SessionsLibrary/LibraryRows.tsx`) share the sidebar row's
+ * behaviour and its state words: pin, remove, rename and the swatch with its
+ * word come from the same hooks and helpers.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { IconSearch, IconWarning } from "../../components/icons/index.js";
-import type {
-  SessionDeleteOutcome,
-  SessionListItem,
-} from "@shared/schemas/sessions.js";
-import {
-  useDeleteSession,
-  useSessionsList,
-  useSetSessionPinned,
-} from "../../lib/api/sessions.js";
+import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { EmptyBlock } from "../../components/ui/empty-block.js";
+import { useSessionsList } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
-import { SessionGroups } from "./SessionRows.js";
+import { LibraryGroups } from "./SessionsLibrary/LibraryRows.js";
 import {
   filterSessionsByMode,
   filterSessionsByTitle,
   groupSessions,
   SESSION_MODE_FILTERS,
 } from "./sessionListModel.js";
+import { useSessionRowActions } from "./useSessionRowActions.js";
 
 const EMPTY_SESSIONS: readonly SessionListItem[] = [];
+
+/** How the register's keys work (the design's line under the list). */
+const LIBRARY_KEYS_NOTE =
+  "Double click a title to rename it. Pin and Remove session appear on hover; removing hides a session from the app, local message history stays on your disk.";
 
 export function SessionsLibrary(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
@@ -42,15 +42,17 @@ export function SessionsLibrary(): JSX.Element {
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
   const setSessionModeFilter = useUiStore((s) => s.setSessionModeFilter);
   const query = useSessionsList();
-  const pinMutation = useSetSessionPinned();
-  const deleteMutation = useDeleteSession();
-  const pendingPinId =
-    pinMutation.isPending && pinMutation.variables
-      ? pinMutation.variables.id
-      : null;
-  const [removeTarget, setRemoveTarget] = useState<SessionListItem | null>(null);
-  const [removeBlocked, setRemoveBlocked] =
-    useState<SessionDeleteOutcome | null>(null);
+  const {
+    pendingPinId,
+    removeTarget,
+    removeBlocked,
+    removePending,
+    handleTogglePin,
+    handleRename,
+    handleRequestRemove,
+    handleCancelRemove,
+    handleConfirmRemove,
+  } = useSessionRowActions();
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -91,70 +93,59 @@ export function SessionsLibrary(): JSX.Element {
 
   const handleSelect = useCallback(
     (id: string): void => {
-      // Row click closes the Sessions screen and opens the session.
+      // Row click closes the Sessions page and opens the session.
       setActiveSessionId(id);
       setShellRoute({ kind: "none" });
     },
     [setActiveSessionId, setShellRoute],
   );
 
-  const handleTogglePin = useCallback(
-    (id: string, nextPinned: boolean): void => {
-      pinMutation.mutate({ id, pinned: nextPinned });
-    },
-    [pinMutation],
-  );
-
-  const handleRequestRemove = useCallback((row: SessionListItem): void => {
-    setRemoveTarget(row);
-    setRemoveBlocked(null);
-  }, []);
-
-  const handleCancelRemove = useCallback((): void => {
-    setRemoveTarget(null);
-    setRemoveBlocked(null);
-  }, []);
-
-  const handleConfirmRemove = useCallback(async (): Promise<void> => {
-    if (removeTarget === null) return;
-    const result = await deleteMutation.mutateAsync({ id: removeTarget.id });
-    if (!result.ok) {
-      setRemoveBlocked("state_changed");
-      return;
-    }
-    const outcome = result.data.outcome;
-    if (
-      outcome === "removed" ||
-      outcome === "not_found" ||
-      outcome === "already_removed"
-    ) {
-      setRemoveTarget(null);
-      setRemoveBlocked(null);
-      return;
-    }
-    setRemoveBlocked(outcome);
-  }, [deleteMutation, removeTarget]);
-
   return (
     <div
-      className="flex w-full flex-col gap-5"
+      className="flex w-full flex-col"
       data-vex-screen="sessions-library"
       aria-label="Sessions library"
     >
-      {/* The register counter rides the toolbar now that the Sessions
-       * ShellScreen owns the page title: a Departure Mono label. */}
-      <span
+      {/* The register counter sits under the page head, a figure line in the
+       * mono at 13 muted. */}
+      <p
         aria-live="polite"
         aria-atomic="true"
-        className="vex-ov-label"
+        className="vex-num m-0 mb-[22px] text-[13px] leading-[1.4] text-ink-tertiary"
       >
         {countLabel}
-      </span>
+      </p>
 
       <div
         data-vex-sessions-library-toolbar
-        className="flex flex-wrap items-center gap-3 border-b border-line-2 pb-4"
+        className="mb-3.5 flex flex-wrap items-center gap-2.5"
       >
+        <div className="relative min-w-[220px] max-w-[340px] flex-1">
+          <input
+            ref={searchRef}
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search session titles"
+            aria-label="Search session titles"
+            autoComplete="off"
+            spellCheck={false}
+            className="h-9 w-full border border-line-input bg-surface-field pl-3 pr-14 text-[14px] text-ink-primary placeholder:text-ink-tertiary focus-visible:border-accent-primary focus-visible:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+          />
+          {searchActive ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                searchRef.current?.focus();
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[12.5px] font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+
         <div
           role="group"
           aria-label="Filter sessions by mode"
@@ -171,78 +162,49 @@ export function SessionsLibrary(): JSX.Element {
             </button>
           ))}
         </div>
-
-        <div className="relative ml-auto min-w-[220px] flex-1 sm:max-w-[320px]">
-          <IconSearch
-            size={14}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-tertiary"
-          />
-          <input
-            ref={searchRef}
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search session titles"
-            aria-label="Search session titles"
-            className="h-9 w-full border border-line-input bg-[var(--vex-alias-field)] py-1 pl-8 pr-14 text-[13px] text-ink-primary placeholder:text-ink-tertiary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
-          />
-          {searchActive ? (
-            <button
-              type="button"
-              onClick={() => {
-                setSearch("");
-                searchRef.current?.focus();
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 vex-micro-label uppercase text-ink-secondary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
       </div>
 
       {query.isLoading ? (
-        <p className="text-sm text-ink-secondary">
-          Loading sessions…
-        </p>
+        <EmptyBlock scope="Sessions" title="Loading sessions" loading />
       ) : query.data && query.data.ok === false ? (
-        <div className="flex items-center gap-2 border border-line-2 bg-danger-wash px-3 py-2 text-sm text-danger">
-          <IconWarning size={15} />
-          <span>{query.data.error.message}</span>
-        </div>
-      ) : totalRows === 0 ? (
-        <p className="text-sm text-ink-tertiary">
-          Create a session from the sidebar to get started.
-        </p>
-      ) : visibleRows === 0 ? (
-        <div className="flex flex-col items-start gap-2 py-3">
-          <p className="text-sm text-ink-secondary">
-            No sessions match your current search and filters.
-          </p>
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="vex-micro-label uppercase text-accent-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-          >
-            Reset filters
-          </button>
-        </div>
-      ) : (
-        <SessionGroups
-          groups={groups}
-          activeSessionId={activeSessionId}
-          onSelect={handleSelect}
-          onTogglePin={handleTogglePin}
-          onRequestRemove={handleRequestRemove}
-          pendingPinId={pendingPinId}
-          idPrefix="library-sessions"
+        <EmptyBlock
+          scope="Sessions"
+          state="error"
+          title={query.data.error.message}
         />
+      ) : totalRows === 0 ? (
+        <EmptyBlock
+          scope="Sessions"
+          title="Create a session from the sidebar to get started."
+        />
+      ) : visibleRows === 0 ? (
+        <EmptyBlock
+          scope="Sessions"
+          title="No sessions match your current search and filters."
+          action={{ label: "Reset filters", onClick: clearFilters }}
+        />
+      ) : (
+        <>
+          <LibraryGroups
+            groups={groups}
+            activeSessionId={activeSessionId}
+            onSelect={handleSelect}
+            onTogglePin={handleTogglePin}
+            onRequestRemove={handleRequestRemove}
+            onRename={handleRename}
+            pendingPinId={pendingPinId}
+            idPrefix="library-sessions"
+          />
+          <p className="m-0 mt-[18px] text-[13px] leading-[1.5] text-ink-tertiary">
+            {LIBRARY_KEYS_NOTE}
+          </p>
+        </>
       )}
 
       <SessionDeleteDialog
         session={removeTarget}
         blockedOutcome={removeBlocked}
-        pending={deleteMutation.isPending}
+        pending={removePending}
         onCancel={handleCancelRemove}
         onConfirm={() => {
           void handleConfirmRemove();
