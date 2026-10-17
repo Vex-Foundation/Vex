@@ -75,8 +75,9 @@ const SHELL_SOURCES: Record<string, string> = {
     { query: "?raw", import: "default", eager: true },
   ),
   // PRE-SHELL (round 2): the boot stack between first paint and the shell.
-  // `features/systemCheck` is in scope with the rest because the blocked-port
-  // / Docker-down screen is now a themed pre-shell surface, not a dark plate.
+  // `features/systemCheck` and `features/runtime` are in scope with the rest
+  // because the setup and runtime screens are themed pre-shell surfaces, not
+  // dark plates.
   ...import.meta.glob<string>(
     [
       "../../setup/**/*.ts",
@@ -87,10 +88,8 @@ const SHELL_SOURCES: Record<string, string> = {
       "../../secrets/**/*.tsx",
       "../../wizard/**/*.ts",
       "../../wizard/**/*.tsx",
-      "../../docker/**/*.ts",
-      "../../docker/**/*.tsx",
-      "../../compose/**/*.ts",
-      "../../compose/**/*.tsx",
+      "../../runtime/**/*.ts",
+      "../../runtime/**/*.tsx",
       "../../database/**/*.ts",
       "../../database/**/*.tsx",
       "../../../components/onboarding/**/*.ts",
@@ -301,8 +300,7 @@ describe("shell design guard (V10)", () => {
       for (const tree of [
         "features/systemCheck/",
         "features/wizard/",
-        "features/docker/",
-        "features/compose/",
+        "features/runtime/",
         "features/database/",
         "components/onboarding/",
       ]) {
