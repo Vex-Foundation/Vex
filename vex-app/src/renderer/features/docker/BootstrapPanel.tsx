@@ -1,9 +1,13 @@
 /**
  * Docker bootstrap orchestrator: the Docker page on the pre-shell stage
- * (docs/design/V10-SPREAD.md section 2). `SetupFrame` lays the paper leaf
- * on the print; a serif "Docker" title sits above the active branch body,
- * and the footer carries exactly one CTA per state: the blue Continue
- * (branch A) or the quiet outlined Recheck (everywhere else).
+ * (docs/design/R3-MINIMAL.md section 10.3). `SetupFrame` stands the page at
+ * the right of the plate with the crumb; a serif "Docker" title sits above
+ * the active branch body, and the actions carry exactly one blue CTA per
+ * state: Continue (branch A), or the branch's own primary key with the quiet
+ * outlined Recheck beside it (everywhere else). Vex's face on the plate
+ * follows the branch: working while Docker is detected, started or
+ * installed, concerned when the user has to act, an error when the check
+ * did not complete, ready when Docker is.
  *
  * Branch dispatch lives here; the per-branch render is delegated to
  * the body components in `bootstrap/branches/`. Shared visual
@@ -30,7 +34,7 @@
  * so the user never has to restart the app after fixing Docker.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 
 import {
   useDockerInstall,
@@ -46,6 +50,7 @@ import type {
   Branch,
   ManualFetchState,
 } from "./bootstrap/types.js";
+import type { FirstRunMood } from "../../components/onboarding/FirstRunStage.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { Button } from "../../components/ui/button.js";
 import { LoadingBody } from "./bootstrap/branches/LoadingBody.js";
@@ -85,7 +90,7 @@ export function BootstrapPanel(): JSX.Element {
   // Single source of truth for the Linux manual-instructions IPC call.
   // Called both from the auto-fetch effect (on C-linux mount) and from
   // the explicit "Retry instructions fetch" handler (codex post-impl
-  // SHOULD-FIX #1 — bare ref reset didn't re-trigger the effect because
+  // SHOULD-FIX #1 - bare ref reset didn't re-trigger the effect because
   // neither `branch` nor `installMutation` changed).
   const fetchLinuxInstructions = useCallback(() => {
     manualFetchRequestedRef.current = true;
@@ -186,77 +191,93 @@ export function BootstrapPanel(): JSX.Element {
     dockerStatus.isFetching ||
     branch === "loading";
 
+  // What Vex shows on the plate.
+  const starting =
+    startMutation.isPending || engineState?.kind === "engine_starting";
+  const mood: FirstRunMood =
+    showInstallProgress || branch === "loading"
+      ? "working"
+      : branch === "A"
+        ? "ready"
+        : branch === "B"
+          ? starting
+            ? "working"
+            : "concerned"
+          : branch === "D"
+            ? "error"
+            : "concerned";
+
+  // Recheck sits beside the branch's own primary key where there is one.
+  const recheckButton = (
+    <Button variant="quiet" onClick={handleRecheck} disabled={recheckDisabled}>
+      Recheck
+    </Button>
+  );
+  const branchOwnsRecheck =
+    !showInstallProgress && (branch === "B" || branch === "C-desktop");
+
   return (
     <SetupFrame
+      layout="plate"
       screen="dockerBootstrap"
+      step="docker"
+      mood={mood}
       title="Docker"
       subline="Vex runs Postgres and embeddings locally through Docker."
     >
-      {/* THE BODY: the active branch, directly on the leaf (no container
-       * card, no inner scroll well: the leaf scrolls, so long Linux
-       * instructions scroll the page, not a well). */}
-      <div className="vex-rise vex-rise-d1">
-          {showInstallProgress ? (
-            <InstallProgressStrip active />
-          ) : branch === "loading" ? (
-            <LoadingBody />
-          ) : branch === "A" ? (
-            <ReadyBody
-              status={dockerStatus.data?.ok ? dockerStatus.data.data : null}
-            />
-          ) : branch === "B" ? (
-            <DaemonStoppedBody
-              platform={platform}
-              // The engine also counts as starting inside the bounded
-              // window after Vex launched Docker, not only while the start
-              // IPC is still in flight.
-              starting={
-                startMutation.isPending ||
-                engineState?.kind === "engine_starting"
-              }
-              startMessage={
-                startMutation.data?.ok
-                  ? startMutation.data.data.message ?? null
-                  : null
-              }
-              onStart={handleStart}
-            />
-          ) : branch === "C-desktop" ? (
-            <DesktopInstallBody
-              platform={platform}
-              installing={installMutation.isPending}
-              onInstall={handleDesktopInstall}
-            />
-          ) : branch === "C-linux" ? (
-            <LinuxInstallBody
-              state={manualFetchState}
-              onRetryFetch={handleRetryInstructionsFetch}
-            />
-          ) : (
-            <FailureBody status={dockerStatus.data} />
-          )}
-      </div>
+      {/* THE BODY: the active branch, directly on the paper. */}
+      <div className="vex-fr-stack">
+        {showInstallProgress ? (
+          <InstallProgressStrip active />
+        ) : branch === "loading" ? (
+          <LoadingBody />
+        ) : branch === "A" ? (
+          <ReadyBody
+            status={dockerStatus.data?.ok ? dockerStatus.data.data : null}
+          />
+        ) : branch === "B" ? (
+          <DaemonStoppedBody
+            platform={platform}
+            // The engine also counts as starting inside the bounded
+            // window after Vex launched Docker, not only while the start
+            // IPC is still in flight.
+            starting={starting}
+            startMessage={
+              startMutation.data?.ok
+                ? startMutation.data.data.message ?? null
+                : null
+            }
+            onStart={handleStart}
+            recheck={recheckButton}
+          />
+        ) : branch === "C-desktop" ? (
+          <DesktopInstallBody
+            platform={platform}
+            installing={installMutation.isPending}
+            onInstall={handleDesktopInstall}
+            recheck={recheckButton}
+          />
+        ) : branch === "C-linux" ? (
+          <LinuxInstallBody
+            state={manualFetchState}
+            onRetryFetch={handleRetryInstructionsFetch}
+          />
+        ) : (
+          <FailureBody status={dockerStatus.data} />
+        )}
 
-      {/* FOOTER: one CTA per state, the blue Continue on branch A, the
-       * quiet outlined Recheck everywhere else. */}
-      <div className="vex-rise vex-rise-d2 mt-8 flex">
+        {/* ACTIONS: one blue CTA per state, Continue on branch A, the quiet
+         * outlined Recheck everywhere a branch does not carry its own. */}
         {branch === "A" ? (
           <Button
-            size="lg"
             onClick={handleContinue}
             aria-label="Continue to services startup"
+            className="w-[420px] max-w-full"
           >
             Continue
           </Button>
-        ) : (
-          <Button
-            variant="quiet"
-            size="lg"
-            onClick={handleRecheck}
-            disabled={recheckDisabled}
-          >
-            Recheck
-          </Button>
+        ) : branchOwnsRecheck ? null : (
+          <div className="vex-fr-acts">{recheckButton}</div>
         )}
       </div>
 

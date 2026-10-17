@@ -1,12 +1,14 @@
 /**
  * The K2 host (`VexK2.tsx`) in jsdom, where no canvas paints. Regressions this catches: a host that
  * is announced to assistive tech or takes the pointer, a lost placement or ground seam, a lost
- * episode seam (the open dock, the closed token) or one that does not follow its prop, and a mount
- * that throws or starts fetching art while its host has no size.
+ * episode seam (the open dock, the closed token) or one that does not follow its prop, a mount
+ * that throws or starts fetching art while its host has no size, and a token toggle host that does
+ * not hand its caller the coin's box on its fit or takes the pointer itself.
  */
 
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { type Box, fitFor, tokenBox } from "../k2-rig.js";
 import { VexK2 } from "../VexK2.js";
 
 afterEach(() => {
@@ -45,5 +47,33 @@ describe("VexK2", () => {
     rerender(<VexK2 placement="sidebar" ground="print" className="h-[280px]" />);
     expect(host()?.hasAttribute("data-vex-k2-open")).toBe(false);
     expect(host()?.hasAttribute("data-vex-k2-closed")).toBe(false);
+  });
+
+  it("hands its caller the coin's box on its fit, and stays decorative with the toggle on", () => {
+    // her host has a size; the art never arrives (the box comes from the fit, before any art)
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(284);
+    try {
+      const boxes: Box[] = [];
+      const { container, unmount } = render(
+        <VexK2 placement="welcome" ground="paper" tokenOnly onTokenBox={(b) => boxes.push(b)} />,
+      );
+      const fit = fitFor("welcome", 320, 284);
+      if (fit === null) throw new Error("no fit");
+      // every fit sends it (the mount and the emotion's re-fit), always the same coin
+      expect(boxes.length).toBeGreaterThan(0);
+      for (const b of boxes) expect(b).toEqual(tokenBox(fit));
+      const host = container.querySelector("[data-vex-k2]");
+      expect(host?.getAttribute("aria-hidden")).toBe("true");
+      expect(host?.className).toContain("pointer-events-none");
+      expect(host?.querySelector("button")).toBeNull();
+      // the state seam waits for the engine's first report
+      expect(host?.hasAttribute("data-vex-k2-token")).toBe(false);
+      unmount();
+    } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
   });
 });

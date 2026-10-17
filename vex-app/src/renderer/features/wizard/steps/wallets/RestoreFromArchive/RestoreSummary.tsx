@@ -23,14 +23,14 @@ export function RestoreSummary({ result }: RestoreResultView): JSX.Element {
         {result.filesRestored.length === 1 ? "" : "s"} from the backup.
       </p>
       {result.walletsRestored.length > 0 ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="vex-wz-kvl">
           {result.walletsRestored.map((wallet) => (
-            <li key={wallet.id} className="flex flex-col gap-1">
-              <span className="vex-micro text-ink-tertiary">
+            <li key={wallet.id} className="vex-wz-kv">
+              <span className="vex-wz-kv__k">
                 {wallet.label}
                 {wallet.legacy === true ? " · legacy" : ""}
               </span>
-              <AddressDisplay address={wallet.address} />
+              <AddressDisplay address={wallet.address} className="col-span-2" />
             </li>
           ))}
         </ul>

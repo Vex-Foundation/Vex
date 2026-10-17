@@ -5,17 +5,19 @@
  * `App` mounts ONE `StagePlate` behind the pre-shell, so the picture holds still while the
  * screens change over it. It has two layouts:
  *
- *   plate  the wake and the unlock: a 720 wide plate at the left at the full window height (the
- *          plateau print by day or night, its grain, Vex rising from the VEX token, her state
- *          word on the print) and paper at the right;
- *   print  the first run screens, which keep their V10 composition until they are restyled: the
- *          same print at window size, no animal on it.
+ *   plate  the wake, the unlock and the first run screens (system check, Docker, services,
+ *          database): a 720 wide plate at the left at the full window height (the plateau print
+ *          by day or night, its grain, Vex rising from the VEX token, her state word on the
+ *          print) and paper at the right. A first run screen says what she shows
+ *          (`stageVexFace`, `SetupFrame`);
+ *   print  the wizard, which draws its own R3 frame and plate over it (`WizardShell`): the same
+ *          print at window size, no animal on it.
  *
  *   StagePlate    the persistent plate (decorative, except the state word)
  *   VersionStamp  the small version at the window's bottom right
  *   StageHead     the 44px head row: the title bar's drag region
- *   StageCounter  the giant italic counter on the sky (first run screens only)
- *   StageGround   the hairline and the mono caption row on the dark ground (first run screens)
+ *   StageCounter  the giant italic counter on the sky (the wizard's leaf only)
+ *   StageGround   the hairline and the mono caption row on the dark ground (the wizard's leaf)
  *
  * Layout and paint live in `styles/global-css/chronos-gate.css`.
  */
@@ -62,14 +64,15 @@ export function releaseOf(version: string): {
 /** Which layout the plate takes for a view. */
 export type StageLayout = "plate" | "print";
 
-const PLATE_VIEWS: ReadonlySet<View> = new Set<View>(["splash", "unlock"]);
-const PRINT_VIEWS: ReadonlySet<View> = new Set<View>([
+const PLATE_VIEWS: ReadonlySet<View> = new Set<View>([
+  "splash",
+  "unlock",
   "systemCheck",
   "dockerBootstrap",
   "composeBootstrap",
   "migrations",
-  "wizard",
 ]);
+const PRINT_VIEWS: ReadonlySet<View> = new Set<View>(["wizard"]);
 
 /**
  * The plate's layout for a view, or null when nothing stands on a stage. The shell holds the plate

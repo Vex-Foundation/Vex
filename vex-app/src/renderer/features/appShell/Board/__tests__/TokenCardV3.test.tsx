@@ -807,13 +807,13 @@ describe("TokenCardV3 - the stylesheet it depends on", () => {
   it("steps one, two and three columns on the plate's own width, and has no mode", () => {
     // The plate is the container; no viewport query decides a column.
     expect(boardLayoutCss).toMatch(
-      /@container vex-board-plate \(min-width: 639px\) \{\s*\.vex-board-grid \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+      /@container vex-board-plate \(min-width: 651px\) \{\s*\.vex-board-grid \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
     );
     expect(boardLayoutCss).toMatch(
-      /@container vex-board-plate \(min-width: 958px\) \{\s*\.vex-board-grid \{\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
+      /@container vex-board-plate \(min-width: 976px\) \{\s*\.vex-board-grid \{\s*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/,
     );
-    expect(boardLayoutCss).toContain("grid-template-columns: minmax(319px, 1fr);");
-    expect(boardLayoutCss).toContain("min-width: 320px;");
+    expect(boardLayoutCss).toContain("grid-template-columns: minmax(325px, 1fr);");
+    expect(boardLayoutCss).toContain("min-width: 326px;");
     // One anatomy: the mode variables and the sparkline slots are retired.
     expect(boardLayoutCss).not.toContain("--vex-board-mode");
     expect(boardLayoutCss).not.toMatch(/sparkline-(inline|slot)|stat-columns|stat-height/);

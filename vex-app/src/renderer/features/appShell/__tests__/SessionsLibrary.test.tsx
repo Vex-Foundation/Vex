@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { SessionModeFilter } from "../../../stores/uiStore.js";
@@ -52,6 +52,11 @@ vi.mock("../../../stores/uiStore.js", async () => {
   };
 });
 
+const actions = vi.hoisted(() => ({
+  pin: vi.fn(),
+  rename: vi.fn(),
+}));
+
 vi.mock("../../../lib/api/sessions.js", () => ({
   useSessionsList: () => ({
     isLoading: false,
@@ -60,28 +65,16 @@ vi.mock("../../../lib/api/sessions.js", () => ({
   useSetSessionPinned: () => ({
     isPending: false,
     variables: undefined,
-    mutate: vi.fn(),
+    mutate: actions.pin,
+  }),
+  useRenameSession: () => ({
+    isPending: false,
+    mutate: actions.rename,
   }),
   useDeleteSession: () => ({
     isPending: false,
     mutateAsync: vi.fn(),
   }),
-}));
-
-vi.mock("../SessionRows.js", () => ({
-  SessionGroups: ({
-    groups,
-  }: {
-    readonly groups: ReadonlyArray<{
-      readonly rows: readonly SessionListItem[];
-    }>;
-  }) => (
-    <ul aria-label="Filtered session rows">
-      {groups.flatMap((group) => group.rows).map((row) => (
-        <li key={row.id}>{row.title ?? row.initialGoal}</li>
-      ))}
-    </ul>
-  ),
 }));
 
 vi.mock("../SessionDeleteDialog.js", () => ({
@@ -93,6 +86,8 @@ const { SessionsLibrary } = await import("../SessionsLibrary.js");
 describe("SessionsLibrary search and filters", () => {
   beforeEach(() => {
     harness.listeners.clear();
+    actions.pin.mockClear();
+    actions.rename.mockClear();
     harness.rows = [
       makeRow("one", "Arbitrum LP Rebalance", "agent"),
       makeRow("two", "Daily gas report", "mission"),
@@ -161,6 +156,71 @@ describe("SessionsLibrary search and filters", () => {
       screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed"),
     ).toBe("true");
     expect(screen.getByText("3 sessions stored locally")).toBeTruthy();
+  });
+
+  it("draws two-line rows: the title over the mode and permission, and a state word for a live mission", () => {
+    harness.rows = [
+      { ...makeRow("one", "Arbitrum LP Rebalance", "mission"), missionStatus: "running" },
+      { ...makeRow("two", "Agent session", "agent"), permission: "full" },
+    ];
+    render(<SessionsLibrary />);
+
+    const first = screen.getByRole("button", { name: /Arbitrum LP Rebalance/ });
+    expect(within(first).getByText("Mission · Restricted")).toBeTruthy();
+    expect(within(first).getByText("Running")).toBeTruthy();
+    const second = screen.getByRole("button", { name: /Agent session/ });
+    expect(within(second).getByText("Agent · Full access")).toBeTruthy();
+    // No state, so the row shows its time only.
+    expect(within(second).queryByText("Running")).toBeNull();
+  });
+
+  it("groups the register by day under 12 point heads and says how the keys work", () => {
+    render(<SessionsLibrary />);
+
+    expect(screen.getByRole("heading", { name: "Older" })).toBeTruthy();
+    expect(
+      screen.getByText(/Double click a title to rename it\./),
+    ).toBeTruthy();
+  });
+
+  it("renames in place on a double click: Enter commits, Escape cancels, unchanged is a cancel", () => {
+    render(<SessionsLibrary />);
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: /Token research/ }));
+    const input = screen.getByRole("textbox", { name: "Rename session" });
+    fireEvent.change(input, { target: { value: "  Token research v2  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(actions.rename).toHaveBeenCalledWith({
+      id: "three",
+      name: "Token research v2",
+    });
+    expect(screen.queryByRole("textbox", { name: "Rename session" })).toBeNull();
+
+    actions.rename.mockClear();
+    fireEvent.doubleClick(screen.getByRole("button", { name: /Daily gas report/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Rename session" }), {
+      target: { value: "Something else" },
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Rename session" }), {
+      key: "Escape",
+    });
+    expect(actions.rename).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: /Daily gas report/ }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Rename session" }), {
+      key: "Enter",
+    });
+    expect(actions.rename).not.toHaveBeenCalled();
+  });
+
+  it("pins from the row's own key without selecting the session", () => {
+    render(<SessionsLibrary />);
+
+    const [pinKey] = screen.getAllByRole("button", { name: "Pin session" });
+    if (pinKey === undefined) throw new Error("no Pin session key in the register");
+    fireEvent.click(pinKey);
+    expect(actions.pin).toHaveBeenCalledWith({ id: "one", pinned: true });
+    expect(harness.state?.activeSessionId).toBeNull();
   });
 });
 

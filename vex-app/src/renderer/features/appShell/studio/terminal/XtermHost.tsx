@@ -107,6 +107,7 @@ import {
   decideTerminalClipboardAction,
   terminalRightClickIsCopyPaste,
 } from "./terminal-clipboard.js";
+import { isVexToggleChord } from "../../../vex/vex-toggle-shortcut.js";
 import { TerminalNotice } from "./TerminalNotice.js";
 import { useTerminalInput } from "./useTerminalInput.js";
 import { useTerminalFileDrop } from "./useTerminalFileDrop.js";
@@ -281,6 +282,10 @@ export function XtermHost({
     // before it encodes the key or cancels the event, so the keypress bubbles
     // to the document listener that owns the Studio table. See the module
     // header for why that path does not `preventDefault`.
+    //
+    // The VEX TOGGLE (Cmd or Ctrl + Shift + Period) is refused the same way:
+    // it is not a Studio row but the app's own chord, and its listener is on
+    // the document too (`features/vex/vex-toggle-shortcut.ts`).
     entry.terminal.attachCustomKeyEventHandler((event) => {
       const action = decideTerminalClipboardAction(event, {
         hasSelection: entry.terminal.hasSelection(),
@@ -291,6 +296,7 @@ export function XtermHost({
         runClipboardRef.current(action);
         return false;
       }
+      if (isVexToggleChord(event, platform)) return false;
       return !isStudioTerminalChord(event, platform, handledIntents());
     });
 

@@ -26,10 +26,55 @@ import {
   STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
 } from "./layout.js";
 import { coerceStudioFileTabs } from "./studio-file-tabs.js";
-import {
-  coerceSessionOrdinals,
-  EMPTY_ORDINAL_LEDGER,
-} from "./session-ordinals.js";
+
+/**
+ * THE RETIRED SESSION ORDINAL LEDGER (v21): the `(02)` numbers the V10 left
+ * page printed beside each session. R3 lists sessions by name, so nothing
+ * assigns or reads an ordinal any more and the store has no setter for it.
+ * The key stays on the whitelist this release (expand-only, as v22 left
+ * `bookWidth` and `bookTab`): a stored ledger is coerced on the way in and
+ * written back unchanged, so an older reader still finds it.
+ */
+export interface SessionOrdinalLedger {
+  readonly next: number;
+  readonly byId: Readonly<Record<string, number>>;
+}
+
+export const EMPTY_ORDINAL_LEDGER: SessionOrdinalLedger = { next: 1, byId: {} };
+
+/** The ledger's bounds, as v21 wrote them: at most 5000 ids of at most 64 characters. */
+const ORDINAL_LEDGER_MAX = 5000;
+const ORDINAL_ID_MAX_LENGTH = 64;
+
+/** Off-shape, over-long or inconsistent payloads degrade to the empty ledger. */
+export function coerceSessionOrdinals(value: unknown): SessionOrdinalLedger {
+  if (typeof value !== "object" || value === null) return EMPTY_ORDINAL_LEDGER;
+  const next: unknown = Reflect.get(value, "next");
+  const byId: unknown = Reflect.get(value, "byId");
+  if (typeof next !== "number" || !Number.isInteger(next) || next < 1) {
+    return EMPTY_ORDINAL_LEDGER;
+  }
+  if (typeof byId !== "object" || byId === null || Array.isArray(byId)) {
+    return EMPTY_ORDINAL_LEDGER;
+  }
+  const entries = Object.entries(byId);
+  if (entries.length > ORDINAL_LEDGER_MAX) return EMPTY_ORDINAL_LEDGER;
+  const clean: Record<string, number> = {};
+  for (const [id, n] of entries) {
+    if (
+      id.length === 0 ||
+      id.length > ORDINAL_ID_MAX_LENGTH ||
+      typeof n !== "number" ||
+      !Number.isInteger(n) ||
+      n < 1 ||
+      n >= next
+    ) {
+      return EMPTY_ORDINAL_LEDGER;
+    }
+    clean[id] = n;
+  }
+  return { next, byId: clean };
+}
 
 /** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
 const MAX_BOOK_SECTION_ENTRIES = 32;

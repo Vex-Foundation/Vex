@@ -1,22 +1,25 @@
 /**
- * Branch C-linux — engine missing on Linux. Orchestrator auto-fetches
+ * Branch C-linux - engine missing on Linux. Orchestrator auto-fetches
  * the apt-repo bootstrap from `useDockerInstall({ method:
  * "linux_manual_instructions" })` and passes the resulting state in.
  *
  * Rendering matrix:
- *   loading — inline VexLoader + "Loading install instructions…"
- *   error   — message + "Retry instructions fetch" (separate from main
- *             footer Recheck; this retries the fetch only)
- *   ready   — `<LinuxManualInstructions>` with copy-paste block
+ *   loading - a word and the quiet loading line
+ *   error   - the ink callout with "Retry instructions fetch" (separate from
+ *             the orchestrator's Recheck; this retries the fetch only)
+ *   ready   - `<LinuxManualInstructions>` with the copy-paste block
  *
  * Always-present: docker-group privilege heads-up (joining the group
- * grants root-equivalent access — Vex supports the standard Engine +
+ * grants root-equivalent access - Vex supports the standard Engine +
  * Compose path; rootless mode is mentioned as an advanced, separate
  * path per codex review).
  */
 
+import type { JSX } from "react";
+
 import { VexLoader } from "../../../../components/ui/vex-loader.js";
 import { Button } from "../../../../components/ui/button.js";
+import { ErrorCallout } from "../../../../components/ui/error-callout.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { DocsLink } from "../../../../components/onboarding/DocsLink.js";
 import { LinuxManualInstructions } from "../../LinuxManualInstructions.js";
@@ -37,7 +40,7 @@ export function LinuxInstallBody({
   onRetryFetch,
 }: LinuxInstallBodyProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <SetupStatusCard
         tone="info"
         word="Install"
@@ -46,35 +49,28 @@ export function LinuxInstallBody({
       />
 
       {state.kind === "loading" ? (
-        <div className="flex items-center gap-2.5">
-          <VexLoader
-            size={16}
-            stroke={2}
-            label="Loading install instructions"
-          />
-          <p aria-hidden className="text-xs text-ink-secondary">
+        <div className="flex flex-col items-start gap-3">
+          <VexLoader label="Loading install instructions" />
+          <p aria-hidden className="vex-fr-text">
             Loading install instructions…
           </p>
         </div>
       ) : state.kind === "error" ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs leading-relaxed text-[var(--color-danger)]">
-            Couldn&rsquo;t fetch install instructions: {state.message}
-          </p>
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={onRetryFetch}
-            className="self-start"
-          >
-            Retry instructions fetch
-          </Button>
-        </div>
+        <ErrorCallout
+          compact
+          role="alert"
+          title={`Couldn’t fetch install instructions: ${state.message}`}
+          actions={
+            <Button variant="quiet" size="sm" onClick={onRetryFetch}>
+              Retry instructions fetch
+            </Button>
+          }
+        />
       ) : state.kind === "ready" ? (
         <LinuxManualInstructions instructions={state.instructions} />
       ) : null}
 
-      {/* The risk callout: ink frame, hatched edge, ink type. */}
+      {/* The ink callout: frame, hatch band, ink type. */}
       <div className="vex-callout">
         <strong className="font-semibold">
           Heads up:
@@ -87,18 +83,20 @@ export function LinuxInstallBody({
           href={DOCKER_ROOTLESS_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[var(--vex-accent-text,var(--color-accent-primary))] underline-offset-4 hover:underline"
+          className="vex-fr-link"
         >
           Docker&rsquo;s rootless mode
         </a>{" "}
         as a separate path.
       </div>
 
-      <DocsLink
-        href={DOCKER_ENGINE_LINUX_URL}
-        label="View official Docker Engine docs"
-      />
-      <OpenLogsLink />
-    </div>
+      <div className="vex-fr-row vex-fr-row--links">
+        <DocsLink
+          href={DOCKER_ENGINE_LINUX_URL}
+          label="View official Docker Engine docs"
+        />
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
+    </>
   );
 }

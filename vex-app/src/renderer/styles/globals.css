@@ -3,16 +3,16 @@
 /* Thin manifest ONLY — the hand-written stylesheet lives in ./global-css/.
  * HARD RULE: every import below must stay a PLAIN unlayered @import.
  * Never add layer(...) to any line: the whole sheet is unlayered author
- * CSS and must keep beating Tailwind's @layer utilities (see the
- * CRITICAL note on .vex-noise--panel in global-css/landing-motifs.css). */
+ * CSS and must keep beating Tailwind's @layer utilities (the label
+ * register in global-css/type.css outranks a call site's `uppercase` or
+ * `font-mono` utility only because it is unlayered). */
 @import "./global-css/fonts.css";
 @import "./global-css/tokens.css";
 @import "./global-css/base.css";
 @import "./global-css/onboarding.css";
 @import "./global-css/shell.css";
-@import "./global-css/glass.css";
 @import "./global-css/book.css";
-@import "./global-css/landing-motifs.css";
+@import "./global-css/type.css";
 @import "./global-css/motion-primitives.css";
 @import "./global-css/chronos-motion.css";
 @import "./global-css/chat-transcript.css";
@@ -27,6 +27,7 @@
 @import "./global-css/vex-sidebar.css";
 @import "./global-css/overlay.css";
 @import "./global-css/settings.css";
+@import "./global-css/wizard.css";
 @import "./global-css/console.css";
 @import "./global-css/chronos-gate.css";
 @import "./global-css/lighter-tokens.css";

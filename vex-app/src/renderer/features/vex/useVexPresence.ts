@@ -250,6 +250,11 @@ export interface VexPresence {
   readonly scope: VexScope | null;
   /** Epoch ms the live turn started, for the m:ss timer; `null` when none runs. */
   readonly timerStartedAt: number | null;
+  /**
+   * A turn is in flight in the open chat. Its turn island speaks for it, so the one announcer of
+   * the state word stays quiet meanwhile (`vex-announce.ts`).
+   */
+  readonly live: boolean;
   /** One line from real data, or `null` when there is nothing true to add. */
   readonly narration: string | null;
   readonly background: BackgroundWork;
@@ -382,6 +387,7 @@ export function useVexPresence(options: VexPresenceOptions = {}): VexPresence {
     fill: VEX_STATE_FILL[state],
     scope: vexScopeOf({ runtimeMode, sessionMode: sessionItem?.mode ?? null }),
     timerStartedAt: vexTimerStartOf(state, isLive, preview?.startedAtMs ?? null),
+    live: isLive,
     narration: vexNarration(state, situation),
     background: sessions === null ? NO_BACKGROUND_WORK : backgroundWorkOf(sessions, sessionId),
     needsYou,

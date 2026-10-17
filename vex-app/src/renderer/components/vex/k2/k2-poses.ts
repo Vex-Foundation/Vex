@@ -205,6 +205,8 @@ export interface MoodFace {
   readonly gestures: boolean;
   /** The beam's and the token's light, 0.7..1. */
   readonly light: number;
+  /** The waking emotion's beats are playing (an episode: the engine draws it at 30 fps). */
+  readonly wake?: boolean;
 }
 
 /** An emotion's pose (the wake shows her own face, idle's). */
@@ -238,6 +240,7 @@ function wakingFace(ch: MoodChange, age: number, r: MoodRig): MoodFace | null {
     frozen: false,
     gestures: false,
     light: lerp(SLEEP.light, 1, (dim - SLEEP.dim) / (1 - SLEEP.dim)),
+    wake: true,
   };
 }
 

@@ -3,12 +3,12 @@
  *
  * OpenRouter serves one model from several endpoints that differ in price,
  * context window and quantization. This list is the operator's chance to pin
- * one. It renders ONLY after an exact catalogue model selection — a
+ * one. It renders ONLY after an exact catalogue model selection - a
  * typed-but-unlisted model id has no endpoint list, so the step stays
  * Auto-only and nothing is fetched per keystroke.
  *
  * Copy honesty: the list is filtered to endpoints that support TOOL CALLING.
- * That is not a claim of general parameter compatibility — Vex also sends
+ * That is not a claim of general parameter compatibility - Vex also sends
  * `toolChoice` and `maxTokens`, and strict compatibility is enforced at
  * request time. The wording here says exactly what the filter does.
  *
@@ -17,7 +17,7 @@
  *
  * ORDER + SUGGESTION: rows arrive ranked by availability (main owns the rule,
  * `main/onboarding/provider-endpoint-availability.ts`). The top row may carry a
- * "Suggested" badge. It is a HINT — this component never calls `onChange` on
+ * "Suggested" badge. It is a HINT - this component never calls `onChange` on
  * its own, so the badge cannot move the operator's pin.
  *
  * HEIGHT: the live catalogue runs past 20 endpoints, which pushed the whole
@@ -26,6 +26,12 @@
  * `overflow-y-auto`, as in `GlobalApprovals` / `ModelPicker`). A pin outside
  * that window is scrolled into view on mount so the current choice is never
  * hidden.
+ *
+ * R3 grammar: a `.vex-wz-group` (label, the list, the hint). The list is one
+ * ruled box of picker rows (`.vex-wz-picker__o`): the name, the mono tag under
+ * it, the meta line below; the chosen row takes the selection wash with a blue
+ * name (`data-active` is the wash's hook here, `aria-checked` stays the radio
+ * state). No roles, ids or data seams change.
  */
 
 import { useEffect, useRef, type JSX } from "react";
@@ -40,7 +46,7 @@ export interface EndpointPickerProps {
   /** Selected endpoint tag, or `null` for Auto. */
   readonly value: string | null;
   readonly endpoints: ReadonlyArray<ProviderEndpointOption>;
-  /** Tag main suggests, or `null`. Display-only — never applied automatically. */
+  /** Tag main suggests, or `null`. Display-only - never applied automatically. */
   readonly suggestedEndpointTag?: string | null;
   readonly loading: boolean;
   readonly failed: boolean;
@@ -50,7 +56,7 @@ export interface EndpointPickerProps {
 }
 
 const ROW_CLASS =
-  "flex w-full cursor-pointer items-start gap-3 border px-3 py-2 text-left";
+  "vex-wz-picker__o cursor-pointer disabled:cursor-not-allowed";
 
 /**
  * Bounded to roughly five rows. Expressed in `rem` rather than a row count
@@ -92,12 +98,12 @@ export function EndpointPicker({
   }, [value]);
 
   return (
-    <div className="flex flex-col gap-2" data-vex-provider-endpoints>
+    <div className="vex-wz-group" data-vex-provider-endpoints>
       <Label htmlFor={id}>Provider</Label>
 
       {loading ? (
         <p
-          className="text-xs text-ink-tertiary"
+          className="vex-wz-hint"
           data-vex-provider-endpoints-state="loading"
         >
           Loading providers for this model…
@@ -107,13 +113,13 @@ export function EndpointPicker({
           className="flex items-center justify-between gap-3"
           data-vex-provider-endpoints-state="failed"
         >
-          <p className="text-xs text-ink-secondary">
+          <p className="vex-wz-hint text-ink-secondary">
             Provider list unavailable. Auto routing still works.
           </p>
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
+            className="vex-wz-link shrink-0"
           >
             <IconRefresh size={12} />
             Retry
@@ -127,7 +133,7 @@ export function EndpointPicker({
           aria-label="OpenRouter provider"
           data-vex-provider-endpoint-list
           className={cn(
-            "vex-scroll flex flex-col gap-1.5 overflow-y-auto pr-1",
+            "vex-scroll flex flex-col overflow-y-auto border border-rule bg-surface-field",
             LIST_MAX_HEIGHT_CLASS,
           )}
         >
@@ -137,19 +143,13 @@ export function EndpointPicker({
             aria-checked={value === null}
             disabled={disabled}
             data-vex-provider-endpoint="auto"
+            data-active={value === null ? "" : undefined}
             onClick={() => onChange(null)}
-            className={cn(
-              ROW_CLASS,
-              value === null
-                ? "border-accent-primary text-ink-primary"
-                : "border-[var(--color-border)] text-ink-secondary",
-            )}
+            className={ROW_CLASS}
           >
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm">Auto (recommended)</span>
-              <span className="block text-[11px] text-ink-tertiary">
-                OpenRouter picks and fails over between providers.
-              </span>
+            <span className="vex-wz-picker__t block">Auto (recommended)</span>
+            <span className="col-span-2 text-[12.5px] text-ink-tertiary">
+              OpenRouter picks and fails over between providers.
             </span>
           </button>
 
@@ -163,49 +163,46 @@ export function EndpointPicker({
                 aria-checked={value === endpoint.tag}
                 disabled={disabled}
                 data-vex-provider-endpoint={endpoint.tag}
+                data-active={value === endpoint.tag ? "" : undefined}
                 onClick={() => onChange(endpoint.tag)}
-                className={cn(
-                  ROW_CLASS,
-                  value === endpoint.tag
-                    ? "border-accent-primary text-ink-primary"
-                    : "border-[var(--color-border)] text-ink-secondary",
-                )}
+                className={ROW_CLASS}
               >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="min-w-0 truncate text-sm">
-                      {endpoint.providerName}
-                    </span>
-                    {suggestedEndpointTag === endpoint.tag ? (
-                      <span
-                        data-vex-provider-endpoint-suggested
-                        className="shrink-0 border border-accent-primary px-1.5 py-px text-[9px] uppercase tracking-wide text-accent-primary"
-                      >
-                        Suggested
-                      </span>
-                    ) : null}
+                <span className="vex-wz-picker__t flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate">
+                    {endpoint.providerName}
                   </span>
-                  <span className="block truncate font-mono text-[10px] text-ink-tertiary">
-                    {endpoint.tag}
-                  </span>
-                  {meta ? (
-                    <span className="block truncate text-[10px] text-ink-tertiary">
-                      {meta}
+                  {suggestedEndpointTag === endpoint.tag ? (
+                    <span
+                      data-vex-provider-endpoint-suggested
+                      className="shrink-0 border border-accent-primary px-1.5 text-[11.5px] font-normal leading-[1.5] text-accent-primary"
+                    >
+                      Suggested
                     </span>
                   ) : null}
                 </span>
+                <span className="vex-wz-picker__m min-w-0 truncate">
+                  {endpoint.tag}
+                </span>
+                {meta ? (
+                  <span className="col-span-2 text-[12.5px] text-ink-tertiary">
+                    {meta}
+                  </span>
+                ) : null}
               </button>
             );
           })}
         </div>
       )}
 
-      <p className="text-xs text-ink-tertiary">
-        Only providers that support tool calling are listed - Vex cannot run on
-        the others. Ordered by recent uptime, most available first; providers
-        OpenRouter reports no uptime for are listed last. Prices are base rates
-        per 1M tokens; long-context and time-window tiers can differ. Pinning
-        one provider turns off OpenRouter&apos;s automatic failover.
+      <p className="vex-wz-hint">
+        <span>
+          Only providers that support tool calling are listed - Vex cannot run
+          on the others. Ordered by recent uptime, most available first;
+          providers OpenRouter reports no uptime for are listed last. Prices
+          are base rates per 1M tokens; long-context and time-window tiers can
+          differ. Pinning one provider turns off OpenRouter&apos;s automatic
+          failover.
+        </span>
       </p>
     </div>
   );

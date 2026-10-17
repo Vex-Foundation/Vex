@@ -6,9 +6,11 @@
  * Severity is the frame and the fill, never a hue: info has no swatch, a
  * warning takes the concerned fill (ink hatch) and a 1.5px frame, a failure
  * the error cross, a 1.5px frame and a hatch band. Since B2.2 this is the only floating toast region in
- * the app: the pre-model single slot and the separate bottom-right sticky card
- * were folded into it, so one owner answers "what is on screen", one cap
- * bounds it and one report ("+N more") covers everything it did not fit.
+ * the app: the pre-model single slot was folded into it, so one owner answers
+ * "what is on screen", one cap bounds it and one report ("+N more") covers
+ * everything it did not fit. The updater is NOT a client: its prompt is the
+ * update card in the left sidebar (`features/updates/UpdateCard.tsx`, section
+ * 12 of the spec), not a toast.
  *
  * Model-owned rather than markup-owned:
  *
@@ -19,7 +21,8 @@
  *  - hovering a toast, or focusing anything inside it, pauses its purge: a
  *    message the user is reading does not vanish under them.
  *  - a STICKY notification never purges at all, which is what lets a long-
- *    running operation (the updater) own a row for as long as it runs.
+ *    running operation (progress that has not finished) own a row for as long
+ *    as it runs.
  *  - what does not fit is NOT dropped. It waits in the center, and this region
  *    reports the count, because a bound that does not report is a silent cut.
  *

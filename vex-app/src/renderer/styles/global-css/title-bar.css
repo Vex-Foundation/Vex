@@ -70,15 +70,29 @@
   font-weight: 400;
   color: var(--vex-alias-label-tertiary);
 }
+/* The sub ("Mission · Restricted") gives way with an ellipsis when the start
+ * cell runs out of room (1000 to 1024 with Vex open in a mission, or beside a
+ * Notices pill), so it never runs under the flank. */
+.vex-tb-title__sub {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── The mission badge: 26 high, a quiet rule, 12.5, the mark and a word ─── */
 .vex-tb-mission {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 8px;
 }
+/* In a tight start cell the badge shrinks too: the mark and the label hold,
+ * the state word ends in an ellipsis (its full name stays in aria-label). */
 .vex-tb-mission [data-vex-action="open-mission-detail"] {
+  flex-shrink: 1;
+  min-width: 0;
   height: 26px;
   gap: 8px;
   padding: 0 10px;
@@ -96,6 +110,14 @@
   letter-spacing: normal;
   text-transform: none;
   color: inherit;
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"] > span:not(:last-child) {
+  flex: none;
+}
+.vex-tb-mission [data-vex-action="open-mission-detail"] > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .vex-tb-mission [data-vex-action="open-mission-detail"] > span:nth-child(2)::after {
   content: " ·";

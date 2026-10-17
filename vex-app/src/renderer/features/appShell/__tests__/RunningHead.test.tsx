@@ -66,7 +66,6 @@ vi.mock("../NotificationCenter.js", () => ({
 }));
 vi.mock("../GlobalApprovals.js", () => ({
   GlobalApprovalsSync: () => <div data-testid="approvals-sync" />,
-  GlobalApprovalsReview: () => null,
 }));
 vi.mock("../../vex/NeedsYouControl.js", () => ({
   NeedsYouControl: () => <div data-testid="needs-you" />,
@@ -235,6 +234,13 @@ describe("the page close key", () => {
     useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
     renderHead("studio", SESSION);
     fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
+  it("closes the Needs you page in Studio, the key the page itself no longer draws", () => {
+    useUiStore.setState({ shellRoute: { kind: "needsYou", origin: null } });
+    renderHead("studio", SESSION);
+    fireEvent.click(screen.getByRole("button", { name: "Close Needs you" }));
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
   });
 

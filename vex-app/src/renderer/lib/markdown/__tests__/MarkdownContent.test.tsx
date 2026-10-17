@@ -211,8 +211,8 @@ describe("article variant protocol-entry headings (owner correction 2026-07-20)"
     expect(logo?.className).toContain("h-11");
     expect(logo?.className).not.toMatch(/rounded/);
     const name = heading?.querySelector("span");
-    // V10 (docs/design/V10-SPREAD.md section 1): the serif never sets a word
-    // under 32px, so a 17px card name is the sans.
+    // docs/design/R3-MINIMAL.md section 1.3: the serif is for display sizes
+    // only, so a 17px card name is the sans.
     expect(name?.className).not.toContain("font-serif");
     expect(name?.className).toContain("text-[17px]");
     expect(name?.textContent).toContain("Uniswap");

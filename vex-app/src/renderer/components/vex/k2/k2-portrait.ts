@@ -114,6 +114,8 @@ export const INKS = [
   "glint",
 ] as const;
 export type Ink = (typeof INKS)[number];
+/** Each ink's place in `INKS` (the dots' hash mixes it in for every dot). */
+const INK_AT: ReadonlyMap<Ink, number> = new Map(INKS.map((n, i) => [n, i]));
 
 /** One frame's dots by ink as (x, y, r) triples, with a running hash so an unchanged frame is
  * never repainted (`k2-stamp.ts` stamps them). */
@@ -134,7 +136,7 @@ export class Dots {
   count = 0;
   add(ink: Ink, x: number, y: number, r: number): void {
     this.lists[ink].push(x, y, r);
-    let h = this.hash ^ INKS.indexOf(ink);
+    let h = this.hash ^ (INK_AT.get(ink) ?? -1);
     h = Math.imul(h ^ Math.round(x * 4), 16777619);
     h = Math.imul(h ^ Math.round(y * 4), 16777619);
     h = Math.imul(h ^ Math.round(r * 8), 16777619);
@@ -248,6 +250,8 @@ export class Portrait {
   readonly X: Float32Array;
   readonly Y: Float32Array;
   readonly #tipD: Float32Array;
+  /** Her cumulus line over each cell (`ycutAt` of its centre, read for every cell of a frame). */
+  readonly #ycutK: Float64Array;
   readonly #sources: number[] = [];
   readonly #eyes: { readonly e: K2Eye; readonly cells: number[] }[];
   readonly #static: Uint8Array;
@@ -292,6 +296,8 @@ export class Portrait {
           BX + i * P + (j & 1) * P * 0.5 + (hash01(i, j, 5) - 0.5) * P * jit;
         this.Y[k] = BY + j * P + (hash01(i, j, 6) - 0.5) * P * jit;
       }
+    this.#ycutK = new Float64Array(N);
+    for (let k = 0; k < N; k++) this.#ycutK[k] = this.ycutAt(this.X[k] ?? 0);
     // the tip dilated by two cells: cells beside a free strand learn that it may blow over them
     this.#tipD = new Float32Array(N);
     for (let j = 0; j < GH; j++)
@@ -883,7 +889,7 @@ export class Portrait {
         const q =
           cut !== null
             ? 0
-            : ((Y[k] ?? 0) - (this.ycutAt(X[k] ?? 0) - MERGE * KS)) /
+            : ((Y[k] ?? 0) - ((this.#ycutK[k] ?? 0) - MERGE * KS)) /
               ((MERGE + 8) * KS);
         if (q > 0 && (q >= 1 || bay < q)) continue;
         put(M, src, X[k] ?? 0, (Y[k] ?? 0) - dyS, q > 0 ? 1 - 0.35 * q : 1);

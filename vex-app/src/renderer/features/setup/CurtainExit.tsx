@@ -19,7 +19,7 @@
  * (`.vex-turn`); the plate's own fade is `[data-vex-stage-exit]` in chronos-gate.css.
  *
  * No cancel path - mount it only after the triggering IPC has succeeded. Timers drive it (no
- * animation callback is a contract). Layering: `z-50` like the gate, below UpdateLayer's `z-[60]`.
+ * animation callback is a contract). Layering: `z-50` like the gate, below the floating update card (z 60).
  */
 
 import { useEffect, useRef, useState, type JSX } from "react";

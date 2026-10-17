@@ -1,8 +1,8 @@
 /**
- * Constants for the Docker bootstrap surface — pulled out so the
+ * Constants for the Docker bootstrap surface - pulled out so the
  * orchestrator and per-branch bodies share a single source of truth.
  * (The NOTARY-era "Step X of N" counter is retired with the Chronos
- * rebrand — only the docs URLs remain.)
+ * rebrand - only the docs URLs remain.)
  */
 
 // Canonical Docker install docs URLs verified via curl HEAD redirect:

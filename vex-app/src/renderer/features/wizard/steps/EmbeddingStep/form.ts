@@ -1,5 +1,5 @@
 /**
- * EmbeddingStep pure form helpers/types — extracted from
+ * EmbeddingStep pure form helpers/types - extracted from
  * `EmbeddingStep.tsx` to keep the screen file under the 400-LOC
  * scalability ceiling (god-file split). VERBATIM move; zero behavior
  * change.
@@ -10,9 +10,9 @@
  *
  * `narrowDimLockDetails` narrows `VexError.details` through `in`-operator
  * checks (zero `as` casts) so the renderer never trusts an arbitrary
- * unknown shape — codex review round 3/4 YELLOW.
+ * unknown shape - codex review round 3/4 YELLOW.
  *
- * Pure module — no React imports, fully unit-testable, no JSX.
+ * Pure module - no React imports, fully unit-testable, no JSX.
  */
 
 import {
@@ -36,7 +36,7 @@ export function narrowDimLockDetails(raw: unknown): DimLockDetails | null {
   // Server-side `embedding-writer.ts` puts these fields into
   // `VexError.details` on `embedding.dim_locked`. Narrow here through
   // `in` operator checks (zero `as` casts) so the renderer never
-  // trusts an arbitrary unknown shape — codex review round 3/4 YELLOW.
+  // trusts an arbitrary unknown shape - codex review round 3/4 YELLOW.
   if (typeof raw !== "object" || raw === null) return null;
   if (!("existingRowCount" in raw) || !("targetDim" in raw)) return null;
   const existingRowCount = raw.existingRowCount;

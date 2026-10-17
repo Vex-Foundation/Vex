@@ -88,15 +88,37 @@ html {
  * `prefers-reduced-motion: reduce` rule that removes every transform and every
  * movement and leaves at most an opacity change. Vestibular safety is why the
  * catch-all exists; opting out of the sweep does not opt out of that. Current
- * holders, both of which do exactly that: `.vex-toast` and
- * `.vex-notification-toast` (ui-primitives/overlays.css). */
+ * holders, each of which does exactly that:
+ *  - the toasts, `.vex-toast` and `.vex-notification-toast`
+ *    (ui-primitives/overlays.css): their exit fade stays a fade;
+ *  - the pre-shell stage plate (`PreShellStage`) and the handoff turn
+ *    (`CurtainExit`), with their rules in chronos-gate.css: the stage and the
+ *    shell crossfade over a fixed 240ms linear, because nothing slides under
+ *    reduced motion but a hard cut from the stage to the shell is not calmer
+ *    (docs/design/R3-MINIMAL.md section 11).
+ *
+ * EVERYTHING ELSE R3 MOVES comes to rest here or in its own rule: the shell's
+ * column tracks snap (shell.css states its own collapse), swatches and the
+ * loading line stop stepping (ui-primitives/marks.css), and the K2 hologram
+ * paints one still frame from JS (`lib/motion/use-still-frame.ts`), so her
+ * dock into the sidebar is her simply appearing and a hide does not wait for
+ * her close.
+ *
+ * DELAYS COLLAPSE TOO. A stagger (`.vex-rise-d1` to `-d3` on the wake and
+ * unlock type, both-filled) would otherwise hold its line at the animation's
+ * first frame, invisible, for up to 300ms before snapping in: under reduced
+ * motion every duration is instant (section 11), a delay included. A rule
+ * that must also drop a resting transform still says `animation: none` in its
+ * own block. */
 @media (prefers-reduced-motion: reduce) {
   *:not([data-vex-motion-opacity]),
   *:not([data-vex-motion-opacity])::before,
   *:not([data-vex-motion-opacity])::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
 }

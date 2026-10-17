@@ -11,11 +11,14 @@
  * - the idle life: by default she looks at you and now and then glances away (`GlanceChain`);
  *   blinks, gusts of wind, the smirk;
  * - the episodes: opening her from the token and closing her into it, awake (`episodeProjector`);
+ *   the token toggle's close runs from wherever she was (`closing`) and its open replays the wake
+ *   from the press (`OPEN_LEAD`);
  * - the "look at you" chain: when she comes back she holds her eyes on you a moment (`lookAtYou`).
  *
  * Nothing here reads a clock, the DOM or `Math.random()`: the engine passes t (ms of her own clock,
  * which stops while she is off screen) and the inputs (the hover, the clicks), so each frame follows
- * from them and the tests can step through any moment. Coordinates are her map's px (the wide
+ * from them and the tests can step through any moment. Episodes run at 30 fps and her idle life at
+ * 10 fps (`frameTime`, `idleTime`), as on the web app. Coordinates are her map's px (the wide
  * drawing's own frame, `k2-rig.ts`).
  */
 import { hash01, noise1, schedule } from "./k2-rand.js";
@@ -29,8 +32,64 @@ export const lerp = (a: number, b: number, q: number): number =>
 export const ramp = (t: number, a: number, b: number): number =>
   clamp((t - a) / (b - a), 0, 1);
 
-/** Her clock steps at 10 fps (the brief): a frame's time is a whole step. */
+/**
+ * Her idle life steps at 10 fps (the brief): the blink, the gaze and its glances, the wind, the
+ * beam's life, the hover and the moods (a sleeping dim) read the idle step of a frame's time.
+ */
 export const STEP_MS = 100;
+
+/* ------------------------------------------------------------------ the frame clock */
+
+/**
+ * An episode (the wake, the token toggle's open and the open episode, the close and the coin's
+ * turn, a gesture) steps at 30 fps (the owner 2026-10-17: the rise looked choppy): three frames to
+ * an idle step, 33, 33 and 34 ms, so every third lands on the idle grid and a frame on the grid is
+ * the 10 fps frame. The same numbers as the web app's K2, so both apps move alike.
+ */
+export const EPISODE_FPS = 30;
+const SUB = (EPISODE_FPS * STEP_MS) / 1000;
+
+/** The 30 fps frame at or before `clock` (whole ms: 0, 33, 66, 100, 133, ...). */
+export function fineTime(clock: number): number {
+  return Math.floor((Math.floor((clock * SUB) / STEP_MS) * STEP_MS) / SUB);
+}
+
+/** The idle step at or before t: the time her idle life reads. */
+export function idleTime(t: number): number {
+  return Math.floor(t / STEP_MS) * STEP_MS;
+}
+
+/**
+ * The frame to paint at `clock` after the last one painted at `last`, or null: a 30 fps frame while
+ * an episode plays at it, otherwise the idle step (each once, never behind the last). A clock that
+ * jumped past an idle step outside an episode still paints that step. Pure in its inputs: the same
+ * clock, last frame and episodes give the same frame.
+ */
+export function frameTime(
+  clock: number,
+  last: number,
+  episodeAt: (t: number) => boolean,
+): number | null {
+  const t = fineTime(clock);
+  if (t <= last) return null;
+  const g = idleTime(t);
+  if (t === g || episodeAt(t)) return t;
+  return g > last ? g : null;
+}
+
+/**
+ * Whether an episode plays at a frame: the wake (the gate's, a re-open's, the open episode, the
+ * waking mood), the close (her dissolve and the coin's turn) or a gesture of her pool (fading out
+ * too). Idle (a blink, the gaze, a glance, the wind, the hover, a mood, the coin at rest) is not.
+ */
+export function inEpisode(e: {
+  readonly still: boolean;
+  readonly waking: boolean;
+  readonly closing: boolean;
+  readonly gesture: boolean;
+}): boolean {
+  return !e.still && (e.waking || e.closing || e.gesture);
+}
 
 /* ------------------------------------------------------------------ the wake */
 
@@ -71,7 +130,8 @@ export interface Projector {
   readonly asm: number;
 }
 
-const AWAKE: Projector = { press: 0, flip: 1, cone: 1, asm: 1 };
+/** Awake: the coin flat, the beam up, she whole. */
+export const AWAKE: Projector = { press: 0, flip: 1, cone: 1, asm: 1 };
 
 /** The press like a key, `a` ms after it began: down in 100 ms, back up over 160 ms. */
 function pressAt(a: number): number {
@@ -105,18 +165,26 @@ export function projector(t: number, mode: WakeMode): Projector {
  *   assembles bottom up, about 2.6 s (no sleep beats: the wake is the gate's and the re-wake's);
  *   then she looks at you. The Vex sidebar plays it when she docks into it from the welcome, or
  *   when the column is shown again.
- * - `close`: she collapses top first into the token (the assembly in reverse: her dots fall into
- *   its light as sparks), the beam sinks back into the coin and the coin turns face-on again,
- *   about 1.45 s; then the token stands alone.
+ * - `close`: she dissolves back into the token, her assembly run backwards (her top leaves first,
+ *   each dot falling into its light as a spark), the beam falls, then the coin turns from lying
+ *   flat at the beam's base to standing upright, face on, 1.94 s; then the token stands alone, at
+ *   rest. The same close as the web app's token toggle, beat for beat, so both apps move alike.
+ *   It runs from the projector it began on (`from`): a close asked for in the middle of a wake or
+ *   an open runs each part from where it was.
+ *
+ * The token toggle (the welcome's token, the owner 2026-10-17) closes her with `close` and opens
+ * her again with the wake replayed from the press (`OPEN_LEAD`): the coin presses at once, lies
+ * down, the beam rises, she assembles asleep, yawns, rubs an eye, blinks and smiles.
  *
  * Reduced motion skips both: she simply appears, or the token simply stands alone.
  */
 export type EpisodeKind = "open" | "close";
 
-/** An episode on her clock: which, and when it began (ms). */
+/** An episode on her clock: which, when it began (ms), and for a close the projector it left. */
 export interface Episode {
   readonly kind: EpisodeKind;
   readonly at: number;
+  readonly from?: Projector;
 }
 
 /** The open episode's beats, ms from its start. */
@@ -126,17 +194,43 @@ export const OPEN = {
   cone: [750, 1350],
   asm: [1150, 2600],
 } as const;
-/** The close episode's beats, ms from its start: the collapse, the beam sinking, the turn back. */
+/**
+ * The close episode's beats, ms from its start: her dots leave over the first 1.2 s, the beam
+ * falls from 0.9 to 1.4 s, the coin turns upright from 1.3 to 1.94 s.
+ */
 export const CLOSE = {
-  collapse: 750,
-  cone: [450, 950],
-  flip: [850, 1450],
+  collapse: 1200,
+  cone: [900, 1400],
+  flip: [1300, 1940],
 } as const;
 export const OPEN_MS = OPEN.asm[1];
 export const CLOSE_MS = CLOSE.flip[1];
 
-/** The token alone, face-on: no beam, no her. */
+/** The token alone, face-on and upright: no beam, none of her. */
 export const CLOSED: Projector = { press: 0, flip: 0, cone: 0, asm: 0 };
+
+/**
+ * The close at c ms from the press, from the projector it began on (`AWAKE`, or a wake or an open
+ * still playing): each part runs from where it was to the token's rest, on the close's own beats.
+ */
+export function closing(c: number, from: Projector): Projector {
+  if (c < 0) return from;
+  if (c >= CLOSE_MS) return CLOSED;
+  const turn = easeIO(ramp(c, CLOSE.flip[0], CLOSE.flip[1]));
+  return {
+    press: 0,
+    flip: from.flip * (1 - turn),
+    cone: from.cone * (1 - ramp(c, CLOSE.cone[0], CLOSE.cone[1])),
+    asm: from.asm * (1 - ramp(c, 0, CLOSE.collapse)),
+  };
+}
+
+/**
+ * The token toggle's open replays the wake from the press: its clock starts this long before the
+ * press, so the upright coin it leaves is the wake's own face-on coin, it presses at once, lies
+ * down, its beam rises and she assembles asleep and wakes.
+ */
+export const OPEN_LEAD = T_PRESS;
 
 /**
  * The projector at t in an episode (awake when none). `still` settles it at once: an open shows
@@ -158,14 +252,8 @@ export function episodeProjector(
       asm: ramp(a, OPEN.asm[0], OPEN.asm[1]),
     };
   }
-  if (still || a >= CLOSE_MS) return CLOSED;
-  if (a < 0) return AWAKE;
-  return {
-    press: 0,
-    flip: 1 - easeIO(ramp(a, CLOSE.flip[0], CLOSE.flip[1])),
-    cone: 1 - ramp(a, CLOSE.cone[0], CLOSE.cone[1]),
-    asm: 1 - smooth(ramp(a, 0, CLOSE.collapse)),
-  };
+  if (still) return CLOSED;
+  return closing(a, ep.from ?? AWAKE);
 }
 
 /**

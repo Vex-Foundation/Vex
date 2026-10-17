@@ -1,12 +1,15 @@
 /**
- * Branch: error.port_collision — Compose detected a port already in use
+ * Branch: error.port_collision - Compose detected a port already in use
  * (typical: Postgres :5432 already running on host, or a stale Vex
  * stack from a previous install holding :27432). Generic conflicts retain
  * manual guidance; inspect-authorized previous Vex containers get an explicit
  * stop-only action whose success automatically retries compose startup.
  */
 
+import type { JSX } from "react";
+
 import { Button } from "../../../../components/ui/button.js";
+import { ErrorCallout } from "../../../../components/ui/error-callout.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { OpenLogsLink } from "../../../../components/common/OpenLogsLink.js";
 
@@ -28,31 +31,27 @@ export function PortCollisionBody({
   onRetry,
 }: PortCollisionBodyProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <SetupStatusCard
         tone="error"
-        word="Blocked"
         title="Port already in use"
         detail={message}
       />
       {previousInstallHoldingPorts ? (
         <>
-          <p className="text-xs leading-relaxed text-ink-secondary">
+          <p className="vex-fr-text">
             Containers from a previous Vex installation are holding the ports.
             Vex will stop only the inspected containers publishing the required
             ports.
           </p>
           {stopPreviousInstallError !== null ? (
-            <p className="text-xs text-[var(--color-danger)]" role="alert">
-              {stopPreviousInstallError}
-            </p>
+            <ErrorCallout compact role="alert" title={stopPreviousInstallError} />
           ) : null}
           <Button
             variant="ink"
-            size="lg"
-            className="w-full"
             disabled={stoppingPreviousInstall}
             onClick={onStopPreviousInstall}
+            className="w-[420px] max-w-full"
           >
             {stoppingPreviousInstall
               ? "Stopping previous Vex services…"
@@ -61,17 +60,17 @@ export function PortCollisionBody({
         </>
       ) : (
         <>
-          <p className="text-xs leading-relaxed text-ink-secondary">
+          <p className="vex-fr-text">
             Stop the conflicting process (another Postgres or Vex install may be
             holding the port) and click Try again. Vex needs free local ports for
             the bundled Postgres + embeddings runtime.
           </p>
-          <Button size="lg" className="w-full" onClick={onRetry}>
+          <Button onClick={onRetry} className="w-[420px] max-w-full">
             Try again
           </Button>
         </>
       )}
-      <OpenLogsLink />
-    </div>
+      <OpenLogsLink className="vex-fr-link" />
+    </>
   );
 }

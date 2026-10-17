@@ -1,5 +1,5 @@
 /**
- * EmbeddingStep inline form alerts — validation / server / advance error
+ * EmbeddingStep inline form alerts - validation / server / advance error
  * lines rendered below the fields. Extracted VERBATIM from
  * `EmbeddingStep.tsx` (god-file split); zero behavior change.
  *

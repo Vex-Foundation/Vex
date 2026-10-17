@@ -1,54 +1,57 @@
 /**
- * Open page section for each wizard step — AMENDMENT A3 (boxless
- * composition): the screen-level card is retired. Content sits DIRECTLY
- * on the hosting surface (the stage's paper leaf in the wizard, the
- * Settings sheet in the shell): quiet hairline icon badge + serif
- * sentence-case title +
- * one human description, then the step content in flow, then actions
- * right-aligned in flow, then a quiet trailing meta line. Separation is
- * spacing and at most a hairline divider — no borders-as-boxes, no
- * grain overlay, no inner scroll well (the page scrolls).
+ * One wizard step's page (docs/design/R3-MINIMAL.md sections 9.6 and 10.3).
+ * The same component draws the step in both hosts (`wizard-host.ts`):
  *
- * Three important contracts:
+ *   wizard    what the shell stands above the title (`before`), the serif
+ *             title (44, blue), the lead (15, ink 2), the step's body (column
+ *             max 600), and a footer at the window's foot: the privacy link at
+ *             the left, the step's actions at the right (the one primary
+ *             action last).
+ *   settings  the Settings section head: the step's title (or the section's
+ *             own name where the title is a state sentence the body repeats)
+ *             at 22 / 500 with the section's status word and swatch beside
+ *             it, the lead (14); the body; the actions at the right; the
+ *             privacy link under them. No icon, no serif.
+ *
+ * Contracts kept:
  *
  *   1. `panelDataAttr` carries the exact `data-vex-wizard-${kind}={value}`
- *      attribute that the step's tests rely on (grep
- *      `vex-app/src/renderer/features/wizard/steps/**\/__tests__/`).
- *      It is a discriminated union so a typo in either the key or
- *      the value fails at compile time (codex round 2 BLOCKED #1).
+ *      attribute the step tests select on; a discriminated union, so a typo
+ *      in either part fails at compile time.
+ *   2. When the step needs a `<form>`, the form wraps BOTH the body AND the
+ *      actions, so the submit button stays a descendant of `<form>` (Enter
+ *      submits; the testing-library form selectors hold). In the wizard the
+ *      footer is inside the form and sticks to the window's foot.
+ *   3. The status word in Settings comes from `settingsSectionStatus`, the
+ *      one pure source the Settings nav reads, from the env read the step
+ *      holds (`env`), so the head and the nav row say the same word.
  *
- *   2. When the step needs a `<form>` (KeystoreStep, ApiKeysStep,
- *      EmbeddingStep, AgentCoreStep, ProviderStep), the form wraps
- *      BOTH the body AND the actions row so the submit button stays a
- *      descendant of `<form>` — preserves Enter-submit and the
- *      existing testing-library form selectors (codex round 1 BLOCKED #2).
+ * Motion is NOT applied here: the shell owns `AnimatePresence` keyed by the
+ * current step; this is a plain element so transitions are not doubled.
  *
- *   3. The trailing meta ("Step X / 7 · Your data stays yours →") is
- *      derived from `panelDataAttr.kind` via a typed `PANEL_KIND_TO_STEP_ID`
- *      map; the step counter renders only in the first-pass wizard flow
- *      (`flowMode`), never when the same form hosts in Settings/back-edit.
- *
- * Motion is NOT applied here — the outer `WizardShell` owns
- * `AnimatePresence` keyed by the current step id; this section is a
- * plain `<div>` so transitions are not double-wrapped.
+ * The stylesheet (`styles/global-css/wizard.css`) loads from `globals.css`,
+ * after `settings.css`, because the forms render in both hosts.
  */
 
-import type { ComponentType, FormEvent, JSX, ReactNode } from "react";
+import type { FormEvent, JSX, ReactNode } from "react";
 
-import {
-  IconArrowUpRight,
-  type GlyphProps,
-} from "../../components/icons/index.js";
-import {
-  WIZARD_STEP_IDS,
-  type WizardStepId,
-} from "@shared/schemas/wizard.js";
+import type { EnvState } from "@shared/schemas/onboarding.js";
+import type { WizardStepId } from "@shared/schemas/wizard.js";
 import { VEX_PRIVACY_DOC_LABEL, VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 
+import { Swatch } from "../../components/ui/swatch.js";
 import type { WizardFlowMode } from "../../lib/api/wizard.js";
-import { cn } from "../../lib/utils.js";
-
-type IconDescriptor = ComponentType<GlyphProps>;
+// The Settings nav's status words and the section rows: the step head in
+// Settings reads the same pure derivation, so the head and the nav row can
+// never disagree.
+import {
+  SETTINGS_SECTIONS,
+  settingsSectionStatus,
+  settingsStatusSwatch,
+  type SectionMeta,
+  type SettingsStatus,
+} from "../appShell/screens/SettingsScreen/settings-sections.js";
+import { useWizardHost } from "./wizard-host.js";
 
 export type WizardPanelDataAttr =
   | { readonly kind: "keystore"; readonly value: "form" | "skip" }
@@ -63,15 +66,13 @@ export interface WizardStepPanelFormProps {
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   readonly noValidate?: boolean;
   /**
-   * Some steps (currently only ProviderStep) carry an additional
-   * `data-vex-wizard-provider-form="openrouter"` attribute on their
-   * `<form>`. Forwarded verbatim onto the form element when present.
+   * ProviderStep carries `data-vex-wizard-provider-form="openrouter"` on its
+   * `<form>`; forwarded verbatim when present.
    */
   readonly providerFormAttr?: "openrouter";
 }
 
 export interface WizardStepPanelProps {
-  readonly icon: IconDescriptor;
   readonly title: string;
   readonly description: ReactNode;
   readonly panelDataAttr: WizardPanelDataAttr;
@@ -79,22 +80,29 @@ export interface WizardStepPanelProps {
   readonly children: ReactNode;
   readonly formProps?: WizardStepPanelFormProps;
   /**
-   * The hosting flow. In `"back-edit"` the trailing meta omits the
-   * "Step X / 7" counter — the same form components host inside the
-   * in-shell Settings screen (and Review back-edit), where a wizard
-   * step counter is meaningless. Defaults to the wizard journey.
+   * The hosting flow. Without a host context (`wizard-host.ts`), `back-edit`
+   * draws the Settings composition and `first-pass` the wizard's. Defaults to
+   * the wizard journey.
    */
   readonly flowMode?: WizardFlowMode;
+  /**
+   * Settings: the env read the section's status word derives from. Omitted,
+   * or null while it loads, the word is the derivation's own hyphen (the nav
+   * shows the same).
+   */
+  readonly env?: EnvState | null;
+  /**
+   * Settings: the head's title and lead when the step's own title is a state
+   * sentence the body repeats (the vault's "Master password already
+   * configured" becomes the section's name and hint, `settingsSectionFor`).
+   */
+  readonly settingsTitle?: string;
+  readonly settingsDescription?: ReactNode;
 }
 
 type PanelKind = WizardPanelDataAttr["kind"];
 
-/**
- * Typed map from `WizardPanelDataAttr.kind` (lowercase / kebab-ish
- * naming used in the test attrs) to the canonical `WizardStepId`
- * (camelCase, from `WIZARD_STEP_IDS`). Keeping both forms in one
- * place avoids ad-hoc string mangling at the call site.
- */
+/** The panel's kind as the canonical step id. */
 const PANEL_KIND_TO_STEP_ID: Readonly<Record<PanelKind, WizardStepId>> = {
   keystore: "keystore",
   wallets: "wallets",
@@ -105,61 +113,37 @@ const PANEL_KIND_TO_STEP_ID: Readonly<Record<PanelKind, WizardStepId>> = {
   review: "review",
 };
 
-const TOTAL_WIZARD_STEPS = WIZARD_STEP_IDS.length;
-
-function stepIndexFor(kind: PanelKind): number {
-  return WIZARD_STEP_IDS.indexOf(PANEL_KIND_TO_STEP_ID[kind]);
+/** The Settings section a step hosts (its name, hint and id); none for Review. */
+export function settingsSectionFor(kind: PanelKind): SectionMeta | undefined {
+  const stepId = PANEL_KIND_TO_STEP_ID[kind];
+  return SETTINGS_SECTIONS.find((meta) => meta.stepId === stepId);
 }
 
-/* Quiet hairline icon circle — a glyph badge, not an accent tile. The
- * serif title is the section's one statement; everything else stays
- * quiet. */
-const ICON_CIRCLE_CHROME = cn(
-  "flex h-10 w-10 shrink-0 items-center justify-center",
-  "border border-[var(--color-border)] text-ink-primary",
-);
+/** The status word of the Settings section a step hosts; null for Review. */
+export function settingsStatusForStep(
+  kind: PanelKind,
+  env: EnvState | null,
+): SettingsStatus | null {
+  const section = settingsSectionFor(kind);
+  if (section === undefined) return null;
+  return settingsSectionStatus(section.id, env);
+}
 
-const META_CHROME = cn(
-  "flex items-center gap-3 vex-micro text-ink-tertiary",
-);
-
-function TrailingMeta({
-  kind,
-  showStepCount,
-}: {
-  kind: PanelKind;
-  showStepCount: boolean;
-}): JSX.Element {
-  const stepIndex = stepIndexFor(kind);
+function PrivacyLink({ className }: { readonly className: string }): JSX.Element {
   return (
-    <div className={META_CHROME}>
-      {showStepCount ? (
-        <>
-          <span>
-            Step {stepIndex + 1} / {TOTAL_WIZARD_STEPS}
-          </span>
-          <span aria-hidden>·</span>
-        </>
-      ) : null}
-      <a
-        href={VEX_PRIVACY_DOC_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={cn(
-          "inline-flex items-center gap-1 text-ink-secondary transition-colors",
-          "hover:text-ink-primary",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-        )}
-      >
-        {VEX_PRIVACY_DOC_LABEL}
-        <IconArrowUpRight size={10} />
-      </a>
-    </div>
+    <a
+      href={VEX_PRIVACY_DOC_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+    >
+      {VEX_PRIVACY_DOC_LABEL}
+      <span aria-hidden="true">↗</span>
+    </a>
   );
 }
 
 export function WizardStepPanel({
-  icon: Icon,
   title,
   description,
   panelDataAttr,
@@ -167,81 +151,94 @@ export function WizardStepPanel({
   children,
   formProps,
   flowMode = "first-pass",
+  env,
+  settingsTitle,
+  settingsDescription,
 }: WizardStepPanelProps): JSX.Element {
+  const host = useWizardHost(flowMode);
   const dataAttrKey = `data-vex-wizard-${panelDataAttr.kind}` as const;
-  // Mapping the discriminated union to a single dynamic-key spread keeps
-  // the rest of the component identical between the seven steps; the
-  // type system guarantees the (kind, value) pair is valid.
+  // One dynamic-key spread keeps the composition identical between the seven
+  // steps; the type system guarantees the (kind, value) pair is valid.
   const dataAttrs = { [dataAttrKey]: panelDataAttr.value };
+  const formExtraAttrs = formProps?.providerFormAttr
+    ? { "data-vex-wizard-provider-form": formProps.providerFormAttr }
+    : {};
 
-  // `vex-step-*` are STYLE HOOKS, not styles: they carry declarations only
-  // inside the `[data-vex-gate]` scope (global-css/chronos-gate.css), where
-  // the step reads as the d8 leaf: no glyph badge, the 56px serif title,
-  // the 15px lead, actions left-aligned, no trailing meta (the stage shows
-  // the step and the privacy link). In Settings, which renders this same
-  // component, they match nothing, so the composition below is what ships
-  // there. Keep the Tailwind classes as the Settings truth.
-  const headerNode = (
-    <header className="vex-step-header flex items-start gap-4">
-      <span aria-hidden className={cn("vex-step-icon", ICON_CIRCLE_CHROME)}>
-        <Icon size={20} />
-      </span>
-      <div className="flex flex-col gap-1.5 pt-0.5">
-        <h1 className="vex-step-title font-serif text-2xl font-normal leading-tight text-ink-primary">
-          {title}
-        </h1>
-        <p className="vex-step-lede text-sm leading-relaxed text-ink-secondary">
-          {description}
-        </p>
+  if (host.host === "settings") {
+    const status = settingsStatusForStep(panelDataAttr.kind, env ?? null);
+    const actions = footer ? <div className="vex-wzs__actions">{footer}</div> : null;
+    return (
+      <div {...dataAttrs} className="vex-wzs">
+        <header className="vex-set__head" data-vex-settings-head>
+          <h2 className="vex-set__title">
+            {settingsTitle ?? title}
+            {status === null ? null : (
+              <span className="vex-set__stw" data-vex-settings-head-status>
+                <Swatch state={settingsStatusSwatch(status.tone)} size={10} />
+                {status.word}
+              </span>
+            )}
+          </h2>
+          <p className="vex-set__lead">{settingsDescription ?? description}</p>
+        </header>
+        {formProps ? (
+          <form
+            onSubmit={formProps.onSubmit}
+            noValidate={formProps.noValidate ?? false}
+            {...formExtraAttrs}
+            className="flex flex-col"
+          >
+            {children}
+            {actions}
+          </form>
+        ) : (
+          <>
+            {children}
+            {actions}
+          </>
+        )}
+        <PrivacyLink className="vex-wzs__meta" />
       </div>
+    );
+  }
+
+  const head = (
+    <header className="vex-wzp__head">
+      {host.before}
+      <h1 className="vex-wzp__title">{title}</h1>
+      <p className="vex-wzp__lead">{description}</p>
     </header>
   );
-
-  // Same hook contract as the header: right-aligned in Settings,
-  // left-aligned under the title on the pre-shell leaf.
-  const actionsNode = footer ? (
-    <div className="vex-step-actions mt-8 flex items-center justify-end gap-3">
-      {footer}
-    </div>
-  ) : null;
-
-  const metaNode = (
-    <div className="vex-step-meta mt-6 border-t border-[var(--color-border)] pt-4">
-      <TrailingMeta
-        kind={panelDataAttr.kind}
-        showStepCount={flowMode !== "back-edit"}
-      />
+  const foot = (
+    <div className="vex-wzp__foot">
+      <PrivacyLink className="vex-wzp__meta" />
+      <span className="vex-wzp__sp" />
+      {footer ? <div className="vex-wzp__actions">{footer}</div> : null}
     </div>
   );
 
   if (formProps) {
-    const { onSubmit, noValidate, providerFormAttr } = formProps;
-    const formExtraAttrs = providerFormAttr
-      ? { "data-vex-wizard-provider-form": providerFormAttr }
-      : {};
     return (
-      <div {...dataAttrs} className="flex w-full flex-col">
-        {headerNode}
+      <div {...dataAttrs} className="vex-wzp">
+        {head}
         <form
-          onSubmit={onSubmit}
-          noValidate={noValidate ?? false}
+          onSubmit={formProps.onSubmit}
+          noValidate={formProps.noValidate ?? false}
           {...formExtraAttrs}
-          className="mt-7 flex flex-col"
+          className="vex-wzp__form"
         >
-          {children}
-          {actionsNode}
+          <div className="vex-wzp__content">{children}</div>
+          {foot}
         </form>
-        {metaNode}
       </div>
     );
   }
 
   return (
-    <div {...dataAttrs} className="flex w-full flex-col">
-      {headerNode}
-      <div className="mt-7 flex flex-col">{children}</div>
-      {actionsNode}
-      {metaNode}
+    <div {...dataAttrs} className="vex-wzp">
+      {head}
+      <div className="vex-wzp__content">{children}</div>
+      {foot}
     </div>
   );
 }

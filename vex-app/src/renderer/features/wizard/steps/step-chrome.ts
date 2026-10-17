@@ -1,9 +1,9 @@
 /**
- * Shared status chrome for wizard step interiors (docs/design/V10-SPREAD.md
- * section 1: status by fill, never by colour).
+ * Shared status chrome for wizard step interiors (docs/design/R3-MINIMAL.md
+ * sections 1.6 and 12: status by fill, never by colour; failures are ink).
  *
  * Warnings and errors are the RISK CALLOUT: a 1.5px ink frame with a
- * hatched left band and ink type (`.vex-callout`, global-css/onboarding.css),
+ * hatched left band and ink type (`.vex-callout`, ui-primitives/indicators.css),
  * never a blue or a status hue and never a filled box. Calm/success states
  * render as plain text (no frame at all). ONE source for the recipe so the
  * ~15 alert sites across the steps cannot drift apart. The callout sets its

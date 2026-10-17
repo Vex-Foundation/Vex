@@ -1,7 +1,7 @@
 /**
  * Micro-label register contract (R3, docs/design/R3-MINIMAL.md section 1).
  *
- * `.vex-micro-label` in `styles/global-css/landing-motifs.css` is the single
+ * `.vex-micro-label` in `styles/global-css/type.css` is the single
  * owner of the app-wide label stamp, with `.vex-micro` (the caption) and
  * `.vex-eyebrow` (the section and field label) beside it. R3 sets all three
  * in Instrument Sans, in sentence case, at 12 or 13px with no caps tracking:
@@ -29,7 +29,7 @@ import { describe, expect, it } from "vitest";
 const read = (name: string): string =>
   readFileSync(join(process.cwd(), "src/renderer/styles/global-css", name), "utf8");
 
-const SHEET = read("landing-motifs.css");
+const SHEET = read("type.css");
 const TOKENS = read("tokens.css");
 const BASE = read("base.css");
 const FONTS = read("fonts.css");

@@ -1,14 +1,16 @@
 /**
- * Branch: error — `database.migrate()` resolved to
+ * Branch: error - `database.migrate()` resolved to
  * `err({ code: "data.migration_failed", details: { failedAt? } })`.
- * Surfaces the message + the failed migration's version/file (if the
- * details payload contained the metadata, via the `extractFailedAt`
- * type guard). The "Show recent applied" disclosure exposes the
- * migrations that DID complete before the failure (from progress
- * event history captured by the orchestrator — bounded buffer).
+ * The ink callout carries the message; the failed migration's version/file
+ * (if the details payload contained the metadata, via the `extractFailedAt`
+ * type guard) stands under it. The "Show N applied before failure"
+ * disclosure exposes the migrations that DID complete before the failure
+ * (from progress event history captured by the orchestrator - bounded
+ * buffer) in the log block.
  */
 
-import { useState } from "react";
+import { useState, type JSX } from "react";
+
 import { Button } from "../../../../components/ui/button.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { OpenLogsLink } from "../../../../components/common/OpenLogsLink.js";
@@ -29,17 +31,17 @@ export function ErrorBody({
 }: ErrorBodyProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <SetupStatusCard tone="error" title="Migration failed" detail={message} />
 
       {failedAt !== null ? (
-        <p className="text-xs leading-relaxed text-ink-secondary">
+        <p className="vex-fr-text">
           Failed at migration{" "}
-          <span className="font-mono text-ink-primary">
+          <span className="vex-num font-mono text-ink-primary">
             v{failedAt.version}
           </span>{" "}
           ·{" "}
-          <code className="font-mono text-ink-primary">
+          <code className="vex-num font-mono text-ink-primary">
             {failedAt.file}
           </code>
         </p>
@@ -47,24 +49,26 @@ export function ErrorBody({
 
       {appliedBeforeFailure.length > 0 ? (
         expanded ? (
-          <pre className="max-h-40 overflow-auto border border-[var(--color-border)] bg-gate-code p-3 font-code text-xs leading-relaxed text-ink-primary">
+          <pre className="vex-fr-code">
             <code>{appliedBeforeFailure.join("\n")}</code>
           </pre>
         ) : (
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="self-start font-mono text-xs text-[var(--vex-accent-text,var(--color-accent-hover))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+            className="vex-fr-link"
           >
             Show {appliedBeforeFailure.length} applied before failure
           </button>
         )
       ) : null}
 
-      <Button size="lg" className="w-full" onClick={onRetry}>
-        Retry
-      </Button>
-      <OpenLogsLink />
-    </div>
+      <div className="vex-fr-acts">
+        <Button onClick={onRetry} className="w-[420px] max-w-full">
+          Retry
+        </Button>
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
+    </>
   );
 }

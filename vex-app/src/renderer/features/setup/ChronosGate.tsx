@@ -11,8 +11,9 @@
  * stage to shell crossfade); every other handoff stands on the same plate, so only the gate's
  * type fades and the picture never moves. Reduced motion: no hold, and the gate leaves at once.
  *
- * Layering: `z-50`, mounted BELOW `UpdateLayer` (`z-[60]`) so a critical
- * update toast stays visible over the boot ritual.
+ * Layering: `z-50`, below the floating update card (`.vex-upd[data-floating]`,
+ * z 60, projected by `UpdateLayer`) so a critical update stays visible over
+ * the boot ritual.
  */
 
 import { useEffect, useState, type JSX } from "react";

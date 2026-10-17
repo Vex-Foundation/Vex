@@ -5,7 +5,7 @@
  *
  * jsdom resolves no cascade and has no WebGL, so the claims the terminal
  * surface makes are provable only here. The V10 pane is opaque: the field
- * paints the whole reading surface (docs/design/V10-SPREAD.md section 1), with
+ * paints the whole reading surface (docs/design/R3-MINIMAL.md section 9.5), with
  * no backdrop under the glyphs, so what is measured is:
  *
  *  - THE OPAQUE PANE. The pane carries no backdrop filter and its background is
@@ -289,7 +289,7 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
 
   // THE SCROLLBAR (owner review 2026-09-04: "smaller, smoother"; square
   // since the V10 spread, which allows no radius anywhere,
-  // docs/design/V10-SPREAD.md section 1). The `.vex-scroll` shape on xterm's
+  // docs/design/R3-MINIMAL.md, rules). The `.vex-scroll` shape on xterm's
   // slider, the vestigial viewport gutter gone, the colour from the app's
   // ladder, VS Code's reveal/hide, and the fade collapsed under reduced motion.
   expect(scrollbar.viewportGutter).toBe(0);

@@ -12,7 +12,7 @@ export interface WalletsCardProps {
 // Display-only review card: shows each chain's public address (copyable
 // inline) and an Edit affordance. Private-key export lives ONLY in
 // Settings' ExportPrivateKeySection since Decision C retired the
-// reconfigure-wizard door — the wizard review never exposes it.
+// reconfigure-wizard door - the wizard review never exposes it.
 export function WalletsCard({
   envState,
   onEdit,

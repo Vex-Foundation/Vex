@@ -1,21 +1,21 @@
 /**
- * Presentational form sections for the New-session modal (extracted from
- * `SessionCreator.tsx`). Each section is purely presentational — it renders
- * the controlled fields/grids the {@link SessionCreator} owns and threads
- * every value + change handler in through typed props. No hooks, no fetches,
- * no local state: state ownership stays with the parent component.
+ * Presentational form sections for the new-session form (extracted from
+ * `SessionCreator.tsx`). Each section is purely presentational: it renders
+ * the controlled fields and grids the {@link SessionCreator} owns and threads
+ * every value and change handler in through typed props. No hooks, no
+ * fetches, no local state: state ownership stays with the parent component.
  *
- * Visual grammar (landing rebrand): every section label is a `.vex-eyebrow`
- * mono micro-label with its leading rule, the option grids are numbered
- * trust-zone cards ({@link RadioCard}), and numerals speak mono/tabular.
- * Accessibility contracts are unchanged: the Name <Label htmlFor> pairing and
- * real <fieldset>/<legend> radio groups. The submit-error line is no longer
- * here: it is `components/ui/submit-error.tsx`, a shared primitive, because the
- * Studio project dialogs render it too and were deep-importing this module.
+ * Visual grammar (docs/design/R3-MINIMAL.md section 12, the inline panel):
+ * every section label is a 13 / 500 ink 2 sentence-case line, the option
+ * grids are two square cards ({@link RadioCard}) 12 apart, the Name field is
+ * the 42 high field, and figures (the title counter, wallet addresses) speak
+ * mono. Accessibility contracts are unchanged: the Name <Label htmlFor>
+ * pairing and real <fieldset>/<legend> radio groups. The submit-error line is
+ * not here: it is `components/ui/submit-error.tsx`, a shared primitive,
+ * because the Studio project dialogs render it too.
  */
 
 import type { JSX } from "react";
-import { Ethereum, Solana } from "@thesvg/react";
 import {
   SESSION_TITLE_MAX_LENGTH,
   type SessionMode,
@@ -24,9 +24,14 @@ import {
 import { DIALOG_INITIAL_FOCUS } from "../../../components/ui/dialog.js";
 import { Input } from "../../../components/ui/input.js";
 import { Label } from "../../../components/ui/label.js";
+import { cn } from "../../../lib/utils.js";
 import { WalletSelect, type WalletSelectOption } from "../SessionWalletSelect.js";
+import { DIALOG_HINT_CLASS, DIALOG_LABEL_CLASS } from "./dialog-fields.js";
 import { MODE_OPTIONS, PERMISSION_OPTIONS } from "./options.js";
 import { RadioCard } from "./RadioCard.js";
+
+/** A section's legend: the label line, sentence case, 7 above its control. */
+const LEGEND_CLASS = cn(DIALOG_LABEL_CLASS, "mb-[7px] p-0");
 
 interface NameFieldProps {
   readonly name: string;
@@ -40,17 +45,15 @@ export function NameField({
   nameRef,
 }: NameFieldProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-2.5">
-      <Label htmlFor="vex-session-name" className="vex-eyebrow">
+    <div className="flex flex-col">
+      <Label htmlFor="vex-session-name" className={cn(DIALOG_LABEL_CLASS, "mb-[7px]")}>
         Name
       </Label>
-      {/* The Input primitive is the brand field (transparent, hairline,
-       * accent focus border) — h-10 keeps this hero field's weight. */}
       <Input
         ref={nameRef}
         id="vex-session-name"
         type="text"
-        // Where the New-session dialog opens (`DialogContent` reads this
+        // Where the new-session form opens (`DialogContent` reads this
         // after `showModal()`): the field the user came here to fill in.
         {...DIALOG_INITIAL_FOCUS}
         required
@@ -58,15 +61,12 @@ export function NameField({
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
         placeholder="Give this session a short name."
-        className="h-10"
+        className="h-[42px]"
       />
-      <div className="flex items-center justify-between gap-3 text-xs text-ink-tertiary">
+      <div className={cn("mt-1.5 flex items-center justify-between gap-3", DIALOG_HINT_CLASS)}>
         <p>The sidebar uses this as the session title.</p>
-        {/* Numerals speak mono/tabular (mirrors the ReportIssue counter). */}
-        <span
-          aria-live="polite"
-          className="font-mono text-[10px] tracking-[0.14em] tabular-nums text-ink-tertiary"
-        >
+        {/* Figures speak mono (mirrors the Report an issue counter). */}
+        <span aria-live="polite" className="vex-num shrink-0 text-ink-tertiary">
           {name.length} / {SESSION_TITLE_MAX_LENGTH}
         </span>
       </div>
@@ -84,9 +84,9 @@ export function ModeFieldset({
   onModeChange,
 }: ModeFieldsetProps): JSX.Element {
   return (
-    <fieldset className="flex flex-col gap-2.5">
-      <legend className="vex-eyebrow">Mode</legend>
-      <div className="grid grid-cols-2 gap-2">
+    <fieldset className="flex flex-col">
+      <legend className={LEGEND_CLASS}>Mode</legend>
+      <div className="grid grid-cols-2 gap-3">
         {MODE_OPTIONS.map((opt) => (
           <RadioCard
             key={opt.value}
@@ -94,7 +94,6 @@ export function ModeFieldset({
             value={opt.value}
             checked={mode === opt.value}
             onChange={() => onModeChange(opt.value)}
-            index={opt.index}
             title={opt.title}
             description={opt.description}
           />
@@ -114,9 +113,9 @@ export function PermissionFieldset({
   onPermissionChange,
 }: PermissionFieldsetProps): JSX.Element {
   return (
-    <fieldset className="flex flex-col gap-2.5">
-      <legend className="vex-eyebrow">Permission</legend>
-      <div className="grid grid-cols-2 gap-2">
+    <fieldset className="flex flex-col">
+      <legend className={LEGEND_CLASS}>Permission</legend>
+      <div className="grid grid-cols-2 gap-3">
         {PERMISSION_OPTIONS.map((opt) => (
           <RadioCard
             key={opt.value}
@@ -124,9 +123,9 @@ export function PermissionFieldset({
             value={opt.value}
             checked={permission === opt.value}
             onChange={() => onPermissionChange(opt.value)}
-            index={opt.index}
             title={opt.title}
             description={opt.description}
+            tag={opt.tag}
             caution={opt.caution}
           />
         ))}
@@ -153,17 +152,16 @@ export function WalletFieldset({
   onSolanaChange,
 }: WalletFieldsetProps): JSX.Element {
   return (
-    <fieldset className="flex flex-col gap-2.5">
-      <legend className="vex-eyebrow">Wallets</legend>
-      <p className="text-xs text-ink-tertiary">
+    <fieldset className="flex flex-col">
+      <legend className={LEGEND_CLASS}>Wallets</legend>
+      <p className={cn("-mt-0.5 mb-2", DIALOG_HINT_CLASS)}>
         Optional - pick the EVM + Solana wallet this session may use. Locked
         once the session starts; leave empty for a chat-only session.
       </p>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         <WalletSelect
           label="EVM wallet"
           caption="EVM"
-          icon={<Ethereum width={16} height={16} aria-hidden focusable={false} />}
           value={selectedEvmWalletId}
           options={evmOptions}
           onChange={onEvmChange}
@@ -171,7 +169,6 @@ export function WalletFieldset({
         <WalletSelect
           label="Solana wallet"
           caption="SOL"
-          icon={<Solana width={16} height={16} aria-hidden focusable={false} />}
           value={selectedSolanaWalletId}
           options={solanaOptions}
           onChange={onSolanaChange}

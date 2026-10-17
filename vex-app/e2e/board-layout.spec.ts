@@ -237,13 +237,17 @@ const COLUMN_LADDER: readonly {
   readonly min: number;
   readonly columns: number;
 }[] = [
-  { min: 958, columns: 3 },
-  { min: 639, columns: 2 },
+  { min: 976, columns: 3 },
+  { min: 651, columns: 2 },
   { min: 0, columns: 1 },
 ];
 
-/** The tile floor: the header's 282 inner width, 36 of padding, a 1px rule. */
-const TILE_FLOOR = 319;
+/**
+ * The tile floor: the price row's 288 inner width (287 measured at whole-pixel
+ * glyph advances, which also leaves the header's identity column 126), 36 of
+ * padding, a 1px rule.
+ */
+const TILE_FLOOR = 325;
 
 function expectedAt(container: number): { columns: number } {
   for (const step of COLUMN_LADDER) {
@@ -257,7 +261,7 @@ function seamsOf(threshold: number): readonly number[] {
   return [threshold - 1, threshold, threshold + 1, threshold - 0.02];
 }
 
-const GRID_THRESHOLDS = [320, 639, 958] as const;
+const GRID_THRESHOLDS = [326, 651, 976] as const;
 
 const WIDTHS = [800, 1000, 1280, 1366, 1440, 1920] as const;
 
@@ -296,8 +300,11 @@ test.describe("board grid geometry", () => {
   }
 
   test("picks columns from the container, not the viewport", async ({ page }) => {
-    // The defect this arc exists for: the Vex sidebar removes 256px from the
-    // CONTAINER while a viewport ladder keeps asking for the same columns.
+    // The defect this arc exists for: the Vex sidebar removes its width (256
+    // at 1440) from the CONTAINER while a viewport ladder keeps asking for the
+    // same columns. The harness lays out all three of the shell's tracks (left
+    // sidebar 264, centre, Vex 256), so at 1440 the container is 1120 with Vex
+    // hidden and 864 with it open.
     await open(page, { width: 1440, drawer: false });
     const wide = await geometry(page);
     await open(page, { width: 1440, drawer: true });
@@ -308,7 +315,8 @@ test.describe("board grid geometry", () => {
     // below what their content needs.
     expect(narrow.cardWidths[0]).toBeGreaterThanOrEqual(TILE_FLOOR);
     expect(wide.cardWidths[0]).toBeGreaterThanOrEqual(TILE_FLOOR);
-    // 1440 with Vex hidden is three tiles; the sidebar takes it to two.
+    // 1440 with Vex hidden is three tiles (C 1120); the sidebar takes it to
+    // two (C 864).
     expect(wide.tracks.length).toBe(3);
     expect(narrow.tracks.length).toBe(2);
   });
@@ -317,7 +325,7 @@ test.describe("board grid geometry", () => {
   // least room.
   for (const at of [
     { label: "with the Vex sidebar open", width: 1440, drawer: true },
-    { label: "at the tile floor", width: 1920, plate: 320 },
+    { label: "at the tile floor", width: 1920, plate: 326 },
   ] as const) {
     test(`survives the longest safety verdict landing late, ${at.label}`, async ({
       page,
@@ -370,7 +378,7 @@ test.describe("board grid geometry", () => {
 
   for (const at of [
     { label: "1440px", width: 1440 },
-    { label: "the tile floor", width: 1440, plate: 320 },
+    { label: "the tile floor", width: 1440, plate: 326 },
   ]) {
     test(`cuts no extreme figure silently at ${at.label}`, async ({ page }) => {
       // THE EXTREME CASE RUNS THE SAME ASSERTION SET AS EVERY OTHER WIDTH.
@@ -416,7 +424,7 @@ test.describe("board grid geometry", () => {
 
   for (const at of [
     { label: "1440px", width: 1440 },
-    { label: "the tile floor", width: 1440, plate: 320 },
+    { label: "the tile floor", width: 1440, plate: 326 },
   ]) {
     test(`cuts no wide-glyph ticker silently at ${at.label}`, async ({
       page,

@@ -1,8 +1,8 @@
 /**
  * Real password-strength gate for the master-password CREATION flow
  * (`KeystoreStep`, the only consumer). The local secret vault (AES-256-GCM
- * + scrypt) is protected ONLY by this password — there is no OS-keychain
- * second factor — so a weak password is the single offline-brute-force
+ * + scrypt) is protected ONLY by this password - there is no OS-keychain
+ * second factor - so a weak password is the single offline-brute-force
  * path for a disk thief. A length floor alone does not catch low-entropy
  * passwords like "aaaaaaaaaa" or "password123", so `KeystoreStep` also
  * gates submission on this real zxcvbn estimate.
@@ -16,7 +16,7 @@
  * `keystoreSetInputSchema` (the main-process floor lives in
  * `PASSWORD_CREATE_MIN`, `@shared/schemas/wizard.js`). A renderer that
  * bypassed this hook and called the IPC directly with a long-but-low-score
- * password would only weaken its own vault — self-custodial, approved
+ * password would only weaken its own vault - self-custodial, approved
  * design (see the /harness plan for this change).
  */
 

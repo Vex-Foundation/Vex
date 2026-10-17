@@ -1,5 +1,5 @@
 /**
- * chromeOptionsFor: the per-OS title bar contract (docs/design/V10-SPREAD.md section 8).
+ * chromeOptionsFor: the per-OS title bar contract (docs/design/R3-MINIMAL.md section 2.2).
  */
 
 import { describe, expect, it } from "vitest";

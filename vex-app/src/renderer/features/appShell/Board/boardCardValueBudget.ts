@@ -144,7 +144,8 @@ const ELLIPSIS_SLOTS = 2;
 
 /**
  * Price. `$0.000001230` is 12 characters and 177.84px in JetBrains Mono 26 /
- * 500 at -.03em (12 x 14.82), which is the string the tile's 280px price row
+ * 500 at -.03em (12 x 14.82; 12 x 15.22 = 182.64 where the engine rounds each
+ * advance to a whole pixel), which is the string the tile's 288px price row
  * was derived from.
  */
 export const BOARD_CARD_PRICE_MAX_SLOTS = 12;
@@ -155,7 +156,7 @@ export const BOARD_CARD_DELTA_MAX_SLOTS = 8;
 /**
  * A stat value, in JetBrains Mono 13 where a character advances 7.67px. The
  * four stats share one row at every width, so the binding column is the one
- * the floor leaves: `(282 - 3 x 6) / 4 = 66px`, and `8 x 7.67 = 61.4px` fits
+ * the floor leaves: `(288 - 3 x 6) / 4 = 67.5px`, and `8 x 7.67 = 61.4px` fits
  * it where nine characters (69px) would not. The widest value the formatters
  * can produce for a real market is 8 characters (`$1234.5B`), so a realistic
  * figure is never cut.
@@ -165,10 +166,10 @@ export const BOARD_CARD_STAT_MAX_SLOTS = 8;
 /**
  * The ticker on the line under the name, and the one PROPORTIONAL surface.
  *
- * The header spends the floor's 282px on the 34px photo, two 11px gaps, the
+ * The header spends the floor's 288px on the 34px photo, two 11px gaps, the
  * 26px key, a 6px gap and the 74px Spotlight chip, which leaves the identity
- * column 120px. A ten-slot string renders in at most ten slots of 9.1px, or
- * 91px, so the budget keeps the ticker inside its own column with 29px to
+ * column 126px. A ten-slot string renders in at most ten slots of 9.1px, or
+ * 91px, so the budget keeps the ticker inside its own column with 35px to
  * spare for the separator and the chain name. The chain name is what concedes
  * when a ten-slot ticker meets a long chain (it ellipsizes, whole in its
  * `title` and in the disclosure); the ticker itself is never cut by CSS.

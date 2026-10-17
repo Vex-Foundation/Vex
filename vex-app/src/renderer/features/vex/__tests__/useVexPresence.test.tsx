@@ -240,6 +240,8 @@ describe("an open chat", () => {
     expect(result.current.state).toBe("working");
     expect(result.current.word).toBe("Working");
     expect(result.current.timerStartedAt).toBe(5_000);
+    // The turn island speaks a live turn, so the state word's announcer stays quiet.
+    expect(result.current.live).toBe(true);
     expect(result.current.narration).toBe(
       "Calling Wallet balances to answer “What is my ETH balance?”",
     );
@@ -298,6 +300,8 @@ describe("an open chat", () => {
     const { result } = present();
     expect(result.current.state).toBe("working");
     expect(result.current.timerStartedAt).toBeNull();
+    // No turn is live: the announcer is the one that says it.
+    expect(result.current.live).toBe(false);
   });
 
   it("lists a mission that needs a decision under Needs you, and keeps Ready", () => {

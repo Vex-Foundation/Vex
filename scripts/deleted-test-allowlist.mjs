@@ -147,6 +147,31 @@ export const DELETED_TEST_ALLOWLIST = [
     reason: "UpdateToastSurface.tsx was deleted: the update is a card in the left sidebar and no longer rides the notification model (R3 wave 4, W4-6); also covered by UpdateLayer.test.tsx.",
     coveredBy: "vex-app/src/renderer/features/updates/__tests__/update-card.test.tsx",
   },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/PrintPlate.test.tsx",
+    reason: "PrintPlate.tsx (the eagle print plate and its flock layer) was deleted: the left page and the pre-shell stage it furnished are gone and the K2 hologram plate replaced it (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/VexPortraitPlate.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/flock-engine.test.ts",
+    reason: "flock-engine.ts (the eagle and far birds on a canvas) was deleted with the plate; the K2 engine draws Vex now (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/components/vex/k2/__tests__/VexK2.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/agent-state.test.ts",
+    reason: "agent-state.ts (the eagle's five-state desk signal) was deleted; the presence model's VexState replaced it (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/vex-state.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/fake-canvas.ts",
+    reason: "A test helper used only by flock-engine.test.ts, deleted with it (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/components/vex/k2/__tests__/k2-poses.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/components/common/__tests__/StrengthMeter.test.tsx",
+    reason: "StrengthMeter.tsx was deleted: KeystoreStep was its only consumer and now draws the wizard-local R3 four-cell meter (R3 wave 5, W5-2).",
+    coveredBy: "vex-app/src/renderer/features/wizard/steps/keystore/__tests__/PasswordStrength.test.tsx",
+  },
 ];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(

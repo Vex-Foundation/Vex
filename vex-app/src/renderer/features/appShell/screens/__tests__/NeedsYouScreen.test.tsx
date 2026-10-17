@@ -910,13 +910,16 @@ describe("NeedsYouScreen: a decision leaves the inbox", () => {
 });
 
 describe("NeedsYouScreen: closing", () => {
-  it("the close key asks the host to close and decides nothing", () => {
+  it("draws no close key of its own: the title bar carries it, and an open page decides nothing", () => {
+    // R3 (W3-5): pages draw no crumb or close row; the title bar's
+    // "Close Needs you" (RunningHead.test.tsx, "the page close key") and
+    // Escape (below) are the ways out.
     const onClose = vi.fn();
     listed(send());
     renderPage(null, onClose);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close Needs you" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Close Needs you" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
     expect(mockApprove).not.toHaveBeenCalled();
     expect(mockReject).not.toHaveBeenCalled();
   });

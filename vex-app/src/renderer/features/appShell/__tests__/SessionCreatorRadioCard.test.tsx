@@ -1,8 +1,10 @@
 /**
- * RadioCard (New-session modal grids) — pins the tokens-v2 selection law:
- * the checked card is marked by the accent trust bar (check-not-fill), the
- * control stays a real native radio for AT, and selection never restyles
- * the title away from primary ink (theme-safe in chronos AND celeris).
+ * RadioCard (new-session form grids, Studio project dialogs) - pins the R3
+ * selection law (docs/design/R3-MINIMAL.md section 12): the checked card is
+ * marked by the solid swatch and the 1.5px blue frame (a state is a fill, not
+ * a wash), the control stays a real native radio for AT, and selection never
+ * restyles the title away from primary ink (theme-safe in chronos AND
+ * celeris).
  */
 
 import { describe, expect, it } from "vitest";
@@ -19,16 +21,15 @@ function Grid(): JSX.Element {
         value="a"
         checked={value === "a"}
         onChange={() => setValue("a")}
-        index="01"
         title="Chat"
         description="Talk first"
+        tag="Funds require approval"
       />
       <RadioCard
         name="mode"
         value="b"
         checked={value === "b"}
         onChange={() => setValue("b")}
-        index="02"
         title="Mission"
         description="Run autonomously"
         caution
@@ -48,19 +49,51 @@ describe("SessionCreator RadioCard", () => {
     expect((radios[0] as HTMLInputElement).checked).toBe(false);
   });
 
-  it("marks selection with the accent trust bar only on the checked card (check-not-fill law)", () => {
+  it("marks selection with the solid swatch and the blue frame on the checked card only", () => {
     const { container } = render(<Grid />);
-    // The marker is the single accent-filled bar element; unchecked cards draw none.
-    expect(container.querySelectorAll(".bg-accent-primary")).toHaveLength(1);
+    const cards = Array.from(container.querySelectorAll("[data-vex-radio-card]"));
+    expect(cards).toHaveLength(2);
+    const swatchStates = (): (string | null)[] =>
+      cards.map((card) => card.querySelector("[data-s]")?.getAttribute("data-s") ?? null);
+
+    expect(swatchStates()).toEqual(["done", "idle"]);
+    expect(cards[0]?.hasAttribute("data-checked")).toBe(true);
+    expect(cards[0]?.className).toContain("border-accent-primary");
+    expect(cards[1]?.hasAttribute("data-checked")).toBe(false);
+    expect(cards[1]?.className).not.toContain("border-accent-primary");
+
     fireEvent.click(screen.getByText("Mission"));
-    expect(container.querySelectorAll(".bg-accent-primary")).toHaveLength(1);
+    expect(swatchStates()).toEqual(["idle", "done"]);
+    expect(cards[1]?.hasAttribute("data-checked")).toBe(true);
   });
 
-  it("caution register colors only the checked caution card's consequence line", () => {
+  it("draws square cards with no wash, no ring and no ordinal", () => {
+    const { container } = render(<Grid />);
+    const html = container.innerHTML;
+    expect(html).not.toContain("rounded");
+    expect(html).not.toContain("ring-");
+    expect(html).not.toContain("bg-accent");
+  });
+
+  it("keeps the title in primary ink whichever card is checked", () => {
     render(<Grid />);
-    // Unchecked caution card: consequence line stays muted ink.
-    expect(screen.getByText("Run autonomously").className).not.toContain("text-warning");
+    const title = (): string => screen.getByText("Chat").className;
+    expect(title()).toContain("text-ink-primary");
     fireEvent.click(screen.getByText("Mission"));
-    expect(screen.getByText("Run autonomously").className).toContain("text-warning");
+    expect(title()).toContain("text-ink-primary");
+  });
+
+  it("shows the quiet tag beside the title", () => {
+    render(<Grid />);
+    expect(screen.getByText("Funds require approval")).toBeTruthy();
+  });
+
+  it("caution register steps only the checked caution card's consequence line up to primary ink", () => {
+    render(<Grid />);
+    // Unchecked caution card: the consequence line stays ink 2.
+    expect(screen.getByText("Run autonomously").className).toContain("text-ink-secondary");
+    fireEvent.click(screen.getByText("Mission"));
+    expect(screen.getByText("Run autonomously").className).toContain("text-ink-primary");
+    expect(screen.getByText("Run autonomously").className).not.toContain("text-warning");
   });
 });

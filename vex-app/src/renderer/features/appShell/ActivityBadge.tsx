@@ -2,7 +2,7 @@
  * ACTIVITY BADGE — the single chip grammar for "what did the agent DO here?"
  * across the shell (Agent Scan renderer round).
  *
- * Before this module the same hairline/mono-9px/tracking-[0.14em] chip was
+ * Before this module the same hairline chip was
  * inlined three separate times (TokenHistoryScreen's `entryStamp`,
  * MovesBlock's `sideStamp`, PremiumBadge's own tone table) — each with its own
  * vocabulary, so the SAME on-chain event read as `SPOT_SWAP · BUY` in one
@@ -23,8 +23,8 @@
  * fields, but a 9px chip is not the place to find out one of them changed.
  *
  * THE VISUAL LAW (owner decree, live-build review): every KIND badge is a
- * SOLID cobalt chip — `--vex-accent` fill, `--vex-accent-contrast` ink, mono
- * uppercase — on every surface that shows activity (Agent Scan, token
+ * SOLID cobalt chip (`--vex-accent` fill, `--vex-accent-contrast` ink, caps)
+ * on every surface that shows activity (Agent Scan, token
  * history, the BOOK Moves ledger). The first cut differentiated kinds by
  * hairline tone; the owner reviewed it against the solid PREDICT chip and
  * rejected the outline variants as pale and generic. The kind is carried by
@@ -62,9 +62,14 @@ import { cn } from "../../lib/utils.js";
  */
 const MAX_VOCAB_CHARS = 16;
 
-/** The chip silhouette every activity mark shares. */
+/**
+ * The chip silhouette every activity mark shares: a tag (docs/design/R3-MINIMAL.md
+ * section 1.3, the only caps in the app), Instrument Sans 11 / 600 at `.08em`.
+ * The Agent Scan rows and the Portfolio activity table read it as plain caps
+ * words (`.vex-scan-kind`, `.vex-pf-kind`), dropping the frame and the fill.
+ */
 const CHIP_BASE =
-  "inline-flex h-4 shrink-0 items-center justify-center rounded-[3px] border px-1.5 font-mono text-[9px] uppercase tracking-[0.14em]";
+  "inline-flex h-4 shrink-0 items-center justify-center rounded-[3px] border px-1.5 text-[11px] font-semibold uppercase tracking-[0.08em]";
 
 /**
  * The tone set. Every value is a shell token or a `color-mix` over one —

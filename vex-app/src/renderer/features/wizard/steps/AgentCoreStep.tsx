@@ -1,5 +1,5 @@
 /**
- * Wizard Step 5 — Agent core tuning (M9; PR6 redesign — glass; V2
+ * Wizard Step 5 - Agent core tuning (M9; PR6 redesign - glass; V2
  * refactor: form helpers and NumericRow moved to `agent-core/` so
  * this file stays under the 400-LOC scalability ceiling).
  *
@@ -9,7 +9,7 @@
  *   - "Reset" btn  → submitted as null → REMOVED from .env (engine
  *                    reads fall back to compile-time default)
  *
- * Continue ALWAYS submits, even with no changes — the writer
+ * Continue ALWAYS submits, even with no changes - the writer
  * runs effective-config validation against existing .env so a
  * user who manually corrupted their .env (e.g. AGENT_MAX > AGENT_CTX)
  * gets blocked at this step until they fix it via this form.
@@ -30,14 +30,13 @@ import {
 import { type WizardStepId } from "@shared/schemas/wizard.js";
 
 import { Button } from "../../../components/ui/button.js";
-import { cn } from "../../../lib/utils.js";
 import { RAIL_DANGER_CHROME } from "./step-chrome.js";
 import {
   useStepAdvance,
   type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
 import { useAgentCoreConfigure } from "../../../lib/api/agent-core.js";
-import { WIZARD_STEP_META } from "../wizard-icons.js";
+import { useEnvState } from "../../../lib/api/onboarding.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import { NumericRow } from "./agent-core/NumericRow.js";
 import {
@@ -58,8 +57,10 @@ export function AgentCoreStep({
   onAdvance,
   flowMode,
 }: AgentCoreStepProps): JSX.Element {
+  const envQuery = useEnvState();
   const stepAdvance = useStepAdvance();
   const configure = useAgentCoreConfigure();
+  const env = envQuery.data?.ok === true ? envQuery.data.data : null;
 
   const [form, setForm] = useState<FormState>(INITIAL_FORM_STATE);
   const [serverError, setServerError] = useState<{
@@ -114,13 +115,12 @@ export function AgentCoreStep({
   );
 
   const submitting = configure.isPending || stepAdvance.isPending;
-  const meta = WIZARD_STEP_META.agentCore;
 
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "agentcore", value: "form" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={env}
       title="Agent core tuning"
       description="Optional throttles for how much the agent reads, writes, and spends per turn. The defaults suit most desks; every field left empty keeps its default. Changes apply the next time the agent starts."
       formProps={{
@@ -139,65 +139,68 @@ export function AgentCoreStep({
         </Button>
       }
     >
-      <div className="flex flex-col gap-5">
-        <div
-          aria-live="polite"
-          className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3"
-        >
-          <span className="vex-micro text-ink-tertiary">
-            Pending ·{" "}
-            <strong className="text-ink-primary">
-              {summary.sets}
-            </strong>{" "}
-            set ·{" "}
-            <strong className="text-ink-primary">
-              {summary.clears}
-            </strong>{" "}
-            cleared
-          </span>
-          <Button
-            type="button"
-            variant="bare"
-            size="sm"
-            onClick={() => setForm(INITIAL_FORM_STATE)}
-            disabled={submitting || (summary.sets === 0 && summary.clears === 0)}
+      <div className="vex-wz-stack">
+        <div>
+          <div
+            aria-live="polite"
+            className="mb-1.5 flex items-center justify-between gap-3 text-[13px] text-ink-tertiary"
           >
-            Reset all
-          </Button>
-        </div>
+            <span className="font-mono vex-num">
+              Pending ·{" "}
+              <strong className="font-normal text-ink-primary">
+                {summary.sets}
+              </strong>{" "}
+              set ·{" "}
+              <strong className="font-normal text-ink-primary">
+                {summary.clears}
+              </strong>{" "}
+              cleared
+            </span>
+            <button
+              type="button"
+              className="vex-wz-link"
+              onClick={() => setForm(INITIAL_FORM_STATE)}
+              disabled={submitting || (summary.sets === 0 && summary.clears === 0)}
+            >
+              Reset all
+            </button>
+          </div>
 
-        <NumericRow
-          id="vex-agent-context"
-          label="Agent context limit"
-          envName="AGENT_CONTEXT_LIMIT"
-          placeholder={`${AGENT_CONTEXT_LIMIT.default ?? ""}`}
-          hint={`How much conversation the agent keeps in view - higher reads more history at higher token cost. Range ${AGENT_CONTEXT_LIMIT.min}–${AGENT_CONTEXT_LIMIT.max}.`}
-          defaultLabel={String(AGENT_CONTEXT_LIMIT.default ?? "engine default")}
-          state={form.contextLimit}
-          onChange={(next) => setForm({ ...form, contextLimit: next })}
-        />
-        <NumericRow
-          id="vex-agent-maxout"
-          label="Agent max output tokens"
-          envName="AGENT_MAX_OUTPUT_TOKENS"
-          placeholder={`${AGENT_MAX_OUTPUT_TOKENS.default ?? ""}`}
-          hint={`Cap on a single reply. Must be ≤ the context limit. Range ${AGENT_MAX_OUTPUT_TOKENS.min}–${AGENT_MAX_OUTPUT_TOKENS.max}.`}
-          defaultLabel={String(
-            AGENT_MAX_OUTPUT_TOKENS.default ?? "engine default",
-          )}
-          state={form.maxOutputTokens}
-          onChange={(next) => setForm({ ...form, maxOutputTokens: next })}
-        />
-        <NumericRow
-          id="vex-agent-temp"
-          label="Agent temperature"
-          envName="AGENT_TEMPERATURE"
-          placeholder="leave empty for provider default (~0.7)"
-          hint={`Higher runs more exploratory, lower more deterministic. Empty = provider default. Range ${AGENT_TEMPERATURE.min}–${AGENT_TEMPERATURE.max}.`}
-          defaultLabel="provider default"
-          state={form.temperature}
-          onChange={(next) => setForm({ ...form, temperature: next })}
-        />
+          <div className="vex-wz-list">
+            <NumericRow
+              id="vex-agent-context"
+              label="Agent context limit"
+              envName="AGENT_CONTEXT_LIMIT"
+              placeholder={`${AGENT_CONTEXT_LIMIT.default ?? ""}`}
+              hint={`How much conversation the agent keeps in view - higher reads more history at higher token cost. Range ${AGENT_CONTEXT_LIMIT.min} to ${AGENT_CONTEXT_LIMIT.max}.`}
+              defaultLabel={String(AGENT_CONTEXT_LIMIT.default ?? "engine default")}
+              state={form.contextLimit}
+              onChange={(next) => setForm({ ...form, contextLimit: next })}
+            />
+            <NumericRow
+              id="vex-agent-maxout"
+              label="Agent max output tokens"
+              envName="AGENT_MAX_OUTPUT_TOKENS"
+              placeholder={`${AGENT_MAX_OUTPUT_TOKENS.default ?? ""}`}
+              hint={`Cap on a single reply. Must be ≤ the context limit. Range ${AGENT_MAX_OUTPUT_TOKENS.min} to ${AGENT_MAX_OUTPUT_TOKENS.max}.`}
+              defaultLabel={String(
+                AGENT_MAX_OUTPUT_TOKENS.default ?? "engine default",
+              )}
+              state={form.maxOutputTokens}
+              onChange={(next) => setForm({ ...form, maxOutputTokens: next })}
+            />
+            <NumericRow
+              id="vex-agent-temp"
+              label="Agent temperature"
+              envName="AGENT_TEMPERATURE"
+              placeholder="leave empty for provider default (~0.7)"
+              hint={`Higher runs more exploratory, lower more deterministic. Empty = provider default. Range ${AGENT_TEMPERATURE.min} to ${AGENT_TEMPERATURE.max}.`}
+              defaultLabel="provider default"
+              state={form.temperature}
+              onChange={(next) => setForm({ ...form, temperature: next })}
+            />
+          </div>
+        </div>
 
         {clientError ? (
           <p className="text-sm text-danger" role="alert">
@@ -208,14 +211,11 @@ export function AgentCoreStep({
         {serverError ? (
           <div
             role="alert"
-            className={cn(
-              "py-1 text-sm text-danger",
-              RAIL_DANGER_CHROME,
-            )}
+            className={RAIL_DANGER_CHROME}
           >
             <p className="font-medium">{serverError.message}</p>
             {serverError.violation === "max_output_exceeds_context" ? (
-              <p className="mt-1 text-xs">
+              <p className="mt-1 text-[13px] text-ink-secondary">
                 Lower max output tokens, or raise context limit.
               </p>
             ) : null}

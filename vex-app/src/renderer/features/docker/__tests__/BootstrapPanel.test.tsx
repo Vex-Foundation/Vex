@@ -1,5 +1,5 @@
 /**
- * Branch matrix tests for BootstrapPanel — ensures each (engine present,
+ * Branch matrix tests for BootstrapPanel - ensures each (engine present,
  * daemon running, platform) combination renders the correct branch
  * body (loading / A / B / C-desktop / C-linux / D) and that the
  * orchestrator wires the right footer CTA.
@@ -40,6 +40,12 @@ import {
 } from "@shared/schemas/docker.js";
 
 import { BootstrapPanel } from "../BootstrapPanel.js";
+import {
+  getStageVex,
+  resetStageVex,
+  stageVexEnd,
+  stageVexView,
+} from "../../../components/onboarding/stage-vex.js";
 
 function statusResult(opts: {
   enginePresent: boolean;
@@ -167,6 +173,9 @@ function clickLogs(getByRole: ReturnType<typeof render>["getByRole"]): void {
 
 describe("BootstrapPanel branch matrix", () => {
   beforeEach(() => {
+    resetStageVex();
+    // The launch is over: Vex's face is the screen's, with no wake to wait for.
+    stageVexEnd();
     mockHooks.useDockerInstall.mockReturnValue(noopMutation);
     mockHooks.useDockerStart.mockReturnValue(noopMutation);
     openLogsFolder.mockReset().mockResolvedValue({
@@ -181,6 +190,7 @@ describe("BootstrapPanel branch matrix", () => {
 
   afterEach(() => {
     cleanup();
+    resetStageVex();
     mockHooks.useDockerStatus.mockReset();
     mockHooks.useDockerInstall.mockReset();
     mockHooks.useDockerStart.mockReset();
@@ -467,5 +477,95 @@ describe("BootstrapPanel branch matrix", () => {
     expect(
       queryByRole("button", { name: /Retry detection/i }),
     ).toBeNull();
+  });
+
+  it("stands on the stage plate with the Docker step current in the crumb", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: true }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
+    const { container, getByRole } = render(<BootstrapPanel />);
+    expect(container.querySelector('[data-vex-screen="dockerBootstrap"] .vex-fr-side')).not.toBeNull();
+    expect(getByRole("navigation", { name: "First run" }).querySelector('[aria-current="step"]')?.textContent)
+      .toContain("Docker");
+  });
+
+  it.each<[string, () => void, string]>([
+    [
+      "ready when Docker is",
+      () => {
+        mockHooks.useDockerStatus.mockReturnValue(
+          statusResult({ enginePresent: true, daemonRunning: true }),
+        );
+        mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+      },
+      "Ready",
+    ],
+    [
+      "concerned when the daemon is stopped and the user has to act",
+      () => {
+        mockHooks.useDockerStatus.mockReturnValue(
+          statusResult({ enginePresent: true, daemonRunning: false }),
+        );
+        mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
+      },
+      "Concerned",
+    ],
+    [
+      "working while the engine starts",
+      () => {
+        mockHooks.useDockerStatus.mockReturnValue(
+          statusResult({
+            enginePresent: true,
+            daemonRunning: false,
+            state: { kind: "engine_starting" },
+          }),
+        );
+        mockHooks.useSystemHealth.mockReturnValue(healthResult("win32"));
+      },
+      "Working",
+    ],
+    [
+      "concerned when Docker has to be installed",
+      () => {
+        mockHooks.useDockerStatus.mockReturnValue(
+          statusResult({ enginePresent: false, daemonRunning: false }),
+        );
+        mockHooks.useSystemHealth.mockReturnValue(healthResult("win32"));
+      },
+      "Concerned",
+    ],
+    [
+      "in error when the check did not complete",
+      () => {
+        mockHooks.useDockerStatus.mockReturnValue(failureStatusResult());
+        mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+      },
+      "Error",
+    ],
+    [
+      "working while Docker is being detected",
+      () => {
+        mockHooks.useDockerStatus.mockReturnValue(pendingStatusResult());
+        mockHooks.useSystemHealth.mockReturnValue(healthResult("linux"));
+      },
+      "Working",
+    ],
+  ])("tells the plate Vex is %s", (_name, arrange, word) => {
+    arrange();
+    render(<BootstrapPanel />);
+    expect(stageVexView(getStageVex()).word).toBe(word);
+  });
+
+  it("branch B: Recheck stands beside Start Docker, and the links follow", () => {
+    mockHooks.useDockerStatus.mockReturnValue(
+      statusResult({ enginePresent: true, daemonRunning: false }),
+    );
+    mockHooks.useSystemHealth.mockReturnValue(healthResult("darwin"));
+    const { getByRole, getByText } = render(<BootstrapPanel />);
+    const row = getByRole("button", { name: /^Start Docker$/i }).closest(".vex-fr-row");
+    expect(row?.contains(getByRole("button", { name: /^Recheck$/i }))).toBe(true);
+    expect(getByText("Paused")).toBeTruthy();
+    expect(getByText(/View Docker Desktop docs/)).toBeTruthy();
   });
 });

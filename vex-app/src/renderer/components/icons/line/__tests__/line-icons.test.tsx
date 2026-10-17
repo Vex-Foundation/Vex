@@ -41,7 +41,9 @@ const CHROME_NAMES = [
  */
 const DERIVED: string[] = [];
 
-type Glyph = (props: { size?: 14 | 16 | 20; className?: string }) => JSX.Element;
+type Glyph = ((props: { size?: 14 | 16 | 20; className?: string }) => JSX.Element) & {
+  displayName?: string;
+};
 type Name = keyof typeof LINE_GLYPHS;
 
 const pascal = (name: string): string =>
@@ -51,8 +53,8 @@ const pascal = (name: string): string =>
     .join("");
 
 const namesOf = (): Name[] => Object.keys(LINE_GLYPHS) as Name[];
-const exportsByName = line as unknown as Record<string, unknown>;
-const glyphOf = (name: string): Glyph => exportsByName["Line" + pascal(name)] as Glyph;
+const exportsByName = new Map<string, unknown>(Object.entries(line));
+const glyphOf = (name: string): Glyph => exportsByName.get("Line" + pascal(name)) as Glyph;
 
 const svgOf = (node: JSX.Element): SVGSVGElement => {
   const svg = render(node).container.querySelector("svg");
@@ -139,7 +141,7 @@ describe("line icon catalogue", () => {
   it("exports one named component per icon, the registry and the by-name component", () => {
     const names = namesOf();
     for (const name of names) {
-      const Glyph = glyphOf(name) as unknown as { displayName?: string };
+      const Glyph = glyphOf(name);
       expect(typeof Glyph, name).toBe("function");
       expect(Glyph.displayName, name).toBe("Line" + pascal(name));
       expect(line.LINE_ICONS[name], name).toBe(Glyph);

@@ -1,5 +1,5 @@
 /**
- * WizardShell — verifies routing between steps based on persisted
+ * WizardShell - verifies routing between steps based on persisted
  * wizard-state.json, the skip-to-app flip when `completed === true`,
  * and the error/loading shells. Mocks `window.vex` per skill §12 and
  * the API hooks layer so we never touch a real IPC bridge.
@@ -50,13 +50,37 @@ vi.mock("../../../stores/uiStore.js", () => ({
     }),
 }));
 
-vi.mock("../steps/KeystoreStep.js", () => ({
-  KeystoreStep: () => <div data-testid="keystore-step" />,
-}));
+// The keystore stub, like WizardStepPanel, renders what the shell stands
+// above a step's title (the small mark and Vex's word under 1180).
+vi.mock("../steps/KeystoreStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    KeystoreStep: () => {
+      const host = useContext(WizardHostContext);
+      return (
+        <div data-testid="keystore-step">
+          {host?.before}
+          <input aria-label="Master password" type="password" />
+          <button type="button">Save and continue</button>
+        </div>
+      );
+    },
+  };
+});
 
-vi.mock("../steps/WalletsStep.js", () => ({
-  WalletsStep: () => <div data-testid="wallets-step" />,
-}));
+// The wallets stub renders what the shell stands above a step's title, the
+// way WizardStepPanel does.
+vi.mock("../steps/WalletsStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    WalletsStep: () => {
+      const host = useContext(WizardHostContext);
+      return <div data-testid="wallets-step">{host?.before}</div>;
+    },
+  };
+});
 
 vi.mock("../steps/ApiKeysStep.js", () => ({
   ApiKeysStep: () => <div data-testid="apikeys-step" />,
@@ -78,6 +102,16 @@ vi.mock("../steps/review/ReviewStep.js", () => ({
 }));
 
 const { WizardShell } = await import("../WizardShell.js");
+
+function stepState(
+  currentStepId: WizardState["currentStepId"],
+  completedSteps: WizardState["completedSteps"],
+): Result<WizardState> {
+  return {
+    ok: true,
+    data: { schemaVersion: 2, currentStepId, completedSteps, completed: false },
+  };
+}
 
 function renderWithQuery(ui: JSX.Element) {
   const qc = new QueryClient({
@@ -137,6 +171,71 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   Reflect.deleteProperty(window, "vex");
+});
+
+describe("WizardShell frame (R3)", () => {
+  it("draws the named stepper and the step line above the title", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("wallets", ["keystore"])),
+    );
+    const { findByTestId, getByRole } = renderWithQuery(<WizardShell />);
+    const step = await findByTestId("wallets-step");
+    const stepper = getByRole("list", { name: "Wizard progress" });
+    const rows = stepper.querySelectorAll("li[data-vex-wizard-step]");
+    expect(rows).toHaveLength(7);
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      "Master password",
+      "Wallets",
+      "API keys",
+      "Embedding",
+      "Agent core",
+      "Provider",
+      "Review",
+    ]);
+    const current = stepper.querySelector('[aria-current="step"]');
+    expect(current?.getAttribute("data-vex-wizard-step")).toBe("wallets");
+    expect(
+      stepper.querySelector('[data-vex-wizard-step="keystore"]')?.getAttribute("data-status"),
+    ).toBe("completed");
+    expect(
+      stepper.querySelector('[data-vex-wizard-step="review"]')?.getAttribute("data-status"),
+    ).toBe("pending");
+    expect(step.textContent).toContain("Step 2 of 7 · Wallets");
+  });
+
+  it("draws no state word under Vex on the plate; her mood still follows focus", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
+    const { findByTestId, container, getByLabelText, getByRole } = renderWithQuery(
+      <WizardShell />,
+    );
+    await findByTestId("keystore-step");
+    const plate = container.querySelector(".vex-wz__plate");
+    expect(plate).not.toBeNull();
+    // Owner: no "Ready" or "Listening" under Vex.
+    expect(plate?.querySelector(".vex-state-word")).toBeNull();
+    expect(plate?.textContent).toBe("");
+    // The mood (the face the plate and the small mark share) follows focus;
+    // the small mark under 1180 still names it.
+    const mood = (): string | null | undefined =>
+      container.querySelector("[data-vex-wizard-mini] .vex-state-word")?.textContent;
+    expect(mood()).toBe("Ready");
+    fireEvent.focus(getByLabelText("Master password"));
+    expect(mood()).toBe("Listening");
+    expect(plate?.querySelector(".vex-state-word")).toBeNull();
+    fireEvent.blur(getByLabelText("Master password"), {
+      relatedTarget: getByRole("button", { name: "Save and continue" }),
+    });
+    expect(mood()).toBe("Ready");
+  });
+
+  it("carries the gate scope on the document while it stands", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
+    const { findByTestId, unmount } = renderWithQuery(<WizardShell />);
+    await findByTestId("keystore-step");
+    expect(document.documentElement.dataset["vexGate"]).toBe("true");
+    unmount();
+    expect(document.documentElement.dataset["vexGate"]).toBeUndefined();
+  });
 });
 
 describe("WizardShell", () => {
@@ -386,7 +485,7 @@ describe("WizardShell", () => {
    * an incomplete non-keystore step would divert to openUnlock("wizard")
    * and never render Review). Wait for ReviewStep, then optionally swap
    * the secrets status to `completeStatus` and flip the query result to
-   * `completed: true` + re-render — exactly what `useCompleteSetup`'s
+   * `completed: true` + re-render - exactly what `useCompleteSetup`'s
    * wizardState invalidation produces. The watcher effect re-fires with
    * the post-finalize status. Returns the render handle.
    */

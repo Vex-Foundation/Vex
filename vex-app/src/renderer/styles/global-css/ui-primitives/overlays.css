@@ -48,6 +48,37 @@ dialog.vex-dialog {
   text-transform: none;
 }
 
+/* ── Dialog enter ──────────────────────────────────────────────────────────
+ * Every native <dialog> in the top layer rises 8px and settles, opacity plus
+ * a small translate on the entrance curve (`--vex-ease-out`), never a scale:
+ * a scaling modal reads as a pop rather than a rise. Element level, so every
+ * modal inherits it; one-shot, rests still; base.css's reduced-motion
+ * catch-all collapses it. Its scrim fades in beside it. */
+@keyframes vex-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+dialog[open] {
+  animation: vex-dialog-enter var(--vex-duration-slow) var(--vex-ease-out) both;
+}
+@keyframes vex-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+dialog[open]::backdrop {
+  animation: vex-backdrop-enter 240ms ease-out both;
+}
+
 /* ── Sheet over the centre column ──────────────────────────────────────────
  * A modal dialog pinned to the box of the element it covers (sheet.tsx sets
  * the coordinates), paper, no frame of its own: the head's and the foot's

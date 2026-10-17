@@ -226,7 +226,7 @@ describe("pre-shell plate", () => {
   });
 
   it("sets the stage type on the print per room: paper at night, the blues by day", () => {
-    // docs/design/V10-SPREAD.md section 1: on the night print every type is
+    // docs/design/R3-MINIMAL.md section 1.1: on the night print every type is
     // paper and blue never sits on dark ground. The giant counter was the
     // one exception the design measured at 1.34:1 (peri-hi on the night
     // sky); it is paper there now. By day the counter is the numeral blue
@@ -243,14 +243,10 @@ describe("pre-shell plate", () => {
     // Every rule that sets type on the stage reads these aliases, never a
     // literal colour. The wake and unlock title is the room's one blue
     // (`accent-primary`: the blue by day, the periwinkle at night, spec
-    // section 10.2); the first run screens' counter and numerals keep the V10
-    // aliases until they are restyled.
+    // section 10.2); the leaf's release counter keeps the gate counter alias.
+    // The wizard's step numerals left with its V10 leaf (R3 wave 5, W5-2).
     const stage = stripComments(gateCss);
-    for (const selector of [
-      ".vex-stage-counter {",
-      ".vex-stage-title {",
-      ".vex-stage-step__n {",
-    ]) {
+    for (const selector of [".vex-stage-counter {", ".vex-stage-title {"]) {
       const at = stage.indexOf(selector);
       expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
       const body = stage.slice(at, stage.indexOf("}", at));
@@ -364,6 +360,15 @@ describe("pre-shell alias group", () => {
     // its Tailwind utility compile to NOTHING - no build error, no styling,
     // found only by eye. This walks the real call sites.
     const rendererDir = path.join(here, "..", "..", "..");
+    const gateUtility = /\b(?:bg|text|border)-(gate-[a-z]+)\b/g;
+    // The R3 first run and wizard (wave 5) dropped the last call sites, so the
+    // walk may find none; the scanner must still read every utility form, or
+    // a drifted regex would pass by finding nothing.
+    const sample = 'className="bg-gate-code text-gate-warn border-gate-rail"';
+    expect(
+      [...sample.matchAll(gateUtility)].map((match) => match[1]),
+      "the regex drifted",
+    ).toEqual(["gate-code", "gate-warn", "gate-rail"]);
     const used = new Set<string>();
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -373,9 +378,7 @@ describe("pre-shell alias group", () => {
             walk(full);
           }
         } else if (/\.tsx?$/.test(entry.name)) {
-          for (const match of readFileSync(full, "utf8").matchAll(
-            /\b(?:bg|text|border)-(gate-[a-z]+)\b/g,
-          )) {
+          for (const match of readFileSync(full, "utf8").matchAll(gateUtility)) {
             used.add(match[1] as string);
           }
         }
@@ -383,8 +386,6 @@ describe("pre-shell alias group", () => {
     };
     walk(rendererDir);
 
-    expect(used.size, "no gate utilities found - the regex drifted").
-      toBeGreaterThan(0);
     for (const utility of used) {
       expect(tokensCss, `--color-${utility} projection missing`).toContain(
         `--color-${utility}: var(--vex-alias-`,
@@ -429,10 +430,11 @@ describe("[data-vex-gate] scope", () => {
     // A class-keyed selector died silently once already when the radius
     // utility was renamed; the data hooks are owned by
     // components/ui/button.tsx (`data-vex-button` = variant,
-    // `data-vex-button-size` = size).
+    // `data-vex-button-size` = size). The bare-variant hook left with the old
+    // wizard leaf's step actions (R3 wave 5); the size hook stays.
     const declarations = gateCss.replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(declarations).toContain('button[data-vex-button="bare"]');
     expect(declarations).toContain('button[data-vex-button-size="lg"]');
+    expect(declarations).not.toMatch(/\.vex-step-actions/);
     expect(declarations).not.toMatch(/button\.[a-z]/i);
   });
 });

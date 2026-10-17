@@ -13,38 +13,256 @@
   --color-ring: var(--vex-onboarding-accent);
 }
 
-/* The risk callout (docs/design/V10-SPREAD.md section 1): a 1.5px ink frame
- * with a hatched left band, ink type, never blue and never a status hue.
- * The pre-shell's notices wear it: a warning the user should weigh before
- * going on ("Without a wallet, ..."), a failure that stops a step. The wizard
- * steps render in Settings too, so the class lives with the forms, not the
- * stage. `--on-print` gives it a field to stand on over the stage print. */
-.vex-callout {
-  position: relative;
-  padding: 12px 14px 12px 26px;
-  border: 1.5px solid var(--vex-alias-rule-ink);
-  font-size: 14px;
-  line-height: 20px;
+/* The first run (docs/design/R3-MINIMAL.md section 10.3): the screens that stand at the right of
+ * the stage plate (system check, Docker, services, database). The side column, the title and the
+ * lead are the stage's own (`chronos-gate.css`); what is here is the crumb, the probe rows, the
+ * card, the steps, the log block and the actions. Radius 0, no shadow, tokens only. The failure
+ * callout is the kit's `.vex-callout` (`ui-primitives/indicators.css`). */
+.vex-stage-side.vex-fr-side {
+  justify-content: flex-start;
+  padding-top: 128px;
+  padding-bottom: 56px;
+  overflow-y: auto;
+}
+
+/* The crumb: where you are. 13, gap 18; the current step is blue 500, done and upcoming steps are
+ * muted. Its swatches are the blue's (a failure's cross is ink in the swatch sheet). */
+.vex-fr-crumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin: 0 0 36px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.vex-fr-crumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-fr-crumb li[data-state="now"] {
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-fr-crumb .vex-swatch {
+  color: var(--vex-alias-accent-primary);
+}
+
+/* A body: a column of what the screen has to say, as wide as the probes (504). */
+.vex-fr-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  width: 100%;
+  max-width: 504px;
+}
+.vex-fr-stack > .vex-callout,
+.vex-fr-stack > .vex-fr-card,
+.vex-fr-stack > .vex-fr-code {
+  width: 100%;
+}
+.vex-fr-side > .vex-callout {
+  width: 100%;
+  max-width: 504px;
+  margin: 0 0 26px;
+}
+
+/* The probe rows: a rule above the list, a quiet rule under each row. Label 15 / 500, the detail
+ * 12.5 in the figure face, the state word at the right (13.5). A row in flight is blue. */
+.vex-fr-probes {
+  width: 100%;
+  max-width: 504px;
+  margin: 0 0 26px;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-fr-probe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 12px 0 13px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-fr-probe__l {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
   color: var(--vex-alias-label-primary);
 }
-.vex-callout::before {
-  content: "";
+.vex-fr-probe__d {
+  grid-column: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+.vex-fr-probe .vex-state-word {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  font-size: 13.5px;
+  color: var(--vex-alias-label-primary);
+}
+/* A row with no detail line keeps its word on the label's line. */
+.vex-fr-probe:not(:has(.vex-fr-probe__d)) .vex-state-word {
+  grid-row: 1;
+}
+.vex-fr-probe[data-live] .vex-fr-probe__l,
+.vex-fr-probe[data-live] .vex-state-word {
+  color: var(--vex-alias-accent-primary);
+}
+
+/* The card: the title at the left, the state word at the right, the detail under them. */
+.vex-fr-card {
+  padding: 14px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+}
+.vex-fr-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vex-fr-card__title {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--vex-alias-label-primary);
+}
+.vex-fr-card .vex-state-word {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--vex-alias-label-primary);
+}
+.vex-fr-card__detail {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* The numbered steps, the quiet lines and the small labels. */
+.vex-fr-steps {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-fr-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-fr-note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-fr-eyebrow {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The log block: the figure face at 12.5 on the second paper, a quiet rule, padding 10 12. */
+.vex-fr-code {
+  position: relative;
+  max-height: 18rem;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-layer-3);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--vex-alias-label-primary);
+}
+.vex-fr-code code {
+  font-family: inherit;
+}
+
+/* The actions: the primary key and the quiet one side by side, then the blue links. */
+.vex-fr-acts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+}
+.vex-fr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.vex-fr-row--links {
+  gap: 8px 22px;
+}
+.vex-fr-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--vex-alias-accent-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+.vex-fr-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.vex-fr-link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+/* The progress line (migrations, the installer): a 2px quiet track with the blue fill. The fill's
+ * width is a CSSOM write from the real count, never a guess. */
+.vex-fr-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 18px;
+  font-size: 13.5px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-fr-progress__bar {
+  position: relative;
+  width: 260px;
+  max-width: 100%;
+  height: 2px;
+  background: var(--vex-alias-rule-quiet);
+}
+.vex-fr-progress__fill {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
-  width: 10px;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--vex-alias-rule-ink) 0 1px,
-    transparent 1px 4px
-  );
-}
-.vex-callout--on-print {
-  background: var(--vex-alias-gate-field);
+  background: var(--vex-alias-accent-primary);
 }
 
-/* Countersign glint — single one-shot flare on the star the mark already
+/* Countersign glint - single one-shot flare on the star the mark already
  * carries, fired at 100%. Stylesheet @keyframes (CSP-safe under
  * `style-src 'self'`); the element mounts only when ready, plays once and
  * ends transparent (`forwards`), so the resting frame is perfectly still.
@@ -69,7 +287,7 @@
   animation: vex-intro-glint 350ms ease-out forwards;
 }
 
-/* Custom scrollbar — scoped to every onboarding screen via the
+/* Custom scrollbar - scoped to every onboarding screen via the
  * `data-vex-onboarding="true"` attribute on the outer wrapper. Electron
  * runs Chromium so the `::-webkit-scrollbar` pseudo-elements are the
  * canonical surface; `scrollbar-color` / `scrollbar-width` are added

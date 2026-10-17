@@ -8,7 +8,7 @@
  * ── THE TWO STAGES ────────────────────────────────────────────────────────
  * STAGE 1 (`editing` → `verifying` → `authorizing`): the user's inputs go to
  * main, which prepares the launch, verifies the returned calldata line by line
- * and answers with a FINGERPRINT — the final predicted token address, the
+ * and answers with a FINGERPRINT - the final predicted token address, the
  * resolved fee recipient and the exact costs. Nothing is signed.
  *
  * STAGE 2 (`authorizing` → `deploying` → `done`): the Deploy click authorizes
@@ -134,7 +134,7 @@ export function poolsLaunchReducer(
     case "deploy_refused":
       // The fingerprint is NOT carried forward. A refused deploy cannot prove
       // the verified plan is still what main would sign, so the user prepares
-      // again and reads the figures again — never a second click on figures
+      // again and reads the figures again - never a second click on figures
       // that already failed once.
       if (state.kind !== "deploying") return state;
       return { kind: "re_review", message: event.message };
@@ -169,7 +169,7 @@ export function isPoolsLaunchBusy(state: PoolsLaunchState): boolean {
 }
 
 /**
- * A SIGNATURE IN FLIGHT IS NOT DISMISSIBLE — the same rule the Trench lane
+ * A SIGNATURE IN FLIGHT IS NOT DISMISSIBLE - the same rule the Trench lane
  * enforces. `verifying` signs nothing and stays dismissible.
  */
 export function canDismissPoolsLaunch(state: PoolsLaunchState): boolean {

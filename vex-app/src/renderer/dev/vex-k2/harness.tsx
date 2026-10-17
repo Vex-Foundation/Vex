@@ -24,6 +24,11 @@
  *   ?seq=sleep-wake                       from `emotion`, asleep at 4 s, the re-wake at 10 s
  *   ?seq=open-close                       open at once, closed into the token at 6 s, open
  *                                         again at 9 s
+ *   ?token=1                              the token toggle: she starts as the upright coin, and a
+ *                                         "Hide Vex" button over the coin toggles her (the wake
+ *                                         from the token, the close into it)
+ *   ?seq=token                            the toggle on a clock: closed into the upright coin at
+ *                                         6 s, the wake from the token at 10 s
  *   ?status=1                             the avatar off: the token and its ring with the word,
  *                                         every state, beside (sidebar) and under (welcome)
  * The host carries `data-vex-k2-ready` once her first frame is painted.
@@ -33,7 +38,8 @@ import { StrictMode, useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { K2_EMOTIONS, type K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import type { K2Ground } from "../../components/vex/k2/k2-engine.js";
-import type { K2PlacementName } from "../../components/vex/k2/k2-rig.js";
+import type { Box, K2PlacementName } from "../../components/vex/k2/k2-rig.js";
+import { K2TokenButton, targetBox } from "../../components/vex/k2/K2TokenButton.js";
 import type { GestureName } from "../../components/vex/k2/k2-time.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import { StateWord } from "../../components/ui/state-word.js";
@@ -63,11 +69,12 @@ const gesture = pick<GestureName | "none">(
   "none",
 );
 const chronos = params.get("theme") === "chronos";
-const seq = pick<"sleep-wake" | "open-close" | "none">(
+const seq = pick<"sleep-wake" | "open-close" | "token" | "none">(
   "seq",
-  ["sleep-wake", "open-close", "none"],
+  ["sleep-wake", "open-close", "token", "none"],
   "none",
 );
+const toggle = params.get("token") === "1" || seq === "token";
 
 document.documentElement.dataset["vexTheme"] = chronos ? "chronos" : "celeris";
 useUiStore.setState({ theme: chronos ? "chronos" : "celeris" });
@@ -85,14 +92,21 @@ function Ground(): JSX.Element {
   return <div className="absolute inset-0 bg-surface-base" />;
 }
 
-/** A sequence's emotion and closed flag over time (wall clock, a dev review only). */
-function useSequence(): { readonly emotion: K2Emotion; readonly closed: boolean } {
-  const [now, setNow] = useState<{ emotion: K2Emotion; closed: boolean }>({
+interface SequenceState {
+  readonly emotion: K2Emotion;
+  readonly closed: boolean;
+  readonly tokenOnly: boolean;
+}
+
+/** A sequence's emotion, closed flag and token toggle over time (wall clock, a dev review only). */
+function useSequence(): SequenceState & { readonly flip: () => void } {
+  const [now, setNow] = useState<SequenceState>({
     emotion,
     closed: params.get("closed") === "1",
+    tokenOnly: params.get("token") === "1",
   });
   useEffect(() => {
-    const steps: [number, Partial<{ emotion: K2Emotion; closed: boolean }>][] =
+    const steps: [number, Partial<SequenceState>][] =
       seq === "sleep-wake"
         ? [
             [4000, { emotion: "sleeping" }],
@@ -103,13 +117,18 @@ function useSequence(): { readonly emotion: K2Emotion; readonly closed: boolean 
               [6000, { closed: true }],
               [9000, { closed: false }],
             ]
-          : [];
+          : seq === "token"
+            ? [
+                [6000, { tokenOnly: true }],
+                [10000, { tokenOnly: false }],
+              ]
+            : [];
     const ids = steps.map(([at, change]) =>
       window.setTimeout(() => setNow((cur) => ({ ...cur, ...change })), at),
     );
     return () => ids.forEach((id) => window.clearTimeout(id));
   }, []);
-  return now;
+  return { ...now, flip: () => setNow((cur) => ({ ...cur, tokenOnly: !cur.tokenOnly })) };
 }
 
 /** The avatar off: every state's token, ring and word, as the sidebar and the welcome show them. */
@@ -141,7 +160,8 @@ function StatusSheet(): JSX.Element {
 }
 
 function Harness(): JSX.Element {
-  const { emotion: shown, closed } = useSequence();
+  const { emotion: shown, closed, tokenOnly, flip } = useSequence();
+  const [box, setBox] = useState<Box | null>(null);
   const stage = placement === "stage";
   const width = size("w", stage ? window.innerWidth : placement === "sidebar" ? 256 : 284);
   const height = size("h", stage ? window.innerHeight : placement === "sidebar" ? 280 : 284);
@@ -162,8 +182,23 @@ function Harness(): JSX.Element {
         force={gesture === "none" ? null : gesture}
         open={params.get("open") === "1" || seq === "open-close"}
         closed={closed}
+        tokenOnly={tokenOnly}
+        onTokenBox={setBox}
         className="absolute inset-0"
       />
+      {toggle && box !== null ? (
+        <K2TokenButton
+          tokenOnly={tokenOnly}
+          onPress={flip}
+          className="vex-welcome__token"
+          style={{
+            left: targetBox(box).left,
+            top: targetBox(box).top,
+            width: targetBox(box).right - targetBox(box).left,
+            height: targetBox(box).bottom - targetBox(box).top,
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -19,6 +19,16 @@ variable weight axis set to the weight the tile paints. JetBrains Mono advances
 within about a pixel, and every floor below keeps the rounding on the safe
 side (it is a `ceil`).
 
+**ONE KNOWN EXCEPTION: WHOLE-PIXEL ADVANCES.** The computed advances are
+fractional (JetBrains Mono 26 advances 15.6). Chromium on Linux without
+subpixel text positioning, which is what the headless harness runs, rounds each
+glyph advance to a whole pixel (15.6 becomes 16, 7.8 becomes 8), and a row of
+twelve rounded glyphs is wider than twelve fractional ones. The price
+`$0.000001230` measured 183px there against the computed 177.84, and the price
+row 287 against 279.71. That is why the inner floor in section 4 is 288 and not
+the header's 282: the floor has to hold at the widest advances an engine
+really produces, not only at the ones the font file promises.
+
 The Chromium harness (`src/renderer/dev/board-layout/`, driven by
 `e2e/board-layout.spec.ts`) is the ARBITER. It re-measures the natural width
 of each region in a real engine, and if it disagrees with this document the
@@ -40,7 +50,7 @@ the widest ticker line a real board can print.
 | --- | --- | --- | --- | --- |
 | Token name | `board-token-name` | sans 15 / 600 | 140 | Aerodrome Finance (ellipsis allowed) |
 | Ticker line | `board-token-meta` | sans 12.5 | 120 | `BITCOIN` + ` · ` + `Robinhood` = 119.04 |
-| Price | `board-token-price` | mono 26 / 500, -.03em | 177.84 | `$0.000001230`, 12 x 14.82 |
+| Price | `board-token-price` | mono 26 / 500, -.03em | 177.84 (183 at whole-pixel advances) | `$0.000001230`, 12 x 14.82 (12 x 15.22 rounded) |
 | Signed delta | `board-token-delta` | mono 13, -.01em | 61.36 | `+661.00%`, 8 x 7.67 |
 | Delta window | `board-token-delta-window` | sans 12 | 20.51 | `24h` |
 | Stat label | `dt` | sans 11.5 | 62.85 | `24h Volume` (widest label) |
@@ -76,7 +86,7 @@ them is an "extreme".
 
 **218 is the number the footer has to survive.** It is not a schema extreme: a
 transport blip on the details channel produces it on every tile at once. It
-fits a row of the 282px floor with 64px to spare, so the checks word is ALWAYS
+fits a row of the 288px floor with 70px to spare, so the checks word is ALWAYS
 a row of its own and never wraps.
 
 ## 3. Schema-reachable extremes
@@ -94,19 +104,22 @@ Three constraints each ask for an inner width; the widest is the floor.
 
 | Constraint | Composition | Inner |
 | --- | --- | --- |
-| Price row | `177.84 + 10 + 61.36 + 10 + 20.51 = 279.71` | 280 |
+| Price row, fractional advances | `177.84 + 10 + 61.36 + 10 + 20.51 = 279.71` | 280 |
+| Price row, whole-pixel advances (measured) | `182.64 + 10 + 62.96 + 10 + 21.5 = 287.1`, the row measures 287 | **288** |
 | Four stats in a row | `4 x 63 + 3 x 6 gap` (the widest label, `24h Volume`, is 62.85) | 270 |
-| Header | `34 photo + 11 + 120 identity + 11 + (26 key + 6 + 74 chip)` | **282** |
+| Header | `34 photo + 11 + 120 identity + 11 + (26 key + 6 + 74 chip)` | 282 |
 | Checks word | `201.93 + 6 + 10` | 218 |
 | Links row | `97.63 + 12 + 67.02` | 176.65 |
 
-The header binds: **inner floor 282.** The tile adds 36 of padding and 1 of
-right rule: **tile floor 319px.** The four stats always fit one row at the
-floor (270 of 282), so the V10 2x2 fallback and the wide and compact modes are
-retired along with `--vex-board-mode`. The identity column at the floor is
-`282 - 162 = 120`; the widest realistic ticker line (`BITCOIN` and `Robinhood`)
-is 119.04 and fits whole, and a wider pair concedes in the chain name, which
-ellipsizes and is whole in its `title` and in the disclosure.
+The price row binds at the advances a real engine paints: **inner floor 288**
+(287 measured, rounded up to the next whole pixel). The tile adds 36 of padding
+and 1 of right rule: **tile floor 325px** (288 + 36 + 1). The four stats always
+fit one row at the floor (270 of 288), so the V10 2x2 fallback and the wide and
+compact modes are retired along with `--vex-board-mode`. The identity column at
+the floor is `288 - 162 = 126`; the widest realistic ticker line (`BITCOIN` and
+`Robinhood`) is 119.04 and fits whole with about 7px to spare, and a wider pair
+concedes in the chain name, which ellipsizes and is whole in its `title` and in
+the disclosure.
 
 Fixed heights come from fixed line heights, not from a measurement of content:
 header 34 (name 18 + ticker line 16 = the photo's 34), price row 32 with a
@@ -122,35 +135,50 @@ pinned with `margin-top: auto`.
 measures; the plate draws no border and no padding, so it is the grid's width.
 The grid's own 1px left rule is taken once, so with `n` columns
 `card = (C - 1) / n`. The rule, in one sentence: **take the most columns (at
-most 3) whose tile clears 319.**
+most 3) whose tile clears 325.**
 
 | Threshold | Derivation | Result |
 | --- | --- | --- |
-| `C >= 958` | `3 x 319 + 1` | 3 columns |
-| `C >= 639` | `2 x 319 + 1` | 2 columns |
-| `C >= 320` | `319 + 1` | 1 column |
-| `C < 320` | UNDERSIZED | 1 column pinned at 320, the plate side-scrolls |
+| `C >= 976` | `3 x 325 + 1` | 3 columns |
+| `C >= 651` | `2 x 325 + 1` | 2 columns |
+| `C >= 326` | `325 + 1` | 1 column |
+| `C < 326` | UNDERSIZED | 1 column pinned at 326, the plate side-scrolls |
 
-The track is `minmax(319px, 1fr)` in one column and `minmax(0, 1fr)` in two and
-three; `min-width: 320px` on the grid keeps its top rule as wide as the pinned
+The track is `minmax(325px, 1fr)` in one column and `minmax(0, 1fr)` in two and
+three; `min-width: 326px` on the grid keeps its top rule as wide as the pinned
 track. Nothing transitions, and nothing reads layout back.
 
 ### What the ladder produces at real widths
 
-`C = window - 264 (left sidebar, --vex-left-w) - 56 (page padding)`, less 256
-when the Vex sidebar is open (`--vex-vex-w`). At the narrower left column
-(224) `C` is 40 wider.
+`C = window - left - Vex (when open) - 56 (page padding, 28 + 28)`. The shell
+solves the three columns by window width (`lib/shell-columns.ts`,
+`docs/design/R3-MINIMAL.md` section 2.1):
 
-| Window | Vex | C | Columns | Tile |
-| --- | --- | --- | --- | --- |
-| 1920 | hidden | 1600 | 3 | 533 |
-| 1440 | hidden | 1120 | 3 | 373 |
-| 1366 | hidden | 1046 | 3 | 348 |
-| 1280 | hidden | 960 | 3 | 319.67 |
-| 1920 | open | 1344 | 3 | 447 |
-| 1440 | open | 864 | 2 | 431.5 |
-| 1366 | open | 790 | 2 | 394.5 |
-| 1280 | open | 704 | 2 | 351.5 |
+| Window | Left sidebar | Vex sidebar (open) |
+| --- | --- | --- |
+| 1360 and up | 264 (`--vex-left-w`) | 256 (`--vex-vex-w`) |
+| 1180 to 1359 | 224 (`--vex-left-w-md`) | 240 (`--vex-vex-w-md`) |
+| under 1180 | the 56 rail while Vex is open, 224 when it is hidden | 224 (`--vex-vex-w-sm`) |
+
+Both sidebars draw their 1px quiet rule INSIDE their track, so the rules cost
+no extra width. The harness lays out the same three tracks (an empty left
+track, the centre, the Vex track), so these `C` values are what the e2e matrix
+measures.
+
+| Window | Left | Vex | C | Columns | Tile |
+| --- | --- | --- | --- | --- | --- |
+| 1920 | 264 | hidden | 1600 | 3 | 533 |
+| 1920 | 264 | 256 | 1344 | 3 | 447.67 |
+| 1440 | 264 | hidden | 1120 | 3 | 373 |
+| 1440 | 264 | 256 | 864 | 2 | 431.5 |
+| 1366 | 264 | hidden | 1046 | 3 | 348.33 |
+| 1366 | 264 | 256 | 790 | 2 | 394.5 |
+| 1280 | 224 | hidden | 1000 | 3 | 333 |
+| 1280 | 224 | 240 | 760 | 2 | 379.5 |
+| 1000 | 224 | hidden | 720 | 2 | 359.5 |
+| 1000 | 56 | 224 | 664 | 2 | 331.5 |
+| 800 | 224 | hidden | 520 | 1 | 519 |
+| 800 | 56 | 224 | 464 | 1 | 463 |
 
 Three columns hold at 1440 with the Vex sidebar hidden and two with it open,
 which were the requirements. The centre column never goes under the app's
@@ -247,10 +275,10 @@ each is derived from the region's own column at the floor:
 
 | Region | Budget | Where it comes from |
 | --- | --- | --- |
-| Price | 12 | `$0.000001230`, 177.84px: the string the 280px price row was derived from |
+| Price | 12 | `$0.000001230`, 177.84px (183px at whole-pixel advances): the string the 288px price row was derived from |
 | Signed delta | 8 | `+661.00%`, 61.36px |
-| Stat value | 8 | the four-column row leaves `(282 - 3 x 6) / 4 = 66px`; `8 x 7.67 = 61.4px` fits, nine (69px) would not |
-| Ticker | 10 | the identity column is 120px; ten slots of 9.1px are at most 91px, leaving 29px for the separator and the chain |
+| Stat value | 8 | the four-column row leaves `(288 - 3 x 6) / 4 = 67.5px`; `8 x 7.67 = 61.4px` fits, nine (69px) would not |
+| Ticker | 10 | the identity column is 126px; ten slots of 9.1px are at most 91px, leaving 35px for the separator and the chain |
 | Token name | none | keeps its CSS ellipsis by product decision; whole in the `title`, the card's accessible name and the disclosure |
 | Chain name | none | a short catalogue name; concedes to the ticker with an ellipsis, whole in the `title` and the disclosure |
 

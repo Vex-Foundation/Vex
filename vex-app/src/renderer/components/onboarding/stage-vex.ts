@@ -7,6 +7,8 @@
  *   ready      she has woken and the desk is ready, or the vault just unlocked: "Ready"
  *   sleeping   the desk was locked: "Sleeping · Locked" (she wakes when the unlock succeeds)
  *   concerned  a wrong password, a throttle or the vault reset panel: "Concerned"
+ *   a face     a first run screen (system check, Docker, services, database) says what she
+ *              shows for what it is doing: "Working" with a timer, "Ready", "Concerned", "Error"
  *
  * `launching` is true from the start of the process until the plate leaves the launch (the shell,
  * or a first-run screen): only a launch plays the wake from the token. A plate that mounts later
@@ -31,6 +33,8 @@ export interface StageVexState {
   readonly unlocked: boolean;
   /** The unlock screen has something to be concerned about. */
   readonly concerned: boolean;
+  /** What the screen standing on the plate says she shows (the first run), or null. */
+  readonly face: StageVexView | null;
   /** Seconds left of a throttle window, while there is one. */
   readonly countdown: number | null;
   /** `reveal`: the plate lifts away over the shell. */
@@ -52,6 +56,7 @@ const INITIAL: StageVexState = {
   pipelineReady: false,
   unlocked: false,
   concerned: false,
+  face: null,
   countdown: null,
   exit: "idle",
 };
@@ -66,7 +71,10 @@ export function formatCountdown(seconds: number): string {
   return `${minutes}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-/** The view for a state. Pure. Concerned wins, then an unlock, then the launch, else asleep. */
+/**
+ * The view for a state. Pure. Concerned wins, then a screen's face (once the launch's wake has
+ * handed her over), then an unlock, then the launch, else asleep.
+ */
 export function stageVexView(state: StageVexState): StageVexView {
   if (state.concerned) {
     return {
@@ -76,6 +84,8 @@ export function stageVexView(state: StageVexState): StageVexView {
       note: state.countdown === null ? null : formatCountdown(state.countdown),
     };
   }
+  // A first run screen speaks for her, but the wake always finishes first: she never skips it.
+  if (state.face !== null && (!state.launching || state.woken)) return state.face;
   const ready: StageVexView = { emotion: "idle", swatch: "done", word: "Ready", note: null };
   if (state.unlocked) return ready;
   if (state.launching) {
@@ -130,6 +140,25 @@ export function stageVexUnlocked(): void {
 /** The unlock screen is concerned (or no longer), with the seconds left of a throttle window. */
 export function stageVexConcerned(concerned: boolean, countdown: number | null = null): void {
   update({ concerned, countdown: concerned ? countdown : null });
+}
+
+/** The same face, by value (the store holds a flag set, never a moving object). */
+function sameFace(a: StageVexView | null, b: StageVexView | null): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.emotion === b.emotion && a.swatch === b.swatch && a.word === b.word && a.note === b.note
+  );
+}
+
+/** A first run screen says what she shows; null hands her back to the launch's own story. */
+export function stageVexFace(face: StageVexView | null): void {
+  if (sameFace(state.face, face)) return;
+  update({ face });
+}
+
+/** The screen that set `face` is leaving: clears it unless another screen has already replaced it. */
+export function stageVexFaceClear(face: StageVexView): void {
+  if (sameFace(state.face, face)) update({ face: null });
 }
 
 /** The stage to shell crossfade starts: the plate lifts away. */

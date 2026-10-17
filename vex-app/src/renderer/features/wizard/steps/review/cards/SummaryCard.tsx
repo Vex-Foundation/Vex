@@ -1,32 +1,26 @@
 /**
- * Shared review summary primitive (M11; landing rebrand — flat hairline
- * tile).
+ * One row of the review grid (docs/design/R3-MINIMAL.md section 10.3): the
+ * step's name after its swatch (14.5 / 500), the status word and the detail
+ * under it (12.5 muted), Edit at the right (13 / 500 blue).
  *
- * Each domain card under `cards/` uses this to render the same
- * label / status / children / Edit-button layout. Pulling the layout
- * out keeps every domain card under ~70 LOC and prevents drift
- * between cards (e.g. one renders the Edit button at the top, another
- * at the bottom — confusing operator UX during finalize review).
- *
- * Landing rebrand: the tile mirrors the `WizardStepPanel` surface —
- * depth is a luminance step + hairline, never backdrop blur or inset
- * shadows — so the review screen reads as one continuous sheet.
+ * Each domain card under `cards/` renders through this so the rows cannot
+ * drift apart. Status is a fill plus a word: the swatch beside the name, the
+ * word starting the detail line.
  */
 
 import type { JSX, ReactNode } from "react";
-import { cn } from "../../../../../lib/utils.js";
-import { Button } from "../../../../../components/ui/button.js";
+import { Swatch, type SwatchState } from "../../../../../components/ui/swatch.js";
 
 export type SummaryStatus = "ok" | "missing" | "partial" | "warning" | "info";
 
-/* Status is a colored WORD (design law: state = color + words, never a
- * dot) — the statusLabel itself carries the tone. */
-const STATUS_WORD_COLOR: Record<SummaryStatus, string> = {
-  ok: "text-success",
-  missing: "text-danger",
-  partial: "text-warning",
-  warning: "text-warning",
-  info: "text-ink-tertiary",
+/* Status by fill: set is solid, part of it the target, a consequence the
+ * ink hatch, nothing set or a plain note the outline. */
+const STATUS_SWATCH: Record<SummaryStatus, SwatchState> = {
+  ok: "done",
+  missing: "idle",
+  partial: "awaiting",
+  warning: "concerned",
+  info: "idle",
 };
 
 export interface SummaryCardProps {
@@ -48,45 +42,32 @@ export function SummaryCard({
   editDisabled = false,
   testId,
 }: SummaryCardProps): JSX.Element {
+  // A one-line detail reads after the word ("Configured · Stored locally");
+  // a richer one (a list, addresses) stands under it.
+  const inline = typeof children === "string";
   return (
-    <div
-      data-vex-review-card={testId}
-      className={cn(
-        // A3 boxless: hairline-separated register row, never a filled
-        // tile — the statusLabel word carries the state color.
-        "flex flex-col gap-2 border-b border-[var(--color-border)] pb-3",
-        "last:border-0 last:pb-0",
-      )}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-ink-primary">
-          {title}
+    <div data-vex-review-card={testId} className="vex-wz-sum__c">
+      <p className="vex-wz-sum__n">
+        <Swatch state={STATUS_SWATCH[status]} size={10} />
+        {title}
+      </p>
+      <div className="vex-wz-sum__d">
+        <span>
+          {statusLabel}
+          {inline ? ` · ${children}` : null}
         </span>
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "vex-micro",
-              STATUS_WORD_COLOR[status],
-            )}
-          >
-            {statusLabel}
-          </span>
-          {onEdit ? (
-            <Button
-              type="button"
-              variant="bare"
-              size="sm"
-              onClick={onEdit}
-              disabled={editDisabled}
-            >
-              Edit
-            </Button>
-          ) : null}
-        </div>
+        {!inline && children ? <div className="mt-1">{children}</div> : null}
       </div>
-      {children ? (
-        <div className="text-xs text-ink-secondary">
-          {children}
+      {onEdit ? (
+        <div className="vex-wz-sum__a">
+          <button
+            type="button"
+            className="vex-wz-link"
+            onClick={onEdit}
+            disabled={editDisabled}
+          >
+            Edit
+          </button>
         </div>
       ) : null}
     </div>

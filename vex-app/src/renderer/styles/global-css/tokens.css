@@ -107,7 +107,7 @@
    *     every UI word, labels and status words included, in sentence case.
    *     Inter Tight follows it as glyph coverage only.
    *   --font-mono  = JetBrains Mono (variable 100-800): every figure,
-   *     address, time and duration, with `.vex-num` (landing-motifs.css) for
+   *     address, time and duration, with `.vex-num` (type.css) for
    *     tabular figures. No pixel face.
    *   --font-code  = JetBrains Mono: code - xterm, code blocks, the file
    *     viewer, raw JSON. The same face as the figures, kept as its own
@@ -270,8 +270,8 @@
    * (#1b1412, main/main-window.ts) so first paint and the plate are one
    * surface. */
   --vex-alias-gate-plate: var(--color-night);
-  /* On the night print every type is paper (docs/design/V10-SPREAD.md
-   * section 1): the giant counter and the step numerals too, where the
+  /* On the night print every type is paper (docs/design/R3-MINIMAL.md
+   * section 1.1): the giant counter and the step numerals too, where the
    * peri-hi counter measured 1.34:1. The unlock field and its Unlock box are
    * night fields; the box keeps a half-peri edge so it reads on the print. */
   --vex-alias-gate-counter: var(--color-paper);
@@ -306,7 +306,7 @@
    * component would be invisible to the theme flip and banned by the design
    * guard.
    *
-   * THE RETUNED PALETTE (docs/design/V10-SPREAD.md section 1). The reading
+   * THE RETUNED PALETTE (docs/design/R3-MINIMAL.md section 1.1). The reading
    * surface, foreground, cursor and selection are literals rather than paper
    * aliases: a running program reads the background through OSC 11, so this
    * surface is a wire contract and moves only with a retune of the terminal

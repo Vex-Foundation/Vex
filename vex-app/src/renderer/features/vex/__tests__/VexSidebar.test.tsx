@@ -13,6 +13,10 @@
  *  - SHE DOCKS: a column that shows after the shell came up (off the
  *    welcome, or open again after a hide) plays her open episode; one open
  *    from the start shows her as she is;
+ *  - HIDING PLAYS HER CLOSE FIRST: the hide key collapses her into the token
+ *    and the column goes when that ends (the unmount waits), inert meanwhile,
+ *    with focus handed to the token chip; a second press keeps her; the
+ *    still frame, the avatar off or a column the shell closes go at once;
  *  - Needs you never decides: its key for an approval in the open chat says
  *    "Review ↓" and only closes a page over the chat;
  *  - STUDIO: the "This project" block opens the project's own Project assets
@@ -33,6 +37,8 @@ import type { VexPresence } from "../useVexPresence.js";
 import { approval } from "./fixtures.js";
 
 const presenceRef: { current: VexPresence | null } = { current: null };
+/** Reduced motion or Save-Data, as the still-frame read answers it. */
+const still = vi.hoisted(() => ({ current: false }));
 
 vi.mock("../useVexPresence.js", () => ({
   useVexPresence: () => {
@@ -59,6 +65,11 @@ vi.mock("../../../lib/api/projects.js", () => ({
     },
   }),
 }));
+vi.mock("../../../lib/motion/use-still-frame.js", () => ({
+  prefersSaveData: () => false,
+  prefersStillFrame: () => still.current,
+  useStillFrame: () => still.current,
+}));
 vi.mock("../../appShell/lighterTrading/LighterChatRail.js", () => ({
   LighterChatRail: () => <div data-testid="desk-chat" />,
 }));
@@ -74,6 +85,7 @@ function PageBlock(): JSX.Element | null {
 }
 const { useUiStore } = await import("../../../stores/uiStore.js");
 const { noteVexOnWelcome, takeVexDock, vexDockPending } = await import("../vex-dock.js");
+const { VEX_HIDE_EPISODE_MS, keepVex, vexClosing } = await import("../vex-hide.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
 const PROJECT = "00000000-0000-4000-8000-0000000000b2";
@@ -86,6 +98,7 @@ function presence(overrides: Partial<VexPresence> = {}): VexPresence {
     fill: "done",
     scope: "This chat:",
     timerStartedAt: null,
+    live: false,
     narration: "Calling Wallet balances to answer “And ETH?”",
     background: {
       count: 1,
@@ -120,6 +133,7 @@ function before(a: Element | null, b: Element | null): boolean {
 
 beforeEach(() => {
   window.localStorage.clear();
+  still.current = false;
   takeVexDock();
   presenceRef.current = presence();
   useUiStore.setState({
@@ -133,6 +147,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("VexSidebar, hidden", () => {
@@ -174,6 +189,7 @@ describe("VexSidebar, open", () => {
   });
 
   it("hides through its key, named for what it does", () => {
+    still.current = true;
     const onHide = vi.fn();
     render(<VexSidebar open onHide={onHide} />);
     fireEvent.click(screen.getByRole("button", { name: "Hide Vex" }));
@@ -290,6 +306,105 @@ describe("VexSidebar, the dock", () => {
     expect(holo()).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
     expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+  });
+});
+
+describe("VexSidebar, hiding plays her close first", () => {
+  const holo = () => document.querySelector("[data-vex-k2]");
+  const hideKey = () => screen.getByRole("button", { name: "Hide Vex" });
+
+  it("collapses her into the token, and the column goes when that ends", () => {
+    vi.useFakeTimers();
+    const onHide = vi.fn();
+    render(<VexSidebar open onHide={onHide} />);
+    fireEvent.click(hideKey());
+    expect(onHide).not.toHaveBeenCalled();
+    expect(holo()?.hasAttribute("data-vex-k2-closed")).toBe(true);
+    expect(sidebar().hasAttribute("data-vex-vs-closing")).toBe(true);
+    expect(vexClosing()).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS - 1);
+    });
+    expect(onHide).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(onHide).toHaveBeenCalledTimes(1);
+    expect(vexClosing()).toBe(false);
+  });
+
+  it("is inert while she closes, and hands focus to the token chip", () => {
+    vi.useFakeTimers();
+    render(
+      <>
+        <button type="button" data-vex-area="vex-token-chip">
+          Vex, Working
+        </button>
+        <VexSidebar open onHide={() => {}} />
+      </>,
+    );
+    hideKey().focus();
+    fireEvent.click(hideKey());
+    expect(sidebar().hasAttribute("inert")).toBe(true);
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+  });
+
+  it("keeps her on a second press: she opens again and nothing is written", () => {
+    vi.useFakeTimers();
+    const onHide = vi.fn();
+    render(<VexSidebar open onHide={onHide} />);
+    fireEvent.click(hideKey());
+    act(() => {
+      keepVex();
+    });
+    expect(holo()?.hasAttribute("data-vex-k2-closed")).toBe(false);
+    expect(sidebar().hasAttribute("inert")).toBe(false);
+    expect(vexClosing()).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS * 2);
+    });
+    expect(onHide).not.toHaveBeenCalled();
+  });
+
+  it("goes at once under the still frame (reduced motion or Save-Data)", () => {
+    still.current = true;
+    const onHide = vi.fn();
+    render(<VexSidebar open onHide={onHide} />);
+    fireEvent.click(hideKey());
+    expect(onHide).toHaveBeenCalledTimes(1);
+    expect(sidebar().hasAttribute("inert")).toBe(false);
+  });
+
+  it("goes at once with the avatar off, where there is nothing of her to close", () => {
+    useUiStore.setState({ showAvatar: false });
+    const onHide = vi.fn();
+    render(
+      <>
+        <button type="button" data-vex-area="vex-token-chip">
+          Vex, Working
+        </button>
+        <VexSidebar open onHide={onHide} />
+      </>,
+    );
+    hideKey().focus();
+    fireEvent.click(hideKey());
+    expect(onHide).toHaveBeenCalledTimes(1);
+    // The column is about to go: focus moves out of it first.
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+  });
+
+  it("drops the close when the shell closes the column on its own", () => {
+    vi.useFakeTimers();
+    const onHide = vi.fn();
+    const { rerender } = render(<VexSidebar open onHide={onHide} />);
+    fireEvent.click(hideKey());
+    rerender(<VexSidebar open={false} onHide={onHide} />);
+    expect(vexClosing()).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS * 2);
+    });
+    expect(onHide).not.toHaveBeenCalled();
+    expect(sidebar().hasAttribute("inert")).toBe(false);
   });
 });
 

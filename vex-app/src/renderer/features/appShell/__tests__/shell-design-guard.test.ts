@@ -47,8 +47,32 @@
  * into the renderer program (the renderer/main type boundary stays clean).
  * A raw text scan (not an AST) is correct here: every banned pattern is a
  * Tailwind class fragment or hex literal that can only appear as text.
+ *
+ * THE R3 BANS (docs/design/R3-MINIMAL.md section 1, wave 5 cleanup) close
+ * the redesign's retirements with their own wider scans. They read from disk
+ * with `node:fs`, as the sheet suites beside them do (glass-tokens,
+ * micro-label-register), because they reach CSS, docs and the main process,
+ * which no renderer glob should inline:
+ *
+ *   6. no Departure Mono anywhere in the renderer's code or sheets;
+ *   7. no `font-mono` with `uppercase` in one class string, and no sheet rule
+ *      in the mono face with caps: words are Instrument Sans in sentence
+ *      case and caps belong to tags (`.vex-stamp`, `.vex-tag`) alone;
+ *   8. no import of the retired eagle modules (the print plate, the flock
+ *      engine, its agent state, the sprite classifier) and no reference to
+ *      the eagle or bird art;
+ *   9. no citation of the retired V10 spread document anywhere in the app;
+ *  10. the trading colours (`trade-up`, `trade-down`) only in the Lighter,
+ *      Portfolio, Board and Agent Scan sources and their sheets.
+ *
+ * The radius, shadow and blur bans stay where they are: the patterns above
+ * for the call sites, `styles/global-css/__tests__/glass-tokens.test.ts` for
+ * the sheets and the token scales.
  */
 
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // ── Scope (glob keys are relative to this __tests__ directory) ────────────
@@ -175,7 +199,7 @@ const BANNED: readonly BannedPattern[] = [
   // the old `font-doto` utility no longer compiles to anything and banning it
   // is moot - what a stale edit CAN still write is the DEAD CLASS NAME, which
   // silently styles nothing. `.vex-micro-label` (+ `--wide`) in
-  // landing-motifs.css is the register; `.vex-doto-chip` is retired outright
+  // type.css is the register; `.vex-doto-chip` is retired outright
   // (owner decision 2: no backing plate under a micro label). Both names are a
   // red build here - rename the call site, never whitelist.
   {
@@ -228,8 +252,8 @@ const WHITELIST: readonly WhitelistEntry[] = [
   // sidebar (SessionsList.tsx) and the Studio rail (StudioSidebar.tsx) - wear
   // the `.vex-glass-rail` class from styles/global-css/glass.css, so the
   // utility no longer appears in either file and their entries would be stale
-  // sanctions. They are still the sanctioned side rails; the sanction now
-  // lives in the stylesheet the guard deliberately does not scan.
+  // sanctions. (R3 deleted glass.css and its classes outright; nothing in the
+  // app is glass any more.)
   // REMOVED (composer rebuild, owner decree 2026-07-29): the Signal Console
   // composer and its starter-chips band were the third and seventh sanctioned
   // glass surfaces. Both are now SOLID ink (--vex-surface-1) with a flat
@@ -471,5 +495,267 @@ describe("shell design guard (V10)", () => {
     expect(matchNames("vex-shiny-text")).toContain("ShinyText chrome");
     // Directional hover shadows are not resting glow.
     expect(matchNames("shadow-[0_2px_8px]")).toEqual([]);
+  });
+});
+
+// ── The R3 bans (docs/design/R3-MINIMAL.md section 1) ─────────────────────
+// Read from disk: these scans reach the sheets, the docs and the main
+// process, which the eager globs above deliberately leave out.
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+/** `vex-app/src/renderer`. */
+const RENDERER_DIR = path.resolve(HERE, "..", "..", "..");
+/** `vex-app`. */
+const APP_DIR = path.resolve(RENDERER_DIR, "..", "..");
+const GLOBAL_CSS_DIR = path.join(RENDERER_DIR, "styles", "global-css");
+
+const SKIPPED_DIRS = new Set(["node_modules", "dist", "out", "release", ".vite"]);
+
+interface Collected {
+  /** Posix path relative to the walk's base. */
+  readonly file: string;
+  readonly text: string;
+}
+
+/** Every file under `dir` with one of `extensions`, relative to `base`. */
+function collect(
+  dir: string,
+  base: string,
+  extensions: readonly string[],
+  includeTests: boolean,
+): Collected[] {
+  const found: Collected[] = [];
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current)) {
+      const full = path.join(current, entry);
+      if (statSync(full).isDirectory()) {
+        if (SKIPPED_DIRS.has(entry)) continue;
+        if (!includeTests && entry === "__tests__") continue;
+        walk(full);
+        continue;
+      }
+      if (!extensions.some((ext) => entry.endsWith(ext))) continue;
+      if (!includeTests && /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entry)) continue;
+      found.push({
+        file: path.relative(base, full).split(path.sep).join("/"),
+        text: readFileSync(full, "utf8"),
+      });
+    }
+  };
+  walk(dir);
+  return found;
+}
+
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+const RENDERER_CODE = collect(RENDERER_DIR, RENDERER_DIR, [".ts", ".tsx"], false);
+const RENDERER_SHEETS = collect(GLOBAL_CSS_DIR, GLOBAL_CSS_DIR, [".css"], false);
+
+// 6. The pixel font.
+const DEPARTURE = /Departure Mono|departure-mono/i;
+
+// 7. Mono caps. One class string (no quote in between) holding both utilities,
+// in either order; a variant prefix (`md:uppercase`) counts.
+const MONO_CAPS_CLASS =
+  /["'`][^"'`\n]*(?<![\w-])font-mono(?![\w-])[^"'`\n]*(?<![\w-])uppercase(?![\w-])|["'`][^"'`\n]*(?<![\w-])uppercase(?![\w-])[^"'`\n]*(?<![\w-])font-mono(?![\w-])/;
+/** Tags own the only caps in the app (ui-primitives/marks.css). */
+const TAG_SELECTOR = /\.vex-(?:stamp|tag)\b/;
+
+/** Each rule in the sheet whose body sets the mono face and caps, by selector. */
+function monoCapsRules(css: string): string[] {
+  const offenders: string[] = [];
+  for (const match of stripCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = (match[1] ?? "").trim();
+    const body = match[2] ?? "";
+    if (TAG_SELECTOR.test(selector)) continue;
+    const mono = /font-family:[^;]*var\(--font-mono\)/.test(body);
+    if (mono && /text-transform:\s*uppercase/.test(body)) offenders.push(selector);
+  }
+  return offenders;
+}
+
+// 8. The retired eagle modules, renderer-relative and without an extension.
+const RETIRED_MODULES = new Set([
+  "components/pixel/PrintPlate",
+  "components/pixel/flock-engine",
+  "components/pixel/agent-state",
+  "components/pixel/useDeskAgentState",
+  "lib/pixel/sprite",
+  "dev/print-plate/harness",
+]);
+const RETIRED_ART = /\/art\/(?:eagle\.png|birds\/)/;
+const IMPORT_SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'`])([^"'`\n]+)\1/g;
+
+/** The renderer-relative module a specifier in `file` names, or null for a package. */
+function resolveSpecifier(file: string, specifier: string): string | null {
+  let target: string;
+  if (specifier.startsWith("@/")) target = specifier.slice(2);
+  else if (specifier.startsWith(".")) target = path.posix.join(path.posix.dirname(file), specifier);
+  else return null;
+  return path.posix.normalize(target).replace(/\.(?:js|jsx|ts|tsx)$/, "");
+}
+
+function retiredImports(file: string, source: string): string[] {
+  const hits: string[] = [];
+  for (const match of source.matchAll(IMPORT_SPECIFIER)) {
+    const resolved = resolveSpecifier(file, match[2] ?? "");
+    if (resolved !== null && RETIRED_MODULES.has(resolved)) hits.push(resolved);
+  }
+  return hits;
+}
+
+// 9. The retired V10 spread document, spelled in parts so this file does not
+// cite it.
+const V10_DOC = new RegExp(`${["V10", "SPREAD"].join("-")}\\.md`);
+
+// 10. The trading colours, on trading values only (R3-MINIMAL.md section 1.2).
+const TRADE_COLOUR = /(?<![a-z])trade-(?:up|down)(?![a-z])/;
+/** Renderer sources that draw trading values: the four money surfaces. */
+const TRADE_SOURCE_PREFIXES: readonly string[] = [
+  "features/appShell/lighterTrading/",
+  "features/appShell/Board/",
+  "features/appShell/book/",
+  "features/appShell/screens/agent-scan/",
+  "features/appShell/screens/AgentScanScreen.tsx",
+  "features/appShell/screens/BoardScreen.tsx",
+  "features/appShell/screens/PortfolioScreen.tsx",
+];
+/** Their sheets, plus tokens.css, which declares the pair. */
+function isTradeSheet(file: string): boolean {
+  return (
+    file === "tokens.css" ||
+    file === "book.css" ||
+    file === "board.css" ||
+    file === "board-layout.css" ||
+    file === "market-picker.css" ||
+    file === "chart-tools.css" ||
+    file === "trade-ticket-controls.css" ||
+    file.startsWith("lighter-")
+  );
+}
+function isTradeSource(file: string): boolean {
+  return TRADE_SOURCE_PREFIXES.some((prefix) => file.startsWith(prefix));
+}
+
+describe("shell design guard (R3 bans)", () => {
+  it("scans the renderer's code and sheets", () => {
+    // Sanity: a broken walk cannot silently pass every ban below.
+    expect(RENDERER_CODE.length).toBeGreaterThan(500);
+    expect(RENDERER_CODE.map((c) => c.file)).toContain("features/appShell/AppShell.tsx");
+    expect(RENDERER_CODE.filter((c) => c.file.includes("__tests__"))).toEqual([]);
+    expect(RENDERER_SHEETS.map((c) => c.file)).toEqual(
+      expect.arrayContaining(["tokens.css", "type.css", "ui-primitives/marks.css"]),
+    );
+  });
+
+  it("ships no Departure Mono in any renderer source or sheet", { timeout: 60_000 }, () => {
+    const html = collect(RENDERER_DIR, RENDERER_DIR, [".html"], false);
+    const offenders = [...RENDERER_CODE, ...html, ...RENDERER_SHEETS]
+      .filter((c) => DEPARTURE.test(c.text))
+      .map((c) => c.file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("sets no word in JetBrains Mono caps: no font-mono with uppercase, no mono caps rule", () => {
+    const classes = RENDERER_CODE.filter((c) => MONO_CAPS_CLASS.test(c.text)).map((c) => c.file);
+    const rules = RENDERER_SHEETS.flatMap((c) =>
+      monoCapsRules(c.text).map((selector) => `${c.file} :: ${selector}`),
+    );
+    expect([...classes, ...rules]).toEqual([]);
+  });
+
+  it("imports none of the retired eagle modules and loads none of their art", () => {
+    const offenders = RENDERER_CODE.flatMap((c) =>
+      retiredImports(c.file, c.text).map((module) => `${c.file} -> ${module}`),
+    );
+    const art = [...RENDERER_CODE, ...RENDERER_SHEETS]
+      .filter((c) => RETIRED_ART.test(c.text))
+      .map((c) => `${c.file} -> eagle or bird art`);
+    expect([...offenders, ...art]).toEqual([]);
+  });
+
+  it("cites the retired V10 spread document nowhere in the app", { timeout: 60_000 }, () => {
+    const extensions = [".ts", ".tsx", ".css", ".html", ".md", ".mjs", ".js", ".json", ".yml"];
+    const scanned = [
+      ...collect(path.join(APP_DIR, "src"), APP_DIR, extensions, true),
+      ...collect(path.join(APP_DIR, "e2e"), APP_DIR, extensions, true),
+      ...collect(path.join(APP_DIR, "docs"), APP_DIR, extensions, true),
+      ...collect(path.join(APP_DIR, "scripts"), APP_DIR, extensions, true),
+      ...readdirSync(APP_DIR)
+        .filter((entry) => entry.endsWith(".md"))
+        .map((entry) => ({ file: entry, text: readFileSync(path.join(APP_DIR, entry), "utf8") })),
+    ];
+    expect(scanned.length).toBeGreaterThan(1000);
+    expect(scanned.map((c) => c.file)).toContain("docs/design/R3-MINIMAL.md");
+    const offenders = scanned.filter((c) => V10_DOC.test(c.text)).map((c) => c.file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the trading colours on the Lighter, Portfolio, Board and Agent Scan surfaces", () => {
+    const sources = RENDERER_CODE.filter(
+      (c) => TRADE_COLOUR.test(c.text) && !isTradeSource(c.file),
+    ).map((c) => c.file);
+    const sheets = RENDERER_SHEETS.filter(
+      (c) => TRADE_COLOUR.test(stripCssComments(c.text)) && !isTradeSheet(c.file),
+    ).map((c) => c.file);
+    expect([...sources, ...sheets]).toEqual([]);
+  });
+
+  // ── Pattern self-tests ──
+  it("reads mono caps in either order and in a variant, never across two strings", () => {
+    expect(MONO_CAPS_CLASS.test('className="font-mono text-[10px] uppercase"')).toBe(true);
+    expect(MONO_CAPS_CLASS.test("cn('uppercase tracking-wide font-mono')")).toBe(true);
+    expect(MONO_CAPS_CLASS.test('className="font-mono md:uppercase"')).toBe(true);
+    expect(MONO_CAPS_CLASS.test('className="font-mono vex-num"')).toBe(false);
+    expect(MONO_CAPS_CLASS.test('className="uppercase tracking-[0.1em]"')).toBe(false);
+    expect(MONO_CAPS_CLASS.test('cn("font-mono",\n  "uppercase")')).toBe(false);
+    expect(MONO_CAPS_CLASS.test('className="font-mono-ish not-uppercase"')).toBe(false);
+  });
+
+  it("flags a mono caps rule but lets a tag keep its caps", () => {
+    expect(
+      monoCapsRules(".x { font-family: var(--font-mono); text-transform: uppercase; }"),
+    ).toEqual([".x"]);
+    expect(
+      monoCapsRules(".vex-tag, .vex-stamp { font-family: var(--font-mono); text-transform: uppercase; }"),
+    ).toEqual([]);
+    expect(monoCapsRules(".x { font-family: var(--font-sans); text-transform: uppercase; }")).toEqual([]);
+    expect(
+      monoCapsRules("/* .x { font-family: var(--font-mono); text-transform: uppercase; } */"),
+    ).toEqual([]);
+  });
+
+  it("resolves relative and aliased imports of a retired module, and nothing else", () => {
+    expect(
+      retiredImports("features/x/Y.tsx", 'import { PrintPlate } from "../../components/pixel/PrintPlate.js";'),
+    ).toEqual(["components/pixel/PrintPlate"]);
+    expect(retiredImports("lib/pixel/index.ts", 'export { spriteGrid } from "./sprite.js";')).toEqual([
+      "lib/pixel/sprite",
+    ]);
+    expect(retiredImports("a/b.ts", 'const m = await import("@/components/pixel/flock-engine");')).toEqual([
+      "components/pixel/flock-engine",
+    ]);
+    expect(retiredImports("lib/pixel/index.ts", 'export { rng } from "./core.js";')).toEqual([]);
+    expect(retiredImports("components/icons/px/a.ts", 'import x from "./px-sprite.js";')).toEqual([]);
+  });
+
+  it("matches the trading tokens and utilities, not neighbouring words", () => {
+    for (const hit of ["text-trade-up", "var(--vex-alias-trade-down)", "bg-trade-down/20"]) {
+      expect(TRADE_COLOUR.test(hit)).toBe(true);
+    }
+    for (const miss of ['data-trade="up"', "trade-upgrade", "tradeUp"]) {
+      expect(TRADE_COLOUR.test(miss)).toBe(false);
+    }
+    expect(isTradeSource("features/appShell/lighterTrading/TradeTicket.tsx")).toBe(true);
+    expect(isTradeSource("features/appShell/SessionPanel.tsx")).toBe(false);
+    expect(isTradeSheet("lighter-book.css")).toBe(true);
+    expect(isTradeSheet("approval.css")).toBe(false);
+  });
+
+  it("spots a V10 spread citation without citing it here", () => {
+    expect(V10_DOC.test(`docs/design/${["V10", "SPREAD"].join("-")}.md section 1`)).toBe(true);
+    expect(V10_DOC.test("docs/design/R3-MINIMAL.md section 1")).toBe(false);
   });
 });

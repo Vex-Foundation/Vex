@@ -187,8 +187,7 @@ afterEach(() => {
   // into the next test, and never resolves as anything but the truth.
   resetMissionContractRequests();
   useUiStore.setState({ reviewModal: "none" });
-  // @ts-expect-error - test cleanup
-  delete window.vex;
+  Reflect.deleteProperty(window, "vex");
 });
 
 describe("MissionControls", () => {

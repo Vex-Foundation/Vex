@@ -1,6 +1,6 @@
 import { requireValue } from "../../../../../../../src/__tests__/helpers/require-value.js";
 /**
- * ApiKeysStep tests (M9 Step 3 + PR8 redesign — per-provider glass cards).
+ * ApiKeysStep tests (M9 Step 3 + the per-provider rows).
  *
  * Verifies:
  *  - Skip-card when JUPITER is configured.
@@ -184,7 +184,7 @@ describe("ApiKeysStep", () => {
     await waitFor(() => {
       expect(mockSetApiKeys).toHaveBeenCalledWith({ jupiterApiKey: "sk-jupiter-secret" });
     });
-    // Input value cleared synchronously before await — should be empty by now.
+    // Input value cleared synchronously before await - should be empty by now.
     expect(jupiterInput.value).toBe("");
     await waitFor(() => {
       expect(mockOnAdvance).toHaveBeenCalledWith("embedding");
@@ -324,7 +324,7 @@ describe("ApiKeysStep", () => {
     expect(getByText(/Encrypted locally/)).toBeTruthy();
     expect(managedStatus?.textContent ?? "").toContain("737810");
     expect(managedStatus?.textContent ?? "").toContain("4");
-    expect(card?.textContent ?? "").toContain("MANAGED");
+    expect(card?.textContent ?? "").toContain("Managed");
     expect(card?.textContent ?? "").toContain("Created and registered locally by Vex");
     expect(card?.textContent ?? "").not.toContain("Add the trading API private key from Lighter");
     expect(container.querySelector(
@@ -350,7 +350,7 @@ describe("ApiKeysStep", () => {
     expect(getByText(/Encrypted locally/)).toBeTruthy();
     expect(managedStatus?.textContent ?? "").toContain("1171");
     expect(managedStatus?.textContent ?? "").toContain("7");
-    expect(card?.textContent ?? "").toContain("MANAGED");
+    expect(card?.textContent ?? "").toContain("Managed");
     expect(card?.textContent ?? "").toContain("Created and registered locally by Vex");
     expect(card?.textContent ?? "").not.toContain("automatic registration is not available");
     expect(container.querySelector(
@@ -472,7 +472,7 @@ describe("ApiKeysStep", () => {
     expect(accountInput.value).toBe("1171");
   });
 
-  // ── PR8 redesign — per-provider cards ────────────────────────────────
+  // ── PR8 redesign - per-provider cards ────────────────────────────────
 
   it("renders provider cards in canonical order", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
@@ -518,7 +518,7 @@ describe("ApiKeysStep", () => {
       "https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper",
     );
 
-    // Relay is OPTIONAL by design — the card links the dashboard and its copy
+    // Relay is OPTIONAL by design - the card links the dashboard and its copy
     // must never imply bridging needs the key.
     const relayCard = container.querySelector('[data-vex-apikeys-card="relay"]');
     expect(relayCard?.querySelector("a[href]")?.getAttribute("href")).toBe(

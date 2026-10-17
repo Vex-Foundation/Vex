@@ -1,5 +1,5 @@
 /**
- * Smoke tests for the System Check screen — wires the M2 hooks to UI.
+ * Smoke tests for the System Check screen - wires the M2 hooks to UI.
  * Mocks the hooks directly (rather than IPC) so we don't depend on
  * jsdom's lack of `window.vex` and don't have to spin up a real
  * QueryClient per test.
@@ -26,6 +26,12 @@ vi.mock("../../../lib/api/onboarding.js", () => ({
 
 import { SystemCheck } from "../SystemCheck.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  getStageVex,
+  resetStageVex,
+  stageVexEnd,
+  stageVexView,
+} from "../../../components/onboarding/stage-vex.js";
 
 const openLogsFolder = vi.fn();
 
@@ -102,6 +108,9 @@ function happyEnv() {
 
 describe("SystemCheck", () => {
   beforeEach(() => {
+    resetStageVex();
+    // The launch is over: her face is the screen's, with no wake to wait for.
+    stageVexEnd();
     vi.useFakeTimers();
     useUiStore.setState({
       sidebarOpen: true,
@@ -124,6 +133,7 @@ describe("SystemCheck", () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
+    resetStageVex();
     mockHooks.useSystemHealth.mockReset();
     mockHooks.useDockerStatus.mockReset();
     mockHooks.useEnvState.mockReset();
@@ -160,11 +170,10 @@ describe("SystemCheck", () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
-    expect(
-      getByText(
-        /Vex is running from a quarantined location \(App Translocation\).*Move Vex\.app to \/Applications in Finder and relaunch\./,
-      ),
-    ).toBeDefined();
+    expect(getByText(/Vex is running from a quarantined location \(App Translocation\)\./)).toBeDefined();
+    expect(getByText(/Move Vex\.app to \/Applications in Finder and relaunch\./)).toBeDefined();
+    // The ink callout is an alert, the one loud thing on the screen.
+    expect(getByRole("alert").getAttribute("data-vex-callout")).toBe("error");
     expect(container.querySelectorAll("[data-step-status]")).toHaveLength(4);
     expect(getByRole("button", { name: /continue/i }).getAttribute("disabled"))
       .toBeNull();
@@ -189,5 +198,48 @@ describe("SystemCheck", () => {
     expect(
       queryByText(/Docker Model Runner is not active on this Linux host/)
     ).toBeNull();
+  });
+
+  it("stands at the right of the stage plate with its crumb and the version stamp", () => {
+    const { container, getByRole } = render(<SystemCheck />);
+    const root = container.querySelector('[data-vex-screen="systemCheck"]');
+    expect(root?.querySelector(".vex-stage-side")).not.toBeNull();
+    expect(root?.querySelector("[data-vex-version-stamp]")).not.toBeNull();
+    const crumb = getByRole("navigation", { name: "First run" });
+    const steps = Array.from(crumb.querySelectorAll("li")).map((li) => li.textContent);
+    expect(steps).toEqual([
+      "System check",
+      "Docker",
+      "Services",
+      "Database",
+      "Setup",
+    ].map((label) => expect.stringContaining(label)));
+    expect(crumb.querySelector('[aria-current="step"]')?.textContent).toContain("System check");
+  });
+
+  it.each([
+    ["loading", "Working"],
+    ["settled", "Ready"],
+  ])("tells the plate what Vex shows while the probes are %s", (phase, word) => {
+    if (phase === "loading") {
+      mockHooks.useEnvState.mockReturnValue({ isPending: true, data: undefined });
+    }
+    render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe(word);
+  });
+
+  it("is concerned when Docker is not ready, and in error when a probe failed", () => {
+    const stopped = happyDocker("active");
+    stopped.data.data.daemon.running = false;
+    mockHooks.useDockerStatus.mockReturnValue(stopped);
+    const first = render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe("Concerned");
+    first.unmount();
+    mockHooks.useDockerStatus.mockReturnValue({
+      isPending: false,
+      data: { ok: false, error: { code: "x", message: "no docker" } },
+    });
+    render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe("Error");
   });
 });

@@ -4,12 +4,15 @@
  * plateau print, mounted ONCE by `App` (`components/onboarding/PreShellStage.tsx`,
  * `StagePlate`). It never moves; only the type over it changes. Two layouts:
  *
- *   plate  the wake (the boot gate) and the unlock: a 720 plate at the left at
- *          the full window height with Vex rising from the VEX token and her
- *          state word on the print, paper at the right with the type.
- *   print  the first run screens and the wizard, which keep their V10
- *          composition (the leaf below) until they are restyled: the print at
- *          window size, no animal on it.
+ *   plate  the wake (the boot gate), the unlock and the first run screens
+ *          (system check, Docker, services, database): a 720 plate at the left
+ *          at the full window height with Vex rising from the VEX token and
+ *          her state word on the print, paper at the right with the type.
+ *   print  the wizard only: the print at window size, no animal on it, under
+ *          the wizard's own R3 frame (`WizardShell`), which draws its plate
+ *          and its step page itself.
+ *
+ * `stageLayoutFor` (`PreShellStage.tsx`) picks the layout per view.
  *
  * Owns: the stage layout, the wake and unlock type, the stage to shell
  * crossfade, and the `[data-vex-gate="true"]` token scope every pre-shell
@@ -140,8 +143,8 @@
   opacity: 0.82;
   font-size: 12.5px;
 }
-/* The first run screens' layout: the print at window size, no animal on it,
- * the print's own position (V10). It develops out of the paper over 240ms. */
+/* The wizard's layout: the print at window size, no animal on it, the print's
+ * own position (V10). It develops out of the paper over 240ms. */
 .vex-stage-plate__full {
   position: absolute;
   inset: 0;
@@ -234,8 +237,10 @@
   user-select: none;
 }
 
-/* The ground row: a hairline and one mono caption line on the dark ground,
- * white in both rooms (the spread caption anatomy). */
+/* The ground row: a hairline and one caption line on the dark ground, white
+ * in both rooms. The caption is a word, so it is Instrument Sans in sentence
+ * case (docs/design/R3-MINIMAL.md section 1.3); a figure inside it carries
+ * `.vex-num`. */
 .vex-stage-ground {
   position: absolute;
   z-index: 2;
@@ -256,11 +261,11 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 24px;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.1;
-  letter-spacing: var(--tracking-caption);
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--vex-alias-on-photo);
   white-space: nowrap;
 }
@@ -295,7 +300,7 @@
  *  the unlock (spec section 10.2)                               *
  * ============================================================ */
 /* The unlock stands on the plate and the paper: no ground row, no caption
- * hairline (the first run screens' `.vex-stage--leaf` keeps its own). */
+ * hairline (the `.vex-stage--leaf` layout, which has no caller now, keeps its own). */
 .vex-stage:not(.vex-stage--leaf) .vex-stage-ground {
   display: none;
 }
@@ -511,7 +516,7 @@
 }
 
 /* ============================================================ *
- *  leaf: the setup screens and the wizard (d8)                  *
+ *  leaf: SetupFrame's default page (no caller since R3 wave 5)  *
  * ============================================================ */
 .vex-stage-sky {
   position: relative;
@@ -526,11 +531,6 @@
   padding: 22px 0 0 60px;
   /* The release counter alone: what the leaf and the margins leave. */
   --vex-stage-counter: min(288px, calc((100vw - var(--vex-stage-leaf) - 120px) / 1.96), 34vh);
-}
-/* The wizard: "(02)" is about 1.35 em wide and shares the sky with the
- * step index (about 190 with its gap). */
-.vex-stage-sky--steps {
-  --vex-stage-counter: min(288px, calc((100vw - var(--vex-stage-leaf) - 300px) / 1.35), 34vh);
 }
 .vex-stage--leaf .vex-stage-ground {
   right: calc(var(--vex-stage-leaf) + 56px);
@@ -563,6 +563,35 @@
     overflow-y: clip;
   }
 }
+
+/* The rise: the first run screens' one-shot load-in (a line rises 18px on
+ * the entrance curve, `--vex-ease-out`), with stagger steps for a screen's
+ * head, body and actions. Rests perfectly still. The 600ms is a named
+ * exception to the desktop duration scale (MOTION-POLICY.md, the landing
+ * motifs it was authored against); base.css's reduced-motion catch-all
+ * collapses it. */
+@keyframes vex-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.vex-rise {
+  animation: vex-rise 600ms var(--vex-ease-out) both;
+}
+.vex-rise-d1 {
+  animation-delay: 90ms;
+}
+.vex-rise-d2 {
+  animation-delay: 190ms;
+}
+.vex-rise-d3 {
+  animation-delay: 300ms;
+}
 /* Night Ledger paper carries the faint print grain. */
 :root:not([data-vex-theme="celeris"]) .vex-stage-leaf::after {
   content: "";
@@ -576,28 +605,11 @@
   background-size: 240px 240px;
 }
 
-/* The page head: mono eyebrow, the 56px serif title, the lead. */
+/* The page head: the 56px serif title, the lead. */
 .vex-stage-leaf__head {
   margin-bottom: 28px;
 }
-/* The wizard's eyebrow alone: the step panel's own title follows it. */
-.vex-stage-leaf__head:not(:has(.vex-stage-leaf__title)) {
-  margin-bottom: 0;
-}
-.vex-stage-leaf__eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-primary);
-}
-.vex-stage-leaf__eyebrow > span {
-  color: var(--vex-alias-label-secondary);
-}
-.vex-stage-leaf__title,
-[data-vex-gate="true"] .vex-step-title {
+.vex-stage-leaf__title {
   font-family: var(--font-serif);
   font-weight: 400;
   font-size: 56px;
@@ -605,11 +617,7 @@
   letter-spacing: -0.014em;
   color: var(--vex-alias-title);
 }
-.vex-stage-leaf__eyebrow + .vex-stage-leaf__title {
-  margin-top: 14px;
-}
-.vex-stage-leaf__lead,
-[data-vex-gate="true"] .vex-step-lede {
+.vex-stage-leaf__lead {
   margin-top: 16px;
   font-size: 15px;
   line-height: 23px;
@@ -619,46 +627,9 @@
   .vex-stage-leaf__body {
     padding: 56px 40px 48px;
   }
-  .vex-stage-leaf__title,
-  [data-vex-gate="true"] .vex-step-title {
+  .vex-stage-leaf__title {
     font-size: 48px;
   }
-}
-
-/* The wizard's step index on the sky: numeral, swatch, name (section 1:
- * index and step numerals 24, line 26). */
-.vex-stage-steps {
-  display: grid;
-  grid-template-rows: repeat(7, 26px);
-  padding-bottom: 6px;
-}
-.vex-stage-step {
-  display: grid;
-  grid-template-columns: 40px 14px minmax(0, 1fr);
-  column-gap: 6px;
-  align-items: center;
-  color: var(--vex-alias-label-primary);
-}
-.vex-stage-step__n {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--vex-alias-gate-counter);
-}
-.vex-stage-step__sw {
-  display: grid;
-  place-items: center;
-  color: var(--vex-alias-title);
-}
-.vex-stage-step__t {
-  font-size: 14px;
-  line-height: 18px;
-  white-space: nowrap;
-}
-.vex-stage-step[aria-current="step"] .vex-stage-step__t {
-  color: var(--vex-alias-title);
 }
 
 /* ============================================================ *
@@ -671,8 +642,7 @@
  * screen, so the pre-shell differences are a re-projection here, never a
  * call-site edit. The leaf is the same paper as the shell, so the scope
  * re-pins little: the hairline and field strengths from the theme-aware
- * `--vex-alias-gate-*` group, the accent-as-text names, and the 11px
- * Departure Mono caption (crisp at 11, section 1). */
+ * `--vex-alias-gate-*` group and the accent-as-text names. */
 [data-vex-gate="true"] {
   --color-border: var(--vex-alias-gate-border);
   --color-input: var(--vex-alias-gate-input);
@@ -680,8 +650,6 @@
   --vex-accent-text: var(--color-accent-primary);
   --color-popover: var(--color-surface-1);
   --color-muted: var(--vex-alias-gate-muted);
-  --vex-micro-size: 0.6875rem;
-  --vex-micro-tracking: var(--tracking-status);
 }
 
 /* --- The page CTA ---------------------------------------------- */
@@ -697,48 +665,6 @@
   height: 44px;
   padding-inline: 18px;
 }
-/* A bare text action in a step's footer ("Continue without a wallet") reads
- * as an underlined ink link on the leaf (d8). */
-[data-vex-gate="true"] .vex-step-actions button[data-vex-button="bare"] {
-  height: 36px;
-  padding-inline: 0;
-  font-size: 14px;
-  color: var(--vex-alias-label-primary);
-  text-decoration: underline;
-  text-decoration-color: var(--vex-alias-rule);
-  text-underline-offset: 4px;
-}
-[data-vex-gate="true"] .vex-step-actions button[data-vex-button="bare"]:enabled:hover {
-  background: transparent;
-  text-decoration-color: currentColor;
-}
-
-/* --- The wizard step head on the leaf ---------------------------- */
-/* Lives here, not in WizardStepPanel.tsx, because that component is also
- * every Settings section header in the app shell, where its own composition
- * must not change. The hook classes carry no declarations outside this
- * scope. On the leaf the step reads as d8: no glyph badge, the 56px serif
- * title under the stepper's eyebrow, the lead under it, the actions
- * left-aligned, and no trailing meta line (the eyebrow already says
- * "Step 2 of 7" and the privacy link sits on the stage ground). */
-[data-vex-gate="true"] .vex-step-header {
-  display: block;
-}
-[data-vex-gate="true"] .vex-step-header > div {
-  display: block;
-  padding-top: 0;
-}
-[data-vex-gate="true"] .vex-step-icon,
-[data-vex-gate="true"] .vex-step-meta {
-  display: none;
-}
-[data-vex-gate="true"] .vex-step-title {
-  margin-top: 14px;
-}
-[data-vex-gate="true"] .vex-step-actions {
-  justify-content: flex-start;
-}
-
 /* --- The gate scrollbar ---------------------------------------- */
 /* The thumb is a passive affordance and sits below the content's contrast
  * floor: the accent at partial alpha. Wins over the onboarding recipe by
