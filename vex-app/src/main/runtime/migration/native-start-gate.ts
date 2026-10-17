@@ -68,6 +68,12 @@ export interface NativeStartGate {
   removeOldData(input: RuntimeMigrationRemoveOldDataInput): Promise<RuntimeMigrationRemoveOldDataResult>;
   /** The latest progress event of the move in flight (null otherwise), for a screen that joins late. */
   lastProgress(): RuntimeMigrationProgress | null;
+  /**
+   * Open, with no move or start-fresh running: the native cluster belongs to
+   * the runtime. Settings' restart and reset act only then (they start or
+   * delete the cluster themselves, under the runtime's hold).
+   */
+  isOpen(): boolean;
   /** Quit: abort a running operation and wait for it to settle. */
   shutdown(): Promise<void>;
 }
@@ -318,6 +324,8 @@ export function createNativeStartGate(deps: NativeStartGateDeps): NativeStartGat
     },
 
     lastProgress: () => progress,
+
+    isOpen: () => openReason !== null && op === null,
 
     async shutdown() {
       lifetime.abort();

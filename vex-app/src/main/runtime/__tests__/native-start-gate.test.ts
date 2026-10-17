@@ -241,4 +241,22 @@ describe("the native start gate", () => {
     engine.removeOldData.mockResolvedValue({ kind: "failed", reason: "docker_unavailable", message: "down" });
     expect(await gate.removeOldData({ allowWithoutImport: false })).toEqual({ kind: "failed", reason: "source_offline", message: "down" });
   });
+
+  it("says it is open (for Settings' restart and reset) only once nothing pending or running owns the cluster", async () => {
+    const { gate, engine } = setup(PENDING);
+    expect(gate.isOpen()).toBe(false);
+    await gate.boot();
+    expect(gate.isOpen()).toBe(false);
+    const run = deferred<Migrate>();
+    engine.migrate.mockImplementation(async () => run.promise);
+    const moving = gate.migrate();
+    expect(gate.isOpen()).toBe(false);
+    run.resolve(MIGRATED);
+    await moving;
+    expect(gate.isOpen()).toBe(true);
+
+    const fresh = setup({ kind: "not_needed", reason: "native_install" });
+    await fresh.gate.boot();
+    expect(fresh.gate.isOpen()).toBe(true);
+  });
 });

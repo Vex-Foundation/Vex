@@ -50,6 +50,7 @@ interface Harness {
   };
   ops: string[];
   holdAvailable: boolean;
+  gateOpen: boolean;
   native: boolean;
   aliveCheck: (pid: number) => boolean;
   readonly opEnds: { count: number };
@@ -96,6 +97,7 @@ function harness(): Harness {
     hold,
     ops: [],
     holdAvailable: true,
+    gateOpen: true,
     native: true,
     aliveCheck: () => false,
     opEnds,
@@ -106,6 +108,7 @@ function harness(): Harness {
     isNative: () => h.native,
     acquireHold: () => (h.holdAvailable ? (hold as NativeRuntimeHold) : null),
     activeCriticalOps: () => h.ops,
+    startGateOpen: () => h.gateOpen,
     beginLocalRuntimeOp: () => {
       calls.push("op:begin");
       return () => {
@@ -215,6 +218,27 @@ describe.each(["restart", "reset"] as const)("%s refuses", (action) => {
     expect(h.hold.stop).not.toHaveBeenCalled();
   });
 
+  it("while the native start gate is shut or a move runs, starting and deleting nothing", async () => {
+    const h = harness();
+    h.gateOpen = false;
+    expect(await run(h)).toMatchObject({ kind: "refused", reason: "migration_pending" });
+    expect(h.hold.stop).not.toHaveBeenCalled();
+    expect(h.hold.start).not.toHaveBeenCalled();
+    expect(existsSync(path.join(h.dataDir, "PG_VERSION"))).toBe(true);
+  });
+
+  it("when a move began between the first check and the hold, giving the hold back", async () => {
+    const h = harness();
+    const acquire = h.deps.acquireHold;
+    (h.deps as { acquireHold: () => NativeRuntimeHold | null }).acquireHold = () => {
+      h.gateOpen = false;
+      return acquire();
+    };
+    expect(await run(h)).toMatchObject({ kind: "refused", reason: "migration_pending" });
+    expect(h.hold.release).toHaveBeenCalledTimes(1);
+    expect(h.hold.stop).not.toHaveBeenCalled();
+  });
+
   it("while another start, restart or reset holds the runtime", async () => {
     const h = harness();
     h.holdAvailable = false;
@@ -311,7 +335,7 @@ describe("reset local data", () => {
       deletedBytes: 0,
       relaunching: true,
     });
-    expect(JSON.parse(readFileSync(h.statePath, "utf8"))).toEqual({ pg: null });
+    expect(JSON.parse(readFileSync(h.statePath, "utf8"))).toEqual({ pg: null, provider: "native" });
   });
 
   it("refuses when the stop failed, deletes nothing, and starts the runtime again", async () => {

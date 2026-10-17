@@ -10,6 +10,7 @@ import type { LocalRuntimeInfo, RuntimeResetResult, RuntimeRestartResult } from 
 import { recycleEngineDbAfterRestart } from "../../database/engine-db-readiness.js";
 import { log } from "../../logger/index.js";
 import { activeCriticalOps, beginCriticalOp, CRITICAL_OP } from "../../updates/critical-ops.js";
+import { nativeStartGate } from "../migration/native-start-gate.js";
 import { getRuntimeMode } from "../runtime-mode.js";
 import { modelsDir, pgDataDir, RUNTIME_DIR } from "../runtime-paths.js";
 import { readRuntimeState, writeRuntimeState } from "../runtime-state.js";
@@ -37,6 +38,7 @@ function production(): LocalRuntimeMaintenance {
     isNative: () => getRuntimeMode() === "native",
     acquireHold: acquireNativeRuntimeHold,
     activeCriticalOps,
+    startGateOpen: () => nativeStartGate().isOpen(),
     beginLocalRuntimeOp: () => beginCriticalOp(CRITICAL_OP.localRuntime),
     currentStatus: () => nativeRuntimeProgress.current(),
     reconnectEngineDb: recycleEngineDbAfterRestart,

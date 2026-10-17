@@ -6,11 +6,14 @@
  * WHEN THEY REFUSE. Outside the native runtime; while a start, a restart or a
  * reset runs, or a data migration holds the `localRuntime` critical op; while
  * the schema migration runs (`dbMigration`: the database must not vanish under
- * it); and while runtime-state.json records a migration that has not
- * completed, because that migration owns the cluster until it does (the boot
- * wiring does not even start the runtime then). The checks run before the
- * hold is taken and the critical-op ones again right after, so nothing that
- * began during the first await is overlooked.
+ * it); while the native start gate (`migration/native-start-gate.ts`) is shut
+ * or a move or start-fresh runs, because until it opens the cluster belongs to
+ * the migration and every native start must go through the gate; and while
+ * runtime-state.json records a migration that has not completed. Both actions
+ * start (or delete) the cluster themselves, under the hold, and only once the
+ * gate is open: an open gate never hands the cluster back to the migration.
+ * The checks run before the hold is taken and the synchronous ones again
+ * right after, so nothing that began during the first await is overlooked.
  *
  * RESTART. Stop both servers (the progress returns to `idle`), then the
  * ordinary start, so the progress bus walks postgres -> model -> embeddings ->
@@ -28,8 +31,9 @@
  * crash may have left) and clears its record in runtime-state.json (`pg`: the
  * system_identifier and last port). Wallets, the vault, the config and the
  * embeddings model are files elsewhere and are not touched; the migration's
- * record and `provider` stay, so a migrated install is not offered the
- * migration again. The next start finds no PG_VERSION, runs initdb and, with
+ * record stays, and `provider` is set to native (the data lives in the native
+ * cluster, now an empty one), so a reset install is never offered a move of
+ * the previous release's data it had already left behind. The next start finds no PG_VERSION, runs initdb and, with
  * `pg` null, bootstraps and records the NEW cluster's identity (D6) instead of
  * judging it against the old one. (Deleting pg18 alone would also do: the
  * supervisor drops a recorded identity when it has to create the cluster.
@@ -74,6 +78,8 @@ export interface LocalRuntimeMaintenanceDeps {
   readonly acquireHold: () => NativeRuntimeHold | null;
   /** Labels of the critical ops in flight (`activeCriticalOps`). */
   readonly activeCriticalOps: () => readonly string[];
+  /** The native start gate is open and no move or start-fresh runs. */
+  readonly startGateOpen: () => boolean;
   /** Mark a `localRuntime` critical op; returns its end. */
   readonly beginLocalRuntimeOp: () => () => void;
   readonly currentStatus: () => NativeRuntimeStatus;
@@ -117,8 +123,14 @@ export function createLocalRuntimeMaintenance(deps: LocalRuntimeMaintenanceDeps)
   const dataDir = pgDataDir(deps.runtimeDir);
   let restarting: Promise<RuntimeRestartResult> | null = null;
 
-  /** Busy for a reason the critical-op registry knows. */
+  /** Busy for a reason the critical-op registry or the start gate knows. */
   function busy(): Refused | null {
+    if (!deps.startGateOpen()) {
+      return refused(
+        "migration_pending",
+        "The local runtime waits on moving your existing data; finish that before changing it.",
+      );
+    }
     const ops = deps.activeCriticalOps();
     if (ops.includes(CRITICAL_OP.localRuntime)) {
       return refused("busy", "The local runtime is busy: it is starting, or a data migration is running.");
@@ -263,7 +275,7 @@ export function createLocalRuntimeMaintenance(deps: LocalRuntimeMaintenanceDeps)
         await deps.fs.rm(`${dataDir}.initdb`);
         const identity = checked.state.pg?.systemIdentifier ?? "none";
         // Re-read, so a field written since the check (or by a newer build) is kept.
-        await deps.writeState(statePath, { ...(await deps.readState(statePath)), pg: null });
+        await deps.writeState(statePath, { ...(await deps.readState(statePath)), pg: null, provider: "native" });
         deps.log.info(
           `[runtime:native] reset local data: deleted ${dataDir} (${size.complete ? "" : "at least "}` +
             `${String(size.bytes)} bytes in ${String(size.files)} files) and cleared the cluster record ` +
