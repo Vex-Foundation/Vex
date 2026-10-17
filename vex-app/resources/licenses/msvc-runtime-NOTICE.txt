@@ -2,8 +2,9 @@ Microsoft Visual C++ runtime (Windows builds of Vex only)
 
 The Windows builds of Vex carry, beside the bundled PostgreSQL programs
 (postgres/bin/) and llama-server (llama/), the Microsoft Visual C++ runtime
-libraries those programs link: vcruntime140.dll and vcruntime140_1.dll, and
-for llama-server also msvcp140.dll. They are copied from the Microsoft.VC14x.CRT
+libraries those programs link: vcruntime140.dll beside the PostgreSQL programs,
+and msvcp140.dll and vcruntime140.dll (on x64 also vcruntime140_1.dll) beside
+llama-server. They are copied from the Microsoft.VC14x.CRT
 folder of the Visual Studio redistributable that built the programs
 (native-runtime/lib/common.sh), because a clean Windows installation has no
 Visual C++ redistributable. Vex's Windows packaging signs them with Vex's own

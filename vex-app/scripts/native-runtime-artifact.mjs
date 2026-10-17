@@ -302,8 +302,8 @@ const NAMING = Object.freeze({
     module: (name) => `${name}.dylib`,
     llamaLibrary: (name) => `lib${name}.0.dylib`,
     cpuBackend: (variant) => (variant === undefined ? "libggml-cpu.so" : `libggml-cpu-${variant}.so`),
-    postgresRuntime: Object.freeze([]),
-    llamaRuntime: Object.freeze([]),
+    postgresRuntime: () => Object.freeze([]),
+    llamaRuntime: () => Object.freeze([]),
   }),
   linux: Object.freeze({
     program: (name) => name,
@@ -311,8 +311,8 @@ const NAMING = Object.freeze({
     module: (name) => `${name}.so`,
     llamaLibrary: (name) => `lib${name}.so.0`,
     cpuBackend: (variant) => (variant === undefined ? "libggml-cpu.so" : `libggml-cpu-${variant}.so`),
-    postgresRuntime: Object.freeze([]),
-    llamaRuntime: Object.freeze([]),
+    postgresRuntime: () => Object.freeze([]),
+    llamaRuntime: () => Object.freeze([]),
   }),
   win32: Object.freeze({
     program: (name) => `${name}.exe`,
@@ -321,9 +321,16 @@ const NAMING = Object.freeze({
     llamaLibrary: (name) => `${name}.dll`,
     cpuBackend: (variant) => (variant === undefined ? "ggml-cpu.dll" : `ggml-cpu-${variant}.dll`),
     // The MSVC runtime, app-local: a clean Windows has no VC++
-    // redistributable. Postgres links vcruntime only; llama also links msvcp.
-    postgresRuntime: Object.freeze(["vcruntime140.dll", "vcruntime140_1.dll"]),
-    llamaRuntime: Object.freeze(["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"]),
+    // redistributable. Postgres (C) links vcruntime140 only; llama-server
+    // (C++) also links msvcp140, and on x64 vcruntime140_1 (the x64-only FH4
+    // exception handling runtime). Read off the native-runtime-2026.10.17-1
+    // trees.
+    postgresRuntime: () => Object.freeze(["vcruntime140.dll"]),
+    llamaRuntime: (machine) => Object.freeze(
+      machine === "amd64"
+        ? ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"]
+        : ["msvcp140.dll", "vcruntime140.dll"]
+    ),
   }),
 });
 
@@ -350,11 +357,11 @@ export function requiredFiles(target, vectorDefaultVersion) {
     naming.libpq,
     ...POSTGRES_MODULES.map((name) => `postgres/lib/postgresql/${naming.module(name)}`),
     ...POSTGRES_SHARE.map((name) => `postgres/share/postgresql/${name}`),
-    ...naming.postgresRuntime.map((name) => `postgres/bin/${name}`),
+    ...naming.postgresRuntime(target.machine.postgres).map((name) => `postgres/bin/${name}`),
     `llama/${naming.program("llama-server")}`,
     ...LLAMA_LIBRARIES.map((name) => `llama/${naming.llamaLibrary(name)}`),
     ...cpuBackendVariants(target).map((variant) => `llama/${naming.cpuBackend(variant)}`),
-    ...naming.llamaRuntime.map((name) => `llama/${name}`),
+    ...naming.llamaRuntime(target.machine.llama).map((name) => `llama/${name}`),
     ...TREE_LICENSES,
   ];
   if (vectorDefaultVersion !== undefined) {

@@ -397,8 +397,8 @@ SOFTWARE.
 ### Microsoft Visual C++ runtime (Windows builds)
 
 The Windows trees carry the Visual C++ runtime DLLs their programs link
-(`vcruntime140.dll`, on x64 also `vcruntime140_1.dll`, and `msvcp140.dll` for
-`llama-server`), copied from the Visual Studio redistributable that built them,
+(`vcruntime140.dll` for PostgreSQL; `msvcp140.dll`, `vcruntime140.dll` and, on
+x64, `vcruntime140_1.dll` for `llama-server`), copied from the Visual Studio redistributable that built them,
 because a clean Windows has no Visual C++ redistributable. They are Microsoft
 Distributable Code, redistributed under the Visual Studio license terms; the
 notice, with links to Microsoft's terms and redistribution list, ships at
