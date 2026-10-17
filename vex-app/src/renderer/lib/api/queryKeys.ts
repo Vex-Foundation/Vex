@@ -14,6 +14,7 @@ export const systemKeys = {
   osInfo: () => ["system", "osInfo"] as const,
   network: () => ["system", "network"] as const,
   runtime: () => ["system", "runtime"] as const,
+  runtimeMigration: () => ["system", "runtimeMigration"] as const,
 };
 
 export const dockerKeys = {
