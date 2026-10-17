@@ -100,8 +100,18 @@ export async function getInstallId(deps: RenderDeps): Promise<string> {
   return id;
 }
 
+/**
+ * What the pg_password generator needs: no template, no resources dir. The
+ * native runtime's initdb (`runtime/native/postgres-supervisor.ts`) reuses
+ * this exact secret, so it must be callable without a compose render.
+ */
+export type PgPasswordDeps = Pick<
+  RenderDeps,
+  "userDataDir" | "secretAdapter" | "randomAdapter" | "cryptoAdapter"
+>;
+
 export async function getPgPassword(
-  deps: RenderDeps
+  deps: PgPasswordDeps
 ): Promise<{ composePath: string }> {
   const targetDir = path.join(deps.userDataDir, SECRETS_DIR_NAME);
   const targetPath = path.join(targetDir, PG_PASSWORD_FILE_NAME);
