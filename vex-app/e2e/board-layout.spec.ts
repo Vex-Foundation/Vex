@@ -898,10 +898,10 @@ test.describe("board paint", () => {
     expect(paint?.radius).toBe("0px");
     expect(paint?.shadow).toBe("none");
     expect(paint?.swatch).not.toBeNull();
-    expect(paint?.priceFont).toContain("Departure Mono");
+    expect(paint?.priceFont).toContain("JetBrains Mono");
   });
 
-  test("sets the modal header in Departure Mono on a ruled paper sheet", async ({
+  test("sets the modal header in JetBrains Mono on a ruled paper sheet", async ({
     page,
   }) => {
     await open(page, { width: 1440 });
@@ -914,7 +914,7 @@ test.describe("board paint", () => {
         rule: getComputedStyle(head).borderBottomWidth,
       };
     });
-    expect(header?.font).toContain("Departure Mono");
+    expect(header?.font).toContain("JetBrains Mono");
     expect(header?.rule).toBe("1px");
   });
 });

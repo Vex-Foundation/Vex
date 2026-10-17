@@ -8,19 +8,16 @@ this file).
 Shipped (variable WOFF2, latin subset, wght 400-700 + wdth 75-100 axes):
   /fonts/instrument-sans-latin-var.woff2              - "Instrument Sans" (UI + reading)
 
-Shipped (static WOFF2, one 400 weight):
-  /fonts/departure-mono-regular.woff2                 - "Departure Mono" (labels, data)
-
 Shipped (variable WOFF2, latin + latin-ext subsets, wght axis):
   /fonts/inter-tight-latin-wght.woff2                 - "Inter Tight" (glyph coverage)
   /fonts/inter-tight-latin-ext-wght.woff2
   /fonts/inter-tight-italic-latin-wght.woff2
   /fonts/inter-tight-italic-latin-ext-wght.woff2
-  /fonts/jetbrains-mono-latin-wght.woff2              - "JetBrains Mono" (code)
+  /fonts/jetbrains-mono-latin-wght.woff2              - "JetBrains Mono" (figures, code)
   /fonts/jetbrains-mono-latin-ext-wght.woff2
 
 Shipped (static WOFF2, latin + latin-ext subsets, 400 regular + italic):
-  /fonts/instrument-serif-latin.woff2                 - "Instrument Serif" (counters, titles)
+  /fonts/instrument-serif-latin.woff2                 - "Instrument Serif" (display)
   /fonts/instrument-serif-latin-ext.woff2
   /fonts/instrument-serif-italic-latin.woff2
   /fonts/instrument-serif-italic-latin-ext.woff2
@@ -32,8 +29,7 @@ JetBrains/JetBrainsMono. Instrument Serif is the Google Fonts / gstatic
 subset build of Instrument/instrument-serif ((c) 2022 The Instrument Serif
 Project Authors). Instrument Sans is the latin variable build of
 Instrument/instrument-sans ((c) 2022 The Instrument Sans Project Authors),
-license InstrumentSans-OFL.txt. Departure Mono is the upstream build of
-Departure Mono ((c) 2022-2024 Helena Zhang), license DepartureMono-OFL.txt.
-Inter Tight stays as per-glyph coverage behind Instrument Sans (latin-ext,
-for example Polish), and JetBrains Mono as the code face and the coverage
-behind Departure Mono. Doto was retired in UIUX round 3 (2026-08-21).
+license InstrumentSans-OFL.txt. Inter Tight stays as per-glyph coverage
+behind Instrument Sans (latin-ext, for example Polish), and JetBrains Mono
+is the face for every figure and for code. Doto was retired in UIUX round 3
+(2026-08-21) and Departure Mono in R3 Minimal (2026-10-17); neither ships.

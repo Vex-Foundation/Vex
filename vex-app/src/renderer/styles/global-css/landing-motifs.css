@@ -3,59 +3,61 @@
  * ============================================================ */
 
 /* -------------------------------------------------------------------------
- * THE TYPOGRAPHY REGISTER (V10)
+ * THE TYPOGRAPHY REGISTER (R3, docs/design/R3-MINIMAL.md section 1)
  *
- * Instrument Sans (--font-sans) is the UI and reading voice. Departure Mono
- * (--font-mono) is every label, caption, status word and figure, always at
- * its one 400 weight and set in caps. Instrument Serif (--font-serif) carries
- * counters and titles. JetBrains Mono (--font-code) is code only. The classes
- * below own family and scale at the CLASS level so their call sites change
- * register in one edit.
+ * Instrument Sans (--font-sans) is every UI word: reading 15, rows 14, meta
+ * 13, small 12, labels and status words included, all in sentence case.
+ * JetBrains Mono (--font-mono) is every figure, address, time and duration,
+ * with `.vex-num` below. Instrument Serif (--font-serif) is display only.
+ * Caps belong to tags alone (REAL FUNDS, HIGH RISK: 11px, 600), which own
+ * their classes in ui-primitives/marks.css. The
+ * classes below own family, scale, case and tracking at the CLASS level, so
+ * their call sites change register in one edit: this sheet is unlayered, so
+ * a call site's `uppercase`, `tracking-*` or `font-mono` utility loses to it.
  * ------------------------------------------------------------------------- */
 
-/* Eyebrow: the section and group label. 11px Departure Mono caps at the
- * eyebrow tracking, in the accent-text family (the one blue). */
+/* Eyebrow: the section and field label (a form legend, a section head, a
+ * dialog's small title). 13px Instrument Sans 500 in sentence case on the
+ * second ink, the field label of the kit. */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--vex-accent-text, var(--color-accent-primary));
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-ink-secondary);
 }
 
-/* Micro: the 10px caption register (group heads, stepper lines, trailing
- * meta). The shell keeps the 10px default below; the pre-shell re-pins the
- * size var in the `[data-vex-gate="true"]` scope (chronos-gate.css) to 12px,
- * because most of these call sites live in wizard step files the Settings
- * screen renders too.
+/* Micro: the caption register (group heads, stepper lines, trailing meta).
+ * 12px Instrument Sans in sentence case, the kit's small step, everywhere:
+ * the pre-shell and the shell read one size, so the old size and tracking
+ * hooks are gone.
  *
  * Sets NO color and no display: every call site owns its own text tier and
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
  * site that needs a different size must not use this class. */
 .vex-micro {
-  font-family: var(--font-mono);
-  font-size: var(--vex-micro-size, 0.625rem);
+  font-family: var(--font-sans);
+  font-size: 12px;
   font-weight: 400;
-  letter-spacing: var(--vex-micro-tracking, var(--tracking-status));
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 /* Micro-LABEL: THE app-wide label stamp (status words, version stamps,
  * dates, counts, inline tags).
  *
- * V10 sets it in Departure Mono, the pixel mono the website captions in:
+ * R3 sets it in Instrument Sans at the kit's small step:
  *
- *   font-size   11px      (Departure Mono is crispest at 11, 22 and 33px)
- *   font-weight 400       (the face's only weight; base.css forbids a fake
- *                          bold, so legibility comes from the size and the
- *                          tracking, never from weight)
- *   tracking    0.12em    (the chip tracking; `--wide` is the 0.18em eyebrow
- *                          step for short all-caps heads)
- *   tabular-nums          (every label carries figures that must not jitter
- *                          a column)
+ *   font-size   12px      (labels are 12 or 13; this is the small one)
+ *   font-weight 400
+ *   case        none      (sentence case: the class outranks a call site's
+ *                          `uppercase`, so every label converts here)
+ *   tracking    normal    (caps tracking belongs to tags alone)
+ *   tabular-nums          (a label that carries figures must not jitter a
+ *                          column)
  *
  * COLOR IS A CALL-SITE DECISION, deliberately. This sheet is unlayered
  * (globals.css keeps every import unlayered on purpose), so a `color` here
@@ -65,19 +67,27 @@
  * (`shell-design-guard.test.ts`) keeps the tertiary and caption tiers off
  * this class.
  *
- * CASE IS A CALL-SITE DECISION too: an eyebrow adds `uppercase`, a value
- * ("v0.3.1", "88.1K IN") keeps its own case.
- *
  * NO BACKING CHIP: a label never carries its own plate. */
 .vex-micro-label {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-family: var(--font-sans);
+  font-size: 12px;
   font-weight: 400;
-  letter-spacing: var(--tracking-chip);
+  letter-spacing: normal;
+  text-transform: none;
   font-variant-numeric: tabular-nums;
 }
+/* The meta step: 13px, for the label that is a small key or a chip's word. */
 .vex-micro-label--wide {
-  letter-spacing: var(--tracking-eyebrow);
+  font-size: 13px;
+}
+
+/* Figures: JetBrains Mono with tabular figures, so a column of numbers
+ * holds still while it updates. Every figure, address, time and duration
+ * carries it (with or without the `font-mono` utility beside it). */
+.vex-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 /* Chat prose: the READING register for message bodies.
@@ -88,8 +98,8 @@
  *   HEADINGS  -> Instrument Sans 600/700, set per-node in `MarkdownContent`.
  *   REASONING -> Instrument Sans 14px muted (`.vex-reasoning-prose` below),
  *                a quieter voice for a different kind of speech.
- *   CODE      -> JetBrains Mono (--font-code) for code and raw JSON;
- *                Departure Mono (--font-mono) for labels and figures. */
+ *   CODE      -> JetBrains Mono (--font-code) for code and raw JSON, and
+ *                (--font-mono) for figures. */
 .vex-chat-prose {
   font-family: var(--font-sans);
   font-size: 15.5px;
