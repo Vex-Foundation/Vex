@@ -376,35 +376,38 @@ describe("boot reaper", () => {
 /* ---------------------------- restart budget ---------------------------- */
 
 describe("supervision", () => {
-  it(`restarts an unexpected exit at most ${String(PG_MAX_RESTARTS)} times, never resetting, then reports unhealthy`, async () => {
+  // `restarts <= PG_MAX_RESTARTS` from 0: six restarts, seven postmasters.
+  const RESTARTS_ALLOWED = PG_MAX_RESTARTS + 1;
+
+  it("restarts with the Studio helpers' arithmetic (six), never resetting, then reports unhealthy", async () => {
     const h = harness({});
     expect((await h.supervisor.start()).kind).toBe("running");
     // Crash every postmaster as soon as it is up, including after each
     // successful restart: a counter that reset on success would loop forever.
-    for (let crash = 0; crash <= PG_MAX_RESTARTS; crash++) {
+    for (let crash = 0; crash <= RESTARTS_ALLOWED; crash++) {
       const child = h.children[crash];
       expect(child).toBeDefined();
       child?.crash();
-      if (crash < PG_MAX_RESTARTS) await until(() => h.health.filter((x) => x.kind === "running").length === crash + 1);
+      if (crash < RESTARTS_ALLOWED) await until(() => h.health.filter((x) => x.kind === "running").length === crash + 1);
     }
     await until(() => h.health.some((x) => x.kind === "unhealthy"));
-    expect(h.children).toHaveLength(1 + PG_MAX_RESTARTS);
+    expect(h.children).toHaveLength(1 + RESTARTS_ALLOWED);
     expect(h.health.filter((x) => x.kind === "restarting").map((x) => (x.kind === "restarting" ? x.attempt : 0))).toEqual([
-      1, 2, 3, 4, 5,
+      1, 2, 3, 4, 5, 6,
     ]);
     expect(h.health.at(-1)?.kind).toBe("unhealthy");
     // Nothing else is spawned afterwards.
     await new Promise((r) => setTimeout(r, 20));
-    expect(h.children).toHaveLength(1 + PG_MAX_RESTARTS);
+    expect(h.children).toHaveLength(1 + RESTARTS_ALLOWED);
   });
 
   it("failed restart attempts spend the budget too", async () => {
     const fail: Script = { kind: "fail", stderr: "FATAL:  could not open file \"global/pg_control\"\n" };
-    const h = harness({ scripts: [{ kind: "ready" }, fail, fail, fail, fail, fail, fail] });
+    const h = harness({ scripts: [{ kind: "ready" }, ...Array.from({ length: 10 }, () => fail)] });
     await h.supervisor.start();
     h.children[0]?.crash();
     await until(() => h.health.some((x) => x.kind === "unhealthy"));
-    expect(h.children).toHaveLength(1 + PG_MAX_RESTARTS);
+    expect(h.children).toHaveLength(1 + RESTARTS_ALLOWED);
   });
 
   it("an ordered stop is not a crash: no restart", async () => {

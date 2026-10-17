@@ -33,9 +33,10 @@
  *   8. Identity (D6) on every connect, `pg-identity.ts`. A mismatch stops the
  *      postmaster we started and reports `foreign_listener`.
  *
- * SUPERVISE. An unexpected exit restarts it, at most PG_MAX_RESTARTS times per
- * session. The counter never resets (the rule `studio/pty-host-starter.ts`
- * and `front-supervisor.ts` document): a reset on success lets a postmaster
+ * SUPERVISE. An unexpected exit restarts it, with the exact arithmetic of
+ * `studio/pty-host-starter.ts`, `front-supervisor.ts` and
+ * `llama-supervisor.ts`: `restarts <= PG_MAX_RESTARTS` from 0, six restarts
+ * per session. The counter never resets: a reset on success lets a postmaster
  * that crashes every minute restart for ever. A failed restart attempt spends
  * budget too. Past the budget the health listeners hear `unhealthy`.
  *
@@ -75,8 +76,12 @@ import {
 } from "./postgres-facts.js";
 import { pgCtlStart, pgCtlStop, type PgCtlContext } from "./postgres-win32.js";
 
-/** At most five automatic restarts per session; never reset. */
+/**
+ * The Studio helpers' arithmetic (and `llama-supervisor.ts`'s): a counter from
+ * 0 restarts while `<= 5`, so SIX restarts per session, and it never resets.
+ */
 export const PG_MAX_RESTARTS = 5;
+const RESTART_DELAY_MS = 500;
 export const PG_READY_TIMEOUT_MS = 60_000;
 /** Fast-stop window when the caller does not name one (6.5: 15 s). */
 export const PG_FAST_STOP_MS = 15_000;
@@ -804,10 +809,13 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
 
   async function superviseRestarts(): Promise<void> {
     let lastMessage = "the postmaster exited";
-    while (!stopRequested && restarts < PG_MAX_RESTARTS) {
+    while (!stopRequested && restarts <= PG_MAX_RESTARTS) {
       restarts += 1;
-      log.warn(`[runtime:pg] restarting (attempt ${String(restarts)} of ${String(PG_MAX_RESTARTS)})`);
+      log.warn(`[runtime:pg] restarting (attempt ${String(restarts)})`);
       emit({ kind: "restarting", attempt: restarts });
+      // Grows, so a crash loop does not spend the budget in a second.
+      await sleep(RESTART_DELAY_MS * restarts);
+      if (stopRequested) return;
       const result = await bringUp(undefined).catch((error: unknown): PgStartResult => ({
         kind: "failed",
         connection: null,
