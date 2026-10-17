@@ -16,6 +16,9 @@
 
 export const CRITICAL_OP = {
   dockerLifecycle: "docker_lifecycle",
+  // The native runtime coming up: initdb, the first-run model download and
+  // the server starts. An update must not restart the app in the middle.
+  localRuntime: "local_runtime",
   dbMigration: "db_migration",
   // Keystore / secret-vault writes + private-key decrypt (wallet generate /
   // import / restore / export, provider+api-key+embedding+agent-core persist).

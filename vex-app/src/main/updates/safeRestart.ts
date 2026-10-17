@@ -70,6 +70,8 @@ export function prepareForUpdateRestart(): void {
 const CRITICAL_OP_REASONS: Record<string, string> = {
   [CRITICAL_OP.dockerLifecycle]:
     "Docker setup is still running. Wait for it to finish, then update.",
+  [CRITICAL_OP.localRuntime]:
+    "The local database is still starting. Wait for it to finish, then update.",
   [CRITICAL_OP.dbMigration]:
     "A database migration is still running. Wait for it to finish, then update.",
   [CRITICAL_OP.secretVaultOp]:
