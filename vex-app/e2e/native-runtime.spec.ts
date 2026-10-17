@@ -1,7 +1,6 @@
 /**
- * The native runtime, end to end, against the BUILT app: a first run with
- * `VEX_RUNTIME=native` gets from System Check through the "Preparing local
- * runtime" screen and the migrations on the bundled Postgres to the setup
+ * The native runtime, end to end, against the BUILT app: a first run gets
+ * from System Check through the "Preparing local runtime" screen and the migrations on the bundled Postgres to the setup
  * wizard, without any container, quitting the app stops the bundled servers
  * cleanly, and a relaunch on the same profile comes back up on the same
  * cluster without downloading the model again.
@@ -323,7 +322,7 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, qu
     if (timings["modelVerified"] === undefined && existsSync(modelPath)) timings["modelVerified"] = seconds(Date.now());
   }, 250);
 
-  const env = { ...process.env, VEX_CONFIG_DIR: configDir, VEX_RUNTIME: "native" };
+  const env = { ...process.env, VEX_CONFIG_DIR: configDir };
   const launch = (): Promise<RunningApp> =>
     INSTALLED_APP === undefined ? launchDevelopment(env) : launchInstalled(INSTALLED_APP, env);
   const readState = (): { pg: { systemIdentifier: string; lastPort: number } | null } =>

@@ -87,8 +87,8 @@ export async function enterStudio(page: Page): Promise<boolean> {
   // `VEX_CONFIG_DIR` is a first run, so the settled handoff is systemCheck (the
   // fact `smoke.spec.ts` pins) and its arrival is the observable state that
   // says the orchestrator has stopped writing views.
-  // 120s rather than the default: the orchestrator's probes are real (Docker,
-  // the vault, the database), and this helper also runs after a RELOAD, where
+  // 120s rather than the default: the orchestrator's probes are real (the
+  // system checks, the vault, the database), and this helper also runs after a RELOAD, where
   // the same settled handoff has to be waited for a second time.
   await expect(page.locator('[data-vex-screen="systemCheck"]')).toBeVisible({
     timeout: 120_000,
