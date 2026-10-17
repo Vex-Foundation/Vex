@@ -1,3 +1,5 @@
+> Superseded by [R3-MINIMAL.md](R3-MINIMAL.md).
+
 # V10 Spread: the desktop design
 
 The VEX desktop window is an open book. The left page is a 300px window onto the same sepia print the unlock stage shows; the right page (gutter, centre, BOOK) is the working surface. The unlock stage hands off to the welcome spread by sliding the right page in as one leaf while the print and the eagle stay put. The eagle is the agent state: its pose, trails and the running head swatch say Idle, Live, Running, Awaiting or Paused without a word.
