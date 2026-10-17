@@ -630,7 +630,15 @@ export function verifyPackagedNativeRuntimeSignatures(
       issues.push(`${file.path}: ${error.message}`);
       continue;
     }
-    if (!signature.verified) {
+    // Windows signs only `.exe` files (no win.signExts, as before the runtime):
+    // a DLL is either Microsoft's own signed redistributable (Valid) or one
+    // of ours left unsigned (NotSigned), whose bytes the tree check above
+    // already bound to the lock. Anything else (HashMismatch, a broken
+    // signature) means the bytes changed after signing.
+    const unsignedLockBoundDll =
+      target.platform === "win32" && file.path.toLowerCase().endsWith(".dll")
+      && /^NotSigned\b/.test(signature.detail ?? "");
+    if (!signature.verified && !unsignedLockBoundDll) {
       issues.push(
         `${file.path} is NOT validly signed inside a SIGNED app: ${signature.detail || "no detail reported"}.\n`
           + "      An unsigned nested executable or library is refused by the hardened runtime (macOS, with "
@@ -639,7 +647,11 @@ export function verifyPackagedNativeRuntimeSignatures(
     }
   }
   if (issues.length === 0) {
-    notes.push(`${executables.length} runtime executables and libraries carry valid ${target.platform} signatures`);
+    notes.push(
+      target.platform === "win32"
+        ? `${executables.length} runtime executables and libraries verified: every .exe validly signed, every .dll Microsoft-signed or unsigned and bound to the lock`
+        : `${executables.length} runtime executables and libraries carry valid ${target.platform} signatures`,
+    );
   }
   return { issues, notes };
 }

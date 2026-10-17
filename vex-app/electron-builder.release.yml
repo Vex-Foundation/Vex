@@ -254,14 +254,14 @@ win:
       # scripts/native-runtime-artifact.mjs).
       arch: [x64, arm64]
   icon: build/icon.ico
-  # Sign the native runtime's DLLs too (libpq, the Postgres modules, ggml and
-  # llama, the app-local MSVC runtime). Without this app-builder-lib 26.8.1
-  # signs `.exe` files only (winPackager.js shouldSignFile); with it every
-  # `.dll` in extraResources is signed DURING the copy, as the `.exe` files
-  # already are, and the afterPack gate binds each one back to the lock by its
-  # Authenticode content digest. It also covers Electron's own DLLs beside
-  # Vex.exe. Each file is one more serialized Trusted Signing call.
-  signExts: [".dll"]
+  # No `signExts`: app-builder-lib 26.8.1 then signs `.exe` files only
+  # (winPackager.js shouldSignFile), which includes every runtime program
+  # (postgres, initdb, pg_ctl, llama-server, ...). DLLs are deliberately NOT
+  # re-signed: `.dll` in signExts would match first and re-sign Microsoft's
+  # own redistributables (vcruntime140*, msvcp140, d3dcompiler_47) under our
+  # name, replacing Microsoft's signature. Our runtime DLLs ship unsigned, as
+  # Electron's do; the afterPack and check:package gates bind each one to the
+  # lock by its Authenticode content digest.
   # electron-updater compares the publisher of a downloaded update against
   # azureSignOptions.publisherName before installing. true is the default -
   # pinned explicitly because the release profile must never flip it off.

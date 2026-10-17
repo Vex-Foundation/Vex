@@ -782,13 +782,13 @@ jobs:
           }
           Write-Host "Packaged Vex Studio bridge binaries present at the contract paths."
 
-      # The native runtime's executables AND DLLs, in both packaged arches. The
-      # recursive step above sees only *.exe; with win.signExts [".dll"] every
-      # DLL under resources\postgres and resources\llama (libpq, the Postgres
-      # modules, ggml, llama, the app-local MSVC runtime) is signed during the
-      # copy too, and is held to the same three sentences: Valid, our
-      # publisher, timestamped. `check:package` above already bound each one
-      # back to the lock by its Authenticode content digest.
+      # The native runtime's executables AND DLLs, in both packaged arches.
+      # Every .exe is signed during the copy and held to the three sentences:
+      # Valid, our publisher, timestamped. DLLs are not re-signed (no
+      # win.signExts; see electron-builder.release.yml): each one is either
+      # Microsoft's own signed redistributable (Valid, Microsoft) or one of
+      # ours shipped unsigned (NotSigned), which `check:package` above already
+      # bound back to the lock by its Authenticode content digest.
       - name: Verify the packaged native runtime is signed (Windows)
         working-directory: vex-app
         shell: pwsh
@@ -810,8 +810,14 @@ jobs:
             if ($files.Count -eq 0) {
               Write-Error "No .exe or .dll under $($root.Name)\resources\{postgres,llama}."
             }
+            $exes = 0; $microsoft = 0; $unsigned = 0
             foreach ($f in $files) {
               $sig = Get-AuthenticodeSignature $f.FullName
+              if ($f.Extension -eq '.dll') {
+                if ($sig.Status -eq 'NotSigned') { $unsigned++; continue }
+                if ($sig.Status -eq 'Valid' -and $sig.SignerCertificate.Subject -match 'O=Microsoft Corporation') { $microsoft++; continue }
+                Write-Error "DLL $($f.FullName) is neither unsigned nor validly Microsoft-signed: $($sig.Status) $($sig.SignerCertificate.Subject)"
+              }
               if ($sig.Status -ne 'Valid') {
                 Write-Error "Signature not Valid for $($f.FullName): $($sig.Status)"
               }
@@ -821,6 +827,8 @@ jobs:
               if (-not $sig.TimeStamperCertificate) {
                 Write-Error "No RFC3161 timestamp on $($f.FullName)."
               }
+              $exes++
             }
-            Write-Host "$($root.Name): $($files.Count) native runtime executables and DLLs signed, timestamped and attributed correctly."
+            if ($exes -eq 0) { Write-Error "No signed runtime executable under $($root.Name)." }
+            Write-Host "$($root.Name): $exes runtime executables signed and timestamped by VEX LABS; $microsoft Microsoft-signed and $unsigned lock-bound unsigned DLLs."
           }

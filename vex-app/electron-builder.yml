@@ -195,11 +195,8 @@ win:
   # Dev/test only. Production release config must set this to true.
   verifyUpdateCodeSignature: false
   icon: build/icon.ico
-  # Sign the native runtime's DLLs too (libpq, the Postgres modules, ggml and
-  # llama, the app-local MSVC runtime). Without this app-builder-lib 26.8.1
-  # signs `.exe` files only (winPackager.js shouldSignFile). Kept identical to
-  # the release profile; it does nothing when no certificate is configured.
-  signExts: [".dll"]
+  # No `signExts`: like the release profile, only `.exe` files are signed
+  # (see the note there on why Microsoft's runtime DLLs are left alone).
 
 linux:
   category: Finance
