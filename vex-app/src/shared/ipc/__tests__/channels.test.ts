@@ -125,6 +125,12 @@ describe("CH / EV channel constants", () => {
     expect(EV.system.runtimeProgress).toBe("vex:event:system:runtimeProgress");
   });
 
+  it("ships the Settings local runtime surface with its canonical names", () => {
+    expect(CH.system.runtimeInfo).toBe("vex:system:runtimeInfo");
+    expect(CH.system.runtimeRestart).toBe("vex:system:runtimeRestart");
+    expect(CH.system.runtimeReset).toBe("vex:system:runtimeReset");
+  });
+
   it("channels are unique (no duplicate values across namespaces)", () => {
     const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
     const seen = new Set<string>();

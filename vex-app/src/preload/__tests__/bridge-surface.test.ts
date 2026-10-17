@@ -301,6 +301,16 @@ describe("preload bridge surface", () => {
     expect(corpus).toContain("nativeRuntimeStatusSchema");
   });
 
+  it("exposes the Settings local runtime channels and validates the reset phrase in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const channel of ["CH.system.runtimeInfo", "CH.system.runtimeRestart", "CH.system.runtimeReset"]) {
+      expect(corpus).toContain(channel);
+    }
+    expect(corpus).toMatch(
+      /invokeWithSchema\(CH\.system\.runtimeReset, input, runtimeResetInputSchema\)/,
+    );
+  });
+
   it("exposes EV.studio.hostStatus and the host-status bridge method (B0)", () => {
     const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
     expect(

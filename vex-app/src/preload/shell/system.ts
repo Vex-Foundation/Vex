@@ -1,5 +1,5 @@
 import { CH, EV } from "../../shared/ipc/channels.js";
-import { nativeRuntimeStatusSchema } from "../../shared/schemas/system.js";
+import { nativeRuntimeStatusSchema, runtimeResetInputSchema } from "../../shared/schemas/system.js";
 import type { SystemBridge } from "../../shared/types/bridge/shell/system.js";
 import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
@@ -24,6 +24,15 @@ export const system = {
   },
   onRuntimeProgress(cb) {
     return subscribe(EV.system.runtimeProgress, nativeRuntimeStatusSchema, cb);
+  },
+  runtimeInfo() {
+    return invokeWithSchema(CH.system.runtimeInfo, {});
+  },
+  runtimeRestart() {
+    return invokeWithSchema(CH.system.runtimeRestart, {});
+  },
+  runtimeReset(input) {
+    return invokeWithSchema(CH.system.runtimeReset, input, runtimeResetInputSchema);
   },
   notifyTurnComplete(input) {
     return invokeWithSchema(CH.system.notifyTurnComplete, input);

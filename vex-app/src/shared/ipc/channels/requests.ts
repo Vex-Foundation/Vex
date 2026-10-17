@@ -23,6 +23,12 @@ export const CH = {
     runtimeStatus: "vex:system:runtimeStatus",
     /** Start the native runtime again after a failure; a no-op otherwise. */
     runtimeRetry: "vex:system:runtimeRetry",
+    /** Settings "Local runtime": release, binary versions, data sizes. */
+    runtimeInfo: "vex:system:runtimeInfo",
+    /** Stop the native runtime and start it again (Settings). */
+    runtimeRestart: "vex:system:runtimeRestart",
+    /** Delete the local database after a typed confirmation, then relaunch into setup. */
+    runtimeReset: "vex:system:runtimeReset",
     /** OS-native turn-complete notification (A34); main checks focus itself. */
     notifyTurnComplete: "vex:system:notifyTurnComplete",
     /** Recolour the Windows/Linux title bar overlay on a theme change. */
