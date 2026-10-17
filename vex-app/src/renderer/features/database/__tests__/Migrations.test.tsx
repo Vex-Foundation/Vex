@@ -317,7 +317,11 @@ describe("Migrations component", () => {
     });
     const ready = renderWithQuery(<Migrations />);
     await ready.findByText(/2 migrations applied/);
-    expect(stageVexView(getStageVex()).word).toBe("Ready");
+    // The stage word follows the result in its own commit: wait for it rather
+    // than reading it in the same tick (it raced under the full suite's load).
+    await waitFor(() => {
+      expect(stageVexView(getStageVex()).word).toBe("Ready");
+    });
     ready.unmount();
 
     mockMigrate.mockResolvedValue({
@@ -333,7 +337,9 @@ describe("Migrations component", () => {
     });
     const failed = renderWithQuery(<Migrations />);
     await failed.findByText(/Migration 007 failed/);
-    expect(stageVexView(getStageVex()).word).toBe("Error");
+    await waitFor(() => {
+      expect(stageVexView(getStageVex()).word).toBe("Error");
+    });
     // A failure is the ink callout, an alert.
     expect(failed.getByRole("alert").getAttribute("data-vex-callout")).toBe("error");
   });
