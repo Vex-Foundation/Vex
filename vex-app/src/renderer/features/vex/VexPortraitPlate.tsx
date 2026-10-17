@@ -24,6 +24,9 @@
  * token turns flat, her beam rises and she assembles (the sidebar asks for it
  * when it shows after the shell came up); reduced motion shows her at once.
  *
+ * SHE CLOSES. With `closed` she collapses into the token (the sidebar sets it
+ * while a hide waits for her close); set back, she opens from it again.
+ *
  * Decorative: the state word above carries the state for assistive tech, so
  * the plate is `aria-hidden` and takes no pointer.
  */
@@ -50,12 +53,15 @@ export interface VexPortraitPlateProps {
   readonly emotion: K2Emotion;
   /** Play her open episode as the plate mounts (she docks into the sidebar). */
   readonly dock?: boolean;
+  /** She is closing into the token (a hide waits for it). */
+  readonly closed?: boolean;
   readonly className?: string;
 }
 
 export function VexPortraitPlate({
   emotion,
   dock = false,
+  closed = false,
   className,
 }: VexPortraitPlateProps): JSX.Element {
   const backdropQuery = useShellBackdrop();
@@ -109,6 +115,7 @@ export function VexPortraitPlate({
         emotion={emotion}
         composer={findComposer}
         open={dock}
+        closed={closed}
         className="vex-vs-plate__holo"
       />
     </div>
