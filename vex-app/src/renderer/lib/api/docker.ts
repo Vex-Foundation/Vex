@@ -32,8 +32,12 @@ export function dockerStatusOptions() {
   });
 }
 
-export function useDockerStatus(): UseQueryResult<Result<DockerStatus>> {
-  return useQuery(dockerStatusOptions());
+/**
+ * `enabled: false` keeps the probe from running at all: on the native runtime
+ * nothing may touch the container engine (System Check passes it).
+ */
+export function useDockerStatus(options?: { readonly enabled?: boolean }): UseQueryResult<Result<DockerStatus>> {
+  return useQuery({ ...dockerStatusOptions(), enabled: options?.enabled ?? true });
 }
 
 export function useDockerInstall(): UseMutationResult<

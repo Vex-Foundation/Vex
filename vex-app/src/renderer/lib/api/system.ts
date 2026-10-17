@@ -7,6 +7,7 @@ import { queryOptions, useQuery, type UseQueryResult } from "@tanstack/react-que
 import type { Result } from "@shared/ipc/result.js";
 import type { HealthReport, OsInfo, NetworkProbe, RuntimeInfo } from "@shared/schemas/system.js";
 import { systemKeys } from "./queryKeys.js";
+import type { LocalRuntimeCheck } from "@shared/schemas/system.js";
 
 export function systemHealthOptions() {
   return queryOptions({
@@ -39,6 +40,19 @@ export function useOsInfo(): UseQueryResult<Result<OsInfo>> {
 
 export function useNetwork(): UseQueryResult<Result<NetworkProbe>> {
   return useQuery(networkOptions());
+}
+
+/**
+ * System Check's native-runtime facts (bundle, disk, memory). Asked only on
+ * the native runtime (`enabled`); read fresh each time the screen mounts.
+ */
+export function useLocalRuntimeCheck(enabled: boolean): UseQueryResult<Result<LocalRuntimeCheck>> {
+  return useQuery({
+    queryKey: systemKeys.localRuntimeCheck(),
+    queryFn: () => window.vex.system.localRuntimeCheck(),
+    enabled,
+    staleTime: 0,
+  });
 }
 
 /** Fixed for the process's lifetime (decided once at boot), so never stale. */
