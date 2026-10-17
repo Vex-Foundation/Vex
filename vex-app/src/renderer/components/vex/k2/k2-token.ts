@@ -1,11 +1,16 @@
 /**
  * The VEX token on K2's canvas: the 3D coin (brand blue enamel, the real vx embossed in white, a
  * bevelled rim) pre-rendered into sprite sheets (`public/art/vex-k2/token-*.webp`), so the app never
- * loads a 3D renderer. Without the wake she loads the flat coin alone (4 KB); the wake loads every
- * pose: face-on with its tilts, the press, the turn to flat.
+ * loads a 3D renderer. Without the wake or an episode she loads the flat coin alone (4 KB); they load
+ * every pose: face-on with its tilts, the press, the turn to flat.
  *
  * `frameFor` picks the pose nearest to the projector's state (pure); `TokenSprite` loads the sheets
  * and draws a frame on her map, answering the flat face's ellipse for the cone.
+ *
+ * The coin's states (`docs/design/R3-MINIMAL.md sections 5.2 and 10.4`): face-on it floats, tilts
+ * toward the pointer and lifts a little under it (`liftOf`); it presses like a key and turns to lie
+ * flat for her; a close turns it back face-on (the reverse flip, the same poses run backward,
+ * `loadPoses`); asleep it dims with her light (`tokenBrightness`).
  */
 import { loadBitmap, loadTokenSheet, type Scratch2D } from "./k2-assets.js";
 import type { TokenBase } from "./k2-scene.js";
@@ -61,6 +66,30 @@ export function frameFor(
   return best;
 }
 
+/** Face-on under the pointer the coin lifts by this much of its diameter and grows a little. */
+export const LIFT = { rise: 0.035, grow: 0.025, up: 220, down: 260 } as const;
+
+/** The lift at a moment: up over 220 ms once the pointer is on the coin, down over 260 ms after. */
+export function liftOf(on: boolean, onAge: number, offAge: number): number {
+  const out = (q: number): number => 1 - (1 - Math.max(0, Math.min(1, q))) ** 3;
+  if (on) return out(onAge / LIFT.up);
+  if (offAge < 0) return 0;
+  return 1 - out(offAge / LIFT.down);
+}
+
+/**
+ * Asleep the coin dims with her light: its lighting drops by up to 45%, which reads on the sprite
+ * as a brightness of 0.775 at the deepest sleep. `dim` is how deep, 0..1.
+ */
+export const TOKEN_DIM = 0.45;
+
+export function tokenBrightness(dim: number): number {
+  return 1 - 0.5 * TOKEN_DIM * Math.max(0, Math.min(1, dim));
+}
+
+/** What painting a coin needs of a 2D context (her canvas's, or a scratch one). */
+export type CoinCanvas = Pick<Scratch2D, "drawImage" | "filter" | "save" | "restore">;
+
 /** A coin placed on her map: its pose (-1 flat), its frame box, its face's ellipse. */
 export interface PlacedToken {
   readonly n: number;
@@ -74,22 +103,39 @@ export class TokenSprite {
   #sheet: TokenSheet | null = null;
   #flat: ImageBitmap | null = null;
   #wake: ImageBitmap | null = null;
+  #poses: Promise<void> | null = null;
   #res: "1x" | "2x" = "2x";
 
   /**
-   * Loads the flat coin (and, for the wake, every pose) at the resolution the screen needs:
-   * `density` is device px per css px of the sheet's coin.
+   * Loads the flat coin (and, for the wake or an episode, every pose) at the resolution the screen
+   * needs: `density` is device px per css px of the sheet's coin.
    */
-  async load(wake: boolean, density: number): Promise<void> {
+  async load(poses: boolean, density: number): Promise<void> {
     this.#res = density > 1.3 ? "2x" : "1x";
     const sheet = await loadTokenSheet();
     this.#sheet = sheet;
-    const [flat, all] = await Promise.all([
+    const [flat] = await Promise.all([
       loadBitmap(`token-flat-${this.#res}.webp`),
-      wake ? loadBitmap(`token-wake-${this.#res}.webp`) : Promise.resolve(null),
+      poses ? this.loadPoses() : Promise.resolve(),
     ]);
     this.#flat = flat;
-    this.#wake = all;
+  }
+
+  /**
+   * Every pose of the coin (face-on with its tilts, the press, the turn), for the wake and the
+   * episodes; loaded once. Until it arrives the coin is drawn flat.
+   */
+  loadPoses(): Promise<void> {
+    this.#poses ??= loadBitmap(`token-wake-${this.#res}.webp`).then(
+      (all) => {
+        this.#wake = all;
+      },
+      () => {
+        // the coin stays flat rather than half turned
+        this.#poses = null;
+      },
+    );
+    return this.#poses;
   }
 
   get ready(): boolean {
@@ -98,7 +144,8 @@ export class TokenSprite {
 
   /**
    * Where the coin stands for a pose: centred at (x, y) of her map, `d` map px across (face-on),
-   * `dy` map px lower; with the face's ellipse (the cone's base) on her map.
+   * `dy` map px lower; with the face's ellipse (the cone's base) on her map. `lift` (0..1) raises
+   * and grows it a little under the pointer.
    */
   place(
     x: number,
@@ -110,11 +157,13 @@ export class TokenSprite {
       readonly press: number;
       readonly tiltX: number;
       readonly tiltY: number;
+      readonly lift?: number;
     },
   ): PlacedToken | null {
     const sheet = this.#sheet;
     if (sheet === null || this.#flat === null) return null;
-    const q = d / sheet.td;
+    const lift = Math.max(0, Math.min(1, pose.lift ?? 0));
+    const q = (d / sheet.td) * (1 + LIFT.grow * lift);
     const n =
       this.#wake === null
         ? -1
@@ -123,7 +172,7 @@ export class TokenSprite {
     if (frame === undefined) return null;
     // the frame box: centred on the coin's resting centre, 6 css px low (token-sprite.mjs)
     const bx = x - (sheet.box / 2) * q;
-    const by = y - (sheet.box / 2 - 6) * q + dy;
+    const by = y - (sheet.box / 2 - 6) * q + dy - LIFT.rise * d * lift;
     return {
       n,
       x: bx,
@@ -138,11 +187,16 @@ export class TokenSprite {
     };
   }
 
-  /** Draws a placed coin on her map. */
-  paint(ctx: Scratch2D, p: PlacedToken): void {
+  /** Draws a placed coin on her map; `dim` (0..1) darkens it with her sleep. */
+  paint(ctx: CoinCanvas, p: PlacedToken, dim = 0): void {
     const sheet = this.#sheet;
     if (sheet === null || this.#flat === null) return;
     const fw = Math.round(sheet.box * sheet.ratios[this.#res]);
+    const dimmed = dim > 0;
+    if (dimmed) {
+      ctx.save();
+      ctx.filter = `brightness(${tokenBrightness(dim).toFixed(3)})`;
+    }
     if (p.n < 0 || this.#wake === null)
       ctx.drawImage(this.#flat, 0, 0, fw, fw, p.x, p.y, p.size, p.size);
     else {
@@ -160,5 +214,6 @@ export class TokenSprite {
         p.size,
       );
     }
+    if (dimmed) ctx.restore();
   }
 }
