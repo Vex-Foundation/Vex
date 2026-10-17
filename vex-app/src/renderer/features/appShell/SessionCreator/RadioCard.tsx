@@ -1,14 +1,20 @@
 /**
- * Single radio "card" for the New-session modal mode/permission grids,
- * speaking the landing's numbered trust-zone grammar (.zone/.prob-card):
- * mono spec-sheet index, display-register title, consequence line, and —
- * on the selected card only — the landing .zone 3px accent bar on the left
- * edge over an accent-fill surface. Purely presentational: the visible card
- * is a styled <label> wrapping a screen-reader-only native radio, so the
- * grids stay keyboard- and AT-navigable as real radio groups.
+ * Single radio "card" for the new-session form's mode and permission grids,
+ * and for the Studio project dialogs that reuse it
+ * (docs/design/R3-MINIMAL.md section 12, the option card of the inline panel).
+ *
+ * Square, 1px rule on the field fill. The selected card takes a 1.5px blue
+ * frame (padding compensated so nothing jumps) and a solid swatch before its
+ * title; an unselected card shows the empty outline swatch. The state is the
+ * fill and the frame, never a wash. A short tag may sit at the right of the
+ * title ("Funds require approval"). Purely presentational: the visible card is
+ * a styled <label> wrapping a screen-reader-only native radio, so the grids
+ * stay keyboard- and AT-navigable as real radio groups.
  */
 
 import type { JSX } from "react";
+import { Swatch } from "../../../components/ui/swatch.js";
+import { Tag } from "../../../components/ui/stamp.js";
 import { cn } from "../../../lib/utils.js";
 
 interface RadioCardProps {
@@ -16,14 +22,19 @@ interface RadioCardProps {
   readonly value: string;
   readonly checked: boolean;
   readonly onChange: () => void;
-  /** Spec-sheet ordinal ("01"/"02") — rendered as the mono card mark. */
-  readonly index: string;
+  /**
+   * An ordinal some callers still pass. R3 draws no ordinal on the card, so
+   * it is accepted and not painted.
+   */
+  readonly index?: string;
   readonly title: string;
   readonly description: string;
+  /** A quiet tag at the right of the title ("Funds require approval"). */
+  readonly tag?: string | undefined;
   /**
-   * Caution register: when checked, the consequence line takes the pin
-   * warning amber instead of muted ink. Set by the "Full access"
-   * permission option only — amber is a register, not a new warning.
+   * Caution register: when checked, the consequence line steps up from ink 2
+   * to the primary ink. Set by the "Full access" permission option only; it
+   * is weight of ink, never a warning hue.
    */
   readonly caution?: boolean;
 }
@@ -33,23 +44,23 @@ export function RadioCard({
   value,
   checked,
   onChange,
-  index,
   title,
   description,
+  tag,
   caution = false,
 }: RadioCardProps): JSX.Element {
   return (
     <label
+      data-vex-radio-card=""
+      data-checked={checked ? "" : undefined}
       className={cn(
-        "relative flex min-h-[96px] cursor-pointer flex-col gap-1.5 rounded-xl border px-4 py-3.5 transition-colors",
-        // Keyboard focus on the sr-only radio lights the card (hairline law:
-        // the ring is the accent, never a glow).
-        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
-        // Selected reads as a solid raised card with the accent bar as the
-        // marker (check-not-fill law) - never an accent-tinted surface.
+        "relative flex cursor-pointer flex-col bg-surface-field text-left",
+        // Keyboard focus on the sr-only radio lights the card with the
+        // focus outline, 3px clear of the frame.
+        "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
         checked
-          ? "border-line-4 bg-interactive-solid"
-          : "border-line-2 hover:bg-interactive-hover",
+          ? "border-[1.5px] border-accent-primary px-[15.5px] pb-[14.5px] pt-[13.5px]"
+          : "border border-rule px-4 pb-[15px] pt-3.5 hover:bg-interactive-hover",
       )}
     >
       <input
@@ -60,39 +71,23 @@ export function RadioCard({
         onChange={onChange}
         className="sr-only"
       />
-      {/* Trust-boundary bar — the landing .zone.z-control border-left,
-       * drawn only on the enforced (selected) card. Paint-only; the notch
-       * geometry (16% inset) mirrors .vex-select-beam::before. */}
-      {checked ? (
-        <span
-          aria-hidden
-          className="absolute bottom-[16%] left-0 top-[16%] w-[3px] rounded-r-[3px] bg-accent-primary"
+      <span className="flex items-center gap-[9px] text-[15px] font-medium leading-[1.3] text-ink-primary">
+        <Swatch
+          state={checked ? "done" : "idle"}
+          size={10}
+          className="text-accent-primary"
         />
-      ) : null}
-      <span
-        className={cn(
-          "vex-micro-label vex-micro-label--wide",
-          checked
-            ? "text-accent-primary"
-            : "text-ink-tertiary",
-        )}
-      >
-        {index}
-      </span>
-      <span
-        className={cn(
-          "font-display text-[15px] font-medium tracking-[-0.01em]",
-          "text-ink-primary",
-        )}
-      >
         {title}
+        {tag === undefined ? null : (
+          <Tag quiet className="ml-auto">
+            {tag}
+          </Tag>
+        )}
       </span>
       <span
         className={cn(
-          "text-xs leading-relaxed",
-          checked && caution
-            ? "text-warning"
-            : "text-ink-tertiary",
+          "mt-[5px] text-[13.5px] leading-[1.45]",
+          checked && caution ? "text-ink-primary" : "text-ink-secondary",
         )}
       >
         {description}
