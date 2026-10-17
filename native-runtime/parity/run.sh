@@ -22,7 +22,14 @@ tree="$NR_ROOT/out/$target/llama"
 UBUNTU_IMAGE="ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf026486401"
 ref_port=28134
 cand_port=28135
-threads=4
+# The runtime's thread rule (plan D9, as llama/smoke.mjs applies it):
+# min(4, physical cores / 2), at least 1. ggml's threadpool spin-waits, so
+# more threads than the machine has cores is drastically slower; a fixed 4
+# made the candidate ~7x slower on a 2-vCPU CI runner.
+if [ "$(uname -s)" = Darwin ]; then cores="$(sysctl -n hw.physicalcpu)"; else cores="$(nproc)"; fi
+threads=$((cores / 2))
+[ "$threads" -le 4 ] || threads=4
+[ "$threads" -ge 1 ] || threads=1
 api_key="$(openssl rand -hex 24)"
 log="$NR_ROOT/.work/parity-$target-candidate.log"
 cand_name="vex-parity-candidate-$cand_port"
