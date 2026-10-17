@@ -10,9 +10,10 @@
  *     GLOBAL history on a surface the user believes is narrowed);
  *   - exactly ONE scope id crosses the wire - never both, which the wire schema
  *     refuses by name anyway;
- *   - it is VISIBLE as its own chip and is NOT a toggle (no `aria-pressed`),
- *     and a project's chip NAMES the project once its name resolves;
- *   - Clear resets the user's filters and PRESERVES the scope — clearing must
+ *   - it is VISIBLE as its own chip and is NOT a toggle (no `aria-pressed`,
+ *     no `aria-checked`) and not one of the four filter menus, and a
+ *     project's chip NAMES the project once its name resolves;
+ *   - Clear resets the user's filters and PRESERVES the scope - clearing must
  *     never silently widen an audit feed;
  *   - an empty narrowed feed says which scope is empty rather than "the agent
  *     has done nothing".
@@ -77,6 +78,14 @@ function mountScreen(scope: AgentScanRouteScope): void {
   render(<AgentScanScreen origin={null} scope={scope} onClose={() => undefined} />);
 }
 
+/** Press the Bridge row of the Kind menu: a real user filter beside the scope. */
+function filterByBridge(): void {
+  const key = screen.getByRole("button", { name: /^Kind/ });
+  fireEvent.pointerDown(key);
+  fireEvent.click(key);
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Bridge" }));
+}
+
 /** The filters argument the screen most recently handed the hook. */
 function lastFilters(): Record<string, unknown> {
   const calls = mockUseAgentScanInfinite.mock.calls;
@@ -107,19 +116,22 @@ describe("AgentScanScreen - session preset (C4)", () => {
     expect(screen.getByText("this session")).not.toBeNull();
   });
 
-  it("the scope chip is NOT a toggle (no aria-pressed) - it cannot be cleared from the bar", () => {
+  it("the scope chip is NOT a toggle (no aria-pressed, no aria-checked) - it cannot be cleared from the bar", () => {
     mockQuery([availablePage([entry({ id: "a-1" })])]);
     mountScreen(SESSION_SCOPE);
-    expect(
-      screen.getByText("this session").getAttribute("aria-pressed"),
-    ).toBeNull();
+    const chip = screen.getByText("this session");
+    expect(chip.getAttribute("aria-pressed")).toBeNull();
+    expect(chip.getAttribute("aria-checked")).toBeNull();
+    // Not a control at all: the only keys in the bar are the four menus.
+    expect(chip.closest("button")).toBeNull();
+    expect(screen.queryByRole("menuitemcheckbox")).toBeNull();
   });
 
   it("Clear resets the user's filters and PRESERVES the session scope", () => {
     mockQuery([availablePage([entry({ id: "a-1" })])]);
     mountScreen(SESSION_SCOPE);
     // Narrow further with a real filter, then clear it.
-    fireEvent.click(screen.getByRole("button", { name: "bridge" }));
+    filterByBridge();
     expect(lastFilters()).toEqual({
       kinds: ["bridge"],
       sessionId: SCOPE_SESSION_ID,
@@ -154,7 +166,7 @@ describe("AgentScanScreen - session preset (C4)", () => {
     // The screen re-renders several times during mount + virtualization; every
     // call must receive the SAME object, or each render mints a new cache key.
     expect(calls.length).toBeGreaterThan(1);
-    for (const call of calls) expect(call[0]).toBe(calls[0]![0]);
+    for (const call of calls) expect(call[0]).toBe(calls[0]?.[0]);
   });
 });
 
@@ -176,6 +188,7 @@ describe("AgentScanScreen - project preset (Studio parity)", () => {
     expect(chip.getAttribute("data-vex-scope")).toBe("project");
     // A scope, not a filter: no toggle semantics reach assistive tech.
     expect(chip.getAttribute("aria-pressed")).toBeNull();
+    expect(chip.getAttribute("aria-checked")).toBeNull();
   });
 
   it("still shows the narrowing BEFORE the name resolves - never an unlabelled feed", () => {
@@ -190,7 +203,7 @@ describe("AgentScanScreen - project preset (Studio parity)", () => {
     mockProjectName(PROJECT_NAME);
     mockQuery([availablePage([entry({ id: "a-1" })])]);
     mountScreen(PROJECT_SCOPE);
-    fireEvent.click(screen.getByRole("button", { name: "bridge" }));
+    filterByBridge();
     expect(lastFilters()).toEqual({
       kinds: ["bridge"],
       projectId: SCOPE_PROJECT_ID,
