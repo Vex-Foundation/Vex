@@ -223,6 +223,37 @@ describe("the left cell", () => {
   });
 });
 
+describe("the title cell's own boundary", () => {
+  it("a malformed token history route degrades the crumb and never throws", () => {
+    useUiStore.setState({
+      shellRoute: { kind: "tokenHistory", origin: null } as unknown as ShellRoute,
+    });
+    renderHead("agent", SESSION);
+    expect(title()).toBe("Portfolio/Token history");
+  });
+
+  it("a title that throws empties its cell and leaves the rest of the title bar standing", () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      reads.session = Object.defineProperty(session(), "title", {
+        get: () => {
+          throw new Error("title read failed");
+        },
+      });
+      const head = renderHead("agent", SESSION);
+      expect(head.querySelector("[data-vex-title-failed]")).not.toBeNull();
+      expect(title()).toBeUndefined();
+      // Everything else keeps working: the approvals sync, Needs you, the chip.
+      expect(screen.getByTestId("approvals-sync")).toBeTruthy();
+      expect(screen.getByTestId("needs-you")).toBeTruthy();
+      expect(screen.getByTestId("token-chip")).toBeTruthy();
+      expect(screen.getByTestId("mission-rail")).toBeTruthy();
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+});
+
 describe("the page close key", () => {
   it("is absent in agent mode, where the nav is the way back", () => {
     useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
