@@ -65,9 +65,12 @@ function check(cond, msg) {
 // Run a program (no shell) and collect its output.
 function run(cmd, args, { env, input, timeoutMs = 300_000 } = {}) {
   return new Promise((resolve, reject) => {
+    // stdin is a pipe only when there is input to send; a child that exits
+    // without reading it would otherwise raise an unhandled EPIPE on the
+    // pipe (seen on a CI runner after a fast-failing start).
     const child = spawn(cmd, args, {
       env: env ? { ...process.env, ...env } : process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
@@ -82,7 +85,14 @@ function run(cmd, args, { env, input, timeoutMs = 300_000 } = {}) {
       clearTimeout(timer);
       resolve({ code, signal, stdout, stderr });
     });
-    child.stdin.end(input ?? '');
+    if (child.stdin !== null) {
+      // A child that stops reading early is its own failure, reported by its
+      // exit code; EPIPE on the input pipe adds nothing.
+      child.stdin.on('error', (e) => {
+        if (e.code !== 'EPIPE') reject(e);
+      });
+      child.stdin.end(input);
+    }
   });
 }
 async function runOk(cmd, args, opts) {
