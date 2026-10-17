@@ -1,8 +1,9 @@
 /**
  * The native runtime, end to end, against the BUILT app: a first run with
- * `VEX_RUNTIME=native` gets from System Check through migrations on the
- * bundled Postgres to the setup wizard, without any container, and quitting
- * the app stops the bundled servers cleanly.
+ * `VEX_RUNTIME=native` gets from System Check through the "Preparing local
+ * runtime" screen and the migrations on the bundled Postgres to the setup
+ * wizard, without any container, and quitting the app stops the bundled
+ * servers cleanly.
  *
  * Two modes:
  *
@@ -62,17 +63,44 @@ test("native runtime: a first run reaches the wizard on the bundled Postgres, an
     );
     expect(runtime).toEqual({ ok: true, data: { native: true } });
 
-    // First run: System Check, whose Continue now leads to migrations.
+    // First run: System Check, whose Continue leads to the runtime screen.
     await expect(window.locator('[data-vex-screen="systemCheck"]')).toBeVisible({ timeout: 30_000 });
     const continueSetup = window.getByRole("button", { name: "Continue setup" });
     await expect(continueSetup).toBeEnabled({ timeout: 30_000 });
+    // Record every state the runtime screen's model row shows: once the
+    // runtime is ready the screen moves on within a second, which a
+    // visibility poll can miss.
+    await window.evaluate(() => {
+      const seen: string[] = [];
+      (window as unknown as { vexE2eModelRow: string[] }).vexE2eModelRow = seen;
+      const record = (): void => {
+        const row = document.querySelector('[data-vex-screen="runtimeBootstrap"] [data-step="model"]');
+        if (row === null) return;
+        const state = `${row.getAttribute("data-status") ?? ""} ${row.textContent ?? ""}`;
+        if (seen.at(-1) !== state) seen.push(state);
+      };
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    });
     await continueSetup.click();
 
-    // Migrations join main's boot start of the native runtime, then apply
-    // the full chain to the bundled cluster.
-    await expect(window.locator('[data-vex-screen="migrations"]')).toBeVisible({ timeout: 30_000 });
+    // The runtime screen watches main's boot start (an installed app
+    // downloads the model here), then advances to the migrations, which
+    // apply the full chain to the bundled cluster.
+    await expect(window.locator('[data-vex-screen="migrations"]')).toBeVisible({
+      timeout: INSTALLED_APP === undefined ? 120_000 : 840_000,
+    });
+    const modelRow = await window.evaluate(
+      () => (window as unknown as { vexE2eModelRow: string[] }).vexE2eModelRow,
+    );
+    expect(modelRow.length, "the runtime screen never showed the model step").toBeGreaterThan(0);
+    expect(modelRow.at(-1)).toMatch(/^ready Embeddings model/);
     const toWizard = window.getByRole("button", { name: "Continue to setup wizard" });
-    await expect(toWizard).toBeVisible({ timeout: INSTALLED_APP === undefined ? 180_000 : 840_000 });
+    await expect(toWizard).toBeVisible({ timeout: 180_000 });
     await toWizard.click();
     await expect(window.locator('[data-vex-screen="wizard"]')).toBeVisible({ timeout: 30_000 });
 
