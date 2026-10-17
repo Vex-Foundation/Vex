@@ -1,9 +1,10 @@
 /**
- * Branch: ready — `database.migrate()` returned `kind: "applied"`.
- * A quiet success stanza; the paper-pill Continue lives in the
- * orchestrator footer. (The NOTARY-era celebration glint is retired —
- * the green word is the celebration.)
+ * Branch: ready - `database.migrate()` returned `kind: "applied"`.
+ * A quiet card with the word Applied; the Continue lives in the
+ * orchestrator's actions.
  */
+
+import type { JSX } from "react";
 
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 

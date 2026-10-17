@@ -1,5 +1,5 @@
 /**
- * Constants for the compose bootstrap surface — the bounded log buffer
+ * Constants for the compose bootstrap surface - the bounded log buffer
  * size. (The NOTARY-era "Step X of N" counter is retired with the
  * Chronos rebrand.)
  */

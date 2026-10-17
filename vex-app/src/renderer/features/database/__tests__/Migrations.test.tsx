@@ -1,6 +1,6 @@
 /**
  * Component tests for the Migrations screen after the glass-aesthetic
- * redesign. Mocks `window.vex` per skill §12 — never reaches a real
+ * redesign. Mocks `window.vex` per skill §12 - never reaches a real
  * IPC bridge.
  *
  * Preserves the four pre-existing assertions:
@@ -53,6 +53,9 @@ beforeEach(() => {
     data: { opened: true },
   });
   progressCb = null;
+  resetStageVex();
+  // The launch is over: Vex's face is the screen's, with no wake to wait for.
+  stageVexEnd();
 
   mockOnProgress.mockImplementation((cb: ProgressCb) => {
     progressCb = cb;
@@ -74,9 +77,13 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetStageVex();
 });
 
 const { Migrations } = await import("../Migrations.js");
+const { getStageVex, resetStageVex, stageVexEnd, stageVexView } = await import(
+  "../../../components/onboarding/stage-vex.js"
+);
 
 describe("Migrations component", () => {
   it("renders applied phase with Continue button (preserved)", async () => {
@@ -266,5 +273,68 @@ describe("Migrations component", () => {
     const root = container.querySelector('[data-vex-screen="migrations"]');
     expect(root).not.toBeNull();
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
+  });
+
+  it("stands on the plate with the Database step current and Vex working while it applies", async () => {
+    mockMigrate.mockImplementation(() => new Promise(() => {}));
+    const { container, getByRole } = renderWithQuery(<Migrations />);
+    expect(container.querySelector('[data-vex-screen="migrations"] .vex-fr-side')).not.toBeNull();
+    expect(
+      getByRole("navigation", { name: "First run" }).querySelector('[aria-current="step"]')?.textContent,
+    ).toContain("Database");
+    expect(stageVexView(getStageVex())).toMatchObject({ emotion: "working", word: "Working" });
+  });
+
+  it("draws the real count as a progress line and names the migration being applied", async () => {
+    mockMigrate.mockImplementation(() => new Promise(() => {}));
+    const { container, findByText, getByText } = renderWithQuery(<Migrations />);
+    await waitFor(() => {
+      expect(progressCb).not.toBeNull();
+    });
+    // Before the count is known there is no bar to fill.
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+    progressCb?.({ phase: "start", index: 15, total: 169, version: 19, file: "019_bug_reports.sql", ts: 1 });
+    await findByText(/Applying 16 of 169/);
+    const bar = container.querySelector('[role="progressbar"]');
+    expect(bar?.getAttribute("aria-valuenow")).toBe("16");
+    expect(bar?.getAttribute("aria-valuemax")).toBe("169");
+    expect(bar?.querySelector<HTMLElement>(".vex-fr-progress__fill")?.style.width).toMatch(/^9\.4/);
+    expect(getByText("Migration v19 in progress")).toBeTruthy();
+    expect(getByText("019_bug_reports.sql")).toBeTruthy();
+    expect(getByText("Applying")).toBeTruthy();
+    const row = container.querySelector('[data-migration-version="19"]');
+    expect(row?.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    // The next file lands as applied: a word and a solid fill.
+    progressCb?.({ phase: "applied", index: 15, total: 169, version: 19, file: "019_bug_reports.sql", ts: 2 });
+    await findByText("Migration v19 applied");
+    expect(getByText("Applied")).toBeTruthy();
+  });
+
+  it("is ready once the schema is up to date, and in error when a migration failed", async () => {
+    mockMigrate.mockResolvedValue({
+      ok: true,
+      data: { kind: "applied", applied: 2, files: ["001.sql", "002.sql"], message: "Applied 2 migrations." },
+    });
+    const ready = renderWithQuery(<Migrations />);
+    await ready.findByText(/2 migrations applied/);
+    expect(stageVexView(getStageVex()).word).toBe("Ready");
+    ready.unmount();
+
+    mockMigrate.mockResolvedValue({
+      ok: false,
+      error: {
+        code: "data.migration_failed",
+        domain: "database",
+        message: "Migration 007 failed: syntax error",
+        retryable: true,
+        userActionable: false,
+        redacted: true,
+      },
+    });
+    const failed = renderWithQuery(<Migrations />);
+    await failed.findByText(/Migration 007 failed/);
+    expect(stageVexView(getStageVex()).word).toBe("Error");
+    // A failure is the ink callout, an alert.
+    expect(failed.getByRole("alert").getAttribute("data-vex-callout")).toBe("error");
   });
 });

@@ -1,12 +1,12 @@
 /**
- * Constants for the migrations bootstrap surface — the auto-advance
+ * Constants for the migrations bootstrap surface - the auto-advance
  * delay for the `noop` (schema already up to date) path and the
  * bounded applied-history buffer. (The NOTARY-era "Step X of N"
  * counter is retired with the Chronos rebrand.)
  */
 
 /**
- * Auto-advance delay for the noop branch — visual confirmation tile
+ * Auto-advance delay for the noop branch - visual confirmation tile
  * shows briefly before the orchestrator transitions to the wizard.
  * Existing tests pin this constant; do not raise without updating them.
  */

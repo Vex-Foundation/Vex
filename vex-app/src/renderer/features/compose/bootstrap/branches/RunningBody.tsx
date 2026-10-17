@@ -1,20 +1,21 @@
 /**
- * Branch: running — Docker Compose up is in flight. The hero VexLoader
- * ring (paper tone) anchors the body; the two services (Postgres +
- * Embeddings) render as quiet hairline rows reading aggregated substate
- * from the parsed log stream — an inline VexLoader while a service is
- * starting/probing, then a colored status word once it settles. A
- * subordinate ghost Cancel closes the body (the paper-pill Continue
- * appears only once the phase flips to `ready`).
+ * Branch: running - Docker Compose up is in flight. The two services
+ * (Postgres + Embeddings) render as probe rows reading aggregated substate
+ * from the parsed log stream: the label, the detail in the figure face and a
+ * state word with its fill (`docs/design/R3-MINIMAL.md section 10.3`). Vex's
+ * face on the plate says "Working" with the real time. A quiet Cancel sits
+ * under the rows (the Continue appears only once the phase flips to `ready`).
  *
  * The `data-vex-compose-cancel` / `data-vex-compose-cancelling`
  * attribute pair on the Cancel button is a public test contract (PR3
- * cancellation) — do not rename.
+ * cancellation) - do not rename.
  */
 
-import { VexLoader } from "../../../../components/ui/vex-loader.js";
+import type { JSX } from "react";
+
 import { Button } from "../../../../components/ui/button.js";
-import { cn } from "../../../../lib/utils.js";
+import { StateWord } from "../../../../components/ui/state-word.js";
+import type { SwatchState } from "../../../../components/ui/swatch.js";
 import type { AggregatedServiceState, ServiceStatus } from "../types.js";
 
 interface RunningBodyProps {
@@ -23,12 +24,12 @@ interface RunningBodyProps {
   readonly cancelling: boolean;
 }
 
-/** Status word ink — paper-alpha while working, tokens once settled. */
-const statusInk: Record<ServiceStatus, string> = {
-  starting: "text-ink-tertiary",
-  probing: "text-ink-secondary",
-  ready: "text-[var(--color-success)]",
-  failed: "text-[var(--color-danger)]",
+/** The word and the fill of a service: the dot screen while it comes up, solid once ready. */
+const STATUS_WORD: Record<ServiceStatus, { readonly word: string; readonly fill: SwatchState }> = {
+  starting: { word: "Starting", fill: "ongoing" },
+  probing: { word: "Probing", fill: "ongoing" },
+  ready: { word: "Ready", fill: "done" },
+  failed: { word: "Failed", fill: "error" },
 };
 
 export function RunningBody({
@@ -37,50 +38,25 @@ export function RunningBody({
   cancelling,
 }: RunningBodyProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-6">
-      {/* HERO — the ring at work, centered above the service rows. */}
-      <div className="flex pt-2">
-        <VexLoader
-          size={40}
-          stroke={2}
-          label="Starting services"
-        />
-      </div>
+    <>
+      {/* The wait is announced once; the rows below carry the words. */}
+      <p role="status" className="sr-only">
+        Starting services
+      </p>
 
-      {/* SERVICE ROWS — one hairline row per service. */}
-      <ul className="flex w-full flex-col">
+      {/* SERVICE ROWS: one probe row per service. */}
+      <ul className="vex-fr-probes">
         {services.map((s) => (
           <li
             key={s.service}
-            className="flex items-center gap-3 border-t border-[var(--color-border)] py-4 first:border-t-0"
+            className="vex-fr-probe"
             data-service={s.service}
             data-status={s.status}
+            data-live={s.status === "probing" ? "" : undefined}
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium text-ink-primary">
-                {s.service}
-              </span>
-              <span className="truncate font-mono text-xs text-ink-tertiary">
-                {s.detail}
-              </span>
-            </div>
-            <span className="flex shrink-0 items-center gap-2">
-              {s.status === "starting" || s.status === "probing" ? (
-                <VexLoader
-                  size={16}
-                  stroke={2}
-                  label={`${s.service} ${s.status}`}
-                />
-              ) : null}
-              <span
-                className={cn(
-                  "vex-micro",
-                  statusInk[s.status],
-                )}
-              >
-                {s.status}
-              </span>
-            </span>
+            <span className="vex-fr-probe__l">{s.service}</span>
+            <span className="vex-fr-probe__d vex-num">{s.detail}</span>
+            <StateWord state={STATUS_WORD[s.status].fill} word={STATUS_WORD[s.status].word} />
           </li>
         ))}
       </ul>
@@ -92,10 +68,9 @@ export function RunningBody({
         {...(cancelling
           ? { "data-vex-compose-cancelling": "" }
           : { "data-vex-compose-cancel": "" })}
-        className="self-start"
       >
         {cancelling ? "Cancelling…" : "Cancel"}
       </Button>
-    </div>
+    </>
   );
 }

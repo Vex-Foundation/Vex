@@ -2,7 +2,7 @@
  * Pure parser for compose log lines emitted by the main process.
  *
  * Free-form text → discriminated `ParsedLogEvent`. Unmatched lines
- * return `null` (graceful degradation — UI falls back to generic
+ * return `null` (graceful degradation - UI falls back to generic
  * copy when parse misses).
  *
  * Patterns are verified against real emitters in:
@@ -11,7 +11,7 @@
  *   - vex-app/src/main/ipc/docker.ts (terminal "completed" line)
  *   - Docker compose stdout passthrough (Container … {Phase})
  *
- * The parser is COSMETIC ONLY — it never flips the UI state machine.
+ * The parser is COSMETIC ONLY - it never flips the UI state machine.
  * Readiness is driven by the IPC `ComposeUpResult.kind` discriminator;
  * parse events only feed per-service pill substate (codex plan v2
  * SHOULD-FIX #3).
@@ -113,7 +113,7 @@ export function parseComposeLog(line: string): ParsedLogEvent | null {
     }
   }
 
-  // Failure pattern is a superset of the connecting/ready patterns —
+  // Failure pattern is a superset of the connecting/ready patterns -
   // check it AFTER the more specific ones above.
   m = RE_POSTGRES_FAILED.exec(line);
   if (m !== null && m[2] !== undefined && !m[2].startsWith("connecting") && m[2] !== "ready" && m[2] !== "ready.") {

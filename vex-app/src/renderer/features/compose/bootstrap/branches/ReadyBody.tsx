@@ -1,9 +1,10 @@
 /**
- * Branch: ready — Compose came back with kind="running" or "reused".
- * A quiet success stanza; the paper-pill Continue lives in the
- * orchestrator footer. (The NOTARY-era celebration glint is retired —
- * the green word is the celebration.)
+ * Branch: ready - Compose came back with kind="running" or "reused".
+ * A quiet card with the word Ready; the Continue lives in the
+ * orchestrator's actions.
  */
+
+import type { JSX } from "react";
 
 import type { ComposeUpResult } from "@shared/schemas/docker.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
