@@ -15,12 +15,13 @@
  * trading values (`[data-trade]`: the Lighter uPnL, Long and Short, the $VEX
  * 24 hour change), never on a state word. */
 
-/* The page asks the sheet for the centre's width (920 at 1440, padding 40),
- * not the 760 reading column: the tables need it. */
+/* The page asks the sheet for the centre's width (920 at 1440) and the
+ * design's page padding (22 40 24, section 9.1), not the 760 reading column:
+ * the tables need it. */
 .vex-ov:has(.vex-pf) {
   --vex-ov-max: 920px;
   --vex-ov-pad: 40px;
-  --vex-ov-top: 10px;
+  --vex-ov-top: 22px;
 }
 @media (max-width: 1179px) {
   .vex-ov:has(.vex-pf) {
