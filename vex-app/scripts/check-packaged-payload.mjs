@@ -24,6 +24,9 @@
  *      an app that is itself signed, carry a valid platform signature - the
  *      failure `build/afterPack.mjs` cannot see, because it runs before
  *      codesign.
+ *   5. (CLI only, POST-SIGNING) the native runtime trees under `postgres/` and
+ *      `llama/` are still exactly the lock-pinned files, and in a signed app
+ *      every Mach-O and PE among them carries a valid signature.
  *
  * One nuance in (1): a module that is OPTIONAL with a working fallback
  * (bufferutil, utf-8-validate - see native-payload-contract.mjs) may be absent
@@ -81,6 +84,15 @@ import {
   PACKAGED_LIGHTER_SIGNER_SUBPATH,
   readLighterSignerDigests,
 } from "./lighter-signer-artifact.mjs";
+import {
+  evaluateNativeRuntimeTree,
+  fetchedNativeRuntimeDir,
+  NATIVE_RUNTIME_COMPONENTS,
+  nativeRuntimeTargetFor,
+  packagedNativeRuntimeDirs,
+  readFetchedListing,
+  readNativeRuntimeLock,
+} from "./native-runtime-artifact.mjs";
 
 /** This repository's `vex-app/`, resolved from this file rather than the CWD. */
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -517,6 +529,121 @@ function bindWindowsHelpersToBuild(signerDir, target, builtDir) {
   return issues;
 }
 
+/**
+ * THE POST-SIGNING GATE for the native runtime trees.
+ *
+ * `build/afterPack.mjs` proves, before codesign, that the packaged `postgres/`
+ * and `llama/` trees are exactly the lock-pinned files. What it cannot see is
+ * what breaks after signing: on macOS a nested Mach-O that @electron/osx-sign
+ * did not sign (or signed so that it no longer verifies) is refused by the
+ * hardened runtime - and with library validation on, so is every dylib and
+ * ggml backend Postgres and llama-server load - and notarization rejects the
+ * bundle. On Windows the equivalent is a `.exe` or `.dll` without a valid
+ * Authenticode signature.
+ *
+ * So, over the payload as shipped:
+ *
+ *   1. the trees are still exactly the pinned set, every executable of the
+ *      right machine, bytes as the platform allows after signing (Linux: every
+ *      sha256; macOS: every non-Mach-O sha256, since codesign rewrites only
+ *      Mach-O files; Windows: every rewritten PE bound to the fetched file by
+ *      its Authenticode content digest, every other file by sha256);
+ *   2. in an app that is itself signed, EVERY Mach-O or PE under `postgres/` and
+ *      `llama/` carries a signature that verifies. The rule is relative to the
+ *      app, as for the Lighter signer: an unsigned local `--dir` build reports a
+ *      note rather than failing, and Linux packages carry no signature at all.
+ *
+ * `inspectSignature`, `host` and `appRoot` are the test seam. Returns
+ * `{ issues, notes }`.
+ */
+export function verifyPackagedNativeRuntimeSignatures(
+  payload,
+  { inspectSignature = inspectPlatformSignature, host = process.platform, appRoot = APP_ROOT } = {}
+) {
+  const { target: packagedTarget, resources } = payload;
+  const issues = [];
+  const notes = [];
+
+  let target;
+  let listing;
+  try {
+    target = nativeRuntimeTargetFor(packagedTarget.platform, packagedTarget.arch);
+    listing = readFetchedListing(appRoot, target, readNativeRuntimeLock(appRoot));
+  } catch (error) {
+    issues.push(
+      `the native runtime cannot be checked: ${error.message}\n`
+        + "      This gate compares the shipped trees against the lock-pinned listing the fetch wrote, so it "
+        + "must run in the workspace that produced the package."
+    );
+    return { issues, notes };
+  }
+
+  const signed = target.platform === "darwin" ? "codesign" : target.platform === "win32" ? "authenticode" : false;
+  const sourceDirs = Object.fromEntries(
+    NATIVE_RUNTIME_COMPONENTS.map((component) => [component, path.join(fetchedNativeRuntimeDir(appRoot, target), component)])
+  );
+  const { issues: treeIssues, files } = evaluateNativeRuntimeTree(packagedNativeRuntimeDirs(resources), target, listing, {
+    signed,
+    sourceDirs,
+  });
+  issues.push(...treeIssues.map((issue) => `native runtime ${target.name}: ${issue}`));
+  if (issues.length > 0) return { issues, notes };
+
+  const executables = files.filter((file) => file.format !== undefined);
+  if (target.platform === "linux") {
+    notes.push(`Linux packages carry no code signature; ${files.length} runtime files verified by sha256 against the lock`);
+    return { issues, notes };
+  }
+  if (target.platform !== host) {
+    notes.push(
+      `the ${target.platform} runtime signatures cannot be verified from a ${host} host; `
+        + `this evidence comes from the ${target.platform} CI job`
+    );
+    return { issues, notes };
+  }
+  const appBinary = target.platform === "darwin"
+    ? path.dirname(path.dirname(resources))
+    : findWindowsAppExecutable(path.dirname(resources));
+  if (appBinary === undefined) {
+    notes.push("no packaged application executable found beside the resources directory; runtime signatures not compared");
+    return { issues, notes };
+  }
+  let app;
+  try {
+    app = inspectSignature(appBinary, target.platform);
+  } catch (error) {
+    issues.push(`the signing tool for ${target.platform} is unavailable: ${error.message}`);
+    return { issues, notes };
+  }
+  if (!app.verified) {
+    notes.push(
+      `${path.basename(appBinary)} itself carries no valid signature (an unsigned local build), `
+        + `so the ${executables.length} runtime executables' signatures are not asserted`
+    );
+    return { issues, notes };
+  }
+  for (const file of executables) {
+    let signature;
+    try {
+      signature = inspectSignature(file.file, target.platform);
+    } catch (error) {
+      issues.push(`${file.path}: ${error.message}`);
+      continue;
+    }
+    if (!signature.verified) {
+      issues.push(
+        `${file.path} is NOT validly signed inside a SIGNED app: ${signature.detail || "no detail reported"}.\n`
+          + "      An unsigned nested executable or library is refused by the hardened runtime (macOS, with "
+          + "library validation) and rejected by notarization; on Windows it has no Authenticode signature."
+      );
+    }
+  }
+  if (issues.length === 0) {
+    notes.push(`${executables.length} runtime executables and libraries carry valid ${target.platform} signatures`);
+  }
+  return { issues, notes };
+}
+
 /** The packaged Windows application executable beside `resources/`. */
 function findWindowsAppExecutable(appOutDir) {
   if (!existsSync(appOutDir)) return undefined;
@@ -598,9 +725,14 @@ function main() {
     // where no helper signature exists yet.
     const signatures = verifyPackagedLighterSignerSignature(payload);
     issues.push(...signatures.issues);
+    const runtime = verifyPackagedNativeRuntimeSignatures(payload);
+    issues.push(...runtime.issues);
     const label = `${payload.label} (${payload.target.platform}/${payload.target.arch})`;
     for (const note of signatures.notes) {
       console.log(`${YELLOW}!${RESET} ${label}: Lighter signer signature check - ${note}`);
+    }
+    for (const note of runtime.notes) {
+      console.log(`${YELLOW}!${RESET} ${label}: native runtime check - ${note}`);
     }
     if (degraded.length > 0) {
       // An accepted, documented capability loss. Printed by name every run so
@@ -621,7 +753,7 @@ function main() {
     if (issues.length === 0) {
       console.log(
         `${GREEN}✓${RESET} ${label} - one native candidate per module, all reviewed; `
-          + "Lighter signer helper present and consistent with the app's signing state"
+          + "Lighter signer helper and native runtime present and consistent with the app's signing state"
       );
     } else {
       failed += 1;

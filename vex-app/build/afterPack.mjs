@@ -1,6 +1,6 @@
 /**
  * Electron Fuses applied in afterPack hook (skill §7), plus the Vex Studio
- * bridge and Lighter signer helper re-inspection.
+ * bridge, Lighter signer helper and native runtime re-inspection.
  * Flips fuses BEFORE codesigning so signature covers the modified binary.
  *
  * Mandatory production-grade flags (even for unsigned dev builds):
@@ -35,6 +35,19 @@ import {
   readLighterSignerDigests,
   stagedLighterSignerDir,
 } from "../scripts/lighter-signer-artifact.mjs";
+import {
+  evaluateNativeRuntimeTree,
+  fetchedNativeRuntimeDir,
+  NATIVE_RUNTIME_COMPONENTS,
+  NATIVE_RUNTIME_LICENSES,
+  nativeRuntimeTargetFor,
+  PACKAGED_LICENSES_SUBPATH,
+  packagedNativeRuntimeDirs,
+  readAuthenticodeManifest,
+  readFetchedListing,
+  readNativeRuntimeLock,
+  stagedNativeRuntimeDir,
+} from "../scripts/native-runtime-artifact.mjs";
 
 /**
  * The Vex Studio bridge artifacts, re-inspected where electron-builder
@@ -316,6 +329,119 @@ export function verifyPackagedLighterSigner(
 }
 
 /**
+ * The native runtime trees (Postgres + pgvector, llama-server), re-inspected
+ * where electron-builder actually PUT them, before the app bundle is signed.
+ *
+ * `scripts/stage-native-runtime.mjs` verified the staged trees, which proves
+ * the staging directories, not the package: between the two sit the
+ * `extraResources` copy (and its filter), the per-arch macro expansion, and on
+ * Windows the Authenticode signing of every `.exe` and `.dll` during that copy.
+ * So this asserts, against the listing the committed lock pins
+ * (`evaluateNativeRuntimeTree` owns the rules):
+ *
+ *   - EXACTLY the pinned files are packaged under `postgres/` and `llama/`:
+ *     none missing, none extra (a staging file that leaked through the filter,
+ *     another arch's tree, anything nobody pinned);
+ *   - every file the app needs is among them;
+ *   - every executable's own header is the target's format and its tree's
+ *     machine (x64 Postgres in the win32-arm64 package, by design), with its
+ *     execute bit on macOS and Linux;
+ *   - BYTES: on macOS and Linux every file's sha256 equals the listing (codesign
+ *     runs after this hook; Linux is never signed). On Windows a PE electron-
+ *     builder signed during the copy must have the Authenticode content digest
+ *     of the fetched, lock-verified file, agree with the staging preflight's
+ *     record, and carry a signature that verifies; everything else must still
+ *     match its sha256.
+ *   - the runtime's notices are packaged under `licenses/`.
+ *
+ * Exported so a test can drive it over a synthetic packaged tree, for the
+ * reason `verifyPackagedBridge` is. `appRoot` names where the lock, the fetched
+ * trees and the staging directories live; `inspectSignature` is the platform
+ * signature tool seam. Returns `{ target, files, transformed }`.
+ */
+export function verifyPackagedNativeRuntime(
+  context,
+  { appRoot = APP_ROOT, inspectSignature = inspectPlatformSignature } = {}
+) {
+  const { electronPlatformName, appOutDir, arch, packager } = context;
+  const fail = (reason) => {
+    throw new Error(
+      `the packaged native runtime is wrong or missing: ${reason}\n`
+        + "    electron-builder only WARNS on a missing extraResources source, so this is the gate that "
+        + "stops a Vex with no usable database or embeddings server from being signed and published."
+    );
+  };
+
+  let target;
+  let lock;
+  let listing;
+  try {
+    target = nativeRuntimeTargetFor(electronPlatformName, Arch[arch] ?? String(arch));
+    lock = readNativeRuntimeLock(appRoot);
+    listing = readFetchedListing(appRoot, target, lock);
+  } catch (error) {
+    fail(error.message);
+  }
+
+  const resourcesDir = electronPlatformName === "darwin"
+    ? path.join(appOutDir, `${packager.appInfo.productFilename}.app`, "Contents", "Resources")
+    : path.join(appOutDir, "resources");
+  const packaged = packagedNativeRuntimeDirs(resourcesDir);
+  const windows = target.platform === "win32";
+  const sourceDirs = Object.fromEntries(
+    NATIVE_RUNTIME_COMPONENTS.map((component) => [component, path.join(fetchedNativeRuntimeDir(appRoot, target), component)])
+  );
+  const { issues, files } = evaluateNativeRuntimeTree(packaged, target, listing, {
+    signed: windows ? "authenticode" : false,
+    sourceDirs,
+  });
+
+  for (const name of NATIVE_RUNTIME_LICENSES) {
+    if (!existsSync(path.join(resourcesDir, PACKAGED_LICENSES_SUBPATH, ...name.split("/")))) {
+      issues.push(`${PACKAGED_LICENSES_SUBPATH}/${name}: missing; the runtime's notices must ship with it`);
+    }
+  }
+
+  const transformed = files.filter((file) => file.transformed === true);
+  for (const file of transformed) {
+    // The staging preflight's own account of these bytes. A disagreement means
+    // the staging directory changed between the preflight and the package.
+    const component = file.path.split("/")[0];
+    const record = readAuthenticodeManifest(stagedNativeRuntimeDir(appRoot, component, target.arch))?.get(file.path);
+    if (record !== undefined && record !== file.content) {
+      issues.push(
+        `${file.path}: the staging preflight recorded Authenticode content ${record}, the packaged file has `
+          + `${file.content}; nothing may be signed on that`
+      );
+      continue;
+    }
+    let signature;
+    try {
+      signature = inspectSignature(file.file, "win32");
+    } catch (error) {
+      issues.push(`${file.path}: is the pinned file (content ${file.content}) but its signature could not be checked: ${error.message}`);
+      continue;
+    }
+    if (!signature.verified) {
+      issues.push(
+        `${file.path}: rewritten on its way into the package and carries NO valid Authenticode signature `
+          + `(${signature.detail || "no detail reported"}). Signing during the copy is the only sanctioned reason `
+          + "for these bytes to differ."
+      );
+    }
+  }
+
+  if (issues.length > 0) fail(`${target.name} (${lock.release}):\n    - ${issues.join("\n    - ")}`);
+  const executables = files.filter((file) => file.format !== undefined).length;
+  console.log(
+    `afterPack: native runtime ${target.name} OK at ${resourcesDir}/{postgres,llama} (${lock.release}: `
+      + `${files.length} files exactly as pinned, ${executables} executables of the right machine`
+      + `${windows ? `, ${transformed.length} signed during the copy and bound by Authenticode content` : ", sha256 against the lock"})`
+  );
+  return { target: target.name, files: files.length, transformed: transformed.length };
+}
+
+/**
  * The one-loadable-candidate native contract, asserted on THIS packaged app.
  *
  * `pnpm check:package` asserts the same contract, but only after a separate
@@ -371,6 +497,7 @@ export default async function afterPack(context) {
   // `verifyPackagedLighterSigner` for the per-platform order.)
   await verifyPackagedBridge(context);
   verifyPackagedLighterSigner(context);
+  verifyPackagedNativeRuntime(context);
   verifyPackagedPayload(context);
 
   let appPath;

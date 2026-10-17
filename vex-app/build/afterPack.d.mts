@@ -47,4 +47,25 @@ export function verifyPackagedLighterSigner(
   }
 ): string[];
 
+/**
+ * Assert that the packaged native runtime (`postgres/` and `llama/` under the
+ * resources directory) is exactly the lock-pinned tree for this target: the
+ * pinned file set and nothing else, every required file, executables of the
+ * target's format and each tree's machine, and the pinned bytes (sha256 on
+ * macOS and Linux; on Windows, for a PE signed during the copy, the
+ * Authenticode content digest of the fetched file plus a valid signature).
+ * Also requires the runtime's notices under `licenses/`. Throws with every
+ * problem named.
+ *
+ * `appRoot` is where the lock, the fetched trees and the staging directories
+ * live; `inspectSignature` is the signature tool seam.
+ */
+export function verifyPackagedNativeRuntime(
+  context: AfterPackContext,
+  options?: {
+    readonly appRoot?: string;
+    readonly inspectSignature?: (file: string, platform: string) => PlatformSignature;
+  }
+): { readonly target: string; readonly files: number; readonly transformed: number };
+
 export default function afterPack(context: AfterPackContext): Promise<void>;
