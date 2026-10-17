@@ -18,7 +18,13 @@
 # so no build-machine path is compiled in.
 #
 # linux-x64 is built by linux/build-in-container.sh llama, never directly on a
-# Mac. Re-running is safe: the checkout is reset and the build and output
+# Mac. win32-x64 and win32-arm64 are built under Git Bash in an MSVC developer
+# environment with clang (MSVC ABI), as upstream's release workflow does:
+# ggml-cpu refuses MSVC for ARM, and arm64 is cross-built from x64 with the
+# target triple arm64-pc-windows-msvc. The Windows tree is the same flat
+# layout: llama-server.exe, the DLLs it links, ggml-cpu*.dll, and the app-local
+# MSVC runtime (msvcp140/vcruntime140*), since a clean Windows has none.
+# Re-running is safe: the checkout is reset and the build and output
 # directories are recreated.
 
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
@@ -74,7 +80,26 @@ case "$target" in
   linux-*)
     cmake_args+=(-DCMAKE_INSTALL_RPATH='$ORIGIN')
     ;;
+  win32-*)
+    nr_win_env "$target"
+    command -v clang >/dev/null || nr_die "clang is not on PATH"
+    nr_log "$(clang --version | head -1)"
+    cmake_args+=(-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++)
+    ;;
 esac
+# win32-arm64: a cross build (upstream's cmake/arm64-windows-llvm.cmake,
+# without its -march=armv8.7-a -ffp-model=fast flags: every target is built at
+# the compiler's arm64 baseline and the default FP model like the other
+# platforms, and ggml-cpu alone at GGML_CPU_ARM_ARCH). armv8.2-a+dotprod is
+# Cortex-A75/A76 class, the oldest Snapdragon that Windows 11 supports
+# (850 / 7c / 8cx); the M1 baseline the macOS build uses adds fp16, i8mm etc.
+if [ "$target" = win32-arm64 ]; then
+  cmake_args+=(
+    -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=arm64
+    -DCMAKE_C_COMPILER_TARGET=arm64-pc-windows-msvc -DCMAKE_CXX_COMPILER_TARGET=arm64-pc-windows-msvc
+    -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod
+  )
+fi
 
 # x64: one CPU backend per ISA level, the best one chosen at runtime by its
 # ggml_backend_score. arm64: a single backend at the compiler's baseline
@@ -86,8 +111,11 @@ esac
 
 # ggml's asserts print __FILE__; without this every shipped binary carries the
 # build machine's absolute checkout path. Changes no code, only those strings.
-export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$src=llama.cpp"
-export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src=llama.cpp"
+# On Windows the compiler sees the checkout as D:/a/..., not Git Bash's /d/a/...
+src_seen="$src"
+[[ "$target" == win32-* ]] && src_seen="$(cygpath -m "$src")"
+export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$src_seen=llama.cpp"
+export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$src_seen=llama.cpp"
 
 rm -rf "$build"
 nr_log "configuring llama.cpp $LLAMA_TAG for $target"
@@ -107,6 +135,28 @@ nr_log "building llama-server ($jobs jobs)"
 cmake --build "$build" --target llama-server -j "$jobs"
 
 bin="$build/bin"
+if [[ "$target" == win32-* ]]; then
+  [ -f "$bin/llama-server.exe" ] || nr_die "llama-server.exe was not produced"
+  rm -rf "$out"
+  mkdir -p "$out"
+  cp "$bin/llama-server.exe" "$out/"
+  compgen -G "$bin/ggml-cpu*.dll" >/dev/null || nr_die "no CPU backend modules (ggml-cpu*.dll) in $bin"
+  cp "$bin"/ggml-cpu*.dll "$out/"
+  arch=x64
+  [ "$target" = win32-arm64 ] && arch=arm64
+  nr_win_closure "$out" "$out" "$bin" "$(nr_win_crt_dir "$arch")"
+  cp "$src/LICENSE" "$out/LICENSE"
+  mkdir -p "$out/licenses"
+  cp "$src/vendor/cpp-httplib/LICENSE" "$out/licenses/cpp-httplib-LICENSE"
+  cp "$src/licenses/LICENSE-jsonhpp" "$out/licenses/nlohmann-json-LICENSE"
+  nr_win_no_build_paths "$out"
+  "$NR_ROOT/lib/verify-tree.sh" "$out" "$target"
+  cp "$build/CMakeCache.txt" "$work/llama-CMakeCache.txt"
+  rm -rf "$build"
+  nr_log "llama $LLAMA_TAG for $target: $(du -sh "$out" | cut -f1) in $out ($((SECONDS - started)) s)"
+  ls -l "$out" >&2
+  exit 0
+fi
 [ -x "$bin/llama-server" ] || nr_die "llama-server was not produced"
 
 # Assemble: the executable, the backend modules, then the closure of the
