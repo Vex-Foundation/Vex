@@ -31,6 +31,7 @@ const TOUR_VIEWS: ReadonlyArray<View> = [
   "systemCheck",
   "dockerBootstrap",
   "composeBootstrap",
+  "runtimeMigration",
   "runtimeBootstrap",
   "migrations",
   "wizard",

@@ -2,7 +2,8 @@
  * The three steps of the native runtime's start as quiet hairline rows, the
  * service-row grammar of the setup screens: an inline VexLoader while a step
  * works, then a colored status word once it settles. The model row carries
- * the download as bytes, speed and percent over the progress line.
+ * the download as bytes, speed and percent over the progress line. The
+ * migration screen draws its steps with the same rows.
  *
  * `data-step` / `data-status` on each row are the test and e2e contract.
  */
@@ -20,7 +21,15 @@ const statusInk: Record<StepStatus, string> = {
   failed: "text-[var(--color-danger)]",
 };
 
-export function StepRows({ rows }: { readonly rows: readonly StepRow[] }): JSX.Element {
+/**
+ * A row as drawn. The runtime screen's `StepRow` is one; the migration screen
+ * draws its own steps through the same grammar.
+ */
+export interface StepRowView extends Omit<StepRow, "step"> {
+  readonly step: string;
+}
+
+export function StepRows({ rows }: { readonly rows: readonly StepRowView[] }): JSX.Element {
   return (
     <ul className="flex w-full flex-col">
       {rows.map((row) => (
