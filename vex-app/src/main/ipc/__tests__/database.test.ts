@@ -60,7 +60,7 @@ vi.mock("../../logger/index.js", () => ({
   },
 }));
 
-const mockMode = vi.fn(() => "docker");
+const mockMode = vi.fn(() => "e2e_door");
 const mockGateStart = vi.fn();
 vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => mockMode() }));
 vi.mock("../../runtime/migration/native-start-gate.js", () => ({
@@ -90,7 +90,7 @@ beforeEach(() => {
   mockPeek.mockReturnValue(null);
   mockReset.mockClear();
   trustedSender.sender.send.mockReset();
-  mockMode.mockReturnValue("docker");
+  mockMode.mockReturnValue("e2e_door");
   mockGateStart.mockReset();
 });
 

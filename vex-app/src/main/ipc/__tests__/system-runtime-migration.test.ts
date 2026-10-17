@@ -15,7 +15,7 @@ import { createTestWebContents, createTrustedSender, type TestIpcEvent } from ".
 type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => ({
-  mode: "native" as "native" | "docker",
+  mode: "native" as "native" | "e2e_door",
   gate: {
     status: vi.fn(),
     migrate: vi.fn(),
@@ -127,7 +127,7 @@ describe("system.runtimeMigration* IPC", () => {
   });
 
   it("has nothing to move outside the native runtime and never reaches the gate", async () => {
-    mocks.mode = "docker";
+    mocks.mode = "e2e_door";
     expect(await invoke(CH.system.runtimeMigrationStatus)).toEqual({ ok: true, data: { kind: "not_needed" } });
     expect(await invoke(CH.system.runtimeMigrationMove)).toMatchObject({ ok: true, data: { kind: "failed", reason: "not_pending" } });
     expect(await invoke(CH.system.runtimeMigrationStartFresh)).toMatchObject({ ok: true, data: { kind: "failed", reason: "not_pending" } });

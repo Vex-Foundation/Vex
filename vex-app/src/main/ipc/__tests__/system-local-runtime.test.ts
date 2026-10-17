@@ -16,7 +16,7 @@ import { createTrustedSender, type TestIpcEvent } from "./test-sender.js";
 type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => ({
-  mode: "native" as "native" | "docker",
+  mode: "native" as "native" | "e2e_door",
   info: vi.fn<() => Promise<LocalRuntimeInfo>>(),
   restart: vi.fn<() => Promise<RuntimeRestartResult>>(),
   reset: vi.fn<() => Promise<RuntimeResetResult>>(),
@@ -85,7 +85,7 @@ describe("system.runtimeInfo", () => {
   });
 
   it("is denied outside the native runtime, without measuring anything", async () => {
-    mocks.mode = "docker";
+    mocks.mode = "e2e_door";
     expect(await invoke(CH.system.runtimeInfo)).toMatchObject({
       ok: false,
       error: { code: "permissions.denied", domain: "system" },

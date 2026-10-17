@@ -63,6 +63,9 @@ vi.mock("../../lifecycle/broadcast.js", () => ({
   broadcastToAllWindows: vi.fn(),
 }));
 
+// The container handlers refuse on the native runtime (docker-native-guard.test.ts).
+vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => "e2e_door" }));
+
 vi.mock("../../database/connection-state.js", () => ({
   LOOPBACK_DB_HOST: "127.0.0.1",
   setDbConnection: vi.fn(),

@@ -41,6 +41,8 @@ vi.mock("../../database/connection-state.js", () => ({
 vi.mock("../../compose/deps-factory.js", () => ({
   buildRenderDeps: () => ({ userDataDir: "/tmp" }),
 }));
+// The container handlers refuse on the native runtime (docker-native-guard.test.ts).
+vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => "e2e_door" }));
 vi.mock("../../docker/probe.js", () => ({ probeDocker: vi.fn() }));
 vi.mock("../../docker/install.js", () => ({ performInstall: vi.fn() }));
 vi.mock("../../docker/start.js", () => ({ performStart: vi.fn() }));

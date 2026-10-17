@@ -37,7 +37,7 @@ vi.mock("../statusCache.js", () => ({
   currentVersion: () => "1.0.0",
 }));
 
-let runtimeMode: "docker" | "native" = "docker";
+let runtimeMode: "e2e_door" | "native" = "e2e_door";
 const stopNativeRuntime = vi.fn(async () => {});
 vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => runtimeMode }));
 vi.mock("../../runtime/native/native-runtime.js", () => ({ stopNativeRuntime: () => stopNativeRuntime() }));
@@ -237,7 +237,7 @@ describe("restartAndInstallNow (step 2: explicit restart)", () => {
     });
 
     currentStatus = DOWNLOADED;
-    runtimeMode = "docker";
+    runtimeMode = "e2e_door";
     await actions.restartAndInstallNow("req");
     expect(order).toEqual(["quitAndInstall"]);
 
@@ -246,7 +246,7 @@ describe("restartAndInstallNow (step 2: explicit restart)", () => {
     runtimeMode = "native";
     await actions.restartAndInstallNow("req");
     expect(order).toEqual(["stop-native-runtime", "quitAndInstall"]);
-    runtimeMode = "docker";
+    runtimeMode = "e2e_door";
   });
 
   it("blocks (no install) when the gate fails", async () => {

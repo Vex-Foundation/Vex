@@ -1,34 +1,24 @@
 /**
- * Which provider runs Vex's local services in this process.
+ * Who serves this process's local services (Postgres + pgvector, the
+ * embeddings server).
  *
- * Until the native runtime ships (plan D11), the compose provider stays the
- * default and the native runtime is an explicit opt-in: `VEX_RUNTIME=native`,
- * in development and in packaged builds alike. Packaged, it is how QA and the
- * clean-machine release gate run a real install with no container runtime
- * before the default flips. It cannot widen what runs: a packaged build only
- * ever starts the binaries it shipped (runtime-paths.ts ignores the dev tree
- * overrides there). An e2e run whose door already published a database keeps
- * that database; the native runtime never displaces it.
- *
- * This is the switch that the release-N flip deletes along with the compose
- * provider (it is in the no-container ratchet's baseline for that reason).
+ * The bundled native runtime is the only runtime Vex runs (plan D11): every
+ * launch, development and packaged alike, starts it through the migration
+ * gate. The one exception is an end-to-end run whose door already published a
+ * database (`database/e2e-connection-door.ts`, inert in a packaged build): that
+ * database is the run's own, so the native runtime is never started and never
+ * displaces it. Everything that would act on the bundled runtime - its start,
+ * stop, restart, reset, data move and live embeddings endpoint - asks this
+ * module first and stands aside for a door run.
  */
 
-import type { RuntimeProviderId } from "./provider.js";
+export type RuntimeMode = "native" | "e2e_door";
 
-export type RuntimeMode = RuntimeProviderId;
-
-const DEFAULT_MODE: RuntimeMode = "docker";
-
-export function resolveRuntimeMode(input: {
-  readonly env: NodeJS.ProcessEnv;
-  readonly connectionAlreadyPublished: boolean;
-}): RuntimeMode {
-  if (input.connectionAlreadyPublished) return DEFAULT_MODE;
-  return input.env["VEX_RUNTIME"] === "native" ? "native" : DEFAULT_MODE;
+export function resolveRuntimeMode(input: { readonly connectionAlreadyPublished: boolean }): RuntimeMode {
+  return input.connectionAlreadyPublished ? "e2e_door" : "native";
 }
 
-let mode: RuntimeMode = DEFAULT_MODE;
+let mode: RuntimeMode = "native";
 
 /** Decided once at boot (index.ts), after the e2e door. */
 export function setRuntimeMode(value: RuntimeMode): void {

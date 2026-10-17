@@ -18,7 +18,7 @@ import type {
   UpdateStatus,
 } from "@shared/schemas/updater.js";
 import { log } from "../logger/index.js";
-import { COMPOSE_QUIT_DEADLINE_MS } from "../lifecycle/quit-stage.js";
+import { RUNTIME_QUIT_DEADLINE_MS } from "../lifecycle/quit-stage.js";
 import { preferencesStore } from "../preferences/store.js";
 import { stopNativeRuntime } from "../runtime/native/native-runtime.js";
 import { getRuntimeMode } from "../runtime/runtime-mode.js";
@@ -259,7 +259,7 @@ export async function restartAndInstallNow(
   if (getRuntimeMode() === "native") {
     await Promise.race([
       stopNativeRuntime().catch(() => {}),
-      new Promise<void>((resolve) => setTimeout(resolve, COMPOSE_QUIT_DEADLINE_MS)),
+      new Promise<void>((resolve) => setTimeout(resolve, RUNTIME_QUIT_DEADLINE_MS)),
     ]);
   }
   // Windows: true => silent installer after explicit Vex UI consent; second

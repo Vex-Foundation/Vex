@@ -16,7 +16,7 @@ import { createTrustedSender, type TestIpcEvent } from "./test-sender.js";
 type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => ({
-  mode: "native" as "native" | "docker",
+  mode: "native" as "native" | "e2e_door",
   startNativeRuntime: vi.fn(),
   checkLocalRuntime: vi.fn(),
   send: vi.fn(),
@@ -106,7 +106,7 @@ describe("system.runtimeStatus / runtimeRetry IPC", () => {
   it("is a no-op outside the native runtime", async () => {
     nativeRuntimeProgress.begin(false);
     nativeRuntimeProgress.fail("failed", "boom");
-    mocks.mode = "docker";
+    mocks.mode = "e2e_door";
     await invoke(CH.system.runtimeRetry);
     expect(mocks.startNativeRuntime).not.toHaveBeenCalled();
   });

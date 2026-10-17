@@ -10,7 +10,7 @@ import { CH } from "@shared/ipc/channels.js";
 type Handler = (event: unknown, raw: unknown) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => ({
-  mode: "native" as "native" | "docker",
+  mode: "native" as "native" | "e2e_door",
   probeDocker: vi.fn(),
   performInstall: vi.fn(),
   performStart: vi.fn(),
@@ -101,8 +101,8 @@ describe("vex:docker:* on the native runtime", () => {
     expect(mocks.stopPreviousInstallStacks).not.toHaveBeenCalled();
   });
 
-  it("detection still runs on the Docker runtime", async () => {
-    mocks.mode = "docker";
+  it("detection still runs outside the native runtime", async () => {
+    mocks.mode = "e2e_door";
     mocks.probeDocker.mockRejectedValue(new Error("probe ran"));
     await invoke(CH.docker.detect);
     expect(mocks.probeDocker).toHaveBeenCalledTimes(1);

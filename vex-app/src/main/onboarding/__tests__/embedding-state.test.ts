@@ -27,6 +27,7 @@ const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 const { probeEmbeddings } = await import("../embedding-state.js");
+const { setRuntimeMode } = await import("../../runtime/runtime-mode.js");
 
 let tmpDir = "";
 let envFile = "";
@@ -43,6 +44,12 @@ afterEach(async () => {
 });
 
 describe("probeEmbeddings", () => {
+  // The file's own URL is what an e2e door run probes; the native runtime's
+  // live endpoint has its own block below.
+  beforeEach(() => {
+    setRuntimeMode("e2e_door");
+  });
+
   it("returns allFieldsConfigured=false when .env missing", async () => {
     mockProbeDbReachable.mockResolvedValue(true);
     const r = await probeEmbeddings(envFile);
@@ -144,7 +151,6 @@ describe("probeEmbeddings", () => {
   });
 });
 
-const { setRuntimeMode } = await import("../../runtime/runtime-mode.js");
 const { publishNativeEmbeddings } = await import("../../runtime/native/embedding-env.js");
 
 describe("probeEmbeddings on the native runtime", () => {
@@ -159,7 +165,7 @@ describe("probeEmbeddings on the native runtime", () => {
   });
   afterEach(() => {
     publishNativeEmbeddings(null, {});
-    setRuntimeMode("docker");
+    setRuntimeMode("e2e_door");
   });
 
   it("probes and names the live server the runtime published, with its key, not the file's default port", async () => {
@@ -196,8 +202,8 @@ describe("probeEmbeddings on the native runtime", () => {
     expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).not.toContain("Bearer");
   });
 
-  it("leaves the container runtime's probe of the file's URL unchanged", async () => {
-    setRuntimeMode("docker");
+  it("leaves an e2e door run's probe of the file's URL unchanged", async () => {
+    setRuntimeMode("e2e_door");
     await fs.writeFile(envFile, BUNDLED_FILE);
     publishNativeEmbeddings(LIVE, {});
     const r = await probeEmbeddings(envFile);
