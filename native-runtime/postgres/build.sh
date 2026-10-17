@@ -130,6 +130,12 @@ EOF
     ;;
   win32-x64)
     nr_win_env "$target"
+    # cl spells __FILE__ (elog/ereport record it) as an absolute path, so trim
+    # the work dir off it, the MSVC counterpart of -ffile-prefix-map (the
+    # option Bazel's MSVC toolchain uses for the same purpose). Passed through
+    # cl's CL environment variable, so meson does not record it in pg_config's
+    # CFLAGS; dash syntax, so Git Bash does not rewrite it as a path.
+    export CL="-d1trimfile:$(cygpath -w "$work")\\"
     # flex/bison from the pinned winflexbison, perl from Strawberry (what
     # upstream's Windows CI uses; Git Bash's msys perl must not be picked).
     wfb="$NR_ROOT/.work/tools/winflexbison-$WINFLEXBISON_VERSION"
@@ -192,13 +198,9 @@ else
   want="$(cygpath -m "$root/lib/postgresql")"
   [ "${got,,}" = "${want,,}" ] || nr_die "staged pg_config does not relocate: $got (expected $want)"
   [ -f "$root/lib/postgres.lib" ] || nr_die "postgres.lib (the import library modules link against) was not installed"
-  # The include directories are relative to the pgvector checkout: cl spells
-  # __FILE__ of a header (Postgres' inline functions call elog) the way it
-  # found it, so absolute -I paths would bake the build directory in.
-  [ "$root" = "$work/stage/vex-unrelocated" ] || nr_die "unexpected staging root $root"
   (cd "$work/pgvector" && nmake -nologo -f Makefile.win all OPTFLAGS=-MD \
-    PGROOT="$(cygpath -w "$root")" INCLUDEDIR='..\stage\vex-unrelocated\include' \
-    INCLUDEDIR_SERVER='..\stage\vex-unrelocated\include\postgresql\server' LIBDIR="$(cygpath -w "$root/lib")")
+    PGROOT="$(cygpath -w "$root")" INCLUDEDIR="$(cygpath -w "$root/include")" \
+    INCLUDEDIR_SERVER="$(cygpath -w "$root/include/postgresql/server")" LIBDIR="$(cygpath -w "$root/lib")")
   cp "$work/pgvector/vector.dll" "$root/lib/postgresql/"
   cp "$work/pgvector/vector.control" "$work/pgvector"/sql/vector--*.sql "$root/share/postgresql/extension/"
 fi

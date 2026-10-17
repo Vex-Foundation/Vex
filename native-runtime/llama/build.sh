@@ -142,6 +142,8 @@ if [[ "$target" == win32-* ]]; then
   cp "$bin/llama-server.exe" "$out/"
   compgen -G "$bin/ggml-cpu*.dll" >/dev/null || nr_die "no CPU backend modules (ggml-cpu*.dll) in $bin"
   cp "$bin"/ggml-cpu*.dll "$out/"
+  # The ISA each CPU backend was compiled for, as ggml's CMake reports it.
+  grep -E 'CPU backend variant|Checking for ARM features|^--   -m' "$work/llama-configure.log" >&2 || true
   arch=x64
   [ "$target" = win32-arm64 ] && arch=arm64
   nr_win_closure "$out" "$out" "$bin" "$(nr_win_crt_dir "$arch")"

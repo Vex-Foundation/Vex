@@ -218,7 +218,19 @@ class WindowsRunner extends HostRunner {
 async function startServerWin(r, port) {
   const t0 = performance.now();
   const logOffset = fs.existsSync(r.pgctlLog) ? fs.statSync(r.pgctlLog).size : 0;
-  const res = await r.exec('pg_ctl', ['start', '-w', '-t', '60', '-D', r.dataDir, '-l', r.pgctlLog, '-o', `-p ${port}`]);
+  // pg_ctl creates the server with handle inheritance on, so the server keeps
+  // whatever stdout/stderr pg_ctl had: a pipe would stay open (and 'close'
+  // never fire) until the server exits. Give pg_ctl a file and wait for exit.
+  const outFile = path.join(r.workDir, 'pg_ctl-start.out');
+  const fd = fs.openSync(outFile, 'w');
+  const child = spawn(r.bin('pg_ctl'), ['start', '-w', '-t', '60', '-D', r.dataDir, '-l', r.pgctlLog, '-o', `-p ${port}`],
+    { stdio: ['ignore', fd, fd] });
+  fs.closeSync(fd);
+  const code = await new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', resolve);
+  });
+  const res = { code, stdout: fs.readFileSync(outFile, 'utf8'), stderr: '' };
   const ms = performance.now() - t0;
   // Early messages (before the logging collector takes over) land in -l.
   const early = fs.existsSync(r.pgctlLog) ? fs.readFileSync(r.pgctlLog).subarray(logOffset).toString('utf8') : '';

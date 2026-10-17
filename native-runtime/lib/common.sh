@@ -201,7 +201,7 @@ nr_win_no_build_paths() {
   [ -z "$leaks" ] && return 0
   while read -r f; do
     nr_log "build path in $f:"
-    LC_ALL=C grep -aoiE "[ -~]{0,60}($re)[ -~]{0,60}" "$f" | sort -u | head -15 >&2
+    LC_ALL=C grep -aoiE "[ -~]{0,40}($re)[ -~]{0,120}" "$f" | sort -u | head -15 >&2
   done <<<"$leaks"
   nr_die "build paths leaked into the tree"
 }

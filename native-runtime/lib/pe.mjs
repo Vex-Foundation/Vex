@@ -98,6 +98,7 @@ export function peInfo(file) {
     dll: (characteristics & 0x2000) !== 0,
     imports, delayImports, pdb,
     clr: dir(14).rva !== 0,
+    signed: dir(4).size > 0, // an embedded Authenticode signature (security directory)
   };
 }
 
@@ -137,8 +138,10 @@ export function verify(tree, wantMachine) {
     if (info.clr) failures.push(`${rel}: is a .NET assembly`);
     for (const d of missing) failures.push(`${rel}: imports ${d}, which neither Windows nor the tree provides`);
     // A CodeView record names the PDB the linker wrote: an absolute path on
-    // the build machine. Release binaries are linked without /DEBUG.
-    if (info.pdb) failures.push(`${rel}: carries a PDB path (${info.pdb})`);
+    // the build machine. What we build is linked without /DEBUG. Already
+    // signed files are redistributed as-is (the MSVC runtime DLLs carry
+    // Microsoft's own PDB paths), so they are exempt from this one check.
+    if (info.pdb && !info.signed) failures.push(`${rel}: carries a PDB path (${info.pdb})`);
   }
   return { checked: pes.length, failures };
 }
