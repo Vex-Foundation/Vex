@@ -1,7 +1,8 @@
 /* The session page, V10 (docs/design/V10-SPREAD.md sections 1, 4 and 7): the
- * RESIDENT SHELL geometry, the welcome chapter opening, the transcript's
- * chapter head, the ruled turn island, the REAL FUNDS approval card and its
- * paper dither veil, hover-revealed timestamps and the chat code tokens.
+ * transcript's place in the RESIDENT SHELL, the transcript's chapter head, the
+ * ruled turn island, the risk callout, hover-revealed timestamps and the chat
+ * code tokens. The composer seat and the welcome live in composer.css, the
+ * approval card in approval.css.
  *
  * Status is shown by fill (the shared swatch, ui-primitives/marks.css), never
  * by a colour, a shimmer or a sweep: the ongoing swatch's four-step dot screen
@@ -31,53 +32,6 @@
   min-height: auto;
   overflow: visible;
   scrollbar-gutter: auto;
-}
-
-/* HERO - the chapter opening is ANCHORED AT THE HEAD of the page, the way the
- * welcome spread draws it (docs/design/V10-SPREAD.md reference d2): flex at the
- * start, never a `transform`. A transform on this box would make it the
- * containing block for every `position: fixed` descendant (menus, dialogs, the
- * command palette), silently shrinking them to this column. */
-[data-vex-area="session-panel"][data-phase="hero"]
-  > [data-vex-conversation-scroll] {
-  justify-content: flex-start;
-}
-
-/* The opening's head room: 104px under the running head on a full window,
- * shrinking with a short one so the field and the starters stay above the
- * fold at the 720px minimum. */
-[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat] {
-  padding-top: clamp(40px, 11.6vh, 104px);
-  padding-bottom: 32px;
-}
-
-/* HERO GROWTH BAND (owner smoothness decree 2026-07-22, carried into
- * residency). The band's LAYOUT height is pinned to the composer's resting
- * stack, so an auto-growing field overflows DOWNWARD and never moves the
- * greeting above it. `overflow: visible` is what lets the overflow paint.
- * 230px = the field's 26px margin + the resting hero field (118) + the
- * starter slot (86: 14 above two 32px rows and their 8px gap). */
-[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock] {
-  height: 230px;
-  overflow: visible;
-}
-
-/* ACTIVE - the seat is the sticky floor of the scroll body, on the page's own
- * paper. A solid floor, not a fade: V10 has no gradient ramp, and the 1px rule
- * above the field already says where the transcript ends. */
-[data-vex-area="session-panel"][data-phase="active"] [data-vex-composer-seat] {
-  position: sticky;
-  bottom: 0;
-  z-index: 7;
-  background: var(--vex-alias-bg-base);
-}
-
-/* SETTLING - a session is opening and its transcript is still unknown, so
- * hero-vs-docked is unknowable. The seat stays MOUNTED (residency is the whole
- * point) but invisible, so no wrong layout flashes before the phase lands. */
-[data-vex-area="session-panel"][data-phase="settling"]
-  [data-vex-composer-seat] {
-  visibility: hidden;
 }
 
 /* In a side rail (the Lighter chat, `data-vex-session-surface="embedded"`) the
@@ -117,66 +71,6 @@
 }
 [data-vex-conversation-scroll] [data-vex-latest-slot] {
   bottom: calc(var(--vex-composer-height, 152px) + 16px);
-}
-
-/* ============================================================ *
- *  THE CHAPTER OPENING (welcome, reference d2)                  *
- * ============================================================ */
-
-/* The opening's column is a size container, so the greeting answers to the
- * page it sits on rather than to the window. */
-.vex-opening {
-  container-type: inline-size;
-}
-
-/* Date eyebrow: 13px Departure Mono caps at the eyebrow tracking, in ink. */
-.vex-opening__eyebrow {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-primary);
-}
-
-/* The greeting: Instrument Serif roman at 96px (section 1), never bold. It
- * steps down with a narrow page and wraps, balanced, rather than clipping a
- * long greeting. -0.014em is the display tracking. */
-.vex-opening__title {
-  margin-top: 18px;
-  font-family: var(--font-serif);
-  font-size: min(96px, 14cqi);
-  font-weight: 400;
-  line-height: 0.9;
-  letter-spacing: -0.014em;
-  text-wrap: balance;
-  color: var(--vex-alias-title);
-}
-
-/* The Arena notice: one ruled box on the paper. Its title is the 36px serif
- * (section 1, "arena and chat rail"). */
-.vex-arena {
-  position: relative;
-  display: grid;
-  gap: 10px;
-  width: 100%;
-  margin-top: 40px;
-  padding: 16px 18px;
-  border: 1px solid var(--vex-alias-rule);
-}
-.vex-arena__title {
-  font-family: var(--font-serif);
-  font-size: 36px;
-  font-weight: 400;
-  line-height: 1;
-  color: var(--vex-alias-title);
-}
-
-@media (max-height: 800px) {
-  .vex-arena {
-    margin-top: 28px;
-  }
 }
 
 /* ============================================================ *
@@ -228,35 +122,6 @@
   border-color: var(--vex-alias-accent-primary);
 }
 
-/* ============================================================ *
- *  REAL FUNDS (section 7, reference d4)                         *
- *                                                               *
- *  Every desktop wallet is a real wallet, so EVERY approval     *
- *  card wears the REAL FUNDS treatment: the 1.5px ink frame,    *
- *  the 8px hatch band down the leading edge and the reversed    *
- *  stamp in its header. Ink, never red and never blue.          *
- * ============================================================ */
-.vex-real-funds {
-  position: relative;
-  padding-left: 8px;
-  background: var(--vex-alias-bg-base);
-  border: 1.5px solid var(--vex-alias-rule-ink);
-}
-.vex-real-funds::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 8px;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--vex-alias-rule-ink) 0 1px,
-    transparent 1px 4px
-  );
-  pointer-events: none;
-}
-
 /* The risk callout (section 1): the 1.5px ink frame with a 10px hatch band
  * down its leading edge, ink type, never blue and never red. A session error
  * and a paused mission speak in it: something needs the reader, and it is
@@ -279,47 +144,6 @@
     var(--vex-alias-rule-ink) 0 1px,
     transparent 1px 4px
   );
-  pointer-events: none;
-}
-
-/* The risk and action tags: ink outline, mono caps. One ink for every level;
- * the level is a word, the REAL FUNDS stamp beside it is the weight. */
-.vex-risk-tag {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--vex-alias-label-primary);
-  outline: 1px solid var(--vex-alias-label-primary);
-  outline-offset: -1px;
-}
-
-/* ── The paper dither veil ─────────────────────────────────────────────────
- * A pending approval is the one thing the run is waiting on, so the rest of
- * the session - the transcript, the composer and the BOOK body beside them -
- * sits under the 2px paper dither (`.vex-approval-mask` in
- * ui-primitives/overlays.css), while the left page, the running heads and the
- * card stay sharp. The mask covers the session panel; the rule below carries
- * the same veil onto the BOOK under its 44px head row. A visual cue only:
- * `pointer-events: none`, the run is already paused. */
-.vex-shell-frame:has(> section [data-vex-area="approval-focus-mask"])
-  aside[data-vex-area="book-panel"]::after {
-  content: "";
-  position: absolute;
-  inset: 44px 0 0;
-  z-index: 40;
-  background:
-    repeating-conic-gradient(var(--vex-alias-bg-base) 0 25%, transparent 0 50%)
-    0 0 / 2px 2px;
-  image-rendering: pixelated;
   pointer-events: none;
 }
 

@@ -16,6 +16,8 @@
 @import "./global-css/motion-primitives.css";
 @import "./global-css/chronos-motion.css";
 @import "./global-css/chat-transcript.css";
+@import "./global-css/composer.css";
+@import "./global-css/approval.css";
 @import "./global-css/board.css";
 @import "./global-css/board-layout.css";
 @import "./global-css/scrollbars.css";
