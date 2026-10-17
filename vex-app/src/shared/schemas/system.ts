@@ -43,6 +43,71 @@ export const runtimeInfoSchema = z
   .strict();
 export type RuntimeInfo = z.infer<typeof runtimeInfoSchema>;
 
+/**
+ * The native runtime's start, as the "Preparing local runtime" screen shows
+ * it: the database, then the embeddings model (checked, downloaded on first
+ * run, verified), then the embeddings server. Setup waits for `ready` (D14).
+ *
+ * `seq` grows with every change, so a renderer holding a newer state than a
+ * status reply that crossed it in flight keeps the newer one. Outside the
+ * native runtime the status stays `idle`.
+ */
+export const nativeRuntimeStepSchema = z.enum(["postgres", "model", "embeddings"]);
+export type NativeRuntimeStep = z.infer<typeof nativeRuntimeStepSchema>;
+
+/**
+ * `offline`: no model source could be reached; `unavailable`: a bundled binary
+ * is missing; the rest are the start vocabulary the supervisors report.
+ */
+export const nativeRuntimeFailureKindSchema = z.enum([
+  "disk_full",
+  "offline",
+  "foreign_listener",
+  "port_collision",
+  "unhealthy",
+  "unavailable",
+  "failed",
+]);
+export type NativeRuntimeFailureKind = z.infer<typeof nativeRuntimeFailureKindSchema>;
+
+export const nativeRuntimeModelStateSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("checking") }).strict(),
+  z
+    .object({
+      state: z.literal("downloading"),
+      receivedBytes: z.number().int().nonnegative(),
+      totalBytes: z.number().int().positive(),
+      /** null until a full measuring window has passed. */
+      bytesPerSecond: z.number().nonnegative().nullable(),
+    })
+    .strict(),
+  z.object({ state: z.literal("verifying") }).strict(),
+]);
+export type NativeRuntimeModelState = z.infer<typeof nativeRuntimeModelStateSchema>;
+
+const seqSchema = z.number().int().nonnegative();
+
+export const nativeRuntimeStatusSchema = z.discriminatedUnion("phase", [
+  z.object({ seq: seqSchema, phase: z.literal("idle") }).strict(),
+  /** `initializing`: no cluster yet, so this start creates it (first run). */
+  z.object({ seq: seqSchema, phase: z.literal("postgres"), initializing: z.boolean() }).strict(),
+  z.object({ seq: seqSchema, phase: z.literal("model"), model: nativeRuntimeModelStateSchema }).strict(),
+  z.object({ seq: seqSchema, phase: z.literal("embeddings") }).strict(),
+  z.object({ seq: seqSchema, phase: z.literal("ready") }).strict(),
+  z
+    .object({
+      seq: seqSchema,
+      phase: z.literal("failed"),
+      /** The step that failed; the steps before it had finished. */
+      step: nativeRuntimeStepSchema,
+      kind: nativeRuntimeFailureKindSchema,
+      /** The runtime's own reason, as it logged it. */
+      message: z.string(),
+    })
+    .strict(),
+]);
+export type NativeRuntimeStatus = z.infer<typeof nativeRuntimeStatusSchema>;
+
 export const healthReportSchema = z
   .object({
     os: osInfoSchema,

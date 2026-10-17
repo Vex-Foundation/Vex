@@ -41,6 +41,7 @@ vi.mock("../../logger/index.js", () => ({
 const { startNativeRuntime, stopNativeRuntime } = await import("../native/native-runtime.js");
 const { getDbConnection } = await import("../../database/connection-state.js");
 const { RUNTIME_DIR, modelsDir } = await import("../runtime-paths.js");
+const { nativeRuntimeProgressBus } = await import("../native/native-runtime-progress.js");
 
 afterAll(async () => {
   await stopNativeRuntime().catch(() => {});
@@ -53,8 +54,14 @@ describe.skipIf(!haveRuntime)("native runtime (real binaries)", () => {
     mkdirSync(modelsDir(RUNTIME_DIR), { recursive: true });
     linkSync(gateModel, path.join(modelsDir(RUNTIME_DIR), "embeddinggemma-300M-Q8_0.gguf"));
 
+    const seen: string[] = [];
+    const off = nativeRuntimeProgressBus.subscribe((status) =>
+      seen.push(status.phase === "model" ? `model:${status.model.state}` : status.phase),
+    );
     const first = await startNativeRuntime();
     expect(first.kind, first.message).toBe("running");
+    // A new cluster, then the hard-linked model (no stamp yet) re-hashed.
+    expect(seen).toEqual(["postgres", "model:checking", "model:verifying", "embeddings", "ready"]);
 
     const connection = getDbConnection();
     expect(connection).toMatchObject({ host: "127.0.0.1" });
@@ -80,6 +87,9 @@ describe.skipIf(!haveRuntime)("native runtime (real binaries)", () => {
     // A later start (the migrate handler joining) reuses both servers.
     const again = await startNativeRuntime();
     expect(again.kind).toBe("reused");
+    expect(seen.at(-1)).toBe("ready");
+    expect(seen).toHaveLength(5);
+    off();
     expect(getDbConnection()).toEqual(connection);
     expect(process.env["EMBEDDING_API_KEY"]).toBe(key);
 
