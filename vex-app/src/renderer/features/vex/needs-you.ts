@@ -108,8 +108,10 @@ function toolNamesOf(approval: ApprovalActionTarget): readonly string[] {
 const LIGHTER_ORDER = /^lighter[.:](order|position)([.:]|$)/;
 const LIGHTER_TRANSFER = /^lighter[.:](deposit|withdraw)([.:]|$)/;
 const BRIDGE = /bridge/;
-const SWAP = /(^|[.:_])swap($|[.:_])|trade_execute/;
-const TRANSFER = /(^|[.:_])(send|transfer)($|[.:_])/;
+// The engine's mutating aliases carry no separator: `SwapExecute` and
+// `SwapExecuteUniswap` are swaps, `WalletSendConfirm` is a wallet send.
+const SWAP = /(^|[.:_])swap($|[.:_])|trade_execute|^swapexecute/;
+const TRANSFER = /(^|[.:_])(send|transfer)($|[.:_])|^walletsendconfirm$/;
 
 /**
  * The action-named approve word for a tool family: bridge, order (Lighter

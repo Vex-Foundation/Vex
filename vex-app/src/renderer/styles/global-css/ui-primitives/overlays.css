@@ -57,18 +57,6 @@ dialog.vex-dialog.vex-sheet {
   background: var(--vex-alias-bg-base);
 }
 
-/* ── Approval mask ─────────────────────────────────────────────────────────
- * R3 draws no veil during an approval: the card is inline and the one framed
- * thing on screen, and Vex and the composer point at it. The element keeps
- * its place in the stacking order and paints nothing. */
-.vex-approval-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  pointer-events: none;
-  background: transparent;
-}
-
 /* ── Notification toast stack ──────────────────────────────────────────────
  * The app's ONE floating notification surface (lib/notifications): flat
  * paper panels with an ink rule, stacked top centre at 56, at most three,

@@ -1,26 +1,35 @@
 /**
- * Presentational header + body for `ApprovalCard` (F3).
+ * The body of `ApprovalCard` (docs/design/R3-MINIMAL.md section 8.1), in the
+ * card's order: the top row (the target swatch, "Approval needed", the expiry,
+ * the REAL FUNDS stamp and the readable risk tag), the plain sentence as the
+ * title, who asked, the money lines or the card's own fact rows, the risk
+ * sentences, the agent's reason, and "All signed fields" (the tool, the action
+ * kind, the origin, the proposal, the project, the ISO expiry and the raw
+ * arguments). Pure presentation: no state, no decision logic, no events; the
+ * two-step confirm and the mutations stay in `ApprovalCard`.
  *
- * Renders the approval title (`namespace:tool`), the risk + action stamps, the
- * reasoning preview, the critical-args well, and the inline error alert. Pure
- * presentation: it holds no state, owns no decision logic, and emits no events
- * — the two-step confirm gate and mutation wiring stay in `ApprovalCard`.
- * Testids, aria, and TEXT CONTENT are pinned by tests and stay verbatim.
- *
- * The chrome is the REAL FUNDS card's (docs/design/V10-SPREAD.md section 7,
- * reference d4): a 50px head with the target swatch, the title in 13px
- * Departure Mono caps in ink, the reversed `Real funds` stamp and the ink risk
- * tags; the bound facts in mono; the reasoning in italic sans; the signed
- * fields in a well on the second paper.
+ * Every fact rule 90 binds stays on the card: who asked is in plain view, the
+ * proposal, the project and the whole expiry sit in the signed fields. A fact
+ * the approval does not carry renders no row at all, never a placeholder.
  */
 
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type {
   ApprovalPreview,
   ApprovalSummaryDto,
 } from "@shared/schemas/approvals.js";
 import { lighterOrderFacts } from "./lighter-order-facts.js";
-import { Stamp } from "../../../components/ui/stamp.js";
+import { approvalMoneyLines, MONEY_NOT_AVAILABLE, type MoneyLine } from "./approval-money-lines.js";
+import {
+  actionKindWords,
+  approvalExpiryWords,
+  approvalSentence,
+  riskSentences,
+  riskTagIsInk,
+  riskTagWord,
+} from "./approval-sentence.js";
+import { LineChevronRight } from "../../../components/icons/line/index.js";
+import { Stamp, Tag } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import {
   APPROVAL_ACTOR_FIELD_LABEL,
@@ -35,10 +44,10 @@ import {
 /**
  * Human labels for the engine-injected, non-argument preview keys. A tool
  * ARGUMENT is normally shown under its own name (the user is verifying the
- * exact field that will be signed), but `vexFee` is not an argument — it is
+ * exact field that will be signed), but `vexFee` is not an argument: it is
  * Vex's own cost disclosure, and "VEXFEE" is not what a person calls it.
  * Tolerant reader: a key with no entry keeps its raw name, and an absent key
- * renders no row at all — never a placeholder or a zero.
+ * renders no row at all: never a placeholder or a zero.
  */
 const CRITICAL_ARG_LABELS: Readonly<Record<string, string>> = {
   vexFee: "Vex fee",
@@ -208,39 +217,70 @@ function criticalArgLabel(
   return "Signed order expiry";
 }
 
-/** The facts block's key and value cells (reference d4, `.facts`). */
-const FACT_KEY =
-  "font-mono text-[11px] uppercase leading-[18px] tracking-chip text-ink-secondary";
-const FACT_VALUE =
-  "break-all font-mono text-[12px] leading-[18px] tracking-[0.02em] text-ink-primary";
+/** The tool label the signed fields show: `namespace:tool`, exactly as bound. */
+function toolLabel(namespace: string | null, toolName: string): string {
+  return namespace !== null ? `${namespace}:${toolName}` : toolName;
+}
 
-/** The signed-fields well (reference d4, `.well`). */
-const WELL =
-  "grid grid-cols-[minmax(112px,max-content)_minmax(0,1fr)] bg-surface-3 px-3 py-1";
-const WELL_KEY =
-  "border-t border-rule-quiet py-[5px] pr-3.5 font-mono text-[11px] uppercase leading-[17px] tracking-chip text-ink-secondary";
-const WELL_VALUE =
-  "border-t border-rule-quiet py-[5px] font-mono text-[12px] leading-[17px] tracking-[0.01em] text-ink-primary";
+/** A line of words with its figures set in mono ("Expires at 15:30 UTC"). */
+function withFigures(text: string): ReactNode[] {
+  return text.split(/(\d(?:[\d:.,]*\d)?)/).map((part, index) =>
+    index % 2 === 1 ? (
+      <span key={index} className="vex-num">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
+/** One money line's value: figures in mono, words in sans, notes muted. */
+function MoneyValue({ line }: { readonly line: MoneyLine }): JSX.Element {
+  const parts: ReactNode[] = [];
+  line.parts.forEach((part, index) => {
+    if (index > 0) parts.push(" ");
+    switch (part.kind) {
+      case "figure":
+        parts.push(<span key={index} className="vex-appr__num vex-num">{part.text}</span>);
+        break;
+      case "text":
+        parts.push(<span key={index}>{part.text}</span>);
+        break;
+      case "note":
+        parts.push(<span key={index} className="vex-appr__sub">{part.text}</span>);
+        break;
+      case "missing":
+        parts.push(
+          <span key={index} className="vex-appr__missing" data-vex-money-missing="">
+            {MONEY_NOT_AVAILABLE}
+          </span>,
+        );
+        break;
+    }
+  });
+  return <>{parts}</>;
+}
 
 export interface ApprovalDetailsProps {
   readonly summary: ApprovalSummaryDto;
   readonly titleId: string;
   readonly namespace: string | null;
   readonly toolName: string;
-  /** `preview.criticalArgs` (JSON-safe scalars) or null — same shape the parent reads. */
+  /** `preview.criticalArgs` (JSON-safe scalars) or null, the shape the parent reads. */
   readonly criticalArgs: ApprovalPreview["criticalArgs"] | null;
   readonly inlineError: string | null;
   /**
    * The joined Vex Studio project NAME, when the caller's read carried one
    * (`ApprovalPendingGlobalDto`). The inline session card reads
-   * `ApprovalSummaryDto`, which has no join, and passes nothing - the field
+   * `ApprovalSummaryDto`, which has no join, and passes nothing; the field
    * then shows `summary.projectId`, which is the identity anyway. Display
    * only: user-authored text, never anything this card binds on.
    */
   readonly projectName?: string | null;
   /**
-   * S5 — one-shot signed glint in the stamp area after a successful approve.
-   * The ONLY light in the approvals flow; reject never sets it.
+   * One-shot signed mark in the top row after a successful approve. The ONLY
+   * light in the approvals flow; reject never sets it.
    */
   readonly signedGlint?: boolean;
 }
@@ -261,116 +301,176 @@ export function ApprovalDetails({
     projectId: summary.projectId,
     projectName,
   });
+  const riskTag = riskTagWord(summary.riskLevel);
+  const risks = riskSentences(summary);
+  const expiry = summary.expiresAt === null ? null : approvalExpiryWords(summary.expiresAt, Date.now());
+  const moneyLines = approvalMoneyLines(summary);
   const orderFacts = criticalArgs === null ? null : lighterOrderFacts(criticalArgs);
-  const criticalArgsWell = criticalArgs !== null && Object.keys(criticalArgs).length > 0 ? (
-    // THE WELL (reference d4): the second paper, one ruled row per signed
-    // field, the key in 11px mono caps and the value in 12px mono. The rule
-    // rides the cells (not a gap) so it runs the well's full width.
+  const curated =
+    criticalArgs !== null && CRITICAL_ARGS_ALLOWLIST_BY_TOOL[String(criticalArgs.toolId)] !== undefined;
+  const hasArgs = criticalArgs !== null && Object.keys(criticalArgs).length > 0;
+
+  // THE ARGUMENTS as bound: one ruled row per signed field, the key as named
+  // and the value in mono. A curated tool's list is its readable facts, so it
+  // stands in plain view; every other list is the raw record behind "All
+  // signed fields".
+  const argsList = hasArgs ? (
     <dl
       data-testid="critical-args"
-      className={`${WELL} [&>div:first-child>*]:border-t-0`}
+      className={curated ? "vex-appr__dl" : "vex-appr__well vex-appr__well--args"}
     >
       {visibleCriticalArgs(criticalArgs).map(([k, v]) => (
-        // `display: contents` keeps the grid layout while giving each
-        // pair a stable React key.
+        // `display: contents` keeps the grid while giving each pair a key.
         <div key={k} className="contents">
-          <dt className={WELL_KEY}>
-            {criticalArgLabel(k, criticalArgs)}
-          </dt>
-          <dd className={criticalArgs.toolId === "lighter.fees.approve"
-            ? `${WELL_VALUE} min-w-0 break-words [overflow-wrap:anywhere]`
-            : `${WELL_VALUE} break-all`}>{criticalArgValue(k, v, criticalArgs)}</dd>
+          <dt>{criticalArgLabel(k, criticalArgs)}</dt>
+          <dd
+            className={
+              curated
+                ? "vex-appr__wrap"
+                : "vex-appr__num vex-num vex-appr__break"
+            }
+          >
+            {criticalArgValue(k, v, criticalArgs)}
+          </dd>
         </div>
       ))}
     </dl>
   ) : null;
+
+  const facts =
+    moneyLines !== null ? (
+      <dl data-vex-area="approval-money" className="vex-appr__dl">
+        {moneyLines.map((line) => (
+          <div key={line.label} className="contents">
+            <dt>{line.label}</dt>
+            <dd>
+              <MoneyValue line={line} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    ) : orderFacts !== null && orderFacts.length > 0 ? (
+      <dl data-testid="order-facts" className="vex-appr__dl">
+        {orderFacts.map((fact) => (
+          <div key={fact.label} className="contents">
+            <dt>{fact.label}</dt>
+            <dd className="vex-appr__wrap">{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+    ) : curated ? (
+      argsList
+    ) : null;
+
+  const signedSummary = [
+    toolLabel(namespace, toolName),
+    actionKindWords(summary.actionKind),
+    summary.expiresAt !== null ? "expiry" : null,
+    hasArgs && !curated ? "raw arguments" : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(", ");
+
   return (
     <>
-      <header
-        // Pinned to the top of the card's own scroll ancestor
-        // (`ApprovalsRegion`'s bounded `overflow-y-auto` region): a long
-        // critical-args well — the combined key+fee card can run to dozens of
-        // rows — used to scroll the title (what is being signed) out of view
-        // before the user ever reached Approve/Reject. Same
-        // `sticky top-0 z-10` + solid-background pattern `GlobalApprovals`
-        // already uses for its `DialogHeader`.
-        className="sticky top-0 z-10 flex min-h-[50px] flex-wrap items-center gap-2.5 border-b border-rule bg-surface-base px-3.5 py-2"
-      >
+      <header className="vex-appr__top">
         {/* The target swatch: the run is waiting on this card. */}
-        <span aria-hidden className="inline-flex text-accent-primary">
-          <Swatch state="warning" size={9} />
+        <span aria-hidden className="vex-appr__pin">
+          <Swatch state="awaiting" size={10} />
         </span>
-        <div className="min-w-0 flex-1">
-          <h3
-            id={titleId}
-            className="truncate font-mono text-[13px] uppercase leading-5 tracking-chip text-ink-primary"
-          >
-            Approval needed:{" "}
-            <span className="font-mono">
-              {namespace !== null ? `${namespace}:${toolName}` : toolName}
-            </span>
-          </h3>
-        </div>
-        {/* REAL FUNDS: the reversed ink stamp, on every card - every desktop
-            wallet is a real wallet (section 7). */}
+        <span className="vex-appr__eyebrow">Approval needed</span>
+        <span className="vex-appr__sp" />
+        {expiry !== null ? <span className="vex-appr__expiry">{withFigures(expiry)}</span> : null}
+        {/* REAL FUNDS: the reversed ink stamp, on every card; every desktop
+            wallet is a real wallet. */}
         <Stamp data-testid="real-funds-stamp" className="shrink-0" />
-        {/* Tag grammar - text content stays verbatim (tests pin it). One ink
-            outline for every level: the level is the word. */}
-        {summary.riskLevel !== null ? (
-          <span data-testid="risk-chip" className="vex-risk-tag">
-            {summary.riskLevel}
-          </span>
-        ) : null}
-        {summary.actionKind !== null ? (
-          <span data-testid="action-chip" className="vex-risk-tag">
-            {summary.actionKind}
-          </span>
+        {riskTag !== null ? (
+          <Tag data-testid="risk-chip" quiet={!riskTagIsInk(summary.riskLevel)} className="shrink-0">
+            {riskTag}
+          </Tag>
         ) : null}
         {/* The signed mark: the done swatch once an approve lands (status by
             fill); unmounting early is fine (grace note, not contract). */}
         {signedGlint ? (
-          <span
-            aria-hidden
-            data-vex-signed-glint=""
-            className="inline-flex shrink-0 text-accent-primary"
-          >
-            <Swatch state="done" size={9} />
+          <span aria-hidden data-vex-signed-glint="" className="vex-appr__pin">
+            <Swatch state="done" size={10} />
           </span>
         ) : null}
       </header>
-      <div className="grid gap-3 pb-3.5 pl-3.5 pr-4 pt-3.5">
-        {/* THE BOUND FACTS (rule 90: an approval binds at least the actor and
-            whether an agent proposed it, the resource, the expiry and the
-            proposal identity). They are ROW-LEVEL facts of the durable intent,
-            not `criticalArgs`: the card's `preview_json` is what the Studio
-            authority digest covers and what the pre-dispatch revalidation
-            rebuilds from the tool call alone, so a field the rebuild cannot
-            reproduce would make every Studio dispatch refuse on card mismatch.
-            Rendering them here puts them in front of the human without
-            touching what the digest binds.
 
-            Each row renders only when the approval CARRIES that fact - an
-            agent-mode approval has no project, a legacy row has no expiry, and
-            an empty "Project: -" would invent one. */}
-        <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[22px] gap-y-1.5">
-          {actorLine !== null ? (
-            <div data-testid="approval-actor" className="contents">
-              <dt className={FACT_KEY}>
-                {APPROVAL_ACTOR_FIELD_LABEL}
-              </dt>
-              <dd className={FACT_VALUE}>{actorLine}</dd>
+      <h3 id={titleId} className="vex-appr__title">
+        {approvalSentence(summary)}
+      </h3>
+
+      {/* WHO ASKED (rule 90: the actor and whether an agent proposed it), in
+          plain view. Each fact renders only when the approval CARRIES it. */}
+      {actorLine !== null ? (
+        <p data-testid="approval-actor" className="vex-appr__meta">
+          {APPROVAL_ACTOR_FIELD_LABEL} <span>{actorLine}</span>
+        </p>
+      ) : null}
+
+      {facts}
+
+      {risks.length > 0 ? (
+        <div className="vex-appr__why">
+          {risks.map((risk) => (
+            <p key={risk.lead}>
+              <b>{risk.lead}</b> {risk.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {summary.reasoningPreview.trim().length > 0 ? (
+        <p className="vex-appr__reason">{summary.reasoningPreview}</p>
+      ) : null}
+
+      {/* ALL SIGNED FIELDS, closed (section 8.1, item 6). The row-level facts
+          of the durable intent (proposal, project, expiry) are NOT
+          `criticalArgs`: the card's `preview_json` is what the Studio authority
+          digest covers, so they are shown here without touching what it
+          binds. A card with no readable facts above opens it, so the only
+          facts it has are never folded away. */}
+      <details className="vex-appr__more" open={facts === null}>
+        <summary className="vex-appr__more-key">
+          <span aria-hidden className="vex-appr__chev">
+            <LineChevronRight size={14} />
+          </span>
+          All signed fields
+          <span className="vex-appr__more-sum">{signedSummary}</span>
+        </summary>
+        <dl className="vex-appr__well">
+          <div className="contents">
+            <dt>Tool</dt>
+            <dd className="vex-appr__num vex-num vex-appr__break">{toolLabel(namespace, toolName)}</dd>
+          </div>
+          {summary.actionKind !== null ? (
+            <div className="contents">
+              <dt>Action kind</dt>
+              <dd data-testid="action-chip" className="vex-appr__num vex-num">
+                {summary.actionKind}
+              </dd>
             </div>
           ) : null}
-          {/* PROVENANCE (B0/B4c). The NAME is what the user reads; the ID rides
-              in the title and the accessible name, because a name can be
-              edited or belong to a tombstoned project and the id cannot. */}
+          {summary.origin !== null ? (
+            <div className="contents">
+              <dt>Origin</dt>
+              <dd className="vex-appr__num vex-num">{summary.origin}</dd>
+            </div>
+          ) : null}
+          <div data-testid="approval-proposal" className="contents">
+            <dt>{APPROVAL_PROPOSAL_FIELD_LABEL}</dt>
+            <dd className="vex-appr__num vex-num vex-appr__break">{summary.id}</dd>
+          </div>
+          {/* PROVENANCE: the NAME is what the user reads; the id rides in the
+              title and the accessible name, because a name can be edited or
+              belong to a tombstoned project and the id cannot. */}
           {summary.projectId !== null ? (
             <div data-testid="approval-project" className="contents">
-              <dt className={FACT_KEY}>
-                {APPROVAL_PROJECT_FIELD_LABEL}
-              </dt>
+              <dt>{APPROVAL_PROJECT_FIELD_LABEL}</dt>
               <dd
-                className={FACT_VALUE}
+                className="vex-appr__break"
                 title={approvalProjectDetail(summary.projectId, projectName)}
                 aria-label={approvalProjectDetail(summary.projectId, projectName)}
               >
@@ -378,70 +478,28 @@ export function ApprovalDetails({
               </dd>
             </div>
           ) : null}
-          <div data-testid="approval-proposal" className="contents">
-            <dt className={FACT_KEY}>
-              {APPROVAL_PROPOSAL_FIELD_LABEL}
-            </dt>
-            <dd className={FACT_VALUE}>{summary.id}</dd>
-          </div>
-          {/* The instant this approval stops being decidable, carried WHOLE and
-              in UTC exactly as the durable row states it. Not localized and not
-              rendered as "in 9 minutes": a countdown computed in the renderer
-              is a second source of truth for the one deadline the engine's
-              sweep and the broker's timer already own. */}
+          {/* The instant this approval stops being decidable, WHOLE and in
+              UTC exactly as the durable row states it: never a renderer
+              countdown, which would be a second source of truth for the one
+              deadline the engine's sweep and the broker's timer own. */}
           {summary.expiresAt !== null ? (
             <div data-testid="approval-expiry" className="contents">
-              <dt className={FACT_KEY}>
+              <dt>
                 {criticalArgs?.toolId === "lighter.fees.approve" ? "Decision deadline" : APPROVAL_EXPIRY_FIELD_LABEL}
               </dt>
-              <dd className={FACT_VALUE}>
-                {summary.expiresAt}
-              </dd>
+              <dd className="vex-appr__num vex-num">{summary.expiresAt}</dd>
             </div>
           ) : null}
         </dl>
-        {summary.reasoningPreview.trim().length > 0 ? (
-          <p className="text-[14px] italic leading-[1.5] text-ink-secondary">
-            {summary.reasoningPreview}
-          </p>
-        ) : null}
-        {/* A Lighter order card reads as an order first: the human rows, then
-            the full signed field list folded beneath them. Every other card
-            shows the field list alone. */}
-        {orderFacts !== null && orderFacts.length > 0 ? (
-          <dl
-            data-testid="order-facts"
-            className={`${WELL} [&>div:first-child>*]:border-t-0`}
-          >
-            {orderFacts.map((fact) => (
-              <div key={fact.label} className="contents">
-                <dt className={WELL_KEY}>
-                  {fact.label}
-                </dt>
-                <dd className="min-w-0 break-words border-t border-rule-quiet py-[5px] text-[14px] leading-[17px] text-ink-primary [overflow-wrap:anywhere]">{fact.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-        {/* Critical args — recessed well: the facts being signed for. */}
-        {orderFacts !== null && criticalArgsWell !== null ? (
-          <details className="group">
-            <summary className="cursor-pointer select-none font-mono text-[11px] uppercase tracking-chip text-accent-primary hover:text-ink-primary">
-              All signed fields
-            </summary>
-            <div className="mt-2">{criticalArgsWell}</div>
-          </details>
-        ) : criticalArgsWell}
-        {inlineError !== null ? (
-          <p
-            role="alert"
-            className="flex items-start gap-2 border border-rule-ink px-3 py-2 text-[13px] leading-5 text-ink-primary"
-          >
-            <Swatch state="error" size={9} className="mt-[5px]" />
-            <span>{inlineError}</span>
-          </p>
-        ) : null}
-      </div>
+        {curated ? null : argsList}
+      </details>
+
+      {inlineError !== null ? (
+        <p role="alert" className="vex-appr__error">
+          <Swatch state="error" size={10} className="mt-[4px] shrink-0" />
+          <span>{inlineError}</span>
+        </p>
+      ) : null}
     </>
   );
 }

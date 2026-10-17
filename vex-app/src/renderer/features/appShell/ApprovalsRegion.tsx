@@ -1,5 +1,5 @@
 /**
- * Inline approval region (F3 — restricted-mode unblock).
+ * Inline approval region (F3: restricted-mode unblock).
  *
  * Mounted in `SessionPanel` between the transcript and the composer for an
  * active session. `useControlStateLiveSync` (F5) now pushes a pending-approval
@@ -10,13 +10,13 @@
  * the preload Zod gate or fire before the renderer subscribes.
  *
  * Codex F3 constraints honoured:
- *  1. `Result.ok === false` is surfaced as an inline error — TanStack `isError`
+ *  1. `Result.ok === false` is surfaced as an inline error: TanStack `isError`
  *     would not catch app-level `Result` failures.
  *  2. Bounded height + `overflow-y-auto` so multiple pending approvals cannot
  *     push the composer off-screen.
  *  3. Only the FIRST newly-appearing card gets `focusOnMount`. Subsequent
  *     refetches that include the same id no longer re-focus.
- *  5. (Mount test) — `__tests__/SessionPanel-approval.test.tsx` asserts that
+ *  5. (Mount test): `__tests__/SessionPanel-approval.test.tsx` asserts that
  *     the selected-session path renders a pending approval card via this
  *     region (directly protects the bug fix).
  */
@@ -32,7 +32,7 @@ import { selectFreshApprovals } from "./approvals/fresh-approvals.js";
 /**
  * Fallback poll only. `useMissionUpdateLiveSync` pushes `approval_enqueued`
  * the moment the enqueue transaction commits, so a new card no longer waits
- * on this tick — it covers a dropped event, nothing else. Never delete it:
+ * on this tick: it covers a dropped event, nothing else. Never delete it:
  * without it a dropped event hides an approval the run is blocked on.
  */
 const REFETCH_INTERVAL_MS = 60_000;
@@ -92,7 +92,7 @@ export function ApprovalsRegion({
         data-vex-area="approvals-region-error"
         className="mt-2 flex items-start gap-2 text-[13px] leading-5 text-ink-primary"
       >
-        <Swatch state="error" size={9} className="mt-[5px]" />
+        <Swatch state="error" size={10} className="mt-[4px]" />
         <span>Could not load pending approvals: {view.message}</span>
       </p>
     );
@@ -100,42 +100,30 @@ export function ApprovalsRegion({
   if (view.rows.length === 0) return null;
 
   return (
-    <>
-      {/* THE PAPER DITHER VEIL (docs/design/V10-SPREAD.md section 7): the
-          rest of the session sits under the 2px paper checkerboard so
-          attention lands on the card. It covers the session panel (its
-          containing block, `ui-primitives/overlays.css`) and, through
-          `chat-transcript.css`, the BOOK body beside it; the left page and the
-          running heads stay sharp. Decorative: the mask carries no content of
-          its own, and the run's `paused_approval` state is already announced
-          through the card's own `aria-live` region, so a screen reader does
-          not need a second node for this purely visual cue. */}
-      <div aria-hidden="true" data-vex-area="approval-focus-mask" className="vex-approval-mask" />
-      <section
-        data-vex-area="approvals-region"
-        // Bound height (Codex F3 #2) so multiple pendings can't push the composer
-        // off-screen; scroll within the region instead. No box of its own:
-        // the card's REAL FUNDS frame is the only edge.
-        // 40vh (pre-2026-09-18) was tuned before any card carried a critical-args
-        // well this long (a Lighter withdrawal's live-state disclosure runs to ~18
-        // rows) - a card that tall spent almost its entire visible area on
-        // internal scroll before the user reached Approve/Reject. 75vh keeps the
-        // ORIGINAL guarantee (a stack of pendings still can't swallow the
-        // composer) while actually fitting one long card's content on screen.
-        // `relative z-50`: stacks above `.vex-approval-mask` (z-40) so the
-        // card(s) actually being signed stay sharp while everything else sits
-        // under the veil. 10px below the stack, as the reference draws it.
-        className="relative z-50 max-h-[75vh] shrink-0 overflow-y-auto pb-2.5"
-      >
-        {view.rows.map((summary) => (
-          <ApprovalCard
-            key={summary.id}
-            summary={summary}
-            sessionId={sessionId}
-            focusOnMount={summary.id === focusTargetId}
-          />
-        ))}
-      </section>
-    </>
+    <section
+      data-vex-area="approvals-region"
+      // NO VEIL (docs/design/R3-MINIMAL.md sections 8.1 and 12): nothing dims
+      // the session while an approval waits; the card is the one framed thing
+      // on screen, Vex points at it and the composer says "Waiting for
+      // approval". No box of its own: the card's REAL FUNDS frame is the only
+      // edge.
+      //
+      // Bound height (Codex F3 #2) so multiple pendings can't push the
+      // composer off-screen; scroll within the region instead. 75vh keeps that
+      // guarantee while fitting one long card (a Lighter withdrawal's
+      // live-state disclosure runs to about 18 rows) on screen, and the
+      // card's sticky footer keeps Reject and the action button in view while
+      // it scrolls. 10px below the stack.
+      className="max-h-[75vh] shrink-0 overflow-y-auto pb-2.5"
+    >
+      {view.rows.map((summary) => (
+        <ApprovalCard
+          key={summary.id}
+          summary={summary}
+          sessionId={sessionId}
+          focusOnMount={summary.id === focusTargetId}
+        />
+      ))}
+    </section>
   );
 }

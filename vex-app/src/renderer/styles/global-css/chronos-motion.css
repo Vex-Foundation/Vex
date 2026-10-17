@@ -79,8 +79,9 @@
 /* `backwards`, not `both`: the end state IS the element's natural state, and
  * an animation still in effect after it ends keeps the session content a
  * stacking context and the containing block of its positioned descendants.
- * That trapped the approval veil (`.vex-approval-mask`) inside the transcript
- * box, under the composer, instead of over the whole session page. */
+ * That once trapped a positioned overlay (the approval veil, retired in R3)
+ * inside the transcript box, under the composer, instead of over the whole
+ * session page. */
 .vex-session-enter {
   animation: vex-session-enter 520ms var(--vex-ease-out) backwards;
 }

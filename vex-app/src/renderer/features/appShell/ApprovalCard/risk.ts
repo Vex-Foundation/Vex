@@ -1,10 +1,10 @@
 /**
- * Risk classification helpers for `ApprovalCard` (F3 — SECURITY-relevant).
+ * Risk classification helpers for `ApprovalCard` (F3: SECURITY-relevant).
  *
  * Pure functions / constants extracted from `ApprovalCard.tsx` VERBATIM. These
  * decide whether an approval is "high-risk" (which arms the two-step confirm
  * gate in the component). They carry
- * NO React state and own NO decision side effects — the confirm gating itself
+ * NO React state and own NO decision side effects: the confirm gating itself
  * stays in `ApprovalCard` so the two-click guard is never weakened.
  */
 
