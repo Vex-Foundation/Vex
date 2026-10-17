@@ -696,10 +696,9 @@
 
 /* ---- the shared ledger grammar ----------------------------------------
  * Rows other surfaces still compose, in R3 voice: the holding row of the All
- * assets page (`TokenHoldingRow`, `.vex-kv3`), the address and copy key of
+ * assets page (`TokenHoldingRow`, `.vex-kv3`) and the address and copy key of
  * `AddressDisplay` (`.vex-wal__a`, `.vex-copy`, used by the wizard and
- * Settings), and the Board module's section grammar (`.vex-bs`,
- * `.vex-bk__btn`, `.vex-bk__thumb`) until the Board page replaces it. */
+ * Settings). */
 
 .vex-kv3 {
   display: grid;
@@ -743,9 +742,6 @@
 }
 .vex-kv3[data-unpriced] > :last-child {
   color: var(--vex-alias-label-tertiary);
-}
-.vex-kv3--active > span {
-  color: var(--vex-alias-accent-primary);
 }
 .vex-kv3__key {
   display: inline-flex;
@@ -806,87 +802,4 @@
   font-family: var(--font-sans);
   font-size: 12px;
   color: var(--vex-alias-accent-primary);
-}
-
-/* The Board module's section grammar (until the Board page). */
-.vex-bs {
-  position: relative;
-  display: grid;
-  gap: 6px;
-  padding: 15px 0;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-bs__h {
-  display: flex;
-  min-height: 22px;
-  align-items: center;
-  gap: 8px;
-}
-.vex-bs__t {
-  margin: 0;
-  font-family: var(--font-sans);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--vex-alias-label-primary);
-}
-.vex-bs__m {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-bs__k {
-  font-size: 12px;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-bs__sub {
-  font-size: 13px;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-bs__empty {
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-bs__empty[data-tone="warn"] {
-  color: var(--vex-alias-label-primary);
-}
-.vex-bs :is(button, a):focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: -2px;
-}
-.vex-bk__thumb {
-  position: relative;
-  aspect-ratio: 1;
-  overflow: hidden;
-  background: var(--vex-alias-bg-base);
-  outline: 1px solid var(--vex-alias-rule);
-  outline-offset: -1px;
-}
-.vex-bk__btn {
-  display: inline-flex;
-  height: 32px;
-  flex: 1 1 0;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--vex-alias-rule);
-  background: transparent;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-bk__btn:hover {
-  border-color: var(--vex-alias-accent-primary);
-}
-.vex-bk__btn[data-primary] {
-  border-color: transparent;
-  background: var(--vex-alias-button-accent-fill);
-  color: var(--vex-alias-button-accent-ink);
-}
-.vex-bk__btn[data-primary]:hover {
-  background: var(--vex-alias-button-accent-hover);
 }

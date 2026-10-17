@@ -224,13 +224,6 @@ html[data-os="mac"] [data-vex-left-page="page"] [data-vex-area="studio-sidebar"]
   padding-inline-start: 92px;
 }
 
-/* The BOOK's head row sits under the Windows and Linux caption buttons. Open,
- * it reserves their width (`.vex-overlay-end`); closed to its 48px spine, the
- * toggle drops below the 44px row instead. */
-html[data-chrome="overlay"] [data-vex-book-open="false"] > .vex-book-head {
-  padding-top: var(--head-h);
-}
-
 /* Sidebar scrollbars are a pointer affordance: the column seeds the l2
  * indirection pair, .vex-quiet-bars rebinds it to transparent while the
  * pointer is elsewhere (lib/useQuietScrollbars). `transparent` rather than
