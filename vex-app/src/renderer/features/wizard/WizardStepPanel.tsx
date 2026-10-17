@@ -29,10 +29,9 @@
  * Motion is NOT applied here: the shell owns `AnimatePresence` keyed by the
  * current step; this is a plain element so transitions are not doubled.
  *
- * The stylesheet loads here, beside the forms it styles in both hosts.
+ * The stylesheet (`styles/global-css/wizard.css`) loads from `globals.css`,
+ * after `settings.css`, because the forms render in both hosts.
  */
-
-import "../../styles/global-css/wizard.css";
 
 import type { FormEvent, JSX, ReactNode } from "react";
 

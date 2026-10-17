@@ -243,14 +243,10 @@ describe("pre-shell plate", () => {
     // Every rule that sets type on the stage reads these aliases, never a
     // literal colour. The wake and unlock title is the room's one blue
     // (`accent-primary`: the blue by day, the periwinkle at night, spec
-    // section 10.2); the first run screens' counter and numerals keep the V10
-    // aliases until they are restyled.
+    // section 10.2); the leaf's release counter keeps the gate counter alias.
+    // The wizard's step numerals left with its V10 leaf (R3 wave 5, W5-2).
     const stage = stripComments(gateCss);
-    for (const selector of [
-      ".vex-stage-counter {",
-      ".vex-stage-title {",
-      ".vex-stage-step__n {",
-    ]) {
+    for (const selector of [".vex-stage-counter {", ".vex-stage-title {"]) {
       const at = stage.indexOf(selector);
       expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
       const body = stage.slice(at, stage.indexOf("}", at));

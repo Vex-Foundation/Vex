@@ -13,15 +13,14 @@
  *          and what Vex shows on the plate follow the mood (a fill and a word).
  *   open   the body stands on the stage itself (the unlock draws its own
  *          side column).
- *   leaf   (default, the wizard until it is restyled) a paper page laid on
- *          the stage from the right, 600 wide at 1440: the serif title, the
- *          lead and the screen's body, which scrolls inside the page. The sky
- *          to its left shows the release as the giant counter, or what the
- *          screen passes as `sky` (the wizard's step number and index).
+ *   leaf   (default; no caller since the wizard draws its own R3 frame) a
+ *          paper page laid on the stage from the right, 600 wide at 1440:
+ *          the serif title, the lead and the screen's body, which scrolls
+ *          inside the page. The sky to its left shows the release as the
+ *          giant counter.
  *
  * The 44px head row carries nothing but the hidden title bar's drag region
- * (section 8); the leaf's ground row along the bottom edge takes
- * `groundStart` and `groundEnd`.
+ * (section 8); the ground row runs along the bottom edge outside the plate.
  *
  * Contracts:
  *   - `data-vex-screen={screen}` is the stable e2e/test selector.
@@ -94,13 +93,6 @@ interface SetupFrameProps {
   readonly title?: string;
   /** Plate and leaf: the lead under the title. */
   readonly subline?: string;
-  /** Leaf: a mono line above the title. */
-  readonly eyebrow?: ReactNode;
-  /** Leaf: what the sky beside the page shows; the release counter by default. */
-  readonly sky?: ReactNode;
-  /** The ground caption row, left and right. */
-  readonly groundStart?: ReactNode;
-  readonly groundEnd?: ReactNode;
   readonly children: ReactNode;
 }
 
@@ -111,14 +103,9 @@ export function SetupFrame({
   mood,
   title,
   subline,
-  eyebrow,
-  sky,
-  groundStart,
-  groundEnd,
   children,
 }: SetupFrameProps): JSX.Element {
   useGateDocumentScope();
-  const hasHead = eyebrow !== undefined || title !== undefined;
   return (
     <main
       data-vex-onboarding="true"
@@ -144,25 +131,18 @@ export function SetupFrame({
         </>
       ) : (
         <>
-          {sky ?? (
-            <div className="vex-stage-sky">
-              <ReleaseCounter />
-            </div>
-          )}
+          <div className="vex-stage-sky">
+            <ReleaseCounter />
+          </div>
           {/* THE LEAF: paper laid on the print; its head row is a drag
            * region that keeps clear of the Windows and Linux caption
            * buttons. Only the page body scrolls. */}
           <div className="vex-stage-leaf">
             <div aria-hidden="true" className="vex-drag vex-overlay-end" />
             <div className="vex-stage-leaf__body">
-              {hasHead ? (
+              {title !== undefined ? (
                 <header className="vex-stage-leaf__head vex-rise">
-                  {eyebrow !== undefined ? (
-                    <p className="vex-stage-leaf__eyebrow">{eyebrow}</p>
-                  ) : null}
-                  {title !== undefined ? (
-                    <h1 className="vex-stage-leaf__title">{title}</h1>
-                  ) : null}
+                  <h1 className="vex-stage-leaf__title">{title}</h1>
                   {subline !== undefined ? (
                     <p className="vex-stage-leaf__lead">{subline}</p>
                   ) : null}
@@ -173,7 +153,7 @@ export function SetupFrame({
           </div>
         </>
       )}
-      {layout === "plate" ? null : <StageGround start={groundStart} end={groundEnd} />}
+      {layout === "plate" ? null : <StageGround />}
     </main>
   );
 }
