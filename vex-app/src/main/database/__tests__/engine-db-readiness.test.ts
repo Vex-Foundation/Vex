@@ -42,6 +42,7 @@ const {
   EngineDbWaitAbortedError,
   ensureEngineDbUrl,
   isEngineDbReady,
+  recycleEngineDbAfterRestart,
   resetEngineDbReadinessForTests,
   whenEngineDbReady,
 } = await import("../engine-db-readiness.js");
@@ -190,6 +191,54 @@ describe("ensureEngineDbUrl", () => {
     expect(outcome.error.retryable).toBe(true);
     expect(process.env.VEX_DB_URL).toBeUndefined();
     expect(isEngineDbReady()).toBe(false);
+  });
+});
+
+describe("recycleEngineDbAfterRestart", () => {
+  it("drains the pool even when the restarted database kept its URL", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    await ensureEngineDbUrl("corr-boot");
+    expect(closePool).toHaveBeenCalledTimes(1);
+
+    expect(await recycleEngineDbAfterRestart()).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(2);
+    expect(process.env.VEX_DB_URL).toBe("postgresql://vex:test-password@127.0.0.1:5433/vex");
+  });
+
+  it("follows a port the restart moved to", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    await ensureEngineDbUrl("corr-boot");
+    buildPoolConfig.mockResolvedValue({ ...CONFIG, port: 5999 });
+    expect(await recycleEngineDbAfterRestart()).toBe(true);
+    expect(process.env.VEX_DB_URL).toBe("postgresql://vex:test-password@127.0.0.1:5999/vex");
+    // Committed: an ordinary caller now sees the new URL as applied.
+    expect((await ensureEngineDbUrl("corr-after")).ok).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs after a recycle already in flight, and later callers join it", async () => {
+    buildPoolConfig.mockResolvedValue(CONFIG);
+    let drain: () => void = () => {};
+    closePool.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          drain = resolve;
+        }),
+    );
+    const boot = ensureEngineDbUrl("corr-boot");
+    const restart = recycleEngineDbAfterRestart();
+    const joiner = ensureEngineDbUrl("corr-joiner");
+    await vi.waitFor(() => expect(closePool).toHaveBeenCalledTimes(1));
+    drain();
+    expect((await boot).ok).toBe(true);
+    expect(await restart).toBe(true);
+    expect((await joiner).ok).toBe(true);
+    expect(closePool).toHaveBeenCalledTimes(2);
+  });
+
+  it("is false when the restart published no connection", async () => {
+    expect(await recycleEngineDbAfterRestart()).toBe(false);
+    expect(closePool).not.toHaveBeenCalled();
   });
 });
 

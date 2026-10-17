@@ -175,12 +175,36 @@ function recycleEngineDbUrl(): Promise<EngineDbRecycleOutcome> {
   return pass;
 }
 
-async function applyEngineDbUrl(): Promise<EngineDbRecycleOutcome> {
+/**
+ * Recycle the engine's pool after the database behind it was restarted on
+ * purpose (Settings' "Restart runtime"), EVEN WHEN THE URL IS UNCHANGED: every
+ * connection the old pool holds went down with the server it pointed at, and
+ * the restart may also have moved the port. Runs after any recycle already in
+ * flight, and later callers join it like any other pass.
+ *
+ * True once the pool points at the published connection; false when there is
+ * no connection to point it at (the restart did not come back up).
+ */
+export async function recycleEngineDbAfterRestart(): Promise<boolean> {
+  const previous = recycleInFlight;
+  const pass: Promise<EngineDbRecycleOutcome> = (async () => {
+    if (previous !== null) await previous;
+    return applyEngineDbUrl({ force: true });
+  })().finally(() => {
+    if (recycleInFlight === pass) recycleInFlight = null;
+  });
+  recycleInFlight = pass;
+  return (await pass) === "applied";
+}
+
+async function applyEngineDbUrl(
+  options: { readonly force?: boolean } = {},
+): Promise<EngineDbRecycleOutcome> {
   try {
     const cfg = await buildPoolConfig();
     if (cfg === null) return "unavailable";
     const nextUrl = makePostgresUrl(cfg);
-    if (appliedDbUrl === nextUrl) return "applied";
+    if (appliedDbUrl === nextUrl && options.force !== true) return "applied";
     // The environment FIRST, because the pool the drain below destroys rebuilds
     // itself from this variable at its next query. Writing it after the drain
     // would let a query landing between the two rebuild the pool against the
