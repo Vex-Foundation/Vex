@@ -51,6 +51,17 @@ export function assetsPageName(scope: AssetsRouteScope): string {
   }
 }
 
+/**
+ * A register's full name, as its dialog and the title bar say it: a project
+ * register carries the project's name once the read answers ("Project
+ * assets: vex-core"); until then it says only what kind of register it is,
+ * rather than a placeholder standing in for a project that is not confirmed.
+ */
+export function assetsPageTitle(scope: AssetsRouteScope, projectName: string | null): string {
+  if (scope.kind === "project" && projectName !== null) return `Project assets: ${projectName}`;
+  return assetsPageName(scope);
+}
+
 /** The words when a route carries no usable token identity at all. */
 export const UNNAMED_TOKEN = "Token";
 

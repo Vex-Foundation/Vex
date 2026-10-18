@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { LighterSidebar } from "../LighterSidebar.js";
 
 vi.mock("../../../../lib/api/lighter-trading.js", () => ({
@@ -12,6 +13,10 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
 
 vi.mock("../../../../lib/api/sessions.js", () => ({
   useSessionsList: () => ({ data: { ok: true, data: [] }, isLoading: false, isError: false }),
+}));
+
+vi.mock("../../../../lib/api/projects.js", () => ({
+  useProject: () => ({ data: undefined }),
 }));
 
 vi.mock("../../SessionDeleteDialog.js", () => ({ SessionDeleteDialog: () => null }));
@@ -71,6 +76,32 @@ describe("LighterSidebar title row", () => {
     const slot = container.querySelector(".lit-desk-top-shell");
     expect(slot?.parentElement?.classList.contains("lit-desk-topbar-header")).toBe(true);
     expect(slot?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("names a page that stands over the desk, as the title bar does elsewhere (section 3)", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    try {
+      render(
+        <LighterSidebar
+          collapsed
+          onToggleSidebar={vi.fn()}
+          zenMode={false}
+          zenAssistantOpen={false}
+          zenControlsOpen={false}
+          onToggleZen={vi.fn()}
+          onToggleZenControls={vi.fn()}
+          onToggleZenAssistant={vi.fn()}
+        />,
+      );
+      const navigation = screen.getByRole("complementary", { name: "Lighter navigation" });
+      const title = navigation.querySelector('[data-vex-area="title-bar-title"]');
+      expect(title?.textContent).toBe("Settings");
+      expect(within(navigation).queryByText("Lighter")).toBeNull();
+      // the desk's own keys stay in the row
+      expect(within(navigation).getByRole("button", { name: "Markets & sessions" })).toBeTruthy();
+    } finally {
+      useUiStore.setState({ shellRoute: { kind: "none" } });
+    }
   });
 
   it("keeps the title bar's slot mounted, only hidden, while Zen folds the row", () => {

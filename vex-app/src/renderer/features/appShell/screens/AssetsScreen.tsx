@@ -47,6 +47,7 @@ import {
   filterDustTokens,
   sortTokensByUsdDesc,
 } from "../book/portfolio/TokenHoldingRow.js";
+import { assetsPageTitle } from "./page-crumbs.js";
 import { ShellScreen } from "./ShellScreen.js";
 
 export function AssetsScreen({
@@ -81,7 +82,7 @@ export function AssetsScreen({
 
   return (
     <ShellScreen
-      title={assetsScreenTitle(scope, projectName)}
+      title={assetsPageTitle(scope, projectName)}
       origin={origin}
       onClose={onClose}
       chapter={null}
@@ -143,23 +144,3 @@ export function AssetsScreen({
   );
 }
 
-/**
- * The dialog's name. A project register carries the project's name once the
- * read answers; until then it says only what kind of register it is, rather
- * than a placeholder standing in for a project that is not confirmed.
- */
-function assetsScreenTitle(
-  scope: AssetsRouteScope,
-  projectName: string | null,
-): string {
-  switch (scope.kind) {
-    case "global":
-      return "All assets";
-    case "session":
-      return "Session assets";
-    case "project":
-      return projectName === null
-        ? "Project assets"
-        : `Project assets: ${projectName}`;
-  }
-}
