@@ -14,17 +14,19 @@
  *   done             a short confirmation, then the runtime screen, which
  *                    watches main start the runtime
  *
- * Visual system: the `SetupFrame` leaf and the step rows of the runtime
- * screen it hands off to.
+ * Visual system (`docs/design/R3-MINIMAL.md` section 10.3): `SetupFrame`
+ * stands the page at the right of the plate with the crumb at "Local
+ * runtime" (the move comes before the runtime starts), the step rows of the
+ * runtime screen it hands off to, and Vex's face following the move.
  */
 
 import { useEffect, type JSX } from "react";
 
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
+import type { FirstRunMood } from "../../components/onboarding/FirstRunStage.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { SetupStatusCard } from "../../components/onboarding/SetupStatusCard.js";
 import { Button } from "../../components/ui/button.js";
-import { VexLoader } from "../../components/ui/vex-loader.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { StepRows } from "./bootstrap/StepRows.js";
 import {
@@ -84,14 +86,12 @@ function Pending({
 }): JSX.Element {
   const resuming = status.resumeStep !== null && status.resumeStep !== "started";
   return (
-    <div className="flex flex-col gap-4" data-migration-state={status.kind}>
-      <div className="flex flex-col gap-3">
-        {INTRO.map((line) => (
-          <p key={line} className="text-sm leading-relaxed text-ink-secondary">
-            {line}
-          </p>
-        ))}
-      </div>
+    <div className="vex-fr-stack" data-migration-state={status.kind}>
+      {INTRO.map((line) => (
+        <p key={line} className="vex-fr-text">
+          {line}
+        </p>
+      ))}
       {status.kind === "pending_source_offline" ? (
         <SetupStatusCard tone="warn" word={OFFLINE.word} title={OFFLINE.title} detail={OFFLINE.advice} />
       ) : status.lastFailure !== null ? (
@@ -102,17 +102,19 @@ function Pending({
           detail={status.lastFailure.message}
         />
       ) : null}
-      {resuming ? <p className="text-xs leading-relaxed text-ink-secondary">{RESUME_NOTE}</p> : null}
-      {status.kind === "pending_source_offline" ? (
-        <Button size="lg" className="w-full" onClick={onRetry}>
-          {TRY_AGAIN_LABEL}
-        </Button>
-      ) : (
-        <Button size="lg" className="w-full" onClick={onMove}>
-          {MOVE_LABEL}
-        </Button>
-      )}
-      <StartFresh onConfirm={onStartFresh} />
+      {resuming ? <p className="vex-fr-text">{RESUME_NOTE}</p> : null}
+      <div className="vex-fr-acts">
+        {status.kind === "pending_source_offline" ? (
+          <Button onClick={onRetry} className="w-[420px] max-w-full">
+            {TRY_AGAIN_LABEL}
+          </Button>
+        ) : (
+          <Button onClick={onMove} className="w-[420px] max-w-full">
+            {MOVE_LABEL}
+          </Button>
+        )}
+        <StartFresh onConfirm={onStartFresh} />
+      </div>
     </div>
   );
 }
@@ -132,19 +134,21 @@ function Failure({
       : null;
   const copy = failureCopy(failure.reason, bytes);
   return (
-    <div className="flex flex-col gap-4" data-migration-failure={failure.reason}>
+    <div className="vex-fr-stack" data-migration-failure={failure.reason}>
       <SetupStatusCard
         tone={copy.tone}
         word={copy.word}
         title={failure.op === "start_fresh" ? START_FRESH_FAILED_TITLE : copy.title}
         detail={failure.message}
       />
-      {copy.advice !== null ? <p className="text-xs leading-relaxed text-ink-secondary">{copy.advice}</p> : null}
-      <Button size="lg" className="w-full" onClick={onRetry}>
-        {TRY_AGAIN_LABEL}
-      </Button>
-      {failure.op === "migrate" ? <StartFresh onConfirm={onStartFresh} /> : null}
-      <OpenLogsLink />
+      {copy.advice !== null ? <p className="vex-fr-text">{copy.advice}</p> : null}
+      <div className="vex-fr-acts">
+        <Button onClick={onRetry} className="w-[420px] max-w-full">
+          {TRY_AGAIN_LABEL}
+        </Button>
+        {failure.op === "migrate" ? <StartFresh onConfirm={onStartFresh} /> : null}
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
     </div>
   );
 }
@@ -166,34 +170,49 @@ export function RuntimeMigration(): JSX.Element {
     return () => window.clearTimeout(timer);
   }, [kind, setCurrentView]);
 
-  const busy = kind === "loading" || kind === "moving" || kind === "starting_fresh" || kind === "not_needed";
+  // Vex's face on the plate: working while anything runs, concerned while the
+  // move waits on the user (the old stack offline, a stopped attempt), an
+  // error on a failure, else ready.
+  const mood: FirstRunMood =
+    kind === "loading" || kind === "moving" || kind === "starting_fresh" || kind === "not_needed"
+      ? "working"
+      : kind === "failed" || kind === "unreadable"
+        ? "error"
+        : kind === "cancelled"
+          || (screen.kind === "pending"
+            && (screen.status.kind === "pending_source_offline" || screen.status.lastFailure !== null))
+          ? "concerned"
+          : "ready";
 
   return (
-    <SetupFrame screen="runtimeMigration" title={SCREEN_TITLE} subline={SCREEN_SUBLINE}>
-      <div className="vex-rise vex-rise-d1 flex flex-col gap-6" data-migration-screen={kind}>
-        {busy ? (
-          <div className="flex pt-2">
-            <VexLoader size={40} stroke={2} label={kind === "starting_fresh" ? STARTING_FRESH : SCREEN_TITLE} />
-          </div>
-        ) : null}
-
+    <SetupFrame
+      layout="plate"
+      screen="runtimeMigration"
+      step="runtime"
+      mood={mood}
+      title={SCREEN_TITLE}
+      subline={SCREEN_SUBLINE}
+    >
+      <div className="vex-fr-stack" data-migration-screen={kind}>
         {rows !== null ? <StepRows rows={rows} /> : null}
 
         {screen.kind === "pending" ? (
           <Pending status={screen.status} onMove={move} onRetry={refresh} onStartFresh={startFresh} />
         ) : screen.kind === "unreadable" ? (
-          <div className="flex flex-col gap-4" data-migration-state="state_unreadable">
+          <div className="vex-fr-stack" data-migration-state="state_unreadable">
             <SetupStatusCard tone="error" word={UNREADABLE.word} title={UNREADABLE.title} detail={screen.message} />
-            <p className="text-xs leading-relaxed text-ink-secondary">{UNREADABLE.advice}</p>
-            <Button size="lg" className="w-full" onClick={refresh}>
-              {TRY_AGAIN_LABEL}
-            </Button>
-            <OpenLogsLink />
+            <p className="vex-fr-text">{UNREADABLE.advice}</p>
+            <div className="vex-fr-acts">
+              <Button onClick={refresh} className="w-[420px] max-w-full">
+                {TRY_AGAIN_LABEL}
+              </Button>
+              <OpenLogsLink className="vex-fr-link" />
+            </div>
           </div>
         ) : screen.kind === "moving" ? (
-          <p className="text-xs leading-relaxed text-ink-secondary">{MOVING_NOTE}</p>
+          <p className="vex-fr-text">{MOVING_NOTE}</p>
         ) : screen.kind === "starting_fresh" ? (
-          <p className="text-xs leading-relaxed text-ink-secondary">{STARTING_FRESH}…</p>
+          <p className="vex-fr-text">{STARTING_FRESH}…</p>
         ) : screen.kind === "failed" ? (
           <Failure
             failure={screen.failure}
@@ -201,9 +220,9 @@ export function RuntimeMigration(): JSX.Element {
             onStartFresh={startFresh}
           />
         ) : screen.kind === "cancelled" ? (
-          <div className="flex flex-col gap-4">
+          <div className="vex-fr-stack">
             <SetupStatusCard tone="muted" word={CANCELLED.word} title={CANCELLED.title} detail={CANCELLED.detail} />
-            <Button size="lg" className="w-full" onClick={move}>
+            <Button onClick={move} className="w-[420px] max-w-full">
               {TRY_AGAIN_LABEL}
             </Button>
           </div>

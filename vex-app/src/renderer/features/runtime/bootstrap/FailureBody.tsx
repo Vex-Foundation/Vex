@@ -91,15 +91,15 @@ interface FailureBodyProps {
 export function FailureBody({ kind, step, message, onRetry }: FailureBodyProps): JSX.Element {
   const copy = copyFor(kind, step);
   return (
-    <div className="flex flex-col gap-4" data-runtime-failure={kind}>
+    <div className="vex-fr-stack" data-runtime-failure={kind}>
       <SetupStatusCard tone={copy.tone} word={copy.word} title={copy.title} detail={message} />
-      {copy.advice !== null ? (
-        <p className="text-xs leading-relaxed text-ink-secondary">{copy.advice}</p>
-      ) : null}
-      <Button size="lg" className="w-full" onClick={onRetry}>
-        Try again
-      </Button>
-      <OpenLogsLink />
+      {copy.advice !== null ? <p className="vex-fr-text">{copy.advice}</p> : null}
+      <div className="vex-fr-acts">
+        <Button onClick={onRetry} className="w-[420px] max-w-full">
+          Try again
+        </Button>
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
     </div>
   );
 }

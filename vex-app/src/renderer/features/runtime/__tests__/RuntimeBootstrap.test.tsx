@@ -11,6 +11,12 @@ import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-libra
 import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 
 import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  getStageVex,
+  resetStageVex,
+  stageVexEnd,
+  stageVexView,
+} from "../../../components/onboarding/stage-vex.js";
 import { RuntimeBootstrap } from "../RuntimeBootstrap.js";
 
 const listeners = new Set<(status: NativeRuntimeStatus) => void>();
@@ -28,11 +34,9 @@ function emit(status: NativeRuntimeStatus): void {
   });
 }
 
-/** The hero loader (its label is its only text). */
-function hero(container: HTMLElement): Element | undefined {
-  return Array.from(container.querySelectorAll("[data-vex-loader]")).find(
-    (el) => el.textContent === "Preparing local runtime",
-  );
+/** What Vex shows on the plate for this screen (the face's word). */
+function face(): string {
+  return stageVexView(getStageVex()).word;
 }
 
 function row(container: HTMLElement, step: string): HTMLElement {
@@ -42,6 +46,9 @@ function row(container: HTMLElement, step: string): HTMLElement {
 }
 
 beforeEach(() => {
+  resetStageVex();
+  // The launch is over: her face is the screen's, with no wake to wait for.
+  stageVexEnd();
   listeners.clear();
   runtimeStatus.mockReset().mockResolvedValue(ok({ seq: 1, phase: "postgres", initializing: true }));
   runtimeRetry.mockReset();
@@ -65,6 +72,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetStageVex();
   Reflect.deleteProperty(window, "vex");
 });
 
@@ -77,7 +85,8 @@ describe("RuntimeBootstrap - phases", () => {
     expect(row(view.container, "postgres").textContent).toContain("Creating the local database (first run)");
     expect(row(view.container, "model").dataset["status"]).toBe("waiting");
     expect(row(view.container, "embeddings").dataset["status"]).toBe("waiting");
-    expect(hero(view.container)).toBeDefined();
+    // Vex works on the plate while a step is in flight.
+    expect(face()).toBe("Working");
   });
 
   it("shows the model download as bytes, speed and percent", async () => {
@@ -204,8 +213,8 @@ describe("RuntimeBootstrap - failures", () => {
     expect(failure.textContent).toContain(status.message);
     if (advice !== null) expect(failure.textContent).toMatch(advice);
     expect(row(view.container, status.step).dataset["status"]).toBe("failed");
-    // No hero loader once settled.
-    expect(hero(view.container)).toBeUndefined();
+    // Vex shows the failure on the plate.
+    expect(face()).toBe("Error");
     fireEvent.click(view.getByRole("button", { name: "Open logs folder" }));
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
     expect(useUiStore.getState().currentView).toBe("runtimeBootstrap");

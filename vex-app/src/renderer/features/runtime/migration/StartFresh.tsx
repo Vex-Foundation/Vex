@@ -25,7 +25,7 @@ export function StartFresh({ onConfirm }: { readonly onConfirm: () => void }): J
 
   if (!open) {
     return (
-      <Button variant="quiet" className="self-start" onClick={() => setOpen(true)}>
+      <Button variant="quiet" onClick={() => setOpen(true)}>
         {START_FRESH_OPEN_LABEL}
       </Button>
     );
@@ -33,8 +33,8 @@ export function StartFresh({ onConfirm }: { readonly onConfirm: () => void }): J
 
   const armed = matchesStartFreshPhrase(typed);
   return (
-    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4" data-start-fresh>
-      <p className="text-xs leading-relaxed text-ink-secondary">{START_FRESH_CONFIRM.explain}</p>
+    <div className="vex-fr-panel" data-start-fresh>
+      <p className="vex-fr-text">{START_FRESH_CONFIRM.explain}</p>
       <Label htmlFor={inputId}>{START_FRESH_CONFIRM.label}</Label>
       <Input
         id={inputId}
@@ -47,7 +47,7 @@ export function StartFresh({ onConfirm }: { readonly onConfirm: () => void }): J
           if (event.key === "Enter" && armed) onConfirm();
         }}
       />
-      <div className="flex items-center gap-3">
+      <div className="vex-fr-row">
         <Button variant="ink" disabled={!armed} onClick={onConfirm}>
           {START_FRESH_CONFIRM.confirm}
         </Button>

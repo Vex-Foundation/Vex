@@ -1,25 +1,33 @@
 /**
- * The three steps of the native runtime's start as quiet hairline rows, the
- * service-row grammar of the setup screens: an inline VexLoader while a step
- * works, then a colored status word once it settles. The model row carries
- * the download as bytes, speed and percent over the progress line. The
- * migration screen draws its steps with the same rows.
+ * The three steps of the native runtime's start in the first run's probe-row
+ * grammar (`docs/design/R3-MINIMAL.md` section 10.3, `.vex-fr-probe`): the
+ * label, the detail in the figure face, and at the right the state as a fill
+ * and a word, never a hue. A step in flight is blue with the ongoing fill; the
+ * model row carries the download as bytes, speed and percent over the 2px
+ * progress line. The migration screen and Settings > Local runtime draw their
+ * steps with the same rows.
  *
  * `data-step` / `data-status` on each row are the test and e2e contract.
  */
 
 import type { JSX } from "react";
 
-import { VexLoader } from "../../../components/ui/vex-loader.js";
-import { cn } from "../../../lib/utils.js";
+import type { SwatchState } from "../../../components/ui/swatch.js";
+import { StateWord } from "../../../components/ui/state-word.js";
 import type { StepRow, StepStatus } from "./steps.js";
 
-const statusInk: Record<StepStatus, string> = {
-  waiting: "text-ink-tertiary",
-  active: "text-ink-secondary",
-  ready: "text-[var(--color-success)]",
-  failed: "text-[var(--color-danger)]",
+/** The fill each status paints beside its word. */
+const STATUS_FILL: Record<StepStatus, SwatchState> = {
+  waiting: "idle",
+  active: "ongoing",
+  ready: "done",
+  failed: "error",
 };
+
+/** Words arrive as main's lowercase vocabulary; the rows say them in sentence case. */
+function sentenceCase(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
 
 /**
  * A row as drawn. The runtime screen's `StepRow` is one; the migration screen
@@ -31,49 +39,32 @@ export interface StepRowView extends Omit<StepRow, "step"> {
 
 export function StepRows({ rows }: { readonly rows: readonly StepRowView[] }): JSX.Element {
   return (
-    <ul className="flex w-full flex-col">
+    <ol className="vex-fr-probes">
       {rows.map((row) => (
         <li
           key={row.step}
-          className="flex flex-col gap-2.5 border-t border-[var(--color-border)] py-4 first:border-t-0"
+          className="vex-fr-probe"
           data-step={row.step}
           data-status={row.status}
+          data-live={row.status === "active" ? "" : undefined}
         >
-          <div className="flex items-center gap-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium text-ink-primary">
-                {row.label}
-              </span>
-              <span className="truncate font-mono text-xs tabular-nums text-ink-tertiary">
-                {row.detail}
-              </span>
-            </div>
-            <span className="flex shrink-0 items-center gap-2">
-              {row.status === "active" ? (
-                <VexLoader size={16} stroke={2} label={`${row.label} ${row.word}`} />
-              ) : null}
-              <span className={cn("vex-micro tabular-nums", statusInk[row.status])}>
-                {row.word}
-              </span>
-            </span>
-          </div>
+          <span className="vex-fr-probe__l">{row.label}</span>
+          <span className="vex-fr-probe__d vex-num">{row.detail}</span>
+          <StateWord state={STATUS_FILL[row.status]} word={sentenceCase(row.word)} />
           {row.download !== null ? (
-            <div
-              className="h-0.5 w-full overflow-hidden bg-gate-rail"
+            <span
+              className="vex-fr-progress__bar vex-fr-probe__bar"
               role="progressbar"
               aria-label="Embeddings model download"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={row.download.percent}
             >
-              <div
-                className="h-full bg-[var(--color-accent-primary)] transition-[width] duration-150 ease-out"
-                style={{ width: `${String(row.download.percent)}%` }}
-              />
-            </div>
+              <i className="vex-fr-progress__fill" style={{ width: `${String(row.download.percent)}%` }} />
+            </span>
           ) : null}
         </li>
       ))}
-    </ul>
+    </ol>
   );
 }
