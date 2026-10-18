@@ -21,7 +21,8 @@ import { createElement, type ReactNode } from "react";
 
 import { useSubmitChat } from "../../../lib/api/chat.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { EDIT_CONTRACT_HINT, MissionControls } from "../MissionControls.js";
+import { ASK_WHAT_HAPPENED, EDIT_CONTRACT_HINT, MissionControls } from "../MissionControls.js";
+import { readDraft, resetDraftsForTest, writeDraft } from "../../../lib/composer-drafts.js";
 import { MISSION_SETUP_STALL_PROMPT_MS } from "../MissionSetupProgress.js";
 import { resetMissionContractRequests } from "../mission-contract-request.js";
 import {
@@ -553,6 +554,33 @@ describe("MissionControls", () => {
     expect(screen.getByRole("button", { name: "Stop mission" })).toBeTruthy();
     fireEvent.click(recoverBtn);
     await waitFor(() => expect(retryMock).toHaveBeenCalledWith({ sessionId: SESSION }));
+  });
+
+  it("paused_error: Ask Vex what happened puts the question in this session's box, never over a draft, and sends nothing", async () => {
+    resetDraftsForTest();
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "paused_error",
+        missionRunId: "r1",
+        recoveryReady: { kind: "ready" },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    const ask = await screen.findByRole("button", { name: "Ask Vex what happened" });
+    expect(ask.closest('[data-vex-area="mission-error-alert"]')).not.toBeNull();
+    fireEvent.click(ask);
+    expect(readDraft(SESSION)).toBe(ASK_WHAT_HAPPENED);
+    // a draft the user typed is never replaced
+    writeDraft(SESSION, "my own words");
+    fireEvent.click(ask);
+    expect(readDraft(SESSION)).toBe("my own words");
+    // nothing recovered, nothing sent
+    expect(retryMock).not.toHaveBeenCalled();
+    resetDraftsForTest();
   });
 
   // M3/M5: the money gate. `recoveryReady` is a display MIRROR of the reader

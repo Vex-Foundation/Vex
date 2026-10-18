@@ -96,6 +96,11 @@ import { cn } from "../../lib/utils.js";
 import { Button } from "../../components/ui/button.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
+import {
+  draftKeyFor,
+  readDraft as readComposerDraft,
+  writeDraft as writeComposerDraft,
+} from "../../lib/composer-drafts.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
 import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
@@ -110,6 +115,20 @@ import { requestMissionContract } from "./mission-contract-request.js";
 import { useMissionSetupProgress } from "./MissionSetupProgress.js";
 import { MissionMissingFields } from "./MissionMissingFields.js";
 import { useMissionStripSlot } from "./MissionControls/mission-strip-slot.js";
+
+/** The question "Ask Vex what happened" puts in the session's message box. */
+export const ASK_WHAT_HAPPENED = "What happened? Why did the mission pause?";
+
+/**
+ * "Ask Vex what happened" (the paused mission render): the question goes into
+ * this session's message box (never over words the user already typed) and
+ * the box takes focus. Nothing is sent: the send is the user's.
+ */
+export function askVexWhatHappened(sessionId: string): void {
+  const key = draftKeyFor(sessionId);
+  if (readComposerDraft(key).trim().length === 0) writeComposerDraft(key, ASK_WHAT_HAPPENED);
+  document.querySelector<HTMLTextAreaElement>("[data-vex-composer-stage] textarea")?.focus();
+}
 
 /** What "Edit contract" does, said before the press. */
 export const EDIT_CONTRACT_HINT =
@@ -422,16 +441,27 @@ export function MissionControls({
             stopReason={runtime.stopReason}
             lastError={runtime.lastError}
             actions={
-              <Button
-                variant="primary"
-                size="sm"
-                aria-label="Recover mission"
-                aria-busy={recover.isPending}
-                disabled={disabled || !canRecover}
-                onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
-              >
-                {recover.isPending ? "Recovering…" : "Recover"}
-              </Button>
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  aria-label="Recover mission"
+                  aria-busy={recover.isPending}
+                  disabled={disabled || !canRecover}
+                  onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
+                >
+                  {recover.isPending ? "Recovering…" : "Recover"}
+                </Button>
+                {/* The paused render's link: a question for Vex in the
+                    message box, never sent for the user. */}
+                <button
+                  type="button"
+                  className={LINK_KEY}
+                  onClick={() => askVexWhatHappened(sessionId)}
+                >
+                  Ask Vex what happened
+                </button>
+              </>
             }
             notes={
               recoveryBlocked ? (
