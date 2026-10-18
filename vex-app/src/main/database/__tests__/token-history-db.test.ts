@@ -69,6 +69,8 @@ vi.mock("../db-config.js", () => ({
 vi.mock("@vex-lib/wallet.js", () => ({
   listWallets: mocks.listWallets,
 }));
+// No removed wallets: the real module reads this machine's config dir.
+vi.mock("@vex-lib/wallet-removal.js", () => ({ listWalletRemovalRecords: () => [] }));
 
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 
