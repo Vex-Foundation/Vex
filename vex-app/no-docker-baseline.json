@@ -60,7 +60,6 @@
     "vex-app/src/renderer/App.tsx": 5,
     "vex-app/src/renderer/dev/board-layout/harness.tsx": 1,
     "vex-app/src/renderer/features/appShell/SidebarProfile.tsx": 2,
-    "vex-app/src/renderer/features/appShell/studio/viewer/highlight/language-of-path.ts": 5,
     "vex-app/src/renderer/features/appShell/studio/welcome/StudioBridgeReadinessPanel.tsx": 2,
     "vex-app/src/renderer/features/compose/bootstrap/branches/FailedBody.tsx": 1,
     "vex-app/src/renderer/features/compose/bootstrap/branches/ForeignListenerBody.tsx": 2,
