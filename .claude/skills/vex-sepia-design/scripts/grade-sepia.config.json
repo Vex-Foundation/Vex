@@ -1,0 +1,522 @@
+{
+  "outDir": "public/art",
+  "masters": [
+    {
+      "name": "hills",
+      "src": "art/hills-sepia.jpg",
+      "retouch": [
+        {
+          "x": 2992,
+          "y": 1700,
+          "w": 26,
+          "h": 112,
+          "feather": 10,
+          "mode": "hfill"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "hills-sepia.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": "auto"
+        },
+        {
+          "name": "chapter-cloud-opener.jpg",
+          "w": 3840,
+          "h": 2160,
+          "frame": {
+            "zoom": 1.5,
+            "fx": 0.42,
+            "fy": 0.9
+          },
+          "sigmaScale": 1.5625,
+          "exposure": 0.855,
+          "localBurn": [
+            {
+              "x0": 0.565,
+              "y0": 0.53,
+              "x1": 1.02,
+              "y1": 0.88,
+              "k": 0.52,
+              "feather": 0.05
+            }
+          ]
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/plate-desktop.jpg",
+          "w": 848,
+          "h": 280,
+          "box": [
+            180,
+            1330,
+            1500,
+            495
+          ],
+          "exposure": 0.91
+        },
+        {
+          "name": "crops/plate-desktop-2x1.jpg",
+          "w": 1200,
+          "h": 600,
+          "box": [
+            180,
+            1205,
+            1500,
+            750
+          ],
+          "exposure": 0.91
+        },
+        {
+          "name": "crops/plate-cloud.jpg",
+          "w": 848,
+          "h": 280,
+          "box": [
+            1250,
+            1640,
+            1500,
+            495
+          ],
+          "exposure": 0.8
+        },
+        {
+          "name": "crops/plate-cloud-2x1.jpg",
+          "w": 1200,
+          "h": 600,
+          "box": [
+            1250,
+            1393,
+            1500,
+            750
+          ],
+          "exposure": 0.8
+        },
+        {
+          "name": "crops/plate-arena.jpg",
+          "w": 848,
+          "h": 280,
+          "box": [
+            2300,
+            1560,
+            1500,
+            495
+          ],
+          "exposure": 0.87
+        },
+        {
+          "name": "crops/plate-arena-2x1.jpg",
+          "w": 1200,
+          "h": 600,
+          "box": [
+            2300,
+            1393,
+            1500,
+            750
+          ],
+          "exposure": 0.87
+        },
+        {
+          "name": "crops/tile-vex.jpg",
+          "w": 240,
+          "h": 240,
+          "box": [
+            700,
+            1500,
+            520,
+            520
+          ],
+          "exposure": 0.88
+        },
+        {
+          "name": "crops/tile-cloud.jpg",
+          "w": 240,
+          "h": 240,
+          "box": [
+            2900,
+            1620,
+            520,
+            520
+          ],
+          "exposure": 0.8
+        },
+        {
+          "name": "crops/release-01.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            2380,
+            900,
+            1150,
+            1150
+          ],
+          "exposure": 0.91
+        },
+        {
+          "name": "crops/release-02.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            60,
+            820,
+            1240,
+            1240
+          ],
+          "exposure": 0.91
+        }
+      ]
+    },
+    {
+      "name": "hills-portrait",
+      "src": "art/raw/hills-portrait-a.png",
+      "outputs": [
+        {
+          "name": "hills-portrait.jpg",
+          "w": 2160,
+          "h": 2700,
+          "exposure": "auto"
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/release-04.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            1500,
+            1900,
+            1900,
+            1900
+          ],
+          "exposure": 0.9
+        }
+      ]
+    },
+    {
+      "name": "desktop-hero-plateau",
+      "src": "art/raw/desktop-hero-plateau-a.png",
+      "outputs": [
+        {
+          "name": "desktop-hero-plateau.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": "auto"
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/release-03.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            3560,
+            820,
+            1900,
+            1900
+          ],
+          "exposure": 0.87
+        }
+      ]
+    },
+    {
+      "name": "desktop-hero-plateau-portrait",
+      "src": "art/raw/desktop-hero-plateau-portrait-a.png",
+      "outputs": [
+        {
+          "name": "desktop-hero-plateau-portrait.jpg",
+          "w": 2160,
+          "h": 2700,
+          "exposure": "auto"
+        }
+      ]
+    },
+    {
+      "name": "cloud-hero-sky",
+      "src": "art/raw/cloud-hero-sky-a.png",
+      "outputs": [
+        {
+          "name": "cloud-hero-sky.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": "auto",
+          "burn": {
+            "start": 0.8,
+            "knee": 0.88,
+            "kneeK": 0.56,
+            "endK": 0.52
+          }
+        }
+      ],
+      "crops": []
+    },
+    {
+      "name": "cloud-hero-sky-portrait",
+      "src": "art/raw/cloud-hero-sky-portrait-a.png",
+      "outputs": [
+        {
+          "name": "cloud-hero-sky-portrait.jpg",
+          "w": 2160,
+          "h": 2700,
+          "exposure": "auto",
+          "burn": {
+            "start": 0.8,
+            "knee": 0.88,
+            "kneeK": 0.5,
+            "endK": 0.48
+          }
+        }
+      ]
+    },
+    {
+      "name": "arena-hero-plain",
+      "src": "art/raw/arena-hero-plain-a.png",
+      "retouch": [
+        {
+          "x": 2536,
+          "y": 1744,
+          "w": 22,
+          "h": 36,
+          "feather": 8,
+          "mode": "hfill"
+        },
+        {
+          "x": 1052,
+          "y": 1784,
+          "w": 18,
+          "h": 32,
+          "feather": 8,
+          "mode": "hfill"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "arena-hero-plain.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": "auto"
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/release-05.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            2000,
+            1000,
+            2000,
+            2000
+          ],
+          "exposure": 0.87
+        }
+      ]
+    },
+    {
+      "name": "arena-hero-plain-portrait",
+      "src": "art/raw/arena-hero-plain-portrait-a.png",
+      "retouch": [
+        {
+          "x": 1552,
+          "y": 2676,
+          "w": 14,
+          "h": 28,
+          "feather": 8,
+          "mode": "hfill"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "arena-hero-plain-portrait.jpg",
+          "w": 2160,
+          "h": 2700,
+          "exposure": "auto"
+        }
+      ]
+    },
+    {
+      "name": "chapter-fog-valley",
+      "src": "art/raw/chapter-fog-valley-a.png",
+      "outputs": [
+        {
+          "name": "chapter-fog-valley.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": "auto"
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/release-06.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            1700,
+            700,
+            2100,
+            2100
+          ],
+          "exposure": 0.87
+        }
+      ]
+    },
+    {
+      "name": "chapter-coast",
+      "src": "art/raw/chapter-coast-b.png",
+      "outputs": [
+        {
+          "name": "chapter-coast.jpg",
+          "w": 3840,
+          "h": 2160,
+          "frame": {
+            "zoom": 1.1,
+            "fx": 0.5,
+            "fy": 0
+          },
+          "exposure": "auto"
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/release-07.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            3250,
+            800,
+            2100,
+            2100
+          ],
+          "exposure": 0.87
+        }
+      ]
+    },
+    {
+      "name": "footer-dusk",
+      "src": "art/raw/footer-dusk-c.png",
+      "outputs": [
+        {
+          "name": "footer-dusk.jpg",
+          "w": 3840,
+          "h": 1646,
+          "exposure": 1,
+          "frame": {
+            "zoom": 1.122,
+            "fx": 0.5,
+            "fy": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "tile-dunes",
+      "src": "art/raw/tile-dunes-a.png",
+      "outputs": [
+        {
+          "name": "tile-dunes.jpg",
+          "w": 1920,
+          "h": 1440,
+          "exposure": 1
+        }
+      ]
+    },
+    {
+      "name": "tile-ridge",
+      "src": "art/raw/tile-ridge-a.png",
+      "outputs": [
+        {
+          "name": "tile-ridge.jpg",
+          "w": 1920,
+          "h": 1440,
+          "exposure": 1
+        }
+      ]
+    },
+    {
+      "name": "tile-shore",
+      "src": "art/raw/tile-shore-a.png",
+      "outputs": [
+        {
+          "name": "tile-shore.jpg",
+          "w": 1920,
+          "h": 1440,
+          "exposure": 1
+        }
+      ]
+    },
+    {
+      "name": "prairie-wide",
+      "src": "art/prairie-wide.jpg",
+      "outputs": [
+        {
+          "name": "fallback/prairie-wide.jpg",
+          "w": 3840,
+          "h": 1650,
+          "exposure": "auto"
+        }
+      ],
+      "crops": [
+        {
+          "name": "crops/release-08.jpg",
+          "w": 848,
+          "h": 848,
+          "box": [
+            900,
+            260,
+            1300,
+            1300
+          ],
+          "exposure": 0.87
+        }
+      ]
+    },
+    {
+      "name": "ocean-wide",
+      "src": "art/ocean-wide.jpg",
+      "outputs": [
+        {
+          "name": "fallback/ocean-wide.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": "auto"
+        }
+      ]
+    },
+    {
+      "name": "sky-sea-wide",
+      "src": "art/sky-sea-wide.jpg",
+      "outputs": [
+        {
+          "name": "fallback/sky-sea-wide.jpg",
+          "w": 3840,
+          "h": 1629,
+          "exposure": "auto"
+        }
+      ]
+    },
+    {
+      "name": "cumulus-photo",
+      "src": "art/cumulus-photo.jpg",
+      "outputs": [
+        {
+          "name": "fallback/cumulus-photo.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": 1
+        }
+      ]
+    },
+    {
+      "name": "dusk-sea",
+      "src": "art/dusk-sea.jpg",
+      "outputs": [
+        {
+          "name": "fallback/dusk-sea.jpg",
+          "w": 3840,
+          "h": 2160,
+          "exposure": 1
+        }
+      ]
+    }
+  ]
+}
