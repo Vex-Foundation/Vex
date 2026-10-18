@@ -21,6 +21,7 @@ const mockSetCurrentView = vi.fn();
 const mockOpenUnlock = vi.fn();
 const mockSecretsStatus = vi.fn();
 const mockReviewStep = vi.fn();
+const mockReviewMounts = vi.fn();
 const mockOpenLogsFolder = vi.fn();
 let mockWizardEntryMode: "setup" = "setup";
 
@@ -127,12 +128,28 @@ vi.mock("../steps/AgentCoreStep.js", () => ({
   AgentCoreStep: () => <div data-testid="agentcore-step" />,
 }));
 
-vi.mock("../steps/review/ReviewStep.js", () => ({
-  ReviewStep: (props: unknown) => {
-    mockReviewStep(props);
-    return <div data-testid="review-step" />;
-  },
-}));
+vi.mock("../steps/review/ReviewStep.js", async () => {
+  const { useContext, useEffect } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    ReviewStep: (props: unknown) => {
+      mockReviewStep(props);
+      const host = useContext(WizardHostContext);
+      useEffect(() => {
+        mockReviewMounts();
+      }, []);
+      return (
+        <div data-testid="review-step">
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
 const { WizardShell } = await import("../WizardShell.js");
 
@@ -261,6 +278,26 @@ describe("WizardShell Back (steps 2 to 7)", () => {
     expect(container.querySelector('[aria-current="step"]')?.getAttribute("data-vex-wizard-step")).toBe(
       "wallets",
     );
+  });
+
+  it("Back from Review unmounts it: no stale summary waits hidden for the next visit", async () => {
+    mockReviewMounts.mockClear();
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(
+        stepState("review", ["keystore", "wallets", "apiKeys", "embedding", "agentCore", "provider"]),
+      ),
+    );
+    const { container, findByTestId, getByRole } = renderWithQuery(<WizardShell />);
+    await findByTestId("review-step");
+    expect(mockReviewMounts).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(getByRole("button", { name: "Back" }));
+    // the provider step shows (the real step, as the routing case renders it)
+    expect(paneOf(container, "provider")?.hidden).toBe(false);
+    // Review left the page instead of hiding with what it summarised, so the
+    // next time it shows it mounts afresh and reads what is saved then
+    expect(paneOf(container, "review")).toBeNull();
+    expect(mockReviewMounts).toHaveBeenCalledTimes(1);
   });
 
   it("hides every step but the shown one from the page and from assistive tech", async () => {

@@ -23,10 +23,12 @@
  * title, and no Back: it has "Return to review").
  *
  * BACK (the mockups' footer key on steps 2 to 7, the owner 2026-10-18) moves
- * the view one step back and saves nothing. Every step the user has seen
- * stays mounted, hidden while another is shown, so the values typed into it
- * are still there both ways (a hidden step leaves the accessibility tree and
- * the tab order with `hidden`). Moving on is always the step's own action, so
+ * the view one step back and saves nothing. Every form step the user has
+ * seen stays mounted, hidden while another is shown, so the values typed into
+ * it are still there both ways (a hidden step leaves the accessibility tree
+ * and the tab order with `hidden`). Review is the exception: it is a summary
+ * of what is saved, so it mounts afresh each time it is shown and never
+ * shows a stale line after an earlier step changed. Moving on is always the step's own action, so
  * its checks run again: the vault step shows the configured vault (the
  * password rules never reopen and are never skipped), a form re-validates
  * before it saves, and the persisted state never moves behind the ground
@@ -442,7 +444,7 @@ export function WizardShell(): JSX.Element {
       onFocusWithin={onFocusWithin}
       onBlurWithin={onBlurWithin}
     >
-      {WIZARD_STEP_IDS.filter((id) => id === currentStepId || seen.has(id)).map((id) => (
+      {WIZARD_STEP_IDS.filter((id) => id === currentStepId || (seen.has(id) && id !== "review")).map((id) => (
         <div
           key={id}
           className="vex-wz__step"
