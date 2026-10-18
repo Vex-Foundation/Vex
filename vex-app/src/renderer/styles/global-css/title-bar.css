@@ -343,6 +343,12 @@
   border-color: var(--vex-alias-rule);
   background: var(--vex-alias-interactive-active);
 }
+/* The chip's subject, "Vex chat", set off from its state by the quiet rule. */
+.vex-tb-chip__subject {
+  padding-right: 10px;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  font-weight: 500;
+}
 .vex-tb-chip__state {
   gap: 8px;
   font-size: 13px;
