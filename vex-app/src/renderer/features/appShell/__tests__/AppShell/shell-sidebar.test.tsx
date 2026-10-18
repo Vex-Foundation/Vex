@@ -709,7 +709,7 @@ describe("AppShell", () => {
     expect(root?.getAttribute("data-vex-theme")).toBe("chronos");
   });
 
-  it("closes the left sidebar to its rail and opens it again from the Chats key", async () => {
+  it("closes the left sidebar to its rail and opens it again from the Expand key", async () => {
     const view = renderShell();
     const sidebar = view.container.querySelector("[data-vex-area='sessions-sidebar']");
     const page = view.container.querySelector("[data-vex-area='left-page']");
@@ -721,7 +721,7 @@ describe("AppShell", () => {
     );
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("false");
     expect(page?.getAttribute("data-vex-left-page")).toBe("spine");
-    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
     expect(sidebar?.getAttribute("data-vex-sidebar-open")).toBe("true");
     expect(page?.getAttribute("data-vex-left-page")).toBe("page");
   });

@@ -17,9 +17,13 @@
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
  *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`).
  *
- * The rail keeps the same order as 40 x 40 keys with their names as tooltips:
- * New chat, Search, the Chats key (icon over the word) that opens the
- * sidebar, the nav, and the account box at the foot.
+ * The rail keeps the same order as 40 x 40 keys with their names as tooltips,
+ * under the Expand key (the panel icon, the collapse key's twin, the one way
+ * back to the open sidebar): New chat, Search, the nav, and the account box
+ * at the foot. Chat and Missions pressed on the rail open the sidebar on
+ * their list, since a list out of sight cannot show that they did anything.
+ * The Lighter desk's rail (`expandable` false) has neither: its drawer opens
+ * from the desk's own Markets & sessions key.
  *
  * Row behaviour (pin, remove, inline rename, the hover preview) is the shared
  * `SessionRow`'s; the list model is `sessionListModel.ts`'s. Scrollbars in
@@ -29,7 +33,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { LineChat, LineNewChat, LineSearch } from "../../components/icons/line/index.js";
+import { LineNewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
 import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
@@ -61,6 +66,8 @@ interface SessionsListProps {
   /** Open or rail, decided by the shell frame (breakpoint-aware). */
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
+  /** Whether the rail opens into the sidebar; false on the Lighter desk. */
+  readonly expandable?: boolean;
 }
 
 /** Proposal copy (section 4): the search mode's closing hint. */
@@ -70,6 +77,7 @@ export function SessionsList({
   onCreate,
   collapsed,
   onToggleSidebar,
+  expandable = true,
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -166,6 +174,11 @@ export function SessionsList({
     setSearchOpen(true);
   }, []);
 
+  // Chat and Missions on the rail: open the sidebar on the list they filter.
+  const showSessionList = useCallback((): void => {
+    if (rail && expandable) onToggleSidebar();
+  }, [rail, expandable, onToggleSidebar]);
+
   // The column's one scroller, carrying the overlay bar.
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   useScrollbarVisibility(listScrollRef);
@@ -215,6 +228,22 @@ export function SessionsList({
             <SidebarHomeSigil sidebarOpen={false} />
           </div>
           <div className="vex-ls-body">
+            {expandable ? (
+              <>
+                <Tooltip label="Expand sidebar">
+                  <button
+                    type="button"
+                    aria-label="Expand sessions sidebar"
+                    aria-expanded={false}
+                    onClick={onToggleSidebar}
+                    className="vex-ls-nrow"
+                  >
+                    <LinePanelLeft className="vex-ls-nrow__i" />
+                  </button>
+                </Tooltip>
+                <div aria-hidden className="vex-ls-rule" />
+              </>
+            ) : null}
             <NewChatKey rail onCreate={onCreate} />
             <NavKey
               icon={<LineSearch className="vex-ls-nrow__i" />}
@@ -223,19 +252,11 @@ export function SessionsList({
               rail
               onClick={openSearch}
             />
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              aria-expanded={false}
-              className="vex-ls-chats"
-            >
-              <LineChat />
-              <span>Chats</span>
-            </button>
             <div aria-hidden className="vex-ls-gap" />
             <SidebarNav
               rail
               onMissions={openMissions}
+              onSessionList={showSessionList}
               activeSessionMode={activeSessionMode}
             />
           </div>
