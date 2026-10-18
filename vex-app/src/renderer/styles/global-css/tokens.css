@@ -151,8 +151,11 @@
   --vex-alias-bg-deep: var(--color-night-0);
   --vex-alias-bg-layer-1: var(--color-night);
   --vex-alias-bg-layer-2: var(--color-night);
-  --vex-alias-bg-layer-3: var(--color-night-2);
-  --vex-alias-bg-overlay: var(--color-night-2);
+  /* Paper 2 (the code and signed-fields wells, the connection banner) is
+   * #221A17 at night, the field's own step (R3-MINIMAL.md section 1.1), as the
+   * transcript's wells and the token chip already paint it. */
+  --vex-alias-bg-layer-3: var(--color-night-1);
+  --vex-alias-bg-overlay: var(--color-night-1);
   --vex-alias-bg-skeleton: rgba(243, 244, 247, 0.06);
   --vex-alias-sidebar-fill: var(--color-night-0);
   /* The field: inputs and the composer. The one surface that steps off the
