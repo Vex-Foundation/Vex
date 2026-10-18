@@ -324,6 +324,8 @@ describe("WizardShell frame (R3)", () => {
     expect(mini).not.toBeNull();
     expect(mini?.querySelector(".vex-state-word")).toBeNull();
     expect(mini?.textContent).toBe("");
+    // the mark is 40 where the plate goes (spec 10.1)
+    expect(mini?.querySelector("svg")?.getAttribute("width")).toBe("40");
     expect(container.querySelector(".vex-state-word")).toBeNull();
     // The mood (her face on the plate) still follows focus.
     const mood = (): string | null | undefined =>

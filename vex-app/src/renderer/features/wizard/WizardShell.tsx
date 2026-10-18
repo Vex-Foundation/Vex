@@ -227,11 +227,14 @@ function WizardFrame({
   );
 }
 
+/** The small mark's size under 1180 (spec 10.1: "a 40 mark" where the plate goes). */
+export const WIZARD_MINI_MARK = 40;
+
 /** Under 1180, above the step: the vx mark, with no state word (the owner). */
 function WizardMini(): JSX.Element {
   return (
     <div className="vex-wzp__mini" data-vex-wizard-mini>
-      <VxToken size={26} />
+      <VxToken size={WIZARD_MINI_MARK} />
     </div>
   );
 }
