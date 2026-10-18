@@ -3,7 +3,9 @@
  * draws the wide drawing as on its own frame (scale 1 at 900 px, anchored at 652 of 900), loses the
  * wake still's token (97.5 px, its foot at 776 of 900) or lets her scale run past its bounds; a bust that leaves the app drawing, loses its cut under the
  * necklace, its 0.6 scale, its short beam or its token's foot; an approval bust whose cut does not
- * drop for the palm; a host too small for her dots that still draws; any placement that pushes
+ * drop for the palm; a coffee bust whose dissolve begins above the mug she holds, pushes her out of
+ * the plate, or wins over the palm, and an ease between two fits that jumps or does not end on
+ * them; a host too small for her dots that still draws; any placement that pushes
  * her hair or her token out of the plate at the sidebar's three widths; and an upright coin (the
  * token toggle's rest) off the token's place, cut by the canvas, the host or the welcome's stage,
  * outside its button's box, or (on the welcome) no larger than the flat token.
@@ -19,6 +21,7 @@ import {
   type Fit,
   fitFor,
   type K2PlacementName,
+  mixFit,
   STAGE_TOKEN,
   STAND_BOB,
   STAND_DROP,
@@ -31,6 +34,7 @@ import {
   UPRIGHT_INK,
   WELCOME_STAND_SCALE,
 } from "../k2-rig.js";
+import { MUG_FOOT } from "../k2-coffee.js";
 import { LIFT } from "../k2-token.js";
 
 const FLAT_DROP = (TOKEN_SHEET.flatCy - (TOKEN_SHEET.box / 2 - 6)) / TOKEN_SHEET.td;
@@ -186,6 +190,67 @@ describe("the bust", () => {
     expect(fitOf("sidebar", 240, 280).rig).not.toBe(R);
     // the stage has no palm cut
     expect(fitOf("stage", 720, 900, true).rig.cut).toBeNull();
+  });
+
+  test("the morning coffee drops the cut under the mug she holds: its dissolve begins below MUG_FOOT, she stays inside the plate", () => {
+    for (const [name, w, h] of [
+      ["sidebar", 256, 280],
+      ["sidebar", 224, 280],
+      ["welcome", 320, 284],
+      ["welcome", 284, 240],
+    ] as const) {
+      const fit = fitFor(name, w, h, false, true);
+      if (fit === null) throw new Error(`no coffee fit for ${name} ${w} x ${h}`);
+      const R = fit.rig;
+      expect(R.coffee).toBe(true);
+      expect(R.palm).toBe(false);
+      const cut = R.cut;
+      if (cut === null) throw new Error("the bust has a cut");
+      // no dot of the mug is dissolved: the dissolve begins under its foot, at every x
+      for (let x = 0; x <= APP.w; x += 12) expect(cut.top(x)).toBeGreaterThan(MUG_FOOT);
+      expect(cut.bottom).toBe(BUST.coffeeCut.y);
+      // she shrinks to fit: her hair and her token stay inside the plate
+      const plain = fitOf(name, w, h);
+      expect(fit.s).toBeLessThan(plain.s);
+      expect(toHost(fit, 0, R.hairTop)[1]).toBeGreaterThanOrEqual(BUST.padTop - 0.5);
+      expect(toHost(fit, 0, R.tokenFoot)[1]).toBeLessThanOrEqual(h - BUST.padBottom + 0.5);
+      // the same drawing, the same upright coin's size
+      expect(R.drawing).toBe("app");
+      expect(R.stand.scale).toBe(plain.rig.stand.scale);
+    }
+    // the palm wins over the coffee; the stage has neither
+    expect(fitOf("sidebar", 256, 280, true).rig).toBe(fitOf("sidebar", 256, 280, true).rig);
+    expect(fitFor("sidebar", 256, 280, true, true)?.rig.palm).toBe(true);
+    expect(fitFor("sidebar", 256, 280, true, true)?.rig.coffee).toBe(false);
+    expect(fitFor("stage", 720, 900, false, true)?.rig.cut).toBeNull();
+    expect(fitFor("stage", 720, 900, false, true)?.rig.coffee).toBe(false);
+    // one rig per bust
+    expect(fitFor("welcome", 320, 284, false, true)?.rig).toBe(fitFor("welcome", 300, 284, false, true)?.rig);
+  });
+
+  test("between two fits she moves smoothly: the ends are the fits themselves, the middle in between", () => {
+    const a = fitOf("welcome", 320, 284);
+    const b = fitFor("welcome", 320, 284, false, true);
+    if (b === null) throw new Error("no coffee fit");
+    expect(mixFit(a, b, 0)).toBe(a);
+    expect(mixFit(a, b, 1)).toBe(b);
+    const m = mixFit(a, b, 0.5);
+    const between = (v: number, x: number, y: number) =>
+      expect(v).toBeCloseTo((x + y) / 2, 6);
+    between(m.s, a.s, b.s);
+    between(m.rig.token.y, a.rig.token.y, b.rig.token.y);
+    between(m.rig.tokenFoot, a.rig.tokenFoot, b.rig.tokenFoot);
+    between(m.rig.cut?.bottom ?? 0, a.rig.cut?.bottom ?? 0, b.rig.cut?.bottom ?? 0);
+    between(m.rig.cut?.top(100) ?? 0, a.rig.cut?.top(100) ?? 0, b.rig.cut?.top(100) ?? 0);
+    between(m.rig.canvas[3], a.rig.canvas[3], b.rig.canvas[3]);
+    // the token's foot stays on the plate's foot all the way
+    for (const q of [0.25, 0.5, 0.75]) {
+      const f = mixFit(a, b, q);
+      expect(toHost(f, 0, f.rig.tokenFoot)[1]).toBeCloseTo(toHost(a, 0, a.rig.tokenFoot)[1], 0);
+      expect(toHost(f, f.rig.token.x, 0)[0]).toBeCloseTo(toHost(a, a.rig.token.x, 0)[0], 0);
+      // her hair keeps its room over her
+      expect(toHost(f, 0, f.rig.hairTop)[1]).toBeGreaterThanOrEqual(BUST.padTop - 0.5);
+    }
   });
 });
 

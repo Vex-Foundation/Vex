@@ -7,11 +7,13 @@
  * (the hex screen would shear); an interruption that pops instead of fading over 300 ms or keeps the
  * exhale; a mood that cuts it without its dissolve running from the mug; a reduced motion frame that
  * moves, shows no mug or no steam; steam that leaves from the wrong place, ignores the blow's ink rule
- * or the page's blocks; and a beat that is not a pure function of its age.
+ * or the page's blocks; a beat that is not a pure function of its age; and a mug foot (`MUG_FOOT`,
+ * the line the bust's cut drops under) above the hold's real mug.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 import { describe, expect, test } from "vitest";
 import {
   C_RISE,
@@ -23,6 +25,7 @@ import {
   coffeeStill,
   drawCoffee,
   isCoffeeGeo,
+  MUG_FOOT,
   STEAM_INK_ALPHA,
 } from "../k2-coffee.js";
 import { type FaceState, GESTURE_MS, NO_FACE } from "../k2-time.js";
@@ -306,5 +309,77 @@ describe("reduced motion and the steam", () => {
     const stillSteam: number[] = [];
     drawCoffee(stillSteam, [], steamOnly, 5100, true, [], () => false);
     expect(still).toEqual(stillSteam);
+  });
+});
+
+/** An 8 bit RGB map PNG's rows (the converter's format), unfiltered. */
+function pngRows(file: string): { readonly w: number; readonly rows: Uint8Array[] } {
+  const b = readFileSync(join(ART, file));
+  let p = 8;
+  let w = 0;
+  let h = 0;
+  const idat: Buffer[] = [];
+  while (p < b.length) {
+    const n = b.readUInt32BE(p);
+    const type = b.subarray(p + 4, p + 8).toString("ascii");
+    const data = b.subarray(p + 8, p + 8 + n);
+    if (type === "IHDR") {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      expect([data[8], data[9]]).toEqual([8, 2]);
+    } else if (type === "IDAT") idat.push(data);
+    p += 12 + n;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const bpp = 3;
+  const stride = w * bpp;
+  const rows: Uint8Array[] = [];
+  let prev = new Uint8Array(stride);
+  for (let j = 0, q = 0; j < h; j++) {
+    const f = raw[q] ?? 0;
+    q++;
+    const line = Uint8Array.from(raw.subarray(q, q + stride));
+    q += stride;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? (line[i - bpp] ?? 0) : 0;
+      const up = prev[i] ?? 0;
+      const c = i >= bpp ? (prev[i - bpp] ?? 0) : 0;
+      const pa = Math.abs(up - c);
+      const pb = Math.abs(a - c);
+      const pc = Math.abs(a + up - 2 * c);
+      const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? up : c;
+      const add = f === 1 ? a : f === 2 ? up : f === 3 ? (a + up) >> 1 : f === 4 ? paeth : 0;
+      line[i] = ((line[i] ?? 0) + add) & 255;
+    }
+    rows.push(line);
+    prev = line;
+  }
+  return { w, rows };
+}
+
+describe("the mug's foot (the bust's lower cut)", () => {
+  test("the hold's mug and her fingers end at MUG_FOOT: hand cells at it under the rim, none below in the mug's middle", () => {
+    const meta = jsonAt("app/meta.json") as { pitch: number; cls: { hand: number } };
+    const { rows } = pngRows("app/coffeeHold.png");
+    const [rx, , hw] = APP.coffeeHold.rim;
+    const P3 = meta.pitch;
+    // the mug's middle columns (half its width round the rim's centre)
+    const i0 = Math.ceil((rx - hw / 2) / P3);
+    const i1 = Math.floor((rx + hw / 2) / P3);
+    const handAt = (j: number): boolean => {
+      const line = rows[j];
+      if (line === undefined) return false;
+      for (let i = i0; i <= i1; i++)
+        if (((line[i * 3 + 1] ?? 0) & 15) === meta.cls.hand && (line[i * 3] ?? 0) > 0) return true;
+      return false;
+    };
+    const foot = MUG_FOOT / P3;
+    expect(Number.isInteger(foot)).toBe(true);
+    // the mug reaches down to its foot
+    expect(handAt(foot)).toBe(true);
+    // and nothing of it below, down to the frame's foot
+    for (let j = foot + 1; j < rows.length; j++) expect(handAt(j)).toBe(false);
+    // the rim is above it
+    expect(APP.coffeeHold.rim[1]).toBeLessThan(MUG_FOOT);
   });
 });

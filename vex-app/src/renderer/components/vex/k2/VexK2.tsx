@@ -28,7 +28,9 @@
  * The morning (`morning`, the owner 2026-10-18, as on the web app): the host reads the local clock
  * (06:00 to 10:59, again every minute, `useMorning` in `k2-morning.ts`) and passes it; in the
  * morning she may have her coffee while idle (`k2-coffee.ts`), and under the still frame she holds
- * the mug.
+ * the mug. While the mug shows on the bust (the engine's `onCoffee`) she is re-fitted with the
+ * bust's lower cut, under the mug, as the approval palm is, and the engine eases her into it and
+ * back.
  */
 import { type JSX, useEffect, useRef, useState } from "react";
 import { useStillFrame } from "../../../lib/motion/use-still-frame.js";
@@ -125,6 +127,8 @@ export function VexK2({
   const placeRef = useRef<(() => void) | null>(null);
   // the toggle's state as the engine reports it (a seam for review and tests)
   const [token, setToken] = useState<K2TokenState | null>(null);
+  // the coffee's mug shows (the engine's report): the bust's lower cut
+  const coffeeRef = useRef(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -148,7 +152,13 @@ export function VexK2({
         setToken(state);
         live.current.onToken?.(state);
       },
+      onCoffee: (on) => {
+        coffeeRef.current = on;
+        // after the frame that reported it: the fit changes outside the engine's paint
+        queueMicrotask(() => placeRef.current?.());
+      },
     });
+    coffeeRef.current = false;
     engineRef.current = engine;
     engine.setEmotion(now.emotion);
     engine.setHover(now.hover);
@@ -156,9 +166,10 @@ export function VexK2({
     engine.setMorning(now.morning);
     let started = false;
     const place = (): void => {
-      // the bust's cut drops while the approval palm shows
+      // the bust's cut drops while the approval palm shows, and under the coffee's mug while it shows
       const palm = placement !== "stage" && live.current.emotion === "approval";
-      const fit = fitFor(placement, host.clientWidth, host.clientHeight, palm);
+      const coffee = placement !== "stage" && coffeeRef.current;
+      const fit = fitFor(placement, host.clientWidth, host.clientHeight, palm, coffee);
       if (fit === null) return;
       engine.setFit(fit);
       live.current.onTokenBox?.(tokenBox(fit));

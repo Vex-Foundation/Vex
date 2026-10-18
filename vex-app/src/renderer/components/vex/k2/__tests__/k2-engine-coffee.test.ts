@@ -7,18 +7,20 @@
  * morning, a morning slot that passes without it, a coffee stepped at anything but 30 fps or played
  * on any face but its own (the hold, the sip with the content eye), a hover or an emotion other than
  * idle that does not end it within its 300 ms fade (or lets it come back), an emotion set before
- * its slot that does not hold it back, a failed coffee file that breaks her morning, and a still
- * frame in the morning that is painted without the mug or keeps the mug once the morning ends.
+ * its slot that does not hold it back, a failed coffee file that breaks her morning, a still
+ * frame in the morning that is painted without the mug or keeps the mug once the morning ends, and
+ * a bust whose cut dissolves the mug she holds, jumps into its lower cut or back instead of easing
+ * at 30 fps, or keeps the lower cut once the coffee is over.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { isK2Meta, isTokenSheet } from "../k2-assets.js";
-import { isCoffeeGeo } from "../k2-coffee.js";
-import { K2Engine, type K2EngineOptions } from "../k2-engine.js";
+import { isCoffeeGeo, MUG_FOOT } from "../k2-coffee.js";
+import { FIT_EASE_MS, K2Engine, type K2EngineOptions } from "../k2-engine.js";
 import { type K2Map, Portrait, type PortraitFrame } from "../k2-portrait.js";
-import { fitFor } from "../k2-rig.js";
+import { BUST, fitFor } from "../k2-rig.js";
 import { GESTURE_MS, GestureChain } from "../k2-time.js";
 import { TokenSprite } from "../k2-token.js";
 
@@ -85,8 +87,15 @@ async function settle(): Promise<void> {
 
 let engine: K2Engine | null = null;
 
-/** She starts awake and idle on the welcome; `morning` is set before her first frame. */
-async function mount(morning: boolean, more: Partial<K2EngineOptions> = {}): Promise<K2Engine> {
+/**
+ * She starts awake and idle on the welcome; `morning` is set before her first frame. With `refit`
+ * the host re-fits her as `VexK2` does when the mug shows or no longer does (after that frame).
+ */
+async function mount(
+  morning: boolean,
+  more: Partial<K2EngineOptions> = {},
+  refit = false,
+): Promise<K2Engine> {
   const host = document.createElement("div");
   Object.defineProperty(host, "clientWidth", { value: 320 });
   Object.defineProperty(host, "clientHeight", { value: 284 });
@@ -94,7 +103,7 @@ async function mount(morning: boolean, more: Partial<K2EngineOptions> = {}): Pro
   Object.defineProperty(canvas, "getContext", { value: () => null });
   host.append(canvas);
   document.body.append(host);
-  const e = new K2Engine({
+  const e: K2Engine = new K2Engine({
     host,
     canvas,
     dark: false,
@@ -102,6 +111,16 @@ async function mount(morning: boolean, more: Partial<K2EngineOptions> = {}): Pro
     still: false,
     wake: false,
     onWoken: () => undefined,
+    ...(refit
+      ? {
+          onCoffee: (on: boolean) => {
+            queueMicrotask(() => {
+              const fit = fitFor("welcome", 320, 284, false, on);
+              if (fit !== null) e.setFit(fit);
+            });
+          },
+        }
+      : {}),
     ...more,
   });
   engine = e;
@@ -114,6 +133,42 @@ async function mount(morning: boolean, more: Partial<K2EngineOptions> = {}): Pro
   await settle();
   return e;
 }
+
+/** As `stepFor`, letting each frame's microtasks run after it (as a browser does). */
+async function runFor(ms: number): Promise<void> {
+  const end = wall + ms;
+  while (wall < end) {
+    wall += 1000 / 60;
+    const due = [...frames.values()];
+    frames = new Map();
+    for (const f of due) f(wall);
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+}
+
+/** The frames her portrait is emitted for over the next `ms`, microtasks run after each. */
+async function emittedLive(ms: number): Promise<PortraitFrame[]> {
+  const emit = vi.spyOn(Portrait.prototype, "emit");
+  await runFor(ms);
+  const out = emit.mock.calls.map((c) => c[0]);
+  emit.mockRestore();
+  return out;
+}
+
+/** The frames she steps over the next `ms`, microtasks run after each. */
+async function steppedLive(ms: number): Promise<number> {
+  const place = vi.spyOn(TokenSprite.prototype, "place");
+  await runFor(ms);
+  const n = place.mock.calls.length;
+  place.mockRestore();
+  return n;
+}
+
+/** Where a frame's bust dissolve begins (map y). */
+const cutTop = (fr: PortraitFrame): number => fr.cut?.top(APP_MID) ?? Number.NaN;
+const APP_MID = 243.75;
+const NECKLACE = BUST.cut.y - BUST.cut.band;
 
 /** The frames she steps over the next `ms` of the display. */
 function stepped(ms: number): number {
@@ -313,6 +368,60 @@ describe("reduced motion in the morning", () => {
     const all = emit.mock.calls.map((c) => c[0]);
     expect(all.length).toBeGreaterThan(0);
     expect(all.every((fr) => fr.face.actors !== "coffee" && fr.face.map !== "coffeeHold")).toBe(true);
+    emit.mockRestore();
+  });
+});
+
+describe("the bust's cut under the mug", () => {
+  test("the dissolve lies under the mug through the whole hold, and under her necklace before and after", async () => {
+    await mount(true, {}, true);
+    await runFor(FIRST - 1500);
+    const before = await emittedLive(300);
+    expect(before.length).toBeGreaterThan(0);
+    for (const fr of before) expect(cutTop(fr)).toBeCloseTo(NECKLACE, 6);
+    // into the hold: the ease is over by 0.5 s, the mug held to 1.7 s
+    await runFor(1500 + FIT_EASE_MS + 100);
+    const hold = await emittedLive(1000);
+    expect(hold.some((fr) => fr.face.map === "coffeeHold" || fr.face.hand?.map === "coffeeHold")).toBe(
+      true,
+    );
+    for (const fr of hold) expect(cutTop(fr)).toBeGreaterThan(MUG_FOOT);
+    // the sip and the lowering keep it
+    const rest = await emittedLive(4000);
+    for (const fr of rest) expect(cutTop(fr)).toBeGreaterThan(MUG_FOOT);
+    // after the coffee (it ends 7.6 s in; here 5.9 s in) and the ease back: her necklace cut again
+    await runFor(GESTURE_MS.coffee + FIT_EASE_MS + 200 - 5900);
+    const after = await emittedLive(300);
+    expect(after.length).toBeGreaterThan(0);
+    for (const fr of after) expect(cutTop(fr)).toBeCloseTo(NECKLACE, 6);
+  });
+
+  test("it eases into the lower cut as the mug rises and back after it, at 30 fps, never in a jump", async () => {
+    await mount(true, {}, true);
+    await runFor(FIRST - 300);
+    const into = await emittedLive(900);
+    const tops = into.map(cutTop);
+    // moving one way only, through lines between the two cuts
+    for (let n = 1; n < tops.length; n++) expect(tops[n] ?? 0).toBeGreaterThanOrEqual((tops[n - 1] ?? 0) - 1e-9);
+    const between = new Set(tops.filter((y) => y > NECKLACE + 1 && y < MUG_FOOT).map((y) => Math.round(y)));
+    expect(between.size).toBeGreaterThanOrEqual(5);
+    expect(Math.max(...tops)).toBeGreaterThan(MUG_FOOT);
+    // back after it: 30 fps while it eases, then her idle 10 fps
+    await runFor(GESTURE_MS.coffee - 600 + 34);
+    expect(await steppedLive(FIT_EASE_MS - 100)).toBeGreaterThanOrEqual(11);
+    await runFor(300);
+    const idle = await steppedLive(1000);
+    expect(idle).toBeGreaterThanOrEqual(9);
+    expect(idle).toBeLessThanOrEqual(11);
+  });
+
+  test("under the still frame the hold stands on the lower cut at once", async () => {
+    const emit = vi.spyOn(Portrait.prototype, "emit");
+    await mount(true, { still: true }, true);
+    await settle();
+    const last = emit.mock.calls.at(-1)?.[0];
+    expect(last?.face.map).toBe("coffeeHold");
+    expect(last === undefined ? Number.NaN : cutTop(last)).toBeGreaterThan(MUG_FOOT);
     emit.mockRestore();
   });
 });

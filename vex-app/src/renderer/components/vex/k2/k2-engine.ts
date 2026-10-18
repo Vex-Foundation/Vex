@@ -49,7 +49,10 @@
  *   awake in it, then every 2 to 4 min), its drawings loading when the morning begins, on the app
  *   drawing only. Whatever holds the pool back holds it too; one that comes during it (a hover, any
  *   emotion but idle, the close) fades it out over 300 ms. Under the still frame she holds the mug
- *   in the morning.
+ *   in the morning. While the mug shows, `onCoffee` asks the host for the bust's lower cut (under
+ *   the mug, `fitFor`'s `coffee`), and the engine eases her between the two fits over 500 ms at
+ *   30 fps, into it as the mug rises and back after it (`mixFit`); under the still frame the change
+ *   is instant.
  *
  * The host places her (`k2-rig.ts`, `setFit`); her map's px are drawn through one transform
  * (host = o + s * map). The maps and the token's sprites load from the renderer's own origin
@@ -97,6 +100,7 @@ import {
   beamScreen,
   canvasBox,
   type Fit,
+  mixFit,
   type K2Drawing,
   STAND_BOB,
   TOKEN_SHEET,
@@ -215,10 +219,18 @@ export interface K2EngineOptions {
   readonly tokenOnly?: boolean;
   /** Each change of the token toggle's state (an episode starting or settling). */
   readonly onToken?: ((state: K2TokenState) => void) | undefined;
+  /**
+   * The coffee's mug shows (its episode runs, or the still frame holds it) or no longer does: the
+   * host re-fits her with the bust's lower cut (`fitFor`'s `coffee`) or back.
+   */
+  readonly onCoffee?: ((on: boolean) => void) | undefined;
 }
 
 /** Her returns kept for the look at you chain (the latest one decides). */
 const RETURNS_KEPT = 8;
+/** The bust eases into the coffee's lower cut, and back, over this long (her clock, ms). */
+export const FIT_EASE_MS = 500;
+const easeInOut = (q: number): number => (q < 0.5 ? 4 * q * q * q : 1 - (-2 * q + 2) ** 3 / 2);
 
 function readVar(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -287,6 +299,8 @@ function dotsKey(fr: PortraitFrame, pass: Pass, epoch: number): string {
     fr.gaze.y,
     fr.asm,
     fr.held,
+    fr.cut?.bottom,
+    fr.cut?.band,
     f.map,
     f.gp,
     h?.map,
@@ -343,6 +357,8 @@ interface K2Frame {
   readonly gust: number;
   readonly fr: PortraitFrame;
   readonly settled: boolean;
+  /** The coffee's mug shows (its episode, or the still frame's hold): the bust's lower cut. */
+  readonly coffeeShown: boolean;
 }
 
 export class K2Engine {
@@ -438,6 +454,17 @@ export class K2Engine {
   #coffeeGeo: CoffeeGeo | null = null;
   #coffeeLoad: Promise<void> | null = null;
   #coffeeFailed = false;
+  /** The mug shows, as the host last heard. */
+  #coffeeShown = false;
+  /**
+   * The bust easing into the coffee's lower cut or back: the fit it eases from and when it began
+   * (her clock); the fit a frame stands on (memoised by its time) and the one the canvas is laid
+   * out for.
+   */
+  #ease: { readonly from: Fit; readonly at: number } | null = null;
+  #mixed: { readonly t: number; readonly from: Fit; readonly to: Fit; readonly fit: Fit } | null =
+    null;
+  #laid: Fit | null = null;
 
   constructor(o: K2EngineOptions) {
     this.#o = o;
@@ -471,10 +498,22 @@ export class K2Engine {
   /** Where the host placed her, and its blocks the actors keep out of (host px). */
   setFit(fit: Fit, keep: readonly Box[] = []): void {
     const prev = this.#fit;
+    const now = this.#clock;
+    // into the coffee's lower cut and back she eases (a resize meanwhile keeps the ease going)
+    if (
+      prev !== null &&
+      this.#started &&
+      !this.#o.still &&
+      prev.rig.drawing === fit.rig.drawing &&
+      prev.rig.coffee !== fit.rig.coffee
+    ) {
+      const from = this.#fitAt(now);
+      if (from !== null) this.#ease = { from, at: now };
+    } else if (prev?.rig.coffee !== fit.rig.coffee) this.#ease = null;
     this.#fit = fit;
     this.#keep = keep;
     this.#epoch++;
-    this.#layout();
+    this.#layout(this.#fitAt(now));
     if (prev?.rig.drawing !== fit.rig.drawing && this.#started)
       void this.#loadDrawing(fit.rig.drawing);
     this.#repaintIdle();
@@ -608,7 +647,7 @@ export class K2Engine {
   }
 
   resize(): void {
-    this.#layout();
+    this.#layout(this.#fitAt(this.#clock));
     this.#repaintIdle();
   }
 
@@ -779,9 +818,10 @@ export class K2Engine {
 
   /* ---------------------------------------------------------------- layout */
 
-  #layout(): void {
-    const fit = this.#fit;
+  /** The canvas laid out for a fit (the host's, or the one an ease stands on). */
+  #layout(fit: Fit | null = this.#fit): void {
     if (fit === null) return;
+    this.#laid = fit;
     const host = this.#o.host;
     const hw = host.clientWidth;
     const hh = host.clientHeight;
@@ -819,6 +859,23 @@ export class K2Engine {
     this.#dpr = dpr;
     this.#lastSig = -1;
     this.#frozen = null;
+  }
+
+  /**
+   * The fit she stands on at t: the host's, or on the way to it while she eases into the coffee's
+   * lower cut or back (the same object for the same t, so a frame's layout is not redone).
+   */
+  #fitAt(t: number): Fit | null {
+    const to = this.#fit;
+    const e = this.#ease;
+    if (to === null || e === null) return to;
+    const q = ramp(t, e.at, e.at + FIT_EASE_MS);
+    if (q >= 1) return to;
+    const m = this.#mixed;
+    if (m !== null && m.t === t && m.to === to && m.from === e.from) return m.fit;
+    const fit = mixFit(e.from, to, easeInOut(q));
+    this.#mixed = { t, from: e.from, to, fit };
+    return fit;
   }
 
   /** Drops her cached dots: the settled frame's, and every memo of a frame's (`#epoch`). */
@@ -986,7 +1043,7 @@ export class K2Engine {
    * emotion other than the waking one) reads t's idle step.
    */
   #frame(t: number): K2Frame | null {
-    const fit = this.#fit;
+    const fit = this.#fitAt(t);
     if (fit === null) return null;
     const portrait = this.#portraits[fit.rig.drawing];
     if (portrait === undefined || !this.#token.ready) return null;
@@ -1186,7 +1243,8 @@ export class K2Engine {
         still: this.#o.still,
         waking: (!veiled && t < awakeAt) || mf?.wake === true || opening,
         closing: veiled && !rest,
-        gesture: G !== null,
+        // the bust easing into the coffee's lower cut or back steps with the episode
+        gesture: G !== null || (this.#ease !== null && t < this.#ease.at + FIT_EASE_MS),
       }),
       fit,
       portrait,
@@ -1207,6 +1265,7 @@ export class K2Engine {
       gust,
       fr,
       settled,
+      coffeeShown: (G !== null && G.name === "coffee") || coffeeHeld,
     };
   }
 
@@ -1231,6 +1290,12 @@ export class K2Engine {
     this.#hold = f.hold;
     this.#holdAt = f.holdAt;
     this.#unholdAt = f.unholdAt;
+    if (this.#ease !== null && t >= this.#ease.at + FIT_EASE_MS) this.#ease = null;
+    // the mug shows or no longer does: the host re-fits her bust's cut
+    if (f.coffeeShown !== this.#coffeeShown) {
+      this.#coffeeShown = f.coffeeShown;
+      this.#o.onCoffee?.(f.coffeeShown);
+    }
     if (!force && f.frozen) {
       const fit = f.fit;
       const R = fit.rig;
@@ -1246,6 +1311,8 @@ export class K2Engine {
   /** A frame's pixels: her dots and her beam's (blended in memory), the actors and the token. */
   #draw(f: K2Frame, force: boolean): void {
     const { fit, portrait, t, ti, pj, gs, G, fr, settled, still, mf, rest } = f;
+    // the canvas follows the fit she stands on (an ease moves it frame by frame)
+    if (fit !== this.#laid) this.#layout(fit);
     const meta = portrait.meta;
     const R = fit.rig;
     const pal = this.#pal;
@@ -1311,7 +1378,7 @@ export class K2Engine {
     const bk =
       base === null
         ? ""
-        : `${this.#epoch}|${ti}|${pj.cone}|${still}|${base.cx}|${base.cy}|${base.rx}|${base.ry}`;
+        : `${this.#epoch}|${ti}|${pj.cone}|${still}|${base.cx}|${base.cy}|${base.rx}|${base.ry}|${R.beam.top}`;
     const memo = this.#beamMemo?.key === bk ? this.#beamMemo.dots : null;
     const beam: number[] = memo ?? [];
     if (base !== null && memo === null) {
@@ -1485,7 +1552,18 @@ export class K2Engine {
     const R = fit.rig;
     // the drawing her settled face shows (the still frame's mug draws its own unchanging dots)
     const face = `${fr.face.map ?? ""}:${fr.face.hand?.map ?? ""}`;
-    const key = [R.drawing, R.palm, this.#dark, fr.hp, fit.s, fit.ox, fit.oy, this.#mood?.to ?? "", face]
+    const key = [
+      R.drawing,
+      R.palm,
+      R.cut?.bottom,
+      this.#dark,
+      fr.hp,
+      fit.s,
+      fit.ox,
+      fit.oy,
+      this.#mood?.to ?? "",
+      face,
+    ]
       .map(String)
       .join("|");
     if (this.#cache?.key === key) return this.#cache.dots;

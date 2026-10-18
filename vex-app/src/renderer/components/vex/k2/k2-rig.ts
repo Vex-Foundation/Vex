@@ -16,9 +16,13 @@
  *   stage (`welcome`, 240 to 300 px high) show her bust: cut under her necklace (map y 370) through
  *   a 64 px Bayer dissolve, a short beam of dots to a small flat token at the plate's foot, scale
  *   0.6 (her face about 84 px across); with the approval palm the cut drops to 412 (a 44 px
- *   dissolve) and she shrinks to 0.57 so the palm stays above it. A lower host shrinks her so her
- *   hair stays inside; a narrower one clips the frame's empty edges (they thin out anyway).
+ *   dissolve) and she shrinks to 0.57 so the palm stays above it; while her morning coffee shows
+ *   the cut drops under the mug she holds (`MUG_FOOT`, a 33 px dissolve from map y 441) and she
+ *   shrinks to fit, so the mug is never dissolved (the engine eases between the two fits). A lower
+ *   host shrinks her so her hair stays inside; a narrower one clips the frame's empty edges (they
+ *   thin out anyway).
  */
+import { MUG_FOOT } from "./k2-coffee.js";
 import type { PortraitCut } from "./k2-portrait.js";
 import { LIFT } from "./k2-token.js";
 
@@ -61,6 +65,8 @@ export interface Rig {
   readonly cut: PortraitCut | null;
   /** The approval palm's lower cut. */
   readonly palm: boolean;
+  /** The morning coffee's lower cut (under the mug she holds). */
+  readonly coffee: boolean;
   /** The gestures' actors are authored on the wide drawing's frame: wide px = map + shift. */
   readonly shift: Point;
   /** Where she glances away to besides the composer: a passing cloud, the birds. */
@@ -198,6 +204,7 @@ const WIDE_RIG: Rig = {
   beam: { top: null, left: DRAWING.beam.left, right: DRAWING.beam.right },
   cut: null,
   palm: false,
+  coffee: false,
   shift: [0, 0],
   looks: { cloud: [900, 140], birds: [300, 600] },
   stand: { scale: 1, drop: STAND_DROP },
@@ -222,6 +229,8 @@ export const APP_LOOKS = {
 export const BUST = {
   cut: { y: 370, band: 64 },
   palmCut: { y: 412, band: 44 },
+  /** Under the coffee's mug: its dissolve begins a row under the mug's foot. */
+  coffeeCut: { y: MUG_FOOT + 3 + 33, band: 33 },
   s: 0.6,
   palmS: 0.57,
   gap: 0.5,
@@ -238,8 +247,8 @@ export const BUST = {
  * its whole drawn coin (rim, lift, bob) above that foot, so the host and a stage cut to the coin
  * never clip it.
  */
-function bustRig(palm: boolean, standScale = 1): Rig {
-  const { y, band } = palm ? BUST.palmCut : BUST.cut;
+function bustRig(palm: boolean, standScale = 1, coffee = false): Rig {
+  const { y, band } = palm ? BUST.palmCut : coffee ? BUST.coffeeCut : BUST.cut;
   const W = APP.w;
   const cut: PortraitCut = {
     top: () => y - band,
@@ -272,6 +281,7 @@ function bustRig(palm: boolean, standScale = 1): Rig {
     beam: { top: y - band - 10, left: cx - half, right: cx + half },
     cut,
     palm,
+    coffee: coffee && !palm,
     shift: APP.shift,
     looks: { cloud: APP_LOOKS.upSide, birds: APP_LOOKS.aside },
     stand: { scale: standScale, drop },
@@ -285,18 +295,22 @@ const BUST_RIG = bustRig(false);
 const BUST_PALM_RIG = bustRig(true);
 const WELCOME_RIG = bustRig(false, WELCOME_STAND_SCALE);
 const WELCOME_PALM_RIG = bustRig(true, WELCOME_STAND_SCALE);
+const BUST_COFFEE_RIG = bustRig(false, 1, true);
+const WELCOME_COFFEE_RIG = bustRig(false, WELCOME_STAND_SCALE, true);
 
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
 /**
  * Her fit in a host of this size, or null when the host is too small for her dots. `palm`: the
- * approval palm shows (the bust's cut drops).
+ * approval palm shows (the bust's cut drops); `coffee`: her morning coffee shows (the bust's cut
+ * drops under the mug; the palm wins). The stage has neither.
  */
 export function fitFor(
   name: K2PlacementName,
   width: number,
   height: number,
   palm = false,
+  coffee = false,
 ): Fit | null {
   if (!(width > 0 && height > 0)) return null;
   if (name === "stage") {
@@ -309,10 +323,14 @@ export function fitFor(
     name === "welcome"
       ? palm
         ? WELCOME_PALM_RIG
-        : WELCOME_RIG
+        : coffee
+          ? WELCOME_COFFEE_RIG
+          : WELCOME_RIG
       : palm
         ? BUST_PALM_RIG
-        : BUST_RIG;
+        : coffee
+          ? BUST_COFFEE_RIG
+          : BUST_RIG;
   const span = R.tokenFoot - R.hairTop;
   const s = Math.min(palm ? BUST.palmS : BUST.s, (height - BUST.padTop - BUST.padBottom) / span);
   if (!(s >= BUST.sMin)) return null;
@@ -322,6 +340,58 @@ export function fitFor(
     ox: Math.round((width - APP.w * s) / 2),
     oy: Math.round(height - BUST.padBottom - R.tokenFoot * s),
   };
+}
+
+const mix = (a: number, b: number, q: number): number => a + (b - a) * q;
+const mixPts = <T extends readonly number[]>(a: T, b: T, q: number): T =>
+  a.map((v, i) => mix(v, b[i] ?? v, q)) as unknown as T;
+
+/**
+ * Between two fits of the same drawing, `q` of the way (0..1): her scale, her token, her beam, her
+ * cut and her canvas move together while her token's foot keeps its line in the host (the engine
+ * eases the bust into the coffee's lower cut and back). The flags (`palm`, `coffee`) switch at the
+ * half.
+ */
+export function mixFit(a: Fit, b: Fit, q: number): Fit {
+  if (q <= 0) return a;
+  if (q >= 1) return b;
+  const A = a.rig;
+  const B = b.rig;
+  const ca = A.cut;
+  const cb = B.cut;
+  const cut: PortraitCut | null =
+    ca === null || cb === null
+      ? (q < 0.5 ? ca : cb)
+      : {
+          top: (x) => mix(ca.top(x), cb.top(x), q),
+          band: mix(ca.band, cb.band, q),
+          gain: mix(ca.gain, cb.gain, q),
+          shrink: mix(ca.shrink, cb.shrink, q),
+          side: mix(ca.side, cb.side, q),
+          width: mix(ca.width, cb.width, q),
+          bottom: mix(ca.bottom, cb.bottom, q),
+        };
+  const top =
+    A.beam.top === null || B.beam.top === null
+      ? (q < 0.5 ? A.beam.top : B.beam.top)
+      : mix(A.beam.top, B.beam.top, q);
+  const rig: Rig = {
+    ...(q < 0.5 ? A : B),
+    token: { x: mix(A.token.x, B.token.x, q), y: mix(A.token.y, B.token.y, q), d: mix(A.token.d, B.token.d, q) },
+    hairTop: mix(A.hairTop, B.hairTop, q),
+    tokenFoot: mix(A.tokenFoot, B.tokenFoot, q),
+    figure: mixPts(A.figure, B.figure, q),
+    face: mixPts(A.face, B.face, q),
+    beam: { top, left: mix(A.beam.left, B.beam.left, q), right: mix(A.beam.right, B.beam.right, q) },
+    cut,
+    stand: { scale: mix(A.stand.scale, B.stand.scale, q), drop: mix(A.stand.drop, B.stand.drop, q) },
+    canvas: mixPts(A.canvas, B.canvas, q),
+  };
+  // her token's foot and centre move straight between their places in the host (the plate's foot)
+  const sc = mix(a.s, b.s, q);
+  const footX = mix(a.ox + a.s * A.token.x, b.ox + b.s * B.token.x, q);
+  const footY = mix(a.oy + a.s * A.tokenFoot, b.oy + b.s * B.tokenFoot, q);
+  return { rig, s: sc, ox: footX - sc * rig.token.x, oy: footY - sc * rig.tokenFoot };
 }
 
 /**

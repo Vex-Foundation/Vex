@@ -22,6 +22,10 @@
  * - 6300 to 6900 the mug sinks back into her light (the dissolve to her base);
  * - to 7600 her default gaze at you.
  *
+ * On the bust (the welcome, the Vex sidebar) the cut under her necklace would dissolve the mug she
+ * holds, so while the coffee shows the host re-fits her with a cut under the mug (`MUG_FOOT`) and
+ * the engine eases between the two fits, and back after it.
+ *
  * An interruption (a hover, any state but Idle, the close; `gestureAt`'s fade) freezes the beat it
  * caught and fades it out over 300 ms: the drawing it showed sinks back into her light while her
  * base (or the emotion's face, `coffeeIntoMood`) dissolves in, the steam gone in 250 ms. Reduced
@@ -103,6 +107,13 @@ export const COFFEE_BEATS = {
   sink: [6300, 6900],
   end: 7600,
 } as const;
+
+/**
+ * The hold's mug and the fingers round it end at this map y (row 146 of `coffeeHold`): a bust cut
+ * whose dissolve began above it would dissolve the mug, so while the coffee shows the bust's cut
+ * drops under it (`k2-rig.ts` `BUST.coffeeCut`).
+ */
+export const MUG_FOOT = 438;
 
 /** Rows the mug rises from and sinks to (her other hands rise 34). */
 export const C_RISE = 40;
