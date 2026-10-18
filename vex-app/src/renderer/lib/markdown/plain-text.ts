@@ -1,6 +1,6 @@
 /**
  * Markdown-to-plain-text projection for copy-message and compact labels.
- * Tokenizes with the SAME `marked` lexer the renderer uses, so the projection
+ * Tokenizes with the SAME lexer the renderer uses (`lexer.ts`), so the projection
  * strips exactly the markup the renderer would draw: links keep their labels,
  * images keep alt text, code keeps its source text, raw HTML stays literal.
  *
@@ -8,7 +8,8 @@
  * labels — it must NEVER touch content going TO the model.
  */
 
-import { lexer, type Token, type Tokens } from "marked";
+import type { Token, Tokens } from "marked";
+import { lexMarkdown } from "./lexer.js";
 
 function inlineText(token: Token): string {
   switch (token.type) {
@@ -107,7 +108,7 @@ function blockText(token: Token): string {
 export function extractMarkdownPlainText(markdown: string): string {
   let tokens: readonly Token[];
   try {
-    tokens = lexer(markdown);
+    tokens = lexMarkdown(markdown);
   } catch {
     return markdown;
   }

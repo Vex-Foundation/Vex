@@ -8,9 +8,10 @@
  * the settled row this preview becomes.
  */
 
-import { lexer, type Token } from "marked";
+import type { Token } from "marked";
 import { useRef, type JSX, type ReactNode } from "react";
 import { IncrementalMarkdownLexer } from "./incremental.js";
+import { lexMarkdown } from "./lexer.js";
 import {
   renderBlock,
   type RenderOptions,
@@ -32,7 +33,7 @@ export function StreamingMarkdownContent({
   parserRef.current ??= new IncrementalMarkdownLexer(
     (source: string): readonly Token[] => {
       try {
-        return lexer(source);
+        return lexMarkdown(source);
       } catch {
         // Degrade to one opaque text token — rendered pre-wrapped verbatim by
         // the default branch, mirroring MarkdownContent's lexer-failure path.

@@ -2,15 +2,16 @@
  * MarkdownContent — render assistant markdown WITHOUT ever producing an HTML
  * string. The build pipeline bans `dangerouslySetInnerHTML`
  * (`scripts/check-build-artifacts.mjs`), so `marked` is used ONLY as a
- * tokenizer (`lexer`) and the token tree is rendered to React elements
+ * tokenizer (`lexer.ts`) and the token tree is rendered to React elements
  * (`MarkdownContent/render-tokens.tsx`); URL hardening lives in
- * `MarkdownContent/url-safety.ts`. If `lexer` throws, the original text is
+ * `MarkdownContent/url-safety.ts`. If the lexer throws, the original text is
  * shown verbatim, never blanked.
  */
 
-import { lexer, type Token } from "marked";
+import type { Token } from "marked";
 import { useMemo } from "react";
 import type { JSX } from "react";
+import { lexMarkdown } from "./lexer.js";
 import {
   renderBlocks,
   type RenderOptions,
@@ -46,7 +47,7 @@ export function MarkdownContent({
     const opts: RenderOptions = { variant };
     let tokens: readonly Token[];
     try {
-      tokens = lexer(text);
+      tokens = lexMarkdown(text);
     } catch {
       return null;
     }
