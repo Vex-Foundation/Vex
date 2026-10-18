@@ -31,7 +31,6 @@ import {
   INFO_FAILED,
   INFO_LOADING,
   LOCAL_RUNTIME_DATA_HEADING,
-  LOCAL_RUNTIME_LEDE,
   LOCAL_RUNTIME_MAINTENANCE_HEADING,
   LOCAL_RUNTIME_RESET_HEADING,
   LOCAL_RUNTIME_STATUS_HEADING,
@@ -46,8 +45,8 @@ import {
   VERSION_UNKNOWN,
 } from "./local-runtime-copy.js";
 
-const SECTION = "border-t border-line-1 pt-5";
-const BODY = "mt-2 text-[12px] leading-[18px] text-ink-secondary";
+const SECTION = "vex-set__sec border-t border-rule pt-5";
+const BODY = "vex-set__note mt-2";
 
 /** What the last Restart press came to, in words. */
 function restartOutcome(result: RuntimeRestartResult): { readonly tone: "ok" | "error"; readonly text: string } {
@@ -127,23 +126,21 @@ export function LocalRuntimeSection(): JSX.Element {
 
   return (
     <div className="flex w-full flex-col gap-5" data-vex-local-runtime="" data-vex-local-runtime-phase={phase ?? "unknown"}>
-      {/* The screen's chapter title already names the section. */}
-      <p className="vex-step-lede max-w-[56ch] text-sm leading-relaxed text-ink-secondary">{LOCAL_RUNTIME_LEDE}</p>
-
+      {/* The section head above names the section and says what it is (`lead`). */}
       <section aria-label={LOCAL_RUNTIME_STATUS_HEADING} className={SECTION} data-vex-local-runtime-status="">
-        <h2 className="vex-ov-label">{LOCAL_RUNTIME_STATUS_HEADING}</h2>
+        <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_STATUS_HEADING}</h3>
         <div className="mt-1">
           <StepRows rows={rows} />
         </div>
         {status?.phase === "failed" ? (
-          <p role="alert" className="mt-1 text-[12px] leading-[18px] text-danger">
+          <p role="alert" className="mt-1 text-[13px] leading-[19px] text-ink-primary">
             {status.message}
           </p>
         ) : null}
       </section>
 
       <section aria-label={LOCAL_RUNTIME_VERSIONS_HEADING} className={SECTION}>
-        <h2 className="vex-ov-label">{LOCAL_RUNTIME_VERSIONS_HEADING}</h2>
+        <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_VERSIONS_HEADING}</h3>
         {info !== null ? (
           <FactList label={LOCAL_RUNTIME_VERSIONS_HEADING} rows={versionRows(info)} />
         ) : (
@@ -152,7 +149,7 @@ export function LocalRuntimeSection(): JSX.Element {
       </section>
 
       <section aria-label={LOCAL_RUNTIME_DATA_HEADING} className={SECTION}>
-        <h2 className="vex-ov-label">{LOCAL_RUNTIME_DATA_HEADING}</h2>
+        <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_DATA_HEADING}</h3>
         {info !== null ? (
           <FactList label={LOCAL_RUNTIME_DATA_HEADING} rows={sizeRows(info)} />
         ) : (
@@ -161,7 +158,7 @@ export function LocalRuntimeSection(): JSX.Element {
       </section>
 
       <section aria-label={LOCAL_RUNTIME_MAINTENANCE_HEADING} className={SECTION}>
-        <h2 className="vex-ov-label">{LOCAL_RUNTIME_MAINTENANCE_HEADING}</h2>
+        <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_MAINTENANCE_HEADING}</h3>
         <p className={BODY}>{RESTART_HELP}</p>
         <div className="mt-3 flex items-center gap-4">
           <button
@@ -180,7 +177,7 @@ export function LocalRuntimeSection(): JSX.Element {
             role={outcome.tone === "error" ? "alert" : "status"}
             className={
               outcome.tone === "error"
-                ? "mt-2 text-[12px] leading-[18px] text-danger"
+                ? "mt-2 text-[13px] leading-[19px] text-ink-primary"
                 : "mt-2 text-[12px] leading-[18px] text-ink-secondary"
             }
             data-vex-local-runtime-restart-outcome={outcome.tone}
@@ -193,7 +190,7 @@ export function LocalRuntimeSection(): JSX.Element {
       {info !== null ? <PreviousReleaseDataSection data={info.previousReleaseData} /> : null}
 
       <section aria-label={LOCAL_RUNTIME_RESET_HEADING} className={SECTION} data-vex-local-runtime-reset="">
-        <h2 className="vex-ov-label">{LOCAL_RUNTIME_RESET_HEADING}</h2>
+        <h3 className="vex-set__sh-title">{LOCAL_RUNTIME_RESET_HEADING}</h3>
         <p className={BODY}>{RESET_BODY}</p>
         <div className="mt-3">
           <button

@@ -18,8 +18,8 @@ import { useRemovePreviousReleaseData } from "../../../../lib/api/system.js";
 import { REMOVE_OLD_DATA, removeOldDataProblem } from "../../../runtime/migration/copy.js";
 import { TypedConfirmDialog, type TypedConfirmOutcome } from "./TypedConfirmDialog.js";
 
-const SECTION = "border-t border-line-1 pt-5";
-const BODY = "mt-2 text-[12px] leading-[18px] text-ink-secondary";
+const SECTION = "vex-set__sec border-t border-rule pt-5";
+const BODY = "vex-set__note mt-2";
 
 export function PreviousReleaseDataSection({ data }: { readonly data: PreviousReleaseData }): JSX.Element | null {
   const remove = useRemovePreviousReleaseData();
@@ -29,7 +29,7 @@ export function PreviousReleaseDataSection({ data }: { readonly data: PreviousRe
   if (removed) {
     return (
       <section aria-label={REMOVE_OLD_DATA.heading} className={SECTION} data-vex-previous-release-data="removed">
-        <h2 className="vex-ov-label">{REMOVE_OLD_DATA.heading}</h2>
+        <h3 className="vex-set__sh-title">{REMOVE_OLD_DATA.heading}</h3>
         <p role="status" className={BODY}>
           {REMOVE_OLD_DATA.done}
         </p>
@@ -55,7 +55,7 @@ export function PreviousReleaseDataSection({ data }: { readonly data: PreviousRe
       className={SECTION}
       data-vex-previous-release-data={imported ? "imported" : "not-imported"}
     >
-      <h2 className="vex-ov-label">{REMOVE_OLD_DATA.heading}</h2>
+      <h3 className="vex-set__sh-title">{REMOVE_OLD_DATA.heading}</h3>
       <p className={BODY}>{imported ? REMOVE_OLD_DATA.bodyImported : REMOVE_OLD_DATA.bodyNotImported}</p>
       <div className="mt-3">
         <button

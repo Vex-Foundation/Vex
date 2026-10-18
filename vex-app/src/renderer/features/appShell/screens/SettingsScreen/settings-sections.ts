@@ -18,6 +18,7 @@ import {
   LIGHTER_SECTION_NAME,
 } from "./lighter-trading-setup-copy.js";
 import {
+  LOCAL_RUNTIME_LEDE,
   LOCAL_RUNTIME_SECTION_HINT,
   LOCAL_RUNTIME_SECTION_NAME,
 } from "./local-runtime-copy.js";
@@ -102,6 +103,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     icon: "desktop",
     name: LOCAL_RUNTIME_SECTION_NAME,
     hint: LOCAL_RUNTIME_SECTION_HINT,
+    lead: LOCAL_RUNTIME_LEDE,
     nativeOnly: true,
   },
   {
