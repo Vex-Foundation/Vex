@@ -1,6 +1,5 @@
 {
   "files": {
-    "src/lib/diagnostics/bug-report-schema.ts": 2,
     "vex-app/resources/compose/docker-compose.template.yml": 10,
     "vex-app/src/main/compose/down.ts": 26,
     "vex-app/src/main/compose/health.ts": 8,
