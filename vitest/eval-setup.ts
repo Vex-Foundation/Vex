@@ -6,7 +6,8 @@
  *      MANAGED_SECRET_ENV_KEY which `src/providers/env-resolution.ts` deliberately
  *      SKIPS, so a generic dotenv loader will NOT populate it — we parse and
  *      assign `process.env.OPENROUTER_API_KEY` directly. Also default the judge
- *      model + the live Gemma embedding endpoint env (only if unset).
+ *      model and the Gemma embedding model/dim/provider env (only if unset;
+ *      EMBEDDING_BASE_URL must be set by the caller).
  *   2. If the key is STILL absent → log a skip notice and RETURN before touching
  *      testcontainers or probing embeddings. A keyless run is a clean no-op.
  *   3. If present → DELEGATE to the existing integration globalSetup (one Postgres
@@ -84,9 +85,9 @@ export async function setup(): Promise<void> {
   if (!process.env.AGENT_MODEL) {
     process.env.AGENT_MODEL = "deepseek/deepseek-v4-flash";
   }
-  if (!process.env.EMBEDDING_BASE_URL) {
-    process.env.EMBEDDING_BASE_URL = "http://127.0.0.1:27134/v1";
-  }
+  // No EMBEDDING_BASE_URL default: the desktop app's embeddings server picks
+  // its port and key per launch, so no fixed URL is ever right. Unset, the
+  // integration setup below fails with how to start one.
   if (!process.env.EMBEDDING_MODEL) {
     process.env.EMBEDDING_MODEL = "ai/embeddinggemma:300M-Q8_0";
   }
@@ -109,7 +110,7 @@ export async function setup(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(
     `[eval] live judge enabled (model=${process.env.AGENT_MODEL}, key=${mask(key)}); ` +
-      `embeddings=${process.env.EMBEDDING_BASE_URL} model=${process.env.EMBEDDING_MODEL} dim=${process.env.EMBEDDING_DIM}.`,
+      `embeddings=${process.env.EMBEDDING_BASE_URL ?? "(unset)"} model=${process.env.EMBEDDING_MODEL} dim=${process.env.EMBEDDING_DIM}.`,
   );
 
   // ── Step 3: delegate to the integration globalSetup (Postgres + probe) ──

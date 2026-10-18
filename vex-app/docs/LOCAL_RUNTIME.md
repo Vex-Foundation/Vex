@@ -198,6 +198,43 @@ docker volume rm <each-listed-volume>
 A fresh `CONFIG_DIR` is created on next launch and the wizard flow restarts
 from System Check.
 
+## Embeddings for the integration suite
+
+`pnpm test:integration` and the eval lanes (`pnpm test:eval*`) need a live
+embeddings endpoint in `EMBEDDING_BASE_URL`; no CI lane runs them, and the
+required Studio lane (`pnpm test:studio-postgres`) needs none. The app's own
+embeddings server picks its port and an API key on every launch, so it cannot
+be borrowed: start the bundled `llama-server` yourself, with the flags the app
+uses (`src/main/runtime/native/llama-supervisor.ts`) on a fixed port and
+without a key.
+
+```bash
+# From the repository root. The tree comes from `pnpm dev:assets` (or
+# `node scripts/fetch-native-runtime.mjs --current` in vex-app/); the model,
+# sha256-verified, from native-runtime/llama/fetch-model.sh.
+bash native-runtime/llama/fetch-model.sh
+MODEL="$PWD/native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf"
+mkdir -p /tmp/vex-llama-cache
+# cwd = the binary's directory: ggml loads its CPU backends from there.
+cd vex-app/resources/native-runtime/<platform>-<arch>/llama
+LLAMA_CACHE=/tmp/vex-llama-cache ./llama-server --model "$MODEL" --embeddings \
+  --alias ai/embeddinggemma:300M-Q8_0 --host 127.0.0.1 --port 27999 \
+  --device none -ngl 0 -np 1 -c 2048 -b 2048 -ub 2048 --no-webui --offline
+```
+
+Then, in another shell at the repository root:
+
+```bash
+export EMBEDDING_BASE_URL=http://127.0.0.1:27999/v1
+export EMBEDDING_MODEL=ai/embeddinggemma:300M-Q8_0 EMBEDDING_DIM=768 EMBEDDING_PROVIDER=local
+make e2e-smoke            # expects "OK: dim=768"
+VEX_TEST_PG=native pnpm test:integration   # Postgres on the bundled binaries too
+```
+
+Any other OpenAI-compatible `/v1` endpoint serving that model works as well;
+set `EMBEDDING_API_KEY` when it wants a bearer key. Without
+`EMBEDDING_BASE_URL` the suite stops at setup and says how to start one.
+
 ## Diagnostic commands
 
 Bundled runtime (`RUNTIME_DIR` is `CONFIG_DIR/runtime`, or
