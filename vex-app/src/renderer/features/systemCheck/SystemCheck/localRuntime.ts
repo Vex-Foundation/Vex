@@ -67,10 +67,10 @@ export function localRuntimeView(query: {
       bundle.kind === "present"
         ? {
             status: "ok",
-            badgeLabel: "READY",
+            badgeLabel: "Ready",
             detail: `Database and embeddings server · ${formatPlatform(bundle.platform, null)} ${bundle.arch}`,
           }
-        : { status: "fail", badgeLabel: "MISSING", detail: bundle.detail },
+        : { status: "fail", badgeLabel: "Missing", detail: bundle.detail },
     disk: diskRow.row,
     memory: memoryView(memory),
     blocksContinue: diskRow.blocks,
@@ -87,7 +87,7 @@ function diskView(disk: LocalRuntimeCheck["disk"]): { readonly row: RowView; rea
       return {
         row: {
           status: "fail",
-          badgeLabel: "NO SPACE",
+          badgeLabel: "No space",
           // The row truncates: what is free, then what the embeddings model
           // and the database need, and nothing the row would cut off.
           detail: `${free} free · setup needs ${formatDiskBytes(verdict.requiredBytes)}`,
@@ -99,7 +99,7 @@ function diskView(disk: LocalRuntimeCheck["disk"]): { readonly row: RowView; rea
         verdict.reason === "low_fraction" && disk.totalBytes > 0
           ? ` (${String(Math.floor((disk.freeBytes / disk.totalBytes) * 100))}%)`
           : "";
-      return { row: { status: "warn", badgeLabel: "LOW", detail: `${free} free of ${total}${share} · running low` }, blocks: false };
+      return { row: { status: "warn", badgeLabel: "Low", detail: `${free} free of ${total}${share} · running low` }, blocks: false };
     }
     case "ok":
       return { row: { status: "ok", detail: `${free} free of ${total}` }, blocks: false };
@@ -113,7 +113,7 @@ function memoryView(memory: LocalRuntimeCheck["memory"]): RowView {
   if (memoryVerdict(memory.totalBytes) === "warn") {
     return {
       status: "warn",
-      badgeLabel: "LOW",
+      badgeLabel: "Low",
       // The LOW word says it may run slowly; the row keeps room for the numbers.
       detail: `${total} · under ${String(MEMORY_WARN_TOTAL_BYTES / 1e9)} GB · ${free}`,
     };

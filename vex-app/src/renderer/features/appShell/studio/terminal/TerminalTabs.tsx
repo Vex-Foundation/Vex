@@ -29,7 +29,7 @@
  * called `bash`. Nothing in that strip told one terminal from another, which is
  * the one job a tab strip has. It now follows the two surfaces the owner named:
  *
- *  - deepseek's `Swatch`: a 10px state slot per row, colour-only and
+ *  - deepseek's `Swatch`: a 10px state slot per row, a fill and not a colour,
  *    `aria-hidden`, paired with the state IN WORDS for assistive technology
  *    (the repo's own `components/ui/swatch.tsx` is that primitive);
  *  - VS Code's tabs: the close affordance appears on HOVER and on the active
@@ -65,7 +65,8 @@
  * holding its trigger, its Keep action and its close - VS Code's own shape
  * (`multiEditorTabsControl.ts:916` builds `.tab-actions` INSIDE the tab
  * container) and the shape of 16.png. The wrapper is the tab's chrome (clear
- * at rest, a field box with a rule when active: `terminal.css` owns the paint); the trigger inside it is
+ * at rest, a 1.5px blue underline when active: `terminal.css` owns the paint,
+ * docs/design/R3-MINIMAL.md section 9.5); the trigger inside it is
  * transparent and borderless, and a hover anywhere on the shell lights the
  * whole tab because there is only one element to light.
  *
@@ -87,11 +88,12 @@ import {
 } from "react";
 import type { TerminalShellId, TerminalShellOption } from "@shared/schemas/terminal.js";
 import {
-  IconClose,
-  IconFile,
-  IconPlus,
-  IconTerminal,
-} from "../../../../components/icons/index.js";
+  LineClose,
+  LineFile,
+  LinePlus,
+  LineTerminal,
+} from "../../../../components/icons/line/index.js";
+import { Button } from "../../../../components/ui/button.js";
 import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
 import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
@@ -286,17 +288,17 @@ export function TerminalTabs({
         idScope={TERMINAL_TABS_ID_SCOPE}
         className="min-h-0 shrink-0"
       >
-        {/* The fades are painted by this wrapper, not by the scroller: an
-            element that scrolls cannot hold a mask that stays put. */}
-        <div className="relative">
+        {/* The caps are painted by this wrapper, not by the scroller: an
+            element that scrolls cannot hold a block that stays put. */}
+        <div className="vex-ws-strip">
           <TabsList
             ref={listRef}
             aria-label="Studio terminals and files"
-            // THE STRIP sits on the paper over a 1px rule (terminal.css); the
-            // active tab is a field box that opens into the pane below it, so
-            // it covers the rule under itself (docs/design/V10-SPREAD.md
-            // section 1). It lines up with the pane's left edge.
-            className="vex-terminal-tab-strip h-[38px] w-full items-end justify-start gap-0.5 overflow-x-auto pt-1 pr-0 pb-0 pl-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            // THE STRIP is 40 high on the paper, padding 0 14, tabs 2 apart,
+            // over a quiet rule that the wrapper draws underneath; the active
+            // tab's blue underline covers it (docs/design/R3-MINIMAL.md
+            // section 9.5, geometry in terminal.css).
+            className="vex-terminal-tab-strip w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {state.tabs.map((tab) => (
               <TabRow
@@ -310,34 +312,40 @@ export function TerminalTabs({
                 {...(onPinTab === undefined ? {} : { onPinTab })}
               />
             ))}
-            <button
-              type="button"
+            {/* The plus key: a 32 x 32 icon key at the end of the strip. Its
+                focus outline is drawn inside, because the scroller clips. */}
+            <Button
+              variant="bare"
+              size="icon"
               aria-label="New terminal"
               onClick={onNewTerminal}
-              className="mb-0.5 ml-1 shrink-0 p-1.5 text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="shrink-0 self-center focus-visible:outline-offset-[-2px]"
             >
-              <IconPlus size={14} />
-            </button>
+              <LinePlus />
+            </Button>
           </TabsList>
           {/* THE OVERFLOW AFFORDANCE. Twenty file tabs used to run off the edge
               with nothing to say they had: the strip scrolled, but only a user
-              who tried scrolling found out. VS Code draws the same fade at both
-              ends of its tabs container. Decoration only - the scroll itself is
-              the tablist's, keyboard navigation reaches every tab, and the
-              active tab is scrolled into view on selection. */}
+              who tried scrolling found out. A flat paper cap with a quiet rule
+              on its inner edge marks each end the strip can still scroll to.
+              Decoration only - the scroll itself is the tablist's, keyboard
+              navigation reaches every tab, and the active tab is scrolled into
+              view on selection. */}
           <div
             aria-hidden="true"
             data-overflow-start={overflow.atStart ? undefined : ""}
+            data-edge="start"
             className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-[var(--vex-alias-bg-base)] to-transparent",
+              "vex-ws-cap pointer-events-none",
               overflow.atStart ? "opacity-0" : "opacity-100",
             )}
           />
           <div
             aria-hidden="true"
             data-overflow-end={overflow.atEnd ? undefined : ""}
+            data-edge="end"
             className={cn(
-              "pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--vex-alias-bg-base)] to-transparent",
+              "vex-ws-cap pointer-events-none",
               overflow.atEnd ? "opacity-0" : "opacity-100",
             )}
           />
@@ -346,9 +354,10 @@ export function TerminalTabs({
 
       {notice}
 
-      {/* THE PANE BODY: the field with a rule on three sides; the strip's own
-          rule is its top edge (docs/design/V10-SPREAD.md section 1). */}
-      <div className="relative min-h-0 flex-1 border border-t-0 border-rule bg-surface-field">
+      {/* THE PANE BODY draws no box (docs/design/R3-MINIMAL.md section 9.5):
+          the strip's quiet rule and the pane head's are the only lines, and the
+          terminal panes carry their own field. */}
+      <div className="relative min-h-0 flex-1">
         {state.tabs.length === 0 ? (
           <EmptyWorkspace
             onNewTerminal={onNewTerminal}
@@ -515,23 +524,27 @@ function EmptyWorkspace({
   readonly watermarkRows?: readonly WatermarkRow[];
 }): JSX.Element {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-      {/* The glyphs are `aria-hidden` at the source, per the icon gate. */}
-      <IconTerminal size={20} className="text-ink-tertiary" />
-      <p className="max-w-xs text-[12px] leading-4 text-ink-tertiary">
-        {EMPTY_WORKSPACE_COPY}
-      </p>
-      <button
-        type="button"
-        onClick={onNewTerminal}
-        className="inline-flex items-center gap-1.5 border border-line-3 px-2.5 py-1.5 text-[12px] leading-4 font-medium text-ink-primary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        <IconPlus size={12} />
-        {EMPTY_WORKSPACE_ACTION_COPY}
-      </button>
-      <EmptyWorkspaceWatermark
-        {...(watermarkRows === undefined ? {} : { rows: watermarkRows })}
-      />
+    // THE EMPTY BLOCK (docs/design/R3-MINIMAL.md section 12): a 1px quiet
+    // frame, padding 18, min height 150; the sentence 15 / 500, the muted
+    // shortcut lines at 13.5, and the blue next step.
+    <div className="absolute inset-0 overflow-y-auto p-[18px]">
+      <div className="flex min-h-[150px] max-w-[760px] flex-col items-start gap-2 border border-rule-quiet p-[18px]">
+        <p className="text-[15px] leading-[1.35] font-medium text-ink-primary">
+          {EMPTY_WORKSPACE_COPY}
+        </p>
+        <EmptyWorkspaceWatermark
+          {...(watermarkRows === undefined ? {} : { rows: watermarkRows })}
+        />
+        {/* The glyph is `aria-hidden` at the source, per the icon gate. */}
+        <button
+          type="button"
+          onClick={onNewTerminal}
+          className="mt-auto inline-flex items-center gap-1.5 text-[13.5px] leading-5 font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
+        >
+          <LinePlus size={14} />
+          {EMPTY_WORKSPACE_ACTION_COPY}
+        </button>
+      </div>
     </div>
   );
 }
@@ -568,12 +581,12 @@ export function EmptyWorkspaceWatermark({
     <dl
       aria-hidden="true"
       data-vex-empty-watermark=""
-      className="mt-2 grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-[11px] leading-4 text-ink-dimmed"
+      className="mb-2 grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 text-[13.5px] leading-[1.5] text-ink-tertiary"
     >
       {rows.map((row) => (
         <div key={row.action} className="contents">
-          <dt className="text-right">{row.action}</dt>
-          <dd className="text-left font-mono">{row.keys ?? ""}</dd>
+          <dt className="text-left">{row.action}</dt>
+          <dd className="vex-num text-left font-mono text-[12.5px]">{row.keys ?? ""}</dd>
         </div>
       ))}
     </dl>
@@ -640,8 +653,9 @@ function TabRow({
       // THE TAB'S CHROME lives on this shell (terminal.css paints rest, hover and
       // active), and `group` is what lets the close icon
       // answer a hover anywhere on it. `data-active` is the paint's switch; the
-      // trigger's `aria-selected` stays the accessibility fact.
-      className="vex-tab-shell group flex h-full shrink-0 items-stretch"
+      // trigger's `aria-selected` stays the accessibility fact. No height of its
+      // own: the strip's `align-items: stretch` sizes it.
+      className="vex-tab-shell group flex shrink-0 items-stretch"
       data-active={active || undefined}
       data-terminal-tab-shell=""
     >
@@ -650,8 +664,14 @@ function TabRow({
         value={tab.tabId}
         // TRANSPARENT AND BORDERLESS: the shell around it is the tab's box.
         // `bg-transparent` out-merges the primitive's active wash and the
-        // rest-state `hover:text-ink-primary` is the only thing kept.
-        className="h-full shrink-0 gap-2 border-0 bg-transparent pr-1 pl-2.5 font-sans text-[13px] font-medium tracking-normal normal-case hover:bg-transparent"
+        // rest-state `hover:text-ink-primary` is the only thing kept. The active
+        // tab is ink and 500, an inactive one ink 2 and 400, both at 13.5
+        // (docs/design/R3-MINIMAL.md section 9.5); the focus outline is drawn
+        // inside because the strip clips.
+        className={cn(
+          "mb-0 h-full shrink-0 gap-2 border-0 bg-transparent pr-1 pl-0 hover:bg-transparent focus-visible:outline-offset-[-2px]",
+          active ? "text-ink-primary" : null,
+        )}
         title={
           runState === null
             ? tab.title
@@ -699,12 +719,12 @@ function TabRow({
           onCloseTab(tab.tabId);
         }}
       >
-        {isGroup ? <IconTerminal size={12} /> : <IconFile size={12} />}
-        {/* The dot is colour-only and `aria-hidden`; the word after the title
+        {isGroup ? <LineTerminal /> : <LineFile />}
+        {/* The swatch is a fill and `aria-hidden`; the word after the title
             is what a screen reader gets, and it comes AFTER so the tab's
             accessible name reads "Terminal 1 Running" rather than opening with
             a status nobody asked about yet. */}
-        {runState === null ? null : <Swatch state={DOT_BY_STATE[runState]} size={8} />}
+        {runState === null ? null : <Swatch state={DOT_BY_STATE[runState]} size={10} />}
         {/* ITALIC IS THE PREVIEW SIGNAL, and it is only half of it: italics say
             nothing to a screen reader, so the state word below carries the same
             fact in the accessible name. VS Code paints the identical
@@ -729,10 +749,10 @@ function TabRow({
             // Same hover-revealed, never-keyboard-hidden grammar as close, and
             // inside the same shell: it sits between the label and the close
             // control, so the whole tab is one continuous surface.
-            "flex shrink-0 items-center px-1 text-[10px] leading-4 text-ink-tertiary",
+            "flex shrink-0 items-center px-1.5 text-[12px] leading-4 text-ink-tertiary",
             "opacity-0 group-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100",
             active ? "opacity-100" : null,
-            "transition-opacity duration-[var(--vex-duration-fast)] hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
+            "transition-opacity duration-[var(--vex-duration-fast)] hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus",
           )}
         >
           Keep
@@ -749,7 +769,7 @@ function TabRow({
         // edge and the next tab starts after the strip's gap.
         data-terminal-tab-close=""
         className={cn(
-          "flex shrink-0 items-center pr-2 pl-1 text-ink-secondary",
+          "flex shrink-0 items-center px-2 text-ink-secondary",
           // HOVER-REVEALED, NEVER KEYBOARD-HIDDEN. `opacity-0` on the ICON keeps
           // the button in the layout, in the tab order and in the accessibility
           // tree, and keeps the tab's width identical whether the icon is
@@ -759,10 +779,10 @@ function TabRow({
           "[&>*]:opacity-0 group-hover:[&>*]:opacity-100 focus-visible:[&>*]:opacity-100",
           active ? "[&>*]:opacity-100" : null,
           "[&>*]:transition-opacity [&>*]:duration-[var(--vex-duration-fast)]",
-          "hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
+          "hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus",
         )}
       >
-        <IconClose size={12} />
+        <LineClose size={14} />
       </button>
     </div>
   );
@@ -822,7 +842,7 @@ function RenameField({
       onBlur={() => {
         onEnd(value);
       }}
-      className="mx-1 h-6 w-32 shrink-0 self-center border border-rule bg-surface-field px-1.5 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="mx-2 h-7 w-40 shrink-0 self-center border border-rule bg-surface-field px-2 text-[13.5px] leading-5 text-ink-primary caret-accent-primary focus-visible:border-accent-primary focus-visible:outline-none"
     />
   );
 }

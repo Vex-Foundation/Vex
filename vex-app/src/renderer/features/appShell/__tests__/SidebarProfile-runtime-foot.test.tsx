@@ -37,8 +37,7 @@ vi.mock("../../../lib/api/capabilities.js", () => ({
 vi.mock("../VexSetupDialog.js", () => ({ VexSetupDialog: () => null }));
 vi.mock("@thesvg/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@thesvg/react")>();
-  // Each brand mark is a bare marker naming itself, so provenance is checkable.
-  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => <i data-brand={name} />]));
+  return Object.fromEntries(Object.keys(actual).map((name) => [name, () => null]));
 });
 
 const {
@@ -134,6 +133,14 @@ describe("SidebarProfile foot", () => {
     expect(screen.getByRole("menuitem", { name: /Lock Vex/ })).not.toBeNull();
   });
 
+  it("shows Lock Vex's chord from the one constant the Settings Vault row shares", async () => {
+    const { LOCK_VEX_SHORTCUT } = await import("../LockVexControl.js");
+    render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    const lock = screen.getByRole("menuitem", { name: /Lock Vex/ });
+    expect(lock.querySelector(".vex-menu-shortcut")?.textContent).toBe(LOCK_VEX_SHORTCUT);
+  });
+
   it("hides Lock Vex when its rollback flag is off", () => {
     feature.enabled = false;
     render(<SidebarProfile sidebarOpen />);
@@ -173,30 +180,81 @@ describe("SidebarProfile foot", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     render(<SidebarProfile sidebarOpen />);
     expect(
-      screen.getByRole("button", { name: "Vex - Degraded. Open menu" }),
+      screen.getByRole("button", { name: "Kuba, Degraded. Open menu" }),
     ).not.toBeNull();
   });
 
-  it("sets the vx mark in its box on either ground, and names the ground it sits on", () => {
-    // docs/design/V10-SPREAD.md section 3: white on the left page's print,
-    // ink on the Studio rail's paper; the mark is the profile picture.
-    const { container, rerender } = render(<SidebarProfile sidebarOpen ground="print" />);
-    const root = (): Element | null => container.querySelector("[data-vex-area='sidebar-profile']");
-    expect(root()?.getAttribute("data-ground")).toBe("print");
+  it("names the account row by the name it shows, then the runtime word", () => {
+    // The row shows "Kuba"; its accessible name must lead with that name and
+    // not with the product ("Vex - Connected. Open menu" was the defect).
+    render(<SidebarProfile sidebarOpen />);
+    const trigger = screen.getByRole("button", { name: "Kuba, Connected. Open menu" });
+    expect(trigger.getAttribute("aria-label")).toBe("Kuba, Connected. Open menu");
+    expect(trigger.textContent).toContain("Kuba");
+    expect(screen.queryByRole("button", { name: /^Vex - / })).toBeNull();
+  });
+
+  it("names the collapsed rail's box by the same account name", () => {
+    render(<SidebarProfile sidebarOpen={false} />);
+    expect(
+      screen.getByRole("button", { name: "Kuba, Connected. Open menu" }),
+    ).not.toBeNull();
+  });
+
+  it("falls back to Vex while there is no name: the ask is not a name", () => {
+    profileMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: { displayName: null } },
+    });
+    const asking = render(<SidebarProfile sidebarOpen />);
+    expect(screen.getByText("What should Vex call you?")).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Vex, Connected. Open menu" }),
+    ).not.toBeNull();
+    asking.unmount();
+
+    profileMock.mockReturnValue({ isLoading: true, isError: false, data: undefined });
+    render(<SidebarProfile sidebarOpen />);
+    expect(
+      screen.getByRole("button", { name: "Vex, Connected. Open menu" }),
+    ).not.toBeNull();
+  });
+
+  it("sets the vx in its box as the profile picture, on paper", () => {
+    // docs/design/R3-MINIMAL.md section 4: the vx in blue in a 30px box on a
+    // 1px rule; the left page's print and its white ground are gone.
+    const { container } = render(<SidebarProfile sidebarOpen />);
+    const root = container.querySelector("[data-vex-area='sidebar-profile']");
+    expect(root).not.toBeNull();
+    expect(root?.hasAttribute("data-ground")).toBe(false);
     expect(container.querySelector(".vex-prof__av svg path")).not.toBeNull();
     expect(container.querySelector("img")).toBeNull();
-    rerender(<SidebarProfile sidebarOpen />);
-    expect(root()?.getAttribute("data-ground")).toBe("paper");
   });
 
-  it("the menu's provenance row marks what runs: the bundled database alone", () => {
+  it("opens upward as the flat profile panel, with the runtime row's fill and word", () => {
     render(<SidebarProfile sidebarOpen />);
     fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
-    expect(document.querySelector("[data-brand='Postgresql']")).not.toBeNull();
-    expect(document.querySelector("[data-brand='Docker']")).toBeNull();
+    const menu = screen.getByRole("menu");
+    expect(menu.classList.contains("vex-profile-menu")).toBe(true);
+    expect(menu.classList.contains("vex-profile-menu--panel")).toBe(true);
+    // The runtime row: a solid fill beside "Runtime" and the short word.
+    const runtime = screen.getByRole("menuitem", { name: /Runtime/ });
+    expect(runtime.hasAttribute("disabled")).toBe(true);
+    expect(runtime.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
+    expect(runtime.textContent).toContain("Connected");
+    // Lock Vex shows its chord at the right.
+    const lock = screen.getByRole("menuitem", { name: /Lock Vex/ });
+    expect(lock.querySelector(".vex-menu-shortcut")?.textContent).toMatch(/L$/);
   });
 
-  it("gives the collapsed spine the sentence as its tooltip - no subtitle there", () => {
+  it("keeps the standard card when it opens downward from a top bar", () => {
+    render(<SidebarProfile sidebarOpen={false} menuSide="bottom" />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(screen.getByRole("menu").classList.contains("vex-profile-menu--panel")).toBe(false);
+  });
+
+  it("gives the collapsed rail the sentence as its tooltip - no subtitle there", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
     render(<SidebarProfile sidebarOpen={false} />);
     const trigger = screen.getByRole("button", { name: /Open menu/ });

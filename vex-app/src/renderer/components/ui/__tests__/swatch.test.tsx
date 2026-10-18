@@ -1,6 +1,7 @@
 /**
  * Swatch tests: one element per state, stamped with its fill name, sized,
- * hidden from assistive technology unless a label is given.
+ * hidden from assistive technology unless a label is given. The V10 fill
+ * names stay and the R3 fills are added beside them, never renamed.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -18,6 +19,11 @@ const STATES: readonly SwatchState[] = [
   "draft",
   "idle",
   "error",
+  "listening",
+  "thinking",
+  "awaiting",
+  "concerned",
+  "sleeping",
 ];
 
 describe("Swatch", () => {
@@ -39,6 +45,12 @@ describe("Swatch", () => {
     const { container, getByText } = render(<Swatch state="warning" label="Drifted" />);
     expect(container.querySelectorAll(".vex-swatch").length).toBe(1);
     expect(getByText("Drifted").className).toContain("sr-only");
+  });
+
+  it("keeps the V10 fill names a test or e2e may read", () => {
+    for (const state of ["done", "ongoing", "warning", "draft", "idle", "error"] as const) {
+      expect(STATES).toContain(state);
+    }
   });
 
   it("never carries a status hue class", () => {

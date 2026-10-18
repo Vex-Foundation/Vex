@@ -2,17 +2,18 @@
  * Hover-revealed per-message icon actions (A13 copy, G7 feedback, A14
  * branch, A18 edit) — the single owner of the caption action-button chrome.
  * Every action is keyboard-reachable (`.vex-action-reveal` reveals on
- * :focus-within too, and touch devices always show it).
+ * :focus-within too, and touch devices always show it). The glyphs are the
+ * calm line set (docs/design/R3-MINIMAL.md section 1.7) at 14 px.
  */
 
 import { useMemo, useState, type JSX, type ReactNode } from "react";
 import {
-  IconBranch,
-  IconCheck,
-  IconCopy,
-  IconDislike,
-  IconEdit,
-} from "../../../components/icons/index.js";
+  LineBranch,
+  LineCheck,
+  LineCopy,
+  LineEdit,
+  LineThumbsDown,
+} from "../../../components/icons/line/index.js";
 import { ReportIssueDialog } from "../ReportIssueDialog.js";
 import { useCopyFeedback } from "../../../lib/use-copy-feedback.js";
 import { extractMarkdownPlainText } from "../../../lib/markdown/plain-text.js";
@@ -66,11 +67,7 @@ export function CopyMessageAction({
       dataAttr="data-vex-copy-message"
       onClick={onCopy}
     >
-      {copied ? (
-        <IconCheck size={12} aria-hidden />
-      ) : (
-        <IconCopy size={12} aria-hidden />
-      )}
+      {copied ? <LineCheck size={14} /> : <LineCopy size={14} />}
     </MessageActionButton>
   );
 }
@@ -99,7 +96,7 @@ export function FeedbackMessageAction({
         dataAttr="data-vex-message-feedback"
         onClick={() => setOpen(true)}
       >
-        <IconDislike size={12} aria-hidden />
+        <LineThumbsDown size={14} />
       </MessageActionButton>
       {open ? (
         <ReportIssueDialog
@@ -131,7 +128,7 @@ export function BranchMessageAction({
       dataAttr="data-vex-branch-message"
       onClick={onBranch}
     >
-      <IconBranch size={12} aria-hidden />
+      <LineBranch size={14} />
     </MessageActionButton>
   );
 }
@@ -152,7 +149,7 @@ export function EditMessageAction({
       dataAttr="data-vex-edit-message"
       onClick={onEdit}
     >
-      <IconEdit size={12} aria-hidden />
+      <LineEdit size={14} />
     </MessageActionButton>
   );
 }

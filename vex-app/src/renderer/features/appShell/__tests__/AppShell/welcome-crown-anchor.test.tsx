@@ -8,15 +8,14 @@
  * WHAT RESIDENCY CHANGED, and what it did not. The hero chrome and the
  * composer used to be siblings in the panel's flex column, with the crown zone
  * balanced against a trailing spacer. They now live together INSIDE the
- * resident composer seat, which the scroll body anchors at the head of the
- * page in the hero phase (the V10 welcome spread, reference d2) - so the whole
- * opening moves as one unit and the composer's DOM node survives the move to
- * the docked phase. The anchoring invariant is unchanged
- * and its mechanism is unchanged in kind: the crown is never inside the box
- * that grows, and the growing box has a FIXED layout height so growth
- * overflows DOWNWARD instead of re-centring the stack above it. Only the owner
- * of that fixed height moved, from a Tailwind class on the band to a
- * phase-scoped rule on `[data-vex-composer-dock]` in chat-transcript.css.
+ * resident composer seat, which stands centred in the centre column in the
+ * hero phase (the R3 welcome, reference d2) - so the whole opening moves as
+ * one unit and the composer's DOM node survives the move to the docked phase.
+ * The anchoring invariant is unchanged and its mechanism is unchanged in kind:
+ * the crown is never inside the box that grows, and the growing box has a
+ * FIXED layout height so growth overflows DOWNWARD instead of re-centring the
+ * stack above it. The owner of that fixed height is a phase-scoped rule on
+ * `[data-vex-composer-dock]` in composer.css.
  *
  * WHY STRUCTURE, NOT PIXELS: jsdom has no layout engine — every element
  * reports offsetTop 0 and the textarea's scrollHeight is 0, so a numeric
@@ -37,9 +36,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// The proven icon set for a real-SessionComposer mount (copied from
-// composer-console.test.tsx — the quick-action chips consume IconFlame/
-// ChartLineData01Icon/IconPercent, the send/stop key the arrows).
+// A real-SessionComposer mount (copied from composer-console.test.tsx): the
+// welcome's task rows and the send/stop key draw line icons.
 const mockSubmitChat = {
   isPending: false as boolean,
   mutateAsync: vi.fn(),
@@ -203,20 +201,20 @@ describe("SessionPanel welcome - crown anchored above a downward growth band", (
     const initialCrownClass = crown.className;
     const initialBandClass = band.className;
 
-    // Chip pick seeds the long starter prompt (the owner-reported chaos
-    // trigger) and hides the chips row.
+    // A row pick seeds its full-sentence prompt (the owner-reported chaos
+    // trigger) and hides the rows.
     fireEvent.click(
-      screen.getByRole("button", { name: /hunt trending memecoins/i }),
+      screen.getByRole("button", { name: /check wallet balances/i }),
     );
     const field = screen.getByLabelText(
       "Session draft",
     ) as HTMLTextAreaElement;
     expect(field.value).toBe(
-      QUICK_ACTIONS.find((action) => action.label === "Hunt trending memecoins")?.prompt,
+      QUICK_ACTIONS.find((action) => action.label === "Check wallet balances")?.prompt,
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: /hunt trending memecoins/i }),
+        screen.queryByRole("button", { name: /check wallet balances/i }),
       ).toBeNull(),
     );
     // Same nodes (no remount), same classes: the crown zone and the band
@@ -227,11 +225,11 @@ describe("SessionPanel welcome - crown anchored above a downward growth band", (
     expect(band.className).toBe(initialBandClass);
     expectAnchoredStructure(container);
 
-    // Clearing the draft brings the chips back — and still moves nothing.
+    // Clearing the draft brings the rows back - and still moves nothing.
     fireEvent.change(field, { target: { value: "" } });
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: /hunt trending memecoins/i }),
+        screen.queryByRole("button", { name: /check wallet balances/i }),
       ).not.toBeNull(),
     );
     expect(crownOf(container)).toBe(crown);
@@ -241,10 +239,10 @@ describe("SessionPanel welcome - crown anchored above a downward growth band", (
     expectAnchoredStructure(container);
   });
 
-  it("a chip pick is one gesture: the field is focused with the caret at the end of the seeded draft", () => {
+  it("a row pick is one gesture: the field is focused with the caret at the end of the seeded draft", () => {
     renderWelcome();
     fireEvent.click(
-      screen.getByRole("button", { name: /hunt trending memecoins/i }),
+      screen.getByRole("button", { name: /check wallet balances/i }),
     );
     const field = screen.getByLabelText(
       "Session draft",
@@ -270,19 +268,23 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
   it("pins the hero growth band's fixed height, so field growth overflows downward", () => {
     // The invariant the structural cases above cannot express in jsdom: with
     // a FIXED band height nothing below the band can reflow as the field
-    // grows, and the greeting above it never moves. 230px = the field's 26px
-    // margin + the resting hero field (118) + the starter slot (86).
+    // grows, and the greeting above it never moves. 302px = the resting field
+    // (116) + the task rows' slot (186: 18 above four 42 high rows).
     const dock = blockFor(
       '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock]',
     );
-    expect(dock).toContain("height: 230px");
+    expect(dock).toContain("height: 302px");
     expect(dock).toContain("overflow: visible");
+    // The slot under the field holds the same 186 whether or not the rows show.
+    expect(blockFor(".vex-starters")).toContain("height: 186px");
   });
 
-  it("anchors the hero opening at the head of the page with FLEX, never a transform", () => {
+  it("places the hero opening with FLEX, never a transform", () => {
     // A transform on the scroll body would make it the containing block for
     // every `position: fixed` descendant (menus, dialogs), silently shrinking
-    // them to this column. Flex placement has no such side effect.
+    // them to this column. Flex placement has no such side effect: the body
+    // stacks from the top and the seat's auto block margins centre it while
+    // there is room (and let a short window scroll to its head).
     // Whitespace-tolerant: the selector spans two lines after formatting, so
     // this scans for the rule rather than an exact `selector {` prefix.
     const heroBody =
@@ -292,6 +294,11 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     expect(heroBody, "hero scroll-body placement rule missing").not.toBeNull();
     expect(heroBody?.[1]).toContain("justify-content: flex-start");
     expect(heroBody?.[1]).not.toContain("transform");
+    const seat = blockFor(
+      '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat]',
+    );
+    expect(seat).toContain("margin-block: auto");
+    expect(seat).not.toContain("transform");
   });
 
   it("transitions the field slot's measured height on the console's 220ms clock, with a clip mask", () => {
@@ -309,7 +316,7 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     // The height glide above used to share its 220ms clock with a radius
     // relax once; the capsule (catalog geometry) is a constant square surface,
     // so that second moving part stays gone: the radius is a static 0
-    // (docs/design/V10-SPREAD.md section 1) and nothing transitions it.
+    // (docs/design/R3-MINIMAL.md section 7) and nothing transitions it.
     const host = blockFor(".vex-composer-card");
     expect(host).toContain("border-radius: 0");
     expect(host).not.toContain("transition");

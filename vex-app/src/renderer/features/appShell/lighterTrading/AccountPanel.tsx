@@ -6,7 +6,7 @@ import type {
   LighterTradingEnvironment,
   LighterTradingFill,
 } from "@shared/schemas/lighter-trading.js";
-import { IconChevronDown, IconChevronUp, PxIcon } from "../../../components/icons/index.js";
+import { LineChevronDown, LineChevronUp, LineRefresh } from "../../../components/icons/line/index.js";
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
 import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow, type OrderCancelStage, type PositionCloseStage } from "./account-model.js";
 import { ClosePositionPopover } from "./ClosePositionPopover.js";
@@ -19,10 +19,13 @@ type BottomTab = "positions" | "orders" | "fills" | "balances";
 const ACCOUNT_TABS: readonly BottomTab[] = ["positions", "orders", "fills", "balances"];
 const TAB_LABEL: Record<BottomTab, string> = {
   positions: "Positions",
-  orders: "Open Orders",
-  fills: "Trade History",
+  orders: "Open orders",
+  fills: "Trade history",
   balances: "Assets",
 };
+
+/** The margin meter's cells; each one is a tenth of the collateral in use. */
+const METER_CELLS = 10;
 
 export type { LighterOpenOrderRow, LighterPositionRow } from "./account-model.js";
 
@@ -212,7 +215,7 @@ export function TradingBottomPanel({
                 }}
               >
                 {TAB_LABEL[item]}
-                {count === null ? null : <i>({count}{item === "orders" && account?.openOrdersTruncated ? "+" : ""})</i>}
+                {count === null ? null : <i>{count}{item === "orders" && account?.openOrdersTruncated ? "+" : ""}</i>}
               </button>
             );
           })}
@@ -227,7 +230,7 @@ export function TradingBottomPanel({
             disabled={accountQuery.isFetching}
             aria-busy={accountQuery.isFetching}
           >
-            <PxIcon name="refresh" />
+            <LineRefresh size={14} />
             Refresh
           </button>
           <button
@@ -238,7 +241,7 @@ export function TradingBottomPanel({
             aria-controls={activePanelId}
             aria-label={collapsed ? "Expand the account dock" : "Collapse the account dock"}
           >
-            {collapsed ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
+            {collapsed ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
           </button>
         </div>
       </header>
@@ -274,7 +277,9 @@ export function TradingBottomPanel({
 /**
  * The account's risk at a glance, in the dock header so it stays in view
  * even with the dock folded: equity, what is free to trade, open PnL over the
- * margin holding it, and how much of the collateral is committed.
+ * margin holding it, and how much of the collateral is committed. Labels are
+ * words, figures are mono; only the Unrealized PnL takes the trading pair
+ * (docs/design/R3-MINIMAL.md section 9.3).
  */
 function RiskStrip({ account }: { readonly account: LighterTradingAccount }): JSX.Element {
   const risk = accountRisk(account.summary);
@@ -284,9 +289,9 @@ function RiskStrip({ account }: { readonly account: LighterTradingAccount }): JS
   return (
     <dl className="lit-risk-strip" aria-label="Account risk">
       <div><dt>Equity</dt><dd>{money(risk.equity)} {settlement}</dd></div>
-      <div><dt>Avbl</dt><dd>{money(risk.available)} {settlement}</dd></div>
+      <div><dt>Available</dt><dd>{money(risk.available)} {settlement}</dd></div>
       <div>
-        <dt>uPnL</dt>
+        <dt>Unrealized PnL</dt>
         <dd data-tone={signedTone(pnl)}>
           {pnl === null ? NO_VALUE : `${pnl > 0 ? "+" : ""}${money(pnl)} ${settlement}`}
           {risk.roe === null ? null : <i> ({signedPercent(risk.roe)})</i>}
@@ -296,23 +301,39 @@ function RiskStrip({ account }: { readonly account: LighterTradingAccount }): JS
         <dt>Margin</dt>
         <dd>
           {money(risk.marginUsed)} {settlement}
-          {risk.usage === null ? null : (
-            <span
-              className="lit-margin-usage-bar"
-              role="meter"
-              aria-label="Margin usage"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(risk.usage * 100)}
-              data-level={risk.usage >= 0.8 ? "high" : risk.usage >= 0.5 ? "mid" : "low"}
-            >
-              <i style={{ width: `${risk.usage * 100}%` }} />
-            </span>
-          )}
+          {risk.usage === null ? null : <MarginMeter usage={risk.usage} label="Margin usage" />}
           {risk.usage === null ? null : <i>{formatNumber(risk.usage * 100, { maximumFractionDigits: 0 })}%</i>}
         </dd>
       </div>
     </dl>
+  );
+}
+
+/**
+ * The kit's ten cell meter: each cell is a tenth of the collateral held by
+ * open positions, so `Math.round(usage * 10)` cells are on (the blue). Past
+ * 80% the on cells turn ink, never red. The reading is also carried as a
+ * percentage in the meter's own aria values, because the cells are paint.
+ */
+function MarginMeter({ usage, label }: {
+  readonly usage: number | null;
+  readonly label: string;
+}): JSX.Element {
+  const on = usage === null ? 0 : Math.max(0, Math.min(METER_CELLS, Math.round(usage * METER_CELLS)));
+  return (
+    <span
+      className="lit-margin-usage-bar"
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={usage === null ? undefined : Math.round(usage * 100)}
+      data-level={usage === null ? undefined : usage >= 0.8 ? "high" : usage >= 0.5 ? "mid" : "low"}
+    >
+      {Array.from({ length: METER_CELLS }, (_, index) => (
+        <i key={index} data-on={index < on ? "" : undefined} />
+      ))}
+    </span>
   );
 }
 
@@ -414,7 +435,7 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
       <div className="lit-account-columns" role="row">
         <span role="columnheader">Market</span><span role="columnheader">Size</span>
         <span role="columnheader">Entry</span><span role="columnheader">Mark</span>
-        <span role="columnheader">Liq.</span><span role="columnheader">Margin</span>
+        <span role="columnheader">Liq. price</span><span role="columnheader">Margin</span>
         <span role="columnheader">uPnL (ROE)</span><span role="columnheader">TP / SL</span>
         <span role="columnheader">Actions</span>
       </div>
@@ -442,8 +463,8 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 >
                   {position.symbol}
                 </button>
-                <small data-tone={position.side === "long" ? "positive" : "negative"}>
-                  {position.side === "long" ? "Long" : "Short"} · {leverageText(metrics.leverage, position.marginMode)}
+                <small>
+                  <span data-trade={position.side === "long" ? "up" : "down"}>{position.side === "long" ? "Long" : "Short"}</span> · {leverageText(metrics.leverage, position.marginMode)}
                 </small>
               </span>
               <span role="cell">{num(position.size)}</span>
@@ -464,12 +485,12 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 <small>{signedPercent(metrics.roe)}</small>
               </span>
               <span className="lit-order-cell" role="cell">
-                <b>{protection.takeProfit === null ? NO_VALUE : num(protection.takeProfit.triggerPrice)}</b>
-                <small>{protection.stopLoss === null ? NO_VALUE : num(protection.stopLoss.triggerPrice)}</small>
+                <b data-empty={protection.takeProfit === null ? "" : undefined}>{protection.takeProfit === null ? NO_VALUE : num(protection.takeProfit.triggerPrice)}</b>
+                <small data-empty={protection.stopLoss === null ? "" : undefined}>{protection.stopLoss === null ? NO_VALUE : num(protection.stopLoss.triggerPrice)}</small>
               </span>
               <span role="cell" className="lit-row-actions">
                 <button type="button" onClick={() => actions.onReviewPosition(position)} aria-label={`Review ${position.symbol} position with Vex`}>
-                  Ask
+                  Ask Vex
                 </button>
                 <button type="button" onClick={() => actions.onProtectPosition(position)} aria-label={`Set stop loss and take profit for ${position.symbol}`}>
                   Protect
@@ -712,17 +733,7 @@ function BalancesTab({ account, onFund }: {
           <span>Margin in use</span>
           <b>{usage === null ? NO_VALUE : formatNumber(usage * 100, { maximumFractionDigits: 1 }) + "%"}</b>
         </div>
-        <div
-          className="lit-margin-usage-bar"
-          role="meter"
-          aria-label="Margin in use"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={usage === null ? undefined : Math.round(usage * 100)}
-          data-level={usage === null ? undefined : usage >= 0.8 ? "high" : usage >= 0.5 ? "mid" : "low"}
-        >
-          <i style={{ width: `${(usage ?? 0) * 100}%` }} />
-        </div>
+        <MarginMeter usage={usage} label="Margin in use" />
       </div>
       <div className="lit-fund-actions">
         <button type="button" onClick={() => onFund("deposit")}>Deposit</button>

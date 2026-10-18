@@ -1,5 +1,5 @@
 /**
- * Decision-table pins for `resolveWizardEntry` — the ONE launch/wizard
+ * Decision-table pins for `resolveWizardEntry` - the ONE launch/wizard
  * routing table shared by WizardShell and the setup orchestrator
  * (Chronos Gate PR1). These cases are a characterization of the
  * pre-extraction WizardShell effect logic; changing any row is a

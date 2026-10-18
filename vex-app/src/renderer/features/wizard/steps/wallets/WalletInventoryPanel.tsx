@@ -8,7 +8,7 @@
  * disabled state here is UX only and is computed from the WHOLE family
  * inventory count (Codex 5D review), not the post-filter list.
  *
- * Import-add carries a raw private key — same secret hygiene as the M8 import
+ * Import-add carries a raw private key - same secret hygiene as the M8 import
  * (uncontrolled DOM ref, value cleared synchronously BEFORE the IPC await,
  * plain async call, never `useMutation`). See `lib/api/wallets.ts`.
  */
@@ -37,7 +37,7 @@ export interface WalletInventoryPanelProps {
 }
 
 // EVM addresses are checksum-cased (case-insensitive equality); Solana
-// addresses are base58 (case-sensitive — must compare verbatim).
+// addresses are base58 (case-sensitive - must compare verbatim).
 const sameAddress = (chain: WalletChain, a: string, b: string): boolean =>
   chain === "evm" ? a.toLowerCase() === b.toLowerCase() : a === b;
 
@@ -81,7 +81,7 @@ export function WalletInventoryPanel({
       return;
     }
     // Clear the DOM input synchronously BEFORE the await resolves (secret
-    // hygiene — the raw key never lingers in the DOM tree).
+    // hygiene - the raw key never lingers in the DOM tree).
     el.value = "";
     setImporting(true);
     try {
@@ -111,29 +111,31 @@ export function WalletInventoryPanel({
 
   return (
     <div
-      className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4"
+      className="vex-wz-stack"
       data-vex-wallet-inventory={chain}
     >
-      <p className="vex-micro text-ink-tertiary">
-        {chainLabel(chain)} wallets ({count}/{MAX_PER_FAMILY})
-      </p>
-      {others.length > 0 ? (
-        <ul className="flex flex-col gap-2">
-          {others.map((w) => (
-            <li key={w.id} className="flex flex-col gap-0.5">
-              <span className="text-xs text-ink-tertiary">{w.label}</span>
-              <AddressDisplay address={w.address} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <div className="vex-wz-group">
+        <p className="text-[13px] text-ink-tertiary">
+          {chainLabel(chain)} wallets ({count}/{MAX_PER_FAMILY})
+        </p>
+        {others.length > 0 ? (
+          <ul className="vex-wz-kvl">
+            {others.map((w) => (
+              <li key={w.id} className="vex-wz-kv">
+                <span className="vex-wz-kv__k">{w.label}</span>
+                <AddressDisplay address={w.address} className="col-span-2" />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
 
       {view === "import" ? (
         <form
           onSubmit={(e) => {
             void handleImportSubmit(e);
           }}
-          className="flex flex-col gap-2"
+          className="vex-wz-card flex flex-col gap-3"
           noValidate
         >
           <Label htmlFor={importInputId}>
@@ -145,9 +147,9 @@ export function WalletInventoryPanel({
             autoFocus
             autoComplete="off"
           />
-          <p className="text-xs text-ink-tertiary">{importHint(chain)}</p>
+          <p className="vex-wz-hint">{importHint(chain)}</p>
           {error !== null ? (
-            <p className="text-xs text-danger" role="alert">
+            <p className="text-[13px] text-danger" role="alert">
               {error}
             </p>
           ) : null}
@@ -170,6 +172,7 @@ export function WalletInventoryPanel({
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             <Button
+              variant="quiet"
               size="sm"
               onClick={() => {
                 void handleAdd();
@@ -191,12 +194,12 @@ export function WalletInventoryPanel({
             </Button>
           </div>
           {atCap ? (
-            <p className="text-xs text-ink-tertiary">
+            <p className="vex-wz-hint">
               Maximum of {MAX_PER_FAMILY} {chainLabel(chain)} wallets reached.
             </p>
           ) : null}
           {error !== null ? (
-            <p className="text-xs text-danger" role="alert">
+            <p className="text-[13px] text-danger" role="alert">
               {error}
             </p>
           ) : null}

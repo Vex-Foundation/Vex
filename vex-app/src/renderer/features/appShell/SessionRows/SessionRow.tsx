@@ -1,58 +1,67 @@
 /**
  * One session row, in one of two settings that share every behaviour:
  *
- * - `index` (the left page, docs/design/V10-SPREAD.md section 3): the
- *   whitepaper chapter rail set into the print's sky. A 26px line of the
- *   session's italic 24px ordinal, its title with the state swatch in front,
- *   and the start time in mono caps. The open session reads in blue behind a
- *   solid swatch; a running mission wears the dot screen, a paused one the
- *   hatch. No fill: the row sits on a photograph.
- * - `register` (the Sessions library): the generic 32px RailRow, title and a
- *   quiet trailing time on paper.
+ * - `sidebar` (the left sidebar, docs/design/R3-MINIMAL.md section 4): a 34px
+ *   row, the name at 14 with an ellipsis, then at the right the start time in
+ *   mono 11.5 muted, or a swatch and a word in 12 muted while a mission has a
+ *   state (Running, Waiting, Sleeping, Paused, Error). The open session takes
+ *   the selection wash, blue type and weight 500. A search marks its match
+ *   with a blue wash.
+ * - `register` (the Sessions library): the generic 32px RailRow, the title,
+ *   the state swatch in front and a quiet trailing time.
  *
- * Both: the time yields to the Remove + Pin cluster on hover and focus, the
- * cluster is a SIBLING of the select button (never nested), the whole row
- * anchors a HoverCard preview (full title, started time, mode, permission),
- * and a double-click swaps the row for an inline rename input (Enter commits
- * via `onRename`, Escape cancels, an empty or unchanged draft is a cancel).
+ * Both: the time yields to the Pin and Remove keys on hover and focus, the
+ * keys are SIBLINGS of the select button (never nested), the whole row
+ * anchors a HoverCard preview, and a double-click swaps the row for an inline
+ * rename input (Enter commits via `onRename`, Escape cancels, an empty or
+ * unchanged draft is a cancel).
  */
 
 import { useState, type JSX, type KeyboardEvent, type MouseEvent } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-import { cn } from "../../../lib/utils.js";
 import { HoverCard } from "../../../components/ui/hover-card.js";
 import { RailRow } from "../../../components/ui/rail-list.js";
-import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
-import {
-  formatSessionTime,
-  getMissionActivity,
-  getSessionTitle,
-} from "../sessionListModel.js";
-import { formatOrdinal } from "../leftPage/sessionOrdinals.js";
+import { Swatch } from "../../../components/ui/swatch.js";
+import { formatSessionTime, getSessionTitle } from "../sessionListModel.js";
 import { SessionHoverContent } from "./SessionHoverContent.js";
 import { RemoveButton } from "./RemoveButton.js";
 import { PinToggle } from "./PinToggle.js";
+import { sessionRowState } from "./session-row-state.js";
 
 /**
- * The swatch a row carries, if any (docs/design/V10-SPREAD.md section 6):
- * the open session solid, a running mission the dot screen, a paused one the
- * hatch. An idle session and a finished mission carry none.
+ * The title with every case-insensitive occurrence of `needle` marked. An
+ * empty needle returns the title as it is.
  */
-export function sessionRowFill(
-  row: SessionListItem,
-  current: boolean,
-): SwatchState | null {
-  if (current) return "done";
-  const activity = getMissionActivity(row);
-  if (activity === null || activity.tone === "stopped") return null;
-  return activity.tone === "active" ? "ongoing" : "draft";
+export function MarkedTitle({
+  title,
+  needle,
+}: {
+  readonly title: string;
+  readonly needle: string;
+}): JSX.Element {
+  const query = needle.trim().toLowerCase();
+  if (query.length === 0) return <>{title}</>;
+  const lower = title.toLowerCase();
+  // The unmarked runs stay bare text, so the row's accessible name keeps the
+  // spaces at a mark's edges.
+  const parts: (JSX.Element | string)[] = [];
+  let from = 0;
+  let at = lower.indexOf(query, from);
+  while (at !== -1) {
+    if (at > from) parts.push(title.slice(from, at));
+    parts.push(<mark key={`m${String(at)}`}>{title.slice(at, at + query.length)}</mark>);
+    from = at + query.length;
+    at = lower.indexOf(query, from);
+  }
+  if (from < title.length) parts.push(title.slice(from));
+  return <>{parts}</>;
 }
 
 export function SessionRow({
   row,
   selected,
   variant = "register",
-  ordinal = null,
+  highlight = "",
   onSelect,
   onTogglePin,
   onRequestRemove,
@@ -61,10 +70,10 @@ export function SessionRow({
 }: {
   readonly row: SessionListItem;
   readonly selected: boolean;
-  /** `index` on the left page, `register` in the Sessions library. */
-  readonly variant?: "index" | "register";
-  /** The session's ordinal (index only); null prints no number. */
-  readonly ordinal?: number | null;
+  /** `sidebar` in the left sidebar, `register` in the Sessions library. */
+  readonly variant?: "sidebar" | "register";
+  /** The sidebar search's text, marked in the title (sidebar only). */
+  readonly highlight?: string;
   readonly onSelect: (id: string) => void;
   readonly onTogglePin: (id: string, nextPinned: boolean) => void;
   readonly onRequestRemove: (row: SessionListItem) => void;
@@ -76,9 +85,8 @@ export function SessionRow({
   const [draft, setDraft] = useState("");
   const title = getSessionTitle(row);
   const isPinned = row.pinnedAt !== null;
-  const index = variant === "index";
-  const fill = sessionRowFill(row, index && selected);
-  const number = index && ordinal !== null ? formatOrdinal(ordinal) : null;
+  const sidebar = variant === "sidebar";
+  const state = sessionRowState(row);
 
   const handlePinClick = (event: MouseEvent<HTMLButtonElement>): void => {
     event.stopPropagation();
@@ -121,8 +129,8 @@ export function SessionRow({
 
   const actions = (
     <>
-      <RemoveButton onClick={handleRemoveClick} />
       <PinToggle pinned={isPinned} pending={pinPending} onClick={handlePinClick} />
+      <RemoveButton onClick={handleRemoveClick} />
     </>
   );
 
@@ -131,15 +139,10 @@ export function SessionRow({
   if (editing) {
     return (
       <div
-        className={index ? "vex-ix-row" : "flex h-8 items-center bg-interactive-hover px-2"}
-        data-vex-ix-item={index ? "row" : undefined}
+        className={sidebar ? "vex-ls-row" : "flex h-8 items-center bg-interactive-hover px-2"}
+        data-vex-ls-item={sidebar ? "row" : undefined}
         data-editing=""
       >
-        {index ? (
-          <span aria-hidden className="vex-ix-row__n">
-            {number}
-          </span>
-        ) : null}
         <input
           autoFocus
           value={draft}
@@ -148,40 +151,45 @@ export function SessionRow({
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onRenameKeyDown}
           onBlur={commitRename}
-          className={cn(
-            "min-w-0 flex-1 focus:outline-none",
-            index
-              ? "vex-ix-row__input"
-              : "border border-line-2 bg-surface-1 px-0.5 text-[14px] leading-[20px] text-ink-primary",
-          )}
+          className={
+            sidebar
+              ? "vex-ls-row__input"
+              : "min-w-0 flex-1 border border-line-2 bg-surface-1 px-0.5 text-[14px] leading-[20px] text-ink-primary focus:outline-none"
+          }
         />
       </div>
     );
   }
 
-  const anchor = index ? (
+  const anchor = sidebar ? (
     <div
-      className="vex-ix-row"
-      data-vex-ix-item="row"
-      data-current={selected || undefined}
+      className="vex-ls-row"
+      data-vex-ls-item="row"
+      data-selected={selected || undefined}
     >
       <button
         type="button"
         onClick={() => onSelect(row.id)}
         onDoubleClick={startRename}
         aria-current={selected ? "true" : undefined}
-        className="vex-ix-row__select"
+        className="vex-ls-row__select"
       >
-        <span aria-hidden className="vex-ix-row__n">
-          {number}
+        <span className="vex-ls-row__t">
+          <MarkedTitle title={title} needle={highlight} />
         </span>
-        <span className="vex-ix-row__t">
-          {fill === null ? null : <Swatch state={fill} size={9} className="vex-ix-row__sw" />}
-          <span className="vex-ix-row__title">{title}</span>
-        </span>
-        <span className="vex-ix-row__time">{formatSessionTime(row.startedAt)}</span>
+        {/* A bare space: no width in the flex row, a word break in the
+          * select button's accessible name. */}
+        {" "}
+        {state === null ? (
+          <span className="vex-ls-row__time vex-num">{formatSessionTime(row.startedAt)}</span>
+        ) : (
+          <span className="vex-ls-row__state">
+            <Swatch state={state.fill} size={10} />
+            {state.word}
+          </span>
+        )}
       </button>
-      <div data-rail-actions className="vex-ix-row__actions">
+      <div data-rail-actions className="vex-ls-row__actions">
         {actions}
       </div>
     </div>
@@ -191,7 +199,7 @@ export function SessionRow({
       title={title}
       onSelect={() => onSelect(row.id)}
       onDoubleClick={startRename}
-      leading={fill === null ? undefined : <Swatch state={fill} size={10} />}
+      leading={state === null ? undefined : <Swatch state={state.fill} size={10} label={state.word} />}
       trailing={formatSessionTime(row.startedAt)}
       actions={actions}
     />
@@ -200,7 +208,7 @@ export function SessionRow({
   return (
     <HoverCard
       anchor={anchor}
-      content={<SessionHoverContent row={row} />}
+      content={<SessionHoverContent row={row} hint={onRename !== undefined} />}
       openDelayMs={500}
     />
   );

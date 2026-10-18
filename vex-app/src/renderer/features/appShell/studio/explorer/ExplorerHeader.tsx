@@ -11,15 +11,19 @@
  * The header is a SIBLING of the tree, never inside it: a `role="tree"` may
  * only contain tree items, so a button in there would put a control in the
  * arrow-key sequence a screen reader walks.
+ *
+ * R3 (docs/design/R3-MINIMAL.md section 4, "Studio"): one line in the left
+ * sidebar's group head register, "Explorer · {project}" in 12 / 500 muted,
+ * with the keys at the right as 14px line icons in ink 2 on 24 x 24 targets.
  */
 
 import type { JSX } from "react";
 import {
-  IconChevronUp,
-  IconFolderClose,
-  IconPlus,
-  IconRefresh,
-} from "../../../../components/icons/index.js";
+  LineChevronUp,
+  LineFile,
+  LineFolder,
+  LineRefresh,
+} from "../../../../components/icons/line/index.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
 import { cn } from "../../../../lib/utils.js";
 import {
@@ -63,6 +67,11 @@ export interface ExplorerHeaderProps {
    * repeated it would name itself twice and name the folder never.
    */
   readonly title?: string;
+  /**
+   * The section word the title follows ("Explorer"), drawn before it with a
+   * middle dot. Omitted, the header names the pane alone.
+   */
+  readonly section?: string;
   readonly className?: string;
 }
 
@@ -72,31 +81,29 @@ export function ExplorerHeader({
   onCreateFile,
   onCreateFolder,
   title,
+  section,
   className,
 }: ExplorerHeaderProps): JSX.Element {
   return (
-    <div
-      className={cn(
-        // A 30px row on the rail's paper with no rule and no plate: the
-        // Departure Mono 11px caps title is what separates it from the 13px
-        // rows below (docs/design/V10-SPREAD.md section 1, the micro-label
-        // register).
-        "flex h-[30px] shrink-0 items-center gap-1 pr-1 pl-5",
-        className,
-      )}
-    >
-      <span className="flex-1 truncate font-mono text-[11px] tracking-[0.14em] text-ink-secondary uppercase">
-        {title ?? EXPLORER_SECTION_LABEL}
-      </span>
+    <div className={cn("vex-st-xhead", className)}>
+      <h2 className="vex-st-xhead__t">
+        {section === undefined ? null : (
+          <>
+            <span className="vex-st-xhead__section">{section}</span>
+            <span aria-hidden="true"> · </span>
+          </>
+        )}
+        <span>{title ?? EXPLORER_SECTION_LABEL}</span>
+      </h2>
       {onCreateFile === undefined ? null : (
         <Tooltip label={EXPLORER_NEW_FILE_TOOLTIP} side="bottom">
           <button
             type="button"
             aria-label={EXPLORER_NEW_FILE_LABEL}
             onClick={onCreateFile}
-            className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="vex-st-xkey"
           >
-            <IconPlus size={12} />
+            <LineFile size={14} />
           </button>
         </Tooltip>
       )}
@@ -106,9 +113,9 @@ export function ExplorerHeader({
             type="button"
             aria-label={EXPLORER_NEW_FOLDER_LABEL}
             onClick={onCreateFolder}
-            className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="vex-st-xkey"
           >
-            <IconFolderClose size={12} />
+            <LineFolder size={14} />
           </button>
         </Tooltip>
       )}
@@ -117,9 +124,9 @@ export function ExplorerHeader({
           type="button"
           aria-label={EXPLORER_REFRESH_LABEL}
           onClick={onRefresh}
-          className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="vex-st-xkey"
         >
-          <IconRefresh size={12} />
+          <LineRefresh size={14} />
         </button>
       </Tooltip>
       <Tooltip label={EXPLORER_COLLAPSE_ALL_TOOLTIP} side="bottom">
@@ -127,9 +134,9 @@ export function ExplorerHeader({
           type="button"
           aria-label={EXPLORER_COLLAPSE_ALL_LABEL}
           onClick={onCollapseAll}
-          className="p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="vex-st-xkey"
         >
-          <IconChevronUp size={12} />
+          <LineChevronUp size={14} />
         </button>
       </Tooltip>
     </div>

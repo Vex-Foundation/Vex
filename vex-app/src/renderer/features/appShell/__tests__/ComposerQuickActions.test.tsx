@@ -1,67 +1,90 @@
 /**
- * ComposerQuickActions - the starter chips detached below the Signal Console.
- * Pins the round-2 contract: a chip is its LABEL AND NOTHING ELSE (owner QA
- * removed the leading intent glyphs), the 01-03 numbering is GONE (parallel
- * starters, not an ordered sequence), and picking a chip seeds the draft with
- * its full prompt.
+ * ComposerQuickActions - the welcome's task rows under the composer
+ * (docs/design/R3-MINIMAL.md section 7, reference d2). Pins the R3 contract:
+ * four task-first rows in the design's order, each a blue line icon and its
+ * label; a prompt row seeds the draft with its full prompt, and "Create a
+ * mission" opens the new session form instead of seeding a chat message.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ComposerQuickActions } from "../ComposerQuickActions.js";
+import { QUICK_ACTIONS } from "../composer-quick-actions.js";
+
+function renderRows(
+  onPick: (prompt: string) => void = () => {},
+  onCreateMission: () => void = () => {},
+) {
+  return render(
+    <ComposerQuickActions onPick={onPick} onCreateMission={onCreateMission} />,
+  );
+}
 
 describe("ComposerQuickActions", () => {
-  it("renders four text-only chips - no leading glyph, no 01-04 numbering", () => {
-    const { container } = render(<ComposerQuickActions onPick={() => {}} />);
-
-    // Four starter chips (Lighter desk / memecoins / Pendle yields / Trench
-    // launchpad), each a real focusable button.
-    const chips = screen.getAllByRole("button");
-    expect(chips).toHaveLength(4);
-
-    // A chip renders its label and no glyph beside it.
-    for (const chip of chips) {
-      expect(chip.querySelector("svg")).toBeNull();
-      expect(chip.childElementCount).toBe(1);
+  it("renders the four task rows in the design's order, each an icon and its label", () => {
+    renderRows();
+    const rows = screen.getAllByRole("button");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Check wallet balances",
+      "Review the market",
+      "Create a mission",
+      "Trade perps on Lighter",
+    ]);
+    for (const row of rows) {
+      // The icon is decoration: hidden from assistive tech, the label names
+      // the row.
+      const icon = row.querySelector("svg");
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("aria-hidden")).toBe("true");
+      expect(icon?.getAttribute("class")).toContain("vex-starter__icon");
     }
+  });
 
-    // The numbering was dropped - no 01/02/03 marks in the chip text.
-    for (const n of ["01", "02", "03", "04"]) {
-      expect(screen.queryByText(n)).toBeNull();
-    }
+  it("draws plain ruled rows - no band behind the list, no rounded box, no numbering", () => {
+    const { container } = renderRows();
+    const root = container.firstElementChild;
+    expect(root?.className).not.toMatch(/bg-|backdrop-blur|rounded/);
+    const row = root?.querySelector("button");
+    expect(row?.className).toBe("vex-starter");
     expect(container.textContent).not.toMatch(/\b0[1234]\b/);
   });
 
-  it("renders bare square starters on the rule - no band, no glass behind the row (V10)", () => {
-    const { container } = render(<ComposerQuickActions onPick={() => {}} />);
-
-    // The row root carries NO surface of its own: the starters are the
-    // surface (square, on the rule, flush with the field's leading edge,
-    // reference d2). No backdrop filter anywhere.
-    const root = container.firstElementChild;
-    expect(root).not.toBeNull();
-    expect(root?.className).not.toMatch(/bg-|backdrop-blur|justify-center|mx-auto/);
-    const chip = root?.querySelector("button");
-    expect(chip?.className).toContain("border-rule");
-    expect(chip?.className).toContain("h-8");
-    expect(chip?.className).not.toMatch(/rounded/);
-  });
-
-  it("the Lighter chip seeds the typed desk command, so Send opens the desk", () => {
+  it("the Lighter row seeds the typed desk command, so Send opens the desk", () => {
     const onPick = vi.fn();
-    render(<ComposerQuickActions onPick={onPick} />);
+    renderRows(onPick);
     fireEvent.click(screen.getByRole("button", { name: /trade perps on lighter/i }));
     expect(onPick).toHaveBeenCalledWith("Light it up.");
   });
 
-  it("seeds the draft with the chip's full prompt", () => {
+  it("seeds the draft with the row's full prompt", () => {
     const onPick = vi.fn();
-    render(<ComposerQuickActions onPick={onPick} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /hunt trending memecoins/i }),
-    );
+    renderRows(onPick);
+    fireEvent.click(screen.getByRole("button", { name: /check wallet balances/i }));
     expect(onPick).toHaveBeenCalledWith(
-      "Hunt the trendiest memecoins right now - combine DexScreener trending narratives with X sentiment if my X account is connected, and propose a plan before any trade.",
+      QUICK_ACTIONS.find((action) => action.label === "Check wallet balances")?.prompt,
     );
+    fireEvent.click(screen.getByRole("button", { name: /review the market/i }));
+    expect(onPick).toHaveBeenLastCalledWith(
+      QUICK_ACTIONS.find((action) => action.label === "Review the market")?.prompt,
+    );
+  });
+
+  it("Create a mission opens the new session form and seeds no chat message", () => {
+    const onPick = vi.fn();
+    const onCreateMission = vi.fn();
+    renderRows(onPick, onCreateMission);
+    fireEvent.click(screen.getByRole("button", { name: /create a mission/i }));
+    expect(onCreateMission).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("every prompt row carries a full-sentence prompt; the mission row carries none", () => {
+    for (const action of QUICK_ACTIONS) {
+      if (action.kind === "mission") {
+        expect(action.prompt).toBe("");
+      } else {
+        expect(action.prompt.trim().length).toBeGreaterThan(0);
+      }
+    }
   });
 });

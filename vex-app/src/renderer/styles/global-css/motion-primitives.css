@@ -16,9 +16,9 @@
  * (EASE_STANDARD / EASE_OUT / EASE_INOUT) for the Motion call sites. Both
  * halves are asserted by `__tests__/motion-tokens.test.ts`. */
 
-/* Desk entry settle — a live-appended transcript row settles onto the page.
+/* Desk entry settle: a live-appended transcript row settles onto the page.
  * One-shot, applied ONLY to rows appended after mount (history pagination
- * mounts at the final frame — see S3). */
+ * mounts at the final frame, see S3). */
 @keyframes vex-entry-settle {
   from {
     opacity: 0;
@@ -49,31 +49,14 @@
   animation: vex-answer-resolve 260ms var(--vex-ease-out) both;
 }
 
-/* BOOK panel slide-in — one-shot on mount (the panel is mounted/unmounted by
- * bookOpen, so this plays when it opens). */
-@keyframes vex-book-enter {
-  from {
-    opacity: 0;
-    transform: translateX(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.vex-book-enter {
-  animation: vex-book-enter 240ms var(--vex-ease-out) both;
-}
-
-/* MESSAGE SEND — the user's own message arriving in the transcript.
+/* MESSAGE SEND: the user's own message arriving in the transcript.
  *
  * A one-shot, TRANSFORM-ONLY entry on the row the send just appended: it rises
  * the last few px and settles at full size, which is the iMessage feel the
  * owner asked for without any of the machinery that feel usually implies.
  *
- * It is deliberately NOT a bubble flying out of the composer: that is a FLIP —
- * measure both boxes, animate the delta — and FLIP is what Motion's `layout`
+ * It is deliberately NOT a bubble flying out of the composer: that is a FLIP
+ * (measure both boxes, animate the delta), and FLIP is what Motion's `layout`
  * does, which MOTION-POLICY bans outright. A build-time keyframe on the
  * arriving row buys ~90% of the impression for none of the policy cost.
  *
@@ -88,7 +71,7 @@
  * (The pre-follow model needed the same rule for its pre-paint top-anchor
  * measurement - the reason changed with the scroll swap, the rule did not.)
  *
- * Reduced motion collapses this to a resting frame via base.css — an instant
+ * Reduced motion collapses this to a resting frame via base.css: an instant
  * append, which is exactly right: the message is already there. */
 @keyframes vex-message-send {
   from {
@@ -108,9 +91,10 @@
   transform-origin: center bottom;
 }
 
-/* BOOK rail drop settle — the "plum": a card that has just been moved to a new
- * slot lands with a soft plop instead of teleporting. One-shot, applied ONLY to
- * the single moved card (never the stack), and TRANSFORM-ONLY — opacity is
+/* Section drop settle, the "plum": a Portfolio section that has just been
+ * moved to a new slot lands with a soft plop instead of teleporting. One-shot,
+ * applied ONLY to the single moved section (never the stack), and
+ * TRANSFORM-ONLY: opacity is
  * untouched, so a settling card never reads as a fresh arrival the way
  * `vex-entry-settle` does.
  *
@@ -136,25 +120,26 @@
   animation: vex-section-settle 240ms var(--vex-ease-out) both;
 }
 
-/* PremiumBadge "awaiting your action" shimmer — applied ONLY to a badge in the
- * `ready` state (the mission/plan is prepared and waiting for the host to
- * accept). Opacity pulse only (no transform, no moving stripe), so the global
- * prefers-reduced-motion rule (global-css/base.css) collapses it to a stable resting frame
- * rather than a flash. The pulse loops while the badge stays in `ready`;
- * the badge drops the class on accept, so the only looping motion is bound
- * to a real pending action. */
+/* "Awaiting your action": applied ONLY to a badge in the `ready` state (the
+ * mission's contract or the compaction is prepared and waits for the user to
+ * accept it). ATTENTION ONCE, on arrival (docs/design/R3-MINIMAL.md section
+ * 11): one dip of the opacity and back, on the reveal step each way (two
+ * alternating iterations of one ramp), then the badge rests; the swatch and
+ * the word carry the state from there. It used to loop for as long as the
+ * badge waited, which R3's "attention once" retires. Opacity only, no
+ * transform. Reduced motion: no dip at all (stated below, not only by the
+ * base.css catch-all). */
 @keyframes vex-badge-shimmer {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
+  from {
     opacity: 1;
+  }
+  to {
+    opacity: 0.55;
   }
 }
 
 .vex-badge--shimmer {
-  animation: vex-badge-shimmer 2.5s ease-in-out infinite;
+  animation: vex-badge-shimmer var(--vex-duration-reveal) var(--vex-ease-standard) 2 alternate;
 }
 
 /* ============================================================ *
@@ -260,7 +245,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vex-surface-enter {
+  .vex-surface-enter,
+  .vex-badge--shimmer {
     animation: none;
   }
 

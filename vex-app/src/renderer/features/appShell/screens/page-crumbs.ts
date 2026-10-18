@@ -1,0 +1,129 @@
+/**
+ * What a page is called, and where it sits: the title bar's left cell names
+ * the open page and, for a subpage, its crumb ("Portfolio / Agent Scan",
+ * "Portfolio / All assets / USD Coin history"), each parent a link up to it
+ * (docs/design/R3-MINIMAL.md sections 3 and 9.2). The page itself draws no
+ * crumb and no close row: its content starts right under the title bar.
+ *
+ * Pure: a route in, words and parent routes out. The title bar renders them
+ * (`RunningHead.tsx`); going up a parent goes through the page trail
+ * (`page-trail.ts`), so the way back stays true.
+ */
+
+import { sanitizeTokenSymbol } from "@shared/token-symbol-sanitizer.js";
+import { truncateAddress } from "../../../lib/format.js";
+import {
+  assetsReturnToScope,
+  assetsRouteFor,
+  assetsRouteScope,
+  type AssetsRouteScope,
+  type ShellRoute,
+  type ShellRouteToken,
+} from "../../../stores/uiStore/shell-route.js";
+
+/** One parent in a subpage's crumb: its words and the route it goes up to. */
+export interface PageCrumb {
+  readonly label: string;
+  readonly route: ShellRoute;
+}
+
+/** Portfolio, the parent of every money subpage. */
+export const PORTFOLIO_CRUMB: PageCrumb = {
+  label: "Portfolio",
+  route: { kind: "portfolio", origin: null },
+};
+
+/** The open page's name and its parents, outermost first (none for a top-level page). */
+export interface PageTitle {
+  readonly name: string;
+  readonly parents: readonly PageCrumb[];
+  /** A top-level page's muted word beside its name ("Read-only" on Memory). */
+  readonly sub?: string;
+}
+
+/** The All-assets register's name for its scope (a narrowed one never reads as everything). */
+export function assetsPageName(scope: AssetsRouteScope): string {
+  switch (scope.kind) {
+    case "global":
+      return "All assets";
+    case "session":
+      return "Session assets";
+    case "project":
+      return "Project assets";
+  }
+}
+
+/**
+ * A register's full name, as its dialog and the title bar say it: a project
+ * register carries the project's name once the read answers ("Project
+ * assets: vex-core"); until then it says only what kind of register it is,
+ * rather than a placeholder standing in for a project that is not confirmed.
+ */
+export function assetsPageTitle(scope: AssetsRouteScope, projectName: string | null): string {
+  if (scope.kind === "project" && projectName !== null) return `Project assets: ${projectName}`;
+  return assetsPageName(scope);
+}
+
+/** The words when a route carries no usable token identity at all. */
+export const UNNAMED_TOKEN = "Token";
+
+/**
+ * A token's display name: the main-sanitized name, else the sanitized symbol,
+ * else the truncated address. Never raw provider text.
+ *
+ * Total over whatever the route carries: the title bar renders this outside
+ * the centre's error boundary, so a malformed route (no token, a token
+ * without an address) degrades to "Token" instead of throwing in the title
+ * bar and taking the whole window down with it.
+ */
+export function tokenDisplayName(token: ShellRouteToken | null | undefined): string {
+  if (token === null || token === undefined) return UNNAMED_TOKEN;
+  const name = typeof token.tokenName === "string" && token.tokenName !== "" ? token.tokenName : null;
+  const address =
+    typeof token.tokenAddress === "string" && token.tokenAddress !== ""
+      ? truncateAddress(token.tokenAddress)
+      : null;
+  return name ?? sanitizeTokenSymbol(token.symbol) ?? address ?? UNNAMED_TOKEN;
+}
+
+/** The open page's title, or null with no page open. */
+export function titleBarPageOf(route: ShellRoute): PageTitle | null {
+  switch (route.kind) {
+    case "none":
+      return null;
+    case "memory":
+      // a register of what Vex has learned that offers no edit (the d3x-memory render)
+      return { name: "Memory", parents: [], sub: "Read-only" };
+    case "sessions":
+      return { name: "Sessions", parents: [] };
+    case "howItWorks":
+      return { name: "How Vex works", parents: [] };
+    case "portfolio":
+      return { name: "Portfolio", parents: [] };
+    case "board":
+      return { name: "Board", parents: [] };
+    case "needsYou":
+      return { name: "Needs you", parents: [] };
+    case "settings":
+      return { name: "Settings", parents: [] };
+    case "agentScan":
+      return { name: "Agent Scan", parents: [PORTFOLIO_CRUMB] };
+    case "assets":
+      return { name: assetsPageName(assetsRouteScope(route)), parents: [PORTFOLIO_CRUMB] };
+    case "tokenHistory": {
+      const name = `${tokenDisplayName(route.token)} history`;
+      // A route without its return point reads as opened from Portfolio.
+      if (route.returnTo?.kind !== "assets") return { name, parents: [PORTFOLIO_CRUMB] };
+      // Opened from a register: the crumb goes back to THAT scope, never the
+      // global one (the same route a close returns to).
+      const scope = assetsReturnToScope(route.returnTo);
+      return {
+        name,
+        parents: [
+          PORTFOLIO_CRUMB,
+          { label: assetsPageName(scope), route: assetsRouteFor(scope, null) },
+        ],
+      };
+    }
+  }
+}

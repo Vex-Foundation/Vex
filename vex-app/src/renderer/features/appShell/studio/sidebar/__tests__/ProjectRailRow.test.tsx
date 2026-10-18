@@ -80,15 +80,17 @@ describe("standing project permission", () => {
     );
     const row = screen.getByText(project.name).closest("button");
     if (row === null) throw new Error("Project selection control is missing");
-    const permission = screen.getByText("FULL ACCESS");
-    expect(permission.className).toContain("vex-micro-label");
-    expect(permission.className).toContain("text-warning-label");
+    // The outlined caps tag (docs/design/R3-MINIMAL.md section 1.3): the
+    // source is sentence case, the tag paints the caps.
+    const permission = screen.getByText("Full access");
+    expect(permission.className).toContain("vex-tag");
+    expect(permission.className).toContain("vex-st-tag");
     expect(screen.getByText(project.name).className).toContain("truncate");
     expect(row.getAttribute("aria-description")).toBe(projectPermissionDescription("full"));
     // JSDOM does not paint Tailwind: pin the layout seam here, then measure
     // computed opacity and nonoverlapping boxes in the Electron capture.
     const assertPersistentLayout = () => {
-      const badge = screen.getByText("FULL ACCESS");
+      const badge = screen.getByText("Full access");
       const state = badge.closest("[data-rail-persistent-state]");
       expect(state).not.toBeNull();
       for (let node: Element | null = badge; node !== null; node = node.parentElement) {
@@ -116,9 +118,10 @@ describe("standing project permission", () => {
     const project = makeProject({ permission: "full", files: { lastRenderedScopeVersion: 1, generatorFingerprint: "test", artifacts: [makeArtifact("drifted")] } });
     render(<ProjectRailRow project={project} selected={false} collapsed onSelect={() => {}} />);
     const row = screen.getByRole("button", { name: project.name });
-    expect(screen.queryByText("FULL ACCESS")).toBeNull();
+    expect(screen.queryByText("Full access")).toBeNull();
+    // The 14px line warning over the folder key, the smallest line icon size.
     const warning = row.querySelector('[data-vex-project-permission="full"] svg');
-    expect(warning?.getAttribute("width")).toBe("13");
+    expect(warning?.getAttribute("width")).toBe("14");
     expect(row.querySelector("[data-vex-project-drift]")).not.toBeNull();
     expect(row.getAttribute("aria-description")).toBe(`${projectPermissionDescription("full")} ${projectDriftLabel(project.name, STUDIO_DRIFT_SENTENCES.drifted ?? "")}`);
     act(() => row.focus());

@@ -1,87 +1,67 @@
 /**
- * Pin status → badge wording mapping. Drift here would silently mislead
+ * Pin status → state word mapping. Drift here would silently mislead
  * the user about whether a probe passed.
  *
- * `badgeLabel` decouples the visible chip text from `StepStatus` so screens
- * can surface contextual wording (READY, SETUP, etc.) without changing the
+ * `badgeLabel` decouples the visible word from `StepStatus` so screens
+ * can surface contextual wording (Ready, Setup, etc.) without changing the
  * semantic state value; the default mapping is asserted here for the four
- * canonical states.
+ * canonical states, each with its fill (a state is a fill and a word).
  */
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { StepRow, type StepStatus } from "../StepRow.js";
 
-function dummyIcon(): JSX.Element {
-  return <svg aria-hidden data-testid="icon" />;
-}
-
 describe("StepRow", () => {
   afterEach(cleanup);
 
-  it.each<[StepStatus, string]>([
-    ["loading", "CHECKING…"],
-    ["ok", "OK"],
-    ["warn", "WARN"],
-    ["fail", "FAIL"],
-  ])("renders default status badge for %s", (status, expectedText) => {
-    const { getByText } = render(
-      <StepRow label="Probe" status={status} detail={null} icon={dummyIcon()} />,
+  it.each<[StepStatus, string, string]>([
+    ["loading", "Checking", "ongoing"],
+    ["ok", "OK", "done"],
+    ["warn", "Warning", "warning"],
+    ["fail", "Failed", "error"],
+  ])("renders the default word and fill for %s", (status, expectedText, fill) => {
+    const { getByText, container } = render(
+      <StepRow label="Probe" status={status} detail={null} />,
     );
     expect(getByText(expectedText)).toBeDefined();
+    expect(container.querySelector(`.vex-swatch[data-s="${fill}"]`)).not.toBeNull();
   });
 
   it("renders explicit badgeLabel overriding the default for the status", () => {
     const { getByText, queryByText } = render(
-      <StepRow
-        label="Local runtime"
-        status="ok"
-        detail={null}
-        icon={dummyIcon()}
-        badgeLabel="READY"
-      />,
+      <StepRow label="Local runtime" status="ok" detail={null} badgeLabel="Ready" />,
     );
-    expect(getByText("READY")).toBeDefined();
+    expect(getByText("Ready")).toBeDefined();
     expect(queryByText("OK")).toBeNull();
   });
 
-  it("renders detail line when provided", () => {
+  it("renders detail line when provided, in the figure face", () => {
     const { getByText } = render(
-      <StepRow
-        label="Operating system"
-        status="ok"
-        detail="Linux / x64"
-        icon={dummyIcon()}
-      />,
+      <StepRow label="Operating system" status="ok" detail="Linux / x64" />,
     );
-    expect(getByText("Linux / x64")).toBeDefined();
+    const detail = getByText("Linux / x64");
+    expect(detail.className).toContain("vex-fr-probe__d");
+    expect(detail.className).toContain("vex-num");
   });
 
   it("omits the detail span when detail is null", () => {
     const { container } = render(
-      <StepRow
-        label="Network"
-        status="loading"
-        detail={null}
-        icon={dummyIcon()}
-      />,
+      <StepRow label="Network" status="loading" detail={null} />,
     );
-    // Detail line is the only `text-[11px]` span in the row; label is the
-    // standard `text-sm` and the badge uses `text-[10px]`.
-    expect(container.querySelectorAll(".text-\\[11px\\]").length).toBe(0);
+    expect(container.querySelectorAll(".vex-fr-probe__d")).toHaveLength(0);
   });
 
   it("exposes status as data attribute (CSS hooks + e2e selectors)", () => {
-    const { container } = render(
-      <StepRow label="x" status="warn" detail={null} icon={dummyIcon()} />,
-    );
+    const { container } = render(<StepRow label="x" status="warn" detail={null} />);
     expect(container.querySelector('[data-step-status="warn"]')).not.toBeNull();
   });
 
-  it("renders the supplied icon inside the icon slot", () => {
-    const { getByTestId } = render(
-      <StepRow label="x" status="ok" detail={null} icon={dummyIcon()} />,
-    );
-    expect(getByTestId("icon")).toBeDefined();
+  it("reads blue only while the probe is in flight", () => {
+    const loading = render(<StepRow label="x" status="loading" detail={null} />);
+    expect(loading.container.querySelector("[data-live]")).not.toBeNull();
+    cleanup();
+    const done = render(<StepRow label="x" status="ok" detail={null} />);
+    expect(done.container.querySelector("[data-live]")).toBeNull();
   });
 });

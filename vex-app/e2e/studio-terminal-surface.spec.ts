@@ -5,7 +5,7 @@
  *
  * jsdom resolves no cascade and has no WebGL, so the claims the terminal
  * surface makes are provable only here. The V10 pane is opaque: the field
- * paints the whole reading surface (docs/design/V10-SPREAD.md section 1), with
+ * paints the whole reading surface (docs/design/R3-MINIMAL.md section 9.5), with
  * no backdrop under the glyphs, so what is measured is:
  *
  *  - THE OPAQUE PANE. The pane carries no backdrop filter and its background is
@@ -101,7 +101,8 @@ async function withTourHidden<T>(page: Page, run: () => Promise<T>): Promise<T> 
 /**
  * Flip the theme through Settings (the product path: the appearance cubes),
  * from whatever mode the shell is in. The menu that reaches Settings lives in
- * the Agent rail, so a Studio caller is switched there and back; the project
+ * the Agent sidebar, so a Studio caller is switched there through the nav's
+ * Chat row and back through its Studio row; the project
  * stays selected across the switch, and is reopened from the rail when it did
  * not.
  */
@@ -110,8 +111,8 @@ async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void
   if ((await html.getAttribute("data-vex-theme")) === theme) return;
   const shell = page.locator('[data-vex-screen="appShell"]');
   const wasStudio = (await shell.getAttribute("data-vex-runtime-mode")) === "studio";
-  const modes = page.getByRole("radiogroup", { name: "Runtime mode" });
-  if (wasStudio) await modes.getByRole("radio", { name: "Agent" }).click();
+  const nav = page.getByRole("navigation", { name: "Main" });
+  if (wasStudio) await nav.getByRole("button", { name: "Chat" }).click();
   // The tour navigator is docked over the rail's menu button; it is QA
   // scaffolding and is taken out of the way for the click, as qa-screenshots
   // does.
@@ -135,7 +136,8 @@ async function pickTheme(page: Page, theme: "chronos" | "celeris"): Promise<void
     });
   }
   if (!wasStudio) return;
-  await modes.getByRole("radio", { name: "Studio" }).click();
+  // Back in agent mode the way into Studio is the left sidebar nav's row.
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Studio" }).click();
   const surface = page.locator(".vex-terminal-surface--active");
   if ((await surface.count()) === 0) {
     await page
@@ -287,7 +289,7 @@ test("Studio terminal surface: opaque pane, gutter, scroll throughput, contrast 
 
   // THE SCROLLBAR (owner review 2026-09-04: "smaller, smoother"; square
   // since the V10 spread, which allows no radius anywhere,
-  // docs/design/V10-SPREAD.md section 1). The `.vex-scroll` shape on xterm's
+  // docs/design/R3-MINIMAL.md, rules). The `.vex-scroll` shape on xterm's
   // slider, the vestigial viewport gutter gone, the colour from the app's
   // ladder, VS Code's reveal/hide, and the fade collapsed under reduced motion.
   expect(scrollbar.viewportGutter).toBe(0);

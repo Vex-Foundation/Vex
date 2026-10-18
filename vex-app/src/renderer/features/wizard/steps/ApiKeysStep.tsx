@@ -1,15 +1,15 @@
 /**
- * Wizard Step 3 — API keys (M9 + PR8 redesign — per-provider glass cards).
+ * Wizard Step 3 - API keys (M9; R3 Minimal restyle: one provider row per key).
  *
  * Stores the optional API keys via `vex.onboarding.apiKeysSet`. Per
  * skill §14: secret inputs are uncontrolled DOM refs, plain-async
  * submit, refs cleared synchronously after firing the IPC. Per-field
- * status badges derive from envState booleans only — values never
+ * status words derive from envState booleans only - values never
  * round-trip.
  *
  * Optional-connections model: API keys are OPTIONAL. Jupiter is needed
  * to swap tokens on Solana, but the operator may defer it (and the rest)
- * to in-app Settings. Nothing on this step BLOCKS advancement anymore —
+ * to in-app Settings. Nothing on this step BLOCKS advancement anymore -
  * we warn and let the user continue.
  *
  * Skip-card semantics (codex turn 1 D3):
@@ -21,7 +21,7 @@
  *     mode (user clicked Edit from Review) we always render the full
  *     form so they can change anything.
  *
- * Chrome lives in `WizardStepPanel` — `data-vex-wizard-apikeys`
+ * Chrome lives in `WizardStepPanel` - `data-vex-wizard-apikeys`
  * forwarded onto the panel root via typed `panelDataAttr`.
  */
 
@@ -38,7 +38,6 @@ import {
   useStepAdvance,
   type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
-import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import {
   buildPayload,
@@ -133,7 +132,7 @@ export function ApiKeysStep({
       const payload = buildPayload(refs);
       // Optional-connections model: API keys never block advancement. An
       // empty Save with Jupiter unconfigured still advances (the
-      // missing-Jupiter warning alert is always visible) — if nothing was
+      // missing-Jupiter warning alert is always visible) - if nothing was
       // entered, skip the IPC and just advance.
       if (Object.keys(payload).length === 0) {
         await advanceToEmbedding();
@@ -160,18 +159,17 @@ export function ApiKeysStep({
   );
 
   const onSkipContinue = useCallback(async () => {
-    // Optional-connections model: skipping never blocks — the Jupiter
+    // Optional-connections model: skipping never blocks - the Jupiter
     // warning is surfaced visually but the user advances.
     setFormError(null);
     await advanceToEmbedding();
   }, [advanceToEmbedding]);
 
-  const meta = WIZARD_STEP_META.apiKeys;
 
   if (canSkip) {
     return (
       <ApiKeysSkipPanel
-        icon={meta.icon}
+        env={envState}
         formError={formError}
         advancePending={stepAdvance.isPending}
         onContinue={() => {
@@ -209,8 +207,8 @@ export function ApiKeysStep({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "apikeys", value: "form" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={envState}
       title="Connect your API keys"
       description="Each key unlocks one tool, and every one of them is optional. Keys are stored on this machine and sent only to their own provider when a tool that needs them runs - never anywhere else."
       formProps={{
@@ -230,7 +228,7 @@ export function ApiKeysStep({
         />
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="vex-wz-stack">
         {!jupiterConfigured ? (
           <p
             role="status"
@@ -243,49 +241,48 @@ export function ApiKeysStep({
             {JUPITER_MISSING_WARNING}
           </p>
         ) : null}
-        <JupiterCard
-          status={statusFor(jupiterConfigured)}
-          configured={jupiterConfigured}
-          inputRef={refs.jupiter}
-        />
+        <div className="vex-wz-list">
+          <JupiterCard
+            status={statusFor(jupiterConfigured)}
+            configured={jupiterConfigured}
+            inputRef={refs.jupiter}
+          />
 
-        <TavilyCard
-          status={statusFor(tavilyConfigured)}
-          inputRef={refs.tavily}
-        />
+          <TavilyCard
+            status={statusFor(tavilyConfigured)}
+            inputRef={refs.tavily}
+          />
 
-        <RettiwtCard
-          status={statusFor(rettiwtConfigured)}
-          inputRef={refs.rettiwt}
-        />
+          <RettiwtCard
+            status={statusFor(rettiwtConfigured)}
+            inputRef={refs.rettiwt}
+          />
 
-        <RelayCard
-          status={statusFor(relayConfigured)}
-          inputRef={refs.relay}
-        />
+          <RelayCard
+            status={statusFor(relayConfigured)}
+            inputRef={refs.relay}
+          />
 
-        {flowMode === "back-edit" ? (
-          <LighterKeysConfigSection
-            configuredCount={
-              Number(lighterRhcTradingConfigured) +
-              Number(lighterCoreTradingConfigured)
-            }
-          >
-            <div
-              className="flex flex-col gap-6"
-              data-vex-lighter-environment-list
+          {flowMode === "back-edit" ? (
+            <LighterKeysConfigSection
+              configuredCount={
+                Number(lighterRhcTradingConfigured) +
+                Number(lighterCoreTradingConfigured)
+              }
             >
+              <div className="vex-wz-list" data-vex-lighter-environment-list>
+                {rhcTradingCard}
+                {coreTradingCard}
+              </div>
+              <LighterCredentialConnections />
+            </LighterKeysConfigSection>
+          ) : (
+            <>
               {rhcTradingCard}
               {coreTradingCard}
-            </div>
-            <LighterCredentialConnections />
-          </LighterKeysConfigSection>
-        ) : (
-          <>
-            {rhcTradingCard}
-            {coreTradingCard}
-          </>
-        )}
+            </>
+          )}
+        </div>
 
         {formError ? (
           <p className="text-sm text-danger" role="alert">

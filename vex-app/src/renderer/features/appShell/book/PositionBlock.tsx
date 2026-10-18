@@ -1,276 +1,180 @@
 /**
- * POSITION — the wallet portfolio card. Card-system grammar (`PortfolioCard`,
- * C3) since the book became one card stack: the display total from
- * `PortfolioOverviewCard`'s hero convention (Departure Mono), the snapshot/PnL line, and the
- * resolved wallet COUNT in the card's trailing slot.
+ * THE PORTFOLIO PAGE'S TOTAL (docs/design/R3-MINIMAL.md section 9.1): the top
+ * of the page. At the left, what the total includes (13 muted), the total in
+ * the money headline (mono 34 / 500), the snapshot it compares with and when
+ * the figures were loaded (13); at the right, the refresh key and the scope
+ * chips the page hands in.
  *
- * TRI-SCOPE, driven purely by its `scope` input (the studio seam, #3 - the
- * card never reads session state inside):
- *   - `global`   → the whole inventory, titled "Portfolio".
- *   - `session`  → that session's wallet-scope portfolio, titled "Position".
- *   - `project`  → that Vex Studio project's SELECTED wallets, also titled
- *                  "Position": to the user it is the same instrument, and the
- *                  headline of the rail already names the project.
+ * SCOPE IS THE ONLY INPUT (`PortfolioPageScope`): the whole inventory, one
+ * inventory wallet, the open chat's wallets or the selected project's. The
+ * renderer never supplies a wallet address of its own choosing; every read
+ * goes to main as the validated scope (or the inventory address main
+ * re-authorizes), and no scope ever falls back to a wider one.
  *
- * The renderer never supplies a wallet address; `usePortfolio` takes the
- * discriminated scope straight to the wire and main resolves the server-side
- * allow-list (`project_wallets` for the project arm). This component only
- * renders the resolved DTO, and no arm ever falls back to a wider scope - a
- * project card showing every wallet Vex knows about would be a wrong answer
- * about whose funds are on screen, not a degraded one.
+ * THE SNAPSHOT LINE SAYS WHAT THE DTO SAYS. `snapshotTotalUsd` is the latest
+ * complete snapshot and `pnlVsPrev` is that snapshot against the one before
+ * it, so the line names it that way; it is never a live gain computed against
+ * the live total (which counts settled balances only, while a snapshot also
+ * counts money in transit). The snapshot's AGE is printed beside it (owner
+ * measurement 2026-09-04: a delta against a 31-day-old baseline looked like
+ * this hour's), and past 24 hours the delta drops to the muted ink. The
+ * change is ink, never a trading colour (section 1.2).
  *
- * SESSION and PROJECT scope render the unified chain switcher
- * (`PositionChains` - one chip row over EVM quick chains + Solana, per-chain
- * top-3 for the selected chain); they differ only in WHERE the pair of wallet
- * families comes from (`useSessionWallets` vs the project's own selection).
- * GLOBAL delegates to `GlobalWalletSwitcher` (WP-L2), which owns the
- * wallet-identity presentation + the flat top-holdings list as the "All
- * wallets" default AND — with more than one wallet configured — a per-wallet
- * chip switcher that swaps in the SAME `PositionChains` presentation scoped to
- * one wallet.
+ * FRESHNESS: "loaded {time}" is the query's own fetch time, true for the app
+ * and not a claim about when the chain was read (the DTO carries no read
+ * time). Chain read problems are printed under the total (`ChainReadWarning`).
  *
- * The hero Total above `GlobalWalletSwitcher` ALWAYS stays the full
- * cross-wallet aggregate — selecting one wallet in the switcher never changes
- * it; the wallet-scoped body shows that wallet's own total separately.
- *
- * One display figure in mono, the PnL in ink (direction is the sign, never a
- * colour), `tabular-nums` on every figure.
+ * The activity terminalization and progress pushes that keep these figures
+ * following a pending transaction are subscribed once for the whole app, in
+ * AppShell; this block mounts none of its own.
  */
 
-import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
+import { useUiStore } from "../../../stores/uiStore.js";
+import { ChainReadWarning } from "./portfolio/ChainReadWarning.js";
+import { CardStateNote, SectionLink, originOf } from "./portfolio/PortfolioCard.js";
 import {
-  usePortfolio,
-  useActivityProgressInvalidation,
-  useActivityResolvedInvalidation,
-} from "../../../lib/api/portfolio.js";
-import { useSessionWallets } from "../../../lib/api/session-wallets.js";
-import { useProject } from "../../../lib/api/projects.js";
-import { formatUsd, formatUsdDelta } from "../../../lib/format.js";
-import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
+  totalIncludesLine,
+  usePageScopePortfolio,
+  type PortfolioPageScope,
+} from "./portfolio/portfolio-page-scope.js";
 import {
-  portfolioReadInputFor,
-  type PortfolioCardScope,
-} from "./portfolio/portfolio-scope.js";
+  NOT_AVAILABLE,
+  clockFromMs,
+  usdDeltaFigure,
+  usdFigure,
+} from "./portfolio/portfolio-format.js";
 import { snapshotAge } from "./portfolio/snapshot-age.js";
-import { GlobalWalletSwitcher } from "./GlobalWalletSwitcher.js";
-import { PositionChains } from "./PositionChains.js";
 import { PortfolioRefreshButton } from "./PortfolioRefreshButton.js";
 
 export function PositionBlock({
   scope,
+  chips,
 }: {
-  /** Wallet scope this card reads - never session state read inside. */
-  readonly scope: PortfolioCardScope;
+  /** The page's scope - never session or project state read inside. */
+  readonly scope: PortfolioPageScope;
+  /** The scope chips, owned by the page (their selection is the page's). */
+  readonly chips: ReactNode;
 }): JSX.Element {
-  // Wave P — subscribe the portfolio queries to the terminalization push. This
-  // card is mounted for the whole app shell, so one subscription here covers
-  // every portfolio surface without a second listener per screen.
-  useActivityResolvedInvalidation();
-  // OD-7 — the pending half: an observation of a row that is STILL pending.
-  // Without it the 5 s lane cadence reached this block only on the 60 s poll.
-  useActivityProgressInvalidation();
-  const scoped = scope.kind !== "global";
-  const title = scoped ? "Position" : "Portfolio";
-
-  const query = usePortfolio(portfolioReadInputFor(scope));
+  const query = usePageScopePortfolio(scope);
   const result = query.data;
   const portfolio = result?.ok ? result.data : null;
 
+  let main: JSX.Element;
   if (query.isLoading) {
-    return (
-      <PortfolioCard eyebrow={title}>
-        <CardStateNote tone="loading">Loading…</CardStateNote>
-      </PortfolioCard>
-    );
-  }
-
-  if ((result !== undefined && !result.ok) || query.isError) {
-    return (
-      <PortfolioCard eyebrow={title}>
-        <CardStateNote tone="warn">
-          Couldn&apos;t load your portfolio.
-        </CardStateNote>
-      </PortfolioCard>
-    );
-  }
-
-  if (portfolio === null || portfolio.walletCount === 0) {
-    return (
-      <PortfolioCard eyebrow={title}>
-        <CardStateNote>{emptyScopeNote(scope)}</CardStateNote>
-      </PortfolioCard>
+    main = <CardStateNote tone="loading">Loading your portfolio…</CardStateNote>;
+  } else if ((result !== undefined && !result.ok) || query.isError) {
+    main = <CardStateNote tone="warn">Couldn&apos;t load your portfolio.</CardStateNote>;
+  } else if (portfolio === null || portfolio.walletCount === 0) {
+    main = <EmptyScope scope={scope} />;
+  } else {
+    main = (
+      <TotalFigure
+        scope={scope}
+        portfolio={portfolio}
+        loadedAt={query.dataUpdatedAt}
+      />
     );
   }
 
   return (
-    <PortfolioCard
-      eyebrow={title}
-      trailing={
-        <>
-          {portfolio.walletCount}{" "}
-          {portfolio.walletCount === 1 ? "wallet" : "wallets"}
-          <PortfolioRefreshButton />
-        </>
-      }
-    >
-      {scope.kind === "session" ? (
-        <SessionPositionBody portfolio={portfolio} sessionId={scope.sessionId} />
-      ) : scope.kind === "project" ? (
-        <ProjectPositionBody portfolio={portfolio} projectId={scope.projectId} />
-      ) : (
-        <PositionBody portfolio={portfolio} />
-      )}
-    </PortfolioCard>
+    <header className="vex-pf-top" data-vex-area="portfolio-total">
+      <div className="vex-pf-top__main">{main}</div>
+      <div className="vex-pf-top__side">
+        <PortfolioRefreshButton />
+        {chips}
+      </div>
+    </header>
   );
 }
 
 /**
- * What "this scope holds nothing" says, per scope. Each arm names the scope the
- * user is looking at, so an empty project rail never reads as an empty wallet.
- * Exhaustive over `PortfolioCardScope`: a new member fails to compile here.
+ * What "this scope holds nothing" says, per scope, and for the whole
+ * inventory the way to add a wallet. Exhaustive over the page scope.
  */
-function emptyScopeNote(scope: PortfolioCardScope): string {
+function EmptyScope({ scope }: { readonly scope: PortfolioPageScope }): JSX.Element {
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
   switch (scope.kind) {
     case "global":
-      return "No wallets configured.";
+    case "wallet":
+      return (
+        <div className="vex-pf-top__empty">
+          <CardStateNote>
+            No wallets configured yet. Add your first and your total appears here.
+          </CardStateNote>
+          <SectionLink
+            onClick={(event) =>
+              setShellRoute({ kind: "settings", origin: originOf(event), section: "wallets" })
+            }
+          >
+            Add wallet
+          </SectionLink>
+        </div>
+      );
     case "session":
-      return "No wallets in this session.";
+      return <CardStateNote>No wallets in this session.</CardStateNote>;
     case "project":
-      return "No wallets selected for this project.";
+      return <CardStateNote>No wallets selected for this project.</CardStateNote>;
   }
 }
 
-/**
- * Session-scope body: the hero total, then the unified chain switcher.
- * `key={sessionId}` remounts the switcher per session so the selected chain
- * always resets to the default.
- */
-function SessionPositionBody({
-  portfolio,
-  sessionId,
-}: {
-  readonly portfolio: PortfolioDto;
-  readonly sessionId: string;
-}): JSX.Element {
-  const walletsQuery = useSessionWallets(sessionId);
-  const scope = walletsQuery.data?.ok ? walletsQuery.data.data : null;
-  return (
-    <div className="flex flex-col gap-2">
-      <TotalFigure portfolio={portfolio} />
-      <PositionChains
-        key={sessionId}
-        chains={portfolio.chains}
-        hasEvmWallet={scope?.evm != null}
-        hasSolanaWallet={scope?.solana != null}
-      />
-    </div>
-  );
-}
-
-/**
- * Project-scope body: the same hero total and the same chain switcher, with
- * the wallet families taken from the PROJECT'S OWN selection
- * (`ProjectDto.wallets`, the same read `WalletPairCard` uses) rather than from
- * a session. `key={projectId}` remounts the switcher per project so the
- * selected chain always resets to the default, exactly as a session switch
- * does on the agent rail.
- *
- * A failed or unknown project read leaves both families FALSE, which renders
- * no chip row at all rather than a row of chains this project may not hold.
- */
-function ProjectPositionBody({
-  portfolio,
-  projectId,
-}: {
-  readonly portfolio: PortfolioDto;
-  readonly projectId: string;
-}): JSX.Element {
-  const projectQuery = useProject(projectId);
-  const result = projectQuery.data;
-  const project = result !== undefined && result.ok ? result.data : null;
-  return (
-    <div className="flex flex-col gap-2">
-      <TotalFigure portfolio={portfolio} />
-      <PositionChains
-        key={projectId}
-        chains={portfolio.chains}
-        hasEvmWallet={project?.wallets.evm != null}
-        hasSolanaWallet={project?.wallets.solana != null}
-      />
-    </div>
-  );
-}
-
-function PositionBody({
-  portfolio,
-}: {
-  readonly portfolio: PortfolioDto;
-}): JSX.Element {
-  return (
-    <div className="flex flex-col gap-2">
-      <TotalFigure portfolio={portfolio} />
-      <GlobalWalletSwitcher portfolio={portfolio} />
-    </div>
-  );
-}
-
-/**
- * The card's ONE display figure: the live total in the serif hero treatment
- * (`PortfolioOverviewCard` grammar), with the snapshot total and the
- * PnL versus it underneath when the DTO carries them.
- *
- * `snapshotAt` IS RENDERED, as an AGE beside the snapshot value (owner
- * measurement 2026-09-04: a "+$0.41" in the gain tone against a 31-day-old
- * baseline, because publication had been withheld). The age is what tells
- * the reader whether the delta is this hour's or last month's, and past 24
- * hours the delta drops its gain/loss tone for the muted one - a PnL versus
- * a stale baseline is not a live gain (rule 08: never stale success as
- * fresh). The clock is read at render; a portfolio refresh re-renders it.
- */
 function TotalFigure({
+  scope,
   portfolio,
+  loadedAt,
 }: {
+  readonly scope: PortfolioPageScope;
   readonly portfolio: PortfolioDto;
+  readonly loadedAt: number;
 }): JSX.Element {
   const { liveTotalUsd, snapshotTotalUsd, pnlVsPrev, snapshotAt } = portfolio;
   const age = snapshotAt === null ? null : snapshotAge(snapshotAt, Date.now());
   const stale = age !== null && age.stale;
+  const delta = usdDeltaFigure(pnlVsPrev);
+  const loaded = clockFromMs(loadedAt);
   return (
-    <div className="grid gap-1.5">
-      <span className="vex-bs__k">Total value</span>
-      <span className="vex-bs__fig">{formatUsd(liveTotalUsd)}</span>
-      <ChainReadWarning portfolio={portfolio} />
-      {snapshotTotalUsd !== null ? (
-        <span
-          data-vex-area="position-snapshot"
-          data-stale={stale ? "true" : "false"}
-          className="vex-bs__sub"
-        >
-          <span>snapshot {formatUsd(snapshotTotalUsd)}</span>
-          {age !== null ? (
-            <span data-vex-area="position-snapshot-age">
-              {" "}
-              <span aria-hidden>| </span>
-              {age.label}
-            </span>
-          ) : null}
-          {pnlVsPrev !== null ? (
+    <>
+      <p className="vex-pf-top__line">
+        {totalIncludesLine(scope, portfolio.walletCount)}
+      </p>
+      <p className="vex-pf-top__big vex-num">{usdFigure(liveTotalUsd) ?? NOT_AVAILABLE}</p>
+      {snapshotTotalUsd !== null || loaded !== null ? (
+        <p className="vex-pf-top__sub">
+          {snapshotTotalUsd !== null ? (
             <span
-              className="vex-bs__pnl"
-              style={stale ? { color: "var(--vex-alias-label-secondary)" } : undefined}
-              aria-label={
-                age === null
-                  ? `Profit and loss versus previous snapshot ${formatUsdDelta(pnlVsPrev)}`
-                  : `Profit and loss versus snapshot taken ${age.label} ${formatUsdDelta(pnlVsPrev)}`
-              }
+              data-vex-area="position-snapshot"
+              data-stale={stale ? "true" : "false"}
             >
-              {formatUsdDelta(pnlVsPrev)}
+              <span className="vex-pf-top__ink">Snapshot</span>
+              {age !== null ? (
+                <span data-vex-area="position-snapshot-age"> {age.label}</span>
+              ) : null}{" "}
+              <span className="vex-num">{usdFigure(snapshotTotalUsd)}</span>
+              {delta !== null ? (
+                <>
+                  {" · "}
+                  <span
+                    className="vex-pf-top__pnl vex-num"
+                    data-stale={stale ? "true" : "false"}
+                    aria-label={`Change from the snapshot before ${delta}`}
+                  >
+                    {delta}
+                  </span>{" "}
+                  since the snapshot before
+                </>
+              ) : null}
             </span>
           ) : null}
-        </span>
+          {loaded !== null ? (
+            <span>
+              {snapshotTotalUsd !== null ? " · loaded " : "Loaded "}
+              <span className="vex-num">{loaded}</span>
+            </span>
+          ) : null}
+        </p>
       ) : null}
-    </div>
+      <ChainReadWarning portfolio={portfolio} />
+    </>
   );
 }

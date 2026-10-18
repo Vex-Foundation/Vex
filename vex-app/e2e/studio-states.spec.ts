@@ -51,7 +51,7 @@ import path from "node:path";
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import { test, expect, type VexDatabaseFixture } from "./fixtures/vex-app-with-database.js";
 import { APP_DIR, relaunchApp } from "./fixtures/electron-app.js";
-import { enterStudio, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
+import { enterStudio, setTourParked, TOUR_SKIP_REASON } from "./fixtures/studio-shell.js";
 import { registerRailParityScenarios } from "./studio-states.rail-parity.js";
 
 /** Where a capture pass writes. Empty means: assert, photograph nothing. */
@@ -223,7 +223,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
   ).toBeNull();
   // Every row carries a glyph. The rows were a wall of sentences with nothing
   // to scan (audit I4). In V10 the glyph is the status swatch, a fill rather
-  // than a colour (docs/design/V10-SPREAD.md section 1): exactly one per row,
+  // than a colour (docs/design/R3-MINIMAL.md section 1.6): exactly one per row,
   // and it names one of the swatch states.
   const outcomeRows = report.locator("[data-vex-artifact-status]");
   const outcomeCount = await outcomeRows.count();
@@ -258,8 +258,15 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
 
   /* ---- 09: settings, and the grant on an existing project -------------- */
 
+  // The row's actions key opens on hover or focus (R3 left sidebar, W4-4): the
+  // pointer reaches the row first, as a user's does.
+  const projectRow = sidebar.getByRole("button", { name: projectName, exact: true });
   const actions = sidebar.getByRole("button", { name: `Actions for ${projectName}` });
-  await actions.click();
+  const openActions = async (): Promise<void> => {
+    await projectRow.hover();
+    await actions.click();
+  };
+  await openActions();
   await page.getByRole("menuitem", { name: "Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Project settings" });
   await expect(settings).toBeVisible();
@@ -310,7 +317,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
 
   /* ---- 10: repair is not dressed as a destructive act (audit A10) ------ */
 
-  await actions.click();
+  await openActions();
   await page.getByRole("menuitem", { name: "Repair" }).click();
   const repair = page.getByRole("dialog", { name: "Repair project files" });
   await expect(repair).toBeVisible();
@@ -328,7 +335,7 @@ test("UX-4 consent grammar: the strip, the grant, and the outcome rows", async (
 
   /* ---- 11..12: delete, and the strip that follows the checkbox --------- */
 
-  await actions.click();
+  await openActions();
   await page.getByRole("menuitem", { name: "Delete" }).click();
   const del = page.getByRole("dialog", { name: "Delete project?" });
   await expect(del).toBeVisible();
@@ -617,12 +624,16 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   // reachable states are modelled).
   await expect(welcome.getByRole("button", { name: /^Open / })).toHaveCount(0);
   await expect(welcome).toContainText("No projects yet.");
-  // The way back is a real control here, not a sentence about one: the
-  // Agent | Studio capsule itself, under the wordmark (owner decree
-  // 2026-09-04). It has exactly one home per page, so the rail header mounts
-  // none while this welcome is on screen; the stand-in button is gone.
-  await expect(welcome.getByRole("radiogroup", { name: "Runtime mode" })).toBeVisible();
-  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
+  // The way back is a real control, not a sentence about one: the left
+  // sidebar nav's Chat row, beside this welcome (docs/design/R3-MINIMAL.md
+  // section 4). No capsule anywhere, and the stand-in button is gone.
+  await expect(
+    page
+      .locator('[data-vex-area="studio-sidebar"]')
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("button", { name: "Chat" }),
+  ).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
   await shot(page, `${theme}-01-studio-welcome-empty`);
 
@@ -864,8 +875,8 @@ test("UX-5 keyboard: the table reaches its owners, and a dialog suspends it", as
   // "bound is not the same as answerable" rule states, and step 44 below proves
   // the other half of it.
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
 
@@ -1820,6 +1831,8 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
     await expect(
       relaunchedPage.locator('[data-vex-screen="appShell"]'),
     ).toBeVisible();
+    // As `tourTo` does: the shell's left sidebar sits under the docked tour.
+    await setTourParked(relaunchedPage, true);
   };
 
   const activeElementLabel = (target: Page): Promise<string> =>
@@ -1898,8 +1911,8 @@ test("RESTORE-1 restore: the last location comes back, and focus lands", async (
   await shot(page, "restore2-03-agent-mode-focus-in-draft");
 
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   await expect(fileTab).toBeVisible({ timeout: 60_000 });

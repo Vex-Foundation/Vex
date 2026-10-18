@@ -6,16 +6,17 @@
  * drew its scrollbar at the column's right edge: a bar floating in the middle
  * of the window beside the text, which is not how any browser behaves and is
  * not what a reader reaches for (owner, 2026-08-05). The fix is structural, not
- * a custom widget: the SCROLLER spans the whole chat panel — so the native
- * overlay bar hugs the panel's right edge, next to the BOOK rail — and the
- * reading column is re-applied as a wrapper INSIDE it.
+ * a custom widget: the SCROLLER spans the whole chat panel - so the native
+ * overlay bar hugs the panel's right edge - and the reading column (centred,
+ * at most 760, docs/design/R3-MINIMAL.md section 6) is re-applied as a
+ * wrapper INSIDE it.
  *
  * This suite is what keeps those two roles apart. It exercises the STANDALONE
  * mount, where the transcript owns its own overflow; inside the resident shell
  * `SessionPanel`'s scroll body is the scrollport instead and these classes go
  * inert (`chat-transcript.css`). Everything the arrangement must not break -
  * follow ownership, the force-scroll on the reader's own words, prepend
- * anchoring, the "↓ latest" pill - is pinned next door in
+ * anchoring, the jump-to-latest key - is pinned next door in
  * `scroll-model.test.tsx`.
  */
 
@@ -59,11 +60,11 @@ async function renderTranscript() {
 
 /**
  * The wrapper that carries the reading measure, inside the scroller: the
- * session page's column (`PAGE_COLUMN`, docs/design/V10-SPREAD.md section 1),
- * the same measure the chapter head and the field share.
+ * reading column (`.vex-reading-col`, docs/design/R3-MINIMAL.md section 6),
+ * the same measure the docked composer shares.
  */
 function readingColumn(container: HTMLElement): HTMLElement {
-  const el = getScroller(container).querySelector(".max-w-\\[880px\\]");
+  const el = getScroller(container).querySelector(".vex-reading-col");
   if (el === null) throw new Error("reading column not found inside scroller");
   return el as HTMLElement;
 }
@@ -85,9 +86,9 @@ describe("the scroller spans the panel; the column lives inside it", () => {
     const column = readingColumn(container);
     expect(scroller.contains(column)).toBe(true);
     expect(column).not.toBe(scroller);
-    // Centred on the panel's axis — the same axis the column had before, so
-    // nothing the reader looks at moves sideways.
-    expect(column.className).toContain("mx-auto");
+    // Centred on the panel's axis by the column class itself (auto inline
+    // margins), the axis the docked composer shares.
+    expect(column.getAttribute("data-vex-transcript-column")).toBe("");
   });
 
   it("keeps the rows inside the reading column", async () => {

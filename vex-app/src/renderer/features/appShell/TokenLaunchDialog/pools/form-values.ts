@@ -1,6 +1,6 @@
 /**
  * The pools.fun form's values and the pure rule that turns them into an IPC
- * payload — or refuses to.
+ * payload - or refuses to.
  *
  * `poolsFormToPayload` returning `null` is what keeps stage 1 unreachable, so
  * every rule here is a reason the user cannot yet ask main to prepare a launch.
@@ -112,7 +112,7 @@ const X_USERNAME_PATTERN = /^@?\w{1,15}$/;
 
 /**
  * A plain decimal amount, or `null`. Refuses a fraction longer than the asset
- * can represent rather than truncating it — a silently dropped digit on a money
+ * can represent rather than truncating it - a silently dropped digit on a money
  * field is a wrong amount, not a formatting detail.
  */
 export function normalizePoolsAmount(
@@ -132,7 +132,7 @@ export function normalizePoolsAmount(
  *
  * ANYTHING STARTING `0x` MUST BE A VALID ADDRESS. Without that rule a truncated
  * or mistyped address like `0x123` matches the username pattern (it is six word
- * characters) and would travel as an X HANDLE — silently turning a typo into a
+ * characters) and would travel as an X HANDLE - silently turning a typo into a
  * lookup for a completely different recipient of the token's fee stream.
  */
 export function isAcceptableFeeRecipient(value: string): boolean {
@@ -268,7 +268,7 @@ function toRecipientChoice(value: string): PoolsRecipientChoice {
  * between them without losing what they typed. The WIRE takes exactly one
  * branch, so the ambiguity ends here: `imageSource` decides, and the other value
  * simply does not travel. Returning `null` means the form cannot be prepared
- * yet — an image is required on this launchpad.
+ * yet - an image is required on this launchpad.
  */
 function resolveImage(values: PoolsLaunchFormValues): PoolsLaunchImage | null {
   if (values.imageSource === "locker") {

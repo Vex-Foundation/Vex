@@ -1,40 +1,40 @@
 /**
- * MemoryMarker — static inline recall indicator (stage 8-4): the
+ * MemoryMarker - static inline recall indicator (stage 8-4): the
  * `ProvenanceMarker` preset for an assistant tool-call row that invoked
  * `session_memory_search` (per-session narrative memory) or a `long_memory_*`
  * read (durable cross-session memory). The copy stays distinct so
  * cross-session memory is never mislabeled as session memory; an
- * unknown/missing recall tool falls back to neutral copy. Static by design —
- * a persisted row has no reliable "recalling…" state.
+ * unknown/missing recall tool falls back to neutral copy. Static by design -
+ * a persisted row has no reliable "recalling" state.
  */
 
 import type { ComponentType, JSX } from "react";
 import {
-  IconBookOpen,
-  IconBrain,
-  type GlyphProps,
-  IconSparkle,
-} from "../../components/icons/index.js";
+  LineBook,
+  LineMemory,
+  LineSpark,
+  type LineIconProps,
+} from "../../components/icons/line/index.js";
 import { ProvenanceMarker } from "./ProvenanceMarker.js";
 
 interface RecallCopy {
   readonly label: string;
-  readonly icon: ComponentType<GlyphProps>;
+  readonly icon: ComponentType<LineIconProps>;
 }
 
 function recallCopy(toolName: string | null): RecallCopy {
   switch (toolName) {
     case "session_memory_search":
-      return { label: "Recalled session memory", icon: IconBrain };
+      return { label: "Recalled session memory", icon: LineMemory };
     case "long_memory_search":
     case "long_memory_get":
     case "long_memory_history":
       return {
         label: "Recalled long-term memory",
-        icon: IconBookOpen,
+        icon: LineBook,
       };
     default:
-      return { label: "Recalled context", icon: IconSparkle };
+      return { label: "Recalled context", icon: LineSpark };
   }
 }
 

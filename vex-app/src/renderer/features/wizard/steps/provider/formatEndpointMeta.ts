@@ -35,7 +35,7 @@ export function hasCachePricing(endpoint: ProviderEndpointOption): boolean {
 /**
  * Uptime for the row, or `null` when OpenRouter reported no window.
  *
- * A missing score renders as an explicit absence upstream — NEVER as "100%".
+ * A missing score renders as an explicit absence upstream - NEVER as "100%".
  * The label names the dominant window (5m) because that is what the ranking
  * weights most, and the number is the combined `availabilityScore` the list is
  * actually ordered by, so the row cannot show one figure and sort on another.
@@ -45,7 +45,7 @@ export function formatEndpointUptime(
 ): string | null {
   // Tolerant reader (rules/90): uptime is a DISPLAY field. The IPC schema
   // guarantees the key, but a stale renderer bundle or an older cached payload
-  // must degrade to "unknown" rather than crash the provider panel — this is
+  // must degrade to "unknown" rather than crash the provider panel - this is
   // not a financially-consumed value, so absence is rendered, not thrown.
   const score = endpoint.availabilityScore;
   if (typeof score !== "number" || !Number.isFinite(score)) return null;

@@ -15,7 +15,7 @@ import {
 import { parseChartPreferences } from "./chart-preferences.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { ChartDrawings } from "./ChartDrawings.js";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LineCamera } from "../../../components/icons/line/index.js";
 
 /** An unresolved token reads as an empty string; the library keeps its own default then. */
 const colorOption = (color: string): { color?: string } => (color === "" ? {} : { color });
@@ -302,7 +302,7 @@ export function ChartTools({
         disabled={!chart || candles.length === 0}
         onClick={saveImage}
       >
-        <PxIcon name="image" />
+        <LineCamera />
       </button>
       {trailing}
     </div>

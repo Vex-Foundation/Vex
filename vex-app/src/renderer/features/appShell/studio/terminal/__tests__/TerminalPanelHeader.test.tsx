@@ -316,6 +316,24 @@ describe("the picker's popup has a surface under it", () => {
     expect(list.className).toContain("bg-surface-field");
   });
 
+  it("is a flat menu panel: a 1px ink border, padding 4 0, rows 32 high at 13.5", () => {
+    renderHeader({ shellId: "zsh" });
+    fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
+    const list = screen.getByRole("listbox");
+    // docs/design/R3-MINIMAL.md section 12.
+    expect(list.className).toContain("border-rule-ink");
+    expect(list.className).toContain("py-1");
+    expect(list.className).not.toMatch(/\brounded|shadow|(?<![\w-])border-rule(?![\w-])/);
+    const row = screen.getByRole("option", { name: "zsh" });
+    expect(row.className).toContain("min-h-8");
+    expect(row.className).toContain("text-[13.5px]");
+    // The selected row takes the selection wash.
+    expect(row.className).toContain("bg-interactive-active");
+    expect(screen.getByRole("option", { name: "bash" }).className).not.toContain(
+      "bg-interactive-active",
+    );
+  });
+
   it("marks the current row with a glyph, not by fill alone", () => {
     renderHeader({ shellId: "zsh" });
     fireEvent.click(screen.getByRole("button", { name: "Shell for the next terminal" }));
@@ -326,23 +344,81 @@ describe("the picker's popup has a surface under it", () => {
 });
 
 describe("the pane head", () => {
-  it("places the decorative mark in the header outside the terminal glyph surface", () => {
+  it("places the flat vx disc in the header outside the terminal glyph surface", () => {
     const { view } = renderHeader();
-    const mark = view.container.querySelector("[data-vex-terminal-header] svg.text-brand-mark");
-    expect(mark).not.toBeNull();
-    expect(mark?.getAttribute("aria-hidden")).toBe("true");
-    expect(mark?.getAttribute("height")).toBe("20");
-    expect(mark?.closest(".vex-terminal-surface")).toBeNull();
+    const token = view.container.querySelector("[data-vex-terminal-header] [data-vex-vx-token]");
+    expect(token).not.toBeNull();
+    const disc = token?.querySelector("svg");
+    // Decorative beside a visible word, so hidden from assistive technology.
+    expect(disc?.getAttribute("aria-hidden")).toBe("true");
+    expect(disc?.getAttribute("height")).toBe("24");
+    expect(disc?.getAttribute("width")).toBe("24");
+    expect(token?.closest(".vex-terminal-surface")).toBeNull();
+    // The faded mark is gone.
+    expect(view.container.querySelector("svg.text-brand-mark")).toBeNull();
   });
 
-  it("sits on the field with one quiet rule under it and keeps the pane's inset", () => {
+  it("is the named R3 head, which carries the 50 high geometry and the quiet rule", () => {
     const { view } = renderHeader();
     const header = view.container.firstElementChild;
     expect(header).not.toBeNull();
-    // docs/design/V10-SPREAD.md section 1: the head carries the quiet rule
-    // (never the strong one) and the 8px inset of the grid below it.
-    expect(header?.className).toContain("border-b");
-    expect(header?.className).toContain("border-rule-quiet");
-    expect(header?.className).toContain("px-2");
+    // docs/design/R3-MINIMAL.md section 9.5: the head paints in terminal.css
+    // (pinned in terminal-surface-css.test.ts) and it paints no field of its own.
+    expect(header?.className).toBe("vex-ws-head");
+    expect(header?.hasAttribute("data-vex-terminal-header")).toBe(true);
+    expect(header?.className).not.toMatch(/\bbg-/);
+    expect(header?.className).not.toMatch(/\brounded|shadow/);
+  });
+
+  it("sets the name at 14 / 500 over a muted mono shell and directory line", () => {
+    renderHeader();
+    const name = screen.getByRole("heading", { name: "Terminal 1" });
+    expect(name.className).toContain("text-[14px]");
+    expect(name.className).toContain("font-medium");
+    expect(name.className).toContain("text-ink-primary");
+    const sub = document.querySelector("[data-vex-terminal-shell]")?.parentElement;
+    expect(sub?.className).toContain("font-mono");
+    expect(sub?.className).toContain("vex-num");
+    expect(sub?.className).toContain("text-[12px]");
+    expect(sub?.className).toContain("text-ink-tertiary");
+    // The directory is muted like the rest of the line, never the blue.
+    const cwd = screen.getByLabelText("Working directory: src/lib");
+    expect(cwd.className).not.toContain("accent");
+  });
+
+  it("draws the four actions as 32 x 32 ink 2 icon keys, in the design's order", () => {
+    renderHeader();
+    const keys = [
+      "Split Terminal 1 side by side",
+      "Split Terminal 1 top and bottom",
+      "Rename Terminal 1",
+      "Kill the shell in Terminal 1",
+    ].map((name) => screen.getByRole("button", { name }));
+    for (const key of keys) {
+      expect(key.getAttribute("data-vex-button")).toBe("bare");
+      expect(key.getAttribute("data-vex-button-size")).toBe("icon");
+      expect(key.querySelector("svg")?.getAttribute("width")).toBe("16");
+    }
+    const row = keys[0]?.parentElement;
+    expect(row?.className).toBe("vex-ws-head__keys");
+    expect([...(row?.children ?? [])]).toEqual(keys);
+    // A kill is ink on hover like its neighbours, never the error red.
+    expect(keys[3]?.className).not.toContain("danger");
+  });
+
+  it("keeps the shell picker key on the named R3 rule, with the chevron muted", () => {
+    renderHeader();
+    const picker = screen.getByRole("button", { name: "Shell for the next terminal" });
+    expect(picker.className).toBe("vex-ws-picker");
+    expect(picker.querySelector("span.vex-num.font-mono")?.textContent).toBe("bash");
+    const chevron = picker.querySelector("svg");
+    expect(chevron?.getAttribute("width")).toBe("14");
+    expect(chevron?.getAttribute("class")).toContain("text-ink-tertiary");
+  });
+
+  it("says in words when the shell the picker holds is not installed", () => {
+    renderHeader({ shellId: "fish" });
+    const picker = screen.getByRole("button", { name: "Shell for the next terminal" });
+    expect(picker.textContent).toBe("fish (not installed)");
   });
 });

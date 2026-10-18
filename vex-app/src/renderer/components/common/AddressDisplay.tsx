@@ -95,7 +95,7 @@ export function AddressDisplay({
     );
   }
 
-  // The ledger form (docs/design/V10-SPREAD.md section 2): the address in
+  // The ledger form (docs/design/R3-MINIMAL.md section 1.3): the address in
   // mono, then the COPY key in blue with the pixel copy icon.
   return (
     <div

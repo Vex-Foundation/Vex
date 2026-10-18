@@ -2,31 +2,87 @@
  * Shared presentational primitives for the Memory panel.
  *
  * Extracted from `MemoryPanel.tsx` so each section module stays under the
- * 400-line budget. Panel-local — NOT a generic UI helper. Holds only the
- * primitives used by more than one section: the section/pill class constants,
- * the loading/error/empty states, and the date formatter.
+ * 400-line budget. Panel-local, NOT a generic UI helper. Holds only the
+ * primitives used by more than one section: the section head, the filter and
+ * the tag classes, the loading, error and empty states, and the date
+ * formatter.
  *
- * S7 reskin: sections are hairline-separated ledger groups on the canvas
- * (no card boxes), metadata pills are quiet mono stamps (hairline border,
- * never accent — accent stamps are reserved for exception states), and the
- * loading state is a recessed surface-down well.
+ * R3 (docs/design/R3-MINIMAL.md sections 9.6 and 12): sections are hairline
+ * ledger groups with a sans 15 / 600 head, a lead, an optional toolbar and
+ * hairline rows (`styles/global-css/memory.css`); tags are quiet 20 high
+ * frames, never an accent; loading is a word and a quiet line, a failure is
+ * the ink callout, an empty section is one muted sentence.
  */
 
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
+import { ErrorCallout } from "../../components/ui/error-callout.js";
+import { StateWord } from "../../components/ui/state-word.js";
 
-export const SECTION =
-  "flex flex-col gap-3 border-b border-line-2 py-6 first:pt-0 last:border-b-0";
-export const PILL =
-  "inline-flex items-center rounded-[3px] border border-line-2 px-1.5 py-0.5 font-mono text-[10px] text-ink-secondary";
+export const SECTION = "vex-mem-sec";
+export const PILL = "vex-mem-tag";
+
+/** The head of a section: the title, an optional count, the lead under it. */
+export function SectionHead({
+  title,
+  count,
+  lead,
+}: {
+  readonly title: string;
+  readonly count?: string;
+  readonly lead: ReactNode;
+}): JSX.Element {
+  return (
+    <>
+      <div className="vex-mem-sec__head">
+        <h2 className="vex-mem-sec__title">{title}</h2>
+        {count === undefined ? null : <span className="vex-mem-sec__count">{count}</span>}
+      </div>
+      <p className="vex-mem-sec__lead">{lead}</p>
+    </>
+  );
+}
+
+/**
+ * The segmented filter of a section: one key per value, the chosen one on the
+ * selection fill (`aria-pressed`). Plain buttons, because a filter changes
+ * what the list below shows, not which panel is on screen.
+ */
+export function FilterKeys<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  readonly options: ReadonlyArray<{ readonly value: T; readonly label: string }>;
+  readonly value: T;
+  readonly onChange: (next: T) => void;
+  readonly label: string;
+}): JSX.Element {
+  return (
+    <span className="vex-mem-seg" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          aria-pressed={value === option.value}
+          data-active={value === option.value}
+        >
+          {option.label}
+        </button>
+      ))}
+    </span>
+  );
+}
 
 export function Loading({ label }: { readonly label: string }): JSX.Element {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="rounded-[6px] border border-line-2 bg-surface-1 px-3 py-2 text-xs text-ink-secondary"
-    >
-      {label}
+    <div role="status" aria-live="polite" className="vex-mem-loading">
+      <StateWord state="listening" word={label} />
+      {/* The same line the loader draws; decorative, the word says it. */}
+      <span className="vex-loader vex-loader--ink" aria-hidden>
+        <i className="vex-loader__segment" />
+      </span>
     </div>
   );
 }
@@ -36,20 +92,11 @@ export function ErrorState({
 }: {
   readonly message: string;
 }): JSX.Element {
-  return (
-    <div
-      role="alert"
-      className="rounded-[6px] border border-destructive/35 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-    >
-      {message}
-    </div>
-  );
+  return <ErrorCallout role="alert" compact title={message} />;
 }
 
 export function Empty({ label }: { readonly label: string }): JSX.Element {
-  return (
-    <p className="px-1 py-2 text-xs text-ink-tertiary">{label}</p>
-  );
+  return <p className="vex-mem-empty">{label}</p>;
 }
 
 export function fmtDate(iso: string): string {

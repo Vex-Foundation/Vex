@@ -1,16 +1,20 @@
 /**
  * THE SPOTLIGHT+ SECTIONS - Smart money, Tape, Momentum, Promotion and
- * Other pools, each over one channel read, each in the shared section frame.
+ * Other pools, each over one channel read, each under the shared section head.
  *
  * NOTHING HERE IS CUT. Smart money renders EVERY ranked row the provider
  * returned inside a capped, scrolling surface; the tape is a bounded ring
  * whose gaps are marked; momentum is a borderless grid of the four windows.
- * Inside a section only hairline dividers separate rows - never a nested
+ * Inside a section only quiet row rules separate rows - never a nested
  * bordered box.
+ *
+ * Paint (docs/design/R3-MINIMAL.md sections 1.2 and 1.3): words are the sans,
+ * figures are the mono with `vex-num`, and the trading colours sit only on
+ * trading values: the buy and sell sides of the tape, the sign of a net cash
+ * flow and the buyer-pressure arrow of a momentum window.
  */
 
 import { useState, type JSX } from "react";
-import { PxIcon } from "../../../components/icons/index.js";
 import { Pill } from "../../../components/ui/pill.js";
 import { cn } from "../../../lib/utils.js";
 import type {
@@ -52,7 +56,6 @@ export function SmartMoneySection({
   return (
     <SpotlightReadSection
       area="board-spotlight-smart-money"
-      icon={<PxIcon name="wallet" size={16} />}
       title="Smart money"
       read={read}
       meta={
@@ -66,22 +69,22 @@ export function SmartMoneySection({
       {(panel) => (
         <div className="flex flex-col gap-2">
           {panel.rows.length === 0 ? (
-            <p className="text-[13px] leading-[18px] text-ink-tertiary">
+            <p className="text-[14px] leading-[1.45] text-ink-tertiary">
               The provider ranked no wallets on this pool.
             </p>
           ) : (
             <ul
               data-vex-area="board-spotlight-traders"
               data-count={panel.rows.length}
-              className="flex max-h-[220px] flex-col divide-y divide-line-1 overflow-y-auto"
+              className="flex max-h-[220px] flex-col overflow-y-auto"
             >
               {panel.rows.map((trader) => (
                 <li
                   key={trader.maker}
                   data-vex-area="board-spotlight-trader"
-                  className="flex items-center gap-2 py-1.5 text-[13px] leading-[18px]"
+                  className="flex min-h-[34px] items-center gap-2 border-b border-rule-quiet text-[13.5px] leading-[1.35]"
                 >
-                  <span className="w-5 shrink-0 tabular-nums text-ink-tertiary">
+                  <span className="w-5 shrink-0 font-mono vex-num text-ink-tertiary">
                     {trader.providerRank}
                   </span>
                   {/* Both facts, and both REVEALABLE without a pointer. */}
@@ -90,13 +93,17 @@ export function SmartMoneySection({
                     label={trader.label}
                     maker={trader.maker}
                   />
-                  <span className="shrink-0 tabular-nums text-ink-tertiary">
+                  <span className="shrink-0 font-mono vex-num text-ink-tertiary">
                     {formatUsdNumber(trader.boughtUsd)} in
                   </span>
                   <span
                     className={cn(
-                      "shrink-0 tabular-nums",
-                      (trader.netCashFlowUsd ?? 0) > 0 ? "text-accent-primary" : "text-ink-primary",
+                      "shrink-0 font-mono vex-num",
+                      (trader.netCashFlowUsd ?? 0) > 0
+                        ? "text-trade-up"
+                        : (trader.netCashFlowUsd ?? 0) < 0
+                          ? "text-trade-down"
+                          : "text-ink-primary",
                     )}
                   >
                     {formatSignedUsdNumber(trader.netCashFlowUsd)} net
@@ -107,7 +114,7 @@ export function SmartMoneySection({
           )}
           <p
             data-vex-area="board-spotlight-smart-money-note"
-            className="text-[12px] leading-[16px] text-ink-tertiary"
+            className="text-[12.5px] leading-[1.4] text-ink-tertiary"
           >
             {panel.semanticsNote}
           </p>
@@ -160,7 +167,7 @@ function WalletIdentity({
       onClick={() => {
         setExpanded((value) => !value);
       }}
-      className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="min-w-0 flex-1 text-left"
     >
       {label === null ? null : (
         <span
@@ -176,9 +183,9 @@ function WalletIdentity({
       <span
         data-vex-area={`${area}-maker`}
         className={cn(
-          "block font-mono",
+          "block font-mono vex-num",
           expanded ? "break-all" : "truncate",
-          label === null ? makerTone : "text-[11px] leading-[15px] text-ink-tertiary",
+          label === null ? makerTone : "text-[12px] leading-[1.35] text-ink-tertiary",
         )}
       >
         {maker}
@@ -230,7 +237,6 @@ export function TapeSection({
     >
       <SpotlightReadSection
         area="board-spotlight-tape"
-        icon={<PxIcon name="list" size={16} />}
         title="Tape"
         read={read}
         className="flex-1"
@@ -246,21 +252,24 @@ export function TapeSection({
         {(tape) => (
           <div className="flex flex-col gap-2">
             {tape.rows.length === 0 ? (
-              <p className="text-[13px] leading-[18px] text-ink-tertiary">
+              <p className="text-[14px] leading-[1.45] text-ink-tertiary">
                 No trades have printed on this pool since the tape opened.
               </p>
             ) : (
               <ul
                 data-vex-area="board-spotlight-tape-rows"
                 data-count={tape.rows.length}
-                className="flex max-h-[220px] flex-col divide-y divide-line-1 overflow-y-auto"
+                className="flex max-h-[220px] flex-col overflow-y-auto"
               >
                 {tape.rows.map((trade) => (
-                  <li key={trade.id} className="flex flex-col py-1">
+                  <li
+                    key={trade.id}
+                    className="flex min-h-[30px] flex-col justify-center border-b border-rule-quiet py-1"
+                  >
                     {trade.gapBefore ? (
                       <span
                         data-vex-area="board-spotlight-tape-gap"
-                        className="py-1 text-[12px] leading-[16px] text-ink-primary"
+                        className="py-1 text-[12.5px] leading-[1.4] text-ink-primary"
                       >
                         Trades before this point could not be read.
                       </span>
@@ -268,24 +277,24 @@ export function TapeSection({
                     <span
                       data-vex-area="board-spotlight-tape-row"
                       data-side={trade.side ?? "unknown"}
-                      className="flex items-center gap-2 text-[13px] leading-[18px] tabular-nums"
+                      className="flex items-center gap-2 text-[13px] leading-[1.35]"
                     >
-                      <span className="w-16 shrink-0 text-ink-tertiary">
+                      <span className="w-16 shrink-0 font-mono vex-num text-ink-tertiary">
                         {formatTapeClock(trade.timestampMs)}
                       </span>
                       <span
                         className={cn(
                           "w-16 shrink-0 font-medium",
                           trade.side === "buy"
-                            ? "text-accent-primary"
+                            ? "text-trade-up"
                             : trade.side === "sell"
-                              ? "text-ink-primary"
+                              ? "text-trade-down"
                               : "text-ink-tertiary",
                         )}
                       >
                         {tapeSideLabel(trade.side)}
                       </span>
-                      <span className="w-20 shrink-0 text-ink-primary">
+                      <span className="w-20 shrink-0 font-mono vex-num text-ink-primary">
                         {formatBoardUsdCompact(trade.volumeUsd)}
                       </span>
                       {/* Same rule as the trader rows. A row with NO maker is
@@ -293,7 +302,7 @@ export function TapeSection({
                         * to reveal, and a focus stop that discloses nothing is
                         * noise in a long list. */}
                       {trade.maker === null ? (
-                        <span className="min-w-0 flex-1 truncate font-mono text-ink-tertiary">
+                        <span className="min-w-0 flex-1 truncate font-mono vex-num text-ink-tertiary">
                           {BOARD_EMPTY}
                         </span>
                       ) : (
@@ -312,7 +321,7 @@ export function TapeSection({
             {tape.droppedIncompleteIdentity > 0 ? (
               <p
                 data-vex-area="board-spotlight-tape-dropped"
-                className="text-[12px] leading-[16px] text-ink-tertiary"
+                className="text-[12.5px] leading-[1.4] text-ink-tertiary"
               >
                 {formatWholeCount(tape.droppedIncompleteIdentity)} rows were refused
                 for carrying an incomplete trade identity.
@@ -342,7 +351,6 @@ export function MomentumSection({
   return (
     <SpotlightReadSection
       area="board-spotlight-momentum"
-      icon={<PxIcon name="chart" size={16} />}
       title="Momentum"
       read={read}
     >
@@ -364,16 +372,16 @@ export function MomentumSection({
                     index > 0 && "border-l border-rule-quiet pl-3",
                   )}
                 >
-                  <dt className="text-[12px] leading-[16px] text-ink-tertiary">
+                  <dt className="text-[12.5px] leading-[1.4] text-ink-tertiary">
                     {view.label}
                   </dt>
                   <dd
                     className={cn(
-                      "text-[15px] font-semibold leading-[20px] tabular-nums",
+                      "font-mono vex-num text-[14px] font-medium leading-[1.4]",
                       view.trend === "up"
-                        ? "text-accent-primary"
+                        ? "text-trade-up"
                         : view.trend === "down"
-                          ? "text-ink-primary"
+                          ? "text-trade-down"
                           : "text-ink-tertiary",
                     )}
                   >
@@ -382,10 +390,10 @@ export function MomentumSection({
                     </span>{" "}
                     {view.buyShareText}
                   </dd>
-                  <dd className="truncate text-[12px] leading-[16px] text-ink-tertiary">
+                  <dd className="truncate font-mono vex-num text-[12px] leading-[1.4] text-ink-tertiary">
                     {view.rateText}
                   </dd>
-                  <dd className="truncate text-[12px] leading-[16px] text-ink-tertiary">
+                  <dd className="truncate text-[12.5px] leading-[1.4] text-ink-tertiary">
                     {view.acceleration === "unknown" ? BOARD_EMPTY : view.acceleration}
                   </dd>
                 </div>
@@ -415,7 +423,6 @@ export function PromotionSection({
   return (
     <SpotlightReadSection
       area="board-spotlight-promotion"
-      icon={<PxIcon name="megaphone" size={16} />}
       title="Promotion"
       read={read}
     >
@@ -424,13 +431,13 @@ export function PromotionSection({
           <p
             data-vex-area="board-spotlight-boosts"
             data-state={panel.boostsActive === null ? "not-reported" : "reported"}
-            className="text-[15px] font-semibold leading-[20px] text-ink-primary"
+            className="text-[14px] font-medium leading-[1.45] text-ink-primary"
           >
             {panel.boostsActive === null
               ? "Boosts not reported for this pair"
               : `${formatWholeCount(panel.boostsActive)} boosts active`}
           </p>
-          <p className="text-[13px] leading-[18px] text-ink-tertiary">
+          <p className="text-[13.5px] leading-[1.45] text-ink-tertiary">
             {panel.promotionNote}
           </p>
           <div
@@ -439,7 +446,7 @@ export function PromotionSection({
             className="flex flex-wrap gap-1.5"
           >
             {panel.narratives.length === 0 ? (
-              <span className="text-[13px] leading-[18px] text-ink-tertiary">
+              <span className="text-[14px] leading-[1.45] text-ink-tertiary">
                 No narrative is recorded for this token.
               </span>
             ) : (
@@ -451,7 +458,7 @@ export function PromotionSection({
             )}
           </div>
           {panel.unjoinedMetaIds.length > 0 ? (
-            <p className="text-[12px] leading-[16px] text-ink-tertiary">
+            <p className="text-[12.5px] leading-[1.4] text-ink-tertiary">
               {formatWholeCount(panel.unjoinedMetaIds.length)} narrative ids on this
               pair are not in the catalog yet.
             </p>
@@ -478,7 +485,6 @@ export function OtherPoolsSection({
   return (
     <SpotlightReadSection
       area="board-spotlight-other-pools"
-      icon={<PxIcon name="globe" size={16} />}
       title="Other pools"
       read={read}
     >
@@ -490,23 +496,23 @@ export function OtherPoolsSection({
           <div className="flex flex-col gap-2">
             <p
               data-vex-area="board-spotlight-other-pools-count"
-              className="text-[15px] font-semibold leading-[20px] text-ink-primary"
+              className="text-[14px] font-medium leading-[1.45] text-ink-primary"
             >
               {formatWholeCount(panel.poolsSeen)} other pools seen
             </p>
             {deepest === undefined ? null : (
-              <p className="text-[13px] leading-[18px] text-ink-secondary">
+              <p className="text-[13.5px] leading-[1.45] text-ink-secondary">
                 Deepest: {deepest.dexId ?? "unknown venue"} on {deepest.chain} at{" "}
                 {formatUsdNumber(deepest.liquidityUsd)}
               </p>
             )}
-            <p className="text-[12px] leading-[16px] text-ink-tertiary">
+            <p className="text-[12.5px] leading-[1.4] text-ink-tertiary">
               {panel.windowNote}
             </p>
             {panel.providerCapped || panel.withheldByLimit > 0 ? (
               <p
                 data-vex-area="board-spotlight-other-pools-bounds"
-                className="text-[12px] leading-[16px] text-ink-tertiary"
+                className="text-[12.5px] leading-[1.4] text-ink-tertiary"
               >
                 {panel.providerCapped
                   ? "The provider's window was full, so more pools exist than were seen."

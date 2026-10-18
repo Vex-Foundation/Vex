@@ -1,16 +1,15 @@
 /**
- * Wizard Step 2 — Wallets (M8; PR6 redesign — onboarding glass).
+ * Wizard Step 2 - Wallets (M8; R3 Minimal restyle).
  *
  * Two chains (EVM + Solana), three actions per chain (Generate, Import,
- * Restore from backup). Layout: shadcn Tabs split. Tabs now carry their
- * matching brand glyphs (`Ethereum` and `Solana` from `@thesvg/react`)
- * next to the labels — the same brand vocabulary we use elsewhere in
- * the onboarding aesthetic, and they cost almost nothing visually.
+ * Restore from backup). Layout: Tabs split. Each tab carries a swatch beside
+ * its word: the solid fill when that chain's wallet is ready, the empty
+ * outline when it is not.
  *
  * Skip-to-continue logic: in the forward setup flow, when both chains have a
  * wallet, render a summary panel + Continue. Otherwise render the Tabs
  * management UI. In `back-edit` (reconfigure from Review) the Tabs UI is
- * ALWAYS shown — even when both wallets exist — so the user can
+ * ALWAYS shown - even when both wallets exist - so the user can
  * add/import/manage wallets post-onboarding, with a "Return to review" button.
  *
  * Address source: `lastGenerated[chain]` (in-session
@@ -22,18 +21,18 @@
  * Zustand / TanStack cache. The import flow is implemented inside
  * `ChainActions` with a direct async call.
  *
- * Chrome lives in `WizardStepPanel` — `data-vex-wizard-wallets="loading"`,
+ * Chrome lives in `WizardStepPanel` - `data-vex-wizard-wallets="loading"`,
  * `"ready"`, `"setup"` forwarded onto the panel root via typed
  * `panelDataAttr`.
  */
 
 import { useCallback, useState, type JSX } from "react";
-import { Ethereum, Solana } from "@thesvg/react";
 
 import { cn } from "../../../lib/utils.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
 import { Button } from "../../../components/ui/button.js";
 import { VexLoader } from "../../../components/ui/vex-loader.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import {
   Tabs,
   TabsContent,
@@ -49,7 +48,6 @@ import {
 } from "../../../lib/api/wizard.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
-import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import { ChainActions } from "./wallets/ChainActions.js";
 import { ExportAllWallets } from "./wallets/ExportAllWallets.js";
@@ -100,7 +98,7 @@ export function WalletsStep({
   const solanaReady =
     solanaAddress !== null || envData?.walletStatus.solana === "present";
   const bothReady = evmReady && solanaReady;
-  // Export is cross-family — offer it as soon as ANY wallet exists.
+  // Export is cross-family - offer it as soon as ANY wallet exists.
   const anyWallet = evmReady || solanaReady;
 
   const advanceToApiKeys = useCallback(async (): Promise<void> => {
@@ -125,27 +123,20 @@ export function WalletsStep({
     [],
   );
 
-  const meta = WIZARD_STEP_META.wallets;
 
   if (envQuery.isLoading || availableWallets.isLoading) {
     return (
       <WizardStepPanel
         panelDataAttr={{ kind: "wallets", value: "loading" }}
-        icon={meta.icon}
         flowMode={flowMode}
+        env={envData}
         title="Set up wallets"
         description="Loading wallet status…"
         footer={null}
       >
-        {/* Brand loading language — the VexLoader ring (role="status"
-            lives on the loader root), never a generic pulse bar. */}
-        <div className="flex justify-center py-4">
-          <VexLoader
-            size={24}
-            stroke={2}
-            label="Loading wallet status…"
-          />
-        </div>
+        {/* The quiet loading line (role="status" lives on the loader root),
+            never a generic pulse bar. */}
+        <VexLoader label="Loading wallet status…" />
       </WizardStepPanel>
     );
   }
@@ -167,8 +158,8 @@ export function WalletsStep({
     return (
       <WizardStepPanel
         panelDataAttr={{ kind: "wallets", value: "setup" }}
-        icon={meta.icon}
         flowMode={flowMode}
+        env={envData}
         title="Couldn't load wallets"
         description="Your wallets exist but couldn't be loaded right now."
         footer={
@@ -195,8 +186,8 @@ export function WalletsStep({
     return (
       <WizardStepPanel
         panelDataAttr={{ kind: "wallets", value: "ready" }}
-        icon={meta.icon}
         flowMode={flowMode}
+        env={envData}
         title="Wallets configured"
         description="Both wallets are set up and encrypted on this machine. Continue to connect API keys."
         footer={
@@ -210,40 +201,30 @@ export function WalletsStep({
           </Button>
         }
       >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3">
-            <div className="border-b border-[var(--color-border)] pb-3">
-              <div className="flex items-center gap-2">
-                <Ethereum width={14} height={14} aria-hidden />
-                <p className="vex-micro text-ink-tertiary">
-                  EVM
-                </p>
-              </div>
+        <div className="vex-wz-stack">
+          <div className="vex-wz-kvl">
+            <div className="vex-wz-kv">
+              <p className="vex-wz-kv__k">EVM</p>
               {evmAddress !== null ? (
-                <AddressDisplay address={evmAddress} className="mt-1" />
+                <AddressDisplay address={evmAddress} className="col-span-2" />
               ) : (
-                <p className="mt-1 text-sm text-ink-secondary">
+                <p className="vex-wz-kv__v col-span-2">
                   Wallet present (address loaded from config).
                 </p>
               )}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <Solana width={14} height={14} aria-hidden />
-                <p className="vex-micro text-ink-tertiary">
-                  Solana
-                </p>
-              </div>
+            <div className="vex-wz-kv">
+              <p className="vex-wz-kv__k">Solana</p>
               {solanaAddress !== null ? (
-                <AddressDisplay address={solanaAddress} className="mt-1" />
+                <AddressDisplay address={solanaAddress} className="col-span-2" />
               ) : (
-                <p className="mt-1 text-sm text-ink-secondary">
+                <p className="vex-wz-kv__v col-span-2">
                   Wallet present (address loaded from config).
                 </p>
               )}
             </div>
           </div>
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-start gap-2">
             <ExportAllWallets />
             <RestoreFromArchive />
           </div>
@@ -270,8 +251,8 @@ export function WalletsStep({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "wallets", value: "setup" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={envData}
       title={flowMode === "back-edit" ? "Manage wallets" : "Set up wallets"}
       description="Vex is self-custodial: wallet keys are generated and encrypted on this machine, under your master password, and never leave it. Add an EVM wallet (Ethereum + L2s), a Solana wallet, or both - generate fresh keys, import existing ones, or restore a backup. Wallets are optional; you can come back to this any time."
       footer={
@@ -286,7 +267,7 @@ export function WalletsStep({
           </Button>
         ) : showConfigureLater ? (
           <Button
-            variant="bare"
+            variant="quiet"
             onClick={() => {
               void advanceToApiKeys();
             }}
@@ -315,12 +296,20 @@ export function WalletsStep({
       ) : null}
       <Tabs defaultValue="evm">
         <TabsList>
-          <TabsTrigger value="evm" className="flex items-center gap-2">
-            <Ethereum width={14} height={14} aria-hidden />
+          <TabsTrigger value="evm" className="gap-[7px]">
+            <Swatch
+              state={evmReady ? "done" : "idle"}
+              size={10}
+              className="text-accent-primary"
+            />
             EVM
           </TabsTrigger>
-          <TabsTrigger value="solana" className="flex items-center gap-2">
-            <Solana width={14} height={14} aria-hidden />
+          <TabsTrigger value="solana" className="gap-[7px]">
+            <Swatch
+              state={solanaReady ? "done" : "idle"}
+              size={10}
+              className="text-accent-primary"
+            />
             Solana
           </TabsTrigger>
         </TabsList>
@@ -341,7 +330,7 @@ export function WalletsStep({
           />
         </TabsContent>
       </Tabs>
-      <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)] pt-4">
+      <div className="mt-6 flex flex-wrap items-start gap-2">
         {anyWallet ? <ExportAllWallets /> : null}
         <RestoreFromArchive />
       </div>

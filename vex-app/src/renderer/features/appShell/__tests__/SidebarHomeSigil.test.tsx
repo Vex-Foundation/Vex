@@ -35,6 +35,8 @@ describe("SidebarHomeSigil", () => {
     expect(mark).not.toBeNull();
     expect(mark?.querySelector("svg path")).not.toBeNull();
     expect(screen.queryByText("VEX")).toBeNull();
+    // The one blue (periwinkle at night), never the paper mark of the print.
+    expect(mark?.classList.contains("text-accent-primary")).toBe(true);
   });
 
   it("becomes a Back-to-welcome button when a session is open and clears it", () => {

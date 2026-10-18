@@ -1,48 +1,42 @@
 /**
- * WALLETS - the wallet PAIR (1 EVM + 1 Solana) a scope holds, copy-ready so
- * the owner can fund it (owner request: "adresy portfeli w sesji, gotowe do
+ * WALLETS on the Portfolio page for the open chat or the selected project
+ * (docs/design/R3-MINIMAL.md section 9.1): the wallet PAIR (1 EVM + 1
+ * Solana) the scope holds, as the same Wallet, Address and Value table the
+ * inventory scope draws, with Copy address in each row's menu so the owner
+ * can fund it (owner request: "adresy portfeli w sesji, gotowe do
  * skopiowania").
  *
- * ONE card serves both rails, driven by its scope input (studio seam #3):
+ * ONE card serves both context scopes, driven by its scope input:
  *
- *  - session scope - the agent rail: the session's immutable pair
+ *  - session scope ("This chat"): the session's immutable pair
  *    (`SessionWalletScopeDto`), fixed at session start;
- *  - project scope - the Studio rail: the pair a Vex Studio project has
+ *  - project scope ("This project"): the pair a Vex Studio project has
  *    SELECTED (`ProjectDto.wallets`, projected from the authoritative
  *    `project_wallets` and verified against the inventory on read, so a drifted
  *    selection surfaces as an error here rather than as somebody else's
  *    address).
  *
- * The scope type is NARROWED to those two members on purpose: a `global` scope
- * has no pair, and accepting it would mean this card had to invent an answer.
- * A project read that fails renders THIS card's error line; it never falls back
- * to the global wallet inventory - showing every wallet Vex knows about under a
- * project's name would be a lie about whose funds are in scope.
+ * The scope type is NARROWED to those two members on purpose: the inventory
+ * scopes have no pair (they draw `WalletsCard`), and accepting one would mean
+ * this card had to invent an answer. A project read that fails renders THIS
+ * card's error line; it never falls back to the global wallet inventory.
  *
- * READ-ONLY BY CONSTRUCTION on both rails. A session's selection cannot change
- * once the first message is sent, and a project's selection is edited in
- * project settings with its own `expectedScopeVersion` gate - so this card
- * DISPLAYS the pair and offers no picker. Offering a control that the domain
- * refuses would be a lie about what the user can do.
+ * READ-ONLY BY CONSTRUCTION. A session's selection cannot change once the
+ * first message is sent, and a project's selection is edited in project
+ * settings with its own `expectedScopeVersion` gate, so this card DISPLAYS the
+ * pair and offers no picker and no "Add wallet".
  *
- * One row per family the scope actually holds: chain mark + the wallet's own
- * label when it has one (the terse family caption when unlabeled) + the
- * reusable `AddressDisplay` chip (truncate + copy with clipboard fallback and
- * a11y feedback - never raw `navigator.clipboard`). The EVM row wears the
- * Ethereum mark but is captioned "EVM": the address is valid on every EVM
- * network, and the caption keeps that honest. A project selection carries no
- * user label (`ProjectWalletRef` is id + address), so those rows show the
- * family caption alone rather than a fabricated name.
- *
- * Loading/error stay quiet lines rather than alarms - the addresses are a
- * convenience surface, not a panel state.
+ * One row per family the scope actually holds: the wallet's own label when it
+ * has one, the family ("EVM", "SOL") when it does not. A project selection
+ * carries no user label (`ProjectWalletRef` is id + address), so those rows
+ * show the family alone rather than a fabricated name.
  */
 
 import type { JSX } from "react";
 import { useSessionWallets } from "../../../lib/api/session-wallets.js";
 import { useProject } from "../../../lib/api/projects.js";
-import { AddressDisplay } from "../../../components/common/AddressDisplay.js";
 import { CardStateNote, PortfolioCard } from "./portfolio/PortfolioCard.js";
+import { WalletTable, WalletTableRow } from "./portfolio/WalletsCard.js";
 import type { PortfolioCardScope } from "./portfolio/portfolio-scope.js";
 
 /**
@@ -86,7 +80,7 @@ export function WalletPairCard({
   const empty = view.evm === null && view.solana === null;
 
   return (
-    <PortfolioCard eyebrow="Wallets">
+    <PortfolioCard title="Wallets">
       {view.isLoading ? (
         <CardStateNote tone="loading">Loading…</CardStateNote>
       ) : view.isError ? (
@@ -102,14 +96,22 @@ export function WalletPairCard({
             : "No wallets selected for this project - wallet tools stay disabled."}
         </CardStateNote>
       ) : (
-        <ul className="flex flex-col gap-1" data-vex-area="deposit-addresses">
+        <WalletTable>
           {view.evm !== null ? (
-            <WalletRow familyCaption="EVM" entry={view.evm} />
+            <WalletTableRow
+              name={view.evm.label.length > 0 ? view.evm.label : "EVM"}
+              detail={null}
+              address={view.evm.address}
+            />
           ) : null}
           {view.solana !== null ? (
-            <WalletRow familyCaption="SOL" entry={view.solana} />
+            <WalletTableRow
+              name={view.solana.label.length > 0 ? view.solana.label : "SOL"}
+              detail={null}
+              address={view.solana.address}
+            />
           ) : null}
-        </ul>
+        </WalletTable>
       )}
     </PortfolioCard>
   );
@@ -174,29 +176,4 @@ function selectWalletPair(
       };
     }
   }
-}
-
-/**
- * One family row. `entry.label` is the user's own name for the wallet and is
- * shown when set; an unlabeled wallet falls back to the terse family caption,
- * so the row always names WHICH chain family the address belongs to.
- */
-function WalletRow({
-  familyCaption,
-  entry,
-}: {
-  readonly familyCaption: string;
-  readonly entry: WalletPairEntry;
-}): JSX.Element {
-  return (
-    <li className="vex-wal vex-wal--pair">
-      <span className="vex-wal__k">
-        {familyCaption}
-        {entry.label.length > 0 ? (
-          <em className="vex-ch__tag not-italic">{entry.label}</em>
-        ) : null}
-      </span>
-      <AddressDisplay address={entry.address} />
-    </li>
-  );
 }

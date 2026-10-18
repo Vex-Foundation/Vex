@@ -16,10 +16,11 @@
  *
  * FOUR IDENTITIES, deliberately separate (A1):
  *  - `latestBoard`  the most recently composed board in this session;
- *  - `pinnedBoard`  what the BOOK sidebar shows, which a newer board must NOT
+ *  - `pinnedBoard`  what the Board page opens, which a newer board must NOT
  *                   silently replace (the unseen dot is how the reader learns
  *                   a newer one exists);
- *  - `modalBoard`   the board the open modal is bound to;
+ *  - `modalBoard`   the board the host is bound to (the Board page is up;
+ *                   the name is from the dialog it replaced);
  *  - the live lease, DERIVED from `modalBoard` + `liveRequested` rather than
  *    stored, so a lease can never survive the surface that asked for it.
  */
@@ -177,7 +178,7 @@ interface BoardSurfaceData {
   readonly filter: BoardFilter;
   readonly scrollTop: number;
   /**
-   * Is the Ask VEX side panel open?
+   * Is the Ask Vex block (in the Vex sidebar) open?
    *
    * Ephemeral in the strongest sense: it does not survive a close, because
    * an unsent question the reader walked away from is not state worth
@@ -204,12 +205,12 @@ interface BoardSurfaceActions {
    * The reader has now SEEN this board: clear its unseen dot.
    *
    * Key-guarded, because there are two clear paths and both must be about
-   * the same board (A13): the BOOK's Board tab becoming selected with this
-   * board visible in the ActiveBoard module, and this board's modal opening
-   * from anywhere. A dot for a DIFFERENT board is left alone.
+   * the same board (A13): this board being bound, from anywhere (the Board
+   * page opening it), and an explicit acknowledgement by a surface showing
+   * it. A dot for a DIFFERENT board is left alone.
    */
   readonly acknowledgeBoardSeen: (key: BoardKey) => void;
-  /** Pin a board into the BOOK. A newer board never overwrites this. */
+  /** Pin a board: the Board page opens it. A newer board never overwrites this. */
   readonly pinBoard: (board: BoardRef) => void;
   readonly unpinBoard: () => void;
   readonly openBoardModal: (board: BoardRef) => void;
@@ -308,7 +309,7 @@ export const useBoardSurfaceStore = create<BoardSurfaceState>((set, get) => ({
     const key = boardKeyOf(board);
     const bound = get().modalBoard;
     // REBINDING IS A CLOSE. Opening a different board while one is up (the
-    // BOOK's Open board while a modal is already open) leaves the previous
+    // transcript's Open board while the page shows another) leaves the previous
     // board's channels reading a pair nobody is looking at, so the feeds are
     // cut and both generations are invalidated BEFORE the new binding lands.
     const rebinding = bound !== null && boardKeyOf(bound) !== key;

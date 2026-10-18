@@ -1,70 +1,95 @@
 /**
- * POSITION block — pins the zero-balance display rules:
+ * PositionBlock - the Portfolio page's total (docs/design/R3-MINIMAL.md
+ * section 9.1): what the total includes, the money headline, the snapshot it
+ * compares with and when the figures were loaded.
  *
- *   - token rows whose USD would render as `$0.00` (|USD| < 0.005, i.e.
- *     below formatUsd's 2-decimal rounding threshold) never render,
- *   - the threshold matches formatUsd exactly: 0.004 hides, 0.006 shows,
- *   - the 8-row cap and "+N more" tail count only displayable rows,
- *   - when the wallet has tokens but ALL of them round to $0.00, a single
- *     muted "No priced balances." line replaces the list (the truly-empty
- *     "No token balances." copy is reserved for zero token rows),
- *   - UNPRICED rows (`balanceUsd: null`) with a positive amount stay VISIBLE
- *     as `amount + symbol` plus a muted em dash — owner decision: show held
- *     funds without a valuation, never a fabricated $0.00,
- *   - totals stay untouched — they reflect the full portfolio.
+ * Pins:
+ *   - SCOPE IS THE ONLY INPUT and it is never widened: global, session and
+ *     project each read exactly their own scope, a single wallet reads the
+ *     global read narrowed by its own address and shows THAT read's figure,
+ *   - the headline is the full USD figure ("$12,345.67", Intl, never compact)
+ *     and the line over it names what the total includes, per scope,
+ *   - the per-scope empty notes, the Add wallet route, the loading and error
+ *     lines, and the refresh key + the chips the page hands in always stand,
+ *   - the snapshot line says what the DTO says (the delta is `pnlVsPrev`, never
+ *     a live gain), prints the snapshot's AGE, and past 24 hours mutes the
+ *     delta (`data-stale`); no age when the DTO carries no (or a future)
+ *     timestamp; "loaded HH:MM" is the query's own fetch time,
+ *   - chain read problems stay beside the cached total.
  *
- * `usePortfolio` is mocked — this suite owns the block's display rules,
- * not the query wiring. `useAvailableWallets` (consumed by the GLOBAL-scope
- * `GlobalWalletAddresses`, WP-L) is mocked to an empty inventory so this
- * suite's assertions stay about the token/total display rules; the panel's
- * own behavior is pinned separately in `GlobalWalletAddresses.test.tsx`.
+ * The query hooks are mocked: this suite owns the block's display rules and
+ * which read it asks for, not the query wiring (the real query layer is pinned
+ * in `portfolio-scope-cards.test.tsx`).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type {
   PortfolioDto,
-  PositionChainDto,
-  PositionTokenDto,
+  PortfolioReadInput,
 } from "@shared/schemas/portfolio.js";
+import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
+import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
-const mockUsePortfolio = vi.hoisted(() => vi.fn());
-const mockUseSessionWallets = vi.hoisted(() => vi.fn());
-const mockUseAvailableWallets = vi.hoisted(() => vi.fn());
-const mockUseProject = vi.hoisted(() => vi.fn());
+interface QueryStub {
+  readonly isLoading: boolean;
+  readonly isError: boolean;
+  readonly data: Result<PortfolioDto> | undefined;
+  readonly dataUpdatedAt: number;
+}
+
+const mockUsePortfolio = vi.hoisted(() =>
+  vi.fn<(input: PortfolioReadInput) => QueryStub>(),
+);
+const mockUseWalletPortfolio = vi.hoisted(() =>
+  vi.fn<(address: string | null) => QueryStub>(),
+);
+const mockResolvedInvalidation = vi.hoisted(() => vi.fn());
+const mockProgressInvalidation = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/api/portfolio.js", () => ({
   usePortfolio: mockUsePortfolio,
-  // Wave P — the card subscribes to the terminalization push and hosts the
-  // refresh button. Both are query-cache concerns owned by the api module, so
-  // stubbing them here keeps these cases about the card's DISPLAY logic.
-  useActivityResolvedInvalidation: () => undefined,
-  useActivityProgressInvalidation: () => undefined,
+  useWalletPortfolio: mockUseWalletPortfolio,
+  // The block hosts the refresh key, a query-cache concern owned by the api
+  // module. The activity pushes are mocked only to prove the block never
+  // subscribes them itself: AppShell holds them once for the whole app.
+  useActivityResolvedInvalidation: mockResolvedInvalidation,
+  useActivityProgressInvalidation: mockProgressInvalidation,
   usePortfolioRefresh: () => ({ refresh: async () => ({ status: "refreshed" }) }),
 }));
 
-vi.mock("../../../lib/api/session-wallets.js", () => ({
-  useSessionWallets: mockUseSessionWallets,
-}));
-
-vi.mock("../../../lib/api/wallet-inventory.js", () => ({
-  useAvailableWallets: mockUseAvailableWallets,
-}));
-
-vi.mock("../../../lib/api/projects.js", () => ({
-  useProject: mockUseProject,
-}));
+/** A full error envelope, as main would hand the renderer on a failed read. */
+const READ_FAILED: VexError = {
+  code: "internal.unexpected",
+  domain: "system",
+  message: "boom",
+  retryable: false,
+  userActionable: false,
+  redacted: true,
+  correlationId: "00000000-0000-4000-8000-0000000000ee",
+};
 
 const { PositionBlock } = await import("../book/PositionBlock.js");
 
-function token(
-  symbol: string,
-  balanceUsd: number | null,
-  chainId: number | null = 1,
-  amount: number | null = null,
-): PositionTokenDto {
-  return { chainId, symbol, balanceUsd, amount };
-}
+const SESSION = "00000000-0000-4000-8000-00000000aaaa";
+const PROJECT = "00000000-0000-4000-8000-00000000bbbb";
+const EVM_WALLET: AvailableWalletDto = {
+  id: "evm-1",
+  family: "evm",
+  address: "0x1111111111111111111111111111111111111111",
+  label: "Main",
+};
+const SOL_WALLET: AvailableWalletDto = {
+  id: "sol-1",
+  family: "solana",
+  address: "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+  label: "",
+};
+
+/** The query's own fetch time: local 09:07, so the "loaded" clock is "09:07". */
+const LOADED_AT = new Date(2026, 8, 4, 9, 7, 30).getTime();
+const LOADED_CLOCK = "09:07";
 
 function portfolio(overrides: Partial<PortfolioDto> = {}): PortfolioDto {
   return {
@@ -80,490 +105,397 @@ function portfolio(overrides: Partial<PortfolioDto> = {}): PortfolioDto {
   };
 }
 
-function mockPortfolio(dto: PortfolioDto): void {
-  mockUsePortfolio.mockReturnValue({
-    isLoading: false,
-    isError: false,
-    data: { ok: true, data: dto },
-  });
+function ready(dto: PortfolioDto, dataUpdatedAt: number = LOADED_AT): QueryStub {
+  return { isLoading: false, isError: false, data: ok(dto), dataUpdatedAt };
 }
 
-function mockSessionWallets(
-  evmAddr: string | null,
-  solAddr: string | null,
-): void {
-  mockUseSessionWallets.mockReturnValue({
-    isLoading: false,
-    isError: false,
-    data: {
-      ok: true,
-      data: {
-        evm: evmAddr ? { walletId: "evm_1", address: evmAddr, label: "Main" } : null,
-        solana: solAddr
-          ? { walletId: "sol_1", address: solAddr, label: "Sol" }
-          : null,
-      },
-    },
-  });
+const NO_READ: QueryStub = {
+  isLoading: false,
+  isError: false,
+  data: undefined,
+  dataUpdatedAt: 0,
+};
+
+function mockScopeRead(dto: PortfolioDto, dataUpdatedAt: number = LOADED_AT): void {
+  mockUsePortfolio.mockReturnValue(ready(dto, dataUpdatedAt));
 }
 
-/** The project's own wallet selection, as `useProject` resolves it. */
-function mockProjectWallets(
-  evmAddr: string | null,
-  solAddr: string | null,
-): void {
-  mockUseProject.mockReturnValue({
-    isLoading: false,
-    isError: false,
-    data: {
-      ok: true,
-      data: {
-        id: PROJECT,
-        wallets: {
-          evm: evmAddr === null ? null : { walletId: "evm_1", address: evmAddr },
-          solana: solAddr === null ? null : { walletId: "sol_1", address: solAddr },
-        },
-      },
-    },
-  });
+/** Every input the scope read was asked for, across all renders. */
+function scopeReads(): readonly PortfolioReadInput[] {
+  return mockUsePortfolio.mock.calls.map(([input]) => input);
+}
+
+/** Every address the wallet read was asked for, across all renders. */
+function walletReads(): readonly (string | null)[] {
+  return mockUseWalletPortfolio.mock.calls.map(([address]) => address);
+}
+
+function area(name: string): HTMLElement {
+  const found = document.querySelector(`[data-vex-area="${name}"]`);
+  if (!(found instanceof HTMLElement)) throw new Error(`missing area: ${name}`);
+  return found;
+}
+
+function maybeArea(name: string): HTMLElement | null {
+  const found = document.querySelector(`[data-vex-area="${name}"]`);
+  return found instanceof HTMLElement ? found : null;
+}
+
+function subLine(): HTMLElement {
+  const found = document.querySelector(".vex-pf-top__sub");
+  if (!(found instanceof HTMLElement)) throw new Error("missing snapshot line");
+  return found;
+}
+
+function renderBlock(
+  scope: Parameters<typeof PositionBlock>[0]["scope"] = { kind: "global" },
+) {
+  return render(<PositionBlock scope={scope} chips={null} />);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // A project read that has not answered: no families, so no chip row - never
-  // a row of chains the project may not hold.
-  mockUseProject.mockReturnValue({
-    isLoading: true,
-    isError: false,
-    data: undefined,
-  });
-  // Global-scope suites never render the session body; a benign default keeps
-  // the hook harmless when a test forgets to script it.
-  mockUseSessionWallets.mockReturnValue({
-    isLoading: true,
-    isError: false,
-    data: undefined,
-  });
-  // GLOBAL scope renders GlobalWalletAddresses (WP-L); default to an empty
-  // inventory so this suite's assertions stay about the token/total rules —
-  // GlobalWalletAddresses' own rendering is pinned in its dedicated suite.
-  mockUseAvailableWallets.mockReturnValue({
-    data: { ok: true, data: { evm: [], solana: [] } },
-  });
+  window.localStorage.clear();
+  useUiStore.setState({ shellRoute: { kind: "none" } });
+  mockScopeRead(portfolio());
+  mockUseWalletPortfolio.mockReturnValue(NO_READ);
 });
 
-describe("PositionBlock zero-balance display", () => {
-  it("hides token rows that would render as $0.00", () => {
-    mockPortfolio(
-      portfolio({
-        tokens: [
-          token("SOL", 12.3),
-          token("GABECUBE", 0),
-          token("AWSTIN", 0.0001),
-        ],
-      }),
-    );
-    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(screen.getByText("SOL")).not.toBeNull();
-    expect(screen.queryByText("GABECUBE")).toBeNull();
-    expect(screen.queryByText("AWSTIN")).toBeNull();
-    // No figure anywhere on the block reads $0.00.
-    expect(screen.queryByText("$0.00")).toBeNull();
-    expect(container.querySelectorAll("li")).toHaveLength(1);
-  });
-
-  it("aligns the cut with formatUsd rounding: 0.004 hides, 0.006 shows as $0.01", () => {
-    mockPortfolio(
-      portfolio({
-        tokens: [token("DUST", 0.004), token("EDGE", 0.006)],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(screen.queryByText("DUST")).toBeNull();
-    expect(screen.getByText("EDGE")).not.toBeNull();
-    expect(screen.getByText("$0.01")).not.toBeNull();
-    expect(screen.queryByText("$0.00")).toBeNull();
-  });
-
-  it("shows 'No priced balances.' when every token rounds to $0.00", () => {
-    mockPortfolio(
-      portfolio({
-        tokens: [token("GABECUBE", 0), token("AWSTIN", -0.002)],
-      }),
-    );
-    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(container.querySelectorAll("li")).toHaveLength(0);
-    expect(screen.getByText("No priced balances.")).not.toBeNull();
-    // The truly-empty copy stays reserved for a portfolio with NO token rows.
-    expect(screen.queryByText("No token balances.")).toBeNull();
-  });
-
-  it("keeps 'No token balances.' for a portfolio with no token rows at all", () => {
-    mockPortfolio(portfolio({ tokens: [] }));
-    render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(screen.getByText("No token balances.")).not.toBeNull();
-    expect(screen.queryByText("No priced balances.")).toBeNull();
-  });
-
-  it("caps at 8 rows and counts '+N more' AFTER filtering zero balances", () => {
-    // 12 rows fetched: 10 displayable + 2 zero. Pre-filter counting would
-    // say "+4 more"; the correct tail is 10 - 8 = "+2 more".
-    const priced = Array.from({ length: 10 }, (_, i) =>
-      token(`TOK${i}`, 5 + i),
-    );
-    const dust = [token("ZERO1", 0), token("ZERO2", 0.001)];
-    mockPortfolio(portfolio({ tokens: [...priced, ...dust] }));
-    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(container.querySelectorAll("li")).toHaveLength(8);
-    expect(screen.getByText("+2 more")).not.toBeNull();
-    expect(screen.queryByText("+4 more")).toBeNull();
-  });
-
-  it("shows an UNPRICED holding as amount + symbol with a muted em dash (no $0.00)", () => {
-    mockPortfolio(
-      portfolio({
-        tokens: [token("ETH", null, 4663, 0.005)],
-      }),
-    );
-    const { container } = render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(screen.getByText("ETH")).not.toBeNull();
-    expect(screen.getByText("0.005 ETH")).not.toBeNull();
-    expect(screen.getByText("-")).not.toBeNull();
-    expect(screen.queryByText("$0.00")).toBeNull();
-    expect(screen.queryByText("No priced balances.")).toBeNull();
-    expect(container.querySelectorAll("li")).toHaveLength(1);
-  });
-
-  it("hides an unpriced row whose amount is unknown or zero (nothing to show)", () => {
-    mockPortfolio(
-      portfolio({
-        tokens: [
-          token("SOL", 12.3),
-          token("GHOST", null, 1, null),
-          token("EMPTY", null, 1, 0),
-        ],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(screen.getByText("SOL")).not.toBeNull();
-    expect(screen.queryByText("GHOST")).toBeNull();
-    expect(screen.queryByText("EMPTY")).toBeNull();
-  });
-
-  it("keeps the live total on the FULL portfolio even when rows filter out", () => {
-    mockPortfolio(
-      portfolio({
-        liveTotalUsd: 987.65,
-        tokens: [token("GABECUBE", 0)],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "global" }} />);
-
-    expect(screen.getByText("$987.65")).not.toBeNull();
-    expect(screen.getByText("No priced balances.")).not.toBeNull();
-  });
+afterEach(() => {
+  cleanup();
 });
 
-// ── Session scope: deposit addresses + per-chain switcher (owner redesign) ──
+describe("PositionBlock - each scope reads its own scope and never a wider one", () => {
+  it("global reads the global portfolio and never asks for a wallet", () => {
+    renderBlock({ kind: "global" });
 
-const SESSION = "00000000-0000-4000-8000-00000000aaaa";
-const PROJECT = "00000000-0000-4000-8000-00000000bbbb";
-const EVM_ADDR = "0xAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaaAAAAaaaa";
-const SOL_ADDR = "So11111111111111111111111111111111111111112";
-
-function chain(
-  chainId: number,
-  family: "evm" | "solana",
-  totalUsd: number,
-  tokens: PositionChainDto["tokens"],
-): PositionChainDto {
-  return { chainId, family, totalUsd, tokens };
-}
-
-describe("PositionBlock session view (unified chain switcher)", () => {
-  it("defaults the EVM group to Ethereum with a quiet empty state at zero balance", () => {
-    mockSessionWallets(EVM_ADDR, SOL_ADDR);
-    // Funds on Base only — Ethereum still leads as the standing default.
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25, amount: null }])],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-
-    expect(screen.getAllByText("Ethereum").length).toBeGreaterThan(0);
-    expect(screen.getByText("No assets on Ethereum")).not.toBeNull();
-  });
-
-  it("switches chains via the quick icons and shows that chain's top tokens", () => {
-    mockSessionWallets(EVM_ADDR, null);
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        chains: [chain(8453, "evm", 25, [{ symbol: "USDC", balanceUsd: 25, amount: null }])],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Show Base assets" }));
-    // The brand SVGs carry their own <title> text, so the name can match
-    // more than once — the header text is asserted as "at least one".
-    expect(screen.getAllByText("Base").length).toBeGreaterThan(0);
-    expect(screen.getByText("USDC")).not.toBeNull();
-    // $25.00 legitimately appears twice: the chain total in the group header
-    // AND the single USDC token row (the chain's whole balance is USDC).
-    expect(screen.getAllByText("$25.00")).toHaveLength(2);
-  });
-
-  it("shows an unpriced-only chain (Robinhood 4663): amount + symbol, muted dashes, no $0.00", () => {
-    mockSessionWallets(EVM_ADDR, null);
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        // Only holding: native ETH on Robinhood Chain with NO price source —
-        // the chain still appears (totalUsd 0) and the funds stay visible.
-        chains: [
-          chain(4663, "evm", 0, [
-            { symbol: "ETH", balanceUsd: null, amount: 0.005 },
-          ]),
-        ],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Show Robinhood assets" }));
-    expect(screen.getAllByText("Robinhood").length).toBeGreaterThan(0);
-    expect(screen.getByText("ETH")).not.toBeNull();
-    expect(screen.getByText("0.005 ETH")).not.toBeNull();
-    // Chain total AND token valuation both render the muted em dash — a $0.00
-    // would fabricate a valuation that does not exist.
-    expect(screen.getAllByText("-").length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText("$0.00")).toBeNull();
-    expect(screen.queryByText("No assets on Robinhood")).toBeNull();
-  });
-
-  it("always offers 'more'; the dialog lists only funded networks", () => {
-    mockSessionWallets(EVM_ADDR, null);
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        // Polygon (137) is not a quick chain — it appears ONLY in the dialog.
-        chains: [chain(137, "evm", 5, [{ symbol: "POL", balanceUsd: 5, amount: null }])],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "more" }));
-    expect(screen.getByText("Networks")).not.toBeNull();
-    expect(screen.getAllByText("Polygon").length).toBeGreaterThan(0);
-  });
-
-  it("offers 'more' even when nothing beyond the quick set is funded (empty-state dialog)", () => {
-    mockSessionWallets(EVM_ADDR, null);
-    mockPortfolio(portfolio({ scope: "session", chains: [] }));
-    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "more" }));
-    expect(screen.getByText("Networks")).not.toBeNull();
-    expect(screen.getByText("No funded networks yet.")).not.toBeNull();
-  });
-
-  it("keeps Solana COLLAPSED by default and opens it from its chip (no always-open second group)", () => {
-    mockSessionWallets(EVM_ADDR, SOL_ADDR);
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        chains: [
-          chain(1, "evm", 40, [{ symbol: "ETH", balanceUsd: 40, amount: null }]),
-          chain(20011000000, "solana", 60, [
-            { symbol: "SOL", balanceUsd: 50, amount: null },
-            { symbol: "BONK", balanceUsd: 10, amount: null },
-          ]),
-        ],
-      }),
-    );
-    const { container } = render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-    const chainsArea = container.querySelector(
-      '[data-vex-area="position-chains"]',
-    ) as HTMLElement;
-    const chains = within(chainsArea);
-
-    // Default = the EVM standing default; Solana's holdings are NOT on screen.
-    expect(chains.getAllByText("Ethereum").length).toBeGreaterThan(0);
-    expect(chains.queryByText("BONK")).toBeNull();
-
-    // Solana is a peer chip in the ONE chip row, labelled for assistive tech.
-    fireEvent.click(
-      chains.getByRole("button", { name: "Show Solana assets" }),
-    );
-    expect(chains.getByText("SOL")).not.toBeNull();
-    expect(chains.getByText("BONK")).not.toBeNull();
-    // One selection at a time — the EVM chain's holdings are gone now.
-    expect(chains.queryByText("ETH")).toBeNull();
-  });
-
-  it("opens on Solana when the session has NO EVM wallet (never an empty EVM default)", () => {
-    mockSessionWallets(null, SOL_ADDR);
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        chains: [
-          chain(20011000000, "solana", 60, [
-            { symbol: "SOL", balanceUsd: 60, amount: null },
-          ]),
-        ],
-      }),
-    );
-    const { container } = render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-    const chains = within(
-      container.querySelector('[data-vex-area="position-chains"]') as HTMLElement,
-    );
-    expect(chains.getByText("SOL")).not.toBeNull();
-    // No EVM chips at all — the session has no EVM wallet.
-    expect(
-      chains.queryByRole("button", { name: "Show Ethereum assets" }),
-    ).toBeNull();
-  });
-
-  it("the 'more' dialog lists Solana too, not just EVM networks", () => {
-    mockSessionWallets(EVM_ADDR, SOL_ADDR);
-    mockPortfolio(
-      portfolio({
-        scope: "session",
-        chains: [
-          chain(137, "evm", 5, [{ symbol: "POL", balanceUsd: 5, amount: null }]),
-          chain(20011000000, "solana", 60, [
-            { symbol: "SOL", balanceUsd: 60, amount: null },
-          ]),
-        ],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "session", sessionId: SESSION }} />);
-    fireEvent.click(screen.getByRole("button", { name: "more" }));
-    expect(screen.getAllByText("Polygon").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Solana").length).toBeGreaterThan(0);
-  });
-});
-
-/**
- * PROJECT scope - the Vex Studio rail's arm of the same card (owner parity
- * decree, 2026-09-04).
- *
- * The property that carries the money risk: the read goes out as the PROJECT
- * scope and the chip row is built from the PROJECT's own wallet selection. A
- * fallback to the global inventory here would put somebody else's funds under
- * a project's name, which is a wrong answer that renders.
- */
-describe("PositionBlock project view", () => {
-  it("reads the PROJECT scope - never the global inventory", () => {
-    mockProjectWallets(EVM_ADDR, SOL_ADDR);
-    mockPortfolio(portfolio({ scope: "project", chains: [] }));
-    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
-
-    expect(mockUsePortfolio).toHaveBeenCalledWith({
-      scope: "project",
-      projectId: PROJECT,
-    });
-  });
-
-  it("is titled Position and counts the project's wallets", () => {
-    mockProjectWallets(EVM_ADDR, SOL_ADDR);
-    mockPortfolio(portfolio({ scope: "project", walletCount: 2, chains: [] }));
-    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
-
-    expect(screen.getByText("Position")).not.toBeNull();
-    expect(screen.getByText("2 wallets")).not.toBeNull();
-    expect(screen.queryByText("Portfolio")).toBeNull();
-  });
-
-  it("builds the chip row from the PROJECT's selection, defaulting to Ethereum", () => {
-    mockProjectWallets(EVM_ADDR, SOL_ADDR);
-    mockPortfolio(
-      portfolio({
-        scope: "project",
-        chains: [
-          chain(8453, "evm", 25, [
-            { symbol: "USDC", balanceUsd: 25, amount: null },
-          ]),
-        ],
-      }),
-    );
-    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
-
-    expect(screen.getAllByText("Ethereum").length).toBeGreaterThan(0);
-    expect(screen.getByText("No assets on Ethereum")).not.toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Show Solana assets" }),
-    ).not.toBeNull();
-  });
-
-  it("opens on Solana when the project selected NO EVM wallet", () => {
-    mockProjectWallets(null, SOL_ADDR);
-    mockPortfolio(
-      portfolio({
-        scope: "project",
-        chains: [
-          chain(20011000000, "solana", 60, [
-            { symbol: "SOL", balanceUsd: 60, amount: null },
-          ]),
-        ],
-      }),
-    );
-    const { container } = render(
-      <PositionBlock scope={{ kind: "project", projectId: PROJECT }} />,
-    );
-    const chains = within(
-      container.querySelector('[data-vex-area="position-chains"]') as HTMLElement,
-    );
-    expect(chains.getByText("SOL")).not.toBeNull();
-    expect(
-      chains.queryByRole("button", { name: "Show Ethereum assets" }),
-    ).toBeNull();
-  });
-
-  it("a FAILED project read draws no chip row rather than guessing the families", () => {
-    mockUseProject.mockReturnValue({
-      isLoading: false,
-      isError: true,
-      data: undefined,
-    });
-    mockPortfolio(
-      portfolio({
-        scope: "project",
-        chains: [chain(1, "evm", 40, [{ symbol: "ETH", balanceUsd: 40, amount: null }])],
-      }),
-    );
-    const { container } = render(
-      <PositionBlock scope={{ kind: "project", projectId: PROJECT }} />,
-    );
-    expect(
-      container.querySelector('[data-vex-area="position-chains"]'),
-    ).toBeNull();
-    // The resolved total is still the project's own and stays on screen.
+    expect(scopeReads().length).toBeGreaterThan(0);
+    for (const input of scopeReads()) expect(input).toEqual({ scope: "global" });
+    // The wallet-narrowed read stays disabled by its null address.
+    for (const address of walletReads()) expect(address).toBeNull();
     expect(screen.getByText("$123.45")).not.toBeNull();
   });
 
-  it("names the PROJECT when the scope holds no wallets", () => {
-    mockProjectWallets(null, null);
-    mockPortfolio(portfolio({ scope: "project", walletCount: 0 }));
-    render(<PositionBlock scope={{ kind: "project", projectId: PROJECT }} />);
+  it("session reads exactly that session - never the global inventory", () => {
+    mockScopeRead(portfolio({ scope: "session", liveTotalUsd: 40 }));
+    renderBlock({ kind: "session", sessionId: SESSION });
 
-    expect(
-      screen.getByText("No wallets selected for this project."),
-    ).not.toBeNull();
-    expect(screen.queryByText("No wallets in this session.")).toBeNull();
+    expect(scopeReads().length).toBeGreaterThan(0);
+    for (const input of scopeReads()) {
+      expect(input).toEqual({ scope: "session", sessionId: SESSION });
+    }
+    expect(mockUsePortfolio).not.toHaveBeenCalledWith({ scope: "global" });
+    for (const address of walletReads()) expect(address).toBeNull();
+    expect(screen.getByText("$40.00")).not.toBeNull();
+  });
+
+  it("project reads exactly that project - never the global inventory", () => {
+    mockScopeRead(portfolio({ scope: "project", liveTotalUsd: 75 }));
+    renderBlock({ kind: "project", projectId: PROJECT });
+
+    expect(scopeReads().length).toBeGreaterThan(0);
+    for (const input of scopeReads()) {
+      expect(input).toEqual({ scope: "project", projectId: PROJECT });
+    }
+    expect(mockUsePortfolio).not.toHaveBeenCalledWith({ scope: "global" });
+    for (const address of walletReads()) expect(address).toBeNull();
+    expect(screen.getByText("$75.00")).not.toBeNull();
+  });
+
+  it("a wallet reads the global read narrowed by ITS address and shows that read's figure", () => {
+    mockScopeRead(portfolio({ liveTotalUsd: 9999.99, walletCount: 2 }));
+    mockUseWalletPortfolio.mockReturnValue(
+      ready(portfolio({ liveTotalUsd: 111.11, walletCount: 1 })),
+    );
+    renderBlock({ kind: "wallet", wallet: EVM_WALLET });
+
+    expect(mockUseWalletPortfolio).toHaveBeenCalledWith(EVM_WALLET.address);
+    expect(screen.getByText("$111.11")).not.toBeNull();
+    // The aggregate rides in the cache but is NOT the figure for this wallet.
+    expect(screen.queryByText("$9,999.99")).toBeNull();
+    // No session or project read leaks into a wallet scope.
+    for (const input of scopeReads()) expect(input).toEqual({ scope: "global" });
+  });
+
+  it("leaves the activity pushes to the shell and never subscribes them twice", () => {
+    renderBlock();
+    expect(mockResolvedInvalidation).not.toHaveBeenCalled();
+    expect(mockProgressInvalidation).not.toHaveBeenCalled();
   });
 });
 
-describe("PositionBlock snapshot age (owner measurement 2026-09-04)", () => {
+describe("PositionBlock - the headline", () => {
+  it("prints the total as the full USD figure, never compact", () => {
+    mockScopeRead(portfolio({ liveTotalUsd: 12345.67 }));
+    renderBlock();
+    expect(screen.getByText("$12,345.67")).not.toBeNull();
+
+    cleanup();
+    mockScopeRead(portfolio({ liveTotalUsd: 1234567.891 }));
+    renderBlock();
+    expect(screen.getByText("$1,234,567.89")).not.toBeNull();
+    expect(screen.queryByText(/\$1\.2M/)).toBeNull();
+    expect(screen.queryByText(/K\b/)).toBeNull();
+  });
+
+  it("sets the headline in the block's header seam, in mono", () => {
+    mockScopeRead(portfolio({ liveTotalUsd: 12345.67 }));
+    renderBlock();
+    const header = area("portfolio-total");
+    expect(header.tagName).toBe("HEADER");
+    const big = header.querySelector(".vex-pf-top__big");
+    expect(big?.textContent).toBe("$12,345.67");
+    expect(big?.classList.contains("vex-num")).toBe(true);
+  });
+
+  it("a real zero total reads $0.00, a non-finite one says Not available", () => {
+    mockScopeRead(portfolio({ liveTotalUsd: 0 }));
+    renderBlock();
+    expect(screen.getByText("$0.00")).not.toBeNull();
+
+    cleanup();
+    mockScopeRead(portfolio({ liveTotalUsd: Number.NaN }));
+    renderBlock();
+    expect(screen.getByText("Not available")).not.toBeNull();
+    expect(screen.queryByText(/NaN/)).toBeNull();
+  });
+
+  it("names what the total includes, per scope, and says Lighter is separate", () => {
+    mockScopeRead(portfolio({ walletCount: 3 }));
+    renderBlock({ kind: "global" });
+    expect(
+      screen.getByText(
+        "Total value of your 3 on-chain wallets · Lighter is shown separately",
+      ),
+    ).not.toBeNull();
+
+    cleanup();
+    mockScopeRead(portfolio({ walletCount: 1 }));
+    renderBlock({ kind: "global" });
+    expect(
+      screen.getByText(
+        "Total value of your 1 on-chain wallet · Lighter is shown separately",
+      ),
+    ).not.toBeNull();
+
+    cleanup();
+    mockScopeRead(portfolio({ scope: "session", walletCount: 2 }));
+    renderBlock({ kind: "session", sessionId: SESSION });
+    expect(
+      screen.getByText(
+        "Total value of this chat's 2 on-chain wallets · Lighter is shown separately",
+      ),
+    ).not.toBeNull();
+
+    cleanup();
+    mockScopeRead(portfolio({ scope: "project", walletCount: 2 }));
+    renderBlock({ kind: "project", projectId: PROJECT });
+    expect(
+      screen.getByText(
+        "Total value of this project's 2 on-chain wallets · Lighter is shown separately",
+      ),
+    ).not.toBeNull();
+
+    cleanup();
+    mockUseWalletPortfolio.mockReturnValue(ready(portfolio({ walletCount: 1 })));
+    renderBlock({ kind: "wallet", wallet: EVM_WALLET });
+    expect(
+      screen.getByText("Total value of Main · Lighter is shown separately"),
+    ).not.toBeNull();
+  });
+
+  it("names an unlabeled wallet by its family", () => {
+    mockUseWalletPortfolio.mockReturnValue(ready(portfolio({ walletCount: 1 })));
+    renderBlock({ kind: "wallet", wallet: SOL_WALLET });
+    expect(
+      screen.getByText("Total value of SOL · Lighter is shown separately"),
+    ).not.toBeNull();
+  });
+
+  it("keeps the total on the DTO's own figure even when every token is dust", () => {
+    mockScopeRead(
+      portfolio({
+        liveTotalUsd: 987.65,
+        tokens: [
+          { chainId: 1, symbol: "DUST", balanceUsd: 0.001, amount: 1 },
+          { chainId: 1, symbol: "ZERO", balanceUsd: 0, amount: 1 },
+        ],
+      }),
+    );
+    renderBlock();
+    expect(screen.getByText("$987.65")).not.toBeNull();
+    // The total block lists no token rows: that is the Balances table's job.
+    expect(screen.queryByText("DUST")).toBeNull();
+  });
+});
+
+describe("PositionBlock - empty, loading and error", () => {
+  it("states the whole-inventory empty note and routes Add wallet to Settings wallets", () => {
+    mockScopeRead(portfolio({ walletCount: 0, liveTotalUsd: 0 }));
+    renderBlock({ kind: "global" });
+
+    expect(
+      screen.getByText(
+        "No wallets configured yet. Add your first and your total appears here.",
+      ),
+    ).not.toBeNull();
+    expect(document.querySelector(".vex-pf-top__big")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add wallet" }));
+    // jsdom rects are all-zero: the pin is that the measured rect object (not
+    // null) rode along as the page's origin.
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "settings",
+      origin: { x: 0, y: 0, width: 0, height: 0 },
+      section: "wallets",
+    });
+  });
+
+  it("a single wallet with nothing configured says the same and offers Add wallet", () => {
+    mockUseWalletPortfolio.mockReturnValue(ready(portfolio({ walletCount: 0 })));
+    renderBlock({ kind: "wallet", wallet: EVM_WALLET });
+
+    expect(
+      screen.getByText(
+        "No wallets configured yet. Add your first and your total appears here.",
+      ),
+    ).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add wallet" }));
+    expect(useUiStore.getState().shellRoute.kind).toBe("settings");
+  });
+
+  it("names the SESSION when the scope holds no wallets, with no Add wallet", () => {
+    mockScopeRead(portfolio({ scope: "session", walletCount: 0 }));
+    renderBlock({ kind: "session", sessionId: SESSION });
+
+    expect(screen.getByText("No wallets in this session.")).not.toBeNull();
+    expect(screen.queryByText("No wallets selected for this project.")).toBeNull();
+    expect(screen.queryByText(/No wallets configured yet/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add wallet" })).toBeNull();
+  });
+
+  it("names the PROJECT when the scope holds no wallets, with no Add wallet", () => {
+    mockScopeRead(portfolio({ scope: "project", walletCount: 0 }));
+    renderBlock({ kind: "project", projectId: PROJECT });
+
+    expect(screen.getByText("No wallets selected for this project.")).not.toBeNull();
+    expect(screen.queryByText("No wallets in this session.")).toBeNull();
+    expect(screen.queryByText(/No wallets configured yet/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add wallet" })).toBeNull();
+  });
+
+  it("says Loading while the read is in flight and prints no figure", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: true,
+      isError: false,
+      data: undefined,
+      dataUpdatedAt: 0,
+    });
+    renderBlock();
+
+    expect(screen.getByText("Loading your portfolio…")).not.toBeNull();
+    expect(document.querySelector(".vex-pf-top__big")).toBeNull();
+    expect(screen.queryByText("Not available")).toBeNull();
+  });
+
+  it("a failed read says it could not load, never a zero or an empty-wallets note", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: err(READ_FAILED),
+      dataUpdatedAt: 0,
+    });
+    renderBlock();
+
+    expect(screen.getByText("Couldn't load your portfolio.")).not.toBeNull();
+    expect(document.querySelector(".vex-pf-top__big")).toBeNull();
+    expect(screen.queryByText("$0.00")).toBeNull();
+    expect(screen.queryByText(/No wallets configured yet/)).toBeNull();
+  });
+
+  it("a transport error says it could not load too", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      data: undefined,
+      dataUpdatedAt: 0,
+    });
+    renderBlock({ kind: "session", sessionId: SESSION });
+
+    expect(screen.getByText("Couldn't load your portfolio.")).not.toBeNull();
+    expect(screen.queryByText("No wallets in this session.")).toBeNull();
+  });
+
+  it("a wallet read that failed says so rather than falling back to the aggregate", () => {
+    mockScopeRead(portfolio({ liveTotalUsd: 9999.99 }));
+    mockUseWalletPortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: err(READ_FAILED),
+      dataUpdatedAt: 0,
+    });
+    renderBlock({ kind: "wallet", wallet: EVM_WALLET });
+
+    expect(screen.getByText("Couldn't load your portfolio.")).not.toBeNull();
+    expect(screen.queryByText("$9,999.99")).toBeNull();
+  });
+});
+
+describe("PositionBlock - the refresh key and the chips stand in every state", () => {
+  const chips = <div role="group" aria-label="Portfolio scope">chips</div>;
+
+  function renderWithChips() {
+    return render(<PositionBlock scope={{ kind: "global" }} chips={chips} />);
+  }
+
+  it("renders the refresh key and the handed chips beside a total", () => {
+    renderWithChips();
+    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
+    expect(
+      document.querySelector(".vex-pf-top__side")?.contains(
+        screen.getByRole("group", { name: "Portfolio scope" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps both through loading, error and empty", () => {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: true,
+      isError: false,
+      data: undefined,
+      dataUpdatedAt: 0,
+    });
+    renderWithChips();
+    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
+    cleanup();
+
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      data: undefined,
+      dataUpdatedAt: 0,
+    });
+    renderWithChips();
+    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
+    cleanup();
+
+    mockScopeRead(portfolio({ walletCount: 0 }));
+    renderWithChips();
+    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
+  });
+
+  it("renders no chip group when the page hands none", () => {
+    renderBlock();
+    expect(screen.queryByRole("group", { name: "Portfolio scope" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+  });
+});
+
+describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
   // The clock is read at render, so the age is a deterministic function of
   // the fixture's `snapshotAt` and this fake now.
   const NOW = new Date("2026-09-04T12:00:00.000Z");
@@ -576,53 +508,179 @@ describe("PositionBlock snapshot age (owner measurement 2026-09-04)", () => {
     vi.useRealTimers();
   });
 
-  function mountSnapshot(snapshotAt: string) {
-    mockPortfolio(
+  function mountSnapshot(
+    snapshotAt: string | null,
+    overrides: Partial<PortfolioDto> = {},
+  ) {
+    mockScopeRead(
       portfolio({
         liveTotalUsd: 62.71,
         snapshotTotalUsd: 100.62,
         pnlVsPrev: 0.41,
         snapshotAt,
+        ...overrides,
       }),
     );
-    return render(<PositionBlock scope={{ kind: "global" }} />);
+    return renderBlock();
   }
 
-  it("a FRESH snapshot states its age and keeps the gain tone", () => {
+  it("a FRESH snapshot states its age and keeps the ink delta", () => {
     mountSnapshot("2026-09-04T11:55:00.000Z");
-    const line = document.querySelector('[data-vex-area="position-snapshot"]');
-    expect(line?.getAttribute("data-stale")).toBe("false");
-    expect(
-      document.querySelector('[data-vex-area="position-snapshot-age"]')?.textContent,
-    ).toContain("5 min ago");
-    const delta = screen.getByLabelText(/Profit and loss versus snapshot taken 5 min ago/);
-    // Direction is the sign, never a colour: a fresh delta keeps the ink.
-    expect(delta.className).toContain("vex-bs__pnl");
+
+    const seam = area("position-snapshot");
+    expect(seam.getAttribute("data-stale")).toBe("false");
+    expect(area("position-snapshot-age").textContent).toContain("5 min ago");
+
+    const delta = screen.getByLabelText("Change from the snapshot before +$0.41");
+    expect(delta.textContent).toBe("+$0.41");
+    expect(delta.classList.contains("vex-pf-top__pnl")).toBe(true);
+    expect(delta.getAttribute("data-stale")).toBe("false");
+    // Direction is the sign, never a colour: no inline tone on the delta.
     expect(delta.getAttribute("style")).toBeNull();
+  });
+
+  it("prints the whole line: snapshot age, figure, delta against the one before, loaded time", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z");
+    expect(subLine().textContent).toBe(
+      `Snapshot 5 min ago $100.62 · +$0.41 since the snapshot before · loaded ${LOADED_CLOCK}`,
+    );
+  });
+
+  it("the delta is the DTO's snapshot-against-snapshot change, never a live gain", () => {
+    // Live $62.71 against a $100.62 snapshot would read -$37.91; the DTO says
+    // +$0.41 against the snapshot BEFORE, and that is what the line carries.
+    mountSnapshot("2026-09-04T11:55:00.000Z");
+    expect(subLine().textContent).not.toContain("37.91");
+    expect(subLine().textContent).toContain("since the snapshot before");
   });
 
   it("a STALE snapshot (31 days) states its age and MUTES the delta - not a live gain", () => {
     mountSnapshot("2026-08-04T12:00:00.000Z");
-    const line = document.querySelector('[data-vex-area="position-snapshot"]');
-    expect(line?.getAttribute("data-stale")).toBe("true");
-    expect(
-      document.querySelector('[data-vex-area="position-snapshot-age"]')?.textContent,
-    ).toContain("31 days ago");
-    const delta = screen.getByLabelText(/Profit and loss versus snapshot taken 31 days ago/);
-    expect(delta.getAttribute("style")).toContain("label-secondary");
+
+    expect(area("position-snapshot").getAttribute("data-stale")).toBe("true");
+    expect(area("position-snapshot-age").textContent).toContain("31 days ago");
+
+    const delta = screen.getByLabelText("Change from the snapshot before +$0.41");
+    expect(delta.getAttribute("data-stale")).toBe("true");
     // The figures themselves are untouched: the tone changed, not the truth.
     expect(delta.textContent).toBe("+$0.41");
-    expect(screen.getByText(/snapshot \$100\.62/)).toBeTruthy();
+    expect(subLine().textContent).toContain("$100.62");
   });
 
-  it("renders no age when the DTO carries no snapshot timestamp", () => {
-    mockPortfolio(
-      portfolio({ snapshotTotalUsd: 100.62, pnlVsPrev: 0.41, snapshotAt: null }),
+  it.each([
+    ["2026-09-03T13:00:00.000Z", "23 hours ago", "false"],
+    ["2026-09-03T11:00:00.000Z", "1 day ago", "true"],
+  ])("the 24 hour line: a snapshot from %s is %s (stale: %s)", (at, label, stale) => {
+    mountSnapshot(at);
+    expect(area("position-snapshot").getAttribute("data-stale")).toBe(stale);
+    expect(area("position-snapshot-age").textContent).toContain(label);
+  });
+
+  it("renders no age when the DTO carries no snapshot timestamp, and keeps the delta", () => {
+    mountSnapshot(null);
+
+    expect(maybeArea("position-snapshot-age")).toBeNull();
+    expect(subLine().textContent).toBe(
+      `Snapshot $100.62 · +$0.41 since the snapshot before · loaded ${LOADED_CLOCK}`,
     );
-    render(<PositionBlock scope={{ kind: "global" }} />);
-    expect(document.querySelector('[data-vex-area="position-snapshot-age"]')).toBeNull();
-    expect(
-      screen.getByLabelText(/Profit and loss versus previous snapshot/).className,
-    ).toContain("vex-bs__pnl");
+    expect(screen.getByLabelText("Change from the snapshot before +$0.41")).not.toBeNull();
+  });
+
+  it("renders no age for a snapshot dated in the future (clock skew)", () => {
+    mountSnapshot("2026-09-04T12:30:00.000Z");
+    expect(maybeArea("position-snapshot-age")).toBeNull();
+  });
+
+  it("signs the delta by value: negative, zero", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: -4.1 });
+    expect(screen.getByLabelText("Change from the snapshot before -$4.10").textContent).toBe(
+      "-$4.10",
+    );
+
+    cleanup();
+    mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: 0 });
+    expect(screen.getByLabelText("Change from the snapshot before $0.00").textContent).toBe(
+      "$0.00",
+    );
+  });
+
+  it("a snapshot without a comparison (pnlVsPrev null) prints the figure and no delta", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: null });
+
+    expect(subLine().textContent).toBe(
+      `Snapshot 5 min ago $100.62 · loaded ${LOADED_CLOCK}`,
+    );
+    expect(subLine().textContent).not.toContain("since the snapshot before");
+    expect(document.querySelector(".vex-pf-top__pnl")).toBeNull();
+  });
+
+  it("with no snapshot at all the line carries only when the figures were loaded", () => {
+    mountSnapshot(null, { snapshotTotalUsd: null, pnlVsPrev: null });
+
+    expect(maybeArea("position-snapshot")).toBeNull();
+    expect(subLine().textContent).toBe(`Loaded ${LOADED_CLOCK}`);
+  });
+
+  it("prints no loaded time when the query has no fetch time", () => {
+    mockScopeRead(portfolio({ snapshotTotalUsd: 100.62, pnlVsPrev: 0.41 }), 0);
+    renderBlock();
+    expect(subLine().textContent).not.toContain("loaded");
+    expect(subLine().textContent).toContain("Snapshot");
+
+    cleanup();
+    mockScopeRead(portfolio(), 0);
+    renderBlock();
+    // Nothing to say beneath the headline: no snapshot and no loaded time.
+    expect(document.querySelector(".vex-pf-top__sub")).toBeNull();
+  });
+});
+
+describe("PositionBlock - chain read uncertainty stays beside the cached total", () => {
+  it("shows the stale chain, its timestamps and the stale-balances line", () => {
+    const staleSince = "2026-09-08T20:37:00.000Z";
+    const lastSuccessAt = "2026-09-07T10:00:00.000Z";
+    mockScopeRead(
+      portfolio({
+        chainReadIssues: [
+          {
+            chainId: 20011000000,
+            status: "read_failed",
+            reason: "http_403",
+            staleSince,
+            lastSuccessAt,
+          },
+        ],
+      }),
+    );
+    const { container } = renderBlock();
+
+    const warning = screen.getByRole("status");
+    expect(warning.textContent).toContain("Solana: stale since");
+    expect(warning.textContent).toContain("Some balances are stale. Totals include last known values.");
+    expect(container.querySelector(`time[datetime="${staleSince}"]`)).not.toBeNull();
+    expect(container.querySelector(`time[datetime="${lastSuccessAt}"]`)).not.toBeNull();
+    // The cached total is still printed, with the warning beside it.
+    expect(screen.getByText("$123.45")).not.toBeNull();
+  });
+
+  it("labels a partial snapshot and says its P&L is unavailable", () => {
+    mockScopeRead(
+      portfolio({
+        snapshotPartial: true,
+        snapshotUnresolvedChainCount: 1,
+        snapshotTotalUsd: 100,
+        pnlVsPrev: null,
+      }),
+    );
+    renderBlock();
+    const warning = screen.getByRole("status");
+    expect(warning.textContent).toContain("Latest snapshot is partial (1 unresolved chain reads)");
+    expect(warning.textContent).toContain("P&L is unavailable");
+  });
+
+  it("is silent for a clean read", () => {
+    mockScopeRead(portfolio({ chainReadIssues: [], snapshotPartial: false }));
+    renderBlock();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

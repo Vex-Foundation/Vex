@@ -1,49 +1,52 @@
 /**
- * BOARD MODAL HOST - the one board modal in the application.
+ * BOARD HOST - the one board surface in the application, presented as the
+ * Board PAGE (docs/design/R3-MINIMAL.md section 9.4).
  *
- * MOUNTED ONCE, at shell level, never per transcript row. A board card in the
- * transcript does not own a dialog; it asks the store to bind this host to a
- * board. Two consequences the per-row alternative could not give us: a board
- * stays open while the reader scrolls its originating message out of the
- * virtualised transcript, and there is exactly one place where "the modal is
- * open" is true.
+ * MOUNTED ONCE, at shell level, never per transcript row, and never by the
+ * page. A board card in the transcript does not own a surface; it asks the
+ * store to bind this host to a board. Two consequences the per-row
+ * alternative could not give us: a board stays bound while the reader
+ * scrolls its originating message out of the virtualised transcript, and
+ * there is exactly one place where "a board is open" is true. The name keeps
+ * its history (it used to present a dialog); the lifecycle below is what it
+ * is for.
  *
- * THE UNMOUNT DISCIPLINE. A native `<dialog>` that closes does NOT unmount its
- * children: without the conditional below, a closed board would keep a chart
- * subscribed and a tape polling, invisibly. So the body renders its children
- * only while a board is bound, while the `<dialog>` element itself stays
- * mounted so `DialogContent`'s close listener can still restore focus to
- * whatever opened it.
+ * THE PAGE IS A PLACE, THE HOST IS THE OWNER. The page
+ * (`screens/BoardScreen.tsx`, route `board`) provides the element this host
+ * renders into (`board-page-slot.ts`); the Ask Vex block renders into the Vex
+ * sidebar's slot (`features/vex/vex-sidebar-slot.ts`). The host stays the
+ * one owner of the binding, the exits and the keyed slots, so moving from a
+ * dialog to a page moved where the pixels go and nothing about who holds the
+ * live lease.
  *
- * ONE CLOSE PATH. The X, Esc (native `cancel`), a backdrop click, a session
- * switch and shell teardown all reach `closeBoardModal`, which cuts every
- * registered feed and bumps both generations BEFORE the state clears. There is
- * no second way to close this dialog.
+ * THE PAGE AND THE BINDING MOVE TOGETHER, in three rules:
+ *  - binding a board opens its page (a transcript card's Open board);
+ *  - on the page with nothing bound, the page binds the pinned board, else
+ *    the latest one of the open session, through the store's own open path
+ *    (the Board nav); with neither, the page says so;
+ *  - leaving the page is the close: `closeBoardModal`, the ONE close path,
+ *    cuts every registered feed and bumps both generations BEFORE the state
+ *    clears. A session switch and shell teardown reach the same action.
  *
- * SLOTS. The host owns the frame, the header chrome, the accessible name and
- * the lifecycle; it renders NOTHING about tokens. The grid, the spotlight, the
- * subtitle, the header controls and the Ask VEX panel arrive as typed
- * component props, so the builders that write them never edit this file.
+ * THE UNMOUNT DISCIPLINE. Nothing is rendered while no board is bound, so a
+ * closed board keeps no chart subscribed and no tape polling.
+ *
+ * SLOTS. The host owns the frame, the head row and the lifecycle; it renders
+ * NOTHING about tokens. The grid, the spotlight, the subtitle, the head
+ * controls and the Ask Vex block arrive as typed component props, so the
+ * builders that write them never edit this file.
  *
  * THE SUBTITLE IS THE HOST'S PLACE, NOT THE GRID'S. It is the one line the
- * design puts directly beneath the model's title, and it states facts the
- * FRAME owns - how many pools this board has and the clock its figures were
- * read at. Carrying it inside the grid meant it lived in a view the spotlight
- * replaces, and reached its position through a sticky bar rather than through
- * the layout. Here it is beneath the title because that is where the header
- * puts it.
+ * design puts beside the model's title, and it states facts the FRAME owns:
+ * how many pools this board has and the clock its figures were read at. It
+ * is the same line in both views.
  */
 
 import { useEffect, useRef, type JSX } from "react";
+import { createPortal } from "react-dom";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { PxIcon } from "../../../components/icons/index.js";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogClose,
-  DialogHeadlessHeader,
-} from "../../../components/ui/dialog.js";
+import { useVexSidebarSlot } from "../../vex/vex-sidebar-slot.js";
+import { useBoardPageSlot } from "./board-page-slot.js";
 import { boardKeyOf } from "./board-surface-contracts.js";
 import type {
   BoardAskSlotProps,
@@ -55,12 +58,9 @@ import type {
 } from "./board-surface-contracts.js";
 import { useBoardSurfaceStore } from "./board-surface-store.js";
 
-const BOARD_DIALOG_DESCRIPTION =
-  "Market figures for the tokens on this board. Press Escape to close.";
-
 export interface BoardModalHostProps {
   readonly headerSlot?: BoardSurfaceSlot<BoardHeaderSlotProps>;
-  /** The derived line under the model's title. Optional like every slot. */
+  /** The derived line beside the model's title. Optional like every slot. */
   readonly subtitleSlot?: BoardSurfaceSlot<BoardSubtitleSlotProps>;
   readonly gridSlot?: BoardSurfaceSlot<BoardGridSlotProps>;
   readonly spotlightSlot?: BoardSurfaceSlot<BoardSpotlightSlotProps>;
@@ -73,19 +73,26 @@ export function BoardModalHost({
   gridSlot: GridSlot,
   spotlightSlot: SpotlightSlot,
   askSlot: AskSlot,
-}: BoardModalHostProps): JSX.Element {
+}: BoardModalHostProps): JSX.Element | null {
   const board = useBoardSurfaceStore((s) => s.modalBoard);
+  const pinnedBoard = useBoardSurfaceStore((s) => s.pinnedBoard);
+  const latestBoard = useBoardSurfaceStore((s) => s.latestBoard);
   const view = useBoardSurfaceStore((s) => s.view);
   const selectedPoolIndex = useBoardSurfaceStore((s) => s.selectedPoolIndex);
   const askPanelOpen = useBoardSurfaceStore((s) => s.askPanelOpen);
+  const openBoardModal = useBoardSurfaceStore((s) => s.openBoardModal);
   const closeBoardModal = useBoardSurfaceStore((s) => s.closeBoardModal);
   const exitBoardSurfaces = useBoardSurfaceStore((s) => s.exitBoardSurfaces);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  const routeKind = useUiStore((s) => s.shellRoute.kind);
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
+  const pageSlot = useBoardPageSlot();
+  const sidebarSlot = useVexSidebarSlot();
 
   // EXPLICIT EXIT TRANSITIONS. Switching session and going home are not
-  // "the modal happens to unmount": they are transitions that must cut every
-  // registered feed first. The host owns them because it is the one component
-  // that lives exactly as long as the shell does.
+  // "the surface happens to unmount": they are transitions that must cut
+  // every registered feed first. The host owns them because it is the one
+  // component that lives exactly as long as the shell does.
   const previousSessionId = useRef(activeSessionId);
   useEffect(() => {
     if (previousSessionId.current === activeSessionId) return;
@@ -104,24 +111,52 @@ export function BoardModalHost({
     [exitBoardSurfaces],
   );
 
-  const open = board !== null;
   /**
    * THE IDENTITY EVERY SLOT IS KEYED BY.
    *
    * Rebinding board A to board B does not unmount this host, and React reuses
-   * a child of the same type at the same position: without a key the header
-   * chrome, the grid and the spotlight all survive the change of subject with
-   * board A's state still in them. That is not a theoretical hazard - the
-   * chrome holds the live lease and publishes rows to the overlay under
-   * whatever `boardKey` it is currently given, so a retained row from A was
-   * being published under B's key.
+   * a child of the same type at the same position: without a key the head
+   * controls, the grid and the spotlight all survive the change of subject
+   * with board A's state still in them. That is not a theoretical hazard -
+   * the head controls hold the live lease and publish rows to the overlay
+   * under whatever `boardKey` they are currently given, so a retained row
+   * from A was being published under B's key.
    *
    * Keying is the structural fix rather than a guard each slot has to
-   * remember: a new board is a new component instance, so there is no retained
-   * state for a slot to leak, and every slot's own unmount cleanup runs before
-   * the replacement mounts.
+   * remember: a new board is a new component instance, so there is no
+   * retained state for a slot to leak, and every slot's own unmount cleanup
+   * runs before the replacement mounts.
    */
   const boardKey = board === null ? null : boardKeyOf(board);
+
+  // BINDING A BOARD OPENS ITS PAGE. Declared BEFORE the close rule below and
+  // it writes the route synchronously, so in the commit that binds a board
+  // from the bare shell the close rule already reads the page as open.
+  useEffect(() => {
+    if (boardKey === null) return;
+    if (useUiStore.getState().shellRoute.kind === "board") return;
+    setShellRoute({ kind: "board", origin: null });
+  }, [boardKey, setShellRoute]);
+
+  // LEAVING THE PAGE IS THE CLOSE. The route is read live, not from this
+  // render: the rule above may have opened the page a moment ago.
+  useEffect(() => {
+    if (boardKey === null) return;
+    if (useUiStore.getState().shellRoute.kind === "board") return;
+    closeBoardModal();
+  }, [routeKind, boardKey, closeBoardModal]);
+
+  // THE PAGE BINDS A BOARD: the pinned one, else the latest of the open
+  // session (a newer board never silently replaces a pinned one). Only a
+  // board of the session in view: the store forgets the others on a switch,
+  // and this guard says so here too.
+  const candidate = pinnedBoard ?? latestBoard;
+  useEffect(() => {
+    if (routeKind !== "board" || boardKey !== null || candidate === null) return;
+    if (candidate.sessionId !== activeSessionId) return;
+    openBoardModal(candidate);
+  }, [routeKind, boardKey, candidate, activeSessionId, openBoardModal]);
+
   // The spec is the bound: a stored selection cannot address a pool that this
   // board does not have (a pinned selection outliving a shorter board).
   // Lower bound last, so a board with NO pools clamps to 0 rather than to the
@@ -131,120 +166,59 @@ export function BoardModalHost({
       ? 0
       : Math.max(Math.min(selectedPoolIndex, board.spec.pools.length - 1), 0);
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) closeBoardModal();
-      }}
-    >
-      <DialogContent
-        size="board"
-        // THE DRAWER IS PAID FOR BY THE DIALOG, NOT BY THE CARDS. The Ask VEX
-        // panel is a fixed 360px taken out of the board's own width, and at
-        // the `board` size's 1280px cap that came straight off the cards: at a
-        // 1440px window every card fell to 268px, below what a stat column or
-        // a price row needs. Opening the drawer therefore widens the box by
-        // exactly the drawer, capped at 94vw so it can never exceed the window
-        // it lives in.
-        //
-        // THE POLICY IS THE HOST'S, THE MECHANISM IS THE PRIMITIVE'S.
-        // `components/ui/dialog.tsx` stays generic and knows nothing about Ask
-        // VEX; `cn` runs tailwind-merge over the result, so these utilities
-        // REPLACE the size family's own width classes rather than fighting
-        // them for specificity.
-        className={
-          askPanelOpen
-            ? "vex-board-dialog w-[min(94vw,1640px)] max-w-[min(94vw,1640px)]"
-            : "vex-board-dialog"
-        }
-        data-vex-surface="board-modal"
-        data-vex-drawer={askPanelOpen ? "open" : "closed"}
-      >
-        {/* The visible header is ours below; the screen reader still gets a
-         * real title and description carrying the dialog's context ids. */}
-        <DialogHeadlessHeader
-          title={board === null ? "Board" : board.title}
-          description={BOARD_DIALOG_DESCRIPTION}
-        />
-        {board === null ? null : (
-          <>
-            <header
-              className="flex shrink-0 items-start justify-between gap-4 border-b border-rule px-6 pt-5 pb-4"
-              data-vex-area="board-header"
-            >
-              {/* The heading is the MODEL's own title for this board. The
-               * host never prints a product label of its own over it. */}
-              <div className="min-w-0">
-                {/* WRAPS, never truncates: the title is the model's own words
-                 * and every one of them is shown. The width cap keeps a long
-                 * line readable, not short. */}
-                <p
-                  data-vex-area="board-title"
-                  className="max-w-[60ch] whitespace-normal break-words font-mono text-[22px] font-normal uppercase leading-[28px] tracking-[0.06em] text-ink-primary"
-                >
-                  {board.title}
-                </p>
-                {SubtitleSlot === undefined ? null : (
-                  <SubtitleSlot board={board} />
-                )}
-              </div>
-              {/* `items-start`: the chrome is a control row over a helper
-               * line, and the close button sits on the CONTROL row. */}
-              <div className="flex shrink-0 items-start gap-3">
-                {HeaderSlot === undefined ? null : (
-                  <HeaderSlot key={boardKey} board={board} />
-                )}
-                <DialogClose
-                  aria-label="Close the board"
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-rule text-ink-secondary hover:border-rule-ink hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <PxIcon name="close" size={16} />
-                </DialogClose>
-              </div>
-            </header>
+  if (board === null || pageSlot === null) return null;
 
-            <DialogBody
-              className="flex-row gap-0 px-0 py-0"
-              data-vex-area="board-body"
-            >
-              <div
-                className="min-w-0 flex-1 overflow-y-auto px-6 py-5"
-                data-vex-area={
-                  view === "spotlight" ? "board-spotlight" : "board-grid"
-                }
-              >
-                {view === "spotlight"
-                  ? SpotlightSlot === undefined
-                    ? null
-                    : (
-                        /* The spotlight's subject is the POOL, not the board:
-                         * selecting a different token on the same board is the
-                         * same change of subject, and A8 forbids the previous
-                         * token's figures being on screen under the new one's
-                         * name for even one commit. */
-                        <SpotlightSlot
-                          key={`${String(boardKey)}:${String(poolIndex)}`}
-                          board={board}
-                          poolIndex={poolIndex}
-                        />
-                      )
-                  : GridSlot === undefined
-                    ? null
-                    : <GridSlot key={boardKey} board={board} />}
-              </div>
-              {askPanelOpen && AskSlot !== undefined ? (
-                <aside
-                  className="w-[360px] shrink-0 overflow-y-auto border-l border-rule px-5 pb-6"
-                  data-vex-area="board-ask"
-                >
-                  <AskSlot key={boardKey} board={board} poolIndex={poolIndex} />
-                </aside>
-              ) : null}
-            </DialogBody>
-          </>
+  const body = (
+    <div data-vex-surface="board-page" data-view={view}>
+      <header className="vex-bd-head" data-vex-area="board-header">
+        {/* The heading is the MODEL's own title for this board. The host
+         * never prints a product label of its own over it; the title bar
+         * names the page. */}
+        <div className="vex-bd-head__title">
+          <h2 data-vex-area="board-title" className="vex-bd-head__name">
+            {board.title}
+          </h2>
+          {SubtitleSlot === undefined ? null : <SubtitleSlot board={board} />}
+        </div>
+        {HeaderSlot === undefined ? null : (
+          <HeaderSlot key={boardKey} board={board} />
         )}
-      </DialogContent>
-    </Dialog>
+      </header>
+
+      <div data-vex-area="board-body" data-view={view}>
+        {view === "spotlight"
+          ? SpotlightSlot === undefined
+            ? null
+            : (
+                /* The spotlight's subject is the POOL, not the board:
+                 * selecting a different token on the same board is the same
+                 * change of subject, and A8 forbids the previous token's
+                 * figures being on screen under the new one's name for even
+                 * one commit. */
+                <SpotlightSlot
+                  key={`${String(boardKey)}:${String(poolIndex)}`}
+                  board={board}
+                  poolIndex={poolIndex}
+                />
+              )
+          : GridSlot === undefined
+            ? null
+            : <GridSlot key={boardKey} board={board} />}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {createPortal(body, pageSlot)}
+      {/* ASK VEX LIVES IN VEX'S COLUMN. Only while the sidebar is open (a
+       * hidden sidebar has no slot) and only while the page is up. */}
+      {askPanelOpen && AskSlot !== undefined && sidebarSlot !== null
+        ? createPortal(
+            <AskSlot key={boardKey} board={board} poolIndex={poolIndex} />,
+            sidebarSlot,
+          )
+        : null}
+    </>
   );
 }

@@ -175,7 +175,7 @@ describe("BoardModalChrome", () => {
     ).toBe("true");
   });
 
-  it("keeps the LIVE dot dark until a tick has actually landed", async () => {
+  it("keeps the Live word dark until a tick has actually landed", async () => {
     render(mount(board()));
     const control = await enabledSwitch();
     act(() => {
@@ -185,6 +185,31 @@ describe("BoardModalChrome", () => {
     // the dot is not.
     expect(useBoardSurfaceStore.getState().liveRequested).toBe(true);
     expect(area("board-live-dot")).toBeNull();
+  });
+
+  it("says Connecting while the lease waits for a tick, and speaks the state", async () => {
+    render(mount(board()));
+    // A snapshot says nothing beside the switch, and the region says so once.
+    expect(area("board-live-state")).toBeNull();
+    expect(area("board-live-region")?.textContent).toContain("snapshot figures");
+    const control = await enabledSwitch();
+    act(() => {
+      control.click();
+    });
+    // Held, nothing delivered: a word with its fill, never "Live".
+    await waitFor(() => {
+      expect(area("board-live-state")?.textContent).toBe("Connecting");
+    });
+    expect(area("board-live-dot")).toBeNull();
+    expect(area("board-live-region")?.textContent).toContain("connecting to live figures");
+  });
+
+  it("is the kit switch and the pin is a line icon key", () => {
+    render(mount(board()));
+    expect(area("board-live-switch")?.classList.contains("vex-switch")).toBe(true);
+    const pin = area("board-pin");
+    expect(pin?.classList.contains("vex-bd-key")).toBe(true);
+    expect(pin?.querySelector("svg")).not.toBeNull();
   });
 
   it("switches the helper copy once the lease is held", async () => {
@@ -215,9 +240,7 @@ describe("BoardModalChrome", () => {
   it("pins and unpins THIS board, and reports the state", () => {
     const ref = board();
     render(mount(ref));
-    const pin = screen.getByRole("button", {
-      name: "Pin this board to the sidebar",
-    });
+    const pin = screen.getByRole("button", { name: "Pin this board" });
     expect(pin.getAttribute("aria-pressed")).toBe("false");
     act(() => {
       pin.click();

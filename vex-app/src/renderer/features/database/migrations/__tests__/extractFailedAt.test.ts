@@ -1,5 +1,5 @@
 /**
- * Pure type guard tests — narrowing semantics for VexError.details
+ * Pure type guard tests - narrowing semantics for VexError.details
  * with failedAt metadata.
  */
 

@@ -1,11 +1,14 @@
-/* Status marks, V10 (docs/design/V10-SPREAD.md sections 1 and 7): the swatch,
- * the chip, the stamp and the cell meter. Status is shown by fill, never by
- * colour: every mark draws in the current text colour, so it sits in an ink
- * or a blue row unchanged. */
+/* Status marks, R3 (docs/design/R3-MINIMAL.md sections 1 and 5): the swatch,
+ * the state word, the flat vx token, the chip, the stamp and the tag, the cell
+ * meter and the quiet loading line. Status is shown by fill, never by colour:
+ * every mark draws in the current text colour, so it sits in an ink or a blue
+ * row unchanged. Instrument Sans for words, the mono face for figures, caps
+ * only on stamps and tags. */
 
 /* ── Swatch ────────────────────────────────────────────────────────────────
- * data-s: done | ongoing | warning | draft | idle | error. Width and height
- * come inline from the component (default 10px = one cell). */
+ * data-s: done | ongoing | warning | draft | idle | error (V10 names, kept)
+ * and listening | thinking | awaiting | concerned | sleeping (R3, added).
+ * Width and height come inline from the component (default 10px). */
 .vex-swatch {
   display: inline-block;
   flex: none;
@@ -42,13 +45,44 @@
   border: 1.5px solid currentColor;
 }
 
-/* Ink cross: ink on both paper and night, never a hue. */
+/* Ink cross: two diagonals 12% wide, ink on both paper and night, never a
+ * hue. */
 .vex-swatch[data-s="error"] {
   border: 1.5px solid var(--vex-alias-label-primary);
   color: var(--vex-alias-label-primary);
   background:
-    linear-gradient(45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(-45deg, transparent calc(50% - 0.5px), currentColor calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+    linear-gradient(45deg, transparent 44%, currentColor 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, currentColor 44% 56%, transparent 56%);
+}
+
+/* Listening: the dot screen, still (the composer has text). */
+.vex-swatch[data-s="listening"] {
+  border: 1px solid currentColor;
+  background: radial-gradient(currentColor 0.8px, transparent 1px) 0 0 / 3px 3px;
+}
+
+/* Thinking: the hatch. */
+.vex-swatch[data-s="thinking"] {
+  border: 1px solid currentColor;
+  background: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 3px);
+}
+
+/* Awaiting a decision: the target, an inner square 2px clear of the edge. */
+.vex-swatch[data-s="awaiting"] {
+  border: 1px solid currentColor;
+  background: linear-gradient(currentColor, currentColor) center / calc(100% - 4px) calc(100% - 4px) no-repeat;
+}
+
+/* Concerned: the ink hatch (rate limit, offline, stale balances). */
+.vex-swatch[data-s="concerned"] {
+  border: 1px solid var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-primary);
+  background: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 3px);
+}
+
+/* Sleeping and paused: the dotted outline. */
+.vex-swatch[data-s="sleeping"] {
+  border: 1.5px dotted currentColor;
 }
 
 @keyframes vex-swatch-step {
@@ -68,95 +102,132 @@ html[data-still] .vex-swatch {
   animation: none !important;
 }
 
+/* ── State word ────────────────────────────────────────────────────────────
+ * The swatch and its word, never one without the other. The swatch takes the
+ * one blue from the component; the word stays ink; the scope is muted and the
+ * timer is a figure. */
+.vex-state-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.vex-state-word__scope {
+  color: var(--vex-alias-label-tertiary);
+  font-weight: 400;
+}
+
+.vex-state-word__timer {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ── Flat vx token ─────────────────────────────────────────────────────────
+ * The disc is the action fill in both rooms; its edge is the accent line (the
+ * same blue on paper, periwinkle at night); the vx is the type on that fill. */
+.vex-vx-token {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  vertical-align: middle;
+  color: var(--vex-alias-button-accent-ink);
+}
+
+.vex-vx-token > svg {
+  display: block;
+}
+
+.vex-vx-token__disc {
+  fill: var(--vex-alias-button-accent-fill);
+  stroke: var(--vex-alias-accent-primary);
+}
+
 /* ── Chip ──────────────────────────────────────────────────────────────────
- * Swatch + bracketed Departure Mono caps word, rule outline. The compact form
- * drops the outline and the brackets for a row. `on-photo` sits on a print. */
+ * A swatch and its word in a quiet frame, sentence case. The compact form
+ * drops the frame for a row. `on-photo` is the word on a print. */
 .vex-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 24px;
-  padding: 0 10px 0 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  font-family: var(--font-sans);
+  font-size: 13px;
   font-weight: 400;
   line-height: 1;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   white-space: nowrap;
-  color: var(--vex-alias-accent-primary);
-  outline: 1px solid var(--vex-alias-rule);
-  outline-offset: -1px;
+  color: var(--vex-alias-label-primary);
   vertical-align: middle;
-  font-variant-numeric: tabular-nums;
 }
 
 .vex-chip > b {
   font-weight: 400;
-  margin-inline-end: calc(-1 * var(--tracking-chip));
-}
-
-.vex-chip > b::before {
-  content: "[";
-}
-
-.vex-chip > b::after {
-  content: "]";
-}
-
-.vex-chip[data-s="error"] {
-  color: var(--vex-alias-label-primary);
 }
 
 .vex-chip[data-compact] {
-  outline: 0;
+  border: 0;
   height: 20px;
   padding: 0;
   gap: 7px;
 }
 
-.vex-chip[data-compact] > b::before,
-.vex-chip[data-compact] > b::after {
-  content: none;
-}
-
-/* The trailing tracking stays INSIDE the compact chip. The outlined chip
- * pulls it into its 10px end padding; the compact chip has no padding to
- * pull it into, so the same negative margin pushed the word's box past the
- * chip's own and the chip reported a label wider than itself. */
-.vex-chip[data-compact] > b {
-  margin-inline-end: 0;
-}
-
 .vex-chip[data-on-photo] {
-  background: var(--vex-alias-label-box);
-  color: var(--color-blue);
-  outline: 0;
+  border: 0;
+  padding: 0;
+  color: var(--vex-alias-on-photo);
+  font-weight: 500;
 }
 
-/* ── Stamp ─────────────────────────────────────────────────────────────────
- * The reversed REAL FUNDS label: ink plate, paper type. Never red, never
- * blue. */
-.vex-stamp {
+/* ── Stamp and tag ─────────────────────────────────────────────────────────
+ * The only caps in the app. The stamp is the reversed REAL FUNDS label: ink
+ * plate, paper type, never red and never blue. The tag is the outlined risk
+ * word (High risk); the quiet tag is a rule outline in the muted ink. */
+.vex-stamp,
+.vex-tag {
   display: inline-flex;
   align-items: center;
   height: 22px;
   padding: 0 8px;
-  background: var(--vex-alias-rule-ink);
-  color: var(--vex-alias-label-on-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 11px;
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: var(--tracking-chip);
   text-transform: uppercase;
   white-space: nowrap;
   vertical-align: middle;
 }
 
+.vex-stamp {
+  letter-spacing: 0.1em;
+  background: var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-on-primary);
+}
+
+.vex-tag {
+  letter-spacing: 0.08em;
+  border: 1px solid var(--vex-alias-rule-ink);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-tag[data-quiet] {
+  border-color: var(--vex-alias-rule);
+  color: var(--vex-alias-label-tertiary);
+}
+
 /* ── Cell meter ────────────────────────────────────────────────────────────
- * A row of 10px cells: filled cells in the blue, empty cells in a rule
- * outline. Over the limit the fill turns ink (never red). */
+ * A row of cells: filled cells in the blue, empty cells in a rule outline.
+ * Over the limit the fill turns ink (never red). */
 .vex-cell-meter {
   display: inline-flex;
   gap: 2px;
@@ -180,17 +251,50 @@ html[data-still] .vex-swatch {
   background: var(--vex-alias-label-primary);
 }
 
-/* ── Loader ────────────────────────────────────────────────────────────────
- * The brand loader is the ongoing swatch at size: a square outline with the
- * dot screen stepping through four positions. No ring, no arc. `ink` is the
- * accent on the shell canvas; `paper` is paper on the dark pre-shell plate.
- * The inline `--vex-loader-stroke` widens the outline. */
+/* ── Loading line ──────────────────────────────────────────────────────────
+ * A word and a quiet line, never a skeleton of fake numbers: a 2px track in
+ * the quiet rule with one blue segment 34% wide. It loops only while it is
+ * mounted, and consumers mount it only for a real pending state: the segment
+ * walks the track in four even steps on the swatch's frame clock (the same
+ * rhythm as the dot screen beside it) and rests at 22% when motion is
+ * reduced or the page is still. Width comes inline from the component; the
+ * inline `--vex-loader-stroke` sets the thickness. `ink` is the accent on the
+ * shell; `paper` is paper on the dark pre-shell plate. */
 .vex-loader {
   position: relative;
-  box-sizing: border-box;
-  border: var(--vex-loader-stroke, 1px) solid var(--vex-loader-ink);
-  background: radial-gradient(var(--vex-loader-ink) 1px, transparent 1.2px) 0 0 / 3px 3px;
-  animation: vex-swatch-step calc(var(--vex-frame-step, 200ms) * 4) steps(1, end) infinite;
+  display: block;
+  flex: none;
+  height: var(--vex-loader-stroke, 2px);
+  overflow: hidden;
+  background: var(--vex-alias-rule-quiet);
+}
+
+.vex-loader__segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 22%;
+  width: 34%;
+  background: var(--vex-loader-ink);
+  animation: vex-loader-step calc(var(--vex-frame-step, 200ms) * 4) steps(1, end) infinite;
+}
+
+/* Four even stops across the free travel (100% less the 34% segment). */
+@keyframes vex-loader-step {
+  0% { left: 0%; }
+  25% { left: 22%; }
+  50% { left: 44%; }
+  75% { left: 66%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-loader__segment {
+    animation: none;
+  }
+}
+
+html[data-still] .vex-loader__segment {
+  animation: none;
 }
 
 .vex-loader--ink {
@@ -199,14 +303,4 @@ html[data-still] .vex-swatch {
 
 .vex-loader--paper {
   --vex-loader-ink: var(--color-paper);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vex-loader {
-    animation: none;
-  }
-}
-
-html[data-still] .vex-loader {
-  animation: none;
 }

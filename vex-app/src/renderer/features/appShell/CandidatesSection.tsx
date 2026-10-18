@@ -18,9 +18,11 @@ import { useInspectorCandidates } from "../../lib/api/memory-inspector.js";
 import {
   Empty,
   ErrorState,
+  FilterKeys,
   Loading,
   PILL,
   SECTION,
+  SectionHead,
   fmtDate,
 } from "./MemoryPanelShared.js";
 
@@ -47,31 +49,18 @@ export function CandidatesSection(): JSX.Element {
 
   return (
     <section data-vex-section="memory-candidates" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">Memory candidates</h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          What the agent proposed for long-term memory. The memory manager
-          decides each candidate&apos;s fate automatically - this view is
-          inspection only.
-        </p>
-      </div>
+      <SectionHead
+        title="Memory candidates"
+        lead="What the agent proposed for long-term memory. The memory manager decides each candidate's fate automatically - this view is inspection only."
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        {CANDIDATE_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setStatus(f.value)}
-            data-active={status === f.value}
-            className={`rounded-[3px] px-2 py-1 vex-micro-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
-              status === f.value
-                ? "bg-accent-wash text-accent-primary"
-                : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="vex-mem-tool">
+        <FilterKeys
+          label="Filter memory candidates by status"
+          options={CANDIDATE_FILTERS}
+          value={status}
+          onChange={setStatus}
+        />
       </div>
 
       <CandidatesList query={query} />
@@ -99,7 +88,7 @@ function CandidatesList({
     return <Empty label="No candidates match." />;
   }
   return (
-    <ul className="flex flex-col">
+    <ul className="vex-mem-list">
       {res.data.map((c) => (
         <CandidateRow key={c.id} candidate={c} />
       ))}
@@ -116,12 +105,10 @@ function CandidateRow({
     <li
       data-vex-candidate-id={candidate.id}
       data-status={candidate.status}
-      className="border-b border-line-2 px-1 py-2 last:border-b-0"
+      className="vex-mem-row"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-xs font-medium text-ink-primary">
-          {candidate.title}
-        </span>
+      <span className="vex-mem-row__t">{candidate.title}</span>
+      <span className="vex-mem-row__m">
         <span className={PILL}>{candidate.kind}</span>
         <span className={PILL} data-vex-candidate-status>
           {candidate.status}
@@ -131,21 +118,15 @@ function CandidateRow({
         ) : null}
         <span className={PILL}>evidence {candidate.evidenceStrength}</span>
         {candidate.promotedKnowledgeId !== null ? (
-          <span className={PILL}>→ memory #{candidate.promotedKnowledgeId}</span>
+          <span className={PILL} data-figure>
+            → memory #{candidate.promotedKnowledgeId}
+          </span>
         ) : null}
-        <span
-          data-vex-recorded
-          title={candidate.recordedAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
-        >
-          {fmtDate(candidate.recordedAt)}
-        </span>
-      </div>
-      {candidate.summary.length > 0 ? (
-        <p className="mt-1 line-clamp-2 text-xs text-ink-secondary">
-          {candidate.summary}
-        </p>
-      ) : null}
+        {candidate.summary.length > 0 ? <span>{candidate.summary}</span> : null}
+      </span>
+      <span data-vex-recorded title={candidate.recordedAt} className="vex-mem-row__r">
+        {fmtDate(candidate.recordedAt)}
+      </span>
     </li>
   );
 }

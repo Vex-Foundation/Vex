@@ -179,7 +179,19 @@ function isWSL2(): boolean {
   }
 }
 
-if (isWSL2()) {
+/**
+ * Opt-in: VEX_WSL_GPU=1 keeps the GPU on WSL2 and renders through ANGLE's GL
+ * backend, which reaches the Windows GPU through Mesa's D3D12 driver when the
+ * shell exports GALLIUM_DRIVER=d3d12. Off by default, so the software path
+ * below stays the safe default.
+ */
+const wslGpuOptIn = process.env.VEX_WSL_GPU === "1";
+
+if (isWSL2() && wslGpuOptIn) {
+  app.commandLine.appendSwitch("use-gl", "angle");
+  app.commandLine.appendSwitch("use-angle", "gl");
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+} else if (isWSL2()) {
   // Primary fix: software rendering. WSLg's vGPU produces transient
   // ContextResult::kTransientFailure on Chromium command-buffer init.
   app.disableHardwareAcceleration();

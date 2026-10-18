@@ -1,14 +1,20 @@
 /**
- * External documentation link primitive. Renders the link with an
- * arrow-up-right glyph and routes through the renderer's default
+ * External documentation link primitive. Renders the link with the line
+ * "external" glyph and routes through the renderer's default
  * `<a target="_blank">` flow, which the main process picks up via the
  * `shell.openExternal` allowlist (no in-renderer navigation).
  *
- * `rel="noopener noreferrer"` mandatory — even on Electron, leaving
+ * `rel="noopener noreferrer"` mandatory - even on Electron, leaving
  * `opener` open against a freshly-launched browser tab is bad hygiene.
+ *
+ * Type: the blue link of the first run (13.5 / 500, `docs/design/R3-MINIMAL.md` section 10.3).
+ * Its colour is the blue token (the periwinkle at night); the focus ring is the
+ * 2px outline of the focus blue, 3px clear, as on every key.
  */
 
-import { IconArrowUpRight } from "../icons/index.js";
+import type { JSX } from "react";
+
+import { LineExternal } from "../icons/line/index.js";
 
 interface DocsLinkProps {
   readonly href: string;
@@ -21,14 +27,10 @@ export function DocsLink({ href, label }: DocsLinkProps): JSX.Element {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      // Token-driven: the label reads `--vex-accent-text` (the accent's
-      // lighter mix) because accent AS TEXT needs it - raw accent falls
-      // short of contrast on night paper. The focus ring is a solid mark and
-      // keeps --color-ring.
-      className="inline-flex items-center gap-1 self-start text-xs text-[var(--vex-accent-text,var(--color-accent-hover))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface-base"
+      className="vex-fr-link inline-flex items-center gap-1.5 self-start"
     >
       {label}
-      <IconArrowUpRight size={12} />
+      <LineExternal size={14} />
     </a>
   );
 }

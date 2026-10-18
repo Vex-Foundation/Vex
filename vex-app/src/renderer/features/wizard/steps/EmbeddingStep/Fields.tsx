@@ -1,5 +1,5 @@
 /**
- * EmbeddingStep form fields — the 4 EMBEDDING_* inputs (Base URL, Model,
+ * EmbeddingStep form fields - the 4 EMBEDDING_* inputs (Base URL, Model,
  * Dim, Provider tag). Extracted VERBATIM from `EmbeddingStep.tsx`
  * (god-file split); zero behavior change.
  *
@@ -11,6 +11,9 @@
  * The bundled embeddings server takes a port chosen at launch, and Vex
  * points itself at it, so the Base URL placeholder only shows the shape of
  * an endpoint of your own.
+ *
+ * R3 grammar: each field is a `.vex-wz-group` (label, input, hint); URLs,
+ * ids and figures are set in mono.
  */
 
 import type { Dispatch, JSX, SetStateAction } from "react";
@@ -35,13 +38,16 @@ export interface EmbeddingFieldsProps {
 /** An endpoint of the user's own, by shape only. */
 export const OWN_ENDPOINT_PLACEHOLDER = "https://embeddings.example.com/v1";
 
+const MONO_FIELD = "font-mono vex-num text-[14px]";
+
+
 export function EmbeddingFields({
   form,
   setForm,
 }: EmbeddingFieldsProps): JSX.Element {
   return (
     <>
-      <div className="flex flex-col gap-2">
+      <div className="vex-wz-group">
         <Label htmlFor="vex-embed-baseurl">Base URL</Label>
         <Input
           id="vex-embed-baseurl"
@@ -51,14 +57,14 @@ export function EmbeddingFields({
           value={form.baseUrl}
           onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
           autoFocus
-          className="h-11"
+          className={MONO_FIELD}
         />
-        <p className="text-xs text-ink-tertiary">
-          A non-local URL sends memory content to that endpoint.
+        <p className="vex-wz-hint">
+          <span>A non-local URL sends memory content to that endpoint.</span>
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="vex-wz-group">
         <Label htmlFor="vex-embed-model">Model</Label>
         <Input
           id="vex-embed-model"
@@ -67,12 +73,12 @@ export function EmbeddingFields({
           autoComplete="off"
           value={form.model}
           onChange={(e) => setForm({ ...form, model: e.target.value })}
-          className="h-11"
+          className={MONO_FIELD}
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-2">
+        <div className="vex-wz-group">
           <Label htmlFor="vex-embed-dim">Dim</Label>
           <Input
             id="vex-embed-dim"
@@ -83,15 +89,17 @@ export function EmbeddingFields({
             placeholder={String(EMBEDDING_DIM)}
             value={form.dim}
             onChange={(e) => setForm({ ...form, dim: e.target.value })}
-            className="h-11"
+            className={MONO_FIELD}
           />
-          <p className="text-xs text-ink-tertiary">
-            {MIN_EMBEDDING_DIM}–{MAX_EMBEDDING_DIM}. Common: 384, 768, 1024,
-            1536. Locks once memories exist - changing it later would
-            strand them.
+          <p className="vex-wz-hint">
+            <span>
+              {MIN_EMBEDDING_DIM} to {MAX_EMBEDDING_DIM}. Common: 384, 768,
+              1024, 1536. Locks once memories exist - changing it later would
+              strand them.
+            </span>
           </p>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="vex-wz-group">
           <Label htmlFor="vex-embed-provider">Provider tag</Label>
           <Input
             id="vex-embed-provider"
@@ -100,7 +108,7 @@ export function EmbeddingFields({
             autoComplete="off"
             value={form.provider}
             onChange={(e) => setForm({ ...form, provider: e.target.value })}
-            className="h-11"
+            className={MONO_FIELD}
           />
         </div>
       </div>

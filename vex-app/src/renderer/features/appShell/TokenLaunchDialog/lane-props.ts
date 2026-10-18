@@ -1,5 +1,5 @@
 /**
- * The props every launch LANE takes — the shared half of the launch surface's
+ * The props every launch LANE takes - the shared half of the launch surface's
  * public contract.
  *
  * Extracted so the facade (`../TokenLaunchDialog.tsx`) and the lane name the
@@ -35,7 +35,7 @@ export interface LaunchLaneProps {
    *
    * It prefills the form and nothing else. Every field here is editable, Deploy
    * is still armed only by a resolved preview, and main still re-derives the
-   * money from whatever the user finally confirms — so a prefill can shorten the
+   * money from whatever the user finally confirms - so a prefill can shorten the
    * typing but can never shorten the authorization.
    *
    * Must be referentially STABLE (memoize it): it re-seeds the form when its

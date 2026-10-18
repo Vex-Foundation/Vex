@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { LighterSidebar } from "../LighterSidebar.js";
 
 vi.mock("../../../../lib/api/lighter-trading.js", () => ({
@@ -12,6 +13,10 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
 
 vi.mock("../../../../lib/api/sessions.js", () => ({
   useSessionsList: () => ({ data: { ok: true, data: [] }, isLoading: false, isError: false }),
+}));
+
+vi.mock("../../../../lib/api/projects.js", () => ({
+  useProject: () => ({ data: undefined }),
 }));
 
 vi.mock("../../SessionDeleteDialog.js", () => ({ SessionDeleteDialog: () => null }));
@@ -38,6 +43,126 @@ vi.mock("../../SessionRows.js", () => ({
     <button type="button" aria-label={label}>{children}</button>
   ),
 }));
+
+describe("LighterSidebar title row", () => {
+  beforeEach(() => {
+    useLighterAnalysisStore.getState().saveDesk({ environment: "rhc", marketId: 7 });
+  });
+
+  it("is the centre's head row: Lighter and its network, the desk keys, then the title bar's slot", () => {
+    const { container } = render(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode={false}
+        zenAssistantOpen={false}
+        zenControlsOpen={false}
+        onToggleZen={vi.fn()}
+        onToggleZenControls={vi.fn()}
+        onToggleZenAssistant={vi.fn()}
+      />,
+    );
+
+    const navigation = screen.getByRole("complementary", { name: "Lighter navigation" });
+    expect(within(navigation).getByText("Lighter")).toBeTruthy();
+    expect(within(navigation).getByText("Robinhood Chain")).toBeTruthy();
+    expect(within(navigation).getByRole("button", { name: "Markets & sessions" }).getAttribute("aria-expanded")).toBe("false");
+    expect(within(navigation).getByRole("button", { name: "New session" })).toBeTruthy();
+    // Settings, the theme and the account live in the left rail.
+    expect(within(navigation).queryByRole("button", { name: "Settings" })).toBeNull();
+    expect(within(navigation).queryByRole("button", { name: /Switch to the (light|dark) theme/ })).toBeNull();
+    // Three cells: the Zen key leads the left cell, before "Lighter"; the
+    // desk keys and the title bar's cluster share the middle; the way out
+    // holds the corner alone.
+    const header = container.querySelector(".lit-desk-topbar-header");
+    const cells = Array.from(header?.children ?? []).map((cell) => cell.className);
+    expect(cells).toEqual(["lit-topbar-start", "lit-topbar-keys", "lit-topbar-end"]);
+    const [start, middle, end] = Array.from(header?.children ?? []);
+    expect(start?.firstElementChild?.getAttribute("aria-label")).toBe("Enter Zen Mode");
+    const slot = container.querySelector(".lit-desk-top-shell");
+    expect(slot?.parentElement).toBe(middle);
+    expect(middle?.lastElementChild).toBe(slot);
+    expect(slot?.hasAttribute("hidden")).toBe(false);
+    expect(Array.from(end?.children ?? []).map((key) => key.getAttribute("aria-label"))).toEqual(["Exit Lighter"]);
+  });
+
+  it("leaves the desk for the mode it was entered from", () => {
+    useUiStore.setState({ runtimeMode: "lighter", lighterReturn: { mode: "studio", sessionId: null } });
+    render(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode={false}
+        zenAssistantOpen={false}
+        zenControlsOpen={false}
+        onToggleZen={vi.fn()}
+        onToggleZenControls={vi.fn()}
+        onToggleZenAssistant={vi.fn()}
+      />,
+    );
+
+    const exit = screen.getByRole("button", { name: "Exit Lighter" });
+    expect(exit.getAttribute("title")).toBe("Exit Lighter, back to Studio");
+    fireEvent.click(exit);
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
+  });
+
+  it("names a page that stands over the desk, as the title bar does elsewhere (section 3)", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    try {
+      render(
+        <LighterSidebar
+          collapsed
+          onToggleSidebar={vi.fn()}
+          zenMode={false}
+          zenAssistantOpen={false}
+          zenControlsOpen={false}
+          onToggleZen={vi.fn()}
+          onToggleZenControls={vi.fn()}
+          onToggleZenAssistant={vi.fn()}
+        />,
+      );
+      const navigation = screen.getByRole("complementary", { name: "Lighter navigation" });
+      const title = navigation.querySelector('[data-vex-area="title-bar-title"]');
+      expect(title?.textContent).toBe("Settings");
+      expect(within(navigation).queryByText("Lighter")).toBeNull();
+      // the page's title takes the left cell beside the Zen key, and the
+      // corner keeps the way out (#216): both hold while a page is open
+      const start = navigation.querySelector(".lit-topbar-start");
+      expect(title !== null && start?.contains(title)).toBe(true);
+      expect(within(start as HTMLElement).getByRole("button", { name: "Enter Zen Mode" })).toBeTruthy();
+      const corner = navigation.querySelector(".lit-topbar-end");
+      expect(within(corner as HTMLElement).getByRole("button", { name: "Exit Lighter" })).toBeTruthy();
+      // the desk's own keys stay in the row
+      expect(within(navigation).getByRole("button", { name: "Markets & sessions" })).toBeTruthy();
+    } finally {
+      useUiStore.setState({ shellRoute: { kind: "none" } });
+    }
+  });
+
+  it("keeps the title bar's slot mounted, only hidden, while Zen folds the row", () => {
+    const props = {
+      collapsed: true,
+      onToggleSidebar: vi.fn(),
+      zenAssistantOpen: false,
+      onToggleZen: vi.fn(),
+      onToggleZenControls: vi.fn(),
+      onToggleZenAssistant: vi.fn(),
+    } as const;
+    const { container, rerender } = render(
+      <LighterSidebar {...props} zenMode={false} zenControlsOpen={false} />,
+    );
+    const slot = container.querySelector(".lit-desk-top-shell");
+
+    rerender(<LighterSidebar {...props} zenMode zenControlsOpen={false} />);
+    expect(container.querySelector(".lit-desk-top-shell")).toBe(slot);
+    expect(slot?.hasAttribute("hidden")).toBe(true);
+
+    rerender(<LighterSidebar {...props} zenMode zenControlsOpen />);
+    expect(container.querySelector(".lit-desk-top-shell")).toBe(slot);
+    expect(slot?.hasAttribute("hidden")).toBe(false);
+  });
+});
 
 describe("LighterSidebar environment switch", () => {
   beforeEach(() => {
@@ -102,8 +227,11 @@ describe("LighterSidebar environment switch", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Show Zen controls" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Exit Zen Mode" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Exit Lighter" })).toBeNull();
+    // Folded, the way out of Zen still holds the corner.
+    fireEvent.click(screen.getByRole("button", { name: "Exit Zen Mode" }));
+    expect(onToggleZen).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
     expect(onToggleZenControls).toHaveBeenCalledTimes(1);
 
@@ -119,8 +247,11 @@ describe("LighterSidebar environment switch", () => {
         onToggleZenAssistant={onToggleZenAssistant}
       />,
     );
-    expect(screen.getByRole("button", { name: "Exit Zen Mode" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Hide Zen controls" })).toBeTruthy();
+    // Open, Exit Zen holds the corner beside the hide key; the Zen key goes.
+    expect(screen.queryByRole("button", { name: "Enter Zen Mode" })).toBeNull();
+    const exitZen = screen.getByRole("button", { name: "Exit Zen Mode" });
+    expect(exitZen.previousElementSibling?.getAttribute("aria-label")).toBe("Hide Zen controls");
+    expect(exitZen.parentElement?.lastElementChild).toBe(exitZen);
     fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
     expect(onToggleZenAssistant).toHaveBeenCalledTimes(1);
   });

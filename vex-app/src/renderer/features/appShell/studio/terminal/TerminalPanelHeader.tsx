@@ -73,15 +73,15 @@ import type {
   TerminalShellOption,
 } from "@shared/schemas/terminal.js";
 import {
-  IconCheck,
-  IconChevronDown,
-  IconEdit,
-  IconSplitHorizontal,
-  IconSplitVertical,
-  IconTrash,
-} from "../../../../components/icons/index.js";
-import { VexMark } from "../../../../components/common/VexMark.js";
-import { Swatch } from "../../../../components/ui/swatch.js";
+  LineCheck,
+  LineChevronDown,
+  LineEdit,
+  LineSplitHorizontal,
+  LineSplitVertical,
+  LineTrash,
+} from "../../../../components/icons/line/index.js";
+import { Button } from "../../../../components/ui/button.js";
+import { VxToken } from "../../../../components/ui/vx-token.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   RENAME_FIELD_LABEL,
@@ -145,11 +145,11 @@ export function TerminalPanelHeader({
   );
 
   return (
-    // THE PANE HEAD (docs/design/V10-SPREAD.md section 1): a 48px row on the
-    // field, a quiet rule under it, the vx mark muted at the left, name and
-    // the shell / directory line in two registers.
-    <div data-vex-terminal-header="" className="flex h-12 shrink-0 items-center gap-1 border-b border-rule-quiet px-2 pl-3">
-      <VexMark size={20} className="pointer-events-none mr-2 shrink-0 text-brand-mark opacity-60" />
+    // THE PANE HEAD (docs/design/R3-MINIMAL.md section 9.5): a 50px row on the
+    // paper, a quiet rule under it (geometry in terminal.css), the flat vx disc
+    // at the left, the name over the shell / directory line, then the keys.
+    <div data-vex-terminal-header="" className="vex-ws-head">
+      <VxToken size={24} />
       <div className="min-w-0 flex-1">
         {/*
           SENTENCE CASE, in the display face. The heading used to be
@@ -160,7 +160,7 @@ export function TerminalPanelHeader({
         {renaming ? (
           <HeaderRenameField initial={title} onEnd={endRename} />
         ) : (
-          <h2 className="truncate font-sans text-[13px] leading-[17px] font-medium text-ink-primary">
+          <h2 className="truncate font-sans text-[14px] leading-[1.2] font-medium text-ink-primary">
             {title}
           </h2>
         )}
@@ -170,15 +170,15 @@ export function TerminalPanelHeader({
           user moving by heading should hear the panel's name, not the panel's
           name plus whatever the shell is and wherever it has wandered.
         */}
-        <p className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] leading-[15px]">
-          <span data-vex-terminal-shell="" className="shrink-0 text-ink-secondary">
+        <p className="vex-num flex min-w-0 items-center gap-1.5 font-mono text-[12px] leading-4 text-ink-tertiary">
+          <span data-vex-terminal-shell="" className="shrink-0">
             {terminalShellLabel(shellLabel)}
           </span>
-          <span aria-hidden="true" className="shrink-0 text-ink-3">
+          <span aria-hidden="true" className="shrink-0">
             /
           </span>
           <span
-            className="truncate text-accent-primary"
+            className="truncate"
             aria-label={terminalLocationLabel(displayCwd)}
           >
             {displayCwd ?? ""}
@@ -186,61 +186,61 @@ export function TerminalPanelHeader({
         </p>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="vex-ws-head__keys">
         <ClusterButton label={splitTerminalLabel(title)} onClick={() => { onSplit("horizontal"); }}>
-          <IconSplitHorizontal size={14} />
+          <LineSplitVertical />
         </ClusterButton>
         <ClusterButton
           label={splitTerminalVerticalLabel(title)}
           onClick={() => { onSplit("vertical"); }}
         >
-          <IconSplitVertical size={14} />
+          <LineSplitHorizontal />
         </ClusterButton>
         <ClusterButton
           ref={renameButtonRef}
           label={renameTabLabel(title)}
           onClick={() => { setRenaming(true); }}
         >
-          <IconEdit size={14} />
+          <LineEdit />
         </ClusterButton>
-        <ClusterButton label={killTerminalLabel(title)} onClick={onKill} danger>
-          <IconTrash size={14} />
+        <ClusterButton label={killTerminalLabel(title)} onClick={onKill}>
+          <LineTrash />
         </ClusterButton>
-        <ShellPicker
-          shells={shells}
-          shellId={shellId}
-          selectedLabel={selected?.label ?? shellId}
-          available={selected?.available ?? false}
-          onSelectShell={onSelectShell}
-        />
       </div>
+      <ShellPicker
+        shells={shells}
+        shellId={shellId}
+        selectedLabel={selected?.label ?? shellId}
+        available={selected?.available ?? false}
+        onSelectShell={onSelectShell}
+      />
     </div>
   );
 }
 
-/** One icon action in the header cluster. Named, never a bare glyph. */
+/**
+ * One icon key in the header cluster: the kit's 32 x 32 bare key in ink 2.
+ * Named, never a bare glyph. Kill hovers like the rest: a failure or an end is
+ * ink, never red (docs/design/R3-MINIMAL.md section 1).
+ */
 const ClusterButton = forwardRef<
   HTMLButtonElement,
   {
     readonly label: string;
     readonly onClick: () => void;
-    readonly danger?: boolean;
     readonly children: ReactNode;
   }
->(({ label, onClick, danger = false, children }, ref) => (
-  <button
+>(({ label, onClick, children }, ref) => (
+  <Button
     ref={ref}
-    type="button"
+    variant="bare"
+    size="icon"
     aria-label={label}
     title={label}
     onClick={onClick}
-    className={cn(
-      "p-1.5 text-ink-secondary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-      danger ? "hover:text-danger" : "hover:text-ink-primary",
-    )}
   >
     {children}
-  </button>
+  </Button>
 ));
 ClusterButton.displayName = "ClusterButton";
 
@@ -290,7 +290,7 @@ function HeaderRenameField({
       onBlur={() => {
         onEnd(value);
       }}
-      className="h-5 w-40 border border-rule bg-surface-field px-1 text-[13px] leading-5 text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="h-6 w-48 border border-rule bg-surface-field px-2 text-[14px] leading-5 text-ink-primary caret-accent-primary focus-visible:border-accent-primary focus-visible:outline-none"
     />
   );
 }
@@ -310,7 +310,11 @@ function ShellPicker({
   readonly shells: readonly TerminalShellOption[];
   readonly shellId: TerminalShellId;
   readonly selectedLabel: string;
-  /** Whether the selected shell exists on this machine, for the pill's dot. */
+  /**
+   * Whether the selected shell exists on this machine. When it does not, the
+   * key says so IN WORDS after the label (the same suffix the option names
+   * carry), because a fill alone is never a state.
+   */
   readonly available: boolean;
   readonly onSelectShell: (shellId: TerminalShellId) => void;
 }): JSX.Element {
@@ -416,15 +420,15 @@ function ShellPicker({
           if (open) close(true);
           else openList();
         }}
-        // A framed chip (docs/design/V10-SPREAD.md section 1): square, a rule
-        // outline, Departure Mono 12px, the shell's own state swatch after it.
-        className="ml-1.5 flex h-7 items-center gap-1.5 border border-rule px-2 font-mono text-[12px] text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        // THE PICKER KEY (docs/design/R3-MINIMAL.md section 9.5, geometry in
+        // terminal.css): 32 high, a rule frame on the field, the shell in mono
+        // 13 ink, the chevron muted at the right.
+        className="vex-ws-picker"
       >
-        <span className="max-w-[10rem] truncate">{selectedLabel}</span>
-        <IconChevronDown size={12} />
-        {/* The dot is `aria-hidden`; the availability is already in the
-            picker's option names, so a second spoken copy would be noise. */}
-        <Swatch state={available ? "done" : "warning"} size={8} />
+        <span className="vex-num min-w-0 truncate font-mono">
+          {available ? selectedLabel : `${selectedLabel}${SHELL_UNAVAILABLE_SUFFIX}`}
+        </span>
+        <LineChevronDown size={14} className="shrink-0 text-ink-tertiary" />
       </button>
 
       {open ? (
@@ -436,17 +440,14 @@ function ShellPicker({
           tabIndex={-1}
           onKeyDown={onListKeyDown}
           /*
-            `bg-surface-2`, NOT the `bg-surface-raised` that used to be here.
-            There is no `--color-surface-raised` in the theme, so Tailwind
-            emitted no rule at all and the popup had NO background: its rows
-            floated over whatever was behind them, which is the terminal. In
-            chronos that read as a dark popup with light rows and looked
-            correct; in celeris the rows are dark ink and the backdrop was the
-            terminal's black canvas, so the AVAILABLE shells were the ones you
-            could not read. The list's readability was inverted by a missing
-            token, not by a colour choice.
+            A MENU PANEL (docs/design/R3-MINIMAL.md section 12): the field, a
+            1px ink border, padding 4 0, no shadow and no radius. The field is
+            a utility the theme DEFINES: an earlier `bg-surface-raised` named a
+            token that does not exist, Tailwind emitted no rule, and the rows
+            floated over the terminal's canvas, so the AVAILABLE shells were
+            the ones you could not read in the light theme.
           */
-          className="absolute top-full right-0 z-20 mt-1 min-w-[12rem] border border-rule bg-surface-field py-1"
+          className="absolute top-full right-0 z-20 mt-1 min-w-[180px] border border-rule-ink bg-surface-field py-1"
         >
           {shells.map((shell, index) => (
             <div
@@ -469,19 +470,23 @@ function ShellPicker({
                 choose(shell);
               }}
               className={cn(
-                "flex cursor-pointer items-center justify-between gap-3 px-2 py-1 text-[12px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                shell.available ? "text-ink-primary" : "cursor-default text-ink-tertiary",
-                shell.id === shellId ? "bg-interactive-hover" : null,
+                // A ROW is 32 high at 13.5 with padding 0 12; the selected one
+                // takes the selection wash, and focus is an outline drawn inside.
+                "flex min-h-8 cursor-pointer items-center justify-between gap-3 px-3 text-[13.5px] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus",
+                shell.available
+                  ? "text-ink-primary hover:bg-interactive-hover"
+                  : "cursor-default text-ink-tertiary",
+                shell.id === shellId ? "bg-interactive-active hover:bg-interactive-active" : null,
               )}
             >
-              <span className="flex min-w-0 items-center gap-1.5">
+              <span className="flex min-w-0 items-center gap-2.5">
                 {/* A CHECK, not only a fill. The selected row used to be told
                     apart by a background tint alone, which is a colour-only
                     signal and disappears at high contrast. */}
-                <span aria-hidden="true" className="w-3 shrink-0">
-                  {shell.id === shellId ? <IconCheck size={12} /> : null}
+                <span aria-hidden="true" className="w-3.5 shrink-0">
+                  {shell.id === shellId ? <LineCheck size={14} /> : null}
                 </span>
-                <span className="truncate">{shell.label}</span>
+                <span className="vex-num truncate font-mono">{shell.label}</span>
               </span>
               {shell.available ? null : (
                 <span aria-hidden="true" className="shrink-0 text-ink-tertiary">

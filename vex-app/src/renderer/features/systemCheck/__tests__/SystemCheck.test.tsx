@@ -1,5 +1,5 @@
 /**
- * Smoke tests for the System Check screen — wires the M2 hooks to UI.
+ * Smoke tests for the System Check screen - wires the M2 hooks to UI.
  * Mocks the hooks directly (rather than IPC) so we don't depend on
  * jsdom's lack of `window.vex` and don't have to spin up a real
  * QueryClient per test.
@@ -28,6 +28,12 @@ vi.mock("../../../lib/api/onboarding.js", () => ({
 
 import { SystemCheck } from "../SystemCheck.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import {
+  getStageVex,
+  resetStageVex,
+  stageVexEnd,
+  stageVexView,
+} from "../../../components/onboarding/stage-vex.js";
 
 const openLogsFolder = vi.fn();
 
@@ -109,7 +115,7 @@ const NO_SPACE = { disk: { freeBytes: 300_000_000, totalBytes: 64 * GiB } };
 function rowByLabel(container: HTMLElement, label: string): HTMLElement | null {
   return (
     [...container.querySelectorAll<HTMLElement>("[data-step-status]")].find(
-      (row) => row.querySelector("span.text-sm")?.textContent === label,
+      (row) => row.querySelector(".vex-fr-probe__l")?.textContent === label,
     ) ?? null
   );
 }
@@ -122,6 +128,9 @@ function clickContinue(getByRole: ReturnType<typeof render>["getByRole"]): void 
 
 describe("SystemCheck", () => {
   beforeEach(() => {
+    resetStageVex();
+    // The launch is over: her face is the screen's, with no wake to wait for.
+    stageVexEnd();
     vi.useFakeTimers();
     useUiStore.setState({
       sidebarOpen: true,
@@ -146,6 +155,7 @@ describe("SystemCheck", () => {
   afterEach(() => {
     vi.useRealTimers();
     cleanup();
+    resetStageVex();
     mockHooks.useSystemHealth.mockReset();
     mockHooks.useRuntimeInfo.mockReset();
     mockHooks.useLocalRuntimeCheck.mockReset();
@@ -158,7 +168,7 @@ describe("SystemCheck", () => {
     const { container, getByText, queryByText } = render(<SystemCheck />);
     const rows = [...container.querySelectorAll("[data-step-status]")];
     expect(rows).toHaveLength(6);
-    expect(rows.map((row) => row.querySelector("span.text-sm")?.textContent)).toEqual([
+    expect(rows.map((row) => row.querySelector(".vex-fr-probe__l")?.textContent)).toEqual([
       "Operating system",
       "Network connectivity",
       "Local runtime",
@@ -169,7 +179,7 @@ describe("SystemCheck", () => {
     expect(queryByText("Docker Engine")).toBeNull();
     expect(getByText("Six quick checks before setup begins.")).toBeDefined();
     expect(rowByLabel(container, "Local runtime")?.textContent).toContain("Database and embeddings server · macOS arm64");
-    expect(rowByLabel(container, "Local runtime")?.textContent).toContain("READY");
+    expect(rowByLabel(container, "Local runtime")?.textContent).toContain("Ready");
     expect(rowByLabel(container, "Disk space")?.getAttribute("data-step-status")).toBe("ok");
     expect(rowByLabel(container, "Disk space")?.textContent).toContain("129 GB free of 537 GB");
     expect(rowByLabel(container, "Memory")?.textContent).toContain("16 GB · 3.0 GB free");
@@ -230,11 +240,10 @@ describe("SystemCheck", () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
-    expect(
-      getByText(
-        /Vex is running from a quarantined location \(App Translocation\).*Move Vex\.app to \/Applications in Finder and relaunch\./,
-      ),
-    ).toBeDefined();
+    expect(getByText(/Vex is running from a quarantined location \(App Translocation\)\./)).toBeDefined();
+    expect(getByText(/Move Vex\.app to \/Applications in Finder and relaunch\./)).toBeDefined();
+    // The ink callout is an alert, the one loud thing on the screen.
+    expect(getByRole("alert").getAttribute("data-vex-callout")).toBe("error");
     expect(container.querySelectorAll("[data-step-status]")).toHaveLength(6);
     expect(getByRole("button", { name: /continue/i }).getAttribute("disabled"))
       .toBeNull();
@@ -255,7 +264,7 @@ describe("SystemCheck", () => {
     const { container, getByRole } = render(<SystemCheck />);
     const disk = rowByLabel(container, "Disk space");
     expect(disk?.getAttribute("data-step-status")).toBe("fail");
-    expect(disk?.textContent).toContain("NO SPACE");
+    expect(disk?.textContent).toContain("No space");
     expect(disk?.textContent).toContain("300 MB free · setup needs 938 MB");
     expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).not.toBeNull();
   });
@@ -339,5 +348,57 @@ describe("SystemCheck", () => {
       expect(rowByLabel(container, "Local runtime")?.getAttribute("data-step-status")).toBe("fail");
       expect(getByRole("button", { name: /continue/i }).getAttribute("disabled")).toBeNull();
     });
+  });
+
+  it("stands at the right of the stage plate with its crumb and the version stamp", () => {
+    const { container, getByRole } = render(<SystemCheck />);
+    const root = container.querySelector('[data-vex-screen="systemCheck"]');
+    expect(root?.querySelector(".vex-stage-side")).not.toBeNull();
+    expect(root?.querySelector("[data-vex-version-stamp]")).not.toBeNull();
+    const crumb = getByRole("navigation", { name: "First run" });
+    const steps = Array.from(crumb.querySelectorAll("li")).map((li) => li.textContent);
+    expect(steps).toEqual([
+      "System check",
+      "Local runtime",
+      "Database",
+      "Setup",
+    ].map((label) => expect.stringContaining(label)));
+    expect(crumb.querySelector('[aria-current="step"]')?.textContent).toContain("System check");
+  });
+
+  it.each([
+    ["loading", "Working"],
+    ["settled", "Ready"],
+  ])("tells the plate what Vex shows while the probes are %s", (phase, word) => {
+    if (phase === "loading") {
+      mockHooks.useEnvState.mockReturnValue({ isPending: true, data: undefined });
+    }
+    render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe(word);
+  });
+
+  it("is concerned when the machine runs low for the local runtime, and in error when a probe failed", () => {
+    mockHooks.useLocalRuntimeCheck.mockReturnValue(
+      localCheck({ disk: { freeBytes: 16 * GiB, totalBytes: 228 * GiB } }),
+    );
+    const first = render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe("Concerned");
+    first.unmount();
+    mockHooks.useLocalRuntimeCheck.mockReturnValue({
+      isPending: false,
+      data: { ok: false, error: { code: "internal.unexpected", message: "x" } },
+    });
+    render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe("Error");
+  });
+
+  it("does not let the local runtime's rows set the face on an e2e door run", () => {
+    mockHooks.useRuntimeInfo.mockReturnValue({ isPending: false, data: { ok: true, data: { native: false } } });
+    mockHooks.useLocalRuntimeCheck.mockReturnValue({
+      isPending: false,
+      data: { ok: false, error: { code: "internal.unexpected", message: "x" } },
+    });
+    render(<SystemCheck />);
+    expect(stageVexView(getStageVex()).word).toBe("Ready");
   });
 });

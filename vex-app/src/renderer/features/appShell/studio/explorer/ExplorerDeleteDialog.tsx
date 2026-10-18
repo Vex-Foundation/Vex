@@ -18,10 +18,11 @@
  * confirmations, which is how the typed gate stops working where it matters.
  *
  * THE REGISTER FOLLOWS THE DISPOSITION. A trash delete is an ordinary
- * destructive confirmation; a PERMANENT one takes the warning treatment,
- * because the undo line stops being "you can restore it" and becomes "nothing
- * can bring it back". Same mechanism the project dialog uses for its checkbox:
- * state tokens on the existing primitive, never a new dialog variant.
+ * destructive confirmation; a PERMANENT one takes the warning treatment (the
+ * undo line goes to ink at weight 500, never a hue), because the undo line
+ * stops being "you can restore it" and becomes "nothing can bring it back".
+ * Same mechanism the project dialog uses for its checkbox: tokens on the
+ * existing primitive, never a new dialog variant.
  *
  * FOCUS DEFAULTS TO CANCEL (rule 08: a dangerous action defaults to the safer
  * choice), through `DIALOG_INITIAL_FOCUS` - React's `autoFocus` prop cannot do
@@ -51,7 +52,6 @@ import {
 } from "../../../../components/ui/dialog.js";
 import { SubmitError } from "../../../../components/ui/submit-error.js";
 import { useLiveAnnouncer } from "../../../../components/ui/live-region.js";
-import { cn } from "../../../../lib/utils.js";
 import {
   EXPLORER_DELETE_CANCEL,
   EXPLORER_DELETE_PENDING,
@@ -161,26 +161,34 @@ export function ExplorerDeleteDialog({
       }}
     >
       <DialogContent
-        className={cn("max-w-md", warned && "border-warning/40")}
+        className="max-w-md"
         // An explicit choice, never a stray backdrop click.
         closeOnBackdropClick={false}
         data-vex-explorer-delete-mode={mode}
       >
-        <DialogHeader className="border-line-2">
+        <DialogHeader>
           <DialogTitle>{EXPLORER_DELETE_TITLE}</DialogTitle>
         </DialogHeader>
 
         {/* The consent strip: WHAT, WHERE, WHETHER-UNDOABLE, in that order and
           * in the same register the project delete uses. */}
-        <DialogConsequence data-vex-consent="delete-file">
+        <DialogConsequence
+          data-vex-consent="delete-file"
+          className="text-[13px] leading-[1.45]"
+        >
           <span className="font-medium">{deleteConsequenceWhat(name, kind)}</span>
           {request === null ? null : (
-            <span className="truncate font-mono text-[11px] text-ink-secondary">
+            <span className="vex-num truncate text-[12px] text-ink-secondary">
               {request.node.path}
             </span>
           )}
           <span className="text-ink-secondary">{deleteDispositionLine(mode)}</span>
-          <span className={warned ? "text-warning" : "text-ink-secondary"}>
+          {/* A permanent delete takes the ink and the weight: the undo line
+            * stops being "you can restore it" and becomes "nothing can bring it
+            * back", and that is said by contrast, never by a hue. */}
+          <span
+            className={warned ? "font-medium text-ink-primary" : "text-ink-secondary"}
+          >
             {deleteUndoLine(mode)}
           </span>
         </DialogConsequence>
@@ -198,15 +206,14 @@ export function ExplorerDeleteDialog({
 
         {liveRegion}
 
-        <DialogFooter className="border-line-2">
+        <DialogFooter>
           <Button
             type="button"
-            variant="bare"
+            variant="quiet"
             onClick={onClose}
             disabled={pending}
             // The safer choice takes focus (rule 08).
             {...DIALOG_INITIAL_FOCUS}
-            className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             {EXPLORER_DELETE_CANCEL}
           </Button>

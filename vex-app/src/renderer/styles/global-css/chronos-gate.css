@@ -1,47 +1,39 @@
-/* THE STAGE: the pre-shell (docs/design/V10-SPREAD.md sections 2, 3, 8 and 10).
+/* THE STAGE: the pre-shell (docs/design/R3-MINIMAL.md section 10).
  *
- * Every screen between first paint and the shell stands on one picture: the
- * plateau print at window size with the Desktop eagle in its band
- * (`components/pixel/PrintPlate.tsx`, `layout="stage"`). The print never
- * moves; only the type over it changes. Three compositions share it:
+ * Every screen between first paint and the shell stands on one picture, the
+ * plateau print, mounted ONCE by `App` (`components/onboarding/PreShellStage.tsx`,
+ * `StagePlate`). It never moves; only the type over it changes. Two layouts:
  *
- *   open   the unlock (d1): the release number as the giant counter on the
- *          sky, the greeting and the field in the right column, the forgot
- *          link on the dark ground.
- *   leaf   the setup screens and the wizard (d8): a paper page laid on the
- *          stage from the right; the counter (and the wizard's step index)
- *          on the sky to its left.
- *   gate   the boot cold open: the same stage while the launch pipeline
- *          runs, its progress drawn as the ground rule.
+ *   plate  the wake (the boot gate), the unlock and the first run screens
+ *          (system check, local runtime, database): a 720 plate at the left
+ *          at the full window height with Vex rising from the VEX token and
+ *          her state word on the print, paper at the right with the type.
+ *   print  the wizard only: the print at window size, no animal on it, under
+ *          the wizard's own R3 frame (`WizardShell`), which draws its plate
+ *          and its step page itself.
  *
- * Owns: the stage layout, the gate acts, the page turn into the shell, and
- * the `[data-vex-gate="true"]` token scope every pre-shell screen carries.
- * Radius 0, no shadow, glass, blur or gradient ramp; blue type sits on the
- * pale sky only, never on the dark ground (V10-SPREAD.md section 1). */
+ * `stageLayoutFor` (`PreShellStage.tsx`) picks the layout per view.
+ *
+ * Owns: the stage layout, the wake and unlock type, the stage to shell
+ * crossfade, and the `[data-vex-gate="true"]` token scope every pre-shell
+ * screen carries. Radius 0, no shadow, glass, blur or gradient ramp. */
 
 :root {
-  /* The paper leaf on the stage (V10-SPREAD.md section 2: 600 at the right).
-   * It gives way to 480 at the 1000px minimum so the sky keeps room for the
-   * counter. */
+  /* The paper leaf on the first run stage (600 at the right). It gives way
+   * to 480 at the 1000px minimum so the sky keeps room for the counter. */
   --vex-stage-leaf: clamp(480px, 52vw, 600px);
-  /* The left page the page turn lands on (section 2): 300, or the 56 spine
-   * under 1276. */
-  --vex-turn-lp: 300px;
-}
-@media (max-width: 1275px) {
-  :root {
-    --vex-turn-lp: 56px;
-  }
+  /* The plate at the left of the wake and the unlock: 720 at 1440, half the
+   * window under it (spec section 10.1). */
+  --vex-stage-plate-w: min(720px, 50vw);
 }
 
 /* ============================================================ *
  *  The stage plate                                              *
  * ============================================================ */
-/* The fill under the print: what paints before the print has decoded, and
- * the ground the gate's print develops out of. THEME-AWARE: the chronos
- * value is the main-window `backgroundColor` (main/windows/main-window.ts),
- * so first paint and the plate are one surface; `theme-matrix.test.ts`
- * guards both. */
+/* The window's ground: paper, the page the type sits on. THEME-AWARE: the
+ * chronos value is the main-window `backgroundColor` (main/windows/main-window.ts),
+ * so first paint and the stage are one surface; `theme-matrix.test.ts` guards
+ * both. */
 .vex-gate-plate {
   background: var(--vex-alias-gate-plate);
 }
@@ -56,15 +48,147 @@
   color: var(--vex-alias-label-primary);
 }
 
-/* The 44px head row: the hidden title bar's drag region, the vx mark at the
- * traffic lights' inset (`.vex-lights-start`, window-chrome.css). */
+/* The 44px head row: the hidden title bar's drag region, clear of the
+ * traffic lights. */
 .vex-stage__tb {
   position: relative;
   z-index: 2;
   display: flex;
   align-items: center;
   height: var(--head-h, 44px);
-  color: var(--vex-alias-brand-mark);
+}
+
+/* The plate (spec section 10.1): the print at the left at the full window
+ * height. Its ground shows while the photograph decodes: the night print's
+ * darkest tone, and the day print's mid tone in celeris (spec section 1.1). */
+.vex-stage-plate {
+  overflow: hidden;
+}
+.vex-stage-plate__plate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--vex-stage-plate-w);
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--color-night-0);
+}
+[data-vex-theme="celeris"] .vex-stage-plate__plate,
+[data-vex-theme="celeris"] .vex-stage-plate__full {
+  background: #c7b6a6;
+}
+.vex-stage-plate__img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  /* The stage's print position (spec section 10.1). */
+  object-position: 50% 78%;
+  user-select: none;
+}
+/* One print per room, swapped on data-vex-theme (stamped on documentElement),
+ * never by a JS theme read. */
+.vex-stage-plate__img--day {
+  display: none;
+}
+[data-vex-theme="celeris"] .vex-stage-plate__img--day {
+  display: block;
+}
+[data-vex-theme="celeris"] .vex-stage-plate__img--night {
+  display: none;
+}
+/* The print's grain: fractal noise, multiplied at 10%, over the photograph
+ * only, under Vex. */
+.vex-stage-plate__grain {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+  background-image: url(/art/grain.svg);
+  background-size: 220px 220px;
+}
+.vex-stage-plate__vex {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+/* No state word under her on the print (the owner, 2026-10-18): the state
+ * lives in the title bar chip and the Vex sidebar. */
+/* The wizard's layout: the print at window size, no animal on it, the print's
+ * own position (V10). It develops out of the paper over 240ms. */
+.vex-stage-plate__full {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--color-night-0);
+  animation: vex-stage-plate-in var(--vex-duration-slow) var(--vex-ease-standard) backwards;
+}
+.vex-stage-plate__full .vex-stage-plate__img {
+  object-position: 60% 50%;
+}
+@keyframes vex-stage-plate-in {
+  from {
+    opacity: 0;
+  }
+}
+/* The stage to shell crossfade: the plate lifts away over the shell mounted
+ * beneath it (`data-vex-stage-exit` is set by the gate or the unlock handoff). */
+.vex-stage-plate[data-vex-stage-exit="reveal"] {
+  opacity: 0;
+  transition: opacity var(--vex-duration-slow) var(--vex-ease-standard);
+}
+
+/* The small version stamp at the window's bottom right (spec section 10.2). */
+.vex-stage-stamp {
+  position: absolute;
+  z-index: 2;
+  right: 28px;
+  bottom: 22px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The right side of the wake and the unlock: paper, the type centred in the
+ * window's height (spec section 10.1: padding 0 120 0 96 at 1440). */
+.vex-stage-side {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--vex-stage-plate-w);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding-inline: clamp(48px, 6.667vw, 96px) clamp(48px, 8.333vw, 120px);
+  color: var(--vex-alias-label-primary);
+}
+/* The gate lifts away over the unlock, so its side is opaque paper. */
+.vex-stage-side--gate {
+  background: var(--vex-alias-bg-base);
+}
+.vex-stage-title {
+  margin: 0 0 14px;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(44px, 3.889vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.012em;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-stage-lead {
+  max-width: 420px;
+  margin: 0 0 28px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
 }
 
 /* The giant italic parenthetical counter on the sky (section 1: stage 288).
@@ -89,8 +213,10 @@
   user-select: none;
 }
 
-/* The ground row: a hairline and one mono caption line on the dark ground,
- * white in both rooms (the spread caption anatomy). */
+/* The ground row: a hairline and one caption line on the dark ground, white
+ * in both rooms. The caption is a word, so it is Instrument Sans in sentence
+ * case (docs/design/R3-MINIMAL.md section 1.3); a figure inside it carries
+ * `.vex-num`. */
 .vex-stage-ground {
   position: absolute;
   z-index: 2;
@@ -111,11 +237,11 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 24px;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.1;
-  letter-spacing: var(--tracking-caption);
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--vex-alias-on-photo);
   white-space: nowrap;
 }
@@ -147,87 +273,82 @@
 }
 
 /* ============================================================ *
- *  open: the unlock (d1)                                        *
+ *  the unlock (spec section 10.2)                               *
  * ============================================================ */
-.vex-unl {
-  --vex-unl-col: min(560px, 44vw);
-  /* "(0.3.1)" sets about 1.96 em wide: the counter takes what the right
-   * column, the gap and the side margins leave (288 at 1440). */
-  --vex-stage-counter: min(288px, calc((100vw - var(--vex-unl-col) - 164px) / 1.96), 34vh);
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--vex-unl-col);
-  column-gap: 32px;
-  align-content: start;
-  min-height: 0;
-  padding: 22px 72px 0 60px;
+/* The unlock stands on the plate and the paper: no ground row, no caption
+ * hairline (the `.vex-stage--leaf` layout, which has no caller now, keeps its own). */
+.vex-stage:not(.vex-stage--leaf) .vex-stage-ground {
+  display: none;
 }
 .vex-unl__form {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
   min-width: 0;
-  padding-top: 74px;
 }
-.vex-unl__h1 {
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: min(100px, calc(var(--vex-unl-col) / 5));
-  line-height: 0.9;
-  letter-spacing: -0.014em;
-  color: var(--vex-alias-title);
-  white-space: nowrap;
+.vex-unl__form[hidden] {
+  display: none;
 }
-.vex-unl__sub {
-  margin-top: 18px;
-  max-width: 30em;
-  font-size: 18px;
-  line-height: 1.45;
-  color: var(--vex-alias-label-primary);
+.vex-unl__fields {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
 }
 .vex-unl__lab {
-  margin-top: 30px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.5;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-primary);
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--vex-alias-label-secondary);
 }
-.vex-unl__row {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-}
-/* The field: a label box on the sky with a 1.5px blue rule under it, the
- * in-flight signing stroke drawn on that rule. */
+/* The field: 42 high, a 1px rule, the field fill; the rule turns blue on
+ * focus and ink with a failure. The in-flight signing stroke is drawn on its
+ * lower rule. */
 .vex-unl__field {
   position: relative;
-  --vex-micro-size: 11px;
 }
 .vex-unl__field input {
-  height: 48px;
-  padding: 0 72px 0 14px;
-  border: 0;
-  border-bottom: 1.5px solid var(--vex-alias-accent-primary);
-  background: var(--vex-alias-gate-field);
+  height: 42px;
+  padding: 0 64px 0 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
   font-size: 15px;
   letter-spacing: 0.08em;
   color: var(--vex-alias-label-primary);
 }
-/* Focus is the rule itself, drawn heavier in the focus blue: the field is
- * focused on arrival and a ring would box the whole label on the print. */
 .vex-unl__field input:focus-visible {
   outline: none;
-  border-bottom: 2px solid var(--vex-alias-focus);
+  border-color: var(--vex-alias-accent-primary);
 }
+.vex-unl__field input[aria-invalid="true"] {
+  border: 1.5px solid var(--vex-alias-rule-ink);
+}
+/* Throttled: the field is off, a dotted rule on the second paper. */
+.vex-unl__field[data-throttled] input {
+  border-style: dotted;
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-tertiary);
+}
+/* "Show" is the field's own word: blue, 13 / 500, no pill. */
 .vex-unl__field button {
-  /* Centred on the field's text box, above its 1.5px rule. */
-  top: calc(50% - 0.75px);
-  right: 6px;
+  right: 10px;
+  padding: 0 2px;
+  border-radius: 0;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: capitalize;
   color: var(--vex-alias-accent-primary);
+}
+.vex-unl__field button:hover {
+  color: var(--vex-alias-accent-hover);
+}
+.vex-unl__field button:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
 }
 .vex-unl__stroke {
   position: absolute;
@@ -236,51 +357,145 @@
   bottom: 0;
   height: 1.5px;
   pointer-events: none;
-  background: var(--vex-alias-title);
+  background: var(--vex-alias-accent-primary);
 }
-/* Unlock: the label box with the blue word; it fills with the one blue the
- * moment the field holds anything (`data-armed`) and while the unlock is in
- * flight (`data-busy`). */
+.vex-unl__alert {
+  margin-top: 10px;
+}
+/* Unlock: a dotted blue outline while the field is empty; it fills with the
+ * one blue the moment the field holds anything (`data-armed`) and while the
+ * unlock is in flight (`data-busy`), with the periwinkle edge at night.
+ *
+ * A key that is disabled and NOT in flight (the throttle window: the form is
+ * off, the typed password still sits in the field, so `data-armed` is still
+ * true) draws the same dotted outline, never the fill with a faded label (the
+ * Button primitive's rule: a disabled primary is a dotted outline). The empty
+ * key and the disabled key share one recipe so they cannot drift. */
 .vex-unl__go {
-  height: 48px;
-  padding: 0 22px;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: normal;
-  border: 0;
-  background: var(--vex-alias-gate-field);
-  color: var(--vex-alias-accent-primary);
-  outline: 1px solid var(--vex-alias-gate-go-rule);
-  outline-offset: -1px;
+  width: 100%;
+  margin-top: 16px;
 }
-.vex-unl__go:enabled:hover {
-  background: var(--vex-alias-gate-field);
-  color: var(--vex-alias-title);
-}
-.vex-unl__go[data-armed="true"],
-.vex-unl__go[data-busy] {
-  background: var(--vex-alias-button-accent-fill);
-  color: var(--vex-alias-button-accent-ink);
-  outline-color: transparent;
-}
-.vex-unl__go[data-armed="true"]:enabled:hover {
-  background: var(--vex-alias-button-accent-hover);
-  color: var(--vex-alias-button-accent-ink);
-}
+.vex-unl__go:not([data-armed="true"]):not([data-busy]),
 .vex-unl__go:disabled:not([data-busy]) {
-  background: var(--vex-alias-gate-field);
-  color: var(--vex-alias-label-tertiary);
+  border: 1.5px dotted var(--vex-alias-accent-primary);
+  background: transparent;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-unl__go[data-armed="true"]:not(:disabled),
+.vex-unl__go[data-busy] {
+  border: 1px solid var(--vex-alias-button-accent-edge);
 }
 .vex-unl__go[data-busy] {
   cursor: progress;
 }
-.vex-unl__alert {
-  margin-top: 12px;
+.vex-unl__forgot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--vex-alias-accent-primary);
+  cursor: pointer;
+}
+.vex-unl__forgot:enabled:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-unl__forgot:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 4px;
+}
+.vex-unl__forgot:disabled {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-unl__note {
+  max-width: 420px;
+  margin: 34px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+/* "Set up a new vault?": an inline panel in place of the form (spec section
+ * 12): a 1.5px ink frame, padding 22 24 20, max 470. */
+.vex-unl__panel {
+  width: 100%;
+  max-width: 470px;
+  padding: 22px 24px 20px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-base);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--vex-alias-label-primary);
+}
+.vex-unl__panel-title {
+  margin: 0 0 4px;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+}
+.vex-unl__panel p {
+  margin: 0 0 10px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-unl__panel .vex-unl__panel-sub {
+  margin-bottom: 14px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-unl__panel .vex-callout {
+  margin: 4px 0 14px;
+}
+.vex-unl__ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 18px;
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+/* The checkbox: 16 x 16, a 1.5px ink border, a blue fill with a white tick. */
+.vex-unl__ack input {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  appearance: none;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: transparent;
+  cursor: pointer;
+}
+.vex-unl__ack input:checked {
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-unl__ack input:checked::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0;
+  width: 4px;
+  height: 8px;
+  border: solid var(--vex-alias-button-accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.vex-unl__ack input:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+}
+.vex-unl__panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* ============================================================ *
- *  leaf: the setup screens and the wizard (d8)                  *
+ *  leaf: SetupFrame's default page (no caller since R3 wave 5)  *
  * ============================================================ */
 .vex-stage-sky {
   position: relative;
@@ -295,11 +510,6 @@
   padding: 22px 0 0 60px;
   /* The release counter alone: what the leaf and the margins leave. */
   --vex-stage-counter: min(288px, calc((100vw - var(--vex-stage-leaf) - 120px) / 1.96), 34vh);
-}
-/* The wizard: "(02)" is about 1.35 em wide and shares the sky with the
- * step index (about 190 with its gap). */
-.vex-stage-sky--steps {
-  --vex-stage-counter: min(288px, calc((100vw - var(--vex-stage-leaf) - 300px) / 1.35), 34vh);
 }
 .vex-stage--leaf .vex-stage-ground {
   right: calc(var(--vex-stage-leaf) + 56px);
@@ -332,6 +542,35 @@
     overflow-y: clip;
   }
 }
+
+/* The rise: the first run screens' one-shot load-in (a line rises 18px on
+ * the entrance curve, `--vex-ease-out`), with stagger steps for a screen's
+ * head, body and actions. Rests perfectly still. The 600ms is a named
+ * exception to the desktop duration scale (MOTION-POLICY.md, the landing
+ * motifs it was authored against); base.css's reduced-motion catch-all
+ * collapses it. */
+@keyframes vex-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.vex-rise {
+  animation: vex-rise 600ms var(--vex-ease-out) both;
+}
+.vex-rise-d1 {
+  animation-delay: 90ms;
+}
+.vex-rise-d2 {
+  animation-delay: 190ms;
+}
+.vex-rise-d3 {
+  animation-delay: 300ms;
+}
 /* Night Ledger paper carries the faint print grain. */
 :root:not([data-vex-theme="celeris"]) .vex-stage-leaf::after {
   content: "";
@@ -345,28 +584,11 @@
   background-size: 240px 240px;
 }
 
-/* The page head: mono eyebrow, the 56px serif title, the lead. */
+/* The page head: the 56px serif title, the lead. */
 .vex-stage-leaf__head {
   margin-bottom: 28px;
 }
-/* The wizard's eyebrow alone: the step panel's own title follows it. */
-.vex-stage-leaf__head:not(:has(.vex-stage-leaf__title)) {
-  margin-bottom: 0;
-}
-.vex-stage-leaf__eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--vex-alias-label-primary);
-}
-.vex-stage-leaf__eyebrow > span {
-  color: var(--vex-alias-label-secondary);
-}
-.vex-stage-leaf__title,
-[data-vex-gate="true"] .vex-step-title {
+.vex-stage-leaf__title {
   font-family: var(--font-serif);
   font-weight: 400;
   font-size: 56px;
@@ -374,11 +596,7 @@
   letter-spacing: -0.014em;
   color: var(--vex-alias-title);
 }
-.vex-stage-leaf__eyebrow + .vex-stage-leaf__title {
-  margin-top: 14px;
-}
-.vex-stage-leaf__lead,
-[data-vex-gate="true"] .vex-step-lede {
+.vex-stage-leaf__lead {
   margin-top: 16px;
   font-size: 15px;
   line-height: 23px;
@@ -388,46 +606,9 @@
   .vex-stage-leaf__body {
     padding: 56px 40px 48px;
   }
-  .vex-stage-leaf__title,
-  [data-vex-gate="true"] .vex-step-title {
+  .vex-stage-leaf__title {
     font-size: 48px;
   }
-}
-
-/* The wizard's step index on the sky: numeral, swatch, name (section 1:
- * index and step numerals 24, line 26). */
-.vex-stage-steps {
-  display: grid;
-  grid-template-rows: repeat(7, 26px);
-  padding-bottom: 6px;
-}
-.vex-stage-step {
-  display: grid;
-  grid-template-columns: 40px 14px minmax(0, 1fr);
-  column-gap: 6px;
-  align-items: center;
-  color: var(--vex-alias-label-primary);
-}
-.vex-stage-step__n {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--vex-alias-gate-counter);
-}
-.vex-stage-step__sw {
-  display: grid;
-  place-items: center;
-  color: var(--vex-alias-title);
-}
-.vex-stage-step__t {
-  font-size: 14px;
-  line-height: 18px;
-  white-space: nowrap;
-}
-.vex-stage-step[aria-current="step"] .vex-stage-step__t {
-  color: var(--vex-alias-title);
 }
 
 /* ============================================================ *
@@ -440,8 +621,7 @@
  * screen, so the pre-shell differences are a re-projection here, never a
  * call-site edit. The leaf is the same paper as the shell, so the scope
  * re-pins little: the hairline and field strengths from the theme-aware
- * `--vex-alias-gate-*` group, the accent-as-text names, and the 11px
- * Departure Mono caption (crisp at 11, section 1). */
+ * `--vex-alias-gate-*` group and the accent-as-text names. */
 [data-vex-gate="true"] {
   --color-border: var(--vex-alias-gate-border);
   --color-input: var(--vex-alias-gate-input);
@@ -449,8 +629,6 @@
   --vex-accent-text: var(--color-accent-primary);
   --color-popover: var(--color-surface-1);
   --color-muted: var(--vex-alias-gate-muted);
-  --vex-micro-size: 0.6875rem;
-  --vex-micro-tracking: var(--tracking-status);
 }
 
 /* --- The page CTA ---------------------------------------------- */
@@ -466,48 +644,6 @@
   height: 44px;
   padding-inline: 18px;
 }
-/* A bare text action in a step's footer ("Continue without a wallet") reads
- * as an underlined ink link on the leaf (d8). */
-[data-vex-gate="true"] .vex-step-actions button[data-vex-button="bare"] {
-  height: 36px;
-  padding-inline: 0;
-  font-size: 14px;
-  color: var(--vex-alias-label-primary);
-  text-decoration: underline;
-  text-decoration-color: var(--vex-alias-rule);
-  text-underline-offset: 4px;
-}
-[data-vex-gate="true"] .vex-step-actions button[data-vex-button="bare"]:enabled:hover {
-  background: transparent;
-  text-decoration-color: currentColor;
-}
-
-/* --- The wizard step head on the leaf ---------------------------- */
-/* Lives here, not in WizardStepPanel.tsx, because that component is also
- * every Settings section header in the app shell, where its own composition
- * must not change. The hook classes carry no declarations outside this
- * scope. On the leaf the step reads as d8: no glyph badge, the 56px serif
- * title under the stepper's eyebrow, the lead under it, the actions
- * left-aligned, and no trailing meta line (the eyebrow already says
- * "Step 2 of 7" and the privacy link sits on the stage ground). */
-[data-vex-gate="true"] .vex-step-header {
-  display: block;
-}
-[data-vex-gate="true"] .vex-step-header > div {
-  display: block;
-  padding-top: 0;
-}
-[data-vex-gate="true"] .vex-step-icon,
-[data-vex-gate="true"] .vex-step-meta {
-  display: none;
-}
-[data-vex-gate="true"] .vex-step-title {
-  margin-top: 14px;
-}
-[data-vex-gate="true"] .vex-step-actions {
-  justify-content: flex-start;
-}
-
 /* --- The gate scrollbar ---------------------------------------- */
 /* The thumb is a passive affordance and sits below the content's contrast
  * floor: the accent at partial alpha. Wins over the onboarding recipe by
@@ -533,123 +669,91 @@
 }
 
 /* ============================================================ *
- *  CHRONOS GATE: the boot cold open on the stage                *
+ *  CHRONOS GATE: the wake screen (spec section 10.2)            *
  * ============================================================ */
-/* Static styles are the Act III resting frame; keyframes declare only
- * `from`, so `animation-fill-mode: backwards` holds each act's start
- * through its delay and reduced motion lands the static frame at once.
- * The delays mirror `ACTS_SETTLED_MS` in ChronosGate/gate-timeline.ts.
- *
- *   Act I    0.0s  the print develops out of the plate (opacity only:
- *                  photos never move)
- *   Act II   1.0s  the release counter and the mark arrive on the sky
- *   Act III  2.2s  the ground: the progress rule and the status line   */
-.vex-gate-act-print {
-  animation: vex-gate-develop 1.2s var(--vex-ease-out) backwards;
+/* The gate's content is the type at the right of the plate: its title, lead,
+ * one progress line and the five real stage lines. The plate at the left is
+ * the stage's own (`.vex-stage-plate`), so the gate paints nothing there. */
+.vex-gate-stage {
+  position: absolute;
+  inset: 0;
 }
-@keyframes vex-gate-develop {
-  from {
-    opacity: 0;
-  }
-}
-.vex-gate-act-sky {
-  animation: vex-gate-arrive 0.8s var(--vex-ease-out) 1s backwards;
-}
-.vex-gate-act-ground {
-  animation: vex-gate-arrive 0.4s var(--vex-ease-out) 2.2s backwards;
-}
-@keyframes vex-gate-arrive {
-  from {
-    opacity: 0;
-  }
+.vex-gate-stage .vex-stage__tb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
 }
 
-/* The progress line IS the ground rule: the 42% white hairline, filled in
- * white as far as the REAL launch pipeline has come. `--chronos-progress`
- * is written per stage via CSSOM (a single custom-property assignment,
- * CSP-safe); the transition rides the resulting transform. */
+/* The progress line: a 360 x 2 rule-quiet track with a blue fill, filled as
+ * far as the REAL launch pipeline has come. `--chronos-progress` is written
+ * per stage via CSSOM (a single custom-property assignment, CSP-safe); the
+ * transition rides the resulting transform. */
+.vex-gate-track {
+  position: relative;
+  width: min(360px, 100%);
+  height: 2px;
+  margin: 6px 0 14px;
+  overflow: hidden;
+  background: var(--vex-alias-rule-quiet);
+}
 .vex-gate-progress__fill {
   position: absolute;
   inset: 0;
-  background: var(--vex-alias-on-photo);
+  background: var(--vex-alias-accent-primary);
   transform-origin: left center;
   transform: scaleX(var(--chronos-progress, 0));
   transition: transform var(--vex-duration-reveal) var(--vex-ease-standard);
 }
 
+/* The five stage lines: 14 on 30 high rows; the current one 500 ink with its
+ * solid blue swatch, finished ones solid and muted, upcoming ones outlines. */
+.vex-gate-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-gate-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+}
+.vex-gate-steps li[aria-current="step"] {
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-gate-steps li[aria-current="step"] .vex-swatch {
+  color: var(--vex-alias-accent-primary);
+}
+
 /* ============================================================ *
- *  THE PAGE TURN: the unlock hands off to the spread (t1 to t3) *
+ *  THE HANDOFF: the unlock crossfades into the shell            *
  * ============================================================ */
-/* The print and the eagle stay; the stage type fades under a copy of the
- * same print (240ms), and the right page arrives from the window edge as
- * one paper leaf onto the left page's edge (480ms, the entrance curve).
- * Then the spread is set beneath and the turn lifts away (240ms), so the
- * page furniture fades in (V10-SPREAD.md section 10). */
+/* The unlock hands off with the stage's plate lifting away over the shell
+ * (`.vex-stage-plate[data-vex-stage-exit]` above, 240ms). The turn itself is a
+ * transparent shield that takes no click while that plays. */
 .vex-turn {
   position: fixed;
   inset: 0;
   z-index: 50;
-  overflow: hidden;
-  transition: opacity var(--vex-duration-slow) var(--vex-ease-standard);
-}
-.vex-turn__print {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity var(--vex-duration-slow) linear;
-}
-.vex-turn__leaf {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--vex-turn-lp);
-  width: calc(100vw - var(--vex-turn-lp));
-  background: var(--vex-alias-bg-base);
-  transform: translateX(100%);
-  transition: transform 480ms var(--vex-ease-out);
-}
-/* Unlock back into the wizard: the leaf lands where the wizard's page is. */
-.vex-turn[data-vex-turn-target="wizard"] .vex-turn__leaf {
-  left: calc(100vw - var(--vex-stage-leaf));
-  width: var(--vex-stage-leaf);
-}
-.vex-turn:not([data-vex-curtain-phase="start"]) .vex-turn__print {
-  opacity: 1;
-}
-.vex-turn:not([data-vex-curtain-phase="start"]) .vex-turn__leaf {
-  transform: none;
-}
-.vex-turn[data-vex-curtain-phase="reveal"] {
-  opacity: 0;
-  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vex-gate-act-print,
-  .vex-gate-act-sky,
-  .vex-gate-act-ground,
-  .vex-stage-leaf__body {
+  .vex-stage-leaf__body,
+  .vex-stage-plate__full {
     animation: none;
   }
   .vex-gate-progress__fill {
     transition: none;
   }
-  /* Nothing slides: the leaf is placed at the left page's edge and the
-   * stage and the spread crossfade over a fixed 240ms linear (literal: the
-   * duration tokens are zeroed under reduced motion). `.vex-turn` carries
-   * `data-vex-motion-opacity`, base.css's documented opt-out for an
-   * opacity-only change. */
-  .vex-turn__print,
-  .vex-turn__leaf {
-    transition: none;
-  }
-  .vex-turn__print {
-    opacity: 1;
-  }
-  .vex-turn__leaf {
-    transform: none;
-  }
-  .vex-turn {
+  /* Nothing slides: the stage and the shell crossfade over a fixed 240ms
+   * linear (literal: the duration tokens are zeroed under reduced motion).
+   * The plate carries `data-vex-motion-opacity`, base.css's documented opt-out
+   * for an opacity-only change. */
+  .vex-stage-plate[data-vex-stage-exit="reveal"] {
     transition: opacity 240ms linear;
   }
 }

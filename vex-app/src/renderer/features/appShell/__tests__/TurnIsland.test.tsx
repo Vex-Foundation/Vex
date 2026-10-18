@@ -1,10 +1,12 @@
 /**
- * The Turn Island's freeze reaches the SHELL, not just the loading bar.
+ * The turn's live row (docs/design/R3-MINIMAL.md section 6): its freeze
+ * reaches the SHELL, not just the loading bar, and its fills, scope and clock
+ * wear the R3 grammar.
  *
  * `islandTurnState.test.ts` proves the state machine produces `animated:false`
- * while a signature is pending; this asserts the component actually threads
+ * while an approval is pending; this asserts the component actually threads
  * that stillness into the island primitive, which is where the earlier defect
- * lived — the derivation was right and nothing consumed it, so the shell kept
+ * lived: the derivation was right and nothing consumed it, so the shell kept
  * springing into the awaiting state.
  */
 
@@ -36,7 +38,7 @@ function island(awaitingApproval: boolean): Element | null {
 }
 
 describe("TurnIsland freeze", () => {
-  it("freezes the island shell while a signature is pending", () => {
+  it("freezes the island shell while an approval is pending", () => {
     const el = island(true);
     expect(el?.hasAttribute("data-vex-island-still")).toBe(true);
   });
@@ -66,7 +68,7 @@ describe("TurnIsland reasoning segments", () => {
     ).container;
   }
 
-  it("streams the ACTIVE segment inline under a Thinking: caption, with no height cut", () => {
+  it("streams the ACTIVE segment inline under a Thinking: row, with no height cut", () => {
     const container = renderIsland({
       status: "thinking",
       reasoningText: "weighing the route",
@@ -130,43 +132,111 @@ describe("TurnIsland reasoning segments", () => {
   });
 
   /**
-   * The island's one motion is the ONGOING SWATCH before the status word
-   * (docs/design/V10-SPREAD.md section 1: status is shown by fill, the dot
-   * screen stepping). The freeze takes it away and draws the target instead,
-   * because motion while a signature is pending reads as progress that is
-   * not happening. No shimmer and no sweep survive anywhere on the island.
+   * Status is shown by FILL (docs/design/R3-MINIMAL.md sections 1.6 and 6):
+   * live work is the solid fill, thinking the hatch, the awaiting freeze the
+   * target (it never moves), an error the ink cross. Nothing in the island
+   * uses the old stepping "ongoing" screen or the "warning" target now,
+   * and no shimmer or sweep survives anywhere on it.
    */
-  it("leads the live status word with the ongoing swatch and swaps it for the target under the freeze", () => {
+  it("leads the live status word with the solid fill and swaps it for the target under the freeze", () => {
     const working = renderIsland({ status: "working" });
     const live = working.querySelector("[data-vex-island-label]");
-    expect(live?.textContent).toBe("vexing…");
+    expect(live?.textContent).toBe("Working");
     const liveSwatch = live?.parentElement?.querySelector(".vex-swatch");
-    expect(liveSwatch?.getAttribute("data-s")).toBe("ongoing");
+    expect(liveSwatch?.getAttribute("data-s")).toBe("done");
     expect(working.querySelector(".vex-turn-shimmer, .vex-row-sweep")).toBeNull();
 
     const frozen = render(
       createElement(TurnIsland, { preview: PREVIEW, awaitingApproval: true }),
     ).container;
     const frozenLabel = frozen.querySelector("[data-vex-island-label]");
-    expect(frozenLabel?.textContent).toBe("Awaiting signature");
+    expect(frozenLabel?.textContent).toBe("Waiting for approval");
     expect(
       frozenLabel?.parentElement?.querySelector(".vex-swatch")?.getAttribute("data-s"),
-    ).toBe("warning");
+    ).toBe("awaiting");
     // The awaiting row takes the blue line (reference d4).
     expect(
       frozen.querySelector("[data-vex-island-size]")?.getAttribute("data-vex-island-tone"),
     ).toBe("pin");
   });
 
-  it("sets the elapsed clock in Departure Mono on the second ink, never the italic serif", () => {
+  it.each([
+    ["working", { status: "working" }, "done"],
+    ["thinking", { status: "thinking", reasoningText: "x" }, "thinking"],
+    ["calling", { status: "calling" }, "done"],
+    ["running", { phase: "done", status: "calling" }, "done"],
+    ["writing", { status: "writing" }, "done"],
+    ["error", { phase: "error" }, "error"],
+  ] as const)("the %s row wears the %s fill, never ongoing or warning", (state, over, fill) => {
+    const container = renderIsland(over);
+    expect(
+      container.querySelector("[data-vex-island-state]")?.getAttribute("data-vex-island-state"),
+    ).toBe(state);
+    const swatches = container.querySelectorAll("[data-vex-island-state] .vex-swatch");
+    expect(swatches).toHaveLength(1);
+    expect(swatches[0]?.getAttribute("data-s")).toBe(fill);
+    expect(container.querySelector('.vex-swatch[data-s="ongoing"]')).toBeNull();
+    expect(container.querySelector('.vex-swatch[data-s="warning"]')).toBeNull();
+  });
+
+  it("sets the scope inline in the row, 13 muted, hidden from assistive tech", () => {
+    const working = renderIsland({ status: "working", streamId: "s2" });
+    const label = working.querySelector("[data-vex-island-label]");
+    const detail = working.querySelector("[data-vex-island-detail]");
+    expect(detail?.textContent).toBe("Waiting for the model");
+    // Same row as the word, not a mono caps caption below it.
+    expect(detail?.parentElement).toBe(label?.parentElement);
+    expect(detail?.getAttribute("aria-hidden")).toBe("true");
+    expect(detail?.className).toContain("vex-step__word");
+    expect(detail?.className).not.toMatch(/font-mono|uppercase|tracking-/);
+
+    // A reasoned Writing row keeps the stamp as its scope; a bare one has none.
+    const writing = renderIsland({
+      status: "writing",
+      reasoningText: "x",
+      reasoningTokens: 1234,
+    });
+    expect(writing.querySelector("[data-vex-island-label]")?.textContent).toBe("Writing");
+    expect(writing.querySelector("[data-vex-island-detail]")?.textContent).toBe(
+      "Reasoned · 1.2K tokens",
+    );
+    expect(
+      renderIsland({ status: "writing" }).querySelector("[data-vex-island-detail]"),
+    ).toBeNull();
+  });
+
+  it("announces the word and its scope once, in the sr-only status", () => {
+    const container = renderIsland({ status: "working", streamId: "s2" });
+    const status = container.querySelector('[role="status"]');
+    expect(status?.className).toContain("sr-only");
+    expect(status?.textContent).toContain("Working Waiting for the model");
+  });
+
+  it("sets the elapsed clock in the mono 12 tabular, coloured by the row, never the italic serif", () => {
     const container = renderIsland({ status: "thinking", reasoningText: "x" });
     const clock = container.querySelector("[data-vex-island-clock] span");
+    expect(clock?.className).toContain("vex-step__num");
+    expect(clock?.className).toContain("shrink-0");
     expect(clock?.className).toContain("font-mono");
     expect(clock?.className).toContain("tabular-nums");
     expect(clock?.className).not.toMatch(/font-serif|italic/);
-    // The caption is mono caps too: no italic anywhere in the island's head.
-    const caption = container.querySelector("[data-vex-island-label]")?.parentElement;
-    expect(caption?.className).toContain("font-mono");
-    expect(caption?.className).not.toContain("italic");
+    // The colour is the row's blue, not the second ink and not a fixed size.
+    expect(clock?.className).not.toMatch(/text-ink-secondary|text-\[11px\]/);
+    // The head of the row is the step grammar: no mono caps, no italic.
+    const row = container.querySelector("[data-vex-island-label]")?.parentElement;
+    expect(row?.className).toContain("vex-step");
+    expect(row?.className).not.toMatch(/font-mono|uppercase|italic/);
+    expect(
+      container.querySelector("[data-vex-island-label]")?.className,
+    ).toContain("vex-step__title");
+  });
+
+  it("carries the clock on every live state and on none of the settled ones", () => {
+    for (const status of ["working", "thinking", "calling", "writing"] as const) {
+      expect(
+        renderIsland({ status }).querySelector("[data-vex-island-clock]"),
+      ).not.toBeNull();
+    }
+    expect(renderIsland({ phase: "error" }).querySelector("[data-vex-island-clock]")).toBeNull();
   });
 });

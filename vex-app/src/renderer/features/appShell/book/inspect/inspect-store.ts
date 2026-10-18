@@ -1,11 +1,12 @@
 /**
- * Tool-inspect store — the BOOK panel's ADDITIVE inspect mode (A32/E13).
- * A tool row in the transcript calls `openToolInspect` with the call it
- * renders; the BOOK swaps its card stack for the inspect view while a
- * payload is set and restores it on close. UI-only Zustand state, never
- * persisted (tool args/results are session data, not preferences), and not
- * a uiStore slot — the seam is book-local by design (board contract with
- * the transcript owner, 2026-08-20).
+ * Tool-inspect store: the inspect view for one tool call, ADDITIVE over the
+ * Vex sidebar's body (docs/design/R3-MINIMAL.md section 5.1). A tool row in
+ * the transcript calls `openToolInspect` with the call it renders; the Vex
+ * sidebar hides its body behind the inspect view while a payload of the open
+ * session is set, and its Back key closes it. UI-only Zustand state, never
+ * persisted (tool args and results are session data, not preferences), and
+ * not a uiStore slot: the seam is local by design (board contract with the
+ * transcript owner, 2026-08-20).
  */
 
 import { create } from "zustand";
@@ -13,7 +14,7 @@ import { create } from "zustand";
 export type ToolInspectStatus = "pending" | "running" | "done" | "error";
 
 export interface ToolInspectPayload {
-  /** Session the call belongs to — a session switch closes the view. */
+  /** Session the call belongs to; a session switch closes the view. */
   readonly sessionId: string;
   /** Stable identity of the call row (message/tool-call key). */
   readonly callKey: string;

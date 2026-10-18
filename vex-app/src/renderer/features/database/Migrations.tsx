@@ -1,8 +1,10 @@
 /**
  * Database migrations orchestrator: the "Database" page on the pre-shell
  * stage (intro is gone; the Chronos Gate fast-path skips this screen for
- * healthy returning users). Visual system: `SetupFrame`'s paper leaf on
- * the print, a serif title, the active phase below it.
+ * healthy returning users). Visual system (`docs/design/R3-MINIMAL.md
+ * section 10.3`): `SetupFrame` stands the page at the right of the plate with
+ * the crumb, a serif title and the active phase below it; Vex is "Working"
+ * with the real time on the plate while the schema is brought up to date.
  *
  * Flow (unchanged):
  *   1. Subscribe to the progress bus BEFORE invoking `migrate()`. The
@@ -15,7 +17,7 @@
  *   3. Dispatch to a per-kind branch body (Running / Noop / Ready /
  *      Error). Noop auto-advances to the wizard after
  *      NOOP_AUTO_ADVANCE_MS; Ready waits for Continue; Error offers
- *      Retry (no cancel — SQL aborts aren't safe, the IPC contract
+ *      Retry (no cancel - SQL aborts aren't safe, the IPC contract
  *      intentionally omits a cancel handle).
  *
  * StrictMode safety: cleanup uses a `cancelled` flag to suppress stale
@@ -27,11 +29,12 @@
  * running (codex review v2 constraint #3).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useUiStore } from "../../stores/uiStore.js";
 import { onboardingKeys } from "../../lib/api/queryKeys.js";
+import type { FirstRunMood } from "../../components/onboarding/FirstRunStage.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { Button } from "../../components/ui/button.js";
 import {
@@ -54,7 +57,7 @@ export function Migrations(): JSX.Element {
   // failure. Stored in a ref (not state) so the migrate effect's
   // closure reads the latest value at the moment of error capture
   // without needing to re-run on every progress event (codex post-impl
-  // SHOULD-FIX P2 — stale closure fix).
+  // SHOULD-FIX P2 - stale closure fix).
   const appliedHistoryRef = useRef<readonly string[]>([]);
 
   // Subscribe BEFORE invoking migrate so the bus's replay-on-subscribe
@@ -63,7 +66,7 @@ export function Migrations(): JSX.Element {
   useEffect(() => {
     const off = window.vex.database.onProgress((payload) => {
       if (payload.phase === "applied") {
-        // Bounded buffer — codex post-impl SHOULD-FIX P3.
+        // Bounded buffer - codex post-impl SHOULD-FIX P3.
         appliedHistoryRef.current = [
           ...appliedHistoryRef.current,
           payload.file,
@@ -96,7 +99,7 @@ export function Migrations(): JSX.Element {
           });
           return;
         }
-        // Migrate seeds embedding env defaults — invalidate the
+        // Migrate seeds embedding env defaults - invalidate the
         // envState query so the wizard sees fresh values without
         // waiting for the staleTime window.
         await queryClient.invalidateQueries({
@@ -126,7 +129,7 @@ export function Migrations(): JSX.Element {
 
   // Auto-advance the noop branch to the wizard after a short
   // confirmation flash. Effect scope keeps the timer cleanly scoped
-  // (no timer ref smuggled into phase state — codex review v2 #4).
+  // (no timer ref smuggled into phase state - codex review v2 #4).
   useEffect(() => {
     if (phase.kind !== "noop") return;
     const timer = window.setTimeout(
@@ -145,45 +148,47 @@ export function Migrations(): JSX.Element {
     openWizard("setup");
   }, [openWizard]);
 
+  const mood: FirstRunMood =
+    phase.kind === "running" ? "working" : phase.kind === "error" ? "error" : "ready";
+
   return (
     <SetupFrame
+      layout="plate"
       screen="migrations"
+      step="database"
+      mood={mood}
       title="Database"
       subline="Bringing your local schema up to date."
     >
-      {/* THE BODY: the active phase, directly on the leaf (no container
-       * card, no inner scroll well: the leaf scrolls). */}
-      <div className="vex-rise vex-rise-d1">
-          {phase.kind === "running" ? (
-            <RunningBody current={phase.current} />
-          ) : phase.kind === "noop" ? (
-            <NoopBody />
-          ) : phase.kind === "ready" ? (
-            <ReadyBody appliedCount={phase.appliedCount} />
-          ) : phase.kind === "error" ? (
-            <ErrorBody
-              message={phase.message}
-              failedAt={phase.failedAt}
-              appliedBeforeFailure={phase.appliedBeforeFailure}
-              onRetry={handleRetry}
-            />
-          ) : null}
-      </div>
+      {/* THE BODY: the active phase, directly on the paper. */}
+      <div className="vex-fr-stack">
+        {phase.kind === "running" ? (
+          <RunningBody current={phase.current} />
+        ) : phase.kind === "noop" ? (
+          <NoopBody />
+        ) : phase.kind === "ready" ? (
+          <ReadyBody appliedCount={phase.appliedCount} />
+        ) : phase.kind === "error" ? (
+          <ErrorBody
+            message={phase.message}
+            failedAt={phase.failedAt}
+            appliedBeforeFailure={phase.appliedBeforeFailure}
+            onRetry={handleRetry}
+          />
+        ) : null}
 
-      {/* FOOTER — the paper-pill Continue appears only when the schema
-       * is up to date (error offers Retry in the body; noop
-       * auto-advances). */}
-      {phase.kind === "ready" ? (
-        <div className="vex-rise vex-rise-d2 mt-8 flex">
+        {/* The Continue appears only when the schema is up to date (error
+         * offers Retry in the body; noop auto-advances). */}
+        {phase.kind === "ready" ? (
           <Button
-            size="lg"
             onClick={handleContinue}
             aria-label="Continue to setup wizard"
+            className="w-[420px] max-w-full"
           >
             Continue
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </SetupFrame>
   );
 }

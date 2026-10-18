@@ -1,6 +1,9 @@
 /**
  * Pill: small outlined label (view switchers, filters, badges). Interactive
  * when onClick is supplied (renders a button); otherwise a static span.
+ * R3 (docs/design/R3-MINIMAL.md section 9): the filter chip, sentence case in
+ * the sans, a quiet rule; the active filter is the blue line and type on the
+ * selection wash.
  */
 
 import type { HTMLAttributes, JSX, ReactNode } from "react";
@@ -14,14 +17,15 @@ import { cn } from "../../lib/utils.js";
 // `overflow-hidden` here - the interactive variant must keep its focus ring
 // paintable.
 //
-// V10: square, one 1px outline, no fill and no status hue. A variant differs
-// by the line it draws (the rule, the one blue, the ink), never by a wash.
+// R3: square, one 1px outline, transparent, no status hue. A variant differs
+// by the line it draws (the quiet rule, the one blue, the ink), never by a
+// wash; only the active filter takes the selection wash.
 const pillVariants = cva(
-  "inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap border",
+  "inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap border bg-transparent",
   {
     variants: {
       variant: {
-        neutral: "border-rule text-ink-secondary",
+        neutral: "border-rule-quiet text-ink-secondary",
         accent: "border-accent-primary text-accent-primary",
         danger: "border-rule-ink text-ink-primary",
         // STATUS FAMILY (board safety chips): the verdict is the line weight
@@ -31,7 +35,7 @@ const pillVariants = cva(
         info: "border-rule text-ink-secondary",
       },
       size: {
-        md: "h-6 px-2 text-[12px] leading-[18px]",
+        md: "h-[26px] px-[9px] text-[12.5px] leading-[18px]",
         sm: "h-5 px-1.5 text-[11px] leading-[14px]",
         // The board card's status chip: a taller pill with room for a
         // leading glyph, sized against the 64px token photo beside it.
@@ -46,12 +50,13 @@ const pillVariants = cva(
 );
 
 /**
- * The ACTIVE treatment of a filter or view pill: the ink frame and the ink
- * type, never a solid fill. One string, so a chain filter, a safety filter
- * and the spotlight crumb cannot each invent their own version of "selected".
+ * The ACTIVE treatment of a filter or view pill: the blue line and the blue
+ * type on the selection wash, never a solid fill. One string, so a chain
+ * filter, a safety filter and the spotlight crumb cannot each invent their
+ * own version of "selected".
  */
 export const PILL_ACTIVE_CLASS =
-  "border-rule-ink bg-interactive-hover text-ink-primary";
+  "border-accent-primary bg-interactive-active font-medium text-accent-primary";
 
 /**
  * ATTRIBUTES REACH BOTH ELEMENTS.

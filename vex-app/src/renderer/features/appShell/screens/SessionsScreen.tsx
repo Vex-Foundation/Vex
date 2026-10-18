@@ -1,6 +1,8 @@
 /**
- * Sessions screen — the Sessions ShellScreen hosting the full session
- * register (SessionsLibrary). Row click closes the screen and opens the
+ * Sessions page: the page sheet hosting the full session register
+ * (SessionsLibrary; docs/design/R3-MINIMAL.md section 9.6). The title bar says
+ * "Sessions" and the sheet draws the serif page head, so the library starts
+ * with its own count line and toolbar. Row click closes the page and opens the
  * session (SessionsLibrary wires that through the uiStore itself).
  */
 

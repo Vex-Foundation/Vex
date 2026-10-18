@@ -233,8 +233,8 @@ describe("terminal palette tokens", () => {
   it("pins the retuned chrome slots to the V10 paper, ink and blue", () => {
     // The foreground and cursor ride OSC 10 and the block cursor, so they are
     // wire values like the background: literal, and pinned here so a repaint
-    // of the room cannot move them by accident. Docs/design/V10-SPREAD.md
-    // section 1: ink on the white field by day; paper type on the night field
+    // of the room cannot move them by accident. Docs/design/R3-MINIMAL.md
+    // section 1.1: ink on the white field by day; paper type on the night field
     // with the periwinkle (blue's night form) cursor.
     expect(resolveHex(celeris, "--vex-alias-term-foreground")).toBe("#0a0d18");
     expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#f3f4f7");

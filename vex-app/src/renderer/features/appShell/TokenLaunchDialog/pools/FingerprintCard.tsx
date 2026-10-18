@@ -4,7 +4,7 @@
  * Every figure here was computed and verified by MAIN and is rendered as given.
  * The renderer performs no arithmetic: a raw amount is formatted with the
  * decimals that travelled beside it, and nothing is summed into a total this
- * side of the boundary (rules/90). There is deliberately no merged "total" —
+ * side of the boundary (rules/90). There is deliberately no merged "total" -
  * `transactionValue` is a commitment, the gas bound is a ceiling, and the Vex
  * fee is charged after the launch confirms. Adding them would present three
  * different kinds of number as one.
@@ -18,6 +18,14 @@
  *    deploying a token that will render empty everywhere.
  *  - HOLDER REWARDS. The creator gets nothing from this token's trading fees
  *    for its whole life, and it is locked at launch.
+ *
+ * LOOK (docs/design/R3-MINIMAL.md sections 1.3, 1.5 and 12): a ruled block, a 1px
+ * rule frame on the field fill, square, padding 14 16. The heading is a sans
+ * 13 / 600 sentence-case line; each row is a muted 13 label at the left and its
+ * value at the right, and every address, hash, fingerprint, amount and the
+ * countdown is set as a figure (mono, `vex-num`). The alarms are ink callouts
+ * (`InkCallout`): a 1.5px ink frame and a swatch beside the sentence, never a
+ * hue, so they read the same on paper and at night.
  *
  * ── THE COUNTDOWN, AND WHY IT IS NOT DECORATION ────────────────────────────
  *
@@ -40,6 +48,9 @@
 
 import { useEffect, useState, type JSX } from "react";
 import type { PoolsAmount, PoolsPreparedLaunch } from "@shared/schemas/pools-launch.js";
+import { Tag } from "../../../../components/ui/stamp.js";
+import { cn } from "../../../../lib/utils.js";
+import { InkCallout } from "../PhaseNote.js";
 import { HOLDER_REWARDS_MODE_LABEL } from "./form-values.js";
 
 export function FingerprintCard({
@@ -51,18 +62,18 @@ export function FingerprintCard({
     <section
       aria-label="What you are authorizing"
       data-vex-pools-fingerprint={fingerprint.fingerprintId}
-      className="flex flex-col gap-2 rounded-xl border border-line-3 bg-surface-deep p-3"
+      className="flex flex-col gap-2 border border-rule bg-surface-field px-4 py-3.5"
     >
-      <h3 className="vex-micro-label vex-micro-label--wide uppercase text-ink-secondary">
+      <h3 className="text-[13px] font-semibold leading-[1.3] text-ink-primary">
         What you are authorizing
       </h3>
 
       {!fingerprint.imageLanded ? (
-        <p role="alert" className="text-[12px] leading-relaxed text-warning">
+        <InkCallout>
           The image did not make it into this token&apos;s published metadata.
           Deploying now creates a token with no picture, and that cannot be
           changed afterwards. Prepare again with a different image URL.
-        </p>
+        </InkCallout>
       ) : null}
 
       <Row label="Token address">
@@ -72,9 +83,7 @@ export function FingerprintCard({
         <Mono>{fingerprint.predictedPoolAddress}</Mono>
       </Row>
       <Row label="Paired with">
-        <span className="vex-micro-label uppercase text-ink-primary">
-          {fingerprint.pairedAsset}
-        </span>
+        <Tag>{fingerprint.pairedAsset}</Tag>
       </Row>
 
       {fingerprint.holderRewards === undefined ? (
@@ -84,23 +93,23 @@ export function FingerprintCard({
       ) : (
         <>
           <Row label="Trading fees go to">
-            <span className="text-[11px] text-ink-primary">
+            <span className="text-[13px] text-ink-primary">
               This token&apos;s holders
             </span>
           </Row>
           <Row label="Holders are paid in">
-            <span className="text-[11px] text-ink-primary">
+            <span className="text-[13px] text-ink-primary">
               {HOLDER_REWARDS_MODE_LABEL[fingerprint.holderRewards.mode]}
             </span>
           </Row>
-          <p role="alert" className="text-[12px] leading-relaxed text-warning">
+          <InkCallout>
             You will receive nothing from this token&apos;s trading fees, ever.
             This is locked at launch and cannot be undone. The launchpad deploys
             the rewards distributor during the launch itself, so its address does
             not exist yet; Vex checks that this transaction carries the
             launchpad&apos;s own holders marker and reports the distributor once
             the launch confirms.
-          </p>
+          </InkCallout>
         </>
       )}
 
@@ -179,7 +188,7 @@ export function ExpiryCountdown({
 
   if (Number.isNaN(deadlineMs)) {
     return (
-      <p className="text-[11px] leading-relaxed text-ink-tertiary">
+      <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
         Vex could not read when this confirmation expires. Deploying may be
         refused; prepare the launch again if it is.
       </p>
@@ -188,29 +197,29 @@ export function ExpiryCountdown({
 
   const expired = remainingMs <= 0;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2">
       <Row label="Valid for">
         <span
           role="timer"
           aria-live="off"
-          className={
-            "font-mono text-[11px] tabular-nums "
-            + (expired || remainingMs <= 30_000 ? "text-warning" : "text-ink-primary")
-          }
+          className={cn(
+            "vex-num text-[13px] text-ink-primary",
+            // Urgency is the weight, never a hue.
+            (expired || remainingMs <= 30_000) && "font-medium",
+          )}
         >
           {expired ? "expired" : formatRemaining(remainingMs)}
         </span>
       </Row>
-      <p
-        className={
-          "text-[11px] leading-relaxed " + (expired ? "text-warning" : "text-ink-tertiary")
-        }
-        {...(expired ? { role: "alert" as const } : {})}
-      >
-        {expired
-          ? `This confirmation has expired: ${EXPIRY_REASON_TEXT[reason]}. Nothing was signed. Prepare the launch again.`
-          : `After that, ${EXPIRY_REASON_TEXT[reason]}, and the launch has to be prepared again.`}
-      </p>
+      {expired ? (
+        <InkCallout>
+          {`This confirmation has expired: ${EXPIRY_REASON_TEXT[reason]}. Nothing was signed. Prepare the launch again.`}
+        </InkCallout>
+      ) : (
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
+          {`After that, ${EXPIRY_REASON_TEXT[reason]}, and the launch has to be prepared again.`}
+        </p>
+      )}
     </div>
   );
 }
@@ -238,7 +247,7 @@ function CostRow({
 }): JSX.Element {
   return (
     <Row label={label}>
-      <span className="font-mono text-[11px] tabular-nums text-ink-primary">
+      <span className="vex-num text-[13px] text-ink-primary">
         {formatPoolsAmount(amount)}
       </span>
     </Row>
@@ -247,7 +256,7 @@ function CostRow({
 
 function Mono({ children }: { readonly children: string }): JSX.Element {
   return (
-    <span className="font-mono text-[11px] break-all text-ink-primary">
+    <span className="vex-num min-w-0 text-right text-[12.5px] break-all text-ink-primary">
       {children}
     </span>
   );
@@ -261,8 +270,8 @@ function Row({
   readonly children: JSX.Element;
 }): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-[11px] text-ink-secondary">{label}</span>
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="shrink-0 text-[13px] text-ink-tertiary">{label}</span>
       {children}
     </div>
   );

@@ -1,0 +1,84 @@
+/* THE ERROR BOUNDARY (docs/design/R3-MINIMAL.md sections 1.3 and 12): what
+ * stands where a screen could not render. In the centre only, with both
+ * sidebars still live: the flat vx token (56), the serif title at 40 / 1.05
+ * in the blue, the sentence (15 / 1.55, max 520), Try again and Reload window,
+ * and the technical card (a grid of 40 and 1fr, 12). Paper, ink, one blue,
+ * radius 0, no shadow; the entrance is one opacity-and-rise pass from
+ * `.vex-surface-enter`, and a failure screen never loops. */
+
+.vex-eb {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 60px 60px;
+  text-align: center;
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+.vex-eb[data-extent="screen"] {
+  height: 100vh;
+}
+.vex-eb[data-extent="region"] {
+  height: 100%;
+  min-height: 0;
+}
+.vex-eb__card {
+  display: flex;
+  width: 100%;
+  max-width: 620px;
+  flex-direction: column;
+  align-items: center;
+}
+.vex-eb__title {
+  max-width: 620px;
+  margin: 18px 0 12px;
+  font-family: var(--font-serif);
+  font-size: 40px;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-title);
+}
+.vex-eb__text {
+  max-width: 520px;
+  margin: 0 0 22px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-eb__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.vex-eb__tech {
+  display: grid;
+  width: 100%;
+  max-width: 520px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 22px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  text-align: left;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-eb__tech dt {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-eb__tech dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.vex-eb__tech dd[data-selectable] {
+  user-select: all;
+}

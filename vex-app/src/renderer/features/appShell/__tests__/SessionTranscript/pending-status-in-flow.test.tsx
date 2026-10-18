@@ -1,21 +1,22 @@
 /**
  * THE PENDING TURN IS AN IN-FLOW ROW, NOT A VIEWPORT OVERLAY.
  *
- * The retired centred "vexing…" scene was a `height: 0` sticky slot whose child
+ * The retired centred pending scene was a `height: 0` sticky slot whose child
  * was one VIEWPORT tall. A zero-height box contributes no normal-flow height,
  * but a positively overflowing child still enlarges SCROLLABLE OVERFLOW, so the
  * scrollport's floor moved out past the sticky composer seat: every send lifted
  * the composer, and Chromium's clamp dropped it back when the scene unmounted
  * (owner QA item 7).
  *
- * What replaces it is the surface Vex already had - `TurnIsland`'s `vexing…`
- * pill at the tail of the observed message column, which the deepseek reference
+ * What replaces it is the surface Vex already had - `TurnIsland`'s live row
+ * ("Working", with its timer, docs/design/R3-MINIMAL.md section 6) at the
+ * tail of the observed message column, which the deepseek reference
  * mounts the same way (`ChatView` renders `TurnStatus` as an ordinary child of
  * the message column). Its height is real conversation geometry, so a pinned
  * reader follows it and a reader who owns the viewport keeps it.
  *
  * The claims pinned here:
- *  1. the pill is present from the SEND, before any engine delta;
+ *  1. the live row is present from the SEND, before any engine delta;
  *  2. nothing inside the scrollport is a viewport-sized child;
  *  3. status arrival and removal follow while pinned;
  *  4. status arrival and removal move nothing while the reader owns the view.
@@ -67,7 +68,7 @@ function statusLabel(container: HTMLElement): HTMLElement | null {
 }
 
 describe("SessionTranscript - the pending turn's in-flow status", () => {
-  it("shows the 'vexing…' pill from the SEND, before any engine delta", async () => {
+  it("shows the 'Working' live row from the SEND, before any engine delta", async () => {
     const client = freshClient();
     const { container } = await mountWithRow(client);
     expect(statusLabel(container)).toBeNull();
@@ -77,7 +78,7 @@ describe("SessionTranscript - the pending turn's in-flow status", () => {
       settle = startChatTurn(client);
     });
     await waitFor(() =>
-      expect(statusLabel(container)?.textContent).toBe("vexing…"),
+      expect(statusLabel(container)?.textContent).toBe("Working"),
     );
 
     act(() => {

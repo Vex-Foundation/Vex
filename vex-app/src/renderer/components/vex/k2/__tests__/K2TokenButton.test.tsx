@@ -1,0 +1,56 @@
+/**
+ * The token toggle's button (`K2TokenButton.tsx`). Regressions this catches: a button that is not a
+ * native button (no Enter or Space), an `aria-pressed` whose meaning differs from the title bar's
+ * token chip (pressed = Vex shown on both), a name that does not say the press ("Hide Vex" while
+ * she is shown, "Show Vex" while only the coin stands), a press that does not reach its caller, a
+ * box that is not where the caller placed it, and a target smaller than 44 px round a small coin.
+ */
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { K2TokenButton, TOKEN_TARGET_MIN, targetBox, tokenButtonName } from "../K2TokenButton.js";
+
+describe("K2TokenButton", () => {
+  it("is a native button pressed while Vex is shown (the title chip's meaning), named by its press", () => {
+    const { rerender } = render(<K2TokenButton tokenOnly={false} onPress={() => undefined} />);
+    const button = screen.getByRole("button", { name: "Hide Vex" });
+    expect(tokenButtonName(false)).toBe("Hide Vex");
+    expect(tokenButtonName(true)).toBe("Show Vex");
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+    // Vex shown: pressed, as the title bar's chip is pressed while her sidebar shows.
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    rerender(<K2TokenButton tokenOnly onPress={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Show Vex", pressed: false })).toBe(button);
+    expect(screen.queryByRole("button", { name: /hide vex/i })).toBeNull();
+  });
+
+  it("a press reaches its caller, and the caller's box and class place it", () => {
+    const onPress = vi.fn();
+    render(
+      <K2TokenButton
+        tokenOnly={false}
+        onPress={onPress}
+        className="vex-welcome__token"
+        style={{ left: 130, top: 226, width: 60, height: 58 }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Hide Vex" });
+    fireEvent.click(button);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(button.className).toBe("vex-welcome__token");
+    expect(button.style.left).toBe("130px");
+    expect(button.style.height).toBe("58px");
+  });
+
+  it("the target grows round the coin's centre to at least 44 px, never shrinks a larger one", () => {
+    expect(TOKEN_TARGET_MIN).toBe(44);
+    expect(targetBox({ left: 145, top: 250, right: 175, bottom: 270 })).toEqual({
+      left: 138,
+      top: 238,
+      right: 182,
+      bottom: 282,
+    });
+    const big = { left: 100, top: 200, right: 160, bottom: 260 };
+    expect(targetBox(big)).toEqual(big);
+  });
+});

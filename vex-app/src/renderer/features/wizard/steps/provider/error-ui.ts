@@ -1,11 +1,11 @@
 /**
- * ProviderStep error UI copy — extracted from `ProviderStep.tsx` so
+ * ProviderStep error UI copy - extracted from `ProviderStep.tsx` so
  * the screen file stays under the 400-LOC scalability ceiling (V2
  * refactor).
  *
  * The map is the single source of truth for fixed strings shown when
  * provider verification or persistence fails. We DO NOT surface the
- * SDK's raw error message (codex turn 3 YELLOW) — the user gets a
+ * SDK's raw error message (codex turn 3 YELLOW) - the user gets a
  * stable, redacted, actionable hint and the correlation id for
  * support, nothing more.
  */
@@ -18,7 +18,7 @@ export interface ServerError {
   /**
    * Errno-shaped cause code from `VexError.details.causeCode`
    * (error-diagnostics plan D-WIZARD). Always a closed-dictionary
-   * errno string extracted main-side — never raw SDK message text.
+   * errno string extracted main-side - never raw SDK message text.
    */
   readonly causeCode: string | null;
 }
@@ -88,7 +88,7 @@ export function uiCopyFor(code: string): ErrorCopy {
 
 /**
  * Closed hint map for errno-shaped cause codes (error-diagnostics plan
- * D-WIZARD). Fixed inline-English copy per code group — a code outside
+ * D-WIZARD). Fixed inline-English copy per code group - a code outside
  * this map renders the Cause line WITHOUT a hint; codes never come from
  * user data (main extracts only errno-shaped `.code` strings).
  */

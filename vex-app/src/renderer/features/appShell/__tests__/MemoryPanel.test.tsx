@@ -5,11 +5,14 @@
  * exposes NO mutation affordances (lifecycle is manager-owned); the
  * session-scoped sections show a clear empty state AND issue NO session-scoped
  * query when no session is active; with an active session, memory + compaction
- * history render from their DTOs.
+ * history render from their DTOs. The last group pins the R3 register
+ * (docs/design/R3-MINIMAL.md sections 9.6 and 12): a sans section head, hairline
+ * rows (title, tags, summary, date), the segmented filter, the loading word and
+ * the ink callout, and no caps label or mono eyebrow.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
@@ -416,5 +419,130 @@ describe("MemoryPanel", () => {
         screen.getByText(/idle until an OpenRouter model is configured/i),
       ).not.toBeNull();
     });
+  });
+});
+
+describe("MemoryPanel in the R3 register", () => {
+  const ENTRY = {
+    id: 1,
+    kind: "risk_rule",
+    title: "Avoid X",
+    summary: "Keep slippage low",
+    tags: ["risk"],
+    confidence: 0.8,
+    status: "active",
+    source: "observed",
+    maturityState: "established",
+    pinned: false,
+    createdAt: ISO,
+    updatedAt: ISO,
+  };
+
+  it("heads each section with a sans title and no caps eyebrow", async () => {
+    longMemoryListMock.mockResolvedValue(ok([ENTRY]));
+    setVex();
+    const { container } = render(createElement(MemoryPanel), {
+      wrapper: makeWrapper(freshClient()),
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Avoid X")).not.toBeNull();
+    });
+    const titles = [...container.querySelectorAll("section h2")].map((node) => node.textContent);
+    expect(titles).toEqual([
+      "Long-term memory",
+      "Memory candidates",
+      "Manager decisions",
+      "Memory jobs",
+      "Session memory",
+      "Compaction history",
+      "Memory & privacy",
+    ]);
+    for (const heading of container.querySelectorAll("section h2")) {
+      expect(heading.className).toBe("vex-mem-sec__title");
+    }
+    expect(container.querySelector(".uppercase, .vex-eyebrow, .vex-micro-label")).toBeNull();
+  });
+
+  it("draws a long-memory row as title, quiet tags with the summary, and the date at the right", async () => {
+    longMemoryListMock.mockResolvedValue(ok([ENTRY]));
+    setVex();
+    const { container } = render(createElement(MemoryPanel), {
+      wrapper: makeWrapper(freshClient()),
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Avoid X")).not.toBeNull();
+    });
+    const row = container.querySelector("[data-vex-long-memory-id]");
+    expect(row?.className).toBe("vex-mem-row");
+    expect(row?.querySelector(".vex-mem-row__t")?.textContent).toBe("Avoid X");
+    const tags = [...(row?.querySelectorAll(".vex-mem-tag") ?? [])].map((node) => node.textContent);
+    expect(tags).toEqual(["risk_rule", "active", "observed", "established", "conf 0.80", "#risk"]);
+    expect(row?.querySelector(".vex-mem-row__m")?.textContent).toContain("Keep slippage low");
+    expect(row?.querySelector(".vex-mem-row__r")?.getAttribute("title")).toBe(ISO);
+  });
+
+  it("counts the entries in the head and follows the search", async () => {
+    longMemoryListMock.mockResolvedValue(
+      ok([ENTRY, { ...ENTRY, id: 2, title: "Kyber timeout lesson" }]),
+    );
+    setVex();
+    const { container } = render(createElement(MemoryPanel), {
+      wrapper: makeWrapper(freshClient()),
+    });
+    const count = (): string | null =>
+      container.querySelector('[data-vex-section="long-memory"] .vex-mem-sec__count')
+        ?.textContent ?? null;
+    await waitFor(() => {
+      expect(count()).toBe("2 entries");
+    });
+    fireEvent.change(screen.getByLabelText("Search long-term memory"), {
+      target: { value: "kyber" },
+    });
+    expect(count()).toBe("1 entry");
+  });
+
+  it("shows the chosen filter as pressed and changes it on a click", async () => {
+    longMemoryListMock.mockResolvedValue(ok([ENTRY]));
+    setVex();
+    render(createElement(MemoryPanel), { wrapper: makeWrapper(freshClient()) });
+    await waitFor(() => {
+      expect(screen.getByText("Avoid X")).not.toBeNull();
+    });
+    const group = screen.getByRole("group", { name: "Filter long-term memory by status" });
+    expect(within(group).getByRole("button", { name: "All", pressed: true })).not.toBeNull();
+    fireEvent.click(within(group).getByRole("button", { name: "Archived" }));
+    await waitFor(() => {
+      expect(within(group).getByRole("button", { name: "Archived", pressed: true })).not.toBeNull();
+    });
+    expect(longMemoryListMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "archived" }),
+    );
+  });
+
+  it("says Loading in a word beside the listening fill, then draws a failure as the ink callout", async () => {
+    longMemoryListMock.mockImplementation(
+      () => new Promise(() => undefined),
+    );
+    setVex();
+    const { container, unmount } = render(createElement(MemoryPanel), {
+      wrapper: makeWrapper(freshClient()),
+    });
+    const loading = container.querySelector(
+      '[data-vex-section="long-memory"] .vex-mem-loading',
+    );
+    expect(loading?.textContent).toContain("Loading memory");
+    expect(loading?.querySelector('[data-s="listening"]')).not.toBeNull();
+    unmount();
+
+    longMemoryListMock.mockReset();
+    longMemoryListMock.mockResolvedValue({
+      ok: false as const,
+      error: { code: "internal", message: "Unable to load memory." },
+    });
+    setVex();
+    render(createElement(MemoryPanel), { wrapper: makeWrapper(freshClient()) });
+    const alert = await screen.findByRole("alert");
+    expect(alert.getAttribute("data-vex-callout")).toBe("error");
+    expect(alert.textContent).toContain("Unable to load memory.");
   });
 });

@@ -107,6 +107,7 @@ import {
   decideTerminalClipboardAction,
   terminalRightClickIsCopyPaste,
 } from "./terminal-clipboard.js";
+import { isVexToggleChord } from "../../../vex/vex-toggle-shortcut.js";
 import { TerminalNotice } from "./TerminalNotice.js";
 import { useTerminalInput } from "./useTerminalInput.js";
 import { useTerminalFileDrop } from "./useTerminalFileDrop.js";
@@ -281,6 +282,10 @@ export function XtermHost({
     // before it encodes the key or cancels the event, so the keypress bubbles
     // to the document listener that owns the Studio table. See the module
     // header for why that path does not `preventDefault`.
+    //
+    // The VEX TOGGLE (Cmd or Ctrl + Shift + Period) is refused the same way:
+    // it is not a Studio row but the app's own chord, and its listener is on
+    // the document too (`features/vex/vex-toggle-shortcut.ts`).
     entry.terminal.attachCustomKeyEventHandler((event) => {
       const action = decideTerminalClipboardAction(event, {
         hasSelection: entry.terminal.hasSelection(),
@@ -291,6 +296,7 @@ export function XtermHost({
         runClipboardRef.current(action);
         return false;
       }
+      if (isVexToggleChord(event, platform)) return false;
       return !isStudioTerminalChord(event, platform, handledIntents());
     });
 
@@ -401,7 +407,7 @@ export function XtermHost({
   return (
     <div
       // The registry wrapper paints an opaque reading surface inside this
-      // host's inset, on the same field as the enclosing pane and header.
+      // host's inset, on the same field as the enclosing pane.
       className={cn(
         "relative flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent",
         className,
@@ -429,16 +435,17 @@ export function XtermHost({
       }}
     >
       {/*
-        THE GRID'S INSET from the pane edge: 8px, the same rhythm as the header
-        text above it and the column padding outside the pane, so the text
-        never touches the pane's rule. Margin, not padding: the registry's
-        wrapper is `inset: 0` of this box, and an absolutely positioned child
-        fills its parent's padding box, so only a margin moves the grid.
+        THE GRID'S INSET from the pane edge: 12 above and below and 16 at the
+        sides (docs/design/R3-MINIMAL.md section 9.5), so the text never
+        touches the pane's outline or its rule. Margin, not padding: the
+        registry's wrapper is `inset: 0` of this box, and an absolutely
+        positioned child fills its parent's padding box, so only a margin moves
+        the grid.
       */}
-      <div ref={containerRef} className="relative mx-2 mt-2 mb-2 min-h-0 flex-1" />
+      <div ref={containerRef} className="relative mx-4 mt-3 mb-3 min-h-0 flex-1" />
 
       {droppedRows > 0 ? (
-        <div className="pointer-events-none absolute top-2 right-2 border border-rule bg-surface-field px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
+        <div className="pointer-events-none absolute top-3 right-4 border border-rule bg-surface-field px-2 py-0.5 text-[12px] leading-4 text-ink-secondary">
           {/*
             Named, not hidden. The 1000-row scrollback bound is the host's, and a
             replay that silently started mid-history would read as data loss with
@@ -475,7 +482,7 @@ export function XtermHost({
       {pasteDialog}
 
       {exit !== null ? (
-        <div className="pointer-events-none absolute bottom-2 left-2 border border-rule bg-surface-field px-2 py-0.5 text-[11px] leading-4 text-ink-tertiary">
+        <div className="pointer-events-none absolute bottom-3 left-4 border border-rule bg-surface-field px-2 py-0.5 text-[12px] leading-4 text-ink-tertiary">
           {exit.signal === null
             ? `Exited with code ${String(exit.exitCode)}`
             : `Killed by signal ${String(exit.signal)}`}

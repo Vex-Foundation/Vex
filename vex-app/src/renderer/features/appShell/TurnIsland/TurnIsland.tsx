@@ -1,57 +1,44 @@
 /**
- * THE TURN ACTIVITY ISLAND — every move Vex makes in the current turn, in one
- * morphing surface above the streaming answer.
+ * THE TURN'S LIVE ROW - every move Vex makes in the current turn, as one step
+ * row at the tail of the transcript (docs/design/R3-MINIMAL.md section 6).
  *
- * DESIGN INTENT (owner visual round 2026-07-30: "obecny loading(thinking)
- * zaprojektować jakoś ciekawie"). The waiting moment is not dressed up with a
- * louder loader — it is filled with the only thing that is actually true, and
- * filled IMMEDIATELY: the island now mounts on the SEND, not on the first
- * provider delta, so the send can never read as a no-op. From there the turn
- * writes itself as a stack of thoughts - settled ones fold up into stamps, the
- * live one streams full-height beneath them - so waiting is spent reading
- * rather than watching a spinner. The single motion in the whole surface is
- * the ONGOING SWATCH before the status word (docs/design/V10-SPREAD.md
- * section 1: status by fill, the dot screen stepping through four positions):
- * the same mark the run band and the agent's mark wear, meaning the same thing
- * everywhere - Vex is working. Everything else is stillness and the island's
- * own shape morph; the swatch stills under reduced motion, and under the
- * awaiting-signature freeze it becomes the target, where motion would read as
- * progress that is not happening.
+ * DESIGN INTENT. The waiting moment is not dressed up with a louder loader -
+ * it is filled with the only thing that is actually true, and filled
+ * IMMEDIATELY: the row mounts on the SEND, not on the first provider delta, so
+ * the send can never read as a no-op. A live row always carries a fill, a
+ * word and a timer: the fill (working solid, thinking hatch, waiting the
+ * target), the word in blue 500, its scope in 13 muted, the real elapsed time
+ * in the mono 12 blue at the right. The thoughts the turn has finished fold
+ * into quiet rows above it; the live one streams in full beneath a Thinking
+ * row, so waiting is spent reading rather than watching a spinner.
  *
  * States (derived purely in `islandTurnState.ts` from the `streamStore`
  * preview, never from timers):
  *
- *   Working   compact pill, the turn has begun and nothing is classified yet.
- *             This is the state the SEND opens on (`turnPreview.ts`). A caption
- *             beneath says "Preparing the turn" until the engine reports the
- *             lease, then "Waiting for the model"
- *   Thinking  the island EXPANDS and the full reasoning streams inside it as
- *             live markdown (`LiveReasoning`) under a "Thinking:" caption —
- *             no window, no clipping; unreadable is not a design
- *   Calling   a tool row: the protocol/tool mark (contract C5) + the tool name
+ *   Working   the turn has begun and nothing is classified yet. This is the
+ *             state the SEND opens on (`turnPreview.ts`). Its scope says
+ *             "Preparing the turn" until the engine reports the lease, then
+ *             "Waiting for the model"
+ *   Thinking  the full reasoning streams under the row as live markdown
+ *             (`LiveReasoning`) - no window, no clipping; unreadable is not a
+ *             design
+ *   Calling   the protocol/tool mark (contract C5) + "Calling {tool}"
  *   Running   the same row once the provider stream has ended and the tool
  *             is executing ("Running {tool}"), until its round persists
- *   Writing   the island settles to the "Reasoned" stamp and the ANSWER
- *             streams below it, exactly as before
+ *   Writing   the ANSWER streams below the row; what the turn thought rides
+ *             as its scope ("Reasoned · 1.2K tokens")
  *
- * Above every state except the hidden one, `ReasoningSegments` stacks the
- * thoughts this turn has already finished.
+ * Preserved from the working strip it replaces: the elapsed m:ss counter, the
+ * awaiting-approval FREEZE (all motion stops, the target fill - trust equals
+ * stillness), the visually-hidden `role="status"` announcements (phase +
+ * status change a few times per turn; the growing text is never announced),
+ * and the error branch, which shows a safe generic line and NEVER the trace.
  *
- * Preserved from the working strip it replaces: the elapsed m:ss counter (in
- * Departure Mono, never the italic serif), the awaiting-signature FREEZE (all
- * motion stops, the target swatch on the blue line - trust equals stillness),
- * the visually-hidden `role="status"` announcements (phase + status
- * change a few times per turn; the growing text is never announced), and the
- * error branch, which shows a safe generic line and NEVER the trace.
- *
- * Removed with intent: the DotmCircular8/DotmHex3 gutter marks (dot-matrix
- * loaders elsewhere in the app are untouched) and the "Ephemeral — not
- * retained" label — reasoning is persisted now, so that label became a lie.
- *
- * Surface law (reference d3): a ruled box on the page's paper via the
- * `dynamic-island` primitive (`.vex-island`, chat-transcript.css), never glass
- * and never a resting glow; `prefers-reduced-motion` is honored by the
- * primitive. `data-vex-island-state` is the test seam.
+ * Surface law: no box, no glass, no glow - the quiet rules above and below
+ * are the row's frame (`.vex-island` and `.vex-live-row`, chat-transcript.css,
+ * on the `dynamic-island` primitive, whose shape stays one live-row size so it
+ * never morphs). `prefers-reduced-motion` is honored by the primitive.
+ * `data-vex-island-state` is the test seam.
  */
 
 import type { JSX } from "react";
@@ -76,66 +63,57 @@ import {
 } from "./islandTurnState.js";
 
 /**
- * The word's ink per tone. The live and attention words speak in the blue
- * (reference d3: the island's caption is the blue), a settled stamp in the
- * second ink, an error in ink - never red.
- */
-const TONE_CLASS: Readonly<Record<TurnIslandView["tone"], string>> = {
-  neutral: "text-ink-secondary",
-  accent: "text-accent-primary",
-  pin: "text-accent-primary",
-  error: "text-ink-primary",
-};
-
-/**
- * The fill before the word - status by fill, and the island's only motion.
- * Live work is the ongoing dot screen (it steps; `marks.css` stills it under
- * reduced motion); the awaiting freeze is the target, and it never moves; an
- * error is the ink cross; a settled stamp is the solid square.
+ * The fill before the word - status by fill (docs/design/R3-MINIMAL.md
+ * sections 1.6 and 6). Live work is the solid fill, thinking the hatch, the
+ * awaiting freeze the target (it never moves), an error the ink cross, a
+ * settled stamp the solid square. No state here steps or animates.
  */
 function islandSwatch(view: TurnIslandView): SwatchState {
   if (view.state === "error") return "error";
-  if (view.state === "awaiting") return "warning";
-  if (view.state === "settled") return "done";
-  return view.animated ? "ongoing" : "done";
+  if (view.state === "awaiting") return "awaiting";
+  if (view.state === "thinking") return "thinking";
+  return "done";
 }
 
-/**
- * THE STATUS WORD: 11px Departure Mono caps at the status tracking, behind
- * its swatch. The swatch carries the state; the word repeats it.
- */
-function StatusWord({
-  label,
-  view,
-  className,
-}: {
-  readonly label: string;
-  readonly view: TurnIslandView;
-  readonly className?: string;
-}): JSX.Element {
+/** The fill that leads the live row; the word after it repeats the state. */
+function StatusFill({ view }: { readonly view: TurnIslandView }): JSX.Element {
   return (
-    <span
-      className={cn(
-        "inline-flex min-w-0 items-center gap-[9px] font-mono text-[11px] uppercase leading-none tracking-status",
-        TONE_CLASS[view.tone],
-        className,
-      )}
-    >
-      <span aria-hidden className="inline-flex flex-none text-accent-primary">
-        <Swatch state={islandSwatch(view)} size={9} />
-      </span>
-      <span data-vex-island-label="" className="min-w-0 truncate">
-        {label}
-      </span>
+    <span aria-hidden className="vex-step__fill">
+      <Swatch state={islandSwatch(view)} size={10} />
     </span>
   );
 }
 
-/** The elapsed clock: Departure Mono 11px on the second ink, tabular. */
+/**
+ * THE WORD behind its fill: the title of the live row in blue 500 (ink for a
+ * failure).
+ */
+function StatusWord({ label }: { readonly label: string }): JSX.Element {
+  return (
+    <span data-vex-island-label="" className="vex-step__title">
+      {label}
+    </span>
+  );
+}
+
+/** The elapsed clock: the mono 12, tabular, in the blue at the row's right. */
 function IslandClock({ startedAtMs }: { readonly startedAtMs: number }): JSX.Element {
   return (
     <span data-vex-island-clock="" className="flex flex-none items-center">
       <ElapsedCounter startedAtMs={startedAtMs} />
+    </span>
+  );
+}
+
+/**
+ * The row's scope, 13 muted beside the word. Fixed copy only, and
+ * aria-hidden because the status region already announces it.
+ */
+function IslandScope({ detail }: { readonly detail: string | undefined }): JSX.Element | null {
+  if (detail === undefined) return null;
+  return (
+    <span aria-hidden="true" data-vex-island-detail="" className="vex-step__word min-w-0 truncate">
+      {detail}
     </span>
   );
 }
@@ -166,41 +144,43 @@ function IslandBody({
 
   if (view.size === "hidden") return null;
 
+  const row = (
+    <span
+      className={cn(
+        "vex-step vex-live-row",
+        view.state === "settled" && "vex-live-row--settled",
+      )}
+    >
+      <StatusFill view={view} />
+      {(view.state === "calling" || view.state === "running")
+      && preview.toolName !== null ? (
+        <span className="vex-step__mark">
+          <CallingMark toolName={preview.toolName} />
+        </span>
+      ) : null}
+      {/* A Thinking row reads "Thinking:" - a speaker label introducing the
+          words below it. The colon lives here and not in the view descriptor
+          because the same label is announced to screen readers, where
+          trailing punctuation is noise. */}
+      <StatusWord
+        label={view.state === "thinking" ? `${view.label}:` : view.label}
+      />
+      <IslandScope detail={view.detail} />
+      <span aria-hidden className="vex-step__spacer" />
+      {view.showElapsed ? <IslandClock startedAtMs={preview.startedAtMs} /> : null}
+    </span>
+  );
+
   if (view.state === "thinking") {
     return (
-      <DynamicContainer className="flex flex-col gap-1.5 px-3.5 pb-3 pt-2.5">
-        <span className="flex items-center justify-between gap-2">
-          {/* The caption reads "Thinking:" — a speaker label introducing the
-              words below it, which is what the trace now is. The colon lives
-              here and not in the view descriptor because the same label is
-              announced to screen readers, where trailing punctuation is
-              noise. */}
-          <StatusWord label={`${view.label}:`} view={view} />
-          {view.showElapsed ? (
-            <IslandClock startedAtMs={preview.startedAtMs} />
-          ) : null}
-        </span>
+      <DynamicContainer className="flex flex-col">
+        {row}
         <LiveReasoning text={preview.reasoningText} />
       </DynamicContainer>
     );
   }
 
-  return (
-    <DynamicContainer className="flex h-full w-full items-center gap-2.5 px-3.5">
-      {(view.state === "calling" || view.state === "running")
-      && preview.toolName !== null ? (
-        <span className="inline-flex flex-none text-accent-primary">
-          <CallingMark toolName={preview.toolName} />
-        </span>
-      ) : null}
-      <StatusWord label={view.label} view={view} />
-      {view.showElapsed ? (
-        <span className="ml-auto flex">
-          <IslandClock startedAtMs={preview.startedAtMs} />
-        </span>
-      ) : null}
-    </DynamicContainer>
-  );
+  return <DynamicContainer className="flex w-full flex-col">{row}</DynamicContainer>;
 }
 
 export function TurnIsland({
@@ -210,16 +190,16 @@ export function TurnIsland({
 }: {
   readonly preview: StreamPreview;
   /**
-   * The active session has ≥1 pending approval. The island FREEZES: every
-   * animation stops and the label becomes "Awaiting signature" behind the
-   * target swatch, on the blue line.
+   * The active session has at least one pending approval. The row FREEZES:
+   * every animation stops and the word becomes "Waiting for approval" behind
+   * the target fill.
    * Derived upstream (SessionTranscript shares ApprovalsRegion's pending
    * query) so the stream store stays decoupled from TanStack Query.
    */
   readonly awaitingApproval?: boolean;
   /**
    * The engine reported the session's runner lease as held (control-state
-   * push). Splits the compact pill's caption into "Preparing the turn" and
+   * push). Splits the Working row's scope into "Preparing the turn" and
    * "Waiting for the model"; nothing else reads it.
    */
   readonly leaseHeld?: boolean;
@@ -253,20 +233,19 @@ export function TurnIsland({
         ) : null}
       </span>
       {/* The thoughts this turn has already finished, folded. They sit ABOVE
-          the island because they are behind it in time - the turn reads top to
-          bottom as it happened. They persist across tool calls and across
+          the live row because they are behind it in time - the turn reads top
+          to bottom as it happened. They persist across tool calls and across
           provider rounds; only the end of the TURN retires them. */}
       <ReasoningSegments segments={preview.reasoningSegments} />
-      {/* THE FREEZE reaches the SHELL, not just the status word: while a
-          signature is pending the island's shape morph and every content
-          cross-fade become hard cuts, so the surface goes genuinely still
-          instead of springing into the awaiting state. */}
+      {/* THE FREEZE reaches the SHELL, not just the word: while a decision is
+          pending every content cross-fade becomes a hard cut, so the row goes
+          genuinely still instead of springing into the awaiting state. */}
       <DynamicIslandProvider
         initialSize={view.size}
         frozen={view.state === "awaiting"}
       >
         {/* `data-vex-sweep` marks the live tool row (the seam the running
-            row has always carried); the swatch inside is its only motion. */}
+            row has always carried). */}
         <div
           data-vex-sweep={
             view.state === "calling" || view.state === "running"
@@ -283,34 +262,18 @@ export function TurnIsland({
           </DynamicIsland>
         </div>
       </DynamicIslandProvider>
-      {view.detail !== undefined ? (
-        // WHICH PART OF THE WAIT (U-3). Beneath the pill, never inside it: the
-        // pill keeps its one word and its fixed width. Fixed copy only, and
-        // aria-hidden because the status region above already announces it.
-        <span
-          aria-hidden="true"
-          data-vex-island-detail=""
-          className="mt-1.5 font-mono text-[11px] uppercase tracking-status text-ink-secondary"
-        >
-          {view.detail}
-        </span>
-      ) : null}
       {view.state === "error" && view.errorBody !== undefined ? (
         // Category copy - the second line explains what the classified
         // failure means, from the same shared copy table as the error banner.
-        <span className="mt-1.5 text-[13px] leading-5 text-ink-primary">{view.errorBody}</span>
+        <span className="vex-live-error">{view.errorBody}</span>
       ) : null}
       {view.state === "error" && view.errorDetail !== undefined ? (
         // Sanitized REAL cause (decree 2026-08-02) - technical register.
-        <span className="mt-1 break-words font-code text-[11.5px] leading-4 text-ink-secondary">
-          {view.errorDetail}
-        </span>
+        <span className="vex-live-error__detail">{view.errorDetail}</span>
       ) : null}
       {view.state === "error" && preview.reasoningText.length > 0 ? (
         // The trace itself is deliberately NOT rendered on the error path.
-        <span className="mt-1 font-mono text-[11px] uppercase tracking-status text-ink-secondary">
-          Reasoning interrupted
-        </span>
+        <span className="vex-live-error">Reasoning interrupted</span>
       ) : null}
     </div>
   );

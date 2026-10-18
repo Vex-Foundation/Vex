@@ -1,11 +1,16 @@
-/* Composer chrome (SessionComposer), V10: a square white field on a 1px rule
- * (docs/design/V10-SPREAD.md section 1: `--app-field`, radius 0, no shadow,
- * no blur), with NO focus treatment of any kind - the accent caret and the
- * send key carry focus. Border lives here (not in a className) because the
+/* Composer chrome (SessionComposer), R3 (docs/design/R3-MINIMAL.md section 7):
+ * a square field on a 1px rule (`--vex-alias-composer`, radius 0, no shadow,
+ * no blur) with NO focus treatment of any kind - the blue caret and the send
+ * key carry focus. Under the text sits one bar: the options control, the
+ * permission as its promise, the context label and meter, and the send or
+ * named stop key. Border chrome lives here (not in a className) because the
  * design guard scans .tsx sources for border chrome. */
 
 .vex-composer-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 10px 18px;
   border: 1px solid var(--vex-alias-border-input);
   border-radius: 0;
   background: var(--vex-alias-composer);
@@ -14,27 +19,157 @@
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* Approval park draws the 1.5px ink frame - the run is waiting on a
- * signature, and the tag above the card says so. Status is shown by the
- * frame, never by a colour. */
+/* While an approval waits the field takes the 1.5px ink frame, and the tag on
+ * its top edge says "Waiting for approval". Status is shown by the frame and
+ * the word, never by a colour. The padding gives back the extra half pixel so
+ * the text does not move. */
 .vex-composer-card[data-vex-composer-state="approval"] {
   border-width: 1.5px;
   border-color: var(--vex-alias-rule-ink);
+  padding: 13.5px 13.5px 9.5px 17.5px;
 }
 
-/* Toolbar chip: the model and the reasoning effort, 28px, 12px Departure
- * Mono on a rule outline (reference d3). An outline, so the chip's box keeps
- * its width whether or not a hover fills it. */
+/* Right under the mission strip (open at its foot) the field's top edge is
+ * the strip's floor, drawn in the quiet rule (R3 d2x mission renders). */
+[data-vex-area="composer-mission-strip"] + .vex-composer-card {
+  border-top-color: var(--vex-alias-rule-quiet);
+}
+
+/* The tag on the field's top edge: 22 high, field ground, a 1px ink border,
+ * 12 / 500 (section 7). The stop acknowledgement wears the same shape on the
+ * rule. */
+.vex-composer-tag {
+  position: absolute;
+  top: -11px;
+  right: 14px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-composer);
+  color: var(--vex-alias-label-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.vex-composer-tag[data-vex-console-status="stopping"] {
+  border-color: var(--vex-alias-rule);
+  color: var(--vex-alias-label-secondary);
+}
+
+/* The bar under the text: 8 apart, 6 below the field. */
+.vex-composer-bar {
+  margin-top: 6px;
+}
+
+/* The options control: "{model} · Reasoning: {effort}" in one 30 high frame
+ * on the quiet rule, 13, the dot and "Reasoning:" muted, a chevron last. The
+ * model name and the effort are two keys inside the one frame (the model opens
+ * its settings, the effort opens its menu). */
+.vex-composer-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.vex-composer-options__key {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+/* The effort's menu opens upward from the frame and keeps the width of its
+ * longest word ("Minimal"), whatever the trigger's own width. */
+.vex-composer-options [role="listbox"] {
+  right: auto;
+  min-width: 8rem;
+}
+
+/* The legacy plan seat keeps the quiet frame of the options control. */
 .vex-composer-chip {
-  outline: 1px solid var(--vex-alias-rule);
-  outline-offset: -1px;
+  border: 1px solid var(--vex-alias-rule-quiet);
 }
 
-/* The context meter's cells are the field's own instrument: 5 x 12, two
- * pixels apart (reference d3), not the default square cell. */
+/* The permission as its promise: 13 / 500 blue with its icon, 30 high. */
+.vex-composer-promise {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px;
+  color: var(--vex-alias-accent-primary);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* "Context 21%" in 12.5 muted and the five cell meter: cells 4 x 10, two
+ * apart, the rule border, filled cells blue (section 7). */
+.vex-composer-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 4px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
 .vex-context-meter > i {
-  width: 5px;
-  height: 12px;
+  width: 4px;
+  height: 10px;
+}
+
+/* The send key: 36 x 36. Waiting for text it is a dotted blue outline with a
+ * blue arrow; with text it is the view's one blue fill (a periwinkle edge at
+ * night, transparent by day). */
+.vex-composer-send {
+  border: 1px solid var(--vex-alias-button-accent-edge);
+  background: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+}
+.vex-composer-send:disabled {
+  border: 1px dotted var(--vex-alias-accent-primary);
+  background: transparent;
+  color: var(--vex-alias-accent-primary);
+  cursor: not-allowed;
+}
+
+/* The named stop key: 36 high, ink fill, paper type, 13 / 500, a 9 x 9
+ * square before the words ("Stop agent", "Stop mission"). Stopping keeps the
+ * box on a dotted ink line until the stop is acknowledged. */
+.vex-composer-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-rule-ink);
+  color: var(--vex-alias-bg-base);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.vex-composer-stop:disabled {
+  border-style: dotted;
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-composer-stop__mark {
+  display: block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: currentColor;
 }
 
 /* Dashed drop ring: a masked SVG rect with square corners. The 4px stroke is

@@ -1,5 +1,5 @@
 /**
- * KeystoreStep — renders the password form, validates it, calls the
+ * KeystoreStep - renders the password form, validates it, calls the
  * keystoreSet IPC on submit, and surfaces the skip-badge when the
  * env already has VEX_KEYSTORE_PASSWORD. Mocks the API hooks layer
  * so we never touch a real IPC bridge. Uses fireEvent (no

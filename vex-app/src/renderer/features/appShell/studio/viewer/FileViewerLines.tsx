@@ -103,7 +103,9 @@ export function FileViewerLines({
       aria-label={CODE_REGION_LABEL}
       tabIndex={0}
       className={cn(
-        "vex-scroll min-h-0 flex-1 overflow-auto bg-surface-field focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        // Focus is the kit outline drawn INSIDE the scroller (a negative
+        // offset), so the region's own edge never clips it.
+        "vex-scroll min-h-0 flex-1 overflow-auto bg-surface-field focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
         className,
       )}
     >

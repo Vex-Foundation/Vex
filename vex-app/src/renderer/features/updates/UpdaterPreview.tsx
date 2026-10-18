@@ -1,11 +1,11 @@
 /**
- * UPDATER PREVIEW - diagnostic toast viewer (owner request 2026-07-22,
+ * UPDATER PREVIEW - diagnostic card viewer (owner request 2026-07-22,
  * sibling of the SetupTour): `VITE_VEX_UPDATER_PREVIEW=1` replaces the
- * live update layer with this local previewer so the update toast can be
+ * live update layer with this local previewer so the update card can be
  * seen in EVERY state without a real update feed.
  *
- * A small picker docks to the LEFT of the toast stack; each key feeds the
- * `UpdateToastSurface` a schema-valid mock status. Action handlers walk
+ * A small picker docks at the lower right; each key feeds the
+ * `UpdateCard` a schema-valid mock status. Action handlers walk
  * the mock through realistic transitions locally ("Update now" ->
  * downloading -> downloaded, "Cancel" -> available, "Try again" from a
  * block re-enters its step) - no IPC is ever called, main is never
@@ -20,10 +20,7 @@ import {
   isToastKind,
   type ToastableUpdateStatus,
 } from "./update-toast-model.js";
-import {
-  UpdateToastSurface,
-  type UpdateToastHandlers,
-} from "./UpdateToastSurface.js";
+import { UpdateCard, type UpdateCardHandlers } from "./UpdateCard.js";
 
 export const UPDATER_PREVIEW_ENABLED =
   import.meta.env.VITE_VEX_UPDATER_PREVIEW === "1";
@@ -121,7 +118,7 @@ export function UpdaterPreview(): JSX.Element {
     ? status
     : null;
 
-  const handlers: UpdateToastHandlers = useMemo(
+  const handlers: UpdateCardHandlers = useMemo(
     () => ({
       onLater: () => pick("available"),
       onUpdateNow: () =>
@@ -155,9 +152,9 @@ export function UpdaterPreview(): JSX.Element {
     <>
       <div
         data-vex-updater-preview
-        className="fixed bottom-4 right-[21.5rem] z-[70] flex flex-col gap-1 rounded-xl border border-line-3 bg-surface-2 p-2 vex-micro-label uppercase text-ink-secondary shadow-lv2"
+        className="fixed bottom-4 right-4 z-[70] flex flex-col gap-1 border border-rule bg-surface-2 p-2 text-[12px] text-ink-secondary"
       >
-        <span className="px-1 text-[9px] text-ink-tertiary">
+        <span className="px-1 text-[11px] text-ink-tertiary">
           Updater preview
         </span>
         {MOCKS.map((m) => (
@@ -166,7 +163,7 @@ export function UpdaterPreview(): JSX.Element {
             type="button"
             onClick={() => pick(m.key)}
             className={cn(
-              "rounded-lg px-2 py-1 text-left transition-colors",
+              "px-2 py-1 text-left transition-colors",
               m.key === activeKey
                 ? "bg-interactive-active text-ink-primary"
                 : "hover:bg-interactive-hover",
@@ -177,7 +174,7 @@ export function UpdaterPreview(): JSX.Element {
         ))}
       </div>
       {toastable !== null ? (
-        <UpdateToastSurface status={toastable} busy={false} handlers={handlers} />
+        <UpdateCard status={toastable} busy={false} handlers={handlers} />
       ) : null}
     </>
   );

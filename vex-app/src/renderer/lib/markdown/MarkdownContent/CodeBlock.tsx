@@ -1,15 +1,16 @@
 /**
- * Fenced code block: a well on the second paper (docs/design/V10-SPREAD.md
- * section 1) with a language strip + copy key, set in JetBrains Mono (code
- * only) on the same code-token palette the Studio viewer's shiki theme writes
- * (`--vex-alias-code-*`). The copy button writes the token's RAW string via
+ * Fenced code block: a well on paper 2 (docs/design/R3-MINIMAL.md section 6)
+ * with a language strip + copy key in the sans at 12 muted, the code set in
+ * JetBrains Mono on the same code-token palette the Studio viewer's shiki
+ * theme writes (`--vex-alias-code-*`). Styles: `.vex-code-block` in
+ * chat-transcript.css. The copy button writes the token's RAW string via
  * the clipboard API; it never re-enters the React tree, so the no-HTML-sink
  * invariant is untouched.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
-import { IconCopy } from "../../../components/icons/index.js";
+import { LineCopy } from "../../../components/icons/line/index.js";
 import { highlightLines } from "../highlight.js";
 
 const KIND_CLASS = {
@@ -81,23 +82,19 @@ export function CodeBlock({
   };
 
   return (
-    <div className="overflow-hidden border border-rule-quiet bg-surface-3">
-      <div className="flex h-7 items-center justify-between border-b border-rule-quiet px-3">
-        <span className="font-mono text-[11px] uppercase tracking-chip text-ink-secondary">
-          {lang}
-        </span>
+    <div className="vex-code-block">
+      <div className="vex-code-block__head">
+        <span>{lang}</span>
         <button
           type="button"
           aria-label="Copy code"
           onClick={() => void onCopy()}
-          className="flex items-center text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="flex items-center text-ink-tertiary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           {copyState === "idle" ? (
-            <IconCopy size={12} />
+            <LineCopy size={14} />
           ) : (
-            <span className="font-mono text-[11px] uppercase tracking-chip">
-              {copyState === "copied" ? "Copied" : "Copy failed"}
-            </span>
+            <span>{copyState === "copied" ? "Copied" : "Copy failed"}</span>
           )}
         </button>
       </div>

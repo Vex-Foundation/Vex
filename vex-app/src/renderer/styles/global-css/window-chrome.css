@@ -1,4 +1,4 @@
-/* Window chrome utilities (docs/design/V10-SPREAD.md section 8). The title bar is hidden on every
+/* Window chrome utilities (docs/design/R3-MINIMAL.md section 2.2). The title bar is hidden on every
  * OS; each 44px head row is the drag region and every control inside it opts
  * out. Hook: lib/use-window-chrome.ts stamps `data-os` (mac | win | linux) and
  * `data-chrome` (overlay | native | mac) on <html>. Wired on the running

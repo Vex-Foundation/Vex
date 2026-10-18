@@ -1,5 +1,5 @@
 /**
- * The "Provider is configured" screen — status view plus an INLINE delta
+ * The "Provider is configured" screen - status view plus an INLINE delta
  * editor.
  *
  * Why this exists: changing only the model used to force a full reconfigure,
@@ -10,21 +10,28 @@
  * omits `apiKey` from the persist payload entirely, and main verifies the new
  * selection against the key already in the vault.
  *
- * SECURITY — the stored key never reaches this component, in any form. There
+ * SECURITY - the stored key never reaches this component, in any form. There
  * is no value, no length, no prefix, no masked tail to render: the only thing
  * the renderer knows is `configured: true` from the env-state probe, so the
  * key row is a literal status word. The replace field is an UNCONTROLLED ref
  * cleared synchronously before the await (skill §14), exactly like the
- * first-run form — a new key is never parked in React state.
+ * first-run form - a new key is never parked in React state.
  *
  * Extracted from `ProviderStep.tsx`, which owns the first-run form and was at
  * the file-size ceiling; the configured state is a different reason to change.
+ *
+ * R3: the three facts are label and value rows (`.vex-wz-kvl`), the key row a
+ * `StateWord` (a fill and a word), the model id and a pinned tag in mono; the
+ * actions are quiet keys in the step's footer, the primary last. The delta
+ * form uses the same field groups as the first-run form.
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
+import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { ProviderPersistInput } from "@shared/schemas/provider.js";
 import { Button } from "../../../../components/ui/button.js";
 import { Label } from "../../../../components/ui/label.js";
+import { StateWord } from "../../../../components/ui/state-word.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import {
   persistProvider,
@@ -33,7 +40,6 @@ import {
   useInvalidateEnvStateAfterProviderWrite,
 } from "../../../../lib/api/provider.js";
 import type { WizardFlowMode } from "../../../../lib/api/wizard.js";
-import { WIZARD_STEP_META } from "../../wizard-icons.js";
 import { WizardStepPanel } from "../../WizardStepPanel.js";
 import type { ServerError } from "./error-ui.js";
 import { ModelBrandIcon } from "./ModelBrandIcon.js";
@@ -42,6 +48,8 @@ import { EndpointPicker } from "./EndpointPicker.js";
 import { ProviderErrorAlert } from "./ProviderErrorAlert.js";
 
 export interface ConfiguredProviderPanelProps {
+  /** The step's own env read, for the Settings section's status word. */
+  readonly env?: EnvState | null;
   readonly providerName: "openrouter" | null;
   /** Currently active `AGENT_MODEL`, or `null` when the probe found none. */
   readonly activeModel: string | null;
@@ -59,40 +67,26 @@ export interface ConfiguredProviderPanelProps {
 
 const AUTO_ROUTING_LABEL = "Auto (recommended)";
 
-const ROW_CLASS =
-  "flex items-center gap-3 border-t border-[var(--color-border)] pt-4";
-
+/** One label and value row (`.vex-wz-kv`); `children` is the value. */
 function StatusRow({
   label,
   children,
-  icon,
   testValue,
 }: {
   readonly label: string;
   readonly children: JSX.Element | string;
-  readonly icon?: JSX.Element;
   readonly testValue: string;
 }): JSX.Element {
   return (
-    <div className={ROW_CLASS} data-vex-provider-status={testValue}>
-      {icon ?? null}
-      <div className="flex min-w-0 flex-col">
-        <span className="vex-micro text-ink-tertiary">
-          {label}
-        </span>
-        {typeof children === "string" ? (
-          <span className="truncate text-sm text-ink-primary">
-            {children}
-          </span>
-        ) : (
-          children
-        )}
-      </div>
+    <div className="vex-wz-kv" data-vex-provider-status={testValue}>
+      <span className="vex-wz-kv__k">{label}</span>
+      <span className="vex-wz-kv__v">{children}</span>
     </div>
   );
 }
 
 export function ConfiguredProviderPanel({
+  env = null,
   providerName,
   activeModel,
   activeEndpointTag,
@@ -126,7 +120,7 @@ export function ConfiguredProviderPanel({
 
   // While editing, endpoints are fetched for an EXACT catalogue match only
   // (same rule as the first-run form). While reading, they are fetched only
-  // when a pin exists — purely to resolve its display name, and never for an
+  // when a pin exists - purely to resolve its display name, and never for an
   // Auto configuration, which needs no lookup at all.
   const selectedCatalogueModelId =
     catalogueModels.find((option) => option.modelId === model.trim())
@@ -241,8 +235,12 @@ export function ConfiguredProviderPanel({
     [endpointTag, invalidateEnvState, model],
   );
 
-  const meta = WIZARD_STEP_META.provider;
   const busy = submitting || continuePending;
+
+  // A pinned endpoint whose friendly name did not resolve shows its raw tag,
+  // which is an id: mono. A name stays in sans.
+  const routingIsTag =
+    activeEndpointTag !== null && activeRoutingLabel === activeEndpointTag;
 
   const description =
     providerName === "openrouter"
@@ -252,8 +250,8 @@ export function ConfiguredProviderPanel({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "provider", value: "skip" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={env}
       title="Provider is configured"
       description={description}
       {...(editing && {
@@ -269,7 +267,7 @@ export function ConfiguredProviderPanel({
           <>
             <Button
               type="button"
-              variant="bare"
+              variant="quiet"
               onClick={cancelEditing}
               disabled={submitting}
             >
@@ -282,14 +280,14 @@ export function ConfiguredProviderPanel({
         ) : (
           <>
             <Button
-              variant="bare"
+              variant="quiet"
               onClick={onReconfigure}
               disabled={continuePending}
             >
               Reconfigure
             </Button>
             <Button
-              variant="bare"
+              variant="quiet"
               onClick={startEditing}
               disabled={continuePending}
               data-vex-provider-edit
@@ -307,10 +305,10 @@ export function ConfiguredProviderPanel({
         )
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="vex-wz-stack">
         {editing ? (
           <>
-            <div className="flex flex-col gap-2">
+            <div className="vex-wz-group">
               <Label
                 htmlFor="vex-provider-edit-model"
                 className="flex items-center gap-2"
@@ -348,7 +346,7 @@ export function ConfiguredProviderPanel({
               />
             ) : null}
 
-            <div className="flex flex-col gap-2">
+            <div className="vex-wz-group">
               <Label htmlFor="vex-provider-replace-key">
                 Replace API key (optional)
               </Label>
@@ -357,32 +355,43 @@ export function ConfiguredProviderPanel({
                 ref={apiKeyRef}
                 placeholder="sk-or-..."
               />
-              <p className="text-xs text-ink-tertiary">
-                Leave blank to keep the current key. Your saved key is never
-                shown here - it stays in the encrypted vault on this machine.
+              <p className="vex-wz-hint">
+                <span>
+                  Leave blank to keep the current key. Your saved key is never
+                  shown here - it stays in the encrypted vault on this machine.
+                </span>
               </p>
             </div>
           </>
         ) : (
-          <>
+          <div className="vex-wz-kvl">
             <StatusRow label="API key" testValue="apiKey">
-              Configured
+              <StateWord state="done" word="Configured" />
             </StatusRow>
             {activeModel !== null ? (
-              <StatusRow
-                label="Active model"
-                testValue="model"
-                icon={<ModelBrandIcon modelId={activeModel} size={22} />}
-              >
-                <code className="truncate font-mono text-sm text-ink-primary">
-                  {activeModel}
-                </code>
+              <StatusRow label="Active model" testValue="model">
+                <span className="inline-flex max-w-full items-center gap-2">
+                  <ModelBrandIcon
+                    modelId={activeModel}
+                    size={16}
+                    className="shrink-0"
+                  />
+                  <code className="min-w-0 font-mono vex-num text-[13px] text-ink-primary">
+                    {activeModel}
+                  </code>
+                </span>
               </StatusRow>
             ) : null}
             <StatusRow label="Provider" testValue="endpoint">
-              {activeRoutingLabel}
+              {routingIsTag ? (
+                <code className="font-mono vex-num text-[13px]">
+                  {activeRoutingLabel}
+                </code>
+              ) : (
+                activeRoutingLabel
+              )}
             </StatusRow>
-          </>
+          </div>
         )}
 
         {(clientError ?? advanceError) !== null ? (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import type { LighterTradingEnvironment, LighterTradingMarket } from "@shared/schemas/lighter-trading.js";
-import { IconChevronDown, IconClose, IconSearch, IconStar, IconStarFill } from "../../../components/icons/index.js";
+import { IconStar, IconStarFill } from "../../../components/icons/index.js";
+import { LineChevronDown, LineClose, LineSearch } from "../../../components/icons/line/index.js";
 import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { MarketSymbol } from "./MarketSymbol.js";
 import { marketIdentity } from "./market-selection.js";
@@ -170,11 +171,11 @@ export function MarketPicker({ environment, markets, loading = false, selectedMa
         <p id="lit-market-picker-description" className="sr-only">Choose the network and the market for this desk</p>
         <EnvironmentSwitch environment={environment} onSelect={onSelectEnvironment} />
       </header>
-      <div className="lit-picker-search"><IconSearch size={16} />
+      <div className="lit-picker-search"><LineSearch size={16} />
         <input autoFocus role="combobox" aria-autocomplete="list" aria-controls="lit-market-options" aria-expanded="true"
           aria-activedescendant={activeOptionId} aria-describedby="lit-picker-keyboard" data-lit-market-search="true"
           value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Search markets" aria-label="Search Lighter markets" />
-        <button type="button" onClick={onClose} aria-label="Close market search"><IconClose size={16} /></button>
+        <button type="button" onClick={onClose} aria-label="Close market search"><LineClose size={16} /></button>
       </div>
       <nav className="lit-picker-tabs" aria-label="Market type">
         <button type="button" className="lit-picker-favorites-filter" aria-label="Favorites" aria-pressed={favoritesOnly}
@@ -191,7 +192,7 @@ export function MarketPicker({ environment, markets, loading = false, selectedMa
             title={key === "volume" ? "24h volume in the displayed quote currency" : key === "interest" ? "Open interest in base units; compare the displayed units" : undefined}
             aria-pressed={sort?.column === key} data-direction={sort?.column === key ? sort.direction : undefined}
             onClick={() => setSort((current) => ({ column: key, direction: current?.column === key && current.direction === "desc" ? "asc" : current?.column === key ? "desc" : key === "market" ? "asc" : "desc" }))}>
-            {label}<IconChevronDown size={16} />
+            {label}<LineChevronDown size={16} />
           </button>)}
         </div>
         <div id="lit-market-options" role="listbox" aria-label="Available Lighter markets" className="lit-picker-options">

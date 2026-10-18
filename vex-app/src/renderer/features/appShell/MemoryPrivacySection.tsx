@@ -12,7 +12,7 @@
 
 import type { JSX } from "react";
 import { useAvailableModels } from "../../lib/api/models.js";
-import { SECTION } from "./MemoryPanelShared.js";
+import { SECTION, SectionHead } from "./MemoryPanelShared.js";
 
 export function MemoryPrivacySection(): JSX.Element {
   const models = useAvailableModels();
@@ -24,50 +24,40 @@ export function MemoryPrivacySection(): JSX.Element {
 
   return (
     <section data-vex-section="memory-privacy" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">
-          Memory &amp; privacy
-        </h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          How Vex builds long-term memory, and what leaves your machine.
-        </p>
-      </div>
+      <SectionHead
+        title="Memory & privacy"
+        lead="How Vex builds long-term memory, and what leaves your machine."
+      />
 
-      <p
-        data-vex-memory-model
-        className="text-xs text-ink-secondary"
-      >
+      <p data-vex-memory-model className="vex-mem-sec__facts">
         {models.isLoading ? (
           "Checking the configured model…"
         ) : model !== null ? (
           <>
             Memory is built by{" "}
-            <span className="font-mono text-ink-primary">{model.modelId}</span>{" "}
-            via OpenRouter.
+            <span className="vex-mem-model">{model.modelId}</span> via
+            OpenRouter.
           </>
         ) : (
           "The memory builder is idle until an OpenRouter model is configured."
         )}
       </p>
 
-      <div className="flex flex-col gap-2 text-xs text-ink-secondary">
-        <p>
-          When older messages are compacted into memory, Vex sends a{" "}
-          <span className="text-ink-primary">redacted</span> copy of that
-          archived transcript to your OpenRouter model. Before it leaves your
-          machine, secrets - wallet seeds, private keys, API keys, and JWTs -
-          are removed, and wallet/contract addresses and transaction hashes are
-          masked.
-        </p>
-        <p>
-          Only the sanitized summary and structured chunks are stored. Logs and
-          support reports never include unredacted memory payloads: raw
-          transcript text and embeddings are not attached to them.
-        </p>
-        <p className="text-ink-tertiary">
-          This runs automatically in the background (enabled by default).
-        </p>
-      </div>
+      <p className="vex-mem-sec__facts">
+        When older messages are compacted into memory, Vex sends a{" "}
+        <b>redacted</b> copy of that archived transcript to your OpenRouter
+        model. Before it leaves your machine, secrets - wallet seeds, private
+        keys, API keys, and JWTs - are removed, and wallet/contract addresses
+        and transaction hashes are masked.
+      </p>
+      <p className="vex-mem-sec__facts">
+        Only the sanitized summary and structured chunks are stored. Logs and
+        support reports never include unredacted memory payloads: raw
+        transcript text and embeddings are not attached to them.
+      </p>
+      <p className="vex-mem-sec__facts" data-quiet>
+        This runs automatically in the background (enabled by default).
+      </p>
     </section>
   );
 }

@@ -1,22 +1,28 @@
 /**
- * Bridge per-leg audit (B8) — the expandable list every bridge row can open:
+ * Bridge per-leg audit (B8) - the expandable list every bridge row can open:
  * approvals, deposit, the canonical fill, extra observed fills, refunds, each
  * with its own chain + explorer link.
  *
  * Extracted MOVE-ONLY from `TokenHistoryScreen.tsx` (Agent Scan renderer
- * round). Collapsed by default; NEVER truncated (OWNER RULE) — a multi-leg
+ * round). Collapsed by default; NEVER truncated (OWNER RULE) - a multi-leg
  * bridge shows every leg it has once opened.
  *
  * Leg explorer URLs are BUILT here through the SAME curated allow-list
- * (`explorerTxUrl`) as every other link in the shell — a leg without a hash,
+ * (`explorerTxUrl`) as every other link in the shell - a leg without a hash,
  * or on an uncurated chain, renders non-interactive rather than guessing.
+ *
+ * R3 paint (docs/design/R3-MINIMAL.md section 9.2): the toggle is the blue
+ * text key ("Show 2 legs"), and each leg is one line - the role as a code
+ * chip, the chain, a fill with its status word, the TX link - under the row's
+ * text column (`.vex-scan-subdetail`, `.vex-scan-leg`).
  */
 
 import { useId, useRef, useState, type JSX } from "react";
-import { IconArrowUpRight } from "../../../../components/icons/index.js";
 import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
+import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
+import { ScanTxLink } from "../agent-scan/ScanRowParts.js";
 
 /** Short leg-role label for the expandable per-leg audit list. */
 export function legRoleLabel(role: BridgeLegRole): string {
@@ -37,7 +43,7 @@ export function legRoleLabel(role: BridgeLegRole): string {
 }
 
 /**
- * Explorer URL for one bridge leg — built through the SAME curated allowlist
+ * Explorer URL for one bridge leg - built through the SAME curated allowlist
  * (`explorerTxUrl`) as every other link, keyed by the leg's `chainFamily`
  * (`solana` → the signature path; else the leg's own bare decimal chain id).
  * `null` (no hash yet / uncurated chain) → the leg renders non-interactive.
@@ -48,8 +54,16 @@ export function bridgeLegUrl(leg: BridgeLeg): string | null {
   return explorerTxUrl(chain, leg.txHash);
 }
 
+/** A leg's own status, as a fill beside its word. */
+function legSwatch(status: string | null): SwatchState {
+  if (status === "confirmed") return "done";
+  if (status === "failed") return "error";
+  if (status === "pending") return "listening";
+  return "idle";
+}
+
 /**
- * Expandable per-leg audit list for a bridge (B8) — every leg (approvals,
+ * Expandable per-leg audit list for a bridge (B8) - every leg (approvals,
  * deposit, the canonical fill, extra fills, refunds) with its own chain +
  * explorer link. Collapsed by default; NEVER truncated (OWNER RULE).
  */
@@ -63,43 +77,42 @@ export function BridgeLegs({
   const triggerRef = useRef<HTMLButtonElement>(null);
   if (legs.length === 0) return null;
   return (
-    <div className="mt-1 pl-[22px]">
+    <div className="vex-scan-subdetail">
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={bodyId}
-        className="vex-micro-label uppercase text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+        className="vex-scan-link"
       >
         {open ? "Hide" : "Show"} {legs.length} leg{legs.length === 1 ? "" : "s"}
       </button>
       <ExpandRegion id={bodyId} open={open} triggerRef={triggerRef}>
-        <ul className="mt-1 flex flex-col gap-1">
+        <ul className="vex-scan-legs-list">
           {legs.map((leg, index) => {
             const url = bridgeLegUrl(leg);
             const legStatus = leg.status === "definitively_failed" ? "failed" : leg.status;
             return (
               <li
                 key={`${leg.role}:${index}:${leg.txHash ?? "none"}`}
-                className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-ink-tertiary"
+                className="vex-scan-leg"
               >
-                <span className="inline-flex h-3.5 min-w-[52px] shrink-0 items-center justify-center rounded-[3px] border border-line-2 px-1 uppercase tracking-[0.14em]">
-                  {legRoleLabel(leg.role)}
+                <span className="vex-scan-code">{legRoleLabel(leg.role)}</span>
+                <span className="vex-num">
+                  {leg.chainFamily === "solana" ? "solana" : leg.chainId}
                 </span>
-                <span className="shrink-0">{leg.chainFamily === "solana" ? "solana" : leg.chainId}</span>
-                {legStatus !== null ? <span className="shrink-0">{legStatus}</span> : null}
+                {legStatus !== null ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Swatch state={legSwatch(legStatus)} className="text-accent-primary" />
+                    {legStatus}
+                  </span>
+                ) : null}
                 {url !== null ? (
-                  <a
+                  <ScanTxLink
                     href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Open ${legRoleLabel(leg.role)} leg on block explorer`}
-                    className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-                  >
-                    TX
-                    <IconArrowUpRight size={10} />
-                  </a>
+                    label={`Open ${legRoleLabel(leg.role)} leg on block explorer`}
+                  />
                 ) : null}
               </li>
             );

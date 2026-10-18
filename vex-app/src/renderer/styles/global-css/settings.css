@@ -1,0 +1,471 @@
+/* THE SETTINGS PAGE (docs/design/R3-MINIMAL.md section 9.6).
+ *
+ * One page sheet (overlay.css) with two panes: the nav (236 wide, 210 under
+ * 1180, padding 22 12 0 14) in four groups, and the section (padding 28 44 0,
+ * 22 28 under 1180, one column of at most 680). The nav and the section scroll
+ * on their own, so the nav never leaves while a long section moves. Radius 0,
+ * no shadow, no blur; every colour is an alias except the selection wash, which
+ * has no alias yet (blue at 7.5% by day, periwinkle at 10% at night, the value
+ * the left sidebar draws its selected row with).
+ *
+ * The sheet's own column (840 with a 40 gutter) gives way to the full width
+ * here: the nav sits flush against the left sidebar's rule. */
+
+.vex-ov:has([data-vex-settings-page]) {
+  --vex-ov-max: none;
+  --vex-ov-pad: 0px;
+  --vex-ov-top: 0px;
+}
+.vex-ov:has([data-vex-settings-page]) .vex-ov__scroll[data-fill] {
+  padding-bottom: 0;
+}
+
+.vex-set {
+  --set-sel: rgba(163, 171, 255, 0.1);
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+[data-vex-theme="celeris"] .vex-set {
+  --set-sel: rgba(0, 0, 192, 0.075);
+}
+
+/* THE NAV: group heads 12 / 500 muted, rows 34 high with a 16 line icon, the
+ * name and the status word at the right (12 muted). Selected = the selection
+ * wash, blue type, weight 500, the icon blue. */
+.vex-set__nav {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 12px 24px 14px;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-set__group {
+  padding: 14px 10px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-set__nav > :first-child > .vex-set__group {
+  padding-top: 0;
+}
+.vex-set__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  text-align: left;
+  font-size: 14px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-set__item:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-set__item:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-set__icon {
+  flex: none;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-set__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vex-set__word {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-set__item[aria-current="page"] {
+  background: var(--set-sel);
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-set__item[aria-current="page"] .vex-set__icon {
+  color: var(--vex-alias-accent-primary);
+}
+
+/* THE SECTION. */
+.vex-set__body {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 44px 56px;
+  /* The rows answer to the section's own width, not the window's. */
+  container-type: inline-size;
+}
+.vex-set__col {
+  max-width: 680px;
+}
+
+/* Under 1180 the nav is 210 and the section pads 22 28. The status words
+ * leave the nav's sight (the section's own head says them) but stay in its
+ * accessible names. */
+@media (max-width: 1179px) {
+  .vex-set {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+  .vex-set__body {
+    padding: 22px 28px 56px;
+  }
+  .vex-set__word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The section head: the name 22 / 500 with its status word (13, ink 2), the
+ * lead 14 / 1.55 ink 2. */
+.vex-set__head {
+  margin: 0 0 20px;
+}
+.vex-set__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--vex-alias-label-primary);
+}
+.vex-set__stw {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-set__lead {
+  max-width: 620px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* A block inside a section (Points, Trading setup): head 15 / 600 with a link
+ * at the right (13 / 500 blue), a note under it (13 muted). */
+.vex-set__sec {
+  margin: 0 0 24px;
+}
+.vex-set__sh {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+.vex-set__sh-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.vex-set__sh-link {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+.vex-set__sh-link:disabled {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-set__sh-link:focus-visible,
+.vex-set__link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-set__note {
+  max-width: 620px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+/* Inside a gapped column the note carries no margin of its own. */
+.vex-set__stack > .vex-set__note {
+  margin: 0;
+}
+.vex-set__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vex-alias-accent-primary);
+}
+
+/* Label and value rows (the Lighter points): a muted label at the left, the
+ * value, an optional sub line, hairline rows. */
+.vex-set__kvl {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-set__kv {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 14px;
+}
+.vex-set__k {
+  font-size: 13.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-set__v {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-set__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The Superboard key: a field-ground box with the masked key at the left and
+ * Show and Copy at the right. */
+.vex-set__keyrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-field);
+}
+.vex-set__key {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-set__keys {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+/* PREFERENCES: one row per setting, the name 14.5 / 500 and the help 13 muted
+ * at the left, the control at the right; a hairline rule above the list and a
+ * quiet one under every row. */
+.vex-prefs__list {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-pref {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-pref--top {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-pref__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pref__help {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pref__em {
+  font-weight: 500;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pref__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.vex-pref__word {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pref__alert {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pref__ref {
+  color: var(--vex-alias-label-tertiary);
+}
+/* A chord beside its key (the Vault section's Lock Vex row): mono 12 muted. */
+.vex-pref__chord {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A section narrower than 560 stacks each row: the name and help, then the
+ * control under them, left aligned. */
+@container (max-width: 560px) {
+  .vex-pref {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+  }
+  .vex-pref__control {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+/* A choice reads as one control: a 1px rule between its keys. */
+.vex-pref .vex-seg > button + button {
+  border-left: 1px solid var(--vex-alias-rule);
+}
+
+/* The "Looking at you" preview under Show avatar (sections 5.2 and 10.1): a
+ * framed block, the 200 x 220 print window at the left (VexPortraitPlate, the
+ * Vex sidebar's own plate cut down: its 280 height and its top rule are the
+ * sidebar's) and the title 15 / 500 over the text 14 / 1.45 at the right. */
+.vex-set-avatar {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  column-gap: 22px;
+  align-items: start;
+  margin: 4px 0 14px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-set-avatar__plate.vex-vs-plate {
+  width: 200px;
+  height: 220px;
+  border-top: 0;
+}
+.vex-set-avatar__text {
+  min-width: 0;
+  padding: 22px 22px 22px 0;
+}
+.vex-set-avatar__title {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-set-avatar__body {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* The switch (section 1.5): a 32 x 18 track with a 10 x 10 thumb at a 3px
+ * inset; off the thumb is muted, on the track fills blue and the thumb moves.
+ * The state is the fill and the position, never a hue. */
+.vex-switch {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-field);
+}
+.vex-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  background: var(--vex-alias-label-tertiary);
+  transition: transform var(--vex-duration-base) linear;
+}
+/* The edge token is clear on paper (the fill shows through) and periwinkle
+ * at night, the 1px edge every night blue fill keeps (section 1.1). */
+.vex-switch[aria-checked="true"] {
+  border-color: var(--vex-alias-button-accent-edge);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-switch[aria-checked="true"]::after {
+  transform: translateX(14px);
+  background: var(--vex-alias-button-accent-ink);
+}
+.vex-switch:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-switch::after {
+    transition: none;
+  }
+}
+
+/* The Background preview: a 16:9 plate in the shape of the image it previews. */
+.vex-backdrop-preview {
+  position: relative;
+  width: 112px;
+  height: 63px;
+  flex: none;
+  overflow: hidden;
+  outline: 1px solid var(--vex-alias-rule);
+  outline-offset: -1px;
+}
+.vex-backdrop-preview > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.vex-backdrop-preview__remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  background: var(--vex-alias-label-box);
+  color: var(--vex-alias-label-on-chrome);
+  opacity: 0;
+}
+.vex-backdrop-preview:hover .vex-backdrop-preview__remove,
+.vex-backdrop-preview__remove:focus-visible {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .vex-backdrop-preview__remove {
+    opacity: 1;
+  }
+}

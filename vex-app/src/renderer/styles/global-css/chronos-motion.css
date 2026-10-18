@@ -58,14 +58,14 @@
   }
 }
 
-/* Session-enter — the SessionPanel welcome↔session (and session↔session)
+/* Session-enter: the SessionPanel welcome↔session (and session↔session)
  * fluid resolve, owner-decreed removal of the distorted-glass regression
  * (2026-07-20): the previous round's SVG feDisplacementMap filter warped
  * CONTENT (profile menu + dialog text) into illegible squiggles, so the
- * whole displacement/dither system is retired in favor of plain blur +
- * static grain (`.vex-noise`, global-css/landing-motifs.css). This is the SessionPanel idiom's
+ * whole displacement/dither system is retired in favor of a plain opacity
+ * and translate enter. This is the SessionPanel idiom's
  * one-shot enter, replayed on every session switch via a `key` remount
- * (same idiom as `.vex-rise` / `.vex-book-enter`). */
+ * (same idiom as `.vex-rise`). */
 @keyframes vex-session-enter {
   from {
     opacity: 0;
@@ -79,8 +79,9 @@
 /* `backwards`, not `both`: the end state IS the element's natural state, and
  * an animation still in effect after it ends keeps the session content a
  * stacking context and the containing block of its positioned descendants.
- * That trapped the approval veil (`.vex-approval-mask`) inside the transcript
- * box, under the composer, instead of over the whole session page. */
+ * That once trapped a positioned overlay (the approval veil, retired in R3)
+ * inside the transcript box, under the composer, instead of over the whole
+ * session page. */
 .vex-session-enter {
   animation: vex-session-enter 520ms var(--vex-ease-out) backwards;
 }

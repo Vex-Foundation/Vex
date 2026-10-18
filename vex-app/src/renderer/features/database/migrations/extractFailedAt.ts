@@ -1,6 +1,6 @@
 /**
  * Pure type-guard for the `failedAt` field on `data.migration_failed`
- * error details. The IPC `VexError.details` field is `unknown` —
+ * error details. The IPC `VexError.details` field is `unknown` -
  * narrow it here before consuming, no `as` assertions in hot paths
  * (codex plan v2 SHOULD-FIX #5).
  */

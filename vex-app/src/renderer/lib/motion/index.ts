@@ -56,9 +56,9 @@ export const DURATION_BASE_MS = 150;
 export const DURATION_SLOW_MS = 240;
 
 /**
- * A full-surface reveal: the shell's column tracks, the BOOK panel. Reserved
- * for layout-owning surfaces; nothing inside a panel may use it.
- * CSS: `--vex-duration-reveal`.
+ * A full-surface reveal: the shell's column tracks (the Vex sidebar opening
+ * and hiding). Reserved for layout-owning surfaces; nothing inside a panel may
+ * use it. CSS: `--vex-duration-reveal`.
  */
 export const DURATION_REVEAL_MS = 300;
 

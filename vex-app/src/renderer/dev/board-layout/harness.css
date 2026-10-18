@@ -8,3 +8,67 @@
  * renderer tree, which is exactly what `vite.renderer.config.ts` gives it. */
 @import "../../styles/globals.css";
 @source "../../";
+
+/* The shell's THREE places, as the product lays them out
+ * (docs/design/R3-MINIMAL.md section 2.1, `lib/shell-columns.ts`): the left
+ * sidebar, the centre column with the page padding (section 9.4, 20 28) and,
+ * while the Ask block is open, the Vex sidebar with its quiet rule. Both
+ * sidebars draw their 1px rule INSIDE their track, as `.vex-ls` and `.vex-vs`
+ * do, so the tracks below are exactly the widths the shell solves and the
+ * centre gets the rest.
+ *
+ * The tiers are the shell's, by WINDOW width (the shell solves its columns
+ * from the window, not from a container): the left is 264 from 1360, 224 from
+ * 1180 to 1359, and under 1180 the 56 rail while the Vex sidebar is open and
+ * 224 while it is hidden; the Vex sidebar is 256, 240 and 224 across the same
+ * tiers. So a window of 1440 gives the board a container of 1120 with Vex
+ * hidden and 864 with it open, which is what the column ladder is asked
+ * about. */
+.vex-board-harness {
+  display: flex;
+  min-height: 100vh;
+  background: var(--vex-alias-bg-base);
+}
+.vex-board-harness__left {
+  box-sizing: border-box;
+  width: var(--vex-left-w-md);
+  flex: none;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+/* Under 1180 an open Vex keeps the left at its rail. */
+.vex-board-harness[data-drawer="open"] .vex-board-harness__left {
+  width: var(--vex-rail-w);
+}
+/* The two rules below carry the same specificity as the one above on purpose
+ * (`[data-drawer]` is always present), so the later, wider tier wins. */
+@media (min-width: 1180px) {
+  .vex-board-harness[data-drawer] .vex-board-harness__left {
+    width: var(--vex-left-w-md);
+  }
+}
+@media (min-width: 1360px) {
+  .vex-board-harness[data-drawer] .vex-board-harness__left {
+    width: var(--vex-left-w);
+  }
+}
+.vex-board-harness__centre {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 20px 28px 56px;
+}
+.vex-board-harness__vex {
+  box-sizing: border-box;
+  width: var(--vex-vex-w-sm);
+  flex: none;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+@media (min-width: 1180px) {
+  .vex-board-harness__vex {
+    width: var(--vex-vex-w-md);
+  }
+}
+@media (min-width: 1360px) {
+  .vex-board-harness__vex {
+    width: var(--vex-vex-w);
+  }
+}

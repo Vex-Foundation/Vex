@@ -432,7 +432,7 @@ export interface BoardSpotlightSlotProps {
   readonly poolIndex: number;
 }
 
-/** What the modal's Ask VEX side panel is handed. */
+/** What the Ask Vex block in the Vex sidebar is handed. */
 export interface BoardAskSlotProps {
   readonly board: BoardRef;
   readonly poolIndex: number;

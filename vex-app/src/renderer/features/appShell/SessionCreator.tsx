@@ -1,9 +1,12 @@
 /**
- * "New Session" dialog. Owns the local form state and submits via
+ * The new-session form (docs/design/R3-MINIMAL.md section 12): a sheet over the
+ * centre column with both sidebars standing and no veil, a native `<dialog>`
+ * underneath (`components/ui/sheet.tsx`), so focus is trapped, Escape closes
+ * and focus returns to the trigger. Owns the local form state and submits via
  * `useCreateSession()`. On success `uiStore.completeSessionCreate` selects
  * the new session automatically (so the panel opens straight onto it),
  * installs the mode-gated welcome reasoning-effort hand-off, and closes the
- * modal, all in one store transition.
+ * sheet, all in one store transition.
  *
  * Form invariants mirror the IPC schema discriminated union:
  *   - mode + permission are immutable session axes
@@ -12,7 +15,7 @@
  *
  * Presentational pieces (option catalogues, the `deriveSessionName` seed
  * helper, the `RadioCard`, and the form sections) live under
- * `./SessionCreator/` so this module keeps only the dialog shell + state
+ * `./SessionCreator/` so this module keeps only the sheet shell + state
  * ownership.
  */
 
@@ -24,16 +27,8 @@ import {
   type SessionPermission,
 } from "@shared/schemas/sessions.js";
 import { Button } from "../../components/ui/button.js";
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPinnedSlot,
-  DialogTitle,
-} from "../../components/ui/dialog.js";
+import { DialogDescription, DialogTitle } from "../../components/ui/dialog.js";
+import { Sheet, SheetBody, SheetContent } from "../../components/ui/sheet.js";
 import { useLiveAnnouncer } from "../../components/ui/live-region.js";
 import { SubmitError } from "../../components/ui/submit-error.js";
 import { useCreateSession } from "../../lib/api/sessions.js";
@@ -47,6 +42,10 @@ import {
   PermissionFieldset,
   WalletFieldset,
 } from "./SessionCreator/FormSections.js";
+
+/** The foot's word while Mission is preselected: true from every door that sets the tab. */
+const MISSION_PRESELECTED_NOTE =
+  "The sidebar is on Missions, so Mission is preselected.";
 
 interface SessionCreatorProps {
   readonly open: boolean;
@@ -146,7 +145,7 @@ export function SessionCreator({
     setSelectedEvmWalletId((current) => current ?? primaryEvmWalletId);
   }, [open, lighter, primaryEvmWalletId]);
 
-  // Focus the Name input first when the dialog opens — it is the only
+  // Focus the Name input first when the dialog opens - it is the only
   // text field in this modal. Mission goal capture happens in chat.
   useEffect(() => {
     if (!open) return;
@@ -180,7 +179,7 @@ export function SessionCreator({
       // in flight, one-shot glint on success (the glint's animationend
       // returns the state to idle). The try/catch exists only so an
       // unexpected mutateAsync throw can never leave the stroke looping
-      // forever — IPC normally resolves with a Result, never throws.
+      // forever - IPC normally resolves with a Result, never throws.
       setSigningState("signing");
       try {
         const outcome = await createMutation.mutateAsync(input);
@@ -193,11 +192,11 @@ export function SessionCreator({
         setSigningState("signed");
         // Single atomic transition (E3/v2): install the MODE-GATED reasoning
         // effort into the hand-off turn, close the modal, and activate the
-        // new session — the new composer's hand-off effect picks up the
+        // new session - the new composer's hand-off effect picks up the
         // (already gated) turn on mount. Mission sessions never carry a
         // reasoning pick: the welcome composer captures it mode-agnostically
         // (Send is pressed before Mode is even chosen here), so this is
-        // where it gets stripped — main/ipc/chat.ts's own mission strip
+        // where it gets stripped - main/ipc/chat.ts's own mission strip
         // stays defense-in-depth, not the only gate.
         const initialReasoningEffort =
           mode === "mission"
@@ -225,83 +224,123 @@ export function SessionCreator({
     ],
   );
 
+  // The sheet covers the centre column under the title bar. A new identity per
+  // opening makes the sheet re-pin to the column as it stands NOW (a sidebar
+  // may have opened or folded since the shell mounted).
+  const anchor = useCallback((): Element | null => centreColumn(), [open]);
+
+  // The form opens on Mission when the sidebar is on its Mission tab. The
+  // store does not say which door set it (the Missions nav row, the welcome's
+  // "Create a mission" and the search's Mission tab all do), so the foot names
+  // only what is known, the sidebar, and says so while Mission is the chosen
+  // mode.
+  const preselectedFromMissionsTab =
+    !lighter && sessionModeFilter === "mission" && mode === "mission";
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
-       * is the Dialog base since the rebrand — only width is per-modal. */}
-      <DialogContent className="max-w-2xl">
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        anchor={anchor}
+        nudgeHint="Create this session or cancel it first · Esc cancels"
+      >
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="gap-2.5 border-line-2 px-8 py-5">
-            {/* The stamp becomes the landing eyebrow (mono micro-label +
-             * leading rule). Same <h2>, same aria-labelledby id — only the
-             * register changes; text stays "New session" (uppercased by
-             * CSS) so the accessible name is untouched. */}
-            <DialogTitle className="vex-eyebrow">New session</DialogTitle>
-            {/* Ceremony line — the retired welcome headline promoted to the
-             * display register (landing .prob-card h3: Archivo 700 19px),
-             * read once per new act (where ceremony belongs). */}
-            <p className="font-display text-[19px] font-bold leading-tight tracking-[-0.02em] text-ink-primary">
-              Your chain. Your rules. I execute.
-            </p>
-            <DialogDescription className="text-xs text-ink-tertiary">
-              Mode and permission are locked once the session is created.
-            </DialogDescription>
-          </DialogHeader>
+          <SheetBody className="gap-0">
+            <div className="mx-auto w-full max-w-[720px] pt-[34px]">
+              {/* The panel title: sans 22 / 500 (section 1.3); the line under
+               * it is the ceremony line, then the lock note. */}
+              <DialogTitle className="m-0 text-[22px] leading-[1.3]">
+                New session
+              </DialogTitle>
+              <p className="m-0 mt-1.5 text-[14.5px] leading-[1.45] text-ink-secondary">
+                Your chain. Your rules. I execute.
+              </p>
+              <DialogDescription className="m-0 mt-1 text-[12.5px] leading-[1.45] text-ink-tertiary">
+                Mode and permission are locked once the session is created.
+              </DialogDescription>
 
-          <DialogBody className="gap-6 px-8">
-            <NameField name={name} onNameChange={setName} nameRef={nameRef} />
+              <div className="mt-[22px]">
+                <NameField name={name} onNameChange={setName} nameRef={nameRef} />
+              </div>
 
-            {lighter ? null : <ModeFieldset mode={mode} onModeChange={setMode} />}
+              {lighter ? null : (
+                <div className="mt-[22px]">
+                  <ModeFieldset mode={mode} onModeChange={setMode} />
+                </div>
+              )}
 
-            <PermissionFieldset
-              permission={permission}
-              onPermissionChange={setPermission}
-            />
+              <div className="mt-[22px]">
+                <PermissionFieldset
+                  permission={permission}
+                  onPermissionChange={setPermission}
+                />
+              </div>
 
-            <WalletFieldset
-              selectedEvmWalletId={selectedEvmWalletId}
-              selectedSolanaWalletId={selectedSolanaWalletId}
-              evmOptions={inventory.evm}
-              solanaOptions={inventory.solana}
-              onEvmChange={(id) => {
-                evmChosen.current = true;
-                setSelectedEvmWalletId(id);
-              }}
-              onSolanaChange={setSelectedSolanaWalletId}
-            />
-          </DialogBody>
+              <div className="mt-[22px]">
+                <WalletFieldset
+                  selectedEvmWalletId={selectedEvmWalletId}
+                  selectedSolanaWalletId={selectedSolanaWalletId}
+                  evmOptions={inventory.evm}
+                  solanaOptions={inventory.solana}
+                  onEvmChange={(id) => {
+                    evmChosen.current = true;
+                    setSelectedEvmWalletId(id);
+                  }}
+                  onSolanaChange={setSelectedSolanaWalletId}
+                />
+              </div>
 
-          {liveRegion}
+              {liveRegion}
 
-          {/* PINNED, beside the button that produced it: this form is taller
-            * than the dialog, so a refusal rendered as the body's last child
-            * was painted below the fold under a Create button that had not
-            * moved. */}
-          {submitError !== null ? (
-            <DialogPinnedSlot className="px-8">
-              <SubmitError submitError={submitError} />
-            </DialogPinnedSlot>
-          ) : null}
-
-          <DialogFooter className="border-line-2 px-8 py-4">
-            <Button
-              type="button"
-              variant="bare"
-              onClick={() => onOpenChange(false)}
-              disabled={createMutation.isPending}
-              className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
-            >
-              Cancel
-            </Button>
-            {/* THE primary action — the landing's filled cobalt pill
-             * (Button default variant: mono uppercase, bg-primary), one
-             * step heavier than Cancel (h-10 vs h-9). */}
-            <Button type="submit" disabled={submitDisabled} className="h-10 px-6">
-              {createMutation.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
+              {/* The foot follows the fields; when the form is taller than the
+               * column it sticks to the bottom of the scroll, so Create and a
+               * refusal stay in view beside the key that produced them. */}
+              <div className="sticky bottom-0 mt-[26px] bg-surface-base">
+                {submitError !== null ? (
+                  <div className="pb-4">
+                    <SubmitError submitError={submitError} />
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2.5 border-t border-rule-quiet pb-6 pt-4">
+                  <span className="min-w-0 text-[12.5px] leading-[1.45] text-ink-tertiary">
+                    {preselectedFromMissionsTab ? MISSION_PRESELECTED_NOTE : null}
+                  </span>
+                  <span className="flex-1" />
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    onClick={() => onOpenChange(false)}
+                    disabled={createMutation.isPending}
+                    data-vex-sheet-cancel=""
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={submitDisabled}>
+                    {createMutation.isPending ? "Creating…" : "Create"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </SheetBody>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/**
+ * The box the sheet covers: the centre column under the title bar (section
+ * 12), which is the body wrapper that follows the head in every mode. The
+ * chat's own surface and the column under the head are the fallbacks; with
+ * none of them (a test render) the sheet covers the element it is mounted in.
+ */
+function centreColumn(): Element | null {
+  return (
+    document.querySelector(
+      '[data-vex-area="shell-frame"] .vex-shell-centre > .min-h-0.flex-1',
+    ) ??
+    document.querySelector('[data-vex-session-surface="shell"]') ??
+    document.querySelector('[data-vex-area="shell-status-strip"]')
+      ?.nextElementSibling ??
+    null
   );
 }

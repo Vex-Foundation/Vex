@@ -1,23 +1,24 @@
 /**
- * Per-family wallet picker for the New-session modal (extracted from
- * `SessionCreator.tsx` to keep that file under the size budget). Optional
- * per-family wallet scope; "None" = chat-only for that chain.
+ * Per-family wallet picker for the new-session form and the Studio project
+ * dialogs (docs/design/R3-MINIMAL.md section 12). Optional per-family wallet
+ * scope; "None" = chat-only for that chain.
  *
- * Uses the dark-themed {@link SelectMenu} primitive instead of a native
- * <select> so the option list is readable on the dark modal (native option
- * lists render with the unthemed OS/white chrome).
+ * Draws the {@link SelectMenu} field (the R3 field, so the option list takes
+ * the room's own paper) with the chain's short word ("EVM", "SOL", 12.5 muted)
+ * seated at the left inside the field, over the field's own left padding. A
+ * chain mark may still be passed in `icon` and then sits before the word.
  *
- * The visible header is the chain mark (a {@link ReactNode} the caller
- * supplies) plus a terse mono caption; the full accessible name ("EVM
- * wallet" / "Solana wallet") stays intact via an sr-only span the menu is
- * labelled by. `placement="top"` is fixed because both wallet selects sit
- * at the modal's bottom — opening upward keeps the panel inside the
- * DialogBody scroll box instead of surfacing a scrollbar.
+ * The full accessible name ("EVM wallet" / "Solana wallet") stays intact via
+ * an sr-only span the menu is labelled by; the caption and mark are
+ * decorative. `placement="top"` is fixed because both wallet selects sit at
+ * the form's bottom: opening upward keeps the panel inside the scroll box
+ * instead of surfacing a scrollbar.
  */
 
 import type { JSX, ReactNode } from "react";
 import { useId, useMemo } from "react";
 import { SelectMenu, type SelectMenuOption } from "../../components/ui/select-menu.js";
+import { cn } from "../../lib/utils.js";
 
 export interface WalletSelectOption {
   readonly id: string;
@@ -39,10 +40,10 @@ export function WalletSelect({
 }: {
   /** Full accessible name, kept sr-only (e.g. "EVM wallet"). */
   readonly label: string;
-  /** Terse visible mono caption beside the mark (e.g. "EVM"). */
+  /** Terse visible caption seated in the field (e.g. "EVM"). */
   readonly caption: string;
-  /** Chain mark shown in place of the old text label. */
-  readonly icon: ReactNode;
+  /** Optional chain mark drawn before the caption. */
+  readonly icon?: ReactNode;
   readonly value: string | null;
   readonly options: ReadonlyArray<WalletSelectOption>;
   readonly onChange: (id: string | null) => void;
@@ -62,17 +63,18 @@ export function WalletSelect({
   );
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="relative">
       {/* Accessible name lives here (sr-only); the mark + caption below are
        * decorative and hidden from assistive tech. */}
       <span id={labelId} className="sr-only">
         {label}
       </span>
-      <span aria-hidden className="flex items-center gap-1.5">
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center gap-1.5 text-[12.5px] text-ink-tertiary"
+      >
         {icon}
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-tertiary">
-          {caption}
-        </span>
+        {caption}
       </span>
       <SelectMenu
         value={value ?? ""}
@@ -80,6 +82,8 @@ export function WalletSelect({
         onChange={(next) => onChange(next === "" ? null : next)}
         ariaLabelledBy={labelId}
         placement="top"
+        // Room for the caption inside the field: 12 + the word + 10.
+        className={cn(icon === undefined ? "pl-[52px]" : "pl-[72px]", "h-10")}
       />
     </div>
   );

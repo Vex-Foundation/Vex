@@ -1,227 +1,199 @@
-# Board card measurement matrix
+# Board tile measurement matrix (R3 Minimal)
 
-Measured, not estimated. Every number below came out of a real Chromium at
-device pixel ratio 1 against the real production stylesheet, through the
-harness at `src/renderer/dev/board-layout/` (`e2e/board-layout.spec.ts` drives
-the same page). Regenerate by running that spec: it re-measures and asserts.
+This document is the derivation behind `global-css/board-layout.css` and
+`boardCardValueBudget.ts`. It describes the R3 Minimal tile
+(`docs/design/R3-MINIMAL.md` section 9.4). **The V10 card numbers (the 502px
+wide floor, the 358px compact floor, the two modes, the sparkline slots and
+the 16px gap ladder) are SUPERSEDED**; they are kept in short form in section
+8 so a reader of an old commit can follow the history.
 
-Units are CSS pixels, `Math.ceil` of the natural (un-clamped, `white-space:
-nowrap`) border-box width of the element.
+## 0. How these numbers were obtained, and what to trust
 
-Method: each element is cloned out of its card into an absolutely positioned
-off-flow copy with `width:auto; max-width:none; overflow:visible;
-text-overflow:clip; white-space:nowrap`, so the number is what the element
-WANTS, not what its parent currently allows.
+The advances below are COMPUTED from the shipped font files, not read off a
+rendered page: `public/fonts/instrument-sans-latin-var.woff2` and
+`jetbrains-mono-latin-wght.woff2`, converted to TTF with fontTools and shaped
+with FreeType and Raqm (GPOS kerning applied) at the tile's sizes, with the
+variable weight axis set to the weight the tile paints. JetBrains Mono advances
+0.6em at every weight, so a mono figure is `0.6 x size` plus the tracking
+(`.vex-num` is -.01em; the price is -.03em). They agree with a browser to
+within about a pixel, and every floor below keeps the rounding on the safe
+side (it is a `ceil`).
 
-## 1. Realistic compact output
+**ONE KNOWN EXCEPTION: WHOLE-PIXEL ADVANCES.** The computed advances are
+fractional (JetBrains Mono 26 advances 15.6). Chromium on Linux without
+subpixel text positioning, which is what the headless harness runs, rounds each
+glyph advance to a whole pixel (15.6 becomes 16, 7.8 becomes 8), and a row of
+twelve rounded glyphs is wider than twelve fractional ones. The price
+`$0.000001230` measured 183px there against the computed 177.84, and the price
+row 287 against 279.71. That is why the inner floor in section 4 is 288 and not
+the header's 282: the floor has to hold at the widest advances an engine
+really produces, not only at the ones the font file promises.
 
-Six pools whose figures are real DexScreener shapes: a five-figure price, a
-sub-cent price with eight leading zeros, hundreds-of-thousands and
-tens-of-millions liquidity, a billions volume, six-digit trade tallies, and
-ages from five minutes to three years. The fixtures live in
-`src/renderer/dev/board-layout/harness.tsx` (`REALISTIC_ROWS`).
+The Chromium harness (`src/renderer/dev/board-layout/`, driven by
+`e2e/board-layout.spec.ts`) is the ARBITER. It re-measures the natural width
+of each region in a real engine, and if it disagrees with this document the
+harness is right and this document and the CSS move together.
 
-| Region | data-vex-area | Widest realistic | Producing row |
-| --- | --- | --- | --- |
-| Token name | `board-token-name` | 174 | Aerodrome Finance |
-| Ticker | `board-token-ticker` | 41 | DEGEN |
-| Hero price | `board-token-price` | 198 | `$0.000001230` (PEPE) |
-| Signed delta | `board-token-delta` | 76 | `+661.00%` |
-| Delta window | `board-token-delta-window` | 22 | `24h` |
-| Stat label `Liquidity` | `dt` | 45 | fixed copy |
-| Stat label `24h Volume` | `dt` | 66 | fixed copy (widest label) |
-| Stat label `Trades` | `dt` | 38 | fixed copy |
-| Stat label `Pair age` | `dt` | 45 | fixed copy |
-| Stat value, Liquidity | `dd` | 62 | `$495.6K` |
-| Stat value, 24h Volume | `dd` | 63 | `$998.8K` |
-| Stat value, Trades | `dd` | 54 | `900.0K` |
-| Stat value, Pair age | `dd` | 49 | `1095d` |
-| Token photo | `board-token-photo` | 64 | fixed |
-| Spotlight button | `board-card-spotlight` | 125 | fixed copy, V10 |
-| DexScreener link | `board-token-dexscreener-link` | 126 | fixed copy, V10 |
-| Ask VEX button | `board-card-ask` | 104 | fixed copy, V10 |
+Units are CSS pixels. A tile is `box-sizing: border-box`: padding 16 18 14, a
+1px quiet rule on its right and bottom edge. The grid carries a 1px quiet rule
+on its top and left edge and has no gap. So a tile's inner width is
+`card - 36 - 1`.
 
-The three action rows are measured in the V10 type (Departure Mono 11px caps,
-0.14em tracking, a 16px pixel icon). They were 96, 100 and 88 in the type
-before it, and the difference is what moved the header and the footer in
-sections 4 and 4b.
+## 1. Realistic output
+
+The same six pools as before (a five-figure price, a sub-cent price with eight
+leading zeros, hundreds-of-thousands and tens-of-millions liquidity, a billions
+volume, six-digit trade tallies, ages from five minutes to three years), plus
+the widest ticker line a real board can print.
+
+| Region | data-vex-area | Type | Widest realistic | Producing value |
+| --- | --- | --- | --- | --- |
+| Token name | `board-token-name` | sans 15 / 600 | 140 | Aerodrome Finance (ellipsis allowed) |
+| Ticker line | `board-token-meta` | sans 12.5 | 120 | `BITCOIN` + ` · ` + `Robinhood` = 119.04 |
+| Price | `board-token-price` | mono 26 / 500, -.03em | 177.84 (183 at whole-pixel advances) | `$0.000001230`, 12 x 14.82 (12 x 15.22 rounded) |
+| Signed delta | `board-token-delta` | mono 13, -.01em | 61.36 | `+661.00%`, 8 x 7.67 |
+| Delta window | `board-token-delta-window` | sans 12 | 20.51 | `24h` |
+| Stat label | `dt` | sans 11.5 | 62.85 | `24h Volume` (widest label) |
+| Stat label | `dt` | sans 11.5 | 45.81 / 35.28 / 42.31 | `Liquidity` / `Trades` / `Pair age` |
+| Stat value | `dd` | mono 13, -.01em | 61.36 | `$1234.5B` (8 characters); `$998.8K` is 53.69 |
+| Token photo | `board-token-photo` | box | 34 | fixed, 1px rule inside the 34 |
+| Disclosure key | `board-token-full-value` | box | 26 | fixed |
+| Spotlight chip | `board-card-spotlight` | sans 12.5 + 2 x 9 + 2 | 73 / 74 pressed | `Spotlight` 52.70 / 53.81 at 500 |
+| DexScreener link | `board-token-dexscreener-link` | sans 13 / 500 + 5 + 14 | 97.63 | `DexScreener` 78.63 + glyph |
+| Ask Vex link | `board-card-ask` | sans 13 / 500 + 14 + 5 | 67.02 | `Ask Vex` 48.02 + glyph |
 
 ## 2. Every safety chip label
 
-Measured in the chip's own type (`Pill` size `lg`, with its leading glyph and
-padding). The labels are the frozen table in
-`src/shared/board/safety-classifier.ts` plus `BOARD_NEW_PAIR_LABEL`. All of
-them are reachable in normal service, so none of them is an "extreme".
+The chip is the kit's compact chip painted as a swatch plus the word in 12.5
+muted: a 10px swatch, a 6px gap, the word in sans 12.5 regular. The labels are
+the frozen table in `src/shared/board/safety-classifier.ts` plus
+`BOARD_NEW_PAIR_LABEL`. All of them are reachable in normal service, so none of
+them is an "extreme".
 
-| Label | Width |
-| --- | --- |
-| `Checks unavailable in this response` | 242 |
-| `Not indexed by the checks provider` | 239 |
-| `Checks describe another token` | 215 |
-| `Checks out of date` | 147 |
-| `Sources disagree` | 139 |
-| `Partial checks` | 120 |
-| `Clean checks` | 118 |
-| `Unverified` | 100 |
-| `Checking` | 95 |
-| `New pair` | 92 |
-| `High risk` | 90 |
+| Label | Word | With swatch |
+| --- | --- | --- |
+| `Checks unavailable in this response` | 201.93 | 217.93 |
+| `Not indexed by the checks provider` | 201.01 | 217.01 |
+| `Checks describe another token` | 178.03 | 194.03 |
+| `Checks out of date` | 107.05 | 123.05 |
+| `Sources disagree` | 98.30 | 114.30 |
+| `Partial checks` | 79.45 | 95.45 |
+| `Clean checks` | 76.19 | 92.19 |
+| `Unverified` | 59.14 | 75.14 |
+| `Checking` | 55.16 | 71.16 |
+| `New pair` | 50.17 | 66.17 |
+| `High risk` | 49.91 | 65.91 |
 
-In the V10 compact chip (Departure Mono 11px caps at 0.12em, a 9px swatch
-and a 7px gap) a label is 16px plus 8.32px per character, so the order above
-holds and the widest is 308.
-
-**308 is the number the footer has to survive.** It is not a schema extreme:
-a transport blip on the details channel produces it on every card at once.
+**218 is the number the footer has to survive.** It is not a schema extreme: a
+transport blip on the details channel produces it on every tile at once. It
+fits a row of the 288px floor with 70px to spare, so the checks word is ALWAYS
+a row of its own and never wraps.
 
 ## 3. Schema-reachable extremes
 
 `BOARD_DECIMAL_MAX_CHARS = 40` and `BOARD_TOKEN_LABEL_MAX_CHARS = 512`
 (`src/lib/board/spec.ts`). A 40-character decimal renders as a 38-character
-hero price; a 512-character symbol renders as a 512-character ticker. Neither
-fits any card at any width the modal can reach, which is what the full-value
-disclosure exists for: the cut becomes recoverable rather than silent.
+price; a 512-character symbol renders as a 512-character ticker. Neither fits
+any tile at any width the page can reach, which is what the full-value
+disclosure and the budgets of section 7 exist for: the cut becomes reported and
+recoverable rather than silent.
 
-## 4. Derived region floors
+## 4. The tile floor, derived
 
-Card padding is `px-5` (40 total). Inner width = card width - 40.
+Three constraints each ask for an inner width; the widest is the floor.
 
-| Region | Composition | Inner floor |
+| Constraint | Composition | Inner |
 | --- | --- | --- |
-| Stat block, 4 equal columns | `4 x max(label,value) + 3 x 12` gap, binding column is `24h Volume` at 66 | 300 |
-| Stat block, 2x2 | `2 x 66 + 12` | 144 |
-| Price row, no sparkline | `198 + 10 + 76 + 10 + 22` | 316 |
-| Price row, sparkline at `w-[30%]` | `316 + 12 <= 0.7 x inner` | 469 |
-| Footer, one row | `308 chip + 12 + (126 + 8 + 104)` | 558 |
-| Footer, stacked | `max(308, 238)` | 308 |
+| Price row, fractional advances | `177.84 + 10 + 61.36 + 10 + 20.51 = 279.71` | 280 |
+| Price row, whole-pixel advances (measured) | `182.64 + 10 + 62.96 + 10 + 21.5 = 287.1`, the row measures 287 | **288** |
+| Four stats in a row | `4 x 63 + 3 x 6 gap` (the widest label, `24h Volume`, is 62.85) | 270 |
+| Header | `34 photo + 11 + 120 identity + 11 + (26 key + 6 + 74 chip)` | 282 |
+| Checks word | `201.93 + 6 + 10` | 218 |
+| Links row | `97.63 + 12 + 67.02` | 176.65 |
 
-## 4b. Per-mode floors, as built
+The price row binds at the advances a real engine paints: **inner floor 288**
+(287 measured, rounded up to the next whole pixel). The tile adds 36 of padding
+and 1 of right rule: **tile floor 325px** (288 + 36 + 1). The four stats always
+fit one row at the floor (270 of 288), so the V10 2x2 fallback and the wide and
+compact modes are retired along with `--vex-board-mode`. The identity column at
+the floor is `288 - 162 = 126`; the widest realistic ticker line (`BITCOIN` and
+`Robinhood`) is 119.04 and fits whole with about 7px to spare, and a wider pair
+concedes in the chain name, which ellipsizes and is whole in its `title` and in
+the disclosure.
 
-Two grid-wide modes. The mode is chosen by CARD width; the column count is
-chosen by CONTAINER width; both live in `global-css/board-layout.css` and
-nowhere else.
+Fixed heights come from fixed line heights, not from a measurement of content:
+header 34 (name 18 + ticker line 16 = the photo's 34), price row 32 with a
+margin of 14 above and 12 below, stats `1 + 9 + 16 + 18 = 44`, footer
+`12 + 20 + 8 + 18 = 58`, padding `16 + 14`, bottom rule 1. That is about 225px a
+tile, computed from the line heights; the harness confirms it. Every tile of a
+row is the same box (`h-full w-full`), the name is one line, and the footer is
+pinned with `margin-top: auto`.
 
-**WIDE** keeps the anatomy the mockup fixes: the sparkline sits in the price
-row beside the figures, the stat `dl` is four equal columns, and the header's
-two actions share one row. The footer STACKS here too: one row needs 558,
-past the wide floor's 460, so with the widest verdict a one-row footer cut
-Ask VEX off the card. The inline sparkline is a fixed `132px` rather than `w-[30%]`, so the
-price row's budget cannot shrink faster than the card does.
-
-| Wide constraint | Composition | Inner |
-| --- | --- | --- |
-| Price row | `316 + 12 gap + 132 sparkline` | **460** |
-| Footer, stacked | `max(308 chip, 126 + 8 + 104 actions)` | 308 |
-| Header, one row | `64 photo + 2 x 16 + (28 + 8 + 125 actions) + 203 identity` | 460 |
-| Stat block, 4 columns | `4 x 66 + 3 x 12` | 300 |
-
-Binding: 460. Plus 40px of `px-5` padding AND the card border's 2px:
-**Wide floor = 460 + 42 = 502px card.**
-
-**COMPACT** adapts rather than deletes: the sparkline leaves the price row for
-its own fixed-height full-width slot below it, the footer stacks (chip row
-above actions row), the stat `dl` goes 2x2, and the header's two actions
-stack (the disclosure above Spotlight, `28 + 8 + 28` = the 64px header).
-
-| Compact constraint | Composition | Inner |
-| --- | --- | --- |
-| Price row, full width | `198 + 10 + 76 + 10 + 22` | **316** |
-| Footer, stacked | `max(308 chip, 126 + 8 + 104 actions)` | 308 |
-| Header, actions stacked | `64 photo + 2 x 16 + 125 Spotlight + 95 identity` | 316 |
-| Stat block, 2x2 | `2 x 66 + 12` | 144 |
-
-Binding: 316. Plus 40px of `px-5` padding AND the card border's 2px:
-**Compact floor = 316 + 42 = 358px card.**
-
-THE BORDER WAS MISSING FROM THE FIRST PASS OF THIS TABLE, and it is not a
-rounding detail. `CARD_CLASS` carries `border`, so a 356px card has 314px of
-inner width, not 316: the hero price got 196px for a string that measures
-197.29, and the one figure the entire ladder is derived from was cut by two
-pixels at every floor on it. The constrained 800px case in
-`e2e/board-layout.spec.ts` is what found it.
-
-Fixed heights per mode, so cards are equal within a mode:
-
-| Block | Wide | Compact |
-| --- | --- | --- |
-| Identity | 64 | 64 |
-| Price row | 44 | 44 |
-| Sparkline | inline, `132 x 44` | own slot, 36 high, 12 margin above |
-| Stat block | 46 | 92 (`2 x 40 + 12` row gap) |
-| Footer | stacked | stacked |
-
-Measured card height, six realistic pools, every card in a grid identical:
-**321 wide, 415 compact** (V10, with the stacked footer).
-
-The mode is declared on the GRID, not on the plate. `@container` styles apply
-to a container's DESCENDANTS and never to the container element itself, so
-mode variables written onto the plate would sit in a block that can never
-match - a defect this document's own verification pass caught after the CSS
-was first written. The grid is the correct owner in any case: it is the one
-element every card shares, which is what makes the mode grid-wide and
-therefore makes the cards equal.
-
-## 4c. The mode ladder
+## 5. The column ladder
 
 `C` is the plate's content box, which is what `container-type: inline-size`
-measures. With `n` columns and a 16px gap, `card = (C - 16(n-1)) / n`.
-
-The rule, in one sentence: **take the most columns (max 3) whose card clears
-the compact floor, then use wide anatomy if that card also clears the wide
-floor.** Nothing else is consulted - not the viewport, not the drawer.
+measures; the plate draws no border and no padding, so it is the grid's width.
+The grid's own 1px left rule is taken once, so with `n` columns
+`card = (C - 1) / n`. The rule, in one sentence: **take the most columns (at
+most 3) whose tile clears 325.**
 
 | Threshold | Derivation | Result |
 | --- | --- | --- |
-| `C >= 1538` | `3 x 502 + 32` | 3 columns, WIDE |
-| `C >= 1106` | `3 x 358 + 32` | 3 columns, COMPACT |
-| `C >= 1020` | `2 x 502 + 16` | 2 columns, WIDE |
-| `C >= 732` | `2 x 358 + 16` | 2 columns, COMPACT |
-| `C >= 502` | `1 x 502` | 1 column, WIDE |
-| `C >= 358` | `1 x 358` | 1 column, COMPACT |
-| `C < 358` | UNDERSIZED | 1 column pinned at 358, the plate side-scrolls |
+| `C >= 976` | `3 x 325 + 1` | 3 columns |
+| `C >= 651` | `2 x 325 + 1` | 2 columns |
+| `C >= 326` | `325 + 1` | 1 column |
+| `C < 326` | UNDERSIZED | 1 column pinned at 326, the plate side-scrolls |
 
-The wide ranges are therefore `[502, 732)` or `[1020, 1106)` or
-`[1538, inf)` - the three windows where the chosen column count happens to
-leave a card 502px wide or better. That is ONE container-query block, not
-three: every mode-dependent value is a custom property set inside it.
-
-The UNDERSIZED regime KEEPS the sparkline slot. Hiding it there was
-permitted and is not needed: the pinned 358px card IS the compact floor, so
-every region still fits and the only thing that changes is that the plate
-scrolls horizontally instead of cutting a figure.
+The track is `minmax(325px, 1fr)` in one column and `minmax(0, 1fr)` in two and
+three; `min-width: 326px` on the grid keeps its top rule as wide as the pinned
+track. Nothing transitions, and nothing reads layout back.
 
 ### What the ladder produces at real widths
 
-`C = dialog - 80` with no drawer (body `px-6`, plate `p-4`), and
-`C = dialog - 440` with it. The dialog is `min(90vw, 1280)`, widened by the
-host to `min(94vw, 1640)` while the drawer is open.
+`C = window - left - Vex (when open) - 56 (page padding, 28 + 28)`. The shell
+solves the three columns by window width (`lib/shell-columns.ts`,
+`docs/design/R3-MINIMAL.md` section 2.1):
 
-| Viewport | Drawer | Dialog | C | Columns | Mode | Card |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1920 | no | 1280 | 1200 | 3 | compact | 389 |
-| 1440 | no | 1280 | 1200 | 3 | compact | 389 |
-| 1366 | no | 1229 | 1149 | 3 | compact | 372 |
-| 1280 | no | 1152 | 1072 | 2 | WIDE | 528 |
-| 1000 | no | 900 | 820 | 2 | compact | 402 |
-| 1920 | yes | 1640 | 1200 | 3 | compact | 389 |
-| 1440 | yes | 1353 | 913 | 2 | compact | 448 |
-| 1366 | yes | 1284 | 844 | 2 | compact | 414 |
-| 1280 | yes | 1203 | 763 | 2 | compact | 373 |
-| 1000 | yes | 940 | 500 | 1 | WIDE | 500 |
-| 800 | no | 752 | 636 | 1 | WIDE | 636 |
-| 800 | yes | 752 | 312 | 1 | compact | 358, side-scrolls |
+| Window | Left sidebar | Vex sidebar (open) |
+| --- | --- | --- |
+| 1360 and up | 264 (`--vex-left-w`) | 256 (`--vex-vex-w`) |
+| 1180 to 1359 | 224 (`--vex-left-w-md`) | 240 (`--vex-vex-w-md`) |
+| under 1180 | the 56 rail while Vex is open, 224 when it is hidden | 224 (`--vex-vex-w-sm`) |
 
-Three columns hold at 1440 with no drawer, which was the requirement; the
-drawer costs a column rather than a figure. The 800px rows are the
-constrained case the Playwright suite runs: one of them is the only regime in
-which the plate side-scrolls, and it is what caught the missing border above.
+Both sidebars draw their 1px quiet rule INSIDE their track, so the rules cost
+no extra width. The harness lays out the same three tracks (an empty left
+track, the centre, the Vex track), so these `C` values are what the e2e matrix
+measures.
 
-## 4d. The full-value disclosure
+| Window | Left | Vex | C | Columns | Tile |
+| --- | --- | --- | --- | --- | --- |
+| 1920 | 264 | hidden | 1600 | 3 | 533 |
+| 1920 | 264 | 256 | 1344 | 3 | 447.67 |
+| 1440 | 264 | hidden | 1120 | 3 | 373 |
+| 1440 | 264 | 256 | 864 | 2 | 431.5 |
+| 1366 | 264 | hidden | 1046 | 3 | 348.33 |
+| 1366 | 264 | 256 | 790 | 2 | 394.5 |
+| 1280 | 224 | hidden | 1000 | 3 | 333 |
+| 1280 | 224 | 240 | 760 | 2 | 379.5 |
+| 1000 | 224 | hidden | 720 | 2 | 359.5 |
+| 1000 | 56 | 224 | 664 | 2 | 331.5 |
+| 800 | 224 | hidden | 520 | 1 | 519 |
+| 800 | 56 | 224 | 464 | 1 | 463 |
+
+Three columns hold at 1440 with the Vex sidebar hidden and two with it open,
+which were the requirements. The centre column never goes under the app's
+640, so `C` is at least 584 and the pinned regime is a floor the app does not
+reach in normal use; it is kept so a narrow constrained container (a future
+panel, the harness) side-scrolls instead of cutting a figure.
+
+## 6. The full-value disclosure
 
 A schema extreme cannot be made to fit and must not be cut in silence, so
-every card carries ONE always-present control in its header - a semantic
-`<button>` next to Spotlight - that opens the whole name, the whole ticker and
-the raw provider decimals for price, liquidity and volume.
+every tile carries ONE always-present control in its header - a semantic
+`<button>`, drawn as a 26 x 26 key with the line info glyph, next to the
+Spotlight chip - that opens the whole name, the whole ticker, the whole chain
+name and the raw provider decimals for price, 24h change, liquidity and
+volume.
 
 Its PRESENCE is **not** conditional on width, because a card always rounds
 something: `formatBoardPriceUsd` truncates every price by design, so the
@@ -231,8 +203,8 @@ What IS conditional is what it SAYS. A control that reads "Show the full
 values" on a card whose price has had its tail removed tells the reader a
 panel exists and does not tell them the figure in front of them is not the
 figure. So when the card printed a shortened copy of a value, the button
-names the cut state in its accessible name, wears the accent treatment the
-card already uses for "this needs your attention", and repeats the statement
+names the cut state in its accessible name, wears the blue edge and the blue glyph the
+board uses for "this needs your attention", and repeats the statement
 visibly at the top of the panel. That is what turns a cut into a REPORTED
 bound.
 
@@ -284,144 +256,110 @@ it belongs to, so focus left behind it would be operating an invisible
 control. Escape closes it and is stopped from propagating, so closing a panel
 never closes the board `<dialog>` listening for the same key.
 
-Its cost to the floors is nothing in wide mode, where it sits in the header
-row and the identity column's flexible middle absorbs it. In compact mode it
-stacks above Spotlight, because beside the V10 Spotlight button it left the
-identity column 59px at the compact floor, under the ticker budget below.
+Its cost to the floor is the 26px key and the 6px gap before the Spotlight
+chip, both inside the header sum of section 4 (the header is the constraint
+that binds the floor). The chain name is in the panel for a reason of its own:
+it is a word on the ticker line, it concedes width there with an ellipsis, and
+nothing the tile may cut is recoverable by hover alone.
 
-## 4e. The content budgets
 
-The floors above are sized against the widest REALISTIC output. The schema
-permits far more (`BOARD_DECIMAL_MAX_CHARS = 40`,
-`BOARD_TOKEN_LABEL_MAX_CHARS = 512`), and such a value used to be rendered
-whole into a `whitespace-nowrap` cell inside an `overflow-hidden` card: the
-reader got a figure with its tail removed and nothing saying so.
+## 7. The content budgets
 
-`boardCardValueBudget.ts` owns the fix. Each budget is the widest realistic
-string for that region, measured in SLOTS - which is exactly the string the
-region's floor was derived from, so a value past it is by construction past
-what the layout was sized for, and it is the value that concedes rather than
-the layout.
+The floor above is sized against the widest REALISTIC output. The schema
+permits far more, and such a value used to be rendered whole into a
+`whitespace-nowrap` cell inside an `overflow-hidden` tile: the reader got a
+figure with its tail removed and nothing saying so.
 
-| Region | Budget | The string it is derived from |
+`boardCardValueBudget.ts` owns the fix. Each budget is a number of SLOTS, and
+each is derived from the region's own column at the floor:
+
+| Region | Budget | Where it comes from |
 | --- | --- | --- |
-| Hero price | 12 | `$0.000001230`, 197.29px in a 198px slot |
-| Signed delta | 8 | `+661.00%`, 76px |
-| Stat value | 11 | wide mode's `(460 - 3 x 12) / 4 = 106px` column |
-| Ticker | 10 | compact identity column, 95px; ten V10 mono cells are 85.4px |
-| Token name | none | keeps its CSS ellipsis by product decision |
+| Price | 12 | `$0.000001230`, 177.84px (183px at whole-pixel advances): the string the 288px price row was derived from |
+| Signed delta | 8 | `+661.00%`, 61.36px |
+| Stat value | 8 | the four-column row leaves `(288 - 3 x 6) / 4 = 67.5px`; `8 x 7.67 = 61.4px` fits, nine (69px) would not |
+| Ticker | 10 | the identity column is 126px; ten slots of 9.1px are at most 91px, leaving 35px for the separator and the chain |
+| Token name | none | keeps its CSS ellipsis by product decision; whole in the `title`, the card's accessible name and the disclosure |
+| Chain name | none | a short catalogue name; concedes to the ticker with an ellipsis, whole in the `title` and the disclosure |
 
-**TWO SURFACES, TWO WIDTH MODELS.** The price, delta and stat values render
-`tabular-nums`, where every digit advances the same width by definition of the
-feature, so a count of clusters IS a width. The TICKER's model was measured
-in its former proportional face, uppercase Inter Tight at 13px, against a slot
-of 8.8px. The V10 ticker is Departure Mono 11px caps at 0.14em, where every
-Latin-1 glyph and the ellipsis is one 8.54px cell, so the table below now
-over-charges `W`, `M` and `%` and under-charges nothing:
+`boardCardValueBudget.test.ts` carries this arithmetic (the last describe), so
+raising a budget past its column fails a test instead of cutting a figure.
 
-| Advance | Glyphs |
+**TWO SURFACES, TWO WIDTH MODELS.** The price, delta and stat values render in
+JetBrains Mono with `tabular-nums`, where every character advances the same
+width by definition, so a count of clusters IS a width and one slot is one
+character. The TICKER is the one proportional surface, in Instrument Sans
+regular at 12.5px (not uppercased, not tracked), where advances run from `I` at
+3.18px to `W` at 13.61px, so it is weighed per glyph against a slot of 9.1px
+(the widest glyph the allowlist admits, `V` and `A`):
+
+| Advance at 12.5px | Glyphs |
 | --- | --- |
-| 11.82 | `W` |
-| 10.84 | `M` |
-| 9.85 | `%` |
-| 8.86 | `C D G H N O Q U` |
-| 7.88 | `A B K P R S T V X Y Z $ + 0 3 4` |
-| 6.90 | `E F L 2 5 6 7 8 9` |
-| 5.91 | `J` |
-| 4.93 | `1 -` |
-| 2.95 | `I . , :` |
+| 13.61 | `W` |
+| 11.32 | `M` |
+| 9.82 to 9.84 | `Q` `%` `O` |
+| 9.20 to 9.56 | `G` `D` `C` `H` `N` |
+| 9.10 | `A` `V` (the slot) |
+| 8.20 to 8.90 | `U` `K` `X` `Y` `0` `P` `R` |
+| 7.30 to 8.10 | `T` `E` `B` `Z` `9` `S` `$` `F` `4` `6` `L` `8` |
+| 6.30 to 7.20 | `3` `5` `2` `7` `+` `-` |
+| 5.69 | `J` |
+| 4.89 | `1` |
+| 3.18 | `I` `.` `,` `:` |
 
 Anything past a slot is charged two, and the class is an ALLOWLIST of the
-glyphs measured inside one - so a character nobody measured, and the schema
-admits all of Latin-1, is charged the wide weight rather than assumed
-innocent. Classification uppercases first, because the element does.
+glyphs measured inside one (`U`, at 8.90, is left out on purpose: charging it
+two is the safe direction and the budget tests pin the table). A character
+nobody measured, and the schema admits all of Latin-1, is charged the wide
+weight rather than assumed innocent. Classification uppercases first: the tile
+no longer forces capitals, but a lowercase glyph weighed as its capital is
+never narrower than what renders (the widest lowercase among the one-slot
+capitals is 7.6px), and `m` (11.5px) and `w` (9.6px) land in the two-slot class
+as `M` and `W`.
 
 **One slot is one narrow character of that region's own type**, and the unit
-matters because `String.length` is not it. Three corrections came out of that:
+matters because `String.length` is not it. Three corrections stand:
 
-- **The ellipsis costs TWO slots.** The financial regions render
-  `tabular-nums` where every digit is one width, but `…` is not a digit: in
-  the display face at the hero's 28px it measures about 30px against a
-  digit's 16.44. A value shortened to exactly the budget in characters still
-  overflowed by nine pixels, which the extreme case at the compact floor
-  caught.
+- **The ellipsis costs TWO slots.** In the tile's mono it is one cell (7.67px),
+  so two slots over-charge it; that is the safe direction and the cut value
+  always has room for its mark.
 - **A wide code point costs TWO slots, and the cut is grapheme-safe.**
-  `baseTokenSymbol` is `z.string().min(1).max(512)`: 512 UTF-16 CODE UNITS of
-  any Unicode, and the ticker is not `tabular-nums`. A ten-character CJK
-  ticker was ten `String.length`, sat under a ten-character budget, and
-  rendered 130px into an 88px column with `shortened` reported as false -
-  silent loss from the module written to prevent it. And `String.slice` cuts
-  code units, so a cut between a surrogate pair emitted a LONE SURROGATE (an
-  ill-formed string on its way to the jsonb boundary) while a cut inside a ZWJ
-  sequence rendered a different token than the provider sent.
-
-- **A wide LATIN glyph costs two slots on the proportional surface.** The
-  correction above was not enough, because it only caught non-Latin-1. Plain
-  ASCII `WWWWWWWW` is eight characters, cost eight of ten slots, and rendered
-  94.56px inside the 88px identity column - clipped, with `shortened` false
-  and a neutral affordance. Latin-1 and short, and it overflowed anyway. The
-  table above is what replaced the assumption; the browser case at the compact
-  floor is what would have caught it.
-
-  The model, owned in that module's head note: segment into grapheme clusters
-  with `Intl.Segmenter`, then charge a cluster ONE slot when every code point
-  in it is U+0000-U+00FF and TWO otherwise. It over-charges a Greek letter or
-  a combining mark, which is the right direction to be wrong in -
-  over-charging shortens early AND SAYS SO; under-charging overflows in
-  silence.
+  `baseTokenSymbol` is `z.string().min(1).max(512)`: 512 UTF-16 code units of
+  any Unicode. `String.slice` cuts code units, so a cut between a surrogate
+  pair emitted a LONE SURROGATE (an ill-formed string on its way to the jsonb
+  boundary) and a cut inside a ZWJ sequence rendered a different token than the
+  provider sent. A value is segmented into grapheme clusters with
+  `Intl.Segmenter` before anything is measured or removed.
+- **A wide LATIN glyph costs two slots on the proportional surface.** Plain
+  ASCII `WWWWWWWW` is eight characters and renders 107px against the 91px a
+  ten-slot ticker may take; a count let it through with `shortened` false.
 
 A budget is a property of the DATA, decided before layout exists. It owns no
-threshold: it does not pick a column count, a mode or a floor, and no
-JavaScript reads a width back. The overflow assertions in
-`e2e/board-layout.spec.ts` run over the SCHEMA-EXTREME board AND a WIDE-GLYPH
-board (CJK, emoji ZWJ sequences, combining marks) at the compact floor, and
-fail if any financial, stat, badge or action region scrolls. That is what
-proves the budgets hold.
+threshold: it does not pick a column count or a floor, and no JavaScript reads
+a width back. The overflow assertions in `e2e/board-layout.spec.ts` run over
+the SCHEMA-EXTREME board AND a WIDE-GLYPH board (CJK, emoji ZWJ sequences,
+combining marks) at the tile floor, and fail if any financial, stat, badge or
+action region scrolls. That is what proves the budgets hold.
 
-## 5. What the matrix proves about the CURRENT card
+## 8. Superseded: the V10 card
 
-Three defects, all reproduced by `e2e/board-layout.spec.ts` before any fix:
+For the history of the old numbers only. None of this is implemented any more.
 
-1. **The hero price row already wraps and is clipped, with no drawer and no
-   narrow window.** At a 1920px viewport the price row's inner flex box
-   measures `scrollHeight` 56 inside its `h-[44px]` parent on three of the six
-   realistic rows (WBTC, PEPE, TOSHI). The delta and its `24h` window wrap
-   onto a second line that the fixed height does not have room for. The
-   binding constraint is the `w-[30%]` sparkline: the row needs 469px of inner
-   width to hold realistic figures beside it, and a three-column grid at 1440
-   gives 349.
-
-2. **Cards in one grid are not the same width.** `<li className="flex
-   min-w-0">` wraps an `<article>` with no `w-full`, so each card shrinks to
-   its own content inside its column: 382 / 369 / 406 / 345 / 407 / 342 at a
-   1440px viewport where every grid track is 388.
-
-3. **Columns follow the viewport while the drawer shrinks the container.** At
-   1440 with the drawer open the grid still asks for three tracks and each one
-   measures 268px, below the 300 the stat block needs and far below the 316
-   the price row needs. `24h Volume` and every chip label ellipsize.
-
-## 6. The question this matrix raised, and how it was settled
-
-With the anatomy the mockup fixes and a `w-[30%]` sparkline, a card needed
-**509px** to render realistic figures with nothing cut. The modal's plate is
-1200px, which is two cards of 592 - never three. Three columns would have
-needed a window past 1820px.
-
-The owner's answer was that the board must be RESPONSIVE at every width, with
-no data loss and no empty-looking two-column board on a typical monitor. That
-is what sections 4b and 4c implement: the anatomy ADAPTS rather than the data
-being cut or a column being surrendered. The sparkline moves to its own slot,
-the footer stacks and the stat block goes 2x2, which drops the floor from 509
-to 358 and lets 1440 keep three columns.
-
-Rejected on the way there, and why:
-
-- **Two columns at 1440.** Wastes the owner's own screen for a constraint the
-  anatomy can absorb instead.
-- **Deleting the sparkline below a width.** Data loss, and the mockup fixes
-  that sparkline as part of the card.
-- **Shrinking the hero price type.** Financial display; rule 08 does not let
-  a layout constraint decide how legible a price is.
-- **Raising the dialog cap past 1280px.** Moves the problem to the next
-  window size instead of solving it, and widens a surface the owner sized.
+- The V10 card was `px-5` (40 of padding) with a 1px border on every edge and a
+  16px gap between cards, and set its figures in Departure Mono caps. The price
+  row `$0.000001230 +661.00% 24h` measured 316; the stat block, the header and a
+  stacked footer gave a COMPACT floor of 358px and, with a 132px sparkline in
+  the price row, a WIDE floor of 502px.
+- Two grid-wide modes (`--vex-board-mode: wide | compact`) chose the anatomy
+  (sparkline inline or in its own slot, stats 4 across or 2x2, header actions in
+  a row or stacked). The ladder was `C >= 1538` 3 wide, `C >= 1106` 3 compact,
+  `C >= 1020` 2 wide, `C >= 732` 2 compact, `C >= 502` 1 wide, `C >= 358` 1
+  compact, below that pinned at 358.
+- Its measured defects (the price row wrapping out of a 44px row at 1920px,
+  cards of unequal width, columns following the viewport while the drawer
+  shrank the container, the card's own border missing from the first floor)
+  are the reasons the container-query ladder, the `h-full w-full` tile and the
+  border term in `card = inner + padding + border` exist; they stay fixed in the
+  R3 tile and are covered by the harness spec.
+- The sparkline (`BoardSparkline`, `board-sparkline-source`) was deleted with
+  the R3 tile: the spotlight carries the chart.

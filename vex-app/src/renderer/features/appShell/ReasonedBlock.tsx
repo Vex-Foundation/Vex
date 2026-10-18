@@ -21,24 +21,25 @@
  * line of the trace beside the stamp: the LATEST non-blank line while the
  * block is the streaming tail, reverting to the FIRST line once settled. While
  * following, that one-line scrollport is pinned to its inline end through the
- * shared 3-frame visual throttle, and the row leads with the ongoing swatch
+ * shared 3-frame visual throttle, and the row leads with the thinking fill
  * (status by fill; `data-vex-sweep` stays the running seam). This is
  * live throughput WITHOUT exposing the chain of thought; expanding drops the
  * moving summary entirely so page reading never fights an internal follower.
  *
- * REGISTER (V10, docs/design/V10-SPREAD.md section 1). The STAMP is a label:
- * 11px Departure Mono caps on the second ink beside the existing chevron. The
- * word stays "Reasoned"; only the face changed. The BODY is
- * `.vex-reasoning-prose` (Instrument Sans 14px, the second ink) - thinking
- * aloud is still not speaking, but the distance is carried by tone and size
- * rather than by a serif italic that cost legibility at paragraph length. The live island stream and the settled in-turn stamps wear
- * the identical class, so one trace looks the same streaming, folded, and
- * reopened a week later.
+ * REGISTER (docs/design/R3-MINIMAL.md section 6). "Reasoned" is a closed row,
+ * 36 high: the chevron and the word in 14 ink 2 at 400, the summary in 13
+ * muted. Opened, the trace is italic 14 ink 2 on a 1px rule with 12 clear
+ * (`.vex-reasoned__body`). The live row's trace and the settled in-turn
+ * thoughts wear the identical classes, so one trace looks the same streaming,
+ * folded, and reopened a week later.
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
-import { IconChevronRight } from "../../components/icons/index.js";
+import {
+  LineChevronDown,
+  LineChevronRight,
+} from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
 import { Swatch } from "../../components/ui/swatch.js";
@@ -107,19 +108,18 @@ export function ReasonedBlock({
     <div
       data-vex-reasoning="persisted"
       data-vex-reasoning-state={running ? "running" : "settled"}
-      className="mb-1.5"
     >
       {/* Fill-only signals need a text equivalent: the swatch is decorative
           and the moving summary says nothing about state, so AT is told
           directly that this trace is still arriving. */}
       {running ? <span className="sr-only">Reasoning</span> : null}
       <div
-        className="flex min-w-0 items-center"
+        className="vex-reasoned__row"
         data-vex-sweep={running ? "running" : undefined}
       >
         {running ? (
-          <span aria-hidden className="mr-[9px] inline-flex flex-none text-accent-primary">
-            <Swatch state="ongoing" size={9} />
+          <span aria-hidden className="vex-step__fill">
+            <Swatch state="thinking" size={10} />
           </span>
         ) : null}
         <button
@@ -128,11 +128,13 @@ export function ReasonedBlock({
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex flex-none items-center gap-1.5 text-left font-mono text-[11px] uppercase leading-5 tracking-status text-ink-secondary transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="vex-reasoned__key"
         >
-          <IconChevronRight
-            size={11}
-            className={cn("shrink-0 transition-transform", open && "rotate-90")} />
+          {open ? (
+            <LineChevronDown size={14} className="shrink-0" />
+          ) : (
+            <LineChevronRight size={14} className="shrink-0" />
+          )}
           {reasonedStampLabel(tokens, durationMs)}
         </button>
         {/* Expanding removes the moving summary: the full trace is right below
@@ -141,23 +143,17 @@ export function ReasonedBlock({
             end of a line that is being scrolled to its end is a lie about
             there being more. */}
         {!open ? (
-          <>
-            <span
-              aria-hidden
-              className="mx-2 h-[2px] w-[2px] flex-none bg-line-3"
-            />
-            <span
-              ref={summaryRef}
-              data-vex-reasoning-summary=""
-              data-follow-end={running ? "true" : undefined}
-              className={cn(
-                "min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[13px] text-ink-secondary",
-                running ? "text-clip" : "text-ellipsis",
-              )}
-            >
-              {summary}
-            </span>
-          </>
+          <span
+            ref={summaryRef}
+            data-vex-reasoning-summary=""
+            data-follow-end={running ? "true" : undefined}
+            className={cn(
+              "vex-reasoned__summary",
+              running ? "text-clip" : "text-ellipsis",
+            )}
+          >
+            {summary}
+          </span>
         ) : null}
       </div>
       {/* The trace rides the shared expand primitive: it stays mounted once
@@ -167,7 +163,7 @@ export function ReasonedBlock({
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="vex-reasoning-prose mt-1 break-words border-l border-rule pl-3 text-[14px] leading-[1.6]"
+        className="vex-reasoning-prose vex-reasoned__body break-words"
       >
         <MarkdownContent text={text} />
       </ExpandRegion>

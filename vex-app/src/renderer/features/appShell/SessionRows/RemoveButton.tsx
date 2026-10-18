@@ -1,12 +1,12 @@
 /**
- * Trash action for a session row. Lives in a sibling cluster outside the
- * row-select button (never nested), so its click does not bubble into the
- * row-select handler. Reveal is owned by the RailRow actions cluster.
+ * Remove key for a session row (docs/design/R3-MINIMAL.md section 4): a
+ * 24 x 24 key with the line trash in ink 2. It lives in a sibling cluster
+ * outside the row-select button (never nested), so its click does not bubble
+ * into the row-select handler. The row owns the reveal.
  */
 
 import type { JSX, MouseEvent } from "react";
-import { IconTrash } from "../../../components/icons/index.js";
-import { cn } from "../../../lib/utils.js";
+import { LineTrash } from "../../../components/icons/line/index.js";
 
 export function RemoveButton({
   onClick,
@@ -18,13 +18,9 @@ export function RemoveButton({
       type="button"
       onClick={onClick}
       aria-label="Remove session"
-      className={cn(
-        "inline-flex h-6 w-6 items-center justify-center rounded border-0 text-ink-tertiary transition-colors",
-        "hover:text-danger",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-      )}
+      className="inline-flex h-6 w-6 items-center justify-center border-0 bg-transparent text-ink-secondary hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--vex-alias-focus)]"
     >
-      <IconTrash size={13} />
+      <LineTrash size={14} />
     </button>
   );
 }

@@ -6,7 +6,12 @@ import { PROJECT_DELETE_OUTCOME_SENTENCES } from "./projects-copy.js";
 import { Button } from "../../../../components/ui/button.js";
 import { useDeleteProject, usePendingProjectCleanups } from "../../../../lib/api/projects.js";
 
-/** Reads tombstones so closing a dialog or restarting cannot hide an unfinished delete. */
+/**
+ * Reads tombstones so closing a dialog or restarting cannot hide an unfinished
+ * delete. In the Studio body of the left sidebar, in its sentence register
+ * (docs/design/R3-MINIMAL.md section 4): 12.5 / 1.45, ink for a failure, the
+ * pending cleanup as the ink hatch swatch with its words.
+ */
 export function ProjectCleanupNotices({ collapsed = false, onExpand, showReadError = true }: {
   readonly collapsed?: boolean;
   readonly onExpand?: () => void;
@@ -20,10 +25,10 @@ export function ProjectCleanupNotices({ collapsed = false, onExpand, showReadErr
     if (!showReadError) return null;
     if (collapsed) return <section role="status" aria-label="Unfinished project cleanups could not be loaded.">
       <button type="button" aria-label="Show unfinished project cleanup error" onClick={onExpand} className="flex h-6 w-full items-center justify-center">
-        <Swatch state="warning" size={8} />
+        <Swatch state="concerned" size={10} />
       </button>
     </section>;
-    return <section role="status" className="p-2 text-xs text-warning">
+    return <section role="status" className="px-2.5 py-2 text-[12.5px] leading-[1.45] text-ink-primary">
       Unfinished project cleanups could not be loaded.
       <Button variant="bare" onClick={() => void query.refetch()}>Retry loading cleanups</Button>
     </section>;
@@ -52,11 +57,11 @@ function CleanupNotice({ item, collapsed, onExpand }: { readonly item: ProjectPe
   if (collapsed) return <article role="status" aria-label={`Pending cleanup for ${item.name}`}>
     <button type="button" aria-label={`Show pending cleanup for ${item.name}`} onClick={onExpand}
       className="flex h-6 w-full items-center justify-center focus-visible:ring-2 focus-visible:ring-accent-primary">
-      <Swatch state="warning" size={8} />
+      <Swatch state="concerned" size={10} />
     </button>
   </article>;
-  return <article role="status" aria-label={`Pending cleanup for ${item.name}`} className="min-w-0 text-xs text-ink-secondary">
-    <DisclosureRow icon={<Swatch state="warning" size={8} />} title={item.name}
+  return <article role="status" aria-label={`Pending cleanup for ${item.name}`} className="min-w-0 text-[12.5px] leading-[1.45] text-ink-secondary">
+    <DisclosureRow icon={<Swatch state="concerned" size={10} />} title={item.name}
       collapsedContent={<span className="ml-2 whitespace-nowrap text-ink-tertiary">Pending cleanup</span>}
       className="[&>.vex-disclosure-row]:overflow-x-auto" titleClassName="shrink-0 whitespace-nowrap" open={open} expandable expandOnRowClick
       onToggle={() => setOpen((value) => !value)} bodyClassName="flex min-w-0 flex-col gap-2 p-2 break-words">

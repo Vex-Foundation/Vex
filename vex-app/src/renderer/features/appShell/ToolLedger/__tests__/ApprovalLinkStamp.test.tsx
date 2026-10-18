@@ -37,7 +37,7 @@ describe("ApprovalLinkStamp", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /awaiting signature/i }),
+      screen.getByRole("button", { name: /waiting for approval/i }),
     );
 
     expect(document.activeElement).toBe(screen.getByTestId("inline-copy"));
@@ -53,7 +53,7 @@ describe("ApprovalLinkStamp", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: /awaiting signature/i }),
+      screen.getByRole("button", { name: /waiting for approval/i }),
     );
 
     expect(document.activeElement).toBe(screen.getByTestId("only-copy"));

@@ -5,9 +5,9 @@
  *  - Skip-card when envState.provider.configured.
  *  - OpenRouter form when not configured.
  *  - Empty/whitespace input blocked client-side (no IPC call).
- *  - apiKey ref cleared SYNCHRONOUSLY on submit (skill §14 — codex
+ *  - apiKey ref cleared SYNCHRONOUSLY on submit (skill §14 - codex
  *    turn 2 RED #1 the only sane way to merge test+persist).
- *  - Each VexErrorCode renders FIXED UI copy (NO SDK raw message —
+ *  - Each VexErrorCode renders FIXED UI copy (NO SDK raw message  - 
  *    codex turn 3 YELLOW).
  *  - Success card with latencyMs + advance to "review".
  *  - External `<a target="_blank">` to openrouter.ai/models (no
@@ -376,7 +376,7 @@ describe("ProviderStep", () => {
     fireEvent.submit(form);
     // Assert presence via the unique data attribute selector. The
     // textual UI copy is verified separately in a smoke test below
-    // — this scenario only ensures the right error card surfaced.
+    // - this scenario only ensures the right error card surfaced.
     await waitFor(() => {
       expect(
         container.querySelector(`[data-vex-provider-error="${code}"]`),
@@ -539,7 +539,7 @@ describe("ProviderStep cause-code diagnostics", () => {
     openLogsFolderMock
       .mockReset()
       .mockResolvedValue({ ok: true, data: { opened: true } });
-    // Partial window.vex stub — only the support bridge surface this
+    // Partial window.vex stub - only the support bridge surface this
     // feature touches. defineProperty keeps it re-definable per test file.
     Object.defineProperty(window, "vex", {
       configurable: true,

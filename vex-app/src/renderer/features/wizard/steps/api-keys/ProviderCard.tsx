@@ -1,32 +1,26 @@
 /**
- * ProviderCard — per-provider section primitive used by ApiKeysStep
- * (Chronos Phase 2b redesign: one calm card per provider).
+ * ProviderCard: the per-provider row of the API keys step
+ * (docs/design/R3-MINIMAL.md section 10.3, the `.vex-wz-prov` row of
+ * `global-css/wizard.css`).
  *
- * Renders a hairline card with:
- *   - 36×36 icon slot (caller passes a brand SVG / `<img>`)
- *   - provider name + a STATUS WORD (mono micro-label in the status
- *     color — the design law says state is a colored word, never a
- *     dot, glyph, or pill)
- *   - one-line "what Vex uses it for" sentence (`description`)
- *   - optional longer how-to / caveat copy (`detail`)
+ * One row under a quiet rule, type only (no brand tile):
+ *   - the head line: the provider name (an h3), what Vex uses the key for,
+ *     and at the right the status as a swatch plus its word
+ *   - optional longer how-to or caveat copy (`detail`)
  *   - optional "Get key" link (target="_blank", rel="noopener noreferrer")
- *   - body slot (children) — the actual input or auto-setup section
+ *   - body slot (children): the actual input or auto-setup section
  *
- * Kept generic on purpose: the three providers (Jupiter / Tavily /
- * Rettiwt) differ in iconography and CTA wiring, but the outer chrome
- * is identical so this primitive avoids a 3× duplication inside
- * ApiKeysStep (rule 18 — "stop duplication early").
+ * Status is a fill AND a word (`StateWord`): set is the solid fill, partial
+ * the target, unset the empty outline. The word is the caller's own label.
  *
- * Colors ride the gate/shell token re-projection (`--color-text-*`),
- * so the same card reads correctly on the stage's paper leaf and inside
- * the Settings screen.
+ * Kept generic on purpose: the providers differ in copy and link wiring but
+ * the row is identical, so this primitive avoids a repeat inside the
+ * provider-card bodies (rule 18, "stop duplication early").
  */
 
 import type { JSX, ReactNode } from "react";
-import {
-  IconArrowUpRight,
-} from "../../../../components/icons/index.js";
-import { cn } from "../../../../lib/utils.js";
+import { StateWord } from "../../../../components/ui/state-word.js";
+import type { SwatchState } from "../../../../components/ui/swatch.js";
 
 export type ProviderCardSlug =
   | "jupiter"
@@ -50,43 +44,36 @@ export interface ProviderCardGetKey {
 
 export interface ProviderCardProps {
   readonly slug: ProviderCardSlug;
-  readonly iconSlot: ReactNode;
   readonly name: string;
   readonly status: ProviderCardStatus;
   /** One quiet sentence: what Vex uses this key for. */
   readonly description: ReactNode;
-  /** Optional longer how-to / caveat copy under the description. */
+  /** Optional longer how-to / caveat copy under the head line. */
   readonly detail?: ReactNode;
   readonly getKey?: ProviderCardGetKey;
   readonly children: ReactNode;
 }
 
-const CARD_CHROME = cn(
-  // A3 boxless: one hairline-separated section per provider, no tile.
-  "flex flex-col gap-3 border-t border-[var(--color-border)] pt-5",
-);
-
-const ICON_TILE_CHROME = cn(
-  "flex h-9 w-9 shrink-0 items-center justify-center",
-  "text-ink-primary",
-);
-
-const STATUS_WORD_COLOR: Record<ProviderCardStatusTone, string> = {
-  set: "text-success",
-  partial: "text-warning",
-  unset: "text-ink-tertiary",
+/** The status tone as the swatch fill: set is done, partial awaiting. */
+const TONE_SWATCH: Readonly<Record<ProviderCardStatusTone, SwatchState>> = {
+  set: "done",
+  partial: "awaiting",
+  unset: "idle",
 };
 
-function StatusWord({ status }: { status: ProviderCardStatus }): JSX.Element {
+/** The row's status at the right of the head line: a swatch and its word. */
+export function ProviderStatusWord({
+  status,
+}: {
+  readonly status: ProviderCardStatus;
+}): JSX.Element {
   return (
-    <span
-      className={cn(
-        "shrink-0 vex-micro",
-        STATUS_WORD_COLOR[status.tone],
-      )}
-    >
-      {status.label}
-    </span>
+    <StateWord
+      className="vex-wz-prov__st"
+      state={TONE_SWATCH[status.tone]}
+      word={status.label}
+      data-set={status.tone === "set" ? "" : undefined}
+    />
   );
 }
 
@@ -96,22 +83,16 @@ function GetKeyLink({ getKey }: { getKey: ProviderCardGetKey }): JSX.Element {
       href={getKey.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={cn(
-        "inline-flex w-fit items-center gap-1.5 text-xs font-medium",
-        "text-ink-primary underline underline-offset-2 transition-colors",
-        "hover:text-ink-secondary",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-      )}
+      className="vex-wz-link self-start"
     >
       {getKey.label}
-      <IconArrowUpRight size={12} />
+      <span aria-hidden="true">↗</span>
     </a>
   );
 }
 
 export function ProviderCard({
   slug,
-  iconSlot,
   name,
   status,
   description,
@@ -123,33 +104,17 @@ export function ProviderCard({
     <section
       data-vex-apikeys-card={slug}
       aria-labelledby={`vex-apikeys-card-${slug}-name`}
-      className={CARD_CHROME}
+      className="vex-wz-prov"
     >
-      <header className="flex items-start gap-3">
-        <span aria-hidden className={ICON_TILE_CHROME}>
-          {iconSlot}
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h3
-              id={`vex-apikeys-card-${slug}-name`}
-              className="text-sm font-semibold text-ink-primary"
-            >
-              {name}
-            </h3>
-            <StatusWord status={status} />
-          </div>
-          <p className="text-sm leading-relaxed text-ink-secondary">
-            {description}
-          </p>
-          {detail ? (
-            <p className="text-xs leading-relaxed text-ink-tertiary">
-              {detail}
-            </p>
-          ) : null}
-          {getKey ? <GetKeyLink getKey={getKey} /> : null}
-        </div>
-      </header>
+      <div className="vex-wz-prov__h">
+        <h3 id={`vex-apikeys-card-${slug}-name`} className="vex-wz-prov__n">
+          {name}
+        </h3>
+        <p className="vex-wz-prov__dsc">{description}</p>
+        <ProviderStatusWord status={status} />
+      </div>
+      {detail ? <p className="vex-wz-prov__detail">{detail}</p> : null}
+      {getKey ? <GetKeyLink getKey={getKey} /> : null}
       <div className="flex flex-col gap-2">{children}</div>
     </section>
   );

@@ -1,5 +1,5 @@
 /**
- * ApiKeysStep form helpers — secret-field plumbing shared between the
+ * ApiKeysStep form helpers - secret-field plumbing shared between the
  * step component and its tests.
  *
  * Secret-input contract (skill §14): every secret field is captured

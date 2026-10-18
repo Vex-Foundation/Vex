@@ -24,9 +24,9 @@ import { createQueryClient } from "../../../../app/queryClient.js";
  * no it() body changes.
  */
 /**
- * The reference window (docs/design/V10-SPREAD.md section 2). jsdom's own
- * 1024 is under the spread, where the left page closes to its spine and the
- * sessions index shows its icon rail; the shell suites drive the open page.
+ * The reference window (docs/design/R3-MINIMAL.md section 2). jsdom's own
+ * 1024 is under the medium tier, where the left sidebar is its icon rail; the
+ * shell suites drive the open sidebar.
  */
 export const SPREAD_TEST_WIDTH = 1440;
 

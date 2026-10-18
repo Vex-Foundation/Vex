@@ -1,36 +1,36 @@
 /**
- * THE ACT LEDGER — one registered act (S5): a tool call plus its merged
- * output, presented as one ruled LEDGER LINE (docs/design/V10-SPREAD.md
- * section 1, reference d3): the protocol mark in the blue, the human title in
- * 13px Departure Mono, the measured duration, and the act's status swatch at
- * the line's end - status by fill, and only for an outcome the engine
+ * THE ACT LEDGER - one registered act (S5): a tool call plus its merged
+ * output, presented as one STEP ROW (docs/design/R3-MINIMAL.md section 6): the
+ * outcome fill, the venue mark, the human title in 500, the word ("Done",
+ * "Failed", "Pending"), the measured duration in the mono 12 at the right and
+ * the chevron. Status by fill plus a word, and only for an outcome the engine
  * actually persisted.
  *
- * The card's header reads as a fact about the world rather than a symbol dump:
- * the protocol mark (contract C5 — venue logo when provenance is proven, the
+ * The row reads as a fact about the world rather than a symbol dump: the
+ * protocol mark (contract C5 - venue logo when provenance is proven, the
  * category glyph otherwise), a human title ("Swap · KyberSwap", "Memory
- * recall"), one summary slot, and the measured duration chip when - and ONLY
- * when - a duration was actually measured (`null` is not zero; a call that
- * never ran must never read "0 s"). The raw tool name stays available as the
- * header's `title` tooltip so nothing the ledger knew is lost.
+ * recall"), one summary slot, and the measured duration when - and ONLY when -
+ * a duration was actually measured (`null` is not zero; a call that never ran
+ * must never read "0 s"). The raw tool name stays available as the row's
+ * `title` tooltip so nothing the ledger knew is lost.
  *
- * THE COLLAPSED HEADER IS ALWAYS ONE LINE (deepseek ToolRow): every fixed
- * member is `flex-none` and the summary is the only thing that fills and
- * truncates, so a wide leg line or a long failure message clips instead of
- * folding the row. The summary slot holds, in precedence order, the proven leg
- * line or the failure's first line in the error tone (see `summary` below for
- * why that order is not deepseek's). Explorer refs and the expanded body are
- * SIBLING lines below the header, never inside it.
+ * THE ROW IS ALWAYS ONE LINE (deepseek ToolRow): every fixed member is
+ * `flex-none` and the summary is the only thing that fills and truncates, so a
+ * wide leg line or a long failure message clips instead of folding the row.
+ * The summary slot holds, in precedence order, the proven leg line or the
+ * failure's first line (see `summary` below for why that order is not
+ * deepseek's). Explorer refs and the opened well are SIBLING lines below the
+ * row, never inside it.
  *
- * Two deterministic stamps survive unchanged: "Awaiting signature" from the
- * approval queue, and "Confirmed" when the engine persisted `success: true`
- * for a `wallet_send_confirm` act AND its (bounded) output carries the tool's
- * strict `{ status: "confirmed", txHash }` contract.
+ * Two deterministic marks survive unchanged: "Waiting for approval" from the
+ * approval queue (a link to the card), and "Confirmed" when the engine
+ * persisted `success: true` for a `wallet_send_confirm` act AND its (bounded)
+ * output carries the tool's strict `{ status: "confirmed", txHash }` contract.
  *
- * Collapsed by default (today's disclosure contract). The expanded body is a
- * recessed well; args/output are sanitized strings rendered as INERT TEXT
- * (`<pre>` pre-wrap) — never HTML, and the friendly header never replaces the
- * ability to read them. The reveal is the shared `ExpandRegion` primitive:
+ * Collapsed by default (today's disclosure contract). The opened row is a
+ * paper 2 well with Args and Output on a 64px key column; args/output are
+ * sanitized strings rendered as INERT TEXT (`<pre>` pre-wrap) or the JSON
+ * inspector - never HTML. The reveal is the shared `ExpandRegion` primitive:
  * build-time CSS height interpolation, collapsed to a hard cut under
  * prefers-reduced-motion. The OUTPUT section rides a second region of its own
  * so a result that lands later unfolds instead of popping in.
@@ -44,10 +44,12 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import { IconChevronRight } from "../../../components/icons/index.js";
+import {
+  LineChevronDown,
+  LineChevronRight,
+} from "../../../components/icons/line/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
 import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
-import { cn } from "../../../lib/utils.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { DeskTicketLoadStamp } from "../lighterTrading/DeskTicketLoadStamp.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
@@ -100,64 +102,59 @@ function isConfirmedWalletTransfer(act: ToolCallActView): boolean {
   }
 }
 
+/** "Confirmed" in ink with the solid fill, after the row, for a proven send. */
 function ConfirmedStamp(): JSX.Element {
   return (
     <span
       role="status"
       aria-label="Transaction confirmed"
       data-vex-transaction-status="confirmed"
-      className="inline-flex h-[22px] shrink-0 items-center gap-[7px] px-2 font-mono text-[11px] uppercase leading-none tracking-chip text-ink-primary outline outline-1 -outline-offset-1 outline-rule-ink"
+      className="vex-step-confirmed"
     >
-      <Swatch state="done" size={9} />
+      <Swatch state="done" size={10} />
       Confirmed
     </span>
   );
 }
 
+/** What a step's fill and word say: only an outcome the engine persisted. */
+interface StepOutcome {
+  readonly fill: SwatchState;
+  readonly word: string;
+  readonly state: "done" | "pending" | "failed";
+}
+
 /**
- * The act's status fill at the line's end (reference d3) - ONLY for an outcome
- * the engine persisted. A success is the solid square, an ambiguous broadcast
- * the dot screen (pending, not failed), a failure the ink cross. A call with no
- * persisted outcome yet (still running, never run, or a legacy row) draws no
- * swatch at all: `null` is not a status, and a guessed fill would be a claim.
+ * The act's outcome (docs/design/R3-MINIMAL.md section 6) - ONLY for an
+ * outcome the engine persisted. A success is the solid square and "Done", an
+ * ambiguous broadcast the dot screen and "Pending" (not failed), a failure the
+ * ink cross and "Failed". A call with no persisted outcome yet (still running,
+ * never run, or a legacy row) draws no fill and no word: `null` is not a
+ * status, and a guessed fill would be a claim.
  */
-function actSwatch(act: ToolCallActView): SwatchState | null {
-  if (act.success === true) return "done";
+function actOutcome(act: ToolCallActView): StepOutcome | null {
+  if (act.success === true) return { fill: "done", word: "Done", state: "done" };
   if (act.success === false) {
-    return act.displayStatus === "pending" ? "ongoing" : "error";
+    return act.displayStatus === "pending"
+      ? { fill: "ongoing", word: "Pending", state: "pending" }
+      : { fill: "error", word: "Failed", state: "failed" };
   }
   return null;
 }
 
 /**
- * The 2x2 separator dot of the one-line header grammar. `line-3`, not the
- * caption tier: caption is the disabled/decoration step and a 2px dot painted
- * in it is invisible in both themes.
- */
-function SeparatorDot(): JSX.Element {
-  return (
-    <span
-      aria-hidden
-      className="mx-2 h-[2px] w-[2px] flex-none bg-line-3"
-    />
-  );
-}
-
-/**
- * Measured-duration chip. The caller resolves the text first and renders this
- * only for a real measurement - `formatToolDuration` returns `null` for every
- * never-executed / synthetic / legacy act, and `null` is not zero: a call that
- * never ran must never read "0 s".
+ * Measured duration, in the mono 12 muted at the row's right. The caller
+ * resolves the text first and renders this only for a real measurement -
+ * `formatToolDuration` returns `null` for every never-executed / synthetic /
+ * legacy act, and `null` is not zero: a call that never ran must never read
+ * "0 s".
  *
  * `flex-none` so it survives a narrow row: a duration clipped to "2" would be
  * a wrong number, whereas a clipped summary is still honest prose.
  */
 function DurationChip({ text }: { readonly text: string }): JSX.Element {
   return (
-    <span
-      data-vex-tool-duration=""
-      className="flex-none font-mono text-[11px] tracking-[0.02em] tabular-nums text-ink-secondary"
-    >
+    <span data-vex-tool-duration="" className="vex-step__num flex-none">
       {text}
     </span>
   );
@@ -207,11 +204,11 @@ function stripToolNamePrefix(
 }
 
 /**
- * Section label of the expanded well - mono microtype (10px floor, a
- * documented register). It is a STATIC label rendered ABOVE its section's
- * scroll surface, never inside it: a sticky label inside the scroller let
- * scrolled payload show through the well's padding around it (owner QA
- * screenshot). `SectionScroll` is the only element that scrolls.
+ * Section key of the opened well - "Args", "Output", 12 muted in the 64px key
+ * column. It is a STATIC label BESIDE its section's scroll surface, never
+ * inside it: a sticky label inside the scroller let scrolled payload show
+ * through around it (owner QA screenshot). `SectionScroll` is the only
+ * element that scrolls.
  */
 function SectionHeading({
   children,
@@ -219,27 +216,22 @@ function SectionHeading({
   readonly children: string;
 }): JSX.Element {
   return (
-    <div className="px-4 pb-1 pt-3">
-      <span
-        data-vex-tool-section-label=""
-        className="block font-mono text-[11px] uppercase tracking-chip text-ink-secondary"
-      >
-        {children}
-      </span>
-    </div>
+    <span data-vex-tool-section-label="" className="vex-step-well__key">
+      {children}
+    </span>
   );
 }
 
 /**
  * The section's capped scroll surface. Caps and scrolls alone so a long
- * input never buries a short output; the label sits above it as a sibling, so
- * no text can pass under or beside the label.
+ * input never buries a short output; the label sits beside it as a sibling,
+ * so no text can pass under or beside the label.
  */
 function SectionScroll({ children }: { readonly children: ReactNode }): JSX.Element {
   return (
     <div
       data-vex-tool-section-scroll=""
-      className="max-h-[220px] overflow-y-auto px-4 pb-3"
+      className="vex-step-well__scroll overflow-y-auto"
     >
       {children}
     </div>
@@ -281,7 +273,7 @@ function SectionBody({
   );
   if (text === null || text.length === 0) {
     return (
-      <span className="font-code text-[11.5px] leading-relaxed text-ink-secondary">
+      <span className="font-code text-[12px] leading-relaxed text-ink-tertiary">
         {emptyHint}
       </span>
     );
@@ -290,7 +282,7 @@ function SectionBody({
     return <JsonTree data={json} />;
   }
   return (
-    <pre className="whitespace-pre-wrap break-words font-code text-[11.5px] leading-relaxed text-ink-secondary">
+    <pre className="whitespace-pre-wrap break-words font-code text-[12px] leading-relaxed text-ink-primary">
       {text}
     </pre>
   );
@@ -301,7 +293,7 @@ export function ToolActRow({
   pendingApprovalId = null,
 }: {
   readonly act: ToolCallActView;
-  /** Matching PENDING approval id — adds the "Awaiting signature" link. */
+  /** Matching PENDING approval id - adds the "Waiting for approval" link. */
   readonly pendingApprovalId?: string | null;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
@@ -355,7 +347,7 @@ export function ToolActRow({
     [operation, legs, act.toolArgs, act.output, act.success, act.displayStatus],
   );
   const durationText = formatToolDuration(act.durationMs ?? null);
-  const swatch = actSwatch(act);
+  const outcome = actOutcome(act);
   // The header's ONE summary slot. Whatever lands here fills and truncates;
   // the title and the duration flank it and never shrink.
   //
@@ -377,73 +369,77 @@ export function ToolActRow({
     ) : failureLine !== null ? (
       <span
         data-vex-tool-error-summary=""
-        className="min-w-0 flex-1 truncate text-[12px] text-destructive"
+        className="vex-step__summary min-w-0 truncate text-destructive"
       >
         {failureLine}
       </span>
     ) : null;
+  // A leg line that already names its outcome ("Quote", "Failed", "Pending")
+  // says what the word would; the row does not say it twice. A step waiting
+  // on the reader says so through its link (the target fill and "Waiting for
+  // approval"), and a confirmed send through its "Confirmed" mark.
+  const legOutcome = legs?.outcome ?? singleLeg?.outcome ?? null;
+  const legsNameOutcome = legOutcome !== null && legOutcome !== "executed";
+  const awaiting = pendingApprovalId !== null;
+  const fill: SwatchState | null = awaiting ? null : (outcome?.fill ?? null);
+  const word =
+    outcome === null || awaiting || confirmed || legsNameOutcome
+      ? null
+      : outcome.word;
   return (
-    // The ledger line: a 32px header closed by the quiet rule, the expanded
-    // body a SIBLING well below it. `group` scopes the leading crossfade.
+    // The step: a 36px row closed by the quiet rule, its links and its well
+    // SIBLING lines below it, each closed by its own rule.
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
       data-vex-tool-category={identity.category}
-      className="vex-ledger__row group flex flex-col"
+      className="flex flex-col"
     >
-      <div className="flex min-h-8 items-center gap-3">
+      <div
+        className="vex-step flex items-center"
+        data-vex-step-state={outcome?.state}
+      >
         <button
           ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          // The raw symbol stays reachable even though the card shows prose.
+          // The raw symbol stays reachable even though the row shows prose.
           title={act.toolName}
-          className="flex min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="vex-step__key"
         >
-          {/* DisclosureRow house pattern: the 16px leading box crossfades the
-              tool mark to a chevron on hover/focus - "this row expands"
-              without a resting chevron. 100ms opacity, no layout shift. */}
-          <span className="relative mr-3 inline-grid h-4 w-4 flex-none place-items-center text-accent-primary">
-            <span className="col-start-1 row-start-1 inline-flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-focus-within:opacity-0">
-              <ProtocolMark
-                protocol={identity.protocol}
-                fallbackGlyph={toolGlyph(act.toolName)}
-                size={16}
-              />
-            </span>
-            <span
-              aria-hidden
-              className={cn(
-                "col-start-1 row-start-1 inline-flex items-center justify-center text-accent-primary opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100",
-                open && "rotate-90",
-              )}
-            >
-              <IconChevronRight size={12} />
-            </span>
+          {/* The outcome fill: always 10px wide, so every title starts on
+              one edge whether or not an outcome is known. */}
+          <span
+            aria-hidden
+            data-vex-tool-status={outcome?.fill}
+            className="vex-step__fill"
+          >
+            {fill !== null ? <Swatch state={fill} size={10} /> : null}
           </span>
-          {/* ONE LINE, always (deepseek ToolRow): title, separator dot, the
-              FILL-truncating summary, then the measurement. `flex-nowrap` and
-              `flex-none` on every fixed member are what stop a long summary or
-              a wide leg line from folding the header into two rows - the
-              defect the QA screenshot caught. */}
-          <span className="flex min-w-0 flex-1 flex-nowrap items-center">
-            <span className="flex-none truncate font-mono text-[13px] leading-6 tracking-[0.02em] text-ink-primary">
-              {identity.title}
+          <span className="vex-step__mark">
+            <ProtocolMark
+              protocol={identity.protocol}
+              fallbackGlyph={toolGlyph(act.toolName)}
+              size={14}
+            />
+          </span>
+          {/* ONE LINE, always (deepseek ToolRow): title, word, the
+              FILL-truncating summary, then the measurement. `flex-none` on
+              every fixed member is what stops a long summary or a wide leg
+              line from folding the row into two lines. */}
+          <span className="vex-step__title">{identity.title}</span>
+          {word !== null ? (
+            <span data-vex-step-word="" className="vex-step__word">
+              {word}
             </span>
-            {summary !== null ? (
-              <>
-                <SeparatorDot />
-                {summary}
-              </>
-            ) : null}
-            {durationText !== null ? (
-              <>
-                <SeparatorDot />
-                <DurationChip text={durationText} />
-              </>
-            ) : null}
+          ) : null}
+          {summary}
+          <span aria-hidden className="vex-step__spacer" />
+          {durationText !== null ? <DurationChip text={durationText} /> : null}
+          <span aria-hidden className="vex-step__chev">
+            {open ? <LineChevronDown size={14} /> : <LineChevronRight size={14} />}
           </span>
         </button>
         <DeskTicketLoadStamp act={act} />
@@ -452,37 +448,26 @@ export function ToolActRow({
         ) : pendingApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={pendingApprovalId} />
         ) : null}
-        {/* The status column: always 9px wide, so every line's figures end
-            on one edge whether or not an outcome is known. */}
-        <span
-          aria-hidden
-          data-vex-tool-status={swatch ?? undefined}
-          className="inline-flex w-[9px] flex-none text-accent-primary"
-        >
-          {swatch !== null && pendingApprovalId === null ? (
-            <Swatch state={swatch} size={9} />
-          ) : null}
-        </span>
       </div>
-      {/* Explorer links get their OWN line under the header. They are anchors,
+      {/* Explorer links get their OWN line under the row. They are anchors,
           so they can never nest inside the disclosure button (invalid HTML),
-          and as a wrapping sibling INSIDE the header row they used to crush
-          the `min-w-0 flex-1` title and wrap off on their own - the "row of
-          chips with no owner" in the QA screenshot. Inert when nothing
-          resolves. */}
+          and as a wrapping sibling INSIDE the row they used to crush the
+          title and wrap off on their own - the "row of chips with no owner"
+          in the QA screenshot. Inert when nothing resolves. */}
       <ExplorerRefLinks refs={act.explorerRefs} />
-      {/* The well (reference d4's facts well): the second paper, no frame;
-          each section is a static label over its own capped scroll surface.
-          It rides the shared expand primitive - the well is the INNER box,
-          so the animated outer box carries none of its margin, and the
-          entrance keyframe is gone (an expand is not also a mount). */}
+      {/* The well (docs/design/R3-MINIMAL.md section 6): paper 2, no frame,
+          20 in from the row; each section a 64px key beside its own capped
+          scroll surface. It rides the shared expand primitive - the well is
+          the INNER box, so the animated outer box carries none of its
+          margin, and there is no entrance keyframe (an expand is not also a
+          mount). */}
       <ExpandRegion
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="mb-2 ml-7 flex flex-col overflow-hidden bg-surface-3"
+        className="vex-step-well overflow-hidden"
       >
-        <div data-vex-tool-section="args">
+        <div data-vex-tool-section="args" className="vex-step-well__section">
           <SectionHeading>Args</SectionHeading>
           <SectionScroll>
             <SectionBody text={act.toolArgs} emptyHint="(no parameters)" />
@@ -493,16 +478,14 @@ export function ToolActRow({
             ExpandRegion (lazy first mount, so nothing renders while null;
             stays mounted after) and unfolds with the same curve as the well
             and the thinking block. Reduced motion is honoured by the
-            primitive's stylesheet, not here. The hairline divider belongs to
-            the revealed section, so it unfolds with it. No trigger: this
-            region opens on data, not on a click. */}
+            primitive's stylesheet, not here. No trigger: this region opens
+            on data, not on a click. */}
         <ExpandRegion
           id={`${bodyId}-output`}
           open={act.output !== null}
           className="flex flex-col"
         >
-          <div aria-hidden className="h-px flex-none bg-rule-quiet" />
-          <div data-vex-tool-section="output">
+          <div data-vex-tool-section="output" className="vex-step-well__section">
             <SectionHeading>Output</SectionHeading>
             <SectionScroll>
               <SectionBody text={act.output} emptyHint="(no output)" />

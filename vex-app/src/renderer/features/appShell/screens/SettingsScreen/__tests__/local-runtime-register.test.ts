@@ -3,15 +3,22 @@ import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 import { formatDiskSize } from "../local-runtime-copy.js";
 import {
   localRuntimeRegisterStatus,
+  settingsNav,
   settingsSectionStatus,
   visibleSettingsSections,
 } from "../settings-sections.js";
 
 describe("the Local runtime register row", () => {
-  it("is listed only on the native runtime, last", () => {
+  it("is listed only on the native runtime, under The agent after Tuning", () => {
     expect(visibleSettingsSections(false).map((s) => s.id)).not.toContain("localRuntime");
-    expect(visibleSettingsSections(true).map((s) => s.id).at(-1)).toBe("localRuntime");
     expect(visibleSettingsSections(true)).toHaveLength(visibleSettingsSections(false).length + 1);
+    expect(settingsNav(true).find((g) => g.name === "The agent")?.items.map((i) => i.id)).toEqual([
+      "model",
+      "memory",
+      "tuning",
+      "localRuntime",
+    ]);
+    expect(settingsNav(false).flatMap((g) => g.items.map((i) => i.id))).not.toContain("localRuntime");
   });
 
   it.each<[string, NativeRuntimeStatus | null, string, string]>([

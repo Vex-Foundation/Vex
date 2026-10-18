@@ -1,64 +1,72 @@
 /**
- * MissionControls — the mission control surface that replaces the mission-*
- * slash commands. A single strip mounted above the composer for mission
- * sessions, the sole owner of runtime-gated mission controls:
+ * MissionControls - the mission control surface that replaces the mission-*
+ * slash commands, mounted in the session column for mission sessions and the
+ * sole owner of runtime-gated mission controls
+ * (docs/design/R3-MINIMAL.md sections 6 and 7):
  *
- *  - ACTIVE RUN → a status-gated toolbar:
- *      Continue (paused_wake/paused_user), Recover (paused_error),
- *      Edit (any status except paused_approval), Stop (always).
- *  - NO ACTIVE RUN + accepted/ready contract → a "Start mission" key
- *    (accent-hairline, S3) → mission.start.
- *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) → a
- *    "Renew mission" button → mission.renew (clones it into a fresh draft).
- *  - NO ACTIVE RUN + a ready, unaccepted draft (the "MISSION READY" state) →
- *    a full-width accent-OUTLINED "Review & accept contract" bar (vs the
- *    solid Start key above) in the same slot, opening the mission dialog via
- *    `uiStore.reviewModal` (owned/rendered by `MissionRail`, a sibling
- *    component in the header cluster). Previously this state surfaced only
- *    the passive notice below with no visible control — the shimmering
- *    MISSION READY badge was the only path to the accept dialog. Reveal is
- *    gated on `useIsChatSubmitting` settling so the bar can't flash open
- *    mid-turn during a tool-call gap (the draft can flip to `ready` before
- *    the turn's final text response); a cancelled/failed turn also settles
- *    `chatSubmitting` back to false, so the bar can never wedge shut. Only
+ *  - ACTIVE RUN -> only the controls that apply (owner decision: no dotted
+ *      dead keys), drawn in the mission strip above the composer:
+ *      Continue now (paused_wake, quiet) or Continue (paused_user, the blue
+ *      key), Edit contract (any status except paused_approval), Stop mission
+ *      (always; disabled only while it would do nothing or a control is in
+ *      flight). Recover (paused_error) is the one blue key inside the
+ *      paused-on-error callout in the transcript. Behaviour, dispatch and the
+ *      gates below are unchanged; only which keys are drawn changed.
+ *  - NO ACTIVE RUN + accepted/ready contract -> a "Start mission" key (the
+ *    view's blue fill) -> mission.start.
+ *  - NO ACTIVE RUN + a terminal accepted mission (the renew source) -> a
+ *    "Renew mission" key -> mission.renew (clones it into a fresh draft), with
+ *    "Tell Vex what to do differently" beside it.
+ *  - NO ACTIVE RUN + a ready, unaccepted draft (the "MISSION READY" state) ->
+ *    the blue-outlined "Review & accept contract" key in the same slot,
+ *    opening the contract sheet via `uiStore.reviewModal` (owned/rendered by
+ *    `MissionRail`, a sibling in the title bar). Reveal is gated on
+ *    `useIsChatSubmitting` settling so the key can't flash open mid-turn
+ *    during a tool-call gap (the draft can flip to `ready` before the turn's
+ *    final text response); a cancelled/failed turn also settles
+ *    `chatSubmitting` back to false, so the key can never wedge shut. Only
  *    one next-step surface shows at a time: while reviewable-and-settled,
- *    this bar REPLACES the standing notice below, never stacks with it.
+ *    this key REPLACES the standing notice below, never stacks with it.
  *  - NO ACTIVE RUN + a contract pending acceptance (any non-accepted-clean
- *    draft, still in setup or mid-turn) → a standing warn notice: on-chain
+ *    draft, still in setup or mid-turn) -> a standing notice: on-chain
  *    actions are blocked by the runtime gate until the user accepts the
  *    contract and starts the run. The notice is STATE-SPECIFIC and CARRIES A
- *    CONTROL. Previously a `draft`-status contract landed on a terminal branch
- *    that rendered the notice ALONE - no button, no link, no next action - and
- *    the modal the user could reach from the header then told them to "Add a
- *    goal, constraints, and stop conditions", fields the host cannot edit
- *    (`mission.updateDraft` is a stub; only the agent's `MissionDraftUpdate`
- *    writes them). That was a reachable dead end. Every branch now names the
- *    state, the consequence, the next action and WHO must take it, enumerates
- *    the engine's own `missingFields`, and offers the contract surface.
+ *    CONTROL: it names the state, the consequence, the next action and WHO
+ *    must take it, enumerates the engine's own `missingFields`, and offers
+ *    the contract surface (only the agent's `MissionDraftUpdate` writes the
+ *    fields; `mission.updateDraft` is a stub), so it is never a dead end.
+ *
+ * WHERE THE RUN KEYS ARE DRAWN. The keys stay owned here (one set of mutation
+ * hooks, so a control in flight disables every other one, Recover in the
+ * transcript included) and portal into the cells the composer's mission strip
+ * publishes (`MissionControls/mission-strip-slot.ts`). With no strip mounted
+ * for this session they render in place under the transcript, so a control
+ * is never unreachable.
  *
  * Readiness is NOT derived here. `mission-readiness.ts` owns the single
- * predicate that this strip, `MissionRail`'s badge and the contract modal all
- * read, so the three surfaces cannot contradict each other.
+ * predicate that this surface, `MissionRail`'s badge and the contract sheet
+ * all read, so the three surfaces cannot contradict each other.
  *
  * `useMissionLiveSync` is mounted here (event-driven + 30s-fallback refresh
  * of the draft/diff queries) so a dropped `transcriptAppend` event can never
- * strand the review bar invisible for a session the user never blurs.
+ * strand the review key invisible for a session the user never blurs.
  *
- * The render gate keys off `runtime` ALONE — never the draft. A started
- * mission flips its row past `ready` (commit-start → `running`; terminal on
+ * The render gate keys off `runtime` ALONE - never the draft. A started
+ * mission flips its row past `ready` (commit-start -> `running`; terminal on
  * finalize), so `getDraft` returns null for the entire active/terminal run;
- * gating the toolbar on a draft hid it for every active run. Start reads the
- * draft, Renew reads the renew-source query — both AFTER the runtime gate.
+ * gating the controls on a draft hid them for every active run. Start reads
+ * the draft, Renew reads the renew-source query - both AFTER the runtime gate.
  *
  * Every control surfaces refusal outcomes (the backend returns `ok:true`
  * classified outcomes like not_accepted / lease_busy / blocked_terminal), not
- * just transport errors, so a race never silently does nothing. Buttons are
+ * just transport errors, so a race never silently does nothing. Keys are
  * disabled while any control mutation is in flight OR a control request is
  * already pending (runtime.pendingControlKind), preventing double-fire.
  */
 
 import { useCallback, useState } from "react";
 import type { JSX } from "react";
+import { createPortal } from "react-dom";
 import { assertNever, type Result } from "@shared/ipc/result.js";
 import type {
   MissionDraftDto,
@@ -85,7 +93,14 @@ import {
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
+import { Button } from "../../components/ui/button.js";
 import { Swatch } from "../../components/ui/swatch.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
+import {
+  draftKeyFor,
+  readDraft as readComposerDraft,
+  writeDraft as writeComposerDraft,
+} from "../../lib/composer-drafts.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
 import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
@@ -99,23 +114,32 @@ import {
 import { requestMissionContract } from "./mission-contract-request.js";
 import { useMissionSetupProgress } from "./MissionSetupProgress.js";
 import { MissionMissingFields } from "./MissionMissingFields.js";
+import { useMissionStripSlot } from "./MissionControls/mission-strip-slot.js";
+
+/** The question "Ask Vex what happened" puts in the session's message box. */
+export const ASK_WHAT_HAPPENED = "What happened? Why did the mission pause?";
 
 /**
- * Primary mission action (Start/Renew) - the one blue fill on the page
- * (docs/design/V10-SPREAD.md section 1): a full-width square 40px key in 12px
- * Departure Mono caps. Hover is a colour change only (never a glow or a
- * gradient); a disabled key is drawn as a dotted blue outline, never a fade.
+ * "Ask Vex what happened" (the paused mission render): the question goes into
+ * this session's message box (never over words the user already typed) and
+ * the box takes focus. Nothing is sent: the send is the user's.
  */
-const PRIMARY_KEY =
-  "flex h-10 w-full items-center justify-center gap-2 border border-transparent bg-button-accent font-mono text-[12px] uppercase tracking-chip text-ink-on-button-accent transition-colors hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary";
+export function askVexWhatHappened(sessionId: string): void {
+  const key = draftKeyFor(sessionId);
+  if (readComposerDraft(key).trim().length === 0) writeComposerDraft(key, ASK_WHAT_HAPPENED);
+  document.querySelector<HTMLTextAreaElement>("[data-vex-composer-stage] textarea")?.focus();
+}
+
+/** What "Edit contract" does, said before the press. */
+export const EDIT_CONTRACT_HINT =
+  "Stops the run and returns the mission to a draft you change with Vex.";
 
 /**
- * Review-&-accept bar - the pre-accept counterpart of `PRIMARY_KEY`: the
- * ghost key, a blue OUTLINE that fills on hover (vs. the solid commitment key
- * above), on the same aliases so it re-tints with the theme.
+ * The text key of the strip ("Edit contract"): 13 / 500 in the blue, no
+ * frame (section 7). Disabled reads muted, never faded.
  */
-const REVIEW_KEY =
-  "flex h-10 w-full items-center justify-center gap-2 border border-accent-primary font-mono text-[12px] uppercase tracking-chip text-accent-primary transition-colors hover:bg-accent-primary hover:text-ink-on-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:border-dotted disabled:text-ink-tertiary";
+const LINK_KEY =
+  "inline-flex h-8 shrink-0 items-center text-[13px] font-medium text-accent-primary underline-offset-4 enabled:hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed disabled:text-ink-tertiary";
 
 export interface MissionControlsProps {
   readonly sessionId: string;
@@ -123,7 +147,7 @@ export interface MissionControlsProps {
 
 type ControlNotice = { readonly tone: "error"; readonly text: string } | null;
 
-/** Outcomes that mean the control succeeded — no notice needed. */
+/** Outcomes that mean the control succeeded - no notice needed. */
 const SUCCESS_OUTCOMES: ReadonlySet<string> = new Set([
   "dispatched",
   "resumed",
@@ -186,7 +210,7 @@ function noticeFor(r: Result<{ readonly outcome: string }>): string | null {
  * controls (e.g. `not_accepted` here means "the source mission was never
  * accepted", not "accept this draft"; `session_has_active_run` is renew-only),
  * so it gets a dedicated mapper instead of the shared `noticeFor`. `renewed` is
- * the success literal → null (clears the notice).
+ * the success literal -> null (clears the notice).
  */
 function renewNoticeFor(r: Result<MissionRenewResult>): string | null {
   if (!r.ok) return r.error.message;
@@ -245,7 +269,7 @@ export function MissionControls({
   const diffQuery = useMissionDiff(sessionId, draft?.missionId ?? null);
   const planQuery = useSessionPlan(sessionId);
   // Readiness requires a SUCCESSFUL plan read: while the query is pending or
-  // failed the plan state is UNKNOWN, and unknown must read as not-ready —
+  // failed the plan state is UNKNOWN, and unknown must read as not-ready -
   // collapsing it to null would make planMissing(null) vacuously false and
   // let the review bar flash during loading or survive a plan.get failure.
   const planKnown = planQuery.data?.ok === true;
@@ -264,11 +288,13 @@ export function MissionControls({
   useMissionLiveSync(sessionId);
   // Setup liveness: distinguishes "still drafting" from "drafting stalled".
   const { stalled } = useMissionSetupProgress(sessionId);
-  // Turn-gate for the review bar's reveal — see the file header comment.
+  // Turn-gate for the review bar's reveal - see the file header comment.
   const chatSubmitting = useIsChatSubmitting(sessionId);
   const setReviewModal = useUiStore((s) => s.setReviewModal);
 
   const [notice, setNotice] = useState<ControlNotice>(null);
+  // The composer strip's cells for this session (none when it is not mounted).
+  const strip = useMissionStripSlot(sessionId);
 
   const run = useCallback(
     async <T extends { readonly outcome: string }>(
@@ -304,7 +330,7 @@ export function MissionControls({
   // Disable while a control is in flight OR one is already pending server-side.
   const disabled = anyPending || runtime.pendingControlKind !== null;
 
-  // ACTIVE RUN → status-gated toolbar (keys off runtime.status alone).
+  // ACTIVE RUN -> status-gated toolbar (keys off runtime.status alone).
   if (runtime.hasActiveRun) {
     const status = runtime.status;
     const canContinue = status === "paused_wake" || status === "paused_user";
@@ -336,6 +362,70 @@ export function MissionControls({
       "mission",
       false,
     );
+    // ONLY THE CONTROLS THAT APPLY (owner decision): a key whose status rules
+    // it out is not drawn at all, instead of a dotted dead key. The gates are
+    // the same ones that used to disable them; Stop is always drawn.
+    const keys = (
+      <div
+        data-vex-area="mission-controls"
+        role="group"
+        aria-label="Mission controls"
+        className="flex shrink-0 items-center gap-3.5"
+      >
+        {canContinue ? (
+          status === "paused_wake" ? (
+            // Sleeping wakes by itself; this wakes it now (proposal copy).
+            <Button
+              variant="quiet"
+              size="sm"
+              disabled={disabled}
+              onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
+            >
+              Continue now
+            </Button>
+          ) : (
+            // Paused by the user: Continue is the strip's one blue key.
+            <Button
+              variant="primary"
+              size="sm"
+              aria-label="Continue mission"
+              disabled={disabled}
+              onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
+            >
+              Continue
+            </Button>
+          )
+        ) : null}
+        {canEdit ? (
+          // Edit stops the run and returns the mission to a draft that Vex
+          // and the user change together (`useEditMission`); the tooltip says
+          // so before the press (owner follow-up), the press is unchanged.
+          <Tooltip label={EDIT_CONTRACT_HINT} side="top" maxWidth={280}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
+              className={LINK_KEY}
+            >
+              Edit contract
+            </button>
+          </Tooltip>
+        ) : null}
+        {/* Stop is the ink outline (the refusing choice), never red, and it
+            is named apart from the composer's Stop turn. */}
+        <Button
+          variant="ink"
+          size="sm"
+          aria-label={stopAffordance.label}
+          disabled={disabled || !stopAffordance.offered}
+          onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
+        >
+          {stopAffordance.label}
+        </Button>
+      </div>
+    );
+    const noticeLine =
+      notice !== null ? <ControlNoticeLine text={notice.text} /> : null;
     return (
       <>
         {/* Keyed on the PAUSE, never on the button. The alert explains why the
@@ -343,59 +433,63 @@ export function MissionControls({
             error - and that explanation is most needed precisely when recovery
             is blocked. Gating it on `canRecover` meant a blocked money state
             silently removed the only account of what happened, leaving a
-            disabled button and no reason for either fact. */}
+            disabled button and no reason for either fact. Recover sits in it
+            as the one blue key; while the money gate holds it is disabled
+            and the reason is stated under it. */}
         {isPausedError ? (
           <MissionErrorAlert
             stopReason={runtime.stopReason}
             lastError={runtime.lastError}
+            actions={
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  aria-label="Recover mission"
+                  aria-busy={recover.isPending}
+                  disabled={disabled || !canRecover}
+                  onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
+                >
+                  {recover.isPending ? "Recovering…" : "Recover"}
+                </Button>
+                {/* The paused render's link: a question for Vex in the
+                    message box, never sent for the user. */}
+                <button
+                  type="button"
+                  className={LINK_KEY}
+                  onClick={() => askVexWhatHappened(sessionId)}
+                >
+                  Ask Vex what happened
+                </button>
+              </>
+            }
+            notes={
+              recoveryBlocked ? (
+                <ControlNoticeLine
+                  text={recoveryBlockedText(recovery)}
+                  tone="warning"
+                />
+              ) : recoveryUnknown ? (
+                <ControlNoticeLine text={RECOVERY_UNKNOWN_TEXT} tone="warning" />
+              ) : null
+            }
           />
         ) : null}
-        <div
-          data-vex-area="mission-controls"
-          role="group"
-          aria-label="Mission controls"
-          className="mt-3 flex flex-wrap items-center gap-2"
-        >
-          <ControlButton
-            label="Continue"
-            disabled={disabled || !canContinue}
-            onClick={() => void run(() => cont.mutateAsync({ sessionId }))}
-          />
-          <ControlButton
-            label={recover.isPending ? "Recovering…" : "Recover"}
-            ariaLabel="Recover mission"
-            ariaBusy={recover.isPending}
-            disabled={disabled || !canRecover}
-            onClick={() => void run(() => recover.mutateAsync({ sessionId }))}
-          />
-          <ControlButton
-            label="Edit"
-            disabled={disabled || !canEdit}
-            onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
-          />
-          <ControlButton
-            label="Stop"
-            ariaLabel={stopAffordance.label}
-            tone="danger"
-            disabled={disabled || !stopAffordance.offered}
-            onClick={() => void run(() => stop.mutateAsync({ sessionId }))}
-          />
-          {recoveryBlocked ? (
-            <ControlNoticeLine
-              text={recoveryBlockedText(recovery)}
-              tone="warning"
-            />
-          ) : null}
-          {recoveryUnknown ? (
-            <ControlNoticeLine text={RECOVERY_UNKNOWN_TEXT} tone="warning" />
-          ) : null}
-          {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
-        </div>
+        {strip.controls !== null ? (
+          createPortal(keys, strip.controls)
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center gap-3.5">{keys}</div>
+        )}
+        {noticeLine === null
+          ? null
+          : strip.notes !== null
+            ? createPortal(<div className="pb-2">{noticeLine}</div>, strip.notes)
+            : <div className="mt-2">{noticeLine}</div>}
       </>
     );
   }
 
-  // NO ACTIVE RUN → Start an accepted/ready draft; Start wins over Renew when
+  // NO ACTIVE RUN -> Start an accepted/ready draft; Start wins over Renew when
   // both could apply (a freshly accepted contract is the more immediate action).
   const diff = readReadyDiff(diffQuery.data);
   // THE readiness answer (see `mission-readiness.ts`). The header badge and the
@@ -411,7 +505,7 @@ export function MissionControls({
   const canStart = readiness.kind === "accepted";
   // Contract pending acceptance (a draft exists that is not accepted-clean)
   // with no active run: the runtime prequote gate fail-closes EVERY on-chain
-  // broadcast (reason `wallet_setup`), so surface that as a standing notice —
+  // broadcast (reason `wallet_setup`), so surface that as a standing notice -
   // the user must see the block deterministically, not via a paraphrased (and
   // possibly confabulated) agent reply to a blocked tool call. The notice now
   // CARRIES the way forward instead of only naming the block.
@@ -423,14 +517,18 @@ export function MissionControls({
   if (canStart && draft !== null) {
     const missionId = draft.missionId;
     return (
-      <div data-vex-area="mission-controls" className="mt-3">
-        <button
-          type="button"
+      <div
+        data-vex-area="mission-controls"
+        className="mb-4 mt-1 flex flex-wrap items-center gap-3.5"
+      >
+        {/* The view's one blue fill: the run starts only from here. */}
+        <Button
+          variant="primary"
           disabled={disabled}
           onClick={() =>
             void run(async () => {
               const result = await start.mutateAsync({ sessionId, missionId });
-              // Pattern 1 (VS Code `startDebugging` → `requestWorkspaceTrust`):
+              // Pattern 1 (VS Code `startDebugging` -> `requestWorkspaceTrust`):
               // the blocked capability RAISES the contract surface rather than
               // reporting a refusal the user then has to act on by guesswork.
               // Only for refusals the contract surface can actually resolve.
@@ -448,21 +546,20 @@ export function MissionControls({
             })
           }
           aria-label="Start mission"
-          className={PRIMARY_KEY}
         >
           Start mission
-        </button>
+        </Button>
         {notice !== null ? <ControlNoticeLine text={notice.text} /> : null}
       </div>
     );
   }
 
-  // Reviewable: a ready draft awaiting acceptance — the "MISSION READY" state.
+  // Reviewable: a ready draft awaiting acceptance - the "MISSION READY" state.
   // Gated on the turn settling (never on the draft/diff data alone) so the
   // bar can't flash open mid-turn during a tool-call gap; a cancelled/failed
   // turn also settles `chatSubmitting` back to false, so a stuck turn can
   // never wedge the bar shut. When not yet settled (or not reviewable), fall
-  // through to the pre-existing affordances below unchanged — the standing
+  // through to the pre-existing affordances below unchanged - the standing
   // notice already covers this state, so nothing regresses mid-turn.
   // The plan gate lives inside `resolveMissionReadiness`: with legacy plan-mode
   // on and no plan body the readiness is `awaiting-plan`, so the rail says
@@ -470,42 +567,45 @@ export function MissionControls({
   const reviewable = readiness.kind === "awaiting-acceptance";
   if (reviewable && !chatSubmitting) {
     return (
-      <div data-vex-area="mission-controls" className="mt-3">
-        <button
-          type="button"
+      <div data-vex-area="mission-controls" className="mb-4 mt-1">
+        {/* The pre-accept counterpart of Start: the blue outline key. */}
+        <Button
+          variant="ghost"
           onClick={raiseContract}
           aria-label="Review & accept contract"
-          className={REVIEW_KEY}
         >
           Review &amp; accept contract
-        </button>
+        </Button>
       </div>
     );
   }
 
-  // No startable draft, but a terminal accepted mission exists → Renew clones it
+  // No startable draft, but a terminal accepted mission exists -> Renew clones it
   // into a fresh draft (the new contract must still be accepted before it runs,
   // so this is non-destructive and needs no confirm step).
   const renewSource = readRenewable(renewableQuery.data);
   // `draft === null` guard mirrors MissionRail's load-bearing guard:
   // `getRenewableSourceForSession` keeps returning the OLD terminal accepted
   // mission even after `mission.renew` (or `edit`) inserts a fresh draft. Without
-  // this guard the Renew button LINGERS once a fresh draft exists — so a renew
+  // this guard the Renew button LINGERS once a fresh draft exists - so a renew
   // looks like it "does nothing", and each extra click clones ANOTHER duplicate
   // draft. Gating on `draft === null` lets the fresh draft fall through to the
   // acceptance-pending UI below (accept it, then Start).
   if (renewSource !== null && draft === null) {
     const previousMissionId = renewSource.missionId;
     return (
-      <div data-vex-area="mission-controls" className="mt-3">
+      <div
+        data-vex-area="mission-controls"
+        className="mb-[18px] mt-1 flex flex-wrap items-center gap-3.5"
+      >
         {pendingAcceptance ? (
           <AcceptancePendingNotice
             readiness={readiness}
             onOpenContract={raiseContract}
           />
         ) : null}
-        <button
-          type="button"
+        <Button
+          variant="quiet"
           disabled={disabled}
           onClick={() =>
             void run(
@@ -514,10 +614,9 @@ export function MissionControls({
             )
           }
           aria-label="Renew mission"
-          className={PRIMARY_KEY}
         >
           Renew mission
-        </button>
+        </Button>
         {/* Same terminal state, different intent: Renew clones the contract
             into a draft that must be accepted again; this restarts the SAME
             accepted contract with one added instruction. */}
@@ -531,11 +630,11 @@ export function MissionControls({
     );
   }
 
-  // Contract pending acceptance with nothing else to show → the standing
+  // Contract pending acceptance with nothing else to show -> the standing
   // notice, which carries its own control so this is never a dead end.
   if (pendingAcceptance) {
     return (
-      <div data-vex-area="mission-controls" className="mt-3">
+      <div data-vex-area="mission-controls" className="mt-1">
         <AcceptancePendingNotice
           readiness={readiness}
           onOpenContract={raiseContract}
@@ -563,11 +662,11 @@ const CONTRACT_BLOCKED_START_OUTCOMES: ReadonlySet<string> = new Set([
 /**
  * Standing notice while a mission session's contract is pending acceptance:
  * mirrors the runtime prequote gate's `wallet_setup` fail-close (no active run
- * → every swap/bridge/send broadcast is refused), so the block is visible in
+ * -> every swap/bridge/send broadcast is refused), so the block is visible in
  * the UI regardless of how the agent narrates it.
  *
  * Every branch below follows the same shape, taken from VS Code's Restricted
- * Mode copy: STATE → CONSEQUENCE → NEXT ACTION, with the actor NAMED. The old
+ * Mode copy: STATE -> CONSEQUENCE -> NEXT ACTION, with the actor NAMED. The old
  * copy stopped after the consequence, and the modal it pointed at then told the
  * user to "Add a goal, constraints, and stop conditions" - fields the host
  * cannot edit at all, because `mission.updateDraft` is a stub and only the
@@ -598,28 +697,28 @@ function AcceptancePendingNotice({
     case "drafting":
       missingFields = readiness.missingFields;
       if (readiness.stalled) {
-        headline = `Vex's last reply did not add anything to the mission contract. ${blocked}`;
+        headline = "Vex's last reply did not add anything to the mission contract.";
         nextAction =
           "Nothing will change until you reply. Answer Vex in the composer below, or ask it to fill what is left:";
       } else {
-        headline = `Vex is still writing the mission contract. ${blocked}`;
+        headline = "Vex is still writing the mission contract.";
         nextAction =
           "Only Vex can fill these fields; you cannot edit them here. Tell Vex what is still missing:";
       }
       break;
     case "contract-loading":
-      headline = `Reading the mission contract. ${blocked}`;
+      headline = "Reading the mission contract.";
       nextAction = "Open the contract to see where it stands.";
       break;
     case "awaiting-plan":
-      headline = `The mission contract is complete, but this session's legacy plan mode has no action plan yet. ${blocked}`;
+      headline = "The mission contract is complete, but this session's legacy plan mode has no action plan yet.";
       nextAction =
         "Ask Vex to write the plan, then accept the contract and the plan together.";
       break;
     case "plan-unknown":
       // NOT "your plan is missing" - we have not read it. Rule 08: unknown and
       // absent are different states and must not collapse into one message.
-      headline = `The mission contract is complete, but its legacy action-plan status has not been read yet, so accepting is unavailable. ${blocked}`;
+      headline = "The mission contract is complete, but its legacy action-plan status has not been read yet, so accepting is unavailable.";
       nextAction = "Open the contract to see the plan status and retry the read.";
       break;
     case "awaiting-acceptance":
@@ -628,84 +727,57 @@ function AcceptancePendingNotice({
       // the passive "Show mission contract" on purpose - promoting the accept
       // CTA here would re-introduce exactly the mid-turn flash the turn-gate
       // exists to prevent, on a contract the running turn may still change.
-      headline = `The mission contract looks ready. ${blocked}`;
+      headline = "The mission contract looks ready.";
       nextAction = "Vex is still replying; review and accept once it settles.";
       break;
     case "dirty-acceptance":
-      headline = `The mission contract changed after you accepted it. ${blocked}`;
+      headline = "The mission contract changed after you accepted it.";
       nextAction =
         "Review what changed and accept the new contract to bring the runtime back in sync.";
       actionLabel = "Review & accept new contract";
       break;
   }
 
+  // A status line, not a card: a quiet accent rule on its left instead of a
+  // framed box, the state in one 13 line, the next action and the block in
+  // muted 12.5 under it, and the action beside the words. The words are
+  // unchanged; only their weight in the transcript is.
   return (
     <div
       role="status"
       data-vex-state="acceptance-pending"
       data-vex-readiness={readiness.kind}
-      className="mb-3 flex w-full flex-col gap-1.5 border border-accent-primary px-3.5 py-2.5 text-[13px] leading-5"
+      className="mb-3 flex w-full basis-full items-start gap-3 border-l-[1.5px] border-accent-primary py-0.5 pl-3 text-[12.5px] leading-[1.45]"
     >
-      <p className="flex items-start gap-[9px] text-ink-primary">
-        <span aria-hidden className="mt-[5px] inline-flex text-accent-primary">
-          <Swatch state="warning" size={9} />
-        </span>
-        <span>{headline}</span>
-      </p>
-      <p className="text-ink-secondary">{nextAction}</p>
-      <MissionMissingFields fields={missingFields} surface="mission-controls" />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="flex items-start gap-2 text-[13px] text-ink-primary">
+          <span aria-hidden className="mt-[4px] inline-flex shrink-0 text-accent-primary">
+            <Swatch state="awaiting" size={10} />
+          </span>
+          <span>{headline}</span>
+        </p>
+        {/* The next action runs straight into the fields it asks for (its
+          * colon introduces them), then the block. */}
+        <div className="text-ink-tertiary">
+          {nextAction}{" "}
+          <MissionMissingFields fields={missingFields} surface="mission-controls" variant="inline" />{" "}
+          {blocked}
+        </div>
+      </div>
       {/* The action lives on the notice itself: a standing surface that names a
           restriction must carry the way out of it (VS Code puts the command on
           the banner, the status bar entry and the editor alike). This notice is
           non-dismissible, so the affordance can never be closed away; the
           header MISSION badge carries the same action independently. */}
-      <button
-        type="button"
+      <Button
+        variant="quiet"
+        size="sm"
         onClick={onOpenContract}
-        className="mt-1 inline-flex h-8 w-fit items-center border border-accent-primary px-3 font-mono text-[11px] uppercase tracking-chip text-accent-primary transition-colors hover:bg-accent-primary hover:text-ink-on-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="shrink-0"
       >
         {actionLabel}
-      </button>
+      </Button>
     </div>
-  );
-}
-
-function ControlButton({
-  label,
-  onClick,
-  disabled,
-  tone,
-  ariaLabel,
-  ariaBusy,
-}: {
-  readonly label: string;
-  readonly onClick: () => void;
-  readonly disabled: boolean;
-  readonly tone?: "danger";
-  /** Overrides the derived `${label} mission` accessible name — used where
-   * the visible label changes (e.g. "Recovering…") but the accessible name
-   * must stay stable for assistive tech and tests. */
-  readonly ariaLabel?: string;
-  readonly ariaBusy?: boolean;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      aria-label={ariaLabel ?? `${label} mission`}
-      aria-busy={ariaBusy}
-      className={cn(
-        // Toolbar keys: the quiet square key, 12px Departure Mono caps on the
-        // rule; Stop is the ink key (the refusing choice), never red.
-        "inline-flex h-9 items-center border px-3.5 font-mono text-[12px] uppercase tracking-chip transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:border-dotted disabled:bg-transparent disabled:text-ink-tertiary",
-        tone === "danger"
-          ? "border-rule-ink text-ink-primary hover:bg-rule-ink hover:text-ink-on-primary"
-          : "border-rule text-ink-primary hover:bg-interactive-hover",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -784,7 +856,7 @@ function ControlNoticeLine({
       role={tone === "warning" ? "status" : "alert"}
       className={cn(
         "w-full text-[13px] leading-5",
-        tone === "warning" ? "text-accent-primary" : "text-ink-primary",
+        tone === "warning" ? "text-ink-secondary" : "text-ink-primary",
       )}
     >
       {text}

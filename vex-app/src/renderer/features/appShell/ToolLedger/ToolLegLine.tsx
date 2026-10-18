@@ -41,13 +41,10 @@ const OUTCOME_LABELS: Readonly<Record<ToolLegOutcome, string | null>> = {
 };
 
 /**
- * The ONE outcome that wears a tone rather than the neutral chip: an ambiguous
- * broadcast is unresolved, not benign, so it reads amber (`--color-warning`)
- * like the other pending affordances in the app.
+ * Visibly distinct prefix for anything that is not a proven execution. The
+ * ONE outcome that wears the blue rather than the neutral frame is the
+ * ambiguous broadcast: it is unresolved, not benign (`.vex-leg-outcome`).
  */
-const WARN_OUTCOMES: ReadonlySet<ToolLegOutcome> = new Set(["pending"]);
-
-/** Visibly distinct prefix for anything that is not a proven execution. */
 function OutcomeLabel({
   outcome,
 }: {
@@ -55,16 +52,8 @@ function OutcomeLabel({
 }): JSX.Element | null {
   const label = OUTCOME_LABELS[outcome];
   if (label === null) return null;
-  const warn = WARN_OUTCOMES.has(outcome);
   return (
-    <span
-      data-vex-tool-leg-outcome={outcome}
-      className={
-        warn
-          ? "shrink-0 px-1.5 font-mono text-[11px] uppercase leading-[18px] tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary"
-          : "shrink-0 px-1.5 font-mono text-[11px] uppercase leading-[18px] tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
-      }
-    >
+    <span data-vex-tool-leg-outcome={outcome} className="vex-leg-outcome">
       {label}
     </span>
   );
@@ -82,12 +71,9 @@ function Leg({
     <span className="inline-flex min-w-0 items-center gap-1">
       <TokenIcon symbol={leg.token.iconSymbol} size={13} />
       {showAmount && leg.amount !== null ? (
-        <span className="font-mono tabular-nums tracking-[0.02em] text-ink-secondary">{leg.amount}</span>
+        <span className="vex-num font-mono tabular-nums">{leg.amount}</span>
       ) : null}
-      <span
-        className="truncate font-mono tracking-[0.02em] text-ink-secondary"
-        title={leg.token.full ?? undefined}
-      >
+      <span className="truncate" title={leg.token.full ?? undefined}>
         {leg.token.text}
       </span>
     </span>
@@ -97,13 +83,10 @@ function Leg({
 export function ToolLegLine({ legs }: { readonly legs: ToolLegPair }): JSX.Element {
   const showAmount = legs.outcome !== "failed";
   return (
-    <span
-      data-vex-tool-legs={legs.outcome}
-      className="flex min-w-0 items-center gap-1.5 text-[12px]"
-    >
+    <span data-vex-tool-legs={legs.outcome} className="vex-step__legs min-w-0">
       <OutcomeLabel outcome={legs.outcome} />
       <Leg leg={legs.from} showAmount={showAmount} />
-      <span aria-hidden className="shrink-0 text-ink-secondary">
+      <span aria-hidden className="shrink-0">
         →
       </span>
       <Leg leg={legs.to} showAmount={showAmount} />
@@ -143,13 +126,13 @@ export function ToolSingleLegLine({
     <span
       data-vex-tool-legs={leg.outcome}
       data-vex-tool-leg-direction={leg.direction}
-      className="flex min-w-0 items-center gap-1.5 text-[12px]"
+      className="vex-step__legs min-w-0"
     >
       <OutcomeLabel outcome={leg.outcome} />
       <span
         role="img"
         aria-label={DIRECTION_LABELS[leg.direction]}
-        className="shrink-0 text-ink-secondary"
+        className="shrink-0"
       >
         {DIRECTION_GLYPHS[leg.direction]}
       </span>

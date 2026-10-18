@@ -1,6 +1,7 @@
 /**
- * HoverCard: delayed hover-preview card portaled to document.body, fixed at
- * the anchor's right edge and repositioned on scroll/resize while open. The
+ * HoverCard: delayed hover-preview card portaled to document.body (320
+ * wide, the field with one ink rule; docs/design/R3-MINIMAL.md section 12),
+ * fixed at the anchor's right edge and repositioned on scroll/resize while open. The
  * card is hit-testable on purpose: leaving the anchor only arms a
  * grace-delayed close, so the pointer can cross the 8px gap and settle on
  * the card. The portaled card is a React child of the wrapper, so one pair

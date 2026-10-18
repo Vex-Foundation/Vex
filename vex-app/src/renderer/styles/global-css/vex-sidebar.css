@@ -1,0 +1,425 @@
+/* THE VEX SIDEBAR (docs/design/R3-MINIMAL.md section 5): the right column,
+ * Vex's own. Paper with a 1px quiet rule on its left, the same ground as the
+ * centre; information first (state, narration, background work, Needs you),
+ * then the 280px print window with her hologram, then the avatar switch.
+ * Width is the frame's (256, 240, 224; 0 hidden); the column only fills its
+ * track. Radius 0, no shadow, no blur, tokens only.
+ *
+ *   aside.vex-vs[data-vex-vex-open]
+ *     .vex-vs__head            44, "Vex" and the hide key
+ *     .vex-vs__body
+ *       .vex-vs__info          state, Needs you, This project, the page slot
+ *       .vex-vs__spacer
+ *       .vex-vs-plate          the print window (VexPortraitPlate)
+ *       .vex-vs__foot | .vex-vs__desk   the switch, or the Lighter desk chat */
+
+.vex-vs {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+}
+/* Hidden is zero width: no rule may stand in a 0px track. */
+.vex-vs[data-vex-vex-open="false"] {
+  border-left: 0;
+}
+
+/* The head row: a window drag region whose content keeps clear of the
+ * Windows and Linux caption buttons (138 + 10 = the 148 of section 2.2; 10
+ * on macOS, where `--overlay-w` is 0). */
+.vex-vs__head {
+  display: flex;
+  height: var(--head-h);
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 calc(var(--overlay-w) + 10px) 0 18px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-vs__title {
+  font-size: 14px;
+  font-weight: 500;
+}
+.vex-vs__key {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-vs__key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-vs__key:focus-visible,
+.vex-vs__back:focus-visible,
+.vex-vs__link:focus-visible,
+.vex-vs__switch:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+
+.vex-vs__body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+/* The inspect takeover hides the body without unmounting it. */
+.vex-vs__body[hidden] {
+  display: none;
+}
+/* What scrolls when the information outgrows the column: never the plate. */
+.vex-vs__info {
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
+  padding-bottom: 2px;
+}
+.vex-vs__spacer {
+  min-height: 16px;
+  flex: 1 1 auto;
+}
+
+/* ---- state: fill, scope and word, timer; narration; background work ---- */
+.vex-vs__state {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 18px 0;
+}
+.vex-vs__state-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.vex-vs__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.vex-vs__sw {
+  flex: none;
+}
+.vex-vs__word {
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.vex-vs__scope {
+  color: var(--vex-alias-label-tertiary);
+  font-weight: 400;
+}
+.vex-vs__timer {
+  flex: none;
+  margin-left: auto;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.vex-vs__narr {
+  margin: 6px 0 0;
+  color: var(--vex-alias-label-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.vex-vs__bg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+/* ---- sections: Needs you, This project ---- */
+.vex-vs__sec {
+  margin: 14px 18px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-vs__h {
+  margin: 0 0 6px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.vex-vs__note {
+  margin: 0;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 13.5px;
+}
+.vex-vs__kv {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  margin: 0;
+}
+.vex-vs__kv > dt,
+.vex-vs__kv > dd {
+  margin: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-vs__kv > dt {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12.5px;
+}
+.vex-vs__kv > dd {
+  min-width: 0;
+  font-size: 13px;
+}
+.vex-vs__path {
+  overflow: hidden;
+  margin: 6px 0 0;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-vs__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
+}
+.vex-vs__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-accent-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+.vex-vs__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+/* A page's own block (the Board's Ask Vex); nothing while no page uses it. */
+.vex-vs__slot:empty {
+  display: none;
+}
+
+/* ---- the portrait plate (VexPortraitPlate): the print window ----
+ * 280 high, 220 to 280 in low windows (236 at 720 high); a quiet rule above.
+ * The plate ground fills in while the photograph decodes: the night print's
+ * darkest tone, and the day print's mid tone in celeris. */
+.vex-vs-plate {
+  position: relative;
+  height: clamp(220px, calc(24.4vh + 60px), 280px);
+  flex: none;
+  overflow: hidden;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--color-night-0);
+}
+[data-vex-theme="celeris"] .vex-vs-plate {
+  background: #c7b6a6;
+}
+/* On the desk the chat needs the room: the plate stays at 220 to 246. */
+.vex-vs[data-vex-vs-mode="lighter"] .vex-vs-plate {
+  height: clamp(220px, calc(24.4vh + 26px), 246px);
+}
+.vex-vs-plate__img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 82%;
+  user-select: none;
+}
+/* The user's own image: shown as it is, centred, in either room. */
+.vex-vs-plate__img--custom {
+  object-position: 50% 50%;
+}
+/* One print per room, swapped on data-vex-theme, never by a JS theme read. */
+.vex-vs-plate__img--day {
+  display: none;
+}
+[data-vex-theme="celeris"] .vex-vs-plate__img--day {
+  display: block;
+}
+[data-vex-theme="celeris"] .vex-vs-plate__img--night {
+  display: none;
+}
+/* The print's grain: fractal noise, multiplied at 10%, over the photograph. */
+.vex-vs-plate__grain {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background-image: url(/art/grain.svg);
+  background-size: 220px 220px;
+  mix-blend-mode: multiply;
+  opacity: 0.1;
+}
+/* Her host fills the plate; the rig stands her bust over the token. */
+.vex-vs-plate__holo {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+}
+
+/* ---- the foot: "Show avatar" and its switch ---- */
+.vex-vs__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 12px;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+}
+.vex-vs__foot > span {
+  flex: 1 1 auto;
+}
+/* The switch: 32 x 18, a 10px square thumb 3px in; off the thumb is muted
+ * on the field, on the track is the blue fill (a periwinkle edge at night)
+ * and the thumb its on-fill ink. */
+.vex-vs__switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-field);
+}
+.vex-vs__switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  background: var(--vex-alias-label-tertiary);
+  transition: transform var(--vex-duration-base) var(--vex-ease-standard);
+}
+.vex-vs__switch[aria-checked="true"] {
+  border-color: var(--vex-alias-button-accent-edge);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-vs__switch[aria-checked="true"]::after {
+  background: var(--vex-alias-button-accent-ink);
+  transform: translateX(14px);
+}
+
+/* ---- the Lighter desk chat, under the plate ---- */
+.vex-vs__desk {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* ---- the inspect takeover (BookInspectPanel) ---- */
+.vex-vs__inspect {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.vex-vs__back {
+  display: inline-flex;
+  height: 32px;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 10px 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--vex-alias-accent-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+.vex-vs__back:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-vs-inspect {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 18px 16px;
+}
+.vex-vs-inspect__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.vex-vs-inspect__title {
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-vs-inspect__state {
+  flex: none;
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+}
+.vex-vs-inspect__scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.vex-vs-inspect__payload {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vex-vs-inspect__label {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.vex-vs-inspect__pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--color-night-1);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+[data-vex-theme="celeris"] .vex-vs-inspect__pre {
+  background: var(--color-paper-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-vs__switch::after {
+    transition: none;
+  }
+}

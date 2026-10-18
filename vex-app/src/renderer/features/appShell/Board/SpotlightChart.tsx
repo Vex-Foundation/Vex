@@ -108,6 +108,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { BoardChartPillResolution } from "@shared/schemas/board-chart.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { cn } from "../../../lib/utils.js";
 import {
   SPOTLIGHT_VOLUME_ALPHA,
@@ -837,9 +838,13 @@ export function SpotlightChart({
       data-vex-area="spotlight-chart"
       data-resolution={resolution}
       data-state={surface.kind}
-      className="flex min-w-0 flex-col gap-2"
+      className="flex min-w-0 flex-col"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* THE RANGE KEYS at the top left, the "as of" note at the top right.
+        * The keys are the board's chip (`vex-bd-chip`, 26 high); the pressed
+        * look is painted from `data-on`, because the keys are tabs and keep
+        * `aria-selected` as their accessible state. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-2.5">
         <div
           role="tablist"
           aria-label="Chart range"
@@ -857,15 +862,11 @@ export function SpotlightChart({
                 data-vex-area="spotlight-chart-pill"
                 data-resolution={pill.resolution}
                 data-selected={selected ? "true" : "false"}
+                data-on={selected ? "true" : "false"}
                 onClick={() => {
                   setResolution(pill.resolution);
                 }}
-                className={cn(
-                  "px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-                  selected
-                    ? "bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary"
-                    : "text-ink-tertiary hover:bg-interactive-hover",
-                )}
+                className="vex-bd-chip"
               >
                 {pill.label}
               </button>
@@ -876,7 +877,7 @@ export function SpotlightChart({
           data-vex-area="spotlight-chart-status"
           data-live={streaming ? "true" : "false"}
           data-degraded={degraded ? "true" : "false"}
-          className="text-[12px] leading-[16px] text-ink-tertiary"
+          className="text-[12.5px] leading-[1.3] text-ink-tertiary"
         >
           {stamp === null ? "read at an unknown time" : `as of ${stamp}`}
         </span>
@@ -884,22 +885,24 @@ export function SpotlightChart({
 
       {/* THE DEGRADED LINE. Visible AND announced: a reader who cannot see
         * the muted stamp still learns that these bars are the last good ones
-        * rather than the current market. */}
+        * rather than the current market. A swatch plus a word, in ink: a
+        * failed refresh is never a colour. */}
       {surface.kind === "degraded" ? (
         <p
           data-vex-area="spotlight-chart-degraded"
           data-reason={surface.reason}
           role="status"
           aria-live="polite"
-          className="text-[12px] leading-[16px] text-ink-primary"
+          className="mx-3 mb-2 flex items-start gap-2 text-[12.5px] leading-[1.4] text-ink-primary"
         >
+          <Swatch state="concerned" size={10} className="mt-[3px] shrink-0" />
           {`Refresh failed. ${CHART_DEGRADED_COPY[surface.reason] ?? "The provider did not answer the latest read."} These bars are the last good read${stamp === null ? "" : `, from ${stamp}`}.`}
         </p>
       ) : null}
 
       {/* A FIXED-HEIGHT BOX THAT NEVER COLLAPSES: the frame is the same
         * height whether it holds candles, a skeleton or a sentence. */}
-      <div className="relative h-[280px] min-w-0">
+      <div className="relative mx-3 h-[280px] min-w-0">
         <div
           ref={containerRef}
           data-vex-area="spotlight-chart-canvas"
@@ -929,7 +932,7 @@ export function SpotlightChart({
           <p
             data-vex-area="spotlight-chart-absent"
             data-reason={surface.kind === "absent" ? surface.reason : ""}
-            className="absolute inset-0 flex items-center justify-center bg-board-card px-6 text-center text-[13px] leading-[18px] text-ink-tertiary"
+            className="absolute inset-0 flex items-center justify-center bg-board-surface px-6 text-center text-[14px] leading-[1.45] text-ink-tertiary"
           >
             {(surface.kind === "absent"
               ? CHART_ABSENT_COPY[surface.reason]
@@ -950,17 +953,17 @@ export function SpotlightChart({
             // NO TRANSFORM: the card's top-left corner is placed outright by
             // `placeSpotlightTooltip`, which is what lets it be clamped into
             // the pane and flipped below the crosshair near the top edge.
-            className="pointer-events-none absolute left-0 top-0 z-10 border border-rule bg-surface-1 px-2.5 py-1.5"
+            className="pointer-events-none absolute left-0 top-0 z-10 border border-rule-ink bg-surface-1 px-2.5 py-1.5"
           >
             <span
               data-vex-area="spotlight-chart-tooltip-open"
-              className="block text-[12px] leading-[16px] tabular-nums text-ink-secondary"
+              className="block font-mono vex-num text-[12px] leading-[16px] text-ink-secondary"
             >
               {`O ${tooltip.openText}`}
             </span>
             <span
               data-vex-area="spotlight-chart-tooltip-range"
-              className="block text-[12px] leading-[16px] tabular-nums text-ink-secondary"
+              className="block font-mono vex-num text-[12px] leading-[16px] text-ink-secondary"
             >
               {`H ${tooltip.highText} / L ${tooltip.lowText}`}
             </span>
@@ -968,21 +971,21 @@ export function SpotlightChart({
               data-vex-area="spotlight-chart-tooltip-close"
               data-direction={tooltip.closeUp ? "up" : "down"}
               className={cn(
-                "block text-[13px] leading-[18px] font-semibold tabular-nums",
-                tooltip.closeUp ? "text-accent-primary" : "text-ink-primary",
+                "block font-mono vex-num text-[13px] font-medium leading-[18px]",
+                tooltip.closeUp ? "text-trade-up" : "text-trade-down",
               )}
             >
               {`C ${tooltip.closeText}`}
             </span>
             <span
               data-vex-area="spotlight-chart-tooltip-volume"
-              className="block text-[12px] leading-[16px] tabular-nums text-ink-secondary"
+              className="block font-mono vex-num text-[12px] leading-[16px] text-ink-secondary"
             >
               {`Vol ${tooltip.volumeText}`}
             </span>
             <span
               data-vex-area="spotlight-chart-tooltip-time"
-              className="block text-[11.5px] leading-[15px] tabular-nums text-ink-tertiary"
+              className="block font-mono vex-num text-[11.5px] leading-[15px] text-ink-tertiary"
             >
               {tooltip.timeText}
             </span>

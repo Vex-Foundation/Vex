@@ -31,15 +31,9 @@ import type {
   CompactionApplyRequestResult,
   CompactionPreparationDto,
 } from "@shared/schemas/compaction-preparation.js";
+import { Button } from "../../components/ui/button.js";
+import { StateWord } from "../../components/ui/state-word.js";
 import { useRequestCompactionApply } from "../../lib/api/compaction-preparation.js";
-
-/**
- * Quiet accent key — the same class string as the compaction-history retry
- * button, which is the established adjacent-button grammar in this shell. A
- * filled button would break it.
- */
-const APPLY_BUTTON =
-  "rounded-[3px] border border-accent-primary px-1.5 py-0.5 vex-micro-label uppercase text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary";
 
 const APPLY_LABEL =
   "Apply prepared compaction: replaces older messages with a summary";
@@ -82,16 +76,13 @@ export function CompactionApplyButton({
   // offer, and a permanently-disabled control reads as one that might enable.
   if (failed) {
     return (
-      <span
+      <StateWord
+        state="error"
+        word="Preparation failed"
         data-vex-compaction-apply={status}
         role="status"
-        className={[
-          stack ? "flex w-full items-center py-1.5" : "inline-flex items-center",
-          "font-mono text-[10px] text-warning-label",
-        ].join(" ")}
-      >
-        Preparation failed
-      </span>
+        className={stack ? "w-full py-1.5" : undefined}
+      />
     );
   }
 
@@ -116,8 +107,12 @@ export function CompactionApplyButton({
           : "inline-flex items-center gap-2"
       }
     >
-      <button
-        type="button"
+      {/* The small blue outline key (docs/design/R3-MINIMAL.md section 8.2,
+        * the ghost button at 32 high): never a fill, so the view keeps its
+        * single blue fill (send). */}
+      <Button
+        variant="ghost"
+        size="sm"
         disabled={!ready || pending}
         onClick={() => {
           requestApply.mutate(
@@ -135,17 +130,12 @@ export function CompactionApplyButton({
             ? "Runs automatically when safe"
             : undefined
         }
-        className={[
-          APPLY_BUTTON,
-          // Opacity-only pulse, bound to a real pending action — exactly the
-          // doctrine the class was written for. Reused, never re-keyframed.
-          ready ? "vex-badge--shimmer" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        // Opacity-only pulse, bound to a real pending action - exactly the
+        // doctrine the class was written for. Reused, never re-keyframed.
+        className={ready ? "vex-badge--shimmer" : undefined}
       >
         {copy}
-      </button>
+      </Button>
       {/* Announces the queued → applying transition without re-rendering the
        * control itself into a focus trap. */}
       <span aria-live="polite" className="sr-only">

@@ -10,7 +10,6 @@ import { MarketBar, streamStatusLabel } from "./MarketBar.js";
 import { MarketChart } from "./MarketChart.js";
 import { MarketPicker } from "./MarketPicker.js";
 import { MarketBookPanel, TradesPanel } from "./OrderBook.js";
-import { setShellStripSlot } from "./shellStripSlot.js";
 import { TradeTicket } from "./TradeTicket.js";
 import {
   LIGHTER_BOOK_COLUMN_DEFAULT_SHARE,
@@ -27,15 +26,22 @@ import {
   LIGHTER_TRADES_DEFAULT_SHARE,
   LIGHTER_TRADES_MIN,
   resolveLighterLayout,
+  reviewTicketWidth,
   type LighterLayout,
 } from "./desk-preferences.js";
+import { useDeskReviewShowing } from "./desk-review-slot.js";
 import { formatRetrievedAt, marketSymbols } from "./format.js";
 import { useLighterDesk, type LighterDesk } from "./useLighterDesk.js";
 import { useSplitter } from "./useSplitter.js";
 
 const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
 
-/** The Lighter desk: chart, book over trades, ticket, account dock — the shell's center column. */
+/**
+ * The Lighter desk under its title row (docs/design/R3-MINIMAL.md section
+ * 9.3): the market bar, then the chart, the book and the ticket, with the
+ * account dock below. The title bar's cluster rides in the title row
+ * (`LighterSidebar`), not here.
+ */
 export function LighterCenter({ zenMode, onOpenZenAssistant }: {
   readonly zenMode?: boolean;
   readonly onOpenZenAssistant?: () => void;
@@ -85,8 +91,6 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           onReload={desk.reloadMarketData}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
         />
-        {/* The shell strip's notices/approvals/export land here; see shellStripSlot.ts. */}
-        <div className="lit-desk-top-shell" ref={setShellStripSlot} />
         {marketPickerOpen ? (
           <MarketPicker
             environment={environment}
@@ -170,6 +174,13 @@ function DeskBody({ desk, theme }: {
   const bottomVisible = layout.bottomCollapsed ? LIGHTER_BOTTOM_COLLAPSED : pixels.bottomHeight;
   const column = body.height - 1 - bottomVisible;
   const bookTrack = bookCollapsed ? 36 : pixels.bookWidth;
+  // "Review order" stands in the ticket's place: the column grows to the
+  // review's width (where the chart keeps its minimum), then returns to the
+  // saved share once the review closes.
+  const reviewShowing = useDeskReviewShowing();
+  const ticketTrack = reviewShowing
+    ? reviewTicketWidth({ ticketWidth: pixels.ticketWidth, bookWidth: bookTrack }, body)
+    : pixels.ticketWidth;
   const compactBookTrack = bookCollapsed ? 36 : pixels.compactBookHeight;
 
   // A minimum book plus a minimum trades panel outranks the dock: when even the
@@ -254,7 +265,7 @@ function DeskBody({ desk, theme }: {
   const symbols = marketSymbols(market.symbol, market.marketType);
   const bookTabs = stacked ? (
     <div className="lit-panel-tabs" role="tablist" aria-label="Book panel">
-      <button type="button" role="tab" aria-selected={bookTab === "book"} onClick={() => setBookTab("book")}>Order Book</button>
+      <button type="button" role="tab" aria-selected={bookTab === "book"} onClick={() => setBookTab("book")}>Order book</button>
       <button type="button" role="tab" aria-selected={bookTab === "trades"} onClick={() => setBookTab("trades")}>Trades</button>
     </div>
   ) : undefined;
@@ -270,9 +281,10 @@ function DeskBody({ desk, theme }: {
         className="lit-desk-upper"
         data-stacked={stacked || undefined}
         data-book-collapsed={bookCollapsed || undefined}
+        data-ticket-review={reviewShowing || undefined}
         style={stacked
-          ? { gridTemplateColumns: `minmax(0, 1fr) ${pixels.ticketWidth}px`, gridTemplateRows: `minmax(0, 1fr) ${compactBookTrack}px` }
-          : { gridTemplateColumns: `minmax(0, 1fr) ${bookTrack}px ${pixels.ticketWidth}px` }}
+          ? { gridTemplateColumns: `minmax(0, 1fr) ${ticketTrack}px`, gridTemplateRows: `minmax(0, 1fr) ${compactBookTrack}px` }
+          : { gridTemplateColumns: `minmax(0, 1fr) ${bookTrack}px ${ticketTrack}px` }}
       >
         <section className="lit-panel lit-chart-panel" aria-label="Price chart">
           <div className="lit-chart-body">

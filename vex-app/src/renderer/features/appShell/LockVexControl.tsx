@@ -2,6 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { LOCK_BUTTON } from "@shared/lock-button.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { showToast } from "../../lib/toast.js";
+import { studioPlatform } from "./studio/keybindings-labels.js";
+
+/**
+ * Lock Vex's chord as the platform spells it (the Studio label grammar). One
+ * constant for the profile menu and the Vault section's row, so the two never
+ * disagree.
+ */
+export const LOCK_VEX_SHORTCUT = studioPlatform === "darwin" ? "\u21e7\u2318L" : "Ctrl+Shift+L";
 
 interface LockControl {
   readonly pending: boolean;

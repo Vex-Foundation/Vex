@@ -37,6 +37,7 @@ import {
 } from "../board-surface-store.js";
 import { boardKeyOf, boardRefOf, type BoardRef } from "../board-surface-contracts.js";
 import { useBoardLiveOverlayStore } from "../board-live-overlay.js";
+import { selectVexOpen, useUiStore } from "../../../../stores/uiStore.js";
 import { boardSpec, hydratedRow, FIXTURE_FETCHED_AT } from "./boardFixture.js";
 
 /* ------------------------------------------------------------------ */
@@ -389,11 +390,16 @@ describe("the mockup's elements", () => {
     mountSpotlight(board);
     await settle();
 
+    // The back row: the quiet link and, beside it, the pressed Spotlight chip.
+    // The separate non-interactive pill is gone: the chip is the one mark of
+    // "where the reader is".
     const back = document.querySelector('[data-vex-area="board-spotlight-back"]');
     expect(back?.textContent).toContain("All tokens");
+    expect(back?.querySelector("svg")).not.toBeNull();
     expect(
-      document.querySelector('[data-vex-area="board-spotlight-pill"]')?.textContent,
+      document.querySelector('[data-vex-area="board-spotlight-toggle"]')?.textContent,
     ).toBe("Spotlight");
+    expect(document.querySelector('[data-vex-area="board-spotlight-pill"]')).toBeNull();
 
     expect(
       document.querySelector('[data-vex-area="board-spotlight-photo"]'),
@@ -401,12 +407,17 @@ describe("the mockup's elements", () => {
     expect(
       document.querySelector('[data-vex-area="board-spotlight-name"]')?.textContent,
     ).toBe("Pepe the Frog");
+    // The identity line reads "{TICKER} . {Chain name}", and the chain is
+    // said in words: there is no chain icon any more.
     expect(
       document.querySelector('[data-vex-area="board-spotlight-ticker"]')?.textContent,
     ).toBe("PEPE");
+    const chain = document.querySelector('[data-vex-area="board-spotlight-chain"]');
+    expect(chain?.textContent).toBe("Base");
+    expect(chain?.querySelector("svg")).toBeNull();
     expect(
-      document.querySelector('[data-vex-area="board-spotlight-chain"]'),
-    ).not.toBeNull();
+      document.querySelector('[data-vex-area="board-spotlight-hero"]')?.textContent,
+    ).toContain("PEPE\u00b7Base");
     expect(
       document.querySelector('[data-vex-area="board-spotlight-price"]')?.textContent,
     ).toContain("0.00000123");
@@ -458,7 +469,85 @@ describe("the mockup's elements", () => {
     expect(document.querySelector('[data-vex-area="board-status-chip"]')).not.toBeNull();
   });
 
-  it("renders the Spotlight control as a PRESSED button that returns to the grid", async () => {
+  it("paints the 24h change in the trading pair and the flat case in muted ink", async () => {
+    const paint = async (h24: string): Promise<string> => {
+      const board = boardRefOf(
+        "session-1",
+        12,
+        boardSpec({
+          pools: [{ chain: "base", pairAddress: "0xaaa111", analysis: null }],
+          rows: [hydratedRow({ priceChange: { h1: "0", h24 } })],
+        }),
+      );
+      bindStore(board);
+      mountSpotlight(board);
+      await settle();
+      const delta = document.querySelector('[data-vex-area="board-spotlight-delta"]');
+      const cls = delta?.className ?? "";
+      cleanup();
+      return cls;
+    };
+    expect(await paint("12.48")).toContain("text-trade-up");
+    expect(await paint("-12.48")).toContain("text-trade-down");
+    const flat = await paint("0");
+    expect(flat).toContain("text-ink-tertiary");
+    expect(flat).not.toMatch(/text-trade-(?:up|down)/);
+  });
+
+  it("sets the price and the change as figures, in the mono with the design's sizes", async () => {
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const price = document.querySelector('[data-vex-area="board-spotlight-price"]');
+    expect(price?.className).toContain("font-mono");
+    expect(price?.className).toContain("vex-num");
+    expect(price?.className).toContain("text-[30px]");
+    const delta = document.querySelector('[data-vex-area="board-spotlight-delta"]');
+    expect(delta?.className).toContain("font-mono");
+    expect(delta?.className).toContain("text-[15px]");
+    // The name is 24 / 600 over the 13 muted identity line.
+    const name = document.querySelector('[data-vex-area="board-spotlight-name"]');
+    expect(name?.className).toContain("text-[24px]");
+    expect(name?.className).toContain("font-semibold");
+  });
+
+  it("draws the stat column as 40 high rows under quiet rules, each with a line glyph", async () => {
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const rows = [
+      ...document.querySelectorAll('[data-vex-area="board-spotlight-stat"]'),
+    ];
+    expect(rows).toHaveLength(5);
+    for (const row of rows) {
+      expect(row.className).toContain("h-10");
+      expect(row.className).toContain("border-b");
+      expect(row.className).toContain("border-rule-quiet");
+      // A 16px line glyph, not the px sprite.
+      const glyph = row.querySelector("svg");
+      expect(glyph?.getAttribute("width")).toBe("16");
+      expect(glyph?.getAttribute("viewBox")).toBe("0 0 16 16");
+      expect(row.querySelector("dd")?.className).toContain("vex-num");
+    }
+    const stats = document.querySelector('[data-vex-area="board-spotlight-stats"]');
+    expect(stats?.className).not.toMatch(/\bborder\b|\bbg-|\bpx-\d/);
+  });
+
+  it("keeps the Holders row on its skeleton, never a dash, while the details read is in flight", () => {
+    readDetails.mockReturnValue(new Promise(() => undefined));
+    const board = boardRef();
+    bindStore(board);
+    mountSpotlight(board);
+    const holders = document.querySelector(
+      '[data-vex-area="board-spotlight-stat"][data-label="Holders"]',
+    );
+    expect(holders?.querySelector('dd[data-state="pending"]')).not.toBeNull();
+    expect(holders?.textContent).not.toContain("-");
+  });
+
+  it("renders the Spotlight control as a PRESSED chip in the back row that returns to the grid", async () => {
     const board = boardRef();
     bindStore(board);
     mountSpotlight(board);
@@ -466,7 +555,14 @@ describe("the mockup's elements", () => {
     const toggle = document.querySelector('[data-vex-area="board-spotlight-toggle"]');
     expect(toggle?.tagName).toBe("BUTTON");
     expect(toggle?.getAttribute("aria-pressed")).toBe("true");
-    expect(toggle?.querySelector("svg")).not.toBeNull();
+    expect(toggle?.getAttribute("aria-label")).toBe("Leave the spotlight on PEPE");
+    // The board's own chip, painted pressed from `aria-pressed`; it sits in
+    // the back row beside the link, not in the hero.
+    expect(toggle?.className).toContain("vex-bd-chip");
+    expect(toggle?.closest('[data-vex-area="board-spotlight-hero"]')).toBeNull();
+    expect(toggle?.previousElementSibling?.getAttribute("data-vex-area")).toBe(
+      "board-spotlight-back",
+    );
     await act(async () => {
       (toggle as HTMLButtonElement).click();
       await Promise.resolve();
@@ -583,19 +679,80 @@ describe("the mockup's elements", () => {
     expect(document.querySelector('[data-vex-area="board-spotlight-description"]')).toBeNull();
   });
 
-  it("puts every section icon in a bare slot, never on a filled disc", async () => {
+  it("draws every section head as a title over one rule, with no icon and no frame", async () => {
     const board = boardRef();
     bindStore(board);
     mountSpotlight(board);
     await settle();
-    const icons = [
-      ...document.querySelectorAll('[data-vex-area="board-spotlight-section-icon"]'),
+    const sections = [
+      ...document.querySelectorAll('[data-vex-area="board-spotlight"] section[data-vex-area]'),
     ];
-    expect(icons.length).toBeGreaterThanOrEqual(8);
-    for (const icon of icons) {
-      expect(icon.className).not.toMatch(/rounded-full|border|bg-/);
-      expect(icon.parentElement?.className).not.toContain("rounded-full");
+    // Assessment, Safety, Buy / Sell, Lock, Smart money, Tape, Momentum,
+    // Promotion and Other pools: none is dropped.
+    expect(sections).toHaveLength(9);
+    expect(
+      [...document.querySelectorAll('[data-vex-area="board-spotlight"] section[data-vex-area] > div:first-child > h3')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual([
+      "Vex assessment",
+      "Safety checks",
+      "Buy / Sell",
+      "Liquidity lock",
+      "Smart money",
+      "Tape",
+      "Momentum",
+      "Promotion",
+      "Other pools",
+    ]);
+    for (const section of sections) {
+      const head = section.firstElementChild;
+      expect(head?.className, section.getAttribute("data-vex-area") ?? "").toContain(
+        "border-b",
+      );
+      // No glyph in the head (the Ask key's own spark is the one exception),
+      // and the section itself wears no frame, fill or padding.
+      for (const glyph of head?.querySelectorAll("svg") ?? []) {
+        expect(glyph.closest('[data-vex-area="board-spotlight-ask"]')).not.toBeNull();
+      }
+      expect(section.className).not.toMatch(/\bborder\b|\bbg-|\bp-\d/);
     }
+    expect(
+      document.querySelector('[data-vex-area="board-spotlight-section-icon"]'),
+    ).toBeNull();
+  });
+
+  it("lays the sections out as the design's pairs, with Other pools across the full width", async () => {
+    const board = boardRef("One observation");
+    bindStore(board);
+    mountSpotlight(board);
+    await settle();
+    const areasIn = (row: string): string[] =>
+      [
+        ...(document.querySelector(`[data-vex-area="${row}"]`)?.children ?? []),
+      ].map((child) => {
+        // The tape sits in a hover wrapper; its section is the first child.
+        const own = child.getAttribute("data-vex-area");
+        return own ?? child.firstElementChild?.getAttribute("data-vex-area") ?? "";
+      });
+    expect(areasIn("board-spotlight-assess-row")).toEqual([
+      "board-spotlight-assessment",
+      "board-spotlight-safety",
+    ]);
+    expect(areasIn("board-spotlight-factual-row")).toEqual([
+      "board-spotlight-buysell",
+      "board-spotlight-lock",
+    ]);
+    expect(areasIn("board-spotlight-plus-row")).toEqual([
+      "board-spotlight-smart-money",
+      "board-spotlight-tape",
+    ]);
+    expect(areasIn("board-spotlight-context-row")).toEqual([
+      "board-spotlight-momentum",
+      "board-spotlight-promotion",
+    ]);
+    const otherPools = document.querySelector('[data-vex-area="board-spotlight-other-pools"]');
+    expect(otherPools?.closest('[class*="vex-board-spotlight-pair"]')).toBeNull();
   });
 
   it("draws no bordered child inside any section body", async () => {
@@ -803,8 +960,35 @@ describe("the model's assessment", () => {
       expect(node.className).toContain("text-ink-primary");
       expect(node.className).not.toContain("truncate");
     }
-    // Ask VEX is the assessment's own header action.
-    expect(section?.querySelector('[data-vex-area="board-spotlight-ask"]')).not.toBeNull();
+    // Ask Vex is the assessment's own header action: the board's link, with
+    // the design's spelling.
+    const ask = section?.querySelector('[data-vex-area="board-spotlight-ask"]');
+    expect(ask).not.toBeNull();
+    expect(ask?.textContent).toBe("Ask Vex");
+    expect(ask?.getAttribute("aria-label")).toBe("Ask Vex about PEPE");
+    expect(ask?.className).toContain("vex-bd-link");
+    expect(section?.querySelector("h3")?.textContent).toBe("Vex assessment");
+  });
+
+  it("hands Ask Vex to the page: selects nothing new, opens the Ask block and shows Vex", async () => {
+    const board = boardRef("One observation");
+    bindStore(board, { selectedPoolIndex: 0, askPanelOpen: false });
+    useUiStore.getState().setVexOpen(false);
+    expect(selectVexOpen(useUiStore.getState())).toBe(false);
+    mountSpotlight(board);
+    await settle();
+
+    const ask = document.querySelector('[data-vex-area="board-spotlight-ask"]');
+    if (ask === null) throw new Error("the Ask key was not rendered");
+    await act(async () => {
+      fireEvent.click(ask);
+      await Promise.resolve();
+    });
+    // The token stays the one already selected, the Ask block opens, and the
+    // Vex sidebar is shown (it is hidden by default on table pages).
+    expect(useBoardSurfaceStore.getState().selectedPoolIndex).toBe(0);
+    expect(useBoardSurfaceStore.getState().askPanelOpen).toBe(true);
+    expect(selectVexOpen(useUiStore.getState())).toBe(true);
   });
 
   it("renders a very long assessment whole, with no character cap", async () => {
@@ -916,6 +1100,20 @@ describe("the safety checks section", () => {
     const safety = document.querySelector('[data-vex-area="board-spotlight-safety"]');
     expect(safety?.textContent).not.toContain("Model prose");
     expect(safety?.querySelector('[data-vex-area="board-status-chip"]')).not.toBeNull();
+
+    // A row is the check name at the left and, at the right, a swatch, the
+    // verdict word and the muted "\u00b7 reason": a failure would be ink, so no
+    // row carries a trading or status hue.
+    const unanswered = rows[2];
+    expect(unanswered?.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("idle");
+    expect(unanswered?.querySelector("dd")?.textContent).toBe(
+      "Unverified\u00b7 not answered",
+    );
+    expect(unanswered?.className).toContain("border-rule-quiet");
+    expect(unanswered?.className).not.toMatch(/text-(?:trade|accent)/);
+    expect(
+      rows[0]?.querySelector(".vex-swatch")?.getAttribute("data-s"),
+    ).toBe("done");
   });
 
   it("shows the pending register while the details read is in flight", () => {

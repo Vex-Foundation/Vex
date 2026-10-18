@@ -41,8 +41,8 @@ import type {
   StudioProjectRefreshFailure,
   StudioRenderOutcome,
 } from "@shared/schemas/studio-installer.js";
-import { IconWarning } from "../../../../components/icons/index.js";
-import { Pill } from "../../../../components/ui/pill.js";
+import { LineWarning } from "../../../../components/icons/line/index.js";
+import { Tag } from "../../../../components/ui/stamp.js";
 import {
   Swatch,
   type SwatchState,
@@ -99,10 +99,11 @@ function isDeclined(outcome: StudioArtifactOutcome): boolean {
  * gives every row a 16px leading state slot and keeps the sentence as secondary
  * text; this is the same slot over this panel's own vocabulary.
  *
- * `refused` is the only ERROR: it is the one status that means Vex tried and
- * could not. `drift_blocked` and `unsupported` are decisions, not failures, and
- * read in the warning register the `caution` pill beside them already uses -
- * splitting the two would give one row two different verdicts.
+ * `refused` is the only ERROR (the ink cross): it is the one status that means
+ * Vex tried and could not. `drift_blocked` and `unsupported` are decisions, not
+ * failures, and read as CONCERNED (the ink hatch, docs/design/R3-MINIMAL.md
+ * section 1.6) beside the ink tag that names them - splitting the two would
+ * give one row two different verdicts.
  *
  * `Record` over the closed union rather than a switch with a default, so a new
  * wire status is a compile error here instead of a row with no glyph.
@@ -114,8 +115,8 @@ const ARTIFACT_STATUS_DOTS: Readonly<
   unchanged: "done",
   removed: "done",
   refused: "error",
-  drift_blocked: "warning",
-  unsupported: "warning",
+  drift_blocked: "concerned",
+  unsupported: "concerned",
 };
 
 export function RenderOutcomePanel({
@@ -145,10 +146,10 @@ export function RenderOutcomePanel({
         {refreshFailure !== null ? (
           <p
             role="status"
-            className="flex items-start gap-1.5 text-xs text-warning"
+            className="flex items-start gap-1.5 text-[13px] leading-[1.45] text-ink-primary"
             data-vex-refresh-failure={refreshFailure.kind}
           >
-            <IconWarning size={13} className="mt-0.5 shrink-0" />
+            <LineWarning size={14} className="mt-[3px] shrink-0" />
             <span className="flex flex-col gap-0.5">
               <span>{PROJECT_REFRESH_FAILURE_SENTENCES[refreshFailure.kind]}</span>
               <span className="text-ink-tertiary">{refreshFailure.detail}</span>
@@ -159,9 +160,9 @@ export function RenderOutcomePanel({
         {render.runFailure !== null ? (
           <p
             role="status"
-            className="flex items-start gap-1.5 text-xs text-warning"
+            className="flex items-start gap-1.5 text-[13px] leading-[1.45] text-ink-primary"
           >
-            <IconWarning size={13} className="mt-0.5 shrink-0" />
+            <LineWarning size={14} className="mt-[3px] shrink-0" />
             <span className="flex flex-col gap-0.5">
               <span>{RUN_FAILURE_SENTENCES[render.runFailure.kind]}</span>
               {/* Main's own sanitized explanation, which is the part that says
@@ -171,7 +172,7 @@ export function RenderOutcomePanel({
             </span>
           </p>
         ) : (
-          <p className="text-xs text-ink-tertiary">
+          <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
             {renderTriggerSentence(render)}
           </p>
         )}
@@ -179,16 +180,16 @@ export function RenderOutcomePanel({
         {incompleteNotice !== null ? (
           <p
             role="status"
-            className="flex items-start gap-1.5 text-xs text-warning"
+            className="flex items-start gap-1.5 text-[13px] leading-[1.45] text-ink-primary"
           >
-            <IconWarning size={13} className="mt-0.5 shrink-0" />
+            <LineWarning size={14} className="mt-[3px] shrink-0" />
             <span>{incompleteNotice}</span>
           </p>
         ) : null}
       </div>
 
       {render.artifacts.length === 0 ? (
-        <p className="text-xs text-ink-tertiary">
+        <p className="text-[12.5px] leading-[1.45] text-ink-tertiary">
           {renderOutcomeEmptySentence(render)}
         </p>
       ) : (
@@ -205,10 +206,10 @@ export function RenderOutcomePanel({
             {render.warnings.map((warning, index) => (
               <li
                 key={`${warning.kind}:${warning.agentId ?? "-"}:${String(index)}`}
-                className="flex items-start gap-1.5 text-xs text-warning"
+                className="flex items-start gap-1.5 text-[13px] leading-[1.45] text-ink-primary"
                 data-vex-warning-kind={warning.kind}
               >
-                <IconWarning size={13} className="mt-0.5 shrink-0" />
+                <LineWarning size={14} className="mt-[3px] shrink-0" />
                 <span className="flex flex-col gap-0.5">
                   <span>{INSTALLER_WARNING_SENTENCES[warning.kind]}</span>
                   <span className="text-ink-tertiary">{warning.detail}</span>
@@ -277,21 +278,21 @@ function ArtifactRow({
 
   return (
     <li
-      className="flex flex-col gap-1 border border-line-2 px-3 py-2"
+      className="flex flex-col gap-1 border border-rule-quiet px-3.5 py-2.5"
       data-vex-artifact-status={artifact.status}
       data-vex-artifact-kind={artifact.kind}
     >
       <div className="flex items-center justify-between gap-2">
-        {/* The leading state slot. No `label`: the Pill on the same line
+        {/* The leading state slot. No `label`: the Tag on the same line
           * carries the verdict WORD, and an sr-only copy of it would announce
           * every row's status twice. */}
         <Swatch
           state={ARTIFACT_STATUS_DOTS[artifact.status]}
-          size={8}
-          className="shrink-0"
+          size={10}
+          className="shrink-0 text-accent-primary"
         />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-xs text-ink-primary">
+          <span className="truncate text-[13px] text-ink-primary">
             {agentName === null
               ? ARTIFACT_KIND_LABELS[artifact.kind]
               : `${ARTIFACT_KIND_LABELS[artifact.kind]} - ${agentName}`}
@@ -300,34 +301,37 @@ function ArtifactRow({
             * `unsupported` row has no file at all, so it prints no path
             * rather than an empty one. */}
           {artifact.path !== null ? (
-            <span className="truncate font-mono text-[10px] text-ink-tertiary">
+            <span className="vex-num truncate text-[12px] text-ink-tertiary">
               {artifact.path}
             </span>
           ) : null}
         </span>
-        <Pill size="sm" variant={declined ? "caution" : "neutral"}>
+        {/* The verdict word: an ink tag when Vex declined, the quiet one when
+          * it did. The only caps in the panel (docs/design/R3-MINIMAL.md
+          * section 1). */}
+        <Tag quiet={!declined} className="shrink-0">
           {artifact.status === "written"
             ? artifactChangeLabel(artifact.change)
             : ARTIFACT_STATUS_LABELS[artifact.status]}
-        </Pill>
+        </Tag>
       </div>
 
       {artifact.status === "refused" ? (
-        <span className="flex flex-col gap-0.5 text-xs text-warning">
+        <span className="flex flex-col gap-0.5 text-[13px] leading-[1.45] text-ink-primary">
           <span>{REFUSAL_REASON_SENTENCES[artifact.reason]}</span>
           <span className="text-ink-tertiary">{artifact.detail}</span>
         </span>
       ) : null}
 
       {artifact.status === "drift_blocked" ? (
-        <span className="flex flex-col gap-0.5 text-xs text-warning">
+        <span className="flex flex-col gap-0.5 text-[13px] leading-[1.45] text-ink-primary">
           <span>{DRIFT_BLOCKED_SENTENCE}</span>
           <span className="text-ink-tertiary">{artifact.detail}</span>
         </span>
       ) : null}
 
       {artifact.status === "unsupported" ? (
-        <span className="flex flex-col gap-0.5 text-xs text-ink-tertiary">
+        <span className="flex flex-col gap-0.5 text-[12.5px] leading-[1.45] text-ink-tertiary">
           <span>{artifact.reason}</span>
           <span>{agentSupportReturnsSentence(artifact.supportReturnsWhen)}</span>
         </span>
@@ -339,7 +343,10 @@ function ArtifactRow({
         * to accept one there would be an instruction about a file that is not
         * there. */}
       {clientStep === null ? null : (
-        <span className="text-xs text-ink-tertiary" data-vex-client-step={artifact.agentId}>
+        <span
+          className="text-[12.5px] leading-[1.45] text-ink-tertiary"
+          data-vex-client-step={artifact.agentId}
+        >
           {clientStep}
         </span>
       )}

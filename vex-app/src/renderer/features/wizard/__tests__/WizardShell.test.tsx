@@ -1,5 +1,5 @@
 /**
- * WizardShell — verifies routing between steps based on persisted
+ * WizardShell - verifies routing between steps based on persisted
  * wizard-state.json, the skip-to-app flip when `completed === true`,
  * and the error/loading shells. Mocks `window.vex` per skill §12 and
  * the API hooks layer so we never touch a real IPC bridge.
@@ -21,6 +21,7 @@ const mockSetCurrentView = vi.fn();
 const mockOpenUnlock = vi.fn();
 const mockSecretsStatus = vi.fn();
 const mockReviewStep = vi.fn();
+const mockReviewMounts = vi.fn();
 const mockOpenLogsFolder = vi.fn();
 let mockWizardEntryMode: "setup" = "setup";
 
@@ -50,17 +51,74 @@ vi.mock("../../../stores/uiStore.js", () => ({
     }),
 }));
 
-vi.mock("../steps/KeystoreStep.js", () => ({
-  KeystoreStep: () => <div data-testid="keystore-step" />,
-}));
+// The keystore stub, like WizardStepPanel, renders what the shell stands
+// above a step's title (the small mark and Vex's word under 1180).
+vi.mock("../steps/KeystoreStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    KeystoreStep: ({ onAdvance }: { onAdvance: (next: string) => void }) => {
+      const host = useContext(WizardHostContext);
+      return (
+        <div data-testid="keystore-step">
+          {host?.before}
+          <input aria-label="Master password" type="password" />
+          <button type="button">Save and continue</button>
+          <button type="button" onClick={() => onAdvance("wallets")}>
+            Continue vault
+          </button>
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
-vi.mock("../steps/WalletsStep.js", () => ({
-  WalletsStep: () => <div data-testid="wallets-step" />,
-}));
+// The wallets stub renders what the shell stands above a step's title, the
+// way WizardStepPanel does.
+vi.mock("../steps/WalletsStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    WalletsStep: () => {
+      const host = useContext(WizardHostContext);
+      return (
+        <div data-testid="wallets-step">
+          {host?.before}
+          <input aria-label="Wallet note" />
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
-vi.mock("../steps/ApiKeysStep.js", () => ({
-  ApiKeysStep: () => <div data-testid="apikeys-step" />,
-}));
+vi.mock("../steps/ApiKeysStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    ApiKeysStep: () => {
+      const host = useContext(WizardHostContext);
+      return (
+        <div data-testid="apikeys-step">
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock("../steps/EmbeddingStep.js", () => ({
   EmbeddingStep: () => <div data-testid="embedding-step" />,
@@ -70,14 +128,40 @@ vi.mock("../steps/AgentCoreStep.js", () => ({
   AgentCoreStep: () => <div data-testid="agentcore-step" />,
 }));
 
-vi.mock("../steps/review/ReviewStep.js", () => ({
-  ReviewStep: (props: unknown) => {
-    mockReviewStep(props);
-    return <div data-testid="review-step" />;
-  },
-}));
+vi.mock("../steps/review/ReviewStep.js", async () => {
+  const { useContext, useEffect } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    ReviewStep: (props: unknown) => {
+      mockReviewStep(props);
+      const host = useContext(WizardHostContext);
+      useEffect(() => {
+        mockReviewMounts();
+      }, []);
+      return (
+        <div data-testid="review-step">
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
 const { WizardShell } = await import("../WizardShell.js");
+
+function stepState(
+  currentStepId: WizardState["currentStepId"],
+  completedSteps: WizardState["completedSteps"],
+): Result<WizardState> {
+  return {
+    ok: true,
+    data: { schemaVersion: 2, currentStepId, completedSteps, completed: false },
+  };
+}
 
 function renderWithQuery(ui: JSX.Element) {
   const qc = new QueryClient({
@@ -137,6 +221,170 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   Reflect.deleteProperty(window, "vex");
+});
+
+describe("WizardShell Back (steps 2 to 7)", () => {
+  const paneOf = (container: HTMLElement, id: string): HTMLElement | null =>
+    container.querySelector<HTMLElement>(`[data-vex-wizard-pane="${id}"]`);
+
+  it("offers Back on steps 2 to 7 and never on the first step", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
+    const first = renderWithQuery(<WizardShell />);
+    await first.findByTestId("keystore-step");
+    expect(first.queryByRole("button", { name: "Back" })).toBeNull();
+    first.unmount();
+
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("apiKeys", ["keystore", "wallets"])),
+    );
+    const third = renderWithQuery(<WizardShell />);
+    await third.findByTestId("apikeys-step");
+    expect(third.getByRole("button", { name: "Back" })).not.toBeNull();
+  });
+
+  it("goes back one step, saves nothing, and keeps what was typed when the user moves on again", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("wallets", ["keystore"])),
+    );
+    const { container, findByTestId, getByLabelText, getByRole } = renderWithQuery(
+      <WizardShell />,
+    );
+    await findByTestId("wallets-step");
+    fireEvent.change(getByLabelText("Wallet note"), { target: { value: "typed before Back" } });
+
+    // a person's press focuses the key first (jsdom's click does not)
+    const back = getByRole("button", { name: "Back" });
+    back.focus();
+    fireEvent.click(back);
+    // the vault step shows (its own panel decides what it offers: the
+    // configured vault, never a second password), with no Back of its own
+    expect(paneOf(container, "keystore")?.hidden).toBe(false);
+    expect(paneOf(container, "wallets")?.hidden).toBe(true);
+    expect(getByRole("button", { name: "Continue vault" })).not.toBeNull();
+    expect(container.querySelector('[aria-current="step"]')?.getAttribute("data-vex-wizard-step")).toBe(
+      "keystore",
+    );
+    expect(paneOf(container, "keystore")?.textContent).toContain("Step 1 of 7 · Master password");
+    // the key that moved the view hid with its step: focus lands in the shown step
+    expect(paneOf(container, "keystore")?.contains(document.activeElement)).toBe(true);
+    // Back persists nothing: the shell never wrote the wizard state
+    expect(Reflect.get(window.vex, "onboarding")).toBeUndefined();
+
+    // moving on is the step's own action; the wallets step comes back as it was left
+    fireEvent.click(getByRole("button", { name: "Continue vault" }));
+    expect(paneOf(container, "wallets")?.hidden).toBe(false);
+    expect(paneOf(container, "keystore")?.hidden).toBe(true);
+    expect((getByLabelText("Wallet note") as HTMLInputElement).value).toBe("typed before Back");
+    expect(container.querySelector('[aria-current="step"]')?.getAttribute("data-vex-wizard-step")).toBe(
+      "wallets",
+    );
+  });
+
+  it("Back from Review unmounts it: no stale summary waits hidden for the next visit", async () => {
+    mockReviewMounts.mockClear();
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(
+        stepState("review", ["keystore", "wallets", "apiKeys", "embedding", "agentCore", "provider"]),
+      ),
+    );
+    const { container, findByTestId, getByRole } = renderWithQuery(<WizardShell />);
+    await findByTestId("review-step");
+    expect(mockReviewMounts).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(getByRole("button", { name: "Back" }));
+    // the provider step shows (the real step, as the routing case renders it)
+    expect(paneOf(container, "provider")?.hidden).toBe(false);
+    // Review left the page instead of hiding with what it summarised, so the
+    // next time it shows it mounts afresh and reads what is saved then
+    expect(paneOf(container, "review")).toBeNull();
+    expect(mockReviewMounts).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides every step but the shown one from the page and from assistive tech", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("wallets", ["keystore"])),
+    );
+    const { container, findByTestId, getByRole, queryAllByRole } = renderWithQuery(<WizardShell />);
+    await findByTestId("wallets-step");
+    fireEvent.click(getByRole("button", { name: "Back" }));
+    const panes = container.querySelectorAll("[data-vex-wizard-pane]");
+    expect([...panes].filter((pane) => !pane.hasAttribute("hidden"))).toHaveLength(1);
+    // the hidden wallets step's Back is not in the accessibility tree
+    expect(queryAllByRole("button", { name: "Back" })).toHaveLength(0);
+  });
+});
+
+describe("WizardShell frame (R3)", () => {
+  it("draws the named stepper and the step line above the title", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("wallets", ["keystore"])),
+    );
+    const { findByTestId, getByRole } = renderWithQuery(<WizardShell />);
+    const step = await findByTestId("wallets-step");
+    const stepper = getByRole("list", { name: "Wizard progress" });
+    const rows = stepper.querySelectorAll("li[data-vex-wizard-step]");
+    expect(rows).toHaveLength(7);
+    expect([...rows].map((row) => row.textContent)).toEqual([
+      "Master password",
+      "Wallets",
+      "API keys",
+      "Embedding",
+      "Agent core",
+      "Provider",
+      "Review",
+    ]);
+    const current = stepper.querySelector('[aria-current="step"]');
+    expect(current?.getAttribute("data-vex-wizard-step")).toBe("wallets");
+    expect(
+      stepper.querySelector('[data-vex-wizard-step="keystore"]')?.getAttribute("data-status"),
+    ).toBe("completed");
+    expect(
+      stepper.querySelector('[data-vex-wizard-step="review"]')?.getAttribute("data-status"),
+    ).toBe("pending");
+    expect(step.textContent).toContain("Step 2 of 7 · Wallets");
+  });
+
+  it("draws no state word under Vex on the plate or beside the small mark; her mood still follows focus", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
+    const { findByTestId, container, getByLabelText, getByRole } = renderWithQuery(
+      <WizardShell />,
+    );
+    await findByTestId("keystore-step");
+    const plate = container.querySelector(".vex-wz__plate");
+    expect(plate).not.toBeNull();
+    // Owner: no "Ready" or "Listening" under Vex.
+    expect(plate?.querySelector(".vex-state-word")).toBeNull();
+    expect(plate?.textContent).toBe("");
+    // The small mark under 1180 carries no word either (the owner,
+    // 2026-10-18: no state word under Vex on any stage).
+    const mini = container.querySelector("[data-vex-wizard-mini]");
+    expect(mini).not.toBeNull();
+    expect(mini?.querySelector(".vex-state-word")).toBeNull();
+    expect(mini?.textContent).toBe("");
+    // the mark is 40 where the plate goes (spec 10.1)
+    expect(mini?.querySelector("svg")?.getAttribute("width")).toBe("40");
+    expect(container.querySelector(".vex-state-word")).toBeNull();
+    // The mood (her face on the plate) still follows focus.
+    const mood = (): string | null | undefined =>
+      container.querySelector("[data-vex-wizard-mood]")?.getAttribute("data-vex-wizard-mood");
+    expect(mood()).toBe("idle");
+    fireEvent.focus(getByLabelText("Master password"));
+    expect(mood()).toBe("listening");
+    expect(container.querySelector(".vex-state-word")).toBeNull();
+    fireEvent.blur(getByLabelText("Master password"), {
+      relatedTarget: getByRole("button", { name: "Save and continue" }),
+    });
+    expect(mood()).toBe("idle");
+  });
+
+  it("carries the gate scope on the document while it stands", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
+    const { findByTestId, unmount } = renderWithQuery(<WizardShell />);
+    await findByTestId("keystore-step");
+    expect(document.documentElement.dataset["vexGate"]).toBe("true");
+    unmount();
+    expect(document.documentElement.dataset["vexGate"]).toBeUndefined();
+  });
 });
 
 describe("WizardShell", () => {
@@ -386,7 +634,7 @@ describe("WizardShell", () => {
    * an incomplete non-keystore step would divert to openUnlock("wizard")
    * and never render Review). Wait for ReviewStep, then optionally swap
    * the secrets status to `completeStatus` and flip the query result to
-   * `completed: true` + re-render — exactly what `useCompleteSetup`'s
+   * `completed: true` + re-render - exactly what `useCompleteSetup`'s
    * wizardState invalidation produces. The watcher effect re-fires with
    * the post-finalize status. Returns the render handle.
    */

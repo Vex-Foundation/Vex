@@ -4,7 +4,7 @@
  * Covers the two inline markers added in 8-4: the static `CompactionMarker`
  * and the static `MemoryMarker`. Asserts accurate memory-vs-knowledge copy,
  * that assistant prose on a recall row is preserved, and that an empty recall
- * row renders the indicator only. Markers are static — no in-flight animation.
+ * row renders the indicator only. Markers are static - no in-flight animation.
  */
 
 import { describe, expect, it } from "vitest";
@@ -217,7 +217,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
     ).toBe(4);
   });
 
-  it("surfaces the Awaiting-signature stamp on an act matched to a pending approval", () => {
+  it("surfaces the Waiting-for-approval link on an act matched to a pending approval", () => {
     render(
       createElement(TranscriptMessage, {
         row: {
@@ -235,9 +235,90 @@ describe("TranscriptMessage tool acts (S5)", () => {
         pendingApprovals: new Map([["call-1", "appr-1"]]),
       }),
     );
+    const link = screen.getByRole("button", { name: /waiting for approval/i });
+    expect(link.textContent).toBe("Waiting for approval");
+    // The target fill rides the link, so the step's own fill slot stays empty
+    // and the row shows the state once.
+    expect(link.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
     expect(
-      screen.getByRole("button", { name: /awaiting signature/i }),
-    ).not.toBeNull();
+      document.querySelector("[data-vex-tool-status] .vex-swatch"),
+    ).toBeNull();
+  });
+
+  it("folds two or more calls of one row into one quiet row that opens to the steps", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          id: 3,
+          variant: "tool",
+          toolKind: "call",
+          label: "wallet:read",
+          content: "",
+          createdAt: ISO,
+          toolCalls: [],
+          toolActs: [
+            { toolCallId: "a", toolName: "wallet:read", toolArgs: "{}", output: "ok", success: true, durationMs: 27 },
+            { toolCallId: "b", toolName: "search:web", toolArgs: "{}", output: "ok", success: true, durationMs: 2300 },
+          ],
+        },
+      }),
+    );
+    const fold = screen.getByRole("button", { name: /2 tool calls/ });
+    expect(fold.textContent).toContain("2 tool calls · Wallet read, Search web");
+    // Time spent in the tools: the measured durations, summed.
+    expect(fold.querySelector("[data-vex-tool-duration]")?.textContent).toBe("2.3 s");
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Done")).toBeNull();
+    fireEvent.click(fold);
+    expect(fold.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByText("Done")).toHaveLength(2);
+    expect(container.querySelector("[data-vex-tool-fold]")).not.toBeNull();
+  });
+
+  it("never lets a fold hide a failure: the folded row counts it, in ink with the cross", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: {
+          id: 4,
+          variant: "tool",
+          toolKind: "call",
+          label: "wallet:read",
+          content: "",
+          createdAt: ISO,
+          toolCalls: [],
+          toolActs: [
+            { toolCallId: "a", toolName: "wallet:read", toolArgs: "{}", output: "ok", success: true },
+            { toolCallId: "b", toolName: "search:web", toolArgs: "{}", output: "boom", success: false },
+          ],
+        },
+      }),
+    );
+    const failed = container.querySelector("[data-vex-tool-fold-failed]");
+    expect(failed?.textContent).toBe("1 failed");
+    expect(failed?.querySelector('.vex-swatch[data-s="error"]')).not.toBeNull();
+    // No member was measured, so the fold prints no time at all.
+    expect(container.querySelector("[data-vex-tool-duration]")).toBeNull();
+  });
+
+  it("keeps a single call as its own step row with its outcome word", () => {
+    render(
+      createElement(TranscriptMessage, {
+        row: {
+          id: 5,
+          variant: "tool",
+          toolKind: "call",
+          label: "wallet:read",
+          content: "",
+          createdAt: ISO,
+          toolCalls: [],
+          toolActs: [
+            { toolCallId: "a", toolName: "wallet:read", toolArgs: "{}", output: "ok", success: true },
+          ],
+        },
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /tool calls/ })).toBeNull();
+    expect(screen.getByText("Done")).not.toBeNull();
   });
 });
 
@@ -265,7 +346,7 @@ describe("TranscriptMessage assistant_stopped (9-5b)", () => {
 });
 
 describe("TranscriptMessage agent activity avatar", () => {
-  it("draws the ongoing swatch under the active agent's mark, never a spinning ring", () => {
+  it("marks the working turn's token, with no state drawn under it: the live row says it", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Preparing the transfer." }),
@@ -275,14 +356,13 @@ describe("TranscriptMessage agent activity avatar", () => {
     const avatar = container.querySelector(
       '[data-vex-agent-avatar-state="working"]',
     );
-    const spinner = container.querySelector("[data-vex-agent-spinner]");
     expect(avatar).not.toBeNull();
-    // Status by fill (docs/design/V10-SPREAD.md section 1): the dot screen
-    // steps, the swatch's own sheet stills it under reduced motion, and no
-    // arc spins.
-    expect(spinner?.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
-    expect(spinner?.className).toContain("text-accent-primary");
-    expect(spinner?.className).not.toMatch(/animate-spin|rounded-full/);
+    // docs/design/R3-MINIMAL.md section 6: the turn in flight is the live
+    // row's fill, word and timer; the token itself carries no swatch and
+    // never spins.
+    expect(avatar?.querySelector(".vex-swatch")).toBeNull();
+    expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
+    expect(avatar?.className).not.toMatch(/animate-spin|rounded-full/);
   });
 
   it("keeps settled agent avatars still", () => {
@@ -296,9 +376,22 @@ describe("TranscriptMessage agent activity avatar", () => {
     ).not.toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
   });
-});
 
-// ── Persisted reasoning on transcript rows (contract C1) ────────────────────
+  it("hangs the turn off the token only on the row that heads it", () => {
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "assistant", content: "And the second part." }),
+        turnMark: false,
+      }),
+    );
+    expect(container.querySelector("[data-vex-agent-avatar]")).toBeNull();
+    // The row still sits on the turn's 40px edge, and is still named.
+    expect(
+      container.querySelector('[data-vex-message-role="assistant"]')?.className,
+    ).toContain("vex-reply");
+    expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+  });
+});
 
 describe("TranscriptMessage persisted reasoning", () => {
   it("renders NOTHING when an assistant row carries no reasoning (null = today)", () => {
@@ -483,7 +576,7 @@ describe("TranscriptMessage assistant identity", () => {
     expect(label?.textContent).toBe("Vex");
   });
 
-  it("draws the working swatch only for the active turn's mark", () => {
+  it("says which token belongs to the working turn, for the active turn only", () => {
     for (const working of [true, false] as const) {
       const { container } = render(
         createElement(TranscriptMessage, {
@@ -495,13 +588,9 @@ describe("TranscriptMessage assistant identity", () => {
       expect(avatar?.getAttribute("data-vex-agent-avatar-state")).toBe(
         working ? "working" : "settled",
       );
-      const spinner = container.querySelector("[data-vex-agent-spinner]");
-      expect(spinner === null).toBe(!working);
-      // The swatch is decoration, never the only signal that a turn is live:
-      // the island and the running head say it in words.
-      if (working) {
-        expect(spinner?.getAttribute("aria-hidden")).toBe("true");
-      }
+      // The token is decoration, never the only signal that a turn is live:
+      // the live row, the title bar chip and the Vex sidebar say it in words.
+      expect(avatar?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     }
   });
 });

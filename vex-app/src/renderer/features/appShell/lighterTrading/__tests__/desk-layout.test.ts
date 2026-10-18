@@ -12,9 +12,11 @@ import {
   LIGHTER_TICKET_MIN,
   LIGHTER_TICKET_MAX,
   LIGHTER_TRADES_MIN,
+  LIGHTER_REVIEW_TICKET_MIN,
   coerceLighterDesk,
   coerceLighterLayout,
   resolveLighterLayout,
+  reviewTicketWidth,
 } from "../desk-preferences.js";
 
 describe("resolveLighterLayout", () => {
@@ -28,9 +30,9 @@ describe("resolveLighterLayout", () => {
     expect(layout.tradesShare).toBe(DEFAULT_LIGHTER_LAYOUT.tradesShare);
   });
   it("keeps valid pixel dimensions across the compact/three-column boundary", () => {
-    expect(LIGHTER_STACK_BELOW).toBe(1020);
+    expect(LIGHTER_STACK_BELOW).toBe(1180);
 
-    for (const width of [1019, 1020]) {
+    for (const width of [1179, 1180]) {
       const resolved = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, {
         width,
         height: 900,
@@ -45,6 +47,17 @@ describe("resolveLighterLayout", () => {
       expect(resolved.tradesHeight).toBeLessThanOrEqual(resolved.tradesMax);
       expect(resolved.bottomHeight).toBeLessThanOrEqual(resolved.bottomMax);
     }
+  });
+
+  it("stacks the book under the chart at a 1440 window with Vex open (a 1128 desk) and keeps three columns with Vex hidden (1384)", () => {
+    expect(1128).toBeLessThan(LIGHTER_STACK_BELOW);
+    expect(1384).toBeGreaterThanOrEqual(LIGHTER_STACK_BELOW);
+    // Stacked, the main area reserves the chart and a side-by-side book under it;
+    // across, it reserves only a book and the trades panel. A frame as tall as the
+    // stacked reserve plus the dock's floor squeezes the dock only when stacked.
+    const height = LIGHTER_COMPACT_CHART_MIN + 1 + LIGHTER_COMPACT_BOOK_MIN + LIGHTER_BOTTOM_MIN;
+    expect(resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, { width: 1128, height }).dockSqueezed).toBe(true);
+    expect(resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, { width: 1384, height }).dockSqueezed).toBe(false);
   });
 
   it("scales the columns, the trades panel and the dock with the desk", () => {
@@ -154,5 +167,32 @@ describe("coerceLighterDesk", () => {
     expect(coerceLighterDesk({ ...DEFAULT_LIGHTER_DESK, skipCloseConfirm: "true" }).skipCloseConfirm).toBe(false);
     expect(coerceLighterDesk({ ...DEFAULT_LIGHTER_DESK, skipCloseConfirm: 1 }).skipCloseConfirm).toBe(false);
     expect(coerceLighterDesk({ ...DEFAULT_LIGHTER_DESK, skipCloseConfirm: true }).skipCloseConfirm).toBe(true);
+  });
+});
+
+describe("reviewTicketWidth", () => {
+  it("grows the ticket to the review's width beside the book where the chart keeps its minimum", () => {
+    expect(LIGHTER_REVIEW_TICKET_MIN).toBe(338);
+    const frame = { width: 1200, height: 900 };
+    const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
+    expect(pixels.ticketWidth).toBe(300);
+    expect(reviewTicketWidth(pixels, frame)).toBe(338);
+  });
+
+  it("never shrinks a ticket the user made wider than the review needs", () => {
+    expect(reviewTicketWidth({ ticketWidth: 380, bookWidth: 240 }, { width: 1400, height: 900 })).toBe(380);
+  });
+
+  it("on a compact desk (the chat open at 1440) the ticket still reaches the review width", () => {
+    const frame = { width: 923, height: 800 };
+    const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
+    expect(pixels.ticketWidth).toBe(LIGHTER_TICKET_MIN);
+    expect(reviewTicketWidth(pixels, frame)).toBe(338);
+  });
+
+  it("yields to the chart minimum when the desk has no room, never below the resolved ticket", () => {
+    const frame = { width: 640, height: 800 };
+    const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
+    expect(reviewTicketWidth(pixels, frame)).toBe(Math.max(pixels.ticketWidth, 640 - 1 - 360));
   });
 });

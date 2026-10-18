@@ -1,8 +1,11 @@
-/* Menu primitive chrome: dropdown card, items, submenu bridge. */
+/* Menu primitive chrome, R3 (docs/design/R3-MINIMAL.md section 12): dropdown
+ * card, items, submenu bridge. */
 
 /* ── Menu ──────────────────────────────────────────────────────────────────
- * Dropdown card: 4px inset pad, square, one 1px rule for an edge (V10: no
- * shadow; the card sits on the same paper as the page), NO entry animation. */
+ * Dropdown card: the field, one 1px ink rule for an edge (no shadow; the card
+ * is told apart by its rule), 4px top and bottom pad, square, NO entry
+ * animation. Items 32 high at 13.5; a selected row takes the selection wash
+ * and keeps its trailing check; a shortcut sits at the right in 12 muted. */
 .vex-menu-root {
   position: relative;
   display: inline-flex;
@@ -14,8 +17,11 @@
   padding: 4px 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--vex-alias-border-l3);
-  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-field);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
   /* Elevated surface: the scrollbar pair takes the l2 tier; the custom
    * properties inherit to whichever descendant actually scrolls. */
   --vex-scrollbar-thumb: var(--vex-alias-scrollbar-l2);
@@ -27,7 +33,7 @@
   top: calc(100% + 4px);
   left: 0;
   z-index: 100;
-  min-width: 218px;
+  min-width: 180px;
   max-width: 360px;
 }
 
@@ -74,7 +80,7 @@
   flex-direction: column;
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid var(--vex-alias-border-l2);
+  border-top: 1px solid var(--vex-alias-rule-quiet);
 }
 
 .vex-menu-item-wrap {
@@ -84,15 +90,16 @@
 .vex-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  min-height: 44px;
-  padding: 8px 14px;
+  min-height: 32px;
+  padding: 0 12px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 15px;
-  line-height: 22px;
+  font-size: 13.5px;
+  line-height: 20px;
+  white-space: nowrap;
   color: var(--vex-alias-label-primary);
   text-align: left;
 }
@@ -101,18 +108,13 @@
   background: var(--vex-alias-interactive-hover);
 }
 
+.vex-menu-item[data-selected] {
+  background: var(--vex-alias-interactive-active);
+}
+
 .vex-menu-item:disabled {
   color: var(--vex-alias-label-tertiary);
   cursor: not-allowed;
-}
-
-.vex-menu-dense .vex-menu-item {
-  min-height: 34px;
-  padding-block: 5px;
-}
-
-.vex-menu-dense .vex-menu-heading {
-  padding-block: 4px;
 }
 
 .vex-menu.vex-menu-compact,
@@ -140,8 +142,6 @@
 
 .vex-menu-compact .vex-menu-heading {
   padding: 4px 7px;
-  font-size: 11px;
-  line-height: 16px;
 }
 
 .vex-menu-item-icon {
@@ -151,7 +151,7 @@
   height: 16px;
   align-items: center;
   justify-content: center;
-  color: var(--vex-alias-label-tertiary);
+  color: var(--vex-alias-label-secondary);
 }
 
 .vex-menu-item-label {
@@ -162,10 +162,16 @@
   white-space: nowrap;
 }
 
-/* Selection marker is the trailing check, never a row fill. */
+.vex-menu-shortcut {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--vex-alias-label-tertiary);
+}
+
 .vex-menu-check {
   flex: none;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-accent-primary);
 }
 
 .vex-menu-danger {
@@ -180,12 +186,11 @@
   background: var(--vex-alias-interactive-danger);
 }
 
+/* Group head: 12 / 500 muted, sentence case. */
 .vex-menu-heading {
-  padding: 8px 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--tracking-chip);
-  text-transform: uppercase;
+  padding: 6px 12px 4px;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
   color: var(--vex-alias-label-tertiary);
 }
@@ -193,7 +198,7 @@
 .vex-menu-separator {
   height: 1px;
   margin: 4px 0;
-  background: var(--vex-alias-rule);
+  background: var(--vex-alias-rule-quiet);
 }
 
 /* Nested card to the right, bottom-aligned with the parent card: item-wrap

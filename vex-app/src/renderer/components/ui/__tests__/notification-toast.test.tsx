@@ -39,6 +39,21 @@ afterEach(() => {
 });
 
 describe("NotificationToastStack", () => {
+  it("shows severity by fill, never a hue: info bare, warning ink hatch, failure ink cross", () => {
+    render(<ToastHost />);
+    act(() => {
+      notifications.notify(input({ severity: "info", message: "Session exported." }));
+      notifications.notify(input({ severity: "warning", message: "Nothing before this message to branch from." }));
+      notifications.notify(input({ severity: "error", message: "Vex could not lock. Try again." }));
+    });
+    const fills = [...document.querySelectorAll('[data-vex-area="notification-toast"]')].map(
+      (node) => [node.getAttribute("data-severity"), node.querySelector(".vex-swatch")?.getAttribute("data-s") ?? null],
+    );
+    expect(Object.fromEntries(fills)).toEqual({ info: null, warning: "concerned", error: "error" });
+    const stack = document.querySelector('[data-vex-area="notification-stack"]');
+    expect(stack?.innerHTML).not.toMatch(/uppercase|danger|amber|green|red-/);
+  });
+
   it("renders the stack, reports the overflow, and dismisses on request", () => {
     render(<ToastHost />);
     act(() => {

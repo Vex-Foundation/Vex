@@ -1,5 +1,6 @@
 /**
- * Tooltip: hover/focus label bubble (dark plate, white text in both themes).
+ * Tooltip: hover/focus label bubble on the reversed chrome plate (ink by
+ * day, paper at night; docs/design/R3-MINIMAL.md section 12).
  * The anchor is the child element itself (cloneElement, no wrapper node), so
  * attaching a tooltip never changes the anchor's layout context. The bubble
  * is position:fixed with coordinates from the anchor's rect at show time, so
@@ -59,9 +60,9 @@ export function Tooltip({
 }): JSX.Element {
   const anchor = useRef<HTMLElement | null>(null);
   // Forward the child's own ref so wrapping never severs the owner's ref.
-  const childRef = (children as ReactElement<AnchorProps> & {
-    ref?: Ref<HTMLElement>;
-  }).ref;
+  // React 19 passes `ref` as a regular prop; `element.ref` is a removed
+  // accessor that logs "Accessing element.ref was removed in React 19".
+  const childRef = children.props.ref;
   const mergedRef = useCallback(
     (el: HTMLElement | null) => {
       anchor.current = el;

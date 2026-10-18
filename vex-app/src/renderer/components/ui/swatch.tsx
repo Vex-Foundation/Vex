@@ -1,10 +1,24 @@
 /**
- * Swatch: status shown by fill, never by colour (docs/design/V10-SPREAD.md
- * section 1). Solid square = done, dot screen = ongoing (the screen steps
- * through four positions, the only state motion), target = warning, hatch =
- * draft, empty outline = idle, ink cross = error. The fill is drawn in the
- * current text colour, so a swatch sits in any ink or blue row unchanged.
- * The pattern rules live in `ui-primitives/indicators.css`.
+ * Swatch: status shown by fill, never by colour (docs/design/R3-MINIMAL.md
+ * section 5). Always beside a word: `StateWord` (state-word.tsx) is the
+ * pairing every R3 surface uses.
+ *
+ * The V10 fills keep their names (tests and e2e read `data-s`): solid = done,
+ * dot screen = ongoing (the screen steps through four positions, the only
+ * state motion), target = warning, hatch = draft, empty outline = idle, ink
+ * cross = error.
+ *
+ * R3 adds five fills as NEW values, never renames:
+ *   listening  dot screen, still
+ *   thinking   hatch
+ *   awaiting   target (a solid inner square, 2px clear of the edge)
+ *   concerned  ink hatch (ink on paper and on night, never a hue)
+ *   sleeping   dotted outline
+ * Working, running and done read as the solid `done` fill.
+ *
+ * The fill is drawn in the current text colour, so a swatch sits in any ink
+ * or blue row unchanged; `error` and `concerned` always paint ink. The
+ * pattern rules live in `ui-primitives/marks.css`.
  */
 
 import type { JSX } from "react";
@@ -16,10 +30,15 @@ export type SwatchState =
   | "warning"
   | "draft"
   | "idle"
-  | "error";
+  | "error"
+  | "listening"
+  | "thinking"
+  | "awaiting"
+  | "concerned"
+  | "sleeping";
 
 /**
- * @param state - which of the six fills the swatch paints.
+ * @param state - which fill the swatch paints.
  * @param size - outer edge in px.
  * @param label - the state IN WORDS, for a site where no visible text already
  *   says it. The swatch itself is `aria-hidden`, so a surface whose only state

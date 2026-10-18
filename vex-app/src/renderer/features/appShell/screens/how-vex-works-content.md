@@ -8,7 +8,7 @@ A ladder. Each rung is safe on its own, and each one teaches you the rung above 
 
 1. **Finish the setup wizard and write down your master password.** Nobody can recover it for you - not Vex, not us.
 2. **Save the backup.** Vex writes one automatically when it creates a wallet and tells you where. Move it somewhere safe now, and keep it in a different place from your password. See "Your keys and your backup".
-3. **Open a New session: Agent type, Restricted, no wallets.** Zero risk - no funds are reachable at all. Ask Vex about a token. Cost: model tokens only, a few cents.
+3. **Press New chat and start a session: Agent type, Restricted, no wallets.** Zero risk - no funds are reachable at all. Ask Vex about a token. Cost: model tokens only, a few cents.
 4. **Attach a wallet holding a small amount, plus gas.** A wallet holding only USDC cannot trade; it needs the chain's native coin too.
 5. **Try a tiny swap.** Read the approval card slowly: the amount, the destination, the chain, the Vex fee. Cost: gas + 0.25%.
 6. **Try the two-step send:** prepare, inspect the preview, then confirm.
@@ -28,7 +28,7 @@ Two things to hold onto:
 
 **What Vex is not.** It is not a custodian and not an exchange account. There is no support desk that can reverse a trade, no deposit insurance, and no password reset. If you send funds to the wrong place, they are gone.
 
-Vex is preview software (pre-1.0, still evolving - you'll see the PREVIEW badge under the mark). Its market calls are directional research (educated reads on which way things might go), never certainty and never a promise of profit. Verify before moving funds.
+Vex is preview software (pre-1.0, still evolving - hover the greeting on the welcome screen for the build note, and look for the small version number in the bottom right corner of the start-up, unlock and setup screens). Its market calls are directional research (educated reads on which way things might go), never certainty and never a promise of profit. Verify before moving funds.
 
 ## What this costs you
 
@@ -36,11 +36,11 @@ Three separate costs, and they are genuinely separate. None of them is refundabl
 
 | What | Who pays | How much | Where you see it |
 | --- | --- | --- | --- |
-| The AI model | You, on your own OpenRouter key | Per message; a chat is cents, a long mission is more | BOOK panel → Runtime & Cost, as a live dollar figure |
+| The AI model | You, on your own OpenRouter key | Per message; a chat is cents, a long mission is more | Hover the end of a finished reply: that turn's cost in dollars. Your OpenRouter account shows the full bill |
 | Network gas | You, in the chain's own coin | Varies by chain and by how busy it is | On the approval card, before you sign |
 | The Vex fee | You | 0.25% (25 basis points) of what you spend | Itemised on the approval card, and on every Agent Scan row |
 
-**"Tokens" on the Runtime & Cost card are not crypto tokens.** They are the model's unit of text - roughly, words in and words out. That card is your AI bill, in dollars, on your own key.
+**"Tokens" in a reply's turn line are not crypto tokens.** They are the model's unit of text - roughly, words in and words out. Vex does not keep a running dollar total: the turn line shows that turn's tokens in and out and its cost in dollars, and your OpenRouter account shows the whole bill on your own key.
 
 **The Vex fee, stated plainly.** Vex charges 0.25% on the operations it executes for you: token swaps on any chain (whichever venue it routed through), cross-chain bridges, and pools.fun launches. **Pendle trades carry no Vex fee.** Three rules govern it:
 
@@ -50,7 +50,7 @@ Three separate costs, and they are genuinely separate. None of them is refundabl
 
 **Lighter is the one venue where the fee works differently**, because it is an exchange rather than a pool. There Vex does not send itself a transfer; the exchange deducts Vex's fee from your fill: **0.02% on perpetuals and 0.25% on spot**, on both the maker and the taker side. It only applies to trades that actually fill, and it needs a one-time authorization you approve before your first Lighter order. That authorization is described under Lighter below, and you can revoke it at any time.
 
-The fee goes to the Vex treasury, which the project uses to buy back and burn $VEX - which is why that token's price sits in a small card in your left rail. You do not need to hold $VEX to use Vex, and Vex will never ask you to.
+The fee goes to the Vex treasury, which the project uses to buy back and burn $VEX - which is why that token's price sits on one line at the bottom of the Portfolio page. You do not need to hold $VEX to use Vex, and Vex will never ask you to.
 
 Read-only actions cost nothing beyond model tokens: quotes, previews, balance reads, research, and every search Vex runs are free. You can always ask Vex "what did that cost?" - every executed move records the exact fee.
 
@@ -60,7 +60,7 @@ During setup, Vex creates your wallets locally and locks each one in an encrypte
 
 You will be asked for it again after every restart. That is not an error: it is the previous sentence being true.
 
-**The backup, which is the part that matters.** When Vex creates or imports a wallet it also writes a backup archive automatically, and the wallet panel tells you where, with an "Open backup folder" button. The archive holds your encrypted keystores, the vault, and your configuration - everything needed to rebuild this machine somewhere else. You can find it again later under **Settings → Wallets**, which also has "Export all wallets" (writes the key files to a folder you choose) and "Restore from backup".
+**The backup, which is the part that matters.** When Vex creates or imports a wallet it also writes a backup archive automatically, and the wallet panel tells you where, with an "Open backup folder" button. The archive holds your encrypted keystores, the vault, and your configuration - everything needed to rebuild this machine somewhere else. The "Open backup folder" button shows right after the wallet is created or imported, so use it then. **Settings → Wallets** also has "Export all wallets" (writes the key files to a folder you choose) and "Restore a full backup", which lists the backups Vex has made.
 
 Three rules:
 
@@ -72,8 +72,8 @@ Three rules:
 
 - **Calls to the AI model**, through OpenRouter. Text and tool descriptions go out; your keys never do, and the model never signs anything.
 - **Requests to blockchains, trading venues and market-data providers** - price lookups, quotes, token images, web research, and the transactions you approve.
-- **The $VEX price ticker**, which keeps polling market APIs in the background so the sidebar card stays live, whether or not Vex is working.
-- **A version check** against Vex's release server when the app starts, when its window comes back into focus, and every few minutes while it runs. Updates never download or install by themselves.
+- **The $VEX price ticker**, which keeps polling market APIs in the background so the $VEX line on the Portfolio page is current when you open it, whether or not Vex is working.
+- **A version check** against Vex's release server when the app starts, when its window comes back into focus, and every few minutes while it runs. Updates never download or install by themselves: a card in the left sidebar offers Update now, and Restart & install is a second, separate click.
 - **One download on the first start** - the local embeddings model (about 330 MB, from Hugging Face). The database and the program that runs the model come inside the app.
 - **Crash reports**, and only if you switch them on. They are off by default, carry no personal data, and are stripped before sending.
 
@@ -89,7 +89,7 @@ Everything important runs on your own computer:
 
 Because all of it is local, Vex only works while the app is open. Close it, or let the machine sleep, and a running mission stops making progress until you come back.
 
-To check on this machinery, open the profile menu (the avatar in the bottom-left corner). Its status row says "Connected" when everything is healthy. Any other word - "Connecting", "Degraded", "Unavailable", "Not ready" - means it is still starting or needs attention; see "When something looks wrong".
+To check on the app, click your name at the bottom of the left sidebar. The Runtime row at the bottom of that menu says "Connected" when you are online and setup is finished. "Not ready" means Vex is offline, "Degraded" means setup is not finished, "Connecting" means it is still checking, and "Unavailable" means Vex could not read its own status; see "When something looks wrong".
 
 ## Who can move your money, and when
 
@@ -115,10 +115,10 @@ Approving signs and executes. Rejecting means nothing happens, and you can attac
 - **Two-step confirm.** High-risk decisions need two clicks: the first arms the button, the second (within 4 seconds) fires. It guards Reject as well as Approve, switching buttons disarms it, and keyboard focus starts on Reject.
 - **Expiry.** An unanswered approval auto-rejects after **one hour** - missions and ordinary chats alike. Expired means rejected; nothing executes. The exception is a prepared wallet send, which expires after 10 minutes and takes its approval card with it.
 - **The two-step send.** Moving funds out of a wallet is always "prepare" then "confirm": prepare builds and previews the transaction with nothing signed, confirm broadcasts it. This shape survives in Full Autonomous too.
-- **The AWAITING badge.** An amber pin in the header counts pending approvals across all sessions. It hides itself while loading or errored, so no badge is not proof that nothing is waiting.
-- **The audit trail.** Every fund-moving attempt - success or failure - is recorded permanently, and you read it on the **Agent Scan** screen (profile menu, or "View all activity" on the Activity card).
+- **Needs you.** The "Needs you" button in the top bar counts every decision waiting on you across all sessions and Studio projects: approvals, and missions that need you to recover, accept a contract or fill in a form. It shows while something waits and steps out of the way when nothing does. If Vex could not read the list it shows "Needs you · ?" with a Retry key instead, so a failed read never looks like an all-clear. Open it and press Review to reach the card.
+- **The audit trail.** Every fund-moving attempt - success or failure - is recorded permanently, and you read it on the **Agent Scan** page (the account menu, or the Agent Scan link on the Activity section of the Portfolio page).
 
-Approvals survive an app restart and reappear in the AWAITING list. If you stop a run, its pending approval is auto-rejected and can never be approved later.
+Approvals survive an app restart and reappear under Needs you. If you stop a run, its pending approval is auto-rejected and can never be approved later.
 
 ### In a Full Autonomous session
 
@@ -126,7 +126,7 @@ The per-action cards do not appear at all - including for transfers out of your 
 
 ### How to stop
 
-**Use Stop.** The send key turns into a Stop key whenever Vex can still be stopped - mid-answer, asleep on a timer, waiting on your approval, or holding a form open. Pressing it always takes: the stop is written down first, under a lock, and applied at the next safe point, so it can never land in the middle of a signature; the model call still in flight is cancelled right after.
+**Use Stop.** The send key turns into a Stop key ("Stop agent" in a chat, "Stop mission" in a mission) whenever Vex can still be stopped - mid-answer, asleep on a timer, waiting on your approval, or holding a form open. Pressing it always takes: the stop is written down first, under a lock, and applied at the next safe point, so it can never land in the middle of a signature; the model call still in flight is cancelled right after.
 
 ### The worst case, plainly
 
@@ -164,37 +164,47 @@ During a run your messages do not stop it - they are queued and read at the next
 
 ## A tour of the desk
 
-Three columns on one screen. Both side columns fold away to a thin strip when you want more room, and the right one folds itself on a small window.
+Three columns on one screen. The left sidebar folds to a thin icon rail on a narrow window, and the vx token in the top bar shows or hides Vex's sidebar on the right.
 
-**Left rail - your sessions.** "New session" starts a fresh conversation. ALL / AGENT / MISSION tabs filter the list, and a magnifier filters it by title. Rows can be pinned or deleted (deletion is blocked while a mission runs or an approval waits - the app says which). A slim $VEX card shows the live token price. The footer avatar opens a menu: Personalize, Memory, Sessions, Agent Scan, How Vex works (this page), Settings - and the runtime status row at the bottom.
+**Left sidebar - where you are.** "New chat" starts a fresh conversation. Search turns into a field with All / Agent / Mission tabs under New chat (Escape or the Esc key beside the field closes it), and the Missions row opens the Mission tab. Below them are the places you can go: Chat, Missions, Portfolio, Board, Lighter, Studio and Settings. Your sessions are listed by name under Pinned, Today, Yesterday and Older; hover a row to pin or remove it, and double click to rename it. Removing is blocked while a mission has an active or paused run or an approval is waiting - the app says which - and it keeps the history on disk. When a new version is ready, an update card appears above the account row. The account row at the foot opens a menu: Personalize, Memory (when the memory feature is on), Sessions, Agent Scan, How Vex works (this page), Settings, Lock Vex - and the Runtime row at the bottom. On the narrow rail, the Expand key at the top brings the sidebar back, and Chat or Missions opens it on their list.
 
-**Center - the conversation.** With no session open you see the Vex mark with its PREVIEW badge, the message box below it, and four quick-action chips: "Trade perps on Lighter", "Hunt trending memecoins", "Scout Pendle yields", "Explore pools.fun launchpad". A chip only fills the message box and vanishes while you type; nothing sends until you press send. The first chip fills in "Light it up.", and sending that opens the Lighter desk instead of a chat. In a session this column is the transcript: replies stream live, every tool call is a collapsible row, and approval cards appear between the transcript and the message box.
+**Center - the conversation.** With no session open you see Vex above a greeting, the message box below it, and four task rows: "Check wallet balances", "Review the market", "Create a mission", "Trade perps on Lighter". A row only fills the message box ("Create a mission" opens the new mission form instead) and vanishes while you type; nothing sends until you press send. The last row fills in "Light it up.", and sending that opens the Lighter desk instead of a chat. In a session this column is the transcript: replies stream live, every tool call is a row you can open, a run of six or more finished calls folds into one line, and an approval card appears in the conversation while the message box says "Waiting for approval". Pages - Portfolio, Board, Memory, Settings and the rest - open in this column too, with both sidebars still in place.
 
-**Right - the BOOK panel.** The instruments dashboard. With a session open it stacks: Position, Wallets, Balances, Activity, Runtime & Cost, Session, and Launchpad. Drag any card by its handle - or focus the handle and press Up or Down - to reorder them; the app remembers your order. With no session open, BOOK shows your whole Portfolio.
+**Right - Vex's sidebar.** It shows what Vex is doing and says it in one line, lists anything waiting on you, and shows her portrait; the Show avatar switch at the foot hides the portrait. It is open by default in chats, on approvals and on the Memory, Sessions and How Vex works pages and in Studio, and hidden by default on Portfolio, Board, Settings and the Lighter desk; the vx token in the top bar ("Hide Vex" or "Show Vex"), or `Ctrl+Shift+.` (`Cmd+Shift+.` on a Mac), changes that. Your money is on the Portfolio page: the total, Wallets, Balances, Lighter account, Activity and Launchpad, then the $VEX line. Drag a section's handle - or focus it and press Up or Down - to reorder them; the app remembers your order.
 
 ### What the states on screen mean
 
+Vex's state is always a small fill and a word, never a colour alone: in the chip in the top bar and in Vex's sidebar. The welcome screen and the start-up screens show her without a word. While she thinks or works, a timer runs beside the word.
+
 | You see | It means |
 | --- | --- |
-| **vexing…** with a particle cloud and a timer | Vex is working. It steps aside the moment words start arriving. The line under it says which step: "Preparing the turn", then "Waiting for the model" once the request is on its way. |
-| **Thinking** | The model is reasoning before it speaks. |
-| **Calling …** / **Running …** | The model is naming a tool, then the tool is running. The row stays until the result is saved. |
-| **Awaiting signature** | Something is waiting for your approval. Click the stamp to jump to the card. |
-| **AWAITING** (amber pin, header) | How many approvals are pending across *all* sessions. |
-| **PREVIEW** (under the mark) | Pre-1.0 software, with its version number. |
+| **Ready** | Nothing is in flight. The word keeps its scope: "This chat: Ready". |
+| **Listening** | You are typing in the message box. |
+| **Thinking** | Vex is preparing the turn, waiting for the model, or reasoning before it speaks. |
+| **Working** | Vex is calling or running a tool, writing the answer, or a mission is running. The live row in the conversation says which step: "Preparing the turn", then "Waiting for the model" once the request is on its way. |
+| **Calling …** / **Running …** | The live row names the tool, then runs it. It stays until the result is saved. |
+| **Waiting for approval** | Something needs your decision. Click the link on the step to jump to the card, or open Needs you. |
+| **Done** | The turn finished and its result is confirmed. The word rests there for a few seconds. |
+| **Concerned** | Vex is offline, the provider is limiting requests, or balances are stale. |
+| **Error** | A turn failed, or a mission failed or paused on an error. |
+| **Sleeping** | You paused it, it parked itself on a timer, or the vault is locked. |
+| **Waking up** | Vex is starting; only the start-up screen shows it. |
+| **Needs you · N** (top bar) | How many decisions are waiting for you across *all* sessions. |
 | **Quote / Requested** | A price was taken, or a trade was sent. Nothing is settled yet. |
-| **PENDING** (amber) | Broadcast, not yet seen to land. Normal. Rows re-check themselves - about every 5 seconds for the first ten minutes, then every 30. |
+| **Pending** / **Submitted, awaiting confirmation** | Broadcast, not yet seen to land. Normal. "Submitted, awaiting confirmation" appears once the row proves something was sent. Rows re-check themselves - about every 5 seconds for the first ten minutes, then every 30. |
 | **in mempool** | The healthy pending answer: a node has your transaction and it is waiting to be included. |
 | **verification stalled** | Repeated checks could not confirm it yet. Still pending - nothing has failed. |
 | **tracking delayed** | The checks themselves have fallen behind. Says nothing about the transaction. |
-| **appears superseded** / **superseded** | Another transaction from this wallet reused this one's slot. Vex has stopped tracking it and **the outcome is unproven** - that is not the same as failed, and it does not mean retrying is safe. Shown in grey on purpose, never red. |
-| **CONFIRMED** | Settled and seen on-chain. |
-| **FAILED** | The attempt failed. Amounts are deliberately not shown, because they did not happen. |
+| **appears superseded** / **superseded** | Another transaction from this wallet reused this one's slot. Vex has stopped tracking it and **the outcome is unproven** - that is not the same as failed, and it does not mean retrying is safe. The row reads "Status unknown" with the ink cross, never red. |
+| **Status unknown** | Vex cannot currently establish what happened: its checks could not conclude, fell behind, or another transaction took the slot. It is never shown as Failed, because nobody knows that. |
+| **Confirmed** | Settled and seen on-chain. |
+| **Failed** | The attempt failed. Amounts are deliberately not shown, because they did not happen. |
+| **Refunded** | A bridge did not complete and the funds came back to the origin chain. |
 | **in flight - no token address yet** (My Launches) | Your launch was broadcast and no token address is proven yet. Vex will not invent one. |
 
 ## Vex Studio
 
-Studio is the second shell inside Vex, for people who already work with a coding agent such as Claude Code, Codex CLI, Gemini CLI or Cursor. Flip the **Agent | Studio** switch at the top of the app (or press `Ctrl+Shift+A`) and Vex becomes a workspace: a project rail with a file explorer on the left, a terminal running real shells in tabs, a file viewer with syntax colouring, and one search box that finds projects and files together. Up to four projects stay open at once, each keeping its terminal and its expanded tree; a fifth asks you to close one first. Close Vex and reopen it and you land back on the same project, the same file tab and the same terminal.
+Studio is the second shell inside Vex, for people who already work with a coding agent such as Claude Code, Codex CLI, Gemini CLI or Cursor. Click **Studio** in the left sidebar (Chat takes you back; inside Studio, `Ctrl+Shift+A`, or `Cmd+Shift+A` on a Mac, does too) and Vex becomes a workspace: your projects and a file explorer in the left sidebar, a terminal running real shells in tabs and a file viewer with syntax colouring in the middle, a "This project" block in Vex's sidebar, and one search box that finds projects and files together. Up to four projects stay open at once, each keeping its terminal and its expanded tree; a fifth asks you to close one first. Close Vex and reopen it and you land back on the same project, the same file tab and the same terminal.
 
 **What a project is.** A folder under `~/Vex/projects` (you can move that root in Settings before the first project exists), plus a scope you control: a **permission**, `restricted` or `full`, and one EVM wallet and one Solana wallet, or none. Restricted means every read runs freely and every fund-moving call stops at an approval card in Vex. Full means those calls run without a card, the same deliberate autonomy a Full Autonomous session has. No wallet selected means no wallet at all; nothing falls back to your primary one.
 
@@ -303,7 +313,7 @@ Read-only research over public tweets, users, and searches - sentiment and news.
 
 **What keeps the record and the conversation.**
 
-- **The activity record** - the log of what actually executed. It feeds the Activity card in the BOOK panel and the Agent Scan screen, which always agree because they read the same source. History from before this record existed no longer appears there.
+- **The activity record** - the log of what actually executed. It feeds the Activity section of the Portfolio page and the Agent Scan page, which always agree because they read the same source. History from before this record existed no longer appears there.
 - **Memory tools** - proposing lessons and searching past ones (see "How Vex learns"), plus a separate search over this conversation's own archived messages once a long chat has been compacted.
 - **Compaction** - when a conversation nears the model's limit, Vex archives older messages and writes a summary so it can keep going. Nothing is deleted; old messages move to an archive and become searchable session memory. Near the limit Vex also stops itself from making fund-moving calls until a compaction has happened, so it cannot trade "blind" - quotes and previews still work throughout, and while a summary is being prepared its full tool set comes back. If a summary is ready early you may see an Apply button.
 
@@ -313,17 +323,17 @@ And the part that makes it feel effortless: **Vex finds its own tools.** It sear
 
 Vex keeps a memory - a notebook of lessons. **You do not have to do anything here**; it maintains itself.
 
-Vex cannot write into it directly. It can only suggest a lesson, which passes through filters (secrets are refused outright, live prices and balances are refused, duplicates strengthen the existing lesson instead of piling up) and then an AI judge that scores the evidence - so yes, a proposed lesson is text that goes to the model, like everything else in a conversation. Only survivors become long-term memory. Every new lesson starts on probation: Vex can still draw on it, but it carries less weight than a confirmed one until a second, independent confirmation matures it.
+Vex cannot write into it directly. It can only suggest a lesson, which passes through filters (recognized secrets are refused outright, suggestions made mostly of live prices and balances are refused, duplicates strengthen the existing lesson instead of piling up) and then an AI judge that scores the evidence - so yes, a proposed lesson is text that goes to the model, like everything else in a conversation. Only survivors become long-term memory. Every new lesson starts on probation: Vex can still draw on it, but it carries less weight than a confirmed one until a second confirmation (a later suggestion that matches it) matures it.
 
-Lessons age. Unused ones fade over weeks; nothing is ever deleted - faded lessons are benched, still searchable, and can earn their way back.
+Lessons age. Trade, strategy and risk lessons fade over weeks unless they are confirmed again; other kinds, such as a preference, do not fade. Nothing is ever deleted - faded lessons are benched, still searchable, and can earn their way back.
 
 One honest limitation: lessons drawn from trades are **not** re-scored against how those trades actually turned out. That automatic correction was removed and is being rebuilt. Treat a trade-derived lesson as Vex's read at the time, not a verified outcome.
 
-Most important: memory is advisory only. A memory only ever reaches Vex as text it reads while thinking. Sizing, approval and signing run on separate paths that never read the memory store - so a lesson can shape what Vex considers, but it cannot size a trade, approve one, or sign anything. The Memory screen (profile menu → Memory) lets you inspect all of it, read-only.
+Most important: memory is advisory only. A memory only ever reaches Vex as text it reads while thinking. Sizing, approval and signing run on separate paths that never read the memory store - so a lesson can shape what Vex considers, but it cannot size a trade, approve one, or sign anything. The Memory page (account menu → Memory) lets you inspect all of it, read-only.
 
 ## Personalize
 
-In the profile menu, Personalize is where you tell Vex about yourself: what to call you, what your work looks like, the tone you want (and a few style traits), how bold or careful its ideas should sound, and any standing instructions. These shape how Vex talks to you. They never loosen safety or approval rules - those are separate on purpose.
+In the account menu, Personalize is where you tell Vex about yourself: what to call you, what your work looks like, the tone you want (and a few style traits), how bold or careful its ideas should sound, and any standing instructions. These shape how Vex talks to you. They never loosen safety or approval rules - those are separate on purpose.
 
 ## Common questions
 
@@ -345,19 +355,19 @@ It auto-rejects after one hour and nothing executes. A prepared wallet send expi
 ### What if Vex says something wrong?
 It can. Trust the approval card, not the chat text: the card carries the arguments that will actually be signed, and its safety verdict comes from Vex's own check rather than the model. For anything already executed, open Agent Scan and follow the explorer link - a block explorer is a public website that shows the chain's own record, and it is the one source neither Vex nor the model can influence.
 
-### Why is there a $VEX price in my sidebar?
+### Why is there a $VEX price on my Portfolio page?
 Because the 0.25% fee you pay funds the treasury that buys back and burns that token. You are not required to hold it and Vex will never route you into it.
 
 ### Do I need my own AI subscription?
-Yes - an OpenRouter key with credit on it. That bill is yours, and the BOOK panel's Runtime & Cost card shows it accruing in dollars.
+Yes - an OpenRouter key with credit on it. That bill is yours: each finished reply shows its own cost when you hover its end, and your OpenRouter account shows the whole bill.
 
 ## When something looks wrong
 
-### The status row isn't "Connected"
-Give it a minute - "Connecting" and "Not ready" are usually the local database still starting. If it stays "Unavailable" or "Degraded", use Restart runtime under Settings > Local runtime, or restart the app; the database and its data are on your disk and survive both.
+### The Runtime row isn't "Connected"
+"Not ready" means Vex is offline, so check your connection. "Degraded" means setup is not finished, so some things will not work yet. "Connecting" is Vex still checking and clears by itself. "Unavailable" means Vex could not read its own status: use Restart runtime under Settings > Local runtime, or restart the app - the database and its data are on your disk and survive both.
 
-### A transaction has been PENDING for a long time
-That is often normal - a busy chain can take a while. The row keeps re-checking itself and will tell you what it knows: "in mempool" means a node has it, "verification stalled" means the checks have not concluded and nothing has failed. If it ends up marked "superseded", another transaction from the same wallet used its slot: Vex stopped tracking it and the outcome is unproven. Look it up on the explorer before assuming anything, and do not retry blind.
+### A transaction has been pending for a long time
+That is often normal - a busy chain can take a while. The row keeps re-checking itself and will tell you what it knows: "in mempool" means a node has it, "verification stalled" means the checks have not concluded and nothing has failed. If it ends up as "Status unknown" with the note "superseded", another transaction from the same wallet used its slot: Vex stopped tracking it and the outcome is unproven. Look it up on the explorer before assuming anything, and do not retry blind.
 
 ### Vex says it can't execute because the conversation is nearly full
 It is compacting first, on purpose, so it does not act on a half-remembered conversation. It resolves itself within a turn or two and you need do nothing.
@@ -369,7 +379,7 @@ The price moved more than the tolerance allowed, so Vex walked away instead of t
 Look at the stop reason: goal reached, deadline, capital floor, max loss, no viable opportunity, emergency stop, or your own Stop. The contract is frozen per run, so to change the terms you edit the mission and start a new run.
 
 ### I closed the app during a mission
-Nothing was lost and nothing kept running. Reopen, unlock, and the session is where you left it; pending approvals reappear in the AWAITING list.
+Nothing was lost and nothing kept running. Reopen, unlock, and the session is where you left it; pending approvals reappear under Needs you.
 
 ### I forgot my master password
 There is no reset. Restore from a backup archive whose password you still have. If you have neither, the funds in those wallets are not recoverable by any means.
@@ -398,6 +408,6 @@ There is no reset. Restore from a backup archive whose password you still have. 
 
 - Session type, access level, and wallets are locked at creation. Wrong pick? Open a new session.
 - In Agent sessions, a text reply ends Vex's turn. Send the next instruction to continue.
-- Check the AWAITING badge when several sessions are open - an approval may be waiting where you aren't looking.
+- Check Needs you in the top bar when several sessions are open - an approval may be waiting where you aren't looking.
 - The most useful sentence you can type is "what did that cost me?" - Vex can answer it exactly, from the record.
 - Stop-losses, price checks, and approval cards reduce risk; none of them guarantees profit. Self-custody means the wins and the losses are genuinely yours.

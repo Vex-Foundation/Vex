@@ -1,23 +1,22 @@
 /**
- * One row of the DESK RULE global approvals inbox.
+ * One decision on the Needs you page (docs/design/R3-MINIMAL.md section 8.5):
+ * the group head of where it was raised (a session, a Studio project, or a
+ * background approval) with its Open key, then the approval itself, either as
+ * the FULL `ApprovalCard` or folded to its row.
  *
- * A session header (title → "Untitled session" → "Background approval" for a
- * session-less / deleted-session row) with an optional "Open session" jump,
- * then the FULL `ApprovalCard` reused verbatim so the two-step high-risk
- * confirm + risk/action stamps + critical-args well are identical to the
- * inline card — a destructive action can never be one-click approved here.
+ * The card is the same component the session mounts, so the REAL FUNDS stamp,
+ * Reject's first focus, the two-step confirm for a high-risk action and the
+ * click lock are the inline card's own: a destructive action can never be
+ * one-click approved here. It is mounted with `idVariant="global"` so its
+ * `approval-card-<id>-` title id stays unique when the SAME approval also
+ * renders inline in the session under the page (duplicate DOM ids break
+ * `aria-labelledby`).
  *
- * The card is mounted with `idVariant="global"` so its `approval-card-<id>-`
- * title element id stays unique when the SAME approval also renders inline in
- * the active session (A3 — duplicate DOM ids break `aria-labelledby`).
- *
- * PROVENANCE (B4c): a Studio-raised approval wears a small project tag beside
- * the session header, and the joined project NAME rides into the card so its
- * details field can show a name rather than a bare uuid. The tag renders only
- * when the row actually carries a project - an agent approval has none, and an
- * empty tag would be a fact the row does not have. The name deliberately
- * survives a tombstone upstream, so the tag can outlive the project it names;
- * the id in its title is what stays identifiable.
+ * PROVENANCE (B4c): a Studio-raised approval is grouped under its project, and
+ * the project name in the head carries the id in its title and accessible
+ * name; the joined name rides into the card so its project field shows a name
+ * rather than a bare uuid. A row with no project draws its session instead:
+ * an empty tag would be a fact the row does not have.
  */
 
 import type { JSX } from "react";
@@ -28,96 +27,159 @@ import {
   approvalProjectDetail,
   approvalProjectDisplay,
 } from "../approvals/approvals-copy.js";
+import { formatNeedsYouTime } from "../../vex/needs-you.js";
+
+/**
+ * The page's two navigations, each ONE write set in one click handler (React
+ * batches them into a single commit):
+ *   - open a session: the agent mode first, then the selection, then the page
+ *     closed, so the jump lands on the transcript even from Studio;
+ *   - open a project: the Studio mode, the project, then the page closed.
+ * Neither is an authority change: the approval is still decided in its own
+ * card under the same two-step confirm.
+ */
+export function useNeedsYouNavigation(): {
+  readonly openSession: (sessionId: string) => void;
+  readonly openProject: (projectId: string) => void;
+} {
+  const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setActiveProjectId = useUiStore((s) => s.setActiveProjectId);
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
+  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
+  return {
+    openSession: (sessionId) => {
+      setRuntimeMode("agent");
+      setActiveSessionId(sessionId);
+      setShellRoute({ kind: "none" });
+    },
+    openProject: (projectId) => {
+      setRuntimeMode("studio");
+      setActiveProjectId(projectId);
+      setShellRoute({ kind: "none" });
+    },
+  };
+}
+
+export interface NeedsYouGroupHeadProps {
+  /** Where the decisions were raised, by name. */
+  readonly where: string;
+  /** The Studio project, when the group is one: its name carries the id. */
+  readonly projectId: string | null;
+  readonly projectName: string | null;
+  /** The muted words after the name ("· Vex Studio project"). */
+  readonly context: string | null;
+  /** The head's key at the right ("Open session", "Open project"). */
+  readonly open: { readonly label: string; readonly onOpen: () => void } | null;
+}
+
+/** A group head: the name in ink, its context in muted type, the Open key. */
+export function NeedsYouGroupHead({
+  where,
+  projectId,
+  projectName,
+  context,
+  open,
+}: NeedsYouGroupHeadProps): JSX.Element {
+  return (
+    <div className="vex-needs-page__group-head" data-vex-area="needs-you-group-head">
+      {projectId !== null ? (
+        <span
+          data-vex-area="approval-project-tag"
+          title={approvalProjectDetail(projectId, projectName)}
+          aria-label={approvalProjectDetail(projectId, projectName)}
+          className="vex-needs-page__group-name"
+        >
+          {approvalProjectDisplay(projectId, projectName)}
+        </span>
+      ) : (
+        <span className="vex-needs-page__group-name">{where}</span>
+      )}
+      {context !== null ? <span>{context}</span> : null}
+      <span className="vex-needs-page__sp" />
+      {open !== null ? (
+        <button type="button" className="vex-needs-page__open" onClick={open.onOpen}>
+          {open.label}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The head's muted context for an approval's group. */
+function approvalGroupContext(row: ApprovalPendingGlobalDto): string | null {
+  if (row.projectId !== null) return "· Vex Studio project";
+  const asked = formatNeedsYouTime(row.createdAt, Date.now());
+  return asked === null ? null : `· asked ${asked}`;
+}
 
 export interface GlobalApprovalItemProps {
   readonly row: ApprovalPendingGlobalDto;
-  /** Close the panel after navigating to the owning session. */
+  /** Called after an Open key navigated to the owning session or project. */
   readonly onOpenSession: () => void;
+  /** Draw the group head above the decision (the first one of its group). */
+  readonly head?: boolean;
+  /** The full card (default), or the folded row. */
+  readonly expanded?: boolean;
+  /** The folded row's Review key: open this decision as the full card. */
+  readonly onReview?: () => void;
+  /** The full card takes the first focus, on Reject, when it mounts. */
+  readonly focusOnMount?: boolean;
 }
 
 export function GlobalApprovalItem({
   row,
   onOpenSession,
+  head = true,
+  expanded = true,
+  onReview,
+  focusOnMount = false,
 }: GlobalApprovalItemProps): JSX.Element {
-  const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
-  const setShellRoute = useUiStore((s) => s.setShellRoute);
-  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
-
-  // A5 nulls `sessionId` for session-less / deleted-session rows upstream, so
-  // "Open session" gates on it directly.
-  const canOpenSession = row.sessionId !== null;
+  const { openSession, openProject } = useNeedsYouNavigation();
   const sessionLabel =
     row.sessionTitle ?? (row.sessionId !== null ? "Untitled session" : "Background approval");
 
-  /**
-   * Jump to the session that raised this approval.
-   *
-   * The strip is mounted ABOVE the mode dispatch, so this panel is reachable
-   * from Studio - and a session transcript only exists in the agent shell.
-   * Selecting the session without switching the mode left the user in Studio
-   * looking at a project workspace, having pressed a control that promised a
-   * session. So the three writes are ONE navigation and land together.
-   *
-   * ORDER: mode first, then the selection, then the covering screen. Zustand's
-   * `set` goes through React's `useSyncExternalStore` subscription, and all
-   * three run inside one click handler, so React 18 batches them into a single
-   * commit - no intermediate frame exists in practice. The order is chosen for
-   * the case where that is not true (a future non-batched dispatcher): mode
-   * first means the worst intermediate frame is the agent shell still showing
-   * the PREVIOUS selection for one frame, never the Studio chrome painted over
-   * a session the user cannot see.
-   *
-   * Neither write is an authority change: `runtimeMode` decides which surfaces
-   * mount, and the approval is still decided in its own card under the same
-   * two-step confirm.
-   */
-  const openSession = (): void => {
-    if (row.sessionId === null) return;
-    setRuntimeMode("agent");
-    setActiveSessionId(row.sessionId);
-    // A full-app screen (Memory / Missions / …) may be covering the shell —
-    // close it so the jump actually lands on the session transcript.
-    setShellRoute({ kind: "none" });
-    onOpenSession();
-  };
+  // The upstream read nulls `sessionId` for session-less and deleted-session
+  // rows, so "Open session" gates on it directly; a Studio approval with no
+  // session opens its project instead.
+  const { sessionId, projectId } = row;
+  const open =
+    sessionId !== null
+      ? {
+          label: "Open session",
+          onOpen: () => {
+            openSession(sessionId);
+            onOpenSession();
+          },
+        }
+      : projectId !== null
+        ? {
+            label: "Open project",
+            onOpen: () => {
+              openProject(projectId);
+              onOpenSession();
+            },
+          }
+        : null;
 
   return (
-    <div
-      data-vex-area="global-approval-item"
-      className="border-b border-rule px-3 py-3 last:border-b-0"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate font-mono text-[11px] uppercase tracking-status text-ink-secondary">
-            {sessionLabel}
-          </span>
-          {row.projectId !== null ? (
-            <span
-              data-vex-area="approval-project-tag"
-              title={approvalProjectDetail(row.projectId, row.projectName)}
-              aria-label={approvalProjectDetail(row.projectId, row.projectName)}
-              className="inline-flex h-[22px] min-w-0 shrink items-center truncate px-2 font-mono text-[11px] uppercase tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
-            >
-              {approvalProjectDisplay(row.projectId, row.projectName)}
-            </span>
-          ) : null}
-        </span>
-        {canOpenSession ? (
-          <button
-            type="button"
-            onClick={openSession}
-            className="shrink-0 font-mono text-[11px] uppercase tracking-status text-accent-primary hover:underline hover:underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          >
-            Open session
-          </button>
-        ) : null}
-      </div>
+    <div data-vex-area="global-approval-item">
+      {head ? (
+        <NeedsYouGroupHead
+          where={sessionLabel}
+          projectId={projectId}
+          projectName={row.projectName}
+          context={approvalGroupContext(row)}
+          open={open}
+        />
+      ) : null}
       <ApprovalCard
         summary={row}
-        sessionId={row.sessionId ?? ""}
-        focusOnMount={false}
+        sessionId={sessionId ?? ""}
+        focusOnMount={focusOnMount}
         idVariant="global"
         projectName={row.projectName}
+        layout={expanded ? "card" : "row"}
+        onReview={onReview}
       />
     </div>
   );

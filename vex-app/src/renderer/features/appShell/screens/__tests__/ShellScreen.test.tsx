@@ -1,15 +1,19 @@
 /**
- * ShellScreen - the reusable full-app overlay chrome.
+ * ShellScreen - the shared page chrome (docs/design/R3-MINIMAL.md sections
+ * 2.3, 9.2, 9.6 and 12).
  *
  * Contract pinned here:
- *   1. renders as a modal dialog named by its title, with the mono H1 in the
- *      44px head and the square close key; the close key fires `onClose`;
- *   2. the overlay is ONE paper sheet (`vex-ov`: absolute inside the shell
- *      frame, radius 0, no glass) - never an in-flow flex child that could
- *      reflow the shell columns - and declares its FLIP morph anchor via
- *      `data-vex-morph` ("trigger" with an origin rect, "center" without,
- *      "reduced" under prefers-reduced-motion). Classes/attrs only - the
- *      animation frames themselves are not assertable in jsdom;
+ *   1. renders as a modal dialog named by its title, with the serif page head
+ *      as its h1 (or a visually hidden h1 when the page draws none), and NO
+ *      crumb or close row of its own: the title bar carries the crumb and,
+ *      where a page has no other way back, its close key;
+ *   2. the page is ONE paper sheet (`vex-ov`: absolute inside the centre
+ *      column, under the title bar, radius 0, no glass) - never an in-flow
+ *      flex child that could reflow the shell columns - and declares its FLIP
+ *      morph anchor via `data-vex-morph` ("trigger" with an origin rect,
+ *      "center" without, "reduced" under prefers-reduced-motion) and its
+ *      column via `data-width`. Classes/attrs only - the animation frames
+ *      themselves are not assertable in jsdom;
  *   3. Escape (from anywhere - the listener rides window) fires `onClose`, but
  *      ONLY while this screen owns the key: never over an already-handled
  *      event, never while a native `<dialog>` is open above it, and never
@@ -20,21 +24,32 @@
  *   5. the optional `header` slot replaces the serif H1 while `title` keeps
  *      naming the dialog and the close key (token-history screen contract);
  *   6. focus returns to the trigger control on unmount (and is never stolen
- *      from a control another surface focused meanwhile).
+ *      from a control another surface focused meanwhile);
+ *   7. Escape returns to the PREVIOUS route: the page the user came from, else
+ *      the host's close. Going up a crumb cuts the way back; a return to the
+ *      bare shell forgets it; a move within one page never counts as a step.
  */
 
 import type { JSX } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { ShellScreen } from "../ShellScreen.js";
+import { goUpToPage } from "../page-trail.js";
 
 const ORIGIN = { x: 10, y: 620, width: 240, height: 44 };
 
 const realMatchMedia = window.matchMedia;
 
+beforeEach(() => {
+  // A return to the bare shell also empties the way back.
+  useUiStore.setState({ shellRoute: { kind: "none" } });
+});
+
 afterEach(() => {
   cleanup();
   window.matchMedia = realMatchMedia;
+  useUiStore.setState({ shellRoute: { kind: "none" } });
 });
 
 /** Minimal MediaQueryList stub forcing prefers-reduced-motion to `matches`. */
@@ -53,10 +68,9 @@ function stubMatchMedia(matches: boolean): void {
 }
 
 describe("ShellScreen", () => {
-  it("opens as a titled modal dialog and closes via the round close key", () => {
-    const onClose = vi.fn();
+  it("opens as a titled modal dialog with the serif head as its h1, and no crumb or close row", () => {
     render(
-      <ShellScreen title="Memory" origin={ORIGIN} onClose={onClose}>
+      <ShellScreen title="Memory" origin={ORIGIN} onClose={vi.fn()}>
         <p>screen content</p>
       </ShellScreen>,
     );
@@ -65,9 +79,9 @@ describe("ShellScreen", () => {
     expect(overlay.getAttribute("aria-modal")).toBe("true");
     expect(screen.getByRole("heading", { level: 1, name: "Memory" })).not.toBeNull();
     expect(screen.getByText("screen content")).not.toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close Memory" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // The title bar says where you are; the page starts with its content.
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("is a fixed full-app overlay declaring its FLIP morph anchor - never an in-flow sheet", () => {
@@ -174,20 +188,6 @@ describe("ShellScreen", () => {
     expect(second.defaultPrevented).toBe(false);
   });
 
-  it("closes once when the round close key was used, not again on a following Escape", () => {
-    const onClose = vi.fn();
-    render(
-      <ShellScreen title="Sessions" origin={null} onClose={onClose}>
-        <p>ledger</p>
-      </ShellScreen>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Close Sessions" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
   it("never takes an Escape a nearer owner already handled", () => {
     const onClose = vi.fn();
     render(
@@ -206,7 +206,7 @@ describe("ShellScreen", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("renders the `header` slot in place of the serif H1 while `title` still names the dialog and close key", () => {
+  it("renders the `header` slot in place of the serif H1 while `title` still names the dialog", () => {
     render(
       <ShellScreen
         title="USD Coin history"
@@ -218,12 +218,9 @@ describe("ShellScreen", () => {
       </ShellScreen>,
     );
 
-    // The dialog + close key stay named by `title` (a11y contract)…
+    // The dialog stays named by `title` (a11y contract)…
     expect(
       screen.getByRole("dialog", { name: "USD Coin history" }),
-    ).not.toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Close USD Coin history" }),
     ).not.toBeNull();
     // …while the default serif H1 is replaced by the custom header content.
     expect(screen.getByTestId("custom-header")).not.toBeNull();
@@ -252,10 +249,8 @@ describe("ShellScreen", () => {
     expect(document.activeElement).toBe(trigger);
 
     view.rerender(<Harness open />);
-    // The chrome claims focus on open (the close key)…
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Close Memory" }),
-    );
+    // The page claims focus on open (the dialog itself)…
+    expect(document.activeElement).toBe(screen.getByRole("dialog", { name: "Memory" }));
 
     view.rerender(<Harness open={false} />);
     // …and hands it back to the trigger on close.
@@ -333,5 +328,161 @@ describe("ShellScreen", () => {
     expect(
       screen.getByRole("dialog", { name: "How Vex works" }),
     ).not.toBeNull();
+  });
+});
+
+describe("ShellScreen - the page chrome", () => {
+  it("draws the column it was given, reading by default", () => {
+    const reading = render(
+      <ShellScreen title="Memory" origin={null} onClose={vi.fn()}>
+        <p>notes</p>
+      </ShellScreen>,
+    );
+    expect(screen.getByRole("dialog", { name: "Memory" }).getAttribute("data-width")).toBe("reading");
+    reading.unmount();
+
+    render(
+      <ShellScreen title="Agent Scan" origin={null} onClose={vi.fn()} width="wide" chapter={null}>
+        <p>ledger</p>
+      </ShellScreen>,
+    );
+    expect(screen.getByRole("dialog", { name: "Agent Scan" }).getAttribute("data-width")).toBe("wide");
+  });
+
+  it("keeps an h1 for a page that draws no serif head", () => {
+    render(
+      <ShellScreen title="Agent Scan" origin={null} onClose={vi.fn()} chapter={null}>
+        <p>ledger</p>
+      </ShellScreen>,
+    );
+    const heading = screen.getByRole("heading", { level: 1, name: "Agent Scan" });
+    expect(heading.classList.contains("sr-only")).toBe(true);
+    expect(document.querySelector("[data-vex-chapter]")).toBeNull();
+  });
+
+  it("closes back to the page the user came from, without its stale trigger rect", () => {
+    const onClose = vi.fn();
+    render(
+      <ShellScreen title="Agent Scan" origin={null} onClose={onClose}>
+        <p>ledger</p>
+      </ShellScreen>,
+    );
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "portfolio", origin: ORIGIN });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "agentScan", origin: ORIGIN, sessionId: null });
+    });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
+  });
+
+  it("walks back one page per close, then hands the last close to the host", () => {
+    const onClose = vi.fn();
+    const view = render(
+      <ShellScreen key="a" title="All assets" origin={null} onClose={onClose}>
+        <p>register</p>
+      </ShellScreen>,
+    );
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "portfolio", origin: null });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "assets", origin: null, sessionId: null });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({
+        kind: "tokenHistory",
+        origin: null,
+        token: { chainId: 8453, tokenAddress: "0xabc", symbol: "USDC", tokenName: "USD Coin" },
+        returnTo: { kind: "assets", sessionId: null },
+      });
+    });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useUiStore.getState().shellRoute.kind).toBe("assets");
+
+    // A fresh page instance for the next step (the host remounts per route).
+    view.rerender(
+      <ShellScreen key="b" title="All assets" origin={null} onClose={onClose}>
+        <p>register</p>
+      </ShellScreen>,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useUiStore.getState().shellRoute.kind).toBe("portfolio");
+
+    view.rerender(
+      <ShellScreen key="c" title="Portfolio" origin={null} onClose={onClose}>
+        <p>total</p>
+      </ShellScreen>,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("going up a crumb cuts the way back, so a later close does not walk down again", () => {
+    const onClose = vi.fn();
+    const view = render(
+      <ShellScreen key="a" title="Agent Scan" origin={null} onClose={onClose}>
+        <p>ledger</p>
+      </ShellScreen>,
+    );
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "portfolio", origin: null });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "agentScan", origin: null, sessionId: null });
+    });
+    // The title bar's crumb link goes up through the trail.
+    act(() => {
+      goUpToPage({ kind: "portfolio", origin: null });
+    });
+    expect(useUiStore.getState().shellRoute.kind).toBe("portfolio");
+
+    view.rerender(
+      <ShellScreen key="b" title="Portfolio" origin={null} onClose={onClose}>
+        <p>total</p>
+      </ShellScreen>,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets the way back on a return to the bare shell, and never counts a move within one page", () => {
+    const onClose = vi.fn();
+    const view = render(
+      <ShellScreen key="a" title="Settings" origin={null} onClose={onClose}>
+        <p>preferences</p>
+      </ShellScreen>,
+    );
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "portfolio", origin: null });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "settings", origin: null, section: null });
+    });
+    // Another section of the same page: not a step.
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "settings", origin: null, section: "wallets" });
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
+
+    // Back to the chat, then a page again: nothing to return to but the host.
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "none" });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "memory", origin: null });
+    });
+    view.rerender(
+      <ShellScreen key="b" title="Memory" origin={null} onClose={onClose}>
+        <p>notes</p>
+      </ShellScreen>,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

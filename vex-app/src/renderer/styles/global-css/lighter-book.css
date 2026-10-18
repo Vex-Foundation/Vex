@@ -1,15 +1,17 @@
 /* ---------------------------------------------------------------------------
- * Order book (asks over bids, or bids | asks side by side) and trades
- * (docs/design/V10-SPREAD.md section 1). Bids are the blue: blue prices over a
- * solid blue depth wash. Asks are the ink: ink prices over an ink hatch.
- * Departure Mono 11px rows, 10px caps column heads.
+ * Order book (asks over bids, or bids beside asks) and trades
+ * (docs/design/R3-MINIMAL.md sections 1.2 and 9.3). Bids are trading values
+ * in trade up, asks in trade down, each over a wash of its colour (14% and
+ * 12%); the B and S ratio bar is the same pair. Rows 22 high in JetBrains
+ * Mono 11.5; the column heads 11.5 / 500 muted in Instrument Sans. The tape
+ * keeps the blue and the ink for its prints.
  * ------------------------------------------------------------------------- */
 
 .lit-book-panel,
-.lit-trades-panel { padding: 0 10px; }
+.lit-trades-panel { padding: 0 14px; }
 
 .lit-book-panel > .lit-panel-header,
-.lit-trades-panel > .lit-panel-header { margin-inline: -10px; padding-inline: 10px; }
+.lit-trades-panel > .lit-panel-header { margin-inline: -14px; padding-inline: 14px; }
 
 .lit-book-header { gap: 8px; }
 
@@ -19,15 +21,14 @@
 /* The desk can fold market depth without losing the live price context. */
 .lit-book-collapse {
   display: inline-grid;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   flex: 0 0 auto;
   place-items: center;
-  border: 0;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+  border: 1px solid var(--lit-line-quiet);
   background: transparent;
   color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1;
 }
@@ -74,26 +75,26 @@
   padding-inline: 0;
 }
 
-/* The two small selects (price grouping, order expiry): rule-framed chips
- * with a drawn caret. */
+/* The two small selects (price grouping, order expiry): a 26 high field in
+ * a 1px rule, the figure in mono 12, a drawn caret. */
 .lit-expiry select,
 .lit-book-controls > select {
-  height: 22px;
+  height: 26px;
   appearance: none;
-  border: 0;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
-  background-color: transparent;
+  border: 1px solid var(--lit-line);
+  background-color: var(--lit-field);
   background-image:
     linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50%;
   background-repeat: no-repeat;
   background-size: 4px 4px;
-  padding: 0 20px 0 7px;
-  color: var(--lit-ink-secondary);
+  padding: 0 22px 0 8px;
+  color: var(--lit-ink);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
 }
 
 .lit-book-controls > select {
@@ -101,37 +102,43 @@
   flex: 0 0 auto;
 }
 
-/* Base | quote and stacked | side by side: rule-framed segments, the chosen
- * one blue on the paper-2 step. */
+/* Base | quote and Stacked | Side by side: segmented controls, 26 high in a
+ * 1px rule; the chosen one takes the selection fill and blue 500 type. */
 .lit-unit-switch {
   display: flex;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+  flex: 0 0 auto;
+  border: 1px solid var(--lit-line);
 }
 
 .lit-unit-switch button {
-  display: inline-grid;
+  display: inline-flex;
   min-width: 30px;
-  height: 22px;
-  place-items: center;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
   border: 0;
+  border-right: 1px solid var(--lit-line);
   background: transparent;
-  padding: 0 7px;
+  padding: 0 8px;
   color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
+  white-space: nowrap;
 }
 
-.lit-unit-switch button:hover { color: var(--lit-ink); }
+.lit-unit-switch button:last-child { border-right: 0; }
+.lit-unit-switch button:hover { background: var(--lit-hover); color: var(--lit-ink); }
 
 .lit-unit-switch button[aria-pressed="true"] {
-  background: var(--lit-panel-raised);
-  color: var(--lit-positive);
+  background: var(--lit-pressed);
+  color: var(--lit-accent);
+  font-weight: 500;
 }
 
-.lit-view-switch button { min-width: 26px; padding: 0 5px; }
+.lit-view-switch button { min-width: 28px; padding: 0 6px; }
 .lit-view-switch svg { display: block; width: 16px; height: 16px; }
+.lit-view-switch .lit-view-word { display: none; }
 
 /* A narrow depth column gives controls their own row instead of squeezing
  * the title or shifting column labels away from the prices below them. */
@@ -147,29 +154,48 @@
   .lit-book-header > .lit-live-dot { grid-row: 1; grid-column: 3; }
 }
 
-/* Pinned inside row: last trade, spread, mark. In the side-by-side view it
- * sits right under the header, over the column heads. */
+/* A wide depth panel (the book under the chart) names its views in words. */
+@container (min-width: 560px) {
+  .lit-view-switch button { padding: 0 10px; }
+  .lit-view-switch .lit-view-icon { display: none; }
+  .lit-view-switch .lit-view-word { display: inline; }
+}
+
+/* Pinned inside row: last trade, spread, mark (30 high, 12.5 muted; the
+ * last trade mono 14 / 500 in ink). In the side-by-side view it sits right
+ * under the header, over the column heads. */
 .lit-book-mid {
   display: grid;
-  min-height: 26px;
+  min-height: 30px;
   flex: 0 0 auto;
   grid-template-columns: auto auto 1fr;
   align-items: center;
   gap: 16px;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
+  color: var(--lit-ink-muted);
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .lit-book-mid b {
   color: var(--lit-ink);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* The last trade carries its tick direction: the arrow, in its trading colour. */
+.lit-book-mid[data-trend] b::after {
   font-weight: 400;
 }
 
-/* Exchange register: the last trade carries its tick direction; up is blue. */
-.lit-book-mid[data-trend="up"] b::after { content: "\00a0\2191"; }
-.lit-book-mid[data-trend="down"] b::after { content: "\00a0\2193"; }
+.lit-book-mid[data-trend="up"] b::after {
+  color: var(--lit-trade-up);
+  content: "\00a0\2191";
+}
+
+.lit-book-mid[data-trend="down"] b::after {
+  color: var(--lit-trade-down);
+  content: "\00a0\2193";
+}
 
 /* At the column's floor the last and the mark keep the row; the spread moves
  * to the row's tooltip rather than clipping the mark's digits. */
@@ -189,7 +215,7 @@
 /* Labels use the same full-width grid as the data rows. */
 .lit-book-labels {
   display: flex;
-  min-height: 20px;
+  min-height: 22px;
   flex: 0 0 auto;
   align-items: center;
 }
@@ -199,10 +225,11 @@
   min-width: 0;
   flex: 1 1 auto;
   grid-template-columns: 1fr 1fr 1fr 1fr;
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
@@ -213,7 +240,7 @@
 .lit-book-columns[data-view="stack"] { grid-template-columns: 1.1fr 1fr 1fr; column-gap: 4px; }
 .lit-book-columns[data-view="stack"] span:not(:first-child) { text-align: right; }
 
-.lit-trades-columns { min-height: 20px; flex: 0 0 auto; align-items: center; grid-template-columns: 1.1fr 1fr 1fr; }
+.lit-trades-columns { min-height: 22px; flex: 0 0 auto; align-items: center; grid-template-columns: 1.1fr 1fr 1fr; }
 .lit-trades-columns span:not(:first-child) { text-align: right; }
 
 .lit-book-body {
@@ -240,14 +267,14 @@
   --lit-depth: 0%;
   position: relative;
   display: grid;
-  min-height: 21px;
+  min-height: 22px;
   flex: 0 0 auto;
   align-items: center;
   border: 0;
   background: transparent;
   padding: 0;
   color: var(--lit-ink);
-  font-size: 11px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -280,29 +307,41 @@
 
 .lit-book-row > * { position: relative; z-index: 1; }
 
-.lit-book-row b {
-  color: var(--lit-positive);
-  font-weight: 400;
-}
+.lit-book-row b { font-weight: 400; }
 
-.lit-book-rows[data-side="ask"] .lit-book-row b,
+/* The trading pair: bid prices up, ask prices down. */
+.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-trade-up); }
+.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-trade-down); }
+
+/* The tape's prints: a buy in the blue, a sell in the ink. */
+.lit-trade-row b { color: var(--lit-positive); }
 .lit-trade-row[data-side="sell"] b { color: var(--lit-negative); }
 
 .lit-book-row:hover { background: var(--lit-hover); }
 
 /* A level whose size just changed, and a trade that just printed, mark once
  * in the side's wash and settle: one discrete frame, no fade. */
-.lit-book-rows[data-side="bid"] .lit-book-row[data-flash],
-.lit-trade-row[data-side="buy"][data-new] { animation: lit-flash-positive 480ms steps(1, end); }
-.lit-book-rows[data-side="ask"] .lit-book-row[data-flash],
-.lit-trade-row[data-side="sell"][data-new] { animation: lit-flash-negative 480ms steps(1, end); }
+.lit-book-rows[data-side="bid"] .lit-book-row[data-flash] { animation: lit-flash-bid 480ms steps(1, end); }
+.lit-book-rows[data-side="ask"] .lit-book-row[data-flash] { animation: lit-flash-ask 480ms steps(1, end); }
+.lit-trade-row[data-side="buy"][data-new] { animation: lit-flash-buy 480ms steps(1, end); }
+.lit-trade-row[data-side="sell"][data-new] { animation: lit-flash-sell 480ms steps(1, end); }
 
-@keyframes lit-flash-positive {
+@keyframes lit-flash-bid {
   from { background: var(--lit-depth-bid); }
   to { background: transparent; }
 }
 
-@keyframes lit-flash-negative {
+@keyframes lit-flash-ask {
+  from { background: var(--lit-depth-ask); }
+  to { background: transparent; }
+}
+
+@keyframes lit-flash-buy {
+  from { background: color-mix(in srgb, var(--lit-positive) 14%, transparent); }
+  to { background: transparent; }
+}
+
+@keyframes lit-flash-sell {
   from { background: color-mix(in srgb, var(--lit-ink) 10%, transparent); }
   to { background: transparent; }
 }
@@ -332,8 +371,8 @@
 
 .lit-book-stack > .lit-book-mid {
   border-block: 1px solid var(--lit-line-quiet);
-  margin-inline: -10px;
-  padding-inline: 10px;
+  margin-inline: -14px;
+  padding-inline: 14px;
 }
 
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row {
@@ -346,7 +385,8 @@
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row span:last-child { color: var(--lit-ink-secondary); }
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row::before { right: 0; left: auto; }
 
-/* Bid and ask share of the visible depth: the blue fill is the bids. */
+/* Bid and ask share of the visible depth: "B 54%" in trade up, "46% S" in
+ * trade down, and a 6 high bar of the two fills between them. */
 .lit-book-ratio {
   display: grid;
   min-height: 28px;
@@ -354,17 +394,27 @@
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
+
+.lit-book-ratio > [data-side="bid"] { color: var(--lit-trade-up); }
+.lit-book-ratio > [data-side="ask"] { color: var(--lit-trade-down); }
 
 .lit-book-ratio i {
   --lit-bid-share: 50%;
+  position: relative;
   display: block;
   height: 6px;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
-  background: linear-gradient(to right, var(--lit-positive) var(--lit-bid-share), transparent var(--lit-bid-share));
+  background: var(--lit-trade-down);
+}
+
+.lit-book-ratio i::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--lit-bid-share);
+  background: var(--lit-trade-up);
 }
 
 .lit-trades-list {

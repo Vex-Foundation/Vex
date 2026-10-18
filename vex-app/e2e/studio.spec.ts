@@ -7,8 +7,8 @@
  * rather than a component's self-report:
  *
  *   1. the shell is reached and reports `data-vex-runtime-mode="agent"`;
- *   2. the rail header's Studio radio flips the mode on the SAME DOM node that
- *      carries `data-vex-screen="appShell"`, and the Studio sidebar and
+ *   2. the left sidebar nav's Studio row flips the mode on the SAME DOM node
+ *      that carries `data-vex-screen="appShell"`, and the Studio sidebar and
  *      welcome mount;
  *   3. the sidebar's New project key opens `ProjectCreator`, whose wallet
  *      fieldset reflects the wallet inventory this config dir really has.
@@ -172,38 +172,33 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   expect(shellNodeBeforeSwitch).not.toBeNull();
   await shot(page, testInfo, screenshots, "01-app-shell-agent");
 
-  /* ---- 2. the welcome hero's radio switches the whole shell to Studio -- */
+  /* ---- 2. the sidebar nav's Studio row switches the whole shell ------- */
 
-  // On the agent welcome the capsule sits under the vex wordmark (no session
-  // is active, so the rail header mounts none): the page-wide locator resolves
-  // to that one seat.
-
+  // In agent mode the way into Studio is the left sidebar nav's Studio row
+  // (docs/design/R3-MINIMAL.md section 4); no mode capsule is on the page.
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-current", "page");
   const modeGroup = page.getByRole("radiogroup", { name: "Runtime mode" });
-  await expect(modeGroup.getByRole("radio", { name: "Agent" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await modeGroup.getByRole("radio", { name: "Studio" }).click();
+  await expect(modeGroup).toHaveCount(0);
+  await nav.getByRole("button", { name: "Studio" }).click();
 
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
-  // Studio is NOT a one-way door, and the capsule has exactly ONE home per
-  // page. With no project open that home is the Studio WELCOME, under its
-  // wordmark (owner decree 2026-09-04); the Studio rail header mounts its copy
-  // only once a project is open. The invariant is "exactly one capsule on the
-  // page, showing Studio as checked" - a stale agent-rail capsule orphaned
-  // behind the Studio columns, or a rail-header copy beside the welcome's,
-  // would double the count and fail here.
-  await expect(modeGroup).toHaveCount(1);
-  const studioWelcome = page.locator('[data-vex-area="studio-welcome"]');
-  await expect(studioWelcome.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
-  await expect(
-    page.locator('[data-vex-area="studio-sidebar"]').getByRole("radiogroup", { name: "Runtime mode" }),
-  ).toHaveCount(0);
-  await expect(studioWelcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
-  await expect(modeGroup.getByRole("radio", { name: "Studio" })).toHaveAttribute(
-    "aria-checked",
-    "true",
+  // Studio is NOT a one-way door, and it carries no capsule: the Studio
+  // sidebar is the left sidebar with the same nav, now showing Studio as the
+  // current row, and its Chat row is the way back (docs/design/R3-MINIMAL.md
+  // section 4). A stale agent sidebar orphaned behind the Studio columns would
+  // double the nav and fail the count.
+  await expect(modeGroup).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(1);
+  const studioNav = page
+    .locator('[data-vex-area="studio-sidebar"]')
+    .getByRole("navigation", { name: "Main" });
+  await expect(studioNav.getByRole("button", { name: "Studio" })).toHaveAttribute(
+    "aria-current",
+    "page",
   );
+  const studioWelcome = page.locator('[data-vex-area="studio-welcome"]');
+  await expect(studioWelcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
   // The screen attribute did not MOVE to a different element: the mode switch
   // repaints the columns inside one shell rather than mounting a second one.
   // This is what `[data-vex-screen="appShell"]` being a stable e2e selector in

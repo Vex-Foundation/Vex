@@ -5,7 +5,7 @@
  * `pools.launch_request_form` drafts an `awaiting_user_form` intent and PARKS
  * the agent's turn on it. Until now the only trace of that reaching the user was
  * prose in the transcript, while the launch UI sat at the bottom of the Book
- * sidebar — so the agent asked a question the interface never presented, and the
+ * sidebar - so the agent asked a question the interface never presented, and the
  * turn stayed parked until the 15-minute window expired.
  *
  * This host closes that loop: main pushes `formRequested` the moment the intent
@@ -14,7 +14,7 @@
  *
  * ── WHAT IT DELIBERATELY IS NOT ───────────────────────────────────────────
  * It is not a second launch surface. `TokenLaunchDialog` is unchanged in every
- * consent rule it enforces — Deploy stays disarmed until a preview resolves,
+ * consent rule it enforces - Deploy stays disarmed until a preview resolves,
  * a stale preview drops into re-review, and the money is derived main-side. This
  * component decides only WHEN the dialog is open and WHAT it opens with; it
  * cannot authorize anything, and it names no amount.
@@ -23,7 +23,7 @@
  * `submitLaunch` moves the intent row to `authorized` BEFORE the executor
  * signs, so the fallback poll can answer `awaiting: null` while the transaction
  * is in flight. Deriving visibility from the live read therefore unmounted the
- * dialog MID-SIGNATURE — a worse defect than the one reported, and it defeats
+ * dialog MID-SIGNATURE - a worse defect than the one reported, and it defeats
  * the dwell as well. So the read only ever OPENS a form into a snapshot, and
  * closing is owned by the dialog.
  *
@@ -39,7 +39,7 @@
  * fire-and-forget by design (the dialog must not trap the user behind a
  * round-trip). So for the
  * moment between the close and the next read, the query cache still holds the
- * row — and without this set the modal would reopen over the user who just
+ * row - and without this set the modal would reopen over the user who just
  * dismissed it. The same is true of a COMPLETED deploy, which closes without
  * cancelling anything: the intent is consumed, but the cached answer has not
  * caught up. Membership is by intent id, so a genuinely NEW request still opens.
@@ -119,8 +119,8 @@ export function AgentLaunchFormHost({
   const [formBusy, setFormBusy] = useState(false);
 
   const result = query.data;
-  // A FAILED read is not "no form waiting". It opens nothing — there is nothing
-  // honest to prefill — but it must not be recorded as a dismissal, or the retry
+  // A FAILED read is not "no form waiting". It opens nothing - there is nothing
+  // honest to prefill - but it must not be recorded as a dismissal, or the retry
   // that succeeds would find the intent suppressed.
   const awaiting = result !== undefined && result.ok ? result.data.awaiting : null;
 
@@ -131,7 +131,7 @@ export function AgentLaunchFormHost({
       // A BUSY snapshot is NOT REPLACEABLE. The render guard below is not enough
       // on its own: if the session the user switches TO has its own awaiting
       // form, this effect would overwrite A's snapshot with B's, and A's
-      // in-flight dialog would unmount before the guard ever ran — losing the
+      // in-flight dialog would unmount before the guard ever ran - losing the
       // terminal phase and the dismissal for a transaction that is already
       // signed. `formBusy` is a DEPENDENCY here, so the next eligible form is
       // adopted the moment the busy one settles.
@@ -179,7 +179,7 @@ export function AgentLaunchFormHost({
 
   if (snapshot === null) return null;
   // THE ONE RENDER GUARD. Default rule: show a form only for the session it
-  // belongs to — a session switch HIDES an idle form without cancelling
+  // belongs to - a session switch HIDES an idle form without cancelling
   // anything, and returning re-opens it from that session's own query, because
   // the intent is still parked and still valid.
   //
@@ -187,7 +187,7 @@ export function AgentLaunchFormHost({
   // read (`formBusy`), outranks the switch and stays on screen even while the
   // user is looking at another session. Unmounting it would drop the terminal
   // phase and the dismissal for a transaction that is ALREADY SIGNED. It is a
-  // brief, self-clearing overlap — the dialog auto-dismisses — and it is the
+  // brief, self-clearing overlap - the dialog auto-dismisses - and it is the
   // lesser harm by a wide margin.
   if (snapshot.sessionId !== sessionId && !formBusy) return null;
 
@@ -198,7 +198,7 @@ export function AgentLaunchFormHost({
       key={snapshot.form.intentId}
       open
       onOpenChange={onOpenChange}
-      // The session the FORM belongs to — never the live prop, so a submit or a
+      // The session the FORM belongs to - never the live prop, so a submit or a
       // cancel can never be addressed to the session the user switched to.
       sessionId={snapshot.sessionId}
       origin="agent_requested_form"

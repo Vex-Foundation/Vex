@@ -30,7 +30,8 @@ export function ElapsedCounter({
     return () => window.clearInterval(id);
   }, [startedAtMs]);
   return (
-    <span className="shrink-0 font-mono text-[11px] tracking-[0.02em] tabular-nums text-ink-secondary">
+    // The mono 12, tabular; the colour is the row's (blue on the live row).
+    <span className="vex-step__num shrink-0 font-mono tabular-nums">
       {label}
     </span>
   );

@@ -1,18 +1,26 @@
 /**
- * Inline approval card (F3 — restricted-mode unblock).
+ * Inline approval card (F3, restricted-mode unblock).
  *
  * Shown by `ApprovalsRegion` between the transcript and the composer when the
  * agent's mutating tool call paused the run at `paused_approval` and the
- * backend enqueued an approval. Backend is live (puzzle-5 phase-3):
- * `useApprove`/`useReject` → `window.vex.approvals.{approve,reject}` →
- * `prepareApprove`/`prepareReject` → background `runResumeAfterDecision`.
+ * backend enqueued an approval, and by the Needs you page. Backend is live
+ * (puzzle-5 phase-3): `useApprove`/`useReject` to
+ * `window.vex.approvals.{approve,reject}` to `prepareApprove`/`prepareReject`
+ * to the background `runResumeAfterDecision`.
  *
- * REAL FUNDS, ON EVERY CARD (docs/design/V10-SPREAD.md section 7, reference
- * d4). Every desktop wallet is a real wallet, so the card always wears the
- * 1.5px ink frame, the 8px hatch band down its leading edge and the reversed
- * `Real funds` stamp in its header (`.vex-real-funds`, chat-transcript.css),
- * with the target swatch where the amber pin used to be. Ink, never red and
- * never blue: the stamp is a fact about the money, not a status colour.
+ * REAL FUNDS, ON EVERY CARD (docs/design/R3-MINIMAL.md section 8). Every
+ * desktop wallet is a real wallet, so the card always wears the 1.5px ink
+ * frame, the 10px hatch band down its leading edge and the reversed `Real
+ * funds` stamp in its top row (`.vex-real-funds`, approval.css), with the
+ * target swatch beside "Approval needed". Ink, never red and never blue: the
+ * stamp is a fact about the money, not a status colour. No veil: the card is
+ * the one framed thing on screen.
+ *
+ * The action button is named by tool family from the one action-word table
+ * (`approvalActionWord`): "Approve bridge", "Approve order", "Approve swap",
+ * "Approve transfer", else "Approve". The Lighter deposit and fee
+ * authorization keep their own words; the armed second press of every other
+ * card reads "Click again to confirm approve" (section 8.4).
  *
  * UX (per vex-ui-ux-quality + vex-provider-hot-wallet skills):
  *   - Default focus on Reject (least destructive) when this card is the
@@ -21,7 +29,7 @@
  *     `actionKind ∈ {destructive,user_wallet_broadcast}`. First click arms,
  *     second click within CONFIRM_RESET_MS fires; timeout resets.
  *   - On success: invalidate pending / history (prefix) / messages
- *     (transcript) / runtime — the engine resume can flip status + write
+ *     (transcript) / runtime: the engine resume can flip status + write
  *     new transcript rows. The refresh runs in the background: the outcome
  *     (`onResolved`, the settled key) is shown the moment the reply lands,
  *     never after five refetches.
@@ -31,7 +39,7 @@
  *   - `useApprove`/`useReject` already use `retry: false`; we DO NOT auto-
  *     retry a dangerous action.
  *   - `Result.ok === false` surfaces as an inline error (TanStack `isError`
- *     does not catch application-level `Result` failures — Codex F3 #1).
+ *     does not catch application-level `Result` failures: Codex F3 #1).
  *   - `aria-live="polite"` so screen readers announce the card without
  *     stealing focus from existing content.
  */
@@ -41,10 +49,13 @@ import type { JSX } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { useApprove, useReject } from "../../lib/api/approvals.js";
+import { approvalActionWord } from "../vex/needs-you.js";
 import { invalidateOnApprovalResolve } from "./approvals/invalidate-on-resolve.js";
 import { isHighRisk as classifyHighRisk } from "./ApprovalCard/risk.js";
+import { approvalReviewWord } from "./ApprovalCard/approval-sentence.js";
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
 import { ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
+import { ApprovalRow } from "./ApprovalCard/ApprovalRow.js";
 
 const CONFIRM_RESET_MS = 4_000;
 
@@ -62,13 +73,16 @@ function isLighterDepositApproval(summary: ApprovalSummaryDto): boolean {
   ) || summary.preview?.criticalArgs.toolId === "lighter.deposit";
 }
 
+/**
+ * The action button's word (section 8.2): the tool family's word from the one
+ * table, except the two Lighter cards that already name their act.
+ */
 function approveLabelFor(summary: ApprovalSummaryDto): string {
   if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
     return summary.preview.criticalArgs.revoke === true ? "Revoke trading fees" : "Approve trading fees";
   }
-  if (isLighterOrderCreateApproval(summary)) return "Approve and execute trade";
   if (isLighterDepositApproval(summary)) return "Approve and deposit";
-  return "Approve";
+  return approvalActionWord(summary);
 }
 
 /**
@@ -77,7 +91,7 @@ function approveLabelFor(summary: ApprovalSummaryDto): string {
  * A Lighter order create signs, submits and then waits on the sequencer's
  * answer, which is fifteen-odd seconds of an app that is otherwise instant. A
  * key that only dims for that long reads as a click that did not land, so it
- * names the step it is on instead - and the name has to stay true for the
+ * names the step it is on instead, and the name has to stay true for the
  * whole window, which rules out a phase the card cannot actually observe.
  */
 function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
@@ -93,9 +107,6 @@ function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {
   if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
     return summary.preview.criticalArgs.revoke === true
       ? "Click again to revoke trading fees" : "Click again to approve trading fees";
-  }
-  if (isLighterOrderCreateApproval(summary)) {
-    return "Click again to approve and execute trade";
   }
   if (isLighterDepositApproval(summary)) {
     return "Click again to approve and deposit";
@@ -131,6 +142,15 @@ export interface ApprovalCardProps {
    * the ticket, which has no transcript to read it from.
    */
   readonly onResolved?: (decision: "approved" | "rejected", result: ApprovalActionResult) => void;
+  /**
+   * `row` folds the card to one line for the Needs you page (section 8.5):
+   * the sentence, the meta line, Reject and "Review {action}". The decision
+   * state lives in THIS component either way, so switching a card between its
+   * row and its full form never drops an armed key or an in-flight decision.
+   */
+  readonly layout?: "card" | "row";
+  /** The row's Review key: open this decision as the full card. */
+  readonly onReview?: () => void;
 }
 
 /**
@@ -147,6 +167,8 @@ export function ApprovalCard({
   idVariant,
   projectName = null,
   onResolved,
+  layout = "card",
+  onReview,
 }: ApprovalCardProps): JSX.Element {
   const queryClient = useQueryClient();
   const approve = useApprove();
@@ -155,7 +177,7 @@ export function ApprovalCard({
 
   const isHighRisk = useMemo(
     () => classifyHighRisk(summary),
-    // Same inputs as the original inline classifier — recompute only when the
+    // Same inputs as the original inline classifier: recompute only when the
     // risk-bearing fields change, not on every `summary` identity churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [summary.riskLevel, summary.actionKind],
@@ -172,12 +194,12 @@ export function ApprovalCard({
     return () => clearTimeout(t);
   }, [armedAction]);
 
-  // Focus Reject only ONCE per Codex constraint #3 — empty deps so a refetch
+  // Focus Reject only ONCE per Codex constraint #3: empty deps so a refetch
   // that rerenders this card never refocuses (other components may have stolen
   // focus deliberately, e.g. user is typing in the composer).
   useEffect(() => {
     if (focusOnMount) rejectRef.current?.focus();
-    // Intentionally empty deps — first-mount focus only.
+    // Intentionally empty deps: first-mount focus only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -185,7 +207,7 @@ export function ApprovalCard({
   // Operator note sent with a rejection. Local to the card and cleared on a
   // successful decision so it can never ride along to a later approval.
   const [rejectReason, setRejectReason] = useState("");
-  // S5 signed glint — set in the approve success handler BEFORE invalidation
+  // S5 signed glint: set in the approve success handler BEFORE invalidation
   // so the one-shot light renders before the refetch unmounts the card. If
   // the unmount wins the race that is acceptable: the light is a grace note,
   // not a contract. Reject never lights (one-light rule).
@@ -286,56 +308,92 @@ export function ApprovalCard({
   const confirmApproveLabel = confirmApproveLabelFor(summary);
   const pendingApproveLabel = pendingApproveLabelFor(summary);
 
+  const settledDecision = decision === "approved" || decision === "rejected" ? decision : null;
+  const rejectPending = reject.isPending || decision === "rejecting";
+
+  if (layout === "row") {
+    return (
+      <section
+        role="region"
+        aria-labelledby={titleId}
+        aria-live="polite"
+        data-vex-area="approval-card"
+        data-vex-approval-layout="row"
+        data-approval-id={summary.id}
+        tabIndex={-1}
+        className="vex-appr-row-frame focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
+      >
+        <ApprovalRow
+          summary={summary}
+          titleId={titleId}
+          projectName={projectName}
+          rejectRef={rejectRef}
+          onReject={onRejectClick}
+          onReview={() => onReview?.()}
+          reviewLabel={approvalReviewWord(summary)}
+          rejectArmed={isHighRisk && armedAction === "reject"}
+          inFlight={inFlight}
+          rejectPending={rejectPending}
+          settledDecision={settledDecision}
+          inlineError={inlineError}
+        />
+      </section>
+    );
+  }
+
   return (
     <section
       role="region"
       aria-labelledby={titleId}
       aria-live="polite"
       data-vex-area="approval-card"
+      data-vex-approval-layout="card"
       data-approval-id={summary.id}
       // S5: the act ledger's "Awaiting signature" stamp-links jump here and
       // call focus(); tabIndex={-1} makes the region programmatically
       // focusable without entering the tab order.
       tabIndex={-1}
       // REAL FUNDS (module note): the ink frame and the hatch band are this
-      // card's whole emphasis - the one place the page asks for the pen.
+      // card's whole emphasis, the one framed thing on screen.
       data-vex-real-funds=""
       // NOT `overflow-hidden`: any `overflow` other than `visible` becomes the
       // containing scrollport for a `position: sticky` descendant (CSS
-      // Positioned Layout section 4.2), and this section never scrolls itself
-      // - only `ApprovalsRegion`'s `overflow-y-auto` wrapper does. A clip here
-      // would silently resolve ApprovalDetails's sticky header against this
-      // non-scrolling box instead, making it a no-op.
-      className={`vex-real-funds mt-3 text-[14px] text-ink-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
+      // Positioned Layout section 4.2), and this section never scrolls itself;
+      // only its scrolling ancestor does (`ApprovalsRegion`'s bounded region,
+      // the Needs you page). A clip here would resolve the sticky footer
+      // against this non-scrolling box instead, making it a no-op.
+      className={`vex-real-funds vex-appr focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus${criticalArgs?.toolId === "lighter.fees.approve" ? " @container" : ""}`}
     >
-      <ApprovalDetails
-        summary={summary}
-        titleId={titleId}
-        namespace={namespace}
-        toolName={toolName}
-        criticalArgs={criticalArgs}
-        inlineError={inlineError}
-        projectName={projectName}
-        signedGlint={signedGlint}
-      />
-      <ApprovalDecisionActions
-        isHighRisk={isHighRisk}
-        armedAction={armedAction}
-        inFlight={inFlight}
-        rejectRef={rejectRef}
-        onReject={onRejectClick}
-        onApprove={onApproveClick}
-        rejectReason={rejectReason}
-        onRejectReasonChange={setRejectReason}
-        approveLabel={approveLabel}
-        confirmApproveLabel={confirmApproveLabel}
-        pendingApproveLabel={pendingApproveLabel}
-        approvePending={approve.isPending || decision === "approving"}
-        rejectPending={reject.isPending || decision === "rejecting"}
-        settledDecision={decision === "approved" || decision === "rejected" ? decision : null}
-        wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
-        rejectReasonInput={summary.origin !== "desk"}
-      />
+      <div className="vex-appr__in">
+        <ApprovalDetails
+          summary={summary}
+          titleId={titleId}
+          namespace={namespace}
+          toolName={toolName}
+          criticalArgs={criticalArgs}
+          inlineError={inlineError}
+          projectName={projectName}
+          signedGlint={signedGlint}
+        />
+        <ApprovalDecisionActions
+          isHighRisk={isHighRisk}
+          armedAction={armedAction}
+          inFlight={inFlight}
+          rejectRef={rejectRef}
+          onReject={onRejectClick}
+          onApprove={onApproveClick}
+          rejectReason={rejectReason}
+          onRejectReasonChange={setRejectReason}
+          approveLabel={approveLabel}
+          confirmApproveLabel={confirmApproveLabel}
+          pendingApproveLabel={pendingApproveLabel}
+          approvePending={approve.isPending || decision === "approving"}
+          rejectPending={rejectPending}
+          settledDecision={settledDecision}
+          wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
+          rejectReasonInput={summary.origin !== "desk"}
+        />
+      </div>
     </section>
   );
 }
