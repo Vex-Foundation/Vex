@@ -1,8 +1,5 @@
 {
   "files": {
-    "src/lib/diagnostics/bug-report-schema.ts": 2,
-    "src/vex-agent/scripts/_preflight.ts": 4,
-    "vex-app/resources/compose/docker-compose.e2e.yml": 1,
     "vex-app/resources/compose/docker-compose.template.yml": 10,
     "vex-app/src/main/compose/down.ts": 26,
     "vex-app/src/main/compose/health.ts": 3,
@@ -13,7 +10,7 @@
     "vex-app/src/main/compose/recreate.ts": 8,
     "vex-app/src/main/compose/render.ts": 2,
     "vex-app/src/main/compose/up.ts": 4,
-    "vex-app/src/main/database/e2e-connection-door.ts": 4,
+    "vex-app/src/main/database/e2e-connection-door.ts": 3,
     "vex-app/src/main/docker/cli-env.ts": 10,
     "vex-app/src/main/docker/daemon.ts": 20,
     "vex-app/src/main/docker/endpoint-policy.ts": 57,
@@ -31,7 +28,6 @@
     "vex-app/src/main/runtime/migration/docker-source.ts": 55,
     "vex-app/src/main/runtime/migration/docker-to-native.ts": 56,
     "vex-app/src/main/runtime/migration/native-start-gate.ts": 5,
-    "vex-app/src/renderer/features/appShell/studio/viewer/highlight/language-of-path.ts": 5,
     "vex-app/src/renderer/features/runtime/migration/copy.ts": 35,
     "vex-app/src/shared/embedding-defaults.ts": 1,
     "vex-app/src/shared/ipc/channels/events.ts": 4,

@@ -17,16 +17,16 @@
  *      fresh (first run, `setupCompleteFlag === false`) — it hands off
  *      to the SystemCheck view with NO user interaction (proves the
  *      Zustand uiStore + the setup orchestrator run in the renderer).
- *      The first-run handoff deliberately never auto-starts compose,
- *      so this assertion stays deterministic on CI runners that DO
- *      have a Docker daemon.
+ *      A first run always lands on SystemCheck, whatever the local
+ *      runtime that main starts at boot is doing, so this assertion
+ *      does not depend on the runtime coming up.
  *
  * What we INTENTIONALLY do NOT assert:
- *   - Anything past SystemCheck. Docker bootstrap, compose up,
- *     migrations, wizard, unlock — all of those require either a
- *     real Docker daemon or a bypass hook that doesn't exist yet
- *     (Codex S2 turn 2). A real E2E for those screens is a separate
- *     decision, tracked under #13 follow-ups + task #9.
+ *   - Anything past SystemCheck. The local runtime, migrations,
+ *     wizard, unlock: the native runtime's first run end to end is
+ *     `native-runtime.spec.ts` (and the clean-machine gate), and the
+ *     shell past setup is reached through the setup tour by the
+ *     Studio specs.
  */
 
 import path from "node:path";
@@ -76,9 +76,9 @@ test("boots through the setup gate to SystemCheck with the bridged window.vex su
       .first()
   ).toBeVisible();
 
-  // 4. The orchestrator's probes resolve (system.health + docker.detect
-  // + envState — real IPC, bounded by `expect.timeout: 15_000` from
-  // playwright.config.ts; docker.detect's own subprocess timeout is 8s).
+  // 4. The orchestrator's launch probes resolve (system.health, the
+  // runtime mode, envState: real IPC, bounded by `expect.timeout: 15_000`
+  // from playwright.config.ts).
   // Fresh CONFIG_DIR ⇒ first run ⇒ the gate hands off to SystemCheck
   // and lifts away over it — no clicks, no Begin button anymore.
   await expect(

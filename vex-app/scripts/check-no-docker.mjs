@@ -20,6 +20,13 @@
  *
  * The baseline starts as today's Docker inventory and must reach {} once the
  * Docker provider and the migration path from Docker are deleted.
+ *
+ * PERMANENT EXEMPTIONS ({@link PERMANENT_EXEMPTIONS}): exact repo-relative
+ * files that name Docker for a reason that has nothing to do with running it,
+ * and so would keep the baseline from ever reaching {}. Each entry is one file
+ * (never a directory or pattern) with its reason; it is not counted at all. A
+ * listed file that no longer exists FAILS the check, so an exemption cannot
+ * outlive the code it was granted for. Adding one is a reviewed hand edit.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -44,6 +51,14 @@ const TEXT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".json", 
 const SKIP_DIRS = new Set(["__tests__", "node_modules", "dist", "e2e", "__fixtures__"]);
 const isTestFile = (name) => /\.(test|spec|int\.test)\.[cm]?[jt]sx?$/.test(name);
 
+/** repo-relative path -> why it may name Docker forever. See the header. */
+const PERMANENT_EXEMPTIONS = new Map([
+  [
+    "vex-app/src/renderer/features/appShell/studio/viewer/highlight/language-of-path.ts",
+    "the Studio file viewer maps a project's `Dockerfile` to its highlighting language; it runs nothing",
+  ],
+]);
+
 const MENTION = /docker|testcontainers/gi;
 const COMPOSE_IMPORT = /["'](?:\.{1,2}\/)+(?:[\w-]+\/)*compose\/[\w./-]+["']/g;
 
@@ -64,9 +79,11 @@ function currentCounts() {
       throw new Error(`scan root missing: ${root}`);
     }
     for (const file of walk(root)) {
+      const relative = path.relative(repoRoot, file).split(path.sep).join("/");
+      if (PERMANENT_EXEMPTIONS.has(relative)) continue;
       const text = readFileSync(file, "utf8");
       const n = (text.match(MENTION)?.length ?? 0) + (text.match(COMPOSE_IMPORT)?.length ?? 0);
-      if (n > 0) counts[path.relative(repoRoot, file).split(path.sep).join("/")] = n;
+      if (n > 0) counts[relative] = n;
     }
   }
   return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
@@ -79,6 +96,15 @@ function readBaseline() {
     throw new Error(`${baselinePath} is not a { files: { path: count } } baseline`);
   }
   return parsed.files;
+}
+
+const staleExemptions = [...PERMANENT_EXEMPTIONS.keys()].filter((file) => !existsSync(path.join(repoRoot, file)));
+if (staleExemptions.length > 0) {
+  console.error(
+    `${RED}Permanent exemptions name files that no longer exist; remove them from PERMANENT_EXEMPTIONS:${RESET}\n  ` +
+      staleExemptions.join("\n  "),
+  );
+  process.exit(1);
 }
 
 const update = process.argv.includes("--update");

@@ -591,6 +591,19 @@ jobs:
           GOTOOLCHAIN: local
         run: pnpm run build:bridge:dev
 
+      # The native runtime trees for this runner, exactly as `pnpm dev`
+      # fetches them (dev:assets): the lock-pinned release, verified against
+      # the lock before anything is extracted, into
+      # resources/native-runtime/<target>/. The Studio specs' isolated
+      # database is the bundled Postgres from these trees
+      # (e2e/fixtures/vex-stack.ts), handed to the app through the e2e door;
+      # without them those specs fail at setup. The token reads the release
+      # while it lives on a private repository.
+      - name: Fetch & verify the native runtime (this runner)
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
+        run: node scripts/fetch-native-runtime.mjs --current
+
       - name: Build (e2e needs the bundled main + preload + renderer)
         # THE TOUR FLAG IS WHAT MAKES `studio.spec.ts` RUN AT ALL.
         # `VITE_VEX_SETUP_TOUR` is a build-time renderer constant

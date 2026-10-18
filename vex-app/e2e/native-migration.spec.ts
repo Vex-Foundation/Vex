@@ -1,6 +1,6 @@
 /**
  * Moving a previous release's Docker data into the native runtime, end to
- * end, against the BUILT app with `VEX_RUNTIME=native`:
+ * end, against the BUILT app:
  *
  *   1. Move my data: a disposable previous-release install (a `migtest-`
  *      compose project, all migrations, realistic data, stopped) is offered
@@ -129,7 +129,6 @@ function launch(install: Install): Promise<ElectronApplication> {
     env: {
       ...process.env,
       VEX_CONFIG_DIR: install.configDir,
-      VEX_RUNTIME: "native",
       VEX_E2E_LOAD_BUILT: "1",
       VEX_NATIVE_PG_DIR: PG_DIR,
       VEX_NATIVE_LLAMA_DIR: LLAMA_DIR,

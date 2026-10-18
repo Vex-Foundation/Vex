@@ -34,7 +34,11 @@ export function assertExplicitDbUrl(commandName: string): void {
         `Refusing to run with the dev fallback (vex_test) — operating on\n` +
         `the wrong DB silently produces/consumes data and breaks recovery.\n\n` +
         `Set it explicitly for the DB you intend to touch, for example:\n` +
-        `  export VEX_DB_URL=postgresql://vex:vex@localhost:5777/vex_test_e2e\n`,
+        `  export VEX_DB_URL=postgresql://vex:<password>@127.0.0.1:<port>/vex\n` +
+        `For the desktop app's own database (while the app runs), <port> is\n` +
+        `pg.lastPort in runtime-state.json under <CONFIG_DIR>/runtime\n` +
+        `(%LOCALAPPDATA%\\vex\\runtime on Windows) and <password> is in\n` +
+        `<CONFIG_DIR>/local-infra/secrets/pg_password.\n`,
     );
     process.exit(2);
   }
@@ -58,10 +62,9 @@ export async function assertSchemaUpToDate(): Promise<void> {
         `has not been applied to this DB. runMigrations should have picked it up\n` +
         `automatically on startup; if it did not, check the migration logs and\n` +
         `verify that the migrations directory is being read correctly.\n\n` +
-        `If you are on an older build and need a clean wipe, use the app's reset\n` +
-        `flow for an installed desktop stack. For the e2e fixture only:\n` +
-        `  docker compose -f vex-app/resources/compose/docker-compose.e2e.yml down -v\n` +
-        `  docker compose -f vex-app/resources/compose/docker-compose.e2e.yml up -d\n\n` +
+        `If you are on an older build and need a clean wipe of the desktop app's\n` +
+        `database, use Settings -> Local runtime -> Reset local data in the app.\n` +
+        `For a scratch database you created yourself, drop and recreate it.\n\n` +
         `WARNING: this destroys all local data. Use 'pg_dump' MANUALLY first\n` +
         `if you need to preserve it — knowledge-export cannot run on a schema\n` +
         `missing the lifecycle columns.\n`,

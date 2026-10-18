@@ -18,9 +18,10 @@ name: Clean machine
 # win32-arm64 is packaged on x64 and run on arm64, as it ships: the release
 # signs Windows on x64 only (plan 15.4 item 8).
 #
-# Called by native-runtime.yml (dispatch input `clean_machine`) and callable
-# from release.yml; `legs` is "all" or a comma-separated list of
-# darwin-arm64, darwin-x64, linux-x64, win32-x64, win32-arm64.
+# Called by native-runtime.yml (dispatch input `clean_machine`) and by
+# release.yml, where every publishing job needs it on all legs; `legs` is
+# "all" or a comma-separated list of darwin-arm64, darwin-x64, linux-x64,
+# win32-x64, win32-arm64.
 
 on:
   workflow_call:
@@ -28,6 +29,11 @@ on:
       legs:
         type: string
         default: all
+    secrets:
+      # Reads the lock-pinned native runtime release while it lives on a
+      # private repository; without it the workflow's own token is used.
+      VEX_NATIVE_RUNTIME_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       legs:

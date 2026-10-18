@@ -4,16 +4,22 @@
  * projects root, and the environment that points a launched Electron main
  * process at all three.
  *
- * ## Why this exists rather than `composeUp`
+ * ## Why this exists rather than the app's own runtime
  *
- * `vex.docker.composeUp` renders a stack keyed by the config dir's install id
- * and refuses ports another stack already holds, and its `running` result also
- * requires the embeddings runtime on a hard-coded port. A per-run `composeUp`
- * therefore either collides with the developer's live Vex stack or leaves a
- * second Postgres plus a second embeddings runtime behind after every run. So
- * this module starts ONLY a Postgres, under an identity nothing else uses, and
- * hands it to main through the e2e door
- * (`vex-app/src/main/database/e2e-connection-door.ts`).
+ * Main starts the bundled native runtime on every launch, keyed to the
+ * profile's runtime dir: a cluster created by initdb, a recorded identity, a
+ * last-used port, and an embeddings server that first downloads its model. A
+ * per-run start of that would initialise a cluster and fetch the model before
+ * the first assertion. So this module starts ONLY a Postgres - the same
+ * bundled binaries, initdb flags and server settings the runtime uses
+ * (`src/__tests__/integration/setup/native-postgres.ts` at the repository
+ * root) - and hands it to main through the e2e door
+ * (`vex-app/src/main/database/e2e-connection-door.ts`). With the door open the
+ * app starts nothing native (`main/runtime/runtime-mode.ts`, `e2e_door`).
+ *
+ * The binaries are the ones `pnpm dev` fetches
+ * (`node scripts/fetch-native-runtime.mjs --current` from vex-app/), or a
+ * local `native-runtime/<component>/build.sh` build, or `VEX_NATIVE_PG_DIR`.
  *
  * ## What it owns, and what happens on every exit path
  *
@@ -22,39 +28,33 @@
  * halfway through setup tears down exactly what was acquired. Teardown runs
  * every removal even when an earlier one rejects and reports the failures
  * together (`Promise.allSettled` + `AggregateError`), because a leaked
- * container and a failed run are orthogonal outcomes and neither may hide the
+ * database and a failed run are orthogonal outcomes and neither may hide the
  * other. Pattern adopted from `deepseek-harness`'s ACP snapshot harness
  * (`packages/test-support/acp-snapshot/src/harness.ts`).
  *
- * Testcontainers' Ryuk reaper is the BACKSTOP, not the plan: it removes what
- * this module failed to remove after the process dies, which is what makes an
- * abrupt kill survivable.
+ * The cluster's watchdog (`reapWithParent`) is the BACKSTOP, not the plan: it
+ * stops the server and removes its directory when the test process dies
+ * before teardown runs, which is what makes an abrupt kill survivable.
  *
  * ## Guards
  *
- * The stack refuses to exist if its Postgres port is the developer's own
- * compose port, or if its identity could be mistaken for a real Vex install's
- * compose project. Both are asserted before anything is published, because the
- * whole point of an isolated stack is that it cannot touch the real one.
+ * The stack refuses to exist if its Postgres port is the previous release's
+ * Docker port, or if its identity could be mistaken for a real Vex install's.
+ * Both are asserted before anything is published, because the whole point of
+ * an isolated stack is that it cannot touch the real one. The door adds the
+ * live port of the developer's own native runtime at boot.
  */
 
 import { randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { startNativePostgres, type NativePostgres } from "../../../src/__tests__/integration/setup/native-postgres.js";
 import { DEFAULT_PG_PORT } from "../../src/shared/local-service-ports.js";
 
 /**
- * Same image the repository's integration suite pins
- * (`src/__tests__/integration/setup/globalSetup.ts`). One pin, so an e2e run
- * and an integration run cannot disagree about what "the database" is.
- */
-export const E2E_PGVECTOR_IMAGE = "pgvector/pgvector:0.8.2-pg18-trixie";
-
-/**
  * Database and role the app hardcodes in `main/database/db-config.ts`. The
- * container must offer exactly these, because the door supplies only a port
+ * cluster must offer exactly these, because the door supplies only a port
  * and a password file.
  */
 export const E2E_DB_NAME = "vex";
@@ -67,19 +67,16 @@ export const E2E_IDENTITY_PREFIX = "vex-e2e-";
  * The exact shape {@link makeStackIdentity} mints.
  *
  * This is also what makes the identity provably disjoint from a real install's
- * compose project, which is `vex-` followed by an install UUID
- * (`vex-724bb237-5a0d-4862-ab36-6c4a9d39852e` in this developer's environment).
- * A UUID's first group is EIGHT hex characters, so character 8 of a real
- * project name is always `-` while ours is `e`: no install id, however
- * unlucky, can ever produce a name starting `vex-e2e-`.
+ * id, which is `vex-` followed by an install UUID (the previous release's
+ * compose project, `vex-724bb237-5a0d-4862-ab36-6c4a9d39852e` in this
+ * developer's environment). A UUID's first group is EIGHT hex characters, so
+ * character 8 of a real name is always `-` while ours is `e`: no install id,
+ * however unlucky, can ever produce a name starting `vex-e2e-`.
  */
 const STACK_IDENTITY_PATTERN = /^vex-e2e-[0-9a-f]{12}$/;
 
 /** Relative location of the Postgres password inside a config dir. */
 export const PG_PASSWORD_RELATIVE_PATH = path.join("local-infra", "secrets", "pg_password");
-
-/** How long the container may take to accept connections. */
-const CONTAINER_START_TIMEOUT_MS = 180_000;
 
 /** One isolated stack's identity and the paths it owns. */
 export interface VexIsolatedStack {
@@ -91,7 +88,7 @@ export interface VexIsolatedStack {
   readonly projectsRoot: string;
   /** Absolute path of the 0600 password file inside {@link configDir}. */
   readonly pgPasswordPath: string;
-  /** Host port the container publishes Postgres on. */
+  /** Loopback port the throwaway Postgres listens on. */
   readonly pgPort: number;
   /**
    * Environment additions for `_electron.launch`. Contains `VEX_CONFIG_DIR`
@@ -111,7 +108,7 @@ export interface StartedVexIsolatedStack extends VexIsolatedStack {
 export interface StartVexIsolatedStackOptions {
   /** Aborts a start in progress; whatever was acquired is torn down. */
   readonly signal?: AbortSignal;
-  /** Parent directory for the generated config dir and projects root. */
+  /** Parent directory for the generated config dir, projects root and cluster. */
   readonly parentDir?: string;
 }
 
@@ -123,11 +120,12 @@ export function makeStackIdentity(): string {
 /**
  * Refuse a port that is not an isolated one.
  *
- * The developer's compose Postgres is the specific thing this run must never
- * reach: it holds their real projects. The constant is imported from the
- * product's own source, so a change there moves this guard with it.
+ * The previous release's Docker Postgres is a database this run must never
+ * reach: an install that has not migrated yet still holds its real projects
+ * there. The constant is imported from the product's own source, so a change
+ * there moves this guard with it.
  *
- * @throws when the port is the compose default or is not a usable TCP port.
+ * @throws when the port is that default or is not a usable TCP port.
  */
 export function assertIsolatedPgPort(port: number): void {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -135,7 +133,7 @@ export function assertIsolatedPgPort(port: number): void {
   }
   if (port === DEFAULT_PG_PORT) {
     throw new Error(
-      `vex-stack: refusing port ${port} - that is the developer's own compose Postgres ` +
+      `vex-stack: refusing port ${port} - that is the previous release's Docker Postgres ` +
         "(DEFAULT_PG_PORT). An isolated e2e stack must never bind or address it.",
     );
   }
@@ -145,9 +143,9 @@ export function assertIsolatedPgPort(port: number): void {
  * Refuse any identity a real Vex install could also carry.
  *
  * Checked rather than assumed: the identity is what every owned resource is
- * named after, so a name a real install's compose project could also produce
- * would make an e2e leak indistinguishable from the developer's own stack -
- * and would make a cleanup sweep dangerous.
+ * named after, so a name a real install could also produce would make an e2e
+ * leak indistinguishable from the developer's own data - and would make a
+ * cleanup sweep dangerous.
  *
  * @throws when the identity is not exactly the shape this module mints.
  */
@@ -155,7 +153,7 @@ export function assertIsolatedIdentity(identity: string): void {
   if (!STACK_IDENTITY_PATTERN.test(identity)) {
     throw new Error(
       `vex-stack: identity ${JSON.stringify(identity)} is not an isolated e2e identity ` +
-        `(${E2E_IDENTITY_PREFIX}<12 hex>). A real Vex install's compose project is ` +
+        `(${E2E_IDENTITY_PREFIX}<12 hex>). A real Vex install's id is ` +
         "`vex-<install uuid>`, which must never be mistaken for one of ours.",
     );
   }
@@ -221,18 +219,20 @@ export async function startVexIsolatedStack(
   const parent = options.parentDir ?? tmpdir();
   const configDir = path.join(parent, `${identity}-config`);
   const projectsRoot = path.join(parent, `${identity}-projects`);
+  // Beside the config dir, never inside its `runtime/`: the door refuses a
+  // profile whose own native cluster is running.
+  const clusterRoot = path.join(parent, `${identity}-pg`);
   const pgPasswordPath = pgPasswordPathFor(configDir);
 
   const teardowns: Array<{ what: string; run: () => Promise<unknown> }> = [];
-  let container: StartedPostgreSqlContainer | undefined;
   let stopped = false;
 
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
     const results = await Promise.allSettled(
-      // Reverse acquisition order: the container first, then the directories
-      // whose contents it was reading.
+      // Reverse acquisition order: the database first, then the directories
+      // the app was reading beside it.
       [...teardowns].reverse().map(async (teardown) => {
         try {
           await teardown.run();
@@ -264,34 +264,26 @@ export async function startVexIsolatedStack(
       what: projectsRoot,
       run: () => rm(projectsRoot, { recursive: true, force: true }),
     });
-    checkAborted();
-
-    const password = randomBytes(32).toString("base64url");
-    // 0600 because the door refuses a group- or world-accessible secret, which
-    // is the same standard `main/compose/render.ts` holds the real one to.
-    await writeFile(pgPasswordPath, password, { encoding: "utf8", mode: 0o600 });
     await writeFile(path.join(configDir, "config.json"), isolatedConfigJson(projectsRoot), "utf8");
     checkAborted();
 
-    container = await new PostgreSqlContainer(E2E_PGVECTOR_IMAGE)
-      .withDatabase(E2E_DB_NAME)
-      .withUsername(E2E_DB_USER)
-      .withPassword(password)
-      // Name AND label the container after the run. Without a name docker
-      // assigns a random one, and a container that leaks past both this
-      // teardown and Ryuk would then be unattributable.
-      .withName(`${identity}-db`)
-      .withLabels({ "ai.projectvex.e2e": identity })
-      .withStartupTimeout(CONTAINER_START_TIMEOUT_MS)
-      .start();
-    const started = container;
-    teardowns.push({ what: `container ${started.getId()}`, run: () => started.stop() });
+    // The helper removes what it created when its own start fails, so the
+    // teardown is registered once the server is up.
+    const database: NativePostgres = await startNativePostgres(E2E_DB_NAME, {
+      root: clusterRoot,
+      reapWithParent: true,
+    });
+    teardowns.push({ what: `cluster ${clusterRoot}`, run: () => database.stop() });
     checkAborted();
 
-    const pgPort = started.getMappedPort(5432);
-    // The guard runs on the port the container ACTUALLY published, not on a
-    // request: a mapped port is assigned by the daemon, so this is the only
-    // moment the real value is knowable.
+    // 0600 because the door refuses a group- or world-accessible secret, which
+    // is the standard the native runtime holds the real one to.
+    await writeFile(pgPasswordPath, database.password, { encoding: "utf8", mode: 0o600 });
+    checkAborted();
+
+    // The guard runs on the port the server ACTUALLY listens on: it is picked
+    // at start, so this is the first moment the real value is knowable.
+    const pgPort = database.port;
     assertIsolatedPgPort(pgPort);
 
     return {

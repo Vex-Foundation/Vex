@@ -3,11 +3,15 @@
  *
  * Spins up an ephemeral Postgres (pgvector) container via testcontainers,
  * wires `VEX_DB_URL`, and runs the full migration chain. The Gemma
- * embeddings endpoint is NOT managed here — it's the standalone
- * `llama.cpp:server` provisioned by the vex-app Compose stack (default
- * http://127.0.0.1:27134/v1) and must be running independently. A
- * reachability probe fails fast with an actionable message so tests don't
- * hang on first embed.
+ * embeddings endpoint is NOT managed here: `EMBEDDING_BASE_URL` must name a
+ * running OpenAI-compatible /v1 server for `ai/embeddinggemma:300M-Q8_0`
+ * (768 dims), with `EMBEDDING_API_KEY` when it wants one. The desktop app's
+ * own server picks its port and key per launch, so start one yourself: the
+ * bundled llama-server command is in vex-app/docs/LOCAL_RUNTIME.md
+ * ("Embeddings for the integration suite"). No CI lane runs this suite; the
+ * required Studio lane uses `setupPostgresWithoutEmbeddings`. A reachability
+ * probe fails fast with an actionable message so tests don't hang on first
+ * embed.
  *
  * Dynamic imports are deliberate: the db client pool singleton reads
  * `VEX_DB_URL` on first `getPool()` call, so we MUST set the env var
@@ -82,20 +86,25 @@ export async function teardown(): Promise<void> {
   }
 }
 
+const EMBEDDINGS_HOWTO =
+  "Start the bundled llama-server with the pinned model (vex-app/docs/LOCAL_RUNTIME.md, " +
+  '"Embeddings for the integration suite") and set EMBEDDING_BASE_URL to its /v1 URL, or point it at any ' +
+  "OpenAI-compatible /v1 endpoint serving that model (EMBEDDING_API_KEY if it needs a key).";
+
 async function assertEmbeddingsReachable(): Promise<void> {
   const baseUrl = process.env.EMBEDDING_BASE_URL;
   if (!baseUrl) {
     throw new Error(
-      "EMBEDDING_BASE_URL is not set. Integration suite needs a live embeddings endpoint. " +
-        "Launch the Vex desktop app once so its Compose stack's llama.cpp embeddings runtime is up " +
-        "(default http://127.0.0.1:27134/v1), or point EMBEDDING_BASE_URL at any OpenAI-compatible /v1 endpoint.",
+      `EMBEDDING_BASE_URL is not set. The integration suite needs a live embeddings endpoint. ${EMBEDDINGS_HOWTO}`,
     );
   }
   const model = process.env.EMBEDDING_MODEL ?? FALLBACK_EMBED_MODEL;
+  const apiKey = (process.env.EMBEDDING_API_KEY ?? "").trim();
   try {
     const res = await fetch(`${baseUrl}/embeddings`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // The same bearer the engine's client sends (src/vex-agent/embeddings/client.ts).
+      headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
       body: JSON.stringify({ model, input: "probe" }),
       signal: AbortSignal.timeout(5000),
     });
@@ -104,8 +113,7 @@ async function assertEmbeddingsReachable(): Promise<void> {
     }
   } catch (err) {
     throw new Error(
-      `Embeddings endpoint unreachable at ${baseUrl} (model=${model}). ` +
-        `Start the vex-app Compose stack's llama.cpp embeddings runtime (or whatever serves this URL). ` +
+      `Embeddings endpoint unreachable at ${baseUrl} (model=${model}). ${EMBEDDINGS_HOWTO} ` +
         `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

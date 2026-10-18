@@ -70,7 +70,7 @@ test("Studio terminal: a space reaches the shell, the grid fills the pane, a lin
 }: {
   vexDb: VexDatabaseFixture;
 }, testInfo: TestInfo) => {
-  // A container start, an Electron boot, a migration, a project render and a
+  // A cluster start, an Electron boot, a migration, a project render and a
   // real pty, plus a shell round trip. The suite's 30s budget is the smoke
   // test's, not this one's.
   test.setTimeout(180_000);

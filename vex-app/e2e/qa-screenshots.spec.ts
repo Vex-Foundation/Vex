@@ -2,8 +2,8 @@
  * Both-themes screenshot QA pass - evidence for the owner's eyes-on
  * calibration review, NOT a CI gate. Runs only when VEX_QA_SHOTS=1 and
  * expects a build made with VITE_VEX_SETUP_TOUR=1 (the tour is the only
- * sanctioned way to reach the shell and the unlock screen without a live
- * Docker runtime).
+ * sanctioned way to reach the shell and the unlock screen without a running
+ * local runtime).
  *
  * Round 2 (2026-08-21) widened the set: every pre-shell screen follows the
  * active theme, so the stages are captured per theme, not once. Since V10

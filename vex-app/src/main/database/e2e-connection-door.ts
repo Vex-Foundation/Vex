@@ -1,17 +1,20 @@
 /**
  * The E2E database door: the ONE way an end-to-end run can hand the main
- * process a Postgres it did not start through Docker Compose.
+ * process a Postgres the app did not start itself.
  *
  * ## Why a door exists at all
  *
- * `connection-state.ts` has exactly one production writer - the compose
- * handler in `main/ipc/docker.ts`, which publishes after a `running` /
- * `reused` compose result. That is correct for the product and useless for a
- * test: `composeUp` renders a stack keyed by the config dir's install id and
- * refuses ports another stack already holds, so a per-run `composeUp` either
- * collides with the developer's live Vex stack or leaves a second Postgres
- * behind. An isolated e2e database therefore needs its own publication path,
- * and that path is this module.
+ * `connection-state.ts` has exactly one production writer - the runtime host
+ * (`main/runtime/runtime-host.ts`), which publishes the bundled native
+ * Postgres once its start settles `running` / `reused`. That is correct for
+ * the product and useless for a test: the native runtime keeps its cluster,
+ * its recorded identity and its last port in the profile's runtime dir, so an
+ * e2e run that let it start would initialise a cluster per profile and fetch
+ * the embeddings model before the first assertion. An e2e run therefore
+ * brings its own throwaway Postgres (`e2e/fixtures/vex-stack.ts`, on the same
+ * bundled binaries) and publishes it here. When the door publishes, the
+ * runtime mode is `e2e_door` (`main/runtime/runtime-mode.ts`) and nothing
+ * native starts, so the door's database is never displaced.
  *
  * ## The authority this door takes, and the guards on it
  *
@@ -21,14 +24,25 @@
  *   - INERT in a packaged app (`app.isPackaged`). A shipped Vex has no door.
  *   - Requires BOTH `VEX_E2E_DB_PORT` and `VEX_E2E_DB_PASSWORD_FILE`. Exactly
  *     one of them is a refusal, never a partial guess.
- *   - Refuses {@link DEFAULT_PG_PORT}, the port the developer's own compose
- *     stack publishes. A door that could point at the real stack is not
- *     isolation. The constant is IMPORTED, never respelled here.
+ *   - Refuses {@link DEFAULT_PG_PORT}, the port the previous release's Docker
+ *     stack publishes (an install that has not migrated yet still runs it).
+ *     The constant is IMPORTED, never respelled here.
+ *   - Refuses the port of the developer's own native runtime while it runs.
+ *     That runtime picks its port at launch (the last one when free, else
+ *     one the OS hands out), so there is no constant to refuse: the live
+ *     port is read from the `postmaster.pid` of the developer's install's
+ *     cluster (its runtime dir resolved WITHOUT `VEX_CONFIG_DIR`), and a
+ *     postmaster that is alive but has not written its port yet is a refusal
+ *     too, since the port cannot be ruled out.
+ *   - Refuses while a native cluster is running for THIS run's own config dir
+ *     (`VEX_CONFIG_DIR`, or the default one when it is unset). A door run
+ *     needs a profile no runtime is serving; one that is being served is
+ *     somebody's real install.
  *   - Refuses a password file that is missing, not a regular file, empty, or
  *     group/world-accessible (POSIX only - Windows mode bits carry no such
  *     meaning).
  *   - Refuses when a connection is already published, so the door can never
- *     displace a live compose stack.
+ *     displace a live runtime.
  *   - Publishes ONCE, through the existing {@link setDbConnection} seam. It
  *     invents no second source of truth, and nothing here crosses the preload
  *     boundary: there is no renderer or IPC surface for this module.
@@ -39,21 +53,26 @@
  * ## Precedence, as implemented
  *
  * The door publishes only into an EMPTY connection slot, and it runs at
- * bootstrap, long before the renderer can invoke `vex.docker.composeUp`. So in
- * practice the door is first and compose is second. The door does not - and
- * cannot from here - stop a later `composeUp` from replacing its connection;
- * `main/ipc/docker.ts` owns that write and is not this module's to change.
- * What the door does instead is OBSERVE: it subscribes to the connection state
- * for as long as it is open and logs a loud warning if its connection is ever
- * replaced or cleared. A later overwrite is therefore diagnosable in the run
- * log rather than silent, which is the property that actually matters when an
- * e2e assertion starts reading a database nobody expected.
+ * bootstrap, before main decides the runtime mode. A published door makes the
+ * mode `e2e_door`, and every path that would start the native runtime asks
+ * that mode first. The door cannot - from here - stop some later writer from
+ * replacing its connection; what it does instead is OBSERVE: it subscribes to
+ * the connection state for as long as it is open and logs a loud warning if
+ * its connection is ever replaced or cleared. A later overwrite is therefore
+ * diagnosable in the run log rather than silent, which is the property that
+ * actually matters when an e2e assertion starts reading a database nobody
+ * expected.
  */
 
 import { app } from "electron";
 import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import { DEFAULT_PG_PORT } from "../../shared/local-service-ports.js";
 import { log } from "../logger/index.js";
+import { resolveConfigDir } from "../paths/config-dir.js";
+import { parsePostmasterPid } from "../runtime/native/postgres-facts.js";
+import { pgDataDir, resolveRuntimeDir } from "../runtime/runtime-paths.js";
 import {
   getDbConnection,
   LOOPBACK_DB_HOST,
@@ -75,6 +94,8 @@ export type E2eDoorRefusal =
   | "partial_configuration"
   | "invalid_port"
   | "dev_port_collision"
+  | "dev_runtime_port_unknown"
+  | "config_dir_runtime_running"
   | "password_file_missing"
   | "password_file_not_regular"
   | "password_file_mode"
@@ -101,6 +122,23 @@ export interface E2ePasswordFileFacts {
   readonly trimmedLength: number;
 }
 
+/**
+ * A native cluster that is running now, as its data dir's `postmaster.pid`
+ * says (a file naming a live process).
+ */
+export interface RunningNativeCluster {
+  /**
+   * `developer_install`: the runtime dir of the developer's own install (the
+   * default config dir). `this_run`: the runtime dir of the config dir this
+   * boot runs on. When the two are the same directory, it is `this_run`.
+   */
+  readonly owner: "developer_install" | "this_run";
+  readonly runtimeDir: string;
+  readonly pid: number;
+  /** Null while the postmaster has not written its port yet. */
+  readonly port: number | null;
+}
+
 /** Everything the pure decision reads. */
 export interface E2eDoorInput {
   readonly packaged: boolean;
@@ -109,6 +147,8 @@ export interface E2eDoorInput {
   readonly connectionAlreadyPublished: boolean;
   /** Returns `null` when the path cannot be inspected at all. */
   readonly inspectPasswordFile: (path: string) => E2ePasswordFileFacts | null;
+  /** The native clusters running now for the developer's install and this run. */
+  readonly runningNativeClusters: readonly RunningNativeCluster[];
 }
 
 /** The highest port a TCP listener can occupy. */
@@ -117,9 +157,11 @@ const MAX_TCP_PORT = 65_535;
 /**
  * Decide, purely, whether this boot may open the door.
  *
- * Order matters: configuration completeness first, then the port (the guard
- * that protects the developer's own stack), then the secret file, then the
- * connection slot. The first failing check is the reported reason.
+ * Order matters: configuration completeness first, then the port (the guards
+ * that protect the developer's own databases: the previous release's Docker
+ * port, then the live native runtime), then this run's own runtime, then the
+ * secret file, then the connection slot. The first failing check is the
+ * reported reason.
  */
 export function decideE2eConnectionDoor(input: E2eDoorInput): E2eDoorDecision {
   if (input.packaged) return { kind: "inert", reason: "packaged" };
@@ -155,8 +197,42 @@ export function decideE2eConnectionDoor(input: E2eDoorInput): E2eDoorDecision {
       kind: "refused",
       reason: "dev_port_collision",
       detail:
-        `${E2E_DB_PORT_ENV}=${port} is the default compose Postgres port; ` +
-        "an e2e run must not be pointed at the developer's own stack",
+        `${E2E_DB_PORT_ENV}=${port} is the previous release's Docker Postgres port; ` +
+        "an e2e run must not be pointed at the developer's own database",
+    };
+  }
+
+  for (const cluster of input.runningNativeClusters) {
+    if (cluster.owner !== "developer_install") continue;
+    if (cluster.port === null) {
+      return {
+        kind: "refused",
+        reason: "dev_runtime_port_unknown",
+        detail:
+          `the developer's own native runtime (${cluster.runtimeDir}, postmaster pid ${cluster.pid}) ` +
+          "is running but has not written its port yet, so it cannot be ruled out; retry once it is up",
+      };
+    }
+    if (cluster.port === port) {
+      return {
+        kind: "refused",
+        reason: "dev_port_collision",
+        detail:
+          `${E2E_DB_PORT_ENV}=${port} is the port of the developer's own native runtime ` +
+          `(${cluster.runtimeDir}, postmaster pid ${cluster.pid}); ` +
+          "an e2e run must not be pointed at the developer's own database",
+      };
+    }
+  }
+
+  const ownCluster = input.runningNativeClusters.find((cluster) => cluster.owner === "this_run");
+  if (ownCluster !== undefined) {
+    return {
+      kind: "refused",
+      reason: "config_dir_runtime_running",
+      detail:
+        `the native runtime of this run's own config dir (${ownCluster.runtimeDir}) is running ` +
+        `(postmaster pid ${ownCluster.pid}); a door run needs a profile no runtime is serving`,
     };
   }
 
@@ -226,19 +302,109 @@ export function inspectPasswordFileOnDisk(path: string): E2ePasswordFileFacts | 
   return { isRegularFile: true, mode: stat.mode, trimmedLength: content.trim().length };
 }
 
+/** Whether `pid` names a live process (EPERM: alive, someone else's). */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * The cluster running in `runtimeDir` now, or null. Postgres removes its
+ * `postmaster.pid` on a clean stop; a file left by a crash names a dead
+ * process and does not count. A file that does not parse is not a running
+ * cluster either: Postgres itself refuses to start over one it cannot read.
+ */
+export function inspectRunningNativeCluster(
+  runtimeDir: string,
+  isAlive: (pid: number) => boolean = processAlive,
+): { readonly pid: number; readonly port: number | null } | null {
+  let text: string;
+  try {
+    text = readFileSync(path.join(pgDataDir(runtimeDir), "postmaster.pid"), "utf8");
+  } catch {
+    return null;
+  }
+  const file = parsePostmasterPid(text);
+  if (file === null || !isAlive(file.pid)) return null;
+  return { pid: file.pid, port: file.port };
+}
+
+/** The two runtime dirs the door must look at. */
+export interface E2eDoorRuntimeDirs {
+  /** The developer's own install: the default config dir's runtime dir. */
+  readonly developerInstall: string;
+  /** The config dir this boot runs on (`VEX_CONFIG_DIR` honoured). */
+  readonly thisRun: string;
+}
+
+/**
+ * Resolve both runtime dirs with the same resolvers `runtime-paths.ts` uses
+ * for `RUNTIME_DIR`, once with the environment as it is and once without
+ * `VEX_CONFIG_DIR`, so they cannot drift from where the runtime really is.
+ */
+export function resolveE2eDoorRuntimeDirs(deps: {
+  readonly platform: NodeJS.Platform;
+  readonly homedir: string;
+  readonly env: NodeJS.ProcessEnv;
+}): E2eDoorRuntimeDirs {
+  const runtimeDirFor = (env: NodeJS.ProcessEnv): string =>
+    resolveRuntimeDir({
+      platform: deps.platform,
+      homedir: deps.homedir,
+      env,
+      configDir: resolveConfigDir({ platform: deps.platform, homedir: deps.homedir, env }),
+    });
+  const withoutOverride: NodeJS.ProcessEnv = { ...deps.env };
+  delete withoutOverride["VEX_CONFIG_DIR"];
+  return { developerInstall: runtimeDirFor(withoutOverride), thisRun: runtimeDirFor(deps.env) };
+}
+
+/** The running clusters of both dirs, for the decision. */
+export function runningNativeClustersIn(
+  dirs: E2eDoorRuntimeDirs,
+  isAlive: (pid: number) => boolean = processAlive,
+): RunningNativeCluster[] {
+  const clusters: RunningNativeCluster[] = [];
+  const own = inspectRunningNativeCluster(dirs.thisRun, isAlive);
+  if (own !== null) clusters.push({ owner: "this_run", runtimeDir: dirs.thisRun, ...own });
+  if (path.resolve(dirs.developerInstall) !== path.resolve(dirs.thisRun)) {
+    const developer = inspectRunningNativeCluster(dirs.developerInstall, isAlive);
+    if (developer !== null) {
+      clusters.push({ owner: "developer_install", runtimeDir: dirs.developerInstall, ...developer });
+    }
+  }
+  return clusters;
+}
+
 /**
  * Evaluate the door for this boot and, when it opens, publish the connection.
+ *
+ * `options.runtimeDirs` is a test seam; production callers pass nothing and
+ * get the dirs of this machine.
  *
  * @returns an idempotent disposer that stops the overwrite watcher. Callers own
  * it for the lifetime of the process; a shut door returns a no-op.
  */
-export function openE2eConnectionDoor(): () => void {
+export function openE2eConnectionDoor(options: { readonly runtimeDirs?: E2eDoorRuntimeDirs } = {}): () => void {
+  const packaged = app.isPackaged;
   const decision = decideE2eConnectionDoor({
-    packaged: app.isPackaged,
+    packaged,
     env: process.env,
     platform: process.platform,
     connectionAlreadyPublished: getDbConnection() !== null,
     inspectPasswordFile: inspectPasswordFileOnDisk,
+    // Read only when the door can open at all: a packaged boot touches no
+    // runtime dir on the door's behalf.
+    runningNativeClusters: packaged
+      ? []
+      : runningNativeClustersIn(
+          options.runtimeDirs ??
+            resolveE2eDoorRuntimeDirs({ platform: process.platform, homedir: homedir(), env: process.env }),
+        ),
   });
 
   if (decision.kind === "inert") {
