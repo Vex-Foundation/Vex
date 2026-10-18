@@ -6,9 +6,6 @@ for embeddings, started and supervised by the app. **Run every cell on a
 machine with Docker uninstalled** (or at least not running), except the
 "Upgrade from a Docker release" rows, which need the previous release's data.
 
-Until the release that makes it the only runtime, select it with
-`VEX_RUNTIME=native` in the app's environment.
-
 Run each cell on a clean install (see [`LOCAL_RUNTIME.md`](./LOCAL_RUNTIME.md)
 → "Clean-slate reset") unless the row says otherwise.
 
