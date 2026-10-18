@@ -21,11 +21,13 @@ export const LIGHTER_RESOLUTIONS: readonly LighterTradingLiveResolution[] = [
 /** The chart keeps this much before the two columns start to yield to it. */
 export const LIGHTER_CHART_MIN = 360;
 /**
- * Below this desk width (the chat rail open, roughly) three columns leave the
- * chart a sliver, so the book column moves under the chart instead, with the
- * book and the trades as tabs.
+ * Below this desk width three columns leave the chart too little, so the book
+ * column moves under the chart instead, with the book and the trades as tabs
+ * and the ticket beside them. At a 1440 window with the 256 Vex sidebar open
+ * the desk is 1128 and stacks; with Vex hidden it is 1384 and keeps three
+ * columns.
  */
-export const LIGHTER_STACK_BELOW = 1020;
+export const LIGHTER_STACK_BELOW = 1180;
 /** A shallow, side-by-side book still needs room for several prices per side. */
 export const LIGHTER_COMPACT_BOOK_MIN = 208;
 export const LIGHTER_COMPACT_CHART_MIN = 280;
