@@ -13,7 +13,7 @@
  * The consent contract and the recovery rules are documented on the hook.
  */
 
-import { useCallback, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
@@ -74,6 +74,16 @@ export function LighterTradingSetupSection({
   // is re-read; the table row behind it says the same thing.
   const [sheetMarketId, setSheetMarketId] = useState<number | null>(null);
   const closeSheet = useCallback((): void => setSheetMarketId(null), []);
+  // A change proven applied to the open market is done: the sheet closes and
+  // the row behind it reads the new leverage. A refusal or an unknown outcome
+  // sets nothing, so the sheet returns to say why.
+  const handledApply = useRef(change.applied?.seq ?? 0);
+  useEffect(() => {
+    const applied = change.applied;
+    if (applied === null || applied.seq === handledApply.current) return;
+    handledApply.current = applied.seq;
+    setSheetMarketId((open) => (open === applied.marketId ? null : open));
+  }, [change.applied]);
 
   const onSaveShare = useCallback(
     (percent: number | null, expectedRevision: number | null): void => {

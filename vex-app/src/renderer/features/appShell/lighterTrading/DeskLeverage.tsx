@@ -13,7 +13,7 @@
  * proposal, the person's Confirm).
  */
 
-import { type JSX } from "react";
+import { useEffect, useRef, type JSX } from "react";
 import type { LighterIntegrationEnvironment } from "@shared/schemas/lighter-integration.js";
 import { LighterLeverageConfirmModal } from "../screens/SettingsScreen/LighterLeverageConfirmModal.js";
 import { LighterLeverageSheet } from "../screens/SettingsScreen/LighterLeverageSheet.js";
@@ -75,6 +75,17 @@ function DeskLeverageScoped({
 }: DeskLeverageProps & { readonly walletAddress: string }): JSX.Element {
   const change = useLighterLeverageChange({ environment, walletAddress });
   const { overview } = change;
+
+  // A change proven applied to this market is done: the sheet closes rather
+  // than come back with "Applied" and another Review change. A refusal or an
+  // unknown outcome sets nothing, so the sheet returns to say why.
+  const handledApply = useRef(change.applied?.seq ?? 0);
+  useEffect(() => {
+    const applied = change.applied;
+    if (applied === null || applied.seq === handledApply.current) return;
+    handledApply.current = applied.seq;
+    if (applied.marketId === marketId) onClose();
+  }, [change.applied, marketId, onClose]);
   const overviewData = overview.data !== undefined && overview.data.ok ? overview.data.data : null;
   const row = overviewData?.markets.find((market) => market.marketId === marketId) ?? null;
   const notice = overview.isPending
