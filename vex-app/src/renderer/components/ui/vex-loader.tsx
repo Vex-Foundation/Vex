@@ -7,7 +7,7 @@
  * `features/`; inline sizes leave it empty.
  *
  * Motion contract: the screen steps ONLY while mounted, and consumers mount
- * it only for real in-flight work (probes, compose, migrate), never
+ * it only for real in-flight work (probes, the runtime start, migrate), never
  * decoratively. `prefers-reduced-motion` and `data-still` freeze it to one
  * still frame via CSS; no JS branch is needed.
  *

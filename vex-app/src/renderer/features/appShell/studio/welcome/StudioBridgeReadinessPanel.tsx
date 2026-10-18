@@ -1,11 +1,11 @@
 /**
  * THE DIAGNOSTIC THAT APPEARS WHEN VEX STUDIO HAS NO BRIDGE (B1.6).
  *
- * The Docker bootstrap flow is the shape this follows, deliberately: a
- * `SetupStatusCard` states what is wrong in a colored word plus one sentence,
- * a body gives the ONE remedy for that exact state, and a re-check button
- * re-asks the question. `docker/bootstrap/branches/DaemonStoppedBody.tsx` is
- * the direct precedent, including the copy-paste command block.
+ * The setup screens' remediation shape is the one this follows,
+ * deliberately: a `SetupStatusCard` states what is wrong in a colored word
+ * plus one sentence, a body gives the ONE remedy for that exact state
+ * (including a copy-paste command block where a command is the remedy), and
+ * a re-check button re-asks the question.
  *
  * ## It renders nothing at all when the bridge is ready
  *
