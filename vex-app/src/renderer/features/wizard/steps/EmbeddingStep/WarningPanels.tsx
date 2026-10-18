@@ -5,9 +5,8 @@
  * Error rendering is specialised by VexErrorCode:
  *   - embedding.dim_locked → warning card with the existing/target row
  *     count + "memory unavailable" guidance.
- *   - embedding.db_unavailable → retry card. Its hint follows the runtime:
- *     the native runtime's database is supervised (and restarted) by main;
- *     the container runtime's services are the user's to check.
+ *   - embedding.db_unavailable → retry card. The bundled database is
+ *     supervised (and restarted) by main, so the hint is to wait and retry.
  */
 
 import type { JSX } from "react";
@@ -22,15 +21,12 @@ export interface EmbeddingWarningPanelsProps {
   readonly isDimLocked: boolean;
   readonly isDbDown: boolean;
   readonly serverError: ServerError | null;
-  /** Main runs the native runtime: the database is the bundled one main supervises. */
-  readonly nativeRuntime?: boolean;
 }
 
 export function EmbeddingWarningPanels({
   isDimLocked,
   isDbDown,
   serverError,
-  nativeRuntime = false,
 }: EmbeddingWarningPanelsProps): JSX.Element {
   return (
     <>
@@ -70,9 +66,8 @@ export function EmbeddingWarningPanels({
           </strong>
           <p className="mt-1">{serverError?.message}</p>
           <p className="mt-2 text-xs">
-            {nativeRuntime
-              ? "Vex restarts its local database on its own. Wait a moment, then retry; if it keeps failing, restart Vex."
-              : "Verify Docker services are running, then retry."}
+            Vex restarts its local database on its own. Wait a moment, then
+            retry; if it keeps failing, restart Vex.
           </p>
         </div>
       ) : null}
