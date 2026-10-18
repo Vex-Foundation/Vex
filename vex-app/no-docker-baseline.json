@@ -55,11 +55,6 @@
     "vex-app/src/main/updates/critical-ops.ts": 3,
     "vex-app/src/main/updates/safeRestart.ts": 4,
     "vex-app/src/main/windows/main-window.ts": 2,
-    "vex-app/src/preload/_dispatch.ts": 3,
-    "vex-app/src/preload/index.ts": 1,
-    "vex-app/src/preload/shell/docker.ts": 15,
-    "vex-app/src/preload/shell/index.ts": 3,
-    "vex-app/src/preload/shell/updater.ts": 1,
     "vex-app/src/renderer/dev/board-layout/harness.tsx": 1,
     "vex-app/src/renderer/features/appShell/studio/viewer/highlight/language-of-path.ts": 5,
     "vex-app/src/renderer/features/appShell/studio/welcome/StudioBridgeReadinessPanel.tsx": 2,
@@ -74,12 +69,6 @@
     "vex-app/src/shared/schemas/capabilities.ts": 1,
     "vex-app/src/shared/schemas/docker.ts": 34,
     "vex-app/src/shared/schemas/onboarding.ts": 2,
-    "vex-app/src/shared/schemas/updater.ts": 1,
-    "vex-app/src/shared/types/bridge.ts": 1,
-    "vex-app/src/shared/types/bridge/agent/engine.ts": 1,
-    "vex-app/src/shared/types/bridge/common.ts": 1,
-    "vex-app/src/shared/types/bridge/index.ts": 1,
-    "vex-app/src/shared/types/bridge/shell/docker.ts": 4,
-    "vex-app/src/shared/types/bridge/shell/index.ts": 7
+    "vex-app/src/shared/schemas/updater.ts": 1
   }
 }
