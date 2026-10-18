@@ -2,12 +2,14 @@
  * The K2 host (`VexK2.tsx`) in jsdom, where no canvas paints. Regressions this catches: a host that
  * is announced to assistive tech or takes the pointer, a lost placement or ground seam, a lost
  * episode seam (the open dock, the closed token) or one that does not follow its prop, a mount
- * that throws or starts fetching art while its host has no size, and a token toggle host that does
- * not hand its caller the coin's box on its fit or takes the pointer itself.
+ * that throws or starts fetching art while its host has no size, a token toggle host that does
+ * not hand its caller the coin's box on its fit or takes the pointer itself, and a morning that
+ * reaches the engine only after its first frame or not on a change.
  */
 
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { K2Engine } from "../k2-engine.js";
 import { type Box, fitFor, tokenBox } from "../k2-rig.js";
 import { VexK2 } from "../VexK2.js";
 
@@ -47,6 +49,33 @@ describe("VexK2", () => {
     rerender(<VexK2 placement="sidebar" ground="print" className="h-[280px]" />);
     expect(host()?.hasAttribute("data-vex-k2-open")).toBe(false);
     expect(host()?.hasAttribute("data-vex-k2-closed")).toBe(false);
+  });
+
+  it("hands the engine the host's morning before her first frame and on every change, with a seam", () => {
+    const morning = vi.spyOn(K2Engine.prototype, "setMorning");
+    const start = vi.spyOn(K2Engine.prototype, "start").mockResolvedValue(undefined);
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(284);
+    try {
+      const { container, rerender, unmount } = render(
+        <VexK2 placement="welcome" ground="paper" morning />,
+      );
+      const host = () => container.querySelector("[data-vex-k2]");
+      expect(host()?.hasAttribute("data-vex-k2-morning")).toBe(true);
+      // set before the engine starts, so a still frame holds the mug from its first frame
+      expect(morning).toHaveBeenCalledWith(true);
+      const first = morning.mock.invocationCallOrder[0] ?? Infinity;
+      expect(first).toBeLessThan(start.mock.invocationCallOrder[0] ?? -1);
+      rerender(<VexK2 placement="welcome" ground="paper" morning={false} />);
+      expect(morning).toHaveBeenLastCalledWith(false);
+      expect(host()?.hasAttribute("data-vex-k2-morning")).toBe(false);
+      unmount();
+    } finally {
+      morning.mockRestore();
+      start.mockRestore();
+      width.mockRestore();
+      height.mockRestore();
+    }
   });
 
   it("hands its caller the coin's box on its fit, and stays decorative with the toggle on", () => {

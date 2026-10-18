@@ -7,7 +7,8 @@
  *
  * Her inks: white dots for skin and tee, the cool ink for hair and lines, a little blue (irises,
  * crown streaks, the vx on her tee); at night the blue and the rim round her hair are periwinkle.
- * Coordinates are her map's px.
+ * Coordinates are her map's px. A hand may stand above its drawing's place (a negative `rise`: the
+ * coffee's mug raised toward her lips).
  */
 import { bayerAt, hash01 } from "./k2-rand.js";
 import {
@@ -819,7 +820,7 @@ export class Portrait {
         if (hand !== null && handMap !== null) {
           const sj = j - hand.rise;
           const si = i - hand.di;
-          if (sj >= 0 && si >= 0 && si < GW) {
+          if (sj >= 0 && sj < GH && si >= 0 && si < GW) {
             const s = sj * GW + si;
             if (handMap.cls[s] === C.hand && hand.p > bay) {
               putHand(handMap, s, k);
@@ -831,7 +832,7 @@ export class Portrait {
         if (handA !== null && handAMap !== null && !useG && !useH) {
           const sj = j - handA.rise;
           const si = i - handA.di;
-          if (sj >= 0 && si >= 0 && si < GW) {
+          if (sj >= 0 && sj < GH && si >= 0 && si < GW) {
             const s = sj * GW + si;
             if (handAMap.cls[s] === C.hand) {
               putHand(handAMap, s, k);
@@ -980,8 +981,9 @@ export class Portrait {
   /**
    * The eyes, authored: ink lash line, white sclera, the iris (blue), ink pupil, one white
    * highlight; the lid closes as white skin with the lash line coming down. Gestures: `squeeze`
-   * (`> <`), `happy` (arcs), `soft`, the wake's `closed` and `drowsy`; the app's moods: `narrow`,
-   * `wide`, `worried` (the lid line tilting up to the inner corner), `half`, `smile`.
+   * (`> <`), `happy` (arcs), `soft`, the coffee's `content` (the soft eye's lifted lower lid, its lids
+   * the frame's), the wake's `closed` and `drowsy`; the app's moods: `narrow`, `wide`, `worried`
+   * (the lid line tilting up to the inner corner), `half`, `smile`.
    */
   #emitEyes(
     fr: PortraitFrame,
@@ -1077,7 +1079,13 @@ export class Portrait {
       const hly = e.hl[1] + g.gy;
       const hl2 = this.cellAt(e.hl2[0] + g.gx, e.hl2[1] + g.gy);
       const lift =
-        em === "soft" ? 1.4 : em === "narrow" ? 1.5 : em === "smile" ? 1 : 0;
+        em === "soft" || em === "content"
+          ? 1.4
+          : em === "narrow"
+            ? 1.5
+            : em === "smile"
+              ? 1
+              : 0;
       const smile = Math.max(hp, lift);
       for (const k of live) {
         const x = X[k] ?? 0;

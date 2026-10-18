@@ -10,8 +10,11 @@
  * a close in the middle of a wake that does not run from where the wake was, a token toggle open
  * that does not press at once, an episode that plays under the still frame; a look at you that is
  * missing after she comes back, runs out of its 1.5 to 3 s, or follows a return that has not
- * happened yet; a schedule that is not a pure function of the clock; and a frame clock that does
- * not step at 30 fps through every episode (the wake, an open, the close, each gesture) and at
+ * happened yet; a morning coffee that plays outside a morning session, sooner than 12 s after she
+ * is awake in one, crowding the pool, more often than every 2 min or less often than every 4 (with
+ * one slot's wait), under a hold, without its drawings or in a still frame, or a pool that changes
+ * when no morning comes; a schedule that is not a pure function of the clock; and a frame clock that
+ * does not step at 30 fps through every episode (the wake, an open, the close, each gesture) and at
  * 10 fps on the idle grid otherwise, that skips an idle step, repeats a frame or goes back, or that
  * gives the wake, the close or an action another count of frames than the web app's.
  */
@@ -21,6 +24,7 @@ import {
   CLOSE,
   CLOSE_MS,
   CLOSED,
+  COFFEE,
   canGiggle,
   closing,
   EPISODE_FPS,
@@ -751,5 +755,112 @@ describe("the look at you chain", () => {
     expect(at(1000)).toBe(1);
     expect(at(1350)).toBeCloseTo(0.4, 5);
     expect(at(1400)).toBe(0);
+  });
+});
+
+/** The pool with the morning coffee allowed (its drawings in, on the app drawing). */
+const WITH_COFFEE: readonly GestureName[] = [...ALL, "coffee"];
+
+describe("the morning coffee's schedule", () => {
+  test("without a morning: no coffee, and the same actions at the same moments as before it existed", () => {
+    const span = 1200000;
+    const allowed = runsOf(new GestureChain(0), 0, span, {
+      allowed: WITH_COFFEE,
+    });
+    const before = runsOf(new GestureChain(0), 0, span);
+    expect(allowed.some((r) => r.name === "coffee")).toBe(false);
+    expect(allowed.map((r) => [r.name, r.start])).toEqual(before.map((r) => [r.name, r.start]));
+    expect(allowed.length).toBeGreaterThan(20);
+  });
+
+  test("in a morning session: first due 12 s after she is awake, in the first free slot, the pool's gap kept on both sides", () => {
+    const awake = 9100;
+    const chain = new GestureChain(awake, null, 0);
+    const runs = runsOf(chain, 0, 1800000, {
+      allowed: WITH_COFFEE,
+      awakeAt: awake,
+    });
+    // the blow keeps its first slot 6 s after she is awake; the coffee takes the next free one
+    expect(runs[0]?.name).toBe("blow");
+    expect(runs[0]?.start).toBe(awake + 6000);
+    expect(runs[1]?.name).toBe("coffee");
+    expect(runs[1]?.start ?? 0).toBeGreaterThanOrEqual(awake + COFFEE.first);
+    const gaps = runs.slice(1).map((r, n) => r.start - (runs[n]?.end ?? 0));
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(GESTURE_GAP - 34);
+    // every other kind still plays in the morning
+    expect([...new Set(runs.map((r) => r.name))].sort()).toEqual([
+      "bird",
+      "blow",
+      "blush",
+      "coffee",
+      "hum",
+      "whistle",
+    ]);
+  });
+
+  test("then every 2 to 4 min after each one ends (one slot's wait at most), each its 7.6 s at 30 fps, never taken by a whistle", () => {
+    const chain = new GestureChain(0, null, 0);
+    const runs = runsOf(chain, 0, 1800000, { allowed: WITH_COFFEE });
+    const coffees = runs.filter((r) => r.name === "coffee");
+    expect(coffees.length).toBeGreaterThanOrEqual(7);
+    const between = coffees.slice(1).map((r, n) => r.start - (coffees[n]?.start ?? 0));
+    expect(Math.min(...between)).toBeGreaterThanOrEqual(GESTURE_MS.coffee + COFFEE.gapMin - 34);
+    // one slot's wait: the longest action (the bird, 7.8 s) and the pool's widest gap (25 s)
+    expect(Math.max(...between)).toBeLessThanOrEqual(
+      GESTURE_MS.coffee + COFFEE.gapMax + 7800 + 25000 + 34,
+    );
+    expect(
+      coffees.every((r) => Math.abs(r.frames.length - (GESTURE_MS.coffee * 3) / 100) <= 1),
+    ).toBe(true);
+    // the pointer never moved (the whistle's stillness): still no whistle stands in a coffee's slot
+    expect(coffees.every((r) => whistleAt(chain, r.start + 100, 0) === null)).toBe(true);
+  });
+
+  test("a morning that begins later: the first coffee 12 s after it began; a morning that ends: no more coffee", () => {
+    const chain = new GestureChain(0);
+    const allowed = WITH_COFFEE;
+    const early = runsOf(chain, 0, 200000, { allowed });
+    expect(early.some((r) => r.name === "coffee")).toBe(false);
+    chain.setMorning(300000);
+    const morning = runsOf(chain, 200000, 800000, { allowed });
+    const first = morning.find((r) => r.name === "coffee");
+    expect(first?.start ?? 0).toBeGreaterThanOrEqual(300000 + COFFEE.first);
+    // slots made before the morning began keep their actions: it waits two slots at most
+    expect(first?.start ?? 1e12).toBeLessThanOrEqual(300000 + COFFEE.first + 2 * (7800 + 25000));
+    chain.setMorning(null);
+    // past the slots already made when it ended
+    const after = runsOf(chain, 1000000, 1600000, { allowed });
+    expect(after.some((r) => r.name === "coffee")).toBe(false);
+    expect(after.length).toBeGreaterThan(5);
+  });
+
+  test("held back like every action: a hold before it cancels it, one during it fades it out in 300 ms; nothing before she is awake, without its drawings or in a still frame", () => {
+    const chain = new GestureChain(0, null, 0);
+    const at = (t: number, more: Partial<GestureInput> = {}) =>
+      gestureAt(chain, idle(t, { allowed: WITH_COFFEE, ...more }));
+    const run = runsOf(chain, 0, 120000, { allowed: WITH_COFFEE }).find((r) => r.name === "coffee");
+    const s = run?.start ?? -1;
+    expect(s).toBeGreaterThan(0);
+    expect(at(s + 1000)?.name).toBe("coffee");
+    // a hover, a reply, typing, an app mood or the close (the engine's hold) before it
+    expect(at(s + 1000, { hold: true, holdAge: 2000 })).toBeNull();
+    // one that came 150 ms ago: half faded
+    const fading = at(s + 1000, { hold: true, holdAge: 150 });
+    expect(fading?.name).toBe("coffee");
+    expect(fading?.fade).toBeCloseTo(0.5, 5);
+    expect(at(s + 1300, { hold: true, holdAge: 450 })).toBeNull();
+    // it stays gone after the hold ends
+    expect(at(s + 2000, { unholdAge: 500 })).toBeNull();
+    // before her gestures' drawings are in (the map-free set) its slot passes; a still frame plays nothing
+    expect(at(s + 1000, { allowed: ["blush", "whistle", "hum"] })).toBeNull();
+    expect(at(s + 1000, { allowed: [] })).toBeNull();
+    expect(at(s + 1000, { awakeAt: s + 5000 })).toBeNull();
+  });
+
+  test("the coffee's slot plays at 30 fps (an episode), its face is hers until the engine draws it (k2-coffee.ts)", () => {
+    const g = { name: "coffee" as const, start: 0, age: 3000, fade: 1 };
+    expect(inEpisode({ still: false, waking: false, closing: false, gesture: true })).toBe(true);
+    expect(gestureState(g)).toEqual(gestureState(null));
+    expect(GESTURE_MS.coffee).toBe(7600);
   });
 });

@@ -7,6 +7,7 @@
  * half drawn.
  */
 import { type AnyCanvas, type Ctx2D, createCanvas } from "../../../lib/pixel/core.js";
+import { type CoffeeGeo, isCoffeeGeo } from "./k2-coffee.js";
 import { decodeMap, type K2Eye, type K2Map, type K2Meta } from "./k2-portrait.js";
 import type { TokenFrame, TokenSheet } from "./k2-token.js";
 
@@ -139,6 +140,11 @@ async function json<T>(file: string, guard: (v: unknown) => v is T): Promise<T> 
 /** A drawing's metadata (`dir`: "" for the wide drawing, "app/" for the app drawing). */
 export function loadMeta(dir = ""): Promise<K2Meta> {
   return json(`${dir}meta.json`, isK2Meta);
+}
+
+/** The morning coffee's geometry on a drawing (`app/coffee.json`: the mug's rims, her lips). */
+export function loadCoffeeGeo(dir = "app/"): Promise<CoffeeGeo> {
+  return json(`${dir}coffee.json`, isCoffeeGeo);
 }
 
 /** The token's sprite sheet layout. */

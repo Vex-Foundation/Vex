@@ -1,7 +1,7 @@
 /**
- * K2's seeded randomness: integer hashes, 1D value noise, event schedules and the Bayer threshold,
- * all pure functions of their inputs, so every blink, gust and gesture follows from the clock and a
- * recording is frame exact. Never `Math.random()`.
+ * K2's seeded randomness: integer hashes, 1D and 2D value noise, event schedules and the Bayer
+ * threshold, all pure functions of their inputs, so every blink, gust and gesture follows from the
+ * clock and a recording is frame exact. Never `Math.random()`.
  */
 import { BAYER } from "../../../lib/pixel/core.js";
 
@@ -34,6 +34,18 @@ export function noise1(x: number, seed = 0): number {
   const a = hash01(i, seed) * 2 - 1;
   const b = hash01(i + 1, seed) * 2 - 1;
   return a + (b - a) * smooth(f);
+}
+
+/** 2D value noise, about -1..1 (the coffee's steam breaks up on it). */
+export function noise2(x: number, y: number, seed = 0): number {
+  const i = Math.floor(x);
+  const j = Math.floor(y);
+  const fx = smooth(x - i);
+  const fy = smooth(y - j);
+  const v = (a: number, b: number) => hash01(a, b, seed) * 2 - 1;
+  const top = v(i, j) + (v(i + 1, j) - v(i, j)) * fx;
+  const bot = v(i, j + 1) + (v(i + 1, j + 1) - v(i, j + 1)) * fx;
+  return top + (bot - top) * fy;
 }
 
 export interface ScheduleHit {

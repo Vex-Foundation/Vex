@@ -7,6 +7,7 @@
  * div[data-vex-k2=<placement>][data-vex-k2-ground][data-vex-k2-ready?]   her host, aria-hidden
  *    [data-vex-k2-open?][data-vex-k2-closed?]                            her episodes
  *    [data-vex-k2-token?=shown|closing|token|opening]                    the token toggle's state
+ *    [data-vex-k2-morning?]                                              the host's morning
  *   canvas                                                               her, her light, her token
  * ```
  *
@@ -23,6 +24,11 @@
  * caller renders `K2TokenButton` over the box `onTokenBox` reports (`tokenBox`, host px, on every
  * fit) and hears each state through `onToken`. A host shrunk below her fit draws nothing, so a
  * caller that shrinks her stage to the coin clips around this host rather than resizing it.
+ *
+ * The morning (`morning`, the owner 2026-10-18, as on the web app): the host reads the local clock
+ * (06:00 to 10:59, again every minute, `useMorning` in `k2-morning.ts`) and passes it; in the
+ * morning she may have her coffee while idle (`k2-coffee.ts`), and under the still frame she holds
+ * the mug.
  */
 import { type JSX, useEffect, useRef, useState } from "react";
 import { useStillFrame } from "../../../lib/motion/use-still-frame.js";
@@ -62,6 +68,8 @@ export interface VexK2Props {
   readonly onToken?: (state: K2TokenState) => void;
   /** The token's box in this host's px on every fit, for the caller's button and its stage. */
   readonly onTokenBox?: (box: Box) => void;
+  /** It is morning (local 06:00 to 10:59, the host's `useMorning`): her coffee may play. */
+  readonly morning?: boolean;
   readonly className?: string;
 }
 
@@ -80,6 +88,7 @@ export function VexK2({
   tokenOnly = false,
   onToken,
   onTokenBox,
+  morning = false,
   className,
 }: VexK2Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -98,6 +107,7 @@ export function VexK2({
     tokenOnly,
     onToken,
     onTokenBox,
+    morning,
   });
   live.current = {
     dark,
@@ -110,6 +120,7 @@ export function VexK2({
     tokenOnly,
     onToken,
     onTokenBox,
+    morning,
   };
   const placeRef = useRef<(() => void) | null>(null);
   // the toggle's state as the engine reports it (a seam for review and tests)
@@ -141,6 +152,8 @@ export function VexK2({
     engineRef.current = engine;
     engine.setEmotion(now.emotion);
     engine.setHover(now.hover);
+    // before start: a still frame in the morning holds the mug from its first frame
+    engine.setMorning(now.morning);
     let started = false;
     const place = (): void => {
       // the bust's cut drops while the approval palm shows
@@ -185,6 +198,9 @@ export function VexK2({
   useEffect(() => {
     engineRef.current?.setTokenOnly(tokenOnly);
   }, [tokenOnly]);
+  useEffect(() => {
+    engineRef.current?.setMorning(morning);
+  }, [morning]);
 
   return (
     <div
@@ -195,6 +211,7 @@ export function VexK2({
       data-vex-k2-open={open ? "" : undefined}
       data-vex-k2-closed={closed ? "" : undefined}
       data-vex-k2-token={token ?? undefined}
+      data-vex-k2-morning={morning ? "" : undefined}
       className={cn("pointer-events-none relative overflow-hidden", className)}
     >
       <canvas ref={canvasRef} className="pointer-events-none absolute left-0 top-0 block" />

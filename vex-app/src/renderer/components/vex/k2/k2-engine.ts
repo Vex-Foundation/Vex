@@ -42,14 +42,31 @@
  * - The still frame (reduced motion, Save-Data, or asked by the host) paints once (awake, the
  *   token flat, the beam on and still, no wind, no gestures, the emotion settled; an open shows
  *   her at once, a close leaves the token alone) and repaints only on a hover, a theme, a ground,
- *   an emotion, an episode or a layout change.
+ *   an emotion, an episode, the morning or a layout change.
+ * - The morning coffee (`setMorning`, the owner 2026-10-18, as on the web app; `k2-coffee.ts`): the
+ *   host passes whether it is morning (local 06:00 to 10:59, refreshed every minute,
+ *   `k2-morning.ts`); a morning session lets the pool offer the coffee (first due 12 s after she is
+ *   awake in it, then every 2 to 4 min), its drawings loading when the morning begins, on the app
+ *   drawing only. Whatever holds the pool back holds it too; one that comes during it (a hover, any
+ *   emotion but idle, the close) fades it out over 300 ms. Under the still frame she holds the mug
+ *   in the morning.
  *
  * The host places her (`k2-rig.ts`, `setFit`); her map's px are drawn through one transform
  * (host = o + s * map). The maps and the token's sprites load from the renderer's own origin
  * (`k2-assets.ts`).
  */
 import { RunGate } from "../../../lib/motion/run-gate.js";
-import { loadMap, loadMeta } from "./k2-assets.js";
+import { loadCoffeeGeo, loadMap, loadMeta } from "./k2-assets.js";
+import {
+  COFFEE_MAPS,
+  type CoffeeGeo,
+  type CoffeeRig,
+  coffeeFace,
+  coffeeIntoMood,
+  coffeeStill,
+  drawCoffee,
+  STEAM_INK_ALPHA,
+} from "./k2-coffee.js";
 import type { K2Emotion } from "./k2-emotion.js";
 import {
   Dots,
@@ -144,6 +161,9 @@ export const CLOCK_CAP_MS = 250;
 /** The idle actions: all once her gestures' drawings are in, the map-free ones before. */
 const ALL: readonly GestureName[] = ["blow", "bird", "giggle", "blush", "whistle", "hum"];
 const MAP_FREE: readonly GestureName[] = ["blush", "whistle", "hum"];
+/** In the morning, with the coffee's drawings in (the app drawing). */
+const ALL_COFFEE: readonly GestureName[] = [...ALL, "coffee"];
+const MAP_FREE_COFFEE: readonly GestureName[] = [...MAP_FREE, "coffee"];
 /**
  * The beam's ink by the ground under her (`docs/design/R3-MINIMAL.md section 10.4`): white on the
  * print by day at 0.66, a step under the clouds' 0.9 so her tee reads (the web home's value); white
@@ -183,7 +203,7 @@ export interface K2EngineOptions {
   readonly wake: boolean;
   /** The wake has handed her over. */
   readonly onWoken: () => void;
-  /** Review: plays that gesture 1 s after she is awake. */
+  /** Review: plays that gesture 1 s after she is awake (the coffee only in the morning). */
   readonly force?: GestureName | null;
   /** The composer she looks at while listening (by default her look goes down and to the side). */
   readonly composer?: (() => HTMLElement | null) | undefined;
@@ -409,6 +429,15 @@ export class K2Engine {
   #reported = false;
   /** The coin's poses were asked for and the answer is in (loaded, or failed: the coin stays flat). */
   #posesTried = false;
+  /**
+   * The host's morning, whether its session runs on the pool's clock, and the coffee's geometry and
+   * load on the app drawing (`k2-coffee.ts`).
+   */
+  #morning = false;
+  #session = false;
+  #coffeeGeo: CoffeeGeo | null = null;
+  #coffeeLoad: Promise<void> | null = null;
+  #coffeeFailed = false;
 
   constructor(o: K2EngineOptions) {
     this.#o = o;
@@ -416,7 +445,8 @@ export class K2Engine {
     this.#ground = o.ground;
     this.#pal = inks(o.dark);
     const f = o.force;
-    const force = f === "blow" || f === "bird" || f === "blush" || f === "hum" ? f : null;
+    const force =
+      f === "blow" || f === "bird" || f === "blush" || f === "hum" || f === "coffee" ? f : null;
     this.#chain = new GestureChain(this.#awakeAt(), force);
     if (f === "giggle") this.#giggles.push(this.#awakeAt() + 1000);
     if (o.tokenOnly === true) {
@@ -554,6 +584,19 @@ export class K2Engine {
     this.#repaintIdle();
   }
 
+  /**
+   * The host's morning (local 06:00 to 10:59, `k2-morning.ts`): it loads the coffee's drawings; the
+   * morning session (the coffee first due 12 s after she is awake in it, `GestureChain.setMorning`)
+   * runs while it is morning and her drawing can play the coffee (`#frame`).
+   */
+  setMorning(on: boolean): void {
+    if (on === this.#morning) return;
+    this.#morning = on;
+    if (on) void this.#loadCoffee(this.#fit?.rig.drawing);
+    this.#frozen = null;
+    this.#repaintIdle();
+  }
+
   /** A click or a tap on her: a giggle, once she is awake, idle and its cooldown is over. */
   poke(): void {
     if (this.#o.still) return;
@@ -581,6 +624,8 @@ export class K2Engine {
     // whole, flat coin)
     const poses = this.#o.wake || this.#want || (this.#o.open === true && !this.#o.still);
     await Promise.all([this.#loadDrawing(fit.rig.drawing), this.#token.load(poses, density)]);
+    // a still frame in the morning holds the mug from the first frame
+    if (this.#o.still && this.#morning) await this.#loadCoffee(fit.rig.drawing);
     if (this.#stopped) return;
     if (poses) this.#posesTried = true;
     this.#started = true;
@@ -632,6 +677,7 @@ export class K2Engine {
       this.#frozen = null;
       if (this.#started) this.#repaintIdle();
       void this.#loadMoods(drawing);
+      if (this.#morning) void this.#loadCoffee(drawing);
     } catch {
       // she stays away rather than half drawn
     } finally {
@@ -661,6 +707,50 @@ export class K2Engine {
     this.#invalidate();
     this.#frozen = null;
     this.#repaintIdle();
+  }
+
+  /**
+   * The coffee's drawings and geometry on the app drawing, once (until they are in, or when they
+   * fail, the morning is like any other time). The wide drawing has no coffee.
+   */
+  #loadCoffee(drawing: K2Drawing | undefined): Promise<void> {
+    if (drawing !== "app" || this.#stopped) return Promise.resolve();
+    const portrait = this.#portraits.app;
+    if (portrait === undefined) return Promise.resolve();
+    if (this.#coffeeLoad !== null) return this.#coffeeLoad;
+    const n = portrait.meta.gw * portrait.meta.gh;
+    const run = (async () => {
+      try {
+        const missing = COFFEE_MAPS.filter((m) => !portrait.hasMap(m));
+        const [maps, geo] = await Promise.all([
+          Promise.all(missing.map((m) => loadMap(`${DIR.app}${m}.png`, n))),
+          loadCoffeeGeo(DIR.app),
+        ]);
+        if (this.#stopped) return;
+        missing.forEach((m, i) => {
+          const map = maps[i];
+          if (map !== undefined) portrait.addMap(m, map);
+        });
+        this.#coffeeGeo = geo;
+        this.#invalidate();
+        this.#frozen = null;
+        this.#repaintIdle();
+      } catch {
+        // no coffee: her morning is like any other time
+        this.#coffeeFailed = true;
+      }
+    })();
+    this.#coffeeLoad = run;
+    return run;
+  }
+
+  /** The coffee's geometry on her drawing once its drawings are in, or null (`k2-coffee.ts`). */
+  #coffeeRig(drawing: K2Drawing, portrait: Portrait): CoffeeRig | null {
+    const geo = this.#coffeeGeo;
+    if (drawing !== "app" || geo === null || !COFFEE_MAPS.every((m) => portrait.hasMap(m)))
+      return null;
+    const meta = portrait.meta;
+    return { geo, pitch: meta.pitch, glance: { x: meta.glance[0], y: meta.glance[1] } };
   }
 
   async #loadGestures(): Promise<void> {
@@ -889,8 +979,9 @@ export class K2Engine {
   /* ---------------------------------------------------------------- one frame */
 
   /**
-   * One frame's state at t, written to nothing but the toggle (an episode it starts here) and the
-   * glances' cache: an episode (the wake, an open, the close, a gesture) reads t, her idle life
+   * One frame's state at t, written to nothing but the toggle (an episode it starts here), the
+   * glances' cache and the morning session (`GestureChain.setMorning`, when the coffee can play or
+   * no longer can): an episode (the wake, an open, the close, a gesture) reads t, her idle life
    * (the blink, the gaze, the glances, the look at you, the wind, the beam's life, the hover, an
    * emotion other than the waking one) reads t's idle step.
    */
@@ -946,17 +1037,36 @@ export class K2Engine {
     const frozen = mf?.frozen === true && !busy;
     const still = this.#o.still || frozen;
 
+    // the morning coffee: a morning session runs while it is morning on the app drawing (unless its
+    // drawings failed): it begins with the coffee first due 12 s after she is awake in it (before
+    // the pool's next slots are made, so from her first frame), and ends; the coffee plays once its
+    // drawings are in
+    const drawing = R.drawing;
+    const coffee = this.#coffeeRig(drawing, portrait);
+    const session = this.#morning && drawing === "app" && !this.#coffeeFailed;
+    if (session !== this.#session && !this.#o.still) {
+      this.#session = session;
+      this.#chain.setMorning(session ? Math.max(t, awakeAt) : null);
+    }
+    const coffeeOn = session && coffee !== null;
+    const pool = this.#gestures
+      ? coffeeOn
+        ? ALL_COFFEE
+        : ALL
+      : coffeeOn
+        ? MAP_FREE_COFFEE
+        : MAP_FREE;
     // what holds the idle pool back: a hover, an episode, a wake, any emotion but idle (settled);
     // a slot due meanwhile is skipped, never shown half way
     const hold = this.#hover || busy || t < awakeAt || (mf !== null && !mf.gestures);
     const changed = hold !== this.#hold;
     const holdAt = changed && hold ? t : this.#holdAt;
     const unholdAt = changed && !hold ? t : this.#unholdAt;
-    const G: ActiveGesture | null =
-      WS === null && !busy && (mf === null || mf.gestures)
+    const G0: ActiveGesture | null =
+      WS === null
         ? gestureAt(this.#chain, {
             t,
-            allowed: still ? [] : this.#gestures ? ALL : MAP_FREE,
+            allowed: still ? [] : pool,
             awakeAt,
             giggles: this.#giggles,
             blushes: this.#blushes,
@@ -966,10 +1076,29 @@ export class K2Engine {
             unholdAge: !hold && unholdAt >= 0 ? t - unholdAt : -1,
           })
         : null;
+    // an episode and any emotion but idle stop the pool at once; the coffee they cut fades out over
+    // 300 ms (under them the pool's hold is on, so a coffee still answering is a fading one)
+    const blocked = busy || (mf !== null && !mf.gestures);
+    const G: ActiveGesture | null = !blocked ? G0 : G0 !== null && G0.name === "coffee" ? G0 : null;
     // an idle action that ends is a return: she looks at you from this frame
     const ended = this.#lastG && G === null && !hold && WS === null;
     const returns = ended ? [...this.#returns, t] : this.#returns;
-    let gs: FaceState = WS ?? (G !== null || mf === null ? gestureState(G) : mf.face);
+    // reduced motion in the morning: one still frame of her holding the mug (her idle face only)
+    const coffeeHeld =
+      this.#o.still &&
+      this.#morning &&
+      coffee !== null &&
+      WS === null &&
+      !veiled &&
+      !this.#hover &&
+      (mf === null || mf.gestures);
+    let gs: FaceState;
+    if (WS !== null) gs = WS;
+    else if (G !== null && G.name === "coffee" && coffee !== null) {
+      const c = coffeeFace(G.age, coffee, G.fade);
+      gs = mf !== null && !mf.gestures ? coffeeIntoMood(c, mf.face) : c;
+    } else if (coffeeHeld) gs = coffeeStill(coffee);
+    else gs = G !== null || mf === null ? gestureState(G) : mf.face;
     const giggle = G !== null && G.name === "giggle" ? G.age : -1;
     const gigW = giggle >= 0 ? ramp(giggle, 0, 150) * (1 - ramp(giggle, 1800, 2000)) : 0;
     let { hp, rp } = hoverProgress(
@@ -1004,13 +1133,21 @@ export class K2Engine {
     let lid = still ? 0 : em === "soft" ? Math.max(0.22, blinkAt(ti)) : blinkAt(ti);
     if (WS !== null && WS.lid > 0) lid = Math.max(lid, WS.lid);
     if (atYou?.blink === true) lid = Math.max(lid, slowBlink(atYou));
-    // the gestures look at their actors on the wide drawing's frame (`k2-rig.ts` shift)
+    // the coffee's content eye: its lids half down, lower over the sip; its still frame: the soft eye
+    if (em === "content" || coffeeHeld) lid = Math.max(lid, gs.lid);
+    // the gestures look at their actors on the wide drawing's frame (`k2-rig.ts` shift); the
+    // coffee's geometry is the drawing's own
     const [sx, sy] = R.shift;
     const seen =
-      G !== null && gs.gaze !== null
+      G !== null && G.name !== "coffee" && gs.gaze !== null
         ? { ...gs, gaze: { x: gs.gaze.x - sx, y: gs.gaze.y - sy } }
         : gs;
-    const look = this.#moodLook(fit, G === null ? mf?.look : undefined, glance, meta);
+    const look = this.#moodLook(
+      fit,
+      G === null || (mf !== null && !mf.gestures) ? mf?.look : undefined,
+      glance,
+      meta,
+    );
     const gaze = this.#gaze(fit, seen, hp, away, glance, meta, look);
     const fr: PortraitFrame = {
       // the wind and the strands live on the idle step
@@ -1029,7 +1166,7 @@ export class K2Engine {
       gaze,
       asm: pj.asm,
       cut: R.cut,
-      held: mf !== null,
+      held: mf !== null || coffeeHeld,
     };
     // an emotion whose dissolve is done and whose hand is up settles like her own face; a blush
     // draws no other drawing (its cells, like the eyes and the marks, are all of the dynamic pass),
@@ -1166,7 +1303,8 @@ export class K2Engine {
       lift,
     });
 
-    const actors = G !== null && gs.actors !== null && !still;
+    // the gestures' actors; a still frame draws only the coffee's steam (her holding the mug)
+    const actors = gs.actors !== null && (G !== null ? !still : gs.actors === "coffee");
     // the beam: the sky's own dots, from the token up into her (under her); its life on the idle
     // step, its growth (the wake, the close) on the frame's time
     const base = placed?.base ?? null;
@@ -1211,6 +1349,19 @@ export class K2Engine {
         this.#keepRects(fit),
         (x, y) => portrait.lightAt(x, y),
       );
+    // the coffee's steam and exhale: the clouds' white dots, ink over her white planes
+    const steam: number[] = [];
+    const steamInk: number[] = [];
+    if (actors && gs.actors === "coffee" && gs.coffee != null)
+      drawCoffee(
+        steam,
+        steamInk,
+        gs.coffee,
+        t,
+        still,
+        this.#keepRects(fit),
+        (x, y) => portrait.lightAt(x, y),
+      );
     const coneMoves = !still && pj.cone > 0;
     let sig = dots.hash ^ (settled ? 1 : 2);
     if (coneMoves) sig = Math.imul(sig ^ ti, 16777619) ^ Math.round(pj.cone * 65536);
@@ -1239,9 +1390,9 @@ export class K2Engine {
     // asleep the beam and the token dim with her
     const light = mf?.light ?? 1;
     const static0 = settled ? this.#cached(portrait, fr, fit, pal) : null;
-    // the same dots, beam and notes as the frame blended last: put it again (only the coin or an
-    // actor moved)
-    const rk = `${dk}|${bk}|${light}|${this.#cache?.key}|${notes.length > 0 ? t : -1}|${k}|${ox}|${oy}|${gs.dy}|${gs.dim}`;
+    // the same dots, beam, notes and steam as the frame blended last: put it again (only the coin
+    // or an actor moved)
+    const rk = `${dk}|${bk}|${light}|${this.#cache?.key}|${notes.length > 0 ? t : -1}|${steam.length + steamInk.length > 0 ? t : -1}|${k}|${ox}|${oy}|${gs.dy}|${gs.dim}`;
     const W = canvas.width;
     const H = canvas.height;
     if (rk !== this.#rasterKey || !this.#stamper.again(ctx, W, H)) {
@@ -1260,6 +1411,17 @@ export class K2Engine {
       this.#stamper.stampInk(ctx, "beam", beam, k, ox, oy, light, true);
       this.#stamper.stampInk(ctx, "beam", notes, k, ox, oy);
       this.#stamper.stampInk(ctx, "ink", notesInk, k, ox, oy);
+      // the steam over her: ink where it crosses her white planes, white at the clouds' alpha
+      this.#stamper.stampInk(ctx, "ink", steamInk, k, ox, oy, STEAM_INK_ALPHA);
+      this.#stamper.stampInk(
+        ctx,
+        "white",
+        steam,
+        k,
+        ox,
+        oy,
+        CLOUD_ALPHA[this.#dark ? "dark" : "light"] / pal.wA,
+      );
       this.#stamper.end(ctx);
       this.#rasterKey = rk;
     }
@@ -1267,7 +1429,7 @@ export class K2Engine {
 
     // the gestures' actors: the blow's cloud and puff, the bird (authored on the wide frame)
     const [sx, sy] = R.shift;
-    if (actors && G !== null && gs.actors !== "notes") {
+    if (actors && G !== null && gs.actors !== "notes" && gs.actors !== "coffee") {
       ctx.translate(-sx, -sy);
       const keep: KeepRect[] = this.#keepRects(fit).map(([a, b, c, d, m]) => [
         a + sx,
@@ -1321,7 +1483,9 @@ export class K2Engine {
   /** Her settled frame's unchanging dots, emitted once per layout, theme, rig, emotion and hover. */
   #cached(portrait: Portrait, fr: PortraitFrame, fit: Fit, pal: Palette): Dots {
     const R = fit.rig;
-    const key = [R.drawing, R.palm, this.#dark, fr.hp, fit.s, fit.ox, fit.oy, this.#mood?.to ?? ""]
+    // the drawing her settled face shows (the still frame's mug draws its own unchanging dots)
+    const face = `${fr.face.map ?? ""}:${fr.face.hand?.map ?? ""}`;
+    const key = [R.drawing, R.palm, this.#dark, fr.hp, fit.s, fit.ox, fit.oy, this.#mood?.to ?? "", face]
       .map(String)
       .join("|");
     if (this.#cache?.key === key) return this.#cache.dots;

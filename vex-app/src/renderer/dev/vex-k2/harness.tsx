@@ -16,7 +16,10 @@
  *   ?w=256&h=280                          the host's size; stage fills the window by default,
  *                                         sidebar is 256 x 280, welcome 284 x 284
  *   ?wake=1                               the wake from the token
- *   ?g=blow|bird|giggle|blush|hum         that gesture 1 s after she is awake
+ *   ?g=blow|bird|giggle|blush|hum|coffee  that gesture 1 s after she is awake (the coffee only in
+ *                                         the morning, on the bust)
+ *   ?hour=0..23                           the local hour for her morning (06 to 10: her coffee may
+ *                                         play; with ?still she holds the mug); the clock otherwise
  *   ?hover=1                              the pointer on her
  *   ?still                                the still frame (reduced motion is the browser's own)
  *   ?open=1                               the open episode from the token (the sidebar's dock)
@@ -38,6 +41,7 @@ import { StrictMode, useEffect, useState, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { K2_EMOTIONS, type K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import type { K2Ground } from "../../components/vex/k2/k2-engine.js";
+import { isMorning, requestedHour, useMorning } from "../../components/vex/k2/k2-morning.js";
 import type { Box, K2PlacementName } from "../../components/vex/k2/k2-rig.js";
 import { K2TokenButton, targetBox } from "../../components/vex/k2/K2TokenButton.js";
 import type { GestureName } from "../../components/vex/k2/k2-time.js";
@@ -65,7 +69,7 @@ const ground = pick<K2Ground>("ground", ["print", "paper", "night"], "print");
 const emotion = pick<K2Emotion>("emotion", K2_EMOTIONS, "idle");
 const gesture = pick<GestureName | "none">(
   "g",
-  ["blow", "bird", "giggle", "blush", "hum", "none"],
+  ["blow", "bird", "giggle", "blush", "hum", "coffee", "none"],
   "none",
 );
 const chronos = params.get("theme") === "chronos";
@@ -75,6 +79,7 @@ const seq = pick<"sleep-wake" | "open-close" | "token" | "none">(
   "none",
 );
 const toggle = params.get("token") === "1" || seq === "token";
+const hour = requestedHour(window.location.search);
 
 document.documentElement.dataset["vexTheme"] = chronos ? "chronos" : "celeris";
 useUiStore.setState({ theme: chronos ? "chronos" : "celeris" });
@@ -162,6 +167,8 @@ function StatusSheet(): JSX.Element {
 function Harness(): JSX.Element {
   const { emotion: shown, closed, tokenOnly, flip } = useSequence();
   const [box, setBox] = useState<Box | null>(null);
+  const clockMorning = useMorning();
+  const morning = hour !== null ? isMorning(hour) : clockMorning;
   const stage = placement === "stage";
   const width = size("w", stage ? window.innerWidth : placement === "sidebar" ? 256 : 284);
   const height = size("h", stage ? window.innerHeight : placement === "sidebar" ? 280 : 284);
@@ -184,6 +191,7 @@ function Harness(): JSX.Element {
         closed={closed}
         tokenOnly={tokenOnly}
         onTokenBox={setBox}
+        morning={morning}
         className="absolute inset-0"
       />
       {toggle && box !== null ? (

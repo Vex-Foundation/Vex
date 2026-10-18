@@ -6,8 +6,8 @@
  *   rises, yawns behind her hand, rubs an eye, blinks twice, looks at you and smiles (about 9 s);
  *   `projector` and `wakeState`;
  * - the idle pool (blow the cloud, the bird on her palm, the giggle on a click, the blush, the
- *   whistle, the hum), one at a time, never during a hover, 15 to 25 s apart; `GestureChain`,
- *   `whistleStarts`, `whistleAt`, `gestureAt`, `gestureState`;
+ *   whistle, the hum, and in the morning the coffee), one at a time, never during a hover, 15 to
+ *   25 s apart; `GestureChain`, `whistleStarts`, `whistleAt`, `gestureAt`, `gestureState`;
  * - the idle life: by default she looks at you and now and then glances away (`GlanceChain`);
  *   blinks, gusts of wind, the smirk;
  * - the episodes: opening her from the token and closing her into it, awake (`episodeProjector`);
@@ -17,8 +17,9 @@
  *
  * Nothing here reads a clock, the DOM or `Math.random()`: the engine passes t (ms of her own clock,
  * which stops while she is off screen) and the inputs (the hover, the clicks), so each frame follows
- * from them and the tests can step through any moment. Episodes run at 30 fps and her idle life at
- * 10 fps (`frameTime`, `idleTime`), as on the web app. Coordinates are her map's px (the wide
+ * from them and the tests can step through any moment; the morning (local 06:00 to 10:59) is such
+ * an input too, the host's (`k2-morning.ts`). Episodes run at 30 fps and her idle life at 10 fps
+ * (`frameTime`, `idleTime`), as on the web app. Coordinates are her map's px (the wide
  * drawing's own frame, `k2-rig.ts`).
  */
 import { hash01, noise1, schedule } from "./k2-rand.js";
@@ -266,9 +267,10 @@ export function episodeBusy(ep: Episode | null, t: number): boolean {
 }
 
 /**
- * Her drawings: the base and the hover, one per gesture and wake beat, and the moods' (the finger
- * on her chin, the narrowed focus, the concern, the pout, the palm toward the conversation;
- * `k2-poses.ts`).
+ * Her drawings: the base and the hover, one per gesture and wake beat, the moods' (the finger on
+ * her chin, the narrowed focus, the concern, the pout, the palm toward the conversation;
+ * `k2-poses.ts`) and the morning coffee's (the mug held in both hands, and raised to her lips;
+ * `k2-coffee.ts`).
  */
 export type MapName =
   | "base"
@@ -283,7 +285,9 @@ export type MapName =
   | "focus"
   | "concern"
   | "pout"
-  | "approve";
+  | "approve"
+  | "coffeeHold"
+  | "coffeeSip";
 
 /**
  * The mouths authored on the screen (`rest` is her own, with its idle smirk); the app's moods add
@@ -304,7 +308,8 @@ export type MouthName =
  * `happy` (arcs), `soft` (the lids a little lower, the smile lifting the lower lid), `open`; the
  * moods: `narrow` (focused, Working), `wide` (brows up, the
  * approval), `worried` (the lid tilting up to the inner corner, Concerned), `half` (half lidded,
- * Error), `smile` (the grin's lifted lower lid, Done).
+ * Error), `smile` (the grin's lifted lower lid, Done); the coffee's `content` (half closed over the
+ * sip, the soft eye's lifted lower lid; how far the lids come down is the face's `lid`).
  */
 export type EyeMode =
   | "map"
@@ -318,7 +323,8 @@ export type EyeMode =
   | "wide"
   | "worried"
   | "half"
-  | "smile";
+  | "smile"
+  | "content";
 
 /** A hand that rises out of her light: its drawing, rows still to rise, a column shift, its dissolve. */
 export interface Hand {
@@ -326,6 +332,18 @@ export interface Hand {
   readonly rise: number;
   readonly di: number;
   readonly p: number;
+}
+
+/**
+ * The coffee's actors (`k2-coffee.ts`), drawn on the clouds' screen: the steam's strength (0..1) and
+ * the mug's rim it leaves from (x, y, half width, map px; null when no mug shows), the exhale's age
+ * (ms, -1 when none) and her lips it leaves from.
+ */
+export interface CoffeeMarks {
+  readonly steam: number;
+  readonly rim: readonly [number, number, number] | null;
+  readonly puff: number;
+  readonly lips: readonly [number, number];
 }
 
 /** Where she looks: a point of her map, or the gesture's cloud as it drifts. */
@@ -343,14 +361,14 @@ export interface FaceState {
   readonly mouth: MouthName | null;
   readonly blush: number;
   readonly gaze: GazeTarget | null;
-  readonly actors: "cloud" | "bird" | "notes" | null;
+  readonly actors: "cloud" | "bird" | "notes" | "coffee" | null;
   /** Her eyes drift up to the side (the whistle). */
   readonly aside: boolean;
   /** The hum's sway of her free hair, -1..1 (her head stays still). */
   readonly sway: number;
   /** The nose mark shows (hidden while the asleep drawing carries its own face). */
   readonly nose: boolean;
-  /** A blink layered on top (the wake's two). */
+  /** A blink layered on top (the wake's two); the coffee's content lids. */
   readonly lid: number;
   /** The yawn's tear, 0..1. */
   readonly tear: number;
@@ -368,6 +386,8 @@ export interface FaceState {
     readonly map: MapName;
     readonly hand: Hand | null;
   } | null;
+  /** The morning coffee: its steam and her exhale (`actors` is `coffee`). */
+  readonly coffee?: CoffeeMarks | null;
 }
 
 export const NO_FACE: FaceState = {
@@ -488,7 +508,8 @@ export function wakeState(
 
 /**
  * Her idle actions, one at a time, never under a hover, a gesture or the wake: the blow, the bird
- * and the giggle, and the blush, the whistle and the hum.
+ * and the giggle, the blush, the whistle and the hum, and in the morning the coffee (the owner,
+ * 2026-10-18; its beats are `k2-coffee.ts`'s).
  */
 export type GestureName =
   | "blow"
@@ -496,7 +517,8 @@ export type GestureName =
   | "giggle"
   | "blush"
   | "whistle"
-  | "hum";
+  | "hum"
+  | "coffee";
 
 export const GESTURE_MS: Readonly<Record<GestureName, number>> = {
   blow: 6400,
@@ -505,6 +527,7 @@ export const GESTURE_MS: Readonly<Record<GestureName, number>> = {
   blush: 2600,
   whistle: 4000,
   hum: 2000,
+  coffee: 7600,
 };
 /** At least 15 s between any two idle actions (end to start), at most 25 s; the reflexes (a giggle, a blush that answers it or a long hover) are the user's, not idle. */
 export const GESTURE_GAP = 15000;
@@ -516,8 +539,16 @@ export const LONG_HOVER = 4000;
 /** The whistle: after 40 to 90 s without the pointer moving, then again every 40 to 90 s; 3 s of notes, then a glance back at you. */
 export const WHISTLE = { min: 40000, max: 90000, notes: 3000 } as const;
 
+/**
+ * The morning coffee's clock (the owner, 2026-10-18): only in a morning session (the host's input,
+ * local 06:00 to 10:59), first due 12 s after she is awake in it (or after the morning began, if
+ * later), then 2 to 4 min after each one ends (seeded); it takes the pool's first free slot once it
+ * is due (ahead of the others), so it keeps the pool's gap to them.
+ */
+export const COFFEE = { first: 12000, gapMin: 120000, gapMax: 240000 } as const;
+
 /** The actions on a clock: when each is first due after she is awake, how often at most, its seed. */
-type PoolName = "blow" | "bird" | "blush" | "hum";
+type PoolName = "blow" | "bird" | "blush" | "hum" | "coffee";
 const POOL: Readonly<
   Record<PoolName, { first: number; min: number; max: number; seed: number }>
 > = {
@@ -525,8 +556,14 @@ const POOL: Readonly<
   bird: { first: 20000, min: 60000, max: 120000, seed: 302 },
   blush: { first: 45000, min: 60000, max: 120000, seed: 303 },
   hum: { first: 70000, min: 80000, max: 160000, seed: 304 },
+  coffee: {
+    first: COFFEE.first,
+    min: GESTURE_MS.coffee + COFFEE.gapMin,
+    max: GESTURE_MS.coffee + COFFEE.gapMax,
+    seed: 306,
+  },
 };
-const POOL_NAMES: readonly PoolName[] = ["blow", "bird", "blush", "hum"];
+const POOL_NAMES: readonly PoolName[] = ["blow", "bird", "blush", "hum", "coffee"];
 /** A slot keeps room for the longest action that may take it over (the whistle). */
 const slotSpan = (name: GestureName) =>
   Math.max(GESTURE_MS[name], GESTURE_MS.whistle);
@@ -540,8 +577,11 @@ export interface ScheduledGesture {
  * The pool's slots: one idle action, then 15 to 25 s of her just looking at you, then the next
  * (seeded). Each slot takes the most overdue kind: the blow keeps its own rhythm (first 6 s
  * after she is awake, then 45 to 90 s), the bird 60 to 120 s, the blush 60 to 120 s, the hum 80 to
- * 160 s, never sooner; a kind not yet due waits. A due whistle takes a slot over (`whistleAt`).
- * Pure in t: the chain extends itself as far as it is asked and never changes behind.
+ * 160 s, never sooner; a kind not yet due waits. The coffee is due only in a morning session
+ * (`COFFEE`, `setMorning`) and takes the first slot free once it is due, ahead of the others; without
+ * a morning the chain is the same as before it existed. A due whistle takes a slot over
+ * (`whistleAt`). Pure in t and the morning: the chain extends itself as far as it is asked and never
+ * changes behind; a morning that begins or ends changes only slots not yet made.
  */
 export class GestureChain {
   readonly #ev: ScheduledGesture[] = [];
@@ -551,16 +591,28 @@ export class GestureChain {
     bird: 0,
     blush: 0,
     hum: 0,
+    coffee: 0,
   };
+  readonly #awakeAt: number;
+  /** When the morning session began (her clock), or null outside one. */
+  #morning: number | null = null;
+  /** The earliest the next coffee may come after the last one (2 to 4 min after it ended). */
+  #coffeeNext = Number.NEGATIVE_INFINITY;
 
-  /** `force` (review in the dev harness) plays that action 1 s after she is awake first. */
-  constructor(awakeAt: number, force: PoolName | null = null) {
+  /**
+   * `force` (review in the dev harness) plays that action 1 s after she is awake first; `morning`
+   * is when a morning session began (her clock), null outside one.
+   */
+  constructor(awakeAt: number, force: PoolName | null = null, morning: number | null = null) {
+    this.#awakeAt = awakeAt;
     this.#due = {
       blow: awakeAt + POOL.blow.first,
       bird: awakeAt + POOL.bird.first,
       blush: awakeAt + POOL.blush.first,
       hum: awakeAt + POOL.hum.first,
+      coffee: Number.POSITIVE_INFINITY,
     };
+    this.setMorning(morning);
     if (force !== null) {
       const at = awakeAt + 1000;
       this.#ev.push({ name: force, start: at });
@@ -568,11 +620,32 @@ export class GestureChain {
     }
   }
 
+  /**
+   * A morning session began at `since` (her clock; the coffee is first due `COFFEE.first` after it
+   * or after she is awake, whichever is later, and never sooner than 2 min after the last one), or
+   * ended (null: no coffee is due).
+   */
+  setMorning(since: number | null): void {
+    const was = this.#morning;
+    this.#morning = since;
+    if (since === null) this.#due.coffee = Number.POSITIVE_INFINITY;
+    else if (was === null)
+      this.#due.coffee = Math.max(
+        Math.max(since, this.#awakeAt) + POOL.coffee.first,
+        this.#coffeeNext,
+      );
+  }
+
   #bump(name: PoolName, start: number): void {
     const p = POOL[name];
     this.#k[name]++;
-    this.#due[name] =
-      start + p.min + hash01(this.#k[name], p.seed) * (p.max - p.min);
+    const next = start + p.min + hash01(this.#k[name], p.seed) * (p.max - p.min);
+    if (name !== "coffee") {
+      this.#due[name] = next;
+      return;
+    }
+    this.#coffeeNext = next;
+    this.#due.coffee = this.#morning === null ? Number.POSITIVE_INFINITY : next;
   }
 
   #extend(t: number): void {
@@ -589,7 +662,11 @@ export class GestureChain {
             GESTURE_GAP +
             hash01(n, 305) * (GAP_MAX - GESTURE_GAP);
       let name: PoolName = "blow";
-      for (const k of POOL_NAMES) if (this.#due[k] < this.#due[name]) name = k;
+      for (const k of POOL_NAMES)
+        if (k !== "coffee" && this.#due[k] < this.#due[name]) name = k;
+      // the morning's coffee goes first whenever it is due by the time the slot is free (so it keeps
+      // its 2 to 4 min); outside a morning it is never due
+      if (Math.max(free, this.#due.coffee) <= Math.max(free, this.#due[name])) name = "coffee";
       const start = Math.max(free, this.#due[name]);
       this.#ev.push({ name, start });
       this.#bump(name, start);
@@ -609,18 +686,27 @@ export class GestureChain {
     return null;
   }
 
-  /** The first slot that starts at or after t. */
-  from(t: number): ScheduledGesture {
+  /**
+   * The first slot that starts at or after t; with `free` the first a whistle may take over (never
+   * the morning's coffee: a whistle waits for the slot after it).
+   */
+  from(t: number, free = false): ScheduledGesture {
     this.#extend(t);
-    for (const e of this.#ev) if (e.start >= t) return e;
+    for (let n = 0; n < 64; n++) {
+      for (const e of this.#ev) if (e.start >= t && !(free && e.name === "coffee")) return e;
+      const last = this.#ev[this.#ev.length - 1];
+      if (last === undefined) break;
+      this.#extend(last.start);
+    }
     return this.#ev[this.#ev.length - 1] ?? { name: "blow", start: t };
   }
 }
 
 /**
  * The slots a whistle takes over up to t, for a pointer still since `since` (her clock): the first
- * slot 40 to 90 s into the stillness, then the first slot 40 to 90 s after each whistle. A pointer
- * that moves starts a new stillness (and ends a whistle).
+ * slot 40 to 90 s into the stillness, then the first slot 40 to 90 s after each whistle (never the
+ * morning's coffee: it takes the slot after). A pointer that moves starts a new stillness (and ends
+ * a whistle).
  */
 export function whistleStarts(
   chain: GestureChain,
@@ -632,7 +718,7 @@ export function whistleStarts(
   let due = since;
   for (let k = 0; k < 4096; k++) {
     due += WHISTLE.min + hash01(seed, k, 311) * (WHISTLE.max - WHISTLE.min);
-    const s = chain.from(due).start;
+    const s = chain.from(due, true).start;
     if (s > t) break;
     out.push(s);
     due = s + GESTURE_MS.whistle;
@@ -665,7 +751,10 @@ export function canGiggle(
 
 export interface GestureInput {
   readonly t: number;
-  /** The actions that can run: all once her gestures' drawings are in, the map-free ones before, none still. */
+  /**
+   * The actions that can run: all once her gestures' drawings are in, the map-free ones before,
+   * none still; the coffee only in the morning, with its drawings in, on the app drawing.
+   */
   readonly allowed: readonly GestureName[];
   /** When the wake handed her over (0 when she started awake). */
   readonly awakeAt: number;
@@ -877,9 +966,12 @@ export function birdState(age: number): BirdState | null {
   };
 }
 
-/** What each part of her does at this moment of a gesture. */
+/**
+ * What each part of her does at this moment of a gesture. The coffee's face needs her drawing's
+ * geometry: `coffeeFace` (`k2-coffee.ts`); here it is her own.
+ */
 export function gestureState(g: ActiveGesture | null): FaceState {
-  if (g === null) return NO_FACE;
+  if (g === null || g.name === "coffee") return NO_FACE;
   const a = g.age;
   let st: FaceState = NO_FACE;
   if (g.name === "blow") {

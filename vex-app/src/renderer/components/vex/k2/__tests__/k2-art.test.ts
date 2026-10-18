@@ -1,8 +1,8 @@
 /**
  * The art K2 ships (`public/art/vex-k2/`): the wide drawing's eight maps at 134 x 201 cells, its
- * metadata, the token's sheet layout and its four sprite sheets; the app drawing's thirteen maps
- * (`app/`, the emotions' among them) at 162 x 217 cells and its metadata; all at their exact byte
- * sizes. A re-export, a
+ * metadata, the token's sheet layout and its four sprite sheets; the app drawing's fifteen maps
+ * (`app/`, the emotions' and the morning coffee's among them) at 162 x 217 cells, its metadata and
+ * the coffee's geometry (`app/coffee.json`); all at their exact byte sizes. A re-export, a
  * swapped file, a stray file or a metadata the loader would refuse shows up here before it shows
  * up as a missing or half drawn portrait. Dimensions are read from the file headers (PNG IHDR,
  * WebP VP8X, VP8L or VP8).
@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isK2Meta, isTokenSheet } from "../k2-assets.js";
+import { isCoffeeGeo } from "../k2-coffee.js";
 import { TOKEN_SHEET } from "../k2-rig.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -51,12 +52,14 @@ const MAPS: readonly (readonly [string, number])[] = [
   ["yawn.png", 16_200],
 ];
 
-/** The app drawing (`app/`): her base, the wake's, the gestures' and the emotions' maps. */
+/** The app drawing (`app/`): her base, the wake's, the gestures', the emotions' and the coffee's maps. */
 const APP_MAPS: readonly (readonly [string, number])[] = [
   ["approve.png", 15_479],
   ["asleep.png", 14_644],
   ["base.png", 14_512],
   ["blow.png", 14_629],
+  ["coffeeHold.png", 14_919],
+  ["coffeeSip.png", 14_681],
   ["concern.png", 14_465],
   ["focus.png", 14_469],
   ["giggle.png", 15_610],
@@ -87,7 +90,7 @@ describe("the K2 art", () => {
       ].sort(),
     );
     expect(readdirSync(fileOf(APP_DIR)).sort()).toEqual(
-      [...APP_MAPS.map(([n]) => n), "meta.json"].sort(),
+      [...APP_MAPS.map(([n]) => n), "coffee.json", "meta.json"].sort(),
     );
   });
 
@@ -115,6 +118,16 @@ describe("the K2 art", () => {
     expect(meta.shoulder).toBe(317);
     expect(Object.keys(meta)).not.toContain("source");
     expect(statSync(fileOf(path.join(APP_DIR, "meta.json"))).size).toBe(3_621);
+  });
+
+  it("the app drawing's coffee geometry is what the guard accepts, with no converter notes, its lift in whole two-row steps", () => {
+    const geo = readJson(path.join(APP_DIR, "coffee.json"));
+    expect(isCoffeeGeo(geo)).toBe(true);
+    if (!isCoffeeGeo(geo)) return;
+    expect(Object.keys(geo)).not.toContain("info");
+    expect(geo.lift[0]).toBe(0);
+    expect(geo.lift[1] % 2).toBe(0);
+    expect(statSync(fileOf(path.join(APP_DIR, "coffee.json"))).size).toBe(185);
   });
 
   it("her metadata is what the loader accepts, on the maps' own grid", () => {
@@ -167,13 +180,13 @@ describe("the K2 art", () => {
     expect(isTokenSheet({ td: 58, box: 80, cols: 8 })).toBe(false);
   });
 
-  it("the wide drawing and the token weigh 338,008 bytes, the app drawing 200,088 (under 540 KB)", () => {
+  it("the wide drawing and the token weigh 338,008 bytes, the app drawing with the coffee's maps and geometry 229,873", () => {
     const sum = (dir: string): number =>
       readdirSync(dir).reduce((acc, n) => {
         const st = statSync(path.join(dir, n));
         return st.isFile() ? acc + st.size : acc;
       }, 0);
     expect(sum(ART)).toBe(338_008);
-    expect(sum(fileOf(APP_DIR))).toBe(200_088);
+    expect(sum(fileOf(APP_DIR))).toBe(229_873);
   });
 });
