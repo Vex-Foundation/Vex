@@ -697,28 +697,28 @@ function AcceptancePendingNotice({
     case "drafting":
       missingFields = readiness.missingFields;
       if (readiness.stalled) {
-        headline = `Vex's last reply did not add anything to the mission contract. ${blocked}`;
+        headline = "Vex's last reply did not add anything to the mission contract.";
         nextAction =
           "Nothing will change until you reply. Answer Vex in the composer below, or ask it to fill what is left:";
       } else {
-        headline = `Vex is still writing the mission contract. ${blocked}`;
+        headline = "Vex is still writing the mission contract.";
         nextAction =
           "Only Vex can fill these fields; you cannot edit them here. Tell Vex what is still missing:";
       }
       break;
     case "contract-loading":
-      headline = `Reading the mission contract. ${blocked}`;
+      headline = "Reading the mission contract.";
       nextAction = "Open the contract to see where it stands.";
       break;
     case "awaiting-plan":
-      headline = `The mission contract is complete, but this session's legacy plan mode has no action plan yet. ${blocked}`;
+      headline = "The mission contract is complete, but this session's legacy plan mode has no action plan yet.";
       nextAction =
         "Ask Vex to write the plan, then accept the contract and the plan together.";
       break;
     case "plan-unknown":
       // NOT "your plan is missing" - we have not read it. Rule 08: unknown and
       // absent are different states and must not collapse into one message.
-      headline = `The mission contract is complete, but its legacy action-plan status has not been read yet, so accepting is unavailable. ${blocked}`;
+      headline = "The mission contract is complete, but its legacy action-plan status has not been read yet, so accepting is unavailable.";
       nextAction = "Open the contract to see the plan status and retry the read.";
       break;
     case "awaiting-acceptance":
@@ -727,32 +727,43 @@ function AcceptancePendingNotice({
       // the passive "Show mission contract" on purpose - promoting the accept
       // CTA here would re-introduce exactly the mid-turn flash the turn-gate
       // exists to prevent, on a contract the running turn may still change.
-      headline = `The mission contract looks ready. ${blocked}`;
+      headline = "The mission contract looks ready.";
       nextAction = "Vex is still replying; review and accept once it settles.";
       break;
     case "dirty-acceptance":
-      headline = `The mission contract changed after you accepted it. ${blocked}`;
+      headline = "The mission contract changed after you accepted it.";
       nextAction =
         "Review what changed and accept the new contract to bring the runtime back in sync.";
       actionLabel = "Review & accept new contract";
       break;
   }
 
+  // A status line, not a card: a quiet accent rule on its left instead of a
+  // framed box, the state in one 13 line, the next action and the block in
+  // muted 12.5 under it, and the action beside the words. The words are
+  // unchanged; only their weight in the transcript is.
   return (
     <div
       role="status"
       data-vex-state="acceptance-pending"
       data-vex-readiness={readiness.kind}
-      className="mb-4 flex w-full basis-full flex-col gap-1.5 border border-rule bg-surface-base px-4 py-3 text-[13.5px] leading-[1.45]"
+      className="mb-3 flex w-full basis-full items-start gap-3 border-l-[1.5px] border-accent-primary py-0.5 pl-3 text-[12.5px] leading-[1.45]"
     >
-      <p className="flex items-start gap-2.5 text-[14px] text-ink-primary">
-        <span aria-hidden className="mt-[5px] inline-flex shrink-0 text-accent-primary">
-          <Swatch state="awaiting" size={10} />
-        </span>
-        <span>{headline}</span>
-      </p>
-      <p className="text-ink-secondary">{nextAction}</p>
-      <MissionMissingFields fields={missingFields} surface="mission-controls" />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="flex items-start gap-2 text-[13px] text-ink-primary">
+          <span aria-hidden className="mt-[4px] inline-flex shrink-0 text-accent-primary">
+            <Swatch state="awaiting" size={10} />
+          </span>
+          <span>{headline}</span>
+        </p>
+        {/* The next action runs straight into the fields it asks for (its
+          * colon introduces them), then the block. */}
+        <div className="text-ink-tertiary">
+          {nextAction}{" "}
+          <MissionMissingFields fields={missingFields} surface="mission-controls" variant="inline" />{" "}
+          {blocked}
+        </div>
+      </div>
       {/* The action lives on the notice itself: a standing surface that names a
           restriction must carry the way out of it (VS Code puts the command on
           the banner, the status bar entry and the editor alike). This notice is
@@ -762,7 +773,7 @@ function AcceptancePendingNotice({
         variant="quiet"
         size="sm"
         onClick={onOpenContract}
-        className="mt-1.5 w-fit"
+        className="shrink-0"
       >
         {actionLabel}
       </Button>

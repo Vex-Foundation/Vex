@@ -4,9 +4,11 @@
  * also the Vex toggle: pressing it shows or hides the Vex sidebar
  * (`aria-pressed`, tooltip "Hide Vex" or "Show Vex").
  *
- * Contents, in order: the disc (22), the state swatch, the word, the live
- * timer, and, while the sidebar is hidden, the background work after a quiet
- * rule ("1 mission running"). No scope: the approved core renders draw the
+ * Contents, in order: the disc (22), "Vex chat" (the chip's subject, so a
+ * bare "Ready" never reads as the desk's or the app's state), then after a
+ * quiet rule the state swatch, the word, the live timer, and, while the
+ * sidebar is hidden, the background work after another quiet rule ("1
+ * mission running"). No scope: the approved core renders draw the
  * chip without it (the Vex sidebar carries "This chat:"). With the
  * sidebar open that line is the sidebar's own, so the chip does not repeat it.
  * Hidden or not, the chip keeps the fill, the word and the timer: the state
@@ -138,9 +140,10 @@ export function VexTokenChip({
           onClick={press}
         >
           <VxToken size={22} />
-          {/* The toggle's subject, for assistive technology: the visible words
-           * are the state, the control is Vex. */}
-          <span className="sr-only">Vex, </span>
+          {/* The toggle's subject, seen and spoken: the control is the Vex
+           * chat, the words after the rule are its state. */}
+          <span className="vex-tb-chip__subject">Vex chat</span>
+          <span className="sr-only">, </span>
           <StateWord
             className="vex-tb-chip__state"
             state={presence.fill}

@@ -5,8 +5,9 @@
  * and Mission tabs under it. Each tab carries its count in mono 11; the count
  * is decoration (`aria-hidden`), so a tab's name stays its word.
  *
- * Escape in the field closes the mode; the owner clears the text and brings
- * back New chat and the sections.
+ * Escape in the field closes the mode, and so does a press on the Esc keycap
+ * (a button, "Close search", so the way out is not keyboard-only); the owner
+ * clears the text and brings back the sections.
  */
 
 import type { JSX, KeyboardEvent, Ref } from "react";
@@ -46,9 +47,15 @@ export function SessionSearchField({
         spellCheck={false}
         className="vex-ls-search__input"
       />
-      <kbd aria-hidden className="vex-ls-search__kbd">
+      <button
+        type="button"
+        aria-label="Close search"
+        title="Close search · Esc"
+        onClick={onClose}
+        className="vex-ls-search__kbd"
+      >
         Esc
-      </kbd>
+      </button>
     </div>
   );
 }

@@ -1,19 +1,20 @@
 /**
  * "Needs you · N" in the title bar (docs/design/R3-MINIMAL.md sections 3 and
  * 5). Pins:
- *   - four honest states: checking (no number), nothing (0), something (N, an
- *     ink frame) and a FAILED read ("?" with Retry), never a failed read drawn
- *     as 0; a failed refetch keeps an earlier non-empty count but never an
- *     earlier empty one; a count over 99 reads "99+";
+ *   - four honest states: checking and nothing (0) draw no control, something
+ *     (N, an ink frame) and a FAILED read ("?" with Retry) do, never a failed
+ *     read drawn as 0; a failed refetch keeps an earlier non-empty count but
+ *     never an earlier empty one; a count over 99 reads "99+";
  *   - missions that need a decision count with the approvals;
- *   - the panel lists the shared items newest first, says "Nothing needs you."
- *     at zero, closes on Escape (focus back on the control) and on an outside
- *     press;
+ *   - the panel lists the shared items newest first, stays open saying
+ *     "Nothing needs you." when the last item clears under it, closes on
+ *     Escape (focus back on the control) and on an outside press;
  *   - Review opens the thing and never decides: the Needs you page on the
  *     approval's full card (in place, in Studio too), or the inline card when
  *     it is on screen, or a mission's session.
  */
 
+import type { JSX } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -121,20 +122,17 @@ afterEach(() => {
 });
 
 describe("NeedsYouControl: the four states", () => {
-  it("CHECKING: no number, a stepping fill, and the words for assistive technology", () => {
-    renderControl();
-    expect(control().textContent).toBe("Needs you");
-    expect(control().getAttribute("data-state")).toBe("loading");
-    expect(swatchFill()).toBe("ongoing");
-    expect(screen.getByRole("status").textContent).toBe("Checking for pending approvals");
+  it("CHECKING: no control until the read answers", () => {
+    const { container } = renderControl();
+    expect(document.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
+    expect(container.textContent).toBe("");
   });
 
-  it("NOTHING: 0 after a successful empty read, the outline fill, the quiet frame", () => {
+  it("NOTHING: a successful empty read draws no control, no 'Needs you · 0'", () => {
     reads.pending = { data: { ok: true, data: [] } };
-    renderControl();
-    expect(control().textContent).toBe("Needs you · 0");
-    expect(swatchFill()).toBe("idle");
-    expect(frame().hasAttribute("data-pending")).toBe(false);
+    const { container } = renderControl();
+    expect(document.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
+    expect(container.textContent).toBe("");
   });
 
   it("SOMETHING: the count, the target fill and the ink frame", () => {
@@ -229,10 +227,21 @@ describe("NeedsYouControl: the panel", () => {
     expect(rows[1]?.textContent).toContain("Older chat");
   });
 
-  it("says 'Nothing needs you.' at zero", () => {
+  it("stays open saying 'Nothing needs you.' when the last item clears, then goes on close", () => {
+    reads.pending = { data: { ok: true, data: [approval()] } };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (): JSX.Element => (
+      <QueryClientProvider client={client}>
+        <NeedsYouControl />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tree());
+    openPanel();
     reads.pending = { data: { ok: true, data: [] } };
-    renderControl();
-    expect(openPanel().textContent).toContain("Nothing needs you.");
+    rerender(tree());
+    expect(screen.getByRole("dialog", { name: "Needs you" }).textContent).toContain("Nothing needs you.");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Needs you" }), { key: "Escape" });
+    expect(document.querySelector("[data-vex-area='needs-you-control']")).toBeNull();
   });
 
   it("Escape closes it and returns focus to the control", () => {

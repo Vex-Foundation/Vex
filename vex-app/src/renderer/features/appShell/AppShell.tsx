@@ -374,13 +374,15 @@ function ShellFrame({
           </div>
         ) : cols.left > 0 ? (
           // Lighter keeps the left sidebar on its rail: New chat, Search, the
-          // Chats key (it opens the desk's Markets & sessions drawer), the
-          // nav and the account. Keyed, so the agent sidebar's own state
-          // never carries across a mode switch.
+          // nav and the account. It never opens into the sidebar, so it has
+          // no Expand key; the desk's drawer opens from Markets & sessions.
+          // Keyed, so the agent sidebar's own state never carries across a
+          // mode switch.
           <div key="lighter-rail" className="vex-left-page__content">
             <SessionsList
               onCreate={onCreate}
               collapsed
+              expandable={false}
               onToggleSidebar={toggleSidebar}
             />
           </div>

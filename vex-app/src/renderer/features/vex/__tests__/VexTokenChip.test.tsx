@@ -160,7 +160,7 @@ describe("VexTokenChip: the toggle", () => {
     const onToggle = vi.fn();
     arrange({ state: "working", word: "Working", fill: "done" });
     render(<VexTokenChip open onToggle={onToggle} />);
-    const button = screen.getByRole("button", { name: /^Vex,\s*Working$/ });
+    const button = screen.getByRole("button", { name: /^Vex chat,\s*Working$/ });
     fireEvent.click(button);
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
@@ -293,6 +293,6 @@ describe("VexTokenChip: the one announcer of the state word", () => {
     expect(announcer).not.toBeNull();
     expect(chip().contains(announcer)).toBe(false);
     expect(chip().querySelector("[role='status']")).toBeNull();
-    expect(screen.getByRole("button", { name: /^Vex,\s*Working$/ })).toBe(chip());
+    expect(screen.getByRole("button", { name: /^Vex chat,\s*Working$/ })).toBe(chip());
   });
 });

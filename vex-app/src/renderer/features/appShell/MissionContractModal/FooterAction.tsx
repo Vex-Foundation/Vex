@@ -165,7 +165,7 @@ export function FooterAction({
           {helperText}
         </span>
         {/* Dismissal without a decision, the same path as Escape. */}
-        <DialogClose className={buttonVariants({ variant: "quiet" })}>
+        <DialogClose className={buttonVariants({ variant: "quiet" })} data-vex-sheet-cancel="">
           Not now
         </DialogClose>
         {/* THE single primary action - the sheet's one blue fill. */}

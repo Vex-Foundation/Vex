@@ -287,9 +287,9 @@ test("APV-1 Needs you in Studio: the control is hit-testable, opens, and the dec
     description: JSON.stringify(settlement),
   });
 
-  // The control counts down to zero (it never leaves the title bar), and the
+  // At zero the control leaves the title bar (no "Needs you · 0"), and the
   // card leaves the page once its approval is no longer pending.
-  await expect(badge).toHaveText(/Needs you\s*·\s*0/, { timeout: 60_000 });
+  await expect(badge).toHaveCount(0, { timeout: 60_000 });
   await expect(card).toHaveCount(0);
   await expect(panel).toContainText("Nothing needs you.");
 });

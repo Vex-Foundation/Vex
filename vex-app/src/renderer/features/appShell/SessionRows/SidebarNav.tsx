@@ -11,7 +11,9 @@
  * (`selectNavDestination`): the open page first (a page with no row of its
  * own, Memory or Sessions, selects none), then the mode, and Missions for a
  * mission chat. Missions also opens the sidebar's search on its Mission tab
- * (the owner's `onMissions`). Lighter enters the desk through
+ * (the owner's `onMissions`), and Chat and Missions both tell the owner to
+ * show their list (`onSessionList`): on the rail the list is out of sight, so
+ * a press there that only moved the filter looked like nothing. Lighter enters the desk through
  * its own command, so the desk entry is the same from every door.
  *
  * `NavKey` is the one row or key shape, shared with New chat and Search.
@@ -106,11 +108,14 @@ function originOf(target: HTMLButtonElement): {
 export function SidebarNav({
   rail,
   onMissions,
+  onSessionList,
   activeSessionMode = null,
 }: {
   readonly rail: boolean;
   /** Missions opens the sidebar's search on its Mission tab. */
   readonly onMissions: () => void;
+  /** Chat and Missions: show the session list they filter. */
+  readonly onSessionList?: () => void;
   /**
    * The mode of the chat in view, when the caller has the session rows: a
    * mission chat selects Missions. `null` (a desk, an unknown session) leaves
@@ -126,6 +131,7 @@ export function SidebarNav({
     if (destination === "lighter" && runtimeMode !== "lighter") enterLighterMode();
     navigate(destination, originOf(target));
     if (destination === "missions") onMissions();
+    if (destination === "chat" || destination === "missions") onSessionList?.();
   };
 
   return (

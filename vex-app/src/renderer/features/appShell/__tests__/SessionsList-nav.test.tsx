@@ -174,16 +174,19 @@ describe("the nav", () => {
     expect(screen.getByRole("tab", { name: "Mission" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Arbitrum LP Rebalance")).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
+    // The way to start one stays above the list, named for what it starts.
+    expect(screen.getByRole("button", { name: "New mission" })).not.toBeNull();
 
-    // Escape brings back New chat and the sections; the Mission tab holds,
-    // so Missions stays the selected row.
+    // Escape brings back the sections; the Mission tab holds, so Missions
+    // stays the selected row and the key still says New mission.
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
     expect(screen.queryByRole("searchbox")).toBeNull();
-    expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "New mission" })).not.toBeNull();
     expect(navRow("Missions").getAttribute("aria-current")).toBe("page");
 
     fireEvent.click(navRow("Chat"));
     expect(useUiStore.getState().sessionModeFilter).toBe("all");
+    expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
   });
 });
 
@@ -237,9 +240,9 @@ describe("New chat and the search mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     const field = screen.getByRole("searchbox", { name: "Search sessions" });
     expect(document.activeElement).toBe(field);
-    // New chat and the nav make way for the field.
-    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+    // The nav makes way for the field; New chat stays above it.
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
+    expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
 
     const tabs = screen.getAllByRole("tab");
     // A tab's name is its word; the count beside it is decoration.
@@ -253,6 +256,34 @@ describe("New chat and the search mode", () => {
     expect(document.querySelector(".vex-ls-row__t mark")?.textContent).toBe("BTC");
     expect(screen.queryByText("Portfolio Check")).toBeNull();
     expect(screen.getByText(/Esc closes search/)).not.toBeNull();
+  });
+
+  it("starts a session and closes the search from the mouse, not only the keyboard", () => {
+    const { onCreate } = renderSidebar();
+    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(nav()).not.toBeNull();
+  });
+
+  it("Escape closes the search wherever the focus is, unless something else took it", () => {
+    renderSidebar();
+    fireEvent.click(navRow("Missions"));
+    // The focus left the field for a tab.
+    const tab = screen.getByRole("tab", { name: "Agent" });
+    tab.focus();
+    fireEvent.click(tab);
+    // A key another surface already handled stays theirs.
+    const taken = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    taken.preventDefault();
+    document.body.dispatchEvent(taken);
+    expect(screen.getByRole("searchbox")).not.toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(nav()).not.toBeNull();
   });
 
   it("the Agent tab leaves with the search, so the list is never filtered out of sight", () => {
@@ -296,10 +327,14 @@ describe("the sessions by name", () => {
 });
 
 describe("the rail", () => {
-  it("keeps New chat, Search, the Chats key and the nav as named keys", () => {
+  it("keeps the Expand key, New chat, Search and the nav as named keys", () => {
     renderSidebar(true);
     const aside = document.querySelector("[data-vex-area='sessions-sidebar']");
     expect(aside?.getAttribute("data-vex-sidebar-open")).toBe("false");
+    // The Expand key heads the rail; the old Chats key is gone.
+    const keys = Array.from(aside?.querySelectorAll(".vex-ls-body button") ?? []);
+    expect(keys[0]?.getAttribute("aria-label")).toBe("Expand sessions sidebar");
+    expect(screen.queryByRole("button", { name: "Chats" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" }).textContent).toBe("");
     expect(navRow("Portfolio").textContent).toBe("");
     expect(within(nav()).getAllByRole("button")).toHaveLength(7);
@@ -308,17 +343,46 @@ describe("the rail", () => {
     expect(screen.getByTestId("account").getAttribute("data-open")).toBe("false");
   });
 
-  it("opens the sidebar from the Chats key, and from Search straight into the field", () => {
+  it("opens the sidebar from the Expand key, and from Search straight into the field", () => {
     const { onToggle, rerender } = renderSidebar(true);
-    const chats = screen.getByRole("button", { name: "Chats" });
-    expect(chats.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(chats);
+    const expand = screen.getByRole("button", { name: "Expand sessions sidebar" });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(expand);
     expect(onToggle).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     expect(onToggle).toHaveBeenCalledTimes(2);
     rerender(false);
     expect(screen.getByRole("searchbox", { name: "Search sessions" })).not.toBeNull();
+  });
+
+  it("opens the sidebar on the list when Chat or Missions is pressed on the rail", () => {
+    const { onToggle } = renderSidebar(true);
+    fireEvent.click(navRow("Chat"));
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    fireEvent.click(navRow("Missions"));
+    expect(onToggle).toHaveBeenCalledTimes(2);
+    expect(useUiStore.getState().sessionModeFilter).toBe("mission");
+    // Elsewhere on the rail the nav never toggles.
+    fireEvent.click(navRow("Portfolio"));
+    expect(onToggle).toHaveBeenCalledTimes(2);
+  });
+
+  it("never toggles from Chat on the open sidebar", () => {
+    const { onToggle } = renderSidebar(false);
+    fireEvent.click(navRow("Chat"));
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("on the Lighter desk's rail, has no Expand key and never opens", () => {
+    const onToggle = vi.fn();
+    render(
+      <SessionsList onCreate={vi.fn()} collapsed expandable={false} onToggleSidebar={onToggle} />,
+    );
+    expect(screen.queryByRole("button", { name: "Expand sessions sidebar" })).toBeNull();
+    fireEvent.click(navRow("Chat"));
+    fireEvent.click(navRow("Missions"));
+    expect(onToggle).not.toHaveBeenCalled();
   });
 });
 

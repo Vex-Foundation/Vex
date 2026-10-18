@@ -198,6 +198,7 @@ export function MissionContractModal({
       <SheetContent
         data-vex-area="mission-contract-modal"
         anchor={centreColumn}
+        nudgeHint="Accept the contract or choose Not now first · Esc closes it"
       >
         <SheetHeader>
           {/* The crumb names the surface, then the mission (authored content,

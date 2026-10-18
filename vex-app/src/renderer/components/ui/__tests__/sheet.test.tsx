@@ -4,13 +4,26 @@
  *     scrim and no centring;
  *   - it covers its anchor's box, the mount parent by default;
  *   - Escape closes it through onOpenChange and a press outside does not;
+ *   - a press outside its box nudges it instead: the frame, the way out
+ *     ringed, the hint as a status, held for SHEET_NUDGE_MS and restarted by
+ *     each press; a press inside never nudges;
  *   - the head, the body (the one scroll region) and the foot take the
  *     spec's seats.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "../sheet.js";
+import { act } from "react";
+import {
+  SHEET_NUDGE_HINT,
+  SHEET_NUDGE_MS,
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "../sheet.js";
 
 afterEach(cleanup);
 
@@ -87,6 +100,55 @@ describe("Sheet", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
     fireEvent(dialog, new Event("cancel", { cancelable: true }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("nudges on a press outside its box: the frame, the hint, held then gone", () => {
+    vi.useFakeTimers();
+    try {
+      const onOpenChange = vi.fn();
+      renderSheet(onOpenChange);
+      const dialog = screen.getByRole("dialog");
+      expect(dialog.hasAttribute("data-vex-sheet-nudge")).toBe(false);
+      expect(screen.queryByRole("status")).toBeNull();
+
+      // jsdom's box is 0 x 0 at the origin: (500, 300) is outside it.
+      fireEvent.click(dialog, { clientX: 500, clientY: 300 });
+      expect(onOpenChange).not.toHaveBeenCalled();
+      expect(dialog.hasAttribute("data-vex-sheet-nudge")).toBe(true);
+      expect(screen.getByRole("status").textContent).toBe(SHEET_NUDGE_HINT);
+
+      // A second press restarts the hold.
+      act(() => { vi.advanceTimersByTime(SHEET_NUDGE_MS - 100); });
+      fireEvent.click(dialog, { clientX: 500, clientY: 300 });
+      act(() => { vi.advanceTimersByTime(SHEET_NUDGE_MS - 100); });
+      expect(dialog.hasAttribute("data-vex-sheet-nudge")).toBe(true);
+      act(() => { vi.advanceTimersByTime(100); });
+      expect(dialog.hasAttribute("data-vex-sheet-nudge")).toBe(false);
+      expect(screen.queryByRole("status")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never nudges on a press inside its box, and says the sheet's own hint", () => {
+    render(
+      <Sheet open onOpenChange={() => {}}>
+        <SheetContent nudgeHint="Create this session or cancel it first">
+          <SheetTitle>New session</SheetTitle>
+          <button type="button" data-vex-sheet-cancel="">Cancel</button>
+        </SheetContent>
+      </Sheet>,
+    );
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }), { clientX: 500, clientY: 300 });
+    fireEvent.click(dialog, { clientX: 0, clientY: 0 });
+    expect(dialog.hasAttribute("data-vex-sheet-nudge")).toBe(false);
+
+    fireEvent.click(dialog, { clientX: 500, clientY: 300 });
+    expect(screen.getByRole("status").textContent).toBe("Create this session or cancel it first");
+    // The ring's hook (overlays.css): the way out under a nudged sheet.
+    expect(document.querySelector("[data-vex-sheet-nudge] [data-vex-sheet-cancel]"))
+      .toBe(screen.getByRole("button", { name: "Cancel" }));
   });
 
   it("seats the head, the scrolling body and the foot", () => {

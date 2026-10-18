@@ -201,7 +201,18 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 18px;
+  background: transparent;
   color: var(--vex-alias-label-tertiary);
+}
+/* The keycap is the mouse's way out of the search, so it answers the pointer. */
+.vex-ls-search__kbd:hover {
+  border-color: var(--vex-alias-rule-ink);
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+/* New chat stands above the field in the search mode too. */
+.vex-ls-find .vex-ls-nrow--new {
+  margin-bottom: 8px;
 }
 /* All, Agent, Mission: gap 16, 13, the active one blue 500 with a 1.5px
  * underline; counts in mono 11 muted. */
@@ -361,8 +372,8 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   border-top: 1px solid var(--vex-alias-rule-quiet);
 }
 
-/* THE RAIL: icons only, 40 x 40 keys centred, the Chats key, the account box
- * at the foot. Its head row is the frame's paper cap (shell.css), so the
+/* THE RAIL: icons only, 40 x 40 keys centred under the Expand key, the
+ * account box at the foot. Its head row is the frame's paper cap (shell.css), so the
  * column's content starts under it; the vx sits on the cap where the OS
  * draws no traffic lights there. */
 .vex-ls-railhead {
@@ -400,27 +411,14 @@ html[data-os="mac"] .vex-ls-railhead {
   bottom: 4px;
   left: 8px;
 }
-.vex-ls-chats {
-  display: flex;
+/* The Expand key heads the rail, the collapse key's twin (the panel icon), and
+ * a short quiet rule sets it apart from the keys that go somewhere. */
+.vex-ls-rule {
   flex: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 48px;
-  height: 50px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-ls-chats span {
-  font-size: 11px;
-  line-height: 1.2;
-}
-.vex-ls-chats:hover {
-  background: var(--vex-alias-interactive-hover);
-  color: var(--vex-alias-label-primary);
+  width: 24px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--vex-alias-rule-quiet);
 }
 .vex-ls[data-rail] .vex-prof {
   width: 100%;

@@ -88,6 +88,52 @@ dialog.vex-dialog.vex-sheet {
   background: var(--vex-alias-bg-base);
 }
 
+/* The nudge (sheet.tsx): a press on the inert window outside the sheet. An
+ * inset accent frame comes up on the state-change step, the sheet's way out
+ * takes the focus ring, and one line enters, once, at the top of the sheet.
+ * The frame is a layer over the sheet, never a shadow, and takes no press. */
+dialog.vex-dialog.vex-sheet::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--vex-alias-accent-primary);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--vex-duration-base) var(--vex-ease-standard);
+}
+dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge]::after {
+  opacity: 1;
+}
+dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge] [data-vex-sheet-cancel] {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-sheet-nudge {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 1;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: vex-sheet-nudge-in var(--vex-duration-base) var(--vex-ease-out) both;
+}
+@keyframes vex-sheet-nudge-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  dialog.vex-dialog.vex-sheet::after { transition: none; }
+  .vex-sheet-nudge { animation: none; }
+}
+
 /* ── Notification toast stack ──────────────────────────────────────────────
  * The app's ONE floating notification surface (lib/notifications): flat
  * paper panels with an ink rule, stacked top centre at 56, at most three,
