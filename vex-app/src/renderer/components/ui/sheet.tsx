@@ -12,6 +12,14 @@
  * box while open. Mount it in the column body under the title bar and it
  * runs from under the head to the foot of the column.
  *
+ * THE INERT WINDOW SAYS SO. The sidebars stand in view with no veil, but a
+ * modal dialog makes them inert, so a press on them did nothing and said
+ * nothing. A press outside the sheet's box now NUDGES it: an accent frame,
+ * the sheet's own way out (`data-vex-sheet-cancel`) ringed, and one line,
+ * `nudgeHint`, at the top of the sheet ("Finish or cancel this first"),
+ * spoken as a status. It holds for `SHEET_NUDGE_MS` and each press starts it
+ * again. The press still decides nothing about the sheet.
+ *
  * Parts, values from the spec: a 56px head (title 16 / 500) with a quiet rule
  * below, a body padded 0 28 that is the one scroll region, a 68px foot with a
  * quiet rule above.
@@ -28,10 +36,13 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type HTMLAttributes,
   type JSX,
+  type MouseEvent,
 } from "react";
 import {
   Dialog,
@@ -55,6 +66,29 @@ export interface SheetContentProps
    * is mounted in.
    */
   readonly anchor?: () => Element | null;
+  /**
+   * The line a press outside the sheet shows: what to do to get out. Omitted:
+   * `SHEET_NUDGE_HINT`.
+   */
+  readonly nudgeHint?: string;
+}
+
+/** How long a nudge holds after the last press outside the sheet. */
+export const SHEET_NUDGE_MS = 2400;
+
+/** The nudge's line when the sheet names none of its own. */
+export const SHEET_NUDGE_HINT = "Finish or cancel this first · Esc closes it";
+
+/** Whether a click landed outside the dialog's own box (on its backdrop). */
+function pressedOutside(event: MouseEvent<HTMLDialogElement>): boolean {
+  if (event.target !== event.currentTarget) return false;
+  const box = event.currentTarget.getBoundingClientRect();
+  return (
+    event.clientX < box.left ||
+    event.clientX > box.right ||
+    event.clientY < box.top ||
+    event.clientY > box.bottom
+  );
 }
 
 /**
@@ -91,7 +125,18 @@ function usePinnedBox(
 }
 
 export const SheetContent = forwardRef<HTMLDialogElement, SheetContentProps>(
-  ({ anchor, closeOnBackdropClick = false, className, ...rest }, ref) => {
+  (
+    {
+      anchor,
+      closeOnBackdropClick = false,
+      nudgeHint = SHEET_NUDGE_HINT,
+      className,
+      onClick,
+      children,
+      ...rest
+    },
+    ref,
+  ) => {
     const localRef = useRef<HTMLDialogElement | null>(null);
     const assignRef = useCallback(
       (node: HTMLDialogElement | null): void => {
@@ -102,17 +147,49 @@ export const SheetContent = forwardRef<HTMLDialogElement, SheetContentProps>(
       [ref],
     );
     usePinnedBox(localRef, anchor);
+
+    // The nudge: 0 at rest; each press outside counts up, which restarts the
+    // hold and re-enters the line.
+    const [nudge, setNudge] = useState(0);
+    useEffect(() => {
+      if (nudge === 0) return undefined;
+      const id = window.setTimeout(() => setNudge(0), SHEET_NUDGE_MS);
+      return () => window.clearTimeout(id);
+    }, [nudge]);
+    const handleClick = useCallback(
+      (event: MouseEvent<HTMLDialogElement>): void => {
+        onClick?.(event);
+        if (!closeOnBackdropClick && pressedOutside(event)) setNudge((count) => count + 1);
+      },
+      [closeOnBackdropClick, onClick],
+    );
+
     return (
       <DialogContent
         ref={assignRef}
         size="sheet"
         backdrop="none"
         // The sidebars stay in view but inert; a press on them is not a
-        // decision about the sheet. Escape and the sheet's own keys close it.
+        // decision about the sheet, it nudges it. Escape and the sheet's own
+        // keys close it.
         closeOnBackdropClick={closeOnBackdropClick}
         className={className}
+        onClick={handleClick}
+        data-vex-sheet-nudge={nudge > 0 ? "" : undefined}
         {...rest}
-      />
+      >
+        {children}
+        {nudge > 0 ? (
+          <p
+            key={nudge}
+            role="status"
+            className="vex-sheet-nudge"
+            data-vex-area="sheet-nudge"
+          >
+            {nudgeHint}
+          </p>
+        ) : null}
+      </DialogContent>
     );
   },
 );
