@@ -11,11 +11,17 @@
  * stop did not end the run, and presenting its summary as the result would
  * claim an outcome that never happened. The summary is model-authored text and
  * renders as plain text, never markup.
+ *
+ * Under it, "Agent Scan for this session" (the d2x-mission-completed render)
+ * opens the session's own Agent Scan, every move the run made, verified on
+ * chain. The transcript on screen is the active session's, so that is the
+ * session it names; with no active session the link is not drawn.
  */
 
 import type { JSX } from "react";
 
 import { Swatch } from "../../../components/ui/swatch.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 import type { ToolCallActView } from "../transcriptRowModel/act-ledger.js";
 
 export interface MissionStopResultView {
@@ -55,6 +61,8 @@ export function missionStopReasonLabel(reason: string): string {
 }
 
 export function MissionStopResult({ result }: { readonly result: MissionStopResultView }): JSX.Element {
+  const sessionId = useUiStore((s) => s.activeSessionId);
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
   return (
     <div
       data-vex-area="mission-stop-result"
@@ -67,6 +75,18 @@ export function MissionStopResult({ result }: { readonly result: MissionStopResu
         </b>
       </div>
       <p className="mt-2 whitespace-pre-wrap text-[14.5px] leading-[1.55] text-ink-primary">{result.summary}</p>
+      {sessionId !== null ? (
+        <div className="mt-3 flex items-center gap-4">
+          <button
+            type="button"
+            data-vex-action="mission-agent-scan"
+            className="text-[13px] font-medium text-accent-primary underline-offset-[3px] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
+            onClick={() => setShellRoute({ kind: "agentScan", origin: null, sessionId })}
+          >
+            Agent Scan for this session
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
