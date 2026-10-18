@@ -5,15 +5,18 @@
  *   - the LEFT cell says where you are: the Zen key, "Lighter", then the
  *     desk's section and network in muted ("Perps · Robinhood Chain"); in
  *     Zen, the market and interval the chart shows;
- *   - the RIGHT cluster (gap 8): Markets & sessions, New session (Ask Vex in
- *     Zen), Core | RHC, then the title bar's own cluster (export, Notices,
- *     Needs you, the token chip), portalled in from `RunningHead` through
- *     `shellStripSlot.ts`. The slot stays mounted in every state, so the
- *     cluster never remounts when Zen folds the row;
- *   - the CORNER, past a rule: the way out. Exit Lighter returns to the mode
- *     the desk was entered from; in Zen it is Exit Zen, beside the key that
- *     hides the Zen controls, and it keeps the corner while the row is
- *     folded, so the way out is never hidden.
+ *   - the MIDDLE cluster (gap 8), centred in the row: Markets & sessions,
+ *     New session (Ask Vex in Zen), Core | RHC, then the title bar's own
+ *     cluster (export, Notices, Needs you, the token chip), portalled in from
+ *     `RunningHead` through `shellStripSlot.ts`. The slot stays mounted in
+ *     every state, so the cluster never remounts when Zen folds the row;
+ *   - the CORNER, on its own at the right end: the way out. Exit Lighter
+ *     returns to the mode the desk was entered from; in Zen it is Exit Zen,
+ *     beside the key that hides the Zen controls, and it keeps the corner
+ *     while the row is folded, so the way out is never hidden.
+ *
+ * The left cell and the corner share the row's spare width equally, which
+ * is what holds the middle cluster at the centre.
  *
  * Navigation, Settings and the account live in the left rail, which the desk
  * always uses; the rail's Chats key and Markets & sessions open the same
@@ -160,34 +163,42 @@ export function LighterSidebar({
           >
             <LineChevronDown size={16} />
           </button>
-        ) : (
-          <>
-            {zenMode ? null : (
-              <button
-                type="button"
-                className="lit-topbar-key lit-zen-toggle"
-                aria-label="Enter Zen Mode"
-                title="Zen Mode: a distraction-free chart"
-                onClick={onToggleZen}
-              >
-                <LineZen size={16} />
-              </button>
-            )}
-            <span className="vex-tb-title lit-topbar-title">
-              <span className="vex-tb-title__name">Lighter</span>
-              {zenMode && activeMarket !== null ? (
-                <span
-                  className="vex-tb-title__sub lit-topbar-zen-market"
-                  aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}
+        ) : null}
+        {/* The left cell: where you are. */}
+        <div className="lit-topbar-start">
+          {zenFolded ? null : (
+            <>
+              {zenMode ? null : (
+                <button
+                  type="button"
+                  className="lit-topbar-key lit-zen-toggle"
+                  aria-label="Enter Zen Mode"
+                  title="Zen Mode: a distraction-free chart"
+                  onClick={onToggleZen}
                 >
-                  {activeMarket.symbol} · {resolution}
-                </span>
-              ) : (
-                <span className="vex-tb-title__sub">{place}</span>
+                  <LineZen size={16} />
+                </button>
               )}
-            </span>
-            <span className="lit-topbar-spacer" />
-            <div className="lit-topbar-keys">
+              <span className="vex-tb-title lit-topbar-title">
+                <span className="vex-tb-title__name">Lighter</span>
+                {zenMode && activeMarket !== null ? (
+                  <span
+                    className="vex-tb-title__sub lit-topbar-zen-market"
+                    aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}
+                  >
+                    {activeMarket.symbol} · {resolution}
+                  </span>
+                ) : (
+                  <span className="vex-tb-title__sub">{place}</span>
+                )}
+              </span>
+            </>
+          )}
+        </div>
+        {/* The middle: the desk's keys, then the title bar's cluster. */}
+        <div className="lit-topbar-keys">
+          {zenFolded ? null : (
+            <>
               <button
                 type="button"
                 className="lit-topbar-pill lit-topbar-distraction"
@@ -223,52 +234,53 @@ export function LighterSidebar({
                 environment={environment}
                 onSelect={(next) => saveDesk({ environment: next, marketId: null })}
               />
-            </div>
-          </>
-        )}
-        {/* The title bar's cluster lands here (see shellStripSlot.ts). The
-          * slot keeps its place in the row in every state, so a folded Zen
-          * row hides the cluster without remounting it. */}
-        <div className="lit-desk-top-shell" ref={setShellStripSlot} hidden={zenFolded} />
+            </>
+          )}
+          {/* The title bar's cluster lands here (see shellStripSlot.ts). The
+            * slot keeps its place in the row in every state, so a folded Zen
+            * row hides the cluster without remounting it. */}
+          <div className="lit-desk-top-shell" ref={setShellStripSlot} hidden={zenFolded} />
+        </div>
         {/* The corner: the way out of the desk, or out of Zen. */}
-        {zenFolded ? null : <span className="lit-topbar-rule" aria-hidden />}
-        {zenMode ? (
-          <>
-            {zenFolded ? null : (
+        <div className="lit-topbar-end">
+          {zenMode ? (
+            <>
+              {zenFolded ? null : (
+                <button
+                  type="button"
+                  className="lit-topbar-key lit-zen-controls-hide"
+                  aria-label="Hide Zen controls"
+                  aria-expanded="true"
+                  title="Hide Zen controls"
+                  onClick={onToggleZenControls}
+                >
+                  <LineChevronUp size={16} />
+                </button>
+              )}
               <button
                 type="button"
-                className="lit-topbar-key lit-zen-controls-hide"
-                aria-label="Hide Zen controls"
-                aria-expanded="true"
-                title="Hide Zen controls"
-                onClick={onToggleZenControls}
+                className="lit-topbar-pill lit-topbar-exit lit-zen-exit"
+                aria-label="Exit Zen Mode"
+                title="Exit Zen Mode · Esc"
+                onClick={onToggleZen}
               >
-                <LineChevronUp size={16} />
+                <LineClose size={16} />
+                <span className="lit-topbar-exit-label">Exit Zen</span>
               </button>
-            )}
+            </>
+          ) : (
             <button
               type="button"
-              className="lit-topbar-pill lit-topbar-exit lit-zen-exit"
-              aria-label="Exit Zen Mode"
-              title="Exit Zen Mode · Esc"
-              onClick={onToggleZen}
+              className="lit-topbar-pill lit-topbar-exit"
+              aria-label="Exit Lighter"
+              title={`Exit Lighter, back to ${returnMode === "studio" ? "Studio" : "Agent"}`}
+              onClick={() => setRuntimeMode(returnMode)}
             >
               <LineClose size={16} />
-              <span className="lit-topbar-exit-label">Exit Zen</span>
+              <span className="lit-topbar-exit-label">Exit Lighter</span>
             </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="lit-topbar-pill lit-topbar-exit"
-            aria-label="Exit Lighter"
-            title={`Exit Lighter, back to ${returnMode === "studio" ? "Studio" : "Agent"}`}
-            onClick={() => setRuntimeMode(returnMode)}
-          >
-            <LineClose size={16} />
-            <span className="lit-topbar-exit-label">Exit Lighter</span>
-          </button>
-        )}
+          )}
+        </div>
       </header>
 
       {!collapsed ? (

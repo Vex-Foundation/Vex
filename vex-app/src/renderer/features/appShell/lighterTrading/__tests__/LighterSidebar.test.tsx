@@ -67,15 +67,19 @@ describe("LighterSidebar title row", () => {
     // Settings, the theme and the account live in the left rail.
     expect(within(navigation).queryByRole("button", { name: "Settings" })).toBeNull();
     expect(within(navigation).queryByRole("button", { name: /Switch to the (light|dark) theme/ })).toBeNull();
-    // The Zen key leads the left cell, before "Lighter".
+    // Three cells: the Zen key leads the left cell, before "Lighter"; the
+    // desk keys and the title bar's cluster share the middle; the way out
+    // holds the corner alone.
     const header = container.querySelector(".lit-desk-topbar-header");
-    expect(header?.firstElementChild?.getAttribute("aria-label")).toBe("Enter Zen Mode");
-    // The title bar's cluster lands at the row's right end, and the way out
-    // holds the corner past it.
+    const cells = Array.from(header?.children ?? []).map((cell) => cell.className);
+    expect(cells).toEqual(["lit-topbar-start", "lit-topbar-keys", "lit-topbar-end"]);
+    const [start, middle, end] = Array.from(header?.children ?? []);
+    expect(start?.firstElementChild?.getAttribute("aria-label")).toBe("Enter Zen Mode");
     const slot = container.querySelector(".lit-desk-top-shell");
-    expect(slot?.parentElement).toBe(header);
+    expect(slot?.parentElement).toBe(middle);
+    expect(middle?.lastElementChild).toBe(slot);
     expect(slot?.hasAttribute("hidden")).toBe(false);
-    expect(header?.lastElementChild?.getAttribute("aria-label")).toBe("Exit Lighter");
+    expect(Array.from(end?.children ?? []).map((key) => key.getAttribute("aria-label"))).toEqual(["Exit Lighter"]);
   });
 
   it("leaves the desk for the mode it was entered from", () => {
