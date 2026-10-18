@@ -115,6 +115,27 @@ html[data-os="mac"] .lit-desk-topbar[data-lighter-zen] .lit-desk-topbar-header {
 
 .lit-topbar-key[aria-pressed="true"] { color: var(--lit-accent); }
 
+/* The corner, past a quiet rule: Exit Lighter, or Exit Zen in Zen. The one
+ * pill on the row with a full rule and a 500 word, so the way out reads
+ * apart from the desk's quiet pills and the bare keys. */
+.lit-topbar-rule {
+  width: 1px;
+  height: 20px;
+  flex: 0 0 auto;
+  background: var(--lit-line-quiet);
+}
+
+.lit-topbar-exit {
+  border-color: var(--lit-line);
+  font-weight: 500;
+}
+
+.lit-topbar-exit:hover,
+.lit-topbar-exit:focus-visible {
+  border-color: var(--lit-ink-secondary);
+  background: var(--lit-pressed);
+}
+
 .lit-topbar-zen-market { max-width: 160px; }
 
 .lit-desk-topbar svg { width: 16px; height: 16px; flex: 0 0 auto; }
@@ -143,6 +164,20 @@ html[data-os="mac"] .lit-desk-topbar[data-lighter-zen] .lit-desk-topbar-header {
 }
 
 .lit-desk-topbar[data-zen-controls="closed"] .lit-desk-topbar-header { -webkit-app-region: no-drag; }
+
+/* Folded, Exit Zen keeps the corner at the handle's height, on paper so it
+ * reads over the chart. */
+.lit-desk-topbar[data-zen-controls="closed"] .lit-zen-exit {
+  height: 24px;
+  align-self: flex-start;
+  gap: 6px;
+  margin-block-start: 5px;
+  margin-inline-start: auto;
+  padding-inline: 8px;
+  background: var(--lit-bg);
+  font-size: 12px;
+  pointer-events: auto;
+}
 
 .lit-zen-controls-reveal {
   position: absolute;
@@ -303,10 +338,21 @@ html[data-os="mac"] .lit-desk-topbar[data-lighter-zen] .lit-desk-topbar-header {
     white-space: nowrap;
   }
   .lit-topbar-pill { width: 32px; padding-inline: 0; }
+  /* The way out keeps its word longer than the desk pills. */
+  .lit-topbar-exit { width: auto; padding-inline: 10px; }
 }
 
 @container (max-width: 760px) {
   .lit-topbar-title > .vex-tb-title__sub { display: none; }
+  .lit-topbar-exit-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .lit-topbar-exit { width: 32px; padding-inline: 0; }
 }
 
 /* Dialogs in the desk's scope (`.lit-environment-dialog`: the setup modal,

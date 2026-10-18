@@ -2,14 +2,18 @@
  * THE LIGHTER TITLE ROW (docs/design/R3-MINIMAL.md sections 3 and 9.3): the
  * centre column's 44px head row on the desk, and the window's drag region.
  *
- *   - the LEFT cell says where you are: "Lighter", then the desk's section
- *     and network in muted ("Perps · Robinhood Chain"); in Zen, the market
- *     and interval the chart shows;
- *   - the RIGHT cluster (gap 8): Markets & sessions, New session, Core | RHC
- *     and the Zen key, then the title bar's own cluster (export, Notices,
+ *   - the LEFT cell says where you are: the Zen key, "Lighter", then the
+ *     desk's section and network in muted ("Perps · Robinhood Chain"); in
+ *     Zen, the market and interval the chart shows;
+ *   - the RIGHT cluster (gap 8): Markets & sessions, New session (Ask Vex in
+ *     Zen), Core | RHC, then the title bar's own cluster (export, Notices,
  *     Needs you, the token chip), portalled in from `RunningHead` through
  *     `shellStripSlot.ts`. The slot stays mounted in every state, so the
- *     cluster never remounts when Zen folds the row.
+ *     cluster never remounts when Zen folds the row;
+ *   - the CORNER, past a rule: the way out. Exit Lighter returns to the mode
+ *     the desk was entered from; in Zen it is Exit Zen, beside the key that
+ *     hides the Zen controls, and it keeps the corner while the row is
+ *     folded, so the way out is never hidden.
  *
  * Navigation, Settings and the account live in the left rail, which the desk
  * always uses; the rail's Chats key and Markets & sessions open the same
@@ -17,7 +21,7 @@
  * desk's sessions).
  *
  * Zen keeps the chart in the whole window: the row folds to a small handle
- * and comes back as an overlay without moving the chart.
+ * and Exit Zen, and comes back as an overlay without moving the chart.
  */
 
 import { useEffect, useId, useMemo, useRef, type JSX } from "react";
@@ -26,6 +30,7 @@ import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js
 import {
   LineChevronDown,
   LineChevronUp,
+  LineClose,
   LinePanelLeft,
   LinePlus,
   LineZen,
@@ -79,6 +84,8 @@ export function LighterSidebar({
 }): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const returnMode = useUiStore((s) => s.lighterReturn?.mode ?? "agent");
+  const setRuntimeMode = useUiStore((s) => s.setRuntimeMode);
   const openCreateSession = useUiStore((s) => s.openCreateSession);
   const theme = useUiStore((s) => s.theme);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
@@ -155,6 +162,17 @@ export function LighterSidebar({
           </button>
         ) : (
           <>
+            {zenMode ? null : (
+              <button
+                type="button"
+                className="lit-topbar-key lit-zen-toggle"
+                aria-label="Enter Zen Mode"
+                title="Zen Mode: a distraction-free chart"
+                onClick={onToggleZen}
+              >
+                <LineZen size={16} />
+              </button>
+            )}
             <span className="vex-tb-title lit-topbar-title">
               <span className="vex-tb-title__name">Lighter</span>
               {zenMode && activeMarket !== null ? (
@@ -188,45 +206,23 @@ export function LighterSidebar({
                 <LinePlus size={16} />
                 <span className="lit-topbar-button-label">New session</span>
               </button>
+              {zenMode ? (
+                <button
+                  type="button"
+                  className="lit-topbar-pill lit-topbar-ask"
+                  aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
+                  aria-pressed={zenAssistantOpen}
+                  title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
+                  onClick={onToggleZenAssistant}
+                >
+                  <VexMark size={16} />
+                  <span className="lit-topbar-button-label">{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
+                </button>
+              ) : null}
               <EnvironmentSwitch
                 environment={environment}
                 onSelect={(next) => saveDesk({ environment: next, marketId: null })}
               />
-              <button
-                type="button"
-                className="lit-topbar-key lit-zen-toggle"
-                aria-label={zenMode ? "Exit Zen Mode" : "Enter Zen Mode"}
-                aria-pressed={zenMode}
-                title={zenMode ? "Exit Zen Mode · Esc" : "Zen Mode: a distraction-free chart"}
-                onClick={onToggleZen}
-              >
-                <LineZen size={16} />
-              </button>
-              {zenMode ? (
-                <>
-                  <button
-                    type="button"
-                    className="lit-topbar-key lit-zen-controls-hide"
-                    aria-label="Hide Zen controls"
-                    aria-expanded="true"
-                    title="Hide Zen controls · Esc"
-                    onClick={onToggleZenControls}
-                  >
-                    <LineChevronUp size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="lit-topbar-pill lit-topbar-ask"
-                    aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-                    aria-pressed={zenAssistantOpen}
-                    title={zenAssistantOpen ? "Close Vex · Esc" : "Ask Vex about this chart · ⌘K"}
-                    onClick={onToggleZenAssistant}
-                  >
-                    <VexMark size={16} />
-                    <span className="lit-topbar-button-label">{zenAssistantOpen ? "Close Vex" : "Ask Vex"}</span>
-                  </button>
-                </>
-              ) : null}
             </div>
           </>
         )}
@@ -234,6 +230,45 @@ export function LighterSidebar({
           * slot keeps its place in the row in every state, so a folded Zen
           * row hides the cluster without remounting it. */}
         <div className="lit-desk-top-shell" ref={setShellStripSlot} hidden={zenFolded} />
+        {/* The corner: the way out of the desk, or out of Zen. */}
+        {zenFolded ? null : <span className="lit-topbar-rule" aria-hidden />}
+        {zenMode ? (
+          <>
+            {zenFolded ? null : (
+              <button
+                type="button"
+                className="lit-topbar-key lit-zen-controls-hide"
+                aria-label="Hide Zen controls"
+                aria-expanded="true"
+                title="Hide Zen controls"
+                onClick={onToggleZenControls}
+              >
+                <LineChevronUp size={16} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="lit-topbar-pill lit-topbar-exit lit-zen-exit"
+              aria-label="Exit Zen Mode"
+              title="Exit Zen Mode · Esc"
+              onClick={onToggleZen}
+            >
+              <LineClose size={16} />
+              <span className="lit-topbar-exit-label">Exit Zen</span>
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="lit-topbar-pill lit-topbar-exit"
+            aria-label="Exit Lighter"
+            title={`Exit Lighter, back to ${returnMode === "studio" ? "Studio" : "Agent"}`}
+            onClick={() => setRuntimeMode(returnMode)}
+          >
+            <LineClose size={16} />
+            <span className="lit-topbar-exit-label">Exit Lighter</span>
+          </button>
+        )}
       </header>
 
       {!collapsed ? (

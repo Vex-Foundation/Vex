@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { LighterSidebar } from "../LighterSidebar.js";
 
 vi.mock("../../../../lib/api/lighter-trading.js", () => ({
@@ -63,14 +64,39 @@ describe("LighterSidebar title row", () => {
     expect(within(navigation).getByText("Robinhood Chain")).toBeTruthy();
     expect(within(navigation).getByRole("button", { name: "Markets & sessions" }).getAttribute("aria-expanded")).toBe("false");
     expect(within(navigation).getByRole("button", { name: "New session" })).toBeTruthy();
-    // The route back, Settings, the theme and the account live in the left rail now.
-    expect(within(navigation).queryByRole("button", { name: /^(Agent|Studio)$/ })).toBeNull();
+    // Settings, the theme and the account live in the left rail.
     expect(within(navigation).queryByRole("button", { name: "Settings" })).toBeNull();
     expect(within(navigation).queryByRole("button", { name: /Switch to the (light|dark) theme/ })).toBeNull();
-    // The title bar's cluster lands at the row's right end.
+    // The Zen key leads the left cell, before "Lighter".
+    const header = container.querySelector(".lit-desk-topbar-header");
+    expect(header?.firstElementChild?.getAttribute("aria-label")).toBe("Enter Zen Mode");
+    // The title bar's cluster lands at the row's right end, and the way out
+    // holds the corner past it.
     const slot = container.querySelector(".lit-desk-top-shell");
-    expect(slot?.parentElement?.classList.contains("lit-desk-topbar-header")).toBe(true);
+    expect(slot?.parentElement).toBe(header);
     expect(slot?.hasAttribute("hidden")).toBe(false);
+    expect(header?.lastElementChild?.getAttribute("aria-label")).toBe("Exit Lighter");
+  });
+
+  it("leaves the desk for the mode it was entered from", () => {
+    useUiStore.setState({ runtimeMode: "lighter", lighterReturn: { mode: "studio", sessionId: null } });
+    render(
+      <LighterSidebar
+        collapsed
+        onToggleSidebar={vi.fn()}
+        zenMode={false}
+        zenAssistantOpen={false}
+        zenControlsOpen={false}
+        onToggleZen={vi.fn()}
+        onToggleZenControls={vi.fn()}
+        onToggleZenAssistant={vi.fn()}
+      />,
+    );
+
+    const exit = screen.getByRole("button", { name: "Exit Lighter" });
+    expect(exit.getAttribute("title")).toBe("Exit Lighter, back to Studio");
+    fireEvent.click(exit);
+    expect(useUiStore.getState().runtimeMode).toBe("studio");
   });
 
   it("keeps the title bar's slot mounted, only hidden, while Zen folds the row", () => {
@@ -160,8 +186,11 @@ describe("LighterSidebar environment switch", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Show Zen controls" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Exit Zen Mode" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Exit Lighter" })).toBeNull();
+    // Folded, the way out of Zen still holds the corner.
+    fireEvent.click(screen.getByRole("button", { name: "Exit Zen Mode" }));
+    expect(onToggleZen).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
     expect(onToggleZenControls).toHaveBeenCalledTimes(1);
 
@@ -177,8 +206,11 @@ describe("LighterSidebar environment switch", () => {
         onToggleZenAssistant={onToggleZenAssistant}
       />,
     );
-    expect(screen.getByRole("button", { name: "Exit Zen Mode" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Hide Zen controls" })).toBeTruthy();
+    // Open, Exit Zen holds the corner beside the hide key; the Zen key goes.
+    expect(screen.queryByRole("button", { name: "Enter Zen Mode" })).toBeNull();
+    const exitZen = screen.getByRole("button", { name: "Exit Zen Mode" });
+    expect(exitZen.previousElementSibling?.getAttribute("aria-label")).toBe("Hide Zen controls");
+    expect(exitZen.parentElement?.lastElementChild).toBe(exitZen);
     fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
     expect(onToggleZenAssistant).toHaveBeenCalledTimes(1);
   });
