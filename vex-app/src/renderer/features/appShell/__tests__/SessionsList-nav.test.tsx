@@ -155,6 +155,18 @@ describe("the nav", () => {
     expect(navRow("Chat").getAttribute("aria-current")).toBe("page");
   });
 
+  it("a chat clicked from a page opens in the centre and closes the page", () => {
+    renderSidebar();
+    fireEvent.click(navRow("Portfolio"));
+    expect(useUiStore.getState().shellRoute.kind).toBe("portfolio");
+
+    fireEvent.click(screen.getByText("Daily gas report"));
+
+    expect(useUiStore.getState().activeSessionId).toBe("10000000-0000-4000-8000-000000000004");
+    expect(useUiStore.getState().shellRoute.kind).toBe("none");
+    expect(navRow("Chat").getAttribute("aria-current")).toBe("page");
+  });
+
   it("switches to Studio, and enters Lighter through the desk's own command", () => {
     renderSidebar();
     fireEvent.click(navRow("Studio"));
