@@ -8,8 +8,9 @@
  *     for a subpage its crumb, "Portfolio / Agent Scan", each parent a link
  *     up to it: `screens/page-crumbs.ts`), or the Studio project with its
  *     access. The page itself draws no crumb or close row;
- *   - the RIGHT cluster (gap 8): the page keys (export, and a close key for a
- *     page with no other way back), the Studio host status, Notices (only
+ *   - the RIGHT cluster (gap 8): the page keys (a page's own keys such as
+ *     Portfolio's refresh, through `pageKeysSlot.tsx`; export; a close key for
+ *     a page with no other way back), the Studio host status, Notices (only
  *     while notices exist), "Needs you · N" (always), then the token chip,
  *     which also shows and hides the Vex sidebar.
  *
@@ -65,6 +66,7 @@ import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 import { getSessionTitle } from "./sessionListModel.js";
 import { useShellStripSlot } from "./lighterTrading/shellStripSlot.js";
+import { setPageKeysSlot } from "./pageKeysSlot.js";
 import { assetsPageTitle, titleBarPageOf, type PageTitle } from "./screens/page-crumbs.js";
 import { assetsRouteScope } from "../../stores/uiStore/shell-route.js";
 import { closePageToPrevious, goUpToPage } from "./screens/page-trail.js";
@@ -289,6 +291,9 @@ export function RunningHead({
 
   const flank = (
     <div className="vex-running-head__flank">
+      {/* A page's own keys land here (Portfolio's refresh): the first keys of
+       * the cluster, before export and the close key. */}
+      <div className="vex-tb-pagekeys" data-vex-area="title-bar-page-keys" ref={setPageKeysSlot} />
       <PageCloseKey runtimeMode={runtimeMode} />
       <SessionExportControl activeSessionId={sessionScopedId} />
       {runtimeMode === "studio" ? <StudioHostStatusWord /> : null}

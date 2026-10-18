@@ -191,6 +191,13 @@ describe("the left cell", () => {
     expect(titleBarPageOf(scan)?.parents.map((parent) => parent.label)).toEqual(["Portfolio"]);
   });
 
+  it("opens its right cluster with the slot a page's own keys land in (Portfolio's refresh)", () => {
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    const head = renderHead("agent", SESSION);
+    const flank = head.querySelector(".vex-running-head__flank");
+    expect(flank?.firstElementChild?.getAttribute("data-vex-area")).toBe("title-bar-page-keys");
+  });
+
   it("names a project's register by its project, as the register's own dialog does", () => {
     reads.project = { name: "vex-core", permission: "full" };
     useUiStore.setState({
