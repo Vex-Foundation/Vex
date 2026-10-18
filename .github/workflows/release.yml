@@ -22,8 +22,9 @@
 # No job publishes before the CLEAN-MACHINE GATE has passed on every leg
 # (clean-machine.yml, plan D12): an unsigned package of this commit for
 # macOS arm64 and x64, Linux x64, Windows x64 and arm64 completes its first
-# run, quit and relaunch on a runner with Docker removed. The three build
-# jobs `need` it, so a red leg means no signing and no upload to the draft.
+# run, quit and relaunch on a runner with Docker removed. The draft release
+# and the three build jobs `need` it, so a red leg means no draft, no signing
+# and no upload.
 #
 # electron-updater (GitHub provider) consumes latest-mac.yml / latest-linux.yml
 # / latest.yml (Windows) that electron-builder emits into each release. The packaged app auto-loads the
@@ -136,8 +137,8 @@ jobs:
   # through its first run (System Check, initdb and every migration, the model
   # download, the wizard), a user's quit and a relaunch
   # (e2e/native-runtime.spec.ts, --retries=0). It runs beside the unit gate;
-  # every job that publishes needs it, so a red leg stops the release before
-  # anything is signed or uploaded. It gets one secret, the token that reads
+  # the draft release and every job that publishes need it, so a red leg stops
+  # the release before a draft exists or anything is signed or uploaded. It gets one secret, the token that reads
   # the native runtime release, and none of the signing secrets.
   clean-machine:
     name: Clean-machine gate (all legs)
@@ -157,7 +158,8 @@ jobs:
   # of Apple delays.
   create-release:
     name: Create draft release (idempotent)
-    needs: test
+    # After the clean-machine gate too, so a red leg leaves no empty draft.
+    needs: [test, clean-machine]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
