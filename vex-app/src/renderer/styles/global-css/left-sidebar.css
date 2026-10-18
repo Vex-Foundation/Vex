@@ -201,7 +201,18 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 18px;
+  background: transparent;
   color: var(--vex-alias-label-tertiary);
+}
+/* The keycap is the mouse's way out of the search, so it answers the pointer. */
+.vex-ls-search__kbd:hover {
+  border-color: var(--vex-alias-rule-ink);
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+/* New chat stands above the field in the search mode too. */
+.vex-ls-find .vex-ls-nrow--new {
+  margin-bottom: 8px;
 }
 /* All, Agent, Mission: gap 16, 13, the active one blue 500 with a 1.5px
  * underline; counts in mono 11 muted. */

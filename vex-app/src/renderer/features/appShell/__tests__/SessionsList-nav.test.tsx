@@ -174,16 +174,19 @@ describe("the nav", () => {
     expect(screen.getByRole("tab", { name: "Mission" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Arbitrum LP Rebalance")).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
+    // The way to start one stays above the list, named for what it starts.
+    expect(screen.getByRole("button", { name: "New mission" })).not.toBeNull();
 
-    // Escape brings back New chat and the sections; the Mission tab holds,
-    // so Missions stays the selected row.
+    // Escape brings back the sections; the Mission tab holds, so Missions
+    // stays the selected row and the key still says New mission.
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
     expect(screen.queryByRole("searchbox")).toBeNull();
-    expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "New mission" })).not.toBeNull();
     expect(navRow("Missions").getAttribute("aria-current")).toBe("page");
 
     fireEvent.click(navRow("Chat"));
     expect(useUiStore.getState().sessionModeFilter).toBe("all");
+    expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
   });
 });
 
@@ -237,9 +240,9 @@ describe("New chat and the search mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
     const field = screen.getByRole("searchbox", { name: "Search sessions" });
     expect(document.activeElement).toBe(field);
-    // New chat and the nav make way for the field.
-    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+    // The nav makes way for the field; New chat stays above it.
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
+    expect(screen.getByRole("button", { name: "New chat" })).not.toBeNull();
 
     const tabs = screen.getAllByRole("tab");
     // A tab's name is its word; the count beside it is decoration.
@@ -253,6 +256,16 @@ describe("New chat and the search mode", () => {
     expect(document.querySelector(".vex-ls-row__t mark")?.textContent).toBe("BTC");
     expect(screen.queryByText("Portfolio Check")).toBeNull();
     expect(screen.getByText(/Esc closes search/)).not.toBeNull();
+  });
+
+  it("starts a session and closes the search from the mouse, not only the keyboard", () => {
+    const { onCreate } = renderSidebar();
+    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    expect(onCreate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(nav()).not.toBeNull();
   });
 
   it("the Agent tab leaves with the search, so the list is never filtered out of sight", () => {

@@ -9,9 +9,10 @@
  *
  *   HEAD     44 high: the vx wordmark and the collapse key
  *            (`AgentSidebarHeader`).
- *   ACTIONS  New chat (500) and Search, as nav rows. Search turns the row
- *            into the field with the All, Agent and Mission tabs under it;
- *            Escape brings back New chat and the sections.
+ *   ACTIONS  New chat (500; "New mission" on the Mission tab) and Search, as
+ *            nav rows. Search turns its row into the field with the All,
+ *            Agent and Mission tabs under it, New chat staying above it;
+ *            Escape or the field's Esc key brings back the sections.
  *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
  *            with a 12px gap above and below (`SidebarNav`).
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
@@ -71,7 +72,7 @@ interface SessionsListProps {
 }
 
 /** Proposal copy (section 4): the search mode's closing hint. */
-const SEARCH_HINT = "Esc closes search and brings back New chat and the sections.";
+const SEARCH_HINT = "Esc closes search and brings back the sections.";
 
 export function SessionsList({
   onCreate,
@@ -267,6 +268,9 @@ export function SessionsList({
           <div className="vex-ls-body">
             {searchOpen ? (
               <div className="vex-ls-find">
+                {/* The way to start stays above the search, so a list of
+                  * missions never hides how to begin one. */}
+                <NewChatKey rail={false} onCreate={onCreate} />
                 <SessionSearchField
                   value={searchText}
                   onChange={setSearchText}
@@ -340,7 +344,9 @@ export function SessionsList({
 
 /**
  * NEW CHAT: the first nav row (500), never a blue fill (each view keeps one
- * blue fill, and that is the centre's). The signing mechanics are unchanged:
+ * blue fill, and that is the centre's). On the Mission tab it reads "New
+ * mission": the session form opens on Mission from that tab, so the word says
+ * what the press will start. The signing mechanics are unchanged:
  * a hairline under the label loops while SessionCreator's create is in
  * flight, and the one-shot glint marks success before the key returns to
  * rest.
@@ -356,10 +362,11 @@ function NewChatKey({
   // only renders the stroke and the glint.
   const signingState = useUiStore((s) => s.signingState);
   const setSigningState = useUiStore((s) => s.setSigningState);
+  const mission = useUiStore((s) => s.runtimeMode === "agent" && s.sessionModeFilter === "mission");
   return (
     <NavKey
       icon={<LineNewChat className="vex-ls-nrow__i" />}
-      label="New chat"
+      label={mission ? "New mission" : "New chat"}
       rail={rail}
       onClick={onCreate}
       className="vex-ls-nrow--new"
