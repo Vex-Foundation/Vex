@@ -72,6 +72,12 @@ describe("settings.css", () => {
     );
   });
 
+  it("draws the Lock Vex row's chord in mono 12 muted", () => {
+    expect(rule(settings, ".vex-pref__chord")).toMatch(
+      /font-family: var\(--font-mono\);[\s\S]*font-size: 12px;[\s\S]*var\(--vex-alias-label-tertiary\)/,
+    );
+  });
+
   it("keeps to the language: tokens only, radius 0, no shadow, blur, gradient or caps", () => {
     expect(settings).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(settings).not.toMatch(/border-radius|box-shadow|backdrop-filter|filter:|gradient/);

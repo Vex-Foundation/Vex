@@ -52,8 +52,7 @@ import { useMemoryFeatureEnabled } from "../../lib/api/capabilities.js";
 import { useUserProfile } from "../../lib/api/user-profile.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { LOCK_BUTTON } from "@shared/lock-button.js";
-import { studioPlatform } from "./studio/keybindings-labels.js";
-import { useLockVexControl } from "./LockVexControl.js";
+import { LOCK_VEX_SHORTCUT, useLockVexControl } from "./LockVexControl.js";
 import { VexSetupDialog } from "./VexSetupDialog.js";
 
 /** The full-app screens the profile menu can open (each a `ShellRoute` kind). */
@@ -102,9 +101,6 @@ const RUNTIME_FILLS: Readonly<Record<RuntimeStatusState, SwatchState>> = {
   degraded: "concerned",
   not_ready: "concerned",
 };
-
-/** Lock Vex's chord as the platform spells it (the Studio label grammar). */
-const LOCK_SHORTCUT = studioPlatform === "darwin" ? "\u21e7\u2318L" : "Ctrl+Shift+L";
 
 /** Two-line menu row body: the title at 14 over its 12.5 muted line. */
 function entryLabel(label: string, hint: string, attention = false): ReactNode {
@@ -226,7 +222,7 @@ export function SidebarProfile({
         id: "lock-vex",
         icon: entryIcon(LineLock),
         label: entryLabel(locking ? "Locking Vex..." : "Lock Vex", "Require your password to return"),
-        shortcut: LOCK_SHORTCUT,
+        shortcut: LOCK_VEX_SHORTCUT,
         disabled: locking,
       },
     ] : []),

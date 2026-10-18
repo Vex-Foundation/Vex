@@ -513,6 +513,19 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText("Close export (stub)")).toBeNull();
   });
 
+  it("the Vault section carries the Lock Vex row under its step form, and no other section does", async () => {
+    render(<ShellScreens />);
+    openSettings("vault");
+    await screen.findByText("Save keystore (stub)");
+    const row = document.querySelector("[data-vex-settings-lock]");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByRole("button", { name: "Lock Vex" })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /API keys/ }));
+    await screen.findByText("Save apiKeys (stub)");
+    expect(document.querySelector("[data-vex-settings-lock]")).toBeNull();
+  });
+
   it("keeps export OUT of every non-Wallets section", async () => {
     render(<ShellScreens />);
     openSettings("vault");

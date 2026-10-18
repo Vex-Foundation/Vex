@@ -25,6 +25,7 @@ import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js
 import { Button } from "../../../../components/ui/button.js";
 import { LighterSection } from "./LighterSection.js";
 import { SettingsHead } from "./SettingsHead.js";
+import { SettingsLockRow } from "./SettingsLockRow.js";
 import { settingsSectionStatus, type SectionMeta } from "./settings-sections.js";
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
 import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
@@ -62,6 +63,7 @@ export function SettingsSectionView({
         />
       ) : null}
       {renderSectionContent(meta, stepProps)}
+      {meta.id === "vault" ? <SettingsLockRow /> : null}
       {meta.id === "apiKeys" ? <ChainEndpointsSection /> : null}
       {meta.id === "wallets" ? <><WalletRemovalSection /><ExportPrivateKeySection env={env} /></> : null}
     </div>

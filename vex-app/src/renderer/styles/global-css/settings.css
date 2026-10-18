@@ -330,6 +330,14 @@
 .vex-pref__ref {
   color: var(--vex-alias-label-tertiary);
 }
+/* A chord beside its key (the Vault section's Lock Vex row): mono 12 muted. */
+.vex-pref__chord {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
 /* A section narrower than 560 stacks each row: the name and help, then the
  * control under them, left aligned. */
 @container (max-width: 560px) {
