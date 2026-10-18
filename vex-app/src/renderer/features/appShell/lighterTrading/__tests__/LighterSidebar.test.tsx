@@ -126,6 +126,13 @@ describe("LighterSidebar title row", () => {
       const title = navigation.querySelector('[data-vex-area="title-bar-title"]');
       expect(title?.textContent).toBe("Settings");
       expect(within(navigation).queryByText("Lighter")).toBeNull();
+      // the page's title takes the left cell beside the Zen key, and the
+      // corner keeps the way out (#216): both hold while a page is open
+      const start = navigation.querySelector(".lit-topbar-start");
+      expect(title !== null && start?.contains(title)).toBe(true);
+      expect(within(start as HTMLElement).getByRole("button", { name: "Enter Zen Mode" })).toBeTruthy();
+      const corner = navigation.querySelector(".lit-topbar-end");
+      expect(within(corner as HTMLElement).getByRole("button", { name: "Exit Lighter" })).toBeTruthy();
       // the desk's own keys stay in the row
       expect(within(navigation).getByRole("button", { name: "Markets & sessions" })).toBeTruthy();
     } finally {
