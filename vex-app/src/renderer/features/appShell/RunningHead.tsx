@@ -212,7 +212,7 @@ export function OpenPageTitle(): JSX.Element | null {
   if (route.kind === "needsYou") return <NeedsYouPageTitle />;
   const named: PageTitle = scope === null ? page : { ...page, name: assetsPageTitle(scope, projectName) };
   return named.parents.length === 0 ? (
-    <TitleText name={named.name} sub={null} />
+    <TitleText name={named.name} sub={named.sub ?? null} />
   ) : (
     <PageCrumbTitle page={named} />
   );

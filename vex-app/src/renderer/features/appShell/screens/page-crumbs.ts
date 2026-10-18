@@ -37,6 +37,8 @@ export const PORTFOLIO_CRUMB: PageCrumb = {
 export interface PageTitle {
   readonly name: string;
   readonly parents: readonly PageCrumb[];
+  /** A top-level page's muted word beside its name ("Read-only" on Memory). */
+  readonly sub?: string;
 }
 
 /** The All-assets register's name for its scope (a narrowed one never reads as everything). */
@@ -90,7 +92,8 @@ export function titleBarPageOf(route: ShellRoute): PageTitle | null {
     case "none":
       return null;
     case "memory":
-      return { name: "Memory", parents: [] };
+      // a register of what Vex has learned that offers no edit (the d3x-memory render)
+      return { name: "Memory", parents: [], sub: "Read-only" };
     case "sessions":
       return { name: "Sessions", parents: [] };
     case "howItWorks":

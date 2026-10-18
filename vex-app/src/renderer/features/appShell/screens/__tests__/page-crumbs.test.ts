@@ -33,8 +33,13 @@ function history(returnTo: ShellRouteReturnTo): ShellRoute {
 describe("titleBarPageOf", () => {
   it("is null with no page open, and a top-level page has no parents", () => {
     expect(titleBarPageOf({ kind: "none" })).toBeNull();
+    // Memory is a read-only register: its muted word says so beside its name
+    expect(titleBarPageOf({ kind: "memory", origin: null })).toEqual({
+      name: "Memory",
+      parents: [],
+      sub: "Read-only",
+    });
     for (const [kind, name] of [
-      ["memory", "Memory"],
       ["sessions", "Sessions"],
       ["howItWorks", "How Vex works"],
       ["portfolio", "Portfolio"],

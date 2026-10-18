@@ -191,6 +191,13 @@ describe("the left cell", () => {
     expect(titleBarPageOf(scan)?.parents.map((parent) => parent.label)).toEqual(["Portfolio"]);
   });
 
+  it("marks the Memory page read-only beside its name, as the render draws it", () => {
+    useUiStore.setState({ shellRoute: { kind: "memory", origin: null } });
+    renderHead("agent", SESSION);
+    expect(title()).toBe("MemoryRead-only");
+    expect(screen.getByText("Read-only").className).toBe("vex-tb-title__sub");
+  });
+
   it("opens its right cluster with the slot a page's own keys land in (Portfolio's refresh)", () => {
     useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
     const head = renderHead("agent", SESSION);
