@@ -35,6 +35,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { LineNewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
+import { isDialogOnScreen } from "../../components/ui/dialog.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
@@ -165,6 +166,22 @@ export function SessionsList({
     setSearchText("");
     if (sessionModeFilter === "agent") setSessionModeFilter("all");
   }, [sessionModeFilter, setSessionModeFilter]);
+
+  // Escape closes the search wherever the focus is, not only in its field: a
+  // press on a tab, a row or the centre moved the focus out and left the
+  // keycap's promise dead. A key another surface already took (a popover, the
+  // slash menu) or one under a modal dialog is not the search's.
+  useEffect(() => {
+    if (!searchOpen || rail) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (isDialogOnScreen(document)) return;
+      event.preventDefault();
+      closeSearch();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen, rail, closeSearch]);
 
   const openSearch = useCallback((): void => {
     setSearchOpen(true);

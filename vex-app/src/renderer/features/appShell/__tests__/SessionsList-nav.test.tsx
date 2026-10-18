@@ -268,6 +268,24 @@ describe("New chat and the search mode", () => {
     expect(nav()).not.toBeNull();
   });
 
+  it("Escape closes the search wherever the focus is, unless something else took it", () => {
+    renderSidebar();
+    fireEvent.click(navRow("Missions"));
+    // The focus left the field for a tab.
+    const tab = screen.getByRole("tab", { name: "Agent" });
+    tab.focus();
+    fireEvent.click(tab);
+    // A key another surface already handled stays theirs.
+    const taken = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    taken.preventDefault();
+    document.body.dispatchEvent(taken);
+    expect(screen.getByRole("searchbox")).not.toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(nav()).not.toBeNull();
+  });
+
   it("the Agent tab leaves with the search, so the list is never filtered out of sight", () => {
     renderSidebar();
     fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
