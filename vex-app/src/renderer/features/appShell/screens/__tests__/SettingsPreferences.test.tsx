@@ -15,11 +15,15 @@
  *     words and offers no control,
  *   - the Enter-key choice round-trips through the composer submission
  *     policy's public API,
- *   - the notifications row round-trips through the typed uiStore slot.
+ *   - the notifications row round-trips through the typed uiStore slot,
+ *   - Show avatar's help names the chord that shows or hides Vex's sidebar,
+ *   - the "Looking at you" preview (the portrait plate in its idle pose, a
+ *     title and a text) sits under Show avatar while it is on and is gone
+ *     while it is off.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { useUiStore } from "../../../../stores/uiStore.js";
@@ -27,7 +31,23 @@ import {
   getSubmitKeyBehavior,
   resetSubmitKeyBehaviorForTest,
 } from "../../../../lib/composer-submission-policy.js";
+import type { VexK2Props } from "../../../../components/vex/k2/VexK2.js";
+import { studioPlatform } from "../../studio/keybindings-labels.js";
+import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
 import { SettingsPreferences } from "../SettingsScreen/SettingsPreferences.js";
+
+// Her canvas is pinned by VexK2's own suite; the plate in the preview only
+// needs a host to stand in, so no canvas runs here.
+vi.mock("../../../../components/vex/k2/VexK2.js", () => ({
+  VexK2: (props: VexK2Props) => (
+    <div
+      aria-hidden="true"
+      data-vex-k2={props.placement}
+      data-emotion={props.emotion}
+      className={props.className}
+    />
+  ),
+}));
 
 // The Background row (SettingsBackdropRow, its own suite) reads the backdrop
 // through TanStack Query on mount; the group therefore renders under a
@@ -213,5 +233,53 @@ describe("SettingsPreferences", () => {
     expect(row.querySelector("button, input, [role='switch']")).toBeNull();
     // The word is beside a fill swatch, never a hue alone.
     expect(row.querySelector(".vex-pref__word .vex-swatch")?.getAttribute("data-s")).toBe("awaiting");
+  });
+
+  it("Show avatar's help names the chord that shows or hides the sidebar", () => {
+    renderGroup(<SettingsPreferences />);
+    const chord = vexToggleShortcutLabel(studioPlatform);
+    const row = document.querySelector("[data-vex-settings-avatar]");
+    if (!(row instanceof HTMLElement)) throw new Error("avatar row missing");
+    expect(row.querySelector(".vex-pref__help")?.textContent).toBe(
+      `Vex's hologram in the right sidebar. The vx token at the right of the top bar, or ${chord}, shows or hides the sidebar. Off, the token and the state word still show what she is doing.`,
+    );
+  });
+
+  it("draws the Looking at you preview right under Show avatar while the avatar is on", () => {
+    renderGroup(<SettingsPreferences />);
+    const preview = document.querySelector("[data-vex-settings-avatar-preview]");
+    if (!(preview instanceof HTMLElement)) throw new Error("preview missing");
+    expect(preview.previousElementSibling?.hasAttribute("data-vex-settings-avatar")).toBe(true);
+    expect(within(preview).getByText("Looking at you")).not.toBeNull();
+    expect(
+      within(preview).getByText(
+        "At rest, after a gesture and when you come back, Vex looks straight at you. Her state word sits in the title bar and in her sidebar, so nothing depends on the picture.",
+      ),
+    ).not.toBeNull();
+    // The plate is the Vex sidebar's own, in her calm look at you, and decorative.
+    const plate = preview.querySelector("[data-vex-area='vex-portrait-plate']");
+    expect(plate?.getAttribute("aria-hidden")).toBe("true");
+    expect(plate?.classList.contains("vex-set-avatar__plate")).toBe(true);
+    expect(plate?.querySelector("[data-vex-k2='sidebar']")?.getAttribute("data-emotion")).toBe("idle");
+    // The title and the text are ordinary text, never hidden from assistive tech.
+    expect(preview.querySelector(".vex-set-avatar__text")?.closest("[aria-hidden='true']")).toBeNull();
+  });
+
+  it("the preview goes with the avatar: it leaves when Show avatar turns off and returns when it turns on", () => {
+    renderGroup(<SettingsPreferences />);
+    const toggle = screen.getByRole("switch", { name: "Show avatar" });
+    fireEvent.click(toggle);
+    expect(document.querySelector("[data-vex-settings-avatar-preview]")).toBeNull();
+    expect(document.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
+    expect(screen.queryByText("Looking at you")).toBeNull();
+    fireEvent.click(toggle);
+    expect(document.querySelector("[data-vex-settings-avatar-preview]")).not.toBeNull();
+  });
+
+  it("draws no preview at all when it mounts with the avatar off", () => {
+    useUiStore.setState({ showAvatar: false });
+    renderGroup(<SettingsPreferences />);
+    expect(document.querySelector("[data-vex-settings-avatar-preview]")).toBeNull();
+    expect(screen.queryByText("Looking at you")).toBeNull();
   });
 });

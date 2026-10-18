@@ -355,6 +355,40 @@
   border-left: 1px solid var(--vex-alias-rule);
 }
 
+/* The "Looking at you" preview under Show avatar (sections 5.2 and 10.1): a
+ * framed block, the 200 x 220 print window at the left (VexPortraitPlate, the
+ * Vex sidebar's own plate cut down: its 280 height and its top rule are the
+ * sidebar's) and the title 15 / 500 over the text 14 / 1.45 at the right. */
+.vex-set-avatar {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  column-gap: 22px;
+  align-items: start;
+  margin: 4px 0 14px;
+  border: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-set-avatar__plate.vex-vs-plate {
+  width: 200px;
+  height: 220px;
+  border-top: 0;
+}
+.vex-set-avatar__text {
+  min-width: 0;
+  padding: 22px 22px 22px 0;
+}
+.vex-set-avatar__title {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-set-avatar__body {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-secondary);
+}
+
 /* The switch (section 1.5): a 32 x 18 track with a 10 x 10 thumb at a 3px
  * inset; off the thumb is muted, on the track fills blue and the thumb moves.
  * The state is the fill and the position, never a hue. */

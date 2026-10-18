@@ -72,6 +72,22 @@ describe("settings.css", () => {
     );
   });
 
+  it("draws the Looking at you preview as a 200 and 1fr grid with a 200 x 220 plate", () => {
+    const block = rule(settings, ".vex-set-avatar");
+    expect(block).toContain("grid-template-columns: 200px minmax(0, 1fr)");
+    expect(block).toContain("column-gap: 22px");
+    expect(block).toContain("border: 1px solid var(--vex-alias-rule-quiet)");
+    // The sidebar's plate is 280 high under a top rule; the preview's is not.
+    const plate = rule(settings, ".vex-set-avatar__plate.vex-vs-plate");
+    expect(plate).toMatch(/width: 200px;[\s\S]*height: 220px;[\s\S]*border-top: 0/);
+    expect(rule(settings, ".vex-set-avatar__title")).toMatch(
+      /font-size: 15px;[\s\S]*font-weight: 500/,
+    );
+    expect(rule(settings, ".vex-set-avatar__body")).toMatch(
+      /font-size: 14px;[\s\S]*line-height: 1\.45;[\s\S]*var\(--vex-alias-label-secondary\)/,
+    );
+  });
+
   it("draws the Lock Vex row's chord in mono 12 muted", () => {
     expect(rule(settings, ".vex-pref__chord")).toMatch(
       /font-family: var\(--font-mono\);[\s\S]*font-size: 12px;[\s\S]*var\(--vex-alias-label-tertiary\)/,

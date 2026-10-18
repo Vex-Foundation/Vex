@@ -141,6 +141,10 @@ vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
   useClearShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
 }));
 
+// The Preferences landing draws the "Looking at you" preview, whose plate
+// hosts the K2 hologram; her canvas belongs to VexK2's own suite.
+vi.mock("../../../../components/vex/k2/VexK2.js", () => ({ VexK2: () => null }));
+
 const { ShellScreens } = await import("../ShellScreens.js");
 
 const ORIGIN = { x: 12, y: 640, width: 320, height: 40 };
