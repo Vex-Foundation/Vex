@@ -77,7 +77,7 @@ test("boots through the setup gate to SystemCheck with the bridged window.vex su
   ).toBeVisible();
 
   // 4. The orchestrator's launch probes resolve (system.health, the
-  // runtime mode, envState — real IPC, bounded by `expect.timeout: 15_000`
+  // runtime mode, envState: real IPC, bounded by `expect.timeout: 15_000`
   // from playwright.config.ts).
   // Fresh CONFIG_DIR ⇒ first run ⇒ the gate hands off to SystemCheck
   // and lifts away over it — no clicks, no Begin button anymore.

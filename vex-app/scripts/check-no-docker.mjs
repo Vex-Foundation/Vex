@@ -21,7 +21,7 @@
  * The baseline starts as today's Docker inventory and must reach {} once the
  * Docker provider and the migration path from Docker are deleted.
  *
- * PERMANENT EXEMPTIONS — {@link PERMANENT_EXEMPTIONS}: exact repo-relative
+ * PERMANENT EXEMPTIONS ({@link PERMANENT_EXEMPTIONS}): exact repo-relative
  * files that name Docker for a reason that has nothing to do with running it,
  * and so would keep the baseline from ever reaching {}. Each entry is one file
  * (never a directory or pattern) with its reason; it is not counted at all. A
