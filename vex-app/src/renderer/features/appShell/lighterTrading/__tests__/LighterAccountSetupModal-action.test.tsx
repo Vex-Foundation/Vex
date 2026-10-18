@@ -135,3 +135,45 @@ describe("LighterAccountSetupModal ready action", () => {
     expect(rendered.onOpenChange).not.toHaveBeenCalled();
   });
 });
+
+describe("LighterAccountSetupModal fee step", () => {
+  it("asks for the fee grant on its own, with its terms, once the key is in place", () => {
+    const start = vi.fn();
+    mocks.useLighterAccountSetup.mockReturnValue({
+      environment: "rhc",
+      setEnvironment: vi.fn(),
+      amountIn: "",
+      setAmountIn: vi.fn(),
+      status: { ...readyStatus("rhc"), feeAuthorized: false },
+      statusError: null,
+      statusLoading: false,
+      phase: "idle",
+      error: null,
+      needsDeposit: false,
+      settlementShortfall: false,
+      canStart: true,
+      starting: false,
+      start,
+      retry: vi.fn(),
+    });
+    render(
+      <LighterAccountSetupModal
+        open
+        onOpenChange={vi.fn()}
+        sessionId="11111111-1111-4111-8111-111111111111"
+        environment="rhc"
+        onDone={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Your account and trading key are ready. Authorize fees to start trading.")).toBeTruthy();
+    const consent = document.querySelector("[data-fee-consent]");
+    expect(consent?.textContent).toContain("0.02%");
+    expect(consent?.textContent).toContain("0.25%");
+    expect(consent?.textContent).toContain("Nothing about fees is signed until you click Authorize fees.");
+    expect(screen.queryByRole("button", { name: "Set up my account" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Authorize fees" }));
+    expect(start).toHaveBeenCalledOnce();
+  });
+});

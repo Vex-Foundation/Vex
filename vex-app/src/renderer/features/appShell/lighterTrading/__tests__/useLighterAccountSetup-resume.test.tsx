@@ -537,3 +537,73 @@ describe("useLighterAccountSetup resume rules", () => {
     expect(prepared).toHaveLength(1);
   });
 });
+
+/**
+ * THE FEE GRANT IS ITS OWN CONSENT. "Set up my account" runs the deposit and
+ * the trading key; the fee authorization waits for the second click,
+ * "Authorize fees", and no route into it (the chain, a retry, an automatic
+ * retry) runs it without that click.
+ */
+describe("useLighterAccountSetup fee consent", () => {
+  it("runs the deposit and the key on Set up, then stops before the fees", async () => {
+    reconcileActivatesKey = true;
+    const { result } = mount();
+
+    act(() => { result.current.setAmountIn("12"); });
+    act(() => { result.current.start(); });
+    await tick();
+    live = status({ accountExists: true, accountCollateral: "12", walletSettlementBalance: "0.97" });
+    await tick(POLL_MS);
+    await tick(POLL_MS);
+
+    expect(prepared.map((action) => action.kind)).toEqual(["onboarding_deposit", "onboarding_key"]);
+    expect(live.tradingKeyRegistered).toBe(true);
+    expect(result.current.phase).toBe("idle");
+    expect(result.current.error).toBeNull();
+
+    // Nothing more happens on its own.
+    await tick(POLL_MS * 5);
+    expect(prepared.some((action) => action.kind === "onboarding_fee")).toBe(false);
+
+    // The second click is the fee consent.
+    expect(result.current.canStart).toBe(true);
+    act(() => { result.current.start(); });
+    await tick();
+    expect(prepared.filter((action) => action.kind === "onboarding_fee")).toHaveLength(1);
+    live = { ...live, feeAuthorized: true };
+    await tick(POLL_MS);
+    expect(result.current.phase).toBe("done");
+  });
+
+  it("a retry that finds the key registered stops before the fees", async () => {
+    live = status({ accountExists: true, accountCollateral: "12" });
+    approveExecutionStatus = "failed";
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+    expect(result.current.error).not.toBeNull();
+
+    // The key landed after all; Try again sees it and asks for the fee click.
+    live = { ...live, tradingKeyRegistered: true };
+    approveExecutionStatus = "succeeded";
+    act(() => { result.current.retry(); });
+    await tick();
+
+    expect(result.current.phase).toBe("idle");
+    expect(prepared.some((action) => action.kind === "onboarding_fee")).toBe(false);
+  });
+
+  it("refreshes the pending approvals once it approves a step itself", async () => {
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    live = status({ accountExists: true, accountCollateral: "12" });
+    const { result } = mount();
+
+    act(() => { result.current.start(); });
+    await tick();
+
+    const keys = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+    expect(keys).toContain(JSON.stringify(["approvals", "pendingAll"]));
+    invalidate.mockRestore();
+  });
+});

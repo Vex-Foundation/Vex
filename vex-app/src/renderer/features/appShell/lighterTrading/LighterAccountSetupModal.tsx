@@ -38,7 +38,7 @@ const START_TRADING_LABELS: Readonly<Record<LighterTradingEnvironment, string>> 
 
 /** The live status line under the tracker (screen-reader announced). */
 const PHASE_LABELS: Readonly<Record<LighterAccountSetupPhase, string>> = {
-  idle: "One confirmation runs all three steps.",
+  idle: "Set up runs the deposit and the trading key. You authorize fees after that, separately.",
   depositing: "Depositing to Lighter…",
   confirming_deposit: "Confirming your deposit on-chain…",
   checking_setup: "Checking your previous setup with Lighter…",
@@ -281,6 +281,16 @@ export function LighterAccountSetupModal({
   const running = setup.phase !== "idle" && setup.phase !== "done";
   const started = setup.phase !== "idle";
   const { status } = setup;
+  // The account and the key are in place and only the fee grant remains: its
+  // own consent, asked for here with its terms (the hook never runs it
+  // without this click).
+  const feeStep = setup.phase === "idle"
+    && status !== null
+    && status.setupRecovery === "none"
+    && status.accountExists
+    && status.tradingKeyRegistered
+    && !status.feeAuthorized;
+  const authorizingFee = setup.phase === "authorizing_fee" || setup.phase === "confirming_fee";
   const presentation = status === null
     ? null
     : lighterSetupPresentation(setup.phase, status);
@@ -300,7 +310,9 @@ export function LighterAccountSetupModal({
           <DialogDescription>
             {status?.setupRecovery !== undefined && status.setupRecovery !== "none"
               ? "Vex will check your earlier setup with Lighter before continuing."
-              : "Lighter needs a first deposit to activate your account and set up trading. Enter the amount you want to deposit."}
+              : feeStep
+                ? "Your account and trading key are ready. Authorize fees to start trading."
+                : "Lighter needs a first deposit to activate your account and set up trading. Enter the amount you want to deposit."}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="gap-5 pt-1">
@@ -415,7 +427,19 @@ export function LighterAccountSetupModal({
                 </p>
               </div>
 
-              {status.feePolicy === null ? null : (
+              {status.feePolicy === null ? (
+                feeStep ? (
+                  <p className="lit-setup-fee" data-fee-consent="">
+                    Nothing about fees is signed until you click Authorize fees.
+                  </p>
+                ) : null
+              ) : feeStep ? (
+                <p className="lit-setup-fee" data-fee-consent="">
+                  Authorizing fees lets Vex charge <b>{status.feePolicy.perpFeePercent}%</b> on
+                  perpetuals and <b>{status.feePolicy.spotFeePercent}%</b> on spot trades.
+                  Nothing about fees is signed until you click Authorize fees.
+                </p>
+              ) : (
                 <p className="lit-setup-fee">
                   Vex charges <b>{status.feePolicy.perpFeePercent}%</b> on perpetuals
                   and <b>{status.feePolicy.spotFeePercent}%</b> on spot trades.
@@ -468,7 +492,11 @@ export function LighterAccountSetupModal({
               onClick={setup.start}
             >
               {running || setup.starting ? <span className="lit-loader" aria-hidden="true" /> : null}
-              {running || setup.starting ? "Setting up…" : status !== null && status.setupRecovery !== "none" ? "Check existing setup" : "Set up my account"}
+              {running || setup.starting
+                ? authorizingFee ? "Authorizing fees…" : "Setting up…"
+                : status !== null && status.setupRecovery !== "none"
+                  ? "Check existing setup"
+                  : feeStep ? "Authorize fees" : "Set up my account"}
             </button>
           )}
         </DialogFooter>
