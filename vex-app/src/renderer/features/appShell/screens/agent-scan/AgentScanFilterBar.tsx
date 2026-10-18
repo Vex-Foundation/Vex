@@ -1,29 +1,45 @@
 /**
- * Agent Scan filter bar — the controls that narrow the feed, plus the state
- * shape they drive.
+ * Agent Scan filter bar - the controls that narrow the feed, plus the state
+ * shape they drive (`docs/design/R3-MINIMAL.md` section 9.2).
  *
- * ONE grammar for every control: a hairline small-caps chip (the sans support
- * face — see CHIP_BASE) that lights cobalt when
- * active (`aria-pressed` carries the same state to assistive tech). Kinds and
- * protocols are MULTI-select, status and chain family are single-select
- * toggles — that mirrors what the query contract can express
- * (`agentScanFiltersSchema`: `kinds`/`protocols` are bounded arrays,
+ * FOUR NAMED MENUS, one per dimension: Kind, Status, Protocol, Chain. Each is
+ * a select-like key ("Kind  All  v") that opens a flat menu card of options;
+ * the key shows "All" while the dimension is empty, the option's name for one
+ * choice, and "Swap +1" for several. Kinds and protocols are MULTI-select
+ * (checkbox rows, the menu stays open on a press); status and chain family are
+ * single-select toggles (radio rows, the menu closes on a press, pressing the
+ * checked row again clears it). That mirrors what the query contract can
+ * express (`agentScanFiltersSchema`: `kinds`/`protocols` are bounded arrays,
  * `chainFamily` is one value) rather than offering the user a control the read
- * cannot honour.
+ * cannot honour. The first row of every menu is "All": it clears that one
+ * dimension and nothing else.
  *
- * ACTIVE FILTERS ARE VISIBLY PINNED: an active chip is cobalt, and the bar
- * shows a live count with a Clear key, so a feed narrowed to three rows can
- * never be mistaken for a feed that only HAS three rows — the exact misread a
- * silent filter causes on an audit surface.
+ * ACTIVE FILTERS ARE VISIBLY PINNED: a menu key that narrows the feed turns
+ * blue (`data-active`), and the bar shows a live count with a Clear link, so a
+ * feed narrowed to three rows can never be mistaken for a feed that only HAS
+ * three rows - the exact misread a silent filter causes on an audit surface.
+ * The scope the page was opened with is its own non-clearable chip.
+ *
+ * KEYBOARD: Escape on an open menu closes it, returns focus to its key and
+ * takes the keystroke (the page sheet closes on a window Escape listener that
+ * ignores handled events, so the menu must claim the key first); the arrows
+ * move between rows (wrapping), Home and End jump, a press outside closes.
  *
  * OPTIONS COME FROM WHAT WRITES THE FEED, never from what we can draw. Kinds
  * come from the shared engine vocabulary; protocols from
- * `agent-scan-protocols.ts` (the executors that write `agent_activity`) —
+ * `agent-scan-protocols.ts` (the executors that write `agent_activity`) -
  * emphatically NOT from the protocol-mark map, which knows read-only tools and
  * retired products and once put two always-empty options in this bar.
  */
 
-import type { JSX } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+} from "react";
 import {
   AGENT_ACTIVITY_KINDS,
   AGENT_ACTIVITY_STATUSES,
@@ -34,7 +50,10 @@ import type {
   AgentScanFilters,
   AgentScanStatusFilter,
 } from "@shared/schemas/agent-scan-feed.js";
-import { cn } from "../../../../lib/utils.js";
+import {
+  LineCheck,
+  LineChevronDown,
+} from "../../../../components/icons/line/index.js";
 import {
   GLOBAL_AGENT_SCAN_SCOPE,
   type AgentScanRouteScope,
@@ -57,7 +76,7 @@ export interface AgentScanFilterState {
   readonly protocols: readonly string[];
   readonly chainFamily: AgentScanChainFamilyFilter | null;
   /**
-   * SCOPE PRESET - set by the caller (a BOOK rail's Activity card "View all"),
+   * SCOPE PRESET - set by the caller (a scoped link such as the Vex sidebar's "Agent Scan"),
    * never by a control in this bar. It is a NON-CLEARABLE scope, not a
    * user-toggled filter: Clear resets everything else and leaves it in place,
    * and it renders as its own visible chip so a narrowed feed can never be
@@ -80,7 +99,7 @@ export const EMPTY_FILTER_STATE: AgentScanFilterState = {
 };
 
 /**
- * How many USER-CLEARABLE constraints are active — drives the pinned count
+ * How many USER-CLEARABLE constraints are active - drives the pinned count
  * and the Clear key. The scope preset is deliberately excluded: it is a
  * scope the user cannot clear from here, and counting it would promise a
  * Clear that does nothing to it. Its own chip carries that narrowing
@@ -102,7 +121,7 @@ export function isFeedNarrowed(state: AgentScanFilterState): boolean {
 
 /**
  * Project the selection onto the IPC filter contract, omitting empty keys
- * entirely (the schema is `.strict()` with optional fields — an empty array
+ * entirely (the schema is `.strict()` with optional fields - an empty array
  * would be a real, and wrong, "match nothing" constraint to send).
  */
 export function toAgentScanFilters(state: AgentScanFilterState): AgentScanFilters {
@@ -146,66 +165,271 @@ export function toggleValue(
     : [...list, value];
 }
 
+/** One row of a filter menu: the wire value and the sentence-case label. */
+interface FilterOption<V extends string> {
+  readonly value: V;
+  readonly label: string;
+}
+
+/** "swap" -> "Swap": the vocabulary values are lower-case wire words. */
+function sentenceCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+const KIND_OPTIONS: readonly FilterOption<string>[] = [
+  ...AGENT_ACTIVITY_KINDS.map((kind) => ({
+    value: kind,
+    label: sentenceCase(kind),
+  })),
+  // The FEED kind that selects the second ledger. It sits beside the
+  // vocabulary-derived rows and routes identically (`kinds` is an OPEN bounded
+  // list on the contract), but it is deliberately NOT in
+  // `AGENT_ACTIVITY_KINDS`: a venue fill is not an `agent_activity` kind and
+  // adding it there would put a value in the database vocabulary that no row
+  // can ever carry.
+  { value: LIGHTER_FILL_KIND, label: LIGHTER_FILL_KIND_LABEL },
+];
+
 /**
- * Chip register: Inter Tight small caps for the interactive chips, one step
- * apart from the `.vex-micro-label` eyebrows beside them; mono remains banned
- * outside technical artifacts.
+ * Display names for the lifecycle statuses. A lookup, not an exhaustive
+ * switch: a member this table predates shows its raw value rather than
+ * blanking the option.
  */
-const CHIP_BASE =
-  "inline-flex h-6 shrink-0 items-center rounded-full border px-2.5 font-sans text-[9px] uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary";
+const STATUS_LABELS: Readonly<Record<string, string>> = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  failed: "Failed",
+  superseded_unproven: "Superseded",
+};
 
-const CHIP_IDLE =
-  "border-line-2 text-ink-tertiary hover:border-line-3 hover:text-ink-secondary";
+const STATUS_OPTIONS: readonly FilterOption<AgentScanStatusFilter>[] =
+  AGENT_ACTIVITY_STATUSES.map((status: AgentActivityStatus) => ({
+    value: status,
+    label: STATUS_LABELS[status] ?? status,
+  }));
 
-const CHIP_ACTIVE =
-  "border-accent-primary bg-accent-wash text-accent-primary";
+const PROTOCOL_OPTIONS: readonly FilterOption<string>[] = FEED_PROTOCOL_OPTIONS;
 
-function FilterChip({
-  label,
-  active,
-  onToggle,
-}: {
-  readonly label: string;
-  readonly active: boolean;
-  readonly onToggle: () => void;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onToggle}
-      className={cn(CHIP_BASE, active ? CHIP_ACTIVE : CHIP_IDLE)}
-    >
-      {label}
-    </button>
-  );
-}
-
-/** One labelled row of chips. */
-function FilterGroup({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="w-[58px] shrink-0 vex-micro-label uppercase text-ink-secondary">
-        {label}
-      </span>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">{children}</div>
-    </div>
-  );
-}
-
-const CHAIN_FAMILIES: readonly {
-  readonly value: AgentScanChainFamilyFilter;
-  readonly label: string;
-}[] = [
+const CHAIN_OPTIONS: readonly FilterOption<AgentScanChainFamilyFilter>[] = [
   { value: "eip155", label: "EVM" },
   { value: "solana", label: "Solana" },
 ];
+
+/** What the key says: "All", the one chosen label, or "Swap +1". */
+function valueLabel<V extends string>(
+  options: readonly FilterOption<V>[],
+  selected: readonly V[],
+): string {
+  const [first] = selected;
+  if (first === undefined) return "All";
+  const firstLabel =
+    options.find((option) => option.value === first)?.label ?? first;
+  return selected.length === 1
+    ? firstLabel
+    : `${firstLabel} +${selected.length - 1}`;
+}
+
+/** The focusable rows of an open menu card, in document order. */
+function menuItems(menu: HTMLElement | null): HTMLElement[] {
+  if (menu === null) return [];
+  return Array.from(menu.querySelectorAll<HTMLElement>('[role^="menuitem"]'));
+}
+
+/**
+ * One named filter menu: a select-like key and, while open, the kit's menu
+ * card. The kit `Menu` cannot be used here: it has no checkbox or radio rows,
+ * and a filter's rows must say "checked" to assistive tech, not only to the
+ * eye.
+ *
+ * `multi` rows are `menuitemcheckbox` and stay open on a press (the user is
+ * building a set); `single` rows are `menuitemradio` and close on a press, and
+ * pressing the checked one again clears it - the toggle the bar always had.
+ */
+function FilterMenu<V extends string>({
+  name,
+  selection,
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  readonly name: string;
+  readonly selection: "multi" | "single";
+  readonly options: readonly FilterOption<V>[];
+  readonly selected: readonly V[];
+  readonly onToggle: (value: V) => void;
+  readonly onClear: () => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const multi = selection === "multi";
+  const itemRole = multi ? "menuitemcheckbox" : "menuitemradio";
+
+  // Opening lands focus on the first checked row, else the first row, so the
+  // arrows work from the first key press.
+  useEffect(() => {
+    if (!open) return;
+    const items = menuItems(menuRef.current);
+    const target =
+      items.find((item) => item.getAttribute("aria-checked") === "true") ??
+      items[0];
+    target?.focus();
+  }, [open]);
+
+  // A press outside the key and its card closes the menu.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node)) return;
+      if (wrapRef.current?.contains(event.target) === true) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const closeToTrigger = (): void => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const moveFocus = (to: "first" | "last" | "next" | "previous"): void => {
+    const items = menuItems(menuRef.current);
+    const count = items.length;
+    if (count === 0) return;
+    const current = items.findIndex((item) => item === document.activeElement);
+    let index: number;
+    switch (to) {
+      case "first":
+        index = 0;
+        break;
+      case "last":
+        index = count - 1;
+        break;
+      case "next":
+        index = current < 0 ? 0 : (current + 1) % count;
+        break;
+      case "previous":
+        index = current < 0 ? count - 1 : (current - 1 + count) % count;
+        break;
+    }
+    items[index]?.focus();
+  };
+
+  // On the wrapper (React's synthetic handler runs before the window listener
+  // the page sheet closes on): Escape here is the menu's, not the page's.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!open) {
+      if (event.key === "ArrowDown" && event.target === triggerRef.current) {
+        event.preventDefault();
+        setOpen(true);
+      }
+      return;
+    }
+    switch (event.key) {
+      case "Escape":
+        event.preventDefault();
+        event.stopPropagation();
+        closeToTrigger();
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        moveFocus("next");
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        moveFocus("previous");
+        break;
+      case "Home":
+        event.preventDefault();
+        moveFocus("first");
+        break;
+      case "End":
+        event.preventDefault();
+        moveFocus("last");
+        break;
+      case "Tab":
+        // Park focus on the key first so the browser's own Tab step leaves
+        // from a node that is still mounted once the card is gone.
+        setOpen(false);
+        triggerRef.current?.focus();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const press = (action: () => void): void => {
+    action();
+    if (!multi) closeToTrigger();
+  };
+
+  const renderItem = (
+    key: string,
+    label: string,
+    checked: boolean,
+    action: () => void,
+  ): JSX.Element => (
+    <button
+      key={key}
+      type="button"
+      role={itemRole}
+      aria-checked={checked}
+      tabIndex={-1}
+      data-selected={checked ? "" : undefined}
+      className="vex-menu-item"
+      onClick={() => press(action)}
+    >
+      <span className="vex-menu-item-label">{label}</span>
+      {checked ? <LineCheck size={16} className="vex-menu-check" /> : null}
+    </button>
+  );
+
+  return (
+    <div ref={wrapRef} className="vex-scan-filter" onKeyDown={onKeyDown}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="vex-scan-filter__key"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        data-active={selected.length > 0 ? "" : undefined}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="vex-scan-filter__name">{name}</span>{" "}
+        <span className="vex-scan-filter__value">
+          {valueLabel(options, selected)}
+        </span>{" "}
+        <LineChevronDown size={14} className="vex-scan-filter__chev" />
+      </button>
+      {open ? (
+        <div
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label={name}
+          className="vex-menu vex-scan-filter__menu"
+        >
+          <div className="vex-menu-viewport" role="presentation">
+            {renderItem("all", "All", selected.length === 0, onClear)}
+            {options.map((option) =>
+              renderItem(
+                option.value,
+                option.label,
+                selected.includes(option.value),
+                () => onToggle(option.value),
+              ),
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * What the non-clearable scope chip SAYS, and what it says while the project's
@@ -247,124 +471,88 @@ export function AgentScanFilterBar({
   const scopeLabel = scopeChipLabel(state.scope, projectName);
 
   return (
-    <section
-      aria-label="Filters"
-      className="flex flex-col gap-2 border-b border-line-1 pb-3"
-    >
-      <FilterGroup label="Kind">
-        {AGENT_ACTIVITY_KINDS.map((kind) => (
-          <FilterChip
-            key={kind}
-            label={kind}
-            active={state.kinds.includes(kind)}
-            onToggle={() =>
-              onChange({ ...state, kinds: toggleValue(state.kinds, kind) })
-            }
-          />
-        ))}
-        {/* The FEED kind that selects the second ledger. It sits beside the
-          * vocabulary-derived chips and routes identically (`kinds` is an OPEN
-          * bounded list on the contract), but it is deliberately NOT in
-          * `AGENT_ACTIVITY_KINDS`: a venue fill is not an `agent_activity`
-          * kind and adding it there would put a value in the database
-          * vocabulary that no row can ever carry. */}
-        <FilterChip
-          label={LIGHTER_FILL_KIND_LABEL}
-          active={state.kinds.includes(LIGHTER_FILL_KIND)}
-          onToggle={() =>
-            onChange({
-              ...state,
-              kinds: toggleValue(state.kinds, LIGHTER_FILL_KIND),
-            })
+    <section aria-label="Filters" className="vex-scan-filters">
+      <FilterMenu
+        name="Kind"
+        selection="multi"
+        options={KIND_OPTIONS}
+        selected={state.kinds}
+        onToggle={(kind) =>
+          onChange({ ...state, kinds: toggleValue(state.kinds, kind) })
+        }
+        onClear={() => onChange({ ...state, kinds: [] })}
+      />
+      <FilterMenu
+        name="Status"
+        selection="single"
+        options={STATUS_OPTIONS}
+        selected={state.status === null ? [] : [state.status]}
+        onToggle={(status) =>
+          onChange({
+            ...state,
+            status: state.status === status ? null : status,
+          })
+        }
+        onClear={() => onChange({ ...state, status: null })}
+      />
+      <FilterMenu
+        name="Protocol"
+        selection="multi"
+        options={PROTOCOL_OPTIONS}
+        selected={state.protocols}
+        onToggle={(protocol) =>
+          onChange({
+            ...state,
+            protocols: toggleValue(state.protocols, protocol),
+          })
+        }
+        onClear={() => onChange({ ...state, protocols: [] })}
+      />
+      <FilterMenu
+        name="Chain"
+        selection="single"
+        options={CHAIN_OPTIONS}
+        selected={state.chainFamily === null ? [] : [state.chainFamily]}
+        onToggle={(family) =>
+          onChange({
+            ...state,
+            chainFamily: state.chainFamily === family ? null : family,
+          })
+        }
+        onClear={() => onChange({ ...state, chainFamily: null })}
+      />
+      {scopeLabel !== null ? (
+        // NOT a menu and NOT a toggle: it carries no `aria-pressed` or
+        // `aria-checked`, because it is a scope the user cannot clear from
+        // this bar. The narrowing must never be invisible on an audit surface.
+        <span
+          data-vex-area="agent-scan-scope-chip"
+          data-vex-scope={state.scope.kind}
+          className="vex-scan-scope"
+          title={
+            state.scope.kind === "project"
+              ? "This feed is narrowed to one project's wallets"
+              : "This feed is narrowed to one session"
           }
-        />
-      </FilterGroup>
-
-      <FilterGroup label="Status">
-        {AGENT_ACTIVITY_STATUSES.map((status: AgentActivityStatus) => (
-          <FilterChip
-            key={status}
-            label={status}
-            active={state.status === status}
-            onToggle={() =>
-              onChange({
-                ...state,
-                status: state.status === status ? null : status,
-              })
-            }
-          />
-        ))}
-      </FilterGroup>
-
-      <FilterGroup label="Protocol">
-        {FEED_PROTOCOL_OPTIONS.map((protocol) => (
-          <FilterChip
-            key={protocol.value}
-            label={protocol.label}
-            active={state.protocols.includes(protocol.value)}
-            onToggle={() =>
-              onChange({
-                ...state,
-                protocols: toggleValue(state.protocols, protocol.value),
-              })
-            }
-          />
-        ))}
-      </FilterGroup>
-
-      <FilterGroup label="Chain">
-        {CHAIN_FAMILIES.map((family) => (
-          <FilterChip
-            key={family.value}
-            label={family.label}
-            active={state.chainFamily === family.value}
-            onToggle={() =>
-              onChange({
-                ...state,
-                chainFamily:
-                  state.chainFamily === family.value ? null : family.value,
-              })
-            }
-          />
-        ))}
-      </FilterGroup>
-
-      {scopeLabel !== null || active > 0 ? (
-        // The narrowing must never be invisible on an audit surface.
-        <div className="flex flex-wrap items-center gap-2 pl-[66px]">
-          {scopeLabel !== null ? (
-            // NOT a FilterChip: it carries no `aria-pressed` and no toggle,
-            // because it is a scope the user cannot clear from this bar.
-            <span
-              data-vex-area="agent-scan-scope-chip"
-              data-vex-scope={state.scope.kind}
-              className={cn(CHIP_BASE, CHIP_ACTIVE, "cursor-default")}
-              title={
-                state.scope.kind === "project"
-                  ? "This feed is narrowed to one project's wallets"
-                  : "This feed is narrowed to one session"
-              }
-            >
-              {scopeLabel}
-            </span>
-          ) : null}
-          {active > 0 ? (
-            <span className="vex-micro-label uppercase text-accent-primary">
-              {active} filter{active === 1 ? "" : "s"} active
-            </span>
-          ) : null}
-          {active > 0 ? (
+        >
+          {scopeLabel}
+        </span>
+      ) : null}
+      {active > 0 ? (
+        <span className="vex-scan-active">
+          {active} filter{active === 1 ? "" : "s"} active
           <button
             type="button"
             // Clear resets the user-chosen filters and PRESERVES the session
-            // scope — clearing must not silently widen an audit feed.
-            onClick={() => onChange({ ...EMPTY_FILTER_STATE, scope: state.scope })}
-            className="font-sans text-[9px] uppercase tracking-[0.14em] text-ink-tertiary underline-offset-2 transition-colors hover:text-ink-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            // scope - clearing must not silently widen an audit feed.
+            onClick={() =>
+              onChange({ ...EMPTY_FILTER_STATE, scope: state.scope })
+            }
+            className="vex-scan-link"
           >
             Clear
           </button>
-          ) : null}
-        </div>
+        </span>
       ) : null}
     </section>
   );

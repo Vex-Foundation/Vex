@@ -1,10 +1,10 @@
 /**
- * Public gate of the wizard feature (Phase 2b — Settings rebuild).
+ * Public gate of the wizard feature (Phase 2b - Settings rebuild).
  *
  * The in-shell Settings screen (`features/appShell/screens/SettingsScreen`)
  * hosts the SAME step forms the wizard runs, in `flowMode="back-edit"`
  * semantics. This gate exports exactly what that consumer needs and nothing
- * else — every other module under `features/wizard/` is wizard-internal.
+ * else - every other module under `features/wizard/` is wizard-internal.
  * Cross-feature imports go through here (rule 04: features reach other
  * features only through public APIs).
  */

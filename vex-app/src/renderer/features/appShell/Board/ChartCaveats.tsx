@@ -166,18 +166,18 @@ export function ChartCaveats({
       data-vex-area="board-chart-caveats"
       className="flex flex-col gap-1"
     >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-tertiary">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-tertiary">
         <span
           data-vex-area="board-chart-resolution"
-          className="vex-micro-label rounded-md border border-line-2 px-1.5 py-0.5 uppercase text-ink-secondary"
+          className="border border-rule-quiet px-1.5 py-0.5 font-mono vex-num text-[11.5px] text-ink-secondary"
         >
           {resolution}
         </span>
-        <span className="tabular-nums">
+        <span className="font-mono vex-num">
           {drawn} {drawn === 1 ? "bar" : "bars"}
         </span>
         {chartClock === null ? null : (
-          <span data-vex-area="board-chart-asof" className="tabular-nums">
+          <span data-vex-area="board-chart-asof" className="font-mono vex-num">
             chart as of {chartClock}
           </span>
         )}
@@ -189,7 +189,7 @@ export function ChartCaveats({
             aria-controls={regionId}
             onClick={() => setOpen((current) => !current)}
             data-vex-area="board-chart-notes-trigger"
-            className="vex-micro-label rounded-md px-1.5 py-0.5 uppercase text-ink-secondary hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+            className="vex-bd-link"
           >
             Data notes ({notes.length})
           </button>
@@ -198,7 +198,7 @@ export function ChartCaveats({
       <ExpandRegion id={regionId} open={open} triggerRef={triggerRef}>
         <ul
           data-vex-area="board-chart-notes"
-          className="flex flex-col gap-1 rounded-lg border border-line-2 bg-surface-1 p-2 text-[11px] leading-relaxed text-ink-tertiary"
+          className="flex flex-col gap-1 border border-rule-quiet p-2.5 text-[12px] leading-[1.5] text-ink-secondary"
         >
           {notes.map((note) => (
             <li key={note.key} data-note-kind={note.key}>

@@ -41,10 +41,10 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
-  IconFile,
-  IconFolderClose,
-  IconWarning,
-} from "../../../../components/icons/index.js";
+  LineFile,
+  LineFolder,
+  LineWarning,
+} from "../../../../components/icons/line/index.js";
 import { cn } from "../../../../lib/utils.js";
 import { EXPLORER_EDIT_ARIA_LABEL } from "./explorer-copy.js";
 import type { EditIntent } from "./explorer-rows.js";
@@ -172,7 +172,7 @@ export function ExplorerEditRow({
       aria-setsize={setSize}
       aria-selected={false}
       style={style}
-      className="flex w-full select-none items-center gap-1 pr-2 text-[13px] leading-[24px]"
+      className="flex w-full select-none items-center gap-[7px] pr-2 text-[13.5px] leading-[28px]"
       // The box is not the tree's focus target; the input inside it is, and it
       // is the one element in this tree that legitimately holds DOM focus.
       // Clicks must not reach the tree's row-select handler behind it.
@@ -183,12 +183,12 @@ export function ExplorerEditRow({
         event.stopPropagation();
       }}
     >
-      <span aria-hidden="true" className="h-4 w-4 shrink-0" />
+      <span aria-hidden="true" className="h-4 w-3.5 shrink-0" />
       <span
         aria-hidden="true"
-        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-tertiary"
+        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-secondary"
       >
-        {intent === "createFolder" ? <IconFolderClose size={14} /> : <IconFile size={14} />}
+        {intent === "createFolder" ? <LineFolder size={14} /> : <LineFile size={14} />}
       </span>
       <input
         ref={inputRef}
@@ -207,8 +207,10 @@ export function ExplorerEditRow({
         // Blur CANCELS here rather than committing; see the module note.
         onBlur={onCancel}
         className={cn(
-          "min-w-0 flex-1 border bg-surface-input px-1 text-[13px] text-ink-primary outline-none",
-          shown === null ? "border-line-2 focus:border-ring" : "border-error",
+          // The left sidebar's edit field: field ground, a 1px blue border,
+          // an ink border when the name is refused (failures are ink).
+          "h-6 min-w-0 flex-1 border bg-surface-field px-1.5 text-[13.5px] text-ink-primary outline-none",
+          shown === null ? "border-accent-primary" : "border-rule-ink",
         )}
       />
       {shown === null ? null : (
@@ -218,10 +220,10 @@ export function ExplorerEditRow({
         <span
           id={messageId}
           role="alert"
-          className="flex max-w-[60%] shrink-0 items-center gap-1 truncate text-[11px] text-error"
+          className="flex max-w-[60%] shrink-0 items-center gap-1 truncate text-[12px] text-ink-primary"
           title={shown}
         >
-          <IconWarning size={12} />
+          <LineWarning size={14} />
           {shown}
         </span>
       )}

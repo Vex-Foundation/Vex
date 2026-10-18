@@ -1,26 +1,29 @@
 /**
- * ApiKeysStep provider-card bodies — the three `ProviderCard` instances
- * rendered inside the step form (Jupiter / Tavily / Rettiwt / Relay).
+ * ApiKeysStep provider-row bodies: the `ProviderCard` instances rendered
+ * inside the step form (Jupiter / Tavily / Rettiwt / Relay) and the two
+ * Lighter trading rows.
  *
- * Each component owns the per-provider chrome (icon, copy, external
- * links, status badge) and forwards the parent-owned uncontrolled secret
- * ref into the `PasswordField`. Markup, copy, hrefs, `data-vex-apikeys-card`
- * selectors, and accessibility (sr-only labels, aria-hidden icons) are
- * preserved verbatim from the inlined cards.
+ * Each component owns the per-provider copy, external links and status, and
+ * forwards the parent-owned uncontrolled secret ref into the `PasswordField`.
+ * Copy, hrefs, `data-vex-apikeys-card` selectors and accessibility (sr-only
+ * labels, aria-hidden arrows) are preserved from the inlined cards.
  *
- * Presentational: no state, no IPC of their own. Status badges come from
- * the parent (which derives them via `status-helpers`); secret values
- * stay in the parent's refs and never enter these modules' scope.
+ * Presentational: no state, no IPC of their own. Status words come from the
+ * parent (which derives them via `status-helpers`); secret values stay in the
+ * parent's refs and never enter these modules' scope.
  */
 
 import type { JSX, RefObject } from "react";
-import { Tavily, X } from "@thesvg/react";
 import type { LighterManagedTradingScope } from "@shared/schemas/onboarding.js";
-import { PxIcon } from "../../../../components/icons/index.js";
+import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
 import { PasswordField } from "../../../../components/common/PasswordField.js";
 import { cn } from "../../../../lib/utils.js";
-import { ProviderCard, type ProviderCardStatus } from "./ProviderCard.js";
+import {
+  ProviderCard,
+  ProviderStatusWord,
+  type ProviderCardStatus,
+} from "./ProviderCard.js";
 
 export interface JupiterCardProps {
   readonly status: ProviderCardStatus;
@@ -36,15 +39,6 @@ export function JupiterCard({
   return (
     <ProviderCard
       slug="jupiter"
-      iconSlot={
-        <img
-          src="/logo/jupiter.png"
-          alt=""
-          aria-hidden
-          draggable={false}
-          className="h-6 w-6 object-contain"
-        />
-      }
       name="Jupiter"
       status={status}
       description="Prices and swaps tokens on Solana."
@@ -72,7 +66,7 @@ export function JupiterCard({
         autoComplete="new-password"
         ref={inputRef}
       />
-      <p className="text-xs text-ink-tertiary">
+      <p className="vex-wz-hint">
         {configured
           ? "Leave blank to keep the saved key, or paste a new one to overwrite it."
           : "Leave blank to add later - Solana swaps stay unavailable until you set it."}
@@ -93,7 +87,6 @@ export function TavilyCard({
   return (
     <ProviderCard
       slug="tavily"
-      iconSlot={<Tavily width={20} height={20} aria-hidden />}
       name="Tavily"
       status={status}
       description="Lets the agent search and read the web."
@@ -135,7 +128,6 @@ export function RettiwtCard({
   return (
     <ProviderCard
       slug="rettiwt"
-      iconSlot={<X width={18} height={18} aria-hidden />}
       name="Rettiwt (X / Twitter)"
       status={status}
       description="Posts and reads from an X (Twitter) account."
@@ -152,25 +144,24 @@ export function RettiwtCard({
         </>
       }
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+      <div className="vex-wz-links">
         <a
           href="https://chromewebstore.google.com/detail/x-auth-helper/igpkhkjmpdecacocghpgkghdcmcmpfhp"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-ink-primary underline underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+          className="vex-wz-link"
         >
-          Chrome: X Auth Helper ↗
+          Chrome: X Auth Helper
+          <span aria-hidden="true">↗</span>
         </a>
-        <span aria-hidden className="text-ink-tertiary">
-          ·
-        </span>
         <a
           href="https://addons.mozilla.org/en-US/firefox/addon/rettiwt-auth-helper"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-ink-primary underline underline-offset-2 hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+          className="vex-wz-link"
         >
-          Firefox: Rettiwt Auth Helper ↗
+          Firefox: Rettiwt Auth Helper
+          <span aria-hidden="true">↗</span>
         </a>
       </div>
       <Label htmlFor="vex-apikey-rettiwt" className="sr-only">
@@ -201,9 +192,6 @@ export function RelayCard({
   return (
     <ProviderCard
       slug="relay"
-      iconSlot={
-        <PxIcon name="api" />
-      }
       name="Relay"
       status={status}
       description="Cross-chain bridging."
@@ -241,12 +229,6 @@ export interface LighterTradingCardProps {
   readonly removeRef: RefObject<HTMLInputElement | null>;
 }
 
-const LIGHTER_STATUS_WORD_COLOR: Record<ProviderCardStatus["tone"], string> = {
-  set: "text-success",
-  partial: "text-warning",
-  unset: "text-ink-tertiary",
-};
-
 export function LighterTradingCard({
   environment,
   status,
@@ -266,8 +248,8 @@ export function LighterTradingCard({
     : "Lighter Core environment · USDC collateral";
   const prefix = `vex-apikey-lighter-${environment}-trading`;
   const managed = managedScopes.length > 0;
-  const displayStatus = managed
-    ? { tone: "set" as const, label: "MANAGED" }
+  const displayStatus: ProviderCardStatus = managed
+    ? { tone: "set", label: "Managed" }
     : status;
   const manualFields = (
     <LighterManualTradingFields
@@ -291,104 +273,79 @@ export function LighterTradingCard({
       data-vex-lighter-environment={environment}
       aria-labelledby={`${prefix}-title`}
       className={cn(
-        "border-t border-line-2 pt-5",
+        "vex-wz-prov",
         environment === "rhc" && "vex-lighter-rhc-shadow",
       )}
     >
-      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-        <div className="min-w-0">
-          <h3
-            id={`${prefix}-title`}
-            className="text-sm font-semibold text-ink-primary"
-          >
-            {title}
-          </h3>
-          <p className="mt-1 text-sm leading-relaxed text-ink-secondary">
-            {environmentDescription}
-          </p>
-        </div>
-        <span
-          className={cn(
-            "vex-micro shrink-0 pt-0.5",
-            LIGHTER_STATUS_WORD_COLOR[displayStatus.tone],
-          )}
-        >
-          {displayStatus.label}
-        </span>
-      </header>
+      <div className="vex-wz-prov__h">
+        <h3 id={`${prefix}-title`} className="vex-wz-prov__n">
+          {title}
+        </h3>
+        <p className="vex-wz-prov__dsc">{environmentDescription}</p>
+        <ProviderStatusWord status={displayStatus} />
+      </div>
 
-      <p className="mt-3 max-w-3xl text-xs leading-relaxed text-ink-tertiary">
+      <p className="vex-wz-prov__detail">
         {managed
           ? "Created and registered locally by Vex after your approval."
           : "Normal setup creates and registers this key during wallet-funded onboarding. External key import remains available below."}
       </p>
 
-      <div className="mt-4">
-        {managed ? (
-          <div
-            role="status"
-            data-vex-lighter-managed-credential={environment}
-            className="border-y border-line-2"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2.5">
-              <p className="text-xs font-medium text-ink-primary">
-                Vex-managed credential
-              </p>
-              <p className="text-xs text-ink-tertiary">
-                Encrypted locally · never displayed · approval required per
-                trade
-              </p>
-            </div>
-            <div>
-              {managedScopes.map((scope) => (
-                <dl
-                  key={`${scope.accountIndex}:${scope.apiKeyIndex}`}
-                  className="grid grid-cols-2 gap-x-8 gap-y-2 border-t border-line-1 py-3 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(7rem,auto)_minmax(6rem,auto)]"
-                >
-                  <div className="col-span-2 sm:col-span-1">
-                    <dt className="sr-only">Credential scope</dt>
-                    <dd className="text-ink-secondary">
-                      Registered trading scope
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-ink-tertiary">Account</dt>
-                    <dd className="mt-1 font-mono text-sm text-ink-primary">
-                      {scope.accountIndex}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-ink-tertiary">API key</dt>
-                    <dd className="mt-1 font-mono text-sm text-ink-primary">
-                      {scope.apiKeyIndex}
-                    </dd>
-                  </div>
-                </dl>
-              ))}
-            </div>
-          </div>
-        ) : configured ? (
-          <p
-            data-vex-lighter-external-credential={environment}
-            className="border-y border-line-2 py-3 text-xs leading-relaxed text-ink-tertiary"
-          >
-            An externally managed {environment === "rhc" ? "RHC" : "Core"}
-            trading key is saved in the encrypted local vault. No key value is
-            displayed.
-          </p>
-        ) : null}
-
-        <details
-          data-vex-lighter-manual-credential={environment}
-          className="border-b border-line-1 py-3"
+      {managed ? (
+        <div
+          role="status"
+          data-vex-lighter-managed-credential={environment}
+          className="vex-wz-kvl"
         >
-          <summary className="cursor-pointer text-xs font-medium text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Advanced: manage an externally created{" "}
-            {environment === "rhc" ? "RHC" : "Core"} key
-          </summary>
-          <div className="mt-4 space-y-3">{manualFields}</div>
-        </details>
-      </div>
+          <div className="vex-wz-kv">
+            <p className="vex-wz-kv__k">Vex-managed credential</p>
+            <p className="vex-wz-kv__v">
+              Encrypted locally · never displayed · approval required per
+              trade
+            </p>
+          </div>
+          {managedScopes.map((scope) => (
+            <dl
+              key={`${scope.accountIndex}:${scope.apiKeyIndex}`}
+              className="vex-wz-kv"
+            >
+              <div>
+                <dt className="sr-only">Credential scope</dt>
+                <dd className="vex-wz-kv__k">Registered trading scope</dd>
+              </div>
+              <div>
+                <dt className="text-[12.5px] text-ink-tertiary">Account</dt>
+                <dd className="font-mono vex-num text-[13px] text-ink-primary">
+                  {scope.accountIndex}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[12.5px] text-ink-tertiary">API key</dt>
+                <dd className="font-mono vex-num text-[13px] text-ink-primary">
+                  {scope.apiKeyIndex}
+                </dd>
+              </div>
+            </dl>
+          ))}
+        </div>
+      ) : configured ? (
+        <p
+          data-vex-lighter-external-credential={environment}
+          className="vex-wz-hint"
+        >
+          An externally managed {environment === "rhc" ? "RHC" : "Core"}{" "}
+          trading key is saved in the encrypted local vault. No key value is
+          displayed.
+        </p>
+      ) : null}
+
+      <details data-vex-lighter-manual-credential={environment}>
+        <summary className="cursor-pointer text-[13.5px] font-medium text-accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+          Advanced: manage an externally created{" "}
+          {environment === "rhc" ? "RHC" : "Core"} key
+        </summary>
+        <div className="mt-3 flex flex-col gap-3">{manualFields}</div>
+      </details>
     </section>
   );
 }
@@ -424,7 +381,7 @@ function LighterManualTradingFields({
           >
             Account index
           </Label>
-          <input
+          <Input
             id={`${prefix}-account-index`}
             ref={accountIndexRef}
             type="number"
@@ -432,7 +389,6 @@ function LighterManualTradingFields({
             step={1}
             inputMode="numeric"
             autoComplete="off"
-            className="h-10 w-full border border-line-input bg-surface-field px-3 text-sm text-ink-primary outline-none focus-visible:border-accent-primary"
           />
         </div>
         <div className="space-y-1.5">
@@ -442,7 +398,7 @@ function LighterManualTradingFields({
           >
             API-key index
           </Label>
-          <input
+          <Input
             id={`${prefix}-api-key-index`}
             ref={apiKeyIndexRef}
             type="number"
@@ -451,7 +407,6 @@ function LighterManualTradingFields({
             step={1}
             inputMode="numeric"
             autoComplete="off"
-            className="h-10 w-full border border-line-input bg-surface-field px-3 text-sm text-ink-primary outline-none focus-visible:border-accent-primary"
           />
         </div>
       </div>
@@ -465,17 +420,17 @@ function LighterManualTradingFields({
       />
       <label
         htmlFor={`${prefix}-remove`}
-        className="flex items-start gap-2 text-xs text-ink-secondary"
+        className="flex items-start gap-2 text-[13px] text-ink-secondary"
       >
         <input
           id={`${prefix}-remove`}
           ref={removeRef}
           type="checkbox"
-          className="mt-0.5 h-4 w-4 border-line-input bg-transparent"
+          className="mt-0.5 h-4 w-4 border-line-input bg-transparent accent-accent-primary"
         />
         Remove the manually imported trading key for this account/API-key scope.
       </label>
-      <p className="text-xs text-ink-secondary">
+      <p className="vex-wz-hint">
         {managed
           ? "Vex-managed registered keys cannot be replaced or removed here. These controls are only for a different externally managed scope."
           : configured

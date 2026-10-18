@@ -1076,12 +1076,13 @@ describe("StudioWorkspaceController terminal disposal", () => {
 });
 
 describe("StudioWorkspaceController surface", () => {
-  it("places the brand mark in the header outside terminal glyphs", async () => {
+  it("places the flat vx disc in the header outside terminal glyphs", async () => {
     const { container } = await renderOpened();
 
-    const mark = container.querySelector("[data-vex-terminal-header] svg.text-brand-mark");
-    expect(mark).not.toBeNull();
-    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    const token = container.querySelector("[data-vex-terminal-header] [data-vex-vx-token]");
+    expect(token).not.toBeNull();
+    expect(token?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector("svg.text-brand-mark")).toBeNull();
   });
 });
 
@@ -2037,15 +2038,17 @@ describe("file tabs across a restart", () => {
 });
 
 describe("the workspace sheet", () => {
-  it("is a square sheet inset from a column that paints nothing, with no glass tier", async () => {
+  it("draws no box: edge to edge on a column that paints nothing, with no glass tier", async () => {
     await renderOpened();
     const card = document.querySelector("[data-vex-workspace-card]");
     expect(card).not.toBeNull();
-    // The column keeps the paper: the strip sits on it and the field body of
-    // the tab set is the only filled surface (docs/design/V10-SPREAD.md
-    // section 1), inset 12px from the rail and the BOOK.
+    // The column keeps the paper: the strip and the pane head sit on it under
+    // a quiet rule each, and only the terminal panes are the field
+    // (docs/design/R3-MINIMAL.md section 9.5). No inset from the column's
+    // edges, no frame, no fill.
     expect(card?.className).not.toMatch(/\bbg-/);
-    expect(card?.className).toContain("px-3");
+    expect(card?.className).not.toMatch(/(?<![\w-])p[xytblr]?-/);
+    expect(card?.className).not.toMatch(/(?<![\w-])border/);
     const pane = card?.firstElementChild;
     expect(pane?.className).not.toContain("vex-glass");
     expect(pane?.className).not.toMatch(/\brounded/);

@@ -1,11 +1,12 @@
 /**
- * ASK VEX - the board modal's right-side question panel (product spec item 5).
+ * ASK VEX - the Board page's question block, in the Vex sidebar under Needs
+ * you (docs/design/R3-MINIMAL.md sections 5.1 and 9.4; product spec item 5).
  *
- * WHAT THE READER SEES: the token this question is about as a VISIBLE context
- * chip ("UBERCAT · Base · snapshot 11:11 UTC"), four quick questions that
- * PRE-FILL an editable field, and a Send that hands the finished question to
- * the chat. The answer lands in the main transcript, and the modal may stay
- * open while it does.
+ * WHAT THE READER SEES: the head "Ask Vex about this token", the token this
+ * question is about as a VISIBLE context chip ("UBERCAT · Base · snapshot
+ * 11:11 UTC"), four quick questions that PRE-FILL an editable field, and a
+ * Send that hands the finished question to the chat. The answer lands in the
+ * main transcript, and the page may stay open while it does.
  *
  * THE CHIP IS NOT DECORATION. The same facts it shows are interpolated into
  * the message text by {@link buildBoardAskMessage} before anything is sent, so
@@ -26,8 +27,11 @@
 
 import { useMemo, useState, type JSX } from "react";
 import { chainDisplayBySlug } from "@shared/chains/display.js";
-import { PxIcon } from "../../../components/icons/index.js";
-import { cn } from "../../../lib/utils.js";
+import {
+  LineChevronRight,
+  LineClose,
+  LineSpark,
+} from "../../../components/icons/line/index.js";
 import {
   boardLiveReadout,
   isBoardLiveHeld,
@@ -51,6 +55,9 @@ import { buildBoardViewModel } from "./boardModel.js";
 
 /** What the panel says after a question has been handed to the chat. */
 export const BOARD_ASK_SENT_NOTICE = "Sent to the chat. The answer appears there.";
+
+/** The block's head in the Vex sidebar, the design's words. */
+export const BOARD_ASK_HEADING = "Ask Vex about this token";
 
 /** What the chip says when the board carries no pool at this index. */
 const BOARD_ASK_NO_TOKEN = "No token selected";
@@ -126,37 +133,31 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
   return (
     <section
       data-vex-area="board-ask-panel"
-      aria-label={`Ask VEX about ${symbol ?? "this board"}`}
-      className="flex h-full min-h-0 flex-col gap-3 pt-6"
+      aria-label={`Ask Vex about ${symbol ?? "this board"}`}
+      className="vex-bd-ask"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-mono text-[11px] uppercase leading-[20px] tracking-[0.14em] text-ink-primary">
-            Ask VEX
-          </p>
-          <p className="mt-0.5 text-[12px] leading-[16px] text-ink-tertiary">
-            The answer lands in the chat behind this board.
-          </p>
-        </div>
+      <div className="vex-bd-ask__top">
+        <h3 className="vex-bd-ask__h">{BOARD_ASK_HEADING}</h3>
         <button
           type="button"
           data-vex-area="board-ask-close"
-          aria-label="Close the Ask VEX panel"
+          aria-label="Close Ask Vex"
           onClick={() => {
             setBoardAskOpen(false);
           }}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-ink-tertiary hover:bg-interactive-active hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="vex-bd-key vex-bd-ask__close"
         >
-          <PxIcon name="close" size={16} />
+          <LineClose size={14} />
         </button>
       </div>
+      <p className="vex-bd-ask__note">The answer lands in the chat behind this board.</p>
 
       {/* THE CONTEXT CHIP. Visible, and identical in substance to the header
         * of the message that gets sent. */}
       <p
         data-vex-area="board-ask-context"
         data-live={held ? "true" : "false"}
-        className="truncate border border-rule bg-surface-2 px-2.5 py-1.5 text-[12px] font-medium leading-[16px] text-ink-secondary"
+        className="vex-bd-ask__ctx"
         title={chipLabel}
       >
         {chipLabel}
@@ -164,7 +165,7 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
 
       <div
         data-vex-area="board-ask-quick"
-        className="flex flex-col gap-1.5"
+        className="vex-bd-ask__quick"
         role="group"
         aria-label="Quick questions"
       >
@@ -175,33 +176,29 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
             data-vex-area="board-ask-quick-question"
             onClick={() => {
               // PRE-FILL, never send: the reader edits before anything leaves
-              // this panel.
+              // this block.
               setDraft(quick);
               setSent(false);
             }}
-            className="border border-rule px-2.5 py-1.5 text-left text-[12.5px] leading-[17px] text-ink-secondary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+            className="vex-bd-ask__q"
           >
+            <LineChevronRight size={14} />
             {quick}
           </button>
         ))}
       </div>
 
-      <label
-        className="flex min-h-0 flex-1 flex-col gap-1.5"
-        data-vex-area="board-ask-field"
-      >
-        <span className="vex-micro-label uppercase text-ink-secondary">
-          Your question
-        </span>
+      <label data-vex-area="board-ask-field">
+        <span className="sr-only">Your question</span>
         <textarea
           value={draft}
           onChange={(event) => {
             setDraft(event.target.value);
             setSent(false);
           }}
-          rows={4}
+          rows={2}
           placeholder="Ask about this token"
-          className="min-h-[96px] w-full resize-y border border-rule bg-surface-2 px-2.5 py-2 text-[13px] leading-[18px] text-ink-primary placeholder:text-ink-dimmed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="vex-bd-ask__field"
         />
       </label>
 
@@ -210,24 +207,15 @@ export function AskVexPanel({ board, poolIndex }: BoardAskSlotProps): JSX.Elemen
         data-vex-area="board-ask-send"
         disabled={!canSend}
         onClick={onSend}
-        className={cn(
-          "inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[13px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
-          canSend
-            ? "bg-button-accent text-ink-on-button-accent hover:bg-button-accent-hover"
-            : "cursor-not-allowed border border-rule text-ink-dimmed",
-        )}
+        className="vex-bd-ask__send"
       >
-        <PxIcon name="models" size={16} />
+        <LineSpark size={16} />
         Send to chat
       </button>
 
       {/* The confirmation is spoken as well as shown: the transcript this
-        * question landed in is behind the modal, out of the reader's view. */}
-      <p
-        data-vex-area="board-ask-sent"
-        aria-live="polite"
-        className="min-h-[16px] text-[12px] leading-[16px] text-ink-tertiary"
-      >
+        * question landed in is behind the page, out of the reader's view. */}
+      <p data-vex-area="board-ask-sent" aria-live="polite" className="vex-bd-ask__sent">
         {sent ? BOARD_ASK_SENT_NOTICE : ""}
       </p>
     </section>

@@ -112,13 +112,32 @@ describe("board surface tokens", () => {
     expect(source).not.toContain("box-shadow");
   });
 
-  it("paints the sheet and the selected tile square, from aliases", () => {
-    expect(ruleBody(boardCss, ".vex-board-dialog")).toContain(
+  it("paints the page and the selected tile square, from aliases", () => {
+    // The Board is a page in the centre column (docs/design/R3-MINIMAL.md
+    // section 9.4): the page body sits on the board paper alias.
+    expect(ruleBody(boardCss, ".vex-bd")).toContain(
       "background-color: var(--vex-alias-board-surface)",
     );
+    // The selected tile: a 1.5px blue outline drawn inside the tile.
     const frame = ruleBody(boardCss, '.vex-board-card[data-selected="true"]');
-    expect(frame).toContain("1.5px solid var(--vex-alias-rule-ink)");
+    expect(frame).toContain("1.5px solid var(--vex-alias-accent-primary)");
+    expect(frame).toContain("outline-offset: -1.5px");
     expect(stripComments(boardCss)).not.toMatch(/border-radius/);
+  });
+
+  it("asks the sheet for the whole centre and the page padding, 20 28", () => {
+    const page = ruleBody(boardCss, ".vex-ov:has(.vex-bd)");
+    expect(page).toContain("--vex-ov-max: none");
+    expect(page).toContain("--vex-ov-pad: 28px");
+    expect(page).toContain("--vex-ov-top: 20px");
+  });
+
+  it("draws the shared chip pressed in the one blue, never a hue of its own", () => {
+    // The pressed list ends with the data seam: aria-pressed, aria-checked, data-on.
+    const pressed = ruleBody(boardCss, '.vex-bd-chip[data-on="true"]');
+    expect(boardCss).toContain('.vex-bd-chip[aria-pressed="true"],');
+    expect(pressed).toContain("var(--vex-alias-accent-primary)");
+    expect(ruleBody(boardCss, ".vex-bd-chip")).toContain("height: 26px");
   });
 
   it("keeps the candle colours out of the Board stylesheets", () => {

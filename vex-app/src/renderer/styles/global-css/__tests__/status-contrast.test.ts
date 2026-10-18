@@ -16,9 +16,11 @@
  * is the binding surface: it moves the backdrop toward the ink.
  *
  * The reversed chrome plate (tooltip, hover card, toast, connection banner)
- * is measured with its own ink in both themes. The last block measures the
- * REAL FUNDS approval card's keys, its ink frame and its reversed stamp: the
- * one card that moves money must read in every state a hand can put it in.
+ * is measured with its own ink in both themes. The REAL FUNDS block measures
+ * the approval card's keys, its ink frame and its reversed stamp: the one
+ * card that moves money must read in every state a hand can put it in. The
+ * last block measures the trading pair (docs/design/R3-MINIMAL.md section 1),
+ * a value colour on trading figures only and never a status.
  *
  * Deliberately OUT of scope: the sixteen `--vex-alias-term-*` ANSI slots, a
  * wire contract owned by `terminal-palette-tokens.test.ts`.
@@ -148,6 +150,10 @@ describe("the resolver (load-bearing)", () => {
     expect(resolveHex([chronos, celeris], "--vex-alias-state-success")).toBe("#0a0d18");
     expect(resolveHex([chronos, celeris], "--vex-alias-state-error")).toBe("#0a0d18");
     expect(resolveHex([chronos, celeris], "--vex-alias-composer")).toBe("#ffffff");
+    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#4cd685");
+    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7b7b");
+    expect(resolveHex([chronos, celeris], "--vex-alias-trade-up")).toBe("#10763a");
+    expect(resolveHex([chronos, celeris], "--vex-alias-trade-down")).toBe("#c2272e");
   });
 });
 
@@ -281,7 +287,7 @@ describe("every text tier reads on every surface it sits on", () => {
 
 /**
  * The REAL FUNDS card's keys (ApprovalCard/ApprovalDecisionActions.tsx,
- * docs/design/V10-SPREAD.md section 7). Approve is the one blue fill with its
+ * docs/design/R3-MINIMAL.md section 8.2). Approve is the one blue fill with its
  * own ink; Reject is the ink key, an ink outline on the card's paper that
  * fills with ink on hover. Every state a hand can put either key in must carry
  * its label at AA body contrast, in both rooms.
@@ -316,6 +322,44 @@ describe("REAL FUNDS key contrast", () => {
       expect(
         ratio(theme.blocks, "--vex-alias-label-on-primary", "--vex-alias-rule-ink"),
       ).toBeGreaterThanOrEqual(AA_BODY);
+    });
+  }
+});
+
+/**
+ * THE TRADING PAIR (docs/design/R3-MINIMAL.md section 1): up and down on
+ * trading values only (a signed uPnL, Long and Short, bids and asks). It
+ * reads as text on every ground text sits on, carries the ink of a solid
+ * Long or Short key, and is never a status: no state ink resolves to it, so
+ * a state keeps its fill and its word.
+ */
+const TRADE_INKS = ["--vex-alias-trade-up", "--vex-alias-trade-down"] as const;
+
+describe("the trading pair", () => {
+  for (const theme of THEMES) {
+    for (const ink of TRADE_INKS) {
+      it(`${theme.name}: ${ink} clears ${AA_BODY}:1 on every surface`, () => {
+        const failures = TEXT_GROUNDS.map((ground) => [ground, ratio(theme.blocks, ink, ground)] as const)
+          .filter(([, value]) => value < AA_BODY)
+          .map(([ground, value]) => `${ground} ${value}:1`);
+        expect(failures, `${ink} in ${theme.name}`).toEqual([]);
+      });
+
+      it(`${theme.name}: a solid ${ink} key carries its label at ${AA_BODY}:1`, () => {
+        expect(
+          ratio(theme.blocks, "--vex-alias-trade-ink", ink),
+          `--vex-alias-trade-ink on ${ink} in ${theme.name}`,
+        ).toBeGreaterThanOrEqual(AA_BODY);
+      });
+    }
+
+    it(`${theme.name}: no status ink is a trading colour`, () => {
+      const trade = new Set(TRADE_INKS.map((ink) => resolveHex(theme.blocks, ink)));
+      for (const family of FAMILIES) {
+        for (const ink of family.ink) {
+          expect(trade.has(resolveHex(theme.blocks, ink)), `${ink} in ${theme.name}`).toBe(false);
+        }
+      }
     });
   }
 });

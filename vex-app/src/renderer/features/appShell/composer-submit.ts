@@ -409,11 +409,12 @@ export function useComposerSubmit(
 
   const runStatus = readRunStatus(runtimeQuery.data);
   const freeTextGate = runStatus !== null && FREE_TEXT_DISALLOWED.has(runStatus);
-  // Approval echo — a mission run parked for approval reaches the composer as
-  // `runStatus === "paused_approval"` (already in FREE_TEXT_DISALLOWED, so the
-  // input is frozen). No new plumbing: this same signal recolors the pill's
-  // traveling shimmer + border amber (via `data-vex-console-state`) and floats
-  // the "AWAITING SIGNATURE" tag above the pill.
+  // Approval echo, the RUN half: a mission run parked for approval reaches
+  // the composer as `runStatus === "paused_approval"` (already in
+  // FREE_TEXT_DISALLOWED, so the input is frozen). An agent chat's approval
+  // never parks a mission run, so `SessionComposer` joins the session's own
+  // pending approvals (passed down by `SessionPanel`) to this signal before
+  // it draws the "Waiting for approval" frame.
   const awaitingApproval = runStatus === "paused_approval";
 
   /**
@@ -479,7 +480,8 @@ export function useComposerSubmit(
       if (isLighterWorkspaceCommand(typed)) {
         setDraft("");
         setNotice(null);
-        enterLighterMode();
+        // Typed in a conversation: the desk opens with its chat showing.
+        enterLighterMode({ openChat: true });
         return;
       }
       // On the Lighter desk a typed message carries the desk's scope, so

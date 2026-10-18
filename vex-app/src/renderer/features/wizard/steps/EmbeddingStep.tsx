@@ -1,5 +1,5 @@
 /**
- * Wizard Step 4 — Embedding configuration (M9; PR6 redesign — glass).
+ * Wizard Step 4 - Embedding configuration (M9; PR6 redesign - glass).
  *
  * Skip-card when `envState.embeddings.allFieldsConfigured` is true.
  * Otherwise: form with the 4 EMBEDDING_* fields. URL is validated
@@ -21,7 +21,7 @@
  * called per-tool invocation in the engine (no agent restart needed
  * for embeddings).
  *
- * Chrome lives in `WizardStepPanel` — `data-vex-wizard-embedding`
+ * Chrome lives in `WizardStepPanel` - `data-vex-wizard-embedding`
  * forwarded onto the panel root.
  *
  * Presentational subcomponents (skip card, warning panels, fields,
@@ -42,7 +42,6 @@ import {
   type WizardStepId,
 } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
-import { cn } from "../../../lib/utils.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useEmbeddingConfigure } from "../../../lib/api/embedding.js";
@@ -50,7 +49,6 @@ import {
   useStepAdvance,
   type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
-import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import {
   narrowDimLockDetails,
@@ -89,8 +87,8 @@ export function EmbeddingStep({
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [showOverride, setShowOverride] = useState(false);
 
-  const embeddingsState =
-    envQuery.data?.ok === true ? envQuery.data.data.embeddings : null;
+  const env = envQuery.data?.ok === true ? envQuery.data.data : null;
+  const embeddingsState = env?.embeddings ?? null;
   const allConfigured = embeddingsState?.allFieldsConfigured ?? false;
 
   const advanceToAgentCore = useCallback(async () => {
@@ -136,12 +134,10 @@ export function EmbeddingStep({
     [form, configure, advanceToAgentCore],
   );
 
-  const meta = WIZARD_STEP_META.embedding;
-
   if (allConfigured && !showOverride) {
     return (
       <EmbeddingSkipCard
-        icon={meta.icon}
+        env={env}
         embeddingsState={embeddingsState}
         flowMode={flowMode}
         isPending={stepAdvance.isPending}
@@ -165,8 +161,8 @@ export function EmbeddingStep({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "embedding", value: "form" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={env}
       title="Embedding configuration"
       description={
         <>
@@ -189,7 +185,7 @@ export function EmbeddingStep({
           {showConfigureLater ? (
             <Button
               type="button"
-              variant="bare"
+              variant="quiet"
               onClick={() => {
                 void advanceToAgentCore();
               }}
@@ -214,15 +210,12 @@ export function EmbeddingStep({
         </>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="vex-wz-stack">
         {showConfigureLater ? (
           <p
             role="status"
             data-vex-embedding-configure-later-alert
-            className={cn(
-              "py-0.5 text-sm text-warning",
-              RAIL_WARNING_CHROME,
-            )}
+            className={RAIL_WARNING_CHROME}
           >
             Without an embedding endpoint, long-term memory and semantic
             search stay unavailable until you configure one. You can set this

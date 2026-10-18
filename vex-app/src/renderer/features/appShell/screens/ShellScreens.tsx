@@ -1,9 +1,10 @@
 /**
- * ShellScreens — the AppShell-mounted host for the full-app overlay screens
- * (Chronos screens redesign, 2026-07-20; atomic `shellRoute` since the
- * token-history round). Reads `uiStore.shellRoute`, mounts the matching
- * screen inside `AnimatePresence` (so the ShellScreen exit animation
- * actually plays), and owns the single close path:
+ * ShellScreens - the AppShell-mounted host for the pages (atomic `shellRoute`
+ * since the token-history round). The shell mounts it INSIDE the centre
+ * column, so every page sits between the two sidebars, which stay standing
+ * (docs/design/R3-MINIMAL.md section 2.3). Reads `uiStore.shellRoute`, mounts
+ * the matching screen inside `AnimatePresence` (so the ShellScreen exit
+ * animation actually plays), and owns the single close path:
  *
  *  - every screen closes back to `{ kind: "none" }`,
  *  - EXCEPT a token-history screen opened FROM the All-assets screen
@@ -33,6 +34,9 @@ import { AgentScanScreen } from "./AgentScanScreen.js";
 import { AssetsScreen } from "./AssetsScreen.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { TokenHistoryScreen } from "./TokenHistoryScreen.js";
+import { PortfolioScreen } from "./PortfolioScreen.js";
+import { BoardScreen } from "./BoardScreen.js";
+import { NeedsYouScreen } from "./NeedsYouScreen.js";
 
 export function ShellScreens(): JSX.Element {
   const route = useUiStore((s) => s.shellRoute);
@@ -81,6 +85,17 @@ export function ShellScreens(): JSX.Element {
           key="settings"
           origin={route.origin}
           section={route.section}
+          onClose={close}
+        />
+      ) : route.kind === "portfolio" ? (
+        <PortfolioScreen key="portfolio" origin={route.origin} onClose={close} />
+      ) : route.kind === "board" ? (
+        <BoardScreen key="board" origin={route.origin} onClose={close} />
+      ) : route.kind === "needsYou" ? (
+        <NeedsYouScreen
+          key="needsYou"
+          origin={route.origin}
+          approvalId={route.approvalId ?? null}
           onClose={close}
         />
       ) : route.kind === "tokenHistory" ? (

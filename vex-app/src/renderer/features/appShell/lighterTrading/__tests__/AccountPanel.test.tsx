@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
 import type { OrderCancelStage, PositionCloseStage } from "../account-model.js";
@@ -84,8 +84,8 @@ describe("TradingBottomPanel", () => {
     expect(mocks.useAccount).toHaveBeenLastCalledWith("rhc", true, "11111111-1111-4111-8111-111111111111");
     expect(screen.getAllByRole("tab").map((item) => item.textContent)).toEqual([
       "Positions",
-      "Open Orders",
-      "Trade History",
+      "Open orders",
+      "Trade history",
       "Assets",
     ]);
     const positionsTab = screen.getByRole("tab", { name: /^Positions/ });
@@ -95,19 +95,19 @@ describe("TradingBottomPanel", () => {
     expect(positionsPanel.id).toBe("lit-bottom-panel-positions");
     expect(positionsPanel.getAttribute("aria-labelledby")).toBe("lit-bottom-tab-positions");
 
-    const ordersTab = screen.getByRole("tab", { name: /^Open Orders/ });
+    const ordersTab = screen.getByRole("tab", { name: /^Open orders/ });
     fireEvent.click(ordersTab);
     expect(ordersTab.getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tabpanel", { name: /^Open Orders/ }).id).toBe("lit-bottom-panel-orders");
-    expect(screen.getByRole("tabpanel", { name: /^Open Orders/ }).getAttribute("aria-labelledby")).toBe("lit-bottom-tab-orders");
+    expect(screen.getByRole("tabpanel", { name: /^Open orders/ }).id).toBe("lit-bottom-panel-orders");
+    expect(screen.getByRole("tabpanel", { name: /^Open orders/ }).getAttribute("aria-labelledby")).toBe("lit-bottom-tab-orders");
   });
 
   it("moves across account tabs with arrow keys", () => {
     renderPanel();
     const positionsTab = screen.getByRole("tab", { name: /^Positions/ });
     fireEvent.keyDown(positionsTab, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: /^Open Orders/ }).getAttribute("aria-selected")).toBe("true");
-    fireEvent.keyDown(screen.getByRole("tab", { name: /^Open Orders/ }), { key: "End" });
+    expect(screen.getByRole("tab", { name: /^Open orders/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("tab", { name: /^Open orders/ }), { key: "End" });
     expect(screen.getByRole("tab", { name: /^Assets/ }).getAttribute("aria-selected")).toBe("true");
   });
 
@@ -115,11 +115,36 @@ describe("TradingBottomPanel", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: EMPTY_ACCOUNT } }));
     const view = render(panel({ collapsed: true }));
     const strip = screen.getByLabelText("Account risk");
-    expect(strip.textContent).toBe("Equity1,213.25 USDGAvbl800.25 USDGuPnL+12.75 USDG (+3.19%)Margin400.25 USDG33%");
-    expect(screen.getByRole("meter", { name: "Margin usage" }).getAttribute("aria-valuenow")).toBe("33");
+    expect(strip.textContent).toBe("Equity1,213.25 USDGAvailable800.25 USDGUnrealized PnL+12.75 USDG (+3.19%)Margin400.25 USDG33%");
+    const meter = screen.getByRole("meter", { name: "Margin usage" });
+    expect(meter.getAttribute("aria-valuenow")).toBe("33");
+    expect(meter.getAttribute("data-level")).toBe("low");
+    // The kit's ten cell meter: Math.round(0.33 * 10) = 3 cells are on.
+    expect(meter.querySelectorAll("i")).toHaveLength(10);
+    expect(meter.querySelectorAll("i[data-on]")).toHaveLength(3);
+    // The Unrealized PnL (with its ROE) is the one figure that takes the trading pair, by sign.
+    expect(screen.getByText("Unrealized PnL").nextElementSibling?.getAttribute("data-tone")).toBe("positive");
+    expect(screen.getByText("Equity").nextElementSibling?.hasAttribute("data-tone")).toBe(false);
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: { ...EMPTY_ACCOUNT, status: "unavailable", unavailableReason: "locked_vault", summary: null } } }));
     view.rerender(panel({ collapsed: true }));
     expect(screen.queryByLabelText("Account risk")).toBeNull();
+  });
+
+  it("fills the meter to the tenth and turns its cells ink past 80%", () => {
+    // 1,100.5 of 1,200.5 collateral is held: Math.round(0.917 * 10) = 9 cells.
+    const heavy: LighterTradingAccount = {
+      ...EMPTY_ACCOUNT,
+      summary: { collateral: "1200.5", availableBalance: "100", unrealizedPnl: "-5" },
+    };
+    mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: heavy } }));
+    render(panel({ collapsed: true }));
+    const meter = screen.getByRole("meter", { name: "Margin usage" });
+    expect(meter.getAttribute("data-level")).toBe("high");
+    expect(meter.getAttribute("aria-valuenow")).toBe("92");
+    expect(meter.querySelectorAll("i")).toHaveLength(10);
+    expect(meter.querySelectorAll("i[data-on]")).toHaveLength(9);
+    // A losing account reads down in the trading pair, by the same tone attribute.
+    expect(screen.getByText("Unrealized PnL").nextElementSibling?.getAttribute("data-tone")).toBe("negative");
   });
 
   it("keeps the account read paused while the desk is closed", () => {
@@ -229,7 +254,7 @@ describe("TradingBottomPanel", () => {
     renderPanel();
 
     expect(screen.getByText("No open positions.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders/ }));
     expect(screen.getByText("No open orders.")).toBeTruthy();
   });
 
@@ -280,7 +305,7 @@ describe("TradingBottomPanel", () => {
     };
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
     render(panel({ cancellingOrders: new Map([["1:order-1", "checking"]]) }));
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders ?\(2\)$/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders ?2$/ }));
 
     const pending = screen.getByRole("button", { name: "Cancel BTC order order-1" }) as HTMLButtonElement;
     const other = screen.getByRole("button", { name: "Cancel BTC order order-2" }) as HTMLButtonElement;
@@ -296,7 +321,7 @@ describe("TradingBottomPanel", () => {
   it("keeps cancellation controls disabled when the approved order set has disappeared but its card is still pending", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: { ...EMPTY_ACCOUNT, openOrders: [limitOrder({ orderId: "later-order" })] } } }));
     render(panel({ cancelAllPending: true }));
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders/ }));
     const cancelAll = screen.getByRole("button", { name: "Cancel all" });
     const cancel = screen.getByRole("button", { name: "Cancel BTC order later-order" });
     expect(cancelAll.hasAttribute("disabled")).toBe(true);
@@ -342,7 +367,7 @@ describe("TradingBottomPanel", () => {
     renderPanel();
     expect(mocks.useFills).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^Trade History/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Trade history/ }));
     expect(mocks.useFills).toHaveBeenLastCalledWith("rhc", true, "11111111-1111-4111-8111-111111111111");
     const table = screen.getByRole("table", { name: "Recent Lighter fills" });
     expect(table.textContent).toContain("ETH");
@@ -350,6 +375,9 @@ describe("TradingBottomPanel", () => {
     expect(table.textContent).toContain("Sell");
     expect(table.textContent).toContain("3,200.5");
     expect(table.textContent).toContain("-12.5");
+    // Sell and a realized loss are trading values: each carries its tone for the trading pair.
+    expect(within(table).getByText("Sell").getAttribute("data-tone")).toBe("negative");
+    expect(within(table).getByText("-12.5").getAttribute("data-tone")).toBe("negative");
     expect(screen.getByRole("note").textContent).toContain("older activity is not loaded");
 
     mocks.useFills.mockReturnValue({
@@ -359,7 +387,7 @@ describe("TradingBottomPanel", () => {
       data: { ok: true, data: { environment: "rhc", retrievedAt: 1, accountIndex: 42, available: false, truncated: false, fills: [] } },
     });
     fireEvent.click(screen.getByRole("tab", { name: /^Assets/ }));
-    fireEvent.click(screen.getByRole("tab", { name: /^Trade History/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Trade history/ }));
     expect(screen.getByText(/Fills are unavailable/)).toBeTruthy();
   });
 
@@ -412,8 +440,14 @@ describe("TradingBottomPanel", () => {
     }));
     renderPanel();
 
-    expect(screen.getByRole("tab", { name: /^Positions ?\(1\)$/ })).toBeTruthy();
-    expect(screen.getByText("Long · 10x Cross")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /^Positions ?1$/ })).toBeTruthy();
+    // The side word is its own element, the only part of the line in the trading pair.
+    const sideWord = screen.getByText("Long");
+    expect(sideWord.getAttribute("data-trade")).toBe("up");
+    expect(sideWord.closest("small")?.textContent).toBe("Long · 10x Cross");
+    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Market", "Size", "Entry", "Mark", "Liq. price", "Margin", "uPnL (ROE)", "TP / SL", "Actions",
+    ]);
     expect(screen.getByText("41,000.0")).toBeTruthy();
     expect(screen.getByText("Account #42 · " + formatRetrievedAt(EMPTY_ACCOUNT.retrievedAt))).toBeTruthy();
     // Live mark for the desk's market at its price decimals; margin and ROE
@@ -421,12 +455,18 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByTitle("Live mark").textContent).toBe("64,100.0");
     expect(screen.getByText("of 16,000")).toBeTruthy();
     expect(screen.getByText("+0.8%")).toBeTruthy();
+    // The uPnL cell carries its sign as the tone the trading pair paints, figure and ROE together.
+    expect(screen.getByText("+0.8%").closest('[role="cell"]')?.getAttribute("data-tone")).toBe("positive");
     // A plain resting limit is not protection: TP / SL stay empty.
     const tpSl = screen.getAllByRole("cell")[7];
     expect(tpSl?.querySelector("b")?.textContent).toBe("--");
     expect(tpSl?.querySelector("small")?.textContent).toBe("--");
+    expect(tpSl?.querySelector("b")?.hasAttribute("data-empty")).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Review BTC position with Vex" }));
+    // The key says "Ask Vex"; its accessible name still says what it asks about.
+    const askKey = screen.getByRole("button", { name: "Review BTC position with Vex" });
+    expect(askKey.textContent).toBe("Ask Vex");
+    fireEvent.click(askKey);
     expect(mocks.actions.onReviewPosition).toHaveBeenCalledWith(account.positions[0]);
     // The row's one close key opens the card; it decides nothing by itself.
     fireEvent.click(screen.getByRole("button", { name: "Close BTC position" }));
@@ -445,11 +485,12 @@ describe("TradingBottomPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set stop loss and take profit for BTC" }));
     expect(mocks.actions.onProtectPosition).toHaveBeenCalledWith(account.positions[0]);
 
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders ?\(1\)$/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders ?1$/ }));
     expect(screen.getByText("0.1")).toBeTruthy();
     expect(screen.getByText("Open")).toBeTruthy();
     expect(screen.getByText("GTC")).toBeTruthy();
     expect(screen.getByText("Filled 0.15 / 0.25")).toBeTruthy();
+    expect(screen.getByText("Sell").getAttribute("data-tone")).toBe("negative");
     fireEvent.click(screen.getByRole("button", { name: "Cancel BTC order order-1" }));
     expect(mocks.actions.onCancelOrder).toHaveBeenCalledWith(account.openOrders[0]);
     fireEvent.click(screen.getByRole("button", { name: "Cancel all" }));
@@ -457,13 +498,19 @@ describe("TradingBottomPanel", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Assets" }));
     expect(screen.getByText("USDG")).toBeTruthy();
-    expect(screen.getByText("Collateral").nextElementSibling?.textContent).toBe("1,200.5 USDG");
-    expect(screen.getByText("Available").nextElementSibling?.textContent).toBe("800.25 USDG");
-    expect(screen.getByText("Unrealized PnL").nextElementSibling?.textContent).toBe("12.75 USDG");
+    // The dock header's summary line says Available and Unrealized PnL too, so the tab is asked on its own.
+    const assets = within(screen.getByRole("tabpanel"));
+    expect(assets.getByText("Collateral").nextElementSibling?.textContent).toBe("1,200.5 USDG");
+    expect(assets.getByText("Available").nextElementSibling?.textContent).toBe("800.25 USDG");
+    const pnl = assets.getByText("Unrealized PnL").nextElementSibling;
+    expect(pnl?.textContent).toBe("12.75 USDG");
+    expect(pnl?.getAttribute("data-tone")).toBe("positive");
     expect(screen.getByText(/800\.25 available/)).toBeTruthy();
     const meter = screen.getByRole("meter", { name: "Margin in use" });
     expect(meter.getAttribute("aria-valuenow")).toBe("33");
     expect(meter.getAttribute("data-level")).toBe("low");
+    expect(meter.querySelectorAll("i")).toHaveLength(10);
+    expect(meter.querySelectorAll("i[data-on]")).toHaveLength(3);
     expect(screen.getByText("33.3%")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Deposit" }));
     expect(mocks.actions.onFund).toHaveBeenCalledWith("deposit");
@@ -477,7 +524,7 @@ describe("TradingBottomPanel", () => {
     }));
     renderPanel();
 
-    const ordersTab = screen.getByRole("tab", { name: /^Open Orders$/ });
+    const ordersTab = screen.getByRole("tab", { name: /^Open orders$/ });
     expect(ordersTab.querySelector("i")).toBeNull();
     fireEvent.click(ordersTab);
     expect(screen.getByText(/Open orders are unavailable: unlock your vault/)).toBeTruthy();
@@ -489,7 +536,7 @@ describe("TradingBottomPanel", () => {
     }));
     renderPanel();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders$/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders$/ }));
     expect(screen.getByText(/could not be loaded from Lighter/)).toBeTruthy();
     expect(screen.queryByText(/unlock your vault/)).toBeNull();
   });
@@ -505,7 +552,7 @@ describe("TradingBottomPanel", () => {
     }));
     const view = renderPanel();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders ?\(1\)$/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders ?1$/ }));
     expect(screen.getByText("Refreshing…")).toBeTruthy();
     expect(screen.getByText("Limit")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(true);
@@ -577,7 +624,7 @@ describe("TradingBottomPanel", () => {
     mocks.useAccount.mockReturnValue(query({ data: { ok: true, data: account } }));
     renderPanel();
 
-    fireEvent.click(screen.getByRole("tab", { name: /^Open Orders ?\(3\+\)$/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Open orders ?3\+$/ }));
 
     expect(screen.getByText("Limit")).toBeTruthy();
     expect(screen.getByText("Stop-loss limit")).toBeTruthy();

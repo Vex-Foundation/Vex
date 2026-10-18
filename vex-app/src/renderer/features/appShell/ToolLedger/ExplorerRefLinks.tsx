@@ -8,7 +8,9 @@
  * line and shows at most `VISIBLE_REF_CAP` chips, the rest behind a `+N more`
  * toggle that smoothly opens a second line under the row (the shared
  * `ExpandRegion` primitive) - display-only, every link keeps its distinct
- * `aria-label` whether it is currently visible or not.
+ * `aria-label` whether it is currently visible or not. Drawn as the step's
+ * links line: 13 / 500 in the blue, 20 in from the row
+ * (docs/design/R3-MINIMAL.md section 6).
  *
  * The link is passive: `target="_blank"` never opens a child window — main's
  * `setWindowOpenHandler` denies the popup and routes allow-listed explorer
@@ -18,9 +20,7 @@
  */
 
 import { useId, useRef, useState, type JSX } from "react";
-import {
-  IconArrowUpRight,
-} from "../../../components/icons/index.js";
+import { LineExternal } from "../../../components/icons/line/index.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
 import type { ExplorerRef } from "@shared/schemas/messages.js";
@@ -77,7 +77,7 @@ export function ExplorerRefLinks({
     // Own line, never a wrapping sibling of a header row: as a flex-wrap
     // neighbour of the act header the chip block crushed the title and folded
     // onto its own line anyway, detached from its owner.
-    <div data-vex-explorer-refs="">
+    <div data-vex-explorer-refs="" className="vex-step__links">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {visible.map((ref, index) => (
           <RefChip key={`${index}-${ref.url}`} chip={ref} />
@@ -89,7 +89,7 @@ export function ExplorerRefLinks({
             aria-expanded={expanded}
             aria-controls={overflowId}
             onClick={() => setExpanded((v) => !v)}
-            className="inline-flex shrink-0 items-center font-mono text-[10px] uppercase tracking-[0.08em] text-accent-primary transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="vex-step-link"
           >
             {expanded ? "less" : `+${overflow} more`}
           </button>
@@ -125,14 +125,12 @@ function RefChip({ chip }: { readonly chip: ResolvedRef }): JSX.Element {
       target="_blank"
       rel="noopener noreferrer"
       aria-label={chip.ariaLabel}
-      // 10px is the repo's mono floor (the act header's own microtype); the
-      // old 9px with 0.14em tracking on uppercase digits is what read as
-      // unformatted. Tracking comes down with it - letter-spacing isolates
-      // already-sparse glyphs rather than helping them.
-      className="inline-flex shrink-0 items-center gap-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-accent-primary transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      // A blue link in the sans, 13 / 500, sentence case: the page's link
+      // register, never caps.
+      className="vex-step-link"
     >
       {chip.label}
-      <IconArrowUpRight size={11} />
+      <LineExternal size={14} />
     </a>
   );
 }

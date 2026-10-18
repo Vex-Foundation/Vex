@@ -1,9 +1,158 @@
-/* The profile menu popover (docs/design/V10-SPREAD.md sections 1 and 3). It
- * rises from the profile row on the left page's ground: a square paper card on
- * one 1px rule (the surface is `.vex-menu` in ui-primitives/menu.css), no
+/* THE ACCOUNT ROW AND ITS PROFILE MENU (docs/design/R3-MINIMAL.md sections 4
+ * and 12). The row (SidebarProfile) sits at the foot of the left sidebar and
+ * of the Studio sidebar, on paper: padding 12 18 14, the vx in blue in a 30px
+ * box on a 1px rule, the name at 14 / 500 over a 12 muted status line, the up
+ * and down chevron in muted at the right. Closed to a rail it is the box
+ * alone. Open, the row takes the selection wash.
+ *
+ * The menu is the Menu primitive's card (ui-primitives/menu.css); opened
+ * upward from a sidebar foot it becomes the flat profile panel: 316 wide,
+ * paper, a 1.5px ink frame, padding 6 0, rows of a 20px icon column, a 14
+ * title over a 12.5 muted line and a 12 muted shortcut at the right. No
  * shadow, no scale. It only fades, over the 150ms base duration; the keyframe
  * names stay because SidebarProfile closes the menu on the exit's
  * `animationend`. */
+
+.vex-prof {
+  --prof-sel: rgba(163, 171, 255, 0.1);
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 16px;
+  column-gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 12px 18px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+[data-vex-theme="celeris"] .vex-prof {
+  --prof-sel: rgba(0, 0, 192, 0.075);
+}
+.vex-prof:hover,
+.vex-prof[aria-expanded="true"] {
+  background: var(--prof-sel);
+}
+.vex-prof:not([data-open]) {
+  grid-template-columns: 30px;
+  justify-content: center;
+  width: auto;
+  padding: 0;
+}
+.vex-prof:not([data-open]):hover,
+.vex-prof:not([data-open])[aria-expanded="true"] {
+  background: transparent;
+}
+.vex-prof:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-prof__av {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-accent-primary);
+}
+.vex-prof:not([data-open])[aria-expanded="true"] .vex-prof__av {
+  background: var(--prof-sel);
+}
+.vex-prof__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vex-prof__n {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-prof__n--ask {
+  font-weight: 400;
+}
+.vex-prof__s {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-prof__s--live {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-prof__chev {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The menu's two-line rows, in any placement. */
+.vex-profile-menu__t {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-profile-menu__s {
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: normal;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-profile-menu__rt {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-profile-menu .vex-menu-item:disabled .vex-profile-menu__rt {
+  cursor: default;
+}
+
+/* The panel: opened upward from a sidebar foot. */
+.vex-profile-menu--panel.vex-menu {
+  width: 316px;
+  max-width: calc(100vw - 24px);
+  padding: 6px 0;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-base);
+}
+.vex-profile-menu--panel .vex-menu-item {
+  gap: 12px;
+  min-height: 0;
+  padding: 8px 16px;
+  white-space: normal;
+}
+.vex-profile-menu--panel .vex-menu-item-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
+  background: rgba(163, 171, 255, 0.1);
+}
+[data-vex-theme="celeris"] .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
+  background: rgba(0, 0, 192, 0.075);
+}
+.vex-profile-menu--panel .vex-menu-separator {
+  margin: 6px 0;
+}
+.vex-profile-menu--panel .vex-menu-footer {
+  margin-top: 6px;
+  padding-top: 0;
+}
+.vex-profile-menu--panel .vex-menu-footer .vex-menu-item {
+  padding: 8px 16px 6px;
+}
+
 .vex-profile-menu {
   animation: vex-profile-menu-enter var(--vex-duration-base) linear both;
 }
@@ -13,7 +162,7 @@
   animation: vex-profile-menu-exit var(--vex-duration-base) linear both;
 }
 
-/* The chevron flips by stepping, not by a tween. */
+/* The chevron never tweens. */
 .vex-profile-chevron {
   transition: none;
 }

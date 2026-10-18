@@ -5,31 +5,33 @@
  * based on the IPC result kind, and (on success) lets the user
  * continue to the migrations screen.
  *
- * Visual system (Chronos rebrand, AMENDMENT A2): `SetupFrame` paints
- * the SetupGate plate, a serif "Starting services" title sits above
- * one ink-glass card. The running branch is the VexLoader hero above
- * the two service rows; terminal branches are quiet status stanzas
- * with paper-pill actions. Per-branch render delegates to the body
- * components in `bootstrap/branches/`.
+ * Visual system (`docs/design/R3-MINIMAL.md section 10.3`): `SetupFrame` stands
+ * the page at the right of the stage plate with the crumb, a serif
+ * "Starting services" title above the active body. The running branch is the
+ * two service rows (a word and a fill each) with Vex "Working" and the real
+ * time on the plate; terminal branches are a quiet card or the ink callout
+ * with their own actions. Per-branch render delegates to the body components
+ * in `bootstrap/branches/`.
  *
- * Cancellation contract (PR3 — `vex:cancel` IPC) is preserved verbatim:
+ * Cancellation contract (PR3 - `vex:cancel` IPC) is preserved verbatim:
  * the Cancel button calls the `cancel` handle returned by
  * `composeUpAbortable`. We DO NOT call cancel() from the effect cleanup
- * function — React StrictMode double-mount would race the cancel
+ * function - React StrictMode double-mount would race the cancel
  * against the main-process single-flight join. The cleanup `cancelled`
  * flag only suppresses stale promise resolutions; user-initiated
  * cancellation goes through the button. Tests in
  * `__tests__/ComposeBootstrap.test.tsx` pin this contract.
  *
  * Log parser is COSMETIC ONLY (codex plan v2): it feeds per-service
- * substate but never flips the orchestrator phase — phase transitions
+ * substate but never flips the orchestrator phase - phase transitions
  * are driven solely by the IPC `ComposeUpResult.kind` discriminator.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { ComposeLog } from "@shared/schemas/docker.js";
 
 import { useUiStore } from "../../stores/uiStore.js";
+import type { FirstRunMood } from "../../components/onboarding/FirstRunStage.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
 import { Button } from "../../components/ui/button.js";
 import { COMPOSE_LOG_BUFFER_MAX } from "./bootstrap/constants.js";
@@ -116,7 +118,7 @@ export function ComposeBootstrap(): JSX.Element {
 
     return () => {
       cancelled = true;
-      // Intentionally NOT calling invocation.cancel() — StrictMode
+      // Intentionally NOT calling invocation.cancel() - StrictMode
       // double-mount race; user-initiated cancellation goes through
       // the button handler. See header comment.
       cancelRef.current = null;
@@ -172,69 +174,80 @@ export function ComposeBootstrap(): JSX.Element {
     [logs],
   );
 
+  // What Vex shows on the plate: working while the stack comes up, an error when it failed,
+  // concerned when the user has to act, ready when the stack is up (or the user cancelled).
+  const mood: FirstRunMood =
+    phase.kind === "running" || phase.kind === "cancelling"
+      ? "working"
+      : phase.kind === "error.failed"
+        ? "error"
+        : phase.kind === "ready" || phase.kind === "error.cancelled" || phase.kind === "idle"
+          ? "ready"
+          : "concerned";
+
   return (
     <SetupFrame
+      layout="plate"
       screen="composeBootstrap"
+      step="services"
+      mood={mood}
       title="Starting services"
       subline="Postgres and embeddings are coming up locally through Docker."
     >
-      {/* THE BODY: the active phase, directly on the leaf (no container
-       * card, no inner scroll well: the leaf scrolls). */}
-      <div className="vex-rise vex-rise-d1">
-          {phase.kind === "running" || phase.kind === "cancelling" ? (
-            <RunningBody
-              services={services}
-              onCancel={handleCancel}
-              cancelling={phase.kind === "cancelling"}
-            />
-          ) : phase.kind === "ready" ? (
-            <ReadyBody result={phase.result} />
-          ) : phase.kind === "error.port_collision" ? (
-            <PortCollisionBody
-              message={phase.message}
-              previousInstallHoldingPorts={
-                phase.previousInstallHoldingPorts
-              }
-              stoppingPreviousInstall={stopPreviousInstall.isPending}
-              stopPreviousInstallError={
-                stopPreviousInstall.data?.ok === false
-                  ? stopPreviousInstall.data.error.message
-                  : (stopPreviousInstall.error?.message ?? null)
-              }
-              onStopPreviousInstall={handleStopPreviousInstall}
-              onRetry={handleRetry}
-            />
-          ) : phase.kind === "error.foreign_listener" ? (
-            <ForeignListenerBody
-              message={phase.message}
-              onRetry={handleRetry}
-            />
-          ) : phase.kind === "error.unhealthy" ? (
-            <UnhealthyBody message={phase.message} onRetry={handleRetry} />
-          ) : phase.kind === "error.failed" ? (
-            <FailedBody
-              message={phase.message}
-              recentLogs={recentLogLines}
-              onRetry={handleRetry}
-            />
-          ) : phase.kind === "error.cancelled" ? (
-            <CancelledBody onRetry={handleRetry} />
-          ) : null}
-      </div>
+      {/* THE BODY: the active phase, directly on the paper. */}
+      <div className="vex-fr-stack">
+        {phase.kind === "running" || phase.kind === "cancelling" ? (
+          <RunningBody
+            services={services}
+            onCancel={handleCancel}
+            cancelling={phase.kind === "cancelling"}
+          />
+        ) : phase.kind === "ready" ? (
+          <ReadyBody result={phase.result} />
+        ) : phase.kind === "error.port_collision" ? (
+          <PortCollisionBody
+            message={phase.message}
+            previousInstallHoldingPorts={
+              phase.previousInstallHoldingPorts
+            }
+            stoppingPreviousInstall={stopPreviousInstall.isPending}
+            stopPreviousInstallError={
+              stopPreviousInstall.data?.ok === false
+                ? stopPreviousInstall.data.error.message
+                : (stopPreviousInstall.error?.message ?? null)
+            }
+            onStopPreviousInstall={handleStopPreviousInstall}
+            onRetry={handleRetry}
+          />
+        ) : phase.kind === "error.foreign_listener" ? (
+          <ForeignListenerBody
+            message={phase.message}
+            onRetry={handleRetry}
+          />
+        ) : phase.kind === "error.unhealthy" ? (
+          <UnhealthyBody message={phase.message} onRetry={handleRetry} />
+        ) : phase.kind === "error.failed" ? (
+          <FailedBody
+            message={phase.message}
+            recentLogs={recentLogLines}
+            onRetry={handleRetry}
+          />
+        ) : phase.kind === "error.cancelled" ? (
+          <CancelledBody onRetry={handleRetry} />
+        ) : null}
 
-      {/* FOOTER — the paper-pill Continue appears only when the stack
-       * is ready (body CTAs carry the action everywhere else). */}
-      {phase.kind === "ready" ? (
-        <div className="vex-rise vex-rise-d2 mt-8 flex">
+        {/* The Continue appears only when the stack is ready (body CTAs
+         * carry the action everywhere else). */}
+        {phase.kind === "ready" ? (
           <Button
-            size="lg"
             onClick={handleContinue}
             aria-label="Continue to database migrations"
+            className="w-[420px] max-w-full"
           >
             Continue
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </SetupFrame>
   );
 }

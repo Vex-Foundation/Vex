@@ -13,6 +13,11 @@
  *
  * The complete list is rendered. No cap, no "and N more": these are the exact
  * things the user is waiting on.
+ *
+ * Two shapes for the same list: `chips` (the contract modal's footer, a row
+ * of framed tags) and `inline` (the notice in the transcript, the names run
+ * on as one comma-separated phrase inside its sentence, so eight fields are
+ * a line of text and not two rows of boxes).
  */
 
 import type { JSX } from "react";
@@ -22,23 +27,42 @@ export interface MissionMissingFieldsProps {
   readonly fields: readonly string[];
   /** Marks the list for tests and for the surface that owns it. */
   readonly surface: string;
+  /** Framed tags (default) or a run of names inside a sentence. */
+  readonly variant?: "chips" | "inline";
 }
 
 export function MissionMissingFields({
   fields,
   surface,
+  variant = "chips",
 }: MissionMissingFieldsProps): JSX.Element | null {
   if (fields.length === 0) return null;
+  if (variant === "inline") {
+    return (
+      <ul
+        data-vex-state="mission-missing-fields"
+        data-vex-surface={surface}
+        className="inline"
+      >
+        {fields.map((field, index) => (
+          <li key={field} className="inline text-ink-secondary">
+            {missionDraftFieldLabel(field)}
+            {index < fields.length - 1 ? ", " : "."}
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <ul
       data-vex-state="mission-missing-fields"
       data-vex-surface={surface}
-      className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-tertiary"
+      className="mt-1 flex flex-wrap gap-1.5"
     >
       {fields.map((field) => (
         <li
           key={field}
-          className="inline-flex h-[22px] items-center px-2 font-mono text-[11px] uppercase tracking-chip text-ink-secondary outline outline-1 -outline-offset-1 outline-rule"
+          className="inline-flex h-[22px] items-center border border-rule-quiet px-2 text-[12px] text-ink-secondary"
         >
           {missionDraftFieldLabel(field)}
         </li>

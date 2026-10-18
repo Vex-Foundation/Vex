@@ -1,16 +1,17 @@
 /**
- * THE IN-FLIGHT TURN — `StreamingBubble` (the thin mount) + the `TurnIsland`
- * it renders.
+ * THE IN-FLIGHT TURN: `StreamingBubble` (the thin mount) + the `TurnIsland`
+ * live row it renders (docs/design/R3-MINIMAL.md section 6).
  *
- * Pins the island's state machine end to end: Working → Thinking (FULL live
- * reasoning as markdown, no masked peek, no "Ephemeral — not retained" label
- * now that reasoning is persisted) → Calling {tool} → Writing (answer below,
- * "Reasoned" stamp above). Plus the invariants inherited from the working
- * strip it replaces: the elapsed m:ss counter, the awaiting-signature FREEZE,
- * the sr-only `role="status"` announcements, and an error branch that shows a
- * safe generic line and NEVER the raw text or the trace.
+ * Pins the row's state machine end to end: Working, Thinking (FULL live
+ * reasoning as markdown, no masked peek, no "Ephemeral" label now that
+ * reasoning is persisted), Calling {tool}, Writing (answer below, the
+ * "Reasoned" stamp as the row's inline scope). Plus the invariants inherited
+ * from the working strip it replaces: the elapsed m:ss counter, the
+ * awaiting-approval FREEZE ("Waiting for approval"), the sr-only
+ * `role="status"` announcements, and an error branch that shows a safe
+ * generic line and NEVER the raw text or the trace.
  *
- * `data-vex-island-state` is the seam — the visual shell may be retuned
+ * `data-vex-island-state` is the seam; the visual shell may be retuned
  * without rewriting these assertions.
  */
 
@@ -81,28 +82,33 @@ describe("StreamingBubble - answer stream", () => {
 });
 
 describe("TurnIsland - state transitions", () => {
-  it("starts in the compact working state, captioned 'vexing…' - the legacy word is retired", () => {
+  it("starts in the working state, worded 'Working' behind the solid fill - the 'vexing…' word is retired", () => {
     const { container } = render(
       createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
     expect(islandState(container)).toBe("working");
     const label = container.querySelector("[data-vex-island-label]");
-    expect(label?.textContent).toBe("vexing\u2026");
-    // The visible "Working" label is gone everywhere (owner brief §7). The
-    // sr-only announcement below stays literal and is asserted elsewhere.
-    expect(label?.textContent).not.toContain("Working");
+    expect(label?.textContent).toBe("Working");
+    expect(label?.textContent).not.toContain("vexing");
+    // Live work wears the solid fill (the same swatch the Working sidebar
+    // state uses), never the old stepping dot screen.
+    expect(
+      label?.parentElement?.querySelector(".vex-swatch")?.getAttribute("data-s"),
+    ).toBe("done");
   });
 
-  it("keeps the working pill in flow - it is the ONLY pending surface", () => {
+  it("keeps the working row in flow - it is the ONLY pending surface", () => {
     // Regression guard for the retired centred scene: nothing may suppress
-    // this pill any more, or a pending turn would show nothing at all.
+    // this row, or a pending turn would show nothing at all.
     const { container } = render(
       createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
     expect(
       container.querySelector("[data-vex-island-label]")?.textContent,
-    ).toBe("vexing\u2026");
+    ).toBe("Working");
     expect(screen.getByText("Vex is responding")).not.toBeNull();
+    // The sr-only status is the one announcement of the word and its scope.
+    expect(screen.getByText("Working Waiting for the model")).not.toBeNull();
   });
 
   it("expands into Thinking and renders the FULL reasoning as live markdown", () => {
@@ -150,7 +156,7 @@ describe("TurnIsland - state transitions", () => {
     ).not.toBeNull();
   });
 
-  it("settles to the Writing stamp with the answer streaming below it", () => {
+  it("writes with the Reasoned stamp as its inline scope and the answer streaming below", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({
@@ -162,7 +168,13 @@ describe("TurnIsland - state transitions", () => {
       }),
     );
     expect(islandState(container)).toBe("writing");
-    // Same stamp grammar the persisted ReasonedBlock uses.
+    // The word is always "Writing"; the stamp the thinking left behind rides
+    // inline beside it, in the same grammar the persisted ReasonedBlock uses.
+    const label = container.querySelector("[data-vex-island-label]");
+    expect(label?.textContent).toBe("Writing");
+    const detail = container.querySelector("[data-vex-island-detail]");
+    expect(detail?.textContent).toBe("Reasoned · 1.2K tokens");
+    expect(detail?.parentElement).toBe(label?.parentElement);
     expect(container.textContent).toContain("Reasoned · 1.2K tokens");
     // The answer is below the island, and the trace is no longer on screen.
     expect(container.textContent).toContain("The answer");
@@ -179,7 +191,7 @@ describe("TurnIsland - state transitions", () => {
 });
 
 describe("TurnIsland - freeze, error, and settle", () => {
-  it("FREEZES into the awaiting-signature register while an approval is pending", () => {
+  it("FREEZES into the awaiting-approval register while an approval is pending", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ status: "thinking", reasoningText: "mid-thought" }),
@@ -191,7 +203,8 @@ describe("TurnIsland - freeze, error, and settle", () => {
     // The status word yields to the awaiting register…
     expect(screen.queryByText("Thinking")).toBeNull();
     // …and it is announced to screen readers as well as shown.
-    expect(screen.getAllByText("Awaiting signature").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("Waiting for approval").length).toBeGreaterThan(1);
+    expect(screen.queryByText("Awaiting signature")).toBeNull();
   });
 
   it("shows the classified error copy and never the raw text on error phase", () => {
@@ -245,19 +258,22 @@ describe("TurnIsland - turn phase (U-3)", () => {
     );
   }
 
-  it("captions the pill with the step and keeps the 'vexing…' word", () => {
+  it("scopes the Working row with the step, inline beside the word", () => {
     const { container, rerender } = render(
       createElement(StreamingBubble, {
         preview: preview({ streamId: PENDING_TURN_STREAM_ID }),
       }),
     );
     expect(phaseOf(container)).toBe("preparing");
-    expect(container.querySelector("[data-vex-island-label]")?.textContent).toBe(
-      "vexing…",
-    );
-    expect(container.querySelector("[data-vex-island-detail]")?.textContent).toBe(
-      "Preparing the turn",
-    );
+    const label = container.querySelector("[data-vex-island-label]");
+    expect(label?.textContent).toBe("Working");
+    const detail = container.querySelector("[data-vex-island-detail]");
+    expect(detail?.textContent).toBe("Preparing the turn");
+    // INLINE in the row (not a caption below it), quiet, and hidden from
+    // assistive tech because the status region already announces it.
+    expect(detail?.parentElement).toBe(label?.parentElement);
+    expect(detail?.getAttribute("aria-hidden")).toBe("true");
+    expect(detail?.className).toContain("vex-step__word");
 
     rerender(
       createElement(StreamingBubble, {
@@ -283,7 +299,47 @@ describe("TurnIsland - turn phase (U-3)", () => {
     expect(label.startsWith("Running ")).toBe(true);
     expect(container.querySelector('[data-vex-sweep="running"]')).not.toBeNull();
     expect(screen.getByText("Vex is responding")).not.toBeNull();
-    // No caption outside the working pill.
+    // No scope on the running row (only Working and a reasoned Writing carry one).
     expect(container.querySelector("[data-vex-island-detail]")).toBeNull();
+  });
+});
+
+describe("StreamingBubble - Vex's token on the live row", () => {
+  it("renders no token by default", () => {
+    const { container } = render(
+      createElement(StreamingBubble, { preview: preview({ status: "writing", text: "Hi" }) }),
+    );
+    expect(container.querySelector("[data-vex-agent-avatar]")).toBeNull();
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
+  });
+
+  it("renders the vx token once, ahead of the live row, when turnMark is set", () => {
+    const { container } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ status: "working" }),
+        turnMark: true,
+      }),
+    );
+    const marks = container.querySelectorAll("[data-vex-agent-avatar]");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.querySelector("[data-vex-vx-token]")).not.toBeNull();
+    const row = container.querySelector("[data-vex-island-state]");
+    expect(row).not.toBeNull();
+    // The token leads the row in document order (it marks the turn's start).
+    expect(
+      marks[0]?.compareDocumentPosition(row as Node) ?? 0,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("shows the token beside the error row and still never the raw text", () => {
+    const { container } = render(
+      createElement(StreamingBubble, {
+        preview: preview({ phase: "error", text: "raw-provider-leak" }),
+        turnMark: true,
+      }),
+    );
+    expect(container.querySelector("[data-vex-agent-avatar]")).not.toBeNull();
+    expect(islandState(container)).toBe("error");
+    expect(container.textContent).not.toContain("raw-provider-leak");
   });
 });

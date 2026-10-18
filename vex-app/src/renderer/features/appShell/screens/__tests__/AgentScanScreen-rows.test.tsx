@@ -1,25 +1,30 @@
 /**
- * AgentScanScreen ROWS + VIRTUALIZATION — split out of
+ * AgentScanScreen ROWS + VIRTUALIZATION - split out of
  * `AgentScanScreen.test.tsx` (which keeps filters, the states matrix, and
  * pagination) by the same seams as the screen itself. Shared DTO factories and
  * the jsdom geometry stubs live in `_agent-scan-fixtures.ts`.
  *
  * Pins:
  *   - VIRTUALIZATION: a large multi-page fixture keeps the rendered row count
- *     BOUNDED, before and after scrolling — an unbounded feed must never
- *     retain a DOM node per fetched row — while the spacer still reserves
+ *     BOUNDED, before and after scrolling - an unbounded feed must never
+ *     retain a DOM node per fetched row - while the spacer still reserves
  *     height for the FULL feed;
  *   - a row renders its badge, legs, quote-time USD marker and main-resolved
  *     explorer link, marks an ESTIMATED basis with `~`/`est.`, expands to its
  *     audit detail (per-leg explorer links, Vex fee, failure code/reason), and
  *     flags a STALE pending row as tracking delayed rather than implying
  *     progress;
+ *   - EVERY ROW ENDS IN A WORD (docs/design/R3-MINIMAL.md section 9.2): the
+ *     money outcome words say only what the row proves ("Submitted, awaiting
+ *     confirmation" needs a hash, "Status unknown" is never "Failed"), and a
+ *     failed row opens to what happened and the next step, built from its
+ *     own legs;
  *   - the feed's SECOND ARM: a Lighter fill renders its own row grammar and
  *     its own drawer, states every unknown as an unknown rather than a zero,
  *     names a fill the user did not place, and shares no identity with an
  *     `agent_activity` row that happens to carry the same numeric id.
  *
- * `useAgentScanInfinite` is mocked — this suite owns the screen, not the query
+ * `useAgentScanInfinite` is mocked - this suite owns the screen, not the query
  * wiring (the hook's pagination contract is pinned in the api layer).
  */
 
@@ -152,7 +157,7 @@ describe("AgentScanScreen - rows and audit detail", () => {
     expect(screen.getByText("SWAP")).not.toBeNull();
     expect(screen.getByText(/50 USDC/)).not.toBeNull();
     expect(screen.getByText(/0\.02 WETH/)).not.toBeNull();
-    // Every USD figure in this feed is a quote-time estimate — it must say so.
+    // Every USD figure in this feed is a quote-time estimate - it must say so.
     expect(screen.getByText("~$49.80 est.")).not.toBeNull();
     const link = screen.getByRole("link", {
       name: "Open transaction on block explorer",
@@ -291,14 +296,17 @@ describe("AgentScanScreen - rows and audit detail", () => {
       ]),
     ]);
     mountScreen();
-    expect(screen.getByText("PENDING")).not.toBeNull();
+    // Checks fell behind: Vex cannot say where it stands, and says so.
+    expect(screen.getByText("Status unknown")).not.toBeNull();
     expect(screen.getByText("tracking delayed")).not.toBeNull();
+    expect(screen.getByText("checked again automatically")).not.toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
   });
 
   // Migration 065's DERIVED state (Wave P, Blocker 2). The engine writes
   // `verification_attempts`/`last_verification_reason`, the main mapper derives
   // `stalledVerification`, and this is the surface that finally says it out
-  // loud. A row that could not be VERIFIED is not a row that FAILED — the whole
+  // loud. A row that could not be VERIFIED is not a row that FAILED - the whole
   // point of never auto-failing it is that the outcome is UNKNOWN.
   it("renders a stalled pending row as a distinct NON-FAILURE state, with its reason", () => {
     mockQuery([
@@ -313,10 +321,11 @@ describe("AgentScanScreen - rows and audit detail", () => {
     ]);
     mountScreen();
 
-    expect(screen.getByText("PENDING")).not.toBeNull();
+    expect(screen.getByText("Status unknown")).not.toBeNull();
     expect(screen.getByText("verification stalled")).not.toBeNull();
-    // NOT dressed as a failure: no FAILED badge, and the chip does not wear the
+    // NOT dressed as a failure: no Failed word, and the note does not wear the
     // destructive tone reserved for a proven failure.
+    expect(screen.queryByText("Failed")).toBeNull();
     expect(screen.queryByText("FAILED")).toBeNull();
     const chip = screen.getByText("verification stalled");
     expect(chip.className).not.toContain("destructive");
@@ -595,5 +604,133 @@ describe("AgentScanScreen - Lighter fill rows", () => {
     const list = screen.getByRole("list", { name: "Activity" });
     // One day divider plus the two entry rows.
     expect(within(list).getAllByRole("listitem")).toHaveLength(3);
+  });
+});
+
+/**
+ * EVERY ROW ENDS IN A WORD. The words are the design's money outcomes, and each
+ * says only what the row proves: a hash before "Submitted", a confirmed leg
+ * before "Check the deposit leg", never "Failed" for an outcome nobody knows.
+ */
+describe("AgentScanScreen - the word each row ends in", () => {
+  it("a confirmed row ends in Confirmed", () => {
+    mockQuery([availablePage([entry({ id: "1" })])]);
+    mountScreen();
+    expect(screen.getByText("Confirmed")).not.toBeNull();
+  });
+
+  it("a pending row with a hash is Submitted, awaiting confirmation; without one it keeps Pending", () => {
+    mockQuery([
+      availablePage([
+        entry({ id: "1", status: "pending", createdAt: new Date().toISOString() }),
+      ]),
+    ]);
+    const view = render(
+      <AgentScanScreen origin={null} scope={GLOBAL_SCOPE} onClose={() => undefined} />,
+    );
+    expect(screen.getByText("Submitted, awaiting confirmation")).not.toBeNull();
+    expect(screen.getByText("checked again automatically")).not.toBeNull();
+    view.unmount();
+
+    mockQuery([
+      availablePage([
+        entry({
+          id: "2",
+          status: "pending",
+          createdAt: new Date().toISOString(),
+          txHash: null,
+          explorerUrl: null,
+        }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("Pending")).not.toBeNull();
+    expect(screen.queryByText("Submitted, awaiting confirmation")).toBeNull();
+  });
+
+  it("a row a node holds in its mempool is submitted, and says where it waits", () => {
+    mockQuery([
+      availablePage([
+        entry({ id: "1", status: "pending", pendingReason: "in_mempool" }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("Submitted, awaiting confirmation")).not.toBeNull();
+    expect(screen.getByText("in mempool").getAttribute("title")).toContain("waiting for inclusion");
+  });
+
+  it("a superseded row is Status unknown, never Failed", () => {
+    mockQuery([availablePage([entry({ id: "1", status: "superseded_unproven" })])]);
+    mountScreen();
+    expect(screen.getByText("Status unknown")).not.toBeNull();
+    expect(screen.getByText("superseded").getAttribute("title")).toContain("outcome is unproven");
+    expect(screen.queryByText("Failed")).toBeNull();
+  });
+
+  it("a refunded bridge ends in Refunded, not Failed", () => {
+    mockQuery([
+      availablePage([
+        entry({ id: "1", activityKind: "bridge", status: "failed", failureCode: "bridge_refunded" }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("Refunded")).not.toBeNull();
+    expect(screen.getByText("returned to the origin chain")).not.toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
+  });
+
+  it("a failed row opens to what happened and the next step, from its own legs", () => {
+    mockQuery([
+      availablePage([
+        entry({
+          id: "1",
+          activityKind: "bridge",
+          eventRole: "bridge_fill_expected",
+          status: "failed",
+          failureCode: "bridge_failed",
+          legs: [
+            {
+              role: "bridge_deposit",
+              chainId: 8453,
+              chainFamily: "eip155",
+              chainSlug: "base",
+              txHash: "0xdep",
+              status: "confirmed",
+              failureCode: null,
+              explorerUrl: null,
+            },
+            {
+              role: "bridge_fill_expected",
+              chainId: 42161,
+              chainFamily: "eip155",
+              chainSlug: "arbitrum",
+              txHash: null,
+              status: "failed",
+              failureCode: "bridge_failed",
+              explorerUrl: null,
+            },
+          ],
+        }),
+      ]),
+    ]);
+    mountScreen();
+    expect(screen.getByText("Failed")).not.toBeNull();
+    expect(screen.getByText("ask Vex what happened").getAttribute("title")).toBe("bridge_failed");
+
+    fireEvent.click(screen.getByRole("button", { name: /Show details/ }));
+    expect(screen.getByText("What happened")).not.toBeNull();
+    expect(
+      screen.getByText(
+        "Submitted, then failed. The deposit on base confirmed; the fill on arbitrum failed.",
+      ),
+    ).not.toBeNull();
+    expect(screen.getByText(/Check the deposit leg before trying again\./)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Ask Vex to check it" })).not.toBeNull();
+  });
+
+  it("a Lighter fill ends in Filled, the venue's own word", () => {
+    mockQuery([availablePage([lighterFill({ id: "9" })])]);
+    mountScreen();
+    expect(screen.getByText("Filled")).not.toBeNull();
   });
 });

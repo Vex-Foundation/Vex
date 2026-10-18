@@ -1,12 +1,14 @@
 /**
- * Branch: error.failed — Compose up itself failed (Docker daemon died
- * mid-run, image pull failed, lifecycle aborted, etc.). Shows the
- * error message + an expandable "Show recent logs" disclosure that
- * surfaces the last buffered log lines (capped at COMPOSE_LOG_BUFFER_MAX
- * — no full-log IPC yet per codex plan v2 SHOULD-FIX #10).
+ * Branch: error.failed - Compose up itself failed (Docker daemon died
+ * mid-run, image pull failed, lifecycle aborted, etc.). The ink callout says
+ * what failed and why, and the recent log lines (capped at
+ * COMPOSE_LOG_BUFFER_MAX - no full-log IPC yet per codex plan v2
+ * SHOULD-FIX #10) stand under it in the log block, so the cause is on the
+ * screen without a click (`docs/design/R3-MINIMAL.md section 10.3`).
  */
 
-import { useState } from "react";
+import type { JSX } from "react";
+
 import { Button } from "../../../../components/ui/button.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
 import { OpenLogsLink } from "../../../../components/common/OpenLogsLink.js";
@@ -22,32 +24,28 @@ export function FailedBody({
   recentLogs,
   onRetry,
 }: FailedBodyProps): JSX.Element {
-  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <SetupStatusCard tone="error" title="Compose up failed" detail={message} />
 
       {recentLogs.length > 0 ? (
-        expanded ? (
-          <pre className="max-h-40 overflow-auto border border-[var(--color-border)] bg-gate-code p-3 font-code text-xs leading-relaxed text-ink-primary">
+        <div className="flex w-full flex-col gap-2">
+          <p className="vex-fr-eyebrow">
+            Recent logs ({recentLogs.length} line
+            {recentLogs.length === 1 ? "" : "s"})
+          </p>
+          <pre className="vex-fr-code">
             <code>{recentLogs.join("\n")}</code>
           </pre>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="self-start font-mono text-xs text-[var(--vex-accent-text,var(--color-accent-hover))] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
-          >
-            Show recent logs ({recentLogs.length} line
-            {recentLogs.length === 1 ? "" : "s"})
-          </button>
-        )
+        </div>
       ) : null}
 
-      <Button size="lg" className="w-full" onClick={onRetry}>
-        Try again
-      </Button>
-      <OpenLogsLink />
-    </div>
+      <div className="vex-fr-acts">
+        <Button onClick={onRetry} className="w-[420px] max-w-full">
+          Try again
+        </Button>
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
+    </>
   );
 }

@@ -1,8 +1,8 @@
 /**
- * "Restore from backup" panel (C3 — full-archive restore).
+ * "Restore from backup" panel (C3 - full-archive restore).
  *
  * Cross-family restore: rebuilds the ENTIRE local wallet inventory (+ vault +
- * .env) from a single backup archive, so — like `ExportAllWallets` — it lives
+ * .env) from a single backup archive, so - like `ExportAllWallets` - it lives
  * at the WalletsStep level rather than per-chain. It is rendered as an inline,
  * progressively-disclosed panel (collapsed trigger → expanded list + form),
  * matching the inline `ExportAllWallets` panel it sits beside. A modal was
@@ -15,7 +15,7 @@
  *  - The master password lives ONLY in the uncontrolled DOM input
  *    (`passwordRef`); it is read once on submit and wiped immediately after.
  *  - React state tracks only a boolean "is the field non-empty" to gate the
- *    Restore button — never the value itself.
+ *    Restore button - never the value itself.
  *  - The restore IPC is a bare async call (`restoreArchive`), NOT a
  *    `useMutation`, so the password never lands in mutation observer state.
  *  - The result carries NO key material (public addresses / labels only); we
@@ -65,7 +65,7 @@ export function RestoreFromArchive(): JSX.Element {
 
   return (
     <div
-      className="flex flex-col gap-3"
+      className="vex-wz-stack w-full border-t border-rule pt-4"
       data-vex-wallet-restore="expanded"
     >
       <PanelHeader
@@ -78,7 +78,7 @@ export function RestoreFromArchive(): JSX.Element {
         }}
       />
 
-      <p className="text-xs text-ink-tertiary">
+      <p className="vex-wz-note">
         Restoring replaces your current wallets with the ones in the selected
         backup. Vex will ask you to confirm before replacing anything.
       </p>

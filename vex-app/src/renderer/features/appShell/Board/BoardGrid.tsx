@@ -1,8 +1,12 @@
 /**
- * THE BOARD GRID - the modal's default view, and the mockup's own object.
+ * THE BOARD GRID - the Board page's default view (docs/design/R3-MINIMAL.md
+ * section 9.4).
  *
- * An outer plate carrying a three-column grid of EQUAL cards, with
- * the durable authored content in a disclosure beneath it.
+ * Top to bottom: the meta line ("Composed by Vex in {session}" at the left,
+ * the "Composed analysis · Data notes" link at the right, which opens the
+ * durable authored content between the line and the grid), the filter row
+ * when it can change something, the grid of EQUAL tiles drawn in quiet
+ * rules, and the footnote that says where the figures come from.
  *
  * ORDER IS MEANING. `spec.pools` IS the display order the model chose, so
  * this never sorts. The board is bounded by the spec itself (at most eight
@@ -21,11 +25,15 @@
  * surfaces are painting its figures.
  */
 
-import { useEffect, useMemo, useRef, type JSX } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
+import { useSession } from "../../../lib/api/sessions.js";
 import { cn } from "../../../lib/utils.js";
-import { BoardDataNotes } from "./BoardDataNotes.js";
+import { useUiStore } from "../../../stores/uiStore.js";
+import { getSessionTitle } from "../sessionListModel.js";
+import { BoardDataNotes, BoardDataNotesTrigger } from "./BoardDataNotes.js";
 import { BoardGridBar } from "./BoardGridBar.js";
 import { TokenCardV3 } from "./TokenCardV3.js";
+import { openBoardAsk } from "./board-ask-open.js";
 import {
   boardLiveReadout,
   isBoardLiveHeld,
@@ -34,20 +42,22 @@ import {
 } from "./board-live-overlay.js";
 import { useBoardSafetyVerdicts } from "./board-safety-surface.js";
 import {
-  BOARD_SPARKLINE_PENDING,
-  useBoardSparklines,
-} from "./board-sparkline-source.js";
-import {
   boardKeyOf,
   boardSafetyVerdict,
   type BoardGridSlotProps,
 } from "./board-surface-contracts.js";
 import { useBoardSurfaceStore } from "./board-surface-store.js";
+import { formatBoardUtcClock } from "./boardFormat.js";
 import {
   buildBoardAuthoredContent,
   buildBoardViewModel,
   type BoardCardModel,
 } from "./boardModel.js";
+
+/** The meta line's lead, before the source session's name. */
+export const BOARD_COMPOSED_IN = "Composed by Vex in";
+/** The source session's name while it is not known (still loading, or unreadable). */
+const BOARD_SOURCE_FALLBACK = "this chat";
 
 export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
   const spec = board.spec;
@@ -63,12 +73,17 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
   const scrollTop = useBoardSurfaceStore((s) => s.scrollTop);
   const setBoardScrollTop = useBoardSurfaceStore((s) => s.setBoardScrollTop);
   const openBoardSpotlight = useBoardSurfaceStore((s) => s.openBoardSpotlight);
-  const selectBoardPool = useBoardSurfaceStore((s) => s.selectBoardPool);
-  const setBoardAskOpen = useBoardSurfaceStore((s) => s.setBoardAskOpen);
   const setBoardFilter = useBoardSurfaceStore((s) => s.setBoardFilter);
+  const navigate = useUiStore((s) => s.navigate);
 
   const verdicts = useBoardSafetyVerdicts(spec);
-  const sparklines = useBoardSparklines(spec);
+  const sessionQuery = useSession(board.sessionId);
+  const session =
+    sessionQuery.data !== undefined && sessionQuery.data.ok ? sessionQuery.data.data : null;
+  const sourceName = session === null ? BOARD_SOURCE_FALLBACK : getSessionTitle(session);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const notesId = useId();
+  const notesTrigger = useRef<HTMLButtonElement | null>(null);
 
   // The model is rebuilt from the PERSISTED spec with live rows drawn over
   // it; nothing is ever written back, so turning the lease off rebuilds the
@@ -120,6 +135,9 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
     [verdicts],
   );
 
+  const held = isBoardLiveHeld(readout.mode);
+  const clock = formatBoardUtcClock(model.marketDataFetchedAt);
+
   return (
     <div
       ref={scrollRef}
@@ -129,43 +147,67 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
       }}
       className="min-h-0"
     >
+      {/* THE META LINE. Where the board came from (the chat behind it, one
+        * press away) and the door to the composed words. */}
+      <div data-vex-area="board-meta" className="vex-bd-meta">
+        <span className="vex-bd-muted">{BOARD_COMPOSED_IN}</span>
+        <button
+          type="button"
+          data-vex-area="board-source-session"
+          className="vex-bd-link"
+          onClick={() => {
+            navigate("chat");
+          }}
+        >
+          {sourceName}
+        </button>
+        <span aria-hidden className="vex-bd-meta__sp" />
+        <BoardDataNotesTrigger
+          open={notesOpen}
+          controls={notesId}
+          triggerRef={notesTrigger}
+          onToggle={() => {
+            setNotesOpen((value) => !value);
+          }}
+        />
+      </div>
+      <BoardDataNotes
+        content={authored}
+        verdicts={verdicts}
+        open={notesOpen}
+        id={notesId}
+        triggerRef={notesTrigger}
+      />
+
+      {/* THE FILTER ROW, labelled, and only when it can change something. */}
+      <BoardGridBar
+        filter={filter}
+        chains={chains}
+        safetyStates={safetyStates}
+        onFilter={setBoardFilter}
+      />
       <div
         data-vex-area="board-grid-plate"
         data-count={total}
         data-visible={visible.length}
         // THE PLATE IS THE CONTAINER. `vex-board-plate` declares
-        // `container-type: inline-size`, so every column and mode threshold in
+        // `container-type: inline-size`, so every column threshold in
         // `global-css/board-layout.css` is a question about the width the
-        // cards actually get. The Ask VEX drawer takes 360px out of this
-        // element without moving the window by a pixel, which is exactly the
-        // measurement a viewport media query could not see.
-        className="vex-board-surface vex-board-plate flex flex-col gap-4 border border-rule-quiet p-4"
+        // tiles actually get: an open Vex sidebar takes its width out of the
+        // centre without moving the window by a pixel, which is exactly the
+        // measurement a viewport media query could not see. The plate draws
+        // nothing itself; the grid's quiet rules are the frame.
+        className="vex-board-surface vex-board-plate"
       >
-        {/* THE FILTER IS THE PLATE'S FIRST ROW, labelled, and only when it
-          * can change something. It used to float unlabelled at the top
-          * right of the view, where "Unverified / High risk" read as a pair
-          * of floating verdict chips rather than as the control it is. */}
-        <BoardGridBar
-          filter={filter}
-          chains={chains}
-          safetyStates={safetyStates}
-          onFilter={setBoardFilter}
-        />
         {visible.length === 0 ? (
-          <p
-            data-vex-area="board-grid-empty"
-            className="px-2 py-10 text-center text-[13px] text-ink-tertiary"
-          >
+          <p data-vex-area="board-grid-empty" className="vex-bd-foot">
             No pool on this board matches the current filter.
           </p>
         ) : (
-          /* THE SCROLLER, not the plate. Below the compact floor the track
-           * refuses to shrink and this element side-scrolls, so a reader
-           * reaches a figure by scrolling instead of being shown a truncated
-           * one. It is a wrapper rather than a property on the plate because
-           * `overflow-x: auto` would compute the plate's `overflow-y` to
-           * `auto` too and put a second vertical scroll region inside the
-           * modal body that already owns the board's scrolling. */
+          /* THE SCROLLER, not the plate. Below the one-column floor the
+           * track refuses to shrink and this element side-scrolls, so a
+           * reader reaches a figure by scrolling instead of being shown a
+           * truncated one. */
           <div
             data-vex-area="board-grid-scroller"
             className="vex-board-grid-scroller"
@@ -180,29 +222,23 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
             >
               {visible.map(({ card, index }) => (
                 // `min-w-0` so a track may be narrower than its content wants,
-                // and the card itself carries `w-full`, which is what makes
-                // every card in the grid the same box. Without it each
-                // `<article>` shrank to its own content inside an equal track:
-                // 382 / 369 / 406 / 345 / 407 / 342 across one 388px grid.
+                // and the tile itself carries `w-full`, which is what makes
+                // every tile in the grid the same box.
                 <li key={card.key} className={cn("flex min-w-0")}>
                   <TokenCardV3
                     card={card}
                     verdict={verdicts[index] ?? boardSafetyVerdict("pending")}
-                    sparkline={sparklines[index] ?? BOARD_SPARKLINE_PENDING}
                     selected={
                       view === "spotlight" && selectedPoolIndex === index
                     }
-                    live={isBoardLiveHeld(readout.mode)}
+                    live={held}
                     onSpotlight={() => {
                       openBoardSpotlight(index);
                     }}
                     onAsk={() => {
-                      // Selection first, then the panel: the Ask surface reads
-                      // the SELECTED pool, so opening it before pointing it at
-                      // this card would show the panel about another token for
-                      // one commit.
-                      selectBoardPool(index);
-                      setBoardAskOpen(true);
+                      // Selection first, then the block, then Vex: the Ask
+                      // block reads the SELECTED pool (`board-ask-open.ts`).
+                      openBoardAsk(index);
                     }}
                   />
                 </li>
@@ -211,9 +247,28 @@ export function BoardGrid({ board }: BoardGridSlotProps): JSX.Element {
           </div>
         )}
       </div>
-      <BoardDataNotes content={authored} verdicts={verdicts} />
+      {/* WHERE THE FIGURES COME FROM, said once under the grid. */}
+      <p data-vex-area="board-footnote" className="vex-bd-foot">
+        {boardFootnote(held, clock)}
+      </p>
     </div>
   );
+}
+
+/**
+ * The footnote under the grid: the source and the clock of the figures (the
+ * clock already carries its "UTC"), and what Ask Vex does. A snapshot names the snapshot's clock; a held lease says
+ * the figures are live and when they were last read.
+ */
+export function boardFootnote(live: boolean, clock: string | null): string {
+  const figures = live
+    ? clock === null
+      ? "Prices and 24h changes are live figures."
+      : `Prices and 24h changes are live figures, last read at ${clock}.`
+    : clock === null
+      ? "Prices and 24h changes are DexScreener figures from the snapshot."
+      : `Prices and 24h changes are DexScreener figures from the snapshot at ${clock}.`;
+  return `${figures} Ask Vex sends a token to the chat behind this board.`;
 }
 
 /**

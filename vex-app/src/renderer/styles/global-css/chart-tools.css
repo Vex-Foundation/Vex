@@ -1,6 +1,8 @@
 /* Chart analysis toolbar, studies, the drawing rail and the drag-to-order
- * handle (docs/design/V10-SPREAD.md section 1). Departure Mono 11px caps on a
- * 36px row; pixel icons at their native 16px; one blue for whatever is on. */
+ * handle (docs/design/R3-MINIMAL.md section 9.3). A 36px row with a quiet
+ * rule below: words in Instrument Sans 12.5 in sentence case, figures in
+ * JetBrains Mono; the calm line icons at their 16px; one blue for whatever
+ * is selected and the blue fill for whatever is on. */
 
 .lit-analysis-toolbar {
   position: absolute;
@@ -9,12 +11,14 @@
   display: flex;
   height: var(--lit-chart-toolbar, 36px);
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   border-bottom: 1px solid var(--lit-line-quiet);
   background: var(--lit-panel);
-  padding: 0 6px 0 8px;
+  padding: 0 10px;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
@@ -26,13 +30,21 @@
   padding: 0;
   color: inherit;
   font: inherit;
-  letter-spacing: var(--lit-tr-label);
+  letter-spacing: inherit;
   cursor: pointer;
 }
 
-.lit-analysis-toolbar > .lit-resolution-tabs button { letter-spacing: var(--lit-tr-data); }
+/* The intervals are figures: mono 11.5 on their own 24 high keys. The shared
+ * reset above would zero their padding, so it is set again here. */
+.lit-analysis-toolbar > .lit-resolution-tabs button {
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
+}
 
-/* Chart type: a rule-framed chip with a small drawn caret. */
+/* Chart type: a quiet chip with a 1px rule frame and a small drawn caret. */
 .lit-analysis-toolbar select {
   height: 28px;
   max-width: 104px;
@@ -46,41 +58,75 @@
   background-repeat: no-repeat;
   background-size: 4px 4px;
   padding: 0 24px 0 8px;
-  font-size: 12px;
-  letter-spacing: var(--lit-tr-data);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
 }
 
-.lit-analysis-toolbar select option { background: var(--lit-panel); color: var(--lit-ink); }
+.lit-analysis-toolbar select option {
+  background: var(--lit-panel);
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+}
 
-.lit-analysis-toolbar button:hover,
+.lit-analysis-toolbar button:hover:not(:disabled):not([aria-pressed="true"]),
 .lit-study-menu summary:hover,
 .lit-analysis-toolbar select:hover { color: var(--lit-ink); }
 
-/* Volume, Fills, Log: an 8px square before the word, outlined when off and
- * solid blue when on (status by fill). */
+/* Keys wash on hover; the select keeps its drawn caret, so it takes the
+ * colour only. */
+.lit-analysis-toolbar select:hover { background-color: var(--lit-hover); }
+
+.lit-analysis-toolbar > button[aria-pressed]:hover,
+.lit-study-menu summary:hover { background: var(--lit-hover); }
+
+/* Volume, Fills, Log: a 12 x 12 square before the word with a 1px ink frame,
+ * empty when off and filled with the blue when on. The word stays ink 2:
+ * status is the fill, never the colour. */
 .lit-analysis-toolbar > button[aria-pressed] {
   display: inline-flex;
   height: 24px;
   align-items: center;
   gap: 6px;
-  text-transform: uppercase;
+  padding: 0 6px;
 }
+
+.lit-analysis-toolbar > button[aria-pressed]:hover { color: var(--lit-ink); }
 
 .lit-analysis-toolbar > button[aria-pressed]::before {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
   box-sizing: border-box;
-  border: 1.5px solid currentColor;
+  border: 1px solid var(--lit-rule-ink);
 }
 
-.lit-analysis-toolbar > button[aria-pressed="true"] { color: var(--lit-positive); }
-.lit-analysis-toolbar > button[aria-pressed="true"]::before { border: 0; background: currentColor; }
+.lit-analysis-toolbar > button[aria-pressed="true"]::before { background: var(--lit-action); }
+
+/* The 1 x 16 rule between the chart type and studies and the toggles. */
+.lit-analysis-toolbar > .lit-study-menu + button[aria-pressed] {
+  position: relative;
+  margin-left: 19px;
+}
+
+.lit-analysis-toolbar > .lit-study-menu + button[aria-pressed]::after {
+  position: absolute;
+  top: 4px;
+  left: -11px;
+  width: 1px;
+  height: 16px;
+  background: var(--lit-line-quiet);
+  content: "";
+}
 
 .lit-study-active {
   overflow: hidden;
+  margin-left: 8px;
   color: var(--lit-ink-secondary);
-  letter-spacing: var(--lit-tr-data);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -91,14 +137,15 @@
   display: inline-flex;
   height: 24px;
   align-items: center;
+  padding: 0 6px;
   list-style: none;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .lit-study-menu summary::-webkit-details-marker { display: none; }
-.lit-study-menu[open] summary { color: var(--lit-positive); }
+.lit-study-menu[open] summary { color: var(--lit-accent); }
 
+/* The study popover: paper, a 1px ink frame, no shadow. */
 .lit-study-popover {
   position: absolute;
   z-index: 9;
@@ -107,10 +154,13 @@
   width: min(300px, calc(100vw - 140px));
   max-height: min(420px, calc(100vh - 160px));
   overflow-y: auto;
-  border: 1px solid var(--lit-line-strong);
+  border: 1px solid var(--lit-rule-ink);
   background: var(--lit-panel);
   padding: 4px 0;
   color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
   white-space: normal;
 }
 
@@ -126,9 +176,9 @@
   padding: 9px 12px;
   color: var(--lit-ink);
   cursor: pointer;
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
 
 .lit-study-popover .lit-study-period {
@@ -140,34 +190,36 @@
   padding: 0 6px;
   color: var(--lit-ink);
   font: inherit;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
 }
 
-.lit-study-popover input[type="checkbox"] { margin-top: 1px; }
+.lit-study-popover input[type="checkbox"] { margin-top: 2px; }
 
 .lit-study-popover small {
   display: block;
   margin-top: 4px;
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
   font-family: var(--font-sans);
   font-size: 12px;
   letter-spacing: normal;
   line-height: 1.4;
-  text-transform: none;
 }
 
 .lit-study-popover p {
   margin: 4px 0 0;
   border-top: 1px solid var(--lit-line-quiet);
   padding: 8px 12px 6px;
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
   font-family: var(--font-sans);
   font-size: 12px;
   letter-spacing: normal;
   line-height: 1.5;
 }
 
-/* Drawing tools: a 36px rail on the canvas's left edge. */
+/* Drawing tools: a 34px rail on the canvas's left edge, 26px keys. */
 .lit-drawing-rail {
   position: absolute;
   z-index: 4;
@@ -175,21 +227,21 @@
   bottom: 0;
   left: 0;
   display: flex;
-  width: var(--lit-chart-rail, 36px);
+  width: var(--lit-chart-rail, 34px);
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 4px;
   overflow-y: auto;
   border-right: 1px solid var(--lit-line-quiet);
   background: var(--lit-panel);
-  padding-top: 6px;
+  padding-top: 8px;
   scrollbar-width: none;
 }
 
 .lit-drawing-rail button {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   place-items: center;
   border: 0;
@@ -198,24 +250,25 @@
 }
 
 .lit-drawing-rail button svg { width: 16px; height: 16px; }
-.lit-drawing-rail button:hover:not(:disabled) { background: var(--lit-panel-raised); color: var(--lit-ink); }
-.lit-drawing-rail button[aria-pressed="true"] { color: var(--lit-positive); }
+.lit-drawing-rail button:hover:not(:disabled) { background: var(--lit-hover); }
+.lit-drawing-rail button:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--lit-ink); }
+.lit-drawing-rail button[aria-pressed="true"] { color: var(--lit-accent); }
 .lit-drawing-rail button:disabled { color: var(--lit-ink-muted); cursor: default; opacity: 0.5; }
 
 .lit-drawing-divider {
   width: 18px;
   height: 1px;
   flex-shrink: 0;
-  margin: 5px 0;
-  background: var(--lit-line);
+  margin: 4px 0;
+  background: var(--lit-line-quiet);
 }
 
 .lit-drawing-layer {
   position: absolute;
   z-index: 3;
   top: var(--lit-chart-toolbar, 36px);
-  left: var(--lit-chart-rail, 36px);
-  width: calc(100% - var(--lit-chart-rail, 36px));
+  left: var(--lit-chart-rail, 34px);
+  width: calc(100% - var(--lit-chart-rail, 34px));
   height: calc(100% - var(--lit-chart-toolbar, 36px));
   overflow: hidden;
   cursor: crosshair;
@@ -251,8 +304,8 @@
   position: absolute;
   z-index: 4;
   top: var(--lit-chart-toolbar, 36px);
-  left: var(--lit-chart-rail, 36px);
-  width: calc(100% - var(--lit-chart-rail, 36px));
+  left: var(--lit-chart-rail, 34px);
+  width: calc(100% - var(--lit-chart-rail, 34px));
   height: calc(100% - var(--lit-chart-toolbar, 36px));
   overflow: hidden;
   pointer-events: none;
@@ -305,6 +358,7 @@
   color: var(--vex-alias-label-on-accent);
   font-family: var(--font-mono);
   font-size: 11px;
+  letter-spacing: var(--lit-tr-data);
   line-height: 16px;
   white-space: nowrap;
 }
@@ -314,25 +368,35 @@
   color: var(--lit-ink-fill-ink);
 }
 
+/* The drawing editor, its hint and the tool notice are flat panels with a
+ * 1px ink frame (docs/design/R3-MINIMAL.md section 12). */
 .lit-drawing-editor,
 .lit-drawing-hint {
   position: absolute;
   z-index: 6;
   bottom: 68px;
-  left: calc(var(--lit-chart-rail, 36px) + 10px);
+  left: calc(var(--lit-chart-rail, 34px) + 10px);
   display: flex;
   max-width: calc(100% - 130px);
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--lit-line-strong);
+  border: 1px solid var(--lit-rule-ink);
   background: var(--lit-panel);
   padding: 8px;
   color: var(--lit-ink);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
 }
 
-.lit-drawing-editor > span { width: 100%; color: var(--lit-ink-secondary); }
+.lit-drawing-editor > span {
+  width: 100%;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .lit-drawing-editor label { display: flex; align-items: center; gap: 6px; }
 
 .lit-drawing-editor input {
@@ -344,21 +408,25 @@
   padding: 0 6px;
   color: var(--lit-ink);
   font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--lit-tr-data);
 }
 
 .lit-drawing-editor button,
 .lit-drawing-hint button,
 .lit-chart-tool-notice button {
-  height: 24px;
+  height: 26px;
   border: 0;
   outline: 1px solid var(--lit-line);
   outline-offset: -1px;
   background: transparent;
-  padding: 0 8px;
+  padding: 0 10px;
   color: var(--lit-ink);
   font: inherit;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  letter-spacing: normal;
 }
 
 .lit-drawing-editor button:hover,
@@ -369,17 +437,21 @@
   position: absolute;
   z-index: 6;
   bottom: 98px;
-  left: calc(var(--lit-chart-rail, 36px) + 10px);
+  left: calc(var(--lit-chart-rail, 34px) + 10px);
   background: var(--lit-panel);
   color: var(--lit-ink);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
 }
 
-/* One focus ring on the desk: the shell's token, at the shell's offset. */
+/* One focus ring on the desk: the shell's token, at the shell's offset. The
+ * rail's keys sit 4px from its edge, so its ring hugs the key. */
 .lit-analysis-toolbar :focus-visible,
-.lit-drawing-rail :focus-visible,
 .lit-drawing-editor :focus-visible,
 .lit-drawing-hint :focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 3px; }
+
+.lit-drawing-rail :focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 1px; }
 
 .lit-analysis-toolbar .lit-chart-export {
   display: grid;
@@ -390,7 +462,7 @@
 }
 
 .lit-analysis-toolbar .lit-chart-export svg { width: 16px; height: 16px; }
-.lit-analysis-toolbar .lit-chart-export:hover:not(:disabled) { background: var(--lit-panel-raised); }
+.lit-analysis-toolbar .lit-chart-export:hover:not(:disabled) { background: var(--lit-hover); }
 .lit-analysis-toolbar .lit-chart-export:disabled { color: var(--lit-ink-muted); cursor: default; }
 
 /* Desk controls share the row: the intervals lead, then type and studies. */
@@ -403,11 +475,13 @@
   top: calc(var(--lit-chart-toolbar, 36px) + 6px);
   right: 8px;
   max-width: calc(100% - 60px);
-  border: 1px solid var(--lit-line-strong);
+  border: 1px solid var(--lit-rule-ink);
   background: var(--lit-panel);
   padding: 8px;
   color: var(--lit-ink);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
 }
 
 .lit-chart-tool-notice button { margin-left: 8px; }
@@ -427,7 +501,7 @@
 }
 
 @container (max-width: 600px) {
-  .lit-resolution-tabs button { min-width: 26px; padding-inline: 4px; }
+  .lit-analysis-toolbar > .lit-resolution-tabs button { min-width: 26px; padding-inline: 4px; }
 }
 
 /* Below that the strip stopped shrinking at nothing: it keeps room for three

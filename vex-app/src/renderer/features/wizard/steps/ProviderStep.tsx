@@ -1,5 +1,5 @@
 /**
- * Wizard Step 6 — Provider configuration (M10; PR6 redesign — glass).
+ * Wizard Step 6 - Provider configuration (M10; PR6 redesign - glass).
  *
  * OpenRouter inline flow. Single "Verify and save" action does
  * verify-then-persist atomically (codex turn 2 RED #1):
@@ -7,7 +7,7 @@
  *   1. Renderer reads apiKey from uncontrolled DOM ref + model from
  *      regular React state.
  *   2. Clears `apiKeyRef.current.value = ""` SYNCHRONOUSLY before
- *      the await (skill §14 — never park secrets in observer state).
+ *      the await (skill §14 - never park secrets in observer state).
  *   3. Calls `providerPersist({apiKey, model, provider:"openrouter"})`.
  *      Main process verifies via OpenRouter SDK (16-token chat
  *      completion, hard 15s timeout) BEFORE storing OPENROUTER_API_KEY
@@ -16,7 +16,7 @@
  *   4. On success → advance to the Review step (Phase 2: Mode + Wake
  *      are session-config, not wizard steps).
  *   5. On error → render specialised UI copy per VexErrorCode (fixed
- *      strings; SDK raw messages NEVER surfaced — codex turn 3
+ *      strings; SDK raw messages NEVER surfaced - codex turn 3
  *      YELLOW).
  *
  * Configured branch: when `envState.provider.configured` is true the
@@ -26,15 +26,15 @@
  * operator re-typing the API key. "Reconfigure" there falls back to
  * THIS file's full first-run form, unchanged.
  *
- * AGENT_MODEL is NOT a secret — model ids are public catalogue
- * entries — so it stays in React state. The OPENROUTER_API_KEY input
+ * AGENT_MODEL is NOT a secret - model ids are public catalogue
+ * entries - so it stays in React state. The OPENROUTER_API_KEY input
  * is the ONLY secret in this step.
  *
- * PR6 — `ModelBrandIcon` parses the `<provider>/<model>` prefix and
+ * PR6 - `ModelBrandIcon` parses the `<provider>/<model>` prefix and
  * shows a matching brand SVG from `@thesvg/react` (DeepSeek, Anthropic,
  * OpenAI, …) both next to the model input AND in the skip-card summary.
  *
- * Chrome lives in `WizardStepPanel` — `data-vex-wizard-provider`
+ * Chrome lives in `WizardStepPanel` - `data-vex-wizard-provider`
  * forwarded onto the panel root. The `<form>` carries the existing
  * `data-vex-wizard-provider-form="openrouter"` attribute via the
  * panel's typed `formProps.providerFormAttr` slot.
@@ -57,7 +57,6 @@ import {
   useStepAdvance,
   type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
-import { WIZARD_STEP_META } from "../wizard-icons.js";
 import { WizardStepPanel } from "../WizardStepPanel.js";
 import { type ServerError } from "./provider/error-ui.js";
 import { ConfiguredProviderPanel } from "./provider/ConfiguredProviderPanel.js";
@@ -94,8 +93,8 @@ export function ProviderStep({
   const [showOverride, setShowOverride] = useState(false);
   const apiKeyRef = useRef<HTMLInputElement | null>(null);
 
-  const providerState =
-    envQuery.data?.ok === true ? envQuery.data.data.provider : null;
+  const env = envQuery.data?.ok === true ? envQuery.data.data : null;
+  const providerState = env?.provider ?? null;
   const configured = providerState?.configured ?? false;
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
@@ -109,7 +108,7 @@ export function ProviderStep({
 
   // The provider (endpoint) select appears only for an EXACT catalogue match.
   // A manually typed or unlisted model id has no endpoint list we can
-  // authorise a pin against, so it stays Auto-only — and this also guarantees
+  // authorise a pin against, so it stays Auto-only - and this also guarantees
   // one fetch per selected model instead of one per keystroke.
   const selectedCatalogueModelId =
     catalogueModels.find((option) => option.modelId === model.trim())
@@ -200,7 +199,7 @@ export function ProviderStep({
         const result = await persistProvider(payload);
         if (!result.ok) {
           // `details.causeCode` is the errno-shaped cause code attached by
-          // main (mapSdkError) — narrow defensively like AgentCoreStep's
+          // main (mapSdkError) - narrow defensively like AgentCoreStep's
           // `details.violation`.
           const causeCodeRaw = result.error.details?.causeCode;
           setServerError({
@@ -221,8 +220,6 @@ export function ProviderStep({
     [advanceToReview, endpointTag, invalidateEnvState, model],
   );
 
-  const meta = WIZARD_STEP_META.provider;
-
   // ── Configured screen ────────────────────────────────────────────
   // Owned by `ConfiguredProviderPanel`: status rows + an inline delta editor
   // that can save a model/routing change WITHOUT re-entering the API key.
@@ -230,6 +227,7 @@ export function ProviderStep({
   if (configured && !showOverride) {
     return (
       <ConfiguredProviderPanel
+        env={env}
         providerName={effectiveName}
         activeModel={effectiveModel}
         activeEndpointTag={effectiveEndpointTag}
@@ -253,8 +251,8 @@ export function ProviderStep({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "provider", value: "form" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={env}
       title="Inference provider"
       description="OpenRouter is the model backend the agent thinks with. The key buys inference only - your wallet keys and vault contents are never sent to the model provider. Optional here, but the agent cannot run until one is configured."
       formProps={{
@@ -269,7 +267,7 @@ export function ProviderStep({
           {showConfigureLater ? (
             <Button
               type="button"
-              variant="bare"
+              variant="quiet"
               onClick={() => {
                 void advanceToReview();
               }}
@@ -291,7 +289,7 @@ export function ProviderStep({
         </>
       }
     >
-      <div className="flex flex-col gap-5">
+      <div className="vex-wz-stack">
         {showConfigureLater ? (
           <p
             role="status"
@@ -303,7 +301,7 @@ export function ProviderStep({
             this later from Settings, but nothing will run until then.
           </p>
         ) : null}
-        <div className="flex flex-col gap-2">
+        <div className="vex-wz-group">
           <Label htmlFor="vex-provider-key">OpenRouter API key</Label>
           <PasswordField
             id="vex-provider-key"
@@ -311,22 +309,24 @@ export function ProviderStep({
             placeholder="sk-or-..."
             autoFocus
           />
-          <p className="text-xs text-ink-tertiary">
-            Create or copy your key at{" "}
-            <a
-              href="https://openrouter.ai/keys"
-              target="_blank"
-              rel="noreferrer"
-              className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
-            >
-              openrouter.ai/keys
-            </a>
-            . Stored on this machine in your local config and sent only
-            to OpenRouter when you invoke the agent.
+          <p className="vex-wz-hint">
+            <span>
+              Create or copy your key at{" "}
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent-primary underline underline-offset-2 hover:text-accent-hover"
+              >
+                openrouter.ai/keys
+              </a>
+              . Stored on this machine in your local config and sent only
+              to OpenRouter when you invoke the agent.
+            </span>
           </p>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="vex-wz-group">
           <Label
             htmlFor="vex-provider-model"
             className="flex items-center gap-2"
@@ -346,18 +346,20 @@ export function ProviderStep({
               void providerModels.refetch();
             }}
           />
-          <p className="text-xs text-ink-tertiary">
-            Browse tool-capable models or enter any OpenRouter model id. View
-            the full catalogue at{" "}
-            <a
-              href="https://openrouter.ai/models"
-              target="_blank"
-              rel="noreferrer"
-              className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
-            >
-              openrouter.ai/models
-            </a>
-            .
+          <p className="vex-wz-hint">
+            <span>
+              Browse tool-capable models or enter any OpenRouter model id. View
+              the full catalogue at{" "}
+              <a
+                href="https://openrouter.ai/models"
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent-primary underline underline-offset-2 hover:text-accent-hover"
+              >
+                openrouter.ai/models
+              </a>
+              .
+            </span>
           </p>
         </div>
 

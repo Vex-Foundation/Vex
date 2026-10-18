@@ -19,16 +19,62 @@ import {
   persistRuntimeMode,
 } from "./runtime-mode.js";
 import {
+  coerceBooleanPreference,
   coerceBookWidth,
   coerceSidebarWidth,
   coerceStudioRailExplorerShare,
   STUDIO_RAIL_EXPLORER_SHARE_DEFAULT,
 } from "./layout.js";
 import { coerceStudioFileTabs } from "./studio-file-tabs.js";
-import {
-  coerceSessionOrdinals,
-  EMPTY_ORDINAL_LEDGER,
-} from "./session-ordinals.js";
+
+/**
+ * THE RETIRED SESSION ORDINAL LEDGER (v21): the `(02)` numbers the V10 left
+ * page printed beside each session. R3 lists sessions by name, so nothing
+ * assigns or reads an ordinal any more and the store has no setter for it.
+ * The key stays on the whitelist this release (expand-only, as v22 left
+ * `bookWidth` and `bookTab`): a stored ledger is coerced on the way in and
+ * written back unchanged, so an older reader still finds it.
+ */
+export interface SessionOrdinalLedger {
+  readonly next: number;
+  readonly byId: Readonly<Record<string, number>>;
+}
+
+export const EMPTY_ORDINAL_LEDGER: SessionOrdinalLedger = { next: 1, byId: {} };
+
+/** The ledger's bounds, as v21 wrote them: at most 5000 ids of at most 64 characters. */
+const ORDINAL_LEDGER_MAX = 5000;
+const ORDINAL_ID_MAX_LENGTH = 64;
+
+/** Off-shape, over-long or inconsistent payloads degrade to the empty ledger. */
+export function coerceSessionOrdinals(value: unknown): SessionOrdinalLedger {
+  if (typeof value !== "object" || value === null) return EMPTY_ORDINAL_LEDGER;
+  const next: unknown = Reflect.get(value, "next");
+  const byId: unknown = Reflect.get(value, "byId");
+  if (typeof next !== "number" || !Number.isInteger(next) || next < 1) {
+    return EMPTY_ORDINAL_LEDGER;
+  }
+  if (typeof byId !== "object" || byId === null || Array.isArray(byId)) {
+    return EMPTY_ORDINAL_LEDGER;
+  }
+  const entries = Object.entries(byId);
+  if (entries.length > ORDINAL_LEDGER_MAX) return EMPTY_ORDINAL_LEDGER;
+  const clean: Record<string, number> = {};
+  for (const [id, n] of entries) {
+    if (
+      id.length === 0 ||
+      id.length > ORDINAL_ID_MAX_LENGTH ||
+      typeof n !== "number" ||
+      !Number.isInteger(n) ||
+      n < 1 ||
+      n >= next
+    ) {
+      return EMPTY_ORDINAL_LEDGER;
+    }
+    clean[id] = n;
+  }
+  return { next, byId: clean };
+}
 
 /** Hard bounds on the persisted BOOK rail order (user-writable localStorage). */
 const MAX_BOOK_SECTION_ENTRIES = 32;
@@ -94,6 +140,11 @@ export const PERSISTED_UI_KEYS = [
   "studioRailExplorerShare",
   "studioFileTabs",
   "sessionOrdinals",
+  "leftOpen",
+  "vexOpenChat",
+  "vexOpenPages",
+  "showAvatar",
+  "welcomeVexShown",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -227,6 +278,13 @@ export function coerceBookTab(value: unknown): BookTab {
 //   v21: `sessionOrdinals` added - the left page's stable `(02)` ledger, which
 //       used to keep its own localStorage key. Seed the empty ledger; it
 //       re-seeds from the session list. Expand-only like every hop above.
+//   v22: the R3 frame's four slots added (docs/design/R3-MINIMAL.md section
+//       2): `leftOpen` seeded from `sidebarOpen`, `vexOpenChat` seeded from
+//       `bookOpen` (the BOOK was the right column the user opened or
+//       closed), `vexOpenPages` false (Vex is hidden by default on the table
+//       pages) and `showAvatar` true. Expand-only: `bookWidth`, `bookTab`,
+//       `sidebarWidth` and `sessionOrdinals` stop being read by the frame
+//       but stay in the payload this release, untouched.
 //   v16: `studioRailExplorerShare` added (the Studio rail's vertical split
 //       between the PROJECTS list and the EXPLORER pane, which used to be a
 //       fixed 256px box). Seed the default so an upgrading install hydrates
@@ -301,6 +359,24 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
   if (version < 21 && !("sessionOrdinals" in next)) {
     next = { ...next, sessionOrdinals: EMPTY_ORDINAL_LEDGER };
   }
+  if (version < 22) next = seedR3FrameSlots(next);
+  return next;
+}
+
+/**
+ * v22's seeds: each slot is added only when the payload does not carry it, so
+ * the hop never rewrites a stored value, old keys included.
+ */
+function seedR3FrameSlots(stored: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...stored };
+  if (!("leftOpen" in next)) {
+    next["leftOpen"] = coerceBooleanPreference(next["sidebarOpen"], true);
+  }
+  if (!("vexOpenChat" in next)) {
+    next["vexOpenChat"] = coerceBooleanPreference(next["bookOpen"], true);
+  }
+  if (!("vexOpenPages" in next)) next["vexOpenPages"] = false;
+  if (!("showAvatar" in next)) next["showAvatar"] = true;
   return next;
 }
 
@@ -400,5 +476,17 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     // tab exists.
     studioFileTabs: coerceStudioFileTabs(incoming?.studioFileTabs),
     sessionOrdinals: coerceSessionOrdinals(incoming?.sessionOrdinals),
+    // The R3 frame's booleans: a hand-edited non-boolean degrades to the
+    // value the store was constructed with, never reaching the solver.
+    leftOpen: coerceBooleanPreference(incoming?.leftOpen, current.leftOpen),
+    vexOpenChat: coerceBooleanPreference(incoming?.vexOpenChat, current.vexOpenChat),
+    vexOpenPages: coerceBooleanPreference(incoming?.vexOpenPages, current.vexOpenPages),
+    showAvatar: coerceBooleanPreference(incoming?.showAvatar, current.showAvatar),
+    // The welcome token's own choice, added after v22 without a hop: a
+    // payload that does not carry it hydrates to the store's default (shown).
+    welcomeVexShown: coerceBooleanPreference(
+      incoming?.welcomeVexShown,
+      current.welcomeVexShown,
+    ),
   };
 }

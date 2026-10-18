@@ -1,27 +1,24 @@
 /**
- * NO GLASS, NO BLUR, NO SHADOW, RADIUS 0 - the V10 surface law, tested as
- * CSS TEXT.
+ * NO GLASS, NO BLUR, NO SHADOW, RADIUS 0 - the surface law
+ * (docs/design/R3-MINIMAL.md, rules), tested as CSS TEXT.
  *
  * jsdom resolves no cascade and no backdrop-filter, so nothing here can be
  * proven by rendering a component: the invariants live in the stylesheets
  * and are exactly the kind that drift silently. What is pinned:
  *
- *  1. the glass tiers are NEUTRALISED: each tint is an opaque surface alias
- *     declared once (no per-theme veil, no alpha literal), glass.css declares
- *     no filter, no border, no radius and no shadow but the 1px rule, and the
- *     retired blur, saturation and edge-light tokens are gone;
+ *  1. the glass is GONE: the neutralised tier sheet (glass.css) is deleted
+ *     and no longer imported, no sheet declares a `.vex-glass-*` class or a
+ *     `--vex-glass-*` token, and no renderer source wears a glass class;
  *  2. no stylesheet in the renderer declares a backdrop-filter;
  *  3. the shape law: base.css squares every element with one `!important`
  *     rule, the radius tokens are 0, the shadow tokens are transparent, and
  *     Tailwind's default radius, shadow and blur scales are reset;
- *  4. the wall behind the shell is opaque paper;
+ *  4. the Vex sidebar's print window shows the print as it is;
  *  5. a compatibility alias outliving its last consumer (dead-code decree:
- *     when this fails, delete the alias in shell.css);
- *  6. glass.css stays imported right after shell.css, unlayered, and takes
- *     every duration and curve from tokens.css.
+ *     when this fails, delete the alias in shell.css).
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -33,7 +30,7 @@ const rendererDir = path.join(stylesDir, "..");
 const read = (name: string): string => readFileSync(path.join(globalCssDir, name), "utf8");
 
 const shellCss = read("shell.css");
-const glassCss = read("glass.css");
+const vexSidebarCss = read("vex-sidebar.css");
 const baseCss = read("base.css");
 const tokensCss = read("tokens.css");
 const indicatorsCss = read("ui-primitives/indicators.css");
@@ -83,86 +80,53 @@ function allSheets(): (readonly [string, string])[] {
 
 const shell = ruleBody(shellCss, '[data-vex-shell="true"]');
 
-/** The tiers that still have a tint; the classes share the names. */
-const TIERS = ["rail", "card", "pane"] as const;
-/** The tiers whose class still exists in glass.css. */
-const CLASS_TIERS = ["rail", "card", "pane"] as const;
-
-describe("the glass tiers, neutralised (shell.css)", () => {
-  it.each(TIERS)("paints the %s tint from an opaque surface alias", (tier) => {
-    // An alias, never an rgba literal: a veil is a translucent surface by
-    // definition, and V10 has none.
-    expect(declarationValue(shell, `--vex-glass-tint-${tier}`)).toMatch(/^var\(--vex-alias-[a-z0-9-]+\)$/);
-  });
-
-  it("declares the tints once: no per-theme glass block survives", () => {
-    // The surface aliases already flip per theme; a celeris glass block could
-    // only re-introduce a veil.
-    expect(stripComments(shellCss)).not.toContain('[data-vex-shell="true"][data-vex-theme="celeris"] {');
-  });
-
-  it("has retired the blur, saturation and edge-light tokens everywhere", () => {
-    for (const sheet of [shellCss, glassCss]) {
-      const source = stripComments(sheet);
-      expect(source).not.toMatch(/--vex-glass-(blur|saturate|edge)/);
+/** Every non-test TypeScript source under the renderer, as [relative name, text]. */
+function rendererSources(): (readonly [string, string])[] {
+  const sources: (readonly [string, string])[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry !== "__tests__" && entry !== "node_modules") walk(full);
+        continue;
+      }
+      if (/\.tsx?$/.test(entry)) {
+        sources.push([path.relative(rendererDir, full), readFileSync(full, "utf8")] as const);
+      }
     }
-  });
+  };
+  walk(rendererDir);
+  return sources;
+}
 
-  it("draws a neutralised tier's edge as one 1px rule, inset", () => {
-    expect(declarationValue(shell, "--vex-glass-rule")).toBe("inset 0 0 0 1px var(--vex-alias-rule)");
-  });
-});
-
-describe("the glass classes, neutralised (glass.css)", () => {
-  it.each(CLASS_TIERS)("gives .vex-glass-%s an opaque tint and nothing that filters", (tier) => {
-    const body = ruleBody(glassCss, `.vex-glass-${tier}`);
-    expect(declarationValue(body, "background")).toBe(`var(--vex-glass-tint-${tier})`);
-    expect(body).not.toMatch(/backdrop-filter|(?:^|[\s;])filter:/);
-  });
-
-  it("lets the rule be the only box-shadow, on the rail, the card and the pane", () => {
-    for (const tier of ["rail", "card", "pane"] as const) {
-      expect(declarationValue(ruleBody(glassCss, `.vex-glass-${tier}`), "box-shadow")).toBe(
-        "var(--vex-glass-rule)",
-      );
-    }
-    const shadows = [...stripComments(glassCss).matchAll(/box-shadow:\s*([^;]+);/g)].map((m) => m[1]?.trim());
-    expect(new Set(shadows)).toEqual(new Set(["var(--vex-glass-rule)"]));
-  });
-
-  it("declares no border and no radius anywhere in the sheet", () => {
-    const source = stripComments(glassCss);
-    expect(source.match(/(?:^|[\s;{])border[a-z-]*\s*:/gm)).toBeNull();
-  });
-
-  it("has deleted the chip tier, whose one consumer (the $VEX card) now sits on the print", () => {
-    expect(stripComments(glassCss)).not.toContain(".vex-glass-chip");
-    expect(declarationValue(shell, "--vex-glass-tint-chip")).toBeUndefined();
-  });
-
-  it("has deleted the retired overlay class, which had no consumer", () => {
-    expect(stripComments(glassCss)).not.toContain(".vex-glass-overlay");
-  });
-
-  it("no longer carries the terminal tab shell, which terminal.css owns", () => {
-    expect(stripComments(glassCss)).not.toContain(".vex-tab-shell");
-  });
-
-  it("takes every duration and curve from tokens.css", () => {
-    const source = stripComments(glassCss);
-    expect(source).not.toContain("cubic-bezier(");
-    expect(source).not.toMatch(/^\s*--vex-(duration|ease)-/m);
-    expect(source).not.toMatch(/\b\d+m?s\b/);
-  });
-
-  it("is imported right after shell.css, as a plain unlayered @import", () => {
+describe("the glass, retired", () => {
+  it("has deleted the tier sheet and dropped its import", () => {
+    expect(existsSync(path.join(globalCssDir, "glass.css"))).toBe(false);
     const imports = globalsCss
       .split("\n")
       .filter((line) => line.startsWith("@import"))
       .map((line) => line.trim());
-    const shellAt = imports.indexOf('@import "./global-css/shell.css";');
-    expect(shellAt).toBeGreaterThanOrEqual(0);
-    expect(imports[shellAt + 1]).toBe('@import "./global-css/glass.css";');
+    expect(imports.filter((line) => line.includes("glass"))).toEqual([]);
+    // shell.css, which held the tier tokens, stays a plain unlayered import.
+    expect(imports).toContain('@import "./global-css/shell.css";');
+  });
+
+  it("declares no glass class and no glass token in any sheet", () => {
+    const offenders = allSheets().flatMap(([name, css]) => {
+      const source = stripComments(css);
+      const hits: string[] = [];
+      if (/\.vex-glass-[a-z]/.test(source)) hits.push(`${name}: .vex-glass-* class`);
+      if (/--vex-glass\b/.test(source)) hits.push(`${name}: --vex-glass* token`);
+      return hits;
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it("puts no glass class on any renderer source", () => {
+    const offenders = rendererSources()
+      .filter(([, source]) => /\bvex-glass-(?:rail|card|pane|chip|overlay)\b/.test(source))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -220,34 +184,54 @@ describe("the shape law", () => {
   });
 });
 
-describe("the left page's print (shell.css)", () => {
+describe("the Vex sidebar's print window (vex-sidebar.css)", () => {
   it("shows the print as it is: no veil, no filter, no motion over it", () => {
-    const source = stripComments(shellCss);
-    // The full-window wall and its veil are gone: the print lives on the
-    // left page only, and nothing dims it.
-    expect(source).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
-    expect(source).not.toContain("data-vex-backdrop-dimmed");
-    for (const selector of [".vex-print", ".vex-print__img", ".vex-print__grain"]) {
-      const body = ruleBody(shellCss, selector);
+    const shell = stripComments(shellCss);
+    // The full-window wall and its veil are gone, and so is the left page's
+    // print: the print lives in the Vex sidebar's plate only, and nothing
+    // dims it.
+    expect(shell).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
+    expect(shell).not.toContain("data-vex-backdrop-dimmed");
+    expect(shell).not.toContain(".vex-print");
+    for (const selector of [".vex-vs-plate", ".vex-vs-plate__img", ".vex-vs-plate__grain"]) {
+      const body = ruleBody(vexSidebarCss, selector);
       expect(body, selector).not.toMatch(/(?:^|[\s;])(filter|backdrop-filter|animation|transition):/);
     }
   });
 
-  it("lays the print out in place, at window size, from the column's corner", () => {
-    const body = ruleBody(shellCss, ".vex-print__img");
-    expect(declarationValue(body, "width")).toBe("100vw");
-    expect(declarationValue(body, "height")).toBe("100vh");
+  it("cuts the print into the plate at the sidebar's focal point", () => {
+    const body = ruleBody(vexSidebarCss, ".vex-vs-plate__img");
+    expect(declarationValue(body, "width")).toBe("100%");
+    expect(declarationValue(body, "height")).toBe("100%");
     expect(declarationValue(body, "object-fit")).toBe("cover");
-    expect(declarationValue(body, "object-position")).toBe("60% 50%");
+    expect(declarationValue(body, "object-position")).toBe("50% 82%");
+    // The user's own image is shown as it is, centred.
+    expect(
+      declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--custom"), "object-position"),
+    ).toBe("50% 50%");
+  });
+
+  it("keeps the plate 280 high, 220 at the least in a low window", () => {
+    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate"), "height")).toBe(
+      "clamp(220px, calc(24.4vh + 60px), 280px)",
+    );
   });
 
   it("swaps the day and night prints on the theme attribute", () => {
-    expect(declarationValue(ruleBody(shellCss, ".vex-print__img--day"), "display")).toBe("none");
+    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--day"), "display")).toBe(
+      "none",
+    );
     expect(
-      declarationValue(ruleBody(shellCss, '[data-vex-theme="celeris"] .vex-print__img--day'), "display"),
+      declarationValue(
+        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--day'),
+        "display",
+      ),
     ).toBe("block");
     expect(
-      declarationValue(ruleBody(shellCss, '[data-vex-theme="celeris"] .vex-print__img--night'), "display"),
+      declarationValue(
+        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--night'),
+        "display",
+      ),
     ).toBe("none");
   });
 });
@@ -284,7 +268,16 @@ describe("compatibility aliases", () => {
     },
   );
 
-  it.each(["--vex-glass", "--vex-rail", "--vex-rail-strong", "--vex-glass-tint-chip"])(
+  it.each([
+    "--vex-glass",
+    "--vex-rail",
+    "--vex-rail-strong",
+    "--vex-glass-tint-chip",
+    "--vex-glass-tint-rail",
+    "--vex-glass-tint-card",
+    "--vex-glass-tint-pane",
+    "--vex-glass-rule",
+  ])(
     "has deleted %s, which had no consumer left",
     (alias) => {
       expect(declarationValue(shell, alias)).toBeUndefined();

@@ -1,5 +1,5 @@
 /**
- * The pools.fun lane, rendered — the two stages as the user meets them.
+ * The pools.fun lane, rendered - the two stages as the user meets them.
  *
  * The machine's rules are pinned as a pure reducer beside this file. What this
  * file proves is that the SCREEN obeys them: that Deploy cannot be reached from
@@ -161,7 +161,7 @@ describe("pools lane - stage 2 authorizes what is on screen", () => {
     // The address the launch actually produces, and the recipient main resolved.
     expect(screen.getByText(ADDRESS)).toBeTruthy();
     expect(screen.getByText(RECIPIENT)).toBeTruthy();
-    // Formatted from raw + decimals, never computed here — and each leg shows
+    // Formatted from raw + decimals, never computed here - and each leg shows
     // its own figure, with no invented total anywhere on the card.
     expect(screen.getByText("0.001 ETH")).toBeTruthy();
     expect(screen.getByText("0.0011 ETH")).toBeTruthy();
@@ -210,7 +210,7 @@ describe("pools lane - the voiding rule, on screen", () => {
 
     fireEvent.change(screen.getByLabelText("Symbol"), { target: { value: "OTHER" } });
 
-    // Back to stage 1, and the figures are gone with the arming — the user
+    // Back to stage 1, and the figures are gone with the arming - the user
     // cannot be looking at numbers computed for the previous symbol.
     expect(submitButton().textContent).toMatch(/prepare launch/i);
     expect(screen.queryByText(RECIPIENT)).toBeNull();
@@ -423,5 +423,128 @@ describe("pools lane - dismissing an agent-requested form answers its agent", ()
     // A form whose launch is being signed is not a form the user dismissed, and
     // cancelling its intent would race a signature.
     expect(cancelAwaitingForm).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * THE R3 PAINT, pinned at the seams that carry meaning (docs/design/R3-MINIMAL.md
+ * sections 1.5, 1.6 and 12). What is asserted is never a class string: it is the
+ * role a sentence keeps, the swatch fill drawn beside it, and the ARIA state of a
+ * choice, because those are what make a state readable without colour.
+ */
+describe("pools lane - the R3 paint keeps its meaning without colour", () => {
+  /** The nearest ancestor (or self) with this ARIA role. */
+  function withRole(node: HTMLElement, role: string): HTMLElement {
+    const found = node.closest(`[role="${role}"]`);
+    if (!(found instanceof HTMLElement)) throw new Error(`no ${role} around the sentence`);
+    return found;
+  }
+
+  /** The fill (`data-s`) of the first swatch inside a node. */
+  function swatchIn(node: HTMLElement): string | null {
+    return node.querySelector("[data-s]")?.getAttribute("data-s") ?? null;
+  }
+
+  it("is a blocking dialog on the flat scrim, never the transparent backdrop", () => {
+    mount();
+    const dialog = document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.getAttribute("data-vex-backdrop")).toBeNull();
+  });
+
+  it("draws the chosen pair with a solid swatch and the others empty", () => {
+    mount();
+    const weth = screen.getByRole("radio", { name: "WETH" });
+    const usdg = screen.getByRole("radio", { name: "USDG" });
+    expect(weth.getAttribute("aria-checked")).toBe("true");
+    expect(swatchIn(weth)).toBe("done");
+    expect(usdg.getAttribute("aria-checked")).toBe("false");
+    expect(swatchIn(usdg)).toBe("idle");
+
+    fireEvent.click(usdg);
+    expect(screen.getByRole("radio", { name: "USDG" }).getAttribute("aria-checked")).toBe("true");
+    expect(swatchIn(screen.getByRole("radio", { name: "USDG" }))).toBe("done");
+    expect(swatchIn(screen.getByRole("radio", { name: "WETH" }))).toBe("idle");
+  });
+
+  it("keeps the fingerprint card's seam and draws the image alarm as an ink callout", async () => {
+    prepare.mockResolvedValue({
+      ok: true,
+      data: prepared({ fingerprintId: "fp-seam", imageLanded: false }),
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(submitButton());
+
+    const sentence = await screen.findByText(/image did not make it into/i);
+    const alarm = withRole(sentence, "alert");
+    expect(swatchIn(alarm)).toBe("concerned");
+    const card = screen.getByRole("region", { name: /what you are authorizing/i });
+    expect(card.getAttribute("data-vex-pools-fingerprint")).toBe("fp-seam");
+    expect(card.contains(alarm)).toBe(true);
+  });
+
+  it("draws the holder-rewards alarm on the card as an ink callout", async () => {
+    const sentinel = "0x968b0c1E896fB1Ddb2042957fc0614c67ab7FFc4";
+    prepare.mockResolvedValue({
+      ok: true,
+      data: prepared({ resolvedFeeRecipient: sentinel, holderRewards: { mode: "token", sentinel } }),
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(submitButton());
+
+    const sentence = await screen.findByText(/you will receive nothing from this token's trading fees, ever/i);
+    expect(swatchIn(withRole(sentence, "alert"))).toBe("concerned");
+  });
+
+  it("draws a refused deploy as a re-review alert with the concerned swatch and both sentences", async () => {
+    prepare.mockResolvedValue({ ok: true, data: prepared() });
+    deploy.mockResolvedValue({
+      ok: false,
+      error: { code: "internal.unexpected", message: "The deployment fee moved." },
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(submitButton().textContent).toMatch(/deploy token/i));
+    fireEvent.click(submitButton());
+
+    // Main's sentence, then the lane's standing line under it, in one alert.
+    const sentence = await screen.findByText("The deployment fee moved.");
+    const alert = withRole(sentence, "alert");
+    expect(swatchIn(alert)).toBe("concerned");
+    expect(within(alert).getByText(/no longer what vex would sign/i)).toBeTruthy();
+  });
+
+  it("draws a refused preparation as an alert with the error swatch, main's sentence verbatim", async () => {
+    prepare.mockResolvedValue({
+      ok: false,
+      error: { code: "internal.unexpected", message: "The paired asset is not allowlisted." },
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(submitButton());
+
+    const sentence = await screen.findByText("The paired asset is not allowlisted.");
+    expect(swatchIn(withRole(sentence, "alert"))).toBe("error");
+  });
+
+  it("draws a completed launch as status with the solid swatch", async () => {
+    prepare.mockResolvedValue({ ok: true, data: prepared() });
+    deploy.mockResolvedValue({
+      ok: true,
+      data: { message: "Launched 0xabc.", tokenAddress: ADDRESS },
+    });
+    mount();
+    fillValidForm();
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(submitButton().textContent).toMatch(/deploy token/i));
+    fireEvent.click(submitButton());
+
+    const sentence = await screen.findByText("Launched 0xabc.");
+    expect(swatchIn(withRole(sentence, "status"))).toBe("done");
+    // The dialog now offers Close, and Cancel is gone.
+    expect(screen.getByRole("button", { name: /^close$/i })).toBeTruthy();
   });
 });

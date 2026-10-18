@@ -1,11 +1,15 @@
-/* Chrome for the shared UI primitives (components/ui): toast, tooltip,
- * hover card, menu, disclosure row, swatch, chip, stamp, cell meter, connection banner, drop
- * overlay, image lightbox, and the dialog backdrop. Split by responsibility
- * into the same-named sibling folder; this manifest only imports (CSS
- * @import must precede all rules). Aliases only; every animated surface
- * carries its prefers-reduced-motion block. */
+/* Chrome for the shared UI primitives (components/ui), R3
+ * (docs/design/R3-MINIMAL.md sections 1, 5, 6 and 12): toast, tooltip, hover
+ * card, menu, disclosure row, empty block, ink callout, swatch, state word,
+ * vx token, chip, stamp and tag, cell meter, loading line, connection banner,
+ * the error boundary,
+ * drop overlay, image lightbox, the dialog scrim and the sheet. Split by
+ * responsibility into the same-named sibling folder; this manifest only
+ * imports (CSS @import must precede all rules). Aliases only; every animated
+ * surface carries its prefers-reduced-motion block. */
 
 @import "./ui-primitives/overlays.css";
 @import "./ui-primitives/menu.css";
 @import "./ui-primitives/indicators.css";
 @import "./ui-primitives/marks.css";
+@import "./ui-primitives/error-boundary.css";

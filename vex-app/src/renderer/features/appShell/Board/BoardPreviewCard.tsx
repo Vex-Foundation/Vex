@@ -27,7 +27,8 @@
 
 import { Swatch } from "../../../components/ui/swatch.js";
 import { useMemo, useState, type JSX } from "react";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LineBoard, LineSpark } from "../../../components/icons/line/index.js";
+import { Button } from "../../../components/ui/button.js";
 import {
   boardTokenIconDataUrl,
   useBoardTokenIcon,
@@ -50,7 +51,7 @@ export const BOARD_PREVIEW_PENDING_CONCLUSION = "Checking safety signals";
 
 export interface BoardPreviewCardExtraProps {
   /**
-   * Ask VEX about these results. Optional: the affordance is only offered
+   * Ask Vex about these results. Optional: the affordance is only offered
    * where a composer can actually receive the intent, so a surface that
    * cannot hand it on does not paint a button that would do nothing.
    */
@@ -89,7 +90,7 @@ export function BoardPreviewCard({
       data-pools={total}
       data-live={held ? "true" : "false"}
       aria-label={`${board.title}, ${String(total)} ${total === 1 ? "result" : "results"}`}
-      className="vex-board-card mt-3 flex flex-col gap-3 border border-rule bg-board-card px-4 py-3.5"
+      className="vex-board-card mt-3 flex flex-col gap-3 border border-rule-quiet bg-board-card px-4 py-3.5"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -129,7 +130,7 @@ export function BoardPreviewCard({
           {overflow > 0 ? (
             <span
               data-vex-area="board-preview-overflow"
-              className="-ml-2 flex h-7 w-7 items-center justify-center border border-rule bg-surface-2 text-[10px] font-semibold tabular-nums text-ink-tertiary"
+              className="vex-num -ml-2 flex h-7 w-7 items-center justify-center border border-rule bg-board-card font-mono text-[10px] text-ink-tertiary"
             >
               {`+${String(overflow)}`}
             </span>
@@ -137,7 +138,7 @@ export function BoardPreviewCard({
         </div>
         <p
           data-vex-area="board-preview-count"
-          className="shrink-0 text-[13px] font-semibold leading-[18px] tabular-nums text-ink-primary"
+          className="shrink-0 text-[13px] font-semibold leading-[18px] text-ink-primary"
         >
           {`${String(total)} ${total === 1 ? "result" : "results"}`}
         </p>
@@ -154,27 +155,30 @@ export function BoardPreviewCard({
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
+        {/* Quiet keys: the transcript's one blue fill is the composer's
+          * send key (docs/design/R3-MINIMAL.md section 1, rules). View
+          * board opens the Board page. */}
+        <Button
+          variant="quiet"
+          size="sm"
           data-vex-area="board-preview-open"
           onClick={() => {
             onOpen(board);
           }}
-          className="inline-flex items-center gap-1.5 bg-button-accent px-3 py-1.5 text-[13px] font-semibold text-ink-on-button-accent transition-colors duration-150 hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
+          <LineBoard size={14} />
           View board
-          <PxIcon name="external" size={16} />
-        </button>
+        </Button>
         {onAsk === undefined ? null : (
-          <button
-            type="button"
+          <Button
+            variant="quiet"
+            size="sm"
             data-vex-area="board-preview-ask"
             onClick={onAsk}
-            className="inline-flex items-center gap-1.5 border border-rule px-3 py-1.5 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:border-rule-ink hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           >
-            <PxIcon name="models" size={16} />
-            Ask VEX about results
-          </button>
+            <LineSpark size={14} />
+            Ask Vex about results
+          </Button>
         )}
       </div>
     </section>
@@ -182,10 +186,10 @@ export function BoardPreviewCard({
 }
 
 /**
- * Snapshot or LIVE, in words plus one dot.
+ * Snapshot or Live, in words plus one swatch.
  *
  * The dot follows `live-connected` - a landed tick - rather than the toggle,
- * so a reader is never shown a green LIVE beside figures that have not
+ * so a reader is never shown "Live" beside figures that have not
  * arrived. A snapshot names its clock, because a board's figures are a
  * financial reading whose age changes what they mean.
  */
@@ -215,12 +219,12 @@ function ModeBadge({
       data-vex-area="board-preview-mode"
       data-mode={connected ? "live" : "connecting"}
       className={cn(
-        "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-semibold leading-[16px]",
-        connected ? "text-accent-primary" : "text-ink-tertiary",
+        "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] font-medium leading-[16px]",
+        connected ? "text-ink-secondary" : "text-ink-tertiary",
       )}
     >
-      <Swatch state={connected ? "done" : "idle"} size={9} />
-      {connected ? "LIVE" : "Connecting"}
+      <Swatch state={connected ? "done" : "listening"} size={9} />
+      {connected ? "Live" : "Connecting"}
     </span>
   );
 }
@@ -247,7 +251,7 @@ function Thumbnail({
   const dataUrl = boardTokenIconDataUrl(query);
   const [undecodableUrl, setUndecodableUrl] = useState<string | null>(null);
   const shell =
-    "h-7 w-7 shrink-0 border border-rule bg-surface-2 ring-2 ring-board-card";
+    "h-7 w-7 shrink-0 border border-rule bg-board-card";
 
   if (dataUrl !== null && dataUrl !== undecodableUrl) {
     return (
@@ -269,7 +273,7 @@ function Thumbnail({
       data-state="monogram"
       className={cn(
         shell,
-        "flex items-center justify-center font-mono text-[10px] leading-none text-ink-secondary",
+        "flex items-center justify-center text-[11px] font-semibold leading-none text-accent-primary",
         className,
       )}
     >

@@ -2,7 +2,7 @@
  * Renderer-side tests for the VexSetupDialog ("Personalize Vex") form.
  *
  * Mocks `window.vex.settings.getUserProfile` / `setUserProfile` (per
- * vex-testing-quality-gates §3 — never mock ipcRenderer in renderer tests).
+ * vex-testing-quality-gates §3 - never mock ipcRenderer in renderer tests).
  * The component reads/writes through `useUserProfile` / `useSetUserProfile`
  * (TanStack Query), so every render needs a `QueryClientProvider`.
  */
@@ -193,5 +193,35 @@ describe("VexSetupDialog", () => {
       expect(screen.getByRole("alert").textContent).toBe("Could not save. Try again."),
     );
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("is a panel, not a blocker, with the Tone, Traits and Risk appetite groups", async () => {
+    renderOpen();
+    await waitFor(() => expect(getUserProfileMock).toHaveBeenCalled());
+
+    expect(
+      document.querySelector("dialog[data-vex-backdrop='none']"),
+    ).not.toBeNull();
+    const tone = screen.getByRole("group", { name: "Tone" });
+    const traits = screen.getByRole("group", { name: "Traits" });
+    const risk = screen.getByRole("group", { name: "Risk appetite" });
+    expect(tone.querySelectorAll("button[aria-pressed]").length).toBe(7);
+    expect(traits.querySelectorAll("button[aria-pressed]").length).toBe(4);
+    expect(risk.querySelectorAll("button[aria-pressed]").length).toBe(3);
+  });
+
+  it("replaces the risk appetite on click and never clears it", async () => {
+    renderOpen();
+    await waitFor(() => expect(getUserProfileMock).toHaveBeenCalled());
+
+    const conservative = screen.getByRole("button", { name: "Conservative" });
+    const aggressive = screen.getByRole("button", { name: "Aggressive" });
+    fireEvent.click(conservative);
+    expect(conservative.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(conservative);
+    expect(conservative.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(aggressive);
+    expect(aggressive.getAttribute("aria-pressed")).toBe("true");
+    expect(conservative.getAttribute("aria-pressed")).toBe("false");
   });
 });

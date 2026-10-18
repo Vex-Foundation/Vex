@@ -22,14 +22,13 @@ export function ForeignListenerBody({
   onRetry,
 }: ForeignListenerBodyProps): JSX.Element {
   return (
-    <div className="flex flex-col gap-4">
+    <>
       <SetupStatusCard
         tone="error"
-        word="Blocked"
         title="Another database owns this port"
         detail={message}
       />
-      <p className="text-xs leading-relaxed text-ink-secondary">
+      <p className="vex-fr-text">
         Vex stopped before touching that database: it belongs to another
         Vex installation or another Postgres, and writing to it could
         damage its data. Stop the database that holds the port, then try
@@ -37,10 +36,12 @@ export function ForeignListenerBody({
         Docker environment (WSL2 with mirrored networking) both publish
         the same loopback port, and quitting one of them frees it.
       </p>
-      <Button size="lg" className="w-full" onClick={onRetry}>
-        Try again
-      </Button>
-      <OpenLogsLink />
-    </div>
+      <div className="vex-fr-acts">
+        <Button onClick={onRetry} className="w-[420px] max-w-full">
+          Try again
+        </Button>
+        <OpenLogsLink className="vex-fr-link" />
+      </div>
+    </>
   );
 }

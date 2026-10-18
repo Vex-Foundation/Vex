@@ -324,6 +324,8 @@ describe("the Full-access consent gate", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
     const strip = document.querySelector('[data-vex-consent="full-access"]');
     expect(strip).not.toBeNull();
+    // The mark of the grant is the one outlined caps tag (R3 kit `Tag`).
+    expect(strip?.querySelector(".vex-tag")?.textContent).toBe("Full access");
     expect(strip?.textContent).toContain("Agents can execute supported Vex wallet actions without per-call approval. Tool-specific approval requirements still apply. Your coding client controls its own filesystem permissions.");
     expect(strip?.textContent).toContain("I understand that agents in this project can execute supported Vex wallet actions without per-call approval.");
     // WHAT, TO WHAT, and whether it can be undone: all three, always.

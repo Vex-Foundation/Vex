@@ -18,9 +18,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
+import { useUiStore } from "../../../../stores/uiStore.js";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { BoardGrid, boardGridLabel } from "../BoardGrid.js";
+import { BoardGrid, boardFootnote, boardGridLabel } from "../BoardGrid.js";
 import {
   BOARD_FILTER_NONE,
   useBoardSurfaceStore,
@@ -31,7 +32,7 @@ import { boardSpec, hydratedRow } from "./boardFixture.js";
 
 const readBoardIcon = vi.fn();
 const prefetchBoardDetails = vi.fn();
-const hydrateBoardSparkline = vi.fn();
+const getSession = vi.fn();
 
 /** An abortable invocation, as the two board bridges now return one. */
 function invocation<T>(value: T): { promise: Promise<T>; cancel: () => void } {
@@ -61,7 +62,7 @@ beforeEach(() => {
   resetStores();
   readBoardIcon.mockReset();
   prefetchBoardDetails.mockReset();
-  hydrateBoardSparkline.mockReset();
+  getSession.mockReset();
   // Every pool answers `not_mounted`, which is the honest shape of a board
   // opened before the market services finished mounting: the classifier reads
   // it as evidence and the cards keep their unchecked chips.
@@ -78,20 +79,11 @@ beforeEach(() => {
         },
       }),
   );
-  hydrateBoardSparkline.mockImplementation(
-    (input: { pools: { chain: string; pairAddress: string }[] }) =>
-      invocation({
-        ok: true,
-        data: {
-          entries: input.pools.map((subject) => ({
-            key: `${subject.chain}:${subject.pairAddress}`.toLowerCase(),
-            subject,
-            outcome: { kind: "unavailable", reason: "not_mounted" },
-          })),
-          deadlineHit: false,
-        },
-      }),
-  );
+  // The source session of every fixture board, as the session read returns it.
+  getSession.mockResolvedValue({
+    ok: true,
+    data: { id: "session-1", title: "Agent session", initialGoal: null },
+  });
   readBoardIcon.mockResolvedValue({
     ok: true,
     data: { iconId: "abcd1234", icon: { kind: "not_found" } },
@@ -102,7 +94,7 @@ beforeEach(() => {
     value: {
       boardIcons: { read: readBoardIcon },
       boardDetails: { prefetch: prefetchBoardDetails },
-      boardSparkline: { hydrate: hydrateBoardSparkline },
+      sessions: { get: getSession },
     },
   });
 });
@@ -229,12 +221,14 @@ describe("BoardGrid", () => {
     expect(document.querySelector('[data-vex-area="board-filter-label"]')).toBeNull();
   });
 
-  it("labels the filter row visibly and seats it INSIDE the plate as its first row", () => {
+  it("labels the filter row visibly and seats it right above the grid", () => {
     render(mount(twoChainBoard()));
     const plate = document.querySelector('[data-vex-area="board-grid-plate"]');
     const bar = document.querySelector('[data-vex-area="board-grid-bar"]');
     expect(bar).not.toBeNull();
-    expect(plate?.firstElementChild).toBe(bar);
+    // The plate is the grid's container query box, so the row sits just
+    // before it: a control and the tiles it filters, read together.
+    expect(bar?.nextElementSibling).toBe(plate);
     const label = bar?.querySelector('[data-vex-area="board-filter-label"]');
     expect(label?.textContent).toBe("Show");
     expect(label?.className).not.toContain("sr-only");
@@ -278,12 +272,55 @@ describe("BoardGrid", () => {
     expect(useBoardSurfaceStore.getState().selectedPoolIndex).toBe(1);
   });
 
-  it("points the Ask panel at the card BEFORE opening it", () => {
+  it("points the Ask block at the tile BEFORE opening it, and shows Vex", () => {
+    useUiStore.setState({ shellRoute: { kind: "board", origin: null }, vexOpenPages: false });
     render(mount(twoChainBoard()));
-    screen.getAllByRole("button", { name: /^Ask VEX about / })[2]?.click();
+    screen.getAllByRole("button", { name: /^Ask Vex about / })[2]?.click();
     const state = useBoardSurfaceStore.getState();
     expect(state.selectedPoolIndex).toBe(2);
     expect(state.askPanelOpen).toBe(true);
+    // Ask Vex lives in the Vex sidebar, hidden by default on the Board page.
+    expect(useUiStore.getState().vexOpenPages).toBe(true);
+  });
+});
+
+describe("BoardGrid - the meta line and the footnote", () => {
+  it("names the chat the board was composed in, one press from it", async () => {
+    useUiStore.setState({ shellRoute: { kind: "board", origin: null } });
+    render(mount(twoChainBoard()));
+    expect(
+      document.querySelector('[data-vex-area="board-meta"]')?.textContent,
+    ).toContain("Composed by Vex in");
+    const source = await screen.findByRole("button", { name: "Agent session" });
+    act(() => {
+      source.click();
+    });
+    expect(useUiStore.getState().shellRoute.kind).toBe("none");
+    expect(getSession).toHaveBeenCalledWith({ id: "session-1" });
+  });
+
+  it("says 'this chat' while the session cannot be read, never a made-up name", () => {
+    getSession.mockReturnValue(new Promise(() => undefined));
+    render(mount(twoChainBoard()));
+    expect(
+      document.querySelector('[data-vex-area="board-source-session"]')?.textContent,
+    ).toBe("this chat");
+  });
+
+  it("says where the figures come from and what Ask Vex does", () => {
+    render(mount(twoChainBoard()));
+    const foot = document.querySelector('[data-vex-area="board-footnote"]')?.textContent ?? "";
+    expect(foot).toMatch(/^Prices and 24h changes are DexScreener figures from the snapshot at \d{2}:\d{2} UTC\./);
+    expect(foot).toContain("Ask Vex sends a token to the chat behind this board.");
+  });
+
+  it("words a live board's footnote as live, with the clock of its last read", () => {
+    expect(boardFootnote(true, "13:45 UTC")).toBe(
+      "Prices and 24h changes are live figures, last read at 13:45 UTC. Ask Vex sends a token to the chat behind this board.",
+    );
+    expect(boardFootnote(false, null)).toBe(
+      "Prices and 24h changes are DexScreener figures from the snapshot. Ask Vex sends a token to the chat behind this board.",
+    );
   });
 });
 
@@ -291,7 +328,7 @@ describe("BoardGrid - every authored string stays reachable", () => {
   it("carries captions, assessments, notes, annotations and provenance", () => {
     render(mount(authoredBoard()));
     const trigger = screen.getByRole("button", {
-      name: /composed analysis \/ data notes/i,
+      name: /composed analysis · data notes/i,
     });
     act(() => {
       trigger.click();
@@ -327,7 +364,7 @@ describe("BoardGrid - every authored string stays reachable", () => {
     render(mount(boardRefOf("session-1", 15, boardSpec({ title: "Bare" }))));
     act(() => {
       screen
-        .getByRole("button", { name: /composed analysis \/ data notes/i })
+        .getByRole("button", { name: /composed analysis · data notes/i })
         .click();
     });
     expect(
@@ -344,7 +381,7 @@ describe("BoardGrid - every authored string stays reachable", () => {
   it("keeps the disclosure collapsed until it is asked for", () => {
     render(mount(authoredBoard()));
     const trigger = screen.getByRole("button", {
-      name: /composed analysis \/ data notes/i,
+      name: /composed analysis · data notes/i,
     });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });

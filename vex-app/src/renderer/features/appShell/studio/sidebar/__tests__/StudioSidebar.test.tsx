@@ -9,13 +9,14 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "@shared/ipc/result.js";
 import type { ProjectPendingCleanups } from "@shared/schemas/project-cleanup.js";
 import type { ProjectList } from "@shared/schemas/projects.js";
 import { ExplorerRegistry } from "../../explorer/index.js";
+import { useUpdateCardSlot } from "../../../../updates/update-card-slot.js";
 import {
   installStudioDomStubs,
   makeArtifact,
@@ -74,9 +75,6 @@ vi.mock("../../explorer/ExplorerTree.js", () => ({
   ExplorerTree: ({ projectId }: { projectId: string }) => (
     <div data-testid="explorer-tree" data-project={projectId} />
   ),
-}));
-vi.mock("../../../market/VexTokenCardCompact.js", () => ({
-  VexTokenCardCompact: () => null,
 }));
 vi.mock("../../../SidebarProfile.js", () => ({
   SidebarProfile: () => <div data-testid="sidebar-profile" />,
@@ -162,7 +160,7 @@ describe("the project rows", () => {
     expect(screen.getByText("trading-agent")).not.toBeNull();
   });
 
-  it("shows the active dot on the ACTIVE row only", async () => {
+  it("marks the ACTIVE row with the selection, and no row with a dot", async () => {
     const active = makeProject({ name: "vex-core" });
     projectsListMock.mockResolvedValue({
       ok: true,
@@ -173,9 +171,14 @@ describe("the project rows", () => {
     // carries the project's name, which is the point of that header.
     await screen.findAllByText("vex-core");
 
+    // R3 (docs/design/R3-MINIMAL.md section 4): the selected project is the
+    // selection wash with its name in blue, the register of a selected nav or
+    // session row. No active dot: a fill means a state, and selection is not
+    // one.
     const activeRow = screen.getByRole("button", { current: true });
     expect(activeRow.textContent).toContain("vex-core");
-    expect(activeRow.querySelector(".vex-swatch")).not.toBeNull();
+    expect(activeRow.closest(".vex-st-proj")?.hasAttribute("data-selected")).toBe(true);
+    expect(activeRow.querySelector(".vex-swatch")).toBeNull();
 
     const otherRow = screen
       .getAllByRole("button")
@@ -185,6 +188,7 @@ describe("the project rows", () => {
           el.getAttribute("aria-current") === null,
       );
     expect(otherRow).toBeDefined();
+    expect(otherRow?.closest(".vex-st-proj")?.hasAttribute("data-selected")).toBe(false);
     expect(otherRow?.querySelector(".vex-swatch")).toBeNull();
   });
 
@@ -200,7 +204,9 @@ describe("the project rows", () => {
     await screen.findByText("restricted-one");
     expect(screen.queryByText("restricted")).toBeNull();
     expect(screen.getByText("restricted-one").closest("button")?.getAttribute("aria-description")).toBe("Restricted");
-    expect(screen.getByText("FULL ACCESS")).not.toBeNull();
+    // The outlined tag (caps are painted by the tag; the source is sentence case).
+    const tag = screen.getByText("Full access");
+    expect(tag.classList.contains("vex-tag")).toBe(true);
   });
 
   it.each([
@@ -340,16 +346,16 @@ describe("the other sections", () => {
     expect(screen.getByTestId("explorer-tree").getAttribute("data-project")).toBe(
       project.id,
     );
-    // The section says "Explorer"; the PANE inside it says which folder, which
-    // is VS Code's own explorer view-pane title (`explorerView.ts:250`).
-    const section = screen
+    // One head line says the section and the folder: "Explorer · vex-core"
+    // (docs/design/R3-MINIMAL.md section 4), VS Code's own view-pane title
+    // (`explorerView.ts:250`) in the left sidebar's group head register.
+    const pane = screen
       .getByTestId("explorer-tree")
-      .closest(".vex-disclosure-root");
-    expect(section).not.toBeNull();
-    expect(section?.querySelector(".vex-disclosure-title")?.textContent).toBe(
-      "Explorer",
-    );
-    expect(section?.textContent).toContain("vex-core");
+      .closest('[data-vex-rail-pane="explorer"]');
+    expect(pane).not.toBeNull();
+    const head = pane?.querySelector("h2");
+    expect(head?.textContent).toBe("Explorer · vex-core");
+    expect(head?.className).toContain("vex-st-xhead__t");
   });
 
   /**
@@ -441,23 +447,40 @@ describe("the other sections", () => {
     }
   });
 
-  it("mounts NO runtime-mode capsule without an active project - the welcome screen's wordmark is the seat then", async () => {
-    // Owner decree 2026-09-04: with no project the Studio welcome carries the
-    // Agent | Studio capsule under its wordmark, and this header mounts none,
-    // so the page keeps exactly ONE `Runtime mode` radiogroup. Revert the
-    // condition and this case goes red.
+  it("mounts NO runtime-mode capsule without an active project", async () => {
+    // R3: the left sidebar's nav replaced the Agent | Studio capsule
+    // everywhere (docs/design/R3-MINIMAL.md section 4).
     renderSidebar({ activeProjectId: null });
     await screen.findByText("No projects yet.");
     expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
   });
 
-  it("carries the runtime-mode capsule while a project is open - the only way back once the welcome is gone", async () => {
+  it("leaves Studio through the nav's Chat row while a project is open - never a one-way door", async () => {
+    const { useUiStore } = await import("../../../../../stores/uiStore.js");
+    useUiStore.setState({ runtimeMode: "studio", shellRoute: { kind: "none" } });
     const project = makeProject({ name: "vex-core" });
     projectsListMock.mockResolvedValue({ ok: true, data: [project] });
     renderSidebar({ activeProjectId: project.id });
     await screen.findByTestId("explorer-tree");
-    expect(screen.getByRole("radiogroup", { name: "Runtime mode" })).not.toBeNull();
-    expect(screen.getByRole("radio", { name: "Agent" })).not.toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
+
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getByRole("button", { name: "Studio" }).getAttribute("aria-current")).toBe("page");
+    fireEvent.click(within(nav).getByRole("button", { name: "Chat" }));
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+  });
+
+  it("New chat goes back to the agent shell and opens the new session form", async () => {
+    const { useUiStore } = await import("../../../../../stores/uiStore.js");
+    useUiStore.setState({
+      runtimeMode: "studio",
+      shellRoute: { kind: "none" },
+      createSessionOpen: false,
+    });
+    renderSidebar();
+    fireEvent.click(await screen.findByRole("button", { name: "New chat" }));
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+    expect(useUiStore.getState().createSessionOpen).toBe(true);
   });
 
   it("keeps the WIDE projects section wide with NO project open: the title, the row, the words", async () => {
@@ -477,12 +500,13 @@ describe("the other sections", () => {
     const row = (await screen.findByText("vex-core")).closest("button");
     expect(row).not.toBeNull();
     expect(row?.getAttribute("aria-description")).toBe("Restricted");
-    const header = screen.getByText("Projects").closest(".vex-disclosure-row");
-    expect(header).not.toBeNull();
-    expect(header?.getAttribute("aria-expanded")).toBe("true");
-    // The rest of the wide chrome rides the same fact: the settings and theme
-    // controls in the foot stay reachable from the welcome screen.
-    expect(screen.getByRole("button", { name: "Open settings" })).not.toBeNull();
+    const header = screen.getByText("Projects");
+    expect(header.tagName.toLowerCase()).toBe("h2");
+    expect(header.classList.contains("vex-ls-group")).toBe(true);
+    // The rest of the wide chrome rides the same fact: the nav, and Settings
+    // in it, stay reachable beside the welcome screen.
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getByRole("button", { name: "Settings" })).not.toBeNull();
     expect(screen.queryByRole("radiogroup", { name: "Runtime mode" })).toBeNull();
   });
 
@@ -498,9 +522,28 @@ describe("the other sections", () => {
     expect(screen.queryByLabelText("Refresh")).toBeNull();
   });
 
-  it("mounts the $VEX widget slot and the profile footer, like the sessions rail", async () => {
+  it("mounts the account row in the foot, like the sessions sidebar", async () => {
     renderSidebar();
+    const profile = await screen.findByTestId("sidebar-profile");
+    expect(profile.closest("[data-rail-foot]")?.classList.contains("vex-ls-foot")).toBe(true);
+  });
+
+  it("offers the update card its slot above the account row, and none on the rail", async () => {
+    const probe = renderHook(() => useUpdateCardSlot());
+    renderSidebar();
+    const profile = await screen.findByTestId("sidebar-profile");
+    const slot = document.querySelector("[data-vex-area='update-slot']");
+    expect(slot?.classList.contains("vex-upd-slot")).toBe(true);
+    expect(slot?.nextElementSibling).toBe(profile.closest("[data-rail-foot]"));
+    expect(probe.result.current).toBe(slot);
+
+    // Closed to its rail there is no room: no slot, and the card floats clear.
+    cleanup();
+    const railProbe = renderHook(() => useUpdateCardSlot());
+    renderSidebar({ collapsed: true });
     await screen.findByTestId("sidebar-profile");
+    expect(document.querySelector("[data-vex-area='update-slot']")).toBeNull();
+    expect(railProbe.result.current).toBeNull();
   });
 });
 
@@ -1402,10 +1445,11 @@ describe("the rail's project-wide file search", () => {
 });
 
 /**
- * THE PAPER RAIL (docs/design/V10-SPREAD.md section 1). The rail is the paper
- * closed by one 1px rule on its right, the head row is 44px under a rule, the
- * explorer pane is spacing on the paper (no box, no plate), and the foot
- * widget sits under one rule. No glass tier, no blur, no rounded box.
+ * THE LEFT SIDEBAR IN STUDIO (docs/design/R3-MINIMAL.md section 4). The
+ * column wears the left sidebar's own sheet (`.vex-ls`: paper, a quiet rule on
+ * its right, the 44px head, the account foot), the explorer pane is spacing
+ * on the paper (no box, no plate), and nothing else sits in the foot. No glass
+ * tier, no blur, no rounded box.
  *
  * These are class-chain assertions on the rendered tree: jsdom lays nothing
  * out, and a stroke is a class here, so the class IS the contract.
@@ -1417,11 +1461,13 @@ describe("the paper rail", () => {
     const rail = screen.getByLabelText("Studio projects sidebar");
     expect(rail.classList.contains("vex-glass-rail")).toBe(false);
     expect(rail.classList.contains("vex-sidebar")).toBe(true);
-    expect(rail.classList.contains("bg-surface-base")).toBe(true);
-    expect(rail.classList.contains("border-r")).toBe(true);
-    expect(rail.classList.contains("border-rule")).toBe(true);
+    // The paper and the quiet rule are the left sidebar sheet's, not a second
+    // set of utilities that could drift from it.
+    expect(rail.classList.contains("vex-ls")).toBe(true);
+    expect(rail.className).not.toMatch(/(?:^|\s)(?:bg-|border-)/);
     expect(rail.className).not.toMatch(/backdrop-blur/);
     expect(rail.className).not.toContain("bg-[var(--vex-rail)]");
+    expect(rail.querySelector("header")?.classList.contains("vex-ls-head")).toBe(true);
   });
 
   it("frames the explorer pane with spacing alone: no rounded box, no stroke", async () => {
@@ -1435,7 +1481,7 @@ describe("the paper rail", () => {
     expect(pane).not.toBeNull();
     expect(pane?.className).not.toMatch(/(?:^|\s)border(?:-|\s|$)/);
     expect(pane?.className).not.toContain("rounded");
-    const header = screen.getByLabelText("Refresh").closest("div.flex.h-\\[30px\\]");
+    const header = screen.getByLabelText("Refresh").closest(".vex-st-xhead");
     expect(header).not.toBeNull();
     expect(header?.className).not.toMatch(/border-b/);
     expect(header?.className).not.toContain("bg-surface-sidebar");
@@ -1448,40 +1494,42 @@ describe("the paper rail", () => {
     }
   });
 
-  it("threads the explorer disclosure's body through the flex chain", async () => {
+  it("threads the explorer pane through the flex chain", async () => {
     const project = makeProject({ name: "vex-core" });
     projectsListMock.mockResolvedValue({ ok: true, data: [project] });
     renderSidebar({ activeProjectId: project.id });
     const tree = await screen.findByTestId("explorer-tree");
-    const body = tree.closest(".vex-disclosure-body");
-    expect(body).not.toBeNull();
-    expect(body?.className).toContain("min-h-0");
-    expect(body?.className).toContain("flex-1");
+    const pane = tree.closest('[data-vex-rail-pane="explorer"]');
+    expect(pane).not.toBeNull();
+    expect(pane?.className).toContain("min-h-0");
+    expect(pane?.className).toContain("flex-col");
   });
 
-  it("sets the token widget under exactly one token rule", async () => {
+  it("carries no $VEX widget and no foot keys: the nav reaches Settings", async () => {
     renderSidebar();
     await screen.findByTestId("sidebar-profile");
     const rail = screen.getByLabelText("Studio projects sidebar");
+    // The $VEX line lives on the Portfolio page (docs/design/R3-MINIMAL.md
+    // section 9.1); the foot is the account row alone.
+    expect(rail.querySelector('[data-vex-area="vex-token-compact"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open settings" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Switch to the (?:dark|light) theme/ })).toBeNull();
     const strokes = Array.from(rail.querySelectorAll<HTMLElement>("*")).filter((el) =>
       /(?:^|\s)border-t(?:\s|$|-\[)/.test(el.className),
     );
-    expect(strokes.map((el) => el.className)).toEqual(["border-t border-rule px-3 py-3"]);
+    expect(strokes).toHaveLength(0);
   });
 
-  it("turns ONE chevron on the section headers instead of swapping glyphs", async () => {
+  it("draws no disclosure chevron on its group heads: they are headings, not switches", async () => {
     const project = makeProject({ name: "vex-core" });
     projectsListMock.mockResolvedValue({ ok: true, data: [project] });
     renderSidebar({ activeProjectId: project.id });
     await screen.findByTestId("explorer-tree");
-    const headers = screen.getAllByRole("button", { expanded: true });
-    const sections = headers.filter((el) => el.classList.contains("vex-disclosure-row"));
-    expect(sections).toHaveLength(2);
-    for (const section of sections) {
-      const chevron = section.querySelector("svg.vex-twistie");
-      expect(chevron).not.toBeNull();
-      expect(chevron?.classList.contains("rotate-90")).toBe(true);
-      expect(section.querySelectorAll("svg.vex-twistie")).toHaveLength(1);
-    }
+    expect(document.querySelector(".vex-disclosure-root")).toBeNull();
+    const heads = screen.getAllByRole("heading", { level: 2 });
+    expect(heads.map((head) => head.textContent)).toEqual([
+      "Projects",
+      "Explorer · vex-core",
+    ]);
   });
 });

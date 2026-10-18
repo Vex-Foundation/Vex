@@ -1,5 +1,5 @@
 /**
- * ApiKeysSkipPanel — the "already configured" skip surface of
+ * ApiKeysSkipPanel - the "already configured" skip surface of
  * ApiKeysStep.
  *
  * Rendered only in `first-pass` flow when JUPITER_API_KEY is set (the
@@ -12,20 +12,21 @@
  * from the inlined branch.
  */
 
-import type { ComponentType, JSX } from "react";
-import type { GlyphProps } from "../../../../components/icons/index.js";
+import type { JSX } from "react";
+import type { EnvState } from "@shared/schemas/onboarding.js";
 import { Button } from "../../../../components/ui/button.js";
 import { WizardStepPanel } from "../../WizardStepPanel.js";
 
 export interface ApiKeysSkipPanelProps {
-  readonly icon: ComponentType<GlyphProps>;
+  /** The step's own env read; Settings derives the head's status word from it. */
+  readonly env: EnvState | null;
   readonly formError: string | null;
   readonly advancePending: boolean;
   readonly onContinue: () => void;
 }
 
 export function ApiKeysSkipPanel({
-  icon,
+  env,
   formError,
   advancePending,
   onContinue,
@@ -33,7 +34,7 @@ export function ApiKeysSkipPanel({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "apikeys", value: "skip" }}
-      icon={icon}
+      env={env}
       title="API keys already configured"
       description="A Jupiter API key is already saved on this install. Continue to keep using it - Tavily and Rettiwt stay editable from the review at the end, or later in Settings."
       footer={

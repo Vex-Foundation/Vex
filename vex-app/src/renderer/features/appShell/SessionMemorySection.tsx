@@ -15,6 +15,7 @@ import {
   Loading,
   PILL,
   SECTION,
+  SectionHead,
   fmtDate,
 } from "./MemoryPanelShared.js";
 
@@ -28,15 +29,10 @@ export function MemorySection({
 
   return (
     <section data-vex-section="memory" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">
-          Session memory
-        </h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          What the agent remembers from this session (read-only). Outstanding
-          work is shown as counts.
-        </p>
-      </div>
+      <SectionHead
+        title="Session memory"
+        lead="What the agent remembers from this session (read-only). Outstanding work is shown as counts."
+      />
       {sessionId === null || sessionId.length === 0 ? (
         <Empty label="Open a session to view its memory." />
       ) : (
@@ -60,13 +56,16 @@ function MemoryStatsRow({
   const stats: MemoryStatsDto | null = res.data;
   if (stats === null) return null;
   return (
-    <div
-      data-vex-memory-stats
-      className="flex flex-wrap items-center gap-2 text-[11px] text-ink-secondary"
-    >
-      <span className={PILL}>{stats.activeCount} memories</span>
-      <span className={PILL}>gen {stats.compactCount}</span>
-      <span className={PILL}>{stats.unresolvedOutstandingCount} open items</span>
+    <div data-vex-memory-stats className="vex-mem-sec__counts">
+      <span className={PILL} data-figure>
+        {stats.activeCount} memories
+      </span>
+      <span className={PILL} data-figure>
+        gen {stats.compactCount}
+      </span>
+      <span className={PILL} data-figure>
+        {stats.unresolvedOutstandingCount} open items
+      </span>
       {stats.recentThemes.slice(0, 5).map((t) => (
         <span key={t} className={PILL}>
           {t}
@@ -96,9 +95,9 @@ function MemoryList({
   if (res.data.length === 0) {
     return <Empty label="No memories recorded for this session yet." />;
   }
-  // Hairline-separated ledger rows — no card boxes, no gaps.
+  // Hairline-separated ledger rows, no card boxes, no gaps.
   return (
-    <ul className="flex flex-col">
+    <ul className="vex-mem-list">
       {res.data.map((m) => (
         <MemoryRow key={m.id} memory={m} />
       ))}
@@ -108,34 +107,31 @@ function MemoryList({
 
 function MemoryRow({ memory }: { readonly memory: SessionMemoryDto }): JSX.Element {
   return (
-    <li
-      data-vex-memory-id={memory.id}
-      className="border-b border-line-2 px-1 py-2 last:border-b-0"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-xs font-medium text-ink-primary">
-          {memory.theme}
-        </span>
+    <li data-vex-memory-id={memory.id} className="vex-mem-row">
+      <span className="vex-mem-row__t">{memory.theme}</span>
+      <span className="vex-mem-row__m">
         <span className={PILL}>{memory.status}</span>
-        <span className={PILL}>gen {memory.checkpointGeneration}</span>
+        <span className={PILL} data-figure>
+          gen {memory.checkpointGeneration}
+        </span>
         {memory.importance !== null ? (
-          <span className={PILL}>imp {memory.importance}</span>
+          <span className={PILL} data-figure>
+            imp {memory.importance}
+          </span>
         ) : null}
         {memory.confidence !== null ? (
-          <span className={PILL}>conf {memory.confidence.toFixed(2)}</span>
+          <span className={PILL} data-figure>
+            conf {memory.confidence.toFixed(2)}
+          </span>
         ) : null}
-        <span className={PILL}>
+        <span className={PILL} data-figure>
           {memory.outstandingOpenCount} open / {memory.outstandingResolvedCount}{" "}
           done
         </span>
-        <span
-          data-vex-created
-          title={memory.createdAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
-        >
-          {fmtDate(memory.createdAt)}
-        </span>
-      </div>
+      </span>
+      <span data-vex-created title={memory.createdAt} className="vex-mem-row__r">
+        {fmtDate(memory.createdAt)}
+      </span>
     </li>
   );
 }

@@ -1,44 +1,70 @@
 /**
- * THE ACT LEDGER — aggregation entry (S5). A run of ≥3 registered calls
- * collapses into one ruled ledger line (reference d3): "{N} tool calls" in
- * Departure Mono plus a strip of distinct act glyphs in the blue. Expanding
- * reveals the member `ToolActRow`s, each its own ruled line. The reveal is the shared `ExpandRegion` primitive (one curve, one
- * duration, one closed-content contract app-wide); the members carry no
- * entrance keyframe of their own, since the expand IS the arrival.
+ * THE FOLD (S5): finished steps in ONE quiet row (docs/design/R3-MINIMAL.md
+ * section 6): the chevron, "{n} tool calls · {titles}" (each title carries its
+ * venue, "Market data · DexScreener"), the time spent in the tools in the mono
+ * 12 at the right. 30 high, 13 muted. Opening it reveals the member
+ * `ToolActRow`s, each its own 36px step row. It folds a run the row model
+ * grouped and the several calls of one call row alike.
  *
- * The group surfaces "Awaiting signature" at header level when ANY member
- * matches a pending approval, so a collapsed group can never hide the one
- * thing waiting on the user's pen.
+ * Nothing that needs the reader is ever hidden by the fold: a member that
+ * failed puts "{k} failed" with the ink cross on the folded row, and a member
+ * matched to a pending approval puts its "Waiting for approval" link there.
+ *
+ * The reveal is the shared `ExpandRegion` primitive (one curve, one duration,
+ * one closed-content contract app-wide); the members carry no entrance
+ * keyframe of their own, since the expand IS the arrival.
  */
 
-import { useId, useRef, useState, type ComponentType, type JSX } from "react";
+import { useId, useMemo, useRef, useState, type JSX } from "react";
 import {
-  IconChevronRight,
-  type GlyphProps,
-} from "../../../components/icons/index.js";
-import { cn } from "../../../lib/utils.js";
+  LineChevronDown,
+  LineChevronRight,
+} from "../../../components/icons/line/index.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import type { ToolGroupRowModel } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ToolActRow } from "./ToolActRow.js";
-import { toolGlyph } from "./toolGlyph.js";
-
-/** Show at most this many distinct glyphs; the rest become "+{k}". */
-const MAX_HEADER_GLYPHS = 4;
+import { formatToolDuration } from "./toolDuration.js";
+import { resolveToolIdentity } from "./toolIdentity.js";
 
 /**
- * Distinct glyphs (by icon identity, not tool name) — two tools sharing a
- * category must not print the same glyph twice in the header strip.
+ * The members' human titles, deduped in first-appearance order. A folded call
+ * has its args, so the identity resolves the venue the same way its own step
+ * row does.
  */
-function distinctGlyphs(
-  toolNames: readonly string[],
-): ComponentType<GlyphProps>[] {
-  const glyphs: ComponentType<GlyphProps>[] = [];
-  for (const name of toolNames) {
-    const glyph = toolGlyph(name);
-    if (!glyphs.includes(glyph)) glyphs.push(glyph);
+function foldTitles(group: ToolGroupRowModel): string {
+  const titles: string[] = [];
+  for (const call of group.calls) {
+    const title = resolveToolIdentity(call.toolName, call.toolArgs).title;
+    if (!titles.includes(title)) titles.push(title);
   }
-  return glyphs;
+  return titles.join(", ");
+}
+
+/**
+ * Time spent in the folded tools: the sum of the MEASURED durations, and only
+ * when every member was measured. One unmeasured member makes the sum a
+ * guess, and `null` is not zero, so the fold then prints no time at all.
+ */
+function foldDurationMs(group: ToolGroupRowModel): number | null {
+  if (group.calls.length === 0) return null;
+  let total = 0;
+  for (const call of group.calls) {
+    const ms = call.durationMs;
+    if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) {
+      return null;
+    }
+    total += ms;
+  }
+  return total;
+}
+
+/** Members whose failure the engine persisted (an ambiguous broadcast is not one). */
+function failedCount(group: ToolGroupRowModel): number {
+  return group.calls.filter(
+    (call) => call.success === false && call.displayStatus !== "pending",
+  ).length;
 }
 
 export function ToolGroupRow({
@@ -46,15 +72,16 @@ export function ToolGroupRow({
   pendingApprovals,
 }: {
   readonly group: ToolGroupRowModel;
-  /** toolCallId → PENDING approval id for the active session (S5). */
+  /** toolCallId to PENDING approval id for the active session (S5). */
   readonly pendingApprovals?: ReadonlyMap<string, string>;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const glyphs = distinctGlyphs(group.distinctToolNames);
-  const overflow = glyphs.length - MAX_HEADER_GLYPHS;
-  // First matched member carries the group-level stamp target.
+  const titles = useMemo(() => foldTitles(group), [group]);
+  const durationText = formatToolDuration(foldDurationMs(group));
+  const failed = failedCount(group);
+  // First matched member carries the fold's link target.
   const matchedApprovalId =
     pendingApprovals === undefined
       ? null
@@ -63,42 +90,39 @@ export function ToolGroupRow({
           .find((id) => id !== undefined) ?? null);
   return (
     <div
-      // Semantic contract: the group container is a tool row too.
+      // Semantic contract: the fold container is a tool row too.
       data-vex-message-role="tool"
-      className="vex-ledger"
+      data-vex-tool-fold=""
+      className="vex-steps"
     >
-      <div className="vex-ledger__row flex h-8 items-center gap-3">
+      <div className="vex-step vex-step--quiet flex items-center">
         <button
           ref={triggerRef}
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((v) => !v)}
-          className="flex h-full min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="vex-step__key"
         >
-          <span className="inline-flex w-4 shrink-0 justify-center text-accent-primary">
-            <IconChevronRight
-              size={12}
-              className={cn("transition-transform", open && "rotate-90")} />
+          <span aria-hidden className="vex-step__chev">
+            {open ? <LineChevronDown size={14} /> : <LineChevronRight size={14} />}
           </span>
-          <span className="shrink-0 font-mono text-[13px] tabular-nums tracking-[0.02em] text-ink-primary">
-            {group.calls.length} tool calls
+          <span className="vex-step__title">
+            <span className="tabular-nums">{group.calls.length} tool calls</span>
+            {titles.length > 0 ? ` · ${titles}` : null}
           </span>
-          <span aria-hidden className="flex min-w-0 items-center gap-1.5 text-accent-primary">
-            {glyphs.slice(0, MAX_HEADER_GLYPHS).map((Glyph, index) => (
-              // Icon identity is the dedupe key; index keeps React stable.
-              <Glyph
-                key={index}
-                size={14}
-                className="shrink-0"
-              />
-            ))}
-            {overflow > 0 ? (
-              <span className="font-mono text-[11px] tabular-nums text-ink-secondary">
-                +{overflow}
-              </span>
-            ) : null}
-          </span>
+          {failed > 0 ? (
+            <span data-vex-tool-fold-failed="" className="vex-step__failed">
+              <Swatch state="error" size={10} />
+              {failed} failed
+            </span>
+          ) : null}
+          <span aria-hidden className="vex-step__spacer" />
+          {durationText !== null ? (
+            <span data-vex-tool-duration="" className="vex-step__num">
+              {durationText}
+            </span>
+          ) : null}
         </button>
         {matchedApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={matchedApprovalId} />
@@ -108,21 +132,17 @@ export function ToolGroupRow({
         id={bodyId}
         open={open}
         triggerRef={triggerRef}
-        className="pl-7"
+        className="vex-steps__members"
       >
-        {/* Member acts, each its own ruled line under the group line. The
-            rows carry no entrance keyframe: the reveal is the expand itself. */}
-        <div className="flex flex-col">
-          {group.calls.map((call) => (
-            <ToolActRow
-              key={call.toolCallId}
-              act={call}
-              pendingApprovalId={
-                pendingApprovals?.get(call.toolCallId) ?? null
-              }
-            />
-          ))}
-        </div>
+        {/* Member steps, each its own ruled row under the fold. The rows
+            carry no entrance keyframe: the reveal is the expand itself. */}
+        {group.calls.map((call) => (
+          <ToolActRow
+            key={call.toolCallId}
+            act={call}
+            pendingApprovalId={pendingApprovals?.get(call.toolCallId) ?? null}
+          />
+        ))}
       </ExpandRegion>
     </div>
   );

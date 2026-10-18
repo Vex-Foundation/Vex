@@ -1,27 +1,31 @@
 /**
- * TokenHistoryScreen ROWS — the per-entry display rules
+ * TokenHistoryScreen ROWS - the per-entry display rules
  * (`screens/token-history/TokenHistoryRow.tsx` +
  * `token-history-display.ts`), split out of `TokenHistoryScreen.test.tsx` by
  * the same seams as the screen itself (the screen gate keeps chrome, the
  * states matrix, and pagination).
  *
- * Pins:
- *   - swap/bridge/transfer rows render their badge, `in → out` legs with
- *     policy-gated symbols, a HUMAN-provenance quantity while an
- *     UNKNOWN-provenance one keeps the em dash (never a blind wei-scale
- *     format), a USD primary figure + unit price, venue/chain meta, and an
- *     explorer link BUILT from `{chainId, ref}` via shared/explorer-links
- *     (chainId 0 / unknown chain → NO link);
+ * Pins (R3 row, docs/design/R3-MINIMAL.md section 9.2):
+ *   - swap/bridge/transfer rows render their kind in caps, `in → out` legs
+ *     with policy-gated symbols, a HUMAN-provenance quantity while an
+ *     UNKNOWN-provenance one keeps the hyphen (never a blind wei-scale
+ *     format), a USD primary figure + unit price, the meta line (venue in
+ *     proper case, chain or `origin → destination` route, each its own
+ *     element) and explorer links BUILT from `{chainId, ref}` via
+ *     shared/explorer-links (chainId 0 / unknown chain → NO link; several
+ *     refs → "TX 1", "TX 2" with "(i of n)" labels);
  *   - the USD primary figure carries `usdProvenance` (Codex final review
  *     round 2 finding 7 / contract C35): `"estimated"` renders with an
- *     explicit `~ … est.` marker, `"recorded"` renders bare — never a
+ *     explicit `~ ... est.` marker, `"recorded"` renders bare - never a
  *     bare-execution-USD read on a quote-time estimate;
- *   - an `agent_activity`-sourced swap entry's pending/failed status renders
- *     a status chip (Agent Scan §4.7); `null`/`"confirmed"` renders none;
- *   - bridge lifecycle vocabulary: settling / tracking delayed (R12) /
- *     refunded / failed, and the collapsed-by-default per-leg audit (B8).
+ *   - every row ends in a state word (the status chips are gone): a legacy
+ *     capture reads "Recorded", a transfer its own status in sentence case;
+ *     the swap words themselves are pinned in the honesty sibling;
+ *   - bridge lifecycle words: Settling / Status unknown with "tracking
+ *     delayed" (R12) / Refunded / Failed, and the collapsed-by-default
+ *     per-leg audit (B8).
  *
- * `useTokenHistoryInfinite` is mocked — this suite owns display rules, not
+ * `useTokenHistoryInfinite` is mocked - this suite owns display rules, not
  * query wiring (the hook's pagination contract is pinned in the api layer).
  */
 
@@ -95,22 +99,26 @@ describe("TokenHistoryScreen - entries", () => {
     mountScreen();
 
     // The badge speaks the CANONICAL vocabulary. The fixture still carries
-    // `productType: "spot_swap"` / `tradeSide: "buy"` — and the old
+    // `productType: "spot_swap"` / `tradeSide: "buy"` - and the old
     // `SPOT_SWAP · BUY` stamp they used to produce must be gone.
     expect(screen.getByText("SWAP")).not.toBeNull();
     expect(screen.queryByText("SPOT_SWAP · BUY")).toBeNull();
     // Human-provenance input quantity prints; unknown-provenance output
-    // quantity keeps the em dash — never a blind base-unit format.
+    // quantity keeps the em dash - never a blind base-unit format.
     expect(screen.getByText(/1\.5 TOKA/)).not.toBeNull();
     expect(screen.getByText(/- TOKB/)).not.toBeNull();
     expect(screen.queryByText(/25100000/)).toBeNull();
     // USD primary (output leads, "recorded" provenance renders bare) + unit price.
     expect(screen.getByText(/\$25\.10/)).not.toBeNull();
     expect(screen.getByText(/@ \$0\.5200/)).not.toBeNull();
-    // Venue + chain meta line.
-    expect(screen.getByText(/KYBERSWAP · base/)).not.toBeNull();
+    // Meta line: the venue in proper case and the chain, each its own element.
+    expect(screen.getByText("KyberSwap")).not.toBeNull();
+    expect(screen.getByText("base")).not.toBeNull();
+    expect(screen.queryByText(/KYBERSWAP/)).toBeNull();
+    // A legacy capture carries no lifecycle status: it ends in "Recorded".
+    expect(screen.getByText("Recorded")).not.toBeNull();
     // Explorer link: URL BUILT from {chainId: 8453, ref} through the shared
-    // chain map — never a raw DB URL.
+    // chain map - never a raw DB URL.
     const link = screen.getByRole("link", {
       name: "Open transaction on block explorer",
     });
@@ -139,6 +147,32 @@ describe("TokenHistoryScreen - entries", () => {
     expect(screen.getByText("SWAP")).not.toBeNull();
     // chainId 0 is the DB layer's "could not resolve" sentinel → NO link.
     expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("numbers several explorer links (TX 1, TX 2) with '(i of n)' labels, each built through the allowlist", () => {
+    mockQuery([
+      availablePage([
+        swapEntry({
+          id: "a-multi",
+          txRefs: [
+            { chainId: 8453, ref: TX_HASH },
+            { chainId: 8453, ref: "0xsecond" },
+          ],
+        }),
+      ]),
+    ]);
+    mountScreen();
+
+    const first = screen.getByRole("link", {
+      name: "Open transaction on block explorer (1 of 2)",
+    });
+    const second = screen.getByRole("link", {
+      name: "Open transaction on block explorer (2 of 2)",
+    });
+    expect(first.textContent).toContain("TX 1");
+    expect(second.textContent).toContain("TX 2");
+    expect(first.getAttribute("href")).toBe(`https://basescan.org/tx/${TX_HASH}`);
+    expect(second.getAttribute("href")).toBe("https://basescan.org/tx/0xsecond");
   });
 
   it("names a Jupiter LEND row by its canonical vocabulary - the exact row the old SPOT taxonomy mislabelled", () => {
@@ -193,11 +227,11 @@ describe("TokenHistoryScreen - entries", () => {
     mountScreen();
 
     expect(screen.getByText("PERPS·PERPS_OPEN")).not.toBeNull();
-    // The row still renders its economics — an unknown kind is not a blank row.
+    // The row still renders its economics - an unknown kind is not a blank row.
     expect(screen.getByText(/1\.5 TOKA/)).not.toBeNull();
   });
 
-  it("renders a transfer row: TRANSFER badge, human amount → truncated recipient, status meta", () => {
+  it("renders a transfer row: TRANSFER badge, human amount → truncated recipient, chain meta, status word", () => {
     mockQuery([
       availablePage([
         {
@@ -219,7 +253,10 @@ describe("TokenHistoryScreen - entries", () => {
     expect(screen.getByText("0.25")).not.toBeNull();
     // Recipient address renders truncated (canonical shortener), full on title.
     expect(screen.getByText("0x9999…0000")).not.toBeNull();
-    expect(screen.getByText(/base · executed/)).not.toBeNull();
+    // The chain is meta; the recorded status is the row's word.
+    expect(screen.getByText("base")).not.toBeNull();
+    expect(screen.getByText("Executed")).not.toBeNull();
+    expect(screen.queryByText(/base · executed/)).toBeNull();
   });
 
   it("renders a bridge row with the origin → destination chain meta", () => {
@@ -254,17 +291,23 @@ describe("TokenHistoryScreen - entries", () => {
 
     // The canonical bridge row is the LOGICAL fill leg.
     expect(screen.getByText("BRIDGE·FILL")).not.toBeNull();
-    expect(screen.getByText(/RELAY · base → arbitrum/)).not.toBeNull();
+    // Venue in proper case; the route is its own element.
+    expect(screen.getByText("Relay")).not.toBeNull();
+    expect(screen.getByText("base → arbitrum")).not.toBeNull();
+    expect(screen.queryByText(/RELAY/)).toBeNull();
     // No output value → input USD is the fallback primary.
     expect(screen.getByText(/\$10\.00/)).not.toBeNull();
   });
 
-  it("renders a PENDING bridge with the 'settling' chip (tracked, NOT a failure)", () => {
+  it("renders a PENDING bridge as 'Settling' with 'tracked automatically' (tracked, NOT a failure)", () => {
     mockQuery([availablePage([bridgeEntry({ id: "b-p", status: "pending" })])]);
     mountScreen();
-    expect(screen.getByText("settling")).not.toBeNull();
-    // A pending bridge is not a failure — no destructive 'failed' chip.
-    expect(screen.queryByText("failed")).toBeNull();
+    expect(screen.getByText("Settling")).not.toBeNull();
+    const note = screen.getByText("tracked automatically");
+    expect(note.getAttribute("title")).toBe("Still settling - tracked automatically");
+    // A pending bridge is not a failure and not unknown.
+    expect(screen.queryByText("Failed")).toBeNull();
+    expect(screen.queryByText("Status unknown")).toBeNull();
   });
 
   it("marks an ESTIMATED bridge amount with ~ and an 'est.' tag (R14 - quoted amount never reads as executed)", () => {
@@ -300,7 +343,7 @@ describe("TokenHistoryScreen - entries", () => {
     expect(screen.queryByText("est.")).toBeNull();
   });
 
-  it("reads 'tracking delayed' for a pending bridge whose sweep check is stale (R12), not the reassuring 'settling'", () => {
+  it("reads 'tracking delayed' for a pending bridge whose sweep check is stale (R12), not the reassuring 'Settling'", () => {
     mockQuery([
       availablePage([
         bridgeEntry({
@@ -311,27 +354,36 @@ describe("TokenHistoryScreen - entries", () => {
       ]),
     ]);
     mountScreen();
-    const chip = screen.getByText("tracking delayed");
-    expect(chip.getAttribute("title")).toContain("Tracking delayed");
-    expect(screen.queryByText("settling")).toBeNull();
+    const note = screen.getByText("tracking delayed");
+    expect(note.getAttribute("title")).toContain("Tracking delayed");
+    expect(screen.getByText("Status unknown")).not.toBeNull();
+    expect(screen.getByText("checked again automatically")).not.toBeNull();
+    expect(screen.queryByText("Settling")).toBeNull();
+    expect(screen.queryByText("tracked automatically")).toBeNull();
   });
 
-  it("renders a REFUNDED bridge as 'refunded' (money returned ≠ success, distinct from 'failed')", () => {
+  it("renders a REFUNDED bridge as 'Refunded' (money returned ≠ success, distinct from 'Failed')", () => {
     mockQuery([
       availablePage([bridgeEntry({ id: "b-r", status: "failed", failureCode: "bridge_refunded", amountBasis: null })]),
     ]);
     mountScreen();
-    expect(screen.getByText("refunded")).not.toBeNull();
-    expect(screen.queryByText("failed")).toBeNull();
+    expect(screen.getByText("Refunded")).not.toBeNull();
+    const note = screen.getByText("returned to the origin chain");
+    expect(note.getAttribute("title")).toBe(
+      "Funds returned to the origin chain - not a completed bridge",
+    );
+    expect(screen.queryByText("Failed")).toBeNull();
   });
 
-  it("renders a non-refund failed bridge as 'failed'", () => {
+  it("renders a non-refund failed bridge as 'Failed', with the failure code on the consequence", () => {
     mockQuery([
       availablePage([bridgeEntry({ id: "b-f", status: "failed", failureCode: "bridge_failed", amountBasis: null })]),
     ]);
     mountScreen();
-    expect(screen.getByText("failed")).not.toBeNull();
-    expect(screen.queryByText("refunded")).toBeNull();
+    expect(screen.getByText("Failed")).not.toBeNull();
+    const note = screen.getByText("ask Vex what happened");
+    expect(note.getAttribute("title")).toBe("bridge_failed");
+    expect(screen.queryByText("Refunded")).toBeNull();
   });
 
   it("legs are collapsed by default and expand on click, listing each leg with an explorer link", () => {
@@ -352,8 +404,11 @@ describe("TokenHistoryScreen - entries", () => {
     expect(screen.queryByText("DEPOSIT")).toBeNull();
     const toggle = screen.getByText(/Show 2 legs/);
     fireEvent.click(toggle);
+    expect(screen.getByText("Hide 2 legs")).not.toBeNull();
     expect(screen.getByText("DEPOSIT")).not.toBeNull();
     expect(screen.getByText("FILL")).not.toBeNull();
+    // Each leg says its own state in words beside its fill.
+    expect(screen.getAllByText("confirmed").length).toBe(2);
     // Each hashed leg exposes a curated-allowlist explorer link (never a raw URL).
     expect(screen.getAllByLabelText(/Open .* leg on block explorer/).length).toBe(2);
   });

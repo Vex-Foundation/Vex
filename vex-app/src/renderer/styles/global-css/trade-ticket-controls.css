@@ -1,9 +1,9 @@
-/* Market | Limit (and a loaded protection mode): full-width tabs over a quiet
- * rule, Departure Mono 11px caps; the chosen one is blue with a 1.5px blue
- * underline (docs/design/V10-SPREAD.md section 1). */
+/* Market | Limit (and a loaded protection mode): full-width tabs 32 high over
+ * a quiet rule, 13.5 sans in ink 2; the chosen one is blue 500 with a 1.5px
+ * blue underline (docs/design/R3-MINIMAL.md section 9.3). */
 .lit-order-type-controls {
   display: flex;
-  height: 30px;
+  height: 32px;
   min-width: 0;
   flex: 0 0 auto;
   border-bottom: 1px solid var(--lit-line-quiet);
@@ -18,10 +18,10 @@
   background: transparent;
   padding: 0;
   color: var(--lit-ink-secondary);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-align: left;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  letter-spacing: normal;
+  text-align: center;
 }
 
 .lit-order-type-controls > button:hover { color: var(--lit-ink); }
@@ -29,6 +29,7 @@
 .lit-order-type-controls > button[aria-pressed="true"] {
   border-bottom-color: var(--lit-positive);
   color: var(--lit-positive);
+  font-weight: 500;
 }
 
 .lit-order-type-controls > button:focus-visible {

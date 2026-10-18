@@ -2,7 +2,7 @@
  * Failure alert for a `providerPersist` call.
  *
  * Extracted so the first-run form and the configured screen's delta-save
- * editor render the SAME failure surface from one owner — two copies would
+ * editor render the SAME failure surface from one owner - two copies would
  * drift, and this block encodes a security contract: only FIXED per-code copy
  * is shown. A raw SDK message is never surfaced (codex turn 3 YELLOW), and the
  * only provider-supplied string that reaches the DOM is the errno-shaped
@@ -15,7 +15,7 @@ import { RAIL_DANGER_CHROME } from "../step-chrome.js";
 
 export interface ProviderErrorAlertProps {
   readonly error: ServerError;
-  /** Opens the OS logs folder — the caller owns the bridge call. */
+  /** Opens the OS logs folder - the caller owns the bridge call. */
   readonly onOpenLogsFolder: () => void;
 }
 
@@ -30,27 +30,27 @@ export function ProviderErrorAlert({
       data-vex-provider-error={String(error.code)}
       className={RAIL_DANGER_CHROME}
     >
-      <strong className="block font-semibold">{copy.title}</strong>
+      <strong className="block font-medium">{copy.title}</strong>
       <p className="mt-1">{copy.body}</p>
       {error.causeCode !== null ? (
-        <p className="mt-2 text-xs text-ink-tertiary">
-          Cause: <code className="font-mono">{error.causeCode}</code>
+        <p className="mt-2 text-[13px] text-ink-secondary">
+          Cause: <code className="font-mono vex-num">{error.causeCode}</code>
         </p>
       ) : null}
       {error.causeCode !== null &&
       CAUSE_HINTS[error.causeCode] !== undefined ? (
-        <p className="mt-1 text-xs text-ink-tertiary">
+        <p className="mt-1 text-[13px] text-ink-secondary">
           {CAUSE_HINTS[error.causeCode]}
         </p>
       ) : null}
       {error.correlationId ? (
-        <p className="mt-2 text-xs text-ink-tertiary">
+        <p className="mt-2 text-[12.5px] text-ink-tertiary">
           Correlation id:{" "}
-          <code className="font-mono">{error.correlationId}</code>{" "}
+          <code className="font-mono vex-num">{error.correlationId}</code>{" "}
           <button
             type="button"
             onClick={onOpenLogsFolder}
-            className="text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
+            className="vex-wz-link"
           >
             Open logs folder
           </button>

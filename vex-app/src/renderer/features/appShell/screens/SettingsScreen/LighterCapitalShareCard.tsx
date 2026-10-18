@@ -97,18 +97,35 @@ export function LighterCapitalShareCard({
   const message = resolveMessage(read, write, touched && parsed.kind === "invalid" ? parsed.message : null);
 
   return (
-    <div className="flex flex-col gap-2" data-vex-lighter-capital-share>
-      <label htmlFor={fieldId} className="text-[13px] leading-[20px] text-ink-primary">
-        {CAPITAL_SHARE_LABEL}
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="vex-pref vex-pref--top" data-vex-lighter-capital-share>
+      <div>
+        <label htmlFor={fieldId} className="vex-pref__title">
+          {CAPITAL_SHARE_LABEL}
+        </label>
+        <p id={helperId} className="vex-pref__help">
+          {CAPITAL_SHARE_HELPER} {CAPITAL_SHARE_EMPTY_HINT}
+        </p>
+        <p
+          id={statusId}
+          role="status"
+          aria-live="polite"
+          className={
+            message.tone === "warning"
+              ? "mt-1 text-[12px] leading-[18px] text-warning"
+              : "mt-1 text-[12px] leading-[18px] text-ink-tertiary"
+          }
+        >
+          {message.text}
+        </p>
+      </div>
+      <div className="vex-pref__control">
         <div className="flex items-center gap-1.5">
           <Input
             id={fieldId}
             type="text"
             inputMode="numeric"
             autoComplete="off"
-            className="h-7 w-20 text-[13px]"
+            className="vex-num h-8 w-20 font-mono text-[13px]"
             value={raw}
             disabled={read.kind !== "ready" || saving}
             aria-describedby={`${helperId} ${statusId}`}
@@ -145,21 +162,6 @@ export function LighterCapitalShareCard({
           </Button>
         ) : null}
       </div>
-      <p id={helperId} className="text-[12px] leading-[18px] text-ink-secondary">
-        {CAPITAL_SHARE_HELPER} {CAPITAL_SHARE_EMPTY_HINT}
-      </p>
-      <p
-        id={statusId}
-        role="status"
-        aria-live="polite"
-        className={
-          message.tone === "warning"
-            ? "text-[12px] leading-[18px] text-warning"
-            : "text-[12px] leading-[18px] text-ink-tertiary"
-        }
-      >
-        {message.text}
-      </p>
     </div>
   );
 }

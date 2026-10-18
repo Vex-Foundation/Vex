@@ -1,24 +1,23 @@
 /**
- * DRAG-TO-REORDER for the BOOK rails - native HTML5 drag-and-drop, zero new
- * dependencies.
+ * DRAG-TO-REORDER for the Portfolio page's sections - native HTML5
+ * drag-and-drop, zero new dependencies. The order persists on
+ * `bookSectionOrder` (docs/design/R3-MINIMAL.md section 9.1: "Reordering stays
+ * on `bookSectionOrder`").
  *
- * MECHANISM ONLY, generic over the rail's id type. It knows no section ids: the
- * agent rail and the Studio rail pass their own `SectionRegistry`
- * (`section-registry.ts`), which supplies the drop validator and the labels.
- * That is not tidiness - two of the ids are spelled the same on both rails and
- * one is not, so a shared id table would validate a drop from the wrong rail
- * and move the wrong card.
+ * MECHANISM ONLY, generic over the id type. It knows no section ids: the page
+ * passes its `SectionRegistry` (`section-registry.ts`), which supplies the
+ * drop validator and the labels.
  *
  * Motion's `<Reorder>` is banned by `MOTION-POLICY.md`: `Reorder.Item` is a
  * `layout` component by construction, and `layout` is on the same Phase-1 ban
- * list under the CSP posture. A drag library for seven static cards in one
- * vertical list is not a trade the dependency rule supports either. The
+ * list under the CSP posture. A drag library for five static sections in one
+ * list is not a trade the dependency rule supports either. The
  * platform already ships the whole gesture, so this file adds only the parts
  * the platform does not: validation and a keyboard path.
  *
  * DESIGN NOTES, in the order they matter:
  *  - the HANDLE carries `draggable`, not the row. Arming the row would let a
- *    text selection inside a card start a drag, and arming it asynchronously
+ *    text selection inside a section start a drag, and arming it asynchronously
  *    (pointerdown → setState → draggable) has cancellation edges no test can
  *    cover;
  *  - the transient drag state lives at LIST level, in the hook, so a source
@@ -29,13 +28,13 @@
  *    anything moves. `dataTransfer` is a page-wide channel: a file, a text
  *    selection, or any other drag source can land here, and an unknown payload
  *    must move nothing at all;
- *  - the ONLY motion added is the drop settle (the owner's "plum"): the single
- *    card that moved plays a one-shot transform-only keyframe from
- *    `globals.css`, which is the sanctioned route (MOTION-POLICY "Allowed":
- *    build-time keyframes). The STACK is not animated - cards keep the existing
- *    `cardVariants` cascade and `key={id}` keeps React's reconciliation stable,
- *    so a reorder moves DOM nodes rather than rebuilding them and the focused
- *    drag handle survives a keyboard move.
+ *  - the ONLY motion is the drop settle (the owner's "plum"): the single
+ *    section that moved plays a one-shot transform-only keyframe from
+ *    `motion-primitives.css`, which is the sanctioned route (MOTION-POLICY
+ *    "Allowed": build-time keyframes). The list is not animated, and
+ *    `key={id}` keeps React's reconciliation stable, so a reorder moves DOM
+ *    nodes rather than rebuilding them and the focused drag handle survives a
+ *    keyboard move.
  */
 
 import {
@@ -47,9 +46,8 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-import { motion } from "motion/react";
 import { prefersReducedMotion } from "./portfolio/portfolio-motion.js";
-import { PxIcon } from "../../../components/icons/index.js";
+import { LineMenu } from "../../../components/icons/line/index.js";
 import { cn } from "../../../lib/utils.js";
 import {
   moveSection,
@@ -69,7 +67,7 @@ interface DragState<Id extends string> {
 
 export interface BookSectionReorder<Id extends string> {
   readonly drag: DragState<Id> | null;
-  /** The card that just landed, and is playing its settle. Null when none. */
+  /** The section that just landed, and is playing its settle. Null when none. */
   readonly settlingId: Id | null;
   /** Live-region text for the last keyboard move, or "" when there was none. */
   readonly announcement: string;
@@ -85,12 +83,11 @@ export interface BookSectionReorder<Id extends string> {
 }
 
 /**
- * The list-level drag state and every mutation the rail can make to its own
+ * The list-level drag state and every mutation the page can make to its own
  * order. `onOrderChange` receives a NEW array; it never mutates `order`.
  *
- * `registry` is the RAIL'S OWN id set (agent or Studio): it supplies the drop
- * validator and the human labels. The mechanism below knows no ids of its own,
- * so a drop payload valid on one rail can never move a card on the other.
+ * `registry` is the page's own id set: it supplies the drop validator and the
+ * human labels. The mechanism below knows no ids of its own.
  */
 export function useBookSectionReorder<Id extends string>(
   order: readonly Id[],
@@ -238,12 +235,15 @@ export function useBookSectionReorder<Id extends string>(
 }
 
 /**
- * One rail row: the drag affordance and nothing else. `children` renders
- * untouched, so no card learns that it can be dragged.
+ * One section row: the drag affordance and nothing else. `children` renders
+ * untouched, so no section learns that it can be dragged. The grip (the line
+ * menu glyph in a 24px key) sits in the page's left margin beside the
+ * section head and shows on hover or focus.
  *
- * `motion.li` (not a plain `li`) so the stack's stagger keeps cascading through
- * to each card's `cardVariants` - variant propagation needs an unbroken chain
- * of motion components. It declares no variants of its own and no `layout`.
+ * `band` places the row in the page's two column band (Wallets beside
+ * Balances, section 9.1): `start` takes the first column, `end` the second;
+ * without it the row spans the page. The page decides; the row only carries
+ * it as `data-vex-band` for the sheet.
  */
 export function ReorderableSection<Id extends string>({
   id,
@@ -251,14 +251,16 @@ export function ReorderableSection<Id extends string>({
   index,
   count,
   reorder,
+  band,
   children,
 }: {
   readonly id: Id;
-  /** The rail registry's human name for `id` - the row holds no id table. */
+  /** The registry's human name for `id` - the row holds no id table. */
   readonly label: string;
   readonly index: number;
   readonly count: number;
   readonly reorder: BookSectionReorder<Id>;
+  readonly band?: "start" | "end";
   readonly children: ReactNode;
 }): JSX.Element {
   const { drag } = reorder;
@@ -266,18 +268,19 @@ export function ReorderableSection<Id extends string>({
   const settling = reorder.settlingId === id;
 
   return (
-    <motion.li
-      data-vex-book-section={id}
+    <li
+      data-vex-portfolio-section={id}
+      data-vex-band={band}
       data-vex-drop-edge={dropEdge ?? undefined}
       data-vex-section-settling={settling ? "" : undefined}
+      data-dragging={drag?.draggedId === id ? "" : undefined}
       onDragOver={(event) => reorder.onRowDragOver(id, event)}
       onDrop={(event) => reorder.onRowDrop(id, event)}
       className={cn(
         // The drop indicator is a CSS-only rule on the row's own edge
         // (`data-vex-drop-edge`, book.css): no JS positioning, no injected style.
-        "vex-bk__item list-none",
+        "vex-pf__item",
         settling && "vex-section-settle",
-        drag?.draggedId === id && "opacity-60",
       )}
     >
       <button
@@ -287,11 +290,11 @@ export function ReorderableSection<Id extends string>({
         onDragEnd={reorder.onDragEnd}
         onKeyDown={(event) => reorder.onHandleKeyDown(id, index, event)}
         aria-label={`Reorder ${label} - position ${index + 1} of ${count}`}
-        className="vex-bk__grip"
+        className="vex-pf__grip"
       >
-        <PxIcon name="grip" />
+        <LineMenu size={14} />
       </button>
       {children}
-    </motion.li>
+    </li>
   );
 }

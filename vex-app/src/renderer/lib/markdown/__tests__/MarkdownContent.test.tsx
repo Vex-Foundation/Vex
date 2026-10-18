@@ -182,6 +182,19 @@ describe("MarkdownContent", () => {
   });
 });
 
+describe("article variant section heads (docs/design/R3-MINIMAL.md section 9.6)", () => {
+  it("sets a section head in the sans at 20 / 500, never the serif (that is the page head's)", () => {
+    const { container } = render(
+      createElement(MarkdownContent, { text: "## Your first hour", variant: "article" }),
+    );
+    const heading = container.querySelector("h2");
+    expect(heading?.textContent).toBe("Your first hour");
+    expect(heading?.className).not.toContain("font-serif");
+    expect(heading?.className).toContain("text-[20px]");
+    expect(heading?.className).toContain("font-medium");
+  });
+});
+
 describe("article variant protocol-entry headings (owner correction 2026-07-20)", () => {
   const PROTOCOL_MD = "### ![Uniswap](/protocols/uniswap.png) Uniswap";
 
@@ -198,8 +211,8 @@ describe("article variant protocol-entry headings (owner correction 2026-07-20)"
     expect(logo?.className).toContain("h-11");
     expect(logo?.className).not.toMatch(/rounded/);
     const name = heading?.querySelector("span");
-    // V10 (docs/design/V10-SPREAD.md section 1): the serif never sets a word
-    // under 32px, so a 17px card name is the sans.
+    // docs/design/R3-MINIMAL.md section 1.3: the serif is for display sizes
+    // only, so a 17px card name is the sans.
     expect(name?.className).not.toContain("font-serif");
     expect(name?.className).toContain("text-[17px]");
     expect(name?.textContent).toContain("Uniswap");

@@ -1,22 +1,24 @@
 /**
- * AssetsScreen — the All-assets ShellScreen (opened from the welcome
- * Portfolio tab's Balances footer).
+ * AssetsScreen - the All-assets page, a Portfolio subpage (opened from the
+ * Balances section's "View all assets").
  *
  * Pins (mirroring the Sessions-screen shape in the AppShell suite):
  *   - `uiStore.shellRoute = { kind: "assets" }` mounts the screen through
  *     ShellScreens as a titled modal dialog ("All assets"),
- *   - EVERY portfolio token line renders (no top-5 cut here), in the shared
- *     row grammar, sorted largest USD first,
+ *   - EVERY portfolio token line renders (no top-5 cut here), as the Balances
+ *     table's own rows under the same column heads, sorted largest USD first,
  *   - Escape closes back to `{ kind: "none" }` (the ShellScreen chrome's
- *     window-level listener — identical to MemoryScreen's shape),
+ *     window-level listener, identical to MemoryScreen's shape), or to the
+ *     page it was opened from (Portfolio); the crumb is the title bar's
+ *     (docs/design/R3-MINIMAL.md section 9.2),
  *   - the quiet empty state invites rather than errors,
  *   - hide-dust: the screen's checkbox (default checked, `hideDustBalances`
  *     in uiStore) filters sub-cent priced rows and names the hidden count;
  *     toggling flips the persisted uiStore preference and re-shows/re-hides,
- *   - THE EYE: rows with exact `(chainId, tokenAddress)` identity carry the
- *     token-history eye; clicking routes to `tokenHistory` with the row's
- *     identity + `returnTo: { kind: "assets", sessionId }`; identity-less rows
- *     carry NO eye,
+ *   - THE HISTORY KEY: rows with exact `(chainId, tokenAddress)` identity carry
+ *     a visible token-history key and answer a row press; both route to
+ *     `tokenHistory` with the row's identity + `returnTo: { kind: "assets",
+ *     sessionId }`; identity-less rows carry NO key and no press,
  *   - SESSION SCOPE (C4): a `sessionId` on the route reads THAT session's
  *     portfolio (never the global one), retitles the screen, and rides along
  *     on the eye's `returnTo` so the close path restores the same scope,
@@ -24,7 +26,7 @@
  *     project's own selection, names the project in the title, and the
  *     token-history close path returns to the PROJECT register.
  *
- * The sibling screens and the portfolio query hook are mocked — this suite
+ * The sibling screens and the portfolio query hook are mocked - this suite
  * owns the assets branch, not Memory/Sessions/HowVexWorks/TokenHistory or
  * query wiring.
  */
@@ -47,9 +49,12 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
 vi.mock("../SessionsScreen.js", () => ({ SessionsScreen: () => null }));
 vi.mock("../HowVexWorksScreen.js", () => ({ HowVexWorksScreen: () => null }));
-// Phase 2b: SettingsScreen hosts the wizard step forms — a heavy module
+// Phase 2b: SettingsScreen hosts the wizard step forms - a heavy module
 // graph this suite's partial mocks do not cover. Own suite covers it.
 vi.mock("../SettingsScreen.js", () => ({ SettingsScreen: () => null }));
+// The Portfolio page owns its own suite; here it is only where a close or the
+// crumb lands.
+vi.mock("../PortfolioScreen.js", () => ({ PortfolioScreen: () => null }));
 // The token-history screen itself is owned by TokenHistoryScreen.test.tsx;
 // here a stub exposing its `onClose` wire is enough to pin ShellScreens'
 // returnTo routing back into THIS screen.
@@ -97,7 +102,7 @@ function portfolio(tokens: readonly PositionTokenDto[]): PortfolioDto {
   };
 }
 
-/** Six lines — more than the Balances card's five, proving the full list. */
+/** Six lines - more than the Balances card's five, proving the full list. */
 const SIX_TOKENS: readonly PositionTokenDto[] = [
   token({ tokenName: "Token A", symbol: "AAA", balanceUsd: 600 }),
   token({ tokenName: "Token B", symbol: "BBB", balanceUsd: 500 }),
@@ -139,13 +144,31 @@ describe("AssetsScreen", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "All assets" }),
     ).not.toBeNull();
-    // All six lines render — the card's top-5 cut does not apply here.
-    const rows = [...view.container.querySelectorAll("li")].map(
+    // All six lines render - the card's top-5 cut does not apply here.
+    const rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
     expect(rows[0]).toContain("Token A");
     expect(rows[5]).toContain("Token F");
+  });
+
+  it("closes on Escape back to the page it was opened from, and draws no crumb of its own", () => {
+    render(<ShellScreens />);
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "portfolio", origin: null });
+    });
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "assets", origin: ORIGIN, sessionId: null });
+    });
+    // The title bar carries the crumb; the page starts with its register.
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
+
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    // Back where the user came from, never the bare shell.
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "portfolio", origin: null });
   });
 
   it("closes on Escape back to shellRoute 'none' (ShellScreen chrome contract)", () => {
@@ -166,8 +189,43 @@ describe("AssetsScreen", () => {
     useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
     render(<ShellScreens />);
     expect(
-      screen.getByText(/No balances yet - fund a wallet/i),
+      screen.getByText(/No balances yet\. Fund a wallet/i),
     ).not.toBeNull();
+  });
+});
+
+describe("AssetsScreen - copy", () => {
+  it("states every empty and dust line with full stops, never a hyphen standing in for a dash", () => {
+    const lines: string[] = [];
+    for (const route of [
+      { kind: "assets", origin: null, sessionId: null },
+      { kind: "assets", origin: null, sessionId: "00000000-0000-4000-8000-0000000000ab" },
+      { kind: "assets", origin: null, projectId: "9c1b0e8e-0000-4000-8000-0000000000ab" },
+    ] as const) {
+      mockUsePortfolio.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: { ok: true, data: portfolio([]) },
+      });
+      useUiStore.setState({ shellRoute: route });
+      const view = render(<ShellScreens />);
+      lines.push(view.container.querySelector(".vex-scan-note")?.textContent ?? "");
+      cleanup();
+    }
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: portfolio([token({ tokenName: "Seeyuh", balanceUsd: 0.001 })]) },
+    });
+    useUiStore.setState({ shellRoute: { kind: "assets", origin: null, sessionId: null } });
+    const dust = render(<ShellScreens />);
+    lines.push(
+      [...dust.container.querySelectorAll(".vex-scan-note")].map((note) => note.textContent).join(" | "),
+    );
+
+    expect(lines[0]).toBe("No balances yet. Fund a wallet and every asset appears here.");
+    expect(lines[3]).toContain('Every asset here is dust. Uncheck "Hide dust" to view.');
+    for (const line of lines) expect(line).not.toMatch(/ [-\u2013\u2014] /);
   });
 });
 
@@ -212,7 +270,7 @@ describe("AssetsScreen - token-history eye", () => {
       tokenName: "USD Coin",
     });
     expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
-    // jsdom rects are all-zero — the pin is that a measured rect object
+    // jsdom rects are all-zero - the pin is that a measured rect object
     // (not null) rode along as the expand origin.
     expect(route.origin).toEqual({ x: 0, y: 0, width: 0, height: 0 });
   });
@@ -239,7 +297,7 @@ describe("AssetsScreen - token-history eye", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Close token history (stub)" }),
     );
-    // Back to assets — with a NULL origin: the old morph rect belonged to a
+    // Back to assets - with a NULL origin: the old morph rect belonged to a
     // row instance that no longer exists (no stale-origin morph).
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "assets",
@@ -276,7 +334,7 @@ describe("AssetsScreen - hide dust", () => {
     const checkbox = screen.getByRole("checkbox", { name: /Hide dust/i });
     expect(checkbox).toHaveProperty("checked", true);
 
-    const rows = [...view.container.querySelectorAll("li")].map(
+    const rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -296,7 +354,7 @@ describe("AssetsScreen - hide dust", () => {
     );
     expect(persisted.state.hideDustBalances).toBe(false);
 
-    let rows = [...view.container.querySelectorAll("li")].map(
+    let rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(6);
@@ -306,7 +364,7 @@ describe("AssetsScreen - hide dust", () => {
 
     fireEvent.click(checkbox);
     expect(useUiStore.getState().hideDustBalances).toBe(true);
-    rows = [...view.container.querySelectorAll("li")].map(
+    rows = [...view.container.querySelectorAll("tbody tr")].map(
       (row) => row.textContent ?? "",
     );
     expect(rows).toHaveLength(4);
@@ -324,7 +382,7 @@ describe("AssetsScreen - session scope (C4)", () => {
       shellRoute: { kind: "assets", origin: null, sessionId: SESSION },
     });
     render(<ShellScreens />);
-    // The scope reaches the query hook — a narrowed register must never be
+    // The scope reaches the query hook - a narrowed register must never be
     // fed the global read.
     // The hook takes the WHOLE validated read input now, not a
     // `string | null` session id: that parameter could not express the B0
@@ -466,5 +524,156 @@ describe("AssetsScreen - project scope (Studio parity)", () => {
     expect(
       screen.getByText(/No balances in this project's wallets yet/i),
     ).not.toBeNull();
+  });
+});
+
+describe("AssetsScreen - column heads and the way into a token's history (review problem 10d)", () => {
+  const USDC_BASE = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+  const WETH = "0x4200000000000000000000000000000000000006";
+
+  function mountRegister(projectId?: string): ReturnType<typeof render> {
+    mockUsePortfolio.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ok: true,
+        data: portfolio([
+          token({
+            tokenName: "USD Coin",
+            symbol: "USDC",
+            chainId: 8453,
+            tokenAddress: USDC_BASE,
+            balanceUsd: 100,
+          }),
+          token({
+            tokenName: "Wrapped Ether",
+            symbol: "WETH",
+            chainId: 1,
+            tokenAddress: WETH,
+            balanceUsd: 90,
+            amount: null,
+          }),
+          // No tokenAddress: no exact identity, so nothing to open.
+          token({ tokenName: "Legacy Row", symbol: "OLD", balanceUsd: 50 }),
+        ]),
+      },
+    });
+    useUiStore.setState({
+      shellRoute:
+        projectId === undefined
+          ? { kind: "assets", origin: null, sessionId: null }
+          : { kind: "assets", origin: null, projectId },
+    });
+    return render(<ShellScreens />);
+  }
+
+  const routeOf = () => useUiStore.getState().shellRoute;
+
+  it("heads the register with the Balances heads: Asset, Network, Quantity, Price, Value", () => {
+    mountRegister();
+    const heads = screen.getAllByRole("columnheader");
+    expect(heads.map((head) => head.textContent)).toEqual([
+      "Asset",
+      "Network",
+      "Quantity",
+      "Price",
+      "Value",
+      "Token history",
+    ]);
+    // The table is the Balances table (same class, so the same head style),
+    // not a list that borrows its look.
+    const table = document.querySelector('[data-vex-area="assets-register"]');
+    expect(table?.tagName).toBe("TABLE");
+    expect(table?.classList.contains("vex-pf-t")).toBe(true);
+    expect(table?.classList.contains("vex-pf-t--balances")).toBe(true);
+  });
+
+  it("says Not available for a figure the read lacks, never a dash or $0.00", () => {
+    mountRegister();
+    const weth = [...document.querySelectorAll("tbody tr")].find((row) =>
+      (row.textContent ?? "").includes("Wrapped Ether"),
+    );
+    const cells = [...(weth?.querySelectorAll("td") ?? [])].map((cell) => cell.textContent);
+    expect(cells[2]).toBe("Not available");
+    expect(cells[3]).toBe("Not available");
+    expect(cells[4]).toBe("$90.00");
+  });
+
+  it("offers a visible, keyboard-reachable key on every row that has a history, named for its token", () => {
+    mountRegister();
+    const keys = screen.getAllByRole("button", { name: /^Token history:/ });
+    expect(keys.map((key) => key.getAttribute("aria-label"))).toEqual([
+      "Token history: USD Coin",
+      "Token history: Wrapped Ether",
+    ]);
+    for (const key of keys) {
+      expect(key.tagName).toBe("BUTTON");
+      expect(key.getAttribute("type")).toBe("button");
+      expect(key.hasAttribute("hidden")).toBe(false);
+      expect(key.hasAttribute("tabindex")).toBe(false);
+      expect(key.querySelector("svg")).not.toBeNull();
+      key.focus();
+      expect(document.activeElement).toBe(key);
+    }
+    // The identity-less row has no key and no press.
+    const legacy = [...document.querySelectorAll("tbody tr")].find((row) =>
+      (row.textContent ?? "").includes("Legacy Row"),
+    );
+    expect(legacy?.querySelector("button")).toBeNull();
+    expect(legacy?.hasAttribute("data-vex-press")).toBe(false);
+  });
+
+  it("opens the token history from the key, once, carrying the register's scope", () => {
+    mountRegister();
+    const seen: string[] = [];
+    const stop = useUiStore.subscribe((state) => seen.push(state.shellRoute.kind));
+    fireEvent.click(screen.getByRole("button", { name: "Token history: Wrapped Ether" }));
+    stop();
+
+    // One route change: the key's click does not bubble into a second press.
+    expect(seen).toEqual(["tokenHistory"]);
+    const route = routeOf();
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.token).toEqual({
+      chainId: 1,
+      tokenAddress: WETH,
+      symbol: "WETH",
+      tokenName: "Wrapped Ether",
+    });
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
+  });
+
+  it("opens the token history from a press on the row, the way the key does", () => {
+    mountRegister();
+    const row = [...document.querySelectorAll("tbody tr")].find((candidate) =>
+      (candidate.textContent ?? "").includes("USD Coin"),
+    );
+    expect(row?.hasAttribute("data-vex-press")).toBe(true);
+    // The press lands on the name, as a pointer does.
+    fireEvent.click(screen.getByText("USD Coin"));
+
+    const route = routeOf();
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.token.tokenAddress).toBe(USDC_BASE);
+    expect(route.returnTo).toEqual({ kind: "assets", sessionId: null });
+    // The row's rect rides along as the morph origin.
+    expect(route.origin).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  });
+
+  it("a press on a row with no history opens nothing", () => {
+    mountRegister();
+    fireEvent.click(screen.getByText("Legacy Row"));
+    expect(routeOf().kind).toBe("assets");
+  });
+
+  it("carries a project register's scope onto the route a row press opens", () => {
+    mountRegister("9c1b0e8e-0000-4000-8000-0000000000ab");
+    fireEvent.click(screen.getByText("USD Coin"));
+    const route = routeOf();
+    if (route.kind !== "tokenHistory") throw new Error("route kind mismatch");
+    expect(route.returnTo).toEqual({
+      kind: "assets",
+      projectId: "9c1b0e8e-0000-4000-8000-0000000000ab",
+    });
   });
 });

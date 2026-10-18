@@ -15,9 +15,8 @@
 
 import type { JSX } from "react";
 import type { TerminalShellId, TerminalShellOption } from "@shared/schemas/terminal.js";
-import { IconClose } from "../../../../components/icons/index.js";
+import { LineClose } from "../../../../components/icons/line/index.js";
 import { SplitPane } from "../../../../components/ui/split-pane.js";
-import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceTerminalGroup } from "../workspace/types.js";
 import { TerminalPanelHeader } from "./TerminalPanelHeader.js";
 import { XtermHost } from "./XtermHost.js";
@@ -130,22 +129,20 @@ export function TerminalPaneGroup({
           separatorLabel={(index) =>
             `Resize terminal ${String(index + 1)} in ${group.title}`
           }
-          className="h-full w-full"
+          className="vex-ws-panes h-full w-full"
         >
           {group.panes.map((pane, index) => {
             const lost = lostTerminalIds?.has(pane.terminalId) === true;
             return (
             <div
               key={pane.paneId}
-              className={cn(
-                "relative h-full w-full",
-                // The ACTIVE pane is named by a hairline, not by a fill: a filled
-                // active pane would sit on top of the terminal's own background and
-                // change how the output reads.
-                multiple && pane.paneId === group.activePaneId
-                  ? "ring-1 ring-accent-primary ring-inset"
-                  : null,
-              )}
+              // THE PANE is the field (docs/design/R3-MINIMAL.md section 9.5).
+              // The focused pane of a split is named by a 1.5px blue outline
+              // drawn INSIDE it (terminal.css), not by a fill: a filled active
+              // pane would sit on top of the terminal's own background and
+              // change how the output reads.
+              data-active={multiple && pane.paneId === group.activePaneId ? "" : undefined}
+              className="vex-ws-pane relative h-full w-full bg-surface-field"
             >
               <XtermHost
                 terminalId={pane.terminalId}
@@ -171,13 +168,14 @@ export function TerminalPaneGroup({
                   // terminal so a keystroke cannot reach a textarea whose pty no
                   // longer exists, while the scrollback stays readable behind it.
                   role="status"
-                  className="absolute inset-0 flex items-end justify-center bg-surface-base/60 p-3 text-[12px] text-ink-secondary"
+                  className="absolute inset-0 flex items-end justify-center bg-surface-base/60 p-3 text-[13px] text-ink-secondary"
                 >
-                  {/* `bg-surface-2`, not the `bg-surface-raised` that used to
-                      be here: there is no `--color-surface-raised` in the
-                      theme, so that utility emitted NOTHING and this notice
-                      floated over the terminal with no plate under it. */}
-                  <span className="border border-rule bg-surface-field px-2 py-1">
+                  {/* A flat panel: the field and a 1px ink border. It is a
+                      utility the theme defines; an earlier `bg-surface-raised`
+                      named a token that does not exist, so that utility
+                      emitted NOTHING and this notice floated over the terminal
+                      with no plate under it. */}
+                  <span className="border border-rule-ink bg-surface-field px-3 py-1.5 text-ink-primary">
                     This shell ended when the terminal service stopped.
                   </span>
                 </div>
@@ -189,9 +187,9 @@ export function TerminalPaneGroup({
                   onClick={() => {
                     onClosePane(pane.paneId);
                   }}
-                  className="absolute top-1 right-1 p-1 text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center text-ink-tertiary hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus"
                 >
-                  <IconClose size={12} />
+                  <LineClose size={14} />
                 </button>
               ) : null}
             </div>

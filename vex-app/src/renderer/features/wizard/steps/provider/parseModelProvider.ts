@@ -5,10 +5,10 @@
  * Returns the lowercased prefix when the id is well-formed; `null`
  * when there is no `/`, the prefix is empty after trim, or the input
  * is empty. The result feeds `ModelBrandIcon` which looks up a brand
- * SVG from a small hardcoded mapping (no dynamic require — bundle
+ * SVG from a small hardcoded mapping (no dynamic require - bundle
  * predictable, CSP-clean).
  *
- * Pure function — kept separate from the React component so it can be
+ * Pure function - kept separate from the React component so it can be
  * unit-tested without rendering.
  */
 export function parseModelProvider(modelId: string): string | null {

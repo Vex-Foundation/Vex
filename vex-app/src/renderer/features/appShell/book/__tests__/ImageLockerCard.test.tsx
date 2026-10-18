@@ -1,28 +1,32 @@
 /**
- * TRENCH PHOTOS card (C2).
+ * LAUNCHPAD section of the Portfolio page (C2): the image locker and the
+ * launch opener as one section, in three modes by scope.
  *
  * The behaviours worth pinning are the ones that carry meaning rather than
  * pixels:
  *  - the empty state EXPLAINS why the locker exists (a launch needs an image
  *    and the agent cannot make one). A user who does not understand that will
  *    not stage an image, and the mission stalls where it cannot be rescued;
- *  - a cancelled file picker leaves NO error on screen — the user closed a
+ *  - a cancelled file picker leaves NO error on screen: the user closed a
  *    dialog they opened;
  *  - a refused delete shows main's message verbatim, naming the launch that
  *    holds the image (the C2 lifecycle guarantee, made visible);
  *  - thumbnails are fetched PER TILE, not as one batch;
- *  - since the merge, "Launch a token" is REACHABLE FROM THIS CARD. That is the
- *    production reachability guarantee, and it can only be proven here, where
- *    the card is real — `BookPanel.test.tsx` mocks it.
+ *  - since the merge, "Launch a token" is REACHABLE FROM THIS CARD in a session
+ *    scope. That is the production reachability guarantee, and it can only be
+ *    proven here, where the card is real: the page's own test mocks it;
+ *  - the section is a region named "Launchpad" with the image count as a muted
+ *    note, and the modes differ exactly as the table below says.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import {
   ImageLockerCard,
   LAUNCH_FROM_AGENT_SESSION_NOTE,
+  LAUNCH_FROM_THIS_CHAT_NOTE,
   PROJECT_LOCKER_EMPTY_NOTE,
   type ImageLockerScope,
 } from "../ImageLockerCard.js";
@@ -91,8 +95,9 @@ const SESSION = "00000000-0000-4000-8000-00000000dddd";
 const PROJECT = "9c1b0e8e-0000-4000-8000-0000000000ab";
 const SESSION_SCOPE: ImageLockerScope = { kind: "session", sessionId: SESSION };
 const PROJECT_SCOPE: ImageLockerScope = { kind: "project", projectId: PROJECT };
+const GLOBAL_SCOPE: ImageLockerScope = { kind: "global" };
 
-function renderCard(scope: ImageLockerScope = SESSION_SCOPE) {
+function renderCard(scope: ImageLockerScope = SESSION_SCOPE, chatOpen?: boolean) {
   setVex();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -100,9 +105,15 @@ function renderCard(scope: ImageLockerScope = SESSION_SCOPE) {
   function Wrapper({ children }: { readonly children: ReactNode }) {
     return createElement(QueryClientProvider, { client }, children);
   }
-  return render(createElement(ImageLockerCard, { scope }), {
-    wrapper: Wrapper,
-  });
+  return render(
+    createElement(ImageLockerCard, chatOpen === undefined ? { scope } : { scope, chatOpen }),
+    { wrapper: Wrapper },
+  );
+}
+
+/** The launch seat's sentence, or null when the scope's seat holds something else. */
+function browseNote(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-vex-area="launchpad-browse-note"]');
 }
 
 function vexError(code: string, message: string) {
@@ -122,8 +133,8 @@ function vexError(code: string, message: string) {
 
 afterEach(() => {
   vi.clearAllMocks();
-  // @ts-expect-error — test cleanup of the injected bridge
-  delete window.vex;
+  // Test cleanup of the injected bridge.
+  Reflect.deleteProperty(window, "vex");
 });
 
 describe("the empty locker", () => {
@@ -256,11 +267,35 @@ describe("read failure", () => {
 });
 
 /**
- * The card serves TWO launchpads now (owner decision, 2026-08-18). Its BookPanel
- * section id stays `"trench"` because that is a persisted user preference, but
- * the card itself is generic and carries the launchpad chips.
+ * The locker and the launch opener are ONE section (owner brief, section 8),
+ * named "Launchpad" and wearing the mark of the one launchpad a launch goes to.
  */
 describe("the merged launchpad card", () => {
+  it("is a region named Launchpad (the PortfolioCard title) on the paper", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    renderCard();
+    const region = await screen.findByRole("region", { name: "Launchpad" });
+    expect(region.className).toContain("vex-pf-sec");
+    expect(within(region).getByRole("heading", { name: /launchpad/i })).toBeTruthy();
+  });
+
+  it("carries the image count as a muted note ' · N', and no note while the locker is empty", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
+    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    const counted = renderCard();
+    const region = await screen.findByRole("region", { name: "Launchpad" });
+    await waitFor(() =>
+      expect(region.querySelector(".vex-pf-sec__note")?.textContent).toBe(" · 2"),
+    );
+    counted.unmount();
+
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    renderCard();
+    const empty = await screen.findByRole("region", { name: "Launchpad" });
+    await screen.findByText(/a launch needs an image/i);
+    expect(empty.querySelector(".vex-pf-sec__note")).toBeNull();
+  });
+
   it("is named for the launchpad role, and wears the venue's own mark", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [] } });
     const { container } = renderCard();
@@ -352,26 +387,32 @@ describe("the on-chain copy, as the user is told about it", () => {
   });
 });
 
+
+const THUMB_OK = (imageId: string) => ({
+  ok: true,
+  data: { imageId, dataUrl: "data:image/png;base64,AAAA" },
+});
+
 /**
- * A PROJECT rail is BROWSE-ONLY (Studio parity decree, 2026-09-04).
- * a fixed decision). It sees the same global locker a session
- * rail does and may do nothing else with it: no upload, no delete, no launch.
- * The table below is the contract, one row per affordance.
+ * THREE SCOPES, TWO MODES. The locker is global, so every scope SEES the same
+ * images; what a scope may DO with them is the contract, one row per
+ * affordance.
  *
- *   affordance            session   project
- *   read the locker       yes       yes
- *   Add image             yes       no
- *   Remove <image>        yes       no
- *   launchpad chips       yes       no
- *   Launch a token        yes       no
- *   "signed from" note    no        yes
+ *   affordance                 session   global    project
+ *   read the locker            yes       yes       yes
+ *   Add image                  yes       yes       no
+ *   Remove <image>             yes       yes       no
+ *   upload/delete mutations    yes       yes       not instantiated
+ *   Launch a token             yes       no        no
+ *   "signed from" note         no        yes       yes
+ *   "This chat" sentence       no        chatOpen  no
  */
-describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
+describe("a PROJECT section is browse-only (Studio parity decree)", () => {
   it("browses the same global locker: the images and their count render", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
-    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
     renderCard(PROJECT_SCOPE);
-    expect(await screen.findByText("2")).toBeTruthy();
+    expect(await screen.findByText("· 2")).toBeTruthy();
     expect(screen.getByText("moon.png")).toBeTruthy();
     expect(screen.getByText("rocket.png")).toBeTruthy();
     expect(listMock).toHaveBeenCalledTimes(1);
@@ -379,9 +420,9 @@ describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
 
   it("renders NO upload control and NO delete control on any tile", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
-    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
     renderCard(PROJECT_SCOPE);
-    await screen.findByText("2");
+    await screen.findByText("· 2");
     expect(screen.queryByRole("button", { name: /add image/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /remove/i })).toBeNull();
     // Not hidden, not disabled: absent. The tiles carry no button at all.
@@ -390,9 +431,9 @@ describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
 
   it("does not instantiate the upload or delete mutation at all", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
-    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
     renderCard(PROJECT_SCOPE);
-    await screen.findByText("1");
+    await screen.findByText("· 1");
     expect(useUploadLockerImage).not.toHaveBeenCalled();
     expect(useDeleteLockerImage).not.toHaveBeenCalled();
     expect(uploadMock).not.toHaveBeenCalled();
@@ -405,12 +446,13 @@ describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
     // decision). So the seat the launch holds for a session carries the
     // sentence, not a button.
     listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
-    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
     renderCard(PROJECT_SCOPE);
-    await screen.findByText("1");
+    await screen.findByText("· 1");
     expect(screen.queryByRole("button", { name: /launch/i })).toBeNull();
     expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.getByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeTruthy();
+    expect(browseNote()?.textContent).toBe(LAUNCH_FROM_AGENT_SESSION_NOTE);
   });
 
   it("an EMPTY locker does not ask the user to add an image here", async () => {
@@ -420,17 +462,136 @@ describe("a PROJECT rail is browse-only (Studio parity decree)", () => {
     expect(screen.queryByText(/add one here/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /add image/i })).toBeNull();
   });
+});
 
-  it("a SESSION rail still carries every affordance the project rail lacks", async () => {
+/**
+ * GLOBAL (the whole inventory, or one wallet): the user stages from here, so
+ * upload and delete are present, but a launch is attributed to a session and
+ * there is none, so the launch seat holds the sentence that says where a
+ * launch is signed from.
+ */
+describe("a GLOBAL section stages images but cannot launch", () => {
+  it("carries the upload control and a delete control on every tile", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A, B] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(GLOBAL_SCOPE);
+    expect(await screen.findByText("· 2")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /add image/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /remove moon\.png/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /remove rocket\.png/i })).toBeTruthy();
+  });
+
+  it("instantiates the upload and delete mutations", async () => {
     listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
-    readThumbMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId, dataUrl: "data:image/png;base64,AAAA" } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(GLOBAL_SCOPE);
+    await screen.findByText("· 1");
+    expect(useUploadLockerImage).toHaveBeenCalled();
+    expect(useDeleteLockerImage).toHaveBeenCalled();
+  });
+
+  it("renders NO launch action and no launch dialog", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(GLOBAL_SCOPE);
+    await screen.findByText("· 1");
+    expect(screen.queryByRole("button", { name: /launch/i })).toBeNull();
+    expect(screen.queryByTestId("launch-dialog")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("holds the launch seat with the signed-from note, and nothing about a chat while none is open", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(GLOBAL_SCOPE);
+    await screen.findByText("· 1");
+    const note = browseNote();
+    expect(note?.textContent).toBe(LAUNCH_FROM_AGENT_SESSION_NOTE);
+    expect(note?.textContent).not.toContain(LAUNCH_FROM_THIS_CHAT_NOTE);
+    expect(screen.queryByText(LAUNCH_FROM_THIS_CHAT_NOTE)).toBeNull();
+  });
+
+  it("chatOpen false is the same seat as the default", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(GLOBAL_SCOPE, false);
+    await screen.findByText("· 1");
+    expect(browseNote()?.textContent).toBe(LAUNCH_FROM_AGENT_SESSION_NOTE);
+  });
+
+  it("chatOpen adds the sentence that says how to launch from the open chat", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(GLOBAL_SCOPE, true);
+    await screen.findByText("· 1");
+    const note = browseNote();
+    expect(note?.textContent).toBe(
+      `${LAUNCH_FROM_AGENT_SESSION_NOTE} ${LAUNCH_FROM_THIS_CHAT_NOTE}`,
+    );
+    // Still a sentence in the seat, never a button.
+    expect(screen.queryByRole("button", { name: /launch/i })).toBeNull();
+  });
+
+  it("the note sits in the card's launch seat, under the upload control", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    renderCard(GLOBAL_SCOPE, true);
+    const region = await screen.findByRole("region", { name: "Launchpad" });
+    await screen.findByText(/a launch needs an image/i);
+    const note = browseNote();
+    expect(note).not.toBeNull();
+    expect(region.contains(note)).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: /add image/i })
+        .compareDocumentPosition(note ?? document.body) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("an EMPTY locker asks the user to add an image here, unlike a project", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [] } });
+    renderCard(GLOBAL_SCOPE);
+    const note = await screen.findByText(/a launch needs an image/i);
+    expect(note.textContent).toMatch(/add one here/i);
+    expect(screen.queryByText(PROJECT_LOCKER_EMPTY_NOTE)).toBeNull();
+    expect(screen.getByRole("button", { name: /add image/i })).toBeTruthy();
+  });
+
+  it("uploads and deletes through the real mutations", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    uploadMock.mockResolvedValue({ ok: true, data: { image: B } });
+    deleteMock.mockResolvedValue({ ok: true, data: { imageId: A.imageId } });
+    renderCard(GLOBAL_SCOPE);
+    fireEvent.click(await screen.findByRole("button", { name: /add image/i }));
+    await waitFor(() => expect(uploadMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole("button", { name: /remove moon\.png/i }));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith({ imageId: A.imageId }));
+  });
+});
+
+describe("a SESSION section still carries every affordance the others lack", () => {
+  it("has upload, delete AND launch, and no signed-from note", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
     renderCard(SESSION_SCOPE);
-    await screen.findByText("1");
+    await screen.findByText("· 1");
     expect(screen.getByRole("button", { name: /add image/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /remove moon\.png/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /launch/i })).toBeTruthy();
     expect(screen.queryByText(LAUNCH_FROM_AGENT_SESSION_NOTE)).toBeNull();
+    expect(screen.queryByText(LAUNCH_FROM_THIS_CHAT_NOTE)).toBeNull();
+    expect(browseNote()).toBeNull();
     expect(useUploadLockerImage).toHaveBeenCalled();
     expect(useDeleteLockerImage).toHaveBeenCalled();
+  });
+
+  it("chatOpen changes nothing in a session: the launch button is the seat's content", async () => {
+    listMock.mockResolvedValue({ ok: true, data: { images: [A] } });
+    readThumbMock.mockResolvedValue(THUMB_OK(A.imageId));
+    renderCard(SESSION_SCOPE, true);
+    await screen.findByText("· 1");
+    expect(screen.getByRole("button", { name: /launch a token/i })).toBeTruthy();
+    expect(screen.queryByText(LAUNCH_FROM_THIS_CHAT_NOTE)).toBeNull();
+    expect(browseNote()).toBeNull();
   });
 });

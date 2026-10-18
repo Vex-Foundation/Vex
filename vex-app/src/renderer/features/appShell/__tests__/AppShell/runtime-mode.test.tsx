@@ -15,6 +15,8 @@
  *     silently steal the first's callbacks. The subscription COUNT through the
  *     mocked bridge is the assertion.
  *  3. Neither mode drops the frame-level hosts.
+ *  4. The activity pushes that refresh the portfolio queries are held once
+ *     for the whole app, in either mode (counted through the mocked bridge).
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -51,6 +53,8 @@ const { makeEngineBridgeStub } = await import(
 
 /** How many live `onControlState` subscriptions the bridge is holding. */
 let controlStateSubscriptions = 0;
+/** Live activity push subscriptions (settled and progress) on the bridge. */
+const activitySubscriptions = { resolved: 0, progress: 0 };
 const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
 const hostStatusMock = vi.fn<() => Promise<Result<StudioHostStatus>>>();
 
@@ -71,6 +75,8 @@ beforeAll(() => {
 beforeEach(() => {
   window.localStorage.clear();
   controlStateSubscriptions = 0;
+  activitySubscriptions.resolved = 0;
+  activitySubscriptions.progress = 0;
   projectsListMock.mockReset();
   hostStatusMock.mockReset();
   projectsListMock.mockResolvedValue({
@@ -142,6 +148,20 @@ beforeEach(() => {
         getVexSnapshot: () => Promise.resolve({ ok: true, data: null }),
         onVexUpdate: () => () => undefined,
       },
+      portfolio: {
+        onActivityResolved: () => {
+          activitySubscriptions.resolved += 1;
+          return () => {
+            activitySubscriptions.resolved -= 1;
+          };
+        },
+        onActivityProgress: () => {
+          activitySubscriptions.progress += 1;
+          return () => {
+            activitySubscriptions.progress -= 1;
+          };
+        },
+      },
       capabilities: {
         get: () => Promise.resolve({ ok: true, data: { features: { memory: true } } }),
       },
@@ -212,12 +232,48 @@ describe("AppShell runtime-mode dispatch", () => {
     expect(controlStateSubscriptions).toBe(agentCount);
   });
 
+  it("holds the activity pushes once for the whole app, in either mode", () => {
+    renderShell();
+    expect(activitySubscriptions).toEqual({ resolved: 1, progress: 1 });
+    switchMode("studio");
+    expect(activitySubscriptions).toEqual({ resolved: 1, progress: 1 });
+    switchMode("agent");
+    expect(activitySubscriptions).toEqual({ resolved: 1, progress: 1 });
+  });
+
   it("keeps the frame-level hosts and the BOOK column in both modes", () => {
     renderShell();
     const frame = document.querySelector('[data-vex-area="shell-frame"]');
     expect(frame).not.toBeNull();
     switchMode("studio");
     expect(document.querySelector('[data-vex-area="shell-frame"]')).toBe(frame);
+  });
+
+  it("offline, the connection banner is a row of the centre column under its head, not a band over the frame", () => {
+    renderShell();
+    expect(screen.queryByText("Offline: waiting for the network to come back")).toBeNull();
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    const banner = screen.getByText("Offline: waiting for the network to come back")
+      .closest(".vex-connection-banner");
+    expect(banner).not.toBeNull();
+    // A child of the centre column (its own row), never of the frame grid
+    // where it lay over all three columns.
+    const centre = banner?.parentElement;
+    expect(centre?.classList.contains("vex-shell-centre")).toBe(true);
+    expect(banner?.parentElement?.getAttribute("data-vex-area")).not.toBe("shell-frame");
+    // Under the head row: the running head comes first in the column.
+    const head = centre?.querySelector('[data-vex-area="shell-status-strip"]');
+    expect(head).not.toBeNull();
+    if (head == null || banner == null) throw new Error("the head row or the banner is missing");
+    expect(
+      head.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(document.querySelector(".vex-connection-banner")).toBeNull();
   });
 
   it("studio mode with no project shows the Studio welcome screen", async () => {

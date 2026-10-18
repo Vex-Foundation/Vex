@@ -1,8 +1,10 @@
 /**
- * Branch A — engine + daemon running. The orchestrator's footer flips
+ * Branch A - engine + daemon running. The orchestrator's actions flip
  * the Recheck button to a Continue button so this body only needs the
- * "ready" status stanza.
+ * "ready" card.
  */
+
+import type { JSX } from "react";
 
 import type { DockerStatus } from "@shared/schemas/docker.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";

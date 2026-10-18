@@ -109,7 +109,7 @@ describe("poolsFormToPayload - what it accepts", () => {
 
   it("distinguishes NO prebuy from a prebuy of zero", () => {
     // An untouched field means the user asked for no prebuy at all, which is
-    // absent on the wire — not the number zero.
+    // absent on the wire - not the number zero.
     expect(poolsFormToPayload(validForm({ prebuy: "" }))?.prebuy).toBeNull();
     expect(poolsFormToPayload(validForm({ prebuy: "0.25" }))?.prebuy).toEqual({
       amountHuman: "0.25",
@@ -158,7 +158,7 @@ describe("poolsFormToPayload - what it refuses", () => {
   });
 
   it("refuses a prebuy finer than the paired asset can represent", () => {
-    // USDG has six decimals, so a seventh digit is not a rounding detail — it is
+    // USDG has six decimals, so a seventh digit is not a rounding detail - it is
     // an amount the user cannot actually send.
     const usdg = { pairedAsset: "usdg" as const, prebuy: "1.0000001" };
     expect(poolsFormToPayload(validForm(usdg))).toBeNull();

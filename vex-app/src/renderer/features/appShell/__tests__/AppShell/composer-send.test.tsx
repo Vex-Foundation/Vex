@@ -241,20 +241,20 @@ describe("AppShell", () => {
     expect(screen.queryByText("Message sent.")).toBeNull();
   });
 
-  it("shows quick-action chips in an empty session and hides them once it has messages", async () => {
+  it("shows the welcome's task rows in an empty session and hides them once it has messages", async () => {
     const row = makeAgentRow("Chips");
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
     sessionsGetMock.mockResolvedValue({ ok: true, data: row });
     useUiStore.setState({ activeSessionId: row.id });
-    // Empty transcript (default mock) → chips are visible as conversation starters.
+    // Empty transcript (default mock): the task rows are visible as starters.
     renderShell();
     await screen.findByText("Chips");
     expect(
-      await screen.findByRole("button", { name: /hunt trending memecoins/i }),
+      await screen.findByRole("button", { name: /check wallet balances/i }),
     ).not.toBeNull();
   });
 
-  it("hides quick-action chips once the session transcript has messages", async () => {
+  it("hides the welcome's task rows once the session transcript has messages", async () => {
     const row = makeAgentRow("Has msgs");
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [row] });
     sessionsGetMock.mockResolvedValue({ ok: true, data: row });
@@ -283,7 +283,7 @@ describe("AppShell", () => {
     await screen.findByText("hi vex");
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: /hunt trending memecoins/i }),
+        screen.queryByRole("button", { name: /check wallet balances/i }),
       ).toBeNull(),
     );
   });

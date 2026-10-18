@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, type JSX } from "react";
-import { VexMark } from "../../../../components/common/VexMark.js";
 import { Button } from "../../../../components/ui/button.js";
 import {
   Dialog, DialogBody, DialogContent, DialogConsequence, DialogDescription,
@@ -13,6 +12,12 @@ export interface TerminalPastePrompt {
 }
 export type TerminalPasteChoice = "paste" | "oneLine" | "cancel";
 
+/**
+ * The multi-line paste confirmation (docs/design/R3-MINIMAL.md section 12): a
+ * native dialog on the kit, the title sans 21 / 500, the body 14 ink 2, the
+ * preview in mono on the paper 2 well. The one blue fill is Paste; the refusing
+ * choice is the ink key and holds the initial focus.
+ */
 export function TerminalPasteDialog({ prompt, open, onOpenChange, onClosed, onAnswer }: {
   readonly prompt: TerminalPastePrompt;
   readonly open: boolean;
@@ -44,29 +49,28 @@ export function TerminalPasteDialog({ prompt, open, onOpenChange, onClosed, onAn
         ref={dialogRef}
       >
         <DialogHeader>
-          <VexMark size={28} className="mb-2 text-brand-mark" />
           <DialogTitle>Paste {prompt.lineCount} lines into the terminal?</DialogTitle>
           <DialogDescription>Review the text before sending it to the running program.</DialogDescription>
         </DialogHeader>
-        <DialogConsequence>Multiple lines can run commands immediately in a shell.</DialogConsequence>
+        <DialogConsequence className="text-[13.5px] leading-[1.5]">Multiple lines can run commands immediately in a shell.</DialogConsequence>
         <DialogBody>
-          <div className="text-xs text-ink-secondary">Preview: up to 3 lines, 30 characters per line.</div>
-          <pre className="whitespace-pre-wrap break-all border border-line-2 p-3 font-mono text-xs">{showWhole ? prompt.text : preview.lines.join("\n")}</pre>
+          <div className="text-[13px] text-ink-secondary">Preview: up to 3 lines, 30 characters per line.</div>
+          <pre className="vex-num whitespace-pre-wrap break-all border border-rule-quiet bg-surface-3 p-3 font-mono text-[13px] leading-[1.5]">{showWhole ? prompt.text : preview.lines.join("\n")}</pre>
           {!showWhole && (preview.omittedLines > 0 || preview.shortenedLines > 0) && (
-            <div className="text-xs text-ink-secondary">
+            <div className="text-[13px] text-ink-secondary">
               {preview.omittedLines} more lines; {preview.shortenedLines} preview lines shortened.
               <Button variant="bare" size="sm" onClick={() => setShowWhole(true)}>Show all text</Button>
             </div>
           )}
-          <label className="flex items-center gap-2 text-xs text-ink-secondary">
+          <label className="flex items-center gap-2 text-[14px] text-ink-secondary">
             <input type="checkbox" checked={dontAsk} onChange={(event) => setDontAsk(event.target.checked)} />
             Don't ask again
           </label>
         </DialogBody>
         <DialogFooter className="flex-wrap">
-          <Button size="sm" variant="bare" {...DIALOG_INITIAL_FOCUS} onClick={() => answer("cancel", false)}>Cancel</Button>
-          <Button size="sm" variant="quiet" onClick={() => answer("oneLine", dontAsk)}>Paste as one line</Button>
-          <Button size="sm" onClick={() => answer("paste", dontAsk)}>Paste</Button>
+          <Button variant="ink" {...DIALOG_INITIAL_FOCUS} onClick={() => answer("cancel", false)}>Cancel</Button>
+          <Button variant="quiet" onClick={() => answer("oneLine", dontAsk)}>Paste as one line</Button>
+          <Button onClick={() => answer("paste", dontAsk)}>Paste</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

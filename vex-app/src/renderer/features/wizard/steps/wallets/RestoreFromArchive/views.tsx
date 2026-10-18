@@ -19,7 +19,6 @@ export function CollapsedTrigger({ onOpen }: CollapsedTriggerProps): JSX.Element
         size="sm"
         onClick={onOpen}
         data-vex-restore-open
-        className="text-accent-primary"
       >
         Restore a full backup
       </Button>
@@ -33,33 +32,27 @@ interface PanelHeaderProps {
 
 export function PanelHeader({ onClose }: PanelHeaderProps): JSX.Element {
   return (
-    <div className="flex items-center justify-between">
-      <p className="vex-micro text-ink-tertiary">
-        Restore a full backup
-      </p>
-      <Button
-        variant="bare"
-        size="sm"
+    <div className="flex items-center justify-between gap-3">
+      <p className="vex-wz-card__h">Restore a full backup</p>
+      <button
+        type="button"
         onClick={onClose}
         data-vex-restore-cancel
+        className="vex-wz-link"
       >
         Close
-      </Button>
+      </button>
     </div>
   );
 }
 
 export function LoadingBackups(): JSX.Element {
-  // Brand loading language — the VexLoader ring (role="status" +
-  // label live on the loader root), never a generic pulse bar.
+  // The quiet loading line (role="status" + label live on the loader root)
+  // with the word beside it, never a generic pulse bar.
   return (
-    <div className="flex items-center gap-2.5" data-vex-restore-loading>
-      <VexLoader
-        size={16}
-        stroke={2}
-        label="Loading backups…"
-      />
-      <span aria-hidden className="text-xs text-ink-tertiary">
+    <div className="flex items-center gap-3" data-vex-restore-loading>
+      <VexLoader label="Loading backups…" />
+      <span aria-hidden className="text-[13px] text-ink-tertiary">
         Loading backups…
       </span>
     </div>
@@ -102,7 +95,7 @@ export function BackupsListError({
 export function EmptyBackups(): JSX.Element {
   return (
     <p
-      className="text-sm text-ink-secondary"
+      className="vex-wz-text"
       role="status"
       data-vex-restore-empty
     >
@@ -140,10 +133,10 @@ export function RestoreForm({
       onSubmit={(event) => void onSubmit(event)}
       className="flex flex-col gap-4"
     >
-      <fieldset className="flex flex-col gap-2" disabled={pending}>
+      <fieldset className="flex flex-col gap-4" disabled={pending}>
         <legend className="sr-only">Select a backup to restore</legend>
         <ul
-          className="flex flex-col gap-2"
+          className="vex-wz-list"
           role="radiogroup"
           aria-label="Available backups"
           data-vex-restore-list
@@ -151,14 +144,15 @@ export function RestoreForm({
           {backups.map((backup) => {
             const checked = selectedId === backup.id;
             return (
-              // A3 boxless: hairline-separated rows; the checked state is a
-              // paper left bar on the label, never a filled card.
+              // Rows under the list's rule, each closed by a quiet rule; the
+              // checked state is a blue left bar on the label, never a filled
+              // card.
               <li
                 key={backup.id}
-                className="border-b border-[var(--color-border)] last:border-0"
+                className="border-b border-rule-quiet"
               >
                 <label
-                  className="flex cursor-pointer flex-col gap-2 border-l-2 border-l-transparent py-3 pl-3 has-[:checked]:border-l-ink-primary"
+                  className="flex cursor-pointer flex-col gap-2 border-l-2 border-l-transparent py-3 pl-3 has-[:checked]:border-l-accent-primary"
                   data-vex-restore-backup={backup.id}
                 >
                   <div className="flex items-start gap-2">
@@ -172,17 +166,17 @@ export function RestoreForm({
                       aria-label={backupCardLabel(backup)}
                     />
                     <div className="flex flex-1 flex-col gap-1">
-                      <span className="text-sm text-ink-primary">
+                      <span className="text-[14px] text-ink-primary">
                         {backupCardLabel(backup)}
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {backup.vaultIncluded ? (
-                          <span className="border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
+                          <span className="border border-rule-quiet px-1.5 py-0.5 text-[12px] text-ink-tertiary">
                             vault
                           </span>
                         ) : null}
                         {backup.envIncluded ? (
-                          <span className="border border-[var(--color-border)] px-2 py-0.5 vex-micro text-ink-tertiary">
+                          <span className="border border-rule-quiet px-1.5 py-0.5 font-mono vex-num text-[12px] text-ink-tertiary">
                             .env
                           </span>
                         ) : null}
@@ -213,7 +207,7 @@ export function RestoreForm({
             }
             data-vex-restore-password
           />
-          <p className="text-xs text-ink-tertiary">
+          <p className="vex-wz-hint">
             Enter the master password for the selected backup.
           </p>
         </div>

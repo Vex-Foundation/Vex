@@ -64,7 +64,7 @@ import {
   DialogHeader,
   DialogPinnedSlot,
   DialogTitle,
-  DIALOG_INITIAL_FOCUS,
+  useInitialFocusRef,
 } from "../../../../components/ui/dialog.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Label } from "../../../../components/ui/label.js";
@@ -146,6 +146,9 @@ export function ProjectCreator({
   /** Set on success. Its presence IS the result phase. */
   const [created, setCreated] = useState<ProjectCreateResult | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  // The name field is both this dialog's initial focus and the field the
+  // effects below focus and select: one ref does both.
+  const nameFieldRef = useInitialFocusRef(nameRef);
   // Announced from the SUBMIT PATH, not from a role on a node that may be
   // scrolled out of view - see `components/ui/live-region.tsx`.
   const { announce, region: liveRegion } = useLiveAnnouncer();
@@ -260,11 +263,9 @@ export function ProjectCreator({
         closeOnBackdropClick={false}
       >
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="gap-2.5 border-line-2 px-8 py-5">
-            <DialogTitle className="vex-eyebrow">
-              {PROJECT_CREATE_TITLE}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-ink-tertiary">
+          <DialogHeader className="gap-1.5 px-8 py-5">
+            <DialogTitle>{PROJECT_CREATE_TITLE}</DialogTitle>
+            <DialogDescription>
               {created === null
                 ? PROJECT_CREATE_LEAD
                 : projectFolderLine(created.project.displayPath)}
@@ -293,12 +294,12 @@ export function ProjectCreator({
                     {PROJECT_NAME_LABEL}
                   </Label>
                   <Input
-                    ref={nameRef}
+                    // Where this dialog opens (`nameFieldRef` names it the
+                    // initial focus): a form the user came here to type
+                    // into, and a field that arms nothing.
+                    ref={nameFieldRef}
                     id="vex-project-name"
                     type="text"
-                    // Where this dialog opens: a form the user came here to
-                    // type into, and a field that arms nothing.
-                    {...DIALOG_INITIAL_FOCUS}
                     required
                     maxLength={PROJECT_NAME_MAX_LENGTH}
                     value={name}
@@ -306,11 +307,11 @@ export function ProjectCreator({
                     placeholder={PROJECT_NAME_PLACEHOLDER}
                     className="h-10"
                   />
-                  <div className="flex items-center justify-between gap-3 text-xs text-ink-tertiary">
+                  <div className="flex items-center justify-between gap-3 text-[12.5px] leading-[1.45] text-ink-tertiary">
                     <p>{PROJECT_NAME_HELP}</p>
                     <span
                       aria-live="polite"
-                      className="font-mono text-[10px] tracking-[0.14em] tabular-nums text-ink-tertiary"
+                      className="vex-num text-[12px] text-ink-tertiary"
                     >
                       {name.length} / {PROJECT_NAME_MAX_LENGTH}
                     </span>
@@ -380,19 +381,18 @@ export function ProjectCreator({
             </DialogPinnedSlot>
           )}
 
-          <DialogFooter className="border-line-2 px-8 py-4">
+          <DialogFooter className="px-8">
             {created === null ? (
               <>
                 <Button
                   type="button"
-                  variant="bare"
+                  variant="quiet"
                   onClick={() => onOpenChange(false)}
                   disabled={pending}
-                  className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
                 >
                   {PROJECT_CANCEL}
                 </Button>
-                <Button type="submit" disabled={submitDisabled} className="h-10 px-6">
+                <Button type="submit" disabled={submitDisabled}>
                   {pending ? PROJECT_CREATE_PENDING : PROJECT_CREATE_SUBMIT}
                 </Button>
               </>
@@ -400,7 +400,6 @@ export function ProjectCreator({
               <Button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="h-10 px-6"
                 autoFocus
               >
                 {PROJECT_CLOSE}

@@ -29,17 +29,17 @@
  * The thumbnail is `aria-hidden` and the tile is labelled by the image's own
  * label instead: a screen reader gains nothing from "image" and everything
  * from "moon.png, 12.4 KB". A thumbnail that fails to load leaves the tile in
- * place with its label — the metadata is still true even when the bytes are
+ * place with its label - the metadata is still true even when the bytes are
  * not readable, and silently dropping the tile would hide that from the user.
  *
- * This tile declares no glass of its own — the blur is inherited from
- * `PortfolioCard`, the single design-guard whitelisted wrapper, and a second
- * glass surface anywhere under `features/appShell` is a red build.
+ * The tile is drawn on the page's paper (`.vex-pf-thumb`, book.css): a square
+ * with a 1px rule, the label on a paper strip at its foot in 11px sans, the
+ * delete key a 24px line icon key at its corner. No radius, no shadow.
  */
 
 import type { JSX } from "react";
 import type { LockerImage } from "@shared/schemas/images.js";
-import { PxIcon } from "../../../../components/icons/index.js";
+import { LineTrash } from "../../../../components/icons/line/index.js";
 import { useLockerImageThumb } from "../../../../lib/api/images.js";
 
 /** What a rail that may delete hands the tile; `null` on a browse-only rail. */
@@ -63,19 +63,16 @@ export function ImageThumb({
   const dataUrl = result?.ok === true ? result.data.dataUrl : null;
 
   return (
-    <li className="group vex-bk__thumb">
+    <li className="vex-pf-thumb">
       {dataUrl !== null ? (
         <img
           src={dataUrl}
           alt=""
           aria-hidden
-          className="h-full w-full object-cover"
+          className="vex-pf-thumb__img"
         />
       ) : (
-        <span
-          aria-hidden
-          className="flex h-full w-full items-center justify-center vex-micro text-ink-secondary"
-        >
+        <span aria-hidden className="vex-pf-thumb__none">
           {hasOnchainCopy && thumb.isLoading ? "…" : "-"}
         </span>
       )}
@@ -85,7 +82,7 @@ export function ImageThumb({
       {!hasOnchainCopy ? (
         <span
           title="Too large for a preview thumbnail. The full image is stored and launches normally."
-          className="pointer-events-none absolute left-1 top-1 bg-surface-base px-1.5 py-0.5 vex-micro text-ink-secondary"
+          className="vex-pf-thumb__tag"
         >
           no preview
         </span>
@@ -93,7 +90,7 @@ export function ImageThumb({
 
       {/* The label rides a bottom scrim rather than a solid bar so a light
        * image stays readable without hiding what the user chose. */}
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-surface-base px-1.5 py-0.5 text-[9.5px] text-ink-secondary">
+      <span className="vex-pf-thumb__label">
         {image.label}
       </span>
 
@@ -105,10 +102,10 @@ export function ImageThumb({
           // Always reachable by keyboard (focus-visible), revealed on hover for
           // the mouse - a destructive control that only exists on hover is a
           // control a keyboard user does not have.
-          className="absolute right-1 top-1 bg-surface-base p-1 text-ink-secondary opacity-0 transition-opacity hover:text-ink-primary focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+          className="vex-pf-thumb__del"
           aria-label={`Remove ${image.label} from the locker`}
         >
-          <PxIcon name="trash" />
+          <LineTrash size={14} />
         </button>
       ) : null}
     </li>

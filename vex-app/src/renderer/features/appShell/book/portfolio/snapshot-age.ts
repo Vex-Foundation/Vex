@@ -1,5 +1,5 @@
 /**
- * How old the POSITION card's snapshot baseline is, in words.
+ * How old the Portfolio total's snapshot baseline is, in words.
  *
  * Measured on the owner's machine (2026-09-04): the card read "snapshot
  * $100.62 +$0.41" beside a live total of $62.71, and that snapshot was 31 days

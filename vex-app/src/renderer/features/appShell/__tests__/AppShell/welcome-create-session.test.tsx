@@ -280,11 +280,18 @@ beforeEach(() => {
   });
 });
 
+/** The left sidebar's New chat row: the plain way into the creator. */
+function newChatKey(): HTMLElement {
+  const [key] = screen.getAllByRole("button", { name: "New chat" });
+  if (key === undefined) throw new Error("no New chat key in the left sidebar");
+  return key;
+}
+
 describe("AppShell", () => {
   it("new-session modal form is a bounded flex column so the footer/Create stays reachable (bug C)", async () => {
     sessionsListMock.mockResolvedValueOnce({ ok: true, data: [] });
     const view = renderShell();
-    fireEvent.click(view.getAllByRole("button", { name: "New session" })[0]!);
+    fireEvent.click(newChatKey());
     await screen.findByRole("heading", { name: "New session" });
 
     const form = view.container.querySelector("dialog form");
@@ -297,7 +304,7 @@ describe("AppShell", () => {
   it("creates a mission session without collecting the goal in the modal", async () => {
     renderShell();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "New session" })[0]!);
+    fireEvent.click(newChatKey());
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "LP rebalance run" },
     });
@@ -369,7 +376,7 @@ describe("AppShell", () => {
   it("blocks Create until the user types a session name", async () => {
     renderShell();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "New session" })[0]!);
+    fireEvent.click(newChatKey());
     const createBtn = screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
     expect(createBtn.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Name"), {

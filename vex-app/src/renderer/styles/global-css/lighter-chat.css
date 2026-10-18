@@ -1,30 +1,11 @@
 /* ---------------------------------------------------------------------------
- * Vex chat rail (the shell's BOOK column in Lighter mode, docs/design/
- * V10-SPREAD.md sections 1 and 2): the serif "Vex" title, the scope row, the
- * quick prompts as rule-framed keys, the session, the composer.
+ * The Lighter desk chat (docs/design/R3-MINIMAL.md sections 5.1 and 9.3): it
+ * sits under the portrait plate in the Vex sidebar. The sidebar root is
+ * `.lit-chat-frame` (lighter-tokens.css), so the `--lit-*` roles apply here.
+ * Top to bottom: the scope chip, the position prompts, the transcript (the
+ * shared session panel) and the desk composer, all 14 in from the sidebar
+ * edges. Words are the sans in sentence case; the figures keep the mono.
  * ------------------------------------------------------------------------- */
-
-/* The shell's BOOK frame is outside `.lit-desk`; it carries the same role
- * scope through `.lit-chat-frame` (lighter-tokens.css). V10 paints the desk
- * from the app's own aliases, so the rail's shared transcript and composer
- * components need no re-projection: they already speak the room. */
-.lit-chat-frame > [data-vex-area="book-panel"] {
-  border-left: 1px solid var(--lit-line);
-  background: var(--lit-bg);
-  color: var(--lit-ink);
-}
-
-/* The rail's title: "Vex" in Instrument Serif 36, the title colour (the blue
- * by day, paper at night). The frame's own markup is the shell's; this only
- * sets the headline the Lighter rail passes it. */
-.lit-chat-frame > [data-vex-area="book-panel"] > :first-child > span:first-child {
-  color: var(--vex-alias-title);
-  font-family: var(--font-serif);
-  font-size: 36px;
-  font-weight: 400;
-  letter-spacing: -0.012em;
-  line-height: 1;
-}
 
 .lit-chat-shell {
   display: flex;
@@ -39,18 +20,26 @@
   flex: 1 1 auto;
 }
 
-.lit-chat-shell [data-vex-session-content] { padding-block: 12px 0; }
+/* 14 in from the sidebar edges: the shared panel already pads the transcript
+ * and the composer 12, so the transcript gets 2 more and the dock is set to 14. */
+.lit-chat-shell [data-vex-session-content] { padding-block: 12px 0; padding-inline: 2px; }
 .lit-chat-shell [data-vex-conversation-scroll] { overscroll-behavior: contain; }
 .lit-chat-shell [data-vex-area="session-header"] { height: 30px; }
-.lit-chat-shell [data-vex-composer-seat] { border-top: 1px solid var(--lit-line-quiet); background: var(--lit-bg); }
+.lit-chat-shell [data-vex-composer-seat] { background: var(--lit-bg); }
+.lit-chat-shell [data-vex-composer-dock] { padding: 8px 14px 12px; }
 
-/* Desk register: the rail is a side column, not a reading page, so the
- * chat's document sizes step down to the rail's: 14.5px agent and user text,
- * smaller headings. The chat marks its sizes with arbitrary classes; match
- * those. */
-.lit-chat-shell .vex-chat-prose { font-size: 14.5px; line-height: 1.55; }
+/* The transcript at the sidebar's sizes: reading text 13 / 1.5, user text 13,
+ * the chat's own headings stepped down with it. The chat marks its heading
+ * sizes with arbitrary classes; match those. */
+.lit-chat-shell .vex-chat-prose { font-size: 13px; line-height: 1.5; }
 .lit-chat-shell .vex-chat-prose table { font-size: 12px; }
+.lit-chat-shell .vex-chat-prose code { font-size: 12px; }
 .lit-chat-shell .vex-reasoning-prose { font-size: 13px; line-height: 1.5; }
+.lit-chat-shell .vex-you__body { font-size: 13px; line-height: 1.5; }
+
+.lit-chat-shell .vex-chat-prose [class*="text-[24px]"] { margin-top: 12px; font-size: 15px; font-weight: 600; line-height: 21px; }
+.lit-chat-shell .vex-chat-prose [class*="text-[20px]"] { margin-top: 10px; font-size: 14px; line-height: 20px; }
+.lit-chat-shell .vex-chat-prose [class*="text-[17px]"] { margin-top: 8px; font-size: 13px; line-height: 19px; }
 
 /* Live thinking on the desk: the focus blue, flat. */
 .lit-chat-shell .vex-turn-shimmer {
@@ -59,90 +48,90 @@
   -webkit-text-fill-color: currentColor;
 }
 
-.lit-chat-shell .vex-chat-prose [class*="text-[24px]"] { margin-top: 14px; font-size: 16px; line-height: 22px; }
-.lit-chat-shell .vex-chat-prose [class*="text-[20px]"] { margin-top: 12px; font-size: 15px; line-height: 21px; }
-.lit-chat-shell .vex-chat-prose [class*="text-[16px]"] { margin-top: 10px; font-size: 14.5px; line-height: 20px; }
-.lit-chat-shell .vex-chat-prose code { font-size: 12px; }
-/* The tool-call rows. */
+/* The approval keys and fields carry the page's 14; the sidebar sets them at 13. */
 .lit-chat-shell [class*="text-[14px]"] { font-size: 13px; line-height: 20px; }
-/* Session stats line: the page indents it under the avatar; the rail has no
- * room for that, so it starts at the margin and wraps by item, not mid-phrase. */
-.lit-chat-shell .vex-micro-label[class*="pl-9"] { padding-left: 0; flex-wrap: wrap; row-gap: 2px; }
-.lit-chat-shell .vex-micro-label[class*="pl-9"] span { white-space: nowrap; }
-/* Composer: the field and its placeholder. */
-.lit-chat-shell textarea,
-.lit-chat-shell [data-vex-composer-seat] [class*="absolute inset-0 truncate"] { font-size: 15px; line-height: 22px; }
 
-/* The scope row (market, interval and, in a position, its side) over the
- * quick prompts. */
+/* Composer: the field and its placeholder, 14 with a 36 floor. */
+.lit-chat-shell textarea,
+.lit-chat-shell [data-vex-composer-seat] [class*="absolute inset-0 truncate"] { font-size: 14px; line-height: 20px; }
+.lit-chat-shell textarea { min-height: 36px; }
+
+/* The scope row: the chip (market, interval and, in a position, its side)
+ * over the prompt keys. */
 .lit-desk-scope {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 12px;
-  border-bottom: 1px solid var(--lit-line-quiet);
-  padding: 0 0 12px;
+  gap: 10px;
+  padding: 12px 0 10px;
 }
+
+.lit-chat-shell > .lit-desk-scope { padding-inline: 14px; }
 
 .lit-desk-scope-chip {
-  display: flex;
-  min-height: 38px;
+  display: inline-flex;
   align-items: center;
-  align-self: stretch;
-  flex: 0 0 auto;
-  gap: 10px;
-  border-block: 1px solid var(--lit-line);
-  border-bottom-color: var(--lit-line-quiet);
-  color: var(--lit-ink);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-data);
-  white-space: nowrap;
+  align-self: flex-start;
+  gap: 7px;
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--lit-line);
+  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: normal;
+  line-height: 1.4;
+  white-space: normal;
 }
 
+/* The position's side: the one trading colour in the chat, weight 500, after
+ * a middle dot that stays quiet. */
 .lit-desk-scope-chip i {
-  color: var(--lit-positive);
+  color: var(--lit-ink-secondary);
   font-style: normal;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-weight: 500;
 }
+
+.lit-desk-scope-chip i::before {
+  content: "\00b7";
+  margin-inline-end: 7px;
+  color: var(--lit-ink-secondary);
+  font-weight: 400;
+}
+
+.lit-desk-scope-chip i[data-side="long"] { color: var(--lit-trade-up); }
+.lit-desk-scope-chip i[data-side="short"] { color: var(--lit-trade-down); }
 
 .lit-desk-quick {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .lit-desk-quick > button {
-  min-width: 0;
-  min-height: 32px;
-  border: 0;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+  min-height: 28px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--lit-line-quiet);
   background: transparent;
-  padding: 4px 10px;
+  padding: 0 9px;
   color: var(--lit-ink);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 12.5px;
+  letter-spacing: normal;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.lit-desk-quick > button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.lit-desk-quick > button:hover {
+  border-color: var(--lit-line);
+  background: var(--lit-hover);
+}
 
 .lit-desk-quick > button:focus-visible {
   outline: 2px solid var(--lit-focus);
   outline-offset: 2px;
-}
-
-.lit-desk-quick > button:hover {
-  outline-color: var(--lit-positive);
-  background: var(--lit-hover);
-}
-
-@container (max-width: 420px) {
-  .lit-desk-scope { padding-inline: 0; }
-  .lit-desk-quick > button { padding-inline: 8px; }
 }
 
 /* No session yet: the desk's starters. */
@@ -153,8 +142,10 @@
   flex-direction: column;
   justify-content: space-between;
   gap: 16px;
-  padding: 6px 0 0;
+  padding: 12px 14px 14px;
   overflow: hidden auto;
+  font-family: var(--font-sans);
+  letter-spacing: normal;
 }
 
 .lit-chat-empty-content {
@@ -175,8 +166,7 @@
   height: 44px;
   flex: 0 0 auto;
   place-items: center;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+  border: 1px solid var(--lit-line);
 }
 
 .lit-chat-empty-mark img { width: 24px; height: 24px; }
@@ -184,21 +174,26 @@
 .lit-chat-empty-copy > h4 {
   margin: 0;
   color: var(--lit-ink);
-  font-size: 15px;
+  font-family: var(--font-sans);
+  font-size: 14px;
   font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.35;
 }
 
 .lit-chat-empty-copy > p {
   margin: 4px 0 0;
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
   font-size: 13px;
+  letter-spacing: normal;
   line-height: 1.45;
 }
 
 .lit-chat-starters {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--lit-line);
+  border-top: 1px solid var(--lit-line-quiet);
 }
 
 .lit-chat-starters > button {
@@ -211,18 +206,20 @@
   background: transparent;
   padding: 10px 0;
   color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
   text-align: left;
 }
 
 .lit-chat-starters > button:hover { background: var(--lit-hover); }
 .lit-chat-starters > button:focus-visible { outline-offset: -3px; }
 
+/* The short tag beside each starter: the mono, in the word's own case. */
 .lit-chat-starter-code {
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: var(--lit-tr-data);
 }
 
 .lit-chat-starter-copy {
@@ -232,12 +229,11 @@
   gap: 2px;
 }
 
-.lit-chat-starters b { color: var(--lit-ink); font-size: 13px; font-weight: 500; }
-.lit-chat-starters small { color: var(--lit-ink-secondary); font-size: 12px; }
+.lit-chat-starters b { color: var(--lit-ink); font-family: var(--font-sans); font-size: 13px; font-weight: 500; }
+.lit-chat-starters small { color: var(--lit-ink-muted); font-family: var(--font-sans); font-size: 12px; }
 
 .lit-chat-starter-arrow { color: var(--lit-ink-secondary); }
-.lit-chat-starters > button:hover .lit-chat-starter-code,
-.lit-chat-starters > button:hover .lit-chat-starter-arrow { color: var(--lit-positive); }
+.lit-chat-starters > button:hover .lit-chat-starter-arrow { color: var(--lit-accent); }
 
 .lit-chat-start-dock {
   display: flex;
@@ -245,23 +241,25 @@
   gap: 8px;
 }
 
-/* Long is the desk's one blue fill, so opening the desk is the blue outline. */
+/* Opening the desk is the outline blue key. */
 .lit-chat-start-dock > button {
-  min-height: 40px;
-  border: 0;
-  outline: 1px solid var(--lit-positive);
-  outline-offset: -1px;
+  min-height: 36px;
+  border: 1px solid var(--lit-accent);
   background: transparent;
-  color: var(--lit-positive);
-  font-size: 14px;
+  padding: 0 14px;
+  color: var(--lit-accent);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
   font-weight: 500;
+  letter-spacing: normal;
 }
 
 .lit-chat-start-dock > button:hover { background: var(--lit-hover); }
 .lit-chat-start-dock > button:focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 2px; }
 
 .lit-chat-start-dock > small {
-  color: var(--lit-ink-secondary);
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
   font-size: 12px;
   text-align: center;
 }

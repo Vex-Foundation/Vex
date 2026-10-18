@@ -1,19 +1,25 @@
 /**
- * The field's send/stop key: one fixed 40px square (reference d3) rendering
- * three hard-cut states in one slot: send (the one blue fill, a dotted blue
- * outline while there is nothing to send), stop (the ink plate) and
- * stopping. The in-flight mark lives beside this key (SessionComposer)
- * because Stop occupies the slot while a turn runs. Presentational only - the
- * parent owns every state transition; the send state stays a `type="submit"`
- * descendant of the composer's own `<form>`.
+ * The field's send/stop key (docs/design/R3-MINIMAL.md section 7), one slot
+ * with three hard-cut states:
+ *  - send: a 36 x 36 key with the up arrow; a dotted blue outline while there
+ *    is nothing to send, the view's one blue fill once there is;
+ *  - stop: the NAMED ink key, 36 high, a 9 x 9 square before its words ("Stop
+ *    agent" in a chat, "Stop mission" in a mission), because a stop names what
+ *    it stops;
+ *  - stopping: the same box on a dotted ink line, disabled, until the stop is
+ *    acknowledged.
+ * Presentational only - the parent owns every state transition; the send
+ * state stays a `type="submit"` descendant of the composer's own `<form>`.
+ * Chrome: `.vex-composer-send` and `.vex-composer-stop` (console.css).
  */
 
 import type { JSX, MouseEvent as ReactMouseEvent } from "react";
-import { IconSend, IconStopFill } from "../../components/icons/index.js";
+import { LineArrowUp } from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 
-const SEND_KEY_BASE =
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center border border-transparent transition-colors duration-100 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-composer";
+/** The shared key frame: fixed, never shrinking, the focus ring offset off the field. */
+const KEY_BASE =
+  "shrink-0 transition-colors duration-100 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-composer";
 
 export interface ComposerSendControlProps {
   /**
@@ -24,9 +30,10 @@ export interface ComposerSendControlProps {
    */
   readonly stopAvailable: boolean;
   /**
-   * The Stop key's accessible name, resolved per session mode by the owner's
-   * `resolveStopAffordance` ("Stop mission" / "Stop agent"). Named by TARGET,
-   * because the key stops a run or an autonomous session, not a generation.
+   * The Stop key's words and accessible name, resolved per session mode by
+   * the owner's `resolveStopAffordance` ("Stop mission" / "Stop agent").
+   * Named by TARGET, because the key stops a run or an autonomous session,
+   * not a generation.
    */
   readonly stopLabel: string;
   readonly stopRequested: boolean;
@@ -57,12 +64,10 @@ export function ComposerSendControl({
           type="button"
           disabled
           aria-label="Stopping"
-          className={cn(
-            SEND_KEY_BASE,
-            "border-dotted border-rule-ink bg-transparent text-ink-secondary",
-          )}
+          className={cn("vex-composer-stop", KEY_BASE)}
         >
-          <IconStopFill size={16} />
+          <span aria-hidden="true" className="vex-composer-stop__mark" />
+          Stopping
         </button>
       );
     }
@@ -72,12 +77,10 @@ export function ComposerSendControl({
         onClick={onStop}
         onMouseDown={onKeepFocus}
         aria-label={stopLabel}
-        className={cn(
-          SEND_KEY_BASE,
-          "bg-rule-ink text-ink-on-primary hover:bg-button-primary-hover",
-        )}
+        className={cn("vex-composer-stop", KEY_BASE)}
       >
-        <IconStopFill size={16} />
+        <span aria-hidden="true" className="vex-composer-stop__mark" />
+        {stopLabel}
       </button>
     );
   }
@@ -88,11 +91,11 @@ export function ComposerSendControl({
       onMouseDown={onKeepFocus}
       aria-label="Send message"
       className={cn(
-        SEND_KEY_BASE,
-        "bg-button-accent text-ink-on-button-accent hover:bg-button-accent-hover disabled:cursor-not-allowed disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary disabled:hover:bg-transparent",
+        "vex-composer-send inline-flex h-9 w-9 items-center justify-center",
+        KEY_BASE,
       )}
     >
-      <IconSend size={16} />
+      <LineArrowUp size={16} />
     </button>
   );
 }

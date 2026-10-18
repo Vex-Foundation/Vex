@@ -65,12 +65,23 @@ describe("terminal link request owner", () => {
 });
 
 describe("isolated Vex consent page dialog", () => {
-  it("shows the complete address, both spellings, theme mark and safe Cancel focus", () => {
+  it("shows the complete address, both spellings and safe Cancel focus", () => {
     render(<TerminalLinkDialog proposal={proposal} onAnswer={vi.fn()} />);
     expect(screen.getByText(proposal.url).textContent).toBe(proposal.url);
     expect(screen.getByText(host.ascii)).toBeTruthy(); expect(screen.getByText(host.display)).toBeTruthy();
-    expect(screen.getByRole("dialog").querySelector(".text-brand-mark")).toBeTruthy();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+  });
+  it("is paper and type: no brand mark, the refusing choice an ink key, one blue fill", () => {
+    render(<TerminalLinkDialog proposal={proposal} onAnswer={vi.fn()} />);
+    const dialog = screen.getByRole("dialog");
+    // docs/design/R3-MINIMAL.md sections 10 and 12: a working view carries no mark.
+    expect(dialog.querySelector("svg.text-brand-mark")).toBeNull();
+    expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("data-vex-button")).toBe("ink");
+    expect(screen.getByRole("button", { name: "Copy link" }).getAttribute("data-vex-button")).toBe("quiet");
+    const fills = dialog.querySelectorAll('[data-vex-button="primary"]');
+    expect(fills).toHaveLength(1);
+    expect(fills[0]?.textContent).toBe("Open link");
+    expect(screen.getByRole("heading", { name: "Open a link from the terminal" }).className).toContain("text-[21px]");
   });
   it.each(["Cancel", "Escape"])("%s closes through the primitive and restores focus before answering", async method => {
     const trigger = document.createElement("textarea"); document.body.append(trigger); trigger.focus();

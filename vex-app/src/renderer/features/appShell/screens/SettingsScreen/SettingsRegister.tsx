@@ -1,77 +1,70 @@
 /**
- * The Settings landing register: the section index (italic numerals, name,
- * hint, a mono status word with its fill swatch, docs/design/V10-SPREAD.md
- * sections 1 and 2) followed by the Preferences group.
+ * The Settings nav (docs/design/R3-MINIMAL.md section 9.6): one column of
+ * sections by name in four groups (App, Security and wallets, The agent,
+ * Connections), each row a line icon, the name and, at the right, its status
+ * word with the fill swatch. The selected row follows the open section
+ * (`aria-current`); Preferences, the App group's one row, has no status.
+ * Status is a fill and a word, never a hue.
  */
 
-import { type JSX } from "react";
+import { useId, type JSX } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
-import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
-import type { SettingsSection } from "../../../../stores/uiStore.js";
-import { useSuperboardKey } from "../../../../lib/api/superboard-key.js";
+import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import { LineIcon } from "../../../../components/icons/line/index.js";
+import { Swatch } from "../../../../components/ui/swatch.js";
 import {
-  SETTINGS_SECTIONS,
+  SETTINGS_NAV,
   settingsSectionStatus,
-  type SettingsStatusTone,
+  settingsStatusSwatch,
+  type SettingsNavId,
 } from "./settings-sections.js";
-import { SettingsPreferences } from "./SettingsPreferences.js";
-
-/** Status is a fill, not a hue: set is solid, neutral an outline, attention a target. */
-const STATUS_SWATCH: Readonly<Record<SettingsStatusTone, SwatchState>> = {
-  success: "done",
-  neutral: "idle",
-  warning: "warning",
-};
-
-/** The index numeral: two digits in parentheses, a stable ordinal of the row. */
-function numeral(index: number): string {
-  return `(${String(index + 1).padStart(2, "0")})`;
-}
 
 export function SettingsRegister({
   env,
-  onOpenSection,
+  superboard,
+  selected,
+  onSelect,
 }: {
   readonly env: EnvState | null;
-  readonly onOpenSection: (section: SettingsSection) => void;
+  readonly superboard: SuperboardKeyStatus | null;
+  readonly selected: SettingsNavId;
+  readonly onSelect: (id: SettingsNavId) => void;
 }): JSX.Element {
-  const superboardQuery = useSuperboardKey();
-  const superboard = superboardQuery.data?.ok === true ? superboardQuery.data.data : null;
+  const idBase = useId();
   return (
-    <div className="w-full">
-      <p className="mb-6 max-w-[56ch] text-[13px] leading-[19px] text-ink-secondary">
-        Everything Vex runs on lives in these sections - keys, wallets, the
-        model, the Superboard key, and Lighter points. Changes save to this
-        machine only.
-      </p>
-      <ul className="vex-reg" data-vex-settings-register>
-        {SETTINGS_SECTIONS.map((meta, index) => {
-          const status = settingsSectionStatus(meta.id, env, superboard);
-          return (
-            <li key={meta.id} className="vex-reg__item">
-              <button
-                type="button"
-                onClick={() => onOpenSection(meta.id)}
-                data-vex-settings-row={meta.id}
-                className="vex-reg__row"
-              >
-                <span aria-hidden className="vex-reg__num">
-                  {numeral(index)}
-                </span>
-                <span className="min-w-0">
-                  <span className="vex-reg__name">{meta.name}</span>
-                  <span className="vex-reg__hint">{meta.hint}</span>
-                </span>
-                <span className="vex-reg__status">
-                  <Swatch state={STATUS_SWATCH[status.tone]} size={9} />
-                  {status.word}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <SettingsPreferences />
-    </div>
+    <nav className="vex-set__nav" aria-label="Settings sections" data-vex-settings-register>
+      {SETTINGS_NAV.map((group, index) => {
+        const headId = `${idBase}-${index}`;
+        return (
+          <div key={group.name} role="group" aria-labelledby={headId}>
+            <div id={headId} className="vex-set__group">
+              {group.name}
+            </div>
+            {group.items.map((item) => {
+              const status = item.id === "preferences" ? null : settingsSectionStatus(item.id, env, superboard);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelect(item.id)}
+                  aria-current={selected === item.id ? "page" : undefined}
+                  data-vex-settings-row={item.id}
+                  className="vex-set__item"
+                >
+                  <LineIcon name={item.icon} size={16} className="vex-set__icon" />
+                  <span className="vex-set__name">{item.name}</span>
+                  {status === null ? null : (
+                    <span className="vex-set__word">
+                      <Swatch state={settingsStatusSwatch(status.tone)} size={9} />
+                      {status.word}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </nav>
   );
 }

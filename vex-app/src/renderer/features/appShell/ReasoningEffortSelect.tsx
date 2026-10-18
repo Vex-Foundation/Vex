@@ -1,24 +1,24 @@
 /**
- * Reasoning-effort selector (S6/D4) - the composer field's effort chip,
- * seated in the leading cluster beside the model chip (reference d3).
+ * Reasoning-effort selector (S6/D4) - the effort key inside the composer's
+ * options control, after the muted "Reasoning:" (docs/design/R3-MINIMAL.md
+ * section 7: "{model name} · Reasoning: {effort}" in one control).
  *
  * Presentational only: the parent (SessionComposer) owns the effective
  * selection (the stored per-session pick validated against the model's
  * FINAL selectable set, else the shared TESTED preselect
- * `selectDefaultReasoningEffort`) and the store write — this component
+ * `selectDefaultReasoningEffort`) and the store write; this component
  * never re-derives preselect logic. Options are the DTO's already-
  * normalized `SessionModelDto.reasoning.supportedEfforts` VERBATIM
- * (provider order, exactly one "none" iff the model is not mandatory —
+ * (provider order, exactly one "none" iff the model is not mandatory;
  * `normalizeReasoningCapability` in `shared/schemas/reasoning.ts` owns
  * that set), with "none" labelled "Off".
  *
- * Anatomy: the {@link SelectMenu} primitive restyled into the field's chip
- * grammar (28px, 12px Departure Mono on a rule outline) with a hover fill,
- * opening UPWARD (the composer sits low on the session stage). Menu
- * physics, the ARIA combobox/listbox contract and the selected-dot
- * convention all come from SelectMenu as-is. The trigger's min-width
- * doubles as the floating panel's width, sized so the longest label
- * ("Minimal") never truncates.
+ * Anatomy: the {@link SelectMenu} primitive with its field chrome cleared, so
+ * the trigger reads as the effort word and the chevron inside the options
+ * frame (13 sans in ink), opening UPWARD (the composer sits low on the
+ * stage). Menu physics, the ARIA combobox/listbox contract and the
+ * selected-swatch convention all come from SelectMenu as-is; the menu keeps
+ * the width of its longest word through `.vex-composer-options` (console.css).
  */
 
 import { useMemo, type JSX } from "react";
@@ -35,7 +35,7 @@ import {
 /**
  * Operator-facing labels for the FULL transport enum (total map, so a
  * widened enum fails the typecheck here instead of rendering a raw value).
- * "none" reads as "Off" — the user is switching reasoning off, not picking
+ * "none" reads as "Off": the user is switching reasoning off, not picking
  * a "none" tier.
  */
 const EFFORT_LABEL: Readonly<Record<ReasoningEffort, string>> = {
@@ -72,7 +72,6 @@ export function ReasoningEffortSelect({
 
   return (
     <SelectMenu
-      shimmerLabels
       value={value}
       options={options}
       onChange={(next) => {
@@ -84,47 +83,37 @@ export function ReasoningEffortSelect({
       }}
       ariaLabel="Reasoning effort"
       placement="top"
-      // Chip-grammar overrides on the SelectMenu trigger (cn/tailwind-merge:
-      // later classes win): the 28px mono chip on the rule outline
-      // (`.vex-composer-chip`, console.css) with the border and fill cleared;
-      // justify-start seats the chevron right after the label ("Medium ⌄").
-      //
-      // WIDTH (round 3, codex Bug 3): 6.5rem is a PREFERRED width, not a
-      // floor. It was `min-w-[6.5rem]`, which pinned the trigger's outer box
-      // and made this seat a hard 104px the toolbar row could not reclaim -
-      // one of the row's overflow contributors. `w-[6.5rem]` keeps the same
-      // resting size (the longest label, "Minimal", still fits, and the
-      // `left-0 right-0` listbox still inherits it) while letting the seat
-      // concede under container pressure; SelectMenu's own label already owns
-      // `min-w-0 truncate` and its chevron is already `shrink-0`, so the
-      // conceded state truncates rather than clipping the control.
-      // Focus ring stays SelectMenu's repo default.
-      className="vex-composer-chip h-7 min-w-0 w-[6.5rem] justify-start border-transparent bg-transparent px-2 font-mono text-[12px] font-normal leading-5 tracking-[0.02em] text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary"
+      // Field chrome cleared on the SelectMenu trigger (cn/tailwind-merge:
+      // later classes win): no border, no fill, no side padding, the 13 sans
+      // word with its chevron right after it ("Medium ⌄"). The trigger sizes
+      // to its word (`w-auto`) and may concede (`min-w-0`; SelectMenu's label
+      // owns `min-w-0 truncate`, its chevron is `shrink-0`). The border focus
+      // step has no border to paint, so the focus ring carries focus.
+      className="vex-composer-options__effort h-7 w-auto min-w-0 justify-start gap-1.5 border-0 bg-transparent px-0 text-[13px] font-normal leading-5 text-ink-primary transition-colors duration-100 hover:text-accent-primary focus-visible:ring-2 focus-visible:ring-focus"
       />
   );
 }
 
 /**
- * Quiet INERT placeholder for the control slot while the global
+ * Quiet INERT placeholder for the effort key while the global
  * model-capability query (`useAvailableModels`) hasn't resolved yet -
  * welcome's cold-start case, and occasionally an existing session opened
- * before the app's first models fetch settles. Same box as the resolved
- * trigger (h28 / 6.5rem preferred width) so the slot never reflows once
- * the real selector mounts or the gate resolves to hidden, and it concedes
- * width on the same terms rather than pinning the toolbar row.
+ * before the app's first models fetch settles. A short quiet bar inside the
+ * options frame, so the frame keeps its place until the real selector mounts
+ * or the gate resolves to hidden; it concedes width rather than pinning the
+ * bar.
  * Deliberately STATIC (no shimmer, no pulse): this is "we don't know yet",
- * not "a value is loading in" — an animated hint here would overstate what
- * is actually happening. No role, no onChange — Send stays enabled while
- * this shows; it never blocks the primary action.
+ * not "a value is loading in". No role, no onChange - Send stays enabled
+ * while this shows; it never blocks the primary action.
  */
 export function ReasoningEffortPlaceholder(): JSX.Element {
   return (
     <span
       aria-hidden
       data-vex-reasoning-placeholder
-      className="vex-composer-chip inline-flex h-7 w-[6.5rem] min-w-0 items-center px-2"
+      className="inline-flex h-7 w-16 min-w-0 items-center"
     >
-      <span className="h-2.5 w-10 bg-surface-skeleton" />
+      <span className="h-2 w-10 bg-surface-skeleton" />
     </span>
   );
 }

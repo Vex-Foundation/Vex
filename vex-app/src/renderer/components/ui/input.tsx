@@ -1,6 +1,6 @@
 /**
- * Input primitive on tokens v2: r-md, input-tier stroke (one step thinner
- * in dark), accent caret. Deliberately NO focus RING - but the stroke has
+ * Input primitive: 42 high (docs/design/R3-MINIMAL.md section 1.5, the
+ * field), square, input-tier stroke (one step thinner in dark), accent caret. Deliberately NO focus RING - but the stroke has
  * to carry the state on its own, so `focus-visible` re-points the border to
  * the accent (the deepseek `:focus-within { border-color: brand }`
  * convention). Caret + resting stroke alone left near-no visible focus on
@@ -25,7 +25,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       ref={ref}
       type={type}
       className={cn(
-        "flex h-11 w-full border border-line-input bg-surface-field px-3 py-1 text-[15px] text-ink-primary caret-accent-primary",
+        "flex h-[42px] w-full border border-line-input bg-surface-field px-3 py-1 text-[15px] text-ink-primary caret-accent-primary",
         "file:border-0 file:bg-transparent file:text-sm file:font-medium",
         "placeholder:text-ink-tertiary",
         "focus-visible:outline-none focus-visible:border-accent-primary",

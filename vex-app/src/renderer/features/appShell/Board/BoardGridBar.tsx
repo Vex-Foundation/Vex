@@ -13,6 +13,12 @@
  * single-chain board is a control that can only ever do nothing, and an
  * empty labelled row would be a label for nothing.
  *
+ * THE PAINT IS THE BOARD'S OWN (docs/design/R3-MINIMAL.md section 9.4): the
+ * "Show" label is 12.5 / 500 muted in sentence case, and each option is the
+ * board chip (`vex-bd-chip` in `board.css`: 26 high, 12.5, a quiet rule) with
+ * `aria-pressed`; the pressed chip takes the blue edge and the blue type on
+ * the selection fill. No caps, no mono: a filter option is a word.
+ *
  * THE FILTER IS MINIMAL ON PURPOSE: chain and safety state, the two axes a
  * reader actually narrows a board by. It is a VIEW, not a redefinition of the
  * board: the list's accessible name keeps reporting the true pool count, and
@@ -20,9 +26,7 @@
  */
 
 import type { JSX, ReactNode } from "react";
-import { cn } from "../../../lib/utils.js";
 import { ChainSlugIcon } from "../../../components/common/ChainIcon.js";
-import { PILL_ACTIVE_CLASS, Pill } from "../../../components/ui/pill.js";
 import {
   BOARD_SAFETY_CHIP,
   type BoardSafetyState,
@@ -60,7 +64,7 @@ export function BoardGridBar({
     >
       <span
         data-vex-area="board-filter-label"
-        className="vex-micro-label mr-1 uppercase text-ink-secondary"
+        className="mr-1 text-[12.5px] font-medium leading-[26px] text-ink-tertiary"
       >
         {BOARD_FILTER_LABEL}
       </span>
@@ -125,20 +129,16 @@ function FilterPill({
   readonly onToggle: () => void;
 }): JSX.Element {
   return (
-    <Pill
-      variant="neutral"
-      size="sm"
+    <button
+      type="button"
       data-vex-area={area}
       data-active={active ? "true" : "false"}
       aria-pressed={active}
       onClick={onToggle}
-      className={cn(
-        "font-mono uppercase tracking-[0.14em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active && PILL_ACTIVE_CLASS,
-      )}
+      className="vex-bd-chip min-w-0 max-w-full"
     >
       {leading}
       <span className="min-w-0 truncate">{label}</span>
-    </Pill>
+    </button>
   );
 }

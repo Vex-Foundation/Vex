@@ -28,9 +28,16 @@ import type {
   WizardState,
 } from "@shared/schemas/wizard.js";
 
+const mockUseEnvState = vi.fn();
 const mockConfigureMutate = vi.fn();
 const mockSetWizardMutate = vi.fn();
 const mockOnAdvance = vi.fn();
+
+// The step reads the env only for the Settings head's status word; these
+// tests run the wizard host, so the read stays unresolved.
+vi.mock("../../../../lib/api/onboarding.js", () => ({
+  useEnvState: () => mockUseEnvState(),
+}));
 
 vi.mock("../../../../lib/api/agent-core.js", () => ({
   useAgentCoreConfigure: () =>
@@ -78,6 +85,13 @@ function renderWithQuery(ui: JSX.Element) {
 }
 
 beforeEach(() => {
+  mockUseEnvState.mockReset();
+  mockUseEnvState.mockReturnValue({
+    data: undefined,
+    isLoading: true,
+    isError: false,
+    isSuccess: false,
+  });
   mockConfigureMutate.mockReset();
   mockSetWizardMutate.mockReset();
   mockOnAdvance.mockReset();

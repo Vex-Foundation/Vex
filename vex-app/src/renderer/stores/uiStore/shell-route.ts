@@ -31,6 +31,9 @@
  * session-scoped register behind the user's back.
  */
 
+import type { SessionModeFilter } from "../uiStore.js";
+import type { RuntimeMode } from "./runtime-mode.js";
+
 /**
  * Viewport rect of the trigger control that opened the current shell screen —
  * the expand-from-trigger anchor for the screen's enter animation. Plain
@@ -111,14 +114,38 @@ export type SettingsSection =
  * All-assets register (global from the welcome Balances card, session-narrowed
  * from the rail's Balances card); `tokenHistory` is the per-token history
  * screen (the eye trigger on a token row), carrying the row's token identity
- * and the surface its close returns to. `none` = no screen open. NOT
- * persisted — launch-ephemeral, like activeSessionId.
+ * and the surface its close returns to; `portfolio`, `board` and `needsYou`
+ * are the R3 pages, opened from the left sidebar's nav and the title bar.
+ * `none` = no screen open. NOT persisted - launch-ephemeral, like
+ * activeSessionId.
  */
 export type ShellRoute =
   | { readonly kind: "none" }
+  /**
+   * The payload-free pages. `portfolio` and `board` are R3 pages in the centre
+   * column (docs/design/R3-MINIMAL.md section 2): both sidebars stay standing
+   * beside them.
+   */
   | {
-      readonly kind: "memory" | "sessions" | "howItWorks";
+      readonly kind:
+        | "memory"
+        | "sessions"
+        | "howItWorks"
+        | "portfolio"
+        | "board";
       readonly origin: ShellScreenOrigin | null;
+    }
+  /**
+   * NEEDS YOU, the R3 page of every decision that waits for the user
+   * (docs/design/R3-MINIMAL.md section 8.5). `approvalId` names the decision
+   * a Review key asked to open as the full card; absent or `null`, the page
+   * opens its first decision. The page never decides anything by itself: the
+   * card it opens carries the same two-step confirm as everywhere else.
+   */
+  | {
+      readonly kind: "needsYou";
+      readonly origin: ShellScreenOrigin | null;
+      readonly approvalId?: string | null;
     }
   /**
    * AGENT SCAN, in its two mutually exclusive narrowings. TWO members rather
@@ -321,4 +348,116 @@ export function assetsScopeKey(scope: AssetsRouteScope): string {
     case "project":
       return `project:${scope.projectId}`;
   }
+}
+
+/* ------------------------------ the nav ------------------------------------ */
+
+/**
+ * THE LEFT SIDEBAR'S NAV, as destinations (docs/design/R3-MINIMAL.md section
+ * 4). One `navigate(destination)` store action maps each onto the store's
+ * existing mechanisms, so the nav adds no state of its own:
+ *
+ *  - Chat: agent mode, no page.
+ *  - Missions: agent mode, no page, the sessions filter on its Mission tab.
+ *  - Portfolio, Board, Settings: their page routes, in the current mode.
+ *  - Lighter, Studio: their runtime modes, no page.
+ */
+export type NavDestination =
+  | "chat"
+  | "missions"
+  | "portfolio"
+  | "board"
+  | "lighter"
+  | "studio"
+  | "settings";
+
+/** What a destination asks of the store: a mode (null keeps it), a route, a filter. */
+export interface NavigationTarget {
+  readonly mode: RuntimeMode | null;
+  readonly route: ShellRoute;
+  readonly sessionModeFilter: SessionModeFilter;
+}
+
+const NO_ROUTE: ShellRoute = { kind: "none" };
+
+/**
+ * The store change one nav press stands for. Pure, so the mapping is tested
+ * without a store. Chat leaves the Mission tab (so the selected row moves back
+ * to Chat) but keeps an Agent tab the user picked.
+ */
+export function navigationTarget(
+  destination: NavDestination,
+  current: SessionModeFilter,
+  origin: ShellScreenOrigin | null = null,
+): NavigationTarget {
+  switch (destination) {
+    case "chat":
+      return {
+        mode: "agent",
+        route: NO_ROUTE,
+        sessionModeFilter: current === "mission" ? "all" : current,
+      };
+    case "missions":
+      return { mode: "agent", route: NO_ROUTE, sessionModeFilter: "mission" };
+    case "portfolio":
+      return { mode: null, route: { kind: "portfolio", origin }, sessionModeFilter: current };
+    case "board":
+      return { mode: null, route: { kind: "board", origin }, sessionModeFilter: current };
+    case "settings":
+      return {
+        mode: null,
+        route: { kind: "settings", origin, section: null },
+        sessionModeFilter: current,
+      };
+    case "lighter":
+      return { mode: "lighter", route: NO_ROUTE, sessionModeFilter: current };
+    case "studio":
+      return { mode: "studio", route: NO_ROUTE, sessionModeFilter: current };
+  }
+}
+
+/**
+ * The nav row that reads as selected, or `null` when the screen is none of the
+ * nav's destinations. It follows the REAL destination, page first, then mode:
+ *
+ *  - an open page with a row of its own selects that row (Portfolio's subpages,
+ *    Agent Scan, All assets and Token history, select Portfolio);
+ *  - a page with no row of its own (Memory, Sessions, How Vex works, Needs
+ *    you) selects NOTHING: the chat or desk behind it is not where the user is;
+ *  - with no page, the mode's row: Lighter, Studio, and in the agent workspace
+ *    Missions when the Mission tab is on or the chat in view IS a mission
+ *    (`activeSessionMode`), else Chat.
+ *
+ * The session's mode is not store state (it is a read of the session), so the
+ * caller that has the session rows passes it; `null` says it is not known, and
+ * the Mission tab then decides alone.
+ */
+export function selectNavDestination(
+  state: {
+    readonly runtimeMode: RuntimeMode;
+    readonly shellRoute: ShellRoute;
+    readonly sessionModeFilter: SessionModeFilter;
+  },
+  activeSessionMode: "agent" | "mission" | null = null,
+): NavDestination | null {
+  switch (state.shellRoute.kind) {
+    case "none":
+      break;
+    case "settings":
+      return "settings";
+    case "portfolio":
+    case "agentScan":
+    case "assets":
+    case "tokenHistory":
+      return "portfolio";
+    case "board":
+      return "board";
+    default:
+      return null;
+  }
+  if (state.runtimeMode === "lighter") return "lighter";
+  if (state.runtimeMode === "studio") return "studio";
+  return state.sessionModeFilter === "mission" || activeSessionMode === "mission"
+    ? "missions"
+    : "chat";
 }

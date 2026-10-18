@@ -6,22 +6,25 @@
  * view beneath itself and lifts away. The view machine itself is
  * unchanged:
  *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
- *   composeBootstrap → migrations → wizard → unlock → appShell —
+ *   composeBootstrap → migrations → wizard → unlock → appShell:
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
- * THE STAGE (docs/design/V10-SPREAD.md sections 2 and 10): every pre-shell
- * screen stands on one picture, the plateau print with the eagle. It is
- * mounted ONCE here, behind the screens, so it never moves or restarts
- * while they change: their swaps ride ONE `AnimatePresence mode="wait"`
- * that crossfades only the type and the paper leaf over it. The app shell
- * is NEVER inside the stage. Unlock→shell plays the page turn
- * (`CurtainExit`, armed by a successful unlock): the print stays, the right
- * page arrives from the window edge, the view flips beneath it, and the
- * turn lifts away.
+ * THE STAGE (docs/design/R3-MINIMAL.md section 10): every pre-shell
+ * screen stands on one picture, the plateau print. For the wake, the unlock
+ * and the first run screens (system check, Docker, services, database;
+ * `stageLayoutFor` in `components/onboarding/PreShellStage.tsx`) it is a 720
+ * plate with Vex rising from the token and paper at the right. The wizard
+ * stands on the print at window size and draws its own R3 frame over it
+ * (`WizardShell`). The stage is mounted ONCE here, behind the screens, so it
+ * never moves or restarts while they change: their swaps ride ONE
+ * `AnimatePresence mode="wait"` that crossfades only the type over it. The app shell is
+ * NEVER inside the stage. Unlock→shell is a 240ms crossfade (`CurtainExit`,
+ * armed by a successful unlock): the view flips beneath the plate and the
+ * plate lifts away.
  *
  * The legacy M0 capability/health/security cards are gated behind
- * `import.meta.env.DEV` and are reachable via a dev-only side panel —
+ * `import.meta.env.DEV` and are reachable via a dev-only side panel:
  * they are not part of the user-facing flow.
  */
 
@@ -36,7 +39,7 @@ import {
 import { ChronosGate } from "./features/setup/ChronosGate.js";
 import { SetupTour } from "./features/setup/SetupTour.js";
 import { CurtainExit } from "./features/setup/CurtainExit.js";
-import { StagePrint } from "./components/onboarding/PreShellStage.js";
+import { StagePlate } from "./components/onboarding/PreShellStage.js";
 import {
   DURATION_BASE_MS,
   DURATION_SLOW_MS,
@@ -129,12 +132,11 @@ export function App(): JSX.Element {
       {currentView === "appShell" || currentView === "splash"
         ? views[currentView]()
         : null}
-      {/* THE STAGE PRINT - one picture under every pre-shell screen and
+      {/* THE STAGE PLATE - one picture under every pre-shell screen and
           under the void the gate covers, mounted once so it never moves or
-          restarts while the screens change over it. */}
-      {PRE_SHELL_VIEWS.has(currentView) || currentView === "splash" ? (
-        <StagePrint className="fixed inset-0" />
-      ) : null}
+          restarts while the screens change over it. It renders nothing while
+          the shell stands, except under the crossfade to it. */}
+      <StagePlate className="fixed inset-0" />
       {/* Pre-shell screens over the print. `mode="wait"` sequences exit
           before enter so two screens never stack; the wrapper is
           `fixed inset-0` so an exiting screen overlays (not reflows) its
@@ -168,16 +170,17 @@ export function App(): JSX.Element {
       </AnimatePresence>
       {/* Boot overlay (z-50): covers every view until the launch pipeline
           resolves and the gate has lifted away, then unmounts for the
-          rest of the process. Mounted BELOW UpdateLayer (z-[60]) so a
-          critical update toast stays visible over the boot ritual. */}
+          rest of the process. It stands BELOW the floating update card
+          (`.vex-upd[data-floating]`, z 60, projected by UpdateLayer) so a
+          critical update stays visible over the boot ritual. */}
       {/* The nonce is a REMOUNT key: the dev tour's replay re-runs the
           gate choreography only if the whole gate is a fresh mount. It
           stays 0 for the entire life of a real launch. */}
       <ChronosGate key={prologueReplayNonce} />
-      {/* Unlock-success page turn, armed by UnlockScreen after the
-          unlock IPC succeeds; the right page arrives over the print, the
-          view flips to unlockReturnView beneath it, and the turn lifts
-          away. Same z-band as the gate (below UpdateLayer). */}
+      {/* Unlock-success handoff, armed by UnlockScreen after the unlock
+          IPC succeeds; the view flips to unlockReturnView beneath the
+          plate and the plate lifts away. Same z-band as the gate (below
+          the floating update card). */}
       {unlockCurtainActive ? (
         <CurtainExit
           target={unlockReturnView}
@@ -187,12 +190,14 @@ export function App(): JSX.Element {
           onDone={dismissUnlockCurtain}
         />
       ) : null}
-      {/* Global, view-independent: a user-triggered update prompt can appear
-          over any screen. No-ops when the updater bridge is absent. */}
+      {/* Global, view-independent: projects the updater's status onto the
+          update card (the sidebar's slot, or a floating card where there is
+          no sidebar), so a prompt can appear over any screen. No-ops when the
+          updater bridge is absent. */}
       <UpdateLayer />
       {/* Single mount of the notification toast stack. Every floating signal -
-          feature showToast calls, engine failures, the update prompt - renders
-          through this one region. */}
+          feature showToast calls, engine failures - renders through this one
+          region. The update prompt is not one of them: it is the update card. */}
       <ToastHost />
       {import.meta.env.DEV ? <DevDiagnostics /> : null}
       {/* Diagnostic screen tour — renders only when VITE_VEX_SETUP_TOUR=1
@@ -262,7 +267,7 @@ function DevDiagnostics(): JSX.Element | null {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md border border-border bg-card px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-ink-secondary hover:text-foreground"
+        className="rounded-md border border-border bg-card px-2 py-1 text-[12px] text-ink-secondary hover:text-foreground"
       >
         dev · {open ? "hide" : "diagnostics"}
       </button>

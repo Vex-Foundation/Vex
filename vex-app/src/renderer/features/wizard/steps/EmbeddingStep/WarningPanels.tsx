@@ -1,5 +1,5 @@
 /**
- * EmbeddingStep server-error warning panels — extracted VERBATIM from
+ * EmbeddingStep server-error warning panels - extracted VERBATIM from
  * `EmbeddingStep.tsx` (god-file split); zero behavior change.
  *
  * Error rendering is specialised by VexErrorCode:
@@ -7,10 +7,12 @@
  *     count + "memory unavailable" guidance.
  *   - embedding.db_unavailable → retry card with hint to verify the
  *     System Check screen first.
+ *
+ * Both are the risk callout (`.vex-callout`, set by `RAIL_*_CHROME`): the
+ * callout owns its frame, type size and ink, so only spacing is added here.
  */
 
 import type { JSX } from "react";
-import { cn } from "../../../../lib/utils.js";
 import {
   RAIL_DANGER_CHROME,
   RAIL_WARNING_CHROME,
@@ -34,19 +36,16 @@ export function EmbeddingWarningPanels({
         <div
           role="alert"
           data-vex-embedding-warning="dim-locked"
-          className={cn(
-            "py-1 text-sm text-danger",
-            RAIL_DANGER_CHROME,
-          )}
+          className={RAIL_DANGER_CHROME}
         >
-          <strong className="block font-semibold">Dim change blocked.</strong>
+          <strong className="block font-medium">Dim change blocked.</strong>
           <p className="mt-1">
             {serverError.details.existingRowCount} existing long-term memory
             entries use a different embedding dimension. Changing to
             dim={serverError.details.targetDim} would make them
             unavailable.
           </p>
-          <p className="mt-2 text-xs">
+          <p className="mt-2 text-[13px] text-ink-secondary">
             Safe path: export your memory first, clear the stored entries,
             then change the dimension and re-import.
           </p>
@@ -56,16 +55,13 @@ export function EmbeddingWarningPanels({
         <div
           role="alert"
           data-vex-embedding-warning="db-unavailable"
-          className={cn(
-            "py-1 text-sm text-warning",
-            RAIL_WARNING_CHROME,
-          )}
+          className={RAIL_WARNING_CHROME}
         >
-          <strong className="block font-semibold">
+          <strong className="block font-medium">
             Database unavailable.
           </strong>
           <p className="mt-1">{serverError?.message}</p>
-          <p className="mt-2 text-xs">
+          <p className="mt-2 text-[13px] text-ink-secondary">
             Verify Docker services are running, then retry.
           </p>
         </div>

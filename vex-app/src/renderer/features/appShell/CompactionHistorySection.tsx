@@ -15,12 +15,14 @@ import {
   useCompactionHistory,
   useRetryCompaction,
 } from "../../lib/api/compaction.js";
+import { Button } from "../../components/ui/button.js";
 import {
   Empty,
   ErrorState,
   Loading,
   PILL,
   SECTION,
+  SectionHead,
   fmtDate,
 } from "./MemoryPanelShared.js";
 
@@ -55,12 +57,10 @@ export function CompactionHistorySection({
 
   return (
     <section data-vex-section="compaction-history" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">Compaction history</h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          When this session&apos;s older messages were compacted into memory.
-        </p>
-      </div>
+      <SectionHead
+        title="Compaction history"
+        lead="When this session's older messages were compacted into memory."
+      />
       {retryError !== null ? <ErrorState message={retryError} /> : null}
       {sessionId === null || sessionId.length === 0 ? (
         <Empty label="Open a session to view its compaction history." />
@@ -101,9 +101,9 @@ function CompactionHistoryList({
   if (res.data.length === 0) {
     return <Empty label="No compactions have run for this session yet." />;
   }
-  // Hairline-separated ledger rows — no card boxes, no gaps.
+  // Hairline-separated ledger rows, no card boxes, no gaps.
   return (
-    <ul className="flex flex-col">
+    <ul className="vex-mem-list">
       {res.data.map((h) => (
         <CompactionRow
           key={h.checkpointGeneration}
@@ -135,27 +135,34 @@ function CompactionRow({
     <li
       data-vex-compaction-generation={item.checkpointGeneration}
       data-status={item.status}
-      className="flex flex-wrap items-center gap-2 border-b border-line-2 px-1 py-2 text-xs text-ink-secondary last:border-b-0"
+      className="vex-mem-row"
+      data-untitled=""
     >
-      <span className={PILL}>gen {item.checkpointGeneration}</span>
-      <span className={PILL}>{item.status}</span>
-      <span className={PILL}>msgs {range}</span>
-      <span className={PILL}>{item.chunksInserted} chunks</span>
-      {item.status === "permanently_failed" ? (
-        // The one user action in the panel — a quiet accent key, not a fill.
-        <button
-          type="button"
-          onClick={() => onRetry(item.checkpointGeneration)}
-          disabled={pending}
-          aria-label={`Retry compaction generation ${item.checkpointGeneration}`}
-          className="rounded-[3px] border border-accent-primary px-1.5 py-0.5 vex-micro-label uppercase text-accent-primary transition-colors hover:border-accent-primary hover:bg-accent-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary disabled:cursor-not-allowed disabled:border-line-3 disabled:text-ink-tertiary"
-        >
-          {pending ? "Retrying…" : "Retry"}
-        </button>
-      ) : null}
-      <span className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary">
-        {fmtDate(item.completedAt ?? item.createdAt)}
+      <span className="vex-mem-row__m">
+        <span className={PILL} data-figure>
+          gen {item.checkpointGeneration}
+        </span>
+        <span className={PILL}>{item.status}</span>
+        <span className={PILL} data-figure>
+          msgs {range}
+        </span>
+        <span className={PILL} data-figure>
+          {item.chunksInserted} chunks
+        </span>
+        {item.status === "permanently_failed" ? (
+          // The one user action in the panel: a small quiet key, not a fill.
+          <Button
+            size="sm"
+            variant="quiet"
+            onClick={() => onRetry(item.checkpointGeneration)}
+            disabled={pending}
+            aria-label={`Retry compaction generation ${item.checkpointGeneration}`}
+          >
+            {pending ? "Retrying…" : "Retry"}
+          </Button>
+        ) : null}
       </span>
+      <span className="vex-mem-row__r">{fmtDate(item.completedAt ?? item.createdAt)}</span>
     </li>
   );
 }

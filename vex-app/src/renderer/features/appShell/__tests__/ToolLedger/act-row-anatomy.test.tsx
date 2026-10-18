@@ -200,13 +200,16 @@ describe("ExplorerRefLinks", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("sits at the repo's 10px mono floor, not the old 9px", () => {
+  it("is the page's blue link in the sans, sentence case, never mono caps", () => {
     const { container } = render(
       createElement(ExplorerRefLinks, { refs: refs(1) }),
     );
     const link = container.querySelector("a");
-    expect(link?.className).toContain("text-[10px]");
-    expect(link?.className).not.toContain("text-[9px]");
+    // docs/design/R3-MINIMAL.md section 6: 13 / 500 in the blue
+    // (`.vex-step-link`); the old 10px mono caps chip is retired.
+    expect(link?.className).toContain("vex-step-link");
+    expect(link?.className).not.toMatch(/uppercase|font-mono|text-\[(9|10)px\]/);
+    expect(link?.textContent).toBe("tx");
   });
 
   it("stays inert when nothing resolves", () => {

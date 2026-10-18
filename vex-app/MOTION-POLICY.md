@@ -20,7 +20,7 @@ move alone.
 | `--vex-duration-fast` | `DURATION_FAST_MS` | 100ms | micro-feedback under the pointer: hover tints, the resize seam |
 | `--vex-duration-base` | `DURATION_BASE_MS` | 150ms | the default: one component changing state |
 | `--vex-duration-slow` | `DURATION_SLOW_MS` | 240ms | a modal or overlay taking the screen |
-| `--vex-duration-reveal` | `DURATION_REVEAL_MS` | 300ms | a full-surface reveal: the shell column tracks, the BOOK panel |
+| `--vex-duration-reveal` | `DURATION_REVEAL_MS` | 300ms | a full-surface reveal: the shell column tracks (the Vex sidebar opening and hiding) |
 
 New motion picks a step; it does not invent a number. The values are the ones
 the app already shipped, so applying a token is a substitution and never a
@@ -67,9 +67,15 @@ Three jobs, and nothing else:
 
 What motion is NOT for: decoration, idle loops, and anything that runs while
 the user is not acting. A looping animation needs a live pending state that
-ends it (`vex-badge--shimmer` is the one holder: it stops the moment the
-action is accepted). Motion never delays a committed result, an approval, a
-final error or a security decision.
+ends it: the loading line and a stepping swatch loop only while the real wait
+lasts, the signing stroke only while a key is being made. Attention is ONCE
+(`docs/design/R3-MINIMAL.md` section 11): the "awaiting your action" badge
+(`vex-badge--shimmer`, a mission contract or a compaction ready to accept)
+dips its opacity once on arrival, on the reveal step each way, and then rests
+on its swatch and word; it no longer pulses for as long as it waits. The one
+named exception is Vex's portrait, bound by its own section below ("The K2
+portrait"). Motion never delays a committed result, an approval, a final
+error or a security decision.
 
 Prefer `transform` and `opacity`. Animating a size is reserved for the owner
 of that layout (`.vex-expand`, the shell's column tracks); nothing inside a
@@ -94,7 +100,79 @@ obligations remain:
 The single documented opt-out from the catch-all is `data-vex-motion-opacity`,
 whose contract is stated at the catch-all in `base.css`: an element may carry
 it only if it defines a reduced-motion rule that removes every transform and
-every movement and leaves at most an opacity change.
+every movement and leaves at most an opacity change. Its holders are the
+toasts (their exit fade stays a fade) and the pre-shell stage plate with the
+handoff turn (the stage and the shell crossfade over a fixed 240ms linear).
+
+What reduced motion means across R3 (`docs/design/R3-MINIMAL.md` section 11),
+and where each part is stated:
+
+- every duration collapses to instant, and so does every delay (the catch-all
+  forces `animation-delay` and `transition-delay` to 0, so a both-filled
+  stagger never holds its line invisible before it snaps in);
+- the shell's column tracks snap: opening or hiding the Vex sidebar is a width
+  change with no slide (`shell.css` states its own collapse);
+- swatches and the loading line stop stepping (`ui-primitives/marks.css`);
+- the K2 hologram paints one settled frame (`use-still-frame.ts`): her dock
+  into the sidebar is her simply appearing, and a hide does not wait for her
+  close, the column goes at once;
+- the stage and the shell crossfade over a fixed 240ms linear (the opt-out
+  above). Nothing slides.
+
+### The K2 portrait
+
+Vex's portrait (`src/renderer/components/vex/k2/`, one canvas per placement)
+is a presence, not a decoration: she blinks, her hair moves in the wind, by
+default she looks at you and now and then glances away, and while the agent is
+idle she plays one action of her idle pool at a time (the blow, the bird, the
+giggle, the blush, the whistle, the hum). It is bound four ways:
+
+- **A 30 fps episode step, a 10 fps idle step.** Her clock steps at 30 fps
+  while an episode plays (the wake, an open, the close and the coin's turn, a
+  gesture) and at 10 fps otherwise (`frameTime`, `EPISODE_FPS` and `STEP_MS`
+  in `k2-time.ts`); her idle life reads the 10 fps step even inside an
+  episode. A frame whose dots, token and light did not change is never
+  repainted, and a settled frame's unchanging dots are drawn once and copied.
+- **A 250ms clock cap.** One animation frame never advances her clock by more
+  than 250ms (`CLOCK_CAP_MS` in `k2-engine.ts`), so a stalled or hidden window
+  resumes where it stopped instead of jumping through a wake or a gesture.
+- **The run gate.** `lib/motion/run-gate.ts` runs her loop only while her
+  canvas is on screen and the window is shown; a hidden window or a folded
+  sidebar paints no frame.
+- **The still frame.** Reduced motion and Save-Data
+  (`lib/motion/use-still-frame.ts`) paint one composed frame (awake, the token
+  flat, the beam still, no wind, no gestures, the emotion settled) and repaint
+  only when the theme, the ground, the hover, the emotion or the layout
+  changes. The wake never plays then.
+
+The agent's state is her pose (`k2-poses.ts`, a 300ms dissolve on her clock),
+and her idle pool plays only in the idle pose, so she never plays over a
+working turn or a pending approval.
+
+Her open and close episodes, the re-wake and the look at you chain run on her
+clock; the still frame skips them (she appears, or the token stands alone).
+
+### The shell and the Vex sidebar
+
+- **The column tracks.** The frame's `grid-template-columns` rides
+  `--vex-duration-reveal` on `--vex-ease-inout`; a sidebar and its rail swap in
+  one commit and only the tracks move. Lighter's chat share drag pauses the
+  transition. Reduced motion snaps the tracks.
+- **The dock.** The welcome has no right sidebar; on the first message Vex
+  docks into it: the sidebar's plate plays her open episode from its token as
+  the column first shows (`vex-dock.ts`, `VexPortraitPlate`), and does again
+  when a hidden column is shown. Under the still frame she simply appears.
+- **The hide waits for her close.** When the user hides the column (its hide
+  key, the title bar's token chip, Cmd or Ctrl + Shift + Period), she collapses
+  into the token in the plate first, and only when that ends does the toggle
+  write the store and the column's track close (`features/vex/vex-hide.ts`).
+  Meanwhile the column is inert and focus that was in it moves to the token
+  chip, which already reads "Show Vex"; pressing a toggle again keeps her (the
+  close stops and she opens again, nothing is written). The wait is skipped,
+  and the column goes at once, under the still frame, with the avatar off, or
+  with her plate hidden under the inspect view. A column the shell closes on
+  its own (the narrow tier when the left sidebar opens, a table page's default,
+  Lighter's Zen) never waits.
 
 ### The CSP rule for motion
 
@@ -116,9 +194,16 @@ Live pairs:
 | JS constant | CSS site | Consequence of drift |
 |---|---|---|
 | `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding a stack slot |
+| `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
+
+One pair has no CSS side and cannot drift: the Vex sidebar's hide waits
+`VEX_HIDE_EPISODE_MS` (`features/vex/vex-hide.ts`), which IS her close
+episode's length on her clock (`CLOSE_MS`, `k2-time.ts`), imported rather than
+restated, so the column never goes in the middle of her close nor stands as a
+bare token after it.
 
 
-CSP for the renderer is strict: `style-src 'self'` — no `'unsafe-inline'`, no
+CSP for the renderer is strict: `style-src 'self'`: no `'unsafe-inline'`, no
 inline `<style>` blocks, no inline HTML `style="..."` attributes parsed from
 markup. This is a non-negotiable Phase 1 gate (skill §7, plan §"Phase 1
 Acceptance Gates" CSP smoke test).
@@ -132,19 +217,19 @@ directive controls:
 2. `<style>` element contents
 3. inline HTML `style="..."` attributes (governed by `style-src-attr` if set,
    otherwise inherited from `style-src`)
-4. **`element.setAttribute("style", "...")`** — treated as creating an inline
+4. **`element.setAttribute("style", "...")`**: treated as creating an inline
    style attribute, hence blocked under `style-src 'self'`
-5. **`element.style.cssText = "..."`** — also creates a parsed inline style
+5. **`element.style.cssText = "..."`**: also creates a parsed inline style
    string, also blocked
 
 What `style-src` does NOT govern:
 
-- `element.style.foo = "value"` — single CSSOM property assignment, allowed
-- `CSSStyleSheet.insertRule(...)` from JavaScript — allowed by CSP, but
+- `element.style.foo = "value"`: single CSSOM property assignment, allowed
+- `CSSStyleSheet.insertRule(...)` from JavaScript: allowed by CSP, but
   audit-relevant: it is still a runtime stylesheet mutation, so a library
   that calls it for theming/animations should be reviewed under the same
   rigor as `<style>` injection (codex 2026-05-08 turn 2).
-- `element.style.setProperty("--foo", "bar")` — single CSSOM property
+- `element.style.setProperty("--foo", "bar")`: single CSSOM property
   assignment, allowed
 
 The distinction is: parsing a string into multiple style declarations
@@ -166,17 +251,17 @@ its `style={{...}}` props will not produce CSP violations.
 
 The places we must still avoid:
 
-1. **`<style>{...}</style>` element injection** — some libraries (older
+1. **`<style>{...}</style>` element injection**: some libraries (older
    Emotion configs, theme runtimes) parse a `<style>` element back into the
    DOM. Tailwind v4 emits CSS at build, so this is a non-issue for us; do not
    introduce another style runtime that would need an inline `<style>` tag.
-2. **`<motion.div layout>` / `<Reorder>`** — Motion's layout features inject
+2. **`<motion.div layout>` / `<Reorder>`**: Motion's layout features inject
    a runtime stylesheet to scope `layoutId` keyframes. **Avoid on
    wizard-critical screens** (Splash, System Check, Wallet step, Provider
    step, Review step). For Phase 2 chat/portfolio screens we will re-evaluate
    per feature.
-3. **`dangerouslySetInnerHTML`** — never; always banned.
-4. **Server-rendered HTML strings with `style="..."`** — banned. Our
+3. **`dangerouslySetInnerHTML`**: never; always banned.
+4. **Server-rendered HTML strings with `style="..."`**: banned. Our
    renderer is a SPA, no SSR, and no template literal injects raw `style=`.
 
 ## Per-Radix-primitive audit checklist (codex RED 3)
@@ -201,7 +286,7 @@ If a primitive injects runtime `<style>`, two options exist:
 - **Implement nonce CSP plumbing properly.** This requires the main
   process to mint a per-load nonce, inject it into the served HTML, and
   forward it to the primitive's StyleSheet manager. **Do not ship a
-  static nonce as a workaround** — that defeats CSP.
+  static nonce as a workaround**: that defeats CSP.
 
 ### Audited primitives
 

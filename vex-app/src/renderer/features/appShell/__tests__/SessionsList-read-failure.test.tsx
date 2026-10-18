@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 
 /**
- * The sessions rail's read-failure contract (B4 review compliance sweep).
+ * The left sidebar's read-failure contract (B4 review compliance sweep).
  *
  * A TRANSPORT rejection (the query rejects, no Result at all) used to fall
- * through the placeholder chain to `null`: the rail rendered blank, which is
+ * through the placeholder chain to `null`: the list rendered blank, which is
  * a lie by omission. These three cases pin the derivation from both sides -
  * neither `isError` alone nor `data.ok === false` alone can serve both, so
  * the chain cannot be "simplified" back into either bug.
@@ -37,11 +37,13 @@ vi.mock("../../../stores/uiStore.js", () => {
     setSessionModeFilter: () => {},
     signingState: "idle",
     setSigningState: () => {},
-    sessionOrdinals: { next: 1, byId: {} },
-    setSessionOrdinals: () => {},
+    runtimeMode: "agent",
+    shellRoute: { kind: "none" },
+    navigate: () => {},
   };
   return {
     useUiStore: <T,>(selector: (s: typeof state) => T): T => selector(state),
+    selectNavDestination: () => "chat",
   };
 });
 
@@ -61,9 +63,6 @@ vi.mock("../SessionDeleteDialog.js", () => ({
 }));
 vi.mock("../SidebarProfile.js", () => ({ SidebarProfile: () => null }));
 vi.mock("../SidebarHomeSigil.js", () => ({ SidebarHomeSigil: () => null }));
-vi.mock("../market/VexTokenCardCompact.js", () => ({
-  VexTokenCardCompact: () => null,
-}));
 
 const { SessionsList } = await import("../SessionsList.js");
 

@@ -1,31 +1,20 @@
 /**
- * Pure projection of an `UpdateStatus` onto the NOTIFICATION vocabulary: which
- * statuses notify at all, the title and body copy, the severity, the progress,
- * the action row, whether the user may dismiss it, and what Escape means per
- * state. The impure halves (mutations, snooze state, the handle's lifetime)
- * live in UpdateLayer / UpdateToastSurface.
+ * Pure projection of an `UpdateStatus` onto what the update card says: which
+ * statuses surface at all, the title and body copy, the severity (what the
+ * card's live region routes on), the progress, the action row, and what Escape
+ * means per state. The impure halves (mutations, snooze state) live in
+ * UpdateLayer; the surface is UpdateCard. The vocabulary (severity, action
+ * rank, progress) is the notification model's, which the updater used before
+ * the card replaced its sticky toast, so the copy and the per-state rules did
+ * not have to change with the look.
  *
- * ## B2.2: the sticky slot became a model client
- *
- * This used to build a `StickyToastEntry` for a second, independent
- * bottom-right region with its own store, its own `role`, its own dismiss
- * affordance and its own glyph vocabulary. That region is gone. What the
- * updater needs from a notification surface - stay until I say otherwise,
- * carry an action row, show a progress bar, refuse to be dismissed while the
- * decision is still the user's to make - is exactly what `sticky`,
- * `actions`, `progress` and `dismissible` are, so the update toast is now the
- * model's first sticky client rather than a parallel implementation of it.
- *
- * Two deliberate consequences, both of them the point rather than fallout:
- *
- *  - the ARIA role is gone from here. Announcement belongs to
- *    `NotificationAnnouncer`, which speaks once per model event; the old
- *    `role: critical ? "alert" : "status"` is now carried by SEVERITY, which
- *    is what the announcer routes on (a critical update is a `warning`, and
- *    warnings are announced assertively).
- *  - the download PERCENT left the message. It lives in `progress` alone, so a
- *    tick moves the bar without rewriting the sentence - and therefore without
- *    the announcer speaking a new number every few hundred milliseconds.
+ *  - Announcement belongs to the card's live region, once per state. A
+ *    critical update is a `warning` (assertive); ordinary ones are `info`
+ *    (polite), the same split the retired `role: alert | status` made.
+ *  - the download PERCENT is not in the sentence. It lives in `progress`
+ *    alone, so a tick moves the bar without rewriting the text and therefore
+ *    without the announcer speaking a new number every few hundred
+ *    milliseconds.
  */
 
 import type { UpdateStatus } from "@shared/schemas/updater.js";
@@ -35,7 +24,7 @@ import type {
   NotificationSeverity,
 } from "../../lib/notifications/types.js";
 
-/** The five states that render a toast; `current/checking/idle` render nothing. */
+/** The five states that show the card; `current/checking/idle` render nothing. */
 export type ToastableUpdateStatus = Extract<
   UpdateStatus,
   {
@@ -82,7 +71,7 @@ export interface UpdateToastAction {
   readonly id: UpdateToastActionId;
   readonly label: string;
   readonly rank: NotificationActionRank;
-  /** A mutation for this toast is already in flight. */
+  /** A mutation for this card is already in flight. */
   readonly disabled: boolean;
 }
 
@@ -213,7 +202,7 @@ export function actionsFor(
 }
 
 /**
- * What Escape means per state: snooze a snoozable toast, dismiss an error,
+ * What Escape means per state: snooze a snoozable card, dismiss an error,
  * nothing for downloading/blocked/critical-available (unchanged semantics
  * from the retired bottom-right card).
  */
@@ -231,14 +220,14 @@ export function escapeActionFor(
 }
 
 /**
- * Whether the USER may remove the toast, and the same question as "does
+ * Whether the USER may remove the card, and the same question as "does
  * Escape do anything here".
  *
  * They are one rule, not two that happen to agree: a dismissal IS the escape
  * action (snooze, or dismiss-error), so a state with no escape action has no
  * meaning for dismissal either and must not offer the control. Downloading, a
  * blocked step and a critical update are exactly those states - removing their
- * toast would take away the only Cancel / Try again / Update now the user has
+ * card would take away the only Cancel / Try again / Update now the user has
  * and leave the operation running unattended.
  */
 export function isDismissible(status: ToastableUpdateStatus): boolean {

@@ -1,7 +1,7 @@
 /**
- * Memory panel — read-only memory register, mounted inside the Memory
- * ShellScreen (Chronos screens redesign, 2026-07-20 — the screen owns the
- * title/close chrome and the scroll well, so this is pure flow content).
+ * Memory panel - read-only memory register, mounted inside the Memory
+ * ShellScreen (docs/design/R3-MINIMAL.md sections 9.6 and 12; the screen owns
+ * the page sheet and the scroll well, so this is pure flow content).
  * A thin composer over seven sections, each in its own
  * module so every file stays under the 400-line budget:
  *
@@ -33,13 +33,9 @@ export function MemoryPanel(): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
 
   return (
-    // Sections are hairline-separated ledger groups (SECTION in
-    // MemoryPanelShared) — separation lives on the section borders,
-    // not on flex gaps, so the page reads as one continuous register.
-    <div
-      data-vex-screen="memory"
-      className="mx-auto flex w-full max-w-[760px] flex-col text-ink-primary"
-    >
+    // Sections are ledger groups (SECTION in MemoryPanelShared): a head, a
+    // lead, hairline rows, 24 between groups (`styles/global-css/memory.css`).
+    <div data-vex-screen="memory" className="vex-mem">
       <LongMemorySection />
       {/* S10 inspector trio — read-only manager pipeline views. */}
       <CandidatesSection />

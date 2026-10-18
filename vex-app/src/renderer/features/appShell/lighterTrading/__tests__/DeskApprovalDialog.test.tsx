@@ -1,14 +1,25 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApprovalSummaryDto } from "../../../../../shared/schemas/approvals.js";
+import { DIALOG_INITIAL_FOCUS } from "../../../../components/ui/dialog.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { DeskApprovalDialog } from "../DeskApprovalDialog.js";
+import { setDeskReviewSlot, useDeskReviewShowing } from "../desk-review-slot.js";
 
+// The card's own safety flow (Reject first, the second press, the signing
+// words) is ApprovalCard's and is pinned there; here the card is a stand-in
+// that keeps the two facts the review relies on: its id and a Reject key
+// named as the initial focus.
 vi.mock("../../ApprovalCard.js", () => ({
   ApprovalCard: ({ summary }: { summary: { id: string } }) => (
-    <div data-testid="approval-card">{summary.id}</div>
+    <section data-testid="approval-card" data-approval-id={summary.id}>
+      {summary.id}
+      <footer data-vex-area="approval-foot">
+        <button type="button" {...DIALOG_INITIAL_FOCUS}>Reject {summary.id}</button>
+      </footer>
+    </section>
   ),
 }));
 
@@ -48,13 +59,16 @@ describe("DeskApprovalDialog", () => {
   beforeEach(() => {
     useLighterAnalysisStore.getState().saveDesk({ environment: "rhc" });
   });
+  afterEach(() => {
+    act(() => { setDeskReviewSlot(null); });
+  });
 
   it("opens with the pending cards and closes once none are left", () => {
     const { container, rerender } = render(
       <DeskApprovalDialog approvals={[approval("a1")]} sessionId="s1" focusApprovalId="a1" onResolved={vi.fn()} {...skip} />,
     );
     expect(dialogOf(container).open).toBe(true);
-    expect(dialogOf(container).classList.contains("lit-environment-dialog")).toBe(true);
+    expect(dialogOf(container).classList.contains("lit-order-review")).toBe(true);
     expect(dialogOf(container).getAttribute("data-lighter-environment")).toBe("rhc");
     expect(dialogOf(container).textContent).toContain("a1");
     expect(container.querySelector("dialog h2")?.textContent).toBe("Review order");
@@ -154,5 +168,72 @@ describe("DeskApprovalDialog", () => {
       <DeskApprovalDialog approvals={[approval("a1"), approval("a2", "order.cancel")]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />,
     );
     expect(container.querySelector("dialog h2")?.textContent).toBe("Review mixed actions");
+  });
+  it("presents inline in the ticket's slot, never as a modal, and tells the ticket to step aside", () => {
+    const slot = document.createElement("div");
+    document.body.appendChild(slot);
+    let showing = false;
+    function ShowingProbe(): null {
+      showing = useDeskReviewShowing();
+      return null;
+    }
+    act(() => { setDeskReviewSlot(slot); });
+    const { container, rerender } = render(
+      <>
+        <ShowingProbe />
+        <DeskApprovalDialog approvals={[approval("a1")]} sessionId="s1" focusApprovalId="a1" onResolved={vi.fn()} {...skip} />
+      </>,
+    );
+    const review = slot.querySelector<HTMLDialogElement>("dialog[data-vex-area=lighter-desk-approval]");
+    if (review === null) throw new Error("review missing from the slot");
+    expect(container.querySelector("dialog")).toBeNull();
+    expect(review.open).toBe(true);
+    expect(review.getAttribute("data-placement")).toBe("ticket");
+    // Non-modal: an `open` attribute in the flow, no top layer and no veil.
+    expect(review.matches(":modal")).toBe(false);
+    expect(review.getAttribute("aria-labelledby")).toBe(review.querySelector("h2")?.id);
+    expect(review.querySelector("h2")?.textContent).toBe("Review order");
+    expect(showing).toBe(true);
+
+    rerender(
+      <>
+        <ShowingProbe />
+        <DeskApprovalDialog approvals={[]} sessionId="s1" focusApprovalId={null} onResolved={vi.fn()} {...skip} />
+      </>,
+    );
+    expect(review.open).toBe(false);
+    expect(showing).toBe(false);
+    slot.remove();
+  });
+
+  it("gives the safe choice the first focus each time the review appears", () => {
+    const props = { sessionId: "s1", onResolved: vi.fn(), ...skip };
+    const { container, rerender } = render(
+      <DeskApprovalDialog approvals={[approval("a1"), approval("a2")]} focusApprovalId="a2" {...props} reopenSignal={0} />,
+    );
+    expect(document.activeElement?.textContent).toBe("Reject a2");
+
+    fireEvent.keyDown(dialogOf(container), { key: "Escape" });
+    expect(dialogOf(container).open).toBe(false);
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    rerender(<DeskApprovalDialog approvals={[approval("a1"), approval("a2")]} focusApprovalId={null} {...props} reopenSignal={1} />);
+    expect(dialogOf(container).open).toBe(true);
+    expect(document.activeElement?.textContent).toBe("Reject a1");
+  });
+
+  it("keeps Escape to itself, so the desk's own Escape keys do not also fire", () => {
+    const onWindowKey = vi.fn();
+    window.addEventListener("keydown", onWindowKey);
+    const { container } = render(
+      <DeskApprovalDialog approvals={[approval("a1")]} sessionId="s1" focusApprovalId="a1" onResolved={vi.fn()} {...skip} />,
+    );
+    fireEvent.keyDown(dialogOf(container), { key: "Escape" });
+    window.removeEventListener("keydown", onWindowKey);
+    expect(dialogOf(container).open).toBe(false);
+    expect(onWindowKey).not.toHaveBeenCalled();
+    // The card stays mounted while hidden: an armed key or a decision in
+    // flight survives the trader looking away.
+    expect(dialogOf(container).textContent).toContain("a1");
   });
 });

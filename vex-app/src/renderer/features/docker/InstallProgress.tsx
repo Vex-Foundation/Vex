@@ -1,20 +1,19 @@
 /**
  * Live install/download progress strip. Subscribes to
- * `vex.docker.onInstallProgress` and renders the most recent payload —
+ * `vex.docker.onInstallProgress` and renders the most recent payload -
  * the renderer never tries to keep a long log of progress lines (the
  * main process is the source of truth, skill §11).
  *
- * Embedded inside the BootstrapPanel card, replacing the status stanza
- * while `desktop_download` is in flight. Visual: a flat hairline strip
- * on the stage's paper leaf: no blur, no inset
- * highlight; the accent bar is the landing preloader's progress line.
- * The bar respects reduced motion (CSS transition-width is disabled
- * via the global media query).
+ * Embedded inside the BootstrapPanel body, replacing the status card
+ * while `desktop_download` is in flight. Visual: the phase word and the
+ * percent (a figure) over a 2px quiet track with the blue fill, as the
+ * first run draws a progress line (`docs/design/R3-MINIMAL.md section 10.3`);
+ * a failed phase keeps the blue fill and the word says it. No transition
+ * under reduced motion (the global rule).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type JSX } from "react";
 import type { InstallProgress } from "@shared/schemas/docker.js";
-import { cn } from "../../lib/utils.js";
 
 interface InstallProgressProps {
   readonly active: boolean;
@@ -36,37 +35,29 @@ export function InstallProgressStrip({ active }: InstallProgressProps): JSX.Elem
 
   const percent = progress?.percent ?? null;
   const phase = progress?.phase ?? "starting";
-  const isFailure = phase === "failed";
 
   return (
-    // Open strip (AMENDMENT A3 — no filled box): phase word, percent, and
-    // the progress bar sit directly on the surface.
-    <div className="flex flex-col gap-2.5 py-1">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="vex-micro text-ink-secondary">
+    // An open strip: the phase word, the percent and the progress line sit
+    // directly on the paper.
+    <div className="flex w-full flex-col gap-2.5">
+      <div className="flex items-baseline justify-between gap-2 text-[13.5px]">
+        <span className="font-medium capitalize text-ink-primary">
           {phase}
         </span>
         {percent !== null ? (
-          <span className="font-mono tabular-nums text-ink-primary">
+          <span className="vex-num font-mono tabular-nums text-ink-primary">
             {percent}%
           </span>
         ) : null}
       </div>
-      <div className="h-0.5 w-full overflow-hidden bg-gate-rail">
+      <div className="vex-fr-progress__bar w-full">
         <div
-          className={cn(
-            "h-full transition-[width] duration-150 ease-out",
-            isFailure
-              ? "bg-[var(--color-danger)]"
-              : "bg-[var(--color-accent-primary)]",
-          )}
+          className="vex-fr-progress__fill transition-[width] duration-150 ease-out"
           style={{ width: percent !== null ? `${percent}%` : "33%" }}
         />
       </div>
       {progress?.message ? (
-        <p className="text-xs leading-relaxed text-ink-secondary">
-          {progress.message}
-        </p>
+        <p className="vex-fr-text">{progress.message}</p>
       ) : null}
     </div>
   );

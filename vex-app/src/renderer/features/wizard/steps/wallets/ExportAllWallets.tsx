@@ -1,10 +1,10 @@
 /**
- * "Export all wallets" action (puzzle 5 phase 5D). Cross-family — exports
- * BOTH EVM + Solana inventories — so it lives at the WalletsStep level, not
+ * "Export all wallets" action (puzzle 5 phase 5D). Cross-family - exports
+ * BOTH EVM + Solana inventories - so it lives at the WalletsStep level, not
  * per-chain. Main owns the directory picker; the renderer never receives the
  * path (the result carries filenames only). The exported bundle is the
  * encrypted keystores + a sanitized `manifest.json` (no plaintext keys, no
- * non-wallet config secrets — see engine `exportAllWallets`).
+ * non-wallet config secrets - see engine `exportAllWallets`).
  */
 
 import { useState, type JSX } from "react";
@@ -29,7 +29,7 @@ export function ExportAllWallets(): JSX.Element {
   };
 
   return (
-    <div className="flex flex-col gap-1" data-vex-wallet-export>
+    <div className="flex flex-col gap-1.5" data-vex-wallet-export>
       <Button
         variant="quiet"
         size="sm"
@@ -41,12 +41,12 @@ export function ExportAllWallets(): JSX.Element {
         {exportMutation.isPending ? "Exporting…" : "Export all wallets"}
       </Button>
       {message !== null ? (
-        <p className="text-xs text-ink-tertiary" role="status">
+        <p className="vex-wz-hint" role="status">
           {message}
         </p>
       ) : null}
       {error !== null ? (
-        <p className="text-xs text-danger" role="alert">
+        <p className="text-[13px] text-danger" role="alert">
           {error}
         </p>
       ) : null}

@@ -7,12 +7,12 @@
  * (running → ready + Continue → migrations).
  *
  * Selectors `data-vex-compose-cancel` and `data-vex-compose-cancelling`
- * are part of the public contract — pinning these prevents the cancel
+ * are part of the public contract - pinning these prevents the cancel
  * UX from regressing during future visual refactors.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const mockCompose = vi.fn();
 const mockCancel = vi.fn();
@@ -36,6 +36,9 @@ vi.mock("../../../stores/uiStore.js", () => ({
 }));
 
 const { ComposeBootstrap } = await import("../ComposeBootstrap.js");
+const { getStageVex, resetStageVex, stageVexEnd, stageVexView } = await import(
+  "../../../components/onboarding/stage-vex.js"
+);
 
 function arrangeBridge(): void {
   Object.defineProperty(window, "vex", {
@@ -60,10 +63,14 @@ beforeEach(() => {
     data: { opened: true },
   });
   arrangeBridge();
+  resetStageVex();
+  // The launch is over: Vex's face is the screen's, with no wake to wait for.
+  stageVexEnd();
 });
 
 afterEach(() => {
   cleanup();
+  resetStageVex();
   Reflect.deleteProperty(window, "vex");
 });
 
@@ -379,5 +386,92 @@ describe("ComposeBootstrap - terminal kinds", () => {
       expect(view.container.textContent).toMatch(/Compose up failed/);
     });
     clickLogs(view);
+  });
+});
+
+describe("ComposeBootstrap - the first run stage", () => {
+  it("stands on the plate with the Services step current and Vex working", () => {
+    mockCompose.mockReturnValue({ promise: new Promise(() => {}), cancel: mockCancel });
+    const view = render(<ComposeBootstrap />);
+    expect(view.container.querySelector('[data-vex-screen="composeBootstrap"] .vex-fr-side')).not.toBeNull();
+    expect(
+      view.getByRole("navigation", { name: "First run" }).querySelector('[aria-current="step"]')
+        ?.textContent,
+    ).toContain("Services");
+    expect(stageVexView(getStageVex())).toMatchObject({ emotion: "working", word: "Working" });
+  });
+
+  it("draws the two services as rows with a word and a fill each", () => {
+    mockCompose.mockReturnValue({ promise: new Promise(() => {}), cancel: mockCancel });
+    const view = render(<ComposeBootstrap />);
+    const rows = Array.from(view.container.querySelectorAll("[data-service]"));
+    expect(rows.map((row) => row.getAttribute("data-service"))).toEqual(["Postgres", "Embeddings"]);
+    for (const row of rows) {
+      expect(row.getAttribute("data-status")).toBe("starting");
+      expect(row.textContent).toContain("Starting");
+      expect(row.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
+    }
+  });
+
+  it("is ready when the stack is up, in error when compose failed and concerned when the user must act", async () => {
+    mockCompose.mockReturnValue({
+      promise: Promise.resolve({ ok: true, data: { kind: "running", message: "ok", composeOutPath: "/tmp/c.yml", installId: "vex-1" } }),
+      cancel: mockCancel,
+    });
+    const ready = render(<ComposeBootstrap />);
+    await waitFor(() => expect(ready.container.textContent).toMatch(/All services ready/));
+    expect(stageVexView(getStageVex()).word).toBe("Ready");
+    ready.unmount();
+
+    mockCompose.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { kind: "failed", composeOutPath: "/tmp/c.yml", installId: "vex-1", message: "docker daemon stopped mid-run.", previousInstallHoldingPorts: false },
+      }),
+      cancel: mockCancel,
+    });
+    const failed = render(<ComposeBootstrap />);
+    await waitFor(() => expect(failed.container.textContent).toMatch(/Compose up failed/));
+    expect(stageVexView(getStageVex()).word).toBe("Error");
+    failed.unmount();
+
+    mockCompose.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { kind: "unhealthy", composeOutPath: "/tmp/c.yml", installId: "vex-1", message: "probe failed", previousInstallHoldingPorts: false },
+      }),
+      cancel: mockCancel,
+    });
+    const unhealthy = render(<ComposeBootstrap />);
+    await waitFor(() => expect(unhealthy.container.textContent).toMatch(/health probe failed/));
+    expect(stageVexView(getStageVex()).word).toBe("Concerned");
+  });
+
+  it("shows a failure as the ink callout with the recent log lines under it", async () => {
+    let logListener: ((payload: { line: string }) => void) | null = null;
+    mockOnComposeLog.mockImplementation((cb: (payload: { line: string }) => void) => {
+      logListener = cb;
+      return () => {};
+    });
+    mockCompose.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { kind: "failed", composeOutPath: "/tmp/c.yml", installId: "vex-1", message: "docker daemon stopped mid-run.", previousInstallHoldingPorts: false },
+      }),
+      cancel: mockCancel,
+    });
+    arrangeBridge();
+    const view = render(<ComposeBootstrap />);
+    await waitFor(() => expect(logListener).not.toBeNull());
+    act(() => {
+      logListener?.({ line: "Postgres health probe #1: ready." });
+      logListener?.({ line: "Postgres health probe #3: connection refused: no listener" });
+    });
+    await waitFor(() => expect(view.container.textContent).toMatch(/Compose up failed/));
+    const alert = view.getByRole("alert");
+    expect(alert.getAttribute("data-vex-callout")).toBe("error");
+    expect(view.getByText(/Recent logs \(2 lines\)/)).toBeTruthy();
+    expect(view.container.querySelector(".vex-fr-code")?.textContent).toContain("connection refused");
+    expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 });

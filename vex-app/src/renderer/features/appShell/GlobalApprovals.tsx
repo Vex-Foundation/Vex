@@ -1,231 +1,62 @@
 /**
- * DESK RULE global approvals inbox — the app-wide "awaiting your signature"
- * affordance in the running head's right flank.
+ * THE APP-WIDE APPROVALS' SYNC (docs/design/R3-MINIMAL.md sections 3 and 8).
+ * The count and the list are "Needs you · N" (`features/vex/NeedsYouControl.tsx`)
+ * and the cards a Review key opens are the Needs you page
+ * (`screens/NeedsYouScreen.tsx`), so what stays here is what has no control of
+ * its own: `GlobalApprovalsSync` keeps the app-wide inbox fresh and owns the
+ * cross-mode announcement. It renders nothing and is mounted ONCE by the
+ * title bar (`RunningHead`), above the mode dispatch: preload allows one
+ * subscriber per event kind per window, so a second mount across a mode
+ * switch would silently lose the live sync.
  *
- * A 28px badge in the blue on a blue outline, behind the target swatch
- * (`AWAITING <n>`, docs/design/V10-SPREAD.md section 4), that opens a centered
- * review dialog listing EVERY pending approval across all sessions. The flank stays empty
- * ONLY after a successful read listed nothing (Kairos U-2). While the first
- * read is in flight it shows a quiet "checking" status, and when the read
- * fails (`data.ok === false` or a query error) it shows "couldn't check" with
- * a read-only Retry - an empty flank after a failed read would be a false
- * all-clear on a surface that exists to say "something needs your signature".
- *
- * Freshness: push first — `useMissionUpdateLiveSync` invalidates `pendingAll`
- * on `approval_enqueued`, which is emitted post-commit for chat AND mission
- * sessions alike, and `useGlobalApprovalsLiveSync` adds any session's
- * control-state transition. The two-tier poll (faster while the panel is open,
- * slower while idle) is now the dropped-event fallback, not the primary net.
- *
- * Cross-mode toast (B4c): this component also owns the one-shot announcement
- * for an approval raised in the mode the user is NOT looking at - see
- * `approvals/useCrossModeApprovalToast.ts` for why the memory lives above the
- * mode dispatch rather than in either shell.
- *
- * Uses the shared native dialog for viewport placement, focus containment,
- * Escape dismissal, and the app's existing modal styling.
+ * Freshness: push first. `useMissionUpdateLiveSync` invalidates `pendingAll`
+ * on `approval_enqueued` (chat and mission sessions alike) and
+ * `useGlobalApprovalsLiveSync` adds any session's control-state transition.
+ * The poll is the dropped-event net: 60s idle, 15s while the Needs you page is
+ * open (the page observes the same query with the faster interval, and the
+ * query refetches on the shortest interval any observer asks for).
  */
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type JSX,
-} from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody } from "../../components/ui/dialog.js";
+import { useMemo } from "react";
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
 import type { Result } from "@shared/ipc/result.js";
 import {
   useGlobalApprovalsLiveSync,
   usePendingApprovalsAll,
 } from "../../lib/api/approvals.js";
-import { GlobalApprovalItem } from "./GlobalApprovals/GlobalApprovalItem.js";
-import { useCrossModeApprovalToast } from "./approvals/useCrossModeApprovalToast.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { Swatch } from "../../components/ui/swatch.js";
+import { useCrossModeApprovalToast } from "./approvals/useCrossModeApprovalToast.js";
 
 /**
- * Idle fallback poll — the app-wide read opens a short-lived pg client per
- * tick. Slowed 15s → 60s: `useMissionUpdateLiveSync` invalidates `pendingAll`
- * on `approval_enqueued`, so the badge no longer depends on this tick to
- * appear. Retained as the net for a dropped event.
+ * Idle fallback poll. The app-wide read opens a short-lived pg client per
+ * tick, and `approval_enqueued` already invalidates the list, so the count no
+ * longer depends on this tick to appear; it is the net for a dropped event.
  */
-const IDLE_POLL_MS = 60_000;
-/**
- * While the panel is OPEN the user is looking at a live list, so it keeps a
- * faster cadence than the idle net (5s → 15s). Still slower than before the
- * push existed, and still not the primary freshness path.
- */
-const PANEL_OPEN_POLL_MS = 15_000;
-/** LIMIT 100 in SQL; the badge collapses anything past this to "99+". */
-const MAX_BADGE_COUNT = 99;
+export const IDLE_POLL_MS = 60_000;
+/** While the Needs you page is open the user is looking at live cards: a faster net. */
+export const REVIEW_OPEN_POLL_MS = 15_000;
 
-/**
- * What the badge may honestly say (Kairos U-2). "none" is claimed only from a
- * successful read that listed nothing; a failed read is "unknown", never a
- * clear. A failed REFETCH over an earlier non-empty read keeps the last known
- * count (an approval that may since have resolved is a safe overstatement); a
- * failed refetch over an earlier EMPTY read is "unknown", because repeating
- * that empty answer would be a clear nobody verified.
- */
-export type GlobalApprovalsStatus =
-  | { readonly kind: "loading" }
-  | { readonly kind: "none" }
-  | { readonly kind: "pending"; readonly count: number }
-  | { readonly kind: "unknown" };
-
-export function globalApprovalsStatus(
+/** The pending rows of a read, newest first; `null` while unread or failed. */
+export function pendingRowsOf(
   data: Result<ReadonlyArray<ApprovalPendingGlobalDto>> | undefined,
-  queryErrored: boolean,
-  rows: ReadonlyArray<ApprovalPendingGlobalDto> | null,
-): GlobalApprovalsStatus {
-  if (data !== undefined && data.ok === false) return { kind: "unknown" };
-  if (rows !== null && rows.length > 0) return { kind: "pending", count: rows.length };
-  if (queryErrored) return { kind: "unknown" };
-  if (data === undefined) return { kind: "loading" };
-  return { kind: "none" };
+): ReadonlyArray<ApprovalPendingGlobalDto> | null {
+  if (data === undefined || !data.ok) return null;
+  // NEWEST FIRST: the row a user just caused is the one they came for.
+  return [...data.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function GlobalApprovals(): JSX.Element | null {
+/**
+ * The live sync and the cross-mode announcement, with no pixels. Mount it
+ * once, above the mode dispatch.
+ */
+export function GlobalApprovalsSync(): null {
   useGlobalApprovalsLiveSync();
-  const [open, setOpen] = useState(false);
-  const query = usePendingApprovalsAll({
-    refetchInterval: open ? PANEL_OPEN_POLL_MS : IDLE_POLL_MS,
-  });
-
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelId = useId();
-
-  // Loading (undefined) or an application-level failure → no rows, no badge.
-  const rows = useMemo<ReadonlyArray<ApprovalPendingGlobalDto> | null>(() => {
-    const data = query.data;
-    if (data === undefined || data.ok === false) return null;
-    // NEWEST FIRST. The panel is an inbox and the row a user just caused is
-    // the one they came for, so it leads - and it is therefore also the row
-    // whose Reject the shared dialog focuses through its named autofocus
-    // target, so focus lands on the newest card's safer action.
-    return [...data.data].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [query.data]);
-
-  // The cross-mode announcement (B4c). Owned HERE, above the mode dispatch:
-  // this component is mounted exactly once for the frame (`RunningHead`)
-  // and already holds the app-wide list, so the observation survives a mode
-  // switch instead of resetting with the shell that switched. Declared before
-  // the early return below - the badge hides when nothing is pending, and a
-  // hook may not.
+  const query = usePendingApprovalsAll({ refetchInterval: IDLE_POLL_MS });
+  const rows = useMemo(() => pendingRowsOf(query.data), [query.data]);
+  // The cross-mode announcement (B4c) lives here, above the mode dispatch,
+  // so the observation survives a mode switch instead of resetting with the
+  // shell that switched.
   const runtimeMode = useUiStore((state) => state.runtimeMode);
   useCrossModeApprovalToast(rows, runtimeMode);
-
-  const closePanel = useCallback((): void => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  }, []);
-
-  const status = globalApprovalsStatus(query.data, query.isError === true, rows);
-
-  useEffect(() => {
-    if (status.kind !== "pending") setOpen(false);
-  }, [status.kind]);
-
-  if (status.kind === "loading") {
-    return (
-      <span
-        role="status"
-        data-vex-area="global-approvals-status"
-        data-state="loading"
-        className="font-mono text-[11px] uppercase tracking-chip text-ink-secondary"
-      >
-        <span aria-hidden="true">APPROVALS …</span>
-        <span className="sr-only">Checking for pending approvals</span>
-      </span>
-    );
-  }
-
-  if (status.kind === "unknown") {
-    const retrying = query.isFetching === true;
-    return (
-      <div
-        role="status"
-        data-vex-area="global-approvals-status"
-        data-state="unknown"
-        className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-chip text-accent-primary"
-      >
-        <span aria-hidden="true">APPROVALS ?</span>
-        <span className="sr-only">
-          Couldn&apos;t check for pending approvals. Some may be waiting for your signature.
-        </span>
-        <button
-          type="button"
-          data-vex-area="global-approvals-retry"
-          disabled={retrying}
-          aria-label={retrying ? "Checking approvals again" : "Retry checking approvals"}
-          onClick={() => {
-            void query.refetch();
-          }}
-          className="inline-flex h-7 items-center px-2.5 outline outline-1 -outline-offset-1 outline-accent-primary hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-focus disabled:text-ink-tertiary disabled:outline-dotted"
-        >
-          {retrying ? "CHECKING" : "RETRY"}
-        </button>
-      </div>
-    );
-  }
-
-  // A confirmed empty inbox: the flank stays empty. Reached ONLY after a
-  // successful read, so an empty flank is never a guess.
-  if (status.kind === "none" || rows === null) return null;
-
-  const count = rows.length;
-  const badgeLabel =
-    count > MAX_BADGE_COUNT ? `${MAX_BADGE_COUNT}+` : String(count);
-
-  return (
-    <div>
-      <button
-        ref={triggerRef}
-        type="button"
-        data-vex-area="global-approvals-badge"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        aria-label={`${count} pending ${
-          count === 1 ? "approval" : "approvals"
-        } awaiting your signature`}
-        onClick={() => (open ? closePanel() : setOpen(true))}
-        className="inline-flex h-7 items-center gap-2 px-2.5 font-mono text-[11px] uppercase leading-none tracking-chip text-accent-primary outline outline-1 -outline-offset-1 outline-accent-primary transition-colors hover:bg-interactive-hover focus-visible:ring-2 focus-visible:ring-focus"
-      >
-        <Swatch state="warning" size={9} />
-        AWAITING {badgeLabel}
-      </button>
-      <Dialog open={open} onOpenChange={(next) => next ? setOpen(true) : closePanel()}>
-        <DialogContent
-          id={panelId}
-          data-vex-area="global-approvals-panel"
-          className="w-[calc(100vw-3rem)] max-w-3xl"
-        >
-          <DialogHeader className="sticky top-0 z-10 flex-row items-start justify-between gap-4 bg-surface-base pr-6">
-            <div>
-              <DialogTitle>Pending approvals</DialogTitle>
-              <DialogDescription>Review the details before approving an action.</DialogDescription>
-            </div>
-            <button
-              type="button"
-              onClick={closePanel}
-              aria-label="Close approval review"
-              className="inline-flex h-9 shrink-0 items-center border border-rule px-3.5 font-mono text-[12px] uppercase tracking-chip text-ink-primary hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            >
-              Close
-            </button>
-          </DialogHeader>
-          <DialogBody className="gap-0 px-3 pb-4 pt-0">
-            {rows.map((row) => (
-              <GlobalApprovalItem key={row.id} row={row} onOpenSession={closePanel} />
-            ))}
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+  return null;
 }

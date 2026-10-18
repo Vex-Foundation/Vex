@@ -1,14 +1,18 @@
 /**
  * Topbar trigger for the local-first "Report an issue" dialog.
  *
- * Phase 1: owns the dialog open state via local React state — there is no
+ * Phase 1: owns the dialog open state via local React state - there is no
  * cross-feature reason to lift this into useUiStore yet. Lifts when Phase 2
  * adds prefilled-report actions in error states elsewhere in the UI.
+ *
+ * R3 Minimal (docs/design/R3-MINIMAL.md sections 1.5 and 1.7): the quiet rule
+ * key (32 high, or the 32 x 32 icon key when compact) with the line warning
+ * icon.
  */
 
 import { useCallback, useState } from "react";
 import type { JSX } from "react";
-import { IconBug } from "../../components/icons/index.js";
+import { LineWarning } from "../../components/icons/line/index.js";
 import { Button } from "../../components/ui/button.js";
 import { ReportIssueDialog } from "./ReportIssueDialog.js";
 
@@ -25,14 +29,13 @@ export function ReportIssueButton({
   return (
     <>
       <Button
-        variant="bare"
+        variant="quiet"
         size={compact ? "icon" : "sm"}
         onClick={openDialog}
         aria-label="Report an issue"
         aria-haspopup="dialog"
-        className="border border-[var(--vex-line-strong)] bg-transparent text-[var(--vex-text-2)] hover:bg-interactive-hover hover:text-foreground"
       >
-        <IconBug size={16} />
+        <LineWarning size={16} />
         {compact ? null : <span>Report issue</span>}
       </Button>
       <ReportIssueDialog open={open} onOpenChange={onOpenChange} />

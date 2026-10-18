@@ -1,5 +1,8 @@
 /**
- * MISSION RAIL — the DESK RULE header's mission/plan status cluster. It
+ * MISSION RAIL: the mission and plan status keys in the title bar's left
+ * cell, after the session title (docs/design/R3-MINIMAL.md section 3: a 26
+ * high badge, a 1px quiet rule, 12.5 type, the mark and a word such as
+ * "Mission · Accepted"; the look rides `.vex-tb-mission` in title-bar.css). It
  * carries the mission/plan status KEYS (compact clickable `PremiumBadge`
  * pills) that open the contract / plan review dialogs. Formerly a fixed 200px
  * column between chat and BOOK; the badges now sit inline in the header's
@@ -7,25 +10,28 @@
  * contract + plan cards used to live inline in `SessionPanel`, which pushed
  * `MissionControls` + the Accept footer below the fold (the bug this cluster
  * resolves); the cluster keeps only the compact badges in the layout and moves
- * the full review surfaces into top-layer `<dialog>`s where the Accept action
- * is pinned and can never be scrolled away.
+ * the full review surfaces into top-layer `<dialog>`s (the contract as a sheet
+ * over the centre column) where the Accept action is pinned and can never be
+ * scrolled away.
  *
  * Render gate (decided in the redesign plan): the cluster renders only in the
  * active session view, and only when the session is mission-mode OR plan-mode
  * is enabled. A plain agent session with plan-mode off gets NO cluster (render
- * nothing — never a broken empty frame). The gate is computed from the same
+ * nothing, never a broken empty frame). The gate is computed from the same
  * TanStack Query hooks the modals use, so the cluster and modals always agree.
  *
  * Badge state derivation (§4 of the plan):
  *   - Mission badge mirrors the contract diff state machine
- *     (preparing / ready / accepted / stale), but "ready" additionally requires
- *     the plan to be ready when plan-mode is on — a `plan_missing` plan keeps
+ *     (preparing / ready / accepted / stale), plus "error" while an active run
+ *     is paused on an error and "ended" for a terminal accepted mission, but
+ *     "ready" additionally requires
+ *     the plan to be ready when plan-mode is on; a `plan_missing` plan keeps
  *     the mission at "preparing" with a plan-needed hint (matches the engine
  *     `plan_missing` block in the modal footer).
  *   - Plan badge mirrors the plan state (preparing while authoring / ready while
  *     pending acceptance / accepted), and surfaces an "awaiting resume" stale
  *     marker when an accepted plan's run is parked. Plan Mode itself is retired
- *     from the UI (no session can enable it again — `PlanSwitch` is gone), so
+ *     from the UI (no session can enable it again; `PlanSwitch` is gone), so
  *     this badge only ever surfaces for a legacy session that already carries
  *     `plan.enabled === true`; it is labelled "Legacy plan" so it reads as a
  *     recovery affordance, never a live feature.
@@ -34,12 +40,12 @@
  * `MissionControls`' "Review & accept contract" bar (mounted in the session
  * body, a different tree branch than this header cluster) needs to open the
  * SAME dialog this component owns, so the state has to be shared, not local.
- * MUTUAL EXCLUSION is still free — `reviewModal` is a single enum value, so
+ * MUTUAL EXCLUSION is still free: `reviewModal` is a single enum value, so
  * opening one dialog closes the other. The state is UI-ephemeral (never
  * persisted, never crosses IPC).
  *
  * Trust boundary: 100% renderer presentation over existing hooks. No new IPC,
- * no `src/vex-agent`/DB/wallet imports, and no plan CONTENT is read here — the
+ * no `src/vex-agent`/DB/wallet imports, and no plan CONTENT is read here: the
  * cluster only derives badge states; the modals own the content render.
  */
 
@@ -113,7 +119,7 @@ export function MissionRail({
   const hasActiveRun =
     runtimeQuery.data?.ok === true && runtimeQuery.data.data.hasActiveRun === true;
   // runtimeStatus: read alongside hasActiveRun so the badge can surface the
-  // paused_error state (MissionControls' standing alert) — never derived from
+  // paused_error state (MissionControls' standing alert), never derived from
   // status alone, since a stale/inconsistent status without an active run
   // must not paint the badge red.
   const runtimeStatus: RuntimeStateDto["status"] =
@@ -148,7 +154,7 @@ export function MissionRail({
   if (!shouldRender) return null;
 
   // Mission setup (mission-mode, no run started yet) accepts the plan TOGETHER
-  // with the contract via the unified `mission.acceptContract` step — withhold
+  // with the contract via the unified `mission.acceptContract` step: withhold
   // the plan modal's standalone "Accept plan" to avoid two competing accepts.
   const suppressPlanAccept =
     isMission && (session?.missionStatus ?? null) === null;
@@ -158,7 +164,7 @@ export function MissionRail({
       data-vex-area="mission-rail"
       role="group"
       aria-label="Mission and plan status"
-      className="flex min-w-0 items-center gap-2"
+      className="vex-tb-mission"
     >
       {mission !== null ? (
         <PremiumBadge
@@ -255,13 +261,13 @@ function deriveMissionBadge(
 ): BadgeDerivation | null {
   if (!isMission) return null;
   // Standing paused_error alert's badge counterpart (issue #42): override to
-  // "error" only when an active run's own status confirms the pause — never
+  // "error" only when an active run's own status confirms the pause, never
   // on status alone, since a stale status without an active run is a
   // defensive inconsistent-state case, not a live error.
   if (hasActiveRun && runtimeStatus === "paused_error") {
     return { state: "error", shimmer: false };
   }
-  // A mission past contract-acceptance is "accepted" — never "preparing".
+  // A mission past contract-acceptance is "accepted", never "preparing".
   // hasActiveRun covers running/paused; hasRenewable (a non-null renewable
   // source) covers terminal accepted missions (completed/failed/stopped/
   // cancelled). Once accepted the draft drops out of `getDraftForSession`
@@ -273,18 +279,21 @@ function deriveMissionBadge(
   // also have a fresh draft. After `mission.renew` a new status='draft'
   // mission is inserted under the same root_session_id, and after
   // `mission.edit` the parent mission returns to draft while its accepted-
-  // contract columns stay set — in both cases hasRenewable stays true while a
+  // contract columns stay set; in both cases hasRenewable stays true while a
   // current draft exists. Gating on `draft === null` lets that fresh draft
   // fall THROUGH to the normal draft/ready/stale derivation instead of being
   // masked as "accepted" by a stale renewable source. hasActiveRun stays
   // unconditional: a live run is authoritative regardless of any draft.
   //
-  // Pass-1 trade-off: a failed/stopped/cancelled mission reuses the `accepted`
-  // badge whose caption reads "Accepted" — here it means "contract accepted /
-  // no accept action pending", not "mission succeeded". A dedicated
-  // RUNNING/DONE state is a deferred Stage-2 follow-up.
-  if (hasActiveRun || (draft === null && hasRenewable)) {
+  // A live run reads "Accepted" (its contract is accepted and nothing waits
+  // on the user); a terminal one reads "Ended" (completed, failed, stopped or
+  // cancelled: the word says the run is over, never that it succeeded, as the
+  // R3 badge draws it in docs/design/R3-MINIMAL.md section 3).
+  if (hasActiveRun) {
     return { state: "accepted", shimmer: false };
+  }
+  if (draft === null && hasRenewable) {
+    return { state: "ended", shimmer: false };
   }
   // Below the run-level overrides, the badge is a pure projection of THE shared
   // readiness selector, the same one `MissionControls` and the contract modal
@@ -300,11 +309,11 @@ function deriveMissionBadge(
 
 /**
  * Legacy-recovery badge state, derived from the plan the same way it always
- * was. Hidden (null) when plan-mode is off — condition is exactly
+ * was. Hidden (null) when plan-mode is off; the condition is exactly
  * `plan.enabled === true`, so an accepted-and-still-enabled plan keeps
  * surfacing the badge (it is the only exit ramp for that session).
  *   - enabled, no markdown        → preparing (authoring)
- *   - enabled, markdown, !accepted → ready (shimmer — awaiting your acceptance)
+ *   - enabled, markdown, !accepted → ready (shimmer, awaiting your acceptance)
  *   - accepted + run parked        → stale (awaiting resume)
  *   - accepted                     → accepted
  */

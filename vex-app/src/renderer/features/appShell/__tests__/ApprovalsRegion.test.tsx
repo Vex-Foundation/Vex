@@ -5,7 +5,9 @@
  *   - empty pending list → renders nothing (no chrome to hide composer);
  *   - Result.ok=false → renders inline error (Codex F3 #1);
  *   - one pending row → renders one ApprovalCard with the right id;
- *   - the FIRST newly-appearing card gets `focusOnMount` (Codex F3 #3).
+ *   - the FIRST newly-appearing card gets `focusOnMount` (Codex F3 #3);
+ *   - no veil: nothing dims the session while an approval waits
+ *     (docs/design/R3-MINIMAL.md sections 8.1 and 12).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -115,11 +117,24 @@ describe("ApprovalsRegion", () => {
       data: { ok: true, data: [makeSummary({ id: "appr-only" })] },
     };
     renderRegion();
-    expect(screen.getByText(/Approval needed:/)).toBeTruthy();
+    expect(screen.getByText("Approval needed")).toBeTruthy();
     expect(screen.getByText("wallet:send")).toBeTruthy();
     // data-approval-id reflects the DTO id (used by integration / debug).
     const card = document.querySelector("[data-approval-id='appr-only']");
     expect(card).not.toBeNull();
+  });
+
+  it("draws no veil and no mask: the card is the one framed thing on screen", () => {
+    pendingState = {
+      data: { ok: true, data: [makeSummary({ id: "appr-only" })] },
+    };
+    const { container } = renderRegion();
+    expect(document.querySelector("[data-vex-area='approval-focus-mask']")).toBeNull();
+    expect(document.querySelector(".vex-approval-mask")).toBeNull();
+    // The region is the card's scroller and nothing else: no layer above it.
+    const region = container.querySelector("[data-vex-area='approvals-region']");
+    expect(region?.className).not.toMatch(/\bz-\d/);
+    expect(region?.children).toHaveLength(1);
   });
 
   it("leaves a desk click's card to the desk's own dialog", () => {

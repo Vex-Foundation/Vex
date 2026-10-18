@@ -1,0 +1,161 @@
+/* ============================================================ *
+ *  THE TYPE REGISTER: labels, figures and the two prose voices  *
+ * ============================================================ *
+ *
+ * docs/design/R3-MINIMAL.md section 1.3. globals.css imports this sheet in
+ * the slot the retired landing motif sheet held, after book.css and before
+ * motion-primitives.css, so every rule here keeps its place in the cascade:
+ * it beats the sheets above it and loses to the screen sheets below it on
+ * the same element, exactly as before. Unlayered, like every partial, so it
+ * also beats Tailwind's `@layer utilities` at the call site. */
+
+/* -------------------------------------------------------------------------
+ * THE TYPOGRAPHY REGISTER (R3, docs/design/R3-MINIMAL.md section 1)
+ *
+ * Instrument Sans (--font-sans) is every UI word: reading 15, rows 14, meta
+ * 13, small 12, labels and status words included, all in sentence case.
+ * JetBrains Mono (--font-mono) is every figure, address, time and duration,
+ * with `.vex-num` below. Instrument Serif (--font-serif) is display only.
+ * Caps belong to tags alone (REAL FUNDS, HIGH RISK: 11px, 600), which own
+ * their classes in ui-primitives/marks.css. The
+ * classes below own family, scale, case and tracking at the CLASS level, so
+ * their call sites change register in one edit: this sheet is unlayered, so
+ * a call site's `uppercase`, `tracking-*` or `font-mono` utility loses to it.
+ * ------------------------------------------------------------------------- */
+
+/* Eyebrow: the section and field label (a form legend, a section head, a
+ * dialog's small title). 13px Instrument Sans 500 in sentence case on the
+ * second ink, the field label of the kit. */
+.vex-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-ink-secondary);
+}
+
+/* Micro: the caption register (group heads, stepper lines, trailing meta).
+ * 12px Instrument Sans in sentence case, the kit's small step, everywhere:
+ * the pre-shell and the shell read one size, so the old size and tracking
+ * hooks are gone.
+ *
+ * Sets NO color and no display: every call site owns its own text tier and
+ * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
+ * site that needs a different size must not use this class. */
+.vex-micro {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Micro-LABEL: THE app-wide label stamp (status words, version stamps,
+ * dates, counts, inline tags).
+ *
+ * R3 sets it in Instrument Sans at the kit's small step:
+ *
+ *   font-size   12px      (labels are 12 or 13; this is the small one)
+ *   font-weight 400
+ *   case        none      (sentence case: the class outranks a call site's
+ *                          `uppercase`, so every label converts here)
+ *   tracking    normal    (caps tracking belongs to tags alone)
+ *   tabular-nums          (a label that carries figures must not jitter a
+ *                          column)
+ *
+ * COLOR IS A CALL-SITE DECISION, deliberately. This sheet is unlayered
+ * (globals.css keeps every import unlayered on purpose), so a `color` here
+ * would BEAT the Tailwind `text-*` utility at the call site and the genuine
+ * tone deviations (attention, accent, active-state ink) could not be
+ * expressed. The FLOOR TIER is `text-ink-secondary`; the design guard
+ * (`shell-design-guard.test.ts`) keeps the tertiary and caption tiers off
+ * this class.
+ *
+ * NO BACKING CHIP: a label never carries its own plate. */
+.vex-micro-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+/* The meta step: 13px, for the label that is a small key or a chip's word. */
+.vex-micro-label--wide {
+  font-size: 13px;
+}
+
+/* Figures: JetBrains Mono with tabular figures, so a column of numbers
+ * holds still while it updates. Every figure, address, time and duration
+ * carries it (with or without the `font-mono` utility beside it). */
+.vex-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Chat prose: the READING register for message bodies.
+ *
+ * The register (V10):
+ *   BODY      -> Instrument Sans 15.5px/1.65 (reading scale). The serif is
+ *                a display face and never sets a paragraph.
+ *   HEADINGS  -> Instrument Sans 600/700, set per-node in `MarkdownContent`.
+ *   REASONING -> Instrument Sans 14px muted (`.vex-reasoning-prose` below),
+ *                a quieter voice for a different kind of speech.
+ *   CODE      -> JetBrains Mono (--font-code) for code and raw JSON, and
+ *                (--font-mono) for figures. */
+.vex-chat-prose {
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+.vex-chat-prose strong,
+.vex-chat-prose b {
+  font-weight: 600;
+}
+.vex-chat-prose code,
+.vex-chat-prose pre {
+  font-family: var(--font-code);
+  font-style: normal;
+  font-weight: 400;
+}
+.vex-chat-prose table {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+/* The serif survivors inside chat prose are display-only (headings), and
+ * Instrument Serif still ships static 400 + 400 italic with NO weight axis:
+ * a `font-weight: 600` reaching them would be FAKED by the browser. */
+.vex-chat-prose :is(h1, h2, h3, h4, .font-serif) {
+  font-synthesis-weight: none;
+}
+
+/* Reasoning prose: the SECOND voice. Vex thinking aloud is not Vex speaking,
+ * so the aside stays MUTED and one step below the reading scale. What it no
+ * longer does is lean: the italic went with the serif in the shell-chrome
+ * sweep (owner 6/6a, ratified 2026-08-21). Deepseek's `ReasoningRow` sets the
+ * same aside in the plain UI face at a muted tier and it reads as an aside on
+ * tone and size alone; a slanted paragraph at 14px only costs legibility.
+ * Worn by all three reasoning surfaces so they read as one object: the live
+ * segment streaming in the island, the settled segment stamps, and the
+ * persisted `ReasonedBlock`.
+ *
+ * The technical opt-out stays: a tool name, a JSON fragment or an address
+ * quoted inside a trace keeps the mono face. */
+.vex-reasoning-prose {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--vex-text-2);
+}
+.vex-reasoning-prose strong,
+.vex-reasoning-prose b {
+  font-weight: 600;
+}
+.vex-reasoning-prose :is(code, pre) {
+  font-family: var(--font-code);
+}

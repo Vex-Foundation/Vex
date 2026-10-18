@@ -1,18 +1,17 @@
 /**
- * TurnStatsLine REGISTER (owner QA round 2, item 6: "88.1K IN / 554 OUT" was
- * illegible in chronos).
+ * TurnStatsLine REGISTER (docs/design/R3-MINIMAL.md section 6: "Turn stats
+ * (11.5 muted) show on hover only").
  *
- * The register was Doto, a dot-matrix face that laid down roughly half a solid
- * face's ink, so tiers calibrated for Inter Tight overstated its perceived
- * contrast. Doto retired on 2026-08-21 (owner decision 2) and the register is
- * now Inter Tight small-caps. The fix is the app-wide class plus a colour
- * tier at or above ink-secondary - never a per-spot patch, and never a size or
- * weight re-declaration at the call site (builder-C's `.vex-micro-label`
- * contract, board 2026-08-21).
+ * The line is VALUES ("88.1K in"), tabular, on the turn's 40px edge with the
+ * rest of Vex's turn, revealed only when the turn or the line is hovered or
+ * focused. Its metric and the reveal live in one class (`.vex-turn-stats`,
+ * chat-transcript.css), never re-declared at the call site.
  *
  * The pure grouping seams stay pinned in `./turnStats.test.ts`.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
@@ -45,52 +44,72 @@ afterEach(() => {
 });
 
 describe("TurnStatsLine", () => {
-  it("rides the shared micro-label class and the legible ink tier", () => {
+  const CSS = readFileSync(
+    join(process.cwd(), "src/renderer/styles/global-css/chat-transcript.css"),
+    "utf8",
+  );
+
+  function ruleBody(selector: string, from = 0): string {
+    const at = CSS.indexOf(`${selector} {`, from);
+    expect(at, `rule missing: ${selector}`).toBeGreaterThan(-1);
+    return CSS.slice(at, CSS.indexOf("}", at));
+  }
+
+  it("rides the one stats class on the turn's edge, never a per-spot register", () => {
     useLastTurnUsage.mockReturnValue(resolved(usage()));
     const { container } = render(
       createElement(TurnStatsLine, { sessionId: "s1" }),
     );
     const line = container.querySelector("[data-vex-turn-stats]");
     expect(line).not.toBeNull();
-    expect(line?.className).toContain("vex-micro-label");
-    // The retired per-spot register (11px / w500 / label-tertiary) is gone.
-    expect(line?.className).not.toContain("vex-stat-doto");
-    expect(line?.className).toContain("text-ink-secondary");
-    // Colour is the call site's, but the receding tiers are a red build on a
-    // micro label - they are the illegibility the owner reported.
-    expect(line?.className).not.toContain("text-ink-tertiary");
-    expect(line?.className).not.toContain("text-ink-caption");
-    // Size, weight, tracking and tabular-nums belong to the class alone.
-    for (const redeclared of ["text-[11px]", "text-[12px]", "font-medium", "tracking-["]) {
+    expect(line?.className).toContain("vex-turn-stats");
+    expect(line?.className).toContain("vex-reply");
+    // Size, colour, tracking and case belong to the class alone; these are
+    // VALUES, not an eyebrow.
+    for (const redeclared of [
+      "text-[11px]",
+      "text-[12px]",
+      "font-medium",
+      "tracking-[",
+      "uppercase",
+      "font-mono",
+      "vex-micro-label",
+    ]) {
       expect(line?.className).not.toContain(redeclared);
     }
-    // These are VALUES, not an eyebrow: no uppercase at the call site.
-    expect(line?.className).not.toContain("uppercase");
   });
 
-  it("paints the separator dot in a tier that is actually visible", () => {
+  it("is 11.5 muted and tabular, on the 40px edge of Vex's turn", () => {
+    const stats = ruleBody(".vex-turn-stats");
+    expect(stats).toContain("font-size: 11.5px;");
+    expect(stats).toContain("color: var(--vex-alias-label-tertiary);");
+    expect(stats).toContain("font-variant-numeric: tabular-nums;");
+    expect(ruleBody(".vex-reply")).toContain("padding-left: 40px;");
+  });
+
+  it("shows on hover or focus only, and always on touch", () => {
+    const hover = CSS.indexOf("@media (hover: hover) {\n  .vex-turn-stats {");
+    expect(hover).toBeGreaterThan(-1);
+    const block = CSS.slice(hover, CSS.indexOf("\n}\n", hover));
+    expect(block).toContain("opacity: 0;");
+    expect(block).toContain(".vex-turn-stats:hover,");
+    expect(block).toContain(".vex-turn-stats:focus-within,");
+    // Hovering the turn itself (the row right above the line) reveals it.
+    expect(block).toContain("[data-vex-entry-id]:hover + .vex-turn-stats {");
+    // Outside the hover query nothing hides it, so touch keeps it visible.
+    expect(ruleBody(".vex-turn-stats")).not.toContain("opacity");
+  });
+
+  it("separates its groups with the middle dot, as the design writes lists", () => {
     useLastTurnUsage.mockReturnValue(resolved(usage({ latestRoundCachedTokens: 44_050 })));
     const { container } = render(
       createElement(TurnStatsLine, { sessionId: "s1" }),
     );
-    // The 2x2 square (V10 radius 0): found by its size, not by a radius.
-    const dots = container.querySelectorAll('[aria-hidden][class*="h-[2px]"]');
+    const dots = container.querySelectorAll("[data-vex-turn-stats] [aria-hidden]");
     expect(dots.length).toBeGreaterThan(0);
     for (const dot of dots) {
-      expect(dot.className).toContain("bg-line-3");
-      // caption is the disabled/decoration tier; a 2px dot in it disappears.
-      expect(dot.className).not.toContain("bg-ink-caption");
+      expect(dot.textContent).toBe("\u00b7");
     }
-  });
-
-  it("stays in the assistant's 30px gutter with the rest of the family", () => {
-    useLastTurnUsage.mockReturnValue(resolved(usage()));
-    const { container } = render(
-      createElement(TurnStatsLine, { sessionId: "s1" }),
-    );
-    expect(
-      container.querySelector("[data-vex-turn-stats]")?.className,
-    ).toContain("pl-[30px]");
   });
 
   it("renders nothing when there is no settled turn to report", () => {

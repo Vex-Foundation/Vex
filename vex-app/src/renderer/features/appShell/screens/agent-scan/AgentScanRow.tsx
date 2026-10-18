@@ -4,31 +4,36 @@
  * arm (a Lighter fill) is rendered by `AgentScanLighterRow`: one list, one
  * renderer per kind, chosen by the entry's `source` discriminator.
  *
- * The row: protocol mark · ActivityBadge (kind·role + attention status) ·
- * `IN → OUT` legs · USD estimate · chain/route · time · TX↗.
+ * The row (docs/design/R3-MINIMAL.md section 9.2): the kind in caps, then
+ * `IN → OUT` with the venue, chain or route and time under it and the row's
+ * links (TX, Ask Vex, Details), the USD estimate at the right, and the state
+ * word with its consequence (`agent-scan-outcome.ts`). Every row ends in a
+ * word.
  *
- * The detail (collapsed by default): every sibling execution leg with its own
- * chain, status and explorer link; the recorded Vex fee; the failure code and
- * redacted reason on a failed row; the last successful tracking check on a
- * pending one. A bridge shows ONE logical row here with its legs nested — the
- * feed never fans a bridge out into several top-level rows, because the audit
- * question is "what did this bridge do?", not "how many database rows did it
- * write?".
+ * The detail (collapsed by default): what happened and the next step for a
+ * row that failed or whose outcome is unknown, the failure code and redacted
+ * reason, the recorded Vex fee, the order id, the last successful check of a
+ * pending row, and every sibling execution leg with its own chain, state and
+ * explorer link. A bridge shows ONE logical row here with its legs nested -
+ * the feed never fans a bridge out into several top-level rows, because the
+ * audit question is "what did this bridge do?", not "how many database rows
+ * did it write?".
  *
  * EXPLORER LINKS ARE MAIN-RESOLVED. Both `entry.explorerUrl` and each leg's
  * `explorerUrl` arrive already built through main's curated host allowlist.
- * This file NEVER derives a URL from a chain id and a hash — the renderer has
+ * This file NEVER derives a URL from a chain id and a hash - the renderer has
  * no allowlist and must not grow one. A `null` url renders as plain text.
  */
 
 import { useId, useRef, useState, type JSX } from "react";
-import { IconArrowUpRight } from "../../../../components/icons/index.js";
-import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
-import { isBridgeTrackingStale } from "@shared/bridge-tracking.js";
-import { ProtocolMark } from "../../../../components/common/ProtocolMark.js";
+import type {
+  AgentScanActivityEntry,
+  AgentScanBridgeLeg,
+} from "@shared/schemas/agent-scan-feed.js";
 import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
-import { ActivityBadge, ActivityChip } from "../../ActivityBadge.js";
+import { ActivityBadge } from "../../ActivityBadge.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
+import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   chainRouteText,
@@ -41,7 +46,9 @@ import {
   usdEstText,
   vexFeeText,
 } from "./agent-scan-display.js";
+import { activityOutcome, pendingSignal } from "./agent-scan-outcome.js";
 import { activityFollowUpMessage } from "./event-follow-up.js";
+import { ScanKind, ScanMeta, ScanState, ScanTxLink } from "./ScanRowParts.js";
 
 /** One `IN`/`OUT` leg: quantity (marked `~` when quoted) + main-resolved symbol. */
 function LegText({
@@ -57,30 +64,88 @@ function LegText({
 }): JSX.Element {
   const shown = amount !== null && estimated ? `~${amount}` : amount;
   return (
-    <span className={bound ? "min-w-0 whitespace-normal break-all" : "truncate"}>
+    <span className={bound ? "min-w-0 break-all" : "min-w-0 truncate"}>
       {shown !== null ? `${shown} ` : ""}
       {symbol}
     </span>
   );
 }
 
-/** A labelled line in the expanded detail panel. */
-function DetailLine({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: React.ReactNode;
-}): JSX.Element {
+/** A leg's own status, as a fill beside its word. */
+function legSwatch(status: string | null): SwatchState {
+  if (status === "confirmed") return "done";
+  if (status === "failed" || status === "definitively_failed") return "error";
+  if (status === "pending") return "listening";
+  return "idle";
+}
+
+/** The leg's role in plain words for the "what happened" sentence. */
+function legNoun(role: string | null): string {
+  if (role === null) return "leg";
+  if (role.startsWith("bridge_fill")) return "fill";
+  if (role === "bridge_deposit") return "deposit";
+  if (role === "bridge_refund") return "refund";
+  if (role.startsWith("allowance")) return "approval";
+  if (role.endsWith("_fee")) return "fee";
+  return role.replace(/_/g, " ");
+}
+
+function legStatusWord(status: string | null): string | null {
+  if (status === null) return null;
+  return status === "definitively_failed" ? "failed" : status;
+}
+
+/**
+ * WHAT HAPPENED, from the row's own facts only: whether a transaction left
+ * (a hash on the row or a leg) and each leg's recorded state. Nothing here is
+ * inferred beyond what the row carries.
+ */
+function whatHappened(entry: AgentScanActivityEntry, word: string): string {
+  const submitted =
+    entry.explorerUrl !== null || entry.legs.some((leg) => leg.txHash !== null);
+  const lead = word === "Failed" && submitted ? "Submitted, then failed." : `${word}.`;
+  const legLines = entry.legs
+    .map((leg) => {
+      const status = legStatusWord(leg.status);
+      if (status === null) return null;
+      const chain = leg.chainSlug ?? null;
+      return `the ${legNoun(leg.role)}${chain !== null ? ` on ${chain}` : ""} ${status}`;
+    })
+    .filter((line): line is string => line !== null);
+  if (legLines.length === 0) return lead;
+  const sentence = legLines.join("; ");
+  return `${lead} ${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
+/** The NEXT STEP for a row that failed or whose outcome is unknown. */
+function nextStep(entry: AgentScanActivityEntry): string {
+  const confirmedLeg = entry.legs.find((leg) => leg.status === "confirmed");
+  if (confirmedLeg !== undefined) {
+    return `Check the ${legNoun(confirmedLeg.role)} leg before trying again.`;
+  }
+  return "Ask Vex what happened before trying again.";
+}
+
+function LegRow({ leg }: { readonly leg: AgentScanBridgeLeg }): JSX.Element {
+  const status = legStatusWord(leg.status);
   return (
-    <div className="flex gap-2">
-      <span className="w-[92px] shrink-0 vex-micro-label uppercase text-ink-secondary">
-        {label}
-      </span>
-      <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-secondary">
-        {children}
-      </span>
-    </div>
+    <li className="vex-scan-leg">
+      <span className="vex-scan-code">{leg.role ?? "leg"}</span>
+      <span>{leg.chainSlug ?? leg.chainId ?? "-"}</span>
+      {status !== null ? (
+        <span className="inline-flex items-center gap-1.5">
+          <Swatch state={legSwatch(leg.status)} className="text-accent-primary" />
+          {status}
+        </span>
+      ) : null}
+      {leg.failureCode !== null ? <span className="vex-num">{leg.failureCode}</span> : null}
+      {leg.explorerUrl !== null ? (
+        <ScanTxLink
+          href={leg.explorerUrl}
+          label={`Open ${leg.role ?? "leg"} on block explorer`}
+        />
+      ) : null}
+    </li>
   );
 }
 
@@ -94,7 +159,7 @@ export function AgentScanRow({
   const detailId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const protocolMark = resolveProtocolMark(entry.protocol);
+  const venue = resolveProtocolMark(entry.protocol)?.label ?? null;
   const estimated = isEstimatedBasis(entry);
   const hasNativeBound = entry.input.amountBasis === "lower_bound";
   const route = chainRouteText(entry);
@@ -102,37 +167,16 @@ export function AgentScanRow({
   const usd = primaryUsdEstText(entry);
   const fee = vexFeeText(entry);
   const feeUsd = usdEstText(entry.usdFeeEst);
-  // Migration 065's DERIVED state. NOT a failure and deliberately not styled as
-  // one: `no_safe_rpc` means the outcome is UNKNOWN, and a row that renders red
-  // tells the user their funds are gone when nobody knows that. It says only
-  // what is true — repeated checks could not conclude — which is the difference
-  // between "still mining" and "we have been unable to look for forty minutes".
-  // A CONCLUSIVE observation about a pending row (migration 067). It outranks
-  // every other attention chip because it is the most specific true statement
-  // available: "we looked and it is in the mempool" beats "we could not
-  // conclude", which in turn beats "we have not checked lately".
-  const supersededTerminal = entry.status === "superseded_unproven";
-  const inMempool = entry.status === "pending" && entry.pendingReason === "in_mempool";
-  const appearsSuperseded =
-    entry.status === "pending" && entry.pendingReason === "nonce_superseded";
-  const verificationStalled =
-    entry.status === "pending"
-    && !inMempool
-    && !appearsSuperseded
-    && entry.stalledVerification;
-  // The stall supersedes the staleness chip: "we checked and could not
-  // conclude" is a strictly more specific statement than "we have not checked
-  // recently", and two attention chips on one row read as two problems.
-  const trackingDelayed =
-    entry.status === "pending" &&
-    !verificationStalled &&
-    !inMempool &&
-    !appearsSuperseded &&
-    isBridgeTrackingStale(entry.lastCheckedAt, entry.createdAt);
+  const outcome = activityOutcome(entry);
+  const signal = pendingSignal(entry);
   const lastChecked =
     entry.lastCheckedAt !== null ? timestampText(entry.lastCheckedAt) : null;
+  // A failed row, or one Vex cannot settle, opens to what happened and the
+  // next step (section 9.2); a refund is neither.
+  const explains = outcome.word === "Failed" || outcome.word === "Status unknown";
 
   const hasDetail =
+    explains ||
     entry.legs.length > 0 ||
     fee !== null ||
     feeUsd !== null ||
@@ -141,241 +185,142 @@ export function AgentScanRow({
     entry.providerOrderId !== null ||
     entry.status === "pending";
 
+  const askVex = (): void => openCreateSession(activityFollowUpMessage(entry));
+
+  const metaParts = [
+    ...(venue !== null ? [{ key: "venue", text: venue }] : []),
+    ...(route !== null ? [{ key: "route", text: route }] : []),
+    ...(clock !== null ? [{ key: "time", text: clock, figure: true }] : []),
+  ];
+
   // A plain <div>: the virtualized feed owns the <ul>/<li> structure, because
   // each row must sit in an absolutely-positioned measured wrapper.
   return (
-    <div className="border-b border-line-2 px-1 py-2">
-      <div className="flex items-center gap-2">
-        <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-          <ProtocolMark mark={protocolMark} size={14} />
-        </span>
-        <ActivityBadge
-          kind={entry.activityKind}
-          eventRole={entry.eventRole}
-          status={entry.status}
-          statusTitle={entry.failureCode ?? undefined}
-        />
-        {inMempool ? (
-          // `paper`, never `warning`: this is the HEALTHY pending answer — a
-          // node knows the transaction and it is waiting for inclusion.
-          <ActivityChip
-            tone="paper"
-            text="in mempool"
-            title={
-              lastChecked !== null
-                ? `Known to a node and waiting for inclusion - last checked ${lastChecked}. Vex re-checks this automatically.`
-                : "Known to a node and waiting for inclusion. Vex re-checks this automatically."
-            }
-          />
-        ) : null}
-        {appearsSuperseded || supersededTerminal ? (
-          // NEVER `danger`. The title states exactly what was established and
-          // refuses the two things that were not: that nothing was spent, and
-          // that a retry is safe.
-          <ActivityChip
-            tone="paper"
-            text={supersededTerminal ? "superseded" : "appears superseded"}
-            title={
-              "Another transaction from this wallet used this one's nonce; what it did has not been checked."
-              + (supersededTerminal ? " Vex has stopped tracking this as in flight - the outcome is unproven." : "")
-            }
-          />
-        ) : null}
-        {verificationStalled ? (
-          // `paper`, never `danger`/`warning`: this is a statement about OUR
-          // knowledge, not about the transaction's outcome.
-          <ActivityChip
-            tone="paper"
-            text="verification stalled"
-            title={
-              entry.stalledReason !== null
-                ? `Repeated checks could not confirm this yet (${entry.stalledReason}). Still pending - nothing has failed.`
-                : "Repeated checks could not confirm this yet. Still pending - nothing has failed."
-            }
-          />
-        ) : null}
-        {trackingDelayed ? (
-          // R12: a pending row whose sweep check has fallen far behind is NOT
-          // reassuringly "tracked" — say so instead of implying progress.
-          <ActivityChip
-            tone="accent"
-            text="tracking delayed"
-            title={
-              lastChecked !== null
-                ? `Tracking delayed - last checked ${lastChecked}`
-                : "Tracking delayed - not yet checked since this started"
-            }
-          />
-        ) : null}
+    <div className="vex-scan-row" data-open={open ? "" : undefined}>
+      <ScanKind>
+        {/* The kind and role only: the state is the word at the row's end. */}
+        <ActivityBadge kind={entry.activityKind} eventRole={entry.eventRole} status={null} />
+      </ScanKind>
 
-        <span className={`flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11.5px] text-ink-primary ${hasNativeBound ? "flex-wrap whitespace-normal leading-relaxed" : "overflow-hidden whitespace-nowrap leading-none"}`}>
+      <div className="vex-scan-what">
+        <span className="vex-scan-legs" data-wrap={hasNativeBound ? "" : undefined}>
           <LegText
             amount={legAmountText(entry.input)}
             symbol={legSymbolText(entry.input)}
             estimated={estimated}
             bound={hasNativeBound}
           />
-          <span className="shrink-0 text-ink-tertiary">→</span>
+          <span aria-hidden className="vex-scan-legs__arrow">→</span>
           <LegText
             amount={legAmountText(entry.output)}
             symbol={legSymbolText(entry.output)}
             estimated={estimated}
           />
-          {estimated ? (
-            <span className="shrink-0 vex-micro-label uppercase text-ink-secondary">
-              est.
-            </span>
-          ) : null}
+          {estimated ? <span className="vex-scan-est">est.</span> : null}
         </span>
-
-        {usd !== null ? (
-          <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-ink-primary">
-            {usd}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="mt-1 flex items-center gap-2 pl-[22px] font-mono text-[10px] tabular-nums text-ink-tertiary">
-        {route !== null ? <span className="truncate">{route}</span> : null}
-        {clock !== null ? <span className="shrink-0">{clock}</span> : null}
-        {entry.explorerUrl !== null ? (
-          <a
-            href={entry.explorerUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open transaction on block explorer"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-          >
-            TX
-            <IconArrowUpRight size={11} />
-          </a>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => openCreateSession(activityFollowUpMessage(entry))}
-          className="ml-auto shrink-0 rounded-[3px] border border-line-2 px-2 py-1 vex-micro-label uppercase text-ink-secondary transition-colors hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-        >
-          Ask Vex
-        </button>
-        {hasDetail ? (
-          <button
-            ref={triggerRef}
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            aria-controls={detailId}
-            aria-label={`${open ? "Hide" : "Show"} details for this activity`}
-            className="ml-auto shrink-0 uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-          >
-            {open ? "Hide" : "Details"}
+        <ScanMeta parts={metaParts}>
+          {entry.explorerUrl !== null ? (
+            <ScanTxLink href={entry.explorerUrl} label="Open transaction on block explorer" />
+          ) : null}
+          <button type="button" onClick={askVex} className="vex-scan-link">
+            Ask Vex
           </button>
-        ) : null}
+          {hasDetail ? (
+            <button
+              ref={triggerRef}
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              aria-controls={detailId}
+              aria-label={`${open ? "Hide" : "Show"} details for this activity`}
+              className="vex-scan-link"
+            >
+              {open ? "Hide" : "Details"}
+            </button>
+          ) : null}
+        </ScanMeta>
       </div>
+
+      <span className="vex-scan-value">{usd ?? ""}</span>
+
+      <ScanState outcome={outcome} />
 
       <ExpandRegion
         id={detailId}
         open={open}
         triggerRef={triggerRef}
-        className="mt-2 flex flex-col gap-1.5 rounded-xl border border-line-1 bg-surface-1 px-3 py-2.5"
+        outerClassName="vex-scan-expand"
       >
+        <dl className="vex-scan-detail">
+          {explains ? (
+            <>
+              <dt>What happened</dt>
+              <dd>{whatHappened(entry, outcome.word)}</dd>
+              <dt>Next step</dt>
+              <dd>
+                {nextStep(entry)}{" "}
+                <button type="button" onClick={askVex} className="vex-scan-link">
+                  Ask Vex to check it
+                </button>
+              </dd>
+            </>
+          ) : null}
           {entry.failureCode !== null || entry.failureReason !== null ? (
-            <DetailLine label="Failure">
-              <span className="text-warning-label">
+            <>
+              <dt>Failure</dt>
+              <dd className="vex-num">
                 {entry.failureCode ?? "unknown"}
                 {entry.failureReason !== null ? ` - ${entry.failureReason}` : ""}
-              </span>
-            </DetailLine>
+              </dd>
+            </>
           ) : null}
           {fee !== null ? (
-            <DetailLine label="Vex fee">
-              {fee}
-              {feeUsd !== null ? (
-                <span className="text-ink-tertiary"> ({feeUsd})</span>
-              ) : null}
-            </DetailLine>
+            <>
+              <dt>Vex fee</dt>
+              <dd>
+                {fee}
+                {feeUsd !== null ? <span className="text-ink-tertiary"> ({feeUsd})</span> : null}
+              </dd>
+            </>
           ) : null}
           {entry.providerOrderId !== null ? (
-            <DetailLine label="Order">
-              <span className="font-mono text-[10px]">{entry.providerOrderId}</span>
-            </DetailLine>
+            <>
+              <dt>Order</dt>
+              <dd className="vex-num">{entry.providerOrderId}</dd>
+            </>
           ) : null}
           {entry.status === "pending" ? (
-            <DetailLine label="Last check">
-              {lastChecked ?? "Not checked yet since this started"}
-            </DetailLine>
+            <>
+              <dt>Last check</dt>
+              <dd>{lastChecked ?? "Not checked yet since this started"}</dd>
+            </>
           ) : null}
-          {inMempool ? (
-          // `paper`, never `warning`: this is the HEALTHY pending answer — a
-          // node knows the transaction and it is waiting for inclusion.
-          <ActivityChip
-            tone="paper"
-            text="in mempool"
-            title={
-              lastChecked !== null
-                ? `Known to a node and waiting for inclusion - last checked ${lastChecked}. Vex re-checks this automatically.`
-                : "Known to a node and waiting for inclusion. Vex re-checks this automatically."
-            }
-          />
-        ) : null}
-        {appearsSuperseded || supersededTerminal ? (
-          // NEVER `danger`. The title states exactly what was established and
-          // refuses the two things that were not: that nothing was spent, and
-          // that a retry is safe.
-          <ActivityChip
-            tone="paper"
-            text={supersededTerminal ? "superseded" : "appears superseded"}
-            title={
-              "Another transaction from this wallet used this one's nonce; what it did has not been checked."
-              + (supersededTerminal ? " Vex has stopped tracking this as in flight - the outcome is unproven." : "")
-            }
-          />
-        ) : null}
-        {verificationStalled ? (
-            <DetailLine label="Stalled">
-              {entry.stalledReason !== null
-                ? `Could not conclude: ${entry.stalledReason}. Still pending - this is not a failure.`
-                : "Repeated checks could not conclude. Still pending - this is not a failure."}
-            </DetailLine>
+          {signal === "verification_stalled" ? (
+            <>
+              <dt>Stalled</dt>
+              <dd>
+                {entry.stalledReason !== null
+                  ? `Could not conclude: ${entry.stalledReason}. Still pending - this is not a failure.`
+                  : "Repeated checks could not conclude. Still pending - this is not a failure."}
+              </dd>
+            </>
           ) : null}
           {entry.legs.length > 0 ? (
-            <DetailLine label="Legs">
-              <ul className="flex flex-col gap-1">
-                {entry.legs.map((leg, index) => (
-                  <li
-                    key={`${leg.role ?? "leg"}:${index}:${leg.txHash ?? "none"}`}
-                    className="flex items-center gap-2 font-mono text-[10px] tabular-nums text-ink-tertiary"
-                  >
-                    <span className="inline-flex h-3.5 min-w-[92px] shrink-0 items-center justify-center rounded-[3px] border border-line-2 px-1 uppercase tracking-[0.14em]">
-                      {leg.role ?? "leg"}
-                    </span>
-                    <span className="shrink-0">
-                      {leg.chainSlug ?? leg.chainId ?? "-"}
-                    </span>
-                    {leg.status !== null ? (
-                      <span className="shrink-0">{leg.status}</span>
-                    ) : null}
-                    {leg.failureCode !== null ? (
-                      <span className="shrink-0 text-warning-label">
-                        {leg.failureCode}
-                      </span>
-                    ) : null}
-                    {leg.explorerUrl !== null ? (
-                      <a
-                        href={leg.explorerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`Open ${leg.role ?? "leg"} on block explorer`}
-                        className="inline-flex shrink-0 items-center gap-0.5 rounded-[3px] uppercase tracking-[0.14em] transition-colors hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-                      >
-                        TX
-                        <IconArrowUpRight size={10} />
-                      </a>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </DetailLine>
+            <>
+              <dt>Legs</dt>
+              <dd>
+                <ul className="vex-scan-legs-list">
+                  {entry.legs.map((leg, index) => (
+                    <LegRow
+                      key={`${leg.role ?? "leg"}:${index}:${leg.txHash ?? "none"}`}
+                      leg={leg}
+                    />
+                  ))}
+                </ul>
+              </dd>
+            </>
           ) : null}
+        </dl>
       </ExpandRegion>
     </div>
   );

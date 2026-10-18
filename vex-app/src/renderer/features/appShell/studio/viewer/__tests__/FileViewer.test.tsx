@@ -284,6 +284,8 @@ describe("refusals are answers about the file", () => {
     files.responder = () => refused("too_large", 3_145_728);
     await mount();
     const refusal = screen.getByTestId("file-viewer-refusal");
+    // The refusal is the empty block's one plain sentence, not a callout.
+    expect(refusal.hasAttribute("data-vex-empty-block")).toBe(true);
     expect(refusal.textContent).toContain("3.0 MiB");
     expect(refusal.textContent).toContain("2.0 MiB");
     // No escape hatch: the refusal is main's and the renderer cannot grant
@@ -307,7 +309,10 @@ describe("refusals are answers about the file", () => {
   it("offers Retry on a transport failure, and it re-reads", async () => {
     files.responder = transportFailure;
     await mount();
-    expect(screen.getByTestId("file-viewer-failure")).toBeTruthy();
+    // A read that never got an answer is the ink callout, never red.
+    expect(
+      screen.getByTestId("file-viewer-failure").getAttribute("data-vex-callout"),
+    ).toBe("error");
 
     files.responder = () => ok(contentOf("recovered\n"));
     await act(async () => {

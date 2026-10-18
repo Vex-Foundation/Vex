@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type JSX, type ReactNode } from "react";
 import type {
   LighterDeskPrepareProgressEvent,
   LighterOnboardingChecklist,
@@ -7,6 +7,7 @@ import type {
   LighterTradingMarket,
 } from "@shared/schemas/lighter-trading.js";
 import { VexMark } from "../../../components/common/VexMark.js";
+import { LineChevronRight } from "../../../components/icons/line/index.js";
 import type { LighterOrderBookData } from "./book-model.js";
 import { isPositiveDecimal } from "./decimal.js";
 import { NO_VALUE, formatDecimalString, formatNumber, formatProviderPercent } from "./format.js";
@@ -32,6 +33,7 @@ import {
   type TradeTicketPrefill,
   type TradeTicketPricePick,
 } from "./ticket-model.js";
+import { setDeskReviewSlot, useDeskReviewShowing } from "./desk-review-slot.js";
 import { useTradeTicketForm, type TradeTicketForm } from "./useTradeTicketForm.js";
 
 const ONBOARDING_STEPS = [
@@ -131,6 +133,33 @@ export function TradeTicket({
     market, book, lastPrice, available, baseAvailable, equity, margin, exchangeFees, markPrice, dataFresh, prefill, pricePick,
   });
   const { mode, side, protective, triggerLimit, perp, symbols } = form;
+  // The desk's review takes this column (docs/design/R3-MINIMAL.md section
+  // 8.6): the form steps aside, kept mounted so the draft survives, and the
+  // slot beside it shows the review. When the review leaves with focus inside
+  // it, focus comes back to the side key, as the modal's own close did.
+  const reviewShowing = useDeskReviewShowing();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const slotRef = useRef<HTMLDivElement | null>(null);
+  const attachSlot = useCallback((element: HTMLDivElement | null): void => {
+    slotRef.current = element;
+    setDeskReviewSlot(element);
+  }, []);
+  const reviewWasShowing = useRef(reviewShowing);
+  useEffect(() => {
+    if (reviewWasShowing.current && !reviewShowing) {
+      const active = document.activeElement;
+      const stranded = active === null || active === document.body || !active.isConnected
+        || slotRef.current?.contains(active) === true;
+      if (stranded) formRef.current?.querySelector<HTMLElement>(".lit-side-actions [data-active]")?.focus({ preventScroll: true });
+    }
+    reviewWasShowing.current = reviewShowing;
+  }, [reviewShowing]);
+  const withReview = (ticket: ReactNode): JSX.Element => (
+    <>
+      {ticket}
+      <div className="lit-review-slot" ref={attachSlot} hidden={!reviewShowing} />
+    </>
+  );
   const availableForSide = market.marketType === "spot" && side === "sell" ? (baseAvailable ?? null) : available;
   const availableSymbol = market.marketType === "spot" && side === "sell" ? symbols.base : settlementSymbol;
   // A fresh ticket is incomplete, not wrong: problems show once a field changes.
@@ -218,8 +247,8 @@ export function TradeTicket({
   // dashes. The chart and book keep working; the dock says the same words.
   if (accountGap === "not_onboarded") {
     const setupAction = checklist?.nextAction ?? "start_setup";
-    return (
-      <form className="lit-ticket" aria-label="Order ticket" data-gate="not-connected" data-setup-progress={checklist?.progress} onSubmit={(event) => event.preventDefault()}>
+    return withReview(
+      <form ref={formRef} hidden={reviewShowing} className="lit-ticket" aria-label="Order ticket" data-gate="not-connected" data-setup-progress={checklist?.progress} onSubmit={(event) => event.preventDefault()}>
         <div className="lit-ticket-connect" role="status" aria-live="polite">
           <b>Lighter setup</b>
           <span>{checklist?.detail ?? "Vex checks your account, then guides each required approval in the chat."}</span>
@@ -238,12 +267,14 @@ export function TradeTicket({
             {SETUP_ACTION_TEXT[setupAction]}
           </button>
         </div>
-      </form>
+      </form>,
     );
   }
 
-  return (
+  return withReview(
     <form
+      ref={formRef}
+      hidden={reviewShowing}
       onSubmit={onSubmit}
       onChange={() => setTouched(true)}
       className="lit-ticket"
@@ -265,11 +296,11 @@ export function TradeTicket({
             {margin === null
               ? "Leverage"
               : `${margin.marginMode === "cross" ? "Cross" : "Isolated"} · ${leverageLabel(margin.initialMarginFraction)}`}
-            <i aria-hidden="true">›</i>
+            <LineChevronRight size={14} />
           </button>
         ) : null}
         <span className="lit-ticket-available">
-          <small>Avbl</small>
+          <small>Available</small>
           <b>{availableForSide === null ? NO_VALUE : `${formatDecimalString(availableForSide)} ${availableSymbol}`}</b>
         </span>
       </div>
@@ -449,7 +480,7 @@ export function TradeTicket({
 
         {mode === "limit" || triggerLimit ? (
           <fieldset className="lit-tif-field">
-            <legend>Time in Force</legend>
+            <legend>Time in force</legend>
             <div className="lit-tif-tabs">
               {(Object.keys(LIMIT_TIME_IN_FORCE_LABELS) as LimitTimeInForce[]).map((item) => (
                 <button
@@ -513,7 +544,7 @@ export function TradeTicket({
             pinned, so a short panel never hides the price and size fields. */}
         <dl className="lit-ticket-facts">
           <div>
-            <dt>Order Value</dt>
+            <dt>Order value</dt>
             <dd>{quote(form.orderValue)}</dd>
           </div>
           {perp ? (
@@ -523,11 +554,11 @@ export function TradeTicket({
                 <dd>{quote(form.cost)}</dd>
               </div>
               <div>
-                <dt>Max Size</dt>
+                <dt>Max size</dt>
                 <dd>{form.maxSize === null ? NO_VALUE : `${formatDecimalString(form.maxSize)} ${symbols.base}`}</dd>
               </div>
               <div>
-                <dt>Liq. Price</dt>
+                <dt>Liq. price</dt>
                 <dd title="Isolated-style estimate for this order alone; cross accounts liquidate on the whole portfolio.">
                   {form.liquidationEstimate === null ? NO_VALUE : `≈ ${formatNumber(form.liquidationEstimate, priceDigits)}`}
                 </dd>
@@ -535,12 +566,12 @@ export function TradeTicket({
             </>
           ) : null}
           <div>
-            <dt title={feeBreakdownTitle(form.feeRate)}>Fee ({form.feeRate.label})</dt>
+            <dt title={feeBreakdownTitle(form.feeRate)}>Fee ({form.feeRate.label.toLowerCase()})</dt>
             <dd>{form.estimatedFee === null ? NO_VALUE : `≈ ${quote(form.estimatedFee, 4)}`}</dd>
           </div>
           {mode === "market" ? (
             <div>
-              <dt title={hardBoundLabel(side)}>{hardBoundShortLabel(side)}</dt>
+              <dt title={hardBoundLabel(side)}>{sentenceCase(hardBoundShortLabel(side))}</dt>
               <dd>{form.worstPrice === null ? NO_VALUE : formatDecimalString(form.worstPrice)}</dd>
             </div>
           ) : (
@@ -621,8 +652,13 @@ export function TradeTicket({
           </button>
         ) : null}
       </div>
-    </form>
+    </form>,
   );
+}
+
+/** A facts label in sentence case (docs/design/R3-MINIMAL.md section 1.3): "Max Buy" reads "Max buy". */
+function sentenceCase(label: string): string {
+  return `${label.charAt(0)}${label.slice(1).toLowerCase()}`;
 }
 
 /**
@@ -741,7 +777,7 @@ function ProtectSection({ form }: { readonly form: TradeTicketForm }): JSX.Eleme
   return (
     <div className="lit-protect" role="group" aria-label="Take profit and stop loss">
       <label className="lit-protect-row">
-        <span>Take Profit</span>
+        <span>Take profit</span>
         <span className="lit-input-shell">
           <input
             value={form.takeProfitTriggerPrice}
@@ -756,7 +792,7 @@ function ProtectSection({ form }: { readonly form: TradeTicketForm }): JSX.Eleme
         <small>{boundNote(form.protection?.takeProfit ?? null)}</small>
       </label>
       <label className="lit-protect-row">
-        <span>Stop Loss</span>
+        <span>Stop loss</span>
         <span className="lit-input-shell">
           <input
             value={form.stopLossTriggerPrice}

@@ -34,17 +34,6 @@
    * surface reads this token instead of a raw colour, so a theme flip carries
    * the contrast automatically. */
   --vex-accent-contrast: var(--vex-alias-label-on-accent);
-  /* THE GLASS TIERS, NEUTRALISED (V10: no glass, no blur). The tier names
-   * stay because their classes (glass.css) and two call sites still read
-   * them; each tint is now an OPAQUE surface alias, so the room under a tier
-   * never shows through. WP18 deletes the tiers with their call sites. */
-  --vex-glass-tint-rail: var(--vex-alias-bg-base);
-  --vex-glass-tint-card: var(--vex-alias-bg-layer-1);
-  --vex-glass-tint-pane: var(--vex-alias-field);
-  /* The edge a neutralised tier draws: one 1px rule inside its box, the V10
-   * region divider. A hairline, not an elevation: it is the only box-shadow
-   * glass.css may declare. */
-  --vex-glass-rule: inset 0 0 0 1px var(--vex-alias-rule);
   /* COMPATIBILITY ALIASES, each with a named consumer and a removal
    * condition (glass-tokens.test.ts fails the moment an alias has no `var()`
    * consumer left, which is the signal to delete it here): none are left;
@@ -97,13 +86,13 @@
 [data-vex-shell="true"] *::-webkit-scrollbar-corner {
   background: transparent;
 }
-/* THE SPREAD (docs/design/V10-SPREAD.md section 2): five grid tracks, left
- * page | gutter | Studio rail | centre | BOOK, solved by lib/shell-columns.ts.
- * Opening and closing animates the tracks on the standard curve; a drag
+/* THE FRAME (docs/design/R3-MINIMAL.md section 2): three grid tracks, left
+ * sidebar | centre | Vex sidebar, solved by lib/shell-columns.ts. Opening and
+ * closing animates the tracks on the standard curve; Lighter's chat share drag
  * writes widths at pointer cadence, so easing them would detach the column
  * edge from the handle. */
 .vex-shell-frame {
-  position: relative; /* anchors the drag handles, which straddle column borders */
+  position: relative; /* anchors the chat share handle, which straddles a column border */
   display: grid;
   grid-template-rows: 100%;
   overflow: hidden;
@@ -113,11 +102,12 @@
   transition: none;
 }
 
-/* Drag handles are frame children (columns clip overflow): an 8px hit strip
- * centered on the column border via inline left, above column content. The
- * BOOK side adds a visible 12x32 pill at vertical center; the sidebar keeps
- * only the hit strip. The strip rides the same curve as the tracks so it
- * stays on the moving border during collapse/expand. */
+/* The one drag handle left, Lighter's chat share, is a frame child (columns
+ * clip overflow): an 8px hit strip centered on the column border via inline
+ * left, above column content, with a visible 12x32 pill at vertical center.
+ * The sidebars have fixed widths and no handle. The strip rides the same
+ * curve as the tracks so it stays on the moving border during collapse and
+ * expand. */
 .vex-shell-handle {
   position: absolute;
   top: 0;
@@ -140,14 +130,10 @@
  * not where the mouse happens to be. Painted on a pseudo-element that never
  * hit-tests, so it cannot eat the drag it is advertising.
  *
- * Both sides get it. The BOOK side already had its 12x32 pill and the sidebar
- * side had NO resting feedback at all - the strip was invisible until the
- * cursor changed - which is the gap this closes.
- *
  * Rejected from VS Code: the hover DELAY (`hoverDelayer`, `globalHoverDelay`).
  * It exists to keep corner sashes from flickering when a pointer crosses two
- * of them; our two handles are far apart and never orthogonal, so a delay
- * would only make the seam feel unresponsive. */
+ * of them; the frame has one handle, so a delay would only make the seam feel
+ * unresponsive. */
 .vex-shell-handle::before {
   content: "";
   position: absolute;
@@ -165,7 +151,7 @@
 .vex-shell-handle[data-dragging]::before {
   background: color-mix(in oklab, var(--vex-accent) 55%, transparent);
 }
-.vex-shell-handle[data-side="book"]::after {
+.vex-shell-handle::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -179,9 +165,9 @@
   opacity: 0;
   transition: opacity var(--vex-duration-reveal) var(--vex-ease-inout);
 }
-.vex-shell-handle[data-side="book"]:hover::after,
-.vex-shell-handle[data-side="book"]:focus-visible::after,
-.vex-shell-handle[data-side="book"][data-dragging]::after {
+.vex-shell-handle:hover::after,
+.vex-shell-handle:focus-visible::after,
+.vex-shell-handle[data-dragging]::after {
   opacity: 1;
   border-color: var(--vex-alias-border-l3);
 }
@@ -189,61 +175,14 @@
   .vex-shell-frame,
   .vex-shell-handle,
   .vex-shell-handle::before,
-  .vex-shell-handle[data-side="book"]::after {
+  .vex-shell-handle::after {
     transition: none;
   }
 }
 
-/* THE LEFT PAGE (docs/design/V10-SPREAD.md section 3): the print in place.
- * Each image is laid out at window size from the column's top left corner,
- * which is the window's, so the 300px page and the 56px spine are windows
- * onto one picture, the one the unlock stage shows full window. The plate
- * colour fills in while the photograph decodes: the night print's darkest
- * tone, and the day print's mid tone in celeris. */
-.vex-print {
-  background: #150f0d;
-}
-[data-vex-theme="celeris"] .vex-print {
-  background: #c7b6a6;
-}
-.vex-print__img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  max-width: none;
-  object-fit: cover;
-  object-position: 60% 50%;
-}
-/* The user's own image: shown as it is, centred, in either room. */
-.vex-print__img--custom {
-  object-position: 50% 50%;
-}
-/* One print per room, swapped on data-vex-theme (stamped on the shell root
- * and documentElement), never by a JS theme read. */
-.vex-print__img--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-print__img--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-print__img--night {
-  display: none;
-}
-/* The print's grain (the print plate's own file): fractal noise, multiplied
- * at 10%, over the photograph only. */
-.vex-print__grain {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  opacity: 0.1;
-  mix-blend-mode: multiply;
-  background-image: url(/art/grain.svg);
-  background-size: 220px 220px;
-}
-/* The spine's paper cap: the head row runs across it, rule included, and the
- * print starts under it. A window drag region like every head row. */
+/* The rail's paper cap: the head row runs across it, rule included, and the
+ * rail's content starts under it, clear of the macOS traffic lights. A window
+ * drag region like every head row. */
 .vex-left-page__cap {
   position: absolute;
   z-index: 3;
@@ -254,7 +193,7 @@
   background: var(--vex-surface-0);
   border-bottom: 1px solid var(--vex-alias-rule);
 }
-/* The page's furniture, over the print. On the spine it starts under the
+/* The column's content, over the print. On the rail it starts under the
  * cap, clear of the macOS traffic lights. */
 .vex-left-page__content {
   position: relative;
@@ -266,141 +205,23 @@
   padding-top: var(--head-h);
 }
 
-/* THE GUTTER (docs/design/V10-SPREAD.md section 5): the binding, with the
- * spread caption set vertically down it. Three groups spread from top to
- * bottom; 22px beside an open page, 11px beside a spine. */
-.vex-gutter {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  padding: 72px 0 32px;
-  writing-mode: vertical-rl;
-  background: var(--vex-surface-0);
-  color: var(--vex-accent);
-  font-family: var(--font-mono);
-  font-size: 22px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: var(--tracking-caption);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.vex-gutter[data-vex-gutter="small"] {
-  padding: 64px 0 24px;
-  font-size: 11px;
-  letter-spacing: var(--tracking-eyebrow);
-}
-.vex-gutter__group {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The caption's words are painted from data-caption, never written into the
- * page's text: the column only repeats words other surfaces own. */
-.vex-gutter__group::after,
-.vex-running-head__fold::after {
-  content: attr(data-caption);
-}
-.vex-gutter[data-vex-gutter="small"] .vex-gutter__group {
-  gap: 9px;
-}
-
-/* THE RUNNING HEAD (docs/design/V10-SPREAD.md section 4): the centre page's
- * 44px head row and the window's drag region. Its right padding reserves the
- * Windows and Linux caption buttons wherever the BOOK under them is narrower
- * than they are (`--vex-book-track` is the solved BOOK track, set by the
- * frame; `--overlay-w` is 0 on macOS and on a native frame).
- *
- * NO Z-INDEX, so the row is not a stacking context. The popovers its controls
- * open (the Studio host status card, the notification center, the approvals
- * inbox) then stack by their own z-index against the page under the row; a
- * z-index here capped all of them at the row's own, and at 10 the host status
- * card painted under the Studio welcome's z-10 column. */
-.vex-running-head {
-  position: relative;
-  display: grid;
-  flex-shrink: 0;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  height: var(--head-h);
-  padding-inline: 32px max(16px, calc(var(--overlay-w) + 8px - var(--vex-book-track, 0px)));
-  border-bottom: 1px solid var(--vex-alias-rule);
-}
-/* The welcome stage: an empty head, so the rule under it is clear. */
-.vex-running-head[data-empty] {
-  border-bottom-color: transparent;
-}
-.vex-shell-frame[data-vex-spread-narrow] .vex-running-head {
-  padding-inline-start: 24px;
-}
-.vex-running-head__start {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-}
-.vex-running-head__centre {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-}
-.vex-running-head__flank {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-/* The welcome stage's clear head row runs across the spine's cap too. */
+/* The title bar's own rules live in title-bar.css. */
+/* The welcome stage's clear head row runs across the rail's cap too. */
 .vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {
   border-bottom-color: transparent;
 }
-/* Under the spread the gutter folds into the head: its context rides here. */
-.vex-running-head__fold {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--tracking-status);
-  text-transform: uppercase;
-  color: var(--vex-text-2);
+/* Pages open inside the centre column (docs/design/R3-MINIMAL.md section 2.3):
+ * the sheet's left edge is the column's own, so both sidebars stay standing.
+ * The frame keeps the window-level value for the sheet's entrance morph. */
+.vex-shell-centre {
+  --vex-overlay-left: 0px;
 }
 
-/* Studio under the spread on macOS: the rail sits right of the 56px spine,
- * under the traffic lights, so it starts below the head row as the spine
- * does, with the head row's rule carried across. */
-html[data-os="mac"] .vex-shell-frame[data-vex-spread-narrow] .vex-rail-slot {
-  padding-top: var(--head-h);
-}
-html[data-os="mac"] .vex-shell-frame[data-vex-spread-narrow] .vex-rail-slot::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: var(--head-h);
-  border-bottom: 1px solid var(--vex-alias-rule);
-}
-
-/* The BOOK's head row sits under the Windows and Linux caption buttons. Open,
- * it reserves their width (`.vex-overlay-end`); closed to its 48px spine, the
- * toggle drops below the 44px row instead. */
-html[data-chrome="overlay"] [data-vex-book-open="false"] > .vex-book-head {
-  padding-top: var(--head-h);
+/* Studio's open sidebar sits in the left column, under the macOS traffic
+ * lights: its head row starts its content at 92 like the left sidebar head
+ * (docs/design/R3-MINIMAL.md section 2.2). The rail clears them with the cap. */
+html[data-os="mac"] [data-vex-left-page="page"] [data-vex-area="studio-sidebar"] > header {
+  padding-inline-start: 92px;
 }
 
 /* Sidebar scrollbars are a pointer affordance: the column seeds the l2

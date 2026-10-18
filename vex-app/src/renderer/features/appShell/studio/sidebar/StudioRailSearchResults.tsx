@@ -25,7 +25,7 @@
 import type { JSX } from "react";
 import type { FileNode } from "@shared/schemas/files.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
-import { IconFile, IconFolderClose } from "../../../../components/icons/index.js";
+import { LineFile, LineFolder } from "../../../../components/icons/line/index.js";
 import { SEARCH_INDEX_AGE_NOTICE_MS } from "@shared/schemas/studio-search.js";
 import {
   STUDIO_SEARCH_EMPTY,
@@ -90,12 +90,12 @@ export function StudioRailSearchResults({
   const showAge = indexAgeMs !== null && indexAgeMs >= SEARCH_INDEX_AGE_NOTICE_MS;
 
   return (
-    <div className="vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip px-2 py-3">
+    <div className="vex-scroll vex-scroll-overlay min-h-0 flex-1 overflow-y-auto overflow-x-clip pb-3">
       {hits === 0 ? (
         // "Nothing matched" is only honest once the index has answered. While
         // the walk is running the file half has not been consulted at all, and
         // saying there are no matches would be a claim nothing supports.
-        <p role="status" className="px-2 py-3 text-[12px] leading-[18px] text-ink-secondary">
+        <p role="status" className="px-2.5 py-3 text-[13px] leading-[1.5] text-ink-tertiary">
           {building ? STUDIO_SEARCH_INDEX_BUILDING : STUDIO_SEARCH_EMPTY}
         </p>
       ) : (
@@ -110,7 +110,7 @@ export function StudioRailSearchResults({
                   active={activeIndex === projectOffset + index}
                   title={project.name}
                   detail={project.displayPath}
-                  glyph={<IconFolderClose size={13} />}
+                  glyph={<LineFolder size={14} />}
                   onActivate={() => onOpenProject(project.id)}
                 />
               ))}
@@ -126,7 +126,7 @@ export function StudioRailSearchResults({
                   active={activeIndex === fileOffset + index}
                   title={node.name}
                   detail={node.path}
-                  glyph={<IconFile size={13} />}
+                  glyph={<LineFile size={14} />}
                   onActivate={() => onOpenFile(node)}
                 />
               ))}
@@ -135,9 +135,9 @@ export function StudioRailSearchResults({
         </div>
       )}
 
-      <div className="mt-2 flex flex-col gap-1 px-2">
+      <div className="mt-2 flex flex-col gap-1 px-2.5">
         {results.projectMatchCount > RAIL_SEARCH_GROUP_LIMIT ? (
-          <p className="text-[11px] leading-[16px] text-ink-tertiary">
+          <p className="text-[12px] leading-[1.45] text-ink-tertiary">
             {`${STUDIO_SEARCH_GROUP_PROJECTS}: ${studioSearchShowingLine(
               results.projects.length,
               results.projectMatchCount,
@@ -145,7 +145,7 @@ export function StudioRailSearchResults({
           </p>
         ) : null}
         {results.fileMatchCount > RAIL_SEARCH_GROUP_LIMIT ? (
-          <p className="text-[11px] leading-[16px] text-ink-tertiary">
+          <p className="text-[12px] leading-[1.45] text-ink-tertiary">
             {`${STUDIO_SEARCH_GROUP_FILES}: ${studioSearchShowingLine(
               results.files.length,
               results.fileMatchCount,
@@ -158,7 +158,7 @@ export function StudioRailSearchResults({
           * Only reachable before the index answers - after that the loaded
           * reader is no longer what bounds the answer. */}
         {results.scanTruncated ? (
-          <p role="status" className="text-[11px] leading-[16px] text-warning">
+          <p role="status" className="text-[12px] leading-[1.45] text-ink-primary">
             {studioSearchScanTruncatedLine(RAIL_SEARCH_SCAN_MAX)}
           </p>
         ) : null}
@@ -166,27 +166,27 @@ export function StudioRailSearchResults({
           * name that was never collected cannot be found, so an empty result
           * is not evidence the file is absent. */}
         {results.indexState === "capped" ? (
-          <p role="status" className="text-[11px] leading-[16px] text-warning">
+          <p role="status" className="text-[12px] leading-[1.45] text-ink-primary">
             {studioSearchIndexCappedLine(results.indexedFileCount)}
           </p>
         ) : null}
         {results.indexTruncated ? (
-          <p role="status" className="text-[11px] leading-[16px] text-warning">
+          <p role="status" className="text-[12px] leading-[1.45] text-ink-primary">
             {STUDIO_SEARCH_RANKING_TRUNCATED}
           </p>
         ) : null}
         {building && hits > 0 ? (
-          <p role="status" className="text-[11px] leading-[16px] text-ink-tertiary">
+          <p role="status" className="text-[12px] leading-[1.45] text-ink-tertiary">
             {STUDIO_SEARCH_INDEX_BUILDING}
           </p>
         ) : null}
         {showAge && indexAgeMs !== null ? (
-          <p className="text-[11px] leading-[16px] text-ink-tertiary">
+          <p className="text-[12px] leading-[1.45] text-ink-tertiary">
             {studioSearchIndexedAgeLine(results.indexedFileCount, indexAgeMs)}
           </p>
         ) : null}
         {fileSearchAvailable ? (
-          <p className="text-[11px] leading-[16px] text-ink-tertiary">
+          <p className="text-[12px] leading-[1.45] text-ink-tertiary">
             {STUDIO_SEARCH_FILE_SCOPE_NOTE}
           </p>
         ) : null}
@@ -205,8 +205,8 @@ export function StudioRailSearchResults({
  */
 function GroupHeading({ title }: { readonly title: string }): JSX.Element {
   return (
-    <div aria-hidden="true" className="mb-1 flex h-6 items-center px-2">
-      <span className="vex-eyebrow">{title}</span>
+    <div aria-hidden="true" className="vex-ls-group">
+      {title}
     </div>
   );
 }
@@ -240,17 +240,22 @@ function ResultOption({
       aria-selected={active}
       onClick={onActivate}
       className={[
-        "flex h-8 cursor-pointer select-none items-center gap-2 px-2",
-        active ? "bg-interactive-hover" : "hover:bg-interactive-hover",
+        "flex h-[34px] cursor-pointer select-none items-center gap-2.5 px-2.5",
+        active ? "bg-[var(--ls-sel)] text-accent-primary" : "hover:bg-interactive-hover",
       ].join(" ")}
     >
-      <span aria-hidden="true" className="shrink-0 text-ink-tertiary">
+      <span aria-hidden="true" className="shrink-0 text-ink-secondary">
         {glyph}
       </span>
-      <span className="min-w-0 flex-1 truncate text-[13px] leading-[20px] text-ink-primary">
+      <span
+        className={[
+          "min-w-0 flex-1 truncate text-[14px] leading-[20px]",
+          active ? "font-medium text-accent-primary" : "text-ink-primary",
+        ].join(" ")}
+      >
         {title}
       </span>
-      <span className="min-w-0 max-w-[45%] shrink-0 truncate text-[11px] leading-[16px] text-ink-tertiary">
+      <span className="min-w-0 max-w-[45%] shrink-0 truncate font-mono text-[11.5px] leading-[16px] text-ink-tertiary vex-num">
         {detail}
       </span>
     </div>

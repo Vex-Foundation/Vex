@@ -91,7 +91,12 @@ vi.mock("../SessionTranscript.js", () => ({
   SessionTranscript: () => <div data-testid="transcript-stub" />,
 }));
 vi.mock("../SessionComposer.js", () => ({
-  SessionComposer: () => <div data-testid="composer-stub" />,
+  SessionComposer: (props: { readonly pendingApproval?: boolean }) => (
+    <div
+      data-testid="composer-stub"
+      data-pending-approval={props.pendingApproval === true ? "true" : "false"}
+    />
+  ),
 }));
 vi.mock("../SessionWelcomeHero.js", () => ({
   SessionWelcomeHero: () => null,
@@ -158,10 +163,25 @@ describe("SessionPanel - selected-session path mounts the approval card", () => 
     );
 
     // The card must appear in the active-session path.
-    expect(screen.getByText(/Approval needed:/)).toBeTruthy();
+    expect(screen.getByText("Approval needed")).toBeTruthy();
     expect(screen.getByText("wallet:send")).toBeTruthy();
     // And the stubs prove we rendered the active-session branch.
     expect(screen.getByTestId("transcript-stub")).toBeTruthy();
     expect(screen.getByTestId("composer-stub")).toBeTruthy();
+  });
+
+  it("tells the composer a decision waits in this agent chat (its run never parks as paused_approval)", () => {
+    useUiStore.setState({
+      activeSessionId: "00000000-0000-4000-8000-00000000aa01",
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <SessionPanel />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTestId("composer-stub").getAttribute("data-pending-approval")).toBe("true");
   });
 });

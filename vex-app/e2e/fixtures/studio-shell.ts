@@ -62,12 +62,32 @@ export async function tourIsPresent(page: Page): Promise<boolean> {
   return present;
 }
 
+/**
+ * PARK THE TOUR ONCE THE SHELL IS UP. The navigator docks bottom-left, and in
+ * R3 that is the left sidebar: Studio's projects and explorer and the account
+ * row sit under it (docs/design/R3-MINIMAL.md sections 2.1 and 4), so a click
+ * meant for a tree row or a project key landed on a tour button. It is QA
+ * scaffolding (a build flag, never shipped), so in the shell it lets the
+ * pointer through: still drawn, as captures always showed it, but no longer a
+ * hit target. An inline `pointer-events` survives the renderer CSP (no
+ * injected sheet) and the inline display or visibility restores some specs
+ * make around a capture. {@link tourTo} unparks it before every jump.
+ */
+export async function setTourParked(page: Page, parked: boolean): Promise<void> {
+  await page.evaluate((park: boolean) => {
+    const tour = document.querySelector("[data-vex-setup-tour]");
+    if (tour instanceof HTMLElement) tour.style.pointerEvents = park ? "none" : "";
+  }, parked);
+}
+
 /** Jump to a view through the diagnostic setup tour. */
 export async function tourTo(page: Page, view: string): Promise<void> {
   const tour = page.locator("[data-vex-setup-tour]");
   await expect(tour).toBeVisible();
+  await setTourParked(page, false);
   await tour.getByRole("button", { name: view, exact: true }).click();
   await expect(page.locator(`[data-vex-screen="${view}"]`)).toBeVisible();
+  if (view === "appShell") await setTourParked(page, true);
 }
 
 /**
@@ -104,11 +124,12 @@ export async function enterStudio(page: Page): Promise<boolean> {
   // renders only while the mode is `studio`. So there is nothing listening in
   // an Agent session yet: the chord into Studio needs the hook mounted in a
   // seat that survives the mode switch, which belongs to `AppShell` and not to
-  // the keyboard module. When that mount lands, the two lines below become
-  // `await page.keyboard.press("Control+Shift+A")`.
+  // the keyboard module. When that mount lands, the click below becomes
+  // `await page.keyboard.press("Control+Shift+A")`. Until then the way in is
+  // the left sidebar nav's Studio row (docs/design/R3-MINIMAL.md section 4).
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
   return true;
@@ -119,7 +140,7 @@ export async function enterStudio(page: Page): Promise<boolean> {
  *
  * `setViewportSize` alone emulates a layout viewport; it does not move the
  * window. That was harmless until the title bar went hidden (Window Controls
- * Overlay on Windows and Linux, docs/design/V10-SPREAD.md section 8): every
+ * Overlay on Windows and Linux, docs/design/R3-MINIMAL.md section 2.2): every
  * head row now reserves the caption buttons as
  * `100vw - env(titlebar-area-width) - env(titlebar-area-x)`
  * (`window-chrome.css`), and `env()` describes the real window while `100vw`
@@ -215,8 +236,8 @@ export async function openFirstProjectWithATerminal(
 ): Promise<string> {
   await tourTo(page, "appShell");
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(page.locator('[data-vex-screen="appShell"]')).toHaveAttribute(
     "data-vex-runtime-mode",

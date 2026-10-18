@@ -6,7 +6,7 @@ function setup() {
   const onStart = vi.fn();
   const onDrag = vi.fn();
   const onEnd = vi.fn();
-  const view = render(<ShellDragHandle side="book" left={700} label="Resize Vex" value={400} min={300} max={520} onStart={onStart} onDrag={onDrag} onEnd={onEnd} />);
+  const view = render(<ShellDragHandle left={700} label="Resize Vex" value={400} min={300} max={520} onStart={onStart} onDrag={onDrag} onEnd={onEnd} />);
   const handle = view.getByRole("separator");
   const captured = new Set<number>();
   Object.assign(handle, {

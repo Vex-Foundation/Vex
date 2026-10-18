@@ -1,0 +1,30 @@
+VEX bundled fonts: license notice
+=================================
+
+The font files in this directory tree are redistributed under the
+SIL Open Font License, Version 1.1 (see the *-OFL.txt / OFL-*.txt files
+alongside this notice).
+
+Instrument Serif (display, counters, figures)
+  /fonts/instrument-serif-latin.woff2
+  /fonts/instrument-serif-latin-ext.woff2
+  /fonts/instrument-serif-italic-latin.woff2
+  /fonts/instrument-serif-italic-latin-ext.woff2
+  License: OFL-instrument-serif.txt
+
+Instrument Sans (reading text, navigation, buttons; variable wght 400-700, wdth 75-100)
+  /fonts/instrument-sans-latin-var.woff2
+  /fonts/instrument-sans-italic-latin-var.woff2
+  License: InstrumentSans-OFL.txt
+
+Departure Mono (the WEBSITE only: labels, chips, data, captions; one weight;
+never in the apps since R3 Minimal)
+  /fonts/departure-mono-regular.woff2
+  Copyright 2022-2024 Helena Zhang (helenazhang.com)
+  License: DepartureMono-OFL.txt
+
+JetBrains Mono (the APPS: every figure, address, time and duration, tabular;
+code and terminals; variable wght 100-800)
+  /fonts/jetbrains-mono-latin-wght.woff2
+  Copyright 2020 The JetBrains Mono Project Authors
+  License: OFL-JetBrainsMono.txt

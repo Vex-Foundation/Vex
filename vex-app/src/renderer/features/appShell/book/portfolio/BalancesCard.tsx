@@ -1,64 +1,60 @@
 /**
- * Balances - the top holdings of a portfolio read, in the shared
- * `TokenHoldingRow` grammar (address-verified marks, sanitized names, em-dash
- * unpriced convention). ONE card serves both stages, driven by its
- * `PortfolioCardScope` input (studio seam #3):
+ * BALANCES on the Portfolio page (docs/design/R3-MINIMAL.md section 9.1): the
+ * top holdings of the page scope's read as a table of Asset, Network,
+ * Quantity, Price and Value, figures in mono and right aligned, with "View all
+ * assets" at the right of the head.
  *
- *  - global scope - the welcome Portfolio tab: the five largest-USD
- *    lines across every configured wallet.
- *  - session scope - the session rail: the five largest-USD lines of
- *    THAT session's wallet scope, flat across chains (the session DTO's
- *    `portfolio.tokens[]`; a `chainId: null` row is a real aggregate line and
- *    renders without a chain suffix, it is never dropped).
- *  - project scope (B4c) - the Studio rail: the same top-5, read through the
- *    `project` arm so the figures cover the project's own selected wallets.
+ *  - whole inventory: the five largest-USD lines across every wallet;
+ *  - one wallet: the same, from that wallet's validated read;
+ *  - this chat, this project: the five largest-USD lines of that scope's own
+ *    wallets (a `chainId: null` row is a real aggregate line and keeps its
+ *    place without a network, it is never dropped).
  *
- * The "View all" footer measures its OWN rect and opens the All-assets
- * ShellScreen morphing out of the exact row pressed - carrying the SAME scope
- * this card is showing, so the full register can never be wider than the card
- * that led to it. Since the Studio parity decree the All-assets ROUTE has a
- * project arm of its own (`assetsRouteFor`, two mutually exclusive arms like
- * Agent Scan), so the door is offered under every scope: a project's register
- * opens narrowed to the project's own wallets, never widened to the global
- * aggregate.
+ * The table and its row grammar are `BalancesTable` (shared with the All
+ * assets page): the trust rules, "Not available" instead of $0.00, and the
+ * Value column that never clips.
  *
  * Dust (sub-cent priced) rows are filtered out BEFORE the top-5 cut, per the
- * `hideDustBalances` uiStore preference - a dust row must never consume a
- * top-5 slot that a real holding would otherwise take. The card carries NO
- * control of its own; the All-assets screen owns the only checkbox, and this
- * card silently follows the same stored preference.
+ * `hideDustBalances` preference, so a dust row never takes a real holding's
+ * slot; a scope holding only dust says "No priced balances." and still offers
+ * the full register. The token history opens from a row's menu, only for a row
+ * with an exact `(chainId, tokenAddress)` identity.
+ *
+ * "View all assets" opens the All assets page carrying the SAME scope, so the
+ * register is never wider than the table that led to it; a single wallet has
+ * no register of its own, so under that scope the link is not offered.
  */
 
-import type { JSX, MouseEvent } from "react";
-import { PxIcon } from "../../../../components/icons/index.js";
-import { usePortfolio } from "../../../../lib/api/portfolio.js";
+import type { JSX } from "react";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
+  RETURN_TO_SHELL,
   assetsRouteFor,
   type AssetsRouteScope,
 } from "../../../../stores/uiStore/shell-route.js";
-import { CardStateNote, PortfolioCard } from "./PortfolioCard.js";
 import {
-  portfolioReadInputFor,
-  type PortfolioCardScope,
-} from "./portfolio-scope.js";
+  CardStateNote,
+  PortfolioCard,
+  SectionLink,
+  originOf,
+} from "./PortfolioCard.js";
+import { BalancesTable } from "./BalancesTable.js";
 import {
-  filterDustTokens,
-  sortTokensByUsdDesc,
-  tokenLineKey,
-  TokenHoldingRow,
-} from "./TokenHoldingRow.js";
+  usePageScopePortfolio,
+  type PortfolioPageScope,
+} from "./portfolio-page-scope.js";
+import { filterDustTokens, sortTokensByUsdDesc } from "./TokenHoldingRow.js";
 
-/** The card shows the top holdings only; the All-assets screen has the rest. */
+/** The table shows the top holdings only; the All assets page has the rest. */
 const TOP_TOKENS = 5;
 
 export function BalancesCard({
   scope,
 }: {
-  /** Wallet scope this card reads (studio seam #3) - never session state read inside. */
-  readonly scope: PortfolioCardScope;
+  /** The page scope - never session or project state read inside. */
+  readonly scope: PortfolioPageScope;
 }): JSX.Element {
-  const query = usePortfolio(portfolioReadInputFor(scope));
+  const query = usePageScopePortfolio(scope);
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const hideDustBalances = useUiStore((s) => s.hideDustBalances);
   const result = query.data;
@@ -66,75 +62,69 @@ export function BalancesCard({
   // Dust filter runs BEFORE the cut - see the module doc.
   const top =
     portfolio !== null
-      ? filterDustTokens(
-          sortTokensByUsdDesc(portfolio.tokens),
-          hideDustBalances,
-        ).slice(0, TOP_TOKENS)
+      ? filterDustTokens(sortTokensByUsdDesc(portfolio.tokens), hideDustBalances).slice(
+          0,
+          TOP_TOKENS,
+        )
       : [];
-
-  const openAllAssets = (event: MouseEvent<HTMLButtonElement>): void => {
-    // The footer row's own viewport rect anchors the screen's expand morph.
-    const rect = event.currentTarget.getBoundingClientRect();
-    setShellRoute(
-      assetsRouteFor(assetsScopeOf(scope), {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      }),
-    );
-  };
+  const register = assetsScopeOf(scope);
+  // Holdings exist but every one is sub-cent dust the preference hides: say
+  // so, and keep the door to the full register, where the dust toggle lives.
+  const onlyDust = portfolio !== null && portfolio.tokens.length > 0 && top.length === 0;
 
   return (
-    <PortfolioCard eyebrow="Balances">
+    <PortfolioCard
+      title="Balances"
+      action={
+        register !== null && (top.length > 0 || onlyDust) ? (
+          <SectionLink
+            onClick={(event) => setShellRoute(assetsRouteFor(register, originOf(event)))}
+          >
+            View all assets
+          </SectionLink>
+        ) : null
+      }
+    >
       {query.isLoading ? (
         <CardStateNote tone="loading">Loading…</CardStateNote>
       ) : (result !== undefined && !result.ok) || query.isError ? (
-        <CardStateNote tone="warn">
-          Couldn&apos;t load your balances.
-        </CardStateNote>
+        <CardStateNote tone="warn">Couldn&apos;t load your balances.</CardStateNote>
+      ) : onlyDust ? (
+        <CardStateNote>No priced balances.</CardStateNote>
       ) : top.length === 0 ? (
-        <CardStateNote>
-          {scope.kind === "project"
-            ? "No balances in this project's wallets yet - fund them and your holdings appear here."
-            : scope.kind === "global"
-              ? "No balances yet - fund a wallet and your holdings appear here."
-              : "No balances in this session's wallets yet - fund them and your holdings appear here."}
-        </CardStateNote>
+        <CardStateNote>{emptyNote(scope)}</CardStateNote>
       ) : (
-        <>
-          <ul className="flex flex-col">
-            {top.map((token) => (
-              <TokenHoldingRow
-                key={tokenLineKey(token)}
-                token={token}
-                historyReturnTo={{ kind: "shell" }}
-              />
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={openAllAssets}
-            className="vex-bs__more self-start"
-          >
-            View all assets
-            <PxIcon name="chevron-right" />
-          </button>
-        </>
+        <BalancesTable tokens={top} historyReturnTo={RETURN_TO_SHELL} />
       )}
     </PortfolioCard>
   );
 }
 
+/** What an empty scope says. Exhaustive over the page scope. */
+function emptyNote(scope: PortfolioPageScope): string {
+  switch (scope.kind) {
+    case "global":
+      return "No balances yet. Fund a wallet and your holdings appear here.";
+    case "wallet":
+      return "No balances in this wallet yet.";
+    case "session":
+      return "No balances in this session's wallets yet. Fund them and your holdings appear here.";
+    case "project":
+      return "No balances in this project's wallets yet. Fund them and your holdings appear here.";
+  }
+}
+
 /**
- * The register scope this card's read opens. Total over the card scope union;
- * a project card's register covers the project's WHOLE selection (the route
- * carries no `walletId`), which is the scope the rail mounts the card for.
+ * The register a scope's "View all assets" opens, or null for a single
+ * wallet (the register has no wallet narrowing, and a wider one would not be
+ * the same answer).
  */
-function assetsScopeOf(scope: PortfolioCardScope): AssetsRouteScope {
+function assetsScopeOf(scope: PortfolioPageScope): AssetsRouteScope | null {
   switch (scope.kind) {
     case "global":
       return { kind: "global" };
+    case "wallet":
+      return null;
     case "session":
       return { kind: "session", sessionId: scope.sessionId };
     case "project":

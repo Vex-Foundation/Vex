@@ -89,11 +89,11 @@ export function TokenIcon({
       aria-hidden
       style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full border border-[var(--vex-line-strong)] font-mono uppercase leading-none text-[var(--vex-text-3)]",
+        "inline-flex shrink-0 items-center justify-center rounded-full border border-[var(--vex-line-strong)] font-mono leading-none text-[var(--vex-text-3)]",
         className,
       )}
     >
-      {symbol !== null && symbol.length > 0 ? symbol.charAt(0) : "?"}
+      {symbol !== null && symbol.length > 0 ? symbol.charAt(0).toUpperCase() : "?"}
     </span>
   );
 }
@@ -163,7 +163,7 @@ export function TokenMark({
       aria-hidden
       style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full border border-[var(--vex-line-strong)] font-mono uppercase leading-none text-[var(--vex-text-3)]",
+        "inline-flex shrink-0 items-center justify-center rounded-full border border-[var(--vex-line-strong)] font-mono leading-none text-[var(--vex-text-3)]",
         className,
       )}
     >

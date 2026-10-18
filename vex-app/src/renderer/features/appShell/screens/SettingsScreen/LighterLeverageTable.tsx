@@ -79,8 +79,8 @@ export function LighterLeverageTable({
 
   return (
     <section aria-label={LEVERAGE_TITLE} data-vex-lighter-leverage>
-      <h3 className="vex-micro-label uppercase text-ink-secondary">{LEVERAGE_TITLE}</h3>
-      <p className="mt-1 text-[12px] leading-[18px] text-ink-secondary">{LEVERAGE_INTRO}</p>
+      <h3 className="vex-set__sh-title">{LEVERAGE_TITLE}</h3>
+      <p className="vex-set__note mt-1">{LEVERAGE_INTRO}</p>
       {vaultLocked ? (
         <p
           className="mt-2 text-[12px] leading-[18px] text-warning"
@@ -101,11 +101,11 @@ export function LighterLeverageTable({
         <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse text-left text-[13px] leading-[20px]">
             <thead>
-              <tr className="text-ink-secondary">
-                <th scope="col" className="py-1 pr-3 font-normal">{LEVERAGE_COLUMN_MARKET}</th>
-                <th scope="col" className="py-1 pr-3 font-normal">{LEVERAGE_COLUMN_CURRENT}</th>
-                <th scope="col" className="py-1 pr-3 font-normal">{LEVERAGE_COLUMN_MAX}</th>
-                <th scope="col" className="py-1 font-normal">{LEVERAGE_COLUMN_CHANGE}</th>
+              <tr className="text-ink-tertiary">
+                <th scope="col" className="border-b border-rule py-2 pr-3 text-[12px] font-medium">{LEVERAGE_COLUMN_MARKET}</th>
+                <th scope="col" className="border-b border-rule py-2 pr-3 text-[12px] font-medium">{LEVERAGE_COLUMN_CURRENT}</th>
+                <th scope="col" className="border-b border-rule py-2 pr-3 text-[12px] font-medium">{LEVERAGE_COLUMN_MAX}</th>
+                <th scope="col" className="border-b border-rule py-2 text-[12px] font-medium">{LEVERAGE_COLUMN_CHANGE}</th>
               </tr>
             </thead>
             <tbody>
@@ -134,7 +134,7 @@ export function LighterLeverageTable({
       ) : null}
 
       <div className="mt-4 flex flex-col gap-2">
-        <label htmlFor={searchId} className="vex-micro-label uppercase text-ink-secondary">
+        <label htmlFor={searchId} className="vex-ov-label">
           {LEVERAGE_PICKER_LABEL}
         </label>
         <p className="text-[12px] leading-[18px] text-ink-secondary">
@@ -205,7 +205,7 @@ function LeverageRow({
   return (
     <>
       <tr
-        className="border-t border-line-1 align-middle"
+        className="border-b border-rule-quiet align-middle"
         data-vex-lighter-leverage-row={row.symbol}
       >
         <th scope="row" className="py-2 pr-3 font-normal text-ink-primary">
@@ -216,14 +216,14 @@ function LeverageRow({
             </span>
           )}
         </th>
-        <td className="py-2 pr-3 text-ink-primary">
+        <td className="vex-num py-2 pr-3 font-mono text-[13px] text-ink-primary">
           {currentLeverageLine(
             row.current.leverageDisplay,
             row.current.marginMode,
             row.current.source,
           )}
         </td>
-        <td className="py-2 pr-3 text-ink-secondary">
+        <td className="vex-num py-2 pr-3 font-mono text-[13px] text-ink-secondary">
           {maxLeverage === null ? "-" : `${maxLeverage}x`}
         </td>
         <td className="py-2">

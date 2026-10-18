@@ -1,25 +1,24 @@
 /**
- * The wizard's progress on the stage (docs/design/V10-SPREAD.md section 1,
- * the d8 reference). Two parts, because they sit in two places:
+ * The wizard's progress (docs/design/R3-MINIMAL.md section 10.3). Two parts:
  *
- *   HorizontalStepper  the step index on the print's sky beside the giant
- *                      step counter: seven rows of italic numeral, status
- *                      swatch and step name. Status is shown by fill: done
- *                      is solid, the current step the target, the rest an
- *                      empty outline. (The name is kept from the dot rail it
- *                      replaced; App and the tests import it.)
- *   WizardStepEyebrow  the mono line on the paper leaf above the step's
- *                      title: "Step 3 of 7 · API keys".
+ *   HorizontalStepper  the named stepper in the top band: seven steps in a
+ *                      row (13), each a swatch and its name. Status by fill:
+ *                      done and the current step are solid, the steps ahead
+ *                      the empty outline; the current step is blue 500 with a
+ *                      2px underline.
+ *   WizardStepEyebrow  the line above the step's title: "Step 3 of 7 · API
+ *                      keys".
  *
- * Display-only: a row does NOT navigate. The wizard still has no
- * back-navigation outside the dedicated ReviewStep "edit" path (codex turn
- * 5 answer #2). The index is an `<ol>` with `aria-label="Wizard progress"`
- * so assistive tech can enumerate the seven steps and the current one.
+ * Display only: a step does NOT navigate. The footer's Back (steps 2 to 7)
+ * moves one step at a time, and Review's edit path opens a step directly.
+ * The stepper is an `<ol>` with
+ * `aria-label="Wizard progress"` so assistive tech can enumerate the seven
+ * steps and the current one.
  *
- * Test/debug surface preserved:
+ * Test seams kept:
  *   - `data-vex-wizard-step={stepId}`
  *   - `data-status="pending|active|completed"`
- *   - `aria-current="step"` on active
+ *   - `aria-current="step"` on the current step
  */
 
 import type { JSX } from "react";
@@ -39,32 +38,26 @@ export interface HorizontalStepperProps {
   readonly className?: string;
 }
 
-type StepDotStatus = "pending" | "active" | "completed";
+type StepStatus = "pending" | "active" | "completed";
 
 function resolveStatus(
   stepId: WizardStepId,
   currentStepId: WizardStepId,
   completedSet: ReadonlySet<WizardStepId>,
-): StepDotStatus {
-  // Active wins over completed — a back-edit flow can leave a step
-  // both "active" and "completed", but the user is interacting with
-  // it RIGHT NOW so the current marker must show (codex review V2 #1).
+): StepStatus {
+  // The current step wins over completed: Review's edit path can leave a step
+  // both current and completed, and the user is on it now.
   if (currentStepId === stepId) return "active";
   if (completedSet.has(stepId)) return "completed";
   return "pending";
 }
 
-/** Status by fill: done solid, here the target, ahead the empty outline. */
-const SWATCH: Record<StepDotStatus, SwatchState> = {
+/** Status by fill: done and here solid, ahead the empty outline. */
+const SWATCH: Record<StepStatus, SwatchState> = {
   completed: "done",
-  active: "warning",
+  active: "done",
   pending: "idle",
 };
-
-/** `2` -> `02`, the counter's two-figure form. */
-export function stepNumeral(index: number): string {
-  return String(index + 1).padStart(2, "0");
-}
 
 export function HorizontalStepper({
   currentStepId,
@@ -74,8 +67,8 @@ export function HorizontalStepper({
   const completedSet = new Set(completedSteps);
 
   return (
-    <ol aria-label="Wizard progress" className={cn("vex-stage-steps", className)}>
-      {WIZARD_STEP_IDS.map((id, index) => {
+    <ol aria-label="Wizard progress" className={cn("vex-wz-steps", className)}>
+      {WIZARD_STEP_IDS.map((id) => {
         const status = resolveStatus(id, currentStepId, completedSet);
         return (
           <li
@@ -83,17 +76,10 @@ export function HorizontalStepper({
             data-vex-wizard-step={id}
             data-status={status}
             aria-current={status === "active" ? "step" : undefined}
-            className="vex-stage-step"
+            className="vex-wz-steps__step"
           >
-            <span aria-hidden className="vex-stage-step__n">
-              ({stepNumeral(index)})
-            </span>
-            <span aria-hidden className="vex-stage-step__sw">
-              <Swatch state={SWATCH[status]} size={9} />
-            </span>
-            <span className="vex-stage-step__t">
-              {WIZARD_STEP_META[id].label}
-            </span>
+            <Swatch state={SWATCH[status]} size={10} />
+            {WIZARD_STEP_META[id].label}
           </li>
         );
       })}
@@ -101,7 +87,7 @@ export function HorizontalStepper({
   );
 }
 
-/** "Step 3 of 7 · API keys", the leaf's eyebrow. */
+/** "Step 3 of 7 · API keys", the line above the step's title. */
 export function WizardStepEyebrow({
   currentStepId,
 }: {
@@ -109,9 +95,9 @@ export function WizardStepEyebrow({
 }): JSX.Element {
   const currentIndex = WIZARD_STEP_IDS.indexOf(currentStepId);
   return (
-    <>
-      Step {currentIndex + 1} of {WIZARD_STEP_IDS.length}
-      <span> · {WIZARD_STEP_META[currentStepId].label}</span>
-    </>
+    <p className="vex-wzp__eyebrow">
+      Step {currentIndex + 1} of {WIZARD_STEP_IDS.length} ·{" "}
+      {WIZARD_STEP_META[currentStepId].label}
+    </p>
   );
 }

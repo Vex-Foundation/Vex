@@ -124,7 +124,11 @@ describe("multiline paste confirmation", () => {
     await paste(textarea);
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain("2 lines");
-    expect(dialog.querySelector("svg.text-brand-mark")).not.toBeNull();
+    // A working view carries no brand mark (docs/design/R3-MINIMAL.md section
+    // 10); the refusing choice is the ink key and the one blue fill is Paste.
+    expect(dialog.querySelector("svg.text-brand-mark")).toBeNull();
+    expect(screen.getByRole("button", { name: "Cancel" }).getAttribute("data-vex-button")).toBe("ink");
+    expect(dialog.querySelectorAll('[data-vex-button="primary"]')).toHaveLength(1);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
     expect(sent()).toBe("");
     fireEvent.click(screen.getByRole("checkbox", { name: "Don't ask again" }));
@@ -313,7 +317,7 @@ describe("file input and visible refusals", () => {
     expect(sent()).toBe("");
     expect(screen.getByRole("alert").textContent).toContain("Save it locally");
   });
-  it("consolidates transport and clipboard refusals into one branded notice", async () => {
+  it("consolidates transport and clipboard refusals into one flat notice", async () => {
     const { textarea } = pane();
     act(() => bridge.emitRefused("t1", "host_unavailable"));
     bridge.clipboardContent = { kind: "refused", reason: "terminal_clipboard_too_large" };
@@ -322,7 +326,10 @@ describe("file input and visible refusals", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("Nothing was shortened");
     expect(alert.textContent).not.toContain("system denied");
-    expect(alert.querySelector("svg.text-brand-mark")).not.toBeNull();
+    // A calm line icon and a 1px ink border, never a brand mark or the red.
+    expect(alert.querySelector("svg.text-brand-mark")).toBeNull();
+    expect(alert.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(alert.className).toContain("border-rule-ink");
     expect(sent()).toBe("");
   });
 });

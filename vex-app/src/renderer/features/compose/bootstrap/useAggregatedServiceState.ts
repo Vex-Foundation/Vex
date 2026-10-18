@@ -4,7 +4,7 @@
  * `embeddings-model-init` container is collapsed into the Embeddings
  * substate (not a separate pill) per codex plan v2 SHOULD-FIX #6.
  *
- * The reducer is a pure derivation — it does NOT trigger the
+ * The reducer is a pure derivation - it does NOT trigger the
  * orchestrator's phase transitions, only feeds visual subState. Phase
  * flips still come from the `composeUpAbortable` promise + IPC kind.
  */
@@ -58,7 +58,7 @@ function applyEvent(
       return next;
 
     case "postgres.probe.failed":
-      // Transient retry — `probeDbHealth` emits failure lines during
+      // Transient retry - `probeDbHealth` emits failure lines during
       // normal polling and the next attempt may succeed. Terminal
       // failure surfaces via the IPC `composeUpKind` (unhealthy /
       // failed) and gets dispatched to the right error body by the
@@ -142,7 +142,7 @@ function applyEvent(
             });
           }
         } else if (event.phase === "Exited" && emb.status === "starting") {
-          // Init container always exits after caching the model — this
+          // Init container always exits after caching the model - this
           // is the normal "model is cached, now waiting for runtime"
           // transition, not a failure.
           next.set("Embeddings", { ...emb, detail: "model ready" });
@@ -160,13 +160,13 @@ function applyEvent(
       return next;
 
     case "compose.completed":
-      // Cosmetic — orchestrator already knows from IPC. No-op here.
+      // Cosmetic - orchestrator already knows from IPC. No-op here.
       return next;
   }
 }
 
 /**
- * Pure reducer (testable without React) — runs once per render via
+ * Pure reducer (testable without React) - runs once per render via
  * `useMemo`. If `events` is the same reference between renders, the
  * memoized result is reused; the orchestrator owns the event buffer
  * and only re-creates it on each new log line.

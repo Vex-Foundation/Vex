@@ -1,4 +1,11 @@
-/** Editable OpenRouter model combobox with a bounded catalogue panel. */
+/**
+ * Editable OpenRouter model combobox with a bounded catalogue panel.
+ *
+ * R3: the open panel is `.vex-wz-picker` (a blue frame under its field, no top
+ * edge). A row carries the name, the mono id under it and the mono meta at the
+ * right; the highlighted row takes the selection wash with a blue name. The
+ * listbox roles, ids and keyboard are unchanged.
+ */
 
 import {
   useCallback,
@@ -167,7 +174,7 @@ export function ModelPicker({
             setOpen(true);
           }}
           onKeyDown={onKeyDown}
-          className="pr-10 font-mono text-xs"
+          className="pr-10 font-mono vex-num text-[14px]"
         />
         <IconChevronDown
           size={15}
@@ -178,10 +185,14 @@ export function ModelPicker({
       </div>
 
       {selected !== null && !showPanel ? (
-        <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-tertiary">
+        <p className="mt-1.5 flex items-center gap-1.5 text-[12.5px] text-ink-tertiary">
           <ModelBrandIcon modelId={selected.modelId} size={13} />
           <span>{selected.displayName}</span>
-          {formatModelMeta(selected) ? <span>· {formatModelMeta(selected)}</span> : null}
+          {formatModelMeta(selected) ? (
+            <span className="font-mono vex-num">
+              · {formatModelMeta(selected)}
+            </span>
+          ) : null}
         </p>
       ) : null}
 
@@ -190,63 +201,59 @@ export function ModelPicker({
           id={listboxId}
           role="listbox"
           aria-label="OpenRouter models"
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto border border-line-2 bg-surface-1 p-1 text-ink-primary"
+          className="vex-wz-picker absolute left-0 right-0 top-full z-20 max-h-56 overflow-y-auto"
         >
           {loading ? (
-            <p className="px-2.5 py-3 text-xs text-ink-tertiary">
+            <p className="px-3 py-2.5 text-[12.5px] text-ink-tertiary">
               Loading tool-capable models from OpenRouter…
             </p>
           ) : failed ? (
-            <div className="flex items-center justify-between gap-3 px-2.5 py-2">
-              <p className="text-xs text-ink-secondary">
+            <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+              <p className="text-[12.5px] text-ink-secondary">
                 Catalogue unavailable. Manual entry still works.
               </p>
               <button
                 type="button"
                 onClick={onRetry}
-                className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-primary underline underline-offset-2 hover:text-ink-secondary"
+                className="vex-wz-link shrink-0"
               >
                 <IconRefresh size={12} />
                 Retry
               </button>
             </div>
           ) : filtered.length === 0 ? (
-            <p className="px-2.5 py-3 text-xs text-ink-tertiary">
+            <p className="px-3 py-2.5 text-[12.5px] text-ink-tertiary">
               No match. Press Enter to use this model id.
             </p>
           ) : (
             filtered.map((model, index) => {
               const isActive = index === activeIndex;
               const isSelected = model.modelId === value.trim();
+              const meta = formatModelMeta(model);
               return (
                 <div
                   key={model.modelId}
                   id={`${listboxId}-option-${index}`}
                   role="option"
                   aria-selected={isSelected}
+                  data-active={isActive ? "" : undefined}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(model)}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-2 px-2.5 py-2",
-                    isActive
-                      ? "bg-accent-wash text-ink-primary"
-                      : "text-ink-secondary",
-                  )}
+                  className="vex-wz-picker__o cursor-pointer"
                 >
-                  <ModelBrandIcon modelId={model.modelId} size={16} className="mt-0.5 shrink-0" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">{model.displayName}</span>
-                    <span className="block truncate font-mono text-[10px] text-ink-tertiary">
-                      {model.modelId}
-                    </span>
-                    {formatModelMeta(model) ? (
-                      <span className="block truncate text-[10px] text-ink-tertiary">
-                        {formatModelMeta(model)}
-                      </span>
-                    ) : null}
+                  <span className="vex-wz-picker__t flex min-w-0 items-center gap-2">
+                    <ModelBrandIcon
+                      modelId={model.modelId}
+                      size={16}
+                      className="shrink-0"
+                    />
+                    <span className="truncate">{model.displayName}</span>
                   </span>
-                  {isSelected ? (
-                    <span aria-hidden className="mt-2 h-1.5 w-1.5 shrink-0 bg-accent-primary" />
+                  <span className="vex-wz-picker__m min-w-0 truncate pl-6">
+                    {model.modelId}
+                  </span>
+                  {meta ? (
+                    <span className="vex-wz-picker__x text-right">{meta}</span>
                   ) : null}
                 </div>
               );

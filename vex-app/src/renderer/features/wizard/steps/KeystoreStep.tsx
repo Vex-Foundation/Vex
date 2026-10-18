@@ -1,17 +1,17 @@
 /**
- * Wizard Step 1 — Master password (M7; PR6 redesign — onboarding glass).
+ * Wizard Step 1 - Master password (M7; PR6 redesign - onboarding glass).
  *
  * Creates or unlocks the encrypted local secret vault via
  * `vex.onboarding.keystoreSet`. The form is uncontrolled (React Hook Form
  * `register` ref forwarding) and the inputs are cleared via
- * `form.reset()` after the IPC call succeeds — the password value
+ * `form.reset()` after the IPC call succeeds - the password value
  * never lives in long-running React state and never enters Zustand
  * or persistent storage on the renderer side.
  *
  * Skip-badge: when `envState.hasKeystorePassword === true` the form
  * is hidden and a "Already configured ✓" panel with a Continue button
  * is shown instead. After a successful keystoreSet we ALSO flip a
- * local `passwordPersisted` flag so the badge appears immediately —
+ * local `passwordPersisted` flag so the badge appears immediately -
  * the env-state query invalidation is async and may not have refreshed
  * by the time `setWizardState` returns. Without the flag a write that
  * succeeds for the password but fails for the wizard-state advance
@@ -20,10 +20,13 @@
  * UX copy refers to the credential as "master password", not
  * "keystore". Concrete file paths are intentionally not surfaced in the UI.
  *
- * Chrome lives in `WizardStepPanel` — `data-vex-wizard-keystore="form"`
+ * Chrome lives in `WizardStepPanel` - `data-vex-wizard-keystore="form"`
  * and `data-vex-wizard-keystore="skip"` are forwarded onto the panel
  * root via the typed `panelDataAttr` prop so the existing test
- * selectors keep working (codex round 2 BLOCKED #1).
+ * selectors keep working (codex round 2 BLOCKED #1). In Settings the
+ * configured vault reads as the Vault section (its name and hint in the
+ * head, docs/design/R3-MINIMAL.md section 9.6) with the configured state as
+ * a card in the body; in the wizard the state sentence stays the title.
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
@@ -38,7 +41,8 @@ import {
 import { Button } from "../../../components/ui/button.js";
 import { Label } from "../../../components/ui/label.js";
 import { PasswordField } from "../../../components/common/PasswordField.js";
-import { StrengthMeter } from "../../../components/common/StrengthMeter.js";
+import { Swatch } from "../../../components/ui/swatch.js";
+import { PasswordStrength } from "./keystore/PasswordStrength.js";
 import { useMasterPasswordStrength } from "./keystore/useMasterPasswordStrength.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import {
@@ -46,8 +50,8 @@ import {
   useStepAdvance,
   type WizardFlowMode,
 } from "../../../lib/api/wizard.js";
-import { WIZARD_STEP_META } from "../wizard-icons.js";
-import { WizardStepPanel } from "../WizardStepPanel.js";
+import { WizardStepPanel, settingsSectionFor } from "../WizardStepPanel.js";
+import { useWizardHost } from "../wizard-host.js";
 
 export interface KeystoreStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -76,11 +80,12 @@ export function KeystoreStep({
   flowMode,
 }: KeystoreStepProps): JSX.Element {
   const envQuery = useEnvState();
+  const host = useWizardHost(flowMode).host;
   const keystoreSet = useKeystoreSet();
   const stepAdvance = useStepAdvance();
 
   const [advanceError, setAdvanceError] = useState<string | null>(null);
-  // Locally remember that we just persisted the password — so the skip
+  // Locally remember that we just persisted the password - so the skip
   // badge renders even before envState query refetches (codex turn 6
   // YELLOW #3). False until the IPC succeeds; never reset (the badge
   // is the right surface from this point on in the same session).
@@ -95,7 +100,7 @@ export function KeystoreStep({
   // RHF returns a `ref` callback inside register(); we ALSO take our
   // own ref so the post-submit clear in handleSubmit guarantees the
   // DOM input is wiped even if RHF state is somehow out-of-sync
-  // (defense-in-depth — the value never lingers in the DOM).
+  // (defense-in-depth - the value never lingers in the DOM).
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const confirmInputRef = useRef<HTMLInputElement | null>(null);
   const passwordReg = form.register("password");
@@ -105,8 +110,8 @@ export function KeystoreStep({
   const strength = useMasterPasswordStrength(passwordValue);
   const meetsCreateFloor = passwordValue.length >= PASSWORD_CREATE_MIN;
   const meetsStrengthGate = meetsCreateFloor && strength.meetsMinimumScore;
-  const envHasPassword =
-    envQuery.data?.ok === true && envQuery.data.data.hasKeystorePassword;
+  const env = envQuery.data?.ok === true ? envQuery.data.data : null;
+  const envHasPassword = env?.hasKeystorePassword === true;
   const hasExisting = passwordPersisted || envHasPassword;
   const envLoading = envQuery.isLoading;
 
@@ -138,7 +143,7 @@ export function KeystoreStep({
     // (advanceToWallets failing + user staying on the screen) renders
     // the skip badge instead of the empty form.
     setPasswordPersisted(true);
-    // Clear DOM inputs first, then RHF state — order matters because
+    // Clear DOM inputs first, then RHF state - order matters because
     // form.reset() will repopulate the input.value if anything is
     // sitting in defaultValues.
     if (passwordInputRef.current) passwordInputRef.current.value = "";
@@ -147,16 +152,21 @@ export function KeystoreStep({
     await advanceToWallets();
   });
 
-  const meta = WIZARD_STEP_META.keystore;
 
   if (hasExisting && !envLoading) {
+    const configuredTitle = "Master password already configured";
+    const configuredText =
+      "This install already has an encrypted local vault, sealed with your master password. There is nothing to redo here.";
+    const vault = settingsSectionFor("keystore");
     return (
       <WizardStepPanel
         panelDataAttr={{ kind: "keystore", value: "skip" }}
-        icon={meta.icon}
         flowMode={flowMode}
-        title="Master password already configured"
-        description="This install already has an encrypted local vault, sealed with your master password. There is nothing to redo here."
+        env={env}
+        title={configuredTitle}
+        description={configuredText}
+        settingsTitle={vault?.name}
+        settingsDescription={vault?.hint}
         footer={
           <Button
             onClick={() => {
@@ -172,8 +182,17 @@ export function KeystoreStep({
           </Button>
         }
       >
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-ink-secondary">
+        <div className="vex-wz-stack">
+          {host === "settings" ? (
+            <div className="vex-wz-card">
+              <p className="vex-wz-card__h">
+                <Swatch state="done" size={10} />
+                {configuredTitle}
+              </p>
+              <p className="vex-wz-card__p">{configuredText}</p>
+            </div>
+          ) : null}
+          <p className="vex-wz-text">
             The master password can&apos;t be rotated from this screen.
             Wallet keystores keep their current encryption - they are not
             re-encrypted automatically if the password ever changes.
@@ -195,8 +214,8 @@ export function KeystoreStep({
   return (
     <WizardStepPanel
       panelDataAttr={{ kind: "keystore", value: "form" }}
-      icon={meta.icon}
       flowMode={flowMode}
+      env={env}
       title="Set your master password"
       description="One password seals the encrypted vault on this machine - wallet keys, API keys, and the provider key you add later all live behind it. It never leaves this computer, and it can't be recovered if lost, so keep it somewhere safe."
       formProps={{
@@ -215,8 +234,8 @@ export function KeystoreStep({
         </Button>
       }
     >
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-2">
+      <div className="vex-wz-stack">
+        <div className="vex-wz-group">
           <Label htmlFor={PASSWORD_INPUT_ID}>Master password</Label>
           <PasswordField
             id={PASSWORD_INPUT_ID}
@@ -232,7 +251,7 @@ export function KeystoreStep({
               passwordInputRef.current = el;
             }}
           />
-          <StrengthMeter
+          <PasswordStrength
             id={PASSWORD_METER_ID}
             length={passwordValue.length}
             ready={strength.ready}
@@ -253,7 +272,7 @@ export function KeystoreStep({
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="vex-wz-group">
           <Label htmlFor={CONFIRM_INPUT_ID}>Confirm password</Label>
           <PasswordField
             id={CONFIRM_INPUT_ID}

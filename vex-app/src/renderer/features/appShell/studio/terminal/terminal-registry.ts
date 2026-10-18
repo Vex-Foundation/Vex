@@ -485,7 +485,8 @@ export class TerminalRegistry {
  * xterm takes a font string, so the family cannot arrive as a `var()`. Reading
  * `--font-code` (JetBrains Mono) off the root keeps ONE definition of the code
  * face; a literal here would be a second one that silently stops matching the
- * app. `--font-mono` is the label face (Departure Mono) and never sets code.
+ * app. `--font-mono` is the figures face (docs/design/R3-MINIMAL.md section
+ * 1.3) and never sets code.
  */
 function readCodeFontFamily(): string {
   if (typeof window === "undefined" || typeof document === "undefined") {

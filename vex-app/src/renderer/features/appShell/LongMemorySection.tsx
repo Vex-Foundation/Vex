@@ -18,9 +18,11 @@ import { useLongMemoryList } from "../../lib/api/long-memory.js";
 import {
   Empty,
   ErrorState,
+  FilterKeys,
   Loading,
   PILL,
   SECTION,
+  SectionHead,
   fmtDate,
 } from "./MemoryPanelShared.js";
 
@@ -40,46 +42,56 @@ export function LongMemorySection(): JSX.Element {
   const [search, setSearch] = useState("");
   const query = useLongMemoryList(status === "all" ? undefined : status);
 
+  const res = query.data;
+  const needle = search.trim().toLowerCase();
+  const shown =
+    res !== undefined && res.ok ? filterEntries(res.data, needle) : null;
+
   return (
     <section data-vex-section="long-memory" className={SECTION}>
-      <div>
-        <h2 className="vex-eyebrow">Long-term memory</h2>
-        <p className="mt-1 text-xs text-ink-secondary">
-          What the agent knows - durable lessons across all sessions. Sources,
-          maturity, and statuses are shown so low-confidence entries are
-          visible but labeled. The lifecycle is managed automatically by the
-          agent&apos;s memory manager.
-        </p>
-      </div>
+      <SectionHead
+        title="Long-term memory"
+        count={
+          shown === null
+            ? undefined
+            : `${shown.length} ${shown.length === 1 ? "entry" : "entries"}`
+        }
+        lead="What the agent knows - durable lessons across all sessions. Sources, maturity, and statuses are shown so low-confidence entries are visible but labeled. The lifecycle is managed automatically by the agent's memory manager."
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        {LONG_MEMORY_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setStatus(f.value)}
-            data-active={status === f.value}
-            className={`rounded-[3px] px-2 py-1 vex-micro-label uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary ${
-              status === f.value
-                ? "bg-accent-wash text-accent-primary"
-                : "text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="vex-mem-tool">
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search title / summary / kind"
           aria-label="Search long-term memory"
-          className="ml-auto min-w-[160px] flex-1 rounded-[6px] border border-line-3 bg-surface-1 px-2 py-1 text-xs text-ink-primary placeholder:text-ink-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary"
+          className="vex-mem-field"
+        />
+        <FilterKeys
+          label="Filter long-term memory by status"
+          options={LONG_MEMORY_FILTERS}
+          value={status}
+          onChange={setStatus}
         />
       </div>
 
       <LongMemoryList query={query} search={search} />
     </section>
+  );
+}
+
+/** The entries whose title, summary or kind holds the search text. */
+function filterEntries(
+  entries: readonly LongMemoryEntryDto[],
+  needle: string,
+): readonly LongMemoryEntryDto[] {
+  if (needle.length === 0) return entries;
+  return entries.filter(
+    (k) =>
+      k.title.toLowerCase().includes(needle) ||
+      k.summary.toLowerCase().includes(needle) ||
+      k.kind.toLowerCase().includes(needle),
   );
 }
 
@@ -99,22 +111,13 @@ function LongMemoryList({
       />
     );
   }
-  const needle = search.trim().toLowerCase();
-  const items =
-    needle.length === 0
-      ? res.data
-      : res.data.filter(
-          (k) =>
-            k.title.toLowerCase().includes(needle) ||
-            k.summary.toLowerCase().includes(needle) ||
-            k.kind.toLowerCase().includes(needle),
-        );
+  const items = filterEntries(res.data, search.trim().toLowerCase());
   if (items.length === 0) {
     return <Empty label="No memory entries match." />;
   }
-  // Hairline-separated ledger rows — no card boxes, no gaps.
+  // Hairline-separated ledger rows, no card boxes, no gaps.
   return (
-    <ul className="flex flex-col">
+    <ul className="vex-mem-list">
       {items.map((k) => (
         <LongMemoryRow key={k.id} entry={k} />
       ))}
@@ -131,12 +134,10 @@ function LongMemoryRow({
     <li
       data-vex-long-memory-id={entry.id}
       data-status={entry.status}
-      className="border-b border-line-2 px-1 py-2 last:border-b-0"
+      className="vex-mem-row"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate text-xs font-medium text-ink-primary">
-          {entry.title}
-        </span>
+      <span className="vex-mem-row__t">{entry.title}</span>
+      <span className="vex-mem-row__m">
         <span className={PILL}>{entry.kind}</span>
         <span className={PILL} data-vex-long-memory-status>
           {entry.status}
@@ -146,33 +147,20 @@ function LongMemoryRow({
           <span className={PILL}>{entry.maturityState}</span>
         ) : null}
         {entry.confidence !== null ? (
-          <span className={PILL}>conf {entry.confidence.toFixed(2)}</span>
+          <span className={PILL} data-figure>
+            conf {entry.confidence.toFixed(2)}
+          </span>
         ) : null}
-        <span
-          data-vex-created
-          title={entry.createdAt}
-          className="ml-auto font-mono text-[10px] tabular-nums text-ink-tertiary"
-        >
-          {fmtDate(entry.createdAt)}
-        </span>
-      </div>
-      {entry.summary.length > 0 ? (
-        <p className="mt-1 line-clamp-2 text-xs text-ink-secondary">
-          {entry.summary}
-        </p>
-      ) : null}
-      {entry.tags.length > 0 ? (
-        <div className="mt-1 flex flex-wrap items-center gap-1">
-          {entry.tags.map((t) => (
-            <span
-              key={t}
-              className="rounded-[3px] px-1 py-0.5 font-mono text-[10px] text-ink-tertiary"
-            >
-              #{t}
-            </span>
-          ))}
-        </div>
-      ) : null}
+        {entry.tags.map((t) => (
+          <span key={t} className={PILL}>
+            #{t}
+          </span>
+        ))}
+        {entry.summary.length > 0 ? <span>{entry.summary}</span> : null}
+      </span>
+      <span data-vex-created title={entry.createdAt} className="vex-mem-row__r">
+        {fmtDate(entry.createdAt)}
+      </span>
     </li>
   );
 }

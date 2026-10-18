@@ -1,82 +1,145 @@
 /**
- * Settings register data: the section rows (id, hosted wizard step,
- * copy) and the pure status-word derivation the register renders. Status
- * words derive from the same `useEnvState()` payload the retired review
- * cards read.
+ * Settings nav data (docs/design/R3-MINIMAL.md section 9.6): the four groups
+ * (App, Security and wallets, The agent, Connections), the section rows (id,
+ * hosted wizard step, copy, line icon) and the pure status-word derivation the
+ * nav renders. Status words derive from the same `useEnvState()` payload the
+ * retired review cards read.
  */
 
-import type { ComponentType } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
-import {
-  IconSuperboard,
-  type GlyphProps,
-} from "../../../../components/icons/index.js";
+import type { LineIconName } from "../../../../components/icons/line/index.js";
+import type { SwatchState } from "../../../../components/ui/swatch.js";
 import type { SettingsSection } from "../../../../stores/uiStore.js";
 import {
   LIGHTER_SECTION_HINT,
   LIGHTER_SECTION_NAME,
 } from "./lighter-trading-setup-copy.js";
 
-/** Superboard wordmark for the section header. */
-export const SUPERBOARD_KEY_ICON: ComponentType<GlyphProps> = IconSuperboard;
+/** The nav's group heads, in order. */
+export type SettingsGroupName =
+  | "App"
+  | "Security and wallets"
+  | "The agent"
+  | "Connections";
 
 export interface SectionMeta {
   readonly id: SettingsSection;
   readonly stepId?: Exclude<WizardStepId, "review">;
+  readonly group: Exclude<SettingsGroupName, "App">;
+  readonly icon: LineIconName;
   readonly name: string;
   readonly hint: string;
+  /**
+   * The lead under the section head, where the section draws its own head
+   * (the sections hosting a wizard step form keep that form's own head).
+   * Defaults to the hint.
+   */
+  readonly lead?: string;
 }
 
-/** Register order is the custody gradient: secrets first, tuning next, integrations last. */
+/** Nav order is the custody gradient: secrets first, tuning next, integrations last. */
 export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
   {
     id: "vault",
     stepId: "keystore",
+    group: "Security and wallets",
+    icon: "vault",
     name: "Vault",
     hint: "The master password that encrypts everything on this machine",
   },
   {
     id: "wallets",
     stepId: "wallets",
+    group: "Security and wallets",
+    icon: "wallet",
     name: "Wallets",
     hint: "EVM and Solana wallets - add, remove, recover, back up, or export",
   },
   {
     id: "apiKeys",
     stepId: "apiKeys",
+    group: "Security and wallets",
+    icon: "key",
     name: "API keys",
     hint: "Jupiter, Tavily, Rettiwt, and chain endpoint overrides",
   },
   {
     id: "model",
     stepId: "provider",
+    group: "The agent",
+    icon: "model",
     name: "Model",
     hint: "The OpenRouter key and model the agent thinks with",
   },
   {
     id: "memory",
     stepId: "embedding",
+    group: "The agent",
+    icon: "database",
     name: "Memory",
     hint: "The embedding endpoint behind long-term recall",
   },
   {
     id: "tuning",
     stepId: "agentCore",
+    group: "The agent",
+    icon: "tuning",
     name: "Tuning",
     hint: "Context, output, and sampling limits",
   },
   {
     id: "superboardKey",
+    group: "Connections",
+    icon: "link",
     name: "Superboard key",
     hint: "One code you paste into Superboard",
+    lead: "One code, generated once. Paste it in Superboard.",
   },
   {
     id: "lighterPoints",
+    group: "Connections",
+    icon: "lighter",
     name: LIGHTER_SECTION_NAME,
     hint: LIGHTER_SECTION_HINT,
   },
+];
+
+/** What the nav can select: a section, or Preferences (the App group's one row). */
+export type SettingsNavId = SettingsSection | "preferences";
+
+export interface SettingsNavItem {
+  readonly id: SettingsNavId;
+  readonly name: string;
+  readonly icon: LineIconName;
+}
+
+export interface SettingsNavGroup {
+  readonly name: SettingsGroupName;
+  readonly items: ReadonlyArray<SettingsNavItem>;
+}
+
+const GROUP_ORDER: ReadonlyArray<Exclude<SettingsGroupName, "App">> = [
+  "Security and wallets",
+  "The agent",
+  "Connections",
+];
+
+/** The four groups with their rows, in the order the nav draws them. */
+export const SETTINGS_NAV: ReadonlyArray<SettingsNavGroup> = [
+  {
+    name: "App",
+    items: [{ id: "preferences", name: "Preferences", icon: "preferences" }],
+  },
+  ...GROUP_ORDER.map((name) => ({
+    name,
+    items: SETTINGS_SECTIONS.filter((meta) => meta.group === name).map((meta) => ({
+      id: meta.id,
+      name: meta.name,
+      icon: meta.icon,
+    })),
+  })),
 ];
 
 export type SettingsStatusTone = "success" | "neutral" | "warning";
@@ -86,9 +149,21 @@ export interface SettingsStatus {
   readonly tone: SettingsStatusTone;
 }
 
+/** Status is a fill, not a hue: set is solid, neutral an outline, attention a target. */
+export function settingsStatusSwatch(tone: SettingsStatusTone): SwatchState {
+  switch (tone) {
+    case "success":
+      return "done";
+    case "neutral":
+      return "idle";
+    case "warning":
+      return "warning";
+  }
+}
+
 /**
  * Status-word derivation. `env === null` covers loading and failed reads
- * alike: an em dash, never a guessed state. Tuning is the one honest
+ * alike: a bare hyphen, never a guessed state. Tuning is the one honest
  * exception - envState does not expose AGENT_* values, so its word stays
  * a neutral "Saved".
  */

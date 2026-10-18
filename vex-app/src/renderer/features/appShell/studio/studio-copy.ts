@@ -21,12 +21,13 @@ import type { StudioArtifactStatus } from "@shared/schemas/studio-installer.js";
 /* ------------------------------- status word ------------------------------ */
 
 /**
- * The one live word in the status strip while Studio is the active shell.
+ * The one live word in the title bar while Studio is the active shell
+ * (docs/design/R3-MINIMAL.md section 3: "Running · {n} connected").
  *
  * `running` carries its connection figure because the number is the fact a user
  * acts on (a capacity refusal is the next thing they would hit), and at
  * capacity the figure is replaced by the words rather than shown beside them:
- * "RUNNING 16 connected" and "at capacity" are the same fact twice.
+ * "Running · 16 connected" and "at capacity" are the same fact twice.
  */
 export function studioHostStatusWord(
   state: StudioHostState,
@@ -36,7 +37,7 @@ export function studioHostStatusWord(
   if (state === "running") {
     return atCapacity
       ? "Running at capacity"
-      : `Running ${String(connectionCount)} connected`;
+      : `Running · ${String(connectionCount)} connected`;
   }
   if (state === "locked") return "Locked";
   if (state === "starting") return "Starting";
@@ -283,6 +284,11 @@ export const STUDIO_WELCOME_ROW_CLEAN_LABEL =
   "Vex's files in this project are as Vex wrote them";
 
 export const STUDIO_WELCOME_RECENT_TITLE = "Projects";
+
+/** The count beside the welcome's "Projects" head. */
+export function studioWelcomeProjectCount(count: number): string {
+  return count === 1 ? "1 project" : `${String(count)} projects`;
+}
 export const STUDIO_WELCOME_RECENT_EMPTY = "No projects yet.";
 export const STUDIO_WELCOME_RECENT_LOADING = "Loading projects";
 export const STUDIO_WELCOME_RECENT_ERROR = "Vex could not read your projects.";
@@ -304,6 +310,7 @@ export const STUDIO_EXPLORER_SECTION = "Explorer";
  * so: the header toggle OPENS or CLOSES the search, the field's control CLEARS
  * the query, and the field itself is named by what it searches.
  */
+export const STUDIO_SEARCH_ROW_LABEL = "Search";
 export const STUDIO_SEARCH_OPEN_LABEL = "Search projects and files";
 export const STUDIO_SEARCH_CLOSE_LABEL = "Close search";
 export const STUDIO_SEARCH_CLEAR_LABEL = "Clear search";
@@ -407,14 +414,14 @@ export const STUDIO_SHOW_FEWER_PROJECTS = "Show fewer projects";
 /** The vertical seam between the PROJECTS list and the EXPLORER pane. */
 export const STUDIO_RAIL_SPLIT_LABEL = "Resize the projects and explorer panes";
 
-export const STUDIO_RAIL_SETTINGS_LABEL = "Open settings";
+/** The left sidebar's New chat row, the same word the agent sidebar uses. */
+export const STUDIO_NEW_CHAT_LABEL = "New chat";
 
-/** The foot's theme control names the theme it switches TO, never the current one. */
-export function studioThemeToggleLabel(nextTheme: "dark" | "light"): string {
-  return nextTheme === "dark" ? "Switch to the dark theme" : "Switch to the light theme";
-}
-
-export const STUDIO_FULL_ACCESS_LABEL = "FULL ACCESS";
+/**
+ * The full access tag. Written in sentence case; the tag paints it in caps
+ * (docs/design/R3-MINIMAL.md section 1.3, tags are the only caps).
+ */
+export const STUDIO_FULL_ACCESS_LABEL = "Full access";
 
 /** Standing project authority, also available when the rail is icon-only. */
 export function projectPermissionDescription(permission: "restricted" | "full"): string {

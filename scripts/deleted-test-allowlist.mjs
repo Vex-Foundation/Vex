@@ -31,7 +31,148 @@
  * collapse choreography and the rail glass tier) were consumed when PR #212
  * merged.
  */
-export const DELETED_TEST_ALLOWLIST = [];
+export const DELETED_TEST_ALLOWLIST = [
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/ShellGutter.test.tsx",
+    reason: "The R3 three-column frame retires the gutter and its spread caption; ShellGutter.tsx was deleted with it (R3 wave 1, W1-6).",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/AppShell/shell-sidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/useDeskAgentState.test.tsx",
+    reason: "useDeskAgentState.ts was deleted (no consumer after the flock left in wave 1) and its agreement partner DeskRuleTapeState is replaced by the title bar's token chip (R3 wave 2, W2-1); the state and the chip agreement are covered by vex-state.test.ts, useVexPresence.test.tsx and session-activity-agreement.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/vex-state.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/leftPage/__tests__/sessionOrdinals.test.tsx",
+    reason: "R3 lists sessions by name: the ordinal ledger sessionOrdinals.ts was deleted with the left page (R3 wave 2, W2-2); the persisted key stays readable (uiStore-session-ordinals-v21.test.ts).",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/SessionRow.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/leftPage/__tests__/useIndexFold.test.tsx",
+    reason: "The print's horizon fold is gone: the R3 sidebar is paper and its session list one plain scroller; useIndexFold.ts was deleted (R3 wave 2, W2-2); also covered by SessionsList-nav.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/AppShell/shell-sidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/ui/__tests__/counter.test.tsx",
+    reason: "counter.tsx was deleted; its only consumer was the left page's giant ordinal, which R3 retires (R3 wave 2, W2-2); also covered by SessionsList-nav.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/SessionRow.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/ArenaCampaignNotice.test.tsx",
+    reason: "The Perps Trading Arena ended 2026-10-16: ArenaCampaignNotice.tsx and lighterTrading/arena-campaign.ts were deleted and the R3 welcome no longer carries the notice (R3 wave 2, W2-4); the Lighter row is covered by ComposerQuickActions.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/SessionWelcomeHero.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/BookPanel.test.tsx",
+    reason: "The BOOK router BookPanel.tsx was deleted: it had been unmounted since W2-3 and its rail cards moved to the Portfolio page (R3 wave 3, W3-4); also covered by VexSidebar.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/PortfolioScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/BookPanel-studio.test.tsx",
+    reason: "The Studio project rail (StudioBookRailFrame.tsx) was deleted; the project scope is now the Portfolio page's \"This project\" chip (R3 wave 3, W3-4); also covered by WalletPairCard.test.tsx, BalancesCard.test.tsx (project scope) and VexSidebar.test.tsx (This project links).",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/PortfolioScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/BookPanel-board-tab.test.tsx",
+    reason: "The Board tab went with the deleted BOOK; the Board becomes a page in W4-1 (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/BoardScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/WelcomePortfolioPanel.test.tsx",
+    reason: "WelcomePortfolioPanel.tsx was deleted: the R3 welcome has no right column and the portfolio is its own page (R3 wave 3, W3-4); also covered by AppShell/shell-sidebar.test.tsx (no welcome-portfolio).",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/PortfolioScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/PositionChains.test.tsx",
+    reason: "PositionChains.tsx, the per-chain chip switcher, was deleted and replaced by the Balances table's Network column (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/BalancesCard.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/GlobalWalletSwitcher.test.tsx",
+    reason: "GlobalWalletSwitcher.tsx was deleted and replaced by the Portfolio page's scope chips (R3 wave 3, W3-4); also covered by portfolio-scope-cards.test.tsx and PortfolioScreen.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/appShell/__tests__/PositionBlock.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/GlobalWalletAddresses.test.tsx",
+    reason: "GlobalWalletAddresses.tsx, the primary and remaining address list, was deleted and replaced by the Wallets table (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/book/portfolio/__tests__/portfolio-scope-cards.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/GlobalWalletAddresses.test.ts",
+    reason: "groupWalletsByPrimary was deleted with GlobalWalletAddresses.tsx; the Wallets table covers the rows and Primary (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/book/portfolio/__tests__/portfolio-scope-cards.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/book-head.test.tsx",
+    reason: "The BOOK head container query was deleted with BookRailFrame.tsx and book-head-slot.ts (R3 wave 3, W3-4; plan 6.1).",
+    coveredBy: "vex-app/src/renderer/features/appShell/book/__tests__/rail-sections.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/studio-rail-portfolio-only.test.tsx",
+    reason: "The Studio rail and its Board-subscription proof were deleted; the Portfolio page mounts no Board (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/PortfolioScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/studio-section-order.test.ts",
+    reason: "studio-section-order.ts was deleted: one page order now, and the Studio order key is no longer read (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/book/__tests__/section-order.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/__tests__/ProjectBlock.test.tsx",
+    reason: "ProjectBlock.tsx was deleted; its facts are in the Vex sidebar's \"This project\" block (R3 wave 3, W3-4).",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/VexSidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/book/board/__tests__/ActiveBoardModule.test.tsx",
+    reason: "The BOOK Board tab is gone with ActiveBoardModule.tsx and ActiveBoardRow.tsx; its title, live word and live region fold into the Board page head (R3 wave 4, W4-1).",
+    coveredBy: "vex-app/src/renderer/features/appShell/screens/__tests__/BoardScreen.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/Board/__tests__/BoardSparkline.test.tsx",
+    reason: "The R3 board tile has no chart (spec 9.4), so BoardSparkline.tsx was deleted; the spotlight carries the chart (R3 wave 4, W4-1).",
+    coveredBy: "vex-app/src/renderer/features/appShell/Board/__tests__/TokenCardV3.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/Board/__tests__/board-sparkline-source.test.tsx",
+    reason: "The renderer hook board-sparkline-source.ts was deleted with the tile sparkline; the main side service keeps its own test (R3 wave 4, W4-1).",
+    coveredBy: "vex-app/src/main/market/__tests__/board-sparkline-service.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/features/appShell/__tests__/RuntimeModeToggle.test.tsx",
+    reason: "The Agent and Studio capsule RuntimeModeToggle.tsx was deleted: the left sidebar nav replaces it in every mode; setRuntimeMode and the data-vex-runtime-mode seam stay (R3 wave 4, W4-4).",
+    coveredBy: "vex-app/src/renderer/features/appShell/studio/sidebar/__tests__/StudioSidebar.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/features/updates/__tests__/update-toast-surface.test.tsx",
+    reason: "UpdateToastSurface.tsx was deleted: the update is a card in the left sidebar and no longer rides the notification model (R3 wave 4, W4-6); also covered by UpdateLayer.test.tsx.",
+    coveredBy: "vex-app/src/renderer/features/updates/__tests__/update-card.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/PrintPlate.test.tsx",
+    reason: "PrintPlate.tsx (the eagle print plate and its flock layer) was deleted: the left page and the pre-shell stage it furnished are gone and the K2 hologram plate replaced it (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/VexPortraitPlate.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/flock-engine.test.ts",
+    reason: "flock-engine.ts (the eagle and far birds on a canvas) was deleted with the plate; the K2 engine draws Vex now (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/components/vex/k2/__tests__/VexK2.test.tsx",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/agent-state.test.ts",
+    reason: "agent-state.ts (the eagle's five-state desk signal) was deleted; the presence model's VexState replaced it (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/features/vex/__tests__/vex-state.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/components/pixel/__tests__/fake-canvas.ts",
+    reason: "A test helper used only by flock-engine.test.ts, deleted with it (R3 wave 5, W5-4).",
+    coveredBy: "vex-app/src/renderer/components/vex/k2/__tests__/k2-poses.test.ts",
+  },
+  {
+    path: "vex-app/src/renderer/components/common/__tests__/StrengthMeter.test.tsx",
+    reason: "StrengthMeter.tsx was deleted: KeystoreStep was its only consumer and now draws the wizard-local R3 four-cell meter (R3 wave 5, W5-2).",
+    coveredBy: "vex-app/src/renderer/features/wizard/steps/keystore/__tests__/PasswordStrength.test.tsx",
+  },
+];
 
 export const DELETED_TEST_ALLOWLIST_PATHS = new Set(
   DELETED_TEST_ALLOWLIST.map((entry) => entry.path),

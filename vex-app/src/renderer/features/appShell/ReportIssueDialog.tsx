@@ -17,6 +17,13 @@
  * chance for the user to mis-pattern an actual secret into the description
  * before the main-side redactor catches it. We bias toward fewer fields
  * + clearer redaction proof.
+ *
+ * R3 Minimal (docs/design/R3-MINIMAL.md sections 1 and 12): a panel over the
+ * window, not a blocker (`backdrop="none"`). Fields and labels draw from
+ * `SessionCreator/dialog-fields.ts`; the Category cards are square with a
+ * 1px rule (the chosen one a 1.5px blue frame and a solid swatch), Severity
+ * is a framed segmented choice over native radios, and the submit feedback is
+ * a flat swatch + word row.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,11 +40,16 @@ import {
 } from "../../components/ui/dialog.js";
 import { Label } from "../../components/ui/label.js";
 import { Input } from "../../components/ui/input.js";
+import { Swatch } from "../../components/ui/swatch.js";
 import { cn } from "../../lib/utils.js";
 import {
   MANUAL_CATEGORIES,
   type ManualCategory,
 } from "@shared/schemas/bug-reports.js";
+import {
+  DIALOG_FIELD_CLASS,
+  DIALOG_LABEL_CLASS,
+} from "./SessionCreator/dialog-fields.js";
 
 interface ReportIssueDialogProps {
   readonly open: boolean;
@@ -111,7 +123,7 @@ export function ReportIssueDialog({
       setSubmitInfo(null);
       setSubmitting(false);
     }
-    // Cleanup runs on every open/close transition and on unmount — any
+    // Cleanup runs on every open/close transition and on unmount - any
     // pending auto-close belongs to the previous open cycle.
     return () => {
       if (autoCloseTimerRef.current !== null) {
@@ -179,13 +191,12 @@ export function ReportIssueDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Brand chrome (raised ink panel, hairline, black/70 no-blur backdrop)
-       * is the Dialog base since the rebrand — only width is per-modal. */}
-      <DialogContent className="max-w-lg">
+      {/* A panel over the window (no scrim): only the width is per-modal. */}
+      <DialogContent backdrop="none" className="max-w-lg">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="border-line-2">
+          <DialogHeader>
             <DialogTitle>Report an issue</DialogTitle>
-            <DialogDescription className="text-ink-tertiary">
+            <DialogDescription className="text-[13.5px] leading-[1.5] text-ink-secondary">
               The report is saved locally on this machine. Secrets are
               automatically redacted before storage. Nothing is sent to a
               remote server in this build.
@@ -194,7 +205,7 @@ export function ReportIssueDialog({
 
           <DialogBody>
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Category</legend>
+              <legend className={DIALOG_LABEL_CLASS}>Category</legend>
               <div className="grid grid-cols-2 gap-2">
                 {CATEGORY_OPTIONS.map((opt) => (
                   <CategoryRadio
@@ -210,18 +221,20 @@ export function ReportIssueDialog({
             </fieldset>
 
             <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Severity</legend>
-              <div className="flex flex-row flex-wrap gap-2">
+              <legend className={DIALOG_LABEL_CLASS}>Severity</legend>
+              {/* A framed segmented choice (the global .vex-seg frame) over
+               * real native radios: the arrow keys keep working, and the
+               * checked one takes the selection fill and blue 500. */}
+              <div className="vex-seg self-start">
                 {SEVERITY_OPTIONS.map((opt) => (
                   <label
                     key={opt.value}
                     className={cn(
-                      // Landing chip: mono micro-label pill on a hairline.
-                      "cursor-pointer rounded-full border px-3 py-1.5 vex-micro-label uppercase transition-colors",
-                      "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
+                      "inline-flex h-8 cursor-pointer items-center whitespace-nowrap px-3 text-[13px]",
+                      "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
                       severity === opt.value
-                        ? "border-accent-primary/85 bg-accent-primary/8 text-accent-primary"
-                        : "border-line-3 text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary",
+                        ? "bg-interactive-active font-medium text-accent-primary"
+                        : "text-ink-secondary hover:text-ink-primary",
                     )}
                   >
                     <input
@@ -239,7 +252,9 @@ export function ReportIssueDialog({
             </fieldset>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="vex-report-title">Title</Label>
+              <Label htmlFor="vex-report-title" className={DIALOG_LABEL_CLASS}>
+                Title
+              </Label>
               <Input
                 id="vex-report-title"
                 required
@@ -247,14 +262,19 @@ export function ReportIssueDialog({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Short summary of the issue"
+                className="h-[42px]"
               />
-              <div className="flex items-center justify-end font-mono text-[10px] tabular-nums text-ink-tertiary">
-                <span aria-live="polite">{title.length} / {TITLE_MAX}</span>
+              <div className="flex items-center justify-end">
+                <span aria-live="polite" className="vex-num text-[12.5px] text-ink-tertiary">
+                  {title.length} / {TITLE_MAX}
+                </span>
               </div>
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="vex-report-description">Description</Label>
+              <Label htmlFor="vex-report-description" className={DIALOG_LABEL_CLASS}>
+                Description
+              </Label>
               <textarea
                 id="vex-report-description"
                 maxLength={DESCRIPTION_MAX}
@@ -262,47 +282,52 @@ export function ReportIssueDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 rows={6}
                 placeholder="What happened? What did you expect to happen?"
-                className={cn(
-                  "min-h-24 w-full rounded-xl border border-line-3 bg-surface-deep px-3 py-2 text-sm shadow-none",
-                  "placeholder:text-ink-tertiary",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
-                )}
+                className={cn(DIALOG_FIELD_CLASS, "h-auto py-2.5")}
               />
-              <div className="flex items-center justify-between gap-3 text-xs text-ink-secondary">
-                <p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12.5px] leading-[1.45] text-ink-secondary">
                   Don&apos;t paste passwords, mnemonics, or private keys -
                   redaction is a safety net, not a guarantee.
                 </p>
-                <span aria-live="polite">
+                <span
+                  aria-live="polite"
+                  className="vex-num shrink-0 text-[12.5px] text-ink-tertiary"
+                >
                   {description.length} / {DESCRIPTION_MAX}
                 </span>
               </div>
             </div>
 
             {submitError !== null ? (
-              <p className="text-sm text-danger" role="alert">
-                {submitError}
+              <p
+                className="flex items-start gap-2 text-[14px] leading-[1.45] text-ink-primary"
+                role="alert"
+              >
+                <Swatch state="error" size={10} className="mt-[5px] shrink-0" />
+                <span>{submitError}</span>
               </p>
             ) : null}
             {submitInfo !== null ? (
-              <p className="text-sm text-success" role="status">
-                {submitInfo}
+              <p
+                className="flex items-start gap-2 text-[14px] leading-[1.45] text-ink-primary"
+                role="status"
+              >
+                <Swatch state="done" size={10} className="mt-[5px] shrink-0 text-accent-primary" />
+                <span>{submitInfo}</span>
               </p>
             ) : null}
           </DialogBody>
 
-          <DialogFooter className="border-line-2">
+          <DialogFooter>
             <Button
               type="button"
-              variant="bare"
+              variant="quiet"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
-              className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
             >
               Cancel
             </Button>
-            {/* THE primary action — the landing's filled cobalt pill
-             * (Button default variant: mono uppercase; mirrors SessionCreator). */}
+            {/* THE primary action: the one blue fill of this dialog. */}
             <Button type="submit" disabled={submitDisabled}>
               {submitting ? "Saving…" : "Save report"}
             </Button>
@@ -331,11 +356,13 @@ function CategoryRadio({
   return (
     <label
       className={cn(
-        "flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-2 text-sm transition-colors",
-        "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-primary",
+        "flex cursor-pointer flex-col gap-1 border",
+        "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[3px] has-[:focus-visible]:outline-focus",
+        // The chosen card is a 1.5px blue frame; the padding gives back the
+        // half pixel so the card does not jump when the choice moves.
         checked
-          ? "border-accent-primary/85 bg-accent-primary/8"
-          : "border-line-3 hover:bg-interactive-hover",
+          ? "border-[1.5px] border-accent-primary px-[15.5px] py-[13.5px]"
+          : "border-rule px-4 py-3.5 hover:bg-interactive-hover",
       )}
     >
       <input
@@ -346,8 +373,11 @@ function CategoryRadio({
         onChange={onChange}
         className="sr-only"
       />
-      <span className="font-medium">{title}</span>
-      <span className="text-xs text-ink-secondary">
+      <span className="flex items-center gap-2 text-[15px] font-medium leading-[1.3] text-ink-primary">
+        <Swatch state={checked ? "done" : "idle"} size={10} className="shrink-0 text-accent-primary" />
+        {title}
+      </span>
+      <span className="text-[13.5px] leading-[1.5] text-ink-secondary">
         {description}
       </span>
     </label>

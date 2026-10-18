@@ -4,7 +4,7 @@
 
 ## Terminal colours
 
-`terminal-palette.ts` resolves semantic tokens for xterm and the registry reapplies the theme to existing terminals without replacing their buffers. Both themes use an opaque text background derived from `bg-base`, shared by the canvas and wrapper, with transparency disabled in the renderer. The pane and its header sit on the same field (docs/design/V10-SPREAD.md section 1). The decorative mark lives in `TerminalPanelHeader`, outside the glyph grid. The palette is retuned for V10: ink on the white field by day, paper type on the night field with the periwinkle cursor, and the ANSI16 held to WCAG AA on the surface they sit on.
+`terminal-palette.ts` resolves semantic tokens for xterm and the registry reapplies the theme to existing terminals without replacing their buffers. Both themes use an opaque text background derived from `bg-base`, shared by the canvas and wrapper, with transparency disabled in the renderer. The pane sits on the field under the pane head, with no frame around the workspace (docs/design/R3-MINIMAL.md section 9.5). The flat vx disc lives in `TerminalPanelHeader`, outside the glyph grid. The palette keeps its V10 tuning: ink on the white field by day, paper type on the night field with the periwinkle cursor, and the ANSI16 held to WCAG AA on the surface they sit on.
 
 Foreground and the sixteen ANSI slots meet 4.5:1 on the actual reading background in both themes, apart from the deliberate dark ANSI black pairing exception. SGR 90 uses bright-black and meets 4.5:1. Default-foreground SGR 2 has a separately documented target of at least 3:1, tested as a 50% opaque-atlas composite: about 4.52:1 in Chronos and 3.45:1 in Celeris. Antialiased edge pixels and arbitrary program colours are not promised those ratios. xterm's `minimumContrastRatio` is 4.5 in both themes; it exempts background glyphs and halves its requested ratio for dim text.
 
@@ -54,7 +54,7 @@ Both OSC 8 and detected web links require Cmd+left-click on macOS or Ctrl+left-c
 | Bounds | At most 32 live proposals per window and 1,024 proposal records globally. Only closed diagnostic records can be evicted to admit another proposal. |
 | Cancellation | The pane's signal withdraws its pending proposal. Expiry, parent navigation or destruction, and consent window destruction close unanswered proposals. An OS browser invocation cannot be undone after dispatch. |
 
-The consent page uses the shared native-dialog primitive, initial Cancel focus, and `VexMark` with `text-brand-mark`. It reads the same persisted theme preference as the main window. The token is white in the dark Chronos theme and brand blue in the light Celeris theme. Copy, decline, refusal, cancellation, and transport failure are surfaced through the same branded notice owner.
+The consent page uses the shared native-dialog primitive and initial Cancel focus, with no decorative mark (docs/design/R3-MINIMAL.md section 10: working views are paper and type). It reads the same persisted theme preference as the main window. Copy, decline, refusal, cancellation, and transport failure are surfaced through the same notice owner.
 
 All hosts, including localhost and loopback addresses, require consent unless explicitly remembered in this parent window. The separate application-link allowlist and navigation policy remain unchanged.
 

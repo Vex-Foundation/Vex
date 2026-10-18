@@ -23,8 +23,9 @@ import { publishDeskSend } from "./desk-send-intent.js";
 import { latestDeskSession } from "./desk-session.js";
 
 /**
- * The BOOK-column rail in Lighter mode: the active desk session, or the
- * starter prompts that open one scoped to the market on the desk.
+ * The desk chat in the Vex sidebar (docs/design/R3-MINIMAL.md section 5.1):
+ * the active desk session, or the starter prompts that open one scoped to the
+ * market on the desk.
  */
 export function LighterChatRail(): JSX.Element {
   const activeSessionId = useUiStore((state) => state.activeSessionId);
@@ -174,7 +175,7 @@ function DeskScopeStrip({ scope, sessionId }: {
     <div className="lit-desk-scope" data-vex-area="desk-scope">
       <span className="lit-desk-scope-chip" title="Every message you type here carries this scope">
         {deskScopeLabel(scope)}
-        {position === null ? null : <i>{position.side}</i>}
+        {position === null ? null : <i data-side={position.side}>{position.side === "long" ? "Long" : "Short"}</i>}
       </span>
       <div className="lit-desk-quick" role="group" aria-label="Quick prompts">
         {prompts.map((prompt) => (

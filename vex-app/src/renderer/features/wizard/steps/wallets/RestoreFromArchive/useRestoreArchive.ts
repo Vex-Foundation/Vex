@@ -18,7 +18,7 @@ import { restoreErrorMessage } from "./errors.js";
  * The master password lives ONLY in the uncontrolled DOM input
  * (`passwordRef`); it is read once on submit and wiped immediately after.
  * React state tracks only a boolean "is the field non-empty" to gate the
- * Restore button — never the value itself. The restore IPC is a bare async
+ * Restore button - never the value itself. The restore IPC is a bare async
  * call (`restoreArchive`), NOT a `useMutation`, so the password never lands in
  * mutation observer state.
  */
@@ -64,7 +64,7 @@ export function useRestoreArchive(): UseRestoreArchive {
       if (selectedId === null || pending) return;
 
       // Read the secret from the DOM once, then wipe the field synchronously
-      // before the IPC promise resolves — the password never enters React
+      // before the IPC promise resolves - the password never enters React
       // state or any cache.
       const password = passwordRef.current?.value ?? "";
       if (password.length === 0) return;
@@ -86,7 +86,7 @@ export function useRestoreArchive(): UseRestoreArchive {
         }
       } catch (cause) {
         // contextBridge throws synchronously on an unhandled invoke (e.g.
-        // a missing channel). No secret has been produced — main never
+        // a missing channel). No secret has been produced - main never
         // replied successfully.
         setError(
           cause instanceof Error

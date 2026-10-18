@@ -1,15 +1,20 @@
 /**
- * THE NOTIFICATION CENTER - the header flank's "what did I miss?".
+ * THE NOTIFICATION CENTER - the title bar's "what did I miss?", the
+ * "Notices · N" pill and its panel (docs/design/R3-MINIMAL.md sections 3 and
+ * 12). The pill exists only while notices exist; the panel is a flat paper
+ * popover with a 1.5px ink frame, 420 wide, 12 from the column's right edge
+ * and 6 under the title bar. A row's state is its fill (the ink cross for a
+ * failure, the ink hatch for a warning), never a colour.
  *
  * WHY IT LIVES HERE and not in `components/ui/`: it is not a primitive. It
  * reads the window's notification model directly, it is mounted exactly once
- * by `RunningHead` above the mode dispatch, and it sits in the same flank
- * as `GlobalApprovals`, whose anchored-panel chrome it generalizes. A
- * primitive would have to take all of that as props from its single caller,
- * which is ceremony, not a boundary.
+ * by `RunningHead` above the mode dispatch, and it sits in the same cluster
+ * as "Needs you", whose anchored-panel chrome it shares. A primitive would
+ * have to take all of that as props from its single caller, which is
+ * ceremony, not a boundary.
  *
- * Chrome is the repo-native anchored panel (`components/ui/select-menu.tsx`,
- * as its flank neighbour uses it): no portal, no inline style, outside
+ * Chrome is the repo-native anchored panel (`components/ui/select-menu.tsx`):
+ * no portal, no inline style, outside
  * pointerdown and Escape close, focus moved into the panel on open and
  * restored to the trigger on close.
  *
@@ -22,9 +27,9 @@
  * with a stated cap and are re-readable here instead of sitting silently in a
  * popover of their own.
  *
- * `GlobalApprovals` is deliberately still its own surface. An approval is an
- * authority decision with a per-row commit path, not a message to read, and it
- * owns a live subscription this list has no business holding.
+ * Approvals are deliberately still their own surface ("Needs you"). An
+ * approval is an authority decision with a per-row commit path, not a message
+ * to read, and its live subscription is no business of this list.
  */
 
 import {
@@ -37,14 +42,16 @@ import {
   type JSX,
   type KeyboardEvent,
 } from "react";
-import { cn } from "../../lib/utils.js";
+import { LineBell } from "../../components/icons/line/index.js";
+import { Swatch } from "../../components/ui/swatch.js";
+import { formatClock } from "../../lib/format.js";
 import { notifications } from "../../lib/notifications/index.js";
 import type {
   NotificationSeverity,
   NotificationView,
 } from "../../lib/notifications/types.js";
 
-/** Highest severity present drives the pill's tint. */
+/** Highest severity present, carried on the pill as `data-severity`. */
 const SEVERITY_RANK: Readonly<Record<NotificationSeverity, number>> = {
   info: 0,
   warning: 1,
@@ -61,76 +68,78 @@ function peakSeverity(
   return peak;
 }
 
+/** Local HH:MM of a notification's epoch-ms stamp; `null` for a bad stamp. */
+function noticeTime(createdAt: number): string | null {
+  return Number.isFinite(createdAt) ? formatClock(new Date(createdAt).toISOString()) : null;
+}
+
 function NotificationRow({ item }: { readonly item: NotificationView }): JSX.Element {
+  const time = noticeTime(item.createdAt);
+  const unavailable = item.actions[0]?.unavailableReason ?? null;
   return (
     <li
       data-vex-area="notification-row"
       data-severity={item.severity}
-      className="border-b border-[var(--vex-rule)] px-3 py-2 last:border-b-0"
+      className="vex-tb-notice"
     >
-      <div className="flex items-start justify-between gap-3">
-        <p
-          className={cn(
-            "vex-micro font-medium uppercase",
-            item.severity === "error"
-              ? "text-danger"
-              : item.severity === "warning"
-                ? "text-[var(--vex-alias-state-warn)]"
-                : "text-[var(--vex-text-2)]",
-          )}
-        >
-          {item.title ?? item.source}
-          {/* Provenance never disappears: a titled row shows both, because the
-           * title names the event and the source names who raised it. */}
-          {item.title === null ? null : (
-            <span className="ml-1.5 font-normal text-[var(--vex-text-3)]">
-              {item.source}
-            </span>
-          )}
+      <span className="vex-tb-notice__mark">
+        {/* A failure is the ink cross, a warning the ink hatch; an info row
+         * has no state to draw. */}
+        {item.severity === "info" ? null : (
+          <Swatch state={item.severity === "error" ? "error" : "concerned"} />
+        )}
+      </span>
+      <div className="min-w-0">
+        {/* Provenance never disappears: the source names who raised it, the
+         * title (when there is one) names the event. */}
+        <p className="vex-tb-notice__scope">
+          <span className="min-w-0 truncate">{item.source}</span>
+          {time === null ? null : <span className="vex-tb-count">{time}</span>}
         </p>
-        {/* Non-dismissible rows are the producer's to clear (the model refuses
-         * a user close for them); a button that would be refused is worse than
-         * no button. */}
-        {item.dismissible ? (
-          <button
-            type="button"
-            aria-label={`Dismiss notification: ${item.title ?? item.message}`}
-            onClick={() => {
-              notifications.close(item.id, "user");
-            }}
-            className="vex-micro text-[var(--vex-text-3)] transition-colors hover:text-danger"
-          >
-            Dismiss
-          </button>
+        {item.title === null ? null : (
+          <p className="vex-tb-notice__title">{item.title}</p>
+        )}
+        <p className="vex-tb-notice__text">{item.message}</p>
+        {item.actions.length > 0 || item.dismissible ? (
+          <div className="vex-tb-notice__actions">
+            {item.actions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={action.run === null || action.disabled}
+                data-rank={action.rank}
+                onClick={() => {
+                  action.run?.();
+                  if (action.rank === "primary") notifications.close(item.id, "action");
+                }}
+                className="vex-tb-notice__action"
+              >
+                {action.label}
+              </button>
+            ))}
+            {/* Non-dismissible rows are the producer's to clear (the model
+             * refuses a user close for them); a button that would be refused
+             * is worse than no button. */}
+            {item.dismissible ? (
+              <button
+                type="button"
+                aria-label={`Dismiss notification: ${item.title ?? item.message}`}
+                onClick={() => {
+                  notifications.close(item.id, "user");
+                }}
+                className="vex-tb-notice__dismiss"
+              >
+                Dismiss
+              </button>
+            ) : null}
+          </div>
         ) : null}
+        {/* Honest inertness: the producing surface is gone, and the row says
+         * so rather than offering a control that quietly does nothing. */}
+        {unavailable === null ? null : (
+          <p className="vex-tb-notice__gone">{`No longer available - ${unavailable}`}</p>
+        )}
       </div>
-      <p className="mt-1 text-xs text-[var(--vex-text-1)]">{item.message}</p>
-      {item.actions.length > 0 ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {item.actions.map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              disabled={action.run === null || action.disabled}
-              onClick={() => {
-                action.run?.();
-                if (action.rank === "primary") notifications.close(item.id, "action");
-              }}
-              className="vex-micro rounded-[3px] border border-[var(--vex-rule)] px-1.5 py-0.5 text-[var(--vex-text-1)] transition-colors hover:border-[var(--vex-accent)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {action.label}
-            </button>
-          ))}
-          {/* Honest inertness: the producing surface is gone, and the row says
-           * so rather than offering a control that quietly does nothing. */}
-          {item.actions[0]?.unavailableReason !== null &&
-          item.actions[0]?.unavailableReason !== undefined ? (
-            <span className="vex-micro text-[var(--vex-text-3)]">
-              {`No longer available - ${item.actions[0].unavailableReason}`}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
     </li>
   );
 }
@@ -155,7 +164,9 @@ export function NotificationCenter(): JSX.Element | null {
     if (!open) return undefined;
     const onPointerDown = (event: PointerEvent): void => {
       const root = rootRef.current;
-      if (root !== null && !root.contains(event.target as Node)) setOpen(false);
+      if (root !== null && event.target instanceof Node && !root.contains(event.target)) {
+        setOpen(false);
+      }
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => {
@@ -172,7 +183,7 @@ export function NotificationCenter(): JSX.Element | null {
     if (snapshot.items.length === 0 && open) setOpen(false);
   }, [snapshot.items.length, open]);
 
-  // Nothing to say - the flank stays empty, as its neighbour does when idle.
+  // Nothing to say: the pill exists only while notices exist.
   if (snapshot.items.length === 0) return null;
 
   const count = snapshot.items.length;
@@ -185,8 +196,10 @@ export function NotificationCenter(): JSX.Element | null {
     }
   };
 
+  // The root is NOT a positioning box: the panel anchors to the title bar
+  // (12 from its right edge, 6 under it), not to the pill.
   return (
-    <div ref={rootRef} className="relative" onKeyDown={onKeyDown}>
+    <div ref={rootRef} className="vex-tb-notices" onKeyDown={onKeyDown}>
       <button
         ref={triggerRef}
         type="button"
@@ -195,18 +208,16 @@ export function NotificationCenter(): JSX.Element | null {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        aria-label={`${count} ${count === 1 ? "notification" : "notifications"}`}
-        onClick={() => (open ? closePanel() : setOpen(true))}
-        className={cn(
-          "inline-flex items-center gap-1 rounded-[3px] border px-1.5 py-0.5",
-          "font-mono text-[10px] uppercase tracking-[0.14em] transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--vex-accent)]",
-          severity === "error"
-            ? "border-[var(--vex-rule)] bg-danger-wash text-danger hover:border-danger"
-            : "border-[var(--vex-rule)] text-[var(--vex-text-2)] hover:border-[var(--vex-accent)]",
-        )}
+        aria-label={`${String(count)} ${count === 1 ? "notification" : "notifications"}`}
+        onClick={() => {
+          if (open) closePanel();
+          else setOpen(true);
+        }}
+        className="vex-tb-pill"
       >
-        NOTICES {count}
+        <LineBell />
+        <span>Notices · </span>
+        <span className="vex-tb-count">{count}</span>
       </button>
       {open ? (
         <div
@@ -216,13 +227,14 @@ export function NotificationCenter(): JSX.Element | null {
           aria-label="Notifications"
           data-vex-area="notification-center-panel"
           tabIndex={-1}
-          className={cn(
-            "absolute right-0 top-full z-20 mt-1 w-[min(420px,80vw)]",
-            "rounded-lg border border-border bg-popover text-popover-foreground",
-            "focus-visible:outline-none",
-          )}
+          className="vex-tb-pop vex-tb-pop--notices vex-no-drag"
         >
-          <ul className="max-h-[60vh] overflow-y-auto">
+          <div className="vex-tb-pop__bar">
+            <span>Notices</span>
+            <span className="vex-tb-count">{count}</span>
+            <span className="vex-tb-pop__hint">Esc closes</span>
+          </div>
+          <ul className="vex-tb-pop__list">
             {snapshot.items.map((item) => (
               <NotificationRow key={item.id} item={item} />
             ))}
@@ -230,9 +242,9 @@ export function NotificationCenter(): JSX.Element | null {
           {snapshot.droppedFromHistory > 0 ? (
             <p
               data-vex-area="notification-center-dropped"
-              className="border-t border-[var(--vex-rule)] px-3 py-2 vex-micro text-[var(--vex-text-3)]"
+              className="vex-tb-pop__foot"
             >
-              {`${snapshot.droppedFromHistory} older ${
+              {`${String(snapshot.droppedFromHistory)} older ${
                 snapshot.droppedFromHistory === 1 ? "notification" : "notifications"
               } dropped by the retention cap`}
             </p>

@@ -1,16 +1,14 @@
 /**
- * Wallet-inventory presentation model for the welcome Portfolio tab — pure
- * derivations shared by `PortfolioOverviewCard` (scope chips) and
- * `WalletsCard` (identity rows):
+ * Wallet-inventory presentation model for the Portfolio page: pure
+ * derivations shared by the scope chips (`portfolio-page-scope.ts`) and the
+ * Wallets table (`WalletsCard`):
  *
  *  - flattening the family-grouped `AvailableWalletsDto` into ONE ordered
- *    list (EVM entries first, then Solana — the inventory's own insertion
+ *    list (EVM entries first, then Solana: the inventory's own insertion
  *    order, never re-sorted);
- *  - the family-primary flag: index 0 per family, the SAME "primary"
- *    convention `groupWalletsByPrimary` (GlobalWalletAddresses) uses on the
- *    session rail;
- *  - the chip display label (user label when set, else the truncated
- *    address) and the family's representative chain id for `ChainIcon`.
+ *  - the family-primary flag: index 0 per family;
+ *  - the display label (user label when set, else the truncated address)
+ *    and the family's representative chain id for `ChainIcon`.
  */
 
 import {
@@ -25,12 +23,12 @@ import { truncateAddress } from "../../../../lib/format.js";
 
 export interface PortfolioWallet {
   readonly wallet: AvailableWalletDto;
-  /** First inventory entry of its family — wears the Primary badge. */
+  /** First inventory entry of its family - wears the Primary badge. */
   readonly isPrimary: boolean;
   /**
    * `isPrimary` minus redundancy (owner screenshot review): when the user's
    * own label already SAYS "Primary", the badge would render "Primary
-   * PRIMARY" — so the badge shows only when it adds information.
+   * PRIMARY" - so the badge shows only when it adds information.
    */
   readonly showPrimaryBadge: boolean;
   /** User label when set, else the truncated address (chip text). */

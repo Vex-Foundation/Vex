@@ -862,7 +862,9 @@ describe("honest notes and absences", () => {
     expect(absent?.getAttribute("data-reason")).toBe("no_drawable_bars");
     expect(absent?.textContent).toContain("no drawable price history");
     // The sentence sits centred inside a box that never collapses.
-    expect(absent?.className).toContain("text-[13px] leading-[18px] text-ink-tertiary");
+    expect(absent?.className).toContain("text-[14px] leading-[1.45] text-ink-tertiary");
+    // No card fill: the page's own paper, so the frame holds one rule only.
+    expect(absent?.className).not.toContain("bg-board-card");
     expect(absent?.parentElement?.className).toContain("h-[280px]");
   });
 
@@ -890,18 +892,40 @@ describe("honest notes and absences", () => {
     expect(poll).toHaveBeenCalledTimes(2);
   });
 
-  it("styles the selected pill as a wash with a ring, not a solid fill", async () => {
+  it("draws every range key as the board's chip, pressed only on the selected one", async () => {
     mount();
     await settle();
+    const pills = [
+      ...document.querySelectorAll('[data-vex-area="spotlight-chart-pill"]'),
+    ];
+    expect(pills.map((pill) => pill.textContent)).toEqual(["1H", "24H", "7D", "30D"]);
+    for (const pill of pills) {
+      // The chip owns the paint (26 high, 12.5, the quiet rule); the key adds
+      // no utility of its own and no mono caps.
+      expect(pill.className).toBe("vex-bd-chip");
+    }
+    // The pressed look is `data-on`, beside the accessible state the tab keeps.
     const selected = document.querySelector(
       '[data-vex-area="spotlight-chart-pill"][data-selected="true"]',
     );
-    expect(selected?.className).toContain("bg-accent-wash text-accent-primary ring-1 ring-inset ring-accent-primary");
-    expect(selected?.className).not.toContain("bg-accent-primary ");
+    expect(selected?.getAttribute("data-on")).toBe("true");
+    expect(selected?.getAttribute("aria-selected")).toBe("true");
+    expect(selected?.textContent).toBe("24H");
     const unselected = document.querySelector(
       '[data-vex-area="spotlight-chart-pill"][data-selected="false"]',
     );
-    expect(unselected?.className).toContain("text-ink-tertiary hover:bg-interactive-hover");
+    expect(unselected?.getAttribute("data-on")).toBe("false");
+    expect(unselected?.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("puts the credit in the caption at 11 muted, and keeps it as a link", async () => {
+    mount();
+    await settle();
+    const credit = document.querySelector('[data-vex-area="spotlight-chart-attribution"]');
+    expect(credit?.textContent).toMatch(/^Charting by .+/);
+    expect(credit?.className).toContain("text-[11px]");
+    expect(credit?.className).toContain("text-ink-tertiary");
+    expect(credit?.querySelector("a")?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 });
 
@@ -1083,6 +1107,10 @@ describe("a failed refresh over good bars", () => {
     expect(degraded?.getAttribute("aria-live")).toBe("polite");
     expect(degraded?.textContent).toContain("Refresh failed");
     expect(degraded?.textContent).toContain("last good read");
+    // Status is a swatch plus a word, in ink: a failed refresh is never a hue.
+    expect(degraded?.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("concerned");
+    expect(degraded?.className).toContain("text-ink-primary");
+    expect(degraded?.className).not.toMatch(/text-(?:trade|danger|error|warning)/);
 
     // The clock is the clock OF THESE BARS, not of the attempt that failed.
     const status = document.querySelector(

@@ -1,15 +1,15 @@
 /**
- * MissionRail — the DESK RULE header's mission/plan badge cluster (formerly a
+ * MissionRail - the DESK RULE header's mission/plan badge cluster (formerly a
  * fixed right rail between chat and BOOK).
  *
  * Pins the three behaviours the cluster owns:
- *   1. Render gate — renders only for an active session that is mission-mode OR
+ *   1. Render gate - renders only for an active session that is mission-mode OR
  *      plan-enabled; a plain agent session with plan-mode off renders NOTHING
  *      (not a broken empty frame).
- *   2. Badge state derivation — the Mission badge mirrors the contract diff
+ *   2. Badge state derivation - the Mission badge mirrors the contract diff
  *      state machine with the "ready requires plan ready" cross-cut; the Plan
  *      badge mirrors the plan state.
- *   3. Single-modal mutual exclusion — opening one badge's dialog closes the
+ *   3. Single-modal mutual exclusion - opening one badge's dialog closes the
  *      other (two dialogs never stack).
  *
  * The API hooks are mocked (no IPC) and the heavy review modals are stubbed to
@@ -135,7 +135,7 @@ function plan(over: Partial<PlanGetResult> = {}): PlanGetResult {
   } as PlanGetResult;
 }
 
-// Minimal runtime Result — the rail reads `hasActiveRun` and `status`.
+// Minimal runtime Result - the rail reads `hasActiveRun` and `status`.
 // Defaults to no active run, no status (agent-mode shape); pass
 // `hasActiveRun: true` for a running mission and `status` for a specific
 // mission-run state (e.g. "paused_error" for the badge-override test).
@@ -155,7 +155,7 @@ function runtime(hasActiveRun = false, status: string | null = null) {
   });
 }
 
-// Renewable-source Result — `{ missionId } | null`. Default null (no terminal
+// Renewable-source Result - `{ missionId } | null`. Default null (no terminal
 // accepted mission); pass a missionId for a completed/failed/cancelled run.
 function renewable(missionId: string | null = null) {
   return ok(missionId === null ? null : { missionId });
@@ -164,7 +164,7 @@ function renewable(missionId: string | null = null) {
 beforeEach(() => {
   vi.clearAllMocks();
   // The open-dialog state now lives in uiStore (`reviewModal`), shared across
-  // components — reset it so no test leaks its open/closed dialog into the
+  // components - reset it so no test leaks its open/closed dialog into the
   // next one.
   useUiStore.setState({ reviewModal: "none" });
   // Sensible defaults: no draft/diff/plan; tests override per case.
@@ -203,7 +203,7 @@ describe("MissionRail render gate", () => {
       container.querySelector('[data-vex-area="mission-rail"]'),
     ).not.toBeNull();
     // Header-cluster a11y contract: a named group (no longer an <aside>
-    // landmark — the cluster lives inside the DESK RULE <header>).
+    // landmark - the cluster lives inside the DESK RULE <header>).
     expect(
       screen.getByRole("group", { name: "Mission and plan status" }),
     ).not.toBeNull();
@@ -329,9 +329,10 @@ describe("MissionRail badge derivation", () => {
     expect(screen.queryByText("Preparing")).toBeNull();
   });
 
-  it("Mission badge is Accepted (not Preparing) for a terminal mission via a renewable source", () => {
+  it("Mission badge is Ended (not Preparing) for a terminal mission via a renewable source", () => {
     // Completed/failed/cancelled: no active run, but a non-null renewable
-    // source proves the contract was accepted.
+    // source proves the contract was accepted and the run is over. R3 names
+    // that state "Ended" instead of reusing "Accepted".
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({ data: ok(null) });
     mockUseRuntimeState.mockReturnValue({ data: runtime(false) });
@@ -339,7 +340,8 @@ describe("MissionRail badge derivation", () => {
     rail();
     expect(
       screen.getByRole("button", { name: /Mission/i }).getAttribute("data-vex-state"),
-    ).toBe("accepted");
+    ).toBe("ended");
+    expect(screen.getByText("Ended")).not.toBeNull();
     expect(screen.queryByText("Preparing")).toBeNull();
   });
 
@@ -363,7 +365,7 @@ describe("MissionRail badge derivation", () => {
   it("Mission badge stays Stale (not masked Accepted) for a dirty accepted contract over a renewable source", () => {
     // An accepted-but-dirty contract on the current draft is "stale". A stale
     // renewable source from a prior terminal run must not mask that to
-    // "accepted" — the dirty current draft owns the badge.
+    // "accepted" - the dirty current draft owns the badge.
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });
     mockUseMissionDiff.mockReturnValue({
@@ -462,7 +464,7 @@ describe("MissionRail single-modal mutual exclusion", () => {
 
   it("opens the mission dialog from an EXTERNAL uiStore write (MissionControls' review bar), not just its own badge click", () => {
     // MissionControls lives in a different tree branch and can only reach
-    // this dialog through uiStore.reviewModal — pin that the rail reacts to
+    // this dialog through uiStore.reviewModal - pin that the rail reacts to
     // the store regardless of who wrote it.
     mockUseSession.mockReturnValue({ data: ok(sessionRow({ mode: "mission" })) });
     mockUseMissionDraft.mockReturnValue({ data: ok(READY_DRAFT) });

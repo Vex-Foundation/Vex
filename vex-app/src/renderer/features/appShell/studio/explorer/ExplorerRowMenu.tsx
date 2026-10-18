@@ -23,11 +23,11 @@
 import { useEffect, useState, type JSX } from "react";
 import { Menu, type MenuEntry } from "../../../../components/ui/menu.js";
 import {
-  IconEdit,
-  IconFile,
-  IconFolderClose,
-  IconTrash,
-} from "../../../../components/icons/index.js";
+  LineEdit,
+  LineFile,
+  LineFolder,
+  LineTrash,
+} from "../../../../components/icons/line/index.js";
 import {
   EXPLORER_DELETE_LABEL,
   EXPLORER_DELETE_PERMANENT_LABEL,
@@ -87,25 +87,25 @@ export function ExplorerRowMenu({
   // all. The header's own two actions are optional props a host may not pass,
   // so the menu cannot assume they are there.
   const items: MenuEntry[] = [
-    { id: "newFile", label: EXPLORER_NEW_FILE_LABEL, icon: <IconFile size={14} /> },
+    { id: "newFile", label: EXPLORER_NEW_FILE_LABEL, icon: <LineFile size={14} /> },
     {
       id: "newFolder",
       label: EXPLORER_NEW_FOLDER_LABEL,
-      icon: <IconFolderClose size={14} />,
+      icon: <LineFolder size={14} />,
     },
     { type: "separator", id: "after-create" },
   ];
   items.push(
-    { id: "rename", label: EXPLORER_RENAME_LABEL, icon: <IconEdit size={14} /> },
+    { id: "rename", label: EXPLORER_RENAME_LABEL, icon: <LineEdit size={14} /> },
     { type: "separator", id: "before-delete" },
     // Both dispositions are on the menu, because a menu that offered only the
     // recoverable one would leave permanent deletion reachable ONLY by a
     // modifier key nobody discovers.
-    { id: "delete", label: EXPLORER_DELETE_LABEL, icon: <IconTrash size={14} />, danger: true },
+    { id: "delete", label: EXPLORER_DELETE_LABEL, icon: <LineTrash size={14} />, danger: true },
     {
       id: "deletePermanent",
       label: EXPLORER_DELETE_PERMANENT_LABEL,
-      icon: <IconTrash size={14} />,
+      icon: <LineTrash size={14} />,
       danger: true,
     },
   );

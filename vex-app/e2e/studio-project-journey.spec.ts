@@ -200,11 +200,11 @@ test("Studio journey: create a project, see its report, open it and get a termin
 
   await tourTo(page, "appShell");
   const shell = page.locator('[data-vex-screen="appShell"]');
-  // The page-wide locator resolves to the ONE capsule: on the agent welcome
-  // it sits under the vex wordmark (owner decree 2026-09-04).
+  // In agent mode the way into Studio is the left sidebar nav's Studio row
+  // (docs/design/R3-MINIMAL.md section 4), open or on the rail.
   await page
-    .getByRole("radiogroup", { name: "Runtime mode" })
-    .getByRole("radio", { name: "Studio" })
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio" })
     .click();
   await expect(shell).toHaveAttribute("data-vex-runtime-mode", "studio");
 
@@ -339,14 +339,15 @@ test("Studio journey: create a project, see its report, open it and get a termin
   expect(box?.width ?? 0).toBeGreaterThan(200);
   expect(box?.height ?? 0).toBeGreaterThan(200);
   await expect(page.locator('[data-vex-area="studio-welcome"]')).toHaveCount(0);
-  // The welcome took its capsule with it and the rail header now carries the
-  // one copy: the way back to Agent survives the project opening.
+  // The way back to Agent survives the project opening: the left sidebar's nav
+  // stays, with its Chat row (docs/design/R3-MINIMAL.md section 4).
   await expect(
     page
       .locator('[data-vex-area="studio-sidebar"]')
-      .getByRole("radiogroup", { name: "Runtime mode" }),
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("button", { name: "Chat" }),
   ).toBeVisible();
-  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(1);
+  await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await shot(page, testInfo, "02-project-open");
 
   /* ---- console errors, across the whole journey ---------------------- */

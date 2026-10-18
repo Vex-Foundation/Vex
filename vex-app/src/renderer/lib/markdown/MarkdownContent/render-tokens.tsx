@@ -120,13 +120,13 @@ export function renderBlock(
       return <p key={key}>{renderInline(token.tokens, opts)}</p>;
     case "heading": {
       // Article variant: long-form static docs earn REAL heading elements, the
-      // section head in the serif at its 32px floor (docs/design/V10-SPREAD.md
-      // section 1: the serif never sets a word under 32px). Chat keeps its
-      // original semantic decision (no h-tags in chat prose).
+      // section head in the sans at 20 / 500 (docs/design/R3-MINIMAL.md
+      // sections 1.3 and 9.6: the serif is for the page head only). Chat keeps
+      // its original semantic decision (no h-tags in chat prose).
       if (opts.variant === "article") {
         if (token.depth <= 2) {
           return (
-            <h2 key={key} className="mt-9 font-serif text-[32px] font-normal leading-[1.05] tracking-[-0.012em] text-title">
+            <h2 key={key} className="mt-[18px] text-[20px] font-medium leading-[1.3] tracking-[-0.005em] text-ink-primary">
               {renderInline(token.tokens, opts)}
             </h2>
           );
@@ -166,13 +166,13 @@ export function renderBlock(
           }
         }
         return (
-          <h3 key={key} className="mt-5 text-[15.5px] font-semibold text-ink-primary">
+          <h3 key={key} className="mt-5 text-[15px] font-semibold text-ink-primary">
             {renderInline(token.tokens, opts)}
           </h3>
         );
       }
       // Chat headings keep their original semantic decision (no h-tags in
-      // chat prose); the Inter Tight document scale carries the hierarchy
+      // chat prose); the Instrument Sans document scale carries the hierarchy
       // (h1 700 24/34, h2 600 20/28, h3+ 600 17/24 — design-language §4).
       return (
         <p
@@ -271,7 +271,7 @@ export function renderBlock(
                 {token.header.map((cell: Tokens.TableCell, i: number) => (
                   <th
                     key={i}
-                    className={`border-b border-rule px-2 py-1 font-mono text-[11px] uppercase tracking-chip text-ink-secondary ${alignClass(i)}`}
+                    className={`border-b border-rule px-2 py-1 text-[12px] font-medium text-ink-tertiary ${alignClass(i)}`}
                   >
                     {renderInline(cell.tokens, opts)}
                   </th>

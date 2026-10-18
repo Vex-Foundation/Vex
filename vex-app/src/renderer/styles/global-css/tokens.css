@@ -1,4 +1,5 @@
-/* VEX design tokens, V10 "Sepia Counter" - the three-tier system.
+/* VEX design tokens: R3 Minimal on the V10 colours, the three-tier system
+ * (docs/design/R3-MINIMAL.md section 1).
  *
  *   static  -> @theme primitives (paper, ink, the one blue, Night Ledger).
  *              NEVER consumed by components; the design guard bans raw hexes
@@ -28,8 +29,10 @@
  *
  * STATUS IS SHOWN BY FILL, NEVER BY COLOUR. Success and error are ink,
  * attention is the one blue; a swatch's pattern (solid, dot screen, hatch,
- * target, outline) carries the state. The only hue outside the blue and the
- * ink ramp is the candlestick pair, inside the Lighter chart only.
+ * target, outline) carries the state. Two hue pairs sit outside the blue and
+ * the ink ramp, both sanctioned exceptions and neither ever a status: the
+ * candlestick pair, inside the Lighter chart only, and the trading pair, on
+ * trading values only (P&L, Long and Short, bids and asks).
  *
  * SHAPE. Radius 0 everywhere (base.css enforces it for every element), no
  * shadow, no blur, no glass, no gradient ramp. */
@@ -71,6 +74,16 @@
   --color-candle-up: #22c55e;
   --color-candle-down: #ef4444;
 
+  /* Static tier - the second sanctioned exception: the trading pair, on
+   * trading values only, never a status (docs/design/R3-MINIMAL.md section
+   * 1). Tuned from the candle pair: up 5.20:1 and down 5.27:1 on paper; the
+   * night pair 9.75:1 and 7.25:1 on night. Components read the
+   * --vex-alias-trade-* aliases below, never these. */
+  --color-up: #10763a;
+  --color-down: #c2272e;
+  --color-up-night: #4cd685;
+  --color-down-night: #ff7b7b;
+
   /* Shape. Tailwind's default radius, shadow and blur scales are killed so a
    * stray `rounded-xl`, `shadow-lg` or `backdrop-blur-md` compiles to nothing.
    * The app's own names stay so their call sites keep compiling, at zero;
@@ -88,34 +101,38 @@
   --shadow-lv3: 0 0 #0000;
   --blur-*: initial;
 
-  /* Typography - self-hosted WOFF2 (CSP-clean), faces in fonts.css.
-   *   --font-sans / --font-display = Instrument Sans (variable 400-700): UI
-   *     chrome and reading. Inter Tight follows it as glyph coverage only.
-   *   --font-mono  = Departure Mono (one 400 weight): every label, caption,
-   *     figure and data value. JetBrains Mono follows it as coverage.
-   *   --font-code  = JetBrains Mono: code only - xterm, code blocks, the file
-   *     viewer, raw JSON.
-   *   --font-serif = Instrument Serif: counters and titles. Static 400 +
-   *     italic, NO weight axis, never under 24px (numerals) or 32px (words).
-   * Each stack names its metric-matched `Fallback` twin right after the web
-   * faces, so the block period lays out at the final metrics. */
+  /* Typography - self-hosted WOFF2 (CSP-clean), faces in fonts.css
+   * (docs/design/R3-MINIMAL.md section 1).
+   *   --font-sans / --font-display = Instrument Sans (variable 400-700):
+   *     every UI word, labels and status words included, in sentence case.
+   *     Inter Tight follows it as glyph coverage only.
+   *   --font-mono  = JetBrains Mono (variable 100-800): every figure,
+   *     address, time and duration, with `.vex-num` (type.css) for
+   *     tabular figures. No pixel face.
+   *   --font-code  = JetBrains Mono: code - xterm, code blocks, the file
+   *     viewer, raw JSON. The same face as the figures, kept as its own
+   *     token so code and figures can part again without a sweep.
+   *   --font-serif = Instrument Serif: display only (the greeting 52, wake
+   *     and unlock 56). Static 400 + italic, NO weight axis.
+   * The sans stack names its metric-matched `Fallback` twin right after the
+   * web faces, so the block period lays out at the final metrics. */
   --font-sans:
     "Instrument Sans", "Inter Tight", "Instrument Sans Fallback",
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, sans-serif;
   --font-display: var(--font-sans);
   --font-mono:
-    "Departure Mono", "JetBrains Mono", "Departure Mono Fallback", "SF Mono",
-    Consolas, "Liberation Mono", monospace;
+    "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   --font-code:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   /* Falls back to the platform serifs so a font-load miss still reads as a
    * serif. */
   --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
 
-  /* Tracking for the Departure Mono caps registers (11px unless noted):
-   * eyebrows, status words, chips, the 22px spread caption and the running
-   * head's tape word. */
+  /* Caps tracking. R3 sets caps on tags only (REAL FUNDS, HIGH RISK: 11px,
+   * 600, docs/design/R3-MINIMAL.md section 1); labels and status words are
+   * sentence case with no tracking. These steps stay for the caps call sites
+   * that each screen converts in its own pass. */
   --tracking-eyebrow: 0.18em;
   --tracking-status: 0.14em;
   --tracking-chip: 0.12em;
@@ -134,8 +151,11 @@
   --vex-alias-bg-deep: var(--color-night-0);
   --vex-alias-bg-layer-1: var(--color-night);
   --vex-alias-bg-layer-2: var(--color-night);
-  --vex-alias-bg-layer-3: var(--color-night-2);
-  --vex-alias-bg-overlay: var(--color-night-2);
+  /* Paper 2 (the code and signed-fields wells, the connection banner) is
+   * #221A17 at night, the field's own step (R3-MINIMAL.md section 1.1), as the
+   * transcript's wells and the token chip already paint it. */
+  --vex-alias-bg-layer-3: var(--color-night-1);
+  --vex-alias-bg-overlay: var(--color-night-1);
   --vex-alias-bg-skeleton: rgba(243, 244, 247, 0.06);
   --vex-alias-sidebar-fill: var(--color-night-0);
   /* The field: inputs and the composer. The one surface that steps off the
@@ -182,6 +202,10 @@
   --vex-alias-button-accent-fill: var(--color-blue);
   --vex-alias-button-accent-hover: var(--color-blue-hi);
   --vex-alias-button-accent-ink: var(--color-white);
+  /* The periwinkle edge on a blue fill at night, where the fill's
+   * silhouette would sink into the night paper (buttons, the send key, the
+   * vx disc). docs/design/R3-MINIMAL.md section 1. */
+  --vex-alias-button-accent-edge: var(--color-peri);
 
   /* The one blue, as text and lines: the peri; hover lifts to paper. */
   --vex-alias-accent-primary: var(--color-peri);
@@ -210,6 +234,15 @@
   --vex-alias-state-warn-wash: var(--color-night-2);
   --vex-alias-state-error: var(--color-paper);
   --vex-alias-state-error-wash: var(--color-night-1);
+
+  /* Trading values only (P&L, Long and Short, bids and asks), never a
+   * status: a state keeps its fill and word. The night pair here, the paper
+   * pair under celeris. `status-contrast.test.ts` measures both on every
+   * text ground. */
+  --vex-alias-trade-up: var(--color-up-night);
+  --vex-alias-trade-down: var(--color-down-night);
+  /* Type on a solid Long or Short key: the night paper on the night pair. */
+  --vex-alias-trade-ink: var(--color-night);
 
   /* Overlay masks: the dialog dim (mask-1) and the drop sheet. No blur. */
   --vex-alias-bg-mask-1: rgba(8, 5, 4, 0.6);
@@ -240,8 +273,8 @@
    * (#1b1412, main/main-window.ts) so first paint and the plate are one
    * surface. */
   --vex-alias-gate-plate: var(--color-night);
-  /* On the night print every type is paper (docs/design/V10-SPREAD.md
-   * section 1): the giant counter and the step numerals too, where the
+  /* On the night print every type is paper (docs/design/R3-MINIMAL.md
+   * section 1.1): the giant counter and the step numerals too, where the
    * peri-hi counter measured 1.34:1. The unlock field and its Unlock box are
    * night fields; the box keeps a half-peri edge so it reads on the print. */
   --vex-alias-gate-counter: var(--color-paper);
@@ -276,7 +309,7 @@
    * component would be invisible to the theme flip and banned by the design
    * guard.
    *
-   * THE RETUNED PALETTE (docs/design/V10-SPREAD.md section 1). The reading
+   * THE RETUNED PALETTE (docs/design/R3-MINIMAL.md section 1.1). The reading
    * surface, foreground, cursor and selection are literals rather than paper
    * aliases: a running program reads the background through OSC 11, so this
    * surface is a wire contract and moves only with a retune of the terminal
@@ -374,6 +407,21 @@
   --vex-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --vex-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
   --vex-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
+
+  /* SHELL GEOMETRY - the R3 column widths (docs/design/R3-MINIMAL.md
+   * section 2). Theme-independent like the motion vocabulary. The left
+   * sidebar is 264 (224 from 1180 to 1359, the 56 rail under 1180); the Vex
+   * sidebar 256 (240, then 224); the transcript column at most 760. The 44px
+   * head row keeps one source: `--head-h` in window-chrome.css, which this
+   * name reads. */
+  --vex-head-h: var(--head-h);
+  --vex-left-w: 264px;
+  --vex-left-w-md: 224px;
+  --vex-rail-w: 56px;
+  --vex-vex-w: 256px;
+  --vex-vex-w-md: 240px;
+  --vex-vex-w-sm: 224px;
+  --vex-transcript-max: 760px;
 }
 
 /* Alias tier - CELERIS (light): the website's paper. */
@@ -413,6 +461,9 @@
   --vex-alias-button-accent-fill: var(--color-blue);
   --vex-alias-button-accent-hover: var(--color-blue-hi);
   --vex-alias-button-accent-ink: var(--color-paper);
+  /* By day the blue fill holds its own silhouette on paper: the edge is
+   * transparent, so a border shows the fill under it. */
+  --vex-alias-button-accent-edge: transparent;
 
   --vex-alias-accent-primary: var(--color-blue);
   --vex-alias-accent-hover: var(--color-blue-hi);
@@ -436,6 +487,10 @@
   --vex-alias-state-warn-wash: var(--color-paper-2);
   --vex-alias-state-error: var(--color-ink);
   --vex-alias-state-error-wash: var(--color-paper-2);
+
+  --vex-alias-trade-up: var(--color-up);
+  --vex-alias-trade-down: var(--color-down);
+  --vex-alias-trade-ink: var(--color-white);
 
   --vex-alias-bg-mask-1: rgba(10, 13, 24, 0.24);
   --vex-alias-bg-mask-drop: rgba(243, 244, 247, 0.7);
@@ -574,6 +629,7 @@
 
   --color-button-accent: var(--vex-alias-button-accent-fill);
   --color-button-accent-hover: var(--vex-alias-button-accent-hover);
+  --color-button-accent-edge: var(--vex-alias-button-accent-edge);
   --color-ink-on-button-accent: var(--vex-alias-button-accent-ink);
 
   --color-interactive-hover: var(--vex-alias-interactive-hover);
@@ -588,6 +644,13 @@
   --color-warning-wash: var(--vex-alias-state-warn-wash);
   --color-danger: var(--vex-alias-state-error);
   --color-danger-wash: var(--vex-alias-state-error-wash);
+
+  /* The trading pair: `text-trade-up`, `text-trade-down`, `bg-trade-up`,
+   * `bg-trade-down`, on trading values only; `text-ink-on-trade` on a solid
+   * Long or Short key. */
+  --color-trade-up: var(--vex-alias-trade-up);
+  --color-trade-down: var(--vex-alias-trade-down);
+  --color-ink-on-trade: var(--vex-alias-trade-ink);
 
   --color-board-surface: var(--vex-alias-board-surface);
   --color-board-card: var(--vex-alias-board-card);

@@ -36,7 +36,7 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
           type={visible ? "text" : "password"}
           autoComplete="new-password"
           spellCheck={false}
-          className="h-11 pr-16"
+          className="h-[42px] pr-16"
           {...props}
         />
         <button
@@ -44,13 +44,11 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
           onClick={() => setVisible((v) => !v)}
           aria-pressed={visible}
           aria-label={visible ? "Hide password" : "Show password"}
-          // Tier floor is SECONDARY, not tertiary: this is a CONTROL wearing
-          // a micro label, and at the pre-shell's small-caps size tertiary
-          // reads as decoration rather than something to click - in celeris
-          // especially. Hover lifts to primary.
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 vex-micro text-ink-secondary hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          // The R3 wizard render's "Show": a word in the blue at 13 / 500,
+          // sentence case, square (radius 0), the kit's 2px focus outline.
+          className="absolute right-3 top-1/2 -translate-y-1/2 px-1 py-0.5 text-[13px] font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
         >
-          {visible ? "hide" : "show"}
+          {visible ? "Hide" : "Show"}
         </button>
       </div>
     );

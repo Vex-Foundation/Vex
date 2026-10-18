@@ -1,15 +1,15 @@
 /**
- * Wizard entry routing — the ONE decision table for "what does a launch
+ * Wizard entry routing - the ONE decision table for "what does a launch
  * (or a wizard mount) do with the persisted wizard state + vault status".
  *
  * Extracted from WizardShell's init/completion effects (behavior-preserving,
  * Chronos Gate PR1) so the boot orchestrator (`features/setup/`) and the
- * wizard shell resolve the SAME table instead of duplicating it. Pure —
+ * wizard shell resolve the SAME table instead of duplicating it. Pure -
  * no IPC, no store access; callers fetch `WizardState` + secrets status
  * themselves and hand the facts in.
  *
  * The table (mirrors the pre-extraction WizardShell logic exactly, minus the
- * reconfigure row retired by Decision C — Settings owns back-edit now):
+ * reconfigure row retired by Decision C - Settings owns back-edit now):
  *   completed + vault locked         → unlock, resume to appShell
  *   completed + vault missing        → show Keystore (repair path)
  *   completed                        → appShell
@@ -42,7 +42,7 @@ export function resolveWizardEntry(args: {
       return { kind: "unlock", returnView: "appShell" };
     }
     if (!vaultConfigured) {
-      // Onboarding says done but no vault exists — re-run keystore.
+      // Onboarding says done but no vault exists - re-run keystore.
       return { kind: "step", stepId: "keystore" };
     }
     return { kind: "appShell" };

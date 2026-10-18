@@ -1,5 +1,5 @@
 /**
- * `SessionSleepBanner` — the "Vex is sleeping" state made visible.
+ * `SessionSleepBanner` - the "Vex is sleeping" state made visible.
  *
  * `loop_defer` parks a run as `paused_wake` for up to 24 hours. Without this
  * banner the operator saw nothing at all for that state and could not tell a
@@ -11,12 +11,12 @@
  * sleeping, and a banner counting down to a wake that already fired is worse
  * than no banner.
  *
- * `reason` and `watchSummary` are display text — model-authored and
+ * `reason` and `watchSummary` are display text - model-authored and
  * main-derived respectively. They are rendered as plain text, never parsed and
  * never used to drive behavior.
  *
- * Informational palette, not the destructive one used by `SessionErrorBanner`:
- * sleeping on purpose is not a failure.
+ * Quiet ink on paper with the sleeping swatch (a dotted outline), not the
+ * treatment `SessionErrorBanner` uses: sleeping on purpose is not a failure.
  */
 
 import { useEffect, useState, type JSX } from "react";
@@ -88,29 +88,27 @@ export function SessionSleepBanner({
   });
 
   // `break-words` on the container: `reason` is model-authored (up to 500
-  // chars) and can carry an unbroken token — a mint address, a URL — that
+  // chars) and can carry an unbroken token (a mint address, a URL) that
   // would otherwise push the session column wider than its container.
+  // No `role="status"`: the countdown ticks every second and would announce
+  // each tick.
   return (
     <div
       data-testid="session-sleep-banner"
       data-vex-area="session-sleep-banner"
-      className="mb-3 w-full break-words border border-rule px-3.5 py-2.5"
+      className="mb-3 grid w-full grid-cols-[22px_1fr] items-start gap-x-2.5 gap-y-0.5 break-words border border-rule bg-surface-base px-4 py-3.5"
     >
-      <p className="flex items-center gap-[9px] font-mono text-[11px] uppercase leading-none tracking-status text-ink-secondary">
-        <span aria-hidden className="inline-flex text-accent-primary">
-          <Swatch state="draft" size={9} />
-        </span>
-        Vex went to sleep
+      <span aria-hidden className="mt-[5px] inline-flex text-accent-primary">
+        <Swatch state="sleeping" size={10} />
+      </span>
+      <p className="text-[15px] font-medium leading-6 text-ink-primary">Vex went to sleep</p>
+      <p className="col-start-2 text-[14px] leading-[1.5] text-ink-secondary">
+        Wakes at <span className="font-mono vex-num">{wakeAt}</span> - {formatRemaining(dueAtMs - nowMs)}
+        {pausedWake.reason !== null ? ` · ${pausedWake.reason}` : null}
       </p>
-      <p className="mt-1.5 text-[13px] leading-5 text-ink-primary">
-        Wakes at {wakeAt} - {formatRemaining(dueAtMs - nowMs)}
-      </p>
-      {pausedWake.reason !== null ? (
-        <p className="mt-1 text-[13px] leading-5 text-ink-secondary">{pausedWake.reason}</p>
-      ) : null}
       {pausedWake.watchSummary !== null ? (
-        <p className="mt-1 font-mono text-[11px] tracking-[0.02em] text-ink-secondary">
-          {pausedWake.watchSummary}
+        <p className="col-start-2 mt-1 text-[12.5px] leading-5 text-ink-tertiary">
+          Watching: <span className="font-mono vex-num">{pausedWake.watchSummary}</span>
         </p>
       ) : null}
     </div>

@@ -511,7 +511,7 @@ export function StudioCenter({
         * workspace fell over. It is `shrink-0` so the workspace column below it
         * keeps its own scrolling. */}
       {keepAlive.activeProjectId === null ? null : (
-        <div className="shrink-0 px-6 py-3">
+        <div className="shrink-0 px-[18px] py-3">
           <StudioBridgeReadinessPanel />
         </div>
       )}

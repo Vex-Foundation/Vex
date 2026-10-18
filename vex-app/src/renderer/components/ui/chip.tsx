@@ -1,9 +1,10 @@
 /**
- * Chip: a status swatch plus its word in bracketed Departure Mono caps
- * (docs/design/V10-SPREAD.md section 1). The word repeats what the swatch
- * says; the fill carries the meaning. `compact` drops the outline and the
- * brackets for a dense row; `onPhoto` paints the label box for a chip that
- * sits on a print. Styles: `ui-primitives/marks.css`.
+ * Chip: a status swatch and its word in a quiet frame, sentence case
+ * (docs/design/R3-MINIMAL.md section 5). The word repeats what the swatch
+ * says; the fill carries the meaning and takes the one blue (`error` and
+ * `concerned` paint ink). `compact` drops the frame for a dense row; `onPhoto`
+ * is the word on a print, where the swatch and the word are the print's type.
+ * Styles: `ui-primitives/marks.css`.
  */
 
 import type { HTMLAttributes, JSX, ReactNode } from "react";
@@ -33,7 +34,11 @@ export function Chip({
       data-on-photo={onPhoto ? "" : undefined}
       {...rest}
     >
-      <Swatch state={state} size={compact ? 9 : 10} />
+      <Swatch
+        state={state}
+        size={10}
+        className={onPhoto ? undefined : "text-accent-primary"}
+      />
       <b>{children}</b>
     </span>
   );

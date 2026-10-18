@@ -1,5 +1,5 @@
 /**
- * WalletsStep — verifies the skip-card / setup-tabs branching, advance
+ * WalletsStep - verifies the skip-card / setup-tabs branching, advance
  * chain, and ChainActions integration. Mocks the API hooks so we don't
  * touch any IPC.
  *
@@ -132,7 +132,7 @@ vi.mock("../../../../lib/api/wallets.js", () => ({
       Error,
       void
     >,
-  // C3 — RestoreFromArchive (rendered collapsed in WalletsStep). Stubbed so the
+  // C3 - RestoreFromArchive (rendered collapsed in WalletsStep). Stubbed so the
   // panel mounts without hitting IPC; its full behaviour lives in
   // wallets/__tests__/RestoreFromArchive.test.tsx.
   useListBackups: () =>
@@ -417,7 +417,7 @@ describe("WalletsStep", () => {
     await waitFor(() => {
       expect(mockRestoreMutate).toHaveBeenCalled();
     });
-    // No "Restore cancelled" error visible — silent cancellation.
+    // No "Restore cancelled" error visible - silent cancellation.
     expect(view.queryByText(/Restore cancelled/i)).toBeNull();
   });
 
@@ -489,7 +489,7 @@ describe("WalletsStep", () => {
     });
     const view = renderStep(["keystore"], "back-edit");
 
-    // NOT the skip/summary card — back-edit always shows full management.
+    // NOT the skip/summary card - back-edit always shows full management.
     expect(view.queryByText(/Wallets configured/i)).toBeNull();
     // EVM resolved from inventory → ChainActions renders the configured view
     // (existing wallet) with the "Add another" affordance from WalletInventoryPanel.
@@ -498,7 +498,7 @@ describe("WalletsStep", () => {
     );
     expect(configuredEl).not.toBeNull();
     expect(view.getByText(/Add another/i)).toBeTruthy();
-    // Back-edit exit affordance (the Tabs path footer) — context-neutral
+    // Back-edit exit affordance (the Tabs path footer) - context-neutral
     // "Done", since Settings hosts the same form (Phase 2b).
     expect(view.getByRole("button", { name: /^Done$/ })).toBeTruthy();
   });

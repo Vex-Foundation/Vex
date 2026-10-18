@@ -1,0 +1,235 @@
+/* VEX design tokens.
+   Part 1, the WEBSITE (V10 "Sepia Counter"): DESIGN.md section 2.3, pasted verbatim (fonts
+   switched to the owner pick P2: Instrument Serif, Instrument Sans, Departure Mono). Do not edit
+   values here without editing DESIGN.md first. Breakpoints are literal: 640px (8 col), 1024px (12
+   col and desktop nav), 1440px, 1920px (scale tops out). Since 2026-10-17 the site has no animals:
+   the "animals" layer below holds dot clouds or a token scene.
+   Part 2, the APPS (R3 Minimal, VEX Desktop and VEX Cloud /app), at the end of this file: from
+   vex-app/docs/design/R3-MINIMAL.md section 1 and the VEX Cloud web spec (private) section 2. The shipped
+   names are --vex-alias-* (desktop, styles/global-css/tokens.css) and --vx-* (web, styles.css); the
+   short names here are for mockups. */
+:root {
+  color-scheme: light;
+
+  /* ---------- color: paper and ink (UI grounds are always cool) ---------- */
+  --paper: #F3F4F7;          /* page ground, label boxes on photos, secondary buttons */
+  --paper-2: #E8EAF2;        /* table stripes, code, pressed paper button */
+  --ink: #0A0D18;            /* body text on paper and on the sky zone */
+  --ink-2: #3A3E52;          /* secondary text, leads on paper (10.5:1) */
+  --muted: #565C78;          /* tertiary text, group counts (6.0:1) */
+
+  /* ---------- color: the one blue (two values of one hue, never a third) ---------- */
+  --blue: #0000C0;           /* logo blue: every blue word, button, chip text, hairline flow */
+  --blue-hi: #0000FF;        /* tweet blue: giant counters, figures, primary hover. Never body text */
+
+  /* ---------- color: on photographs (ground zone only) ---------- */
+  --on-photo: #FFFFFF;               /* captions, status rows, parameter values, dot clouds */
+  --on-photo-2: rgba(255,255,255,.78); /* parameter keys, secondary lines on the ground zone */
+  --rule-photo: rgba(255,255,255,.42); /* the hairline above a spread caption */
+  --rule-photo-2: rgba(255,255,255,.34); /* parameter table rows on a photo */
+  --label-box: #F3F4F7;              /* chips and buttons that sit on a photo get a paper box */
+
+  /* ---------- color: lines on paper ---------- */
+  --rule: rgba(0,0,192,.22);  /* chip outlines, quiet dividers */
+  --rule-blue: #0000C0;       /* flows, brackets, timeline line, FAQ dotted rules */
+  --rule-ink: #0A0D18;        /* risk callout frame only */
+
+  /* ---------- color: sepia ramp. ONLY for photo grading LUTs and image placeholders ---------- */
+  /* sampled from shared/art/hills-sepia.jpg, luma 32 to 236 in 9 even steps */
+  --sepia-900: #282020;
+  --sepia-800: #49352C;
+  --sepia-700: #6C4D38;
+  --sepia-600: #8D6647;
+  --sepia-500: #A87F5A;
+  --sepia-400: #BC997A;
+  --sepia-300: #C7B6A6;
+  --sepia-200: #DBD0C6;
+  --sepia-100: #F3E9DF;
+
+  /* ---------- color: ice. ONLY renewing points in the CLOUD scene, under 1% of a frame ---------- */
+  --ice: #A6FEFF;
+
+  /* ---------- color: textures ---------- */
+  --dotmap: rgba(10,13,24,.08); /* world dot map dots on paper */
+  --focus: #0000FF;             /* focus ring on paper and sky */
+  --focus-on-photo: #FFFFFF;    /* focus ring on the ground zone */
+
+  /* ---------- type families (self-hosted, app/fonts.css) ---------- */
+  --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;      /* 400 + italic only */
+  --sans: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; /* variable wght 400 to 700, wdth 75 to 100 */
+  --mono: 'Departure Mono', 'SF Mono', Consolas, 'Liberation Mono', monospace; /* pixel mono, ONE weight (400): never set 500/600, never faux bold. Crispest at 11, 22, 33px */
+
+  /* ---------- fluid type scale: min at 375px, max at 1920px, linear between ---------- */
+  --fs-counter-xl: clamp(12.5rem, 7.949rem + 19.4175vw, 31.25rem); /* 200 to 500: hero and photo chapter counters */
+  --fs-counter-l:  clamp(8rem, 5.3908rem + 11.1327vw, 18.75rem);   /* 128 to 300: paper chapter counters */
+  --fs-counter-s:  clamp(2.5rem, 2.2573rem + 1.0356vw, 3.5rem);    /* 40 to 56: inline counter in a label */
+  --fs-figure:     clamp(4rem, 3.1505rem + 3.6246vw, 7.5rem);      /* 64 to 120: key figures in data blocks */
+  --fs-display:    clamp(3rem, 2.0291rem + 4.1424vw, 7rem);        /* 48 to 112: h1 */
+  --fs-h2:         clamp(2.5rem, 1.7718rem + 3.1068vw, 5.5rem);    /* 40 to 88: section and chapter titles */
+  --fs-h3:         clamp(2rem, 1.8786rem + 0.5178vw, 2.5rem);      /* 32 to 40: product names, card titles, FAQ */
+  --fs-lead:       clamp(1.125rem, 1.0947rem + 0.1294vw, 1.25rem); /* 18 to 20 */
+  --fs-body:       clamp(1rem, 0.9697rem + 0.1294vw, 1.125rem);    /* 16 to 18 */
+  --fs-body-s:     clamp(0.875rem, 0.8598rem + 0.0647vw, 0.9375rem); /* 14 to 15 */
+  --fs-nav:        clamp(0.9375rem, 0.9223rem + 0.0647vw, 1rem);   /* 15 to 16 */
+  --fs-label:      clamp(0.75rem, 0.7197rem + 0.1294vw, 0.875rem); /* 12 to 14: mono caps eyebrows */
+  --fs-chip:       clamp(0.6875rem, 0.6723rem + 0.0647vw, 0.75rem); /* 11 to 12 */
+  --fs-data:       clamp(0.8125rem, 0.7822rem + 0.1294vw, 0.9375rem); /* 13 to 15: params, flow labels, dates */
+  --fs-caption:    clamp(1rem, 0.7269rem + 1.165vw, 2.125rem);     /* 16 to 34: spread caption */
+
+  /* line heights */
+  --lh-counter: .86;  --lh-display: .9;  --lh-h2: .94;  --lh-h3: 1;
+  --lh-lead: 1.45;    --lh-body: 1.6;    --lh-label: 1.2; --lh-data: 1.4; --lh-caption: 1.1;
+
+  /* tracking */
+  --tr-counter: -.02em;  --tr-counter-money: -.04em;
+  --tr-display: -.014em; --tr-h2: -.012em; --tr-h3: -.005em; --tr-lead: -.003em;
+  --tr-eyebrow: .18em;   --tr-status: .14em; --tr-chip: .12em; --tr-caps-data: .1em;
+  --tr-data: .02em;      --tr-caption: .06em;
+
+  /* ---------- spacing: 8px base (4px only for optical nudges) ---------- */
+  --sp-half: 4px;  --sp-1: 8px;   --sp-2: 16px;  --sp-3: 24px;  --sp-4: 32px;
+  --sp-5: 40px;    --sp-6: 48px;  --sp-8: 64px;  --sp-10: 80px; --sp-12: 96px;
+  --sp-16: 128px;  --sp-20: 160px; --sp-24: 192px; --sp-30: 240px;
+  --section-y: clamp(6rem, 5.0291rem + 4.1424vw, 10rem);  /* 96 to 160: paper section padding */
+  --stack-l:   clamp(3rem, 2.2718rem + 3.1068vw, 6rem);   /* 48 to 96: between blocks inside a section */
+  --stack-m:   clamp(1.5rem, 1.1359rem + 1.5534vw, 3rem); /* 24 to 48 */
+
+  /* ---------- grid: 12 / 8 / 4 columns ---------- */
+  --cols: 4;                                               /* 8 at >=640px, 12 at >=1024px (media queries below) */
+  --gutter: clamp(1.25rem, 0.5825rem + 2.8479vw, 4rem);   /* 20 to 64: outer margin */
+  --gap: clamp(1rem, 0.7573rem + 1.0356vw, 2rem);         /* 16 to 32: column gap */
+  --max: 1792px;                                          /* content width at 1920 = 12 x 120 + 11 x 32 */
+  --measure: 68ch;                                        /* whitepaper body */
+  --nav-h: clamp(4rem, 3.3932rem + 2.589vw, 6.5rem);      /* 64 to 104 */
+  --nav-h-sticky: 64px;
+
+  /* ---------- shape ---------- */
+  --radius: 0;            /* everything. No exceptions, focus rings included */
+  --hair: 1px;            /* rules, chip outlines */
+  --flow: 1.25px;         /* diagram flows and brackets */
+  --frame: 1.5px;         /* planned swatch, risk callout */
+
+  /* ---------- motion ---------- */
+  --dur-1: 80ms;          /* press */
+  --dur-2: 160ms;         /* hover color */
+  --dur-3: 240ms;         /* toggles, FAQ open, sticky nav, emblem nudge */
+  --dur-4: 480ms;         /* sheet, section reveal */
+  --dur-develop: 1200ms;  /* photo develops in on first load */
+  --frame-step: 200ms;    /* sprite frame swap (dot clouds, scenes) */
+  --ease-out: cubic-bezier(.2,.7,.1,1);
+  --ease-inout: cubic-bezier(.65,0,.35,1);
+  --ease-step: steps(4, end); /* dither reveals: four Bayer thresholds */
+
+  /* ---------- z-index ---------- */
+  --z-photo: 0;  --z-grain: 1;  --z-counter: 2;  --z-animals: 3;  --z-content: 4; /* --z-animals: the scene layer (dot clouds, the token, Vex on the home); the name is kept */
+  --z-nav: 50;   --z-sheet: 60; --z-toast: 70;   --z-skip: 100;
+}
+@media (min-width: 640px)  { :root { --cols: 8; } }
+@media (min-width: 1024px) { :root { --cols: 12; } }
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; --dur-4: 0ms; --dur-develop: 0ms; }
+}
+
+/* =====================================================================================
+   Part 2: the APPS, R3 Minimal (VEX Desktop and VEX Cloud /app).
+   Celeris = light, Chronos = dark ("Night Ledger"). Desktop: Chronos is the default :root and
+   Celeris is [data-vex-theme="celeris"]; web: light :root, dark :root.dark. Scope these to the app
+   root (the web app root carries [data-vx-app]); the website keeps Part 1.
+   ===================================================================================== */
+[data-vx-app], .vex-app {
+  color-scheme: light;
+  /* grounds: one paper for all three columns */
+  --app-paper: #F3F4F7;      /* left sidebar, centre, Vex sidebar */
+  --app-paper-2: #E8EAF2;    /* open tool row, banner, code well, hover step */
+  --app-field: #FFFFFF;      /* composer, inputs, result line */
+  --app-plate: #C7B6A6;      /* ground behind a print while it loads */
+  /* ink ramp; muted is also the placeholder. No faint tier (2.9:1 fails): paint muted there */
+  --app-ink: #0A0D18;        /* 17.6:1 on paper */
+  --app-ink-2: #3A3E52;
+  --app-muted: #565C78;      /* 5.97:1 on paper */
+  /* the one blue */
+  --app-blue: #0000C0;       /* type, links, selected row text */
+  --app-fill: #0000C0;       /* the one primary key per view, switch on, the token disc */
+  --app-on-fill: #F3F4F7;
+  --app-blue-hi: #0000FF;    /* primary hover only */
+  --app-focus: #0000FF;
+  /* rules and fills */
+  --app-rule: rgba(0,0,192,.22);
+  --app-rule-quiet: rgba(0,0,192,.12);   /* inside a block, under every head */
+  --app-rule-ink: #0A0D18;               /* ink frames, tags, popovers */
+  --app-wash: rgba(0,0,192,.05);         /* row hover */
+  --app-selection: rgba(0,0,192,.075);   /* selected row, pressed chip */
+  --app-search-hit: rgba(0,0,192,.14);
+  --app-stamp-bg: #0A0D18;  --app-stamp-fg: #F3F4F7;
+  --app-scrim: rgba(243,244,247,.62);    /* flat scrim, only when a dialog must block */
+  /* trading values ONLY (signed P&L, Long and Short, Buy and Sell, bids and asks, 24h change).
+     Never on a status or a state word. 5.20:1 and 5.27:1 on paper; white type on a solid key */
+  --app-trade-up: #10763A;
+  --app-trade-down: #C2272E;
+  --app-candle-up: #22C55E;   /* desktop chart only; web candles #3C7A55 / #A9483E */
+  --app-candle-down: #EF4444;
+
+  /* type: Instrument Sans every word, JetBrains Mono every figure (tabular, -.01em),
+     Instrument Serif display only. No Departure Mono in the apps. */
+  --app-sans: 'Instrument Sans', -apple-system, 'Segoe UI', Arial, sans-serif;
+  --app-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  --app-serif: 'Instrument Serif', Georgia, serif;
+  --app-fs-greeting: 52px;   /* serif, 1.02, -.012em, blue; 46 beside Vex at 1024 */
+  --app-fs-wake: 56px;       /* serif, wake and unlock title */
+  --app-fs-page: 40px;       /* serif, page head (Memory, Sessions, How Vex works) */
+  --app-fs-approval: 21px;   /* sans 500, the approval sentence */
+  --app-fs-state: 15px;      /* sans 500, the Vex state word (scope 400 muted) */
+  --app-fs-read: 15px;       /* sans, line 1.6 (user 1.55) */
+  --app-fs-composer: 16px;   /* sans, line 24px, min height 48 */
+  --app-fs-row: 14px;        /* rows, nav, buttons (500) */
+  --app-fs-meta: 13px;
+  --app-fs-small: 12px;      /* group heads 12 / 500 muted, sentence case */
+  --app-fs-tag: 11px;        /* 600 caps, the only caps: REAL FUNDS .1em, outline tags .08em */
+  --app-fs-money: 34px;      /* mono 500, -.03em, the Portfolio total */
+  --app-fs-figure: 13px;     /* mono tabular; inline 12 to 12.5 */
+
+  /* geometry (desktop names: --vex-left-w, --vex-vex-w, --vex-transcript-max, --vex-head-h) */
+  --app-left-w: 264px;       /* web 248 (R3b allows 240 to 264); 224 at 1180 to 1359; 56 rail */
+  --app-left-w-md: 224px;
+  --app-rail-w: 56px;
+  --app-vex-w: 256px;        /* 240 at 1180 to 1359, 224 under 1180; hidden = 0 */
+  --app-vex-w-md: 240px;
+  --app-vex-w-sm: 224px;
+  --app-transcript-max: 760px;
+  --app-composer-welcome: 720px;
+  --app-head-h: 44px;        /* the top bar; web phone 52 */
+  --app-row-h: 34px;         /* nav and session rows */
+  --app-control-h: 32px;     /* top bar controls; 44 on the phone */
+  --app-button-h: 40px;      /* small 32 */
+  --app-field-h: 42px;
+  --app-plate-h: 280px;      /* the Vex sidebar portrait plate */
+  --app-frame: 1.5px;        /* REAL FUNDS card, callouts, popovers, the waiting composer */
+  --app-hatch-band: 10px;    /* approval card; 8 on callouts, 7 on error toasts */
+  --app-radius: 0;
+
+  /* motion (desktop --vex-duration-*, --vex-ease-*) */
+  --app-dur-fast: 100ms;  --app-dur-base: 150ms;  --app-dur-slow: 240ms;  --app-dur-reveal: 300ms;
+  --app-ease-standard: cubic-bezier(.4,0,.2,1);
+  --app-ease-out: cubic-bezier(.25,1,.5,1);
+  --app-ease-inout: cubic-bezier(.76,0,.24,1);
+}
+:is([data-vx-app], .vex-app)[data-theme="dark"], .dark :is([data-vx-app], .vex-app) {
+  color-scheme: dark;
+  --app-paper: #1B1412;  --app-paper-2: #221A17;  --app-field: #221A17;  --app-plate: #150F0D;
+  --app-ink: #F3F4F7;  --app-ink-2: #BBBABB;  --app-muted: #989697;   /* muted 6.18:1 */
+  --app-blue: #A3ABFF;       /* periwinkle for blue type and lines */
+  --app-fill: #0000C0;       /* the action fill stays, with a 1px #A3ABFF edge */
+  --app-fill-edge: #A3ABFF;
+  --app-on-fill: #FFFFFF;
+  --app-blue-hi: #6470FF;  --app-focus: #A3ABFF;
+  --app-rule: rgba(243,244,247,.14);  --app-rule-quiet: rgba(243,244,247,.07);  --app-rule-ink: #F3F4F7;
+  --app-wash: rgba(243,244,247,.04);  --app-selection: rgba(163,171,255,.10);
+  --app-search-hit: rgba(163,171,255,.22);
+  --app-stamp-bg: #F3F4F7;  --app-stamp-fg: #1B1412;
+  --app-scrim: rgba(27,20,18,.66);
+  --app-trade-up: #4CD685;   /* 9.75:1 on night paper; #1B1412 type on a solid key */
+  --app-trade-down: #FF7B7B; /* 7.25:1 */
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-vx-app], .vex-app) { --app-dur-fast: 0ms; --app-dur-base: 0ms; --app-dur-slow: 0ms; --app-dur-reveal: 0ms; }
+}

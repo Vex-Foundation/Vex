@@ -101,6 +101,22 @@ describe("ChartCaveats status line", () => {
   });
 });
 
+describe("ChartCaveats chrome", () => {
+  it("is square and sentence case: the figures are mono, the trigger is the board's link", () => {
+    renderCaveats();
+    const resolution = screen.getByText("1h");
+    expect(resolution.className).toContain("vex-num");
+    expect(resolution.className).toContain("border-rule-quiet");
+    const trigger = screen.getByRole("button", { name: /data notes/i });
+    expect(trigger.className).toBe("vex-bd-link");
+    fireEvent.click(trigger);
+    const list = document.querySelector('[data-vex-area="board-chart-notes"]');
+    for (const node of [resolution, trigger, list]) {
+      expect(node?.className).not.toMatch(/\brounded|\buppercase\b|\bvex-micro-label\b/);
+    }
+  });
+});
+
 describe("ChartCaveats disclosure", () => {
   it("is a keyboard-reachable button with a correct aria contract", () => {
     renderCaveats();

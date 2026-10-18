@@ -1,37 +1,66 @@
 /* ---------------------------------------------------------------------------
- * Account dock (docs/design/V10-SPREAD.md section 1): the tabs row, the risk
- * row under it, then the tables. Departure Mono throughout: 10px caps column
- * heads, 12px figures right-aligned, the market a blue link when it is the
- * desk's. Up is the blue with an up arrow, down the ink with a down arrow.
+ * Account dock (docs/design/R3-MINIMAL.md sections 1.2 and 9.3): the tabs row,
+ * the summary line under it, then the tables.
+ *
+ * TYPE. Every word is Instrument Sans in sentence case with normal tracking;
+ * every figure is JetBrains Mono, tabular, at -0.01em. There are no caps in
+ * this sheet. The panel starts from the sans so the desk's mono base never
+ * reaches a word, and each figure puts the mono back on its own rule.
+ *
+ * COLOUR. Paper, ink, ink 2, muted and the rules come from the desk tokens.
+ * The trading pair (`--vex-alias-trade-up` and `-down`) paints trading values
+ * only: the Long or Short word, a signed uPnL with its ROE, Buy and Sell, a
+ * realized PnL and the Unrealized PnL figure. It never paints a status word.
+ *
+ * SIZES. Summary line 32 high; table head 28 (11.5 / 500 muted) over a quiet
+ * rule; rows 46; row keys 26; the quiet small key 32 (13 / 500). The refusing
+ * keys (Cancel, Cancel all, Market close) are ink frames that fill with ink.
  * ------------------------------------------------------------------------- */
 
-.lit-bottom-panel { container-type: inline-size; padding: 0 12px; }
+.lit-bottom-panel {
+  /* One inset for the header, the summary line and the table edges. */
+  --lit-dock-inset: 18px;
+  container-type: inline-size;
+  padding: 0 var(--lit-dock-inset);
+  font-family: var(--font-sans);
+  font-variant-numeric: normal;
+  letter-spacing: normal;
+}
 
 .lit-bottom-header {
   flex-wrap: wrap;
   gap: 0 14px;
-  margin-inline: -12px;
-  padding-inline: 12px;
+  margin-inline: calc(var(--lit-dock-inset) * -1);
+  padding-inline: var(--lit-dock-inset);
 }
 
 .lit-bottom-header > .lit-bottom-tabs { min-height: 36px; }
 
-/* Risk row: equity, available, open PnL, margin and its meter, one line
- * under the tabs. A folded dock keeps it inline beside them. */
+/* The count rides beside its tab in the figure face ("Positions 1"). */
+.lit-bottom-panel .lit-bottom-tabs button i {
+  color: var(--lit-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-style: normal;
+}
+
+/* Summary line: equity, available, unrealized PnL, margin and its meter, one
+ * line under the tabs. A folded dock keeps it inline beside them. */
 .lit-risk-strip {
   display: flex;
   min-width: 0;
-  min-height: 30px;
+  min-height: 32px;
   flex: 1 0 100%;
   order: 3;
   align-items: center;
   justify-content: flex-start;
-  gap: 14px;
-  margin: 0 -12px;
+  gap: 22px;
+  margin: 0 calc(var(--lit-dock-inset) * -1);
   overflow: hidden;
   border-top: 1px solid var(--lit-line-quiet);
-  padding: 0 12px;
-  font-size: 11px;
+  padding: 0 var(--lit-dock-inset);
+  color: var(--lit-ink-muted);
+  font-size: 12.5px;
   white-space: nowrap;
 }
 
@@ -46,7 +75,7 @@
 }
 
 .lit-risk-strip > div { display: flex; align-items: center; gap: 6px; }
-.lit-risk-strip dt { color: var(--lit-ink-secondary); }
+.lit-risk-strip dt { color: var(--lit-ink-muted); }
 
 .lit-risk-strip dd {
   display: inline-flex;
@@ -54,21 +83,52 @@
   gap: 6px;
   margin: 0;
   color: var(--lit-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
-/* Open PnL is a figure in ink: its sign says up or down. */
-.lit-risk-strip dd i { color: inherit; font-style: normal; }
-.lit-risk-strip .lit-margin-usage-bar { width: 44px; }
+/* The Unrealized PnL and its ROE take the trading pair by sign. */
+.lit-risk-strip dd > i { color: inherit; font-style: normal; }
+.lit-risk-strip dd[data-tone="positive"] { color: var(--vex-alias-trade-up); }
+.lit-risk-strip dd[data-tone="negative"] { color: var(--vex-alias-trade-down); }
+
+/* The margin meter: ten cells, each a tenth of the collateral in use. The on
+ * cells are the blue; past 80% they turn to the ink. */
+.lit-margin-usage-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lit-margin-usage-bar > i {
+  display: block;
+  width: 4px;
+  height: 10px;
+  flex: none;
+  box-sizing: border-box;
+  border: 1px solid var(--lit-line);
+}
+
+.lit-margin-usage-bar > i[data-on] {
+  border-color: var(--lit-positive);
+  background: var(--lit-positive);
+}
+
+.lit-margin-usage-bar[data-level="high"] > i[data-on] {
+  border-color: var(--lit-ink);
+  background: var(--lit-ink);
+}
 
 /* Narrow dock: the status text yields first, then the strip's outer items. */
 @container (max-width: 1060px) {
   .lit-bottom-status > span { display: none; }
 }
-@container (max-width: 850px) {
+@container (max-width: 900px) {
   .lit-risk-strip > div:last-child { display: none; }
 }
-@container (max-width: 720px) {
+@container (max-width: 640px) {
   .lit-risk-strip > div:first-child { display: none; }
 }
 
@@ -78,34 +138,50 @@
   align-items: center;
   gap: 10px;
   margin-left: auto;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
+  color: var(--lit-ink-muted);
+  font-size: 12.5px;
   white-space: nowrap;
 }
 
-/* Refresh, Cancel all, Ask, Protect, Deposit: rule-framed chips. */
+/* The quiet small key (Refresh, Try again, Deposit, an empty state's action):
+ * 32 high, a 1px rule frame, 13 / 500 ink. */
 .lit-account-refresh-button,
-.lit-cancel-all,
 .lit-fund-actions button,
-.lit-row-actions button,
 .lit-account-empty-action {
   display: inline-flex;
-  height: 24px;
+  height: 32px;
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  border: 0;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+  border: 1px solid var(--lit-line);
   background: transparent;
-  padding: 0 8px;
-  color: var(--lit-ink-secondary);
-  font-size: 11px;
+  padding: 0 12px;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
-.lit-account-refresh-button { height: 28px; font-size: 12px; }
-.lit-account-refresh-button svg { width: 16px; height: 16px; }
+/* The row keys (Ask Vex, Protect, Cancel) and Cancel all: 26 high, 12.5 sans. */
+.lit-cancel-all,
+.lit-row-actions button {
+  display: inline-flex;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--lit-line);
+  background: transparent;
+  padding: 0 9px;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
 
 .lit-account-refresh-button:hover:not(:disabled),
 .lit-fund-actions button:hover,
@@ -120,7 +196,7 @@
 /* Cancel and Cancel all refuse: the ink frame, filling with ink on hover. */
 .lit-cancel-all,
 .lit-row-actions button[data-danger] {
-  outline-color: var(--vex-alias-rule-ink);
+  border-color: var(--vex-alias-rule-ink);
   color: var(--lit-ink);
 }
 
@@ -130,9 +206,10 @@
   color: var(--lit-ink-fill-ink);
 }
 
+/* A disabled key is a dotted frame and muted type, never a faded fill. */
 .lit-cancel-all:disabled,
 .lit-row-actions button:disabled {
-  outline-style: dotted;
+  border-style: dotted;
   color: var(--lit-ink-muted);
   cursor: not-allowed;
 }
@@ -142,21 +219,30 @@
   flex: 1 1 auto;
   overflow: auto;
   overscroll-behavior: contain;
-  margin-inline: -12px;
-  padding-inline: 12px;
+  margin-inline: calc(var(--lit-dock-inset) * -1);
+  padding-inline: var(--lit-dock-inset);
 }
 
 .lit-account-table { min-width: 960px; }
 
-/* Positions: Market · Size · Entry · Mark · Liq. · Margin · uPnL (ROE) · TP / SL · actions */
+/* Positions: Market, Size, Entry, Mark, Liq. price, Margin, uPnL (ROE), TP / SL, actions */
 .lit-account-columns,
 .lit-account-row {
   display: grid;
   grid-template-columns: minmax(140px, 1.3fr) repeat(7, minmax(72px, 1fr)) minmax(184px, auto);
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: 12.5px;
+}
+
+/* Figures: JetBrains Mono, tabular, at -0.01em. Everything else in a row is a
+ * word and keeps the panel's sans. */
+.lit-positions .lit-account-row > :not(:first-child, .lit-row-actions),
+.lit-open-orders .lit-account-row > :is(:nth-child(4), :nth-child(5)),
+.lit-fills .lit-account-row > :is(:first-child, :nth-child(n + 4)) {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 /* Figures right-aligned under right-aligned heads (the leading identity
@@ -201,14 +287,14 @@
 /* Keep position actions available when the dock is narrower than the table. */
 @container (max-width: 960px) {
   .lit-positions .lit-account-columns { z-index: 3; }
-  /* The body pads its content by 12px; the sticky column covers that edge
-   * too, so nothing scrolls into view beside it. */
+  /* The body pads its content by the dock inset; the sticky column covers
+   * that edge too, so nothing scrolls into view beside it. */
   .lit-positions .lit-account-columns > :last-child,
   .lit-positions .lit-row-actions {
     position: sticky;
-    right: -12px;
-    margin-right: -12px;
-    padding-right: 12px;
+    right: calc(var(--lit-dock-inset) * -1);
+    margin-right: calc(var(--lit-dock-inset) * -1);
+    padding-right: var(--lit-dock-inset);
     z-index: 2;
     display: flex;
     align-items: center;
@@ -220,36 +306,38 @@
   }
 }
 
-/* Open orders: Market · Side · Price · Size · Filled · Time · actions */
+/* Open orders: Market, Side, Order, Price, Remaining, Status, actions */
 .lit-open-orders .lit-account-columns,
 .lit-open-orders .lit-account-row {
   grid-template-columns: minmax(120px, 1.3fr) minmax(0, 0.6fr) repeat(4, minmax(0, 1fr)) minmax(80px, auto);
 }
 
-/* Fills: Time · Market · Side · Price · Size · Value · Realized PnL */
+/* Fills: Time, Market, Side, Price, Size, Value, Realized PnL */
 .lit-fills .lit-account-columns,
 .lit-fills .lit-account-row {
   grid-template-columns: minmax(140px, 0.9fr) minmax(120px, 1.3fr) minmax(0, 0.6fr) repeat(4, minmax(0, 1fr));
 }
 
+/* Table head: 28 high, 11.5 / 500 muted words over a quiet rule. */
 .lit-account-columns {
   position: sticky;
   top: 0;
   z-index: 1;
-  min-height: 24px;
+  min-height: 28px;
   white-space: nowrap;
+  border-bottom: 1px solid var(--lit-line-quiet);
   background: var(--lit-panel);
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-caps-data);
-  text-transform: uppercase;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 .lit-account-row {
-  min-height: 44px;
-  border-top: 1px solid var(--lit-line-quiet);
+  min-height: 46px;
   color: var(--lit-ink);
 }
+
+.lit-account-row + .lit-account-row { border-top: 1px solid var(--lit-line-quiet); }
 
 .lit-account-row:hover { background: var(--lit-hover); }
 
@@ -271,10 +359,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
@@ -297,7 +385,8 @@
 
 .lit-account-row b { color: var(--lit-ink); font-weight: 400; }
 
-/* The market cell is a link to the desk; the desk's own market is blue. */
+/* The market cell is a link to the desk; the desk's own market is blue. The
+ * symbol reads a step above the figures beside it. */
 .lit-market-link {
   align-self: flex-start;
   border: 0;
@@ -305,28 +394,39 @@
   background: transparent;
   padding: 0;
   color: var(--lit-ink);
-  font-size: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: inherit;
   line-height: 1.2;
 }
 
 .lit-market-link:hover { border-bottom-color: currentColor; }
 .lit-market-link[aria-current="true"] { color: var(--lit-positive); }
 
-/* A side reads as its colour (buy blue, sell ink, as in the book); a PnL is
- * a figure in ink with its arrow or sign. */
-.lit-account-row > span[data-tone="positive"]:not(.lit-order-cell) { color: var(--lit-positive); }
-.lit-account-row > span[data-tone="negative"]:not(.lit-order-cell) { color: var(--lit-negative); }
-.lit-fills .lit-account-row > span[data-tone]:last-child { color: var(--lit-ink); }
+.lit-open-orders .lit-account-row > .lit-order-cell:first-child > b,
+.lit-fills .lit-account-row > .lit-order-cell:nth-child(2) > b {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Trading values take the pair: Buy and Sell, a realized PnL, and a uPnL cell
+ * (its figure and its ROE together, with the arrow of its sign). */
+.lit-account-row > span[data-tone="positive"]:not(.lit-order-cell) { color: var(--vex-alias-trade-up); }
+.lit-account-row > span[data-tone="negative"]:not(.lit-order-cell) { color: var(--vex-alias-trade-down); }
+.lit-account-row .lit-order-cell[data-tone="positive"] { color: var(--vex-alias-trade-up); }
+.lit-account-row .lit-order-cell[data-tone="negative"] { color: var(--vex-alias-trade-down); }
+.lit-account-row .lit-order-cell[data-tone] > :is(b, small) { color: inherit; }
 .lit-account-row .lit-order-cell[data-tone="positive"] > b::before { content: "\2191\00a0"; }
 .lit-account-row .lit-order-cell[data-tone="negative"] > b::before { content: "\2193\00a0"; }
 
-/* The side under the market reads as a label: Long · 10x Cross. */
-.lit-positions .lit-account-row > .lit-order-cell:first-child > small,
-.lit-positions .lit-account-row > .lit-order-cell:first-child > small[data-tone] {
-  color: var(--lit-ink-secondary);
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
-}
+/* The side line under the market: the Long or Short word in the pair, the
+ * leverage after it muted. */
+.lit-order-cell small > [data-trade="up"] { color: var(--vex-alias-trade-up); font-weight: 500; }
+.lit-order-cell small > [data-trade="down"] { color: var(--vex-alias-trade-down); font-weight: 500; }
+
+/* An empty TP or SL is a quiet "--". */
+.lit-order-cell > [data-empty] { color: var(--lit-ink-muted); }
 
 .lit-order-cell {
   display: flex;
@@ -336,14 +436,14 @@
   line-height: 1.2;
 }
 
-.lit-order-cell small,
-.lit-order-cell time {
-  color: var(--lit-ink-secondary);
-  font-size: 10px;
+/* A cell's second line: 11.5 muted, under the first. */
+.lit-order-cell > small,
+.lit-order-cell > time {
+  display: block;
+  color: var(--lit-ink-muted);
+  font-size: 11.5px;
   white-space: nowrap;
 }
-
-.lit-order-cell[data-tone] small { color: var(--lit-ink-secondary); }
 
 .lit-open-orders-toolbar {
   display: flex;
@@ -357,9 +457,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
-  font-size: 12px;
-  letter-spacing: normal;
+  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -371,9 +469,7 @@
   border-bottom: 1px solid var(--lit-line-quiet);
   padding: 6px 0;
   color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
-  font-size: 12px;
-  letter-spacing: normal;
+  font-size: 12.5px;
 }
 
 .lit-row-actions {
@@ -391,33 +487,29 @@
   justify-content: flex-end;
 }
 
-.lit-row-actions .lit-close-trigger:disabled {
-  cursor: not-allowed;
-}
-
 /* ============================================================ *
  *  CLOSE CARD - one key for the close decision, and the card    *
- *  it opens. The trigger is a square ink cross so it reads as a *
- *  mark rather than a fourth word; the card asks the two        *
- *  questions a close has - how much, at what kind of price.     *
+ *  it opens. The trigger is a framed 26 px square holding a     *
+ *  line cross, so it reads as a mark rather than a fourth word; *
+ *  the card asks the two questions a close has: how much, and   *
+ *  at what kind of price.                                       *
  * ============================================================ */
 .lit-row-actions .lit-close-trigger[data-danger] {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   justify-content: center;
-  outline: 0;
+  border-color: var(--lit-line);
   padding: 0;
   color: var(--lit-ink);
 }
 
 .lit-row-actions .lit-close-trigger[data-danger]:hover:not(:disabled) {
-  background: var(--lit-panel-raised);
+  background: var(--lit-hover);
   color: var(--lit-ink);
 }
 
-.lit-row-actions .lit-close-trigger[data-danger]:disabled { outline: 0; color: var(--lit-ink-muted); }
-.lit-row-actions .lit-close-trigger svg { width: 16px; height: 16px; }
-
+/* A flat popover: paper and a 1.5px ink frame, never a shadow
+ * (docs/design/R3-MINIMAL.md section 12). */
 .lit-close-card {
   /* FIXED HERE, NOT IN THE COMPONENT, and it is not only about where the card
    * ends up. The owner measures this box to place it, and a card left in
@@ -434,51 +526,51 @@
    * than at a number picked to clear today's desk chrome. */
   z-index: 1100;
   display: flex;
-  min-width: 208px;
+  min-width: 220px;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid var(--lit-line-strong);
+  border: 1.5px solid var(--vex-alias-rule-ink);
   background: var(--lit-panel);
-  padding: 10px;
-  font-family: var(--font-mono);
-  letter-spacing: var(--lit-tr-data);
+  padding: 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: normal;
 }
 
 .lit-close-card-title {
   margin: 0;
   color: var(--lit-ink);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
+/* The portions are a segmented control: 28 high, mono 12, a 1px rule. */
 .lit-close-portions {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
 }
 
-.lit-close-portions button,
-.lit-close-card-keys button {
-  height: 26px;
-  border: 0;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+.lit-close-portions button {
+  height: 28px;
+  border: 1px solid var(--lit-line);
   background: transparent;
   color: var(--lit-ink-secondary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 .lit-close-portions button + button { margin-left: -1px; }
-.lit-close-portions button:hover,
-.lit-close-card-keys button:hover { background: var(--lit-hover); color: var(--lit-ink); }
+.lit-close-portions button:hover { background: var(--lit-hover); color: var(--lit-ink); }
 
 /* The chosen portion decides how much of a position leaves, so the mark has
- * to survive a glance: the paper-2 step inside an ink frame. */
+ * to survive a glance: the selection fill, the blue, a step heavier. */
 .lit-close-portions button[data-selected] {
-  outline-color: var(--lit-ink);
-  background: var(--lit-panel-raised);
-  color: var(--lit-ink);
+  background: color-mix(in srgb, var(--lit-positive) 7.5%, transparent);
+  color: var(--lit-positive);
+  font-weight: 500;
 }
 
 .lit-close-card-keys {
@@ -487,18 +579,22 @@
   gap: 6px;
 }
 
+/* Limit is the quiet key; Market is the destructive one below. */
 .lit-close-card-keys button {
-  height: 30px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  height: 32px;
+  border: 1px solid var(--lit-line);
+  background: transparent;
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 
+.lit-close-card-keys button:hover { background: var(--lit-hover); }
+
 /* Market close is the destructive key: the ink frame, the ink fill on hover. */
-.lit-close-card-keys button[data-danger] {
-  outline: 1.5px solid var(--vex-alias-rule-ink);
-  outline-offset: -1.5px;
-  color: var(--lit-ink);
-}
+.lit-close-card-keys button[data-danger] { border: 1.5px solid var(--vex-alias-rule-ink); }
 
 .lit-close-card-keys button[data-danger]:hover {
   background: var(--lit-ink-fill);
@@ -513,34 +609,21 @@
   margin: 0;
   padding: 6px 0;
   color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
-  font-size: 12px;
-  letter-spacing: normal;
+  font-size: 13px;
 }
 
 .lit-positions-note button {
   border: 0;
-  border-bottom: 1px solid currentColor;
   background: transparent;
   padding: 0;
   color: var(--lit-positive);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
-}
-
-.lit-positions-note button:hover { color: var(--lit-ink); }
-
-/* The desk approval dialog's "Don't ask again" for Market close. */
-.lit-desk-skip-confirm {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 4px;
-  color: var(--lit-ink-secondary);
+  font-family: var(--font-sans);
   font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
+
+.lit-positions-note button:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .lit-account-balances {
   display: flex;
@@ -563,47 +646,30 @@
   padding: 8px 10px;
 }
 
-.lit-balance-summary .lit-asset-row span {
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-caps-data);
-  text-transform: uppercase;
-}
-
 .lit-margin-usage {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-bottom: 10px;
-  font-size: 11px;
+  font-size: 12.5px;
 }
+
+.lit-margin-usage > .lit-margin-usage-bar { align-self: flex-start; }
 
 .lit-margin-usage-head {
   display: flex;
-  justify-content: space-between;
-  color: var(--lit-ink-secondary);
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--lit-ink-muted);
 }
 
-.lit-margin-usage-head b { color: var(--lit-ink); font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: var(--lit-tr-data); }
-
-/* The margin meter: a rule-framed cell, the blue run is the margin in use;
- * past 80% it turns to the ink. */
-.lit-margin-usage-bar {
-  display: block;
-  height: 6px;
-  overflow: hidden;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
+.lit-margin-usage-head b {
+  color: var(--lit-ink);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
-
-.lit-margin-usage-bar i {
-  display: block;
-  height: 100%;
-  background: var(--lit-positive);
-}
-
-.lit-margin-usage-bar[data-level="high"] i { background: var(--lit-ink); }
 
 .lit-fund-actions {
   display: flex;
@@ -614,12 +680,11 @@
 }
 
 .lit-fund-actions small {
-  color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
+  color: var(--lit-ink-muted);
   font-size: 12px;
-  letter-spacing: normal;
 }
 
+/* A label is a 12 muted word; its value is a 13 mono figure in ink. */
 .lit-asset-row {
   display: flex;
   align-items: center;
@@ -627,28 +692,42 @@
   gap: 10px;
   padding: 6px 0;
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
-.lit-asset-row span { color: var(--lit-ink-secondary); }
-.lit-asset-row b { color: var(--lit-ink); font-weight: 400; }
-.lit-asset-row b small { color: var(--lit-ink-secondary); }
+.lit-asset-row span { color: var(--lit-ink-muted); }
+
+.lit-asset-row b {
+  color: var(--lit-ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.lit-asset-row b small {
+  color: var(--lit-ink-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
+}
+
+/* The Unrealized PnL is a trading value: the pair, by its sign. */
+.lit-asset-row b[data-tone="positive"] { color: var(--vex-alias-trade-up); }
+.lit-asset-row b[data-tone="negative"] { color: var(--vex-alias-trade-down); }
 
 .lit-asset-section {
   margin: 6px 0 2px;
   color: var(--lit-ink);
-  font-size: 10px;
-  letter-spacing: var(--lit-tr-eyebrow);
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .lit-asset-note {
   margin: 0;
   padding: 6px 0;
   color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
   font-size: 13px;
-  letter-spacing: normal;
 }
 
 .lit-account-empty {
@@ -657,31 +736,21 @@
   align-items: flex-start;
   gap: 6px;
   padding: 14px 0;
-  color: var(--lit-ink-secondary);
-  font-family: var(--font-sans);
+  color: var(--lit-ink-muted);
   font-size: 13px;
-  letter-spacing: normal;
   line-height: 1.5;
 }
 
 .lit-account-empty b {
   color: var(--lit-ink);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: var(--lit-tr-eyebrow);
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .lit-account-empty span { max-width: 560px; }
 
-.lit-account-empty-action {
-  margin-top: 4px;
-  color: var(--lit-ink);
-  font-family: var(--font-mono);
-  letter-spacing: var(--lit-tr-label);
-  text-transform: uppercase;
-}
+.lit-account-empty-action,
+.lit-account-empty .lit-account-refresh-button { margin-top: 4px; }
 
 .lit-account-empty-action:focus-visible,
 .lit-account-refresh-button:focus-visible,
@@ -696,14 +765,14 @@
 @container (max-width: 560px) {
   .lit-bottom-header { column-gap: 8px; }
   .lit-bottom-tabs { gap: 10px; }
-  .lit-account-refresh-button { padding-inline: 7px; }
+  .lit-account-refresh-button { padding-inline: 8px; }
 }
 
 /* Collapsed dock: header only; the tabs stay clickable and re-expand it. */
 .lit-bottom-collapse {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 0;
   background: transparent;
@@ -711,7 +780,6 @@
 }
 
 .lit-bottom-collapse:hover { background: var(--lit-hover); color: var(--lit-ink); }
-.lit-bottom-collapse svg { width: 16px; height: 16px; }
 
 .lit-bottom-panel[data-collapsed] .lit-bottom-header { min-height: 32px; flex-wrap: nowrap; border-bottom: 0; }
 .lit-bottom-panel[data-collapsed] .lit-bottom-tabs { min-height: 0; }

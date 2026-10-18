@@ -32,9 +32,6 @@ const projectsListMock = vi.fn<() => Promise<Result<ProjectList>>>();
 vi.mock("../../explorer/ExplorerTree.js", () => ({
   ExplorerTree: () => <div data-testid="explorer-tree" />,
 }));
-vi.mock("../../../market/VexTokenCardCompact.js", () => ({
-  VexTokenCardCompact: () => null,
-}));
 vi.mock("../../../SidebarProfile.js", () => ({
   SidebarProfile: () => <div data-testid="sidebar-profile" />,
 }));
@@ -96,7 +93,8 @@ describe("the sidebar row menu", () => {
   ])("%s publishes a %s intent for that project", async (label, kind) => {
     renderSidebar();
     await openRowMenu();
-    fireEvent.click(await screen.findByText(label));
+    // By role: the sidebar's nav also has a Settings row (R3 left sidebar).
+    fireEvent.click(await screen.findByRole("menuitem", { name: label }));
 
     await waitFor(() => {
       expect(useProjectDialogStore.getState().request).toEqual({
@@ -111,9 +109,11 @@ describe("the sidebar row menu", () => {
     // outlive the dialog it launched.
     renderSidebar();
     await openRowMenu();
-    fireEvent.click(await screen.findByText(STUDIO_PROJECT_MENU_SETTINGS));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: STUDIO_PROJECT_MENU_SETTINGS }),
+    );
     await waitFor(() => {
-      expect(screen.queryByText(STUDIO_PROJECT_MENU_REPAIR)).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: STUDIO_PROJECT_MENU_REPAIR })).toBeNull();
     });
   });
 

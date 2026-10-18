@@ -1,61 +1,80 @@
 /**
- * Run-state band (A28, generalized in M5): the quiet one-line band above the
- * composer field while the session is doing something (reference d3, "AGENT ·
- * RUNNING"), naming that state behind its swatch - status by fill: dot screen
- * while it runs, target while a signature or a form is awaited, hatch while it
- * is paused or asleep, the ink cross on an error - and, for a mission session
- * carrying an enabled action plan, opening the read-only plan review.
- * Read-only: mission controls stay in `MissionControls`; this band never
- * mutates.
+ * The run strip above the composer field (docs/design/R3-MINIMAL.md section
+ * 7): 44 high, a 1px rule on three sides (the composer's own top edge closes
+ * it), the state as a fill and a word ("Mission · Running"), then only real
+ * facts after a quiet divider, and at the right end only the controls that
+ * apply. A mission paused on an error takes the 1.5px ink frame.
  *
- * TWO SOURCES, ONE BAND. A mission session reads the run STATUS (its states are
- * run-lifecycle states, and `paused_wake` already has its own rich sleeping
- * banner). An agent session has no run row at all, so it reads the session
- * ACTIVITY projection - which is why a full-autonomy agent used to show
- * nothing here while it was mid-run or parked on a wake. Mission rendering is
- * unchanged, deliberately: the status word grammar below is the one the rest of
- * the mission surfaces speak.
+ * The KEYS are not drawn here. `MissionControls` owns every mission control
+ * (one set of mutation hooks, so a control in flight disables the others and
+ * Recover in the transcript shares that gate) and portals the running
+ * mission's keys into the `controls` cell this strip publishes
+ * (`mission-strip-slot.ts`); a refusal line lands in the `notes` cell above
+ * the strip. This file never mutates anything.
+ *
+ * TWO SOURCES, ONE STRIP. A mission session reads the run STATUS (its states
+ * are run-lifecycle states). An agent session has no run row at all, so it
+ * reads the session ACTIVITY projection - which is why a full-autonomy agent
+ * used to show nothing here while it was mid-run or parked on a wake. It has
+ * no keys here: an agent stops through the composer's own Stop agent.
+ *
+ * FACTS ONLY. The contract's limits are not readable once a run has started
+ * (the draft read stops at `ready`), so a running mission shows its word
+ * alone rather than limits from memory; a sleeping one shows the wake time
+ * from the same `pausedWake` the sleep card reads; a mission paused on an
+ * error says it is not monitoring the market.
  */
 
-import { lazy, Suspense, useState, type JSX } from "react";
+import { lazy, Suspense, useCallback, useState, type JSX } from "react";
 import type { RuntimeActivity } from "@shared/schemas/runtime.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
+import { useRuntimeState } from "../../../lib/api/runtime.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
+import { cn } from "../../../lib/utils.js";
 import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
 import {
   formatWakeTime,
   readSessionActivityReadout,
 } from "../session-activity-readout.js";
+import {
+  clearMissionStripCell,
+  setMissionStripCell,
+  type MissionStripCell,
+} from "../MissionControls/mission-strip-slot.js";
 
 // Lazy: the plan modal pulls the markdown pipeline - loaded on first open.
 const PlanDisplayModal = lazy(async () => ({
   default: (await import("../PlanDisplayModal.js")).PlanDisplayModal,
 }));
 
-/** Status words in the landing's status-as-word grammar. */
+/** The run's state in words, sentence case (sections 5.2 and 7). */
 const STATUS_WORD: Readonly<Record<MissionRunStatus, string>> = {
-  running: "RUNNING",
-  paused_approval: "AWAITING APPROVAL",
-  paused_user: "PAUSED",
-  paused_wake: "SLEEPING",
-  paused_error: "PAUSED ON ERROR",
-  paused_plan_acceptance: "PLAN REVIEW",
-  paused_user_form: "AWAITING FORM",
-  completed: "COMPLETED",
-  failed: "FAILED",
-  stopped: "STOPPED",
-  cancelled: "CANCELLED",
+  running: "Running",
+  paused_approval: "Waiting for approval",
+  paused_user: "Paused",
+  paused_wake: "Sleeping",
+  paused_error: "Paused on error",
+  paused_plan_acceptance: "Plan review",
+  paused_user_form: "Awaiting form",
+  completed: "Completed",
+  failed: "Failed",
+  stopped: "Stopped",
+  cancelled: "Cancelled",
 };
 
-/** The fill each live run state draws (the eagle's own state grammar). */
+/**
+ * The fill beside each word (section 1.6): solid while it runs, the target
+ * while a decision, a signature or a form is awaited, the dotted outline
+ * while it is paused or asleep, the ink cross on an error.
+ */
 const STATUS_SWATCH: Readonly<Record<MissionRunStatus, SwatchState>> = {
-  running: "ongoing",
-  paused_approval: "warning",
-  paused_user: "draft",
-  paused_wake: "draft",
+  running: "done",
+  paused_approval: "awaiting",
+  paused_user: "sleeping",
+  paused_wake: "sleeping",
   paused_error: "error",
-  paused_plan_acceptance: "warning",
-  paused_user_form: "warning",
+  paused_plan_acceptance: "awaiting",
+  paused_user_form: "awaiting",
   completed: "done",
   failed: "error",
   stopped: "idle",
@@ -70,6 +89,9 @@ const SETTLED: ReadonlySet<MissionRunStatus> = new Set([
   "cancelled",
 ]);
 
+/** Proposal copy (section 7): what a mission paused on an error is not doing. */
+const NOT_MONITORING = "Not monitoring the market";
+
 export function ComposerMissionStrip({
   sessionId,
   mode,
@@ -83,56 +105,123 @@ export function ComposerMissionStrip({
   readonly activity: RuntimeActivity | null;
 }): JSX.Element | null {
   const [planOpen, setPlanOpen] = useState(false);
-  // Only a MISSION session has an action plan to review, and now that the strip
-  // renders for agent sessions too, asking for one on every agent session would
-  // be an IPC round trip per session whose answer this band never reads. The
-  // hook self-gates on a null id (`enabled`), which is this repo's existing way
-  // to say "not for this session".
-  const planQuery = useSessionPlan(mode === "mission" ? sessionId : null);
+  // Only a MISSION session has an action plan to review or a run to read; an
+  // agent session passes null, which this repo's hooks read as "not for this
+  // session" (no IPC).
+  const missionSessionId = mode === "mission" ? sessionId : null;
+  const planQuery = useSessionPlan(missionSessionId);
   const plan = planQuery.data?.ok ? planQuery.data.data : null;
-  const band = resolveBand(mode, missionStatus, activity);
+  // The same runtime read the composer already holds (one query key), for the
+  // sleeping run's wake time.
+  const runtimeQuery = useRuntimeState(missionSessionId);
+  const wakeDueAt =
+    runtimeQuery.data?.ok === true
+      ? runtimeQuery.data.data.pausedWake?.dueAt
+      : undefined;
+
+  // The cells the run's keys and refusal line portal into. React 19 ref
+  // cleanups withdraw exactly the element this strip published.
+  const controlsRef = useCellRef(sessionId, "controls");
+  const notesRef = useCellRef(sessionId, "notes");
+
+  const band = resolveBand(mode, missionStatus, activity, wakeDueAt);
   if (band === null) return null;
+  const inkFrame = mode === "mission" && missionStatus === "paused_error";
   return (
     <div
       data-vex-area="composer-mission-strip"
       data-status={band.dataStatus}
       data-vex-activity={band.activityState ?? undefined}
-      className="flex h-[26px] items-center justify-between gap-3"
+      className="flex w-full flex-col"
     >
-      <span className="inline-flex min-w-0 items-center gap-[9px] font-mono text-[11px] uppercase leading-none tracking-status text-ink-secondary">
-        <span className="inline-flex shrink-0 text-accent-primary">
-          <Swatch state={band.swatch} size={9} />
+      {mode === "mission" ? (
+        <div ref={notesRef} data-vex-cell="mission-notes" />
+      ) : null}
+      <div
+        className={cn(
+          "flex h-11 min-w-0 items-center gap-3.5 bg-surface-base pl-3.5 pr-2 text-[13.5px] leading-none text-ink-primary",
+          inkFrame
+            ? "border-[1.5px] border-b-0 border-rule-ink"
+            : "border border-b-0 border-rule",
+        )}
+      >
+        <span className="inline-flex min-w-0 shrink-0 items-center gap-2.5">
+          <span aria-hidden className="inline-flex shrink-0 text-accent-primary">
+            <Swatch state={band.swatch} size={10} />
+          </span>
+          <span className="truncate font-medium">{band.text}</span>
         </span>
-        <span className="min-w-0 truncate">{band.text}</span>
-      </span>
-      {missionStatus !== null && plan !== null && plan.enabled ? (
-        <>
+        {band.fact !== null ? (
+          <>
+            <span aria-hidden className="h-4 w-px shrink-0 bg-rule-quiet" />
+            <span className="inline-flex min-w-0 items-baseline gap-1.5 truncate text-[12.5px] text-ink-tertiary">
+              {band.fact.label}
+              {band.fact.figure !== null ? " " : null}
+              {band.fact.figure !== null ? (
+                <span className="font-mono vex-num text-[12.5px] tracking-[-0.01em] text-ink-primary">
+                  {band.fact.figure}
+                </span>
+              ) : null}
+            </span>
+          </>
+        ) : null}
+        <span className="min-w-0 flex-1" />
+        {missionStatus !== null && plan !== null && plan.enabled ? (
           <button
             type="button"
             aria-label="Review the mission action plan"
-            className="shrink-0 font-mono text-[11px] uppercase tracking-status text-accent-primary transition-colors duration-100 hover:underline hover:underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="shrink-0 text-[13px] font-medium text-accent-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus"
             onClick={() => setPlanOpen(true)}
           >
             View plan
           </button>
-          {planOpen ? (
-            <Suspense fallback={null}>
-              <PlanDisplayModal
-                sessionId={sessionId}
-                missionStatus={missionStatus}
-                open={planOpen}
-                onOpenChange={setPlanOpen}
-              />
-            </Suspense>
-          ) : null}
-        </>
+        ) : null}
+        {mode === "mission" ? (
+          <span
+            ref={controlsRef}
+            data-vex-cell="mission-controls"
+            className="inline-flex shrink-0 items-center"
+          />
+        ) : null}
+      </div>
+      {planOpen && missionStatus !== null ? (
+        <Suspense fallback={null}>
+          <PlanDisplayModal
+            sessionId={sessionId}
+            missionStatus={missionStatus}
+            open={planOpen}
+            onOpenChange={setPlanOpen}
+          />
+        </Suspense>
       ) : null}
     </div>
   );
 }
 
+/** A stable callback ref that publishes one strip cell for the session. */
+function useCellRef(
+  sessionId: string,
+  cell: MissionStripCell,
+): (element: HTMLElement | null) => (() => void) | undefined {
+  return useCallback(
+    (element: HTMLElement | null) => {
+      if (element === null) return undefined;
+      setMissionStripCell(sessionId, cell, element);
+      return () => clearMissionStripCell(sessionId, cell, element);
+    },
+    [sessionId, cell],
+  );
+}
+
+interface StripFact {
+  /** The fact in words ("Wakes at"). */
+  readonly label: string;
+  /** Its figure in mono, or null when the fact is words alone. */
+  readonly figure: string | null;
+}
+
 interface StripBand {
-  /** The band's copy, in the strip's status-as-word grammar. */
+  /** The state in words: "Mission · Running", "Agent · Sleeping". */
   readonly text: string;
   /** `data-status` - the mission run status, or the activity state. */
   readonly dataStatus: string;
@@ -140,19 +229,29 @@ interface StripBand {
   readonly activityState: string | null;
   /** The fill beside the word. */
   readonly swatch: SwatchState;
+  /** One real fact after the divider, or none. */
+  readonly fact: StripFact | null;
+}
+
+/** "Wakes at {time}", or nothing when the time does not parse. */
+function wakeFact(iso: string | null | undefined): StripFact | null {
+  if (iso === null || iso === undefined) return null;
+  const at = formatWakeTime(iso);
+  return at === null ? null : { label: "Wakes at", figure: at };
 }
 
 /**
  * WHICH band to show, or none.
  *
- * Mission: unchanged - a live run's status word, nothing while settled or
- * absent. Agent: the activity word, and nothing at all while idle, because a
- * band that says "IDLE" over an idle composer is chrome, not information.
+ * Mission: a live run's status word, nothing while settled or absent. Agent:
+ * the activity word, and nothing at all while idle, because a band that says
+ * "Idle" over an idle composer is chrome, not information.
  */
 function resolveBand(
   mode: "mission" | "agent",
   missionStatus: MissionRunStatus | null,
   activity: RuntimeActivity | null,
+  wakeDueAt: string | undefined,
 ): StripBand | null {
   if (mode === "mission") {
     if (missionStatus === null || SETTLED.has(missionStatus)) return null;
@@ -161,28 +260,30 @@ function resolveBand(
       dataStatus: missionStatus,
       activityState: null,
       swatch: STATUS_SWATCH[missionStatus],
+      fact:
+        missionStatus === "paused_wake"
+          ? wakeFact(wakeDueAt)
+          : missionStatus === "paused_error"
+            ? { label: NOT_MONITORING, figure: null }
+            : null,
     };
   }
   if (activity === null || activity.kind === "none") return null;
   const readout = readSessionActivityReadout(activity);
   // Unreadable state: no band at all, rather than a band that guesses a word.
   if (readout === null) return null;
-  const wakeAt =
-    readout.nextWakeAt === null ? null : formatWakeTime(readout.nextWakeAt);
   return {
-    // The wake time is appended only when it is readable: the state word alone
-    // is still true, and "SLEEPING · until Invalid Date" is not.
-    text:
-      wakeAt === null
-        ? `Agent · ${readout.label.toUpperCase()}`
-        : `Agent · ${readout.label.toUpperCase()} · until ${wakeAt}`,
+    text: `Agent · ${readout.label}`,
     dataStatus: readout.state,
     activityState: readout.state,
     swatch:
       readout.state === "running"
-        ? "ongoing"
+        ? "done"
         : readout.state === "sleeping"
-          ? "draft"
+          ? "sleeping"
           : "idle",
+    // The wake time only when it is readable: the state word alone is still
+    // true, and "Wakes at Invalid Date" is not.
+    fact: wakeFact(readout.nextWakeAt),
   };
 }

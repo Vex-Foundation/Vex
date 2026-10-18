@@ -501,23 +501,47 @@ describe("renaming a terminal tab", () => {
  * THE OVERFLOW AFFORDANCE (A2).
  *
  * Twenty file tabs scrolled off the edge with nothing on screen to say they
- * had. jsdom has no layout, so the fade's VISIBILITY cannot be measured here -
- * what is pinned is that both edges exist, are decoration (`aria-hidden`, no
- * pointer events) and never become tab stops, which is the part a browser test
- * cannot state more clearly than this one.
+ * had. jsdom has no layout, so the cap's VISIBILITY cannot be measured here -
+ * what is pinned is that both edges exist, are flat paper caps and not a
+ * gradient ramp (docs/design/R3-MINIMAL.md section 1), are decoration
+ * (`aria-hidden`, no pointer events) and never become tab stops, which is the
+ * part a browser test cannot state more clearly than this one.
  */
 describe("the tab strip's overflow", () => {
-  it("draws a fade at each end that is decoration only", () => {
+  it("draws a flat cap at each end that is decoration only", () => {
     renderTabs(twoTabs("g1"));
-    const fades = document.querySelectorAll("[data-overflow-start], [data-overflow-end]");
+    // Both caps are always in the DOM; the `data-overflow-*` seam marks the end
+    // the strip can still scroll to, and jsdom (no layout) is at both ends.
+    const fades = document.querySelectorAll("[data-edge]");
+    expect([...fades].map((fade) => fade.getAttribute("data-edge"))).toEqual(["start", "end"]);
     for (const fade of fades) {
       expect(fade.getAttribute("aria-hidden")).toBe("true");
       expect(fade.className).toContain("pointer-events-none");
+      expect(fade.className).toContain("vex-ws-cap");
+      expect(fade.className).not.toMatch(/gradient/);
     }
     // The scroller is the tablist itself, so keyboard navigation still reaches
     // every tab through the primitive's roving tabindex.
     const list = screen.getByRole("tablist", { name: "Studio terminals and files" });
     expect(list.className).toContain("overflow-x-auto");
+  });
+
+  it("shows the end cap, and only that one, while more tabs wait to the right", () => {
+    const scrollWidth = vi.spyOn(Element.prototype, "scrollWidth", "get").mockReturnValue(1000);
+    const clientWidth = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(200);
+    try {
+      renderTabs(twoTabs("g1"));
+      const start = document.querySelector('[data-edge="start"]');
+      const end = document.querySelector('[data-edge="end"]');
+      // Scrolled to the start: nothing to the left, more to the right.
+      expect(start?.hasAttribute("data-overflow-start")).toBe(false);
+      expect(start?.className).toContain("opacity-0");
+      expect(end?.hasAttribute("data-overflow-end")).toBe(true);
+      expect(end?.className).toContain("opacity-100");
+    } finally {
+      scrollWidth.mockRestore();
+      clientWidth.mockRestore();
+    }
   });
 });
 
@@ -701,7 +725,7 @@ describe("the close control sits inside its tab", () => {
 
     // THE SHAPE OF 16.png, as the DOM shows it. The trigger and the close
     // share a `.vex-tab-shell` wrapper that is the tab's box; the paint is
-    // the wrapper's (glass.css, terminal.css) and neither half draws a stroke.
+    // the wrapper's (terminal.css) and neither half draws a stroke.
     const shell = trigger.closest(".vex-tab-shell");
     expect(shell).not.toBeNull();
     expect(shell?.contains(close)).toBe(true);
@@ -795,3 +819,130 @@ describe("the close control sits inside its tab", () => {
     expect(close.className).not.toContain("hidden");
   });
 });
+
+/**
+ * THE R3 CHROME (docs/design/R3-MINIMAL.md section 9.5), as the DOM states it.
+ *
+ * The numbers (40 high strip, 1.5px underline, 50 high head) are pinned as CSS
+ * text in `terminal-surface-css.test.ts`; what only the markup can say is
+ * which element wears which class, that the calm line icons replaced the px
+ * sprite, and that the workspace draws no box.
+ */
+describe("the R3 workspace chrome", () => {
+  function splitState(activePaneId: string): WorkspaceState {
+    const state = twoTabs("g1");
+    return {
+      ...state,
+      tabs: [
+        {
+          kind: "terminalGroup",
+          tabId: "g1",
+          title: "Terminal 1",
+          orientation: "horizontal",
+          panes: [
+            { paneId: "g1:0", terminalId: "t1", relativeSize: 0.5, displayCwd: null },
+            { paneId: "g1:1", terminalId: "t3", relativeSize: 0.5, displayCwd: null },
+          ],
+          activePaneId,
+        },
+        ...state.tabs.slice(1),
+      ],
+    };
+  }
+
+  it("draws the strip, the tabs and the plus key with the named R3 rules and line icons", () => {
+    renderTabs(mixedWithFile());
+    const list = screen.getByRole("tablist", { name: "Studio terminals and files" });
+    expect(list.className).toContain("vex-terminal-tab-strip");
+    expect(list.parentElement?.className).toBe("vex-ws-strip");
+    const terminalTab = screen.getByRole("tab", { name: /Terminal 1/ });
+    const fileTab = screen.getByRole("tab", { name: /service\.ts/ });
+    // 16 line icons: the px sprite is gone from the strip.
+    expect(terminalTab.querySelector("svg")?.getAttribute("width")).toBe("16");
+    expect(fileTab.querySelector("svg")?.getAttribute("width")).toBe("16");
+    // The active tab is ink and 500, an inactive one ink 2 and 400 (the
+    // underline is the shell's, in terminal.css).
+    expect(terminalTab.className).toContain("text-ink-primary");
+    expect(terminalTab.className).toContain("font-medium");
+    expect(terminalTab.className).not.toContain("text-accent-primary");
+    expect(fileTab.className).not.toContain("font-medium");
+    expect(fileTab.className).toContain("text-ink-secondary");
+    expect(fileTab.className).toContain("text-[13.5px]");
+    // The plus is a 32 x 32 icon key at the end of the strip.
+    const plus = screen.getByRole("button", { name: "New terminal" });
+    expect(plus.getAttribute("data-vex-button")).toBe("bare");
+    expect(plus.getAttribute("data-vex-button-size")).toBe("icon");
+    expect(plus.querySelector("svg")?.getAttribute("width")).toBe("16");
+    expect(list.lastElementChild).toBe(plus);
+    // The tab's state swatch keeps its fill and its word.
+    expect(terminalTab.querySelector(".vex-swatch")?.getAttribute("style")).toContain("10px");
+    expect(within(terminalTab).getByText("Running")).toBeTruthy();
+  });
+
+  it("paints the panes as the field and the workspace as no box", () => {
+    renderTabs(twoTabs("g1"));
+    const body = panelFor("g1").parentElement;
+    // The body carries no frame and no fill: the strip's rule and the head's
+    // are the only lines, and the panes are the field.
+    expect(body?.className).not.toMatch(/(?<![\w-])border/);
+    expect(body?.className).not.toMatch(/\bbg-/);
+    const pane = panelFor("g1").querySelector(".vex-ws-pane");
+    expect(pane?.className).toContain("bg-surface-field");
+    expect(pane?.hasAttribute("data-active")).toBe(false);
+    expect(panelFor("g1").querySelector("[data-vex-terminal-header]")?.className).toBe(
+      "vex-ws-head",
+    );
+  });
+
+  it("outlines only the focused pane of a split, and moves the outline with focus", () => {
+    const view = renderTabs(splitState("g1:0"));
+    const panes = (): Element[] => [...panelFor("g1").querySelectorAll(".vex-ws-pane")];
+    expect(panes().map((pane) => pane.hasAttribute("data-active"))).toEqual([true, false]);
+    expect(panelFor("g1").querySelector(".vex-ws-panes")).not.toBeNull();
+    view.rerender(
+      <TerminalTabs
+        state={splitState("g1:1")}
+        registry={registry}
+        onSelectTab={noop}
+        onCloseTab={noop}
+        onNewTerminal={noop}
+        onSplit={noop}
+        onResizePanes={noop}
+        onActivatePane={noop}
+        onClosePane={noop}
+        onRenameTab={noop}
+        onShellTitle={noop}
+        onDisplayCwdChange={noop}
+        onPaneExit={noop}
+        shellId="system_default"
+        shells={SHELLS}
+        onSelectShell={noop}
+        renderFileTab={renderFileTabStub}
+      />,
+    );
+    expect(panes().map((pane) => pane.hasAttribute("data-active"))).toEqual([false, true]);
+  });
+
+  it("draws the empty workspace as a quiet frame with a 15 / 500 sentence and a blue next step", () => {
+    renderTabs({ projectId: "p1", activeTabId: null, tabs: [] });
+    const sentence = screen.getByText("No terminals or files are open in this project.");
+    expect(sentence.className).toContain("text-[15px]");
+    expect(sentence.className).toContain("font-medium");
+    expect(sentence.parentElement?.className).toContain("border-rule-quiet");
+    expect(sentence.parentElement?.className).toContain("min-h-[150px]");
+    const step = screen.getByRole("button", { name: "Open a terminal" });
+    expect(step.className).toContain("text-accent-primary");
+    expect(step.className).toContain("text-[13.5px]");
+    expect(step.querySelector("svg")?.getAttribute("width")).toBe("14");
+  });
+});
+
+function mixedWithFile(): WorkspaceState {
+  const state = twoTabs("g1");
+  return {
+    ...state,
+    tabs: [state.tabs[0], fileTab("f1", "src/service.ts")].flatMap((tab) =>
+      tab === undefined ? [] : [tab],
+    ),
+  };
+}

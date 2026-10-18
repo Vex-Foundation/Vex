@@ -1,13 +1,13 @@
 /**
- * SelectMenu — a dark-themed, accessible single-select dropdown (ARIA
- * "select-only combobox" pattern).
+ * SelectMenu: an accessible single-select dropdown (ARIA "select-only
+ * combobox" pattern), drawn as the R3 field with the R3 menu card under it.
  *
  * Why this exists: native <select> renders its option list with the OS
- * default (white) chrome, which is unreadable on Vex's dark modals. This
- * is a fully-styled replacement (dark panel, aria-activedescendant, useId)
+ * default chrome, which ignores the room (paper or night). This is a
+ * fully-styled replacement (themed panel, aria-activedescendant, useId)
  * without Radix/portals.
  *
- * CSP: NO inline styles — the panel is anchored with Tailwind classes only,
+ * CSP: NO inline styles: the panel is anchored with Tailwind classes only,
  * so it stays compatible with `style-src 'self'`.
  *
  * Form safety: the trigger is `type="button"` so it can never submit a
@@ -57,7 +57,7 @@ export function SelectMenu({
   readonly disabled?: boolean;
   /**
    * Static open direction. "bottom" (default) opens below the trigger;
-   * "top" opens above it. There is no dynamic geometry measurement — a
+   * "top" opens above it. There is no dynamic geometry measurement; a
    * caller sitting near the bottom of a scrollable modal passes "top" so
    * the absolutely-positioned panel never extends its parent's scroll
    * bounds (which would surface a modal scrollbar).
@@ -68,7 +68,7 @@ export function SelectMenu({
    * Opt-in brand shimmer on the VALUE labels (trigger + every option): each
    * label span carries `.vex-preview-shimmer` + `data-shimmer-text`, so the
    * slow accent band sweeps the level names themselves (owner decree
-   * 2026-07-21 — the reasoning-effort selector; other consumers stay
+   * 2026-07-21: the reasoning-effort selector; other consumers stay
    * plain). The base text remains solid; reduced motion stills the band.
    */
   readonly shimmerLabels?: boolean;
@@ -197,9 +197,12 @@ export function SelectMenu({
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={handleKeyDown}
+        // The R3 field (docs/design/R3-MINIMAL.md section 1.5): 42 high,
+        // padding 0 12, 15, a rule border on the field; focus turns the
+        // border blue.
         className={cn(
-          "flex h-11 w-full items-center justify-between gap-2 border border-line-input bg-transparent px-3 text-left text-[15px] text-ink-primary",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary",
+          "flex h-[42px] w-full items-center justify-between gap-2.5 border border-line-input bg-surface-field px-3 text-left text-[15px] text-ink-primary",
+          "focus-visible:border-accent-primary focus-visible:outline-none",
           "disabled:cursor-not-allowed disabled:text-ink-tertiary",
           className,
         )}
@@ -215,7 +218,7 @@ export function SelectMenu({
           {selectedLabel}
         </span>
         <IconChevronDown
-          size={15}
+          size={14}
           className={cn(
             "shrink-0 text-ink-tertiary transition-transform",
             open && "rotate-180",
@@ -228,12 +231,14 @@ export function SelectMenu({
           role="listbox"
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledBy}
-          // Paper popover: one 1px rule, no shadow, no blur; its scrollbar rebinds to the elevated (l2) pair.
+          // The menu card (docs/design/R3-MINIMAL.md section 12): the field,
+          // one 1px ink rule, no shadow, no blur; its scrollbar rebinds to
+          // the elevated (l2) pair.
           // `placement` flips the anchor edge (down vs up). The listbox
           // FLOATS (absolute + z-30 + its own max-h scroll): it overlays
           // whatever follows the trigger and never pushes layout.
           className={cn(
-            "vex-scroll-elevated absolute left-0 right-0 z-30 max-h-56 overflow-y-auto border border-line-3 bg-surface-2 py-1 text-ink-primary",
+            "vex-scroll-elevated absolute left-0 right-0 z-30 max-h-56 overflow-y-auto border border-rule-ink bg-surface-field py-1 text-ink-primary",
             placement === "top" ? "bottom-full mb-1" : "top-full mt-1",
           )}
         >
@@ -248,12 +253,15 @@ export function SelectMenu({
                 aria-selected={selected}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(index)}
+                // Menu rows: 32 high at 13.5; the selected row keeps its
+                // swatch so the state never rests on a wash alone.
                 className={cn(
-                  "flex min-h-10 cursor-pointer items-center justify-between gap-2 px-3.5 py-1.5 text-[15px]",
+                  "flex min-h-8 cursor-pointer items-center justify-between gap-2.5 px-3 text-[13.5px]",
                   active
                     ? "bg-interactive-hover text-ink-primary"
                     : "text-ink-secondary",
-                  selected && !active && "text-ink-primary",
+                  selected && "text-ink-primary",
+                  selected && !active && "bg-interactive-active",
                 )}
               >
                 <span

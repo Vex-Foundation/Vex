@@ -1,5 +1,5 @@
 /**
- * "Tell Vex what to do differently" — the post-stop restart affordance.
+ * "Tell Vex what to do differently" - the post-stop restart affordance.
  *
  * Rendered by `MissionControls` in its terminal branch (accepted contract,
  * terminal last run, no pending draft), next to "Renew mission". The two are
@@ -17,7 +17,7 @@
  * The instruction is untrusted text on its way to a transcript row the agent
  * re-reads every turn. It is bounded here by `maxLength` for the user's sake,
  * and independently by the Zod schema at the preload boundary and by the
- * engine primitive — this input is a convenience, never the enforcement.
+ * engine primitive - this input is a convenience, never the enforcement.
  */
 
 import { useState, type FormEvent, type JSX } from "react";
@@ -25,6 +25,7 @@ import { MISSION_RESTART_INSTRUCTION_MAX_LENGTH } from "@shared/schemas/mission.
 import type { MissionRestartWithInstructionResult } from "@shared/schemas/mission.js";
 import type { Result } from "@shared/ipc/result.js";
 import { useMissionRestartWithInstruction } from "../../lib/api/mission.js";
+import { Button } from "../../components/ui/button.js";
 
 export interface MissionRestartAffordanceProps {
   readonly sessionId: string;
@@ -111,7 +112,7 @@ export function MissionRestartAffordance({
         type="button"
         disabled={busy}
         onClick={() => setOpen(true)}
-        className="mt-2 w-full text-left text-[13px] text-accent-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-ink-tertiary"
+        className="text-[13.5px] font-medium text-accent-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed disabled:text-ink-tertiary"
       >
         Tell Vex what to do differently
       </button>
@@ -119,10 +120,10 @@ export function MissionRestartAffordance({
   }
 
   return (
-    <form onSubmit={(event) => void onSubmit(event)} className="mt-2 w-full">
+    <form onSubmit={(event) => void onSubmit(event)} className="mt-1 w-full basis-full">
       <label
         htmlFor="mission-restart-instruction"
-        className="mb-1.5 block font-mono text-[11px] uppercase tracking-status text-ink-secondary"
+        className="mb-1.5 block text-[13px] font-medium text-ink-secondary"
       >
         What should be different this run?
       </label>
@@ -133,34 +134,36 @@ export function MissionRestartAffordance({
         maxLength={MISSION_RESTART_INSTRUCTION_MAX_LENGTH}
         rows={3}
         placeholder="e.g. Skip the SOL leg and rebalance into USDC instead."
-        className="w-full resize-none border border-rule bg-surface-field px-3 py-2 text-[13px] leading-5 text-ink-primary caret-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        className="w-full resize-none border border-rule bg-surface-field px-3 py-2 text-[14px] leading-[1.45] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:border-accent-primary focus-visible:outline-none"
       />
-      <p className="mt-1 text-[12px] leading-[18px] text-ink-secondary">
+      <p className="mt-1 text-[12.5px] leading-[18px] text-ink-tertiary">
         Restarts the same accepted contract with this instruction added. The
         contract itself is unchanged.
       </p>
-      <div className="mt-2 flex gap-2">
-        <button
+      <div className="mt-2.5 flex gap-2.5">
+        <Button
           type="submit"
+          variant="primary"
+          size="sm"
           disabled={busy || trimmed.length === 0}
-          className="inline-flex h-9 items-center border border-transparent bg-button-accent px-3.5 font-mono text-[12px] uppercase tracking-chip text-ink-on-button-accent transition-colors hover:bg-button-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary"
         >
           Restart with instruction
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="quiet"
+          size="sm"
           disabled={restart.isPending}
           onClick={() => {
             setOpen(false);
             setNotice(null);
           }}
-          className="inline-flex h-9 items-center border border-rule px-3.5 font-mono text-[12px] uppercase tracking-chip text-ink-primary transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:border-dotted disabled:text-ink-tertiary"
         >
           Cancel
-        </button>
+        </Button>
       </div>
       {notice !== null ? (
-        <p role="alert" className="mt-1 w-full text-[13px] leading-5 text-ink-primary">
+        <p role="alert" className="mt-2 w-full text-[13px] leading-5 text-ink-primary">
           {notice}
         </p>
       ) : null}

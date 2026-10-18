@@ -1,5 +1,5 @@
 /**
- * ApiKeysFormFooter — the "Skip optional" + "Save…" action row rendered
+ * ApiKeysFormFooter - the "Skip optional" + "Save…" action row rendered
  * in the `footer` slot of the ApiKeysStep form panel.
  *
  * Presentational: the parent owns submit/skip wiring and the busy flags.
@@ -30,7 +30,7 @@ export function ApiKeysFormFooter({
     <>
       <Button
         type="button"
-        variant="bare"
+        variant="quiet"
         onClick={() => {
           onSkip();
         }}

@@ -1,26 +1,31 @@
 /**
- * SettingsScreen — the in-shell Settings ShellScreen (Phase 2b; the
- * reconfigure-wizard "Edit infrastructure" surface is retired).
+ * SettingsScreen - the in-shell Settings page (docs/design/R3-MINIMAL.md
+ * section 9.6; the reconfigure-wizard "Edit infrastructure" surface is
+ * retired).
  *
  * Pins:
- *   - `shellRoute = { kind: "settings", section: null }` mounts the screen
- *     through ShellScreens as a titled modal dialog ("Settings") showing
- *     the eight-row landing register,
+ *   - `shellRoute = { kind: "settings", section: null }` mounts the page
+ *     through ShellScreens as a titled modal dialog ("Settings") with ONE nav:
+ *     four groups (App, Security and wallets, The agent, Connections), nine
+ *     rows, the page landing on Preferences,
  *   - status WORDS derive from envState (success / neutral / warning
- *     vocabulary — "Protected", "Both chains", "Jupiter missing", …),
- *   - clicking a row slides to that section's sub-view hosting the wizard
- *     step form in `flowMode="back-edit"`, with the "← Settings" back
- *     affordance returning to the register,
- *   - a route `section` deep-links straight into a sub-view (the welcome
+ *     vocabulary - "Protected", "Both chains", "Jupiter missing", ...), each
+ *     beside a fill swatch, Preferences has none,
+ *   - clicking a nav row opens that section beside the nav (the selected row
+ *     says so with `aria-current`), hosting the wizard step form in
+ *     `flowMode="back-edit"`; the Preferences row returns,
+ *   - a route `section` deep-links straight into a section (the welcome
  *     Portfolio "Add wallet" path),
- *   - a step form's save (`onAdvance`) returns to the register,
- *   - per-chain private-key export lives ONLY in the Wallets sub-view,
- *     gated on the chain actually existing,
+ *   - a step form's save (`onAdvance`) returns to Preferences,
+ *   - Superboard key and Lighter draw their own head (name, status word, lead),
+ *   - per-chain private-key export lives ONLY in the Wallets section, gated on
+ *     the chain actually existing,
+ *   - Vex's sidebar is hidden by default on this page (a table page),
  *   - Escape closes back to `{ kind: "none" }`.
  *
  * The wizard step forms are mocked through the `features/wizard` public
- * gate — their behavior belongs to the wizard suites; this suite owns the
- * register, routing, and status-word derivation.
+ * gate - their behavior belongs to the wizard suites; this suite owns the
+ * nav, routing, and status-word derivation.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,7 +47,7 @@ Object.defineProperty(globalThis, "localStorage", {
     clear: () => localStorageState.clear(),
   },
 });
-const { useUiStore } = await import("../../../../stores/uiStore.js");
+const { useUiStore, selectVexOpen, vexPageClass } = await import("../../../../stores/uiStore.js");
 
 // Sibling screens pull heavy registers; only the settings branch is under test.
 vi.mock("../MemoryScreen.js", () => ({ MemoryScreen: () => null }));
@@ -52,7 +57,7 @@ vi.mock("../AssetsScreen.js", () => ({ AssetsScreen: () => null }));
 vi.mock("../AgentScanScreen.js", () => ({ AgentScanScreen: () => null }));
 vi.mock("../TokenHistoryScreen.js", () => ({ TokenHistoryScreen: () => null }));
 
-// The wizard public gate — step-form stubs expose exactly the contract the
+// The wizard public gate - step-form stubs expose exactly the contract the
 // screen drives: flowMode + the save-returns-to-register wire (onAdvance).
 type StepStubProps = {
   readonly flowMode: string;
@@ -79,7 +84,7 @@ vi.mock("../../../wizard/index.js", () => ({
 
 vi.mock("../../../wallets/WalletRemovalSection.js", () => ({ WalletRemovalSection: () => <div>Remove a wallet</div> }));
 
-// The export modal is a high-risk surface with its own suites — a stub
+// The export modal is a high-risk surface with its own suites - a stub
 // exposing the chain prop pins the wiring without the crypto flow.
 const exportModalSpy = vi.hoisted(() => vi.fn());
 vi.mock("../../../wallets/ExportPrivateKeyModal.js", () => ({
@@ -135,6 +140,10 @@ vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
   usePickShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
   useClearShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
 }));
+
+// The Preferences landing draws the "Looking at you" preview, whose plate
+// hosts the K2 hologram; her canvas belongs to VexK2's own suite.
+vi.mock("../../../../components/vex/k2/VexK2.js", () => ({ VexK2: () => null }));
 
 const { ShellScreens } = await import("../ShellScreens.js");
 
@@ -230,13 +239,28 @@ afterEach(() => {
   useUiStore.setState({ shellRoute: { kind: "none" } });
 });
 
+/** The nav row of one section. */
+function navRow(id: string): HTMLElement {
+  const row = document.querySelector(`[data-vex-settings-row="${id}"]`);
+  if (!(row instanceof HTMLElement)) throw new Error(`nav row ${id} missing`);
+  return row;
+}
+
 describe("SettingsScreen", () => {
-  it("mounts through ShellScreens as the Settings dialog with the eight-row register and healthy status words", async () => {
+  it("mounts through ShellScreens as the Settings dialog with one nav of four groups and healthy status words", async () => {
     render(<ShellScreens />);
     openSettings();
 
     await screen.findByRole("dialog", { name: "Settings" });
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    expect(nav.hasAttribute("data-vex-settings-register")).toBe(true);
+    expect(
+      within(nav)
+        .getAllByRole("group")
+        .map((group) => group.firstElementChild?.textContent),
+    ).toEqual(["App", "Security and wallets", "The agent", "Connections"]);
     for (const name of [
+      "Preferences",
       "Vault",
       "Wallets",
       "API keys",
@@ -246,42 +270,53 @@ describe("SettingsScreen", () => {
       "Superboard key",
       "Lighter",
     ]) {
-      expect(screen.getByText(name)).not.toBeNull();
+      expect(within(nav).getByRole("button", { name: new RegExp(name) })).not.toBeNull();
     }
-    // Status = colored WORDS from envState (never a dot).
-    expect(screen.getByText("Protected")).not.toBeNull();
-    expect(screen.getByText("Both chains")).not.toBeNull();
-    expect(screen.getByText("Configured")).not.toBeNull();
-    expect(screen.getByText("Linked")).not.toBeNull();
-    expect(screen.getByText("OpenRouter")).not.toBeNull();
-    expect(screen.getByText("Reachable")).not.toBeNull();
-    expect(screen.getByText("Saved")).not.toBeNull();
-    expect(screen.getByText("Open")).not.toBeNull();
+    // Status = a fill and a WORD from envState (never a dot, never a hue).
+    expect(within(navRow("vault")).getByText("Protected")).not.toBeNull();
+    expect(within(navRow("wallets")).getByText("Both chains")).not.toBeNull();
+    expect(within(navRow("apiKeys")).getByText("Configured")).not.toBeNull();
+    expect(within(navRow("superboardKey")).getByText("Linked")).not.toBeNull();
+    expect(within(navRow("model")).getByText("OpenRouter")).not.toBeNull();
+    expect(within(navRow("memory")).getByText("Reachable")).not.toBeNull();
+    expect(within(navRow("tuning")).getByText("Saved")).not.toBeNull();
+    expect(within(navRow("lighterPoints")).getByText("Open")).not.toBeNull();
     const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
     expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
-      "vault", "wallets", "apiKeys", "model", "memory", "tuning", "superboardKey", "lighterPoints",
+      "preferences",
+      "vault",
+      "wallets",
+      "apiKeys",
+      "model",
+      "memory",
+      "tuning",
+      "superboardKey",
+      "lighterPoints",
     ]);
-    // The section index (docs/design/V10-SPREAD.md section 2): an italic
-    // numeral per row in register order, decorative, no icon slot; status is a
-    // fill swatch beside its word (aria-hidden), never a hue.
-    rows.forEach((row, index) => {
-      const numeral = row.querySelector(".vex-reg__num");
-      expect(numeral?.textContent).toBe(`(${String(index + 1).padStart(2, "0")})`);
-      expect(numeral?.getAttribute("aria-hidden")).toBe("true");
-      expect(row.querySelector("svg")).toBeNull();
-      const swatch = row.querySelector(".vex-reg__status .vex-swatch");
+    // No numerals: a line icon per row (decorative), and a fill swatch beside
+    // every status word except Preferences, which has none.
+    rows.forEach((row) => {
+      expect(row.querySelector(".vex-reg__num")).toBeNull();
+      expect(row.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+      const swatch = row.querySelector(".vex-set__word .vex-swatch");
+      if (row.getAttribute("data-vex-settings-row") === "preferences") {
+        expect(swatch).toBeNull();
+        return;
+      }
       expect(swatch?.getAttribute("aria-hidden")).toBe("true");
       expect(swatch?.getAttribute("data-s")).toMatch(/^(done|idle|warning)$/);
     });
+    // The page lands on Preferences, its row selected; no chain read runs.
+    expect(navRow("preferences").getAttribute("aria-current")).toBe("page");
+    expect(document.querySelector("[data-vex-settings-preferences]")).not.toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "Preferences" })).not.toBeNull();
     expect(mockGetChainEndpoints).not.toHaveBeenCalled();
-    expect(screen.getByText(/the Superboard key, and Lighter points/)).not.toBeNull();
-
-    const lighter = screen.getByRole("button", { name: /Lighter/ });
-    expect(lighter.querySelector("img")).toBeNull();
+    // The page draws no back row and no second nav of its own.
+    expect(document.querySelector("[data-vex-settings-back]")).toBeNull();
     expect(screen.queryByRole("switch", { name: /Lighter integration/i })).toBeNull();
   });
 
-  it("opens chain endpoint overrides inside API keys without another register row", async () => {
+  it("opens chain endpoint overrides inside API keys without another nav row", async () => {
     render(<ShellScreens />);
     openSettings();
 
@@ -291,10 +326,14 @@ describe("SettingsScreen", () => {
     expect(screen.getByLabelText("EVM RPC URL")).not.toBeNull();
     expect(screen.getByLabelText("Blockscout base URL")).not.toBeNull();
     await waitFor(() => expect(mockGetChainEndpoints).toHaveBeenCalledWith(4663));
+    expect(navRow("apiKeys").getAttribute("aria-current")).toBe("page");
+    expect(navRow("preferences").getAttribute("aria-current")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    await screen.findByRole("button", { name: /API keys/ });
-    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(8);
+    fireEvent.click(navRow("preferences"));
+    await waitFor(() =>
+      expect(document.querySelector("[data-vex-settings-preferences]")).not.toBeNull(),
+    );
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
     expect(screen.queryByRole("region", { name: "Chain endpoints" })).toBeNull();
   });
 
@@ -304,6 +343,7 @@ describe("SettingsScreen", () => {
     await screen.findByText("Save apiKeys (stub)");
     expect(screen.getByRole("region", { name: "Chain endpoints" })).not.toBeNull();
     expect(document.querySelector('[data-vex-settings-section="apiKeys"]')).not.toBeNull();
+    expect(navRow("apiKeys").getAttribute("aria-current")).toBe("page");
     await waitFor(() => expect(mockGetChainEndpoints).toHaveBeenCalledWith(4663));
   });
 
@@ -339,35 +379,44 @@ describe("SettingsScreen", () => {
       });
       render(<ShellScreens />);
       openSettings();
-      const superboard = await screen.findByRole("button", { name: /Superboard key/ });
+      await screen.findByRole("dialog", { name: "Settings" });
       // Status is a fill, not a hue: the swatch beside the word carries the tone.
       expect(
-        within(superboard).getByText(word).querySelector(".vex-swatch")?.getAttribute("data-s"),
+        within(navRow("superboardKey")).getByText(word).querySelector(".vex-swatch")?.getAttribute("data-s"),
       ).toBe(tone);
-      const lighter = screen.getByRole("button", { name: /Lighter/ });
       expect(
-        within(lighter).getByText("Open").querySelector(".vex-swatch")?.getAttribute("data-s"),
+        within(navRow("lighterPoints")).getByText("Open").querySelector(".vex-swatch")?.getAttribute("data-s"),
       ).toBe("idle");
     },
   );
 
   it.each([
-    ["superboardKey", /Superboard key/, "[data-vex-superboard-key]", "[data-vex-lighter-points]"],
-    ["lighterPoints", /Lighter/, "[data-vex-lighter-points]", "[data-vex-superboard-key]"],
-  ] satisfies ReadonlyArray<readonly [SettingsSection, RegExp, string, string]>)(
-    "opens %s from its row and returns to the register",
-    async (_section, name, active, inactive) => {
+    ["superboardKey", "Superboard key", "Linked", "[data-vex-superboard-key]", "[data-vex-lighter-points]"],
+    ["lighterPoints", "Lighter", "Open", "[data-vex-lighter-points]", "[data-vex-superboard-key]"],
+  ] satisfies ReadonlyArray<readonly [SettingsSection, string, string, string, string]>)(
+    "opens %s from its row under its own head and returns to Preferences",
+    async (section, name, word, active, inactive) => {
       const { container } = render(<ShellScreens />);
       openSettings();
-      fireEvent.click(await screen.findByRole("button", { name }));
-      await screen.findByRole("button", { name: "Settings" });
+      fireEvent.click(await screen.findByRole("button", { name: new RegExp(name) }));
       await waitFor(() => expect(container.querySelector(active)).not.toBeNull());
       expect(container.querySelector(inactive)).toBeNull();
       expect(container.querySelector("[data-vex-step-stub]")).toBeNull();
       expect(container.querySelector("[data-vex-settings-export]")).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-      await screen.findByRole("button", { name });
-      expect(container.querySelector(active)).toBeNull();
+      // The section's head: the name, its status word beside a swatch, a lead.
+      const head = container.querySelector("[data-vex-settings-head]");
+      expect(head?.querySelector("h2")?.firstChild?.textContent).toBe(name);
+      const status = head?.querySelector("[data-vex-settings-head-status]");
+      expect(status?.textContent).toBe(word);
+      expect(status?.querySelector(".vex-swatch")).not.toBeNull();
+      expect(head?.querySelector("p")?.textContent).toBe(
+        section === "superboardKey"
+          ? "One code, generated once. Paste it in Superboard."
+          : "Robinhood Chain points, and the trading setup the agent reads: capital share and leverage per market",
+      );
+      fireEvent.click(navRow("preferences"));
+      await waitFor(() => expect(container.querySelector(active)).toBeNull());
+      expect(container.querySelector("[data-vex-settings-preferences]")).not.toBeNull();
     },
   );
 
@@ -379,9 +428,10 @@ describe("SettingsScreen", () => {
     async (section, selector) => {
       const { container } = render(<ShellScreens />);
       openSettings(section);
-      await screen.findByRole("button", { name: "Settings" });
+      await screen.findByRole("dialog", { name: "Settings" });
       expect(container.querySelector(selector)).not.toBeNull();
-      expect(container.querySelector("[data-vex-settings-register]")).toBeNull();
+      expect(container.querySelector("[data-vex-settings-preferences]")).toBeNull();
+      expect(navRow(section).getAttribute("aria-current")).toBe("page");
     },
   );
 
@@ -421,35 +471,36 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("Jupiter missing")).not.toBeNull();
   });
 
-  it("row click opens the section sub-view hosting the step form in back-edit mode; ← Settings returns", async () => {
+  it("a row click opens the section hosting the step form in back-edit mode; Preferences returns", async () => {
     render(<ShellScreens />);
     openSettings();
 
-    const row = await screen.findByRole("button", { name: /Vault/ });
-    fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: /Vault/ }));
 
     const stub = await screen.findByText("Save keystore (stub)");
     expect(
       stub.closest("[data-vex-step-stub]")?.getAttribute("data-vex-step-flow"),
     ).toBe("back-edit");
+    expect(navRow("vault").getAttribute("aria-current")).toBe("page");
+    // The nav stays: the way between sections is never behind a back row.
+    expect(within(navRow("vault")).getByText("Protected")).not.toBeNull();
 
-    // Exact-name match: the close key is "Close Settings", the back
-    // affordance is plain "Settings".
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    await screen.findByText("Protected");
-    expect(screen.queryByText("Save keystore (stub)")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Preferences/ }));
+    await waitFor(() => expect(screen.queryByText("Save keystore (stub)")).toBeNull());
+    expect(document.querySelector("[data-vex-settings-preferences]")).not.toBeNull();
   });
 
-  it("a step form's save returns to the register", async () => {
+  it("a step form's save returns to Preferences", async () => {
     render(<ShellScreens />);
     openSettings("tuning");
 
     fireEvent.click(await screen.findByText("Save agentCore (stub)"));
-    await screen.findByText("Saved");
-    expect(screen.queryByText("Save agentCore (stub)")).toBeNull();
+    await waitFor(() => expect(screen.queryByText("Save agentCore (stub)")).toBeNull());
+    expect(document.querySelector("[data-vex-settings-preferences]")).not.toBeNull();
+    expect(navRow("preferences").getAttribute("aria-current")).toBe("page");
   });
 
-  it("a route section deep-links straight into the Wallets sub-view with export gated per chain", async () => {
+  it("a route section deep-links straight into the Wallets section with export gated per chain", async () => {
     setEnv(envFixture({ walletStatus: { evm: "present", solana: "missing" } }));
     render(<ShellScreens />);
     openSettings("wallets");
@@ -466,11 +517,35 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText("Close export (stub)")).toBeNull();
   });
 
-  it("keeps export OUT of every non-Wallets sub-view", async () => {
+  it("the Vault section carries the Lock Vex row under its step form, and no other section does", async () => {
+    render(<ShellScreens />);
+    openSettings("vault");
+    await screen.findByText("Save keystore (stub)");
+    const row = document.querySelector("[data-vex-settings-lock]");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByRole("button", { name: "Lock Vex" })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /API keys/ }));
+    await screen.findByText("Save apiKeys (stub)");
+    expect(document.querySelector("[data-vex-settings-lock]")).toBeNull();
+  });
+
+  it("keeps export OUT of every non-Wallets section", async () => {
     render(<ShellScreens />);
     openSettings("vault");
     await screen.findByText("Save keystore (stub)");
     expect(screen.queryByRole("button", { name: /Export/ })).toBeNull();
+  });
+
+  it("hides Vex's sidebar by default on the page, and the nav needs no Vex", async () => {
+    render(<ShellScreens />);
+    openSettings();
+    await screen.findByRole("dialog", { name: "Settings" });
+    const state = useUiStore.getState();
+    expect(vexPageClass(state)).toBe("pages");
+    // The store default for the table pages: closed, whatever chats do.
+    expect(state.vexOpenPages).toBe(false);
+    expect(selectVexOpen(state)).toBe(false);
   });
 
   it("Escape closes back to { kind: 'none' }", async () => {

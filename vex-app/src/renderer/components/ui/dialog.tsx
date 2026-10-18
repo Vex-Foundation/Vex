@@ -1,5 +1,5 @@
 /**
- * Custom Dialog primitive (M12) — native `<dialog>` element + Tailwind.
+ * Custom Dialog primitive (M12): native `<dialog>` element + Tailwind.
  *
  * vex-app deliberately avoids Radix Dialog: the Portal-based primitive
  * needs a CSP audit before adoption (see `MOTION-POLICY.md`), and shipping
@@ -16,13 +16,14 @@
  *     before opening (the trigger).
  *
  * CSP: NO inline `style` attributes anywhere. Every effect is Tailwind
- * + classes from `globals.css`. Backdrop styling (the paper dither) rides on the
- * native `::backdrop` pseudo-element via the `.vex-dialog` rules in
- * `global-css/ui-primitives.css`, so we don't need a separate sibling div.
+ * + classes from `globals.css`. The backdrop (a flat paper scrim, or none per
+ * call; docs/design/R3-MINIMAL.md section 12) rides on the native
+ * `::backdrop` pseudo-element via the `.vex-dialog` rules in
+ * `global-css/ui-primitives/overlays.css`, so we don't need a sibling div.
  *
  * Sub-components mirror shadcn naming so application code reads the
  * same as the rest of the project (`<DialogContent>`, `<DialogHeader>`,
- * `<DialogTitle>`, etc.). They are pure Tailwind wrappers — no Radix
+ * `<DialogTitle>`, etc.). They are pure Tailwind wrappers, no Radix
  * Slot or asChild composition.
  */
 
@@ -39,6 +40,8 @@ import {
   type JSX,
   type ReactEventHandler,
   type ReactNode,
+  type Ref,
+  type RefCallback,
 } from "react";
 import { Swatch } from "./swatch.js";
 import { cn } from "../../lib/utils.js";
@@ -71,7 +74,7 @@ export interface DialogProps {
  * (DialogContent, DialogClose) can read open state and invoke close
  * intent without prop drilling.
  *
- * Renders nothing on its own — descendant `<DialogContent>` paints the
+ * Renders nothing on its own; descendant `<DialogContent>` paints the
  * actual native `<dialog>` element.
  */
 export function Dialog({ open, onOpenChange, children }: DialogProps): JSX.Element {
@@ -87,19 +90,39 @@ export function Dialog({ open, onOpenChange, children }: DialogProps): JSX.Eleme
 }
 
 /**
- * How wide the dialog box is allowed to get.
+ * How the dialog box is placed and how wide it may get.
  *
- * ADDITIVE. `default` is the 380px prompt column every existing consumer
- * renders and its classes are unchanged. `board` is the Token Radar surface:
+ * `default` is the 380px prompt column. `board` is the Token Radar surface:
  * nine tenths of the viewport, capped at 1280px, with the same 85vh height
- * bound so the body stays the single scroll region.
+ * bound so the body stays the single scroll region. `sheet` is the R3 sheet
+ * over the centre column (`sheet.tsx` owns it and sets its coordinates): no
+ * centring, no size caps, no frame of its own.
  */
-export type DialogSize = "default" | "board";
+export type DialogSize = "default" | "board" | "sheet";
 
-const DIALOG_WIDTH_CLASS: Readonly<Record<DialogSize, string>> = {
-  default: "w-full max-w-[380px]",
-  board: "w-[90vw] max-w-[1280px]",
+const DIALOG_BOX_CLASS: Readonly<Record<DialogSize, string>> = {
+  default: "fixed inset-0 m-auto max-h-[85vh] w-full max-w-[380px] overflow-hidden",
+  board: "fixed inset-0 m-auto max-h-[85vh] w-[90vw] max-w-[1280px] overflow-hidden",
+  sheet: "vex-sheet fixed m-0 max-h-none max-w-none overflow-hidden",
 };
+
+/**
+ * What sits behind a modal dialog (docs/design/R3-MINIMAL.md section 12).
+ *
+ * `scrim` is the flat paper scrim (paper at 62%, night paper at 66%) for a
+ * dialog that must block; `none` leaves the window standing behind a panel
+ * or a sheet. Either way the dialog is modal: the rest of the document is
+ * inert and focus stays inside.
+ */
+export type DialogBackdrop = "scrim" | "none";
+
+/**
+ * Write the `autofocus` content attribute onto a node as its ref attaches.
+ * The one stamp behind `DIALOG_INITIAL_FOCUS` and `useInitialFocusRef`.
+ */
+export function stampInitialFocus(node: HTMLElement | null): void {
+  node?.setAttribute("autofocus", "");
+}
 
 /**
  * NAME THE ELEMENT THAT TAKES FOCUS WHEN THIS DIALOG OPENS.
@@ -126,10 +149,49 @@ const DIALOG_WIDTH_CLASS: Readonly<Record<DialogSize, string>> = {
  * means the same thing to the browser, to the jsdom polyfill, and to
  * `DialogContent` below. It is a content attribute, so a test can assert it
  * without a live focus manager.
+ *
+ * ## Why the attribute is written by a ref and not spread as a prop
+ *
+ * React 19 warns on the lowercase `autofocus` PROP ("Invalid DOM property
+ * `autofocus`. Did you mean `autoFocus`?") and its only other spelling,
+ * `autoFocus`, is the one that never reaches the DOM. So the constant carries
+ * a ref that stamps the content attribute onto the node as it mounts: the DOM
+ * is exactly what the prop produced (every `[autofocus]` reader and every
+ * `hasAttribute("autofocus")` test still finds it) and React has no prop to
+ * complain about. The ref runs in the commit's layout phase, before any
+ * parent effect, so it is on the node before `DialogContent` calls
+ * `showModal()` and before a host such as the approval card reads it.
+ *
+ * A ref is one slot: an element that ALSO needs its own ref must not spread
+ * this constant (the spread would replace that ref). It takes
+ * `useInitialFocusRef(ownRef)` instead, which does both.
  */
-export const DIALOG_INITIAL_FOCUS: { readonly autofocus?: string } = {
-  autofocus: "",
+export const DIALOG_INITIAL_FOCUS: { readonly ref: RefCallback<HTMLElement> } = {
+  ref: stampInitialFocus,
 };
+
+/**
+ * `DIALOG_INITIAL_FOCUS` for an element that keeps a ref of its own: the
+ * returned callback stamps the attribute and then hands the node to `own`
+ * (object or callback, a callback's cleanup included). Stable while `own` is,
+ * so React does not detach and re-attach it on every render.
+ */
+export function useInitialFocusRef<T extends HTMLElement>(
+  own: Ref<T> | undefined,
+): RefCallback<T> {
+  return useCallback(
+    (node: T | null) => {
+      stampInitialFocus(node);
+      if (typeof own === "function") {
+        const cleanup = own(node);
+        return cleanup;
+      }
+      if (own !== null && own !== undefined) own.current = node;
+      return undefined;
+    },
+    [own],
+  );
+}
 
 /**
  * Which element `DialogContent` focuses after `showModal()`.
@@ -183,6 +245,8 @@ export function isDialogOnScreen(doc: Document = document): boolean {
 export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
   /** Width family; omitted means the 380px prompt column. */
   readonly size?: DialogSize;
+  /** Behind the dialog; omitted means the flat paper scrim. */
+  readonly backdrop?: DialogBackdrop;
   /**
    * When true (default) the dialog closes on backdrop click. Set to
    * false for destructive prompts that require an explicit choice.
@@ -201,7 +265,7 @@ export interface DialogContentProps extends HTMLAttributes<HTMLDialogElement> {
  * Native `<dialog>` element wrapper. Owns:
  *  - `showModal()` / `close()` lifecycle keyed off context.open
  *  - ESC handling (the browser fires `cancel` → we route to onOpenChange)
- *  - Backdrop click handling — `mousedown` on the dialog itself (not
+ *  - Backdrop click handling: `mousedown` on the dialog itself (not
  *    children, courtesy of e.target === e.currentTarget check)
  *  - INITIAL FOCUS after `showModal()` (see `DIALOG_INITIAL_FOCUS` and
  *    `resolveDialogInitialFocus`): the dialog decides where focus lands, so
@@ -222,6 +286,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
       onCancel,
       closeOnBackdropClick = true,
       size = "default",
+      backdrop = "scrim",
       ...rest
     },
     ref,
@@ -289,7 +354,7 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
     }, []);
 
     // ESC: browser fires `cancel` on the dialog. Preventing default
-    // keeps the controlled state authoritative — we send the close
+    // keeps the controlled state authoritative: we send the close
     // intent through the same path as a backdrop click.
     const handleCancel = useCallback(
       (event: React.SyntheticEvent<HTMLDialogElement, Event>): void => {
@@ -323,20 +388,19 @@ export const DialogContent = forwardRef<HTMLDialogElement, DialogContentProps>(
         tabIndex={-1}
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
+        data-vex-backdrop={backdrop === "none" ? "none" : undefined}
         onCancel={handleCancel}
         onClick={handleClick}
         className={cn(
-          // Center the dialog box itself — keeps backdrop-target clicks
+          // Center the dialog box itself: keeps backdrop-target clicks
           // on the dialog element, not the inner content (so the
-          // currentTarget check above is reliable).
-          // The width family is interpolated rather than appended, so the
-          // default case emits the byte-identical class string every existing
-          // 380px consumer already renders.
-          `fixed inset-0 m-auto max-h-[85vh] ${DIALOG_WIDTH_CLASS[size]} overflow-hidden`,
-          // V10 chrome: the paper, square, one 1px rule for an edge, no
-          // shadow. The 2px paper dither behind it rides the .vex-dialog
-          // class in ui-primitives/overlays.css (native ::backdrop).
-          "vex-dialog border border-line-3 bg-surface-2 p-0 text-ink-primary",
+          // currentTarget check above is reliable). A sheet is placed by
+          // its owner instead.
+          DIALOG_BOX_CLASS[size],
+          // R3 chrome: the paper, square, a 1.5px ink frame, no shadow. The
+          // flat scrim behind it rides the .vex-dialog class in
+          // ui-primitives/overlays.css (native ::backdrop).
+          "vex-dialog border-[1.5px] border-rule-ink bg-surface-2 p-0 text-ink-primary",
           "open:flex open:flex-col",
           className,
         )}
@@ -375,9 +439,9 @@ export const DialogTitle = forwardRef<
     <h2
       ref={ref}
       id={id ?? ctx.titleId}
-      // Chrome register, weight capped at 500 (the serif voice is gate-only
-      // since the tokens-v2 rebrand).
-      className={cn("text-[16px] font-medium leading-6", className)}
+      // The panel title: sans 21 / 500 (docs/design/R3-MINIMAL.md section
+      // 1.3); the serif stays for display sizes.
+      className={cn("text-[21px] font-medium leading-[1.3] tracking-[-0.005em]", className)}
       {...props}
     />
   );
@@ -571,8 +635,9 @@ export const DialogFooter = forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
+    // The panel foot: the keys at the right, 10 apart, 20 from the frame.
     className={cn(
-      "flex shrink-0 flex-row justify-end gap-2 px-6 pt-3 pb-6",
+      "flex shrink-0 flex-row justify-end gap-2.5 px-6 pt-3 pb-5",
       className,
     )}
     {...props}

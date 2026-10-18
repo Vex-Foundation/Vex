@@ -1,5 +1,5 @@
 /**
- * POOLS.FUN launch lane — the two-stage launch surface.
+ * POOLS.FUN launch lane - the two-stage launch surface.
  *
  * ── WHY IT IS NOT THE TRENCH LANE ─────────────────────────────────────────
  * Trench arms Deploy from a preview that refetches in the background. pools.fun
@@ -19,7 +19,13 @@
  * fabricating a money path. Passing a bridge is the only change needed to make
  * this lane live.
  *
- * Glass: NONE written here — the chrome comes from `DialogContent`.
+ * Chrome: NONE written here. The panel, its ink frame and the flat scrim come
+ * from `DialogContent` (`backdrop="scrim"`, because this is the one dialog that
+ * must block while real funds are on the line; docs/design/R3-MINIMAL.md
+ * section 12). What this file paints is ink, rules and swatches: the header is
+ * the primitive's 21 / 500 title over a 13.5 description, the foot is a 13
+ * helper sentence with Cancel as the quiet key and the one action as the
+ * primary key, and every state note is a swatch beside main's own sentence.
  */
 
 import { useCallback, useEffect, useReducer, useRef, useState, type JSX } from "react";
@@ -40,6 +46,7 @@ import {
   preparePoolsLaunch,
 } from "../../../lib/api/pools-launch.js";
 import type { LaunchLaneProps } from "./lane-props.js";
+import { DoneNote, NoteRow } from "./PhaseNote.js";
 import { DEPLOYED_AUTO_DISMISS_MS } from "./phase.js";
 import { FingerprintCard } from "./pools/FingerprintCard.js";
 import {
@@ -114,7 +121,7 @@ export function PoolsLaunchLane({
 
   // AN ARMED FINGERPRINT EXPIRES ON ITS OWN. Main refuses a stale one, but the
   // user must not be left reading figures that are no longer authorizable and
-  // pressing a button that can only fail — so the arming is dropped here at the
+  // pressing a button that can only fail - so the arming is dropped here at the
   // moment main would stop honouring it.
   const armedUntil = state.kind === "authorizing" ? state.fingerprint.expiresAt : null;
   useEffect(() => {
@@ -171,7 +178,7 @@ export function PoolsLaunchLane({
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
       event.preventDefault();
       // STAGE 1 and STAGE 2 share the form's submit, and which one runs is
-      // decided by the machine's state alone — never by a field the user could
+      // decided by the machine's state alone - never by a field the user could
       // put into a state the button does not reflect.
       if (fingerprint === null) {
         await runPrepare();
@@ -198,8 +205,8 @@ export function PoolsLaunchLane({
       }
 
       // Main's own sentence, and the fingerprint is voided either way. The wire
-      // code cannot distinguish "the fee moved" from "the verifier refused" —
-      // both map onto `internal.unexpected` by design — so the lane takes the
+      // code cannot distinguish "the fee moved" from "the verifier refused" -
+      // both map onto `internal.unexpected` by design - so the lane takes the
       // fail-safe reading: prepare again and look at the new figures.
       dispatch({ type: "deploy_refused", message: outcome.error.message });
     },
@@ -236,13 +243,11 @@ export function PoolsLaunchLane({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())}>
-      <DialogContent className="max-w-[640px]">
+      <DialogContent backdrop="scrim" className="max-w-[640px]">
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogHeader className="border-line-2">
-            <DialogTitle className="text-[17px] font-semibold">
-              Launch a token
-            </DialogTitle>
-            <DialogDescription className="text-[11px] text-ink-tertiary">
+          <DialogHeader>
+            <DialogTitle>Launch a token</DialogTitle>
+            <DialogDescription className="text-[13.5px] leading-[1.5] text-ink-secondary">
               pools.fun · Robinhood Chain. The whole supply goes into a locked
               SushiSwap V3 pool, so the token trades from its first block.
               Deploying sends a real transaction and cannot be undone.
@@ -257,19 +262,18 @@ export function PoolsLaunchLane({
             <StateNote state={state} bridgeMissing={!bridgeMounted} />
           </DialogBody>
 
-          <DialogFooter className="flex-col items-stretch gap-2 border-line-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-[12px] text-ink-secondary">
+          <DialogFooter className="flex-col items-stretch sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[13px] leading-[1.4] text-ink-secondary">
               {fingerprint !== null
                 ? "Deploy authorizes exactly the figures above. Changing any field prepares them again."
                 : "Nothing is authorized until this launch has been prepared and checked."}
             </p>
-            <span className="flex flex-row justify-end gap-2">
+            <span className="flex flex-row justify-end gap-2.5">
               <Button
                 type="button"
-                variant="bare"
+                variant="quiet"
                 onClick={requestClose}
                 disabled={state.kind === "deploying"}
-                className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
               >
                 {state.kind === "done" ? "Close" : "Cancel"}
               </Button>
@@ -307,43 +311,37 @@ function StateNote({
 }): JSX.Element | null {
   if (bridgeMissing) {
     return (
-      <p className="text-[12px] leading-relaxed text-warning" role="status">
+      <NoteRow state="idle" role="status">
         Launching on pools.fun is not available in this build yet. You can fill
         the form in, but Vex cannot prepare or deploy it.
-      </p>
+      </NoteRow>
     );
   }
   if (state.kind === "re_review") {
     return (
-      <div className="flex flex-col items-start gap-2" role="alert">
-        <p className="text-sm text-warning">{state.message}</p>
-        <p className="text-[12px] leading-relaxed text-ink-secondary">
-          Those figures are no longer what Vex would sign. Prepare the launch
-          again and read the new ones before deploying.
-        </p>
-      </div>
+      <NoteRow
+        state="concerned"
+        role="alert"
+        detail={
+          <>
+            Those figures are no longer what Vex would sign. Prepare the launch
+            again and read the new ones before deploying.
+          </>
+        }
+      >
+        {state.message}
+      </NoteRow>
     );
   }
   if (state.kind === "refused") {
     return (
-      <p className="text-sm text-danger" role="alert">
+      <NoteRow state="error" role="alert">
         {state.message}
-      </p>
+      </NoteRow>
     );
   }
   if (state.kind === "done") {
-    return (
-      <p
-        className={
-          state.tone === "failure"
-            ? "text-sm break-all text-danger"
-            : "text-sm break-all text-success"
-        }
-        role={state.tone === "failure" ? "alert" : "status"}
-      >
-        {state.message}
-      </p>
-    );
+    return <DoneNote tone={state.tone} message={state.message} />;
   }
   return null;
 }

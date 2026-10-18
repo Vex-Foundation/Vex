@@ -1,5 +1,5 @@
 /**
- * The launch dialog's PHASE union — what the user is currently being asked to
+ * The launch dialog's PHASE union - what the user is currently being asked to
  * look at, shared by every platform lane.
  *
  * Shared deliberately: the phases are the CONSENT vocabulary, not a platform
@@ -27,7 +27,7 @@ export type DialogPhase =
 /**
  * How long the receipt stays up before the dialog dismisses itself (owner
  * decision D1). A beat, not a modal to close: the hash is also in the Activity
- * row, in My launches, and — for an agent-requested form — in the resumed turn.
+ * row, in My launches, and - for an agent-requested form - in the resumed turn.
  * Set to 0 for an immediate close.
  */
 export const DEPLOYED_AUTO_DISMISS_MS = 2_500;

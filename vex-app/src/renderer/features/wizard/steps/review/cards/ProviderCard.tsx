@@ -15,7 +15,7 @@ export function ProviderCard({
 }: ProviderCardProps): JSX.Element {
   const p = envState.provider;
   // Optional-connections model: the provider never blocks finalize, but
-  // it carries the strongest consequence — without it the agent cannot
+  // it carries the strongest consequence - without it the agent cannot
   // run inference. Surface that as a warning, not a hard miss.
   return (
     <SummaryCard

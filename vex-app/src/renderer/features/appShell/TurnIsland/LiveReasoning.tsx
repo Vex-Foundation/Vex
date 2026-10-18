@@ -9,10 +9,10 @@
  * too — a box that scrolls independently inside a scrolling transcript is two
  * competing scroll contexts, and it cut the thought mid-sentence.)
  *
- * REGISTER: `.vex-reasoning-prose` — Inter Tight 14px, muted (the serif italic
- * left shell chrome on 2026-08-21, owner 6/6a). Thinking aloud is still not
- * speaking; the distance is carried by tone and size now. The same class
- * dresses the settled stamps and the persisted `ReasonedBlock`, so a trace
+ * REGISTER: `.vex-reasoning-prose` and `.vex-reasoned__body` - the opened
+ * Reasoned row of docs/design/R3-MINIMAL.md section 6: italic 14 ink 2 on a
+ * 1px rule with 12 clear. Thinking aloud is not speaking. The same classes
+ * dress the settled thoughts and the persisted `ReasonedBlock`, so a trace
  * looks the same whether it is streaming, folded, or reopened a week later.
  *
  * ONE STREAMING METHOD (owner decree 2026-08-03). This component used to carry
@@ -39,7 +39,7 @@ export const LiveReasoning = memo(function LiveReasoning({
   return (
     <div
       data-vex-island-reasoning=""
-      className="vex-reasoning-prose break-words text-[14px] leading-[1.6]"
+      className="vex-reasoning-prose vex-reasoned__body vex-live-trace break-words"
     >
       <StreamingMarkdownContent text={throttledText} />
     </div>

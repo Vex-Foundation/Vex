@@ -1,15 +1,19 @@
 /**
- * Branch: running — `database.migrate()` is in flight. The hero
- * VexLoader ring (paper tone) anchors the body; below it the progress
- * readout ("Applying X of Y" — index is zero-based in the IPC schema,
- * displayed 1-based) and a quiet hairline row naming the file/version
- * currently being applied.
+ * Branch: running - `database.migrate()` is in flight. The progress readout
+ * ("Applying X of Y" - index is zero-based in the IPC schema, displayed
+ * 1-based) sits beside a 2px progress line filled by the real count, and below
+ * it a probe row names the file/version currently being applied
+ * (`docs/design/R3-MINIMAL.md section 10.3`). Before the count is known (checking,
+ * planning) the quiet loading line stands in for the bar.
  *
- * No cancel button — the IPC surface intentionally does NOT expose a
+ * No cancel button - the IPC surface intentionally does NOT expose a
  * cancel handle (mid-SQL aborts aren't safe).
  */
 
+import type { JSX } from "react";
+
 import type { MigrateProgress } from "@shared/schemas/database.js";
+import { StateWord } from "../../../../components/ui/state-word.js";
 import { VexLoader } from "../../../../components/ui/vex-loader.js";
 
 interface RunningBodyProps {
@@ -30,45 +34,52 @@ function progressLabel(progress: MigrateProgress | null): string {
 
 export function RunningBody({ current }: RunningBodyProps): JSX.Element {
   const showCurrentRow = current !== null && current.phase !== "planned";
+  // The line fills as far as the migration being applied is of the plan: the real count.
+  const percent =
+    current !== null && current.phase !== "planned" && current.total > 0
+      ? Math.min(100, ((current.index + 1) / current.total) * 100)
+      : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* HERO — the ring at work, centered above the readout. */}
-      <div className="flex pt-2">
-        <VexLoader
-          size={40}
-          stroke={2}
-          label="Applying migrations"
-        />
+    <>
+      <div className="vex-fr-progress">
+        <span>{progressLabel(current)}</span>
+        {percent !== null && current !== null ? (
+          <span
+            role="progressbar"
+            aria-label="Applying migrations"
+            aria-valuemin={0}
+            aria-valuemax={current.total}
+            aria-valuenow={current.index + 1}
+            className="vex-fr-progress__bar"
+          >
+            <i className="vex-fr-progress__fill" style={{ width: `${percent}%` }} />
+          </span>
+        ) : (
+          <VexLoader label="Applying migrations" />
+        )}
       </div>
 
-      <p className="vex-micro text-ink-secondary">
-        {progressLabel(current)}
-      </p>
-
       {showCurrentRow && current !== null ? (
-        <div
-          className="flex w-full items-center gap-3 border-t border-[var(--color-border)] py-4"
-          data-migration-version={current.version}
-        >
-          <VexLoader
-            size={16}
-            stroke={2}
-            label={`Migration ${current.version} in progress`}
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-sm font-medium text-ink-primary">
-              Migration v{current.version}
+        <ul className="vex-fr-probes">
+          <li
+            className="vex-fr-probe"
+            data-migration-version={current.version}
+            data-live={current.phase === "start" ? "" : undefined}
+          >
+            <span className="vex-fr-probe__l">
+              {current.phase === "applied"
+                ? `Migration v${current.version} applied`
+                : `Migration v${current.version} in progress`}
             </span>
-            <span className="truncate font-mono text-xs text-ink-tertiary">
-              {current.file}
-            </span>
-          </div>
-          <span className="shrink-0 vex-micro text-ink-secondary">
-            {current.phase}
-          </span>
-        </div>
+            <span className="vex-fr-probe__d vex-num">{current.file}</span>
+            <StateWord
+              state={current.phase === "applied" ? "done" : "ongoing"}
+              word={current.phase === "applied" ? "Applied" : "Applying"}
+            />
+          </li>
+        </ul>
       ) : null}
-    </div>
+    </>
   );
 }

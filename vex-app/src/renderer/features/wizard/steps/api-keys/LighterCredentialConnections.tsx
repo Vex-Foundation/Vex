@@ -4,6 +4,7 @@ import type {
   LighterCredentialScope,
 } from "@shared/schemas/lighter-integration.js";
 import { Button } from "../../../../components/ui/button.js";
+import { StateWord } from "../../../../components/ui/state-word.js";
 import {
   Dialog,
   DialogBody,
@@ -82,37 +83,36 @@ export function LighterCredentialConnections(): JSX.Element {
   return (
     <section
       aria-labelledby="vex-lighter-connections-title"
-      className="border-t border-line-1 pt-5"
+      className="vex-wz-prov"
       data-vex-lighter-credential-connections
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 max-w-[58ch]">
-          <h2
-            id="vex-lighter-connections-title"
-            className="text-sm font-medium text-ink-primary"
-          >
-            Stored Lighter access
-          </h2>
-          <p className="mt-1 text-xs leading-[18px] text-ink-secondary">
-            Verify which wallet owns each encrypted Lighter key. The current
-            primary Vex wallet is protected; other connections can be forgotten.
-          </p>
-        </div>
+      <div className="vex-wz-prov__h">
+        <h2
+          id="vex-lighter-connections-title"
+          className="vex-wz-prov__n"
+        >
+          Stored Lighter access
+        </h2>
         <Button
           type="button"
           size="sm"
           variant="quiet"
+          className="ml-auto"
           disabled={reviewing || forgetting}
           onClick={() => { void review(); }}
         >
           {reviewing ? "Checking…" : connections === null ? "Review connections" : "Check again"}
         </Button>
       </div>
+      <p className="vex-wz-prov__dsc">
+        Verify which wallet owns each encrypted Lighter key. The current
+        primary Vex wallet is protected; other connections can be forgotten.
+      </p>
 
       {connections !== null ? (
-        <div className="mt-4 border-y border-line-1" aria-live="polite">
+        <div className="vex-wz-kvl" aria-live="polite">
           {connections.length === 0 ? (
-            <p className="py-4 text-xs text-ink-secondary">
+            <p className="vex-wz-note border-b border-rule-quiet py-3">
               No local Lighter trading credentials are stored.
             </p>
           ) : connections.map((connection) => (
@@ -126,12 +126,12 @@ export function LighterCredentialConnections(): JSX.Element {
       ) : null}
 
       {error !== null && selected === null ? (
-        <p role="alert" className="mt-3 text-xs leading-[18px] text-destructive">
+        <p role="alert" className="text-[13px] leading-[18px] text-danger">
           {error}
         </p>
       ) : null}
       {notice !== null ? (
-        <p role="status" className="mt-3 text-xs leading-[18px] text-ink-secondary">
+        <p role="status" className="vex-wz-note">
           {notice}
         </p>
       ) : null}
@@ -161,24 +161,26 @@ function ConnectionRow({
 }): JSX.Element {
   return (
     <div
-      className="flex flex-col gap-3 border-b border-line-1 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-3 border-b border-rule-quiet py-3 sm:flex-row sm:items-center sm:justify-between"
       data-vex-lighter-connection={connection.protected ? "protected" : "removable"}
     >
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="break-all font-mono text-xs text-ink-primary">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="break-all font-mono vex-num text-[13px] text-ink-primary">
             {connection.walletAddress}
           </span>
-          <span className="border border-line-2 px-2 py-0.5 text-[11px] leading-4 text-ink-secondary">
-            {connection.protected ? "Primary Vex wallet · protected" : "Not primary"}
-          </span>
+          <StateWord
+            state={connection.protected ? "done" : "idle"}
+            word={connection.protected ? "Primary Vex wallet · protected" : "Not primary"}
+            className="text-[13px] text-ink-secondary"
+          />
         </div>
-        <p className="mt-1 text-xs leading-[18px] text-ink-secondary">
+        <p className="mt-1 text-[12.5px] leading-[18px] text-ink-tertiary">
           {connection.scopes.map(scopeLabel).join(" · ")}
         </p>
       </div>
       {connection.protected ? (
-        <span className="shrink-0 text-xs font-medium text-ink-tertiary">
+        <span className="shrink-0 text-[13px] text-ink-tertiary">
           Cannot forget
         </span>
       ) : (
@@ -206,42 +208,41 @@ function ForgetConnectionDialog({
   return (
     <Dialog open={connection !== null} onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="max-w-md" closeOnBackdropClick={false}>
-        <DialogHeader className="border-line-2">
+        <DialogHeader>
           <DialogTitle>Forget Lighter access?</DialogTitle>
-          <DialogDescription className="break-all text-ink-secondary">
+          <DialogDescription className="break-all font-mono vex-num text-[13px] text-ink-secondary">
             {connection?.walletAddress ?? ""}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="gap-4">
-          <p className="text-sm leading-5 text-ink-secondary">
+          <p className="vex-wz-text">
             This permanently removes only this wallet&apos;s encrypted Lighter
             trading keys from the active Vex vault. It does not touch any Vex
             wallet file, move funds, revoke provider keys, or delete Lighter accounts.
           </p>
           {connection !== null ? (
-            <dl className="divide-y divide-line-1 border-y border-line-1 text-xs">
+            <dl className="vex-wz-kvl">
               {connection.scopes.map((scope) => (
                 <ScopeRow key={`${scope.environment}:${scope.accountIndex}:${scope.apiKeyIndex}`} scope={scope} />
               ))}
             </dl>
           ) : null}
-          <p className="text-xs leading-[18px] text-ink-tertiary">
+          <p className="vex-wz-hint">
             Vex will verify these owners and scopes again before changing the vault.
           </p>
           {error !== null ? (
-            <p role="alert" className="text-xs leading-[18px] text-destructive">
+            <p role="alert" className="text-[13px] leading-[18px] text-danger">
               {error}
             </p>
           ) : null}
         </DialogBody>
-        <DialogFooter className="border-line-2">
+        <DialogFooter>
           <Button
             type="button"
-            variant="bare"
+            variant="quiet"
             disabled={pending}
             autoFocus
             onClick={onCancel}
-            className="text-ink-secondary hover:bg-interactive-hover hover:text-ink-primary"
           >
             Cancel
           </Button>
@@ -261,11 +262,11 @@ function ForgetConnectionDialog({
 
 function ScopeRow({ scope }: { readonly scope: LighterCredentialScope }): JSX.Element {
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-4 py-2.5">
-      <dt className="text-ink-secondary">
+    <div className="vex-wz-kv">
+      <dt className="vex-wz-kv__k">
         {LIGHTER_ENVIRONMENT_NAMES[scope.environment]}
       </dt>
-      <dd className="text-right font-mono text-ink-primary">
+      <dd className="vex-wz-kv__v font-mono vex-num text-[13px]">
         account {scope.accountIndex} · key {scope.apiKeyIndex}
       </dd>
     </div>
