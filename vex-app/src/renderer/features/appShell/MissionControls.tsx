@@ -718,10 +718,13 @@ function AcceptancePendingNotice({
           </span>
           <span>{headline}</span>
         </p>
-        <p className="text-ink-tertiary">
-          {nextAction} {blocked}
-        </p>
-        <MissionMissingFields fields={missingFields} surface="mission-controls" />
+        {/* The next action runs straight into the fields it asks for (its
+          * colon introduces them), then the block. */}
+        <div className="text-ink-tertiary">
+          {nextAction}{" "}
+          <MissionMissingFields fields={missingFields} surface="mission-controls" variant="inline" />{" "}
+          {blocked}
+        </div>
       </div>
       {/* The action lives on the notice itself: a standing surface that names a
           restriction must carry the way out of it (VS Code puts the command on

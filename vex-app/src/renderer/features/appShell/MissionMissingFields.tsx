@@ -13,6 +13,11 @@
  *
  * The complete list is rendered. No cap, no "and N more": these are the exact
  * things the user is waiting on.
+ *
+ * Two shapes for the same list: `chips` (the contract modal's footer, a row
+ * of framed tags) and `inline` (the notice in the transcript, the names run
+ * on as one comma-separated phrase inside its sentence, so eight fields are
+ * a line of text and not two rows of boxes).
  */
 
 import type { JSX } from "react";
@@ -22,13 +27,32 @@ export interface MissionMissingFieldsProps {
   readonly fields: readonly string[];
   /** Marks the list for tests and for the surface that owns it. */
   readonly surface: string;
+  /** Framed tags (default) or a run of names inside a sentence. */
+  readonly variant?: "chips" | "inline";
 }
 
 export function MissionMissingFields({
   fields,
   surface,
+  variant = "chips",
 }: MissionMissingFieldsProps): JSX.Element | null {
   if (fields.length === 0) return null;
+  if (variant === "inline") {
+    return (
+      <ul
+        data-vex-state="mission-missing-fields"
+        data-vex-surface={surface}
+        className="inline"
+      >
+        {fields.map((field, index) => (
+          <li key={field} className="inline text-ink-secondary">
+            {missionDraftFieldLabel(field)}
+            {index < fields.length - 1 ? ", " : "."}
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <ul
       data-vex-state="mission-missing-fields"
