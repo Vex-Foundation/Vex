@@ -140,6 +140,18 @@ describe("HowVexWorksScreen", () => {
     expect(text).toContain("The welcome screen and the start-up screens show her without a word.");
   });
 
+  it("says Needs you steps out while nothing waits, and the rail opens through its Expand key", () => {
+    const { container } = renderPage();
+    const text = container.querySelector(".vex-article__col")?.textContent ?? "";
+    // Martin's review (#216): no "Needs you · 0" in the title bar, a failed
+    // read still shows "?" with Retry; the rail's Chats key gave way to Expand.
+    expect(text).toContain("It shows while something waits and steps out of the way when nothing does.");
+    expect(text).toContain("with a Retry key instead, so a failed read never looks like an all-clear.");
+    expect(text).not.toContain("It never hides.");
+    expect(text).toContain("the Expand key at the top brings the sidebar back, and Chat or Missions opens it on their list.");
+    expect(text).not.toMatch(/Chats key/);
+  });
+
   it("no longer names what the redesign retired", () => {
     const { container } = renderPage();
     const text = container.querySelector(".vex-article__col")?.textContent ?? "";

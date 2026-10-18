@@ -22,9 +22,8 @@
  * is what holds the middle cluster at the centre.
  *
  * Navigation, Settings and the account live in the left rail, which the desk
- * always uses; the rail's Chats key and Markets & sessions open the same
- * drawer (a paper sheet hung from the row's rule: the watchlist and the
- * desk's sessions).
+ * always uses; Markets & sessions opens the drawer (a paper sheet hung from
+ * the row's rule: the watchlist and the desk's sessions).
  *
  * Zen keeps the chart in the whole window: the row folds to a small handle
  * and Exit Zen, and comes back as an overlay without moving the chart.
