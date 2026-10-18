@@ -81,7 +81,7 @@ import {
   canvasBox,
   type Fit,
   type K2Drawing,
-  STAND_DROP,
+  STAND_BOB,
   TOKEN_SHEET,
 } from "./k2-rig.js";
 import {
@@ -575,7 +575,7 @@ export class K2Engine {
     const fit = this.#fit;
     if (fit === null) return;
     // device px per css px of the sheet's coin
-    const coin = fit.rig.token.d * fit.s;
+    const coin = fit.rig.token.d * fit.rig.stand.scale * fit.s;
     const density = (Math.min(window.devicePixelRatio || 1, DPR_CAP) * coin) / TOKEN_SHEET.td;
     // the coin's poses for the wake, the episodes and the upright coin (a still open shows her
     // whole, flat coin)
@@ -1127,9 +1127,11 @@ export class K2Engine {
     // the token: face-on, pressed, turning flat, flat; it tilts to the pointer while face-on in a
     // wake or an open; upright after a close it rests (no bob, no tilt)
     const T = R.token;
-    const td = T.d;
     const p = this.#pointerMap(fit);
     const fl = pj.flip;
+    // face on, the coin takes its upright size (the welcome's is larger: `Rig.stand`) and turns
+    // back to the flat token's size as it lies down
+    const td = T.d * (1 + (R.stand.scale - 1) * (1 - fl));
     const calm = still || rest;
     const ptx =
       p !== null && !calm
@@ -1143,8 +1145,8 @@ export class K2Engine {
         : calm
           ? 0
           : noise1(t / 3100, 8) * 0.2;
-    const bob = calm ? 0 : Math.sin((t / 3400) * 6.2832) * td * 0.03;
-    const float = (bob - td * STAND_DROP) * (1 - fl);
+    const bob = calm ? 0 : Math.sin((t / 3400) * 6.2832) * td * STAND_BOB;
+    const float = (bob - td * R.stand.drop) * (1 - fl);
     // face-on, the coin lifts a little under the pointer
     const over =
       p !== null && !still && fl < 0.5 && Math.hypot(p[0] - T.x, p[1] - (T.y - float)) < td * 0.55;

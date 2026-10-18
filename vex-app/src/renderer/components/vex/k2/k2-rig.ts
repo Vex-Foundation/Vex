@@ -20,6 +20,7 @@
  *   hair stays inside; a narrower one clips the frame's empty edges (they thin out anyway).
  */
 import type { PortraitCut } from "./k2-portrait.js";
+import { LIFT } from "./k2-token.js";
 
 /** A box in host px. */
 export interface Box {
@@ -64,8 +65,20 @@ export interface Rig {
   readonly shift: Point;
   /** Where she glances away to besides the composer: a passing cloud, the birds. */
   readonly looks: { readonly cloud: Point; readonly birds: Point };
+  /**
+   * The upright coin (face on: the wake's first beat, the token toggle's rest): its diameter in
+   * flat coins (`scale`) and how far its centre sits under the token's point, in its own diameters
+   * (`drop`, negative above).
+   */
+  readonly stand: Stand;
   /** The canvas's box: her, her light, her token and the gestures' actors. */
   readonly canvas: Rect;
+}
+
+/** The upright coin's size and place against the flat token (`Rig.stand`). */
+export interface Stand {
+  readonly scale: number;
+  readonly drop: number;
 }
 
 /** Her map in the host: host px = o + s * map. */
@@ -91,6 +104,37 @@ const FLAT_DROP = (TOKEN_SHEET.flatCy - (TOKEN_SHEET.box / 2 - 6)) / TOKEN_SHEET
  * off) sits this much of its diameter under the token's point, as the wake's face-on coin rests.
  */
 export const STAND_DROP = 0.12;
+
+/**
+ * The face-on coin's drawn extent in a sheet frame (css px of the 80 px frame, the coin's centre at
+ * 40, 34): the union of every face-on pose in `token-wake-2x.webp` (the coin and its bevelled rim;
+ * the sprite draws no shadow under it). Measured from the sheet's alpha.
+ */
+export const UPRIGHT_INK = { left: 10.4, top: 4.4, right: 69.6, bottom: 63.6 } as const;
+
+/** The face-on coin floats this much of its diameter up and down in an episode (the engine's bob). */
+export const STAND_BOB = 0.03;
+
+/**
+ * The welcome's upright coin, the token toggle's rest with only the coin left (the owner,
+ * 2026-10-18): clearly larger than the flat token, one and a half coins across.
+ */
+export const WELCOME_STAND_SCALE = 1.5;
+
+/**
+ * The upright coin's drawn extent around its centre, per diameter: the rim's ink, the lift under
+ * the pointer (it rises and grows a little) and the bob in an episode. Returns [half width, above,
+ * below] in diameters.
+ */
+function uprightReach(): readonly [number, number, number] {
+  const q = 1 / TOKEN_SHEET.td;
+  const grown = q * (1 + LIFT.grow);
+  const cy = TOKEN_SHEET.box / 2 - 6;
+  const half = Math.max(TOKEN_SHEET.box / 2 - UPRIGHT_INK.left, UPRIGHT_INK.right - TOKEN_SHEET.box / 2) * grown;
+  const above = (cy - UPRIGHT_INK.top) * grown + LIFT.rise + STAND_BOB;
+  const below = Math.max((UPRIGHT_INK.bottom - cy) * q, (UPRIGHT_INK.bottom - cy) * grown - LIFT.rise) + STAND_BOB;
+  return [half, above, below];
+}
 
 /* ------------------------------------------------------------------ the wide drawing */
 
@@ -156,6 +200,7 @@ const WIDE_RIG: Rig = {
   palm: false,
   shift: [0, 0],
   looks: { cloud: [900, 140], birds: [300, 600] },
+  stand: { scale: 1, drop: STAND_DROP },
   // down to the face-on token's frame under the foot, as it floats and turns flat
   canvas: [DRAWING.canvas[0], DRAWING.canvas[1], DRAWING.canvas[2], STAGE_TOKEN.foot + 44],
 };
@@ -187,7 +232,13 @@ export const BUST = {
   sMin: 0.2,
 } as const;
 
-function bustRig(palm: boolean): Rig {
+/**
+ * A bust's rig. `standScale` sizes the upright coin: at 1 (the Vex sidebar) it rests a little under
+ * the token's point as the wake's coin does; larger (the welcome) it stands on the flat coin's foot,
+ * its whole drawn coin (rim, lift, bob) above that foot, so the host and a stage cut to the coin
+ * never clip it.
+ */
+function bustRig(palm: boolean, standScale = 1): Rig {
   const { y, band } = palm ? BUST.palmCut : BUST.cut;
   const W = APP.w;
   const cut: PortraitCut = {
@@ -206,8 +257,11 @@ function bustRig(palm: boolean): Rig {
   const half = 0.36 * W;
   const foot = flatCy + d * BUST.foot;
   const ty = flatCy - FLAT_DROP * d;
-  // the upright coin's foot (the token toggle's rest) reaches a little under the flat coin's
-  const stand = ty + d * STAND_DROP + d / 2;
+  const sd = d * standScale;
+  const [, , below] = uprightReach();
+  const drop = standScale === 1 ? STAND_DROP : (foot - below * sd - ty) / sd;
+  // the upright coin's drawn foot (the token toggle's rest)
+  const stand = ty + drop * sd + below * sd;
   return {
     drawing: "app",
     token: { x: cx, y: ty, d },
@@ -220,14 +274,17 @@ function bustRig(palm: boolean): Rig {
     palm,
     shift: APP.shift,
     looks: { cloud: APP_LOOKS.upSide, birds: APP_LOOKS.aside },
+    stand: { scale: standScale, drop },
     // the bird comes in at the frame's right edge; down to the upright coin's foot
     canvas: [-8, 0, W + 8, Math.max(foot + BUST.padBottom, stand)],
   };
 }
 
-/** One rig per bust (a fit compares by identity). */
+/** One rig per bust (a fit compares by identity); the welcome's has the larger upright coin. */
 const BUST_RIG = bustRig(false);
 const BUST_PALM_RIG = bustRig(true);
+const WELCOME_RIG = bustRig(false, WELCOME_STAND_SCALE);
+const WELCOME_PALM_RIG = bustRig(true, WELCOME_STAND_SCALE);
 
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
@@ -248,7 +305,14 @@ export function fitFor(
     const ay = (height * DRAWING.token.y) / DRAWING.frameH;
     return { rig: WIDE_RIG, s, ox: ax - s * DRAWING.token.x, oy: ay - s * DRAWING.token.y };
   }
-  const R = palm ? BUST_PALM_RIG : BUST_RIG;
+  const R =
+    name === "welcome"
+      ? palm
+        ? WELCOME_PALM_RIG
+        : WELCOME_RIG
+      : palm
+        ? BUST_PALM_RIG
+        : BUST_RIG;
   const span = R.tokenFoot - R.hairTop;
   const s = Math.min(palm ? BUST.palmS : BUST.s, (height - BUST.padTop - BUST.padBottom) / span);
   if (!(s >= BUST.sMin)) return null;
@@ -292,12 +356,30 @@ export function canvasBox(f: Fit): Box {
 
 /* ------------------------------------------------------------------ the token toggle's coin */
 
-/** The upright coin in the host: face on at the token's place (the toggle's rest). */
+/** The upright coin's diameter and centre on her map (the toggle's rest, face on). */
+function standOf(f: Fit): { readonly d: number; readonly cy: number } {
+  const t = f.rig.token;
+  const d = t.d * f.rig.stand.scale;
+  return { d, cy: t.y + d * f.rig.stand.drop };
+}
+
+/** The upright coin in the host: face on at the token's place (the toggle's rest), its disc. */
 export function tokenStand(f: Fit): Box {
   const t = f.rig.token;
-  const r = t.d / 2;
-  const cy = t.y + t.d * STAND_DROP;
+  const { d, cy } = standOf(f);
+  const r = d / 2;
   return boxToHost(f, [t.x - r, cy - r, t.x + r, cy + r]);
+}
+
+/**
+ * Everything the upright coin draws in the host: its disc and bevelled rim, lifted and grown under
+ * the pointer, bobbing in an episode. A stage cut to the coin contains this box.
+ */
+export function tokenStandInk(f: Fit): Box {
+  const t = f.rig.token;
+  const { d, cy } = standOf(f);
+  const [half, above, below] = uprightReach();
+  return boxToHost(f, [t.x - half * d, cy - above * d, t.x + half * d, cy + below * d]);
 }
 
 /** The flat coin in the host: its face's ellipse and its rim, down to the token's foot. */
@@ -310,11 +392,11 @@ export function tokenFlat(f: Fit): Box {
 
 /**
  * The token's box for its toggle button, and its stage's height while only the coin shows: the
- * flat coin and the upright one together (host px).
+ * flat coin and everything the upright one draws, together (host px).
  */
 export function tokenBox(f: Fit): Box {
   const flat = tokenFlat(f);
-  const up = tokenStand(f);
+  const up = tokenStandInk(f);
   return {
     left: Math.min(flat.left, up.left),
     top: Math.min(flat.top, up.top),

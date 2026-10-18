@@ -5,7 +5,8 @@
  * necklace, its 0.6 scale, its short beam or its token's foot; an approval bust whose cut does not
  * drop for the palm; a host too small for her dots that still draws; any placement that pushes
  * her hair or her token out of the plate at the sidebar's three widths; and an upright coin (the
- * token toggle's rest) off the token's place, cut by the canvas, or outside its button's box.
+ * token toggle's rest) off the token's place, cut by the canvas, the host or the welcome's stage,
+ * outside its button's box, or (on the welcome) no larger than the flat token.
  */
 import { describe, expect, test } from "vitest";
 import {
@@ -19,13 +20,18 @@ import {
   fitFor,
   type K2PlacementName,
   STAGE_TOKEN,
+  STAND_BOB,
   STAND_DROP,
   TOKEN_SHEET,
   tokenBox,
   tokenFlat,
   tokenStand,
+  tokenStandInk,
   toHost,
+  UPRIGHT_INK,
+  WELCOME_STAND_SCALE,
 } from "../k2-rig.js";
+import { LIFT } from "../k2-token.js";
 
 const FLAT_DROP = (TOKEN_SHEET.flatCy - (TOKEN_SHEET.box / 2 - 6)) / TOKEN_SHEET.td;
 
@@ -147,8 +153,22 @@ describe("the bust", () => {
     expect(fitFor("stage", 720, 0)).toBeNull();
   });
 
-  test("the welcome's stage is the same bust", () => {
-    expect(fitOf("welcome", 284, 284)).toEqual(fitOf("sidebar", 284, 284));
+  test("the welcome's stage is the same bust; only its upright coin (and the canvas reaching it) differ", () => {
+    const welcome = fitOf("welcome", 284, 284);
+    const sidebar = fitOf("sidebar", 284, 284);
+    expect(welcome.s).toBe(sidebar.s);
+    expect(welcome.ox).toBe(sidebar.ox);
+    expect(welcome.oy).toBe(sidebar.oy);
+    const { stand: ws, canvas: wc, cut: wCut, ...wRest } = welcome.rig;
+    const { stand: ss, canvas: sc, cut: sCut, ...sRest } = sidebar.rig;
+    expect(wRest).toEqual(sRest);
+    // the cut's top is a function per rig: compare what it gives
+    const { top: wTop, ...wCutRest } = wCut ?? { top: () => -1 };
+    const { top: sTop, ...sCutRest } = sCut ?? { top: () => -2 };
+    expect(wCutRest).toEqual(sCutRest);
+    expect(wTop(0)).toBe(sTop(0));
+    expect(ws.scale).toBeGreaterThan(ss.scale);
+    expect(wc.slice(0, 3)).toEqual(sc.slice(0, 3));
   });
 
   test("the approval palm drops the cut to 412 through a 44 px dissolve and shrinks her to 0.57", () => {
@@ -200,21 +220,28 @@ describe("the token toggle's coin", () => {
     for (const [name, w, h] of FITS) {
       const f = fitOf(name, w, h);
       const t = f.rig.token;
+      const sd = t.d * f.rig.stand.scale;
       const up = tokenStand(f);
+      const ink = tokenStandInk(f);
       const flat = tokenFlat(f);
       const [cx] = toHost(f, t.x, t.y);
       expect((up.left + up.right) / 2).toBeCloseTo(cx, 5);
-      expect(up.right - up.left).toBeCloseTo(t.d * f.s, 5);
-      expect(up.bottom - up.top).toBeCloseTo(t.d * f.s, 5);
-      const [, cy] = toHost(f, t.x, t.y + t.d * STAND_DROP);
+      expect(up.right - up.left).toBeCloseTo(sd * f.s, 5);
+      expect(up.bottom - up.top).toBeCloseTo(sd * f.s, 5);
+      const [, cy] = toHost(f, t.x, t.y + sd * f.rig.stand.drop);
       expect((up.top + up.bottom) / 2).toBeCloseTo(cy, 5);
       // its foot within a quarter of the coin of the flat coin's foot
-      expect(Math.abs(up.bottom - flat.bottom)).toBeLessThanOrEqual(t.d * f.s * 0.25);
+      expect(Math.abs(up.bottom - flat.bottom)).toBeLessThanOrEqual(sd * f.s * 0.25);
+      // what it draws (rim, lift, bob) holds the disc
+      expect(ink.left).toBeLessThanOrEqual(up.left);
+      expect(ink.top).toBeLessThanOrEqual(up.top);
+      expect(ink.right).toBeGreaterThanOrEqual(up.right);
+      expect(ink.bottom).toBeGreaterThanOrEqual(up.bottom);
       const box = tokenBox(f);
-      expect(box.left).toBeLessThanOrEqual(Math.min(up.left, flat.left));
-      expect(box.top).toBeLessThanOrEqual(Math.min(up.top, flat.top));
-      expect(box.right).toBeGreaterThanOrEqual(Math.max(up.right, flat.right));
-      expect(box.bottom).toBeGreaterThanOrEqual(Math.max(up.bottom, flat.bottom));
+      expect(box.left).toBeLessThanOrEqual(Math.min(ink.left, flat.left));
+      expect(box.top).toBeLessThanOrEqual(Math.min(ink.top, flat.top));
+      expect(box.right).toBeGreaterThanOrEqual(Math.max(ink.right, flat.right));
+      expect(box.bottom).toBeGreaterThanOrEqual(Math.max(ink.bottom, flat.bottom));
     }
   });
 
@@ -230,11 +257,64 @@ describe("the token toggle's coin", () => {
     }
   });
 
-  test("on the welcome's full stage the coin's box is about 59 px high at the stage's foot", () => {
+  test("the sidebar and the stage keep the flat token's size and the wake's drop", () => {
+    for (const name of ["sidebar", "stage"] as const) {
+      const f = name === "stage" ? fitOf(name, 720, 900) : fitOf(name, 256, 280);
+      expect(f.rig.stand).toEqual({ scale: 1, drop: STAND_DROP });
+    }
+  });
+
+  test("the welcome's upright coin is one and a half coins across (the owner: clearly larger)", () => {
+    for (const palm of [false, true]) {
+      const f = fitOf("welcome", 320, 284, palm);
+      expect(f.rig.stand.scale).toBe(WELCOME_STAND_SCALE);
+      expect(WELCOME_STAND_SCALE).toBeGreaterThanOrEqual(1.5);
+      const up = tokenStand(f);
+      const flat = tokenFlat(f);
+      expect(up.right - up.left).toBeCloseTo((flat.right - flat.left) * 1.5, 5);
+      // about 88 px across on the full stage (the flat token is about 58; 83 with the palm's 0.57)
+      expect(up.right - up.left).toBeGreaterThan(palm ? 80 : 85);
+    }
+  });
+
+  test("on the welcome the whole upright coin (rim, lift, bob) stays inside her host at every stage size", () => {
+    const sizes: readonly [number, number][] = [[320, 284], [320, 268], [280, 268], [320, 240]];
+    for (const [w, h] of sizes) {
+      for (const palm of [false, true]) {
+        const f = fitOf("welcome", w, h, palm);
+        const ink = tokenStandInk(f);
+        expect(ink.bottom).toBeLessThanOrEqual(h);
+        expect(ink.top).toBeGreaterThanOrEqual(0);
+        expect(ink.left).toBeGreaterThanOrEqual(0);
+        expect(ink.right).toBeLessThanOrEqual(w);
+        // it stands on the flat coin's foot, and the canvas reaches it
+        expect(ink.bottom).toBeCloseTo(toHost(f, 0, f.rig.tokenFoot)[1], 5);
+        expect(canvasBox(f).bottom).toBeGreaterThanOrEqual(ink.bottom - 1e-9);
+      }
+    }
+  });
+
+  test("the drawn extent covers the sheet's face-on ink at rest, lifted and bobbing", () => {
+    const f = fitOf("welcome", 320, 284);
+    const t = f.rig.token;
+    const sd = t.d * f.rig.stand.scale;
+    const q = sd / TOKEN_SHEET.td;
+    const cy = t.y + sd * f.rig.stand.drop;
+    const ink = tokenStandInk(f);
+    const host = (y: number): number => toHost(f, 0, y)[1];
+    // at rest, bobbing down: the sheet's ink bottom (63.6 of the 80 frame, centre at 34)
+    const restBottom = cy + (UPRIGHT_INK.bottom - 34) * q + STAND_BOB * sd;
+    expect(ink.bottom).toBeGreaterThanOrEqual(host(restBottom) - 1e-9);
+    // lifted under the pointer and bobbing up: the ink top, grown, raised
+    const liftTop = cy - (34 - UPRIGHT_INK.top) * q * (1 + LIFT.grow) - LIFT.rise * sd - STAND_BOB * sd;
+    expect(ink.top).toBeLessThanOrEqual(host(liftTop) + 1e-9);
+  });
+
+  test("on the welcome's full stage the coin's box is about 99 px high, its foot inside the stage", () => {
     const box = tokenBox(fitOf("welcome", 320, 284));
-    expect(box.bottom - box.top).toBeGreaterThan(55);
-    expect(box.bottom - box.top).toBeLessThan(62);
-    expect(box.bottom).toBeLessThanOrEqual(284.5);
+    expect(box.bottom - box.top).toBeGreaterThan(92);
+    expect(box.bottom - box.top).toBeLessThan(106);
+    expect(box.bottom).toBeLessThanOrEqual(284);
     expect((box.left + box.right) / 2).toBeCloseTo(160, 0);
   });
 });

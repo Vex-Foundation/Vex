@@ -22,10 +22,11 @@
  * a press closes her back into the token (her assembly backwards, the beam
  * falling, the coin turning to stand upright, face on, with the vx); the next
  * press lays it down and she wakes from it again (asleep, the yawn, the rub,
- * the blinks, the smile). The choice is the "Show avatar" preference, one
- * source of truth with the Vex sidebar's switch and Settings: token only
- * means no hologram anywhere (section 5.1, "the welcome shows the token alone
- * over the greeting"). The stage shrinks to the coin's box only once the
+ * the blinks, the smile). The choice is the welcome's own `welcomeVexShown`
+ * (the coordinator, 2026-10-17), never the global "Show avatar". The upright
+ * coin is one and a half coins across (the owner, 2026-10-18: clearly larger)
+ * and stands on the flat coin's foot inside her host. The stage shrinks to
+ * the coin's box (everything the coin draws: `tokenBox`) only once the
  * engine reports `token`, so the greeting, the composer and the rows move up
  * (the seat glides 240 ms); before she opens again the stage gets its size
  * back, then the open plays. Reduced motion and Save-Data swap the two still
