@@ -21,7 +21,7 @@ import { createElement, type ReactNode } from "react";
 
 import { useSubmitChat } from "../../../lib/api/chat.js";
 import { useUiStore } from "../../../stores/uiStore.js";
-import { MissionControls } from "../MissionControls.js";
+import { EDIT_CONTRACT_HINT, MissionControls } from "../MissionControls.js";
 import { MISSION_SETUP_STALL_PROMPT_MS } from "../MissionSetupProgress.js";
 import { resetMissionContractRequests } from "../mission-contract-request.js";
 import {
@@ -496,6 +496,33 @@ describe("MissionControls", () => {
     expect(screen.queryByRole("button", { name: "Continue mission" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Continue now" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Recover mission" })).toBeNull();
+  });
+
+  it("running: Edit contract says before the press that it stops the run and returns a draft", async () => {
+    getStateMock.mockResolvedValue(
+      runtimeState({
+        hasActiveRun: true,
+        status: "running",
+        missionRunId: "r1",
+        stoppable: true,
+        leaseActive: true,
+        activity: { kind: "running" },
+      }),
+    );
+    getDraftMock.mockResolvedValue(draftReady());
+    getDiffMock.mockResolvedValue(diffAccepted(true));
+    renderControls();
+
+    await screen.findByRole("button", { name: "Stop mission" });
+    const edit = screen.getByRole("button", { name: "Edit contract" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(edit);
+    expect(screen.getByRole("tooltip").textContent).toBe(EDIT_CONTRACT_HINT);
+    expect(EDIT_CONTRACT_HINT).toBe(
+      "Stops the run and returns the mission to a draft you change with Vex.",
+    );
+    fireEvent.blur(edit);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   it("paused_error: Recover enabled in the error callout (dispatches mission.retry), Continue not drawn", async () => {

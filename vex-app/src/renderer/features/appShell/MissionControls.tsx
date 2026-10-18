@@ -95,6 +95,7 @@ import { useRuntimeState } from "../../lib/api/runtime.js";
 import { cn } from "../../lib/utils.js";
 import { Button } from "../../components/ui/button.js";
 import { Swatch } from "../../components/ui/swatch.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
 import { readStopAvailability } from "./composer-submit/stop-availability.js";
 import { resolveStopAffordance } from "./composer-submit/stop-affordance.js";
 import { MissionRestartAffordance } from "./MissionRestartAffordance.js";
@@ -109,6 +110,10 @@ import { requestMissionContract } from "./mission-contract-request.js";
 import { useMissionSetupProgress } from "./MissionSetupProgress.js";
 import { MissionMissingFields } from "./MissionMissingFields.js";
 import { useMissionStripSlot } from "./MissionControls/mission-strip-slot.js";
+
+/** What "Edit contract" does, said before the press. */
+export const EDIT_CONTRACT_HINT =
+  "Stops the run and returns the mission to a draft you change with Vex.";
 
 /**
  * The text key of the strip ("Edit contract"): 13 / 500 in the blue, no
@@ -374,15 +379,18 @@ export function MissionControls({
         ) : null}
         {canEdit ? (
           // Edit stops the run and returns the mission to a draft that Vex
-          // and the user change together (`useEditMission`).
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
-            className={LINK_KEY}
-          >
-            Edit contract
-          </button>
+          // and the user change together (`useEditMission`); the tooltip says
+          // so before the press (owner follow-up), the press is unchanged.
+          <Tooltip label={EDIT_CONTRACT_HINT} side="top" maxWidth={280}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => void run(() => edit.mutateAsync({ sessionId }))}
+              className={LINK_KEY}
+            >
+              Edit contract
+            </button>
+          </Tooltip>
         ) : null}
         {/* Stop is the ink outline (the refusing choice), never red, and it
             is named apart from the composer's Stop turn. */}
