@@ -266,8 +266,9 @@ describe("AppShell runtime-mode dispatch", () => {
     // Under the head row: the running head comes first in the column.
     const head = centre?.querySelector('[data-vex-area="shell-status-strip"]');
     expect(head).not.toBeNull();
+    if (head == null || banner == null) throw new Error("the head row or the banner is missing");
     expect(
-      head!.compareDocumentPosition(banner!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      head.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     act(() => {
       window.dispatchEvent(new Event("online"));

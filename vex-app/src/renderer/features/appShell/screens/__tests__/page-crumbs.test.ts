@@ -26,6 +26,15 @@ const TOKEN = {
   tokenName: "USD Coin",
 } as const;
 
+/**
+ * Lets a deliberately malformed route reach the typed seam: it checks only
+ * the `kind` the crumb's switch reads, so the rest stays as wrong as the
+ * test means it to be.
+ */
+function hasRouteKind(value: unknown): value is ShellRoute {
+  return typeof value === "object" && value !== null && "kind" in value;
+}
+
 function history(returnTo: ShellRouteReturnTo): ShellRoute {
   return { kind: "tokenHistory", origin: null, token: TOKEN, returnTo };
 }
@@ -111,7 +120,10 @@ describe("a malformed route never throws in the title bar", () => {
   });
 
   it("a token history route without its token or its return point reads as a Portfolio subpage", () => {
-    const malformed = { kind: "tokenHistory", origin: null } as unknown as ShellRoute;
+    // Built as `unknown`, then narrowed by what the switch actually reads (its
+    // kind), never cast: the shape is wrong on purpose.
+    const malformed: unknown = { kind: "tokenHistory", origin: null };
+    if (!hasRouteKind(malformed)) throw new Error("the malformed route lost its kind");
     expect(() => titleBarPageOf(malformed)).not.toThrow();
     expect(titleBarPageOf(malformed)).toEqual({ name: "Token history", parents: [PORTFOLIO_CRUMB] });
   });
