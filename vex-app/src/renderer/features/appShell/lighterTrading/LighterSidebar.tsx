@@ -4,7 +4,10 @@
  *
  *   - the LEFT cell says where you are: the Zen key, "Lighter", then the
  *     desk's section and network in muted ("Perps · Robinhood Chain"); in
- *     Zen, the market and interval the chart shows;
+ *     Zen, the market and interval the chart shows; while a page stands over
+ *     the desk (Settings from the rail, Portfolio, a register), the page's own
+ *     title as the title bar draws it (`OpenPageTitle`, R3-MINIMAL.md
+ *     section 3);
  *   - the MIDDLE cluster (gap 8), centred in the row: Markets & sessions,
  *     New session (Ask Vex in Zen), Core | RHC, then the title bar's own
  *     cluster (export, Notices, Needs you, the token chip), portalled in from
@@ -44,6 +47,7 @@ import { useSessionsList } from "../../../lib/api/sessions.js";
 import { useScrollbarVisibility } from "../../../lib/useScrollbarVisibility.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { OpenPageTitle } from "../RunningHead.js";
 import { SessionDeleteDialog } from "../SessionDeleteDialog.js";
 import {
   SessionGroups,
@@ -138,6 +142,8 @@ export function LighterSidebar({
     .filter((part): part is string => part !== null)
     .join(" · ");
   const zenFolded = zenMode && !zenControlsOpen;
+  // A page over the desk is named in this row, the desk's title bar.
+  const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
 
   return (
     <aside
@@ -179,19 +185,23 @@ export function LighterSidebar({
                   <LineZen size={16} />
                 </button>
               )}
-              <span className="vex-tb-title lit-topbar-title">
-                <span className="vex-tb-title__name">Lighter</span>
-                {zenMode && activeMarket !== null ? (
-                  <span
-                    className="vex-tb-title__sub lit-topbar-zen-market"
-                    aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}
-                  >
-                    {activeMarket.symbol} · {resolution}
-                  </span>
-                ) : (
-                  <span className="vex-tb-title__sub">{place}</span>
-                )}
-              </span>
+              {pageOpen ? (
+                <OpenPageTitle />
+              ) : (
+                <span className="vex-tb-title lit-topbar-title">
+                  <span className="vex-tb-title__name">Lighter</span>
+                  {zenMode && activeMarket !== null ? (
+                    <span
+                      className="vex-tb-title__sub lit-topbar-zen-market"
+                      aria-label={`Viewing ${activeMarket.symbol} ${resolution} chart`}
+                    >
+                      {activeMarket.symbol} · {resolution}
+                    </span>
+                  ) : (
+                    <span className="vex-tb-title__sub">{place}</span>
+                  )}
+                </span>
+              )}
             </>
           )}
         </div>

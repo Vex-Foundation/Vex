@@ -25,6 +25,13 @@ export interface WizardHostValue {
   readonly host: WizardHost;
   /** Wizard: what stands above the step's title. */
   readonly before?: ReactNode;
+  /**
+   * Wizard: back one step (steps 2 to 7, the mockups' footer key). Absent on
+   * the first step, on Review's edit path (it has "Return to review") and in
+   * Settings. Going back saves nothing and undoes nothing: the step shown
+   * again keeps what was entered, and moving on still runs its own checks.
+   */
+  readonly onBack?: () => void;
 }
 
 export const WizardHostContext = createContext<WizardHostValue | null>(null);

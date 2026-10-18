@@ -7,23 +7,37 @@
  * top band (the hidden title bar's drag region), then the current step's page
  * (`WizardStepPanel`): "Step N of 7 · {name}", the serif title, the lead, the
  * form, and a footer at the window's foot with the privacy link and the
- * step's actions. Under 1180 a small vx mark and Vex's word stand above the
- * step instead of the plate. Loading is the quiet loading line.
+ * step's actions. Under 1180 a small vx mark stands above the step instead of
+ * the plate. No state word stands under or beside her anywhere in the wizard
+ * (the owner, 2026-10-17 on the plate and 2026-10-18 on every stage). Loading
+ * is the quiet loading line.
  *
  * Vex's mood follows real focus: she listens while a text field of the form
- * has focus, else she is at rest ("Listening" and "Ready" beside the small
- * mark under 1180).
+ * has focus, else she is at rest (her face on the plate; the frame carries it
+ * as `data-vex-wizard-mood`).
  *
- * Per-step chrome lives in `WizardStepPanel`; the shell provides the wizard
- * host (`wizard-host.ts`) with what stands above each step's title. Each step
- * returns a `WizardStepPanel` (ReviewStep's edit path renders the edited
- * step's panel with the editing row added above its title).
- * `AnimatePresence` stays on this shell; the panel is a plain element so
- * transitions are not doubled.
+ * Per-step chrome lives in `WizardStepPanel`; the shell provides each step
+ * its wizard host (`wizard-host.ts`): what stands above its title and, on
+ * steps 2 to 7, Back. Each step returns a `WizardStepPanel` (ReviewStep's edit
+ * path renders the edited step's panel with the editing row added above its
+ * title, and no Back: it has "Return to review").
  *
- * There is no back navigation outside Review's edit path; the active step
- * lives in local React state, not Zustand. Recovery after a crash mid-wizard
- * flows through `wizard-state.json` and the TanStack Query cache.
+ * BACK (the mockups' footer key on steps 2 to 7, the owner 2026-10-18) moves
+ * the view one step back and saves nothing. Every form step the user has
+ * seen stays mounted, hidden while another is shown, so the values typed into
+ * it are still there both ways (a hidden step leaves the accessibility tree
+ * and the tab order with `hidden`). Review is the exception: it is a summary
+ * of what is saved, so it mounts afresh each time it is shown and never
+ * shows a stale line after an earlier step changed. Moving on is always the step's own action, so
+ * its checks run again: the vault step shows the configured vault (the
+ * password rules never reopen and are never skipped), a form re-validates
+ * before it saves, and the persisted state never moves behind the ground
+ * already covered (`nextWizardStateFor`). A step that comes into view fades
+ * in on the shared surface entrance (`wizard.css`).
+ *
+ * The active step lives in local React state, not Zustand. Recovery after a
+ * crash mid-wizard flows through `wizard-state.json` and the TanStack Query
+ * cache.
  *
  * If `completed === true` (Review finalised on a previous launch) we flip the
  * view to `appShell` immediately. Two effects own this routing: the one-time
@@ -46,27 +60,27 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
   type FocusEvent,
   type JSX,
   type ReactNode,
 } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import type { WizardStepId, WizardState } from "@shared/schemas/wizard.js";
+import {
+  WIZARD_STEP_IDS,
+  type WizardStepId,
+  type WizardState,
+} from "@shared/schemas/wizard.js";
 import { Button } from "../../components/ui/button.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
-import { StateWord } from "../../components/ui/state-word.js";
-import type { SwatchState } from "../../components/ui/swatch.js";
 import { VexLoader } from "../../components/ui/vex-loader.js";
 import { VxToken } from "../../components/ui/vx-token.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import type { K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import { useUiStore } from "../../stores/uiStore.js";
-import { useWizardState } from "../../lib/api/wizard.js";
+import { previousStepId, useWizardState } from "../../lib/api/wizard.js";
 import { resolveWizardEntry } from "./wizard-entry.js";
 import { HorizontalStepper, WizardStepEyebrow } from "./HorizontalStepper.js";
-import { WizardHostContext, type WizardHostValue } from "./wizard-host.js";
+import { WizardHostContext } from "./wizard-host.js";
 import { AgentCoreStep } from "./steps/AgentCoreStep.js";
 import { ApiKeysStep } from "./steps/ApiKeysStep.js";
 import { EmbeddingStep } from "./steps/EmbeddingStep.js";
@@ -110,19 +124,13 @@ const PRINT_ART = {
   night: "/art/plateau-night.jpg",
 } as const;
 
-/** What Vex shows: her face, the fill and the word. */
+/** What Vex shows: her face (no word goes with it, the owner). */
 interface WizardFace {
   readonly emotion: K2Emotion;
-  readonly swatch: SwatchState;
-  readonly word: string;
 }
 
-const READY: WizardFace = { emotion: "idle", swatch: "idle", word: "Ready" };
-const LISTENING: WizardFace = {
-  emotion: "listening",
-  swatch: "listening",
-  word: "Listening",
-};
+const READY: WizardFace = { emotion: "idle" };
+const LISTENING: WizardFace = { emotion: "listening" };
 
 const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
   "text",
@@ -209,6 +217,7 @@ function WizardFrame({
       data-vex-onboarding="true"
       data-vex-gate="true"
       data-vex-screen="wizard"
+      data-vex-wizard-mood={face.emotion}
       className="vex-wz"
     >
       <WizardPlate face={face} />
@@ -220,12 +229,14 @@ function WizardFrame({
   );
 }
 
-/** Under 1180, above the step: the vx mark and Vex's word. */
-function WizardMini({ face }: { readonly face: WizardFace }): JSX.Element {
+/** The small mark's size under 1180 (spec 10.1: "a 40 mark" where the plate goes). */
+export const WIZARD_MINI_MARK = 40;
+
+/** Under 1180, above the step: the vx mark, with no state word (the owner). */
+function WizardMini(): JSX.Element {
   return (
     <div className="vex-wzp__mini" data-vex-wizard-mini>
-      <VxToken size={26} />
-      <StateWord state={face.swatch} word={face.word} size={10} />
+      <VxToken size={WIZARD_MINI_MARK} />
     </div>
   );
 }
@@ -235,7 +246,6 @@ export function WizardShell(): JSX.Element {
   const openUnlock = useUiStore((s) => s.openUnlock);
   const wizardEntryMode = useUiStore((s) => s.wizardEntryMode);
   const wizardStateQuery = useWizardState();
-  const reducedMotion = useReducedMotion();
 
   const persisted: WizardState | null =
     wizardStateQuery.data?.ok === true ? wizardStateQuery.data.data : null;
@@ -244,6 +254,8 @@ export function WizardShell(): JSX.Element {
     (wizardStateQuery.data && wizardStateQuery.data.ok === false);
 
   const [currentStepId, setCurrentStepId] = useState<WizardStepId | null>(null);
+  // Every step shown in this session, kept mounted so what was typed stays.
+  const [seen, setSeen] = useState<ReadonlySet<WizardStepId>>(() => new Set());
   const [listening, setListening] = useState(false);
   const face = listening ? LISTENING : READY;
 
@@ -343,6 +355,25 @@ export function WizardShell(): JSX.Element {
   const onAdvance = useCallback((next: WizardStepId) => {
     setCurrentStepId(next);
   }, []);
+  const onBack = useCallback(() => {
+    setCurrentStepId((step) => (step === null ? step : (previousStepId(step) ?? step)));
+  }, []);
+  useEffect(() => {
+    if (currentStepId === null) return;
+    setSeen((was) => (was.has(currentStepId) ? was : new Set([...was, currentStepId])));
+    // The key that moved the view (Back, or a step's own action onto a step
+    // already seen) now sits in a hidden step: focus goes to the shown
+    // step's title, never to the page body. A step mounting for the first
+    // time keeps its own autofocus.
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return;
+    if (active.closest("[data-vex-wizard-pane]")?.hasAttribute("hidden") !== true) return;
+    const pane = document.querySelector<HTMLElement>(`[data-vex-wizard-pane="${currentStepId}"]`);
+    const title = pane?.querySelector<HTMLElement>("h1") ?? pane;
+    if (title === null || title === undefined) return;
+    if (!title.hasAttribute("tabindex")) title.setAttribute("tabindex", "-1");
+    title.focus({ preventScroll: true });
+  }, [currentStepId]);
 
   const onFocusWithin = useCallback((event: FocusEvent<HTMLDivElement>) => {
     setListening(isTextEntry(event.target));
@@ -350,22 +381,6 @@ export function WizardShell(): JSX.Element {
   const onBlurWithin = useCallback((event: FocusEvent<HTMLDivElement>) => {
     setListening(isTextEntry(event.relatedTarget));
   }, []);
-
-  const host = useMemo<WizardHostValue | null>(
-    () =>
-      currentStepId === null
-        ? null
-        : {
-            host: "wizard",
-            before: (
-              <>
-                <WizardMini face={face} />
-                <WizardStepEyebrow currentStepId={currentStepId} />
-              </>
-            ),
-          },
-    [currentStepId, face],
-  );
 
   if (queryError) {
     const message =
@@ -376,7 +391,7 @@ export function WizardShell(): JSX.Element {
       <WizardFrame face={face}>
         <div className="vex-wzp">
           <header className="vex-wzp__head">
-            <WizardMini face={face} />
+            <WizardMini />
             <h1 className="vex-wzp__title">Setup unavailable</h1>
           </header>
           <div className="vex-wzp__content">
@@ -406,7 +421,7 @@ export function WizardShell(): JSX.Element {
     );
   }
 
-  if (currentStepId === null || host === null) {
+  if (currentStepId === null) {
     return (
       <WizardFrame face={face}>
         {/* The quiet loading line; the loader root carries role="status". */}
@@ -429,24 +444,29 @@ export function WizardShell(): JSX.Element {
       onFocusWithin={onFocusWithin}
       onBlurWithin={onBlurWithin}
     >
-      <WizardHostContext.Provider value={host}>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={currentStepId}
-            initial={reducedMotion ? false : { opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-            transition={{ duration: reducedMotion ? 0 : 0.2, ease: "easeOut" }}
-            className="vex-wz__step"
+      {WIZARD_STEP_IDS.filter((id) => id === currentStepId || (seen.has(id) && id !== "review")).map((id) => (
+        <div
+          key={id}
+          className="vex-wz__step"
+          data-vex-wizard-pane={id}
+          hidden={id !== currentStepId}
+        >
+          <WizardHostContext.Provider
+            value={{
+              host: "wizard",
+              before: (
+                <>
+                  <WizardMini />
+                  <WizardStepEyebrow currentStepId={id} />
+                </>
+              ),
+              ...(previousStepId(id) === null ? {} : { onBack }),
+            }}
           >
-            {renderStep(
-              currentStepId,
-              persisted?.completedSteps ?? [],
-              onAdvance,
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </WizardHostContext.Provider>
+            {renderStep(id, persisted?.completedSteps ?? [], onAdvance)}
+          </WizardHostContext.Provider>
+        </div>
+      ))}
     </WizardFrame>
   );
 }

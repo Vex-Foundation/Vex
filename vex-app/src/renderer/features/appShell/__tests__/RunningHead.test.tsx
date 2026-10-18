@@ -191,6 +191,36 @@ describe("the left cell", () => {
     expect(titleBarPageOf(scan)?.parents.map((parent) => parent.label)).toEqual(["Portfolio"]);
   });
 
+  it("marks the Memory page read-only beside its name, as the render draws it", () => {
+    useUiStore.setState({ shellRoute: { kind: "memory", origin: null } });
+    renderHead("agent", SESSION);
+    expect(title()).toBe("MemoryRead-only");
+    expect(screen.getByText("Read-only").className).toBe("vex-tb-title__sub");
+  });
+
+  it("opens its right cluster with the slot a page's own keys land in (Portfolio's refresh)", () => {
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    const head = renderHead("agent", SESSION);
+    const flank = head.querySelector(".vex-running-head__flank");
+    expect(flank?.firstElementChild?.getAttribute("data-vex-area")).toBe("title-bar-page-keys");
+  });
+
+  it("names a project's register by its project, as the register's own dialog does", () => {
+    reads.project = { name: "vex-core", permission: "full" };
+    useUiStore.setState({
+      shellRoute: { kind: "assets", origin: null, sessionId: null, projectId: PROJECT },
+    });
+    renderHead("studio", SESSION);
+    expect(title()).toBe("Portfolio/Project assets: vex-core");
+    expect(screen.getByText("Project assets: vex-core").getAttribute("aria-current")).toBe("page");
+    cleanup();
+
+    // until the projects read answers it says only what kind of register it is
+    reads.project = null;
+    renderHead("studio", SESSION);
+    expect(title()).toBe("Portfolio/Project assets");
+  });
+
   it("draws a subpage's crumb: each parent a link up to it, the page itself current", () => {
     useUiStore.setState({
       shellRoute: {

@@ -409,7 +409,7 @@ describe("desk lane", () => {
     accountData.value = { ok: true, data: positionAccount(Date.now() + 2_000, [], []) };
     rerender();
     await waitFor(() => expect(result.current.cancellingOrders.has("7:9001")).toBe(false));
-    expect(result.current.deskOutcome?.text).toContain("Check Trade History for any fill");
+    expect(result.current.deskOutcome?.text).toContain("Check Trade history for any fill");
   });
 
   describe("a desk card that times out", () => {
@@ -1042,7 +1042,7 @@ describe("desk lane", () => {
     expect(result.current.deskOutcome?.text).toContain("9003");
     expect(result.current.deskOutcome?.text).toContain("canceled with no fill");
     expect(result.current.deskOutcome?.text).toContain("did not open a position");
-    expect(result.current.deskOutcome?.text).toContain("Positions and Trade History");
+    expect(result.current.deskOutcome?.text).toContain("Positions and Trade history");
     expect(result.current.deskOutcome?.text).not.toContain("Check Orders below");
     expect(funnelStep).toHaveBeenCalledWith({ step: "desk_order_canceled", environment: "rhc" });
   });
@@ -1155,9 +1155,9 @@ describe("desk lane", () => {
         occurredAt: AT,
         result: resolved({ id: "ap-bg2", executionStatus: "indeterminate" }),
       }));
-      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Check Open orders below and refresh before retrying." });
       act(() => result.current.onApprovalResolved("approved", resolved({ id: "ap-bg2", executionStatus: "dispatching" })));
-      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+      expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Check Open orders below and refresh before retrying." });
     });
 
     it("a failed event reports on the ticket and releases the row, exactly like a failed awaited approve", async () => {
@@ -1193,7 +1193,7 @@ describe("desk lane", () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
 
         expect(approvalGet).toHaveBeenCalledWith({ id: "ap-bg4" });
-        expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Open Orders below and refresh before retrying." });
+        expect(result.current.deskOutcome).toEqual({ tone: "warn", text: "Outcome unknown. Check Open orders below and refresh before retrying." });
       } finally {
         vi.useRealTimers();
       }

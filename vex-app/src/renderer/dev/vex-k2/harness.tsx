@@ -29,7 +29,7 @@
  *                                         from the token, the close into it)
  *   ?seq=token                            the toggle on a clock: closed into the upright coin at
  *                                         6 s, the wake from the token at 10 s
- *   ?status=1                             the avatar off: the token and its ring with the word,
+ *   ?status=1                             the avatar off: the token (no ring) with the word,
  *                                         every state, beside (sidebar) and under (welcome)
  * The host carries `data-vex-k2-ready` once her first frame is painted.
  */
@@ -131,7 +131,7 @@ function useSequence(): SequenceState & { readonly flip: () => void } {
   return { ...now, flip: () => setNow((cur) => ({ ...cur, tokenOnly: !cur.tokenOnly })) };
 }
 
-/** The avatar off: every state's token, ring and word, as the sidebar and the welcome show them. */
+/** The avatar off: every state's token and word, as the sidebar and the welcome show them. */
 function StatusSheet(): JSX.Element {
   return (
     <div data-vex-harness-status="" className="grid grid-cols-2 gap-x-12 gap-y-4 bg-surface-base p-8">

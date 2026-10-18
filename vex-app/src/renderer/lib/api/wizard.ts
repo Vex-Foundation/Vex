@@ -50,10 +50,36 @@ export function nextWizardStateFor(args: {
     ? args.completedSteps
     : [...args.completedSteps, args.current];
   return {
-    currentStepId: args.next,
+    currentStepId: persistedNextStep(completed, args.next),
     completedSteps: completed,
     ...(args.markCompleted ? { completed: true } : {}),
   };
+}
+
+/**
+ * The step the persisted state records after a save. Normally the step the
+ * user moves to; after the wizard's Back (the user saved an earlier step
+ * again) never behind the ground already covered: the step after the
+ * furthest completed one (that step itself when it is the last). So the
+ * `isForwardSafe` invariant holds, a relaunch lands where the user had got
+ * to, and nothing already done is marked undone. The view moves to `next`
+ * either way (`onAdvance`).
+ */
+function persistedNextStep(
+  completed: ReadonlyArray<WizardStepId>,
+  next: WizardStepId,
+): WizardStepId {
+  const furthest = Math.max(-1, ...completed.map((id) => WIZARD_STEP_IDS.indexOf(id)));
+  const resume = WIZARD_STEP_IDS[Math.min(furthest + 1, WIZARD_STEP_IDS.length - 1)];
+  if (resume === undefined) return next;
+  return WIZARD_STEP_IDS.indexOf(next) >= WIZARD_STEP_IDS.indexOf(resume) ? next : resume;
+}
+
+/** The step before `current` (the wizard's Back), or null on the first step. */
+export function previousStepId(current: WizardStepId): WizardStepId | null {
+  const idx = WIZARD_STEP_IDS.indexOf(current);
+  if (idx <= 0) return null;
+  return WIZARD_STEP_IDS[idx - 1] ?? null;
 }
 
 /** Returns the canonical next step id, or null if `current` is the last step. */

@@ -15,6 +15,10 @@ vi.mock("../../../../lib/api/sessions.js", () => ({
   useSessionsList: () => ({ data: { ok: true, data: [] }, isLoading: false, isError: false }),
 }));
 
+vi.mock("../../../../lib/api/projects.js", () => ({
+  useProject: () => ({ data: undefined }),
+}));
+
 vi.mock("../../SessionDeleteDialog.js", () => ({ SessionDeleteDialog: () => null }));
 vi.mock("../../SidebarProfile.js", () => ({ SidebarProfile: () => <div /> }));
 vi.mock("../../useSessionRowActions.js", () => ({
@@ -101,6 +105,32 @@ describe("LighterSidebar title row", () => {
     expect(exit.getAttribute("title")).toBe("Exit Lighter, back to Studio");
     fireEvent.click(exit);
     expect(useUiStore.getState().runtimeMode).toBe("studio");
+  });
+
+  it("names a page that stands over the desk, as the title bar does elsewhere (section 3)", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    try {
+      render(
+        <LighterSidebar
+          collapsed
+          onToggleSidebar={vi.fn()}
+          zenMode={false}
+          zenAssistantOpen={false}
+          zenControlsOpen={false}
+          onToggleZen={vi.fn()}
+          onToggleZenControls={vi.fn()}
+          onToggleZenAssistant={vi.fn()}
+        />,
+      );
+      const navigation = screen.getByRole("complementary", { name: "Lighter navigation" });
+      const title = navigation.querySelector('[data-vex-area="title-bar-title"]');
+      expect(title?.textContent).toBe("Settings");
+      expect(within(navigation).queryByText("Lighter")).toBeNull();
+      // the desk's own keys stay in the row
+      expect(within(navigation).getByRole("button", { name: "Markets & sessions" })).toBeTruthy();
+    } finally {
+      useUiStore.setState({ shellRoute: { kind: "none" } });
+    }
   });
 
   it("keeps the title bar's slot mounted, only hidden, while Zen folds the row", () => {

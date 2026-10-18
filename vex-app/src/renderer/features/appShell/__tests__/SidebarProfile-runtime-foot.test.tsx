@@ -133,6 +133,14 @@ describe("SidebarProfile foot", () => {
     expect(screen.getByRole("menuitem", { name: /Lock Vex/ })).not.toBeNull();
   });
 
+  it("shows Lock Vex's chord from the one constant the Settings Vault row shares", async () => {
+    const { LOCK_VEX_SHORTCUT } = await import("../LockVexControl.js");
+    render(<SidebarProfile sidebarOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    const lock = screen.getByRole("menuitem", { name: /Lock Vex/ });
+    expect(lock.querySelector(".vex-menu-shortcut")?.textContent).toBe(LOCK_VEX_SHORTCUT);
+  });
+
   it("hides Lock Vex when its rollback flag is off", () => {
     feature.enabled = false;
     render(<SidebarProfile sidebarOpen />);

@@ -30,9 +30,9 @@ describe("resolveLighterLayout", () => {
     expect(layout.tradesShare).toBe(DEFAULT_LIGHTER_LAYOUT.tradesShare);
   });
   it("keeps valid pixel dimensions across the compact/three-column boundary", () => {
-    expect(LIGHTER_STACK_BELOW).toBe(1020);
+    expect(LIGHTER_STACK_BELOW).toBe(1180);
 
-    for (const width of [1019, 1020]) {
+    for (const width of [1179, 1180]) {
       const resolved = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, {
         width,
         height: 900,
@@ -47,6 +47,17 @@ describe("resolveLighterLayout", () => {
       expect(resolved.tradesHeight).toBeLessThanOrEqual(resolved.tradesMax);
       expect(resolved.bottomHeight).toBeLessThanOrEqual(resolved.bottomMax);
     }
+  });
+
+  it("stacks the book under the chart at a 1440 window with Vex open (a 1128 desk) and keeps three columns with Vex hidden (1384)", () => {
+    expect(1128).toBeLessThan(LIGHTER_STACK_BELOW);
+    expect(1384).toBeGreaterThanOrEqual(LIGHTER_STACK_BELOW);
+    // Stacked, the main area reserves the chart and a side-by-side book under it;
+    // across, it reserves only a book and the trades panel. A frame as tall as the
+    // stacked reserve plus the dock's floor squeezes the dock only when stacked.
+    const height = LIGHTER_COMPACT_CHART_MIN + 1 + LIGHTER_COMPACT_BOOK_MIN + LIGHTER_BOTTOM_MIN;
+    expect(resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, { width: 1128, height }).dockSqueezed).toBe(true);
+    expect(resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, { width: 1384, height }).dockSqueezed).toBe(false);
   });
 
   it("scales the columns, the trades panel and the dock with the desk", () => {

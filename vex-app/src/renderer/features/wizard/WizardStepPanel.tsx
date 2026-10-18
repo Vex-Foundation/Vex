@@ -4,9 +4,9 @@
  *
  *   wizard    what the shell stands above the title (`before`), the serif
  *             title (44, blue), the lead (15, ink 2), the step's body (column
- *             max 600), and a footer at the window's foot: the privacy link at
- *             the left, the step's actions at the right (the one primary
- *             action last).
+ *             max 600), and a footer at the window's foot: Back (steps 2 to 7,
+ *             `onBack` from the host) and the privacy link at the left, the
+ *             step's actions at the right (the one primary action last).
  *   settings  the Settings section head: the step's title (or the section's
  *             own name where the title is a state sentence the body repeats)
  *             at 22 / 500 with the section's status word and swatch beside
@@ -39,6 +39,7 @@ import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import { VEX_PRIVACY_DOC_LABEL, VEX_PRIVACY_DOC_URL } from "@shared/docs-links.js";
 
+import { Button } from "../../components/ui/button.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import type { WizardFlowMode } from "../../lib/api/wizard.js";
 // The Settings nav's status words and the section rows: the step head in
@@ -211,6 +212,12 @@ export function WizardStepPanel({
   );
   const foot = (
     <div className="vex-wzp__foot">
+      {host.onBack ? (
+        // Never a submit: inside the step's form Back must not save it.
+        <Button type="button" variant="quiet" onClick={host.onBack} data-vex-wizard-back>
+          Back
+        </Button>
+      ) : null}
       <PrivacyLink className="vex-wzp__meta" />
       <span className="vex-wzp__sp" />
       {footer ? <div className="vex-wzp__actions">{footer}</div> : null}

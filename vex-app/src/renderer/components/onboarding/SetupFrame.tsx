@@ -10,7 +10,7 @@
  *          the right of the 720 plate with the crumb, the serif title, the
  *          lead and the screen's body, and the small version stamp. The
  *          screen names its `step` and its `mood`: the crumb's current step
- *          and what Vex shows on the plate follow the mood (a fill and a word).
+ *          and Vex's face on the plate follow the mood (no word under her).
  *   open   the body stands on the stage itself (the unlock draws its own
  *          side column).
  *   leaf   (default; no caller since the wizard draws its own R3 frame) a

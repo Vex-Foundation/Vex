@@ -19,7 +19,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useRef } from "react";
 import type { K2TokenState } from "../../../components/vex/k2/k2-engine.js";
-import { fitFor, tokenBox, type Box } from "../../../components/vex/k2/k2-rig.js";
+import {
+  fitFor,
+  tokenBox,
+  tokenStand,
+  tokenStandInk,
+  type Box,
+} from "../../../components/vex/k2/k2-rig.js";
 import type { VexK2Props } from "../../../components/vex/k2/VexK2.js";
 import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -327,6 +333,30 @@ describe("SessionWelcomeHero - the token toggle", () => {
     );
     // the button follows the coin up
     expect(Number.parseFloat(token().style.top)).toBeCloseTo(225.6 - 225, 5);
+  });
+
+  it("collapsed on the full stage, the stage holds the whole larger upright coin: rim, lift and bob, never clipped at its foot", () => {
+    useUiStore.setState({ welcomeVexShown: false });
+    const { container } = render(<SessionWelcomeHero />);
+    expect(stageOf(container)).toBe("token");
+    const fit = fitFor("welcome", 320, 284);
+    if (fit === null) throw new Error("the full stage has no fit");
+    const box = tokenBox(fit);
+    const ink = tokenStandInk(fit);
+    const clip = clipOf(container);
+    const height = Number.parseFloat(clip?.style.height ?? "");
+    const top = -Number.parseFloat(
+      (clip?.firstElementChild as HTMLElement | null)?.style.marginTop ?? "",
+    );
+    // the cut starts at or above the coin's highest ink and ends at or under its foot
+    expect(top).toBeLessThanOrEqual(ink.top);
+    expect(top + height).toBeGreaterThanOrEqual(ink.bottom);
+    expect(top + height).toBeGreaterThanOrEqual(box.bottom);
+    // inside her host (284 high), so the host's own edge never cuts it either
+    expect(ink.bottom).toBeLessThanOrEqual(284);
+    // clearly larger than before (the flat token's box was 59 high): one and a half coins
+    expect(height).toBeGreaterThan(90);
+    expect(tokenStand(fit).right - tokenStand(fit).left).toBeGreaterThan(85);
   });
 
   it("a second press gives the stage its size back first, then she opens (the wake from the token)", () => {

@@ -7,9 +7,9 @@
  *  - the R3b ORDER: the state (scope, word, timer), the narration, the
  *    background missions, Needs you, then the portrait plate, then the
  *    avatar switch;
- *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token in
- *    its state ring beside the state, and everything else stays; the switch
- *    writes the persisted preference;
+ *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token
+ *    (no ring round it) beside the state, and everything else stays; the
+ *    switch writes the persisted preference;
  *  - SHE DOCKS: a column that shows after the shell came up (off the
  *    welcome, or open again after a hide) plays her open episode; one open
  *    from the start shows her as she is;
@@ -257,7 +257,9 @@ describe("VexSidebar, avatar off", () => {
     expect(document.querySelector("[data-vex-k2]")).toBeNull();
     const state = area("vex-state");
     expect(state?.querySelector("[data-vex-vx-token] svg")?.getAttribute("width")).toBe("44");
-    expect(state?.querySelector("[data-vex-status-ring]")?.getAttribute("data-vex-status-ring")).toBe(
+    // The kit's avatar off is the bare disc: no ring, the word carries the state.
+    expect(state?.querySelector("[data-vex-status-ring]")).toBeNull();
+    expect(state?.querySelector("[data-vex-status]")?.getAttribute("data-vex-status")).toBe(
       "working",
     );
     expect(state?.textContent).toContain("This chat: Working");

@@ -209,7 +209,12 @@
   }
 }
 
-/* ── Page keys (export): a 32 x 32 icon key, ink 2, and its status word ──── */
+/* ── Page keys (a page's own keys, export): a 32 x 32 icon key, ink 2, and its
+ * status word. The slot a page's keys land in adds no box of its own, so its
+ * keys take the cluster's gap like the rest. ─────────────────────────────── */
+.vex-tb-pagekeys {
+  display: contents;
+}
 .vex-tb-key {
   display: inline-grid;
   flex: none;

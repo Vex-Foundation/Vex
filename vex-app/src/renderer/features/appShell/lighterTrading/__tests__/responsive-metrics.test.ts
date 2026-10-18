@@ -140,6 +140,12 @@ describe("Lighter desk sheets (docs/design/R3-MINIMAL.md sections 1.2 and 9.3)",
     expect(css).not.toMatch(/@media \(max-width: 1440px\)/);
   });
 
+  it("draws the market picker's symbol at 15 / 600 in a 36 high key with a 1px rule", () => {
+    const bar = sheetRules("lighter-market-bar.css");
+    expect(bar).toMatch(/button\.lit-market-select\s*\{[^}]*height: 36px;[^}]*border: 1px solid var\(--lit-line\);/s);
+    expect(bar).toMatch(/button\.lit-market-select b\s*\{[^}]*font-size: 15px;[^}]*font-weight: 600;/s);
+  });
+
   it("keeps the chart, order book, ticket and account dock mounted together", () => {
     expect(css).toMatch(/\.lit-desk-upper\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) 260px 300px;/s);
     expect(css).toMatch(/\.lit-book-column > \.lit-book-panel\s*\{[^}]*min-height: 140px;/s);

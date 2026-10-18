@@ -1,8 +1,9 @@
 /**
  * The Preferences section of the Settings page (docs/design/R3-MINIMAL.md
  * section 9.6): the head, then one row per setting under a hairline rule:
- * Appearance (the theme choice, a segmented control), Show avatar, Open Vex's
- * sidebar in chats, the Session permission explainer, the Background image
+ * Appearance (the theme choice, a segmented control), Show avatar (with its
+ * "Looking at you" preview under it while it is on), Open Vex's sidebar in
+ * chats, the Session permission explainer, the Background image
  * (`SettingsBackdropRow`), the composer Enter key and the two switches.
  *
  * Appearance selection follows the PERSISTED preference, never the resolved
@@ -22,6 +23,9 @@ import {
   useSubmitKeyBehavior,
   type SubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
+import { studioPlatform } from "../../studio/keybindings-labels.js";
+import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
+import { SettingsAvatarPreview } from "./SettingsAvatarPreview.js";
 import { SettingsBackdropRow } from "./SettingsBackdropRow.js";
 import { SettingsHead } from "./SettingsHead.js";
 
@@ -154,7 +158,7 @@ function ShowAvatarRow(): JSX.Element {
   return (
     <SwitchRow
       title="Show avatar"
-      help="Vex's hologram in the right sidebar. The vx token at the right of the top bar shows or hides the sidebar. Off, the token and the state word still show what she is doing."
+      help={`Vex's hologram in the right sidebar. The vx token at the right of the top bar, or ${vexToggleShortcutLabel(studioPlatform)}, shows or hides the sidebar. Off, the token and the state word still show what she is doing.`}
       enabled={enabled}
       onToggle={() => setShowAvatar(!enabled)}
       seam="data-vex-settings-avatar"
@@ -252,6 +256,7 @@ export function SettingsPreferences(): JSX.Element {
       <div className="vex-prefs__list">
         <AppearanceRow />
         <ShowAvatarRow />
+        <SettingsAvatarPreview />
         <OpenInChatsRow />
         <SessionPermissionRow />
         <SettingsBackdropRow />

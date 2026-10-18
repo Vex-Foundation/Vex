@@ -141,6 +141,10 @@ vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
   useClearShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
 }));
 
+// The Preferences landing draws the "Looking at you" preview, whose plate
+// hosts the K2 hologram; her canvas belongs to VexK2's own suite.
+vi.mock("../../../../components/vex/k2/VexK2.js", () => ({ VexK2: () => null }));
+
 const { ShellScreens } = await import("../ShellScreens.js");
 
 const ORIGIN = { x: 12, y: 640, width: 320, height: 40 };
@@ -511,6 +515,19 @@ describe("SettingsScreen", () => {
     expect(exportModalSpy).toHaveBeenCalledWith("evm");
     fireEvent.click(screen.getByRole("button", { name: "Close export (stub)" }));
     expect(screen.queryByText("Close export (stub)")).toBeNull();
+  });
+
+  it("the Vault section carries the Lock Vex row under its step form, and no other section does", async () => {
+    render(<ShellScreens />);
+    openSettings("vault");
+    await screen.findByText("Save keystore (stub)");
+    const row = document.querySelector("[data-vex-settings-lock]");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByRole("button", { name: "Lock Vex" })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /API keys/ }));
+    await screen.findByText("Save apiKeys (stub)");
+    expect(document.querySelector("[data-vex-settings-lock]")).toBeNull();
   });
 
   it("keeps export OUT of every non-Wallets section", async () => {

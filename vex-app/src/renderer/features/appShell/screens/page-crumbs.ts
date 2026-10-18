@@ -37,6 +37,8 @@ export const PORTFOLIO_CRUMB: PageCrumb = {
 export interface PageTitle {
   readonly name: string;
   readonly parents: readonly PageCrumb[];
+  /** A top-level page's muted word beside its name ("Read-only" on Memory). */
+  readonly sub?: string;
 }
 
 /** The All-assets register's name for its scope (a narrowed one never reads as everything). */
@@ -49,6 +51,17 @@ export function assetsPageName(scope: AssetsRouteScope): string {
     case "project":
       return "Project assets";
   }
+}
+
+/**
+ * A register's full name, as its dialog and the title bar say it: a project
+ * register carries the project's name once the read answers ("Project
+ * assets: vex-core"); until then it says only what kind of register it is,
+ * rather than a placeholder standing in for a project that is not confirmed.
+ */
+export function assetsPageTitle(scope: AssetsRouteScope, projectName: string | null): string {
+  if (scope.kind === "project" && projectName !== null) return `Project assets: ${projectName}`;
+  return assetsPageName(scope);
 }
 
 /** The words when a route carries no usable token identity at all. */
@@ -79,7 +92,8 @@ export function titleBarPageOf(route: ShellRoute): PageTitle | null {
     case "none":
       return null;
     case "memory":
-      return { name: "Memory", parents: [] };
+      // a register of what Vex has learned that offers no edit (the d3x-memory render)
+      return { name: "Memory", parents: [], sub: "Read-only" };
     case "sessions":
       return { name: "Sessions", parents: [] };
     case "howItWorks":

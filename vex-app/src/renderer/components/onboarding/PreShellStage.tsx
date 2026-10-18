@@ -7,13 +7,14 @@
  *
  *   plate  the wake, the unlock and the first run screens (system check, Docker, services,
  *          database): a 720 wide plate at the left at the full window height (the plateau print
- *          by day or night, its grain, Vex rising from the VEX token, her state word on the
- *          print) and paper at the right. A first run screen says what she shows
- *          (`stageVexFace`, `SetupFrame`);
+ *          by day or night, its grain, Vex rising from the VEX token) and paper at the right.
+ *          No state word stands under her on the print (the owner, 2026-10-18: the state lives
+ *          in the title bar chip and the Vex sidebar; each screen keeps its own words). A first
+ *          run screen says what she shows on her face (`stageVexFace`, `SetupFrame`);
  *   print  the wizard, which draws its own R3 frame and plate over it (`WizardShell`): the same
  *          print at window size, no animal on it.
  *
- *   StagePlate    the persistent plate (decorative, except the state word)
+ *   StagePlate    the persistent plate (decorative)
  *   VersionStamp  the small version at the window's bottom right
  *   StageHead     the 44px head row: the title bar's drag region
  *   StageCounter  the giant italic counter on the sky (the wizard's leaf only)
@@ -26,7 +27,6 @@ import { useEffect, useState, type JSX, type ReactNode } from "react";
 import { useStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore, type View } from "../../stores/uiStore.js";
-import { StateWord } from "../ui/state-word.js";
 import { VexK2 } from "../vex/k2/VexK2.js";
 import { wakeEnd } from "../vex/k2/k2-time.js";
 import {
@@ -110,9 +110,9 @@ function PrintLayers(): JSX.Element {
 }
 
 /**
- * The plate at the left: the print, Vex and her state word. She wakes from the token on a launch
- * and never otherwise; the wake belongs to the plate's life, so it is read once when the plate
- * mounts (a changing flag would restart her).
+ * The plate at the left: the print and Vex, with no word under her (the owner, 2026-10-18). She
+ * wakes from the token on a launch and never otherwise; the wake belongs to the plate's life, so
+ * it is read once when the plate mounts (a changing flag would restart her).
  */
 function PlateScene(): JSX.Element {
   const stage = useStageVex();
@@ -121,7 +121,7 @@ function PlateScene(): JSX.Element {
   const still = useStillFrame();
 
   // The engine says when the wake has handed her over. Under the still frame she was never asleep,
-  // and a plate whose art failed to load never says: both call her woken so the word cannot stick.
+  // and a plate whose art failed to load never says: both call her woken so her face cannot stick.
   useEffect(() => {
     if (!wake) return;
     if (still) {
@@ -143,9 +143,6 @@ function PlateScene(): JSX.Element {
         onWoken={stageVexWoken}
         className="vex-stage-plate__vex"
       />
-      <div className="vex-stage-plate__word">
-        <StateWord state={view.swatch} word={view.word} timer={view.note} size={10} />
-      </div>
     </div>
   );
 }

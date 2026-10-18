@@ -221,7 +221,7 @@ function canceledOrderMessage(order: DeskOrderExecution): string {
     : status === "canceled-expired"
       ? " The order expired before it could fill."
       : "";
-  return `${orderLabel(order.orderId)} was canceled with no fill.${reason} This order did not open a position. Check Positions and Trade History before placing another order.`;
+  return `${orderLabel(order.orderId)} was canceled with no fill.${reason} This order did not open a position. Check Positions and Trade history before placing another order.`;
 }
 
 /**
@@ -518,7 +518,7 @@ export function useDeskLane({
       if (cancelAll.orderKeys === null ? account.openOrders.length !== 0
         : account.openOrders.some((order) => cancelAll.orderKeys?.includes(cancelRowKey(order.marketId, order.orderId)))) continue;
       updateCancelAll(key, null);
-      setDeskOutcome({ tone: "ok", text: "Requested orders are no longer open. Check Trade History for any fills before cancellation." });
+      setDeskOutcome({ tone: "ok", text: "Requested orders are no longer open. Check Trade history for any fills before cancellation." });
     }
   }, [account, activeSessionId, environment, pendingCancelAlls]);
 
@@ -536,7 +536,7 @@ export function useDeskLane({
       updateCancel(key, null);
       setDeskOutcome(cancel.stage === "checking"
         ? { tone: "ok", text: "Order canceled." }
-        : { tone: "warn", text: "Order is no longer open. Check Trade History for any fill." });
+        : { tone: "warn", text: "Order is no longer open. Check Trade history for any fill." });
     }
   }, [account, activeSessionId, environment]);
 
@@ -769,7 +769,7 @@ export function useDeskLane({
         recordFunnelStep("desk_order_unknown", pending.scope.environment);
         if (!scopeIsCurrent) return;
         setDeskOutcome(hasAttachedProtection(pending.draft)
-          ? { tone: "warn", text: "Order submitted, but its fill state could not be verified. Open Orders below before adding protection or retrying." }
+          ? { tone: "warn", text: "Order submitted, but its fill state could not be verified. Check Open orders below before adding protection or retrying." }
           : { tone: "ok", text: "Order sent." });
         return;
       }
@@ -777,7 +777,7 @@ export function useDeskLane({
         setCloseStage(pending.closeKey, "uncertain");
         recordFunnelStep("desk_order_unknown", pending.scope.environment);
         if (!scopeIsCurrent) return;
-        setDeskOutcome({ tone: "warn", text: "Order outcome is uncertain. Open Orders below and refresh before retrying." });
+        setDeskOutcome({ tone: "warn", text: "Order outcome is uncertain. Check Open orders below and refresh before retrying." });
         return;
       }
       if (execution.state === "sequencer_pending") {
@@ -882,7 +882,7 @@ export function useDeskLane({
         ? "Cancel-all outcome is uncertain. Wait for the account's order status before retrying."
         : pending.action.kind === "cancel"
         ? "Cancel outcome is uncertain. Wait for order status before retrying."
-        : "Outcome unknown. Open Orders below and refresh before retrying." });
+        : "Outcome unknown. Check Open orders below and refresh before retrying." });
       return;
     }
     if (pending.action.kind === "order") recordFunnelStep("desk_order_rejected", pending.scope.environment);

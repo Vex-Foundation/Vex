@@ -184,6 +184,22 @@
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
+  animation: vex-surface-enter var(--vex-duration-base) var(--vex-ease-out) both;
+}
+/* A step seen before stays mounted while another shows (Back keeps what was
+ * typed): hidden means gone from view, the tab order and assistive tech. It
+ * fades in again on the shared surface entrance each time it is shown. */
+.vex-wz__step[hidden] {
+  display: none;
+}
+.vex-wz__step:focus,
+.vex-wzp__title:focus {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-wz__step {
+    animation: none;
+  }
 }
 .vex-wz__loading {
   padding: 40px var(--wz-pad) 0;

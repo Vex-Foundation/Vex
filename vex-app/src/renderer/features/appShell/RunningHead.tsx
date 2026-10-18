@@ -8,8 +8,9 @@
  *     for a subpage its crumb, "Portfolio / Agent Scan", each parent a link
  *     up to it: `screens/page-crumbs.ts`), or the Studio project with its
  *     access. The page itself draws no crumb or close row;
- *   - the RIGHT cluster (gap 8): the page keys (export, and a close key for a
- *     page with no other way back), the Studio host status, Notices (only
+ *   - the RIGHT cluster (gap 8): the page keys (a page's own keys such as
+ *     Portfolio's refresh, through `pageKeysSlot.tsx`; export; a close key for
+ *     a page with no other way back), the Studio host status, Notices (only
  *     while notices exist), "Needs you · N" (while something waits or the
  *     read failed), then the token chip ("Vex chat" and its state), which
  *     also shows and hides the Vex sidebar.
@@ -66,7 +67,9 @@ import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 import { getSessionTitle } from "./sessionListModel.js";
 import { useShellStripSlot } from "./lighterTrading/shellStripSlot.js";
-import { titleBarPageOf, type PageTitle } from "./screens/page-crumbs.js";
+import { setPageKeysSlot } from "./pageKeysSlot.js";
+import { assetsPageTitle, titleBarPageOf, type PageTitle } from "./screens/page-crumbs.js";
+import { assetsRouteScope } from "../../stores/uiStore/shell-route.js";
 import { closePageToPrevious, goUpToPage } from "./screens/page-trail.js";
 
 export { titleBarPageOf };
@@ -187,6 +190,35 @@ function PageCloseKey({ runtimeMode }: { readonly runtimeMode: RuntimeMode }): J
   );
 }
 
+/** A project's name from the shared projects read, or null until it answers. */
+function useProjectName(projectId: string | null): string | null {
+  const query = useProject(projectId);
+  const data = query.data;
+  return projectId !== null && data !== undefined && data.ok ? (data.data?.name ?? null) : null;
+}
+
+/**
+ * The open page's title as the left cell draws it (section 3: "Pages put
+ * their name there"), or null with no page open. A project's register names
+ * its project, as its own dialog does ("Project assets: vex-core"). Lighter's
+ * title row draws the same title while a page stands over the desk
+ * (`LighterSidebar.tsx`), so a page opened from Lighter is named too.
+ */
+export function OpenPageTitle(): JSX.Element | null {
+  const route = useUiStore((s) => s.shellRoute);
+  const scope = route.kind === "assets" ? assetsRouteScope(route) : null;
+  const projectName = useProjectName(scope?.kind === "project" ? scope.projectId : null);
+  const page = titleBarPageOf(route);
+  if (page === null) return null;
+  if (route.kind === "needsYou") return <NeedsYouPageTitle />;
+  const named: PageTitle = scope === null ? page : { ...page, name: assetsPageTitle(scope, projectName) };
+  return named.parents.length === 0 ? (
+    <TitleText name={named.name} sub={named.sub ?? null} />
+  ) : (
+    <PageCrumbTitle page={named} />
+  );
+}
+
 /** The left cell's words: the page, else the project or the session. */
 function TitleBarContext({
   runtimeMode,
@@ -195,17 +227,9 @@ function TitleBarContext({
   readonly runtimeMode: RuntimeMode;
   readonly sessionId: string | null;
 }): JSX.Element | null {
-  const route = useUiStore((s) => s.shellRoute);
+  const routeKind = useUiStore((s) => s.shellRoute.kind);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
-  const page = titleBarPageOf(route);
-  if (page !== null) {
-    if (route.kind === "needsYou") return <NeedsYouPageTitle />;
-    return page.parents.length === 0 ? (
-      <TitleText name={page.name} sub={null} />
-    ) : (
-      <PageCrumbTitle page={page} />
-    );
-  }
+  if (routeKind !== "none") return <OpenPageTitle />;
   if (runtimeMode === "studio") return <ProjectTitle projectId={activeProjectId} />;
   return <SessionTitle sessionId={sessionId} />;
 }
@@ -268,6 +292,9 @@ export function RunningHead({
 
   const flank = (
     <div className="vex-running-head__flank">
+      {/* A page's own keys land here (Portfolio's refresh): the first keys of
+       * the cluster, before export and the close key. */}
+      <div className="vex-tb-pagekeys" data-vex-area="title-bar-page-keys" ref={setPageKeysSlot} />
       <PageCloseKey runtimeMode={runtimeMode} />
       <SessionExportControl activeSessionId={sessionScopedId} />
       {runtimeMode === "studio" ? <StudioHostStatusWord /> : null}

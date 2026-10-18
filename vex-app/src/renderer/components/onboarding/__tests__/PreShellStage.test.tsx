@@ -1,8 +1,8 @@
 /**
  * The stage's persistent plate (`PreShellStage.tsx`, `docs/design/R3-MINIMAL.md section 10`): which
  * layout each view takes, that the wake, the unlock and the first run screens stand on the plate
- * with Vex's word on it, that the wizard keeps a plain print, and that the plate leaves with the
- * stage.
+ * with no state word under Vex (the owner, 2026-10-18: the state lives in the title bar chip and
+ * the Vex sidebar), that the wizard keeps a plain print, and that the plate leaves with the stage.
  *
  * jsdom paints no canvas and gives her host no size, so the K2 engine loads no art here.
  */
@@ -19,6 +19,7 @@ import {
 import {
   getStageVex,
   resetStageVex,
+  stageVexConcerned,
   stageVexEnd,
   stageVexExit,
   stageVexFace,
@@ -66,9 +67,9 @@ describe("stageLayoutFor", () => {
 });
 
 describe("StagePlate", () => {
-  it("stands the wake on a 720 plate: both prints, the grain, her host and her word", () => {
+  it("stands the wake on a 720 plate: both prints, the grain and her host, no word under her", () => {
     stand("splash");
-    const { container, getByText } = render(<StagePlate />);
+    const { container, queryByText } = render(<StagePlate />);
     const root = container.querySelector("[data-vex-stage-plate]");
     expect(root?.getAttribute("data-vex-stage-plate")).toBe("plate");
     expect(root?.hasAttribute("data-vex-motion-opacity")).toBe(true);
@@ -77,32 +78,46 @@ describe("StagePlate", () => {
     const host = container.querySelector("[data-vex-k2]");
     expect(host?.getAttribute("data-vex-k2")).toBe("stage");
     expect(host?.getAttribute("data-vex-k2-ground")).toBe("print");
-    // A state is a fill and a word: she is waking up.
-    expect(getByText("Waking up")).toBeTruthy();
-    expect(container.querySelector('.vex-stage-plate__word [data-s="listening"]')).not.toBeNull();
+    // The owner: no state word on the plate, not even while she wakes.
+    expect(queryByText("Waking up")).toBeNull();
+    expect(container.querySelector(".vex-stage-plate__word")).toBeNull();
+    expect(container.querySelector("[data-s]")).toBeNull();
+    expect(container.textContent).toBe("");
     // There is no eagle and no flock canvas of the old print plate.
     expect(container.querySelector("[data-vex-print-plate]")).toBeNull();
   });
 
-  it("says Ready once she has woken and the desk is ready", () => {
+  it("says no Ready once she has woken and the desk is ready", () => {
     stand("unlock");
-    const { getByText, queryByText } = render(<StagePlate />);
-    expect(getByText("Waking up")).toBeTruthy();
+    const { container, queryByText } = render(<StagePlate />);
+    expect(queryByText("Waking up")).toBeNull();
     act(() => {
       stageVexWoken();
       stageVexPipelineReady();
     });
-    expect(getByText("Ready")).toBeTruthy();
-    expect(queryByText("Waking up")).toBeNull();
+    expect(queryByText("Ready")).toBeNull();
+    expect(container.querySelector("[data-vex-k2]")).not.toBeNull();
+    expect(container.textContent).toBe("");
   });
 
-  it("sleeps on a locked desk with 'Locked' beside the word, and never wakes from the token", () => {
+  it("sleeps on a locked desk with no 'Sleeping · Locked' under her", () => {
     stageVexEnd();
     stand("unlock");
-    const { container, getByText } = render(<StagePlate />);
-    expect(getByText("Sleeping")).toBeTruthy();
-    expect(getByText("Locked")).toBeTruthy();
-    expect(container.querySelector('.vex-stage-plate__word [data-s="sleeping"]')).not.toBeNull();
+    const { container, queryByText } = render(<StagePlate />);
+    expect(queryByText("Sleeping")).toBeNull();
+    expect(queryByText("Locked")).toBeNull();
+    expect(container.querySelector("[data-s]")).toBeNull();
+    expect(container.textContent).toBe("");
+  });
+
+  it("draws no word for a wrong password or a throttle either (the form says it)", () => {
+    stageVexEnd();
+    stand("unlock");
+    const { container, queryByText } = render(<StagePlate />);
+    act(() => stageVexConcerned(true, 28));
+    expect(queryByText("Concerned")).toBeNull();
+    expect(queryByText("0:28")).toBeNull();
+    expect(container.textContent).toBe("");
   });
 
   it("keeps the wizard on a plain print with no animal and no state word", () => {
@@ -116,24 +131,24 @@ describe("StagePlate", () => {
     expect(container.querySelector(".vex-stage-plate__word")).toBeNull();
   });
 
-  it("stands a first run screen on the plate with the word the screen says she shows", () => {
+  it("stands a first run screen on the plate with no word for what she shows", () => {
     stageVexEnd();
     stand("composeBootstrap");
-    const { container, getByText, queryByText } = render(<StagePlate />);
+    const { container, queryByText } = render(<StagePlate />);
     expect(container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-plate")).toBe(
       "plate",
     );
     expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-vex-k2")).toBe("stage");
     expect(container.querySelector(".vex-stage-plate__full")).toBeNull();
-    // Nothing said yet: the desk's own story (locked here, as after the launch).
-    expect(getByText("Sleeping")).toBeTruthy();
+    expect(queryByText("Sleeping")).toBeNull();
     act(() =>
       stageVexFace({ emotion: "working", swatch: "done", word: "Working", note: "0:14" }),
     );
-    expect(getByText("Working")).toBeTruthy();
-    expect(getByText("0:14")).toBeTruthy();
-    expect(container.querySelector('.vex-stage-plate__word [data-s="done"]')).not.toBeNull();
-    expect(queryByText("Sleeping")).toBeNull();
+    // Her face works; no word or timer stands under her on the print.
+    expect(queryByText("Working")).toBeNull();
+    expect(queryByText("0:14")).toBeNull();
+    expect(container.querySelector("[data-s]")).toBeNull();
+    expect(container.textContent).toBe("");
   });
 
   it("renders nothing while the shell stands, and ends the launch's wake when it leaves the plate", () => {
