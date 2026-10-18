@@ -3,9 +3,10 @@
  * crumb that says where you are (System check, Docker, Services, Database, Setup) and what Vex
  * shows for what the screen is doing.
  *
- * A screen names its step and its mood to `SetupFrame`; the mood is a fill and a word on the plate
- * ("Working 0:14", "Ready", "Concerned", "Error") and the fill of the crumb's current step. The
- * timer beside "Working" is the real time since the screen began its work, never a loop.
+ * A screen names its step and its mood to `SetupFrame`; the mood is Vex's face on the plate and
+ * the fill of the crumb's current step. The plate draws no word under her (the owner, 2026-10-18);
+ * the view keeps its word and timer ("Working 0:14", "Ready", "Concerned", "Error") as the name of
+ * the face, the timer the real time since the screen began its work, never a loop.
  *
  *   working    the screen is doing something now (probing, starting, applying)
  *   ready      nothing is in flight and nothing is wrong
@@ -35,7 +36,7 @@ export const FIRST_RUN_STAGES: readonly { readonly id: FirstRunStep | "setup"; r
   { id: "setup", label: "Setup" },
 ];
 
-/** What Vex shows on the plate for a mood: her emotion, the fill and the word. */
+/** What Vex shows on the plate for a mood: her emotion (the fill and the word name it, undrawn). */
 export function moodFace(mood: FirstRunMood, timer: string | null): StageVexView {
   switch (mood) {
     case "working":

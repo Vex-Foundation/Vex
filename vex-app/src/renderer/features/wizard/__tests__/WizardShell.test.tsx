@@ -203,7 +203,7 @@ describe("WizardShell frame (R3)", () => {
     expect(step.textContent).toContain("Step 2 of 7 · Wallets");
   });
 
-  it("draws no state word under Vex on the plate; her mood still follows focus", async () => {
+  it("draws no state word under Vex on the plate or beside the small mark; her mood still follows focus", async () => {
     mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
     const { findByTestId, container, getByLabelText, getByRole } = renderWithQuery(
       <WizardShell />,
@@ -214,18 +214,24 @@ describe("WizardShell frame (R3)", () => {
     // Owner: no "Ready" or "Listening" under Vex.
     expect(plate?.querySelector(".vex-state-word")).toBeNull();
     expect(plate?.textContent).toBe("");
-    // The mood (the face the plate and the small mark share) follows focus;
-    // the small mark under 1180 still names it.
+    // The small mark under 1180 carries no word either (the owner,
+    // 2026-10-18: no state word under Vex on any stage).
+    const mini = container.querySelector("[data-vex-wizard-mini]");
+    expect(mini).not.toBeNull();
+    expect(mini?.querySelector(".vex-state-word")).toBeNull();
+    expect(mini?.textContent).toBe("");
+    expect(container.querySelector(".vex-state-word")).toBeNull();
+    // The mood (her face on the plate) still follows focus.
     const mood = (): string | null | undefined =>
-      container.querySelector("[data-vex-wizard-mini] .vex-state-word")?.textContent;
-    expect(mood()).toBe("Ready");
+      container.querySelector("[data-vex-wizard-mood]")?.getAttribute("data-vex-wizard-mood");
+    expect(mood()).toBe("idle");
     fireEvent.focus(getByLabelText("Master password"));
-    expect(mood()).toBe("Listening");
-    expect(plate?.querySelector(".vex-state-word")).toBeNull();
+    expect(mood()).toBe("listening");
+    expect(container.querySelector(".vex-state-word")).toBeNull();
     fireEvent.blur(getByLabelText("Master password"), {
       relatedTarget: getByRole("button", { name: "Save and continue" }),
     });
-    expect(mood()).toBe("Ready");
+    expect(mood()).toBe("idle");
   });
 
   it("carries the gate scope on the document while it stands", async () => {

@@ -41,7 +41,10 @@ export interface StageVexState {
   readonly exit: "idle" | "reveal";
 }
 
-/** What the plate draws from the state: her emotion, the swatch, the word and a figure beside it. */
+/**
+ * What the plate shows from the state: her emotion. The swatch, the word and the figure name that
+ * face for the screens and the tests; the plate draws none of them (the owner, 2026-10-18).
+ */
 export interface StageVexView {
   readonly emotion: K2Emotion;
   readonly swatch: SwatchState;

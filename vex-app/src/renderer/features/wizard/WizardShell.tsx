@@ -7,12 +7,14 @@
  * top band (the hidden title bar's drag region), then the current step's page
  * (`WizardStepPanel`): "Step N of 7 · {name}", the serif title, the lead, the
  * form, and a footer at the window's foot with the privacy link and the
- * step's actions. Under 1180 a small vx mark and Vex's word stand above the
- * step instead of the plate. Loading is the quiet loading line.
+ * step's actions. Under 1180 a small vx mark stands above the step instead of
+ * the plate. No state word stands under or beside her anywhere in the wizard
+ * (the owner, 2026-10-17 on the plate and 2026-10-18 on every stage). Loading
+ * is the quiet loading line.
  *
  * Vex's mood follows real focus: she listens while a text field of the form
- * has focus, else she is at rest ("Listening" and "Ready" beside the small
- * mark under 1180).
+ * has focus, else she is at rest (her face on the plate; the frame carries it
+ * as `data-vex-wizard-mood`).
  *
  * Per-step chrome lives in `WizardStepPanel`; the shell provides the wizard
  * host (`wizard-host.ts`) with what stands above each step's title. Each step
@@ -56,8 +58,6 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { WizardStepId, WizardState } from "@shared/schemas/wizard.js";
 import { Button } from "../../components/ui/button.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
-import { StateWord } from "../../components/ui/state-word.js";
-import type { SwatchState } from "../../components/ui/swatch.js";
 import { VexLoader } from "../../components/ui/vex-loader.js";
 import { VxToken } from "../../components/ui/vx-token.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
@@ -110,19 +110,13 @@ const PRINT_ART = {
   night: "/art/plateau-night.jpg",
 } as const;
 
-/** What Vex shows: her face, the fill and the word. */
+/** What Vex shows: her face (no word goes with it, the owner). */
 interface WizardFace {
   readonly emotion: K2Emotion;
-  readonly swatch: SwatchState;
-  readonly word: string;
 }
 
-const READY: WizardFace = { emotion: "idle", swatch: "idle", word: "Ready" };
-const LISTENING: WizardFace = {
-  emotion: "listening",
-  swatch: "listening",
-  word: "Listening",
-};
+const READY: WizardFace = { emotion: "idle" };
+const LISTENING: WizardFace = { emotion: "listening" };
 
 const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
   "text",
@@ -209,6 +203,7 @@ function WizardFrame({
       data-vex-onboarding="true"
       data-vex-gate="true"
       data-vex-screen="wizard"
+      data-vex-wizard-mood={face.emotion}
       className="vex-wz"
     >
       <WizardPlate face={face} />
@@ -220,12 +215,11 @@ function WizardFrame({
   );
 }
 
-/** Under 1180, above the step: the vx mark and Vex's word. */
-function WizardMini({ face }: { readonly face: WizardFace }): JSX.Element {
+/** Under 1180, above the step: the vx mark, with no state word (the owner). */
+function WizardMini(): JSX.Element {
   return (
     <div className="vex-wzp__mini" data-vex-wizard-mini>
       <VxToken size={26} />
-      <StateWord state={face.swatch} word={face.word} size={10} />
     </div>
   );
 }
@@ -359,12 +353,12 @@ export function WizardShell(): JSX.Element {
             host: "wizard",
             before: (
               <>
-                <WizardMini face={face} />
+                <WizardMini />
                 <WizardStepEyebrow currentStepId={currentStepId} />
               </>
             ),
           },
-    [currentStepId, face],
+    [currentStepId],
   );
 
   if (queryError) {
@@ -376,7 +370,7 @@ export function WizardShell(): JSX.Element {
       <WizardFrame face={face}>
         <div className="vex-wzp">
           <header className="vex-wzp__head">
-            <WizardMini face={face} />
+            <WizardMini />
             <h1 className="vex-wzp__title">Setup unavailable</h1>
           </header>
           <div className="vex-wzp__content">
