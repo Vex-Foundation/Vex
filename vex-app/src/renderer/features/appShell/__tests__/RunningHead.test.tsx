@@ -253,11 +253,22 @@ describe("the left cell", () => {
   });
 });
 
+/**
+ * Lets a deliberately malformed route reach the store's typed seam: it checks
+ * only the `kind` the title cell switches on, so the rest stays as wrong as
+ * the test means it to be.
+ */
+function hasRouteKind(value: unknown): value is ShellRoute {
+  return typeof value === "object" && value !== null && "kind" in value;
+}
+
 describe("the title cell's own boundary", () => {
   it("a malformed token history route degrades the crumb and never throws", () => {
-    useUiStore.setState({
-      shellRoute: { kind: "tokenHistory", origin: null } as unknown as ShellRoute,
-    });
+    // Built as `unknown`, then narrowed by its kind alone, never cast: the
+    // route has no token and no return point on purpose.
+    const malformed: unknown = { kind: "tokenHistory", origin: null };
+    if (!hasRouteKind(malformed)) throw new Error("the malformed route lost its kind");
+    useUiStore.setState({ shellRoute: malformed });
     renderHead("agent", SESSION);
     expect(title()).toBe("Portfolio/Token history");
   });

@@ -239,7 +239,10 @@ export function SessionCreator({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent anchor={anchor}>
+      <SheetContent
+        anchor={anchor}
+        nudgeHint="Create this session or cancel it first · Esc cancels"
+      >
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
           <SheetBody className="gap-0">
             <div className="mx-auto w-full max-w-[720px] pt-[34px]">
@@ -307,6 +310,7 @@ export function SessionCreator({
                     variant="quiet"
                     onClick={() => onOpenChange(false)}
                     disabled={createMutation.isPending}
+                    data-vex-sheet-cancel=""
                   >
                     Cancel
                   </Button>

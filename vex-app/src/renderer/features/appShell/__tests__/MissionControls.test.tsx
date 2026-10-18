@@ -318,6 +318,12 @@ describe("MissionControls", () => {
     expect(missing).not.toBeNull();
     expect(missing?.textContent).toMatch(/Goal/);
     expect(missing?.textContent).toMatch(/Stop conditions/);
+    // Inline in the transcript: the names run on after the ask's colon, and
+    // the block follows them, never the other way round.
+    expect(missing?.getAttribute("class")).toBe("inline");
+    expect(notice.textContent).toMatch(
+      /still missing: Goal, Stop conditions\. On-chain actions/,
+    );
     // The way forward. Keyboard-reachable and correctly named.
     const control = screen.getByRole("button", { name: "Show mission contract" });
     expect((control as HTMLButtonElement).disabled).toBe(false);

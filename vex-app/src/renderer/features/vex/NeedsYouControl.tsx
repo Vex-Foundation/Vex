@@ -1,16 +1,18 @@
 /**
- * "NEEDS YOU · N": the title bar's persistent control for everything that
- * waits for the user's decision (docs/design/R3-MINIMAL.md sections 3 and 5).
- * Always visible, on every screen and in every mode, whether Vex is shown or
- * not. It opens a flat panel under itself with the same `NeedsYouList` the
- * Vex sidebar draws, so the two can never count or word it differently.
+ * "NEEDS YOU · N": the title bar's control for everything that waits for the
+ * user's decision (docs/design/R3-MINIMAL.md sections 3 and 5), on every
+ * screen and in every mode, whether Vex is shown or not, WHILE THERE IS
+ * SOMETHING TO SAY. It opens a flat panel under itself with the same
+ * `NeedsYouList` the Vex sidebar draws, so the two can never count or word it
+ * differently.
  *
- * Four honest states, never collapsed into one another: still checking (a
- * stepping dot screen and no number), nothing (the outline swatch and 0),
- * something (the target swatch, an ink frame and the count), and a read that
- * FAILED ("Needs you · ?" with Retry). A failed read is never drawn as 0: an
- * empty control after a failed read would be a false all-clear on the surface
- * that exists to say a signature is waiting.
+ * Four honest states, never collapsed into one another. Two of them draw the
+ * control: something (the target swatch, an ink frame and the count), and a
+ * read that FAILED ("Needs you · ?" with Retry). A failed read is never drawn
+ * as 0: an empty control after a failed read would be a false all-clear on
+ * the surface that exists to say a signature is waiting. Still checking and
+ * nothing (a read that came back 0) draw no control, so an empty "Needs you
+ * · 0" never takes room in the title bar; an open panel stays until closed.
  *
  * The list never decides. Review opens the thing:
  *   - an approval whose card is already on screen (its session open in the
@@ -67,7 +69,7 @@ function inlineApprovalCard(approvalId: string): HTMLElement | null {
   return null;
 }
 
-export function NeedsYouControl(): JSX.Element {
+export function NeedsYouControl(): JSX.Element | null {
   const model = useNeedsYou();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -153,6 +155,9 @@ export function NeedsYouControl(): JSX.Element {
   const countLabel = needsYouCountLabel(status, count);
   const pending = status === "unknown" || (count !== null && count > 0);
   const heading = countLabel === null ? "Needs you" : `Needs you · ${countLabel}`;
+
+  // Nothing waits, or the read has not answered yet: no control.
+  if (!pending && !open) return null;
 
   return (
     <div ref={rootRef} className="vex-tb-needs" onKeyDown={onKeyDown}>

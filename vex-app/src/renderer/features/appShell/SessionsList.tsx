@@ -9,17 +9,22 @@
  *
  *   HEAD     44 high: the vx wordmark and the collapse key
  *            (`AgentSidebarHeader`).
- *   ACTIONS  New chat (500) and Search, as nav rows. Search turns the row
- *            into the field with the All, Agent and Mission tabs under it;
- *            Escape brings back New chat and the sections.
+ *   ACTIONS  New chat (500; "New mission" on the Mission tab) and Search, as
+ *            nav rows. Search turns its row into the field with the All,
+ *            Agent and Mission tabs under it, New chat staying above it;
+ *            Escape or the field's Esc key brings back the sections.
  *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
  *            with a 12px gap above and below (`SidebarNav`).
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
  *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`).
  *
- * The rail keeps the same order as 40 x 40 keys with their names as tooltips:
- * New chat, Search, the Chats key (icon over the word) that opens the
- * sidebar, the nav, and the account box at the foot.
+ * The rail keeps the same order as 40 x 40 keys with their names as tooltips,
+ * under the Expand key (the panel icon, the collapse key's twin, the one way
+ * back to the open sidebar): New chat, Search, the nav, and the account box
+ * at the foot. Chat and Missions pressed on the rail open the sidebar on
+ * their list, since a list out of sight cannot show that they did anything.
+ * The Lighter desk's rail (`expandable` false) has neither: its drawer opens
+ * from the desk's own Markets & sessions key.
  *
  * Row behaviour (pin, remove, inline rename, the hover preview) is the shared
  * `SessionRow`'s; the list model is `sessionListModel.ts`'s. Scrollbars in
@@ -29,7 +34,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { LineChat, LineNewChat, LineSearch } from "../../components/icons/line/index.js";
+import { LineNewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
+import { isDialogOnScreen } from "../../components/ui/dialog.js";
+import { Tooltip } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import { useSessionsList } from "../../lib/api/sessions.js";
 import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
@@ -61,15 +68,18 @@ interface SessionsListProps {
   /** Open or rail, decided by the shell frame (breakpoint-aware). */
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
+  /** Whether the rail opens into the sidebar; false on the Lighter desk. */
+  readonly expandable?: boolean;
 }
 
 /** Proposal copy (section 4): the search mode's closing hint. */
-const SEARCH_HINT = "Esc closes search and brings back New chat and the sections.";
+const SEARCH_HINT = "Esc closes search and brings back the sections.";
 
 export function SessionsList({
   onCreate,
   collapsed,
   onToggleSidebar,
+  expandable = true,
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -157,6 +167,22 @@ export function SessionsList({
     if (sessionModeFilter === "agent") setSessionModeFilter("all");
   }, [sessionModeFilter, setSessionModeFilter]);
 
+  // Escape closes the search wherever the focus is, not only in its field: a
+  // press on a tab, a row or the centre moved the focus out and left the
+  // keycap's promise dead. A key another surface already took (a popover, the
+  // slash menu) or one under a modal dialog is not the search's.
+  useEffect(() => {
+    if (!searchOpen || rail) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (isDialogOnScreen(document)) return;
+      event.preventDefault();
+      closeSearch();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen, rail, closeSearch]);
+
   const openSearch = useCallback((): void => {
     setSearchOpen(true);
     if (rail) onToggleSidebar();
@@ -165,6 +191,11 @@ export function SessionsList({
   const openMissions = useCallback((): void => {
     setSearchOpen(true);
   }, []);
+
+  // Chat and Missions on the rail: open the sidebar on the list they filter.
+  const showSessionList = useCallback((): void => {
+    if (rail && expandable) onToggleSidebar();
+  }, [rail, expandable, onToggleSidebar]);
 
   // The column's one scroller, carrying the overlay bar.
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -215,6 +246,22 @@ export function SessionsList({
             <SidebarHomeSigil sidebarOpen={false} />
           </div>
           <div className="vex-ls-body">
+            {expandable ? (
+              <>
+                <Tooltip label="Expand sidebar">
+                  <button
+                    type="button"
+                    aria-label="Expand sessions sidebar"
+                    aria-expanded={false}
+                    onClick={onToggleSidebar}
+                    className="vex-ls-nrow"
+                  >
+                    <LinePanelLeft className="vex-ls-nrow__i" />
+                  </button>
+                </Tooltip>
+                <div aria-hidden className="vex-ls-rule" />
+              </>
+            ) : null}
             <NewChatKey rail onCreate={onCreate} />
             <NavKey
               icon={<LineSearch className="vex-ls-nrow__i" />}
@@ -223,19 +270,11 @@ export function SessionsList({
               rail
               onClick={openSearch}
             />
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              aria-expanded={false}
-              className="vex-ls-chats"
-            >
-              <LineChat />
-              <span>Chats</span>
-            </button>
             <div aria-hidden className="vex-ls-gap" />
             <SidebarNav
               rail
               onMissions={openMissions}
+              onSessionList={showSessionList}
               activeSessionMode={activeSessionMode}
             />
           </div>
@@ -246,6 +285,9 @@ export function SessionsList({
           <div className="vex-ls-body">
             {searchOpen ? (
               <div className="vex-ls-find">
+                {/* The way to start stays above the search, so a list of
+                  * missions never hides how to begin one. */}
+                <NewChatKey rail={false} onCreate={onCreate} />
                 <SessionSearchField
                   value={searchText}
                   onChange={setSearchText}
@@ -319,7 +361,9 @@ export function SessionsList({
 
 /**
  * NEW CHAT: the first nav row (500), never a blue fill (each view keeps one
- * blue fill, and that is the centre's). The signing mechanics are unchanged:
+ * blue fill, and that is the centre's). On the Mission tab it reads "New
+ * mission": the session form opens on Mission from that tab, so the word says
+ * what the press will start. The signing mechanics are unchanged:
  * a hairline under the label loops while SessionCreator's create is in
  * flight, and the one-shot glint marks success before the key returns to
  * rest.
@@ -335,10 +379,11 @@ function NewChatKey({
   // only renders the stroke and the glint.
   const signingState = useUiStore((s) => s.signingState);
   const setSigningState = useUiStore((s) => s.setSigningState);
+  const mission = useUiStore((s) => s.runtimeMode === "agent" && s.sessionModeFilter === "mission");
   return (
     <NavKey
       icon={<LineNewChat className="vex-ls-nrow__i" />}
-      label="New chat"
+      label={mission ? "New mission" : "New chat"}
       rail={rail}
       onClick={onCreate}
       className="vex-ls-nrow--new"

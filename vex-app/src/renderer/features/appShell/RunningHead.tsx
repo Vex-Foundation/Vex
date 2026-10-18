@@ -11,8 +11,9 @@
  *   - the RIGHT cluster (gap 8): the page keys (a page's own keys such as
  *     Portfolio's refresh, through `pageKeysSlot.tsx`; export; a close key for
  *     a page with no other way back), the Studio host status, Notices (only
- *     while notices exist), "Needs you · N" (always), then the token chip,
- *     which also shows and hides the Vex sidebar.
+ *     while notices exist), "Needs you · N" (while something waits or the
+ *     read failed), then the token chip ("Vex chat" and its state), which
+ *     also shows and hides the Vex sidebar.
  *
  * The row is a window drag region (`.vex-drag`); every control inside it opts
  * out on its own (window-chrome.css). Its right padding reserves the Windows
