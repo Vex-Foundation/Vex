@@ -5,8 +5,8 @@
  *   - the LEFT cell says where you are: the Zen key, "Lighter", then the
  *     desk's section and network in muted ("Perps · Robinhood Chain"); in
  *     Zen, the market and interval the chart shows; while a page stands over
- *     the desk (Settings from the rail, Portfolio, a register), the page's
- *     own title as the title bar draws it (`OpenPageTitle`, R3-MINIMAL.md
+ *     the desk (Settings from the rail, Portfolio, a register), the page's own
+ *     title as the title bar draws it (`OpenPageTitle`, R3-MINIMAL.md
  *     section 3);
  *   - the MIDDLE cluster (gap 8), centred in the row: Markets & sessions,
  *     New session (Ask Vex in Zen), Core | RHC, then the title bar's own

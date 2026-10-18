@@ -45,7 +45,9 @@ function stubArt(fail: readonly string[] = []): string[] {
       asked.push(file);
       if (fail.includes(file)) return new Response(null, { status: 404 });
       if (file === "token.json") return new Response(JSON.stringify(SHEET));
-      return new Response(new Blob([new Uint8Array([0])]));
+      // Bytes, not a Blob: under jsdom `Blob` is jsdom's, which has no
+      // `.stream()`, and Node's Response reads its body through it.
+      return new Response(new Uint8Array([0]));
     }),
   );
   vi.stubGlobal(
