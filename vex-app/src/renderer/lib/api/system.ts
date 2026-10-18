@@ -63,14 +63,13 @@ export function useNetwork(): UseQueryResult<Result<NetworkProbe>> {
 }
 
 /**
- * System Check's native-runtime facts (bundle, disk, memory). Asked only on
- * the native runtime (`enabled`); read fresh each time the screen mounts.
+ * System Check's native-runtime facts (bundle, disk, memory). Read-only in
+ * main (it starts nothing); read fresh each time the screen mounts.
  */
-export function useLocalRuntimeCheck(enabled: boolean): UseQueryResult<Result<LocalRuntimeCheck>> {
+export function useLocalRuntimeCheck(): UseQueryResult<Result<LocalRuntimeCheck>> {
   return useQuery({
     queryKey: systemKeys.localRuntimeCheck(),
     queryFn: () => window.vex.system.localRuntimeCheck(),
-    enabled,
     staleTime: 0,
   });
 }

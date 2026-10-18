@@ -4,9 +4,8 @@
  * performs no IO. All rows render immediately (the NOTARY-era cascade reveal
  * is retired; the card itself rises once via `.vex-rise` in the parent).
  *
- * The rows between network and configuration are the local runtime's:
- *   - native: Local runtime, Disk space, Memory (`LocalRuntimeRows`);
- *   - container: the Docker Engine row, unchanged.
+ * The rows between network and configuration are the bundled local
+ * runtime's: Local runtime, Disk space, Memory (`LocalRuntimeRows`).
  *
  * Reuses the shared `StepRow` (one level up) so the row chrome and the
  * `data-step-status` test selector stay single-sourced.
@@ -20,29 +19,14 @@ import {
   IconSettings,
   IconWifi,
 } from "../../../components/icons/index.js";
-import { Docker } from "@thesvg/react";
 
 import { StepRow, type StepStatus } from "../StepRow.js";
 import { OperatingSystemIcon, type Platform } from "./OperatingSystemIcon.js";
 import { LocalRuntimeRows } from "./LocalRuntimeRows.js";
 import type { LocalRuntimeView } from "./localRuntime.js";
-import {
-  formatDockerDetail,
-  formatEnvDetail,
-  formatPlatform,
-} from "./format.js";
+import { formatEnvDetail, formatPlatform } from "./format.js";
 import type { useSystemHealth } from "../../../lib/api/system.js";
-import type { useDockerStatus } from "../../../lib/api/docker.js";
 import type { useEnvState } from "../../../lib/api/onboarding.js";
-
-/** Which local runtime main runs, with what its rows need. */
-export type RuntimeRows =
-  | { readonly kind: "native"; readonly view: LocalRuntimeView }
-  | {
-      readonly kind: "container";
-      readonly status: StepStatus;
-      readonly docker: ReturnType<typeof useDockerStatus>;
-    };
 
 interface ProbeRowsProps {
   readonly platform: Platform;
@@ -50,7 +34,7 @@ interface ProbeRowsProps {
   readonly networkStatus: StepStatus;
   readonly envStatus: StepStatus;
   readonly health: ReturnType<typeof useSystemHealth>;
-  readonly runtime: RuntimeRows;
+  readonly localRuntime: LocalRuntimeView;
   readonly env: ReturnType<typeof useEnvState>;
 }
 
@@ -60,7 +44,7 @@ export function ProbeRows({
   networkStatus,
   envStatus,
   health,
-  runtime,
+  localRuntime,
   env,
 }: ProbeRowsProps): JSX.Element {
   return (
@@ -87,24 +71,7 @@ export function ProbeRows({
             : null
         }
       />
-      {runtime.kind === "native" ? (
-        <LocalRuntimeRows view={runtime.view} />
-      ) : (
-        <StepRow
-          label="Docker Engine"
-          status={runtime.status}
-          icon={<Docker variant="mono" width={20} height={20} aria-hidden />}
-          // "READY" reads more accurately than "OK" for an engine
-          // that's installed + daemon running + container available.
-          // Other states fall back to StepRow defaults (CHECKING…/WARN/FAIL).
-          badgeLabel={runtime.status === "ok" ? "READY" : undefined}
-          detail={
-            runtime.docker.data?.ok
-              ? formatDockerDetail(runtime.docker.data.data)
-              : null
-          }
-        />
-      )}
+      <LocalRuntimeRows view={localRuntime} />
       <StepRow
         label="Vex configuration"
         status={envStatus}

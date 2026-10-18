@@ -36,9 +36,6 @@ import {
   type EmbeddingConfigureInput,
 } from "@shared/schemas/embedding.js";
 import {
-  DEFAULT_EMBED_PORT,
-} from "@shared/embedding-defaults.js";
-import {
   type WizardStepId,
 } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
@@ -46,7 +43,6 @@ import { cn } from "../../../lib/utils.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useEmbeddingConfigure } from "../../../lib/api/embedding.js";
-import { useRuntimeInfo } from "../../../lib/api/system.js";
 import {
   useStepAdvance,
   type WizardFlowMode,
@@ -78,10 +74,6 @@ export function EmbeddingStep({
   const envQuery = useEnvState();
   const stepAdvance = useStepAdvance();
   const configure = useEmbeddingConfigure();
-  // The native runtime's embeddings server listens on a port chosen at
-  // launch, so its copy names no address.
-  const runtimeInfo = useRuntimeInfo();
-  const nativeRuntime = runtimeInfo.data?.ok === true && runtimeInfo.data.data.native;
 
   const [form, setForm] = useState<FormState>({
     baseUrl: "",
@@ -176,15 +168,8 @@ export function EmbeddingStep({
       description={
         <>
           Embeddings power Vex&apos;s long-term memory. The bundled model
-          (EmbeddingGemma 300M) runs entirely on this machine
-          {nativeRuntime ? (
-            ", on a local port Vex picks each time it starts"
-          ) : (
-            <>
-              {" "}at <code>127.0.0.1:{DEFAULT_EMBED_PORT}</code>
-            </>
-          )}{" "}
-          - nothing leaves it. Point Base URL at your own OpenAI-compatible
+          (EmbeddingGemma 300M) runs entirely on this machine, on a local
+          port Vex picks each time it starts - nothing leaves it. Point Base URL at your own OpenAI-compatible
           endpoint only if you&apos;re comfortable sending memory content
           there. Optional; you can configure this later.
         </>
@@ -244,10 +229,9 @@ export function EmbeddingStep({
           isDimLocked={isDimLocked}
           isDbDown={isDbDown}
           serverError={serverError}
-          nativeRuntime={nativeRuntime}
         />
 
-        <EmbeddingFields form={form} setForm={setForm} nativeRuntime={nativeRuntime} />
+        <EmbeddingFields form={form} setForm={setForm} />
 
         <EmbeddingAlerts
           validationError={validationError}

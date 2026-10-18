@@ -17,7 +17,6 @@
 import type { VexShellBridge } from "../../shared/types/bridge/shell/index.js";
 import { capabilities } from "./capabilities.js";
 import { database } from "./database.js";
-import { docker } from "./docker.js";
 import { files } from "./files.js";
 import { market } from "./market.js";
 import { lighterTrading } from "./lighter-trading.js";
@@ -39,7 +38,6 @@ import { wallet } from "./wallet.js";
 export const shellBridge = {
   capabilities,
   system,
-  docker,
   database,
   secrets,
   wallet,

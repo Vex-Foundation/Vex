@@ -254,7 +254,7 @@
   --vex-alias-gate-well: var(--vex-alias-field);
   /* 1px rails, progress tracks and quiet chips on the plate. */
   --vex-alias-gate-rail: rgba(243, 244, 247, 0.1);
-  /* Multi-line log/command plates (docker output, migration errors). */
+  /* Multi-line log/command plates (command blocks, migration errors). */
   --vex-alias-gate-code: var(--color-night-0);
   /* Alert-rail ink: the status inks themselves, no mixing toward white or
    * black (status is a fill pattern now, the ink only has to read). */

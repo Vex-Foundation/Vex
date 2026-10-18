@@ -5,10 +5,10 @@
  * while its orchestrator runs the launch pipeline, then hands off to a
  * view beneath itself and lifts away. The view machine itself is
  * unchanged:
- *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
- *   composeBootstrap → migrations → wizard → unlock → appShell —
- * (on the native runtime, systemCheck → runtimeBootstrap → migrations, with
- * runtimeMigration first while an install's data must still be moved);
+ *   splash (void beneath the gate) → systemCheck → runtimeBootstrap →
+ *   migrations → wizard → unlock → appShell —
+ * (with runtimeMigration before runtimeBootstrap while an install's data
+ * must still be moved from the previous release);
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
@@ -45,8 +45,6 @@ import {
   EASE_STANDARD,
 } from "./lib/motion/index.js";
 import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
-import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
-import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
 import { RuntimeBootstrap } from "./features/runtime/RuntimeBootstrap.js";
 import { RuntimeMigration } from "./features/runtime/RuntimeMigration.js";
 import { Migrations } from "./features/database/Migrations.js";
@@ -66,8 +64,6 @@ import type { HealthReport } from "../shared/schemas/system.js";
 /** The stage members: every screen on the print. Never splash/appShell. */
 const PRE_SHELL_VIEWS: ReadonlySet<View> = new Set<View>([
   "systemCheck",
-  "dockerBootstrap",
-  "composeBootstrap",
   "runtimeMigration",
   "runtimeBootstrap",
   "migrations",
@@ -97,8 +93,6 @@ export function App(): JSX.Element {
       <main data-vex-screen="boot-void" className="h-screen w-screen" />
     ),
     systemCheck: () => <SystemCheck />,
-    dockerBootstrap: () => <BootstrapPanel />,
-    composeBootstrap: () => <ComposeBootstrap />,
     runtimeMigration: () => <RuntimeMigration />,
     runtimeBootstrap: () => <RuntimeBootstrap />,
     migrations: () => <Migrations />,

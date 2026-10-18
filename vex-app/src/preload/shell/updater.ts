@@ -8,7 +8,7 @@ import { invokeWithSchema, subscribe } from "../_dispatch.js";
  *
  * Business methods only; the renderer never imports electron-updater / electron
  * and never sees a raw channel. Status arrives via `onStatus` (main-pushed,
- * Zod-validated at the preload boundary). Mirrors `shell/docker.ts`.
+ * Zod-validated at the preload boundary). Mirrors `shell/system.ts`.
  */
 export const updater = {
   getStatus() {

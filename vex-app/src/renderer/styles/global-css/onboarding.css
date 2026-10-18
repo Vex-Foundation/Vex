@@ -1,6 +1,6 @@
 /* Shared onboarding accent: the one blue (the periwinkle at night). Applied
  * via the `data-vex-onboarding="true"` attribute on the outer wrapper of
- * each onboarding screen (systemCheck, dockerBootstrap, composeBootstrap,
+ * each onboarding screen (systemCheck, runtimeMigration, runtimeBootstrap,
  * migrations, wizard, unlock). Shared primitives read
  * `var(--vex-onboarding-accent, var(--color-accent-primary))` so they
  * degrade to the global accent outside the onboarding flow. */

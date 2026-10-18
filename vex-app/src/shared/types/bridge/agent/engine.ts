@@ -3,7 +3,7 @@
  * runtime spine (engine).
  *
  * Naming follows the `EV.engine.<topic>` channel namespace and the
- * `window.vex.<domain>.on<Topic>` convention used for docker / database
+ * `window.vex.<domain>.on<Topic>` convention used for system / database
  * progress streams. Each subscription returns an idempotent unsubscribe
  * function; the renderer must call it on cleanup (puzzle 02 mounts the
  * hook in `SessionPanel`, which unsubscribes on unmount).

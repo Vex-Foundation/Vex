@@ -4,8 +4,9 @@
  *
  * Pins:
  *   - flag ABSENT → renders nothing (the production shape),
- *   - flag "1" → the bottom-left navigator lists every pre-shell view of
- *     the runtime main runs + appShell + "Reload boot",
+ *   - flag "1" → the bottom-left navigator lists every pre-shell view +
+ *     appShell + "Reload boot" (the runtime screens only once main says it
+ *     runs the native runtime: never in an e2e door run),
  *   - clicking a view key dismisses the boot gate (idempotent, dev-only)
  *     and flips `currentView` — renderer view-routing only.
  *
@@ -18,7 +19,7 @@
 
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 type UiStoreModule = typeof import("../../../stores/uiStore.js");
 type SetupTourModule = typeof import("../SetupTour.js");
@@ -29,6 +30,7 @@ async function importFresh(flag: string): Promise<{
   SetupTour: SetupTourModule["SetupTour"];
   store: UiStoreModule["useUiStore"];
   wrapper: (props: { readonly children: ReactNode }) => ReactNode;
+  client: InstanceType<typeof import("@tanstack/react-query").QueryClient>;
 }> {
   vi.resetModules();
   vi.stubEnv("VITE_VEX_SETUP_TOUR", flag);
@@ -41,12 +43,12 @@ async function importFresh(flag: string): Promise<{
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { readonly children: ReactNode }): ReactNode =>
     createElement(QueryClientProvider, { client }, children);
-  return { SetupTour, store: useUiStore, wrapper };
+  return { SetupTour, store: useUiStore, wrapper, client };
 }
 
 beforeEach(() => {
   window.localStorage.clear();
-  runtime.mockReset().mockResolvedValue({ ok: true, data: { native: false } });
+  runtime.mockReset().mockResolvedValue({ ok: true, data: { native: true } });
   Object.defineProperty(window, "vex", { configurable: true, value: { system: { runtime } } });
 });
 
@@ -66,47 +68,47 @@ describe("SetupTour", () => {
     expect(runtime).not.toHaveBeenCalled();
   });
 
-  it("docks the navigator with every tour view and Reload boot when enabled", async () => {
+  it("docks the navigator with every tour view, in order, and Reload boot when enabled", async () => {
     const { SetupTour, wrapper } = await importFresh("1");
-    render(<SetupTour />, { wrapper });
+    const { container } = render(<SetupTour />, { wrapper });
 
     expect(screen.getByText("Setup tour")).not.toBeNull();
-    await screen.findByRole("button", { name: "dockerBootstrap" });
-    for (const view of [
+    await screen.findByRole("button", { name: "runtimeBootstrap" });
+    const viewKeys = [...container.querySelectorAll("[data-vex-setup-tour] button:not([data-vex-tour-prologue])")]
+      .map((button) => button.textContent)
+      .filter((label) => label !== "Reload boot");
+    expect(viewKeys).toEqual([
       "systemCheck",
-      "dockerBootstrap",
-      "composeBootstrap",
+      "runtimeMigration",
+      "runtimeBootstrap",
       "migrations",
       "wizard",
       "unlock",
       "appShell",
-    ]) {
-      expect(screen.getByRole("button", { name: view })).not.toBeNull();
-    }
-    expect(screen.queryByRole("button", { name: "runtimeBootstrap" })).toBeNull();
+    ]);
     expect(screen.getByRole("button", { name: "Reload boot" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "Replay gate" })).not.toBeNull();
   });
 
-  it("on the native runtime lists the runtime screen and never the container screens", async () => {
-    runtime.mockResolvedValue({ ok: true, data: { native: true } });
-    const { SetupTour, wrapper } = await importFresh("1");
+  it("in an e2e door run leaves out the runtime screens: no runtime is started", async () => {
+    runtime.mockResolvedValue({ ok: true, data: { native: false } });
+    const { SetupTour, wrapper, client } = await importFresh("1");
     render(<SetupTour />, { wrapper });
 
-    await screen.findByRole("button", { name: "runtimeBootstrap" });
-    expect(screen.queryByRole("button", { name: "dockerBootstrap" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "composeBootstrap" })).toBeNull();
+    // The answer has landed (and rendered) before its effect is asserted.
+    await waitFor(() => expect(client.getQueryData(["system", "runtime"])).toBeDefined());
+    expect(screen.queryByRole("button", { name: "runtimeBootstrap" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "runtimeMigration" })).toBeNull();
     for (const view of ["systemCheck", "migrations", "wizard", "unlock", "appShell"]) {
       expect(screen.getByRole("button", { name: view })).not.toBeNull();
     }
   });
 
-  it("lists only the shared views until the runtime mode is known", async () => {
+  it("lists only the other views until the runtime mode is known", async () => {
     runtime.mockReturnValue(new Promise(() => {}));
     const { SetupTour, wrapper } = await importFresh("1");
     render(<SetupTour />, { wrapper });
     expect(screen.getByRole("button", { name: "systemCheck" })).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "dockerBootstrap" })).toBeNull();
     expect(screen.queryByRole("button", { name: "runtimeBootstrap" })).toBeNull();
   });
 

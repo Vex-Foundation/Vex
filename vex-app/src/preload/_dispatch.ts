@@ -62,11 +62,11 @@ export async function invokeWithSchema<T, I = unknown>(
 
 /**
  * Abortable invocation. Bridge files that wrap a cancellable channel
- * (`docker.composeUp`, `chat.submit`) call this. The returned shape
+ * (`settings.lighterPoints`, `chat.submit`) call this. The returned shape
  * matches `AbortableInvocation<T>` exported from `bridge/common.js`.
  *
- * The cancelled outcome is handler-specific: `docker.composeUp` throws
- * AbortError → `promise` resolves to `err(internal.cancelled)`, while
+ * The cancelled outcome is handler-specific: `settings.lighterPoints`
+ * answers an abort with `err(internal.cancelled)`, while
  * `chat.submit` (9-5b) returns the persisted partial normally → `promise`
  * resolves to `ok(... stopReason:"user_stopped" ...)`. See
  * `AbortableInvocation` for the full contract.
@@ -119,7 +119,7 @@ export function abortableInvoke<T, I = unknown>(
 /**
  * Domain-namespaced event subscription. Renderer never sees raw
  * channel strings — every subscription comes through a typed bridge
- * method (e.g. `vex.docker.onInstallProgress`) that calls into this.
+ * method (e.g. `vex.system.onRuntimeProgress`) that calls into this.
  * Payload is Zod-validated at the preload boundary so a misbehaving
  * main never injects unexpected shapes into renderer state.
  */
