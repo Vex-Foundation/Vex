@@ -144,8 +144,8 @@ describe("execution gate", () => {
       ...gate.EXECUTION_GATE_EXEMPT_CHANNELS,
       CH.approvals.listPending,
       CH.runtime.getState,
-      CH.docker.detect,
-      CH.docker.composeUp,
+      CH.system.runtimeStatus,
+      CH.system.runtimeRetry,
       CH.database.migrate,
       CH.secrets.unlock,
     ];
@@ -285,8 +285,6 @@ describe("armExecutionGate", () => {
  * agent, tool or wallet work; each says why.
  */
 const NOT_EXECUTION: ReadonlySet<string> = new Set<string>([
-  CH.docker.start, // starts Docker itself: the runtime the gate waits for
-  CH.docker.stopPreviousInstallStacks, // runtime housekeeping, no agent work
   CH.mission.acceptContract, // binds the contract; `start` is what runs it
   CH.compaction.retry, // re-enqueues a memory job, never a tool or a signature
   CH.compaction.requestApply, // transcript maintenance under its own gates

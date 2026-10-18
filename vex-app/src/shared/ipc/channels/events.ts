@@ -23,11 +23,6 @@ export const EV = {
      */
     runtimeMigrationProgress: "vex:event:system:runtimeMigrationProgress",
   },
-  docker: {
-    installProgress: "vex:event:docker:installProgress",
-    daemonChanged: "vex:event:docker:daemonChanged",
-    composeLogs: "vex:event:docker:composeLogs",
-  },
   database: {
     migrateProgress: "vex:event:database:migrateProgress",
   },

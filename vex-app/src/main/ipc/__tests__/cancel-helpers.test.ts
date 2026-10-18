@@ -115,10 +115,10 @@ describe("raceWithAbort", () => {
 
 describe("cancelledError", () => {
   it("returns the canonical internal.cancelled VexError shape", () => {
-    const err = cancelledError("docker", "req-42");
+    const err = cancelledError("database", "req-42");
     expect(err).toEqual({
       code: "internal.cancelled",
-      domain: "docker",
+      domain: "database",
       message: "Operation cancelled.",
       retryable: true,
       userActionable: false,

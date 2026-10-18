@@ -113,20 +113,10 @@ describe("preload bridge surface", () => {
    * and naming them is what keeps the check below total. The assertion under
    * this list makes the exclusion self-expiring: an entry that stops being a
    * real channel, or that acquires a bridge method, fails.
-   *
-   * The `docker.*` group lost its bridge with the Docker setup screens: the
-   * app runs only its bundled native runtime. The constants go with the rest
-   * of the Docker IPC contract in a later step.
    */
   const NOT_ON_THE_BRIDGE: readonly string[] = [
     "CH.database.status",
     "CH.onboarding.providerTest",
-    "CH.docker.detect",
-    "CH.docker.install",
-    "CH.docker.start",
-    "CH.docker.composeUp",
-    "CH.docker.composeDown",
-    "CH.docker.stopPreviousInstallStacks",
   ];
 
   /**

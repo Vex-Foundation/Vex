@@ -165,7 +165,7 @@ describe("registerHandler - cancellation (PR3)", () => {
     const registerHandler = await load();
     registerHandler({
       channel: "vex:test:abort-throw",
-      domain: "docker",
+      domain: "database",
       inputSchema: z.object({}).strict(),
       handle: async () => {
         const e = new Error("aborted");
@@ -180,7 +180,7 @@ describe("registerHandler - cancellation (PR3)", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe("internal.cancelled");
-    expect(result.error.domain).toBe("docker");
+    expect(result.error.domain).toBe("database");
     expect(result.error.correlationId).toBe("req-abort");
     expect(result.error.redacted).toBe(true);
     // Abort path must NOT be logged at error level — it's a normal
@@ -197,7 +197,7 @@ describe("registerHandler - cancellation (PR3)", () => {
     let proceed: (() => void) | null = null;
     registerHandler({
       channel: "vex:test:mid-flight-abort",
-      domain: "docker",
+      domain: "database",
       inputSchema: z.object({}).strict(),
       handle: async (_input, ctx) => {
         signalRef = ctx.signal;
@@ -235,7 +235,7 @@ describe("registerHandler - cancellation (PR3)", () => {
     let proceed: (() => void) | null = null;
     registerHandler({
       channel: "vex:test:abort-rewrite",
-      domain: "docker",
+      domain: "database",
       inputSchema: z.object({}).strict(),
       handle: async () => {
         await new Promise<void>((resolve) => {
@@ -247,7 +247,7 @@ describe("registerHandler - cancellation (PR3)", () => {
           ok: false as const,
           error: {
             code: "internal.unexpected" as const,
-            domain: "docker" as const,
+            domain: "database" as const,
             message: "something went wrong",
             retryable: false,
             userActionable: false,

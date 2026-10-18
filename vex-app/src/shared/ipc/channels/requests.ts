@@ -48,16 +48,6 @@ export const CH = {
     setTitleBarOverlay: "vex:system:setTitleBarOverlay",
   },
 
-  // Docker - detection + lifecycle (M4)
-  docker: {
-    detect: "vex:docker:detect",
-    install: "vex:docker:install",
-    start: "vex:docker:start",
-    composeUp: "vex:docker:composeUp",
-    composeDown: "vex:docker:composeDown",
-    stopPreviousInstallStacks: "vex:docker:stopPreviousInstallStacks",
-  },
-
   // Database - migrations + status (M6)
   database: {
     migrate: "vex:database:migrate",

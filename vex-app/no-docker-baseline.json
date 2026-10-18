@@ -22,7 +22,6 @@
     "vex-app/src/main/docker/probe/version.ts": 2,
     "vex-app/src/main/docker/spawn-runner.ts": 12,
     "vex-app/src/main/docker/start.ts": 55,
-    "vex-app/src/main/ipc/capabilities.ts": 1,
     "vex-app/src/main/onboarding/embedding-defaults.ts": 2,
     "vex-app/src/main/paths/config-dir.ts": 1,
     "vex-app/src/main/runtime/migration/docker-source.ts": 55,
@@ -30,13 +29,7 @@
     "vex-app/src/main/runtime/migration/native-start-gate.ts": 5,
     "vex-app/src/renderer/features/runtime/migration/copy.ts": 35,
     "vex-app/src/shared/embedding-defaults.ts": 1,
-    "vex-app/src/shared/ipc/channels/events.ts": 4,
-    "vex-app/src/shared/ipc/channels/requests.ts": 8,
-    "vex-app/src/shared/ipc/result/codes.ts": 2,
-    "vex-app/src/shared/ipc/result/types.ts": 3,
     "vex-app/src/shared/local-service-ports.ts": 4,
-    "vex-app/src/shared/schemas/capabilities.ts": 1,
-    "vex-app/src/shared/schemas/docker.ts": 34,
     "vex-app/src/shared/schemas/onboarding.ts": 2,
     "vex-app/src/shared/schemas/updater.ts": 1
   }
