@@ -27,10 +27,6 @@
     "vex-app/src/main/runtime/migration/docker-source.ts": 55,
     "vex-app/src/main/runtime/migration/docker-to-native.ts": 56,
     "vex-app/src/main/runtime/migration/native-start-gate.ts": 5,
-    "vex-app/src/renderer/features/runtime/migration/copy.ts": 35,
-    "vex-app/src/shared/embedding-defaults.ts": 1,
-    "vex-app/src/shared/local-service-ports.ts": 4,
-    "vex-app/src/shared/schemas/onboarding.ts": 2,
-    "vex-app/src/shared/schemas/updater.ts": 1
+    "vex-app/src/renderer/features/runtime/migration/copy.ts": 35
   }
 }

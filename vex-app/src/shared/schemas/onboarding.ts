@@ -8,9 +8,9 @@
  * `wallet.solana[]`) plus the primary entry's keystore file existing on
  * disk — NOT from a fixed keystore filename alone (see env-state.ts).
  *
- * `embeddings` lives here (not in DockerStatus) because the endpoint is
- * user-configured via `EMBEDDING_BASE_URL` — it might be Docker Model
- * Runner, OpenRouter, or any custom OpenAI-compatible service.
+ * `embeddings` lives here (not in the local runtime's status) because the
+ * endpoint is user-configured via `EMBEDDING_BASE_URL` — it might be the
+ * bundled server, OpenRouter, or any custom OpenAI-compatible service.
  */
 
 import { z } from "zod";

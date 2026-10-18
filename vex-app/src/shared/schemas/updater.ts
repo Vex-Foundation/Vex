@@ -47,7 +47,7 @@ export const updateStatusSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
   // The user asked to update, but a safe-restart gate is blocking (e.g. a
-  // Docker/DB operation or an active mission). `reason` is user-actionable.
+  // local runtime/DB operation or an active mission). `reason` is user-actionable.
   // `blockedAction` records which step was blocked (download vs install) so
   // the toast's "Try again" can re-invoke that SAME action, which re-checks
   // the gate live — no polling, no auto-recovery timer. The remaining fields

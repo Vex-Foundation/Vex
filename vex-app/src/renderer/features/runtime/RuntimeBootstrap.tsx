@@ -7,8 +7,8 @@
  * three are ready (D14); then the screen advances to the migrations on its
  * own after a short confirmation, the way an up-to-date schema does.
  *
- * Visual system: the same `SetupFrame` leaf as the container bootstrap it
- * replaces on this runtime. In flight, the VexLoader hero sits above the
+ * Visual system: the `SetupFrame` leaf the other setup screens share. In
+ * flight, the VexLoader hero sits above the
  * rows; settled, the rows stay as the record of what happened, above a ready
  * stanza or the failure branch for the failed step's kind.
  *
