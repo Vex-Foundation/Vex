@@ -190,6 +190,13 @@ describe("an open chat", () => {
     expect(present().result.current.scope).toBe("This mission:");
   });
 
+  it("does not wait on a desk row: the desk's own dialog decides it", () => {
+    openSession();
+    mocks.pending = [{ ...approval(), sessionId: SESSION_ID, origin: "desk" }];
+    const { result } = present();
+    expect(result.current.state).not.toBe("awaiting");
+  });
+
   it("waits for approval on the chat's own pending approvals, not another chat's", () => {
     openSession();
     mocks.pendingAll = [approval({ sessionId: testId() })];

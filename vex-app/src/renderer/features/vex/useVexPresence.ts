@@ -298,7 +298,12 @@ export function useVexPresence(options: VexPresenceOptions = {}): VexPresence {
 
   // -- approvals: this chat's own, or app-wide when no chat is open
   const pendingData = pendingQuery.data;
-  const sessionPending = pendingData !== undefined && pendingData.ok ? pendingData.data.length : 0;
+  // A desk row is decided in the desk's own dialog (the account setup, the
+  // ticket), never in this chat, so the chat does not wait on it - the same
+  // split the transcript makes (`ApprovalsRegion`).
+  const sessionPending = pendingData !== undefined && pendingData.ok
+    ? pendingData.data.filter((row) => row.origin !== "desk").length
+    : 0;
   const appPending = needsYou.items.filter((item) => item.kind === "approval").length;
   const awaitingCount = sessionId !== null ? sessionPending : appPending;
 
