@@ -71,7 +71,7 @@ vi.mock("../../../lib/motion/reduced-motion.js", () => ({
 
 // Her canvas is pinned by VexK2's own suite; here the host records what the
 // welcome hands her (placement, ground, emotion, the composer she looks at,
-// the token toggle) and stands in for the engine: after mount it reports the
+// the token toggle, the morning) and stands in for the engine: after mount it reports the
 // coin's box and the state she starts in, as the engine does after her first
 // frame. Each render also notes the stage as the previous commit left it, so
 // a case can prove the stage got its size back before she was told to open.
@@ -241,6 +241,40 @@ describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
     expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-emotion")).toBe(
       "concerned",
     );
+  });
+});
+
+describe("SessionWelcomeHero - her morning coffee", () => {
+  it("hands her the morning by the local clock: 06:00 to 10:59 on, otherwise off", () => {
+    const hours = vi.spyOn(Date.prototype, "getHours");
+    try {
+      hours.mockReturnValue(8);
+      const first = render(<SessionWelcomeHero />);
+      expect(lastK2?.morning).toBe(true);
+      first.unmount();
+      hours.mockReturnValue(11);
+      render(<SessionWelcomeHero />);
+      expect(lastK2?.morning).toBe(false);
+    } finally {
+      hours.mockRestore();
+    }
+  });
+
+  it("reads the clock again every minute: the morning ends while she stands there", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const hours = vi.spyOn(Date.prototype, "getHours").mockReturnValue(10);
+    try {
+      render(<SessionWelcomeHero />);
+      expect(lastK2?.morning).toBe(true);
+      hours.mockReturnValue(11);
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(lastK2?.morning).toBe(false);
+    } finally {
+      hours.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 

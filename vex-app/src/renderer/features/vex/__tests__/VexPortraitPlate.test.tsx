@@ -12,7 +12,9 @@
  *  - a NEW pick (a different URL written into the shared cache entry) gets
  *    its own chance after an earlier failure;
  *  - nothing on the print veils it or blurs it, and Vex stands over the grain
- *    as the K2 hologram on the print ground, in the sidebar placement.
+ *    as the K2 hologram on the print ground, in the sidebar placement;
+ *  - Vex is handed the morning by the local clock (06:00 to 10:59), so her
+ *    coffee may play only then.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -150,6 +152,23 @@ describe("VexPortraitPlate", () => {
     expect(holo?.className).toContain("pointer-events-none");
     expect(holo?.previousElementSibling?.className).toBe("vex-vs-plate__grain");
     await waitFor(() => expect(readMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("hands Vex the morning by the local clock (06:00 to 10:59): her coffee may play only then", async () => {
+    readMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
+    const hours = vi.spyOn(Date.prototype, "getHours");
+    try {
+      hours.mockReturnValue(7);
+      const morning = renderWall(<VexPortraitPlate emotion="idle" />);
+      expect(wall(morning.container).lastElementChild?.hasAttribute("data-vex-k2-morning")).toBe(true);
+      morning.unmount();
+      hours.mockReturnValue(14);
+      const noon = renderWall(<VexPortraitPlate emotion="idle" />);
+      expect(wall(noon.container).lastElementChild?.hasAttribute("data-vex-k2-morning")).toBe(false);
+      await waitFor(() => expect(readMock).toHaveBeenCalled());
+    } finally {
+      hours.mockRestore();
+    }
   });
 
   it("falls back to the shipped prints when the custom image fails to load", async () => {

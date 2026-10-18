@@ -37,6 +37,10 @@
  * shared with a surface that is mounted anyway; nothing here polls. Her
  * hologram here leaves a note for the Vex sidebar, which docks her on the
  * first message.
+ *
+ * In the morning (local 06:00 to 10:59, the clock read again every minute,
+ * `useMorning`) she may have her coffee while idle (the owner, 2026-10-18,
+ * as on the web app's welcome); under reduced motion she holds the mug.
  */
 
 import {
@@ -60,6 +64,7 @@ import type { K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import type { K2TokenState } from "../../components/vex/k2/k2-engine.js";
 import { type Box, fitFor, tokenBox } from "../../components/vex/k2/k2-rig.js";
 import { K2TokenButton, targetBox } from "../../components/vex/k2/K2TokenButton.js";
+import { useMorning } from "../../components/vex/k2/k2-morning.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import { NEEDS_YOU_UNKNOWN_COPY } from "../vex/needs-you.js";
 import { useVexPresence } from "../vex/useVexPresence.js";
@@ -162,6 +167,8 @@ function WelcomeVex({
   const welcomeVexShown = useUiStore((s) => s.welcomeVexShown);
   const setWelcomeVexShown = useUiStore((s) => s.setWelcomeVexShown);
   const tokenOnly = !welcomeVexShown;
+  // the morning (local 06:00 to 10:59): her coffee may play
+  const morning = useMorning();
   // the engine's state (null until she reports)
   const [k2, setK2] = useState<K2TokenState | null>(null);
   // the stage got its size back and waits one commit before she opens
@@ -223,6 +230,7 @@ function WelcomeVex({
             tokenOnly={tokenOnly}
             onToken={onToken}
             onTokenBox={onTokenBox}
+            morning={morning}
             className="vex-welcome__vex"
           />
         </div>
@@ -248,8 +256,9 @@ export function SessionWelcomeHero(): JSX.Element {
   // failing closed to the nameless draw for every non-success state. The hour
   // and the random draw are frozen ONCE PER MOUNT (useState initializers) so
   // the headline never flickers across re-renders, and no ticking timer
-  // exists. Only the profile read resolving can upgrade the line (nameless to
-  // the name variant), and at most once.
+  // drives it (Vex's morning, below her, reads the clock every minute for her
+  // coffee; the headline never does). Only the profile read resolving can
+  // upgrade the line (nameless to the name variant), and at most once.
   const profileQuery = useUserProfile();
   const displayName = profileQuery.data?.ok
     ? profileQuery.data.data.displayName

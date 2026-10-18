@@ -27,6 +27,10 @@
  * SHE CLOSES. With `closed` she collapses into the token (the sidebar sets it
  * while a hide waits for her close); set back, she opens from it again.
  *
+ * HER MORNING COFFEE. In the morning (local 06:00 to 10:59, the clock read
+ * again every minute, `useMorning`) she may have her coffee while idle (the
+ * owner, 2026-10-18); under reduced motion she holds the mug.
+ *
  * Decorative: the state word above carries the state for assistive tech, so
  * the plate is `aria-hidden` and takes no pointer.
  */
@@ -34,6 +38,7 @@
 import { useEffect, useState, type JSX } from "react";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import type { K2Emotion } from "../../components/vex/k2/k2-emotion.js";
+import { useMorning } from "../../components/vex/k2/k2-morning.js";
 import { currentShellBackdrop, useShellBackdrop } from "../../lib/api/shell-backdrop.js";
 import { cn } from "../../lib/utils.js";
 
@@ -65,6 +70,8 @@ export function VexPortraitPlate({
   className,
 }: VexPortraitPlateProps): JSX.Element {
   const backdropQuery = useShellBackdrop();
+  // the morning (local 06:00 to 10:59): her coffee may play
+  const morning = useMorning();
   const custom = currentShellBackdrop(backdropQuery.data);
   // A custom URL the renderer could not load. Keyed by URL so a NEW pick
   // (new id, new URL) gets its own chance rather than inheriting the old
@@ -116,6 +123,7 @@ export function VexPortraitPlate({
         composer={findComposer}
         open={dock}
         closed={closed}
+        morning={morning}
         className="vex-vs-plate__holo"
       />
     </div>
