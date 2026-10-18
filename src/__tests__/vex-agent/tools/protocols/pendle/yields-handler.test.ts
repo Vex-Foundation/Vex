@@ -9,7 +9,7 @@
  *     `impliedApyPercent: "2.28"`, with the unit in the field name.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PendleReadMarketCatalog } from "@tools/pendle/read/types.js";
 import type { PendleAsset } from "@tools/pendle/types.js";
@@ -91,8 +91,18 @@ async function run(params: Record<string, unknown> = {}): Promise<{ success: boo
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The handler drops markets past their expiry against `Date.now()`, and the
+  // live fixture has one (ynRWAx) expiring 2026-10-15: pin the clock to the
+  // capture day so the fixture's actives stay active. Only `Date` is faked;
+  // the handler's promises and timers run as usual.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-07-27T00:00:00.000Z"));
   mockListMarkets.mockResolvedValue(catalog());
   mockBuildAssetMap.mockResolvedValue(assetMap());
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("pendle.yields — one cross-chain read", () => {

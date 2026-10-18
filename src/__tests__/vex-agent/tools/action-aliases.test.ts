@@ -37,6 +37,20 @@ vi.mock("@vex-agent/tools/protocols/runtime.js", () => ({
   executeProtocolTool,
 }));
 
+// The bridge venue router reads the LIVE Khalani chain registry, so it is
+// pinned here and this file never touches the network for it: Ethereum, Base
+// and Solana served, Robinhood Chain (4663) not. Reading it live made these
+// tests change verdict the day Khalani began listing 4663.
+vi.mock("@tools/khalani/client.js", () => ({
+  getKhalaniClient: () => ({
+    getChains: async () => [
+      { type: "eip155", id: 1, name: "Ethereum", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+      { type: "eip155", id: 8453, name: "Base", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 } },
+      { type: "solana", id: 20011000000, name: "Solana", nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 } },
+    ],
+  }),
+}));
+
 import {
   handleSwapQuote,
   handleTokenCheck,
@@ -386,7 +400,9 @@ describe("BridgeQuote — pass-through to khalani.quote.get", () => {
     expect(executeProtocolTool).not.toHaveBeenCalled();
   });
 
-  // ── Robinhood Chain 4663 routes to Relay, never Khalani (LOCKED #3) ──
+  // ── Robinhood Chain 4663 routes to Relay while Khalani's registry does not
+  //    list it (the venue router's rule since 2026-08-17; the registry above
+  //    is pinned without it) ──
   const VIRTUAL = "0xc6911796042b15d7Fa4F6CDe69e245DdCd3d9c31";
   const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
