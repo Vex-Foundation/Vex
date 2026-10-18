@@ -15,7 +15,7 @@
  *
  * On the Lighter desk the plate is followed by the desk chat, which takes the
  * rest of the column, and there is no foot. With the avatar off there is no
- * plate and no hologram: the 44px flat token in its state ring (`VexStatus`)
+ * plate and no hologram: the 44px flat token (`VexStatus`, no ring round it)
  * stands beside the state instead, and everything else stays.
  *
  * SHE DOCKS: a column that shows after the shell came up (the first message
