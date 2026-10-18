@@ -9,8 +9,9 @@
  *   WizardStepEyebrow  the line above the step's title: "Step 3 of 7 · API
  *                      keys".
  *
- * Display only: a step does NOT navigate. The wizard has no back navigation
- * outside Review's edit path. The stepper is an `<ol>` with
+ * Display only: a step does NOT navigate. The footer's Back (steps 2 to 7)
+ * moves one step at a time, and Review's edit path opens a step directly.
+ * The stepper is an `<ol>` with
  * `aria-label="Wizard progress"` so assistive tech can enumerate the seven
  * steps and the current one.
  *

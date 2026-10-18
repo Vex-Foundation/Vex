@@ -7,8 +7,8 @@
  * reads.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import { WizardStepPanel, settingsSectionFor, settingsStatusForStep } from "../WizardStepPanel.js";
 import { WizardHostContext } from "../wizard-host.js";
@@ -117,6 +117,70 @@ describe("WizardStepPanel in the wizard", () => {
     );
     expect(screen.getByRole("heading", { level: 1, name: "Manage wallets" })).toBeTruthy();
     expect(screen.queryByText("EVM only")).toBeNull();
+  });
+});
+
+describe("WizardStepPanel Back (the wizard's steps 2 to 7)", () => {
+  it("draws Back at the foot's left, before the privacy link, as a key that never submits the form", () => {
+    const onBack = vi.fn();
+    const onSubmit = vi.fn();
+    const { container } = render(
+      <WizardHostContext.Provider value={{ host: "wizard", onBack }}>
+        <WizardStepPanel
+          panelDataAttr={{ kind: "wallets", value: "ready" }}
+          flowMode="first-pass"
+          title="Set up wallets"
+          description="Add a wallet."
+          formProps={{ onSubmit }}
+          footer={<button type="submit">Continue</button>}
+        >
+          <input aria-label="Field" />
+        </WizardStepPanel>
+      </WizardHostContext.Provider>,
+    );
+    const foot = container.querySelector(".vex-wzp__foot");
+    const back = screen.getByRole("button", { name: "Back" });
+    expect(back.getAttribute("type")).toBe("button");
+    expect(back.hasAttribute("data-vex-wizard-back")).toBe(true);
+    expect(foot?.firstElementChild).toBe(back);
+    expect(back.nextElementSibling?.textContent).toContain("Your data stays yours");
+    fireEvent.click(back);
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("draws no Back without one from the host (the first step, Review's edit path)", () => {
+    render(
+      <WizardHostContext.Provider value={{ host: "wizard" }}>
+        <WizardStepPanel
+          panelDataAttr={{ kind: "keystore", value: "form" }}
+          flowMode="first-pass"
+          title="Set your master password"
+          description="One password seals the vault."
+          footer={<button type="button">Save and continue</button>}
+        >
+          <p>body</p>
+        </WizardStepPanel>
+      </WizardHostContext.Provider>,
+    );
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+
+  it("draws no Back in Settings", () => {
+    render(
+      <WizardHostContext.Provider value={{ host: "settings", onBack: noop }}>
+        <WizardStepPanel
+          panelDataAttr={{ kind: "wallets", value: "ready" }}
+          flowMode="back-edit"
+          title="Set up wallets"
+          description="Add a wallet."
+          footer={<button type="button">Save changes</button>}
+        >
+          <p>body</p>
+        </WizardStepPanel>
+      </WizardHostContext.Provider>,
+    );
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });
 });
 

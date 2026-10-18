@@ -56,13 +56,21 @@ vi.mock("../steps/KeystoreStep.js", async () => {
   const { useContext } = await import("react");
   const { WizardHostContext } = await import("../wizard-host.js");
   return {
-    KeystoreStep: () => {
+    KeystoreStep: ({ onAdvance }: { onAdvance: (next: string) => void }) => {
       const host = useContext(WizardHostContext);
       return (
         <div data-testid="keystore-step">
           {host?.before}
           <input aria-label="Master password" type="password" />
           <button type="button">Save and continue</button>
+          <button type="button" onClick={() => onAdvance("wallets")}>
+            Continue vault
+          </button>
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
         </div>
       );
     },
@@ -77,14 +85,39 @@ vi.mock("../steps/WalletsStep.js", async () => {
   return {
     WalletsStep: () => {
       const host = useContext(WizardHostContext);
-      return <div data-testid="wallets-step">{host?.before}</div>;
+      return (
+        <div data-testid="wallets-step">
+          {host?.before}
+          <input aria-label="Wallet note" />
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
     },
   };
 });
 
-vi.mock("../steps/ApiKeysStep.js", () => ({
-  ApiKeysStep: () => <div data-testid="apikeys-step" />,
-}));
+vi.mock("../steps/ApiKeysStep.js", async () => {
+  const { useContext } = await import("react");
+  const { WizardHostContext } = await import("../wizard-host.js");
+  return {
+    ApiKeysStep: () => {
+      const host = useContext(WizardHostContext);
+      return (
+        <div data-testid="apikeys-step">
+          {host?.onBack ? (
+            <button type="button" onClick={host.onBack}>
+              Back
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock("../steps/EmbeddingStep.js", () => ({
   EmbeddingStep: () => <div data-testid="embedding-step" />,
@@ -171,6 +204,77 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   Reflect.deleteProperty(window, "vex");
+});
+
+describe("WizardShell Back (steps 2 to 7)", () => {
+  const paneOf = (container: HTMLElement, id: string): HTMLElement | null =>
+    container.querySelector<HTMLElement>(`[data-vex-wizard-pane="${id}"]`);
+
+  it("offers Back on steps 2 to 7 and never on the first step", async () => {
+    mockUseWizardState.mockReturnValue(makeQueryResult(stepState("keystore", [])));
+    const first = renderWithQuery(<WizardShell />);
+    await first.findByTestId("keystore-step");
+    expect(first.queryByRole("button", { name: "Back" })).toBeNull();
+    first.unmount();
+
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("apiKeys", ["keystore", "wallets"])),
+    );
+    const third = renderWithQuery(<WizardShell />);
+    await third.findByTestId("apikeys-step");
+    expect(third.getByRole("button", { name: "Back" })).not.toBeNull();
+  });
+
+  it("goes back one step, saves nothing, and keeps what was typed when the user moves on again", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("wallets", ["keystore"])),
+    );
+    const { container, findByTestId, getByLabelText, getByRole } = renderWithQuery(
+      <WizardShell />,
+    );
+    await findByTestId("wallets-step");
+    fireEvent.change(getByLabelText("Wallet note"), { target: { value: "typed before Back" } });
+
+    // a person's press focuses the key first (jsdom's click does not)
+    const back = getByRole("button", { name: "Back" });
+    back.focus();
+    fireEvent.click(back);
+    // the vault step shows (its own panel decides what it offers: the
+    // configured vault, never a second password), with no Back of its own
+    expect(paneOf(container, "keystore")?.hidden).toBe(false);
+    expect(paneOf(container, "wallets")?.hidden).toBe(true);
+    expect(getByRole("button", { name: "Continue vault" })).not.toBeNull();
+    expect(container.querySelector('[aria-current="step"]')?.getAttribute("data-vex-wizard-step")).toBe(
+      "keystore",
+    );
+    expect(paneOf(container, "keystore")?.textContent).toContain("Step 1 of 7 · Master password");
+    // the key that moved the view hid with its step: focus lands in the shown step
+    expect(paneOf(container, "keystore")?.contains(document.activeElement)).toBe(true);
+    // Back persists nothing: the shell never wrote the wizard state
+    expect(Reflect.get(window.vex, "onboarding")).toBeUndefined();
+
+    // moving on is the step's own action; the wallets step comes back as it was left
+    fireEvent.click(getByRole("button", { name: "Continue vault" }));
+    expect(paneOf(container, "wallets")?.hidden).toBe(false);
+    expect(paneOf(container, "keystore")?.hidden).toBe(true);
+    expect((getByLabelText("Wallet note") as HTMLInputElement).value).toBe("typed before Back");
+    expect(container.querySelector('[aria-current="step"]')?.getAttribute("data-vex-wizard-step")).toBe(
+      "wallets",
+    );
+  });
+
+  it("hides every step but the shown one from the page and from assistive tech", async () => {
+    mockUseWizardState.mockReturnValue(
+      makeQueryResult(stepState("wallets", ["keystore"])),
+    );
+    const { container, findByTestId, getByRole, queryAllByRole } = renderWithQuery(<WizardShell />);
+    await findByTestId("wallets-step");
+    fireEvent.click(getByRole("button", { name: "Back" }));
+    const panes = container.querySelectorAll("[data-vex-wizard-pane]");
+    expect([...panes].filter((pane) => !pane.hasAttribute("hidden"))).toHaveLength(1);
+    // the hidden wallets step's Back is not in the accessibility tree
+    expect(queryAllByRole("button", { name: "Back" })).toHaveLength(0);
+  });
 });
 
 describe("WizardShell frame (R3)", () => {
