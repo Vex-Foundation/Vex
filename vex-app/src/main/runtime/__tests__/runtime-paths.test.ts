@@ -15,11 +15,11 @@ afterEach(() => {
 });
 
 /** A fake tree with the four binaries, executable unless `mode` says otherwise. */
-function tree(root: string, mode = 0o755): string {
+function tree(root: string, mode = 0o755, suffix = ""): string {
   const bin = path.join(root, "bin");
   mkdirSync(bin, { recursive: true });
   for (const name of ["postgres", "initdb", "pg_ctl", "pg_controldata"]) {
-    const file = path.join(bin, name);
+    const file = path.join(bin, `${name}${suffix}`);
     writeFileSync(file, "#!/bin/sh\n");
     chmodSync(file, mode);
   }
@@ -79,6 +79,7 @@ describe("locatePostgresBinaries", () => {
     const found = await locatePostgresBinaries({
       packaged: true,
       resourcesPath: resources,
+      platform: "linux",
       env: { VEX_NATIVE_PG_DIR: other },
     });
     expect(found).toEqual({
@@ -88,6 +89,21 @@ describe("locatePostgresBinaries", () => {
         initdb: path.join(resources, "postgres", "bin", "initdb"),
         pgCtl: path.join(resources, "postgres", "bin", "pg_ctl"),
         pgControldata: path.join(resources, "postgres", "bin", "pg_controldata"),
+      },
+    });
+  });
+
+  it("packaged on Windows: the same tree, by its .exe names", async () => {
+    const resources = tempRoot();
+    tree(path.join(resources, "postgres"), 0o755, ".exe");
+    const found = await locatePostgresBinaries({ packaged: true, resourcesPath: resources, platform: "win32", env: {} });
+    expect(found).toEqual({
+      kind: "found",
+      binaries: {
+        postgres: path.join(resources, "postgres", "bin", "postgres.exe"),
+        initdb: path.join(resources, "postgres", "bin", "initdb.exe"),
+        pgCtl: path.join(resources, "postgres", "bin", "pg_ctl.exe"),
+        pgControldata: path.join(resources, "postgres", "bin", "pg_controldata.exe"),
       },
     });
   });

@@ -182,6 +182,11 @@ function sha256(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function present<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`fixture has no ${what}`);
+  return value;
+}
+
 function writeFile(file: string, bytes: Buffer, executable: boolean): void {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, bytes);
@@ -361,7 +366,7 @@ describe("the native runtime lock", () => {
     expect(read().message).toMatch(/no entry for win32-arm64/);
 
     const badDigest = JSON.parse(valid) as { targets: Record<string, Record<string, unknown>> };
-    badDigest.targets["linux-x64"]!.sha256 = "not-a-digest";
+    present(badDigest.targets["linux-x64"], "linux-x64").sha256 = "not-a-digest";
     writeFileSync(lockFile, JSON.stringify(badDigest));
     expect(read().message).toMatch(/linux-x64\.sha256 is not a sha256/);
   });
@@ -375,7 +380,7 @@ describe("staging the native runtime", () => {
     expect(result.ok).toBe(true);
 
     for (const arch of ["arm64", "x64"] as const) {
-      const runtime = runtimes.get(`darwin-${arch}`)!;
+      const runtime = present(runtimes.get(`darwin-${arch}`), `darwin-${arch}`);
       const resources = path.join(root, "vex-app", "resources");
       const staged = [
         ...filesUnder(path.join(resources, `postgres-${arch}`), "postgres/"),
@@ -384,7 +389,10 @@ describe("staging the native runtime", () => {
       expect(staged).toEqual([...runtime.files.keys(), "postgres/.gitignore", "llama/.gitignore"].sort());
       const server = path.join(resources, `postgres-${arch}`, "bin", "postgres");
       expect(readFileSync(server)).toEqual(runtime.files.get("postgres/bin/postgres"));
-      expect(execFileSync("stat", process.platform === "darwin" ? ["-f", "%Lp", server] : ["-c", "%a", server], { encoding: "utf8" }).trim()).toBe("755");
+      // NTFS keeps no execute bit; the macOS runtime is staged on macOS, where it does.
+      if (process.platform !== "win32") {
+        expect(execFileSync("stat", process.platform === "darwin" ? ["-f", "%Lp", server] : ["-c", "%a", server], { encoding: "utf8" }).trim()).toBe("755");
+      }
     }
   });
 
@@ -423,7 +431,7 @@ describe("staging the native runtime", () => {
     const runtimes = fakeApp(root, []);
     // Rebuild the lock and the fetched tree with an x64 llama-server in the
     // arm64 tree: internally consistent, wrong for the target.
-    const runtime = runtimes.get("darwin-arm64")!;
+    const runtime = present(runtimes.get("darwin-arm64"), "darwin-arm64");
     const files = new Map(runtime.files);
     files.set("llama/llama-server", macho("amd64", "llama/llama-server"));
     const dir = path.join(root, "vex-app", "resources", "native-runtime", "darwin-arm64");
@@ -432,7 +440,7 @@ describe("staging the native runtime", () => {
     writeFileSync(path.join(dir, "SHA256SUMS"), listing);
     const lockFile = path.join(root, "vex-app", "native-runtime.lock.json");
     const lock = JSON.parse(readFileSync(lockFile, "utf8")) as { targets: Record<string, Record<string, unknown>> };
-    lock.targets["darwin-arm64"]!.treeSha256 = sha256(listing);
+    present(lock.targets["darwin-arm64"], "darwin-arm64").treeSha256 = sha256(listing);
     writeFileSync(lockFile, JSON.stringify(lock));
 
     const result = stage(root, "mac", ["arm64"]);
@@ -452,7 +460,7 @@ describe("staging the native runtime", () => {
     const manifest = readFileSync(path.join(resources, "postgres-arm64", "AUTHENTICODE-SHA256SUMS"), "utf8");
     expect(manifest).toMatch(/^[0-9a-f]{64} {2}postgres\/bin\/postgres\.exe$/m);
     expect(readFileSync(path.join(resources, "postgres-arm64", "bin", "postgres.exe"))).toEqual(
-      runtimes.get("win32-arm64")!.files.get("postgres/bin/postgres.exe"),
+      present(runtimes.get("win32-arm64"), "win32-arm64").files.get("postgres/bin/postgres.exe"),
     );
   });
 });
@@ -461,7 +469,7 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
   it("accepts exactly the pinned trees, by sha256, asking no signature tool (macOS, Linux)", () => {
     for (const name of ["darwin-arm64", "linux-x64"]) {
       const root = temporaryRoot(`vex-nr-pack-${name}-`);
-      const runtime = fakeApp(root, [name]).get(name)!;
+      const runtime = present(fakeApp(root, [name]).get(name), name);
       const { context } = fakePackage(root, runtime);
       expect(verifyPackaged(root, context)).toMatchObject({ ok: true, value: { target: name, transformed: 0 } });
     }
@@ -469,7 +477,7 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
 
   it("refuses a staging file that leaked through the filter, and any file the lock does not pin", () => {
     const root = temporaryRoot("vex-nr-pack-extra-");
-    const runtime = fakeApp(root, ["darwin-arm64"]).get("darwin-arm64")!;
+    const runtime = present(fakeApp(root, ["darwin-arm64"]).get("darwin-arm64"), "darwin-arm64");
     const { context } = fakePackage(root, runtime, (files) => {
       files.set("postgres/.gitignore", Buffer.from("*\n"));
       files.set("llama/libggml-cpu-haswell.so", macho("amd64", "another arch's backend"));
@@ -482,7 +490,7 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
 
   it("refuses a missing file and a changed one", () => {
     const root = temporaryRoot("vex-nr-pack-changed-");
-    const runtime = fakeApp(root, ["linux-x64"]).get("linux-x64")!;
+    const runtime = present(fakeApp(root, ["linux-x64"]).get("linux-x64"), "linux-x64");
     const { context } = fakePackage(root, runtime, (files) => {
       files.delete("postgres/lib/postgresql/vector.so");
       files.set("postgres/bin/initdb", elf("amd64", "a different initdb"));
@@ -495,7 +503,7 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
 
   it("refuses a package without the runtime's notices", () => {
     const root = temporaryRoot("vex-nr-pack-notices-");
-    const runtime = fakeApp(root, ["darwin-x64"]).get("darwin-x64")!;
+    const runtime = present(fakeApp(root, ["darwin-x64"]).get("darwin-x64"), "darwin-x64");
     const { context, resources } = fakePackage(root, runtime);
     rmSync(path.join(resources, "licenses", "gemma", "NOTICE"));
     const result = verifyPackaged(root, context);
@@ -505,7 +513,7 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
 
   it("accepts Windows PEs signed during the copy, bound by Authenticode content, under a valid signature", () => {
     const root = temporaryRoot("vex-nr-pack-win-signed-");
-    const runtime = fakeApp(root, ["win32-arm64"]).get("win32-arm64")!;
+    const runtime = present(fakeApp(root, ["win32-arm64"]).get("win32-arm64"), "win32-arm64");
     expect(stage(root, "win", ["arm64"]).ok).toBe(true);
     let signedCount = 0;
     const { context } = fakePackage(root, runtime, (files) => {
@@ -524,14 +532,14 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
 
   it("accepts an unsigned Windows package by sha256 alone, asking no signature tool", () => {
     const root = temporaryRoot("vex-nr-pack-win-plain-");
-    const runtime = fakeApp(root, ["win32-x64"]).get("win32-x64")!;
+    const runtime = present(fakeApp(root, ["win32-x64"]).get("win32-x64"), "win32-x64");
     const { context } = fakePackage(root, runtime);
     expect(verifyPackaged(root, context)).toMatchObject({ ok: true, value: { transformed: 0 } });
   });
 
   it("refuses a signed Windows PE that is not the pinned file, though its signature is valid", () => {
     const root = temporaryRoot("vex-nr-pack-win-stale-");
-    const runtime = fakeApp(root, ["win32-x64"]).get("win32-x64")!;
+    const runtime = present(fakeApp(root, ["win32-x64"]).get("win32-x64"), "win32-x64");
     const { context } = fakePackage(root, runtime, (files) => {
       files.set("postgres/bin/libpq.dll", authenticodeSigned(pe("amd64", "libpq from an older release")));
     });
@@ -542,9 +550,9 @@ describe("verifying the packaged native runtime in the afterPack hook", () => {
 
   it("refuses a rewritten Windows PE without a valid signature", () => {
     const root = temporaryRoot("vex-nr-pack-win-unsigned-");
-    const runtime = fakeApp(root, ["win32-x64"]).get("win32-x64")!;
+    const runtime = present(fakeApp(root, ["win32-x64"]).get("win32-x64"), "win32-x64");
     const { context } = fakePackage(root, runtime, (files) => {
-      files.set("llama/llama-server.exe", authenticodeSigned(files.get("llama/llama-server.exe")!));
+      files.set("llama/llama-server.exe", authenticodeSigned(present(files.get("llama/llama-server.exe"), "llama/llama-server.exe")));
     });
     const result = verifyPackaged(root, context, SIGNATURE_NOT_SIGNED);
     expect(result.ok).toBe(false);
@@ -604,7 +612,7 @@ describe("the post-signing native runtime gate (check:package)", () => {
 
   it("in a signed macOS app, accepts codesigned Mach-O files and refuses one that does not verify", () => {
     const root = temporaryRoot("vex-nr-check-mac-");
-    const runtime = fakeApp(root, ["darwin-arm64"]).get("darwin-arm64")!;
+    const runtime = present(fakeApp(root, ["darwin-arm64"]).get("darwin-arm64"), "darwin-arm64");
     const { resources } = fakePackage(root, runtime, (files) => {
       // codesign rewrites every Mach-O; data files stay byte-identical.
       for (const [rel, bytes] of files) if (isExecutablePath(rel)) files.set(rel, Buffer.concat([bytes, Buffer.from("signature")]));
@@ -618,7 +626,7 @@ describe("the post-signing native runtime gate (check:package)", () => {
 
   it("in an unsigned local macOS build, notes rather than fails", () => {
     const root = temporaryRoot("vex-nr-check-mac-unsigned-");
-    const runtime = fakeApp(root, ["darwin-x64"]).get("darwin-x64")!;
+    const runtime = present(fakeApp(root, ["darwin-x64"]).get("darwin-x64"), "darwin-x64");
     const { resources } = fakePackage(root, runtime);
     const result = check(root, resources, runtime.target, SIGNATURE_NOT_SIGNED, "darwin");
     expect(result).toMatchObject({ ok: true, value: { issues: [] } });
@@ -627,7 +635,7 @@ describe("the post-signing native runtime gate (check:package)", () => {
 
   it("still holds a signed macOS package's data files to their sha256", () => {
     const root = temporaryRoot("vex-nr-check-mac-data-");
-    const runtime = fakeApp(root, ["darwin-arm64"]).get("darwin-arm64")!;
+    const runtime = present(fakeApp(root, ["darwin-arm64"]).get("darwin-arm64"), "darwin-arm64");
     const { resources } = fakePackage(root, runtime, (files) => {
       files.set("postgres/share/postgresql/postgres.bki", Buffer.from("edited after packaging\n"));
     });
@@ -637,7 +645,7 @@ describe("the post-signing native runtime gate (check:package)", () => {
 
   it("in a signed Windows app, requires signed .exe files but accepts Microsoft-signed or lock-bound unsigned DLLs", () => {
     const root = temporaryRoot("vex-nr-check-win-");
-    const runtime = fakeApp(root, ["win32-x64"]).get("win32-x64")!;
+    const runtime = present(fakeApp(root, ["win32-x64"]).get("win32-x64"), "win32-x64");
     const { resources } = fakePackage(root, runtime);
     writeFile(path.join(path.dirname(resources), "Vex.exe"), Buffer.from("MZ app"), true);
 
@@ -658,7 +666,7 @@ describe("the post-signing native runtime gate (check:package)", () => {
 
   it("verifies a Linux package by sha256 and consults no signature tool", () => {
     const root = temporaryRoot("vex-nr-check-linux-");
-    const runtime = fakeApp(root, ["linux-x64"]).get("linux-x64")!;
+    const runtime = present(fakeApp(root, ["linux-x64"]).get("linux-x64"), "linux-x64");
     const { resources } = fakePackage(root, runtime);
     const result = check(root, resources, runtime.target, SIGNATURE_TOOL_MUST_NOT_BE_CONSULTED, "linux");
     expect(result).toMatchObject({ ok: true, value: { issues: [] } });

@@ -27,6 +27,16 @@ process.stdout.write("started pid " + child.pid + "\\n");
 process.exit(0);
 `;
 
+// On Windows the grandchild can be gone by now: it exits with the pipe
+// handles it inherited. Gone is what the cleanup wants.
+function killIfAlive(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+}
+
 describe("runPgTool", () => {
   it("settles on the tool's exit while a grandchild still holds its pipes", async () => {
     const startedAt = Date.now();
@@ -41,7 +51,7 @@ describe("runPgTool", () => {
       // the grandchild's 30 s.
       expect(elapsed).toBeLessThan(10_000);
     } finally {
-      if (grandchild > 0) process.kill(grandchild, "SIGKILL");
+      if (grandchild > 0) killIfAlive(grandchild);
     }
   }, 30_000);
 
