@@ -21,7 +21,9 @@ name: Clean machine
 # Called by native-runtime.yml (dispatch input `clean_machine`) and by
 # release.yml, where every publishing job needs it on all legs; `legs` is
 # "all" or a comma-separated list of darwin-arm64, darwin-x64, linux-x64,
-# win32-x64, win32-arm64.
+# win32-x64, win32-arm64. A push to the native-runtime branch runs it on all
+# legs, as it runs the signed dry run: a dispatch needs the workflow on the
+# default branch, which this branch is not yet.
 
 on:
   workflow_call:
@@ -40,6 +42,8 @@ on:
         description: '"all" or a comma-separated list of darwin-arm64, darwin-x64, linux-x64, win32-x64, win32-arm64'
         type: string
         default: all
+  push:
+    branches: [native-runtime]
 
 permissions:
   contents: read
@@ -57,7 +61,8 @@ jobs:
     steps:
       - id: plan
         env:
-          LEGS: ${{ inputs.legs }}
+          # A push carries no inputs: it gates every leg.
+          LEGS: ${{ inputs.legs || 'all' }}
         # The packaged executable per leg: electron-builder's --dir output for
         # productName Vex. Linux names the binary after the package
         # (sanitized "@vex/app"), as the AppImage and the deb install it.
