@@ -67,6 +67,7 @@ import {
   checkPgIdentity,
   describePgError,
   isDiskFullPgError,
+  isDuplicateDatabaseError,
   withPgClient,
   type PgIdentityResult,
 } from "./pg-identity.js";
@@ -101,6 +102,8 @@ const BUSY_RETRY_DELAY_MS = 250;
 const READY_POLL_MS = 25;
 const CONNECT_WINDOW_MS = 10_000;
 const CONNECT_RETRY_MS = 200;
+/** The first start's CREATE DATABASE: one disk copy of template1, once per install. */
+const CREATE_DATABASE_TIMEOUT_MS = 120_000;
 /** The Windows postmaster is not our child; its liveness is polled (6.5). */
 const WINDOWS_POLL_MS = 5_000;
 const ORPHAN_POLL_MS = 50;
@@ -811,15 +814,30 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
     }
   }
 
-  /** CREATE DATABASE vex, then the identity both sources must agree on. */
+  /**
+   * CREATE DATABASE vex, then the identity both sources must agree on.
+   *
+   * The create copies template1 to disk, which on a slow disk (a CI runner's
+   * Windows volume measured over five seconds) outlasts a probe's timeout, so
+   * it gets its own. It must also be safe to repeat: an attempt the client
+   * gave up on keeps running in the server, and the retry's check cannot see
+   * its uncommitted row, so a create that finds the database already there
+   * has done its job.
+   */
   async function bootstrapIdentity(port: number, password: string): Promise<string> {
     const answer = await untilAnswered(async () => {
       const result = await withPgClient({ port, password, database: "postgres" }, async (client) => {
         const exists = await client.query("SELECT 1 FROM pg_database WHERE datname = 'vex'");
-        if (exists.rowCount === 0) await client.query("CREATE DATABASE vex OWNER vex");
+        if (exists.rowCount === 0) {
+          try {
+            await client.query("CREATE DATABASE vex OWNER vex");
+          } catch (error: unknown) {
+            if (!isDuplicateDatabaseError(error)) throw error;
+          }
+        }
         const row = await client.query<{ id: string }>("SELECT system_identifier::text AS id FROM pg_control_system()");
         return row.rows[0]?.id ?? null;
-      });
+      }, { queryTimeoutMs: CREATE_DATABASE_TIMEOUT_MS });
       if (result.ok) return { kind: "answered" as const, id: result.value };
       // CREATE DATABASE copies template1: the first write of a new cluster.
       if (isDiskFullPgError(result.error)) return { kind: "disk_full" as const };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describePgError, isDiskFullPgError } from "../native/pg-identity.js";
+import { describePgError, isDiskFullPgError, isDuplicateDatabaseError } from "../native/pg-identity.js";
 import { CLIENT_DISK_FULL_ERROR } from "./pg-disk-full-logs.js";
 
 /** What node-postgres throws for an error the server sent. */
@@ -44,5 +44,25 @@ describe("isDiskFullPgError", () => {
     expect(isDiskFullPgError(serverError("57P03"))).toBe(false);
     expect(isDiskFullPgError(Object.assign(new Error("refused"), { code: "53100" }))).toBe(false);
     expect(isDiskFullPgError(new Error("write EPIPE"))).toBe(false);
+  });
+});
+
+describe("isDuplicateDatabaseError", () => {
+  it("reads duplicate_database as the database being there", () => {
+    expect(isDuplicateDatabaseError(serverError("42P04"))).toBe(true);
+  });
+
+  it("reads the unique violation a racing CREATE DATABASE gets as the database being there", () => {
+    // Measured on a Windows runner: a create the client had given up on
+    // committed while the retry's create waited, and the retry got this.
+    const raced = Object.assign(serverError("23505"), { constraint: "pg_database_datname_index" });
+    expect(isDuplicateDatabaseError(raced)).toBe(true);
+  });
+
+  it("does not swallow any other unique violation, a socket error or a disk full", () => {
+    expect(isDuplicateDatabaseError(Object.assign(serverError("23505"), { constraint: "pg_authid_rolname_index" }))).toBe(false);
+    expect(isDuplicateDatabaseError(serverError("23505"))).toBe(false);
+    expect(isDuplicateDatabaseError(Object.assign(new Error("Query read timeout"), { code: "ETIMEDOUT" }))).toBe(false);
+    expect(isDuplicateDatabaseError(serverError("53100"))).toBe(false);
   });
 });

@@ -45,10 +45,16 @@ export type PgIdentityResult =
   | { readonly kind: "auth_rejected"; readonly detail: string }
   | { readonly kind: "unreachable"; readonly detail: string };
 
-/** Run `body` on a short-lived client; never throws for a connection outcome. */
+/**
+ * Run `body` on a short-lived client; never throws for a connection outcome.
+ * Queries share the connect timeout unless `queryTimeoutMs` says otherwise: a
+ * probe should answer in seconds, while the one-time CREATE DATABASE copies
+ * template1 to disk and can take longer on a slow disk.
+ */
 export async function withPgClient<T>(
   target: PgConnectTarget,
   body: (client: pg.Client) => Promise<T>,
+  options: { readonly queryTimeoutMs?: number } = {},
 ): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: unknown }> {
   const client = new pg.Client({
     host: LOOPBACK_DB_HOST,
@@ -57,7 +63,7 @@ export async function withPgClient<T>(
     password: target.password,
     database: target.database,
     connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    query_timeout: CONNECT_TIMEOUT_MS,
+    query_timeout: options.queryTimeoutMs ?? CONNECT_TIMEOUT_MS,
   });
   try {
     await client.connect();
@@ -92,6 +98,19 @@ function serverSqlState(error: unknown): string | null {
 export function isDiskFullPgError(error: unknown): boolean {
   if (serverSqlState(error) === "53100") return true;
   return error instanceof Error && isDiskFullText(error.message);
+}
+
+/**
+ * The `vex` database already exists: `42P04` (duplicate_database), or `23505`
+ * on `pg_database_datname_index`, which is what a CREATE DATABASE racing an
+ * uncommitted one gets once the first commits. Either way the database the
+ * bootstrap wanted is there, so creating it is done.
+ */
+export function isDuplicateDatabaseError(error: unknown): boolean {
+  const state = serverSqlState(error);
+  if (state === "42P04") return true;
+  if (state !== "23505" || typeof error !== "object" || error === null) return false;
+  return (error as { constraint?: unknown }).constraint === "pg_database_datname_index";
 }
 
 export function describePgError(error: unknown): Exclude<PgIdentityResult, { readonly kind: "usable" }> {
