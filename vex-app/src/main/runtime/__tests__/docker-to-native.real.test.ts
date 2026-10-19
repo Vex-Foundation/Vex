@@ -261,7 +261,7 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
   it("resumes after a crash right after pg_restore committed, reaping the orphaned postmaster", { timeout: STEP_TIMEOUT_MS }, async () => {
     const runtimeDir = runtimeDirs.crash();
     const dataDir = pgDataDir(runtimeDir);
-    let frozenSupervisor: Awaited<ReturnType<Deps["createSupervisor"]>> | null = null;
+    const frozen: { supervisor: ReturnType<typeof createPostgresSupervisor> | null } = { supervisor: null };
     let reached!: () => void;
     let rejectFrozen!: (e: Error) => void;
     const frozenAt = new Promise<void>((r, reject) => {
@@ -270,12 +270,12 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
     });
     const first = migration(runtimeDir, {
       createSupervisor: async () => {
-        frozenSupervisor = createPostgresSupervisor({
+        frozen.supervisor = createPostgresSupervisor({
           runtimeDir,
           binaries: binaries(),
           ensurePasswordFile: async () => (await getPgPassword(renderDeps())).composePath,
         });
-        return frozenSupervisor;
+        return frozen.supervisor;
       },
       runTool: async (command, args, options) => {
         const result = await runPgTool(command, args, options);
@@ -292,8 +292,8 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
     expect((await readRuntimeState(runtimeStatePath(runtimeDir))).migration?.step).toBe("dumped");
     // The dead process's postmaster is gone with it; what a crashed main
     // really leaves is a postmaster nobody supervises, holding the data dir.
-    const s = frozenSupervisor as unknown as { stop: () => Promise<unknown> };
-    await s.stop();
+    if (frozen.supervisor === null) throw new Error("the migration never created its supervisor");
+    await frozen.supervisor.stop();
     const state = await readRuntimeState(runtimeStatePath(runtimeDir));
     const orphan = spawn(binaries().postgres, ["-D", dataDir, "-p", String(state.pg?.lastPort ?? 0)], { stdio: "ignore" });
     orphans.push(orphan);
@@ -317,7 +317,7 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
 
   it("resumes after a crash during verification: verification only", { timeout: STEP_TIMEOUT_MS }, async () => {
     const runtimeDir = runtimeDirs.verify();
-    let frozenSupervisor: { stop: () => Promise<unknown> } | null = null;
+    const frozen: { supervisor: ReturnType<typeof createPostgresSupervisor> | null } = { supervisor: null };
     let reached!: () => void;
     let rejectFrozen!: (e: Error) => void;
     const frozenAt = new Promise<void>((r, reject) => {
@@ -331,7 +331,7 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
           binaries: binaries(),
           ensurePasswordFile: async () => (await getPgPassword(renderDeps())).composePath,
         });
-        frozenSupervisor = s;
+        frozen.supervisor = s;
         return s;
       },
       facts: {
@@ -345,7 +345,8 @@ describe.skipIf(unavailable !== null)(unavailable === null ? TITLE : `${TITLE} (
     void first.migrate().then((r) => rejectFrozen(new Error(`the migration settled instead of freezing: ${JSON.stringify(r)}`)));
     await frozenAt;
     expect((await readRuntimeState(runtimeStatePath(runtimeDir))).migration?.step).toBe("restored");
-    await (frozenSupervisor as unknown as { stop: () => Promise<unknown> }).stop();
+    if (frozen.supervisor === null) throw new Error("the migration never created its supervisor");
+    await frozen.supervisor.stop();
 
     const tools: string[] = [];
     const resumed = await migration(runtimeDir, {

@@ -31,7 +31,7 @@ describe("runtime-state.json", () => {
 
   it("round-trips and keeps fields a newer build wrote", async () => {
     const file = stateFile();
-    await writeRuntimeState(file, { ...recorded, provider: "native" } as never);
+    await writeRuntimeState(file, { ...recorded, provider: "native" });
     const read = await readRuntimeState(file);
     expect(read).toEqual({ ...recorded, provider: "native" });
   });

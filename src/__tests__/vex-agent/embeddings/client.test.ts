@@ -27,6 +27,12 @@ function mockFetchOk(body: unknown): void {
   } as unknown as Response);
 }
 
+function firstFetchInit(): RequestInit {
+  const init = vi.mocked(global.fetch).mock.calls[0]?.[1];
+  if (!init) throw new Error("fetch was not called with a request init");
+  return init;
+}
+
 function mockFetchStatus(status: number, text = ""): void {
   global.fetch = vi.fn().mockResolvedValue({
     ok: false,
@@ -77,14 +83,14 @@ describe("embedDocument", () => {
   it("sends no Authorization header when the config has no apiKey", async () => {
     mockFetchOk({ data: [{ embedding: makeEmbedding() }] });
     await embedDocument("title", "summary", VALID_CONFIG);
-    const [, init] = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const init = firstFetchInit();
     expect(init.headers).not.toHaveProperty("Authorization");
   });
 
   it("sends the configured apiKey as a bearer token", async () => {
     mockFetchOk({ data: [{ embedding: makeEmbedding() }] });
     await embedQuery("q", { ...VALID_CONFIG, apiKey: "per-launch-key" });
-    const [, init] = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const init = firstFetchInit();
     expect(init.headers).toMatchObject({ Authorization: "Bearer per-launch-key" });
   });
 

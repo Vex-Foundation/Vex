@@ -27,9 +27,13 @@ import type { RuntimeDirSize } from "@shared/schemas/system.js";
 export const DIR_SIZE_MAX_ENTRIES = 200_000;
 const STAT_BATCH = 64;
 
+/** What the walk reads of an entry and of its `lstat`, and nothing more. */
+export type DirSizeEntry = Pick<Dirent, "name">;
+export type DirSizeStat = Pick<Stats, "isDirectory" | "isFile" | "size">;
+
 export interface DirSizeFs {
-  readonly readdir: (dir: string) => Promise<Dirent[]>;
-  readonly lstat: (file: string) => Promise<Stats>;
+  readonly readdir: (dir: string) => Promise<readonly DirSizeEntry[]>;
+  readonly lstat: (file: string) => Promise<DirSizeStat>;
 }
 
 const nodeFs: DirSizeFs = {
@@ -55,7 +59,7 @@ export async function measureDirectory(
 
   while (pending.length > 0) {
     const dir = pending.pop() as string;
-    let entries: Dirent[];
+    let entries: readonly DirSizeEntry[];
     try {
       entries = await io.readdir(dir);
     } catch (error: unknown) {

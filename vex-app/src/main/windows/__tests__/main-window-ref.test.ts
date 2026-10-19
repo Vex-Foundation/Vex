@@ -1,13 +1,13 @@
 /**
  * The main window reference: what the dock's `activate` and the second
  * instance's focus ask for, instead of "any window" (a hidden helper window
- * counts as one).
+ * counts as one). `setMainWindow`/`getMainWindow` are this reference over
+ * BrowserWindow; it is exercised here over an EventEmitter window.
  */
 
 import { EventEmitter } from "node:events";
-import type { BrowserWindow } from "electron";
 import { describe, expect, it } from "vitest";
-import { getMainWindow, setMainWindow } from "../main-window-ref.js";
+import { createWindowRef } from "../main-window-ref.js";
 
 function fakeWindow(): EventEmitter & { destroyed: boolean; isDestroyed(): boolean } {
   return Object.assign(new EventEmitter(), {
@@ -18,12 +18,12 @@ function fakeWindow(): EventEmitter & { destroyed: boolean; isDestroyed(): boole
   });
 }
 
-const asWindow = (fake: ReturnType<typeof fakeWindow>): BrowserWindow => fake as unknown as BrowserWindow;
-
 describe("main window reference", () => {
+  const { set: setMainWindow, get: getMainWindow } = createWindowRef<ReturnType<typeof fakeWindow>>();
+
   it("is the window last opened until that window closes", () => {
     const first = fakeWindow();
-    setMainWindow(asWindow(first));
+    setMainWindow(first);
     expect(getMainWindow()).toBe(first);
 
     first.emit("closed");
@@ -32,9 +32,9 @@ describe("main window reference", () => {
 
   it("is not cleared by an older window closing after a new one opened", () => {
     const old = fakeWindow();
-    setMainWindow(asWindow(old));
+    setMainWindow(old);
     const reopened = fakeWindow();
-    setMainWindow(asWindow(reopened));
+    setMainWindow(reopened);
 
     old.emit("closed");
     expect(getMainWindow()).toBe(reopened);
@@ -42,7 +42,7 @@ describe("main window reference", () => {
 
   it("is null for a destroyed window whose closed event has not arrived", () => {
     const window = fakeWindow();
-    setMainWindow(asWindow(window));
+    setMainWindow(window);
     window.destroyed = true;
     expect(getMainWindow()).toBeNull();
   });

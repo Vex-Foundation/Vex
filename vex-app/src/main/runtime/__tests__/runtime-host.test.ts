@@ -80,8 +80,8 @@ describe("runtime host publication", () => {
 
   it("republishes a supervising provider's restarts and outages, embeddings included", async () => {
     const { provider, starts } = fakeProvider();
-    let report: ((endpoints: RuntimeEndpoints | null) => void) | null = null;
-    const watched = { ...provider, watch: (listener: (e: RuntimeEndpoints | null) => void) => ((report = listener), () => {}) };
+    const watcher = { report: (_endpoints: RuntimeEndpoints | null): void => { throw new Error("the host never watched the provider"); } };
+    const watched = { ...provider, watch: (listener: (e: RuntimeEndpoints | null) => void) => ((watcher.report = listener), () => {}) };
     const embeddings: Array<RuntimeEndpoints["embeddings"] | null> = [];
     const host = createRuntimeHost(watched, { onEmbeddings: (e) => embeddings.push(e) });
 
@@ -90,10 +90,10 @@ describe("runtime host publication", () => {
     await pending;
     expect(embeddings).toEqual([{ baseUrl: "http://127.0.0.1:27134/v1", apiKey: null }]);
 
-    report!(null);
+    watcher.report(null);
     expect(getDbConnection()).toBeNull();
     const moved = { db: { ...DB, pgPort: 46001 }, embeddings: { baseUrl: "http://127.0.0.1:41000/v1", apiKey: "k2" } };
-    report!(moved);
+    watcher.report(moved);
     expect(getDbConnection()).toEqual(moved.db);
     expect(embeddings.slice(1)).toEqual([null, moved.embeddings]);
 

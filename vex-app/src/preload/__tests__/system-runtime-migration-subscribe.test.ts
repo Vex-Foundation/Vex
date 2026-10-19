@@ -86,7 +86,9 @@ describe("vex.system.runtimeMigrationRemoveOldData", () => {
   });
 
   it("rejects a malformed request in preload", async () => {
-    const answer = await system.runtimeMigrationRemoveOldData({ allowWithoutImport: "yes" } as never);
+    // A caller-chosen volume: the request names none, so the strict schema refuses it.
+    const malformed = { allowWithoutImport: true, volume: "vex-postgres-data-someone-else" };
+    const answer = await system.runtimeMigrationRemoveOldData(malformed);
     expect(answer).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
     expect(invoke).not.toHaveBeenCalled();
   });

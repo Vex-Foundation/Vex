@@ -20,9 +20,15 @@ const connection = { host: "127.0.0.1", pgPort: 45999, pgPasswordPath: "/cfg/pg_
 const mocks = vi.hoisted(() => ({
   pgBinaries: true,
   llamaBinary: true,
-  pgStart: null as unknown as () => Promise<PgStartResult>,
-  ensureModel: null as unknown as (onProgress: (p: ModelProgress) => void) => Promise<EnsureModelResult>,
-  llamaStart: null as unknown as () => Promise<LlamaStartResult>,
+  pgStart: async (): Promise<PgStartResult> => {
+    throw new Error("pgStart is set per test");
+  },
+  ensureModel: async (_onProgress: (p: ModelProgress) => void): Promise<EnsureModelResult> => {
+    throw new Error("ensureModel is set per test");
+  },
+  llamaStart: async (): Promise<LlamaStartResult> => {
+    throw new Error("llamaStart is set per test");
+  },
   pgHealth: new Set<(health: PgHealth) => void>(),
   llamaUnhealthy: null as ((reason: string) => void) | null,
   builds: 0,

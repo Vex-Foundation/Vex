@@ -53,7 +53,7 @@ function setup(initial: Status): {
   const startNative = vi.fn(async () => RUNNING);
   const published: RuntimeMigrationProgress[] = [];
   const gate = createNativeStartGate({
-    migration: engine as unknown as Engine,
+    migration: engine,
     startNative,
     publishProgress: (p) => published.push(p),
   });

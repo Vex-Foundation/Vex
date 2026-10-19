@@ -3,11 +3,11 @@
  * temporary directory, plus a stand-in filesystem for the failure modes.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, type Dirent, type Stats } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { measureDirectory } from "../native/dir-size.js";
+import { measureDirectory, type DirSizeEntry, type DirSizeStat } from "../native/dir-size.js";
 
 let root: string;
 
@@ -51,15 +51,14 @@ describe("measureDirectory", () => {
   });
 
   it("skips what vanishes mid-walk, but marks what it could not read", async () => {
-    const dirent = (name: string, dir: boolean): Dirent =>
-      ({ name, isDirectory: () => dir, isFile: () => !dir, isSymbolicLink: () => false }) as unknown as Dirent;
-    const file = (size: number): Stats => ({ isDirectory: () => false, isFile: () => true, size }) as unknown as Stats;
-    const folder = { isDirectory: () => true, isFile: () => false, size: 0 } as unknown as Stats;
+    const dirent = (name: string): DirSizeEntry => ({ name });
+    const file = (size: number): DirSizeStat => ({ isDirectory: () => false, isFile: () => true, size });
+    const folder: DirSizeStat = { isDirectory: () => true, isFile: () => false, size: 0 };
     const errno = (code: string): Error => Object.assign(new Error(code), { code });
     const result = await measureDirectory("/data", {
       fs: {
         readdir: async (dir) => {
-          if (dir === "/data") return [dirent("a", false), dirent("gone", false), dirent("locked", true)];
+          if (dir === "/data") return [dirent("a"), dirent("gone"), dirent("locked")];
           throw errno("EACCES");
         },
         lstat: async (full) => {

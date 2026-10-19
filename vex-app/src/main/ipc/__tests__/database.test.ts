@@ -20,6 +20,13 @@ type Handler = (
 ) => Promise<unknown>;
 
 const handlers = new Map<string, Handler>();
+
+function migrateHandler(): Handler {
+  const fn = handlers.get(CH.database.migrate);
+  if (!fn) throw new Error("the migrate handler is not registered");
+  return fn;
+}
+
 const mockRunMigrationsForIpc = vi.fn();
 const mockSubscribe = vi.fn(() => () => {});
 
@@ -278,7 +285,7 @@ describe("vex.database.migrate handler", () => {
     mockMode.mockReturnValue("native");
     mockGateStart.mockResolvedValue({ kind: "migration_pending", message: "Your existing data must be moved first." });
     registerDatabaseHandlers();
-    const fn = handlers.get(CH.database.migrate)!;
+    const fn = migrateHandler();
     const result = (await fn(trustedSender, { requestId: "n1", payload: {} })) as {
       ok: false;
       error: { code: string; message: string };
@@ -294,7 +301,7 @@ describe("vex.database.migrate handler", () => {
     mockGateStart.mockResolvedValue({ kind: "running", message: "ok" });
     mockRunMigrationsForIpc.mockResolvedValue({ kind: "noop", message: "up to date" });
     registerDatabaseHandlers();
-    const fn = handlers.get(CH.database.migrate)!;
+    const fn = migrateHandler();
     const result = (await fn(trustedSender, { requestId: "n2", payload: {} })) as { ok: boolean };
     expect(result.ok).toBe(true);
     expect(mockGateStart).toHaveBeenCalledTimes(1);

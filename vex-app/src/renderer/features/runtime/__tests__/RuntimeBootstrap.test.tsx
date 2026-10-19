@@ -208,7 +208,8 @@ describe("RuntimeBootstrap - failures", () => {
     runtimeStatus.mockResolvedValue(ok(status));
     const view = render(<RuntimeBootstrap />);
     await waitFor(() => expect(view.container.querySelector(`[data-runtime-failure="${status.kind}"]`)).not.toBeNull());
-    const failure = view.container.querySelector<HTMLElement>("[data-runtime-failure]")!;
+    const failure = view.container.querySelector<HTMLElement>("[data-runtime-failure]");
+    if (!failure) throw new Error("no runtime failure rendered");
     expect(within(failure).getByRole("alert").textContent).toContain(title);
     expect(failure.textContent).toContain(status.message);
     if (advice !== null) expect(failure.textContent).toMatch(advice);

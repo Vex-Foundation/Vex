@@ -101,40 +101,39 @@ function harness(): Harness {
     native: true,
     aliveCheck: () => false,
     opEnds,
-    deps: undefined as unknown as LocalRuntimeMaintenanceDeps,
-  };
-  (h as { deps: LocalRuntimeMaintenanceDeps }).deps = {
-    runtimeDir,
-    isNative: () => h.native,
-    acquireHold: () => (h.holdAvailable ? (hold as NativeRuntimeHold) : null),
-    activeCriticalOps: () => h.ops,
-    startGateOpen: () => h.gateOpen,
-    beginLocalRuntimeOp: () => {
-      calls.push("op:begin");
-      return () => {
-        opEnds.count += 1;
-        calls.push("op:end");
-      };
+    deps: {
+      runtimeDir,
+      isNative: () => h.native,
+      acquireHold: () => (h.holdAvailable ? (hold as NativeRuntimeHold) : null),
+      activeCriticalOps: () => h.ops,
+      startGateOpen: () => h.gateOpen,
+      beginLocalRuntimeOp: () => {
+        calls.push("op:begin");
+        return () => {
+          opEnds.count += 1;
+          calls.push("op:end");
+        };
+      },
+      currentStatus: () => READY,
+      reconnectEngineDb: vi.fn(async () => {
+        calls.push("reconnect");
+        return true;
+      }),
+      readState: readRuntimeState,
+      writeState: writeRuntimeState,
+      measure: async (dir): Promise<RuntimeDirSize> => {
+        const { measureDirectory } = await import("../native/dir-size.js");
+        return measureDirectory(dir);
+      },
+      fs: {
+        lstat: (file) => fsp.lstat(file),
+        realpath: (file) => fsp.realpath(file),
+        readFile: (file) => fsp.readFile(file, "utf8"),
+        rm: (file) => fsp.rm(file, { recursive: true, force: true }),
+      },
+      processAlive: (pid) => h.aliveCheck(pid),
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     },
-    currentStatus: () => READY,
-    reconnectEngineDb: vi.fn(async () => {
-      calls.push("reconnect");
-      return true;
-    }),
-    readState: readRuntimeState,
-    writeState: writeRuntimeState,
-    measure: async (dir): Promise<RuntimeDirSize> => {
-      const { measureDirectory } = await import("../native/dir-size.js");
-      return measureDirectory(dir);
-    },
-    fs: {
-      lstat: (file) => fsp.lstat(file),
-      realpath: (file) => fsp.realpath(file),
-      readFile: (file) => fsp.readFile(file, "utf8"),
-      rm: (file) => fsp.rm(file, { recursive: true, force: true }),
-    },
-    processAlive: (pid) => h.aliveCheck(pid),
-    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
   return h;
 }
