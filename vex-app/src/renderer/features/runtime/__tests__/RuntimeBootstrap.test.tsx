@@ -85,8 +85,10 @@ describe("RuntimeBootstrap - phases", () => {
     expect(row(view.container, "postgres").textContent).toContain("Creating the local database (first run)");
     expect(row(view.container, "model").dataset["status"]).toBe("waiting");
     expect(row(view.container, "embeddings").dataset["status"]).toBe("waiting");
-    // Vex works on the plate while a step is in flight.
-    expect(face()).toBe("Working");
+    // Vex works on the plate while a step is in flight. The face follows the
+    // rows in the plate's own effect: wait for it rather than reading it in
+    // the same tick (it races under the full suite's load).
+    await waitFor(() => expect(face()).toBe("Working"));
   });
 
   it("shows the model download as bytes, speed and percent", async () => {
@@ -214,8 +216,8 @@ describe("RuntimeBootstrap - failures", () => {
     expect(failure.textContent).toContain(status.message);
     if (advice !== null) expect(failure.textContent).toMatch(advice);
     expect(row(view.container, status.step).dataset["status"]).toBe("failed");
-    // Vex shows the failure on the plate.
-    expect(face()).toBe("Error");
+    // Vex shows the failure on the plate, in the plate's own effect.
+    await waitFor(() => expect(face()).toBe("Error"));
     fireEvent.click(view.getByRole("button", { name: "Open logs folder" }));
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
     expect(useUiStore.getState().currentView).toBe("runtimeBootstrap");

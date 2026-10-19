@@ -447,16 +447,25 @@ export async function measureScrollbar(page: Page, gridBox: { x: number; y: numb
   // Leave the terminal: the hide is scheduled 500ms after the pointer goes
   // and the fade takes 800ms; the class flips at the schedule, not the fade.
   // `invisible` contains `visible`, so the states are matched on word
-  // boundaries, never by substring.
+  // boundaries, never by substring. Each state is recorded as the poll saw
+  // it: a second read can land after late output re-revealed the bar.
+  let classesAfterLeave = "";
   await page.mouse.move(2, 2);
-  await expect.poll(() => trackClasses(page), { timeout: 5_000 }).toMatch(/\binvisible\b/);
-  const classesAfterLeave = await trackClasses(page);
+  await expect
+    .poll(async () => {
+      classesAfterLeave = await trackClasses(page);
+      return classesAfterLeave;
+    }, { timeout: 5_000 })
+    .toMatch(/\binvisible\b/);
 
+  let classesOnHover = "";
   await page.mouse.move(gridBox.x + gridBox.width / 2, gridBox.y + gridBox.height / 2);
   await expect
-    .poll(async () => /\bvisible\b/.test(await trackClasses(page)), { timeout: 5_000 })
+    .poll(async () => {
+      classesOnHover = await trackClasses(page);
+      return /\bvisible\b/.test(classesOnHover);
+    }, { timeout: 5_000 })
     .toBe(true);
-  const classesOnHover = await trackClasses(page);
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   const reducedMotionTransition = await page.evaluate(
