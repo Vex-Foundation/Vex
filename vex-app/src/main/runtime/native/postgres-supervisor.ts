@@ -54,7 +54,7 @@ import { LOOPBACK_DB_HOST, type DbConnection } from "../../database/connection-s
 import { AbortError, isAbortError } from "../../ipc/cancel-helpers.js";
 import { log } from "../../logger/index.js";
 import type { RuntimeStopKind } from "../provider.js";
-import { pgDataDir, runtimeStatePath, type PostgresBinaries } from "../runtime-paths.js";
+import { pgDataDir, pgLogDir, runtimeStatePath, type PostgresBinaries } from "../runtime-paths.js";
 import {
   PG_MAJOR,
   readRuntimeState,
@@ -480,7 +480,7 @@ export function createPostgresSupervisor(options: PostgresSupervisorOptions): Po
   const dataDir = pgDataDir(runtimeDir);
   const statePath = runtimeStatePath(runtimeDir);
   const pidFilePath = path.join(dataDir, "postmaster.pid");
-  const logDir = path.join(dataDir, "log");
+  const logDir = pgLogDir(runtimeDir);
   const env = postgresChildEnv(platform);
   const spawnPg = options.spawn ?? spawnPostgres;
   const runTool = options.runTool ?? runPgTool;

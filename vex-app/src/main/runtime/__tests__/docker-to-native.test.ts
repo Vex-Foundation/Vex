@@ -28,6 +28,7 @@ const { createDockerMigration } = await import("../migration/docker-to-native.js
 const { compareDatabaseFacts } = await import("../migration/database-facts.js");
 const { readRuntimeState, writeRuntimeState } = await import("../runtime-state.js");
 const { __resetCriticalOpsForTests, criticalOpInFlight } = await import("../../updates/critical-ops.js");
+const { DUMP_PERMISSION_DENIED, RESTORE_CREATE_TABLE_EXISTS, toCrlf } = await import("./pg-client-tool-stderr.js");
 
 type Engine = ReturnType<typeof createDockerMigration>;
 type Deps = Parameters<typeof createDockerMigration>[0];
@@ -92,6 +93,8 @@ interface World {
   corruptRestore: ((facts: Facts) => Facts) | null;
   hang: Partial<Record<"bringUp" | "pgDump" | "pgRestore" | "readTarget" | "stopSource", boolean>>;
   fail: Partial<Record<"pgDump" | "pgRestore" | "nativeStart", string>>;
+  /** What the native server's logging collector writes on each start (null: no log dir). */
+  serverLog: string | null;
   probe: Awaited<ReturnType<Source["probe"]>>;
   bringUp: Awaited<ReturnType<Source["bringUpDb"]>>;
   freeBytes: number;
@@ -122,6 +125,7 @@ function makeWorld(): World {
     corruptRestore: null,
     hang: {},
     fail: {},
+    serverLog: null,
     probe: { kind: "volume_present" },
     bringUp: { kind: "ready", pgPort: SOURCE_PORT, passwordPath },
     freeBytes: 10 * 1024 ** 3,
@@ -157,6 +161,10 @@ function fakeSupervisor(w: World): Supervisor {
         mkdirSync(w.dataDir, { recursive: true });
         writeFileSync(path.join(w.dataDir, "PG_VERSION"), "18\n");
         w.calls.push("native.initdb");
+      }
+      if (w.serverLog !== null) {
+        mkdirSync(path.join(w.dataDir, "log"), { recursive: true });
+        writeFileSync(path.join(w.dataDir, "log", "postgresql.log"), w.serverLog, { flag: "a" });
       }
       const state = await readRuntimeState(w.statePath);
       if (state.pg === null) await writeRuntimeState(w.statePath, { ...state, pg: { systemIdentifier: SYSID, lastPort: NATIVE_PORT, major: 18 } });
@@ -276,6 +284,8 @@ function engine(w: World, overrides: Partial<Deps> = {}): Engine {
 async function state(w: World = world): Promise<Awaited<ReturnType<typeof readRuntimeState>>> {
   return readRuntimeState(w.statePath);
 }
+
+const failedAttemptDir = (w: World): string => path.join(w.runtimeDir, "migration-failed-attempt");
 
 const migrationFiles = (w: World): string[] => {
   const dir = path.join(w.runtimeDir, "migration");
@@ -593,18 +603,56 @@ describe("migrate: failures drop what the migration made and keep the install pe
     await expectCleanFailure("verify_failed");
   });
 
-  it("a failed pg_restore", async () => {
-    world.fail.pgRestore = 'pg_restore: error: could not execute query: ERROR:  type "vector" does not exist';
+  it("a failed pg_restore names its error, not the statement's tail, and keeps the whole output and the server log", async () => {
+    // Windows line ends, as the bundled win32 pg_restore prints them.
+    world.fail.pgRestore = toCrlf(RESTORE_CREATE_TABLE_EXISTS);
+    world.serverLog = '2026-10-19 14:11:37.100 UTC [31308] ERROR:  relation "activity" already exists\n';
     const result = await engine(world).migrate();
     expect(result).toMatchObject({ kind: "failed", reason: "restore_failed" });
-    if (result.kind === "failed") expect(result.message).toContain('type "vector" does not exist');
+    if (result.kind !== "failed") return;
+    const dir = failedAttemptDir(world);
+    expect(result.message).toBe(
+      'pg_restore failed: pg_restore: error: could not execute query: ERROR:  relation "activity" already exists'
+        + " | statement: CREATE TABLE public.activity ( [8 more lines]"
+        + ` The full pg_restore output and the database server's log were kept in ${dir}.`,
+    );
+    expect((await state()).migration?.lastFailure?.message).toBe(result.message);
+    expect(readFileSync(path.join(dir, "pg_restore.stderr.txt"), "utf8")).toBe(toCrlf(RESTORE_CREATE_TABLE_EXISTS));
+    expect(readFileSync(path.join(dir, "server-log", "postgresql.log"), "utf8")).toBe(world.serverLog);
+    expect(JSON.parse(readFileSync(path.join(dir, "failure.json"), "utf8"))).toMatchObject({
+      reason: "restore_failed",
+      tool: { name: "pg_restore", exitCode: 1 },
+      toolOutput: "kept",
+      serverLog: "kept",
+    });
+    // The rollback is unchanged: the cluster and the dump are gone, the volume untouched.
     await expectCleanFailure("restore_failed");
   });
 
-  it("a failed pg_dump", async () => {
-    world.fail.pgDump = "pg_dump: error: connection to server failed";
-    expect(await engine(world).migrate()).toMatchObject({ kind: "failed", reason: "dump_failed" });
+  it("a failed pg_dump names its error and detail and keeps its whole output; no server ran yet", async () => {
+    world.fail.pgDump = DUMP_PERMISSION_DENIED;
+    const result = await engine(world).migrate();
+    expect(result).toMatchObject({ kind: "failed", reason: "dump_failed" });
+    if (result.kind !== "failed") return;
+    const dir = failedAttemptDir(world);
+    expect(result.message).toBe(
+      "pg_dump failed: pg_dump: error: query failed: ERROR:  permission denied for table activity"
+        + " | pg_dump: detail: Query was: LOCK TABLE public.activity IN ACCESS SHARE MODE"
+        + ` The full pg_dump output was kept in ${dir}.`,
+    );
+    expect(readFileSync(path.join(dir, "pg_dump.stderr.txt"), "utf8")).toBe(DUMP_PERMISSION_DENIED);
+    expect(existsSync(path.join(dir, "server-log"))).toBe(false);
     await expectCleanFailure("dump_failed");
+  });
+
+  it("keeps one failed attempt: the next failure replaces it", async () => {
+    world.fail.pgRestore = RESTORE_CREATE_TABLE_EXISTS;
+    await engine(world).migrate();
+    world.fail.pgRestore = "pg_restore: error: something else";
+    await engine(world).migrate();
+    const dir = failedAttemptDir(world);
+    expect(readdirSync(dir).sort()).toEqual(["failure.json", "pg_restore.stderr.txt"]);
+    expect(readFileSync(path.join(dir, "pg_restore.stderr.txt"), "utf8")).toBe("pg_restore: error: something else");
   });
 
   it("a full disk during the restore", async () => {
@@ -635,6 +683,8 @@ describe("migrate: failures drop what the migration made and keep the install pe
     world.bringUp = bringUp;
     expect(await engine(world).migrate()).toMatchObject({ kind: "failed", reason, message: bringUp.message });
     expect(world.toolCalls).toEqual([]);
+    // Nothing ran that printed or logged: nothing is kept, the message is untouched.
+    expect(existsSync(failedAttemptDir(world))).toBe(false);
     await expectCleanFailure(reason);
   });
 
@@ -657,6 +707,8 @@ describe("migrate: failures drop what the migration made and keep the install pe
     const result = await engine(world).migrate();
     expect(result.kind).toBe("migrated");
     expect((await state()).migration).toMatchObject({ step: "completed", attempts: 2, lastFailure: null });
+    // Why the first attempt failed stays answerable after the retry succeeded.
+    expect(readFileSync(path.join(failedAttemptDir(world), "pg_restore.stderr.txt"), "utf8")).toBe("boom");
   });
 });
 

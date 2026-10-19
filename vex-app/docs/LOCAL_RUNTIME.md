@@ -254,6 +254,13 @@ ls -t "$RUNTIME_DIR/pg18/log" | head -1
 # Recorded cluster identity, last port, migration state and provider
 cat "$RUNTIME_DIR/runtime-state.json"
 
+# Why the last data move from Docker failed: the failed tool's complete stderr
+# (pg_dump.stderr.txt or pg_restore.stderr.txt), the database server's log
+# (server-log/, moved out before the rollback deleted the cluster) and
+# failure.json. One attempt is kept; the next failure replaces it, and a later
+# successful retry leaves it in place. It never holds the dump or data files.
+ls "$RUNTIME_DIR/migration-failed-attempt"
+
 # View electron-log output
 #   Linux:        ~/.config/vex/.electron-state/logs/main.log
 #   macOS:        ~/Library/Application Support/vex/.electron-state/logs/main.log

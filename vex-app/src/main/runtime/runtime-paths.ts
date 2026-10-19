@@ -66,9 +66,19 @@ export function runtimeStatePath(runtimeDir: string): string {
   return path.join(runtimeDir, "runtime-state.json");
 }
 
+/** The logging collector's files (`log_directory = 'log'`, postgres-conf.ts), inside the data dir. */
+export function pgLogDir(runtimeDir: string): string {
+  return path.join(pgDataDir(runtimeDir), "log");
+}
+
 /** The migration's dump and source facts (runtime/migration/). */
 export function migrationDir(runtimeDir: string): string {
   return path.join(runtimeDir, "migration");
+}
+
+/** The last failed data move's tool output and server log (migration/failed-attempt.ts). */
+export function migrationFailedAttemptDir(runtimeDir: string): string {
+  return path.join(runtimeDir, "migration-failed-attempt");
 }
 
 /** Where the verified embeddings model lives (model-store.ts). */

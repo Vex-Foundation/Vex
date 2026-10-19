@@ -65,7 +65,9 @@ import {
   locatePostgresBinaries,
   locatePostgresClientTools,
   migrationDir,
+  migrationFailedAttemptDir,
   pgDataDir,
+  pgLogDir,
   RUNTIME_DIR,
   runtimeStatePath,
   type PostgresClientToolsLocation,
@@ -91,6 +93,8 @@ import {
   type VerifyReport,
 } from "./database-facts.js";
 import { createDockerSource, type DockerSource } from "./docker-source.js";
+import { keepFailedAttempt, keptSentence, type FailedToolRun } from "./failed-attempt.js";
+import { pgToolFailureSummary } from "./pg-tool-failure.js";
 
 /* ------------------------------------------------------------------ *
  * The API the setup flow and Settings call.
@@ -237,7 +241,6 @@ const DISK_MARGIN_BYTES = 256 * 1024 * 1024;
 const TOOL_TIMEOUT_MS = 6 * 60 * 60_000;
 const DUMP_PROGRESS_MS = 500;
 const SOURCE_STOP_BUDGET_MS = 30_000;
-const STDERR_TAIL_LINES = 6;
 
 class MigrationFailure extends Error {
   constructor(
@@ -247,6 +250,8 @@ class MigrationFailure extends Error {
       readonly report?: VerifyReport;
       readonly requiredBytes?: number;
       readonly availableBytes?: number;
+      /** The failed pg_dump / pg_restore run, kept whole by `keepFailedAttempt`. */
+      readonly tool?: FailedToolRun;
     } = {},
   ) {
     super(message);
@@ -267,10 +272,6 @@ function failed(failure: MigrationFailure): MigrationFailed {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function stderrTail(text: string): string {
-  return text.trim().split("\n").slice(-STDERR_TAIL_LINES).join(" | ");
 }
 
 const DISK_FULL_RE = /no space left on device|could not extend file|disk full/i;
@@ -368,6 +369,7 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
   const factsPath = path.join(workDir, FACTS_FILE);
   const reportPath = path.join(workDir, REPORT_FILE);
   const pgpassPath = path.join(workDir, PGPASS_FILE);
+  const failedAttemptDir = migrationFailedAttemptDir(deps.runtimeDir);
 
   let inFlight: { readonly op: "migrate" | "fresh" | "remove"; readonly promise: Promise<unknown> } | null = null;
 
@@ -629,8 +631,11 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
         const result = await dump;
         throwIfAborted(run);
         if (result.code !== 0) {
-          const tail = stderrTail(result.stderr);
-          throw new MigrationFailure(DISK_FULL_RE.test(result.stderr) ? "disk_full" : "dump_failed", `pg_dump failed: ${tail}`);
+          throw new MigrationFailure(
+            DISK_FULL_RE.test(result.stderr) ? "disk_full" : "dump_failed",
+            `pg_dump failed: ${pgToolFailureSummary("pg_dump", result)}`,
+            { tool: { name: "pg_dump", code: result.code, stderr: result.stderr } },
+          );
         }
       } finally {
         clearInterval(timer);
@@ -701,8 +706,11 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
     }
     throwIfAborted(run);
     if (result.code !== 0) {
-      const tail = stderrTail(result.stderr);
-      throw new MigrationFailure(DISK_FULL_RE.test(result.stderr) ? "disk_full" : "restore_failed", `pg_restore failed: ${tail}`);
+      throw new MigrationFailure(
+        DISK_FULL_RE.test(result.stderr) ? "disk_full" : "restore_failed",
+        `pg_restore failed: ${pgToolFailureSummary("pg_restore", result)}`,
+        { tool: { name: "pg_restore", code: result.code, stderr: result.stderr } },
+      );
     }
     await updateMigration({ step: "restored" });
     log.info("[runtime:migration] restored");
@@ -804,6 +812,25 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
     await updateMigration({ step: "started", dump: null, lastFailure });
   }
 
+  /**
+   * Keep the failed tool's output and the server's log before the rollback
+   * deletes the cluster, and end the message with what was kept where.
+   */
+  async function withKeptAttempt(run: Run, failure: MigrationFailure): Promise<MigrationFailure> {
+    // Stopped first, so the log is complete when it moves; a no-op when not running.
+    await stopNative(run).catch(() => {});
+    const kept = await keepFailedAttempt({
+      dir: failedAttemptDir,
+      reason: failure.reason,
+      message: failure.message,
+      at: now().toISOString(),
+      tool: failure.extra.tool ?? null,
+      serverLogDir: pgLogDir(deps.runtimeDir),
+    });
+    const sentence = kept === null ? "" : keptSentence(kept);
+    return sentence.length === 0 ? failure : new MigrationFailure(failure.reason, `${failure.message} ${sentence}`, failure.extra);
+  }
+
   async function runMigration(signal: AbortSignal | undefined, onProgress?: (p: MigrationProgress) => void): Promise<MigrateResult> {
     const end = beginCriticalOp(CRITICAL_OP.localRuntime);
     const run = newRun(signal, onProgress);
@@ -856,19 +883,21 @@ export function createDockerMigration(deps: DockerMigrationDeps): DockerMigratio
             : (error as NodeJS.ErrnoException | null)?.code === "ENOSPC"
               ? new MigrationFailure("disk_full", "The disk is full.")
               : new MigrationFailure("unexpected", messageOf(error));
-      log.error(`[runtime:migration] failed (${failure.reason}): ${failure.message}`);
       const owned = await readRuntimeState(statePath).then(
         (s) => s.migration !== undefined && s.migration.step !== "completed",
         () => false,
       );
-      if (owned && failure.reason !== "state_unreadable") {
-        await cleanUpAfterFailure(run, failure).catch((cleanupError: unknown) =>
+      const rollBack = owned && failure.reason !== "state_unreadable";
+      const reported = rollBack ? await withKeptAttempt(run, failure) : failure;
+      log.error(`[runtime:migration] failed (${reported.reason}): ${reported.message}`);
+      if (rollBack) {
+        await cleanUpAfterFailure(run, reported).catch((cleanupError: unknown) =>
           log.error(`[runtime:migration] cleanup after the failure failed: ${messageOf(cleanupError)}`),
         );
       } else {
         await stopNative(run).catch(() => {});
       }
-      return failed(failure);
+      return failed(reported);
     } finally {
       end();
     }
