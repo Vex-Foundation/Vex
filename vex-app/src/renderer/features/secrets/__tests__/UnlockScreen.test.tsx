@@ -247,7 +247,9 @@ describe("UnlockScreen", () => {
     expect(callout?.getAttribute("data-vex-callout")).toBe("error");
     expect(callout?.hasAttribute("data-compact")).toBe(true);
     expect(input.getAttribute("aria-invalid")).toBe("true");
-    expect(getStageVex().concerned).toBe(true);
+    // Vex's concern is a passive effect of the render that shows the alert,
+    // so it can land just after the alert does.
+    await waitFor(() => expect(getStageVex().concerned).toBe(true));
     expect(stageVexView(getStageVex()).word).toBe("Concerned");
   });
 

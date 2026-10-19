@@ -12,6 +12,16 @@
   PATH in build scripts only).
 - **On Windows: Git for Windows**, for its Git Bash. `bridge/build.sh` is a
   bash script and Windows has no bash of its own.
+- No Docker. The app runs its bundled native runtime (Postgres + pgvector,
+  `llama-server`) in development too: `pnpm dev` (`dev:assets`) fetches this
+  machine's lock-pinned trees into `resources/native-runtime/<target>/`
+  (`node scripts/fetch-native-runtime.mjs --current`, verified against
+  `native-runtime.lock.json`). While that release lives on a private
+  repository, set `VEX_NATIVE_RUNTIME_TOKEN` (or `GH_TOKEN`) to a token that
+  can read it. A local build from `native-runtime/<component>/build.sh` wins
+  over the fetched tree. The first launch downloads the embeddings model.
+- The Studio e2e specs need the same fetched trees (their isolated database
+  is the bundled Postgres) and a build made with `VITE_VEX_SETUP_TOUR=1`.
 
 ### Windows: the build finds Git Bash itself, and never uses WSL's
 
@@ -130,7 +140,7 @@ process — the flags are read at build time, not live.
 ## `VITE_VEX_SETUP_TOUR=1` — setup screen tour
 
 What: a small mono navigator docks bottom-left with one key per pre-shell view
-(systemCheck · dockerBootstrap · composeBootstrap · migrations · wizard ·
+(systemCheck · runtimeMigration · runtimeBootstrap · migrations · wizard ·
 unlock · appShell) plus **Reload boot**, which replays the whole Chronos Gate
 cold open (cobalt plate → sigil → curtain).
 

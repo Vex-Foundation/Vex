@@ -235,3 +235,17 @@ describe("article variant protocol-entry headings (owner correction 2026-07-20)"
     expect(container.querySelector("h3")?.textContent).toContain("Name");
   });
 });
+
+describe("strikethrough", () => {
+  it("draws no strike line between two approximate amounts", () => {
+    const reply = "agree within ~$3 of each other (~$45M combined), so the quote holds";
+    const { container } = renderMd(reply);
+    expect(container.querySelector("del")).toBeNull();
+    expect(container.textContent).toBe(reply);
+  });
+
+  it("strikes through double-tilde text", () => {
+    const { container } = renderMd("this is ~~gone~~ now");
+    expect(container.querySelector("del")?.textContent).toBe("gone");
+  });
+});

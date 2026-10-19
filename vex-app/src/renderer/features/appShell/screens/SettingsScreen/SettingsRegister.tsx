@@ -12,8 +12,10 @@ import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import { LineIcon } from "../../../../components/icons/line/index.js";
 import { Swatch } from "../../../../components/ui/swatch.js";
+import { useIsNativeRuntime } from "../../../../lib/api/system.js";
+import { useNativeRuntimeStatus } from "../../../runtime/bootstrap/useNativeRuntimeStatus.js";
 import {
-  SETTINGS_NAV,
+  settingsNav,
   settingsSectionStatus,
   settingsStatusSwatch,
   type SettingsNavId,
@@ -31,9 +33,12 @@ export function SettingsRegister({
   readonly onSelect: (id: SettingsNavId) => void;
 }): JSX.Element {
   const idBase = useId();
+  const native = useIsNativeRuntime();
+  // Main's live runtime status; `idle` and unused outside the native runtime.
+  const { status: runtimeStatus } = useNativeRuntimeStatus();
   return (
     <nav className="vex-set__nav" aria-label="Settings sections" data-vex-settings-register>
-      {SETTINGS_NAV.map((group, index) => {
+      {settingsNav(native).map((group, index) => {
         const headId = `${idBase}-${index}`;
         return (
           <div key={group.name} role="group" aria-labelledby={headId}>
@@ -41,7 +46,10 @@ export function SettingsRegister({
               {group.name}
             </div>
             {group.items.map((item) => {
-              const status = item.id === "preferences" ? null : settingsSectionStatus(item.id, env, superboard);
+              const status =
+                item.id === "preferences"
+                  ? null
+                  : settingsSectionStatus(item.id, env, superboard, runtimeStatus);
               return (
                 <button
                   key={item.id}

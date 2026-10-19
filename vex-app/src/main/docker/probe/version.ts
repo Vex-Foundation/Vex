@@ -55,7 +55,7 @@ export function parseSemver(version: string | null): ParsedSemver | null {
 
 /**
  * Returns true iff `actual >= minimum` after ignoring pre-release /
- * build suffixes. Used by `lifecycle.composeUp` to short-circuit with
+ * build suffixes. Used by the compose pre-flight to short-circuit with
  * a helpful error before attempting a `compose up` that would fail
  * with an obscure `unknown field: content` from the inline configs
  * block.

@@ -9,7 +9,8 @@
  * Skill §10 implicit: "user app instance owns local infra contract".
  */
 
-import { app, BrowserWindow } from "electron";
+import { app } from "electron";
+import { getMainWindow } from "../windows/main-window-ref.js";
 
 /**
  * @returns true if this is the primary instance and execution should continue.
@@ -23,8 +24,8 @@ export function acquireSingleInstanceLock(): boolean {
   }
 
   app.on("second-instance", () => {
-    const windows = BrowserWindow.getAllWindows();
-    const primary = windows.find((w) => !w.isDestroyed());
+    // The MAIN window: the first live window may be a hidden helper's.
+    const primary = getMainWindow();
     if (primary) {
       if (primary.isMinimized()) primary.restore();
       primary.focus();

@@ -25,7 +25,6 @@ export type { AbortableInvocation, TelemetryReportInput } from "./common.js";
 export type {
   CapabilitiesBridge,
   DatabaseBridge,
-  DockerBridge,
   MarketBridge,
   LighterTradingBridge,
   OnboardingBridge,

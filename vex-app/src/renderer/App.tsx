@@ -5,14 +5,16 @@
  * while its orchestrator runs the launch pipeline, then hands off to a
  * view beneath itself and lifts away. The view machine itself is
  * unchanged:
- *   splash (void beneath the gate) → systemCheck → dockerBootstrap →
- *   composeBootstrap → migrations → wizard → unlock → appShell:
+ *   splash (void beneath the gate) → systemCheck → runtimeBootstrap →
+ *   migrations → wizard → unlock → appShell:
+ * (with runtimeMigration before runtimeBootstrap while an install's data
+ * must still be moved from the previous release);
  * a healthy returning user skips straight from the gate to
  * unlock/appShell; first-run still walks the classic guided chain.
  *
  * THE STAGE (docs/design/R3-MINIMAL.md section 10): every pre-shell
  * screen stands on one picture, the plateau print. For the wake, the unlock
- * and the first run screens (system check, Docker, services, database;
+ * and the first run screens (system check, local runtime, database;
  * `stageLayoutFor` in `components/onboarding/PreShellStage.tsx`) it is a 720
  * plate with Vex rising from the token and paper at the right. The wizard
  * stands on the print at window size and draws its own R3 frame over it
@@ -46,8 +48,8 @@ import {
   EASE_STANDARD,
 } from "./lib/motion/index.js";
 import { SystemCheck } from "./features/systemCheck/SystemCheck.js";
-import { BootstrapPanel } from "./features/docker/BootstrapPanel.js";
-import { ComposeBootstrap } from "./features/compose/ComposeBootstrap.js";
+import { RuntimeBootstrap } from "./features/runtime/RuntimeBootstrap.js";
+import { RuntimeMigration } from "./features/runtime/RuntimeMigration.js";
 import { Migrations } from "./features/database/Migrations.js";
 import { WizardShell } from "./features/wizard/WizardShell.js";
 import { AppShell } from "./features/appShell/AppShell.js";
@@ -65,8 +67,8 @@ import type { HealthReport } from "../shared/schemas/system.js";
 /** The stage members: every screen on the print. Never splash/appShell. */
 const PRE_SHELL_VIEWS: ReadonlySet<View> = new Set<View>([
   "systemCheck",
-  "dockerBootstrap",
-  "composeBootstrap",
+  "runtimeMigration",
+  "runtimeBootstrap",
   "migrations",
   "wizard",
   "unlock",
@@ -94,8 +96,8 @@ export function App(): JSX.Element {
       <main data-vex-screen="boot-void" className="h-screen w-screen" />
     ),
     systemCheck: () => <SystemCheck />,
-    dockerBootstrap: () => <BootstrapPanel />,
-    composeBootstrap: () => <ComposeBootstrap />,
+    runtimeMigration: () => <RuntimeMigration />,
+    runtimeBootstrap: () => <RuntimeBootstrap />,
     migrations: () => <Migrations />,
     wizard: () => <WizardShell />,
     unlock: () => <UnlockScreen />,

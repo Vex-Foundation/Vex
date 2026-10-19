@@ -1,30 +1,25 @@
 /**
- * Compose up/down pre-flight checks: compose version floor, Docker
- * endpoint policy / daemon readiness, and host port availability. These
- * gate `composeUp` before any image pull or `up -d` runs.
+ * Compose pre-flight checks for the migration from the previous release:
+ * compose version floor and Docker endpoint policy / daemon readiness. They
+ * gate bringing that release's stack up before any compose call runs.
  *
- * The endpoint-policy and daemon-readiness probes and the `isPortFree`
- * host-port check are re-exported here so the lifecycle orchestrator
- * imports its pre-flight surface from one place.
+ * The endpoint-policy and daemon-readiness probes are re-exported here so
+ * the migration imports its pre-flight surface from one place.
  */
 
 import { runSpawn } from "../docker/spawn-runner.js";
-import {
-  isPortFree,
-  parseComposeVersion,
-  semverGte,
-  COMPOSE_VERSION_FLOOR,
-} from "../docker/probe.js";
+import { parseComposeVersion } from "../docker/probe/parsers.js";
+import { COMPOSE_VERSION_FLOOR, semverGte } from "../docker/probe/version.js";
 import { ensureDockerDaemonReady } from "../docker/daemon.js";
 import { inspectDockerEndpointPolicy } from "../docker/endpoint-policy.js";
 import { composeArgs } from "./project.js";
 
-export { isPortFree, ensureDockerDaemonReady, inspectDockerEndpointPolicy };
+export { ensureDockerDaemonReady, inspectDockerEndpointPolicy };
 
 /**
  * Pre-flight that `docker compose` is at the inline-`configs.content:`
  * floor (`COMPOSE_VERSION_FLOOR`). Returning a non-null message means
- * we MUST abort `composeUp` — the template would otherwise error with
+ * we MUST abort the compose start — the template would otherwise error with
  * "unknown field: content" deep into the call. Codex turn 1 YELLOW —
  * use a real semver comparison so `v2.23.1-desktop.1` is accepted.
  */

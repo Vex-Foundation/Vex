@@ -64,24 +64,6 @@ const HEALTH = {
   overall: "ok",
 };
 
-const DOCKER_READY = {
-  endpoint: { accepted: true, blockReason: null },
-  engine: { present: true, version: "27.0.0", runtimeOK: true, failure: null },
-  compose: { present: true, version: "2.29.0" },
-  modelRunner: { present: false, status: "absent", tcpReachable: false },
-  daemon: { running: true, startable: true },
-  ports: { vexPgFree: true },
-  disk: { availableGB: 100 },
-};
-
-const COMPOSE_RUNNING = {
-  kind: "running",
-  composeOutPath: "/tmp/compose.yml",
-  installId: "install-1",
-  message: "up",
-  previousInstallHoldingPorts: false,
-};
-
 function stubVex(overrides: {
   readonly setupCompleteFlag: boolean;
   readonly vaultConfigured?: boolean;
@@ -105,13 +87,12 @@ function stubVex(overrides: {
     ],
   };
   vi.stubGlobal("vex", {
-    system: { health: vi.fn().mockResolvedValue(ok(HEALTH)) },
-    docker: {
-      detect: vi.fn().mockResolvedValue(ok(DOCKER_READY)),
-      composeUpAbortable: vi.fn(() => ({
-        promise: Promise.resolve(ok(COMPOSE_RUNNING)),
-        abort: vi.fn(),
-      })),
+    system: {
+      health: vi.fn().mockResolvedValue(ok(HEALTH)),
+      runtime: vi.fn().mockResolvedValue(ok({ native: true })),
+      runtimeMigrationStatus: vi.fn().mockResolvedValue(ok({ kind: "not_needed" })),
+      runtimeStatus: vi.fn().mockResolvedValue(ok({ seq: 1, phase: "ready" })),
+      onRuntimeProgress: vi.fn(() => vi.fn()),
     },
     onboarding: {
       getEnvState: vi.fn().mockResolvedValue(ok(env)),

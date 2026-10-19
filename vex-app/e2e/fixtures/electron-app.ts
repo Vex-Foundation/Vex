@@ -150,7 +150,7 @@ async function closeAppWithEvidence(
  * The app shell's document, in both load modes: `app://vex/index.html` when
  * the built renderer is loaded, the Vite origin in dev.
  */
-function isShellUrl(url: string): boolean {
+export function isShellUrl(url: string): boolean {
   return url.endsWith("/index.html") || url.startsWith("http://127.0.0.1:5173");
 }
 

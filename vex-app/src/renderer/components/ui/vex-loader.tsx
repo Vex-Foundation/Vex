@@ -7,8 +7,9 @@
  * primitive announces its label once and draws the line.
  *
  * Motion contract: the segment loops ONLY while mounted, and consumers mount
- * it only for real in-flight work, never decoratively. `prefers-reduced-motion`
- * and `data-still` rest it in place via CSS; no JS branch is needed.
+ * it only for real in-flight work (probes, the runtime start, migrate), never
+ * decoratively. `prefers-reduced-motion` and `data-still` rest it in place via
+ * CSS; no JS branch is needed.
  *
  * `size` is the line's length in px (120 by default, the R3 loading line) and
  * `stroke` its thickness (2 by default). The V10 centre slot is gone: a line

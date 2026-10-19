@@ -2,8 +2,8 @@
  * Broadcast a payload to every live BrowserWindow's webContents.
  *
  * Centralizes the `getAllWindows() → isDestroyed() → webContents.send`
- * loop that was previously copy-pasted at three IPC handler sites
- * (docker install progress, compose logs, database migration progress).
+ * loop that was previously copy-pasted at each IPC handler site that
+ * pushes progress (database migration progress, the local runtime).
  * Per skill §11, the destroyed-window guard is mandatory — sending to
  * a destroyed webContents throws and bypasses the cleanup registry.
  *

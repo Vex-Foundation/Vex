@@ -9,7 +9,7 @@
  * a single object and exposes it on `window.vex`. Per-domain implementations
  * live under:
  *
- *   - `preload/shell/*.ts`  — capabilities, system, docker, database, secrets,
+ *   - `preload/shell/*.ts`  — capabilities, system, database, secrets,
  *                              wallet, onboarding, settings, telemetry, support
  *   - `preload/agent/*.ts`  — sessions, chat, messages, runtime, mission,
  *                              approvals, wallets, models, usage

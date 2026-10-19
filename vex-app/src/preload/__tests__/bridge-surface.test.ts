@@ -107,8 +107,8 @@ describe("preload bridge surface", () => {
   /**
    * Request channels that deliberately have NO bridge method.
    *
-   * Both are DEAD CONSTANTS: neither has a main handler and neither is reached
-   * from anywhere. They are named here rather than deleted because removing a
+   * All are DEAD CONSTANTS: none has a bridge method, so the renderer can
+   * reach none of them. They are named here rather than deleted because removing a
    * channel constant is a contract change that does not belong in this change,
    * and naming them is what keeps the check below total. The assertion under
    * this list makes the exclusion self-expiring: an entry that stops being a
@@ -292,6 +292,31 @@ describe("preload bridge surface", () => {
     ]) {
       expect(corpus).toContain(reference);
     }
+  });
+
+  it("exposes EV.system.runtimeProgress and re-validates it in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus).toContain("EV.system.runtimeProgress");
+    expect(corpus).toContain("onRuntimeProgress");
+    expect(corpus).toContain("nativeRuntimeStatusSchema");
+  });
+
+  it("exposes the Settings local runtime channels and validates the reset phrase in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const channel of ["CH.system.runtimeInfo", "CH.system.runtimeRestart", "CH.system.runtimeReset"]) {
+      expect(corpus).toContain(channel);
+    }
+    expect(corpus).toMatch(
+      /invokeWithSchema\(CH\.system\.runtimeReset, input, runtimeResetInputSchema\)/,
+    );
+  });
+
+  it("exposes EV.system.runtimeMigrationProgress and re-validates it, and the remove input, in preload", () => {
+    const corpus = PRELOAD_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
+    expect(corpus).toContain("EV.system.runtimeMigrationProgress");
+    expect(corpus).toContain("onRuntimeMigrationProgress");
+    expect(corpus).toContain("runtimeMigrationProgressSchema");
+    expect(corpus).toContain("runtimeMigrationRemoveOldDataInputSchema");
   });
 
   it("exposes EV.studio.hostStatus and the host-status bridge method (B0)", () => {

@@ -20,6 +20,13 @@ type Handler = (
 ) => Promise<unknown>;
 
 const handlers = new Map<string, Handler>();
+
+function migrateHandler(): Handler {
+  const fn = handlers.get(CH.database.migrate);
+  if (!fn) throw new Error("the migrate handler is not registered");
+  return fn;
+}
+
 const mockRunMigrationsForIpc = vi.fn();
 const mockSubscribe = vi.fn(() => () => {});
 
@@ -60,6 +67,13 @@ vi.mock("../../logger/index.js", () => ({
   },
 }));
 
+const mockMode = vi.fn(() => "e2e_door");
+const mockGateStart = vi.fn();
+vi.mock("../../runtime/runtime-mode.js", () => ({ getRuntimeMode: () => mockMode() }));
+vi.mock("../../runtime/migration/native-start-gate.js", () => ({
+  nativeStartGate: () => ({ startNative: () => mockGateStart() }),
+}));
+
 vi.mock("../../onboarding/ensure-embedding-defaults.js", () => ({
   ensureEmbeddingDefaults: vi
     .fn()
@@ -83,6 +97,8 @@ beforeEach(() => {
   mockPeek.mockReturnValue(null);
   mockReset.mockClear();
   trustedSender.sender.send.mockReset();
+  mockMode.mockReturnValue("e2e_door");
+  mockGateStart.mockReset();
 });
 
 afterEach(() => {
@@ -263,5 +279,32 @@ describe("vex.database.migrate handler", () => {
 
     resolveRun?.({ kind: "noop", message: "ok" });
     await Promise.all([a, b]);
+  });
+
+  it("native: starts nothing and reports why while the install's data must be moved first", async () => {
+    mockMode.mockReturnValue("native");
+    mockGateStart.mockResolvedValue({ kind: "migration_pending", message: "Your existing data must be moved first." });
+    registerDatabaseHandlers();
+    const fn = migrateHandler();
+    const result = (await fn(trustedSender, { requestId: "n1", payload: {} })) as {
+      ok: false;
+      error: { code: string; message: string };
+    };
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("data.migration_failed");
+    expect(result.error.message).toContain("Your existing data must be moved first.");
+    expect(mockRunMigrationsForIpc).not.toHaveBeenCalled();
+  });
+
+  it("native: migrates once the gate started the runtime", async () => {
+    mockMode.mockReturnValue("native");
+    mockGateStart.mockResolvedValue({ kind: "running", message: "ok" });
+    mockRunMigrationsForIpc.mockResolvedValue({ kind: "noop", message: "up to date" });
+    registerDatabaseHandlers();
+    const fn = migrateHandler();
+    const result = (await fn(trustedSender, { requestId: "n2", payload: {} })) as { ok: boolean };
+    expect(result.ok).toBe(true);
+    expect(mockGateStart).toHaveBeenCalledTimes(1);
+    expect(mockRunMigrationsForIpc).toHaveBeenCalledTimes(1);
   });
 });

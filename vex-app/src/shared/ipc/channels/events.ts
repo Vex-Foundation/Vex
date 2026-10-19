@@ -11,11 +11,17 @@ export const EV = {
   system: {
     logLine: "vex:event:system:logLine",
     resume: "vex:event:system:resume",
-  },
-  docker: {
-    installProgress: "vex:event:docker:installProgress",
-    daemonChanged: "vex:event:docker:daemonChanged",
-    composeLogs: "vex:event:docker:composeLogs",
+    /**
+     * Every change of the native runtime's start (`NativeRuntimeStatus`),
+     * broadcast; download progress is throttled in main. A late screen reads
+     * `CH.system.runtimeStatus` too and keeps whichever has the higher seq.
+     */
+    runtimeProgress: "vex:event:system:runtimeProgress",
+    /**
+     * Every progress event of a data move (`RuntimeMigrationProgress`). A
+     * screen joining a move in flight is sent the latest one directly.
+     */
+    runtimeMigrationProgress: "vex:event:system:runtimeMigrationProgress",
   },
   database: {
     migrateProgress: "vex:event:database:migrateProgress",

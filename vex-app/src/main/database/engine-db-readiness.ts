@@ -6,7 +6,7 @@
  * The engine's pool is lazy and reads `process.env.VEX_DB_URL` at first use;
  * with that variable unset it falls back to a development URL
  * (`src/vex-agent/db/client.ts`) and every query fails against a database
- * nobody runs. So main must POINT the pool at the compose-managed Postgres
+ * nobody runs. So main must POINT the pool at the local runtime's Postgres
  * before any engine code touches it. That fact used to be resolved lazily by
  * whichever caller happened to need it first, from two copy-pasted
  * implementations (`ipc/runtime/_ensure-engine-db-url.ts` and
@@ -18,9 +18,9 @@
  * A start-up consumer needs more than "the URL resolves": it needs the schema
  * this build ships. Those are two separate facts and they arrive in this order:
  *
- *   1. THE URL. `buildPoolConfig()` answers only after compose has written its
- *      connection state and password file, which on a cold start happens when
- *      the renderer asks for Docker - ten to twenty seconds after `whenReady`.
+ *   1. THE URL. `buildPoolConfig()` answers only after the local runtime has
+ *      published its connection, which on a cold start happens only once its
+ *      Postgres is up - well after `whenReady`.
  *   2. THE MIGRATIONS. `migrationsApplied()` (see `migrations-applied.ts`) is
  *      the process-wide latch the migrate runner sets.
  *
@@ -28,7 +28,8 @@
  * consumer that gave up after a fixed number of attempts would be deciding, on
  * the user's behalf, that a database which is merely slow to come up is a
  * database that is never coming - which is exactly the defect that left Vex
- * Studio unavailable for a whole session on a machine where Docker took 15 s.
+ * Studio unavailable for a whole session on a machine where the database took
+ * 15 s to come up.
  * The only way out of the wait is the caller's own `AbortSignal`, which its
  * lifecycle owner aborts at teardown.
  *
@@ -175,12 +176,36 @@ function recycleEngineDbUrl(): Promise<EngineDbRecycleOutcome> {
   return pass;
 }
 
-async function applyEngineDbUrl(): Promise<EngineDbRecycleOutcome> {
+/**
+ * Recycle the engine's pool after the database behind it was restarted on
+ * purpose (Settings' "Restart runtime"), EVEN WHEN THE URL IS UNCHANGED: every
+ * connection the old pool holds went down with the server it pointed at, and
+ * the restart may also have moved the port. Runs after any recycle already in
+ * flight, and later callers join it like any other pass.
+ *
+ * True once the pool points at the published connection; false when there is
+ * no connection to point it at (the restart did not come back up).
+ */
+export async function recycleEngineDbAfterRestart(): Promise<boolean> {
+  const previous = recycleInFlight;
+  const pass: Promise<EngineDbRecycleOutcome> = (async () => {
+    if (previous !== null) await previous;
+    return applyEngineDbUrl({ force: true });
+  })().finally(() => {
+    if (recycleInFlight === pass) recycleInFlight = null;
+  });
+  recycleInFlight = pass;
+  return (await pass) === "applied";
+}
+
+async function applyEngineDbUrl(
+  options: { readonly force?: boolean } = {},
+): Promise<EngineDbRecycleOutcome> {
   try {
     const cfg = await buildPoolConfig();
     if (cfg === null) return "unavailable";
     const nextUrl = makePostgresUrl(cfg);
-    if (appliedDbUrl === nextUrl) return "applied";
+    if (appliedDbUrl === nextUrl && options.force !== true) return "applied";
     // The environment FIRST, because the pool the drain below destroys rebuilds
     // itself from this variable at its next query. Writing it after the drain
     // would let a query landing between the two rebuild the pool against the

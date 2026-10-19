@@ -50,6 +50,8 @@ vi.mock("pg", () => {
 
 vi.mock("../db-config.js", () => ({ buildPoolConfig: mocks.buildPoolConfig }));
 vi.mock("@vex-lib/wallet.js", () => ({ listWallets: mocks.listWallets }));
+// No removed wallets: the real module reads this machine's config dir.
+vi.mock("@vex-lib/wallet-removal.js", () => ({ listWalletRemovalRecords: () => [] }));
 vi.mock("../../logger/index.js", () => ({ log: mocks.log }));
 vi.mock("../projects/portfolio-scope.js", () => ({
   readProjectPortfolioScope: mocks.readProjectPortfolioScope,

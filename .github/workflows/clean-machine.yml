@@ -1,0 +1,284 @@
+name: Clean machine
+
+# THE CLEAN-MACHINE GATE (plan D12): on every release OS, a freshly packaged
+# Vex completes first-run setup on a machine with NO Docker. Each leg packages
+# the real app for its OS/arch with the lock-pinned native runtime staged (the
+# `package` path, so afterPack and check:package run), removes Docker from the
+# runner and proves it is gone (scripts/assert-no-docker-host.mjs), then runs
+# e2e/native-runtime.spec.ts against the packaged executable: System Check,
+# the bundled Postgres's initdb and every migration, the model download, the
+# setup wizard, a user's quit that stops the bundled servers, and a relaunch.
+#
+# Unsigned: macOS legs are ad-hoc signed without the hardened runtime (arm64
+# runs no unsigned code, and an ad-hoc signature under the hardened runtime's
+# library validation loads no framework at all); Windows and Linux are not
+# signed. The signed-release variant needs the signing secrets and lives in
+# release.yml.
+#
+# win32-arm64 is packaged on x64 and run on arm64, as it ships: the release
+# signs Windows on x64 only (plan 15.4 item 8).
+#
+# Called by native-runtime.yml (dispatch input `clean_machine`) and by
+# release.yml, where every publishing job needs it on all legs; `legs` is
+# "all" or a comma-separated list of darwin-arm64, darwin-x64, linux-x64,
+# win32-x64, win32-arm64. A push to the native-runtime branch runs it on all
+# legs, as it runs the signed dry run: a dispatch needs the workflow on the
+# default branch, which this branch is not yet.
+
+on:
+  workflow_call:
+    inputs:
+      legs:
+        type: string
+        default: all
+    secrets:
+      # Reads the lock-pinned native runtime release while it lives on a
+      # private repository; without it the workflow's own token is used.
+      VEX_NATIVE_RUNTIME_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      legs:
+        description: '"all" or a comma-separated list of darwin-arm64, darwin-x64, linux-x64, win32-x64, win32-arm64'
+        type: string
+        default: all
+  push:
+    branches: [native-runtime]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      legs: ${{ steps.plan.outputs.legs }}
+      win32_arm64: ${{ steps.plan.outputs.win32_arm64 }}
+    steps:
+      - id: plan
+        env:
+          # A push carries no inputs: it gates every leg.
+          LEGS: ${{ inputs.legs || 'all' }}
+        # The packaged executable per leg: electron-builder's --dir output for
+        # productName Vex. Linux names the binary after the package
+        # (sanitized "@vex/app"), as the AppImage and the deb install it.
+        run: |
+          all='[
+            {"leg": "darwin-arm64", "runner": "macos-15", "executable": "dist-electron/mac-arm64/Vex.app/Contents/MacOS/Vex"},
+            {"leg": "darwin-x64", "runner": "macos-15-intel", "executable": "dist-electron/mac/Vex.app/Contents/MacOS/Vex"},
+            {"leg": "linux-x64", "runner": "ubuntu-22.04", "executable": "dist-electron/linux-unpacked/@vexapp"},
+            {"leg": "win32-x64", "runner": "windows-2025", "executable": "dist-electron/win-unpacked/Vex.exe"},
+            {"leg": "win32-arm64"}
+          ]'
+          chosen=$(jq -c --arg legs "$LEGS" '
+            ($legs | gsub("\\s"; "") | split(",") | map(select(. != ""))) as $want
+            | (map(.leg)) as $known
+            | if $want == ["all"] then .
+              elif $want == [] then error("no legs requested")
+              elif ($want - $known) != [] then error("unknown leg(s) \($want - $known | join(", ")); legs are \($known | join(", "))")
+              else map(select(.leg as $leg | $want | any(.[]; . == $leg))) end' <<<"$all")
+          echo "legs=$(jq -c 'map(select(.leg != "win32-arm64"))' <<<"$chosen")" >> "$GITHUB_OUTPUT"
+          echo "win32_arm64=$(jq 'any(.[]; .leg == "win32-arm64")' <<<"$chosen")" >> "$GITHUB_OUTPUT"
+          jq . <<<"$chosen"
+
+  gate:
+    needs: plan
+    if: needs.plan.outputs.legs != '[]'
+    name: ${{ matrix.leg }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.legs) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: corepack enable
+        working-directory: ${{ github.workspace }}
+
+      # The bridge and the Lighter signer helper are built here, by the
+      # pinned Go the toolchain check accepts (same pin as ci.yml).
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
+
+      - name: Install root dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package the app (unsigned) with the native runtime
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
+          GOTOOLCHAIN: local
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            pnpm run package:prepare
+            pnpm exec electron-builder --dir --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false
+            pnpm run check:package
+          else
+            pnpm run package
+          fi
+          test -x "${{ matrix.executable }}" || { echo "::error::no packaged executable at ${{ matrix.executable }}"; ls -la dist-electron/*; exit 1; }
+
+      # What installing the deb provides on a desktop: its declared runtime
+      # libraries (electron-builder's default Depends), and chrome-sandbox
+      # owned by root and setuid, as the deb's postinst leaves it.
+      - name: Install the deb's runtime dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
+            xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1 libsecret-1-0 libgbm1 libasound2
+          sudo chown root:root dist-electron/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 dist-electron/linux-unpacked/chrome-sandbox
+
+      - name: Remove Docker (Linux)
+        if: runner.os == 'Linux'
+        run: ../.github/clean-machine/remove-docker-linux.sh
+
+      - name: Remove Docker (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ../.github/clean-machine/remove-docker-windows.ps1
+
+      # macOS images ship no Docker; this proves it rather than assuming it.
+      - name: Assert no Docker on this machine
+        run: node --experimental-strip-types --no-warnings scripts/assert-no-docker-host.mjs
+
+      - name: First run on the native runtime (installed app, no Docker)
+        env:
+          VEX_E2E_APP_EXECUTABLE: ${{ github.workspace }}/vex-app/${{ matrix.executable }}
+        # --retries=0: a gate that passes on its second attempt has failed.
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a pnpm exec playwright test e2e/native-runtime.spec.ts --project electron-smoke --retries=0
+          else
+            pnpm exec playwright test e2e/native-runtime.spec.ts --project electron-smoke --retries=0
+          fi
+
+      # The report carries the app's own logs (main, the bundled Postgres's
+      # server log, runtime-state.json, what the process printed): the spec
+      # attaches them on failure.
+      - name: Upload the Playwright report and the app's logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-machine-${{ matrix.leg }}
+          path: |
+            vex-app/playwright-report/
+            vex-app/test-results/
+          retention-days: 14
+
+  win32-arm64-package:
+    needs: plan
+    if: needs.plan.outputs.win32_arm64 == 'true'
+    name: win32-arm64 (package on x64)
+    runs-on: windows-2025
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+        working-directory: ${{ github.workspace }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.0"
+          check-latest: false
+          cache: false
+      - name: Verify pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: pnpm run verify:toolchain
+      - name: Install root dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package the app (unsigned, arm64) with the native runtime
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
+          GOTOOLCHAIN: local
+        run: |
+          pnpm run package:prepare
+          pnpm exec electron-builder --dir --publish never --arm64
+          pnpm run check:package
+          test -f dist-electron/win-arm64-unpacked/Vex.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clean-machine-win32-arm64-app
+          path: vex-app/dist-electron/win-arm64-unpacked/
+          retention-days: 3
+
+  win32-arm64:
+    needs: [plan, win32-arm64-package]
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: vex-app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+        working-directory: ${{ github.workspace }}
+      # Playwright and the config's dev server only; the app under test is the
+      # package built on x64.
+      - name: Install vex-app dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: clean-machine-win32-arm64-app
+          path: vex-app/dist-electron/win-arm64-unpacked
+
+      - name: Remove Docker
+        shell: pwsh
+        run: ../.github/clean-machine/remove-docker-windows.ps1
+      - name: Assert no Docker on this machine
+        run: node --experimental-strip-types --no-warnings scripts/assert-no-docker-host.mjs
+
+      - name: First run on the native runtime (installed app, no Docker)
+        env:
+          VEX_E2E_APP_EXECUTABLE: ${{ github.workspace }}/vex-app/dist-electron/win-arm64-unpacked/Vex.exe
+        run: pnpm exec playwright test e2e/native-runtime.spec.ts --project electron-smoke --retries=0
+
+      - name: Upload the Playwright report and the app's logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-machine-win32-arm64
+          path: |
+            vex-app/playwright-report/
+            vex-app/test-results/
+          retention-days: 14

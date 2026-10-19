@@ -6,7 +6,7 @@
  * pre-shell screen, so the picture holds still while screens change and
  * this frame paints only what stands on it.
  *
- *   plate  the first run (system check, Docker, services, database): paper at
+ *   plate  the first run (system check, local runtime, database): paper at
  *          the right of the 720 plate with the crumb, the serif title, the
  *          lead and the screen's body, and the small version stamp. The
  *          screen names its `step` and its `mood`: the crumb's current step

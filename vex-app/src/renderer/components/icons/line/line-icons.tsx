@@ -119,7 +119,6 @@ export const LineMemory = make("memory");
 export const LineDatabase = make("database");
 export const LineTuning = make("tuning");
 export const LineLink = make("link");
-export const LineDocker = make("docker");
 export const LineWifi = make("wifi");
 export const LineWifiOff = make("wifi-off");
 export const LineDesktop = make("desktop");
@@ -219,7 +218,6 @@ export const LINE_ICONS: { readonly [K in LineIconName]: LineIconComponent } = {
   database: LineDatabase,
   tuning: LineTuning,
   link: LineLink,
-  docker: LineDocker,
   wifi: LineWifi,
   "wifi-off": LineWifiOff,
   desktop: LineDesktop,

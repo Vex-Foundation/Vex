@@ -65,7 +65,7 @@ export async function runMigrationsForIpc(): Promise<MigrateRunResult> {
     return {
       kind: "failed",
       message:
-        "Database connection is not available. Compose bootstrap must complete first.",
+        "Database connection is not available. The local runtime must start first.",
       failedAt: null,
     };
   }

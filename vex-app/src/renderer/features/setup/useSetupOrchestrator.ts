@@ -2,29 +2,33 @@
  * SETUP ORCHESTRATOR — the launch pipeline behind the Chronos Gate plate.
  *
  * Runs ONCE per process while the Chronos Gate covers the window and
- * decides where the launch lands, replacing the old click-through chain
- * (intro → systemCheck → docker → compose → migrations) for the returning
- * user. The pipeline is a re-sequencing of the EXACT same IPC contracts
- * those screens own today — no new main-process behavior:
+ * decides where the launch lands, replacing the click-through chain
+ * (intro → systemCheck → runtime → migrations) for the returning user. The
+ * pipeline is a re-sequencing of the EXACT same IPC contracts those screens
+ * own today — no new main-process behavior:
  *
- *   1. Parallel probes: system.health / docker.detect / onboarding.envState.
+ *   1. Parallel probes: system.health / system.runtime / onboarding.envState.
  *   2. FIRST RUN (`setupCompleteFlag === false`): hand off to the classic
- *      systemCheck screen after the probes — the gate never auto-starts
- *      compose on a machine that has not completed setup (this also keeps
- *      the e2e boot smoke deterministic on CI runners that have Docker).
+ *      systemCheck screen after the probes — the gate never drives setup on
+ *      a machine that has not completed it.
  *   3. RETURNING USER: macOS translocation → systemCheck (its banner owns
- *      the warning); Docker endpoint/engine/daemon not ready →
- *      dockerBootstrap (full remediation branch tree lives there).
- *      Otherwise compose up → migrate → the shared wizard-entry table
- *      (features/wizard/wizard-entry.ts) → appShell / unlock / wizard.
- *      Any non-happy outcome hands off to the classic screen that owns
- *      that remediation — never a dead end.
+ *      the warning). Otherwise the gate waits for the bundled native
+ *      runtime, which main started at boot: ready → migrate → the shared
+ *      wizard-entry table (features/wizard/wizard-entry.ts) → appShell /
+ *      unlock / wizard. A failed start, or a model download or re-hash long
+ *      enough to deserve its progress, hands off to runtimeBootstrap (which
+ *      advances to migrations once ready). First, though: while this
+ *      install's data must still be moved from the previous release, main
+ *      has NOT started the runtime, and the gate hands off to
+ *      runtimeMigration (which hands off to runtimeBootstrap). Any non-happy
+ *      outcome hands off to the classic screen that owns that remediation —
+ *      never a dead end.
+ *   4. E2E DOOR RUN (`system.runtime` answers `native: false`, which only
+ *      an unpackaged end-to-end run whose test door already published the
+ *      database does): main starts no runtime, so there is nothing to wait
+ *      for, and the gate goes straight to migrate.
  *
  * Contract notes carried over from the screens this fast path bypasses:
- *  - compose: `composeUpAbortable` is NEVER cancelled from effect cleanup
- *    (StrictMode double-mount would race the main-process single-flight
- *    join — same rule as ComposeBootstrap). The gate offers no cancel;
- *    remediation screens do.
  *  - migrate: subscribe to `database.onProgress` BEFORE invoking migrate
  *    (the push bus replays the latest event to late subscribers); there is
  *    deliberately NO cancel path (mid-SQL aborts are unsafe). On success
@@ -38,11 +42,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { MigrateProgress } from "@shared/schemas/database.js";
-import {
-  dockerKeys,
-  onboardingKeys,
-  systemKeys,
-} from "../../lib/api/queryKeys.js";
+import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
+import { onboardingKeys, systemKeys } from "../../lib/api/queryKeys.js";
+import { needsRuntimeScreen } from "../runtime/bootstrap/steps.js";
 import { resolveWizardEntry } from "../wizard/wizard-entry.js";
 import type { UnlockReturnView, View } from "../../stores/uiStore.js";
 
@@ -53,8 +55,8 @@ export type SetupHandoff =
       readonly view: Extract<
         View,
         | "systemCheck"
-        | "dockerBootstrap"
-        | "composeBootstrap"
+        | "runtimeMigration"
+        | "runtimeBootstrap"
         | "migrations"
         | "wizard"
         | "appShell"
@@ -91,6 +93,35 @@ export interface SetupOrchestrator {
   readonly handoff: SetupHandoff | null;
 }
 
+/**
+ * Wait for main's start of the native runtime: true once it is ready, false
+ * as soon as the runtime screen should take over. Subscribes BEFORE reading
+ * the status and ignores anything older than what it has seen.
+ */
+function nativeRuntimeReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let seen = -1;
+    let settled = false;
+    const settle = (ready: boolean): void => {
+      if (settled) return;
+      settled = true;
+      off();
+      resolve(ready);
+    };
+    const decide = (status: NativeRuntimeStatus): void => {
+      if (status.seq < seen) return;
+      seen = status.seq;
+      if (status.phase === "ready") settle(true);
+      else if (needsRuntimeScreen(status)) settle(false);
+    };
+    const off = window.vex.system.onRuntimeProgress(decide);
+    void window.vex.system.runtimeStatus().then((result) => {
+      if (result.ok) decide(result.data);
+      else settle(false);
+    });
+  });
+}
+
 export function useSetupOrchestrator(): SetupOrchestrator {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SetupStatusLine>(() =>
@@ -99,9 +130,9 @@ export function useSetupOrchestrator(): SetupOrchestrator {
   const [handoff, setHandoff] = useState<SetupHandoff | null>(null);
   // Guards same-instance effect re-runs. StrictMode's dev remount creates
   // a NEW instance whose pipeline runs again — the same double-invoke the
-  // classic compose/migrations screens have today, and safe for the same
-  // reasons: compose up single-flight-joins in main, and the migration
-  // runner serializes on a Postgres advisory lock. The unmounted first
+  // classic runtime/migrations screens have today, and safe for the same
+  // reasons: the gate only watches main's single-flight runtime start, and
+  // the migration runner serializes on a Postgres advisory lock. The unmounted first
   // instance's setState calls are no-ops, so only the live instance
   // drives the gate.
   const startedRef = useRef(false);
@@ -112,15 +143,17 @@ export function useSetupOrchestrator(): SetupOrchestrator {
 
     const run = async (): Promise<void> => {
       // ---- 1. Parallel probes ---------------------------------------
-      const [health, docker, env] = await Promise.all([
+      const [health, runtime, env] = await Promise.all([
         window.vex.system.health(),
-        window.vex.docker.detect(),
+        window.vex.system.runtime(),
         window.vex.onboarding.getEnvState(),
       ]);
+      // Only an explicit `native: false` is a door run. An unreadable answer
+      // takes the native path, whose own failures hand off to its screens.
+      const doorRun = runtime.ok && !runtime.data.native;
       // Seed the caches the classic screens read (parity with today's
       // cross-screen reuse; each option's own staleTime applies).
       queryClient.setQueryData(systemKeys.health(), health);
-      queryClient.setQueryData(dockerKeys.status(), docker);
       queryClient.setQueryData(onboardingKeys.envState(), env);
 
       const setupComplete = env.ok && env.data.setupCompleteFlag;
@@ -136,33 +169,24 @@ export function useSetupOrchestrator(): SetupOrchestrator {
         setHandoff({ kind: "view", view: "systemCheck" });
         return;
       }
-      const dockerReady =
-        docker.ok &&
-        docker.data.endpoint.accepted &&
-        docker.data.engine.present &&
-        docker.data.daemon.running;
-      if (!dockerReady) {
-        setHandoff({ kind: "view", view: "dockerBootstrap" });
-        return;
-      }
-
-      // ---- 2. Compose up (returning user only) ----------------------
-      setStatus(statusLine("services"));
-      // Deliberately NOT cancelled on unmount — see the header contract.
-      const composeInvocation = window.vex.docker.composeUpAbortable({});
-      let compose: Awaited<typeof composeInvocation.promise>;
-      try {
-        compose = await composeInvocation.promise;
-      } catch {
-        setHandoff({ kind: "view", view: "composeBootstrap" });
-        return;
-      }
-      if (!compose.ok || (compose.data.kind !== "running" && compose.data.kind !== "reused")) {
-        // port_collision / unhealthy / failed / IPC error — the classic
-        // compose screen owns every remediation branch (incl. the
-        // "previous Vex install holds the ports" special case).
-        setHandoff({ kind: "view", view: "composeBootstrap" });
-        return;
+      // ---- 2. The native runtime -----------------------------------
+      // Main started it at boot and the migrate call below joins that start.
+      // A door run's database is already published: there is nothing to
+      // start or wait for, so it goes straight to migrate.
+      if (!doorRun) {
+        setStatus(statusLine("services"));
+        // Main starts nothing while data must be moved: waiting for the
+        // runtime would wait forever. Any answer but not_needed (an IPC
+        // failure included) is the migration screen's to explain.
+        const migration = await window.vex.system.runtimeMigrationStatus();
+        if (!migration.ok || migration.data.kind !== "not_needed") {
+          setHandoff({ kind: "view", view: "runtimeMigration" });
+          return;
+        }
+        if (!(await nativeRuntimeReady())) {
+          setHandoff({ kind: "view", view: "runtimeBootstrap" });
+          return;
+        }
       }
 
       // ---- 3. Migrations -------------------------------------------

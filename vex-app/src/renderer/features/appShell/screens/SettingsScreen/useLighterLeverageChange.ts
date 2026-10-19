@@ -53,6 +53,14 @@ export interface LighterLeverageChange {
   /** The market whose change is in flight; every Apply is disabled while set. */
   readonly busyMarketId: number | null;
   readonly outcomes: ReadonlyMap<number, LeverageOutcomeView>;
+  /**
+   * The last change this hook PROVED applied (a confirm or a reconcile whose
+   * outcome is a success), with a sequence so a second change to the same
+   * market is a new value. A sheet showing that market closes on it: the
+   * change is done and the leverage reads back in the row. A refusal or an
+   * unknown outcome never sets it, so the sheet stays to say why.
+   */
+  readonly applied: { readonly marketId: number; readonly seq: number } | null;
   readonly reconciling: ReadonlySet<string>;
   readonly proposal: { readonly value: LighterLeverageIssuedProposal; readonly marketId: number } | null;
   readonly submitting: boolean;
@@ -125,6 +133,17 @@ export function useLighterLeverageChange(scope: {
       });
     },
     [],
+  );
+
+  const [applied, setApplied] = useState<LighterLeverageChange["applied"]>(null);
+  /** Main's answer to a confirm or a reconcile: recorded, and a proven success marks it applied. */
+  const recordApplyResult = useCallback(
+    (marketId: number, outcome: LeverageOutcomeView): void => {
+      recordOutcome(marketId, outcome);
+      if (outcome.tone !== "success") return;
+      setApplied((previous) => ({ marketId, seq: (previous?.seq ?? 0) + 1 }));
+    },
+    [recordOutcome],
   );
 
   const onApply = useCallback(
@@ -231,7 +250,7 @@ export function useLighterLeverageChange(scope: {
             });
             return;
           }
-          recordOutcome(open.marketId, describeApplyOutcome(open.value.symbol, result.data));
+          recordApplyResult(open.marketId, describeApplyOutcome(open.value.symbol, result.data));
         })
         .catch(() => {
           setSubmitting(false);
@@ -246,7 +265,7 @@ export function useLighterLeverageChange(scope: {
           });
         });
     },
-    [clearProposal, confirm, proposal, recordOutcome],
+    [clearProposal, confirm, proposal, recordApplyResult, recordOutcome],
   );
 
   /**
@@ -278,7 +297,7 @@ export function useLighterLeverageChange(scope: {
             });
             return;
           }
-          recordOutcome(marketId, describeApplyOutcome(symbol, result.data));
+          recordApplyResult(marketId, describeApplyOutcome(symbol, result.data));
         })
         .catch(() => {
           settle();
@@ -289,7 +308,7 @@ export function useLighterLeverageChange(scope: {
           });
         });
     },
-    [recordOutcome, reconcile],
+    [recordApplyResult, recordOutcome, reconcile],
   );
 
   const onReconcile = useCallback(
@@ -313,6 +332,7 @@ export function useLighterLeverageChange(scope: {
     unresolved,
     busyMarketId,
     outcomes,
+    applied,
     reconciling,
     proposal,
     submitting,

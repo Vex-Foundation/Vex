@@ -12,7 +12,7 @@
  *   5. Install permission handlers (deny-all default).
  *   6. Install app://vex/ protocol handler.
  *   7. Register IPC handlers (Phase 1 surface), then arm the execution gate.
- *   8. Open main window, AT ONCE: it does not wait for Docker, Postgres or the
+ *   8. Open main window, AT ONCE: it does not wait for the local runtime or the
  *      Studio readiness barrier. Execution is held by the gate instead.
  *   9. In the background: the bounded Studio barrier wait, then the Studio
  *      MCP host.
@@ -57,6 +57,10 @@ import {
 } from "./agent/studio-settlement-bridge.js";
 import { whenEngineDbReady } from "./database/engine-db-readiness.js";
 import { openE2eConnectionDoor } from "./database/e2e-connection-door.js";
+import { getDbConnection } from "./database/connection-state.js";
+import { getRuntimeMode, resolveRuntimeMode, setRuntimeMode } from "./runtime/runtime-mode.js";
+import { stopNativeRuntime } from "./runtime/native/native-runtime.js";
+import { nativeStartGate } from "./runtime/migration/native-start-gate.js";
 import { closeMainIpcPgPool } from "./database/main-ipc-pg-pool.js";
 import { recordEventLoopWindow } from "./database/event-loop-samples-db.js";
 import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
@@ -68,14 +72,14 @@ import {
   removeUpdaterEventListeners,
 } from "./updates/configureUpdater.js";
 import { installUpdaterAutoCheck } from "./updates/autoCheck.js";
-import { cleanupOnBoot, cleanupOnQuit } from "./lifecycle/secret-cleanup.js";
+import { sweepTransientSecrets } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
 import {
-  COMPOSE_QUIT_DEADLINE_MS,
   ORDERED_QUIT_DEADLINE_MS,
   QUIT_STAGE_SLACK_MS,
   QUIT_TASK_DEADLINE_MS,
+  RUNTIME_QUIT_DEADLINE_MS,
   runQuitStage,
 } from "./lifecycle/quit-stage.js";
 import { STUDIO_HOST_SHUTDOWN_DEADLINE_MS } from "./studio/mcp-host/bounds.js";
@@ -108,6 +112,7 @@ import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
 import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
 import { disposeStudioDispatchPoisonRetry } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
+import { getMainWindow } from "./windows/main-window-ref.js";
 import { installMinimalMenu } from "./menu.js";
 import {
   disableSentry,
@@ -294,11 +299,25 @@ async function initializeMainRuntime(): Promise<void> {
   // the connection state this may publish. Inert in a packaged build and
   // whenever `VEX_E2E_DB_PORT` + `VEX_E2E_DB_PASSWORD_FILE` are not BOTH set,
   // so an ordinary boot is unaffected. `database/e2e-connection-door.ts` owns
-  // the guards, and states why compose keeps the production publication.
+  // the guards.
   const closeE2eDbDoor = openE2eConnectionDoor();
   globalCleanup.add(() => {
     closeE2eDbDoor();
   }, "e2e-db-door");
+
+  // 3b'. Local runtime mode, decided once and after the e2e door (a door's
+  // database is never displaced). The native runtime is started by MAIN at
+  // boot (plan D8): the window opens at once and the migrate handler joins
+  // this start, so the renderer never drives it. It starts through the
+  // migration gate: boot first asks whether this install's data must be moved
+  // from the previous release, and starts nothing while it must (the
+  // migration screen moves it, then the gate starts the runtime).
+  setRuntimeMode(resolveRuntimeMode({ connectionAlreadyPublished: getDbConnection() !== null }));
+  if (getRuntimeMode() === "native") {
+    void nativeStartGate().boot();
+  } else {
+    log.warn("[main] local runtime: not started (the e2e door published this run's database)");
+  }
 
   // 3c. Event loop delay telemetry (K-5, measurement only): p50/p99/max delay
   // and a count of perceptible stalls per window, logged and written to
@@ -506,18 +525,19 @@ async function initializeMainRuntime(): Promise<void> {
   }, "board-live-service");
 
   // 6b. Register lifecycle-driven cleanup. ALL workers must drain in-flight
-  // work BEFORE cleanupOnQuit stops Compose/Postgres — and globalCleanup runs
+  // work BEFORE the local runtime's Postgres stops — and globalCleanup runs
   // tasks concurrently, so makeOrderedQuitCleanup sequences (drain workers) ->
-  // cleanupOnQuit in one ordered task. Rejected stops are logged so a stuck
-  // worker is diagnosable but never blocks secret/compose cleanup. cleanupOnBoot
-  // runs once now to sweep orphaned transient secrets from a prior crash.
+  // runtime stop in one ordered task. Rejected stops are logged so a stuck
+  // worker is diagnosable but never blocks the runtime stop or the secret
+  // sweep. The sweep also runs once now, for transient secrets a prior crash
+  // left behind.
   globalCleanup.add(
     makeOrderedQuitCleanup(async () => {
-      // Vex Studio A3 - FIRST, and before Compose stops: every pending Studio
+      // Vex Studio A3 - FIRST, and before Postgres stops: every pending Studio
       // approval is a blocked MCP call from an external coding agent, and a
       // quit must leave a terminal row rather than a pending one nobody will
-      // ever decide. It runs inside the ordered task because `cleanupOnQuit`
-      // stops the local Postgres, and a refusal after that has no database to
+      // ever decide. It runs inside the ordered task because the runtime stop
+      // takes the local Postgres away, and a refusal after that has no database to
       // write to. A failure is logged by the owner and never blocks the quit.
       // Vex Studio A4a - the LISTENER and its CONNECTIONS go first, in that
       // order: stop admitting, then destroy the open sockets with the trusted
@@ -593,27 +613,35 @@ async function initializeMainRuntime(): Promise<void> {
           stopToolEmbeddingReconcileWorker,
         ),
       ]);
-      // LAST inside the ordered stop, and still before `cleanupOnQuit`: the
+      // LAST inside the ordered stop, and still before the runtime stop: the
       // bridges are the buses the workers above publish on, so they outlive
       // the drain; and the board read caches + DexScreener transport they own
-      // must be closed before compose/Postgres teardown begins. The disposer
+      // must be closed before the Postgres teardown begins. The disposer
       // is memoized in `setupAgentBridges`, so this is the only execution.
       await runQuitStage("agent-bridges", QUIT_TASK_DEADLINE_MS, teardownAgentBridges);
       // The shared main-process IPC pool (K-4) closes after every reader above
-      // has drained and before Compose stops Postgres, so no pooled
+      // has drained and before the runtime stops Postgres, so no pooled
       // connection is left for the server shutdown to sever.
       await runQuitStage("main-ipc-pg-pool", QUIT_TASK_DEADLINE_MS, closeMainIpcPgPool);
     }, async () => {
-      // `docker compose stop` on a live Postgres is the one participant that
-      // is legitimately slow, so it gets the quit's largest single budget.
-      await runQuitStage("compose-and-secret-cleanup", COMPOSE_QUIT_DEADLINE_MS, cleanupOnQuit);
+      // Stopping a live Postgres is the one participant that is legitimately
+      // slow, so it gets the quit's largest single budget (Postgres' fast stop
+      // fits the slot). An e2e door run started no runtime: its database is
+      // the run's own to stop.
+      await runQuitStage("native-runtime-and-secret-cleanup", RUNTIME_QUIT_DEADLINE_MS, async () => {
+        if (getRuntimeMode() === "native") {
+          // A data move in flight is cancelled first: it keeps its durable
+          // steps for the next launch and stops the database it started.
+          await nativeStartGate().shutdown();
+          await stopNativeRuntime();
+        }
+        await sweepTransientSecrets();
+      });
     }),
     "ordered-quit",
     { deadlineMs: ORDERED_QUIT_DEADLINE_MS },
   );
-  void cleanupOnBoot().catch((err) => {
-    log.error("[main] cleanupOnBoot failed", err);
-  });
+  void sweepTransientSecrets();
 
   // 6b. Sentry — honors prior opt-in if any. Idempotent + lazy-imports the
   // SDK only when consent + DSN are both present (codex v3 hard fix #2).
@@ -632,14 +660,14 @@ async function initializeMainRuntime(): Promise<void> {
   // 7. Main window, AT ONCE. It used to wait here for the Studio readiness
   // barrier (bounded at 15 s), because an approval IPC handler cannot be
   // invoked before a renderer exists to invoke it. On a cold start that bound
-  // was always spent: the barrier waits for the engine database, and the
-  // database only starts when the RENDERER asks for Docker, which it could not
-  // do before this window existed. The property the wait carried ("nothing
-  // dispatches while the reconciler runs") is now carried by the execution
-  // gate armed above, which refuses the approvals IPC (and every other
-  // execution request) until the barrier has settled. With Docker stopped the
-  // window shows the launch pipeline's own starting state, and every execution
-  // request is refused, typed, with nothing run.
+  // was always spent: the barrier waits for the engine database, which is not
+  // up before the local runtime has started and the schema has migrated. The
+  // property the wait carried ("nothing dispatches while the reconciler
+  // runs") is now carried by the execution gate armed above, which refuses
+  // the approvals IPC (and every other execution request) until the barrier
+  // has settled. While the runtime is not up the window shows the launch
+  // pipeline's own starting state, and every execution request is refused,
+  // typed, with nothing run.
   await createMainWindow();
 
   // 7c. THE VEX STUDIO READINESS BARRIER, then the Studio MCP host, off the
@@ -693,9 +721,10 @@ app.whenReady().then(async () => {
 
 app.on("activate", async () => {
   if (!bootRuntimeInitialized) return;
-  // macOS: re-create window when dock icon clicked + no windows open
-  const { BrowserWindow } = await import("electron");
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // macOS: re-create the main window when the dock icon is clicked after it
+  // was closed. "No main window", not "no windows": the DexScreener bridge's
+  // hidden window outlives it (windows/main-window-ref.ts).
+  if (getMainWindow() === null) {
     await createMainWindow();
   }
 });

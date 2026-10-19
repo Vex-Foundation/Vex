@@ -38,8 +38,6 @@ export const KNOWN_AUTOMATIC_CATEGORIES = [
   "ipc_validation_failure",
   "database_unavailable",
   "database_migration_failure",
-  "docker_detection_failure",
-  "docker_compose_failure",
   "inference_provider_failure",
   "embedding_failure",
   "mission_paused_error",

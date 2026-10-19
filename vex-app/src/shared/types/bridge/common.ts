@@ -16,8 +16,8 @@ import type { Result } from "../../ipc/result.js";
  * rejection.
  *
  * The cancelled outcome is handler-specific, NOT always an error:
- *   - `docker.composeUp` throws `AbortError` on abort → `promise`
- *     resolves to `err(internal.cancelled)`.
+ *   - `settings.lighterPoints` answers an abort with
+ *     `err(internal.cancelled)`.
  *   - `chat.submit` (9-5b) returns the persisted partial normally on
  *     abort → `promise` resolves to `ok(... stopReason:"user_stopped" ...)`.
  * `register-handler` only rewrites a result to `internal.cancelled` when

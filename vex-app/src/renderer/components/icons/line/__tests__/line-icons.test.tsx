@@ -17,7 +17,7 @@ const EXPECTED_NAMES = [
   "activity", "archive", "arrow-down", "arrow-up", "arrows", "attach", "back", "bars", "bell",
   "board", "book", "branch", "camera", "candles", "chat", "check", "chevron-down", "chevron-left",
   "chevron-right", "chevron-up", "chevrons-up-down", "clock", "close", "copy", "cursor",
-  "database", "desktop", "docker", "download", "drop", "edit", "external", "fib", "file",
+  "database", "desktop", "download", "drop", "edit", "external", "fib", "file",
   "flame", "folder", "gear", "h-line", "home", "inbox", "info", "key", "lighter", "link", "lock",
   "markets", "memory", "menu", "missions", "model", "moon", "more", "new-chat", "panel-left",
   "panel-right", "pause", "percent", "pin", "play", "plus", "portfolio", "preferences",

@@ -24,9 +24,27 @@ import { WalletRemovalSection } from "../../../wallets/WalletRemovalSection.js";
 import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js";
 import { Button } from "../../../../components/ui/button.js";
 import { LighterSection } from "./LighterSection.js";
+import { LocalRuntimeSection } from "./LocalRuntimeSection.js";
 import { SettingsHead } from "./SettingsHead.js";
 import { SettingsLockRow } from "./SettingsLockRow.js";
-import { settingsSectionStatus, type SectionMeta } from "./settings-sections.js";
+import {
+  localRuntimeRegisterStatus,
+  settingsSectionStatus,
+  type SectionMeta,
+} from "./settings-sections.js";
+import { useNativeRuntimeStatus } from "../../../runtime/bootstrap/useNativeRuntimeStatus.js";
+
+/** The Local runtime section's head: its word is the runtime's live state. */
+function LocalRuntimeHead({ meta }: { readonly meta: SectionMeta }): JSX.Element {
+  const { status } = useNativeRuntimeStatus();
+  return (
+    <SettingsHead
+      title={meta.name}
+      status={localRuntimeRegisterStatus(status)}
+      lead={meta.lead ?? meta.hint}
+    />
+  );
+}
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
 import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
 
@@ -55,7 +73,9 @@ export function SettingsSectionView({
       className="flex w-full flex-col gap-4"
       data-vex-settings-section={meta.id}
     >
-      {meta.stepId === undefined ? (
+      {meta.id === "localRuntime" ? (
+        <LocalRuntimeHead meta={meta} />
+      ) : meta.stepId === undefined ? (
         <SettingsHead
           title={meta.name}
           status={settingsSectionStatus(meta.id, env, superboard)}
@@ -83,6 +103,8 @@ function renderSectionContent(
       return <SuperboardKeySection />;
     case "lighterPoints":
       return <LighterSection />;
+    case "localRuntime":
+      return <LocalRuntimeSection />;
   }
   switch (meta.stepId) {
     case undefined:

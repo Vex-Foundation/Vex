@@ -174,7 +174,7 @@ test("Studio journey: create a project, see its report, open it and get a termin
 }: {
   vexDb: VexDatabaseFixture;
 }, testInfo: TestInfo) => {
-  // A container start, an Electron boot, a migration, a render onto disk and a
+  // A cluster start, an Electron boot, a migration, a render onto disk and a
   // real pty. The suite's 30s budget is the smoke test's, not this one's.
   test.setTimeout(180_000);
 

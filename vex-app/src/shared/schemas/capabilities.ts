@@ -30,7 +30,6 @@ export const capabilitiesSchema = z
         // Phase 1
         splash: z.boolean(),
         systemCheck: z.boolean(),
-        dockerBootstrap: z.boolean(),
         wizard: z.boolean(),
         wallets: z.boolean(),
         // Phase 2 (always false until implemented)

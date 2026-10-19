@@ -24,24 +24,24 @@ describe("SetupFrame, plate layout", () => {
     const { container, getByRole } = render(
       <SetupFrame
         layout="plate"
-        screen="dockerBootstrap"
-        step="docker"
+        screen="runtimeBootstrap"
+        step="runtime"
         mood="concerned"
-        title="Docker"
-        subline="Vex runs Postgres and embeddings locally through Docker."
+        title="Preparing local runtime"
+        subline="Vex runs its database and embeddings locally, on this machine."
       >
         <p>body</p>
       </SetupFrame>,
     );
-    const main = container.querySelector('main[data-vex-screen="dockerBootstrap"]');
+    const main = container.querySelector('main[data-vex-screen="runtimeBootstrap"]');
     expect(main?.getAttribute("data-vex-onboarding")).toBe("true");
     expect(main?.getAttribute("data-vex-gate")).toBe("true");
     const side = main?.querySelector(".vex-stage-side.vex-fr-side");
     expect(side).not.toBeNull();
-    expect(side?.querySelector("h1.vex-stage-title")?.textContent).toBe("Docker");
+    expect(side?.querySelector("h1.vex-stage-title")?.textContent).toBe("Preparing local runtime");
     expect(side?.querySelector("p.vex-stage-lead")?.textContent).toContain("embeddings locally");
     expect(side?.textContent).toContain("body");
-    expect(getByRole("navigation", { name: "First run" }).textContent).toContain("Services");
+    expect(getByRole("navigation", { name: "First run" }).textContent).toContain("Local runtime");
     expect(main?.querySelector("[data-vex-version-stamp]")).not.toBeNull();
     // No leaf, no sky counter and no ground caption row on the plate layout.
     expect(main?.querySelector(".vex-stage-leaf")).toBeNull();

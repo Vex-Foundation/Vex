@@ -12,7 +12,7 @@
  *
  * `withClient` is the single connection wrapper; `BugReportsDbUnavailableError`
  * is single-sourced here so the create / read / upload-attempt functions all
- * fail identically when compose state is missing.
+ * fail identically when no database connection is published.
  */
 
 import type { Client } from "pg";
@@ -31,7 +31,7 @@ const QUERY_TIMEOUT_MS = 5_000;
  */
 export class BugReportsDbUnavailableError extends Error {
   constructor() {
-    super("Bug reports DB unavailable (compose state missing).");
+    super("Bug reports DB unavailable (no database connection).");
     this.name = "BugReportsDbUnavailableError";
   }
 }

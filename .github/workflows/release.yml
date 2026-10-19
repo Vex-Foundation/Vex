@@ -7,10 +7,24 @@
 #   - Linux  (ubuntu-latest): AppImage + deb, x64, unsigned. Needs no signing
 #     secrets, so it ships even while Apple account approval is pending
 #     (owner-agreed strategy — Linux is independent of macOS/Apple delays).
-#   - Windows (windows-latest): NSIS installer, x64, signed + RFC3161
-#     timestamped via Azure Trusted Signing (electron-builder azureSignOptions,
-#     account vexlabssigning / profile vex-app-signing). Consumes the 3 Azure
-#     secrets.
+#   - Windows (windows-latest): per-arch NSIS installers, x64 AND arm64, signed
+#     + RFC3161 timestamped via Azure Trusted Signing (electron-builder
+#     azureSignOptions, account vexlabssigning / profile vex-app-signing).
+#     Consumes the 3 Azure secrets.
+#
+# Every job also carries the native runtime (Postgres + pgvector,
+# llama-server): fetched from the release vex-app/native-runtime.lock.json
+# pins, verified against the lock, staged per arch, re-verified by the
+# afterPack hook before signing and by check:package after it. While that
+# release lives on a private repository, the VEX_NATIVE_RUNTIME_TOKEN secret
+# must be a token that can read it.
+#
+# No job publishes before the CLEAN-MACHINE GATE has passed on every leg
+# (clean-machine.yml, plan D12): an unsigned package of this commit for
+# macOS arm64 and x64, Linux x64, Windows x64 and arm64 completes its first
+# run, quit and relaunch on a runner with Docker removed. The draft release
+# and the three build jobs `need` it, so a red leg means no draft, no signing
+# and no upload.
 #
 # electron-updater (GitHub provider) consumes latest-mac.yml / latest-linux.yml
 # / latest.yml (Windows) that electron-builder emits into each release. The packaged app auto-loads the
@@ -40,6 +54,10 @@
 #   AZURE_CLIENT_SECRET client secret of that principal (github-actions-release-4,
 #                      expires 2028-08-09 - when it lapses the windows job fails
 #                      with a 401; rotate in Entra and update this secret)
+#   VEX_NATIVE_RUNTIME_TOKEN  read access to the repository whose release the
+#                      native runtime lock pins, while it is private (falls
+#                      back to the workflow's own token, enough when the
+#                      release is in this repository or public)
 #   GITHUB_TOKEN       provided automatically by Actions (no setup)
 
 name: Release
@@ -112,6 +130,26 @@ jobs:
         working-directory: vex-app
         run: pnpm test
 
+  # THE CLEAN-MACHINE GATE (plan D12), on every leg the release ships:
+  # darwin-arm64, darwin-x64, linux-x64, win32-x64, win32-arm64. Each leg
+  # packages this commit unsigned with the lock-pinned native runtime, removes
+  # Docker from its runner and proves it is gone, then drives the packaged app
+  # through its first run (System Check, initdb and every migration, the model
+  # download, the wizard), a user's quit and a relaunch
+  # (e2e/native-runtime.spec.ts, --retries=0). It runs beside the unit gate;
+  # the draft release and every job that publishes need it, so a red leg stops
+  # the release before a draft exists or anything is signed or uploaded. It gets one secret, the token that reads
+  # the native runtime release, and none of the signing secrets.
+  clean-machine:
+    name: Clean-machine gate (all legs)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/clean-machine.yml
+    with:
+      legs: all
+    secrets:
+      VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN }}
+
   # Serialize DRAFT-RELEASE CREATION only (Codex review finding): electron-publish
   # has no retry-on-422 for simultaneous createRelease() calls, so two parallel
   # jobs racing to create the same draft can fail. This job creates the draft
@@ -120,7 +158,8 @@ jobs:
   # of Apple delays.
   create-release:
     name: Create draft release (idempotent)
-    needs: test
+    # After the clean-machine gate too, so a red leg leaves no empty draft.
+    needs: [test, clean-machine]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -157,7 +196,7 @@ jobs:
 
   macos:
     name: Build, sign, notarize & publish macOS (arm64 + x64)
-    needs: create-release
+    needs: [create-release, clean-machine]
     runs-on: macos-latest
     # 120 (not 60): Apple's FIRST notarization on a new account is held for
     # "additional analysis", and notarytool --wait has no timeout — the initial
@@ -270,6 +309,23 @@ jobs:
       - name: Stage & verify Lighter signer for packaging
         working-directory: vex-app
         run: node scripts/stage-lighter-signer.mjs --platform mac
+
+      # The native runtime (Postgres + pgvector, llama-server) for BOTH arches
+      # this job packages: downloaded from the release vex-app/native-runtime.lock.json
+      # pins, verified against the lock BEFORE anything is extracted, then
+      # staged per arch. Like the bridge, electron-builder would only warn on a
+      # missing tree; the preflight and the afterPack gate make it fatal. The
+      # token reads the release while it lives on a private repository
+      # (VEX_NATIVE_RUNTIME_TOKEN); a public location needs none.
+      - name: Fetch & verify the native runtime (darwin arm64 + x64)
+        working-directory: vex-app
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
+        run: node scripts/fetch-native-runtime.mjs --platform mac
+
+      - name: Stage & verify the native runtime for packaging
+        working-directory: vex-app
+        run: node scripts/stage-native-runtime.mjs --platform mac --arch arm64 --arch x64
 
       # Method B notarization: decode the App Store Connect API key (.p8) to an
       # ephemeral file and expose its PATH + the key id/issuer via $GITHUB_ENV.
@@ -401,9 +457,47 @@ jobs:
           done
           echo "Embedded bridge signed and verified in every .app bundle."
 
+      # Every Mach-O of the native runtime (programs, libpq, the Postgres
+      # modules, the llama and ggml dylibs, the ggml CPU backends) carries its
+      # own signature, and from OUR team. A valid signature is not enough:
+      # library validation stays on (no disable-library-validation), so
+      # Postgres and llama-server refuse to load a library signed by any other
+      # Team ID. `check:package` above proves each one verifies; this proves
+      # whose it is, and that share/ (data, signIgnore) carries no Mach-O.
+      - name: Verify the embedded native runtime is signed by our team
+        working-directory: vex-app
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(dist-electron/mac*/Vex.app)
+          for app in "${apps[@]}"; do
+            team="$(codesign --display --verbose=2 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+            if [ -z "$team" ] || [ "$team" = "not set" ]; then
+              echo "::error::$app carries no TeamIdentifier."
+              exit 1
+            fi
+            count=0
+            while IFS= read -r -d '' f; do
+              case "$(file -b "$f")" in *Mach-O*) ;; *) continue ;; esac
+              case "$f" in */Contents/Resources/postgres/share/*) echo "::error::$f is a Mach-O under share/, which signIgnore skips."; exit 1 ;; esac
+              codesign --verify --strict "$f"
+              got="$(codesign --display --verbose=2 "$f" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+              if [ "$got" != "$team" ]; then
+                echo "::error::$f is signed by team '$got', not the app's '$team'."
+                exit 1
+              fi
+              count=$((count + 1))
+            done < <(find "$app/Contents/Resources/postgres" "$app/Contents/Resources/llama" -type f -print0)
+            if [ "$count" -eq 0 ]; then
+              echo "::error::No Mach-O under $app/Contents/Resources/{postgres,llama} - the package would ship without its runtime."
+              exit 1
+            fi
+            echo "$app: $count native runtime Mach-O files signed by team $team."
+          done
+
   linux:
     name: Build & publish Linux (x64)
-    needs: create-release
+    needs: [create-release, clean-machine]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -473,6 +567,17 @@ jobs:
         working-directory: vex-app
         run: node scripts/stage-lighter-signer.mjs --platform linux
 
+      # See the macOS job: the lock-pinned runtime, verified before extraction.
+      - name: Fetch & verify the native runtime (linux x64)
+        working-directory: vex-app
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
+        run: node scripts/fetch-native-runtime.mjs --platform linux
+
+      - name: Stage & verify the native runtime for packaging
+        working-directory: vex-app
+        run: node scripts/stage-native-runtime.mjs --platform linux --arch x64
+
       # No signing env on Linux (AppImage/deb are unsigned). --linux with no arch
       # flag uses the release profile's arch list (x64). electron-updater feed is
       # latest-linux.yml. Publishes to the SAME tagged draft release as the macOS
@@ -483,11 +588,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The shipped payload, re-read after packaging: the native candidates, and
+      # the native runtime trees byte-for-byte against the lock (nothing signs a
+      # Linux package, so every sha256 must still match).
+      - name: Verify the packaged payload
+        working-directory: vex-app
+        run: pnpm run check:package
+
   windows:
-    name: Build, sign & publish Windows (x64)
-    needs: create-release
+    # BOTH arches on this one x64 runner, in one electron-builder invocation, as
+    # the macOS job does: one latest.yml listing both installers. The arm64
+    # build is packaged and signed here too because the Trusted Signing client
+    # and SignTool are x64-only (plan 15.4 item 8); Electron, node-pty and
+    # @parcel/watcher ship win32-arm64 prebuilds, and pnpm's
+    # supportedArchitectures installs the arm64 optional packages on x64.
+    name: Build, sign & publish Windows (x64 + arm64)
+    needs: [create-release, clean-machine]
     runs-on: windows-latest
-    timeout-minutes: 60
+    # 120 (not 60): with the native runtime every .exe and .dll of two arches
+    # is signed, one serialized Trusted Signing call per file (app-builder-lib
+    # 26.8.1 WindowsSignAzureManager.signFile runs Invoke-TrustedSigning once
+    # per path): on the order of a hundred extra calls per release.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
 
@@ -567,18 +689,37 @@ jobs:
         run: pnpm run build
 
       # bash on windows-latest is Git Bash, which runs the wrapper unchanged.
-      - name: Build Vex Studio bridge (windows amd64)
+      - name: Build Vex Studio bridge (windows amd64 + arm64)
         shell: bash
-        run: bash bridge/build.sh windows amd64
+        run: |
+          bash bridge/build.sh windows amd64
+          bash bridge/build.sh windows arm64
 
       - name: Stage & verify bridge for packaging
         working-directory: vex-app
         shell: bash
-        run: node scripts/stage-bridge.mjs --platform win --arch x64
+        run: node scripts/stage-bridge.mjs --platform win --arch x64 --arch arm64
 
+      # Stages BOTH Windows helpers (win32-x64 and win32-arm64) already: the
+      # Lighter signer stages every arch of the packaged platform.
       - name: Stage & verify Lighter signer for packaging
         working-directory: vex-app
         run: node scripts/stage-lighter-signer.mjs --platform win
+
+      # See the macOS job. win32-arm64 stages the x64 Postgres tree its release
+      # tarball carries (PostgreSQL 18 has no MSVC ARM64 build) beside the
+      # native arm64 llama-server. Staging also records the pre-sign
+      # Authenticode content digest of every PE, which the afterPack gate binds
+      # the files electron-builder signs during the copy back to.
+      - name: Fetch & verify the native runtime (win32 x64 + arm64)
+        working-directory: vex-app
+        env:
+          VEX_NATIVE_RUNTIME_TOKEN: ${{ secrets.VEX_NATIVE_RUNTIME_TOKEN || github.token }}
+        run: node scripts/fetch-native-runtime.mjs --platform win
+
+      - name: Stage & verify the native runtime for packaging
+        working-directory: vex-app
+        run: node scripts/stage-native-runtime.mjs --platform win --arch x64 --arch arm64
 
       # app-builder-lib's WindowsSignAzureManager authenticates through
       # DefaultAzureCredential's EnvironmentCredential using these three vars.
@@ -589,7 +730,7 @@ jobs:
       # applies the RFC3161 timestamp (pinned in the release profile).
       - name: Package, sign & publish
         working-directory: vex-app
-        run: pnpm exec electron-builder --win --x64 --publish always --config electron-builder.release.yml
+        run: pnpm exec electron-builder --win --x64 --arm64 --publish always --config electron-builder.release.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -668,3 +809,54 @@ jobs:
             }
           }
           Write-Host "Packaged Vex Studio bridge binaries present at the contract paths."
+
+      # The native runtime's executables AND DLLs, in both packaged arches.
+      # Every .exe is signed during the copy and held to the three sentences:
+      # Valid, our publisher, timestamped. DLLs are not re-signed (no
+      # win.signExts; see electron-builder.release.yml): each one is either
+      # Microsoft's own signed redistributable (Valid, Microsoft) or one of
+      # ours shipped unsigned (NotSigned), which `check:package` above already
+      # bound back to the lock by its Authenticode content digest.
+      - name: Verify the packaged native runtime is signed (Windows)
+        working-directory: vex-app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $roots = @(Get-ChildItem -Path dist-electron -Directory -Filter 'win*-unpacked')
+          if ($roots.Count -ne 2) {
+            Write-Error "Expected win-unpacked and win-arm64-unpacked in dist-electron, found: $($roots.Name -join ', ')"
+          }
+          foreach ($root in $roots) {
+            $files = @()
+            foreach ($tree in @('postgres', 'llama')) {
+              $dir = Join-Path $root.FullName "resources\$tree"
+              if (-not (Test-Path $dir)) {
+                Write-Error "No $dir - the package would ship without its $tree runtime."
+              }
+              $files += @(Get-ChildItem -Path $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' })
+            }
+            if ($files.Count -eq 0) {
+              Write-Error "No .exe or .dll under $($root.Name)\resources\{postgres,llama}."
+            }
+            $exes = 0; $microsoft = 0; $unsigned = 0
+            foreach ($f in $files) {
+              $sig = Get-AuthenticodeSignature $f.FullName
+              if ($f.Extension -eq '.dll') {
+                if ($sig.Status -eq 'NotSigned') { $unsigned++; continue }
+                if ($sig.Status -eq 'Valid' -and $sig.SignerCertificate.Subject -match 'O=Microsoft Corporation') { $microsoft++; continue }
+                Write-Error "DLL $($f.FullName) is neither unsigned nor validly Microsoft-signed: $($sig.Status) $($sig.SignerCertificate.Subject)"
+              }
+              if ($sig.Status -ne 'Valid') {
+                Write-Error "Signature not Valid for $($f.FullName): $($sig.Status)"
+              }
+              if ($sig.SignerCertificate.Subject -notmatch 'VEX LABS PTE\. LTD\.') {
+                Write-Error "Unexpected signer for $($f.FullName): $($sig.SignerCertificate.Subject)"
+              }
+              if (-not $sig.TimeStamperCertificate) {
+                Write-Error "No RFC3161 timestamp on $($f.FullName)."
+              }
+              $exes++
+            }
+            if ($exes -eq 0) { Write-Error "No signed runtime executable under $($root.Name)." }
+            Write-Host "$($root.Name): $exes runtime executables signed and timestamped by VEX LABS; $microsoft Microsoft-signed and $unsigned lock-bound unsigned DLLs."
+          }

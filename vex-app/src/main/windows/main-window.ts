@@ -26,6 +26,8 @@ import {
   type DisplayInfo,
 } from "./visibility.js";
 import { chromeOptionsFor } from "./chrome-options.js";
+import { quitWhenMainWindowCloses } from "../lifecycle/window-all-closed.js";
+import { setMainWindow } from "./main-window-ref.js";
 import {
   computeFirstRunBounds,
   computeMinConstraints,
@@ -56,8 +58,6 @@ const ALLOWED_EXTERNAL: ReadonlyArray<ExternalAllowEntry> = [
   "app.tavily.com",
   "openrouter.ai",
   "releases.electronjs.org",
-  "desktop.docker.com",
-  "docs.docker.com",
   // Go toolchain guidance (Studio bridge readiness panel, from-source runs
   // only). Path-scoped: the download page and the install doc, nothing else
   // on go.dev.
@@ -222,6 +222,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       devTools: !app.isPackaged,
     },
   });
+
+  setMainWindow(win);
+  quitWhenMainWindowCloses(win);
 
   if (prefs.window.maximized) win.maximize();
 

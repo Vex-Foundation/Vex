@@ -63,8 +63,6 @@ describe("isAllowedExternalUrl", () => {
     "app.tavily.com",
     "openrouter.ai",
     "releases.electronjs.org",
-    "desktop.docker.com",
-    "docs.docker.com",
     "explorer.solana.com",
     "dexscreener.com",
     "www.tradingview.com",
@@ -95,8 +93,6 @@ describe("isAllowedExternalUrl", () => {
     "https://app.tavily.com/api-keys",
     "https://openrouter.ai/models",
     "https://releases.electronjs.org/schedule",
-    "https://desktop.docker.com/mac/main/arm64/Docker.dmg",
-    "https://docs.docker.com/desktop/setup/install/mac-install/",
     "https://projectvex.ai/releases",
     "https://projectvex.ai/releases/v0-2-0",
     "https://projectvex.ai/docs",
@@ -139,6 +135,10 @@ describe("isAllowedExternalUrl", () => {
     // projectvex.ai/releases repoint (2026-07-22) — must stay denied.
     "https://github.com/Vex-Foundation/Vex",
     "https://github.com/Vex-Foundation/Vex/releases",
+    // Regression: the Docker installer and docs hosts died with the Docker
+    // runtime - Vex no longer installs or explains Docker. Must stay denied.
+    "https://desktop.docker.com/mac/main/arm64/Docker.dmg",
+    "https://docs.docker.com/desktop/setup/install/mac-install/",
     // projectvex.ai near-misses: path boundary, host root, exact-host only
     "https://projectvex.ai/", // root not under /releases or /docs
     "https://projectvex.ai/releasesX",

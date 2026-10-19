@@ -59,7 +59,7 @@ export default defineConfig({
      *
      * Chromium rather than Electron because the board modal is unreachable
      * from the Electron fixture (see `e2e/smoke.spec.ts`: everything past
-     * SystemCheck needs a live Docker daemon and an unlocked vault), and
+     * SystemCheck needs a running local runtime and an unlocked vault), and
      * because geometry is decided entirely by the renderer's own container
      * queries over the real production stylesheet - which is exactly what
      * `vite.board-layout.config.ts` serves.

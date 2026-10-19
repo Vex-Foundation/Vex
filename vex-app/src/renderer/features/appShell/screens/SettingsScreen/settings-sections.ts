@@ -8,6 +8,7 @@
 
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import type { LineIconName } from "../../../../components/icons/line/index.js";
 import type { SwatchState } from "../../../../components/ui/swatch.js";
@@ -16,6 +17,11 @@ import {
   LIGHTER_SECTION_HINT,
   LIGHTER_SECTION_NAME,
 } from "./lighter-trading-setup-copy.js";
+import {
+  LOCAL_RUNTIME_LEDE,
+  LOCAL_RUNTIME_SECTION_HINT,
+  LOCAL_RUNTIME_SECTION_NAME,
+} from "./local-runtime-copy.js";
 
 /** The nav's group heads, in order. */
 export type SettingsGroupName =
@@ -37,6 +43,8 @@ export interface SectionMeta {
    * Defaults to the hint.
    */
   readonly lead?: string;
+  /** Listed only when main runs the bundled native runtime. */
+  readonly nativeOnly?: true;
 }
 
 /** Nav order is the custody gradient: secrets first, tuning next, integrations last. */
@@ -90,6 +98,15 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     hint: "Context, output, and sampling limits",
   },
   {
+    id: "localRuntime",
+    group: "The agent",
+    icon: "desktop",
+    name: LOCAL_RUNTIME_SECTION_NAME,
+    hint: LOCAL_RUNTIME_SECTION_HINT,
+    lead: LOCAL_RUNTIME_LEDE,
+    nativeOnly: true,
+  },
+  {
     id: "superboardKey",
     group: "Connections",
     icon: "link",
@@ -105,6 +122,11 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     hint: LIGHTER_SECTION_HINT,
   },
 ];
+
+/** The rows this install lists: the native-only ones only on the native runtime. */
+export function visibleSettingsSections(native: boolean): ReadonlyArray<SectionMeta> {
+  return SETTINGS_SECTIONS.filter((meta) => native || meta.nativeOnly !== true);
+}
 
 /** What the nav can select: a section, or Preferences (the App group's one row). */
 export type SettingsNavId = SettingsSection | "preferences";
@@ -126,21 +148,27 @@ const GROUP_ORDER: ReadonlyArray<Exclude<SettingsGroupName, "App">> = [
   "Connections",
 ];
 
-/** The four groups with their rows, in the order the nav draws them. */
-export const SETTINGS_NAV: ReadonlyArray<SettingsNavGroup> = [
-  {
-    name: "App",
-    items: [{ id: "preferences", name: "Preferences", icon: "preferences" }],
-  },
-  ...GROUP_ORDER.map((name) => ({
-    name,
-    items: SETTINGS_SECTIONS.filter((meta) => meta.group === name).map((meta) => ({
-      id: meta.id,
-      name: meta.name,
-      icon: meta.icon,
+/**
+ * The four groups with their rows, in the order the nav draws them. The
+ * native-only rows are listed only on the native runtime.
+ */
+export function settingsNav(native: boolean): ReadonlyArray<SettingsNavGroup> {
+  const sections = visibleSettingsSections(native);
+  return [
+    {
+      name: "App",
+      items: [{ id: "preferences", name: "Preferences", icon: "preferences" }],
+    },
+    ...GROUP_ORDER.map((name) => ({
+      name,
+      items: sections.filter((meta) => meta.group === name).map((meta) => ({
+        id: meta.id,
+        name: meta.name,
+        icon: meta.icon,
+      })),
     })),
-  })),
-];
+  ];
+}
 
 export type SettingsStatusTone = "success" | "neutral" | "warning";
 
@@ -189,12 +217,36 @@ export function superboardRegisterStatus(
   }
 }
 
+/**
+ * The local runtime's word, from main's live status: running, on its way up
+ * (a start or a restart), stopped, or failed. Null before the first status.
+ */
+export function localRuntimeRegisterStatus(
+  status: NativeRuntimeStatus | null,
+): SettingsStatus {
+  if (status === null) return { word: "-", tone: "neutral" };
+  switch (status.phase) {
+    case "ready":
+      return { word: "Running", tone: "success" };
+    case "failed":
+      return { word: "Stopped with an error", tone: "warning" };
+    case "idle":
+      return { word: "Stopped", tone: "neutral" };
+    case "postgres":
+    case "model":
+    case "embeddings":
+      return { word: "Starting", tone: "neutral" };
+  }
+}
+
 export function settingsSectionStatus(
   section: SettingsSection,
   env: EnvState | null,
   superboard: SuperboardKeyStatus | null = null,
+  runtime: NativeRuntimeStatus | null = null,
 ): SettingsStatus {
   if (section === "superboardKey") return superboardRegisterStatus(superboard);
+  if (section === "localRuntime") return localRuntimeRegisterStatus(runtime);
   if (env === null) return { word: "-", tone: "neutral" };
   switch (section) {
     case "vault":

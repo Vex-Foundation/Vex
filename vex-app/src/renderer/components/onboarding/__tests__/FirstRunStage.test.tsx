@@ -53,11 +53,10 @@ describe("moodFace", () => {
 });
 
 describe("FirstRunCrumb", () => {
-  it("names the five stages in order", () => {
+  it("names the four stages in order", () => {
     expect(FIRST_RUN_STAGES.map((stage) => stage.label)).toEqual([
       "System check",
-      "Docker",
-      "Services",
+      "Local runtime",
       "Database",
       "Setup",
     ]);
@@ -65,13 +64,12 @@ describe("FirstRunCrumb", () => {
 
   it.each<[FirstRunStep, number]>([
     ["systemCheck", 0],
-    ["docker", 1],
-    ["services", 2],
-    ["database", 3],
+    ["runtime", 1],
+    ["database", 2],
   ])("marks %s as current, the earlier stages done and the later ones next", (step, at) => {
     const { container, getByRole } = render(<FirstRunCrumb step={step} mood="working" />);
     const items = Array.from(container.querySelectorAll("li"));
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(4);
     items.forEach((li, index) => {
       expect(li.getAttribute("data-state")).toBe(
         index < at ? "done" : index === at ? "now" : "next",
@@ -84,11 +82,11 @@ describe("FirstRunCrumb", () => {
   });
 
   it("draws each stage as a fill with its word: solid for done, the mood's fill for the current one, an outline for the rest", () => {
-    const { container } = render(<FirstRunCrumb step="services" mood="error" />);
+    const { container } = render(<FirstRunCrumb step="database" mood="error" />);
     const fills = Array.from(container.querySelectorAll("li .vex-swatch")).map((swatch) =>
       swatch.getAttribute("data-s"),
     );
-    expect(fills).toEqual(["done", "done", "error", "idle", "idle"]);
+    expect(fills).toEqual(["done", "done", "error", "idle"]);
     // A reader without the picture hears what a done stage and the failed one are.
     const spoken = Array.from(container.querySelectorAll("li .sr-only")).map((n) => n.textContent);
     expect(spoken).toEqual(["Done", "Done", "Error"]);

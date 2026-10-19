@@ -410,7 +410,7 @@ describe("ON: one shared bounded pool", () => {
   it("retires the pool on every DB connection handoff (compose up after a restart, compose down)", async () => {
     await pool.runWithMainDbClient(CFG, CALL, async () => "a");
     const first = lastPool();
-    setDbConnection({ pgPort: 27432, pgPasswordPath: "/secret" });
+    setDbConnection({ host: "127.0.0.1", pgPort: 27432, pgPasswordPath: "/secret" });
     expect(first.ended).toBe(true);
     await pool.runWithMainDbClient(CFG, CALL, async () => "b");
     expect(state.pools).toHaveLength(2);

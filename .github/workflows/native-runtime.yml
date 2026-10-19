@@ -1,0 +1,412 @@
+name: Native runtime
+
+# Builds the bundled Postgres + pgvector and llama-server trees for every
+# target from the pins in native-runtime/sources.env, and runs the smoke and
+# parity gates on real hardware of each target (native-runtime/README.md).
+# Not part of every push: the trees change only when a pin or a recipe does.
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Targets to build (windows = only the two Windows targets, none = no build)
+        type: choice
+        options: [all, windows, none]
+        default: all
+      release:
+        description: >-
+          Publish the five gated trees as a GitHub release with this name
+          (native-runtime-<yyyy.mm.dd>-<n>); empty = build and gate only
+        type: string
+        default: ""
+      clean_machine:
+        description: >-
+          Also run the clean-machine gate (clean-machine.yml) on these legs:
+          "all" or a comma-separated list of darwin-arm64, darwin-x64,
+          linux-x64, win32-x64, win32-arm64; empty = do not run it
+        type: string
+        default: ""
+  push:
+    branches: [native-runtime]
+    paths:
+      - "native-runtime/**"
+      - ".github/workflows/native-runtime.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # The gates need the app's `pg` client and tsx, not Electron itself.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+jobs:
+  darwin-arm64:
+    if: inputs.targets != 'windows' && inputs.targets != 'none'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir vex-app install --frozen-lockfile
+
+      - name: Build Postgres
+        run: native-runtime/postgres/build.sh darwin-arm64
+      - name: Build llama-server
+        run: native-runtime/llama/build.sh darwin-arm64
+
+      - name: Smoke Postgres
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/darwin-arm64/postgres
+      - uses: actions/cache@v4
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server
+        run: node native-runtime/llama/smoke.mjs darwin-arm64 native-runtime/out/darwin-arm64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+      - name: Durability benchmark
+        run: node native-runtime/postgres/bench-durability.mjs native-runtime/out/darwin-arm64/postgres fsync fsync_writethrough
+
+      - name: Pack the trees
+        run: tar -czf runtime-darwin-arm64.tar.gz -C native-runtime/out darwin-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-darwin-arm64
+          path: runtime-darwin-arm64.tar.gz
+          retention-days: 14
+
+  darwin-x64-build:
+    # Cross-built on Apple Silicon (the same recipe as a local build), run on
+    # a real Intel Mac below.
+    if: inputs.targets != 'windows' && inputs.targets != 'none'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build Postgres
+        run: native-runtime/postgres/build.sh darwin-x64
+      - name: Build llama-server
+        run: native-runtime/llama/build.sh darwin-x64
+      - name: Pack the trees
+        run: tar -czf runtime-darwin-x64.tar.gz -C native-runtime/out darwin-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-darwin-x64
+          path: runtime-darwin-x64.tar.gz
+          retention-days: 14
+
+  darwin-x64-smoke:
+    needs: darwin-x64-build
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir vex-app install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-darwin-x64
+      - name: Unpack the trees
+        run: mkdir -p native-runtime/out && tar -xzf runtime-darwin-x64.tar.gz -C native-runtime/out
+      - name: Verify the trees on this machine
+        run: |
+          native-runtime/lib/verify-tree.sh native-runtime/out/darwin-x64/postgres darwin-x64
+          native-runtime/lib/verify-tree.sh native-runtime/out/darwin-x64/llama darwin-x64
+
+      - name: Smoke Postgres
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/darwin-x64/postgres darwin-x64
+      - uses: actions/cache@v4
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server
+        run: node native-runtime/llama/smoke.mjs darwin-x64 native-runtime/out/darwin-x64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+      - name: Durability benchmark
+        run: node native-runtime/postgres/bench-durability.mjs native-runtime/out/darwin-x64/postgres fsync fsync_writethrough
+
+  linux-x64:
+    if: inputs.targets != 'windows' && inputs.targets != 'none'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir vex-app install --frozen-lockfile
+
+      - name: Build Postgres (manylinux_2_28)
+        run: native-runtime/linux/build-in-container.sh postgres
+      - name: Build llama-server (manylinux_2_28)
+        run: native-runtime/linux/build-in-container.sh llama
+
+      - name: Smoke Postgres (server in ubuntu:22.04)
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/linux-x64/postgres linux-x64
+      - uses: actions/cache@v4
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server (in ubuntu:22.04)
+        run: node native-runtime/llama/smoke.mjs linux-x64 native-runtime/out/linux-x64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+      - name: Embedding parity vs the pinned server-b9115 image
+        run: native-runtime/parity/run.sh linux-x64
+
+      - name: Pack the trees
+        if: always()
+        run: tar -czf runtime-linux-x64.tar.gz -C native-runtime/out .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-linux-x64
+          path: runtime-linux-x64.tar.gz
+          retention-days: 14
+
+  # Windows. Built under Git Bash in an MSVC developer environment set up by
+  # ilammy/msvc-dev-cmd (pinned by commit; it runs vcvarsall for the newest
+  # Visual Studio on the image). The runners are elevated, which is what makes
+  # the Postgres smoke exercise the pg_ctl path.
+  win32-x64:
+    if: inputs.targets != 'none'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The image's git has core.autocrlf=true; the pgvector and llama.cpp
+      # checkouts must stay byte-identical to their pinned commits, and
+      # llama.cpp has paths past MAX_PATH.
+      - run: git config --global core.autocrlf false && git config --global core.longpaths true
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install the app's pg client
+        # Only vex-app's pure-JS `pg` is needed; no native module builds.
+        run: pnpm --dir vex-app install --frozen-lockfile --ignore-scripts
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      # The two trees are independent: each build and its smoke runs whatever
+      # happened to the other one, and the job fails if any step does.
+      - name: Build Postgres
+        id: pg
+        run: native-runtime/postgres/build.sh win32-x64
+      - name: Build llama-server
+        id: llama
+        if: ${{ !cancelled() }}
+        run: native-runtime/llama/build.sh win32-x64
+      - name: Pack the trees
+        if: ${{ !cancelled() && steps.pg.outcome == 'success' }}
+        run: |
+          tar -czf runtime-win32-x64.tar.gz -C native-runtime/out win32-x64
+          for t in postgres llama; do
+            d=native-runtime/out/win32-x64/$t
+            [ -d "$d" ] || continue
+            echo "$t: $(du -sk "$d" | cut -f1) KiB, tar.gz -9 $(tar -C "$d" -cf - . | gzip -9 | wc -c) B, tar.xz -9 $(tar -C "$d" -cf - . | xz -9 | wc -c) B"
+          done
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.pg.outcome == 'success' }}
+        with:
+          name: runtime-win32-x64
+          path: runtime-win32-x64.tar.gz
+          retention-days: 14
+
+      - name: Smoke Postgres
+        if: ${{ !cancelled() && steps.pg.outcome == 'success' }}
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/win32-x64/postgres win32-x64
+      - uses: actions/cache@v4
+        if: ${{ !cancelled() && steps.llama.outcome == 'success' }}
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        if: ${{ !cancelled() && steps.llama.outcome == 'success' }}
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server
+        if: ${{ !cancelled() && steps.llama.outcome == 'success' }}
+        run: node native-runtime/llama/smoke.mjs win32-x64 native-runtime/out/win32-x64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+
+  win32-arm64-llama:
+    # Cross-built on x64 with clang for arm64-pc-windows-msvc, as upstream's
+    # release workflow does; run on a real arm64 machine below.
+    if: inputs.targets != 'none'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false && git config --global core.longpaths true
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: amd64_arm64
+      - name: Build llama-server
+        run: native-runtime/llama/build.sh win32-arm64
+      - name: Pack the tree
+        run: |
+          tar -czf llama-win32-arm64.tar.gz -C native-runtime/out win32-arm64/llama
+          d=native-runtime/out/win32-arm64/llama
+          echo "llama: $(du -sk "$d" | cut -f1) KiB, tar.gz -9 $(tar -C "$d" -cf - . | gzip -9 | wc -c) B, tar.xz -9 $(tar -C "$d" -cf - . | xz -9 | wc -c) B"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llama-win32-arm64
+          path: llama-win32-arm64.tar.gz
+          retention-days: 14
+
+  win32-arm64:
+    # The win32-arm64 runtime: the x64 Postgres tree (PG 18 has no MSVC ARM64
+    # build; it runs under Windows' x64 emulation) and the native arm64
+    # llama-server. Runs whenever both trees were uploaded, so a win32-x64
+    # smoke failure does not hide this target's result.
+    needs: [win32-x64, win32-arm64-llama]
+    if: ${{ !cancelled() && needs.win32-arm64-llama.result == 'success' }}
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false && git config --global core.longpaths true
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Install the app's pg client
+        run: pnpm --dir vex-app install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-win32-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: llama-win32-arm64
+      - name: Assemble the win32-arm64 runtime
+        run: |
+          mkdir -p native-runtime/out
+          tar -xzf runtime-win32-x64.tar.gz -C native-runtime/out win32-x64/postgres
+          tar -xzf llama-win32-arm64.tar.gz -C native-runtime/out
+          mv native-runtime/out/win32-x64/postgres native-runtime/out/win32-arm64/postgres
+          native-runtime/lib/verify-tree.sh native-runtime/out/win32-arm64/postgres win32-arm64
+          native-runtime/lib/verify-tree.sh native-runtime/out/win32-arm64/llama win32-arm64
+      - name: Describe the CPU
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Processor | Format-List Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors
+          Add-Type -Namespace W -Name K -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool IsProcessorFeaturePresent(uint f);'
+          # winnt.h PF_ARM_* values
+          @{ 'V8 (29)' = 29; 'CRC32 (31)' = 31; 'V81 atomics (34)' = 34; 'V82 dotprod (43)' = 43; 'V83 JSCVT (44)' = 44; 'V83 LRCPC (45)' = 45; 'SVE (46)' = 46; 'SVE2 (47)' = 47; 'SVE I8MM (54)' = 54 }.GetEnumerator() |
+            Sort-Object Value | ForEach-Object { "{0,-18} {1}" -f $_.Key, [W.K]::IsProcessorFeaturePresent($_.Value) }
+
+      - name: Smoke Postgres (x64 under emulation)
+        run: node native-runtime/postgres/smoke.mjs native-runtime/out/win32-arm64/postgres win32-arm64
+      - uses: actions/cache@v4
+        if: ${{ !cancelled() }}
+        with:
+          path: native-runtime/.work/models
+          key: embedding-model-${{ hashFiles('vex-app/src/main/onboarding/embedding-defaults.ts') }}
+      - name: Fetch the embeddings model
+        if: ${{ !cancelled() }}
+        run: native-runtime/llama/fetch-model.sh
+      - name: Smoke llama-server
+        if: ${{ !cancelled() }}
+        run: node native-runtime/llama/smoke.mjs win32-arm64 native-runtime/out/win32-arm64/llama native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf
+
+      - name: Pack the runtime
+        if: always()
+        run: tar -czf runtime-win32-arm64.tar.gz -C native-runtime/out win32-arm64
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-win32-arm64
+          path: runtime-win32-arm64.tar.gz
+          retention-days: 14
+
+  clean-machine:
+    # The packaged app against the lock-pinned runtime release, on machines
+    # with no Docker (plan D12). Independent of the builds above.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_machine != '' }}
+    uses: ./.github/workflows/clean-machine.yml
+    with:
+      legs: ${{ inputs.clean_machine }}
+    secrets: inherit
+
+  publish:
+    # Only on an explicit dispatch with a release name, and only when every
+    # target built AND passed its gates on its own hardware (the default
+    # `needs` semantics). The name can never match release.yml's `v*` tags.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release != '' && inputs.targets == 'all' }}
+    needs: [darwin-arm64, darwin-x64-smoke, linux-x64, win32-x64, win32-arm64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RELEASE: ${{ inputs.release }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the release name
+        run: |
+          [[ "$RELEASE" =~ ^native-runtime-[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9]+$ ]] ||
+            { echo "release must look like native-runtime-2026.10.17-1, got '$RELEASE'"; exit 1; }
+          if gh release view "$RELEASE" >/dev/null 2>&1; then echo "$RELEASE already exists"; exit 1; fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runtime-*
+          path: artifacts
+      - name: Repack one canonical tarball per target
+        run: |
+          set -euo pipefail
+          mkdir -p staged dist
+          for target in darwin-arm64 darwin-x64 linux-x64 win32-x64 win32-arm64; do
+            tar -xzf "artifacts/runtime-$target/runtime-$target.tar.gz" -C staged
+            for component in postgres llama; do
+              [ -d "staged/$target/$component" ] || { echo "$target has no $component tree"; exit 1; }
+            done
+            # Reproducible: sorted entries, fixed owner and mtime, the two
+            # trees only (no gate reports).
+            tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='@0' \
+              -C staged -cf - "$target/postgres" "$target/llama" |
+              xz -9e -T0 > "dist/vex-native-runtime-$target.tar.xz"
+          done
+          (cd dist && sha256sum vex-native-runtime-*.tar.xz > SHA256SUMS)
+          cp native-runtime/sources.env dist/sources.env
+          cat dist/SHA256SUMS
+      - name: Publish the release
+        run: |
+          gh release create "$RELEASE" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE" \
+            --notes "Vex native runtime trees (Postgres + pgvector, llama-server) built from native-runtime/sources.env at $GITHUB_SHA. Every target passed its build, verify-tree, smoke and (linux-x64) parity gates in run $GITHUB_RUN_ID."

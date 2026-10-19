@@ -19,22 +19,6 @@ export function formatPlatform(
   return distro ? `${base} · ${distro}` : base;
 }
 
-export function formatDockerDetail(
-  status: import("@shared/schemas/docker.js").DockerStatus,
-): string {
-  if (!status.endpoint.accepted) {
-    return status.endpoint.message ?? "Docker endpoint rejected.";
-  }
-  const engine = status.engine.present
-    ? `Docker ${status.engine.version ?? "?"}`
-    : "Docker not found";
-  const daemon = status.daemon.running ? "daemon running" : "daemon stopped";
-  const compose = status.compose.present
-    ? `Compose ${status.compose.version ?? "?"}`
-    : "Compose missing";
-  return `${engine} · ${daemon} · ${compose}`;
-}
-
 export function formatEnvDetail(
   state: import("@shared/schemas/onboarding.js").EnvState,
 ): string {

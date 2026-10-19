@@ -119,6 +119,30 @@ describe("CH / EV channel constants", () => {
     expect(Object.keys(CH.studio)).toEqual(["hostStatus", "bridgeReadiness"]);
   });
 
+  it("ships the native runtime's start surface with its canonical names", () => {
+    expect(CH.system.runtimeStatus).toBe("vex:system:runtimeStatus");
+    expect(CH.system.runtimeRetry).toBe("vex:system:runtimeRetry");
+    expect(EV.system.runtimeProgress).toBe("vex:event:system:runtimeProgress");
+  });
+
+  it("ships the Settings local runtime surface with its canonical names", () => {
+    expect(CH.system.runtimeInfo).toBe("vex:system:runtimeInfo");
+    expect(CH.system.runtimeRestart).toBe("vex:system:runtimeRestart");
+    expect(CH.system.runtimeReset).toBe("vex:system:runtimeReset");
+  });
+
+  it("ships System Check's native-runtime facts under the system domain", () => {
+    expect(CH.system.localRuntimeCheck).toBe("vex:system:localRuntimeCheck");
+  });
+
+  it("ships the runtime migration surface with its canonical names", () => {
+    expect(CH.system.runtimeMigrationStatus).toBe("vex:system:runtimeMigrationStatus");
+    expect(CH.system.runtimeMigrationMove).toBe("vex:system:runtimeMigrationMove");
+    expect(CH.system.runtimeMigrationStartFresh).toBe("vex:system:runtimeMigrationStartFresh");
+    expect(CH.system.runtimeMigrationRemoveOldData).toBe("vex:system:runtimeMigrationRemoveOldData");
+    expect(EV.system.runtimeMigrationProgress).toBe("vex:event:system:runtimeMigrationProgress");
+  });
+
   it("channels are unique (no duplicate values across namespaces)", () => {
     const all = [CH.cancel, ...collectStrings(CH).filter((c) => c !== CH.cancel), ...collectStrings(EV)];
     const seen = new Set<string>();

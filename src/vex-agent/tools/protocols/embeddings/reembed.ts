@@ -181,8 +181,11 @@ async function run(): Promise<ReconcileReport> {
  * through `embeddingText` → `canonicalSummary` → `description` so a tool
  * with no `discovery` metadata still embeds something coherent (the
  * description authors already wrote).
+ *
+ * Exported for the native-runtime embedding parity gate, which must embed
+ * exactly what production embeds.
  */
-function pickSourceText(manifest: ProtocolToolManifest): string {
+export function pickSourceText(manifest: ProtocolToolManifest): string {
   return (
     manifest.discovery?.embeddingText ??
     manifest.discovery?.canonicalSummary ??

@@ -7,7 +7,7 @@
  * build. It exists because board geometry is decided by the renderer's own
  * container queries and can only be MEASURED in a real engine at real widths;
  * the Electron smoke fixture cannot reach the Board page at all (its head
- * note: everything past SystemCheck needs a live Docker daemon and an
+ * note: everything past SystemCheck needs a running local database and an
  * unlocked vault).
  *
  * IT MOUNTS THE REAL THING. The real `BoardModalHost`, the real `BoardGrid`,

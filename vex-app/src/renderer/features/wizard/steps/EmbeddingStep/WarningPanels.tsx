@@ -5,8 +5,8 @@
  * Error rendering is specialised by VexErrorCode:
  *   - embedding.dim_locked → warning card with the existing/target row
  *     count + "memory unavailable" guidance.
- *   - embedding.db_unavailable → retry card with hint to verify the
- *     System Check screen first.
+ *   - embedding.db_unavailable → retry card. The bundled database is
+ *     supervised (and restarted) by main, so the hint is to wait and retry.
  *
  * Both are the risk callout (`.vex-callout`, set by `RAIL_*_CHROME`): the
  * callout owns its frame, type size and ink, so only spacing is added here.
@@ -62,7 +62,8 @@ export function EmbeddingWarningPanels({
           </strong>
           <p className="mt-1">{serverError?.message}</p>
           <p className="mt-2 text-[13px] text-ink-secondary">
-            Verify Docker services are running, then retry.
+            Vex restarts its local database on its own. Wait a moment, then
+            retry; if it keeps failing, restart Vex.
           </p>
         </div>
       ) : null}

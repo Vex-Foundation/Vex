@@ -10,7 +10,8 @@
 # Release matrix (owner-agreed 2026-07-05, see vex-expand/dystrybucja-macos-github.md
 # §"Ustalenia platformowe"): macOS arm64 + x64 (Developer ID + notarization,
 # two separate per-arch artifacts), Windows x64 (NSIS, Azure Trusted Signing,
-# added 2026-08) and Linux x64 (AppImage + deb, unsigned).
+# added 2026-08) and arm64 (per-arch NSIS installers, with the native runtime),
+# and Linux x64 (AppImage + deb, unsigned).
 #
 # Secrets are read from the CI ENVIRONMENT ONLY — never stored in this repo:
 #   CSC_LINK            Developer ID Application cert (.p12, base64)
@@ -142,6 +143,26 @@ extraResources:
   - from: resources/bridge-${arch}
     to: bridge
     filter: ["**/*"]
+  # The native runtime - Postgres + pgvector and llama-server - staged for THIS
+  # arch by `scripts/stage-native-runtime.mjs` from the lock-pinned release
+  # trees (`scripts/fetch-native-runtime.mjs`). Per arch for the bridge's
+  # reason: one invocation packages both macOS (and both Windows) arches. The
+  # trees keep their built layout exactly: Postgres resolves lib/ and share/
+  # relative to bin/, llama-server loads its CPU backends from its own
+  # directory. The filter drops the staging files (the directory's own ignore
+  # rule and the Windows pre-sign Authenticode record); the afterPack gate
+  # (verifyPackagedNativeRuntime) refuses any file the lock does not pin.
+  - from: resources/postgres-${arch}
+    to: postgres
+    filter: ["**/*", "!.gitignore", "!AUTHENTICODE-SHA256SUMS"]
+  - from: resources/llama-${arch}
+    to: llama
+    filter: ["**/*", "!.gitignore", "!AUTHENTICODE-SHA256SUMS"]
+  # The runtime's notices its trees do not carry themselves (Snowball, zlib,
+  # the MSVC runtime, the Gemma terms). Committed, the same on every platform.
+  - from: resources/licenses
+    to: licenses
+    filter: ["**/*"]
 
 mac:
   category: public.app-category.finance
@@ -170,6 +191,31 @@ mac:
     # packages x64 and arm64 in ONE invocation.
     - Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-x64/spawn-helper
     - Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper
+    # The native runtime's programs. @electron/osx-sign 1.3.3 signs every file
+    # its walker finds that `isBinaryFile` calls binary, whatever its name, so
+    # it reaches these and every runtime dylib and ggml `.so` backend without
+    # a list; the programs are named anyway because they are what gets
+    # exec'd, and a list entry fails the build if the file is not there.
+    # Only paths common to BOTH arches can be listed (codesign fails on a
+    # missing one): the CPU backends differ per arch and are left to the
+    # walker. Every one of them is re-signed with our Team ID, which is what
+    # lets library validation load them with disable-library-validation OFF;
+    # `check:package` and the release workflow assert every Mach-O under
+    # postgres/ and llama/ verifies after signing.
+    - Contents/Resources/postgres/bin/postgres
+    - Contents/Resources/postgres/bin/initdb
+    - Contents/Resources/postgres/bin/pg_ctl
+    - Contents/Resources/postgres/bin/pg_controldata
+    - Contents/Resources/postgres/bin/pg_dump
+    - Contents/Resources/postgres/bin/pg_restore
+    - Contents/Resources/llama/llama-server
+  # The same walker would also "sign" Postgres's timezone database (TZif files
+  # are binary), writing code-signature extended attributes onto data files.
+  # share/ holds no code at all; it is sealed by the bundle signature like any
+  # other resource. The pattern is a RegExp tested against the absolute path
+  # (app-builder-lib macPackager.js).
+  signIgnore:
+    - /Contents/Resources/postgres/share/
   target:
     - target: dmg # human-facing installer UX
       arch: [arm64, x64]
@@ -202,8 +248,20 @@ mac:
 win:
   target:
     - target: nsis # electron-updater's Windows path (emits latest.yml + blockmap)
-      arch: [x64] # x64 only for the first Windows release; arm64 later
+      # Both arches in ONE invocation (the Windows job), so the single
+      # latest.yml lists both installers. win32-arm64 ships the x64 Postgres
+      # tree under emulation and a native arm64 llama-server (see
+      # scripts/native-runtime-artifact.mjs).
+      arch: [x64, arm64]
   icon: build/icon.ico
+  # No `signExts`: app-builder-lib 26.8.1 then signs `.exe` files only
+  # (winPackager.js shouldSignFile), which includes every runtime program
+  # (postgres, initdb, pg_ctl, llama-server, ...). DLLs are deliberately NOT
+  # re-signed: `.dll` in signExts would match first and re-sign Microsoft's
+  # own redistributables (vcruntime140*, msvcp140, d3dcompiler_47) under our
+  # name, replacing Microsoft's signature. Our runtime DLLs ship unsigned, as
+  # Electron's do; the afterPack and check:package gates bind each one to the
+  # lock by its Authenticode content digest.
   # electron-updater compares the publisher of a downloaded update against
   # azureSignOptions.publisherName before installing. true is the default -
   # pinned explicitly because the release profile must never flip it off.
@@ -230,6 +288,18 @@ win:
     # and Defender then flags the binary.
     timestampRfc3161: http://timestamp.acs.microsoft.com
     timestampDigest: SHA256
+
+nsis:
+  # PER-ARCH installers (Vex-<version>-win-x64.exe, ...-win-arm64.exe), not
+  # app-builder-lib's default combined two-arch installer: each user downloads
+  # one architecture's app. Verified in the installed 26.8.1: with this false,
+  # NsisTarget.build() builds one installer per arch, and updateInfoBuilder
+  # merges both into the files list of the ONE latest.yml (same channel file);
+  # electron-updater 6.8.9's NsisUpdater (Windows releases began 2026-08, all
+  # on the 6.8 line) then picks the .exe whose URL contains
+  # `process.arch` (Provider.js findFile): "x64" or "arm64", which our
+  # artifactName puts in every file name.
+  buildUniversalInstaller: false
 
 linux:
   category: Finance

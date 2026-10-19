@@ -40,7 +40,6 @@ import { registerTerminalInputHandlers } from "./terminal-input.js";
 import { registerTerminalLinkHandlers } from "./terminal-links.js";
 import { registerMemoryHandlers } from "./memory.js";
 import { registerMemoryInspectorHandlers } from "./memory-inspector.js";
-import { registerDockerHandlers } from "./docker.js";
 import { registerMessagesHandlers } from "./messages.js";
 import { registerMissionHandlers } from "./mission.js";
 import { registerModelsHandlers } from "./models.js";
@@ -93,9 +92,9 @@ import { registerWalletsSessionHandlers } from "./wallets-session.js";
  * `teardowns` array below: that array is drained by an independent
  * `globalCleanup` task, and `CleanupRegistry.runAll()` runs its tasks
  * CONCURRENTLY, so the bridge drain - which owns the board read caches and the
- * DexScreener transport - would race `cleanupOnQuit()`. Ownership is
+ * DexScreener transport - would race the local runtime stop. Ownership is
  * TRANSFERRED to the caller, which composes it into the ordered quit task
- * (`makeOrderedQuitCleanup`) so it completes BEFORE compose/Postgres teardown.
+ * (`makeOrderedQuitCleanup`) so it completes BEFORE the local runtime stops.
  * One owner, one execution path.
  */
 export function registerAllIpcHandlers(): () => Promise<void> {
@@ -104,7 +103,6 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   teardowns.push(registerCancelHandler());
   teardowns.push(registerCapabilitiesHandler());
   teardowns.push(...registerSystemHandlers());
-  teardowns.push(...registerDockerHandlers());
   teardowns.push(...registerDatabaseHandlers());
   teardowns.push(...registerSecretsHandlers());
   teardowns.push(...registerOnboardingHandlers());

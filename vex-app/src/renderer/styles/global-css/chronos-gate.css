@@ -5,7 +5,7 @@
  * `StagePlate`). It never moves; only the type over it changes. Two layouts:
  *
  *   plate  the wake (the boot gate), the unlock and the first run screens
- *          (system check, Docker, services, database): a 720 plate at the left
+ *          (system check, local runtime, database): a 720 plate at the left
  *          at the full window height with Vex rising from the VEX token and
  *          her state word on the print, paper at the right with the type.
  *   print  the wizard only: the print at window size, no animal on it, under

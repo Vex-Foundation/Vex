@@ -1,6 +1,6 @@
 /**
  * The first run's furniture on the stage plate (`docs/design/R3-MINIMAL.md section 10.3`): the
- * crumb that says where you are (System check, Docker, Services, Database, Setup) and what Vex
+ * crumb that says where you are (System check, Local runtime, Database, Setup) and what Vex
  * shows for what the screen is doing.
  *
  * A screen names its step and its mood to `SetupFrame`; the mood is Vex's face on the plate and
@@ -10,7 +10,8 @@
  *
  *   working    the screen is doing something now (probing, starting, applying)
  *   ready      nothing is in flight and nothing is wrong
- *   concerned  the screen needs the user to do something (Docker stopped, a port is taken)
+ *   concerned  the screen needs the user to do something (no space for the runtime, a data
+ *              move waiting on its source)
  *   error      something failed
  */
 
@@ -24,14 +25,17 @@ import {
   type StageVexView,
 } from "./stage-vex.js";
 
-export type FirstRunStep = "systemCheck" | "docker" | "services" | "database";
+/**
+ * The first run's steps. `runtime` covers the bundled local runtime's start
+ * and, before it on an upgrade, the move of the previous release's data.
+ */
+export type FirstRunStep = "systemCheck" | "runtime" | "database";
 export type FirstRunMood = "working" | "ready" | "concerned" | "error";
 
-/** The five stages of the first run, in order. The wizard is the last. */
+/** The four stages of the first run, in order. The wizard is the last. */
 export const FIRST_RUN_STAGES: readonly { readonly id: FirstRunStep | "setup"; readonly label: string }[] = [
   { id: "systemCheck", label: "System check" },
-  { id: "docker", label: "Docker" },
-  { id: "services", label: "Services" },
+  { id: "runtime", label: "Local runtime" },
   { id: "database", label: "Database" },
   { id: "setup", label: "Setup" },
 ];
@@ -114,7 +118,7 @@ export function StageFace({ mood }: { readonly mood: FirstRunMood }): null {
   return null;
 }
 
-/** Where you are: System check, Docker, Services, Database, Setup. The current step is blue. */
+/** Where you are: System check, Local runtime, Database, Setup. The current step is blue. */
 export function FirstRunCrumb({
   step,
   mood,

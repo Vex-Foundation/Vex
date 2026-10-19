@@ -51,8 +51,8 @@ describe("stageLayoutFor", () => {
       "splash",
       "unlock",
       "systemCheck",
-      "dockerBootstrap",
-      "composeBootstrap",
+      "runtimeMigration",
+      "runtimeBootstrap",
       "migrations",
     ] as const) {
       expect(stageLayoutFor(view, false)).toBe("plate");
@@ -133,7 +133,7 @@ describe("StagePlate", () => {
 
   it("stands a first run screen on the plate with no word for what she shows", () => {
     stageVexEnd();
-    stand("composeBootstrap");
+    stand("runtimeBootstrap");
     const { container, queryByText } = render(<StagePlate />);
     expect(container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-plate")).toBe(
       "plate",

@@ -115,7 +115,7 @@ describe("writeProvider", () => {
    * POSIX mode bits are kernel-enforced on macOS and Linux. On Windows libuv
    * maps `mode` onto the read-only attribute alone, so the group/other bits
    * this asserts have no NTFS representation and the check measures nothing
-   * there - see the per-platform note in `compose/electron-secret-adapter.ts`.
+   * there - see the per-platform note in `runtime/secrets/electron-secret-adapter.ts`.
    *
    * `it.skipIf` rather than a bare early `return`: a skipped test is visible
    * in the reporter, while an early return reports as PASSING on the one

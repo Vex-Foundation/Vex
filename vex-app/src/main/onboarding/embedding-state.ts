@@ -10,6 +10,10 @@
  *
  * Reachability (HTTP probe to `${baseUrl}/models`) and dim-lock DB
  * reachability are best-effort signals exposed alongside.
+ *
+ * On the native runtime, while `.env` selects the bundled embeddings, the
+ * endpoint probed and shown is the LIVE one the runtime host published (see
+ * `nativeLiveEndpoint` below); `.env` is read, never written, here.
  */
 
 import {
@@ -20,6 +24,11 @@ import { readDotenvFileValue } from "@vex-lib/dotenv.js";
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
 import { probeDbReachable } from "../database/dim-lock.js";
+import type { RuntimeEndpoints } from "../runtime/provider.js";
+import { getRuntimeMode } from "../runtime/runtime-mode.js";
+import { isBundledEmbeddingSelection, liveNativeEmbeddings } from "../runtime/native/embedding-env.js";
+
+type RuntimeEmbeddings = RuntimeEndpoints["embeddings"];
 
 const HTTP_PROBE_TIMEOUT_MS = 2_000;
 
@@ -78,21 +87,43 @@ function readResolvedFields(envFile: string): {
   return { baseUrl, model, dim, provider };
 }
 
-async function probeReachable(baseUrl: string): Promise<boolean> {
+async function probeReachable(baseUrl: string, apiKey: string | null = null): Promise<boolean> {
   // Same path-preserving probe shape used by env-state.ts (codex turn
   // 5 YELLOW #1): never use new URL("/v1/models", baseUrl) which would
   // drop the existing path.
   const url = `${baseUrl.replace(/\/$/, "")}/models`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey !== null) headers["Authorization"] = `Bearer ${apiKey}`;
   try {
     const res = await fetch(url, {
       method: "GET",
       signal: AbortSignal.timeout(HTTP_PROBE_TIMEOUT_MS),
-      headers: { Accept: "application/json" },
+      headers,
     });
     return res.ok;
   } catch {
     return false;
   }
+}
+
+/**
+ * NATIVE RUNTIME. `.env` keeps the bundled tuple setup wrote, whose URL names
+ * the default port; the bundled llama-server listens on a port chosen at
+ * launch behind a per-launch key, which main publishes to the engine's
+ * environment and never persists (`runtime/native/embedding-env.ts`). While
+ * the file selects the bundled embeddings, the status therefore describes and
+ * probes that LIVE endpoint, key included: `undefined` here means "not this
+ * case, probe the file's URL as before" (any other runtime, or a remote
+ * provider the user configured); null means the server is down right now.
+ */
+function nativeLiveEndpoint(fields: ReturnType<typeof readResolvedFields>): RuntimeEmbeddings | null | undefined {
+  if (getRuntimeMode() !== "native") return undefined;
+  const selection: NodeJS.ProcessEnv = {};
+  if (fields.baseUrl !== null) selection["EMBEDDING_BASE_URL"] = fields.baseUrl;
+  if (fields.provider !== null) selection["EMBEDDING_PROVIDER"] = fields.provider;
+  if (fields.model !== null) selection["EMBEDDING_MODEL"] = fields.model;
+  if (!isBundledEmbeddingSelection(selection)) return undefined;
+  return liveNativeEmbeddings();
 }
 
 export async function probeEmbeddings(envFile: string = ENV_FILE): Promise<EmbeddingsProbe> {
@@ -108,15 +139,24 @@ export async function probeEmbeddings(envFile: string = ENV_FILE): Promise<Embed
   const baseUrlValid = fields.baseUrl !== null && isValidUrl(fields.baseUrl);
   const allFieldsConfigured = allPresent && baseUrlValid;
 
+  const live = allFieldsConfigured ? nativeLiveEndpoint(fields) : undefined;
   const [reachable, dbReachable] = await Promise.all([
-    allFieldsConfigured ? probeReachable(fields.baseUrl!) : Promise.resolve(false),
+    !allFieldsConfigured || live === null
+      ? Promise.resolve(false)
+      : live === undefined
+        ? probeReachable(fields.baseUrl!)
+        : probeReachable(live.baseUrl, live.apiKey),
     safeProbeDb(),
   ]);
 
   return {
     configured: allFieldsConfigured,
     reachable,
-    baseUrlRedacted: allFieldsConfigured ? redactUrl(fields.baseUrl!) : null,
+    baseUrlRedacted: !allFieldsConfigured
+      ? null
+      : live === undefined || live === null
+        ? redactUrl(fields.baseUrl!)
+        : redactUrl(live.baseUrl),
     allFieldsConfigured,
     dbReachable,
   };

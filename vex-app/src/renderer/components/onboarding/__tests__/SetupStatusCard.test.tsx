@@ -31,7 +31,7 @@ describe("SetupStatusCard", () => {
 
   it("takes the word and the fill the screen names, as the Paused card does", () => {
     const { container, getByText } = render(
-      <SetupStatusCard tone="warn" state="sleeping" word="Paused" title="Docker stopped" />,
+      <SetupStatusCard tone="warn" state="sleeping" word="Paused" title="Local runtime stopped" />,
     );
     expect(getByText("Paused")).toBeTruthy();
     expect(container.querySelector('.vex-swatch[data-s="sleeping"]')).not.toBeNull();
@@ -39,19 +39,19 @@ describe("SetupStatusCard", () => {
 
   it("draws a failure as the ink callout with the ink cross, never a hue, and interrupts", () => {
     const { container, getByRole, getByText } = render(
-      <SetupStatusCard tone="error" title="Compose up failed" detail="docker daemon stopped mid-run." />,
+      <SetupStatusCard tone="error" title="The local runtime did not start" detail="The database stopped during its start." />,
     );
     const alert = getByRole("alert");
     expect(alert.className).toContain("vex-callout");
     expect(alert.getAttribute("data-vex-callout")).toBe("error");
-    expect(getByText("Compose up failed")).toBeTruthy();
-    expect(getByText("docker daemon stopped mid-run.")).toBeTruthy();
+    expect(getByText("The local runtime did not start")).toBeTruthy();
+    expect(getByText("The database stopped during its start.")).toBeTruthy();
     expect(container.querySelector('.vex-swatch[data-s="error"]')).not.toBeNull();
     expect(container.querySelector(".vex-fr-card")).toBeNull();
   });
 
   it("omits the detail line when there is none", () => {
-    const { container } = render(<SetupStatusCard tone="ok" title="Docker is ready" />);
+    const { container } = render(<SetupStatusCard tone="ok" title="The local runtime is ready" />);
     expect(container.querySelector(".vex-fr-card__detail")).toBeNull();
   });
 });

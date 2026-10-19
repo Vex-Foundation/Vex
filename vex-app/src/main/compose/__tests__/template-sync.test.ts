@@ -22,7 +22,9 @@ import {
   EMBEDDING_MODEL_FILENAME,
   EMBEDDING_MODEL_SHA256,
 } from "../../onboarding/embedding-defaults.js";
+import { EMBEDDING_CONTEXT_TOKENS } from "@shared/embedding-defaults.js";
 import { DEFAULT_PG_PORT } from "@shared/local-service-ports.js";
+import { postgresVolumeName } from "../project.js";
 
 const TEMPLATE_PATH = path.resolve(
   __dirname,
@@ -65,6 +67,12 @@ describe("docker-compose.template.yml ↔ embedding-defaults.ts sync", () => {
     expect(template).toContain(`"${EMBEDDING_MODEL_ALIAS}"`);
   });
 
+  it("sizes the server's context and both batches to EMBEDDING_CONTEXT_TOKENS, as the native launch does", () => {
+    for (const flag of ["--ctx-size", "--batch-size", "--ubatch-size"]) {
+      expect(template).toContain(`- ${flag}\n      - "${String(EMBEDDING_CONTEXT_TOKENS)}"`);
+    }
+  });
+
   it("defaults the embed port placeholder to DEFAULT_EMBED_PORT", () => {
     expect(template).toContain(
       `\${VEX_EMBED_PORT:-${DEFAULT_EMBED_PORT}}`
@@ -79,6 +87,12 @@ describe("docker-compose.template.yml ↔ embedding-defaults.ts sync", () => {
     expect(template).toContain(
       `\${VEX_PG_PORT:-${DEFAULT_PG_PORT}}`
     );
+  });
+
+  it("names the Postgres volume exactly as postgresVolumeName does (the migration reads it)", () => {
+    const placeholder = "${VEX_INSTALL_ID}";
+    expect(template).toContain(`- ${postgresVolumeName(placeholder)}:/var/lib/postgresql`);
+    expect(template).toContain(`name: ${postgresVolumeName(placeholder)}`);
   });
 
   it("downloads the GGUF from the URL pinned in TS", () => {

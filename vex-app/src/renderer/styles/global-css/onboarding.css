@@ -1,6 +1,6 @@
 /* Shared onboarding accent: the one blue (the periwinkle at night). Applied
  * via the `data-vex-onboarding="true"` attribute on the outer wrapper of
- * each onboarding screen (systemCheck, dockerBootstrap, composeBootstrap,
+ * each onboarding screen (systemCheck, runtimeMigration, runtimeBootstrap,
  * migrations, wizard, unlock). Shared primitives read
  * `var(--vex-onboarding-accent, var(--color-accent-primary))` so they
  * degrade to the global accent outside the onboarding flow. */
@@ -14,7 +14,7 @@
 }
 
 /* The first run (docs/design/R3-MINIMAL.md section 10.3): the screens that stand at the right of
- * the stage plate (system check, Docker, services, database). The side column, the title and the
+ * the stage plate (system check, local runtime, database). The side column, the title and the
  * lead are the stage's own (`chronos-gate.css`); what is here is the crumb, the probe rows, the
  * card, the steps, the log block and the actions. Radius 0, no shadow, tokens only. The failure
  * callout is the kit's `.vex-callout` (`ui-primitives/indicators.css`). */
@@ -198,6 +198,19 @@
   font-family: inherit;
 }
 
+/* An inline confirmation in place of the actions (section 10.2, the unlock's "Set up a new
+ * vault?"): a 1.5px ink frame, padding 22 24 20, max 470; a destructive choice arms here. */
+.vex-fr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 470px;
+  padding: 22px 24px 20px;
+  border: 1.5px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-bg-base);
+}
+
 /* The actions: the primary key and the quiet one side by side, then the blue links. */
 .vex-fr-acts {
   display: flex;
@@ -253,6 +266,12 @@
   max-width: 100%;
   height: 2px;
   background: var(--vex-alias-rule-quiet);
+}
+/* Under a probe row (the model download), the line spans the row. */
+.vex-fr-probe__bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 6px;
 }
 .vex-fr-progress__fill {
   position: absolute;

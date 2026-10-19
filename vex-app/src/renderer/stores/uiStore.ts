@@ -91,8 +91,8 @@ export type ReviewModal = "none" | "mission" | "plan";
 export type View =
   | "splash"
   | "systemCheck"
-  | "dockerBootstrap"
-  | "composeBootstrap"
+  | "runtimeMigration"
+  | "runtimeBootstrap"
   | "migrations"
   | "wizard"
   | "unlock"

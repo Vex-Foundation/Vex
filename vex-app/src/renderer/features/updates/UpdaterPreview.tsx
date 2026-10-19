@@ -71,7 +71,8 @@ const MOCKS: ReadonlyArray<{
       kind: "blockedByOperation",
       currentVersion: CURRENT,
       latestVersion: LATEST,
-      reason: "Docker setup is still running. Try again when it finishes.",
+      // A reason main really gives (updates/safeRestart.ts), on either runtime.
+      reason: "A database migration is still running. Wait for it to finish, then update.",
       blockedAction: "download",
       severity: "normal",
       wasDownloaded: false,

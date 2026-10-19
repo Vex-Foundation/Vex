@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-query";
 import type { JSX } from "react";
 import type { Result } from "@shared/ipc/result.js";
+import { DEFAULT_EMBED_PORT } from "@shared/embedding-defaults.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type {
   EmbeddingConfigureInput,
@@ -274,5 +275,22 @@ describe("EmbeddingStep", () => {
         container.querySelector('[data-vex-embedding-warning="db-unavailable"]'),
       ).not.toBeNull();
     });
+    // The bundled database is main's to restart: the hint is to wait.
+    expect(container.textContent).toContain(
+      "Vex restarts its local database on its own. Wait a moment, then retry; if it keeps failing, restart Vex.",
+    );
+    expect(container.textContent).not.toMatch(/docker/i);
+  });
+
+  it("names no fixed address: the bundled server's port is chosen at launch", () => {
+    mockUseEnvState.mockReturnValue(makeQueryResult(envState(false)));
+    const { container, getByLabelText } = renderWithQuery(
+      <EmbeddingStep completedSteps={["keystore", "wallets", "apiKeys"]} onAdvance={mockOnAdvance} flowMode="first-pass" />,
+    );
+    expect(container.textContent).toContain(
+      "runs entirely on this machine, on a local port Vex picks each time it starts - nothing leaves it.",
+    );
+    expect(container.textContent).not.toContain(String(DEFAULT_EMBED_PORT));
+    expect(getByLabelText("Base URL").getAttribute("placeholder")).toBe("https://embeddings.example.com/v1");
   });
 });

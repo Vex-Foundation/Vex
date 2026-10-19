@@ -19,6 +19,8 @@ import {
 } from "@vex-lib/wallet.js";
 import { applySecretVaultToProcessEnv } from "@vex-lib/local-secret-vault.js";
 import { loadProviderDotenv } from "@vex-lib/runtime-env.js";
+import { applyNativeEmbeddingEnv } from "../../../runtime/native/embedding-env.js";
+import { getRuntimeMode } from "../../../runtime/runtime-mode.js";
 import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result } from "@shared/ipc/result.js";
 import {
@@ -295,6 +297,8 @@ export function registerRestoreHandlers(handlers: Array<() => void>): void {
           // env (same pattern as providerPersist). Dynamic import keeps the
           // engine off the main bundle's static graph.
           loadProviderDotenv({ overwrite: true });
+          // The native server's live port and key exist only in memory.
+          if (getRuntimeMode() === "native") applyNativeEmbeddingEnv();
           const { resetProvider } = await import(
             "@vex-agent/inference/registry.js"
           );

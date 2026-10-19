@@ -4,25 +4,10 @@
  * encoding, and uses Electron `safeStorage` for at-rest encryption.
  */
 
-import { app, safeStorage } from "electron";
+import { app } from "electron";
 import path from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
-import { CONFIG_DIR } from "../paths/config-dir.js";
-import { makeElectronSecretAdapter } from "./electron-secret-adapter.js";
-import type {
-  CryptoAdapter,
-  RandomAdapter,
-  RenderDeps,
-} from "./render.js";
-
-const randomAdapter: RandomAdapter = {
-  uuid: () => randomUUID(),
-  randomBytes: (size) => randomBytes(size),
-};
-
-const cryptoAdapter: CryptoAdapter = {
-  base64url: (input) => Buffer.from(input).toString("base64url"),
-};
+import { productionPgPasswordDeps } from "../runtime/secrets/production-deps.js";
+import type { RenderDeps } from "./render.js";
 
 function getResourcesDir(): string {
   // The compiled main bundle lands at `vex-app/dist/main/index.js`, so
@@ -37,10 +22,7 @@ function getResourcesDir(): string {
 
 export function buildRenderDeps(): RenderDeps {
   return {
-    userDataDir: CONFIG_DIR,
+    ...productionPgPasswordDeps(),
     resourcesDir: getResourcesDir(),
-    secretAdapter: makeElectronSecretAdapter({ safeStorage }),
-    randomAdapter,
-    cryptoAdapter,
   };
 }

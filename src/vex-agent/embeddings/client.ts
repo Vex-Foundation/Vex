@@ -198,7 +198,10 @@ async function callEmbeddingsEndpoint(
   try {
     res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(config.apiKey !== undefined ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+      },
       body,
       signal,
     });

@@ -83,6 +83,7 @@ export function SessionsList({
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
   const sessionModeFilter = useUiStore((s) => s.sessionModeFilter);
   const setSessionModeFilter = useUiStore((s) => s.setSessionModeFilter);
   const query = useSessionsList();
@@ -154,8 +155,11 @@ export function SessionsList({
   const handleSelect = useCallback(
     (id: string): void => {
       setActiveSessionId(id);
+      // A chat opens in the centre: a page standing there (Portfolio, Board,
+      // Settings) closes, the way a row on the Sessions page closes it.
+      setShellRoute({ kind: "none" });
     },
-    [setActiveSessionId],
+    [setActiveSessionId, setShellRoute],
   );
 
   // Escape brings back New chat and the sections. The Agent tab is a search

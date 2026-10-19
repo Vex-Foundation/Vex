@@ -633,15 +633,6 @@ export const LINE_GLYPHS = {
       </>
     ),
   },
-  docker: {
-    spec: "docker",
-    draw: (
-      <>
-        <path d="M1.5 8.5h12c0 3-2.5 5-6 5s-5.5-2-6-5z" />
-        <path d="M3 6h2v2.5H3zM5.5 6h2v2.5h-2zM8 6h2v2.5H8zM5.5 3.5h2V6h-2z" />
-      </>
-    ),
-  },
   wifi: {
     spec: "wifi",
     draw: (

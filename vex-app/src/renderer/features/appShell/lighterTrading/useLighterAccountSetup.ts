@@ -10,18 +10,24 @@ import {
   lighterAccountSetupStatusQueryKey,
   useLighterAccountSetupStatus,
 } from "../../../lib/api/lighter-trading.js";
+import { invalidateOnApprovalResolve } from "../approvals/invalidate-on-resolve.js";
 import { compareUnsignedDecimals, isPositiveDecimal } from "./decimal.js";
 
 /**
- * The account-setup modal's single-click chain: deposit -> trading key ->
- * fee authorization, no agent turn and no per-step approval card (design:
- * the modal's own "Set up my account" click is the one consent for all
- * three - see `approval-runtime/desk/prepare.ts`'s `DESK_PREPARE_TOOL_IDS`).
+ * The account-setup modal's chain: deposit -> trading key -> fee
+ * authorization, no agent turn and no per-step approval card (see
+ * `approval-runtime/desk/prepare.ts`'s `DESK_PREPARE_TOOL_IDS`). Two clicks
+ * are the consent: "Set up my account" for the deposit and the trading key,
+ * then "Authorize fees" for the fee grant. The chain never walks from the key
+ * into the fees on its own: without the fee click (`feeConsented`) it stops
+ * at idle and the modal asks for it, the way the on-open key reconcile
+ * already hands fees back to the operator.
  *
  * Each step still goes through the real approval pipeline
  * (`prepareDeskAction` -> `approvals.approve`); this hook just fires the
  * approve call itself instead of waiting for a click, exactly like the
- * ticket's existing "skip close confirm" path.
+ * ticket's existing "skip close confirm" path, and then refreshes the
+ * pending-approval reads so the approved row does not linger as "Needs you".
  */
 export type LighterAccountSetupPhase =
   | "idle"
@@ -213,6 +219,10 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   // Set synchronously by `start`, so a second click in the same frame is
   // refused before React has rendered the first one.
   const startingRef = useRef(false);
+  // True only once the operator clicked "Authorize fees" in this opening. No
+  // route into the fee grant - the chain after the key, a retry, an automatic
+  // retry - runs it without this.
+  const feeConsented = useRef(false);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
@@ -227,6 +237,7 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     autoTriggered.current = false;
     autoRetries.current = 0;
     startingRef.current = false;
+    feeConsented.current = false;
     setStarting(false);
     return () => {
       cancelled.current = true;
@@ -372,9 +383,14 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     let approved: Awaited<ReturnType<typeof window.vex.approvals.approve>>;
     try {
       approved = await window.vex.approvals.approve({ id: prepared.data.approvalId });
+      // The enqueue made every pending read count this row; the approve that
+      // resolved it emits nothing they listen to, so they are refreshed here,
+      // the way the desk ticket does after its own approve.
+      void invalidateOnApprovalResolve(queryClient, sessionId);
       if (approved.ok && approved.data.executionStatus === "dispatching") {
         // The submit is out; its outcome follows as an event.
         const outcome = await watch.next();
+        void invalidateOnApprovalResolve(queryClient, sessionId);
         if (outcome.kind === "unknown") {
           return { ok: false, unproven: true, reason: "The outcome is uncertain. Check status before retrying." };
         }
@@ -460,10 +476,21 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
   const runFee = async (env: LighterTradingEnvironment): Promise<void> => {
     setResume(() => runFee(env));
     const before = await refreshStatus(env);
+    if (cancelled.current) return;
     if (before !== null && before.feeAuthorized) { finish(env); return; }
+    // The fee grant is its own consent: never submitted without the click.
+    if (!feeConsented.current) { awaitFeeConsent(); return; }
     setPhase("authorizing_fee");
     if (!(await submitStep(env, { kind: "onboarding_fee" }))) return;
     await confirmFee(env);
+  };
+
+  /** The key is in place; stop at idle so the modal asks for the fee click. */
+  const awaitFeeConsent = (): void => {
+    if (cancelled.current) return;
+    resumeStep.current = null;
+    resumeReconcileOnly.current = false;
+    setPhase("idle");
   };
 
   const confirmKey = async (env: LighterTradingEnvironment): Promise<void> => {
@@ -603,8 +630,13 @@ export function useLighterAccountSetup(input: UseLighterAccountSetupInput): Ligh
     setError(null);
     autoRetries.current = 0;
     if (!needsDeposit) {
-      if (status.tradingKeyRegistered) launch(() => runFee(environment));
-      else launch(() => runKey(environment));
+      if (status.tradingKeyRegistered) {
+        // This click is the "Authorize fees" one: the only fee consent.
+        feeConsented.current = true;
+        launch(() => runFee(environment));
+      } else {
+        launch(() => runKey(environment));
+      }
       return;
     }
     const baseline = Number(status.accountCollateral);

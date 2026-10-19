@@ -34,7 +34,7 @@ export function Footer({ disabled, onContinue }: FooterProps): JSX.Element {
         ref={continueRef}
         disabled={disabled}
         onClick={onContinue}
-        aria-label="Continue to Docker bootstrap"
+        aria-label="Continue setup"
         className="w-[420px] max-w-full"
       >
         Continue

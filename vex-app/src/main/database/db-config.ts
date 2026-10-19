@@ -1,11 +1,11 @@
 /**
- * Builds a `pg.Pool` config from the compose state held in
+ * Builds a `pg.Pool` config from the connection held in
  * `connection-state.ts`. Reads the password from the secret file the
- * compose stack mounts — that file is owned by main and never crosses
- * the preload boundary.
+ * local runtime was started with — that file is owned by main and never
+ * crosses the preload boundary.
  *
- * Returns `null` when no compose has run yet; callers must surface
- * that as a user-facing failure (compose bootstrap must succeed first).
+ * Returns `null` when no runtime has published a connection yet; callers
+ * must surface that as a user-facing failure (the runtime must start first).
  */
 
 import { promises as fs } from "node:fs";
@@ -19,7 +19,6 @@ export interface DbPoolConfig {
   readonly password: string;
 }
 
-const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_DATABASE = "vex";
 const DEFAULT_USER = "vex";
 
@@ -35,7 +34,7 @@ export async function buildPoolConfig(): Promise<DbPoolConfig | null> {
   }
   if (password.length === 0) return null;
   return {
-    host: DEFAULT_HOST,
+    host: conn.host,
     port: conn.pgPort,
     database: DEFAULT_DATABASE,
     user: DEFAULT_USER,

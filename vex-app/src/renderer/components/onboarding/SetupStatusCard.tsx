@@ -1,6 +1,7 @@
 /**
- * SetupStatusCard: the status stanza for the first run's branch bodies
- * (Docker, services, database; `docs/design/R3-MINIMAL.md` sections 1.6, 10.3 and 12).
+ * SetupStatusCard: the status stanza for the first run's branch bodies (the
+ * local runtime's start, the database; `docs/design/R3-MINIMAL.md` sections
+ * 1.6, 10.3 and 12).
  *
  * Grammar: a state is a fill and a word. A calm tone (`ok`, `info`, `warn`, `muted`) is a card on
  * the paper: a 1px rule frame, the title at the left and the state word at the right (swatch and
@@ -9,8 +10,9 @@
  *
  * ## It is a LIVE REGION, and it has to be its own
  *
- * These cards are the only thing that reports a pre-shell branch: Docker not
- * running, a compose bootstrap failing, a migration finishing. All of it
+ * These cards are the only thing that reports a pre-shell branch: the local
+ * database failing to start, a disk too full for the embeddings model, a
+ * migration finishing. All of it
  * arrives while the user is watching a screen that changes under them without
  * any focus moving, so a sighted user sees the word change and nobody else is
  * told anything. The app-wide notification announcer is NOT the owner here -

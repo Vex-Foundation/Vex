@@ -101,7 +101,9 @@ export type SettingsSection =
   | "memory"
   | "tuning"
   /** The Lighter points campaign; the one section with no wizard step behind it. */
-  | "lighterPoints";
+  | "lighterPoints"
+  /** The bundled database and embeddings server; shown only on the native runtime. */
+  | "localRuntime";
 
 /**
  * Full-app overlay screen route (Chronos screens redesign, 2026-07-20;

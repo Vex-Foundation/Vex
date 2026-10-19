@@ -12,9 +12,10 @@
  *     one is broken.
  *   - THE STACK OUTLIVES NO TEST. Setup and teardown are one fixture, so an
  *     assertion failure, a timeout and an interrupt all reach the same
- *     teardown. Container removal is attempted first and its failure is
- *     reported, never swallowed; testcontainers' Ryuk reaper remains the
- *     backstop for a process that dies before teardown runs.
+ *     teardown. The database is removed once the app has exited and its
+ *     failure is reported, never swallowed; the cluster's watchdog
+ *     (`vex-stack.ts`) remains the backstop for a process that dies before
+ *     teardown runs.
  */
 
 import { test as base, _electron, type ElectronApplication, type Page } from "@playwright/test";
@@ -61,7 +62,7 @@ export async function migrateThroughApp(shell: Page): Promise<MigrateOutcome> {
 }
 
 /**
- * Pulling an image, starting Postgres, launching Electron and migrating a
+ * Creating a cluster, starting Postgres, launching Electron and migrating a
  * fresh schema does not fit the suite's 30s per-test budget. A fixture-scoped
  * timeout is the right instrument: Playwright budgets it separately from the
  * test body, so a spec still fails fast on its OWN assertions while setup and
@@ -123,7 +124,7 @@ export const test = base.extend<{ vexDb: VexDatabaseFixture }>({
       // the profile Chromium wrote after the removal.
       //
       // So the app goes first and the directories go after it is gone. Its
-      // failure is still not allowed to strand the container: it is captured
+      // failure is still not allowed to strand the database: it is captured
       // and reported, never thrown before the stack is stopped.
       const closed = app === undefined
         ? []

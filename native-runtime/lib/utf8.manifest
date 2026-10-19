@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Embedded into every shipped Windows executable (lib/common.sh
+  nr_win_utf8_manifest). With activeCodePage UTF-8 (Windows 10 1903+) the
+  process code page is UTF-8: argv, getenv and every -A Win32 / narrow CRT file
+  API speak UTF-8, so paths with any characters work. Without it Postgres and
+  llama.cpp see paths in the legacy ANSI code page: initdb then fails on a
+  non-ASCII install path (it COPYs share/sql_features.txt by path in UTF-8 SQL)
+  and llama-server cannot open a non-ASCII model path (ggml decodes it as UTF-8).
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

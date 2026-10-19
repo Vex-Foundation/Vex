@@ -17,6 +17,10 @@
  * "nothing is listening", "the socket denied us", and "something else went
  * wrong" into one failure is exactly the error class this task exists to
  * remove.
+ *
+ * The app itself no longer probes the engine. The one caller left is the
+ * clean-machine precondition under `scripts/`, which imports this module so
+ * it looks exactly where the previous release looked.
  */
 
 import { createConnection, type Socket } from "node:net";

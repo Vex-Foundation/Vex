@@ -6,20 +6,36 @@ import { app, net } from "electron";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import { z } from "zod";
-import { CH } from "@shared/ipc/channels.js";
+import { CH, EV } from "@shared/ipc/channels.js";
 import { ok, type Result } from "@shared/ipc/result.js";
 import {
   healthReportSchema,
+  localRuntimeCheckSchema,
+  nativeRuntimeStatusSchema,
   networkProbeSchema,
   osInfoSchema,
+  runtimeInfoSchema,
   type HealthReport,
+  type LocalRuntimeCheck,
+  type NativeRuntimeStatus,
   type NetworkProbe,
   type OsInfo,
   type OsPlatform,
+  type RuntimeInfo,
 } from "@shared/schemas/system.js";
+import { broadcastToAllWindows } from "../lifecycle/broadcast.js";
+import { checkLocalRuntime } from "../runtime/native/local-runtime-check.js";
+import { nativeStartGate } from "../runtime/migration/native-start-gate.js";
+import {
+  nativeRuntimeProgress,
+  nativeRuntimeProgressBus,
+} from "../runtime/native/native-runtime-progress.js";
+import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { SETUP_COMPLETE_FILE } from "../paths/config-dir.js";
 import { registerHandler } from "./register-handler.js";
+import { registerSystemLocalRuntimeHandlers } from "./system/local-runtime.js";
 import { registerSystemNotifyTurnCompleteHandler } from "./system/notify-turn-complete.js";
+import { registerSystemRuntimeMigrationHandlers } from "./system/runtime-migration.js";
 import { registerSystemTitleBarOverlayHandler } from "./system/title-bar-overlay.js";
 import { isAppTranslocated } from "../system/translocation.js";
 
@@ -97,6 +113,8 @@ export function registerSystemHandlers(): Array<() => void> {
 
   handlers.push(registerSystemNotifyTurnCompleteHandler());
   handlers.push(registerSystemTitleBarOverlayHandler());
+  handlers.push(...registerSystemLocalRuntimeHandlers());
+  handlers.push(...registerSystemRuntimeMigrationHandlers());
 
   handlers.push(
     registerHandler({
@@ -106,6 +124,62 @@ export function registerSystemHandlers(): Array<() => void> {
       outputSchema: osInfoSchema,
       handle: async (): Promise<Result<OsInfo>> => ok(await gatherOsInfo()),
     })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.system.runtime,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: runtimeInfoSchema,
+      handle: async (): Promise<Result<RuntimeInfo>> => ok({ native: getRuntimeMode() === "native" }),
+    })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.system.runtimeStatus,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: nativeRuntimeStatusSchema,
+      handle: async (): Promise<Result<NativeRuntimeStatus>> => ok(nativeRuntimeProgress.current()),
+    })
+  );
+
+  // Main owns the start (D8); the renderer may only ask for another attempt
+  // once one has failed. Joining a start in flight or re-checking a ready
+  // runtime is the migrate handler's, not a button's. The start goes through
+  // the migration gate, which starts nothing while data must be moved first.
+  handlers.push(
+    registerHandler({
+      channel: CH.system.runtimeRetry,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: nativeRuntimeStatusSchema,
+      handle: async (): Promise<Result<NativeRuntimeStatus>> => {
+        if (getRuntimeMode() === "native" && nativeRuntimeProgress.current().phase === "failed") {
+          void nativeStartGate().startNative();
+        }
+        return ok(nativeRuntimeProgress.current());
+      },
+    })
+  );
+
+  // Read-only: locating the binaries and measuring the disk start nothing.
+  handlers.push(
+    registerHandler({
+      channel: CH.system.localRuntimeCheck,
+      domain: "system",
+      inputSchema: empty,
+      outputSchema: localRuntimeCheckSchema,
+      handle: async (): Promise<Result<LocalRuntimeCheck>> => ok(await checkLocalRuntime()),
+    })
+  );
+
+  handlers.push(
+    nativeRuntimeProgressBus.subscribe((status) =>
+      broadcastToAllWindows(EV.system.runtimeProgress, status)
+    )
   );
 
   handlers.push(

@@ -5,8 +5,8 @@
  * `App` mounts ONE `StagePlate` behind the pre-shell, so the picture holds still while the
  * screens change over it. It has two layouts:
  *
- *   plate  the wake, the unlock and the first run screens (system check, Docker, services,
- *          database): a 720 wide plate at the left at the full window height (the plateau print
+ *   plate  the wake, the unlock and the first run screens (system check, the local runtime and
+ *          the move of a previous release's data, database): a 720 wide plate at the left at the full window height (the plateau print
  *          by day or night, its grain, Vex rising from the VEX token) and paper at the right.
  *          No state word stands under her on the print (the owner, 2026-10-18: the state lives
  *          in the title bar chip and the Vex sidebar; each screen keeps its own words). A first
@@ -68,8 +68,8 @@ const PLATE_VIEWS: ReadonlySet<View> = new Set<View>([
   "splash",
   "unlock",
   "systemCheck",
-  "dockerBootstrap",
-  "composeBootstrap",
+  "runtimeMigration",
+  "runtimeBootstrap",
   "migrations",
 ]);
 const PRINT_VIEWS: ReadonlySet<View> = new Set<View>(["wizard"]);

@@ -1,49 +1,23 @@
 /**
- * Service health: label-based project liveness detection + the poll loop
- * that decides whether the published Postgres port is THIS install's
- * database.
+ * Service health: the poll loop that decides whether the published
+ * Postgres port is THIS install's database.
  *
- * `isOurProjectActive` powers the reuse path. `waitForHealth` polls
- * `pgConnectProbe` and returns a `PgIdentityVerdict`, not a boolean:
- * "did not answer" and "answered, but it is not our database" are
- * different facts with different remedies, and only the first one is
- * worth waiting out. See `pg-listener-identity.ts` for why a
+ * `waitForHealth` polls `pgConnectProbe` and returns a `PgIdentityVerdict`,
+ * not a boolean: "did not answer" and "answered, but it is not our
+ * database" are different facts with different remedies, and only the
+ * first one is worth waiting out. See `pg-listener-identity.ts` for why a
  * reachability answer cannot stand in for an identity answer.
  */
 
-import { runSpawn } from "../docker/spawn-runner.js";
 import { pgConnectProbe, DEFAULT_PG_DATABASE, DEFAULT_PG_USER } from "./pg-health.js";
 import {
   probeOwnDbContainerAuth,
   verdictForAuthRejection,
   type PgIdentityVerdict,
 } from "./pg-listener-identity.js";
-import { projectLabelFilter } from "./project.js";
 
 export const HEALTH_POLL_INTERVAL_MS = 2_000;
 export const HEALTH_TIMEOUT_MS = 60_000;
-
-export async function isOurProjectActive(
-  installId: string,
-  signal?: AbortSignal
-): Promise<boolean> {
-  // `docker ps --filter label=com.docker.compose.project=...` is the
-  // skill-recommended detection (label survives daemon restarts; less
-  // brittle than parsing `docker compose ls` JSON).
-  const result = await runSpawn(
-    "docker",
-    [
-      "ps",
-      "--filter",
-      projectLabelFilter(installId),
-      "--format",
-      "{{.ID}}",
-    ],
-    { signal }
-  );
-  if (result.code !== 0) return false;
-  return result.stdout.trim().length > 0;
-}
 
 /** Verdict plus the sanitized sentence explaining how it was reached. */
 export interface PgListenerHealth {

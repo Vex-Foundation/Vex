@@ -7,7 +7,7 @@
  *   ready      she has woken and the desk is ready, or the vault just unlocked: "Ready"
  *   sleeping   the desk was locked: "Sleeping · Locked" (she wakes when the unlock succeeds)
  *   concerned  a wrong password, a throttle or the vault reset panel: "Concerned"
- *   a face     a first run screen (system check, Docker, services, database) says what she
+ *   a face     a first run screen (system check, local runtime, database) says what she
  *              shows for what it is doing: "Working" with a timer, "Ready", "Concerned", "Error"
  *
  * `launching` is true from the start of the process until the plate leaves the launch (the shell,

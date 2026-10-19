@@ -5,9 +5,9 @@
  *   provided `AbortSignal` aborts first, in which case rejects with an
  *   AbortError. Always cleans up the abort listener on every exit
  *   path (resolve, reject, abort) to avoid leaking listeners on the
- *   shared controller — which matters for the compose-up single-flight
- *   join path, where many joined waiters may attach to the same shared
- *   promise.
+ *   shared controller — which matters for a single-flight join path
+ *   (the runtime host's start), where many joined waiters may attach to
+ *   the same shared promise.
  *
  * - `isAbortError`: best-effort check for "this rejection came from an
  *   aborted signal". Node + the DOM both use `error.name === "AbortError"`,
@@ -55,10 +55,10 @@ export function isAbortError(value: unknown): boolean {
  * If `signal` is undefined, this is a transparent pass-through.
  *
  * Critically: this does NOT call `controller.abort()` on the upstream
- * promise's source. It only stops awaiting. Compose-up joined callers
- * use this to detach from the shared in-flight promise without
- * aborting the shared process — only the initiator's signal flows
- * into `runSpawn`.
+ * promise's source. It only stops awaiting. Joined callers of a
+ * single-flight start use this to detach from the shared in-flight
+ * promise without aborting the shared work — only the initiator's
+ * signal flows into it.
  */
 export async function raceWithAbort<T>(
   promise: Promise<T>,

@@ -109,7 +109,6 @@ const RESERVED_UNREGISTERED: Readonly<Record<string, string>> = {
   // connection-test responder remains reserved; model listing is now wired.
   [CH.onboarding.providerTest]:
     "Reserved provider connection-test responder - verify is folded into providerPersist; standalone test is not wired yet.",
-
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

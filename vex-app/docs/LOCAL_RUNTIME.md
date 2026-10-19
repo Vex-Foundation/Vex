@@ -32,13 +32,16 @@ Within `CONFIG_DIR`:
 CONFIG_DIR/
   .env                              shared tracked env keys
   secrets.vault.json                encrypted API/provider credentials (scrypt + AES-256-GCM)
-  .install-id                       per-install uuid (used by Docker project name)
+  .install-id                       per-install uuid (named the previous release's Docker project)
   .setup-complete                   wizard completion flag
   keystore.json                     EVM keystore (encrypted)
   solana-keystore.json              Solana keystore (encrypted)
   config.json                       wallet addresses + chain config (plaintext, no secrets)
-  compose/                          rendered docker-compose.yml + secrets
+  compose/                          only on installs that ran a Docker-based release
+                                    (its rendered stack, read once by the data move)
   local-infra/secrets/pg_password   Postgres password (generated per install)
+  runtime/                          bundled runtime: pg18/ cluster, models/, runtime-state.json
+                                    (Windows: %LOCALAPPDATA%\vex\runtime instead)
   .electron-state/                  Electron-only (window state, session cache, log files)
 ```
 
@@ -70,13 +73,21 @@ non-empty absolute path.
 > backups outside `CONFIG_DIR` — see step 3 below for the exact command.
 
 If a setup gets stuck mid-flow (e.g. corrupt vault, half-applied wizard,
-stale Docker stack), reset:
+a local database that will not start), reset. To empty only the database
+(sessions, messages, memory, history; wallets, vault, settings and the model
+are kept), use Settings -> Local runtime -> Reset local data instead; the
+steps below remove the whole install:
 
 ### 1. Stop the running app
 
 Close the desktop app. On Windows, verify no `vex.exe` lingers in Task Manager.
+Quitting also stops the bundled runtime; verify no `postgres` or
+`llama-server` process from the app is left (Task Manager on Windows,
+`pgrep -fl 'postgres|llama-server'` on macOS / Linux).
 
-### 2. Tear down the Docker stack
+### 2. Tear down the Docker stack (installs that ran a Docker release)
+
+Skip this step if the install never ran a Docker-based release of Vex.
 
 Run `docker compose down` from the per-install compose directory so the
 generated `docker-compose.yml` is auto-discovered. Pass `--volumes` to drop
@@ -165,7 +176,16 @@ Do not proceed to 3b until all checks above succeed.
 | Windows (PowerShell) | `Remove-Item -Recurse -Force "$env:APPDATA\vex"` |
 | WSL2 reaching Windows AppData | `rm -rf /mnt/c/Users/<user>/AppData/Roaming/vex` |
 
-### 4. Verify Docker volumes are gone
+The bundled runtime's directory (database cluster, embeddings model,
+`runtime-state.json`) is `CONFIG_DIR/runtime` on macOS and Linux, so the
+commands above remove it. **On Windows it is machine-local and must be removed
+separately**, or the next launch reuses the old database:
+
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\vex\runtime"
+```
+
+### 4. Verify Docker volumes are gone (installs that ran a Docker release)
 
 Per-install volumes are named after the project label and disappear with
 `docker compose down --volumes`. If you didn't pass `--volumes` above (the
@@ -182,7 +202,73 @@ docker volume rm <each-listed-volume>
 A fresh `CONFIG_DIR` is created on next launch and the wizard flow restarts
 from System Check.
 
+## Embeddings for the integration suite
+
+`pnpm test:integration` and the eval lanes (`pnpm test:eval*`) need a live
+embeddings endpoint in `EMBEDDING_BASE_URL`; no CI lane runs them, and the
+required Studio lane (`pnpm test:studio-postgres`) needs none. The app's own
+embeddings server picks its port and an API key on every launch, so it cannot
+be borrowed: start the bundled `llama-server` yourself, with the flags the app
+uses (`src/main/runtime/native/llama-supervisor.ts`) on a fixed port and
+without a key.
+
+```bash
+# From the repository root. The tree comes from `pnpm dev:assets` (or
+# `node scripts/fetch-native-runtime.mjs --current` in vex-app/); the model,
+# sha256-verified, from native-runtime/llama/fetch-model.sh.
+bash native-runtime/llama/fetch-model.sh
+MODEL="$PWD/native-runtime/.work/models/embeddinggemma-300M-Q8_0.gguf"
+mkdir -p /tmp/vex-llama-cache
+# cwd = the binary's directory: ggml loads its CPU backends from there.
+cd vex-app/resources/native-runtime/<platform>-<arch>/llama
+LLAMA_CACHE=/tmp/vex-llama-cache ./llama-server --model "$MODEL" --embeddings \
+  --alias ai/embeddinggemma:300M-Q8_0 --host 127.0.0.1 --port 27999 \
+  --device none -ngl 0 -np 1 -c 2048 -b 2048 -ub 2048 --no-webui --offline
+```
+
+Then, in another shell at the repository root:
+
+```bash
+export EMBEDDING_BASE_URL=http://127.0.0.1:27999/v1
+export EMBEDDING_MODEL=ai/embeddinggemma:300M-Q8_0 EMBEDDING_DIM=768 EMBEDDING_PROVIDER=local
+make e2e-smoke            # expects "OK: dim=768"
+VEX_TEST_PG=native pnpm test:integration   # Postgres on the bundled binaries too
+```
+
+Any other OpenAI-compatible `/v1` endpoint serving that model works as well;
+set `EMBEDDING_API_KEY` when it wants a bearer key. Without
+`EMBEDDING_BASE_URL` the suite stops at setup and says how to start one.
+
 ## Diagnostic commands
+
+Bundled runtime (`RUNTIME_DIR` is `CONFIG_DIR/runtime`, or
+`%LOCALAPPDATA%\vex\runtime` on Windows):
+
+```bash
+# Is the cluster up? Line 8 of postmaster.pid reads "ready" once it accepts connections.
+cat "$RUNTIME_DIR/pg18/postmaster.pid"
+
+# Postgres's own log (the logging collector writes here, not to the app log)
+ls -t "$RUNTIME_DIR/pg18/log" | head -1
+
+# Recorded cluster identity, last port, migration state and provider
+cat "$RUNTIME_DIR/runtime-state.json"
+
+# Why the last data move from Docker failed: the failed tool's complete stderr
+# (pg_dump.stderr.txt or pg_restore.stderr.txt), the database server's log
+# (server-log/, moved out before the rollback deleted the cluster) and
+# failure.json. One attempt is kept; the next failure replaces it, and a later
+# successful retry leaves it in place. It never holds the dump or data files.
+ls "$RUNTIME_DIR/migration-failed-attempt"
+
+# View electron-log output
+#   Linux:        ~/.config/vex/.electron-state/logs/main.log
+#   macOS:        ~/Library/Application Support/vex/.electron-state/logs/main.log
+#   Windows:      %APPDATA%\vex\.electron-state\logs\main.log
+```
+
+The previous release's Docker stack (installs that ran a Docker release,
+until their data has been moved and the old data removed):
 
 ```bash
 # Is the Vex compose project running?
@@ -196,9 +282,4 @@ docker compose -p vex-<uuid> logs -f embeddings-runtime
 
 # Probe Postgres TCP locally (replace <pg-port> with the value from compose)
 nc -zv 127.0.0.1 <pg-port>
-
-# View electron-log output
-#   Linux:        ~/.config/vex/.electron-state/logs/main.log
-#   macOS:        ~/Library/Application Support/vex/.electron-state/logs/main.log
-#   Windows:      %APPDATA%\vex\.electron-state\logs\main.log
 ```

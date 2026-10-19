@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getInstallId,
   getPgPassword,
+  readInstallId,
   renderCompose,
+  renderedComposePath,
   type CryptoAdapter,
   type RandomAdapter,
   type RenderDeps,
@@ -192,5 +194,19 @@ describe("compose/render core", () => {
     expect(b.installId).toBe(a.installId);
     expect(b.pgPasswordComposePath).toBe(a.pgPasswordComposePath);
     expect(bContent).toBe(aContent);
+  });
+
+  it("readInstallId reads the id without ever creating one", async () => {
+    expect(await readInstallId(userDataDir)).toBeNull();
+    writeFileSync(path.join(userDataDir, ".install-id"), "  \n");
+    expect(await readInstallId(userDataDir)).toBeNull();
+    const id = await getInstallId({ ...deps, userDataDir: mkdtempSync(path.join(tmpdir(), "vex-render-id-")) });
+    writeFileSync(path.join(userDataDir, ".install-id"), id);
+    expect(await readInstallId(userDataDir)).toBe(id);
+  });
+
+  it("renderedComposePath is where renderCompose writes", async () => {
+    const result = await renderCompose(deps);
+    expect(renderedComposePath(userDataDir)).toBe(result.outPath);
   });
 });

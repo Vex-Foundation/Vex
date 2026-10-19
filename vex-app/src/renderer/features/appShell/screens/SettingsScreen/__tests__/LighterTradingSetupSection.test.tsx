@@ -250,6 +250,50 @@ it("keeps Confirm pending until the applied leverage has been read back", async 
   const refreshedRow = screen.getByRole("button", { name: "Change leverage for ETH" }).closest("tr");
   expect(refreshedRow).not.toBeNull();
   expect(within(refreshedRow as HTMLElement).getByText("50x cross")).not.toBeNull();
+  // Applied is done: the sheet does not come back with another Review.
+  expect(screen.queryByLabelText("New leverage for ETH")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Review leverage change for ETH" })).toBeNull();
+});
+
+it("keeps the sheet open to say why when Lighter refuses the change", async () => {
+  const proposal: Result<LighterLeverageProposal> = {
+    ok: true,
+    data: {
+      kind: "proposal",
+      proposalId: "proposal-refused-1",
+      environment: "rhc",
+      walletAddress: WALLET,
+      accountIndex: 24226,
+      apiKeyIndex: 4,
+      marketId: 0,
+      symbol: "ETH",
+      current: ETH_ROW.current,
+      target: { initialMarginFraction: 200, leverageDisplay: "50.00", marginMode: "cross" },
+      marketMinInitialMarginFraction: 200,
+      openPosition: ETH_ROW.openPosition,
+      observations: { liquidationPrice: null, openOrders: { count: 0 } },
+      expiresAt: "2026-09-10T12:05:00.000Z",
+    },
+  };
+  const refused: Result<ApplyLighterLeverageResult> = {
+    ok: true,
+    data: { status: "refused", intentId: "proposal-refused-1", reason: "the market is closed" },
+  };
+  getLighterLeverageOverview.mockResolvedValue(overview());
+  prepareLighterLeverage.mockResolvedValue(proposal);
+  confirmLighterLeverage.mockReturnValue({ promise: Promise.resolve(refused), cancel: vi.fn() });
+
+  renderCard();
+  fireEvent.click(await screen.findByRole("button", { name: "Change leverage for ETH" }));
+  fireEvent.change(screen.getByLabelText("New leverage for ETH"), { target: { value: "50" } });
+  fireEvent.click(screen.getByRole("button", { name: "Review leverage change for ETH" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+
+  // The reason shows in the sheet and in the row behind it; the sheet stays.
+  await waitFor(() => {
+    expect(screen.getAllByText("Vex did not apply this change: the market is closed").length).toBeGreaterThan(0);
+  });
+  expect(screen.getByLabelText("New leverage for ETH")).not.toBeNull();
 });
 
 it("keeps an unresolved change after a remount and reconciles it by intent id", async () => {

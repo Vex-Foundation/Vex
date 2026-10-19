@@ -128,14 +128,16 @@ export function SessionPanel({
   // Shared with ApprovalsRegion and SessionTranscript (same query key, no
   // extra IPC): a decision waiting in this session frames the composer
   // "Waiting for approval", agent chats included (their runs never park as
-  // `paused_approval`). Every pending row counts, as the turn island's
-  // freeze counts them.
+  // `paused_approval`). Every row proposed to the chat counts, as the turn
+  // island's freeze counts them; a desk row is decided in the desk's own
+  // dialog and the transcript leaves it out (`ApprovalsRegion`), so the
+  // composer does not wait on it either.
   const pendingQuery = usePendingApprovals(activeSessionId);
   const pendingApproval =
     activeSessionId !== null &&
     pendingQuery.data !== undefined &&
     pendingQuery.data.ok &&
-    pendingQuery.data.data.length > 0;
+    pendingQuery.data.data.some((row) => row.origin !== "desk");
 
   // THE FRESH-SESSION HANDOFF, as a phase input. `completeSessionCreate`
   // activates the new session and stores its first turn in ONE set, but the

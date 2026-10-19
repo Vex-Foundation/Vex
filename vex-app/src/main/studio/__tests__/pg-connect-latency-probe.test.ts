@@ -58,14 +58,20 @@ describe("mirror drift", () => {
     expect(PROBE_DEFAULT_PG_PORT).toBe(DEFAULT_PG_PORT);
   });
 
-  it("restates the connection triple db-config.ts hardcodes", () => {
+  it("restates the connection triple the product uses", () => {
     const source = readFileSync(
       path.join(VEX_APP_ROOT, "src", "main", "database", "db-config.ts"),
       "utf8",
     );
-    expect(source).toContain(`const DEFAULT_HOST = "${PG_HOST}"`);
     expect(source).toContain(`const DEFAULT_DATABASE = "${PG_DATABASE}"`);
     expect(source).toContain(`const DEFAULT_USER = "${PG_USER}"`);
+    // The host travels in the published DbConnection; every local runtime
+    // publishes the loopback constant from connection-state.ts.
+    const connectionState = readFileSync(
+      path.join(VEX_APP_ROOT, "src", "main", "database", "connection-state.ts"),
+      "utf8",
+    );
+    expect(connectionState).toContain(`export const LOOPBACK_DB_HOST = "${PG_HOST}"`);
   });
 
   /**

@@ -1,8 +1,11 @@
 /**
- * The four System Check probe rows (`<ol>`). Pure presentation: every
+ * The six System Check probe rows (`<ol>`). Pure presentation: every
  * status arrives as a prop - this module derives nothing and performs no
- * IO. All four rows render immediately; the stage crossfade is the only
+ * IO. All six rows render immediately; the stage crossfade is the only
  * entrance.
+ *
+ * The rows between network and configuration are the bundled local
+ * runtime's: Local runtime, Disk space, Memory (`LocalRuntimeRows`).
  *
  * Reuses the shared `StepRow` (one level up) so the row chrome and the
  * `data-step-status` test selector stay single-sourced. The rows carry no
@@ -17,32 +20,27 @@
 import type { JSX } from "react";
 
 import { StepRow, type StepStatus } from "../StepRow.js";
-import {
-  formatDockerDetail,
-  formatEnvDetail,
-  formatPlatform,
-} from "./format.js";
+import { LocalRuntimeRows } from "./LocalRuntimeRows.js";
+import type { LocalRuntimeView } from "./localRuntime.js";
+import { formatEnvDetail, formatPlatform } from "./format.js";
 import type { useSystemHealth } from "../../../lib/api/system.js";
-import type { useDockerStatus } from "../../../lib/api/docker.js";
 import type { useEnvState } from "../../../lib/api/onboarding.js";
 
 interface ProbeRowsProps {
   readonly osStatus: StepStatus;
   readonly networkStatus: StepStatus;
-  readonly dockerStatus: StepStatus;
   readonly envStatus: StepStatus;
   readonly health: ReturnType<typeof useSystemHealth>;
-  readonly docker: ReturnType<typeof useDockerStatus>;
+  readonly localRuntime: LocalRuntimeView;
   readonly env: ReturnType<typeof useEnvState>;
 }
 
 export function ProbeRows({
   osStatus,
   networkStatus,
-  dockerStatus,
   envStatus,
   health,
-  docker,
+  localRuntime,
   env,
 }: ProbeRowsProps): JSX.Element {
   return (
@@ -67,19 +65,7 @@ export function ProbeRows({
             : null
         }
       />
-      <StepRow
-        label="Docker Engine"
-        status={dockerStatus}
-        // "Ready" reads more accurately than "OK" for an engine
-        // that's installed + daemon running + container available.
-        // Other states fall back to the StepRow defaults.
-        badgeLabel={dockerStatus === "ok" ? "Ready" : undefined}
-        detail={
-          docker.data?.ok
-            ? formatDockerDetail(docker.data.data)
-            : null
-        }
-      />
+      <LocalRuntimeRows view={localRuntime} />
       <StepRow
         label="Vex configuration"
         status={envStatus}

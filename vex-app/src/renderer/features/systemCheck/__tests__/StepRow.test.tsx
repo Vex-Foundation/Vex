@@ -30,7 +30,7 @@ describe("StepRow", () => {
 
   it("renders explicit badgeLabel overriding the default for the status", () => {
     const { getByText, queryByText } = render(
-      <StepRow label="Docker" status="ok" detail={null} badgeLabel="Ready" />,
+      <StepRow label="Local runtime" status="ok" detail={null} badgeLabel="Ready" />,
     );
     expect(getByText("Ready")).toBeDefined();
     expect(queryByText("OK")).toBeNull();

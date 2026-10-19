@@ -16,7 +16,8 @@
  * ## Two prerequisites, both named in their skip messages
  *
  * REACHING THE SHELL. `useSetupOrchestrator` only hands off to `appShell`
- * after Docker, compose, migrations, the wizard and an unlocked vault. The
+ * after System Check, the local runtime, migrations, the wizard and an
+ * unlocked vault. The
  * sanctioned bypass is the diagnostic setup tour, which is baked in at build
  * time by `VITE_VEX_SETUP_TOUR=1` and is absent from a default build (and from
  * every release build). Without it this spec skips and says so; it never
@@ -35,20 +36,20 @@
  * DB-backed: `vex.projects.*` goes through `main/database/projects/*`, and
  * `terminalDomain().create` resolves its cwd from `getProject(projectId)`, so
  * no project means no terminal, no explorer, no viewer and no delete. The
- * connection is published exactly once, by the compose handler
- * (`main/ipc/docker.ts` -> `setDbConnection`), so a fixture config dir that
- * never ran compose has no database. Measured in this environment, not
- * assumed: `window.vex.projects.list()` answers
+ * connection is published by the runtime host once the bundled native
+ * runtime is up (`main/runtime/runtime-host.ts` -> `setDbConnection`). This
+ * spec's fixture opens no e2e door, and its bare `dist/main/index.js` launch
+ * brings up no runtime (development binaries resolve from the app path, which
+ * that launch does not match), so its config dir has no database. Measured,
+ * not assumed:
+ * `window.vex.projects.list()` answers
  * `{"ok":false,"error":{"code":"internal.unexpected","message":"Database
  * unavailable. Verify services are running and retry."}}`.
  *
- * The e2e fixture cannot borrow one either. Compose renders a stack keyed by
- * the config dir's install id, and its preflight refuses ports another stack
- * already holds, so a per-run `composeUp` would either collide with the
- * developer's live Vex stack or leave a second Postgres plus embeddings
- * runtime behind after every run. Pointing the fixture at the developer's own
- * config dir would create and delete projects in their real database. Both are
- * decisions above this spec's pay grade.
+ * Letting the app's own runtime serve one would initialise a cluster and
+ * download the embeddings model per run, and pointing the fixture at the
+ * developer's own config dir would create and delete projects in their real
+ * database.
  *
  * So this journey stops at the database gate, and the DB-backed half now has
  * its own spec and its own fixture: `e2e/studio-project-journey.spec.ts` runs
@@ -324,7 +325,7 @@ test("Studio journey: the shell switches to Studio and opens the project creator
   // THIS spec keeps the scope it actually covers, which is the shell WITHOUT a
   // database: the mode switch, the creator's form and wallet inventory, and the
   // degraded rail an unreadable list must produce. Its fixture mints a bare
-  // config dir and never runs compose, so `projects.ok` stays false here; if a
+  // config dir with no database, so `projects.ok` stays false here; if a
   // future change gives this fixture a database, the arm above simply stops
   // running and the annotation below says so.
   testInfo.annotations.push({

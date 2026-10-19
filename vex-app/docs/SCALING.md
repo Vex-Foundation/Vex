@@ -136,8 +136,12 @@ Two options for the ANN migration:
 
    ```bash
    # 1. Announce a brief read-only window to ourselves (no concurrent writes).
-   # 2. Connect to the stack's Postgres:
-   docker compose -p vex-<uuid> exec postgres psql -U vex -d vex
+   # 2. Connect to the app's bundled Postgres while the app runs. Vex ships
+   #    no psql; use any psql 13+ client. The port is pg.lastPort in
+   #    runtime-state.json (RUNTIME_DIR: CONFIG_DIR/runtime, or
+   #    %LOCALAPPDATA%\vex\runtime on Windows).
+   PGPASSWORD="$(cat "$CONFIG_DIR/local-infra/secrets/pg_password")" \
+     psql -h 127.0.0.1 -p <pg.lastPort> -U vex -d vex
 
    -- 3. Run the partial index creation without an explicit transaction.
    -- (psql autocommits between statements when run outside `\transaction`).

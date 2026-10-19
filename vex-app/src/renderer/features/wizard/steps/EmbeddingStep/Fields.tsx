@@ -8,13 +8,16 @@
  * the controlled-input semantics (and the `{ ...form, ... }` spread on each
  * change) stay identical to the inlined version.
  *
+ * The bundled embeddings server takes a port chosen at launch, and Vex
+ * points itself at it, so the Base URL placeholder only shows the shape of
+ * an endpoint of your own.
+ *
  * R3 grammar: each field is a `.vex-wz-group` (label, input, hint); URLs,
  * ids and figures are set in mono.
  */
 
 import type { Dispatch, JSX, SetStateAction } from "react";
 import {
-  buildEmbeddingBaseUrl,
   EMBEDDING_DIM,
   EMBEDDING_MODEL_ALIAS,
   EMBEDDING_PROVIDER,
@@ -32,7 +35,11 @@ export interface EmbeddingFieldsProps {
   readonly setForm: Dispatch<SetStateAction<FormState>>;
 }
 
+/** An endpoint of the user's own, by shape only. */
+export const OWN_ENDPOINT_PLACEHOLDER = "https://embeddings.example.com/v1";
+
 const MONO_FIELD = "font-mono vex-num text-[14px]";
+
 
 export function EmbeddingFields({
   form,
@@ -45,7 +52,7 @@ export function EmbeddingFields({
         <Input
           id="vex-embed-baseurl"
           type="url"
-          placeholder={buildEmbeddingBaseUrl()}
+          placeholder={OWN_ENDPOINT_PLACEHOLDER}
           autoComplete="off"
           value={form.baseUrl}
           onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}

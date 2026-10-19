@@ -152,7 +152,7 @@ describe("buildDockerPath", () => {
 });
 
 describe("dockerSpawnEnv", () => {
-  it("strips managed secrets from the real process.env (covers docker CLI + probe/daemon.ts callers)", () => {
+  it("strips managed secrets from the real process.env (covers every docker CLI caller)", () => {
     const originalEnv = process.env;
     process.env = {
       ...originalEnv,

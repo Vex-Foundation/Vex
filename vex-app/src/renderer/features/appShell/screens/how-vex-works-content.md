@@ -1,6 +1,6 @@
 This page is the whole app in plain words. The first three sections take about five minutes and are the ones to read before you move any real money; everything after them is reference you can come back to.
 
-**Before you start.** You will need: Docker Desktop installed and running (Vex keeps its database inside it, and if it is missing the app will not finish starting); an OpenRouter account with credit and an API key (the AI model is rented per message and **you** pay that bill, not Vex); your master password written down somewhere safe; and, once you attach a wallet, a little of each chain's own coin - ETH on Ethereum and Base, SOL on Solana - to pay network fees. Reading this page costs nothing. A session with no wallets attached costs nothing but model tokens.
+**Before you start.** You will need: about 1 GB of free disk space for the first start (Vex brings its own database and downloads its local embeddings model, about 330 MB, once); an OpenRouter account with credit and an API key (the AI model is rented per message and **you** pay that bill, not Vex); your master password written down somewhere safe; and, once you attach a wallet, a little of each chain's own coin - ETH on Ethereum and Base, SOL on Solana - to pay network fees. Reading this page costs nothing. A session with no wallets attached costs nothing but model tokens.
 
 ## Your first hour
 
@@ -74,7 +74,7 @@ Three rules:
 - **Requests to blockchains, trading venues and market-data providers** - price lookups, quotes, token images, web research, and the transactions you approve.
 - **The $VEX price ticker**, which keeps polling market APIs in the background so the $VEX line on the Portfolio page is current when you open it, whether or not Vex is working.
 - **A version check** against Vex's release server when the app starts, when its window comes back into focus, and every few minutes while it runs. Updates never download or install by themselves: a card in the left sidebar offers Update now, and Restart & install is a second, separate click.
-- **Downloads during setup** - Docker's installer and the container images for the database and the local embeddings model.
+- **One download on the first start** - the local embeddings model (about 330 MB, from Hugging Face). The database and the program that runs the model come inside the app.
 - **Crash reports**, and only if you switch them on. They are off by default, carry no personal data, and are stripped before sending.
 
 Your keys, your chat history, the database, your wallet files and Vex's memory never leave.
@@ -84,7 +84,7 @@ Your keys, your chat history, the database, your wallet files and Vex's memory n
 Everything important runs on your own computer:
 
 - The agent engine - the part that thinks and calls tools.
-- A Postgres database inside Docker (a filing cabinet program that keeps sessions, trades, and memories organized locally). **Docker is a real requirement**, not scenery: it must be installed and running.
+- A Postgres database (a filing cabinet program that keeps sessions, trades, and memories organized locally). It ships inside the app, and Vex starts it, watches it and restarts it on its own; there is nothing else to install.
 - A local embeddings model (a small helper that turns text into searchable fingerprints, so memory search works on-device).
 
 Because all of it is local, Vex only works while the app is open. Close it, or let the machine sleep, and a running mission stops making progress until you come back.
@@ -364,7 +364,7 @@ Yes - an OpenRouter key with credit on it. That bill is yours: each finished rep
 ## When something looks wrong
 
 ### The Runtime row isn't "Connected"
-"Not ready" means Vex is offline, so check your connection. "Degraded" means setup is not finished, so some things will not work yet. "Connecting" is Vex still checking and clears by itself. "Unavailable" means Vex could not read its own status: restart the app - the database and its data are on your disk and survive that. If the app itself will not finish starting, check that Docker Desktop is running.
+"Not ready" means Vex is offline, so check your connection. "Degraded" means setup is not finished, so some things will not work yet. "Connecting" is Vex still checking and clears by itself. "Unavailable" means Vex could not read its own status: use Restart runtime under Settings > Local runtime, or restart the app - the database and its data are on your disk and survive both.
 
 ### A transaction has been pending for a long time
 That is often normal - a busy chain can take a while. The row keeps re-checking itself and will tell you what it knows: "in mempool" means a node has it, "verification stalled" means the checks have not concluded and nothing has failed. If it ends up as "Status unknown" with the note "superseded", another transaction from the same wallet used its slot: Vex stopped tracking it and the outcome is unproven. Look it up on the explorer before assuming anything, and do not retry blind.

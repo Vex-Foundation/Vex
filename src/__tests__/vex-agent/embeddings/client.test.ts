@@ -27,6 +27,12 @@ function mockFetchOk(body: unknown): void {
   } as unknown as Response);
 }
 
+function firstFetchInit(): RequestInit {
+  const init = vi.mocked(global.fetch).mock.calls[0]?.[1];
+  if (!init) throw new Error("fetch was not called with a request init");
+  return init;
+}
+
 function mockFetchStatus(status: number, text = ""): void {
   global.fetch = vi.fn().mockResolvedValue({
     ok: false,
@@ -72,6 +78,20 @@ describe("embedDocument", () => {
     expect(body.input).toBe("title: title | text: summary");
     expect(body.model).toBe("ai/embeddinggemma:300M-Q8_0");
     expect(result.embedding).toHaveLength(VALID_CONFIG.dim);
+  });
+
+  it("sends no Authorization header when the config has no apiKey", async () => {
+    mockFetchOk({ data: [{ embedding: makeEmbedding() }] });
+    await embedDocument("title", "summary", VALID_CONFIG);
+    const init = firstFetchInit();
+    expect(init.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("sends the configured apiKey as a bearer token", async () => {
+    mockFetchOk({ data: [{ embedding: makeEmbedding() }] });
+    await embedQuery("q", { ...VALID_CONFIG, apiKey: "per-launch-key" });
+    const init = firstFetchInit();
+    expect(init.headers).toMatchObject({ Authorization: "Bearer per-launch-key" });
   });
 
   it("throws on dim mismatch against config.dim", async () => {

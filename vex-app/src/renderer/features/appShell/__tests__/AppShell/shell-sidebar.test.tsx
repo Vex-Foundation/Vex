@@ -366,7 +366,7 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
     // The status row speaks ONE short word (the long RuntimeLedger strings
-    // are retired), beside the Docker/Postgres marks.
+    // are retired), beside the Postgres mark.
     expect(screen.getByText("Connected")).not.toBeNull();
     expect(screen.queryByText("Connected to local runtime")).toBeNull();
 

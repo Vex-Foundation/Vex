@@ -29,9 +29,10 @@ import { EASE_STANDARD } from "../../../lib/motion/index.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useSuperboardKey } from "../../../lib/api/superboard-key.js";
 import { useWizardState } from "../../../lib/api/wizard.js";
+import { useIsNativeRuntime } from "../../../lib/api/system.js";
 import { ShellScreen } from "./ShellScreen.js";
 import {
-  SETTINGS_SECTIONS,
+  visibleSettingsSections,
   type SettingsNavId,
 } from "./SettingsScreen/settings-sections.js";
 import { SettingsPreferences } from "./SettingsScreen/SettingsPreferences.js";
@@ -75,10 +76,13 @@ export function SettingsScreen({
       ? wizardStateQuery.data.data.completedSteps
       : [];
 
+  // A section this install does not list (the native-only one elsewhere) lands
+  // on Preferences, deep link or not.
+  const native = useIsNativeRuntime();
   const activeMeta =
     section === null
       ? null
-      : (SETTINGS_SECTIONS.find((s) => s.id === section) ?? null);
+      : (visibleSettingsSections(native).find((s) => s.id === section) ?? null);
   const selected: SettingsNavId = activeMeta === null ? "preferences" : activeMeta.id;
   const select = (id: SettingsNavId): void => {
     setSection(id === "preferences" ? null : id);

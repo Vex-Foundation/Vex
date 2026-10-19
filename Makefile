@@ -1,6 +1,6 @@
 # Vex — Developer Makefile
 
-.PHONY: build test dev clean lint lint-all check e2e-up e2e-down e2e-smoke \
+.PHONY: build test dev clean lint lint-all check e2e-smoke \
         knowledge-export knowledge-import knowledge-reembed \
         vex-dev vex-make vex-lint vex-test
 
@@ -26,22 +26,17 @@ lint-all:
 
 check: lint test
 
-# -- E2E test stack (pgvector; embeddings runtime separate) -------------------
+# -- Embeddings endpoint smoke ------------------------------------------------
 #
-# Postgres on host port 5777 (test-only; production uses 27432 via vex-app
-# render template). Embedding model + dim are config-driven via
-# EMBEDDING_MODEL / EMBEDDING_DIM env vars sourced from your CONFIG_DIR/.env.
-# Requires Docker Engine >=4.40, Compose >=2.38.1. The embeddings endpoint is
-# the llama.cpp:server provisioned by the vex-app Compose stack (default
-# http://127.0.0.1:27134/v1) and must be running separately.
+# Checks that EMBEDDING_BASE_URL answers /embeddings with EMBEDDING_DIM-long
+# vectors for EMBEDDING_MODEL. The app's own embeddings server picks its port
+# and an API key per launch, so point these at a server you started yourself
+# (the bundled llama-server: vex-app/docs/LOCAL_RUNTIME.md, "Embeddings for
+# the integration suite") or any OpenAI-compatible /v1 endpoint.
 #
-# The canonical e2e compose lives in vex-app/resources/compose/.
-
-e2e-up:
-	docker compose -f vex-app/resources/compose/docker-compose.e2e.yml up -d
-
-e2e-down:
-	docker compose -f vex-app/resources/compose/docker-compose.e2e.yml down
+# No separate database stack is needed: the Studio e2e specs start their own
+# throwaway Postgres on the bundled binaries, and so do the integration lanes
+# with VEX_TEST_PG=native.
 
 e2e-smoke:
 	@if [ -z "$$EMBEDDING_DIM" ] || [ -z "$$EMBEDDING_MODEL" ] || [ -z "$$EMBEDDING_BASE_URL" ]; then \

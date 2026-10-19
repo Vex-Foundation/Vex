@@ -18,7 +18,10 @@ import type {
   UpdateStatus,
 } from "@shared/schemas/updater.js";
 import { log } from "../logger/index.js";
+import { RUNTIME_QUIT_DEADLINE_MS } from "../lifecycle/quit-stage.js";
 import { preferencesStore } from "../preferences/store.js";
+import { stopNativeRuntime } from "../runtime/native/native-runtime.js";
+import { getRuntimeMode } from "../runtime/runtime-mode.js";
 import { setSilentCheckActive } from "./auto-check-state.js";
 import { errorStatus, publicUpdateError } from "./sanitize.js";
 import {
@@ -247,6 +250,18 @@ export async function restartAndInstallNow(
     latestVersion: status.latestVersion,
   });
   prepareForUpdateRestart();
+  // The one deliberate pre-drain (see safeRestart.ts): the installer does not
+  // wait for main's ordered quit. NSIS force-kills processes running from the
+  // install dir ~1.3 s in, Squirrel.Mac swaps the bundle under running
+  // children, an AppImage mount disappears with main. So the bundled Postgres
+  // gets its fast stop FIRST, bounded by the quit's runtime slot; past the
+  // bound the install proceeds and WAL recovery is the backstop.
+  if (getRuntimeMode() === "native") {
+    await Promise.race([
+      stopNativeRuntime().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, RUNTIME_QUIT_DEADLINE_MS)),
+    ]);
+  }
   // Windows: true => silent installer after explicit Vex UI consent; second
   // arg re-runs the app after install where supported.
   autoUpdater.quitAndInstall(process.platform === "win32", true);

@@ -49,7 +49,6 @@ export function registerCapabilitiesHandler(): () => void {
         features: {
           splash: true,
           systemCheck: true,
-          dockerBootstrap: false, // M4
           wizard: false, // M7+
           wallets: false, // M8
           chat: true,

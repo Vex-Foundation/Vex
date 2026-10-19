@@ -140,6 +140,18 @@ vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
   usePickShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
   useClearShellBackdrop: () => ({ mutate: () => undefined, isPending: false }),
 }));
+// The runtime mode decides whether the native-only Local runtime row is
+// listed; the section itself has its own suite (LocalRuntimeSection.test.tsx).
+const runtimeMode = vi.hoisted(() => ({ native: false }));
+vi.mock("../../../../lib/api/system.js", () => ({
+  useIsNativeRuntime: () => runtimeMode.native,
+}));
+vi.mock("../../../runtime/bootstrap/useNativeRuntimeStatus.js", () => ({
+  useNativeRuntimeStatus: () => ({ status: { seq: 3, phase: "ready" }, retry: () => undefined }),
+}));
+vi.mock("../SettingsScreen/LocalRuntimeSection.js", () => ({
+  LocalRuntimeSection: () => <div data-vex-local-runtime-stub="">Local runtime (stub)</div>,
+}));
 
 // The Preferences landing draws the "Looking at you" preview, whose plate
 // hosts the K2 hologram; her canvas belongs to VexK2's own suite.
@@ -231,6 +243,7 @@ beforeEach(() => {
     },
   });
   exportModalSpy.mockClear();
+  runtimeMode.native = false;
   useUiStore.setState({ shellRoute: { kind: "none" } });
 });
 
@@ -555,5 +568,36 @@ describe("SettingsScreen", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
+  it("lists Local runtime under The agent, with the runtime's live word, only on the native runtime", async () => {
+    runtimeMode.native = true;
+    render(<ShellScreens />);
+    openSettings();
+    await screen.findByRole("dialog", { name: "Settings" });
+    const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
+    expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
+      "preferences", "vault", "wallets", "apiKeys", "model", "memory", "tuning", "localRuntime",
+      "superboardKey", "lighterPoints",
+    ]);
+    const localRuntime = rows.find(
+      (row) => row.getAttribute("data-vex-settings-row") === "localRuntime",
+    ) as HTMLElement;
+    expect(within(localRuntime).getByText("Local runtime")).not.toBeNull();
+    expect(within(localRuntime).getByText("Running")).not.toBeNull();
+
+    fireEvent.click(localRuntime);
+    await screen.findByText("Local runtime (stub)");
+    expect(document.querySelector('[data-vex-settings-section="localRuntime"]')).not.toBeNull();
+  });
+
+  it("never opens the Local runtime section off the native runtime, even deep-linked", async () => {
+    render(<ShellScreens />);
+    openSettings("localRuntime");
+    await screen.findByRole("dialog", { name: "Settings" });
+    expect(screen.queryByText("Local runtime (stub)")).toBeNull();
+    // Preferences and the eight sections every runtime lists.
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
+    expect(document.querySelector('[data-vex-settings-row="localRuntime"]')).toBeNull();
   });
 });

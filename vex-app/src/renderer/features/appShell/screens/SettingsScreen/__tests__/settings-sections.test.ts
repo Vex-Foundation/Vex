@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import { LINE_ICON_NAMES } from "../../../../../components/icons/line/index.js";
 import {
-  SETTINGS_NAV,
   SETTINGS_SECTIONS,
+  settingsNav,
   settingsStatusSwatch,
   superboardRegisterStatus,
 } from "../settings-sections.js";
+
+// The nav every launch shows: the bundled native runtime's.
+const SETTINGS_NAV = settingsNav(true);
 
 const SHARE = "A".repeat(43);
 
@@ -98,7 +101,7 @@ describe("the Settings nav", () => {
     expect(SETTINGS_NAV.map((group) => group.items.map((item) => item.id))).toEqual([
       ["preferences"],
       ["vault", "wallets", "apiKeys"],
-      ["model", "memory", "tuning"],
+      ["model", "memory", "tuning", "localRuntime"],
       ["superboardKey", "lighterPoints"],
     ]);
     // Flattened, the sections keep the order the registry declares.
@@ -121,6 +124,7 @@ describe("the Settings nav", () => {
       ["model", "Model", "The OpenRouter key and model the agent thinks with"],
       ["memory", "Memory", "The embedding endpoint behind long-term recall"],
       ["tuning", "Tuning", "Context, output, and sampling limits"],
+      ["localRuntime", "Local runtime", "The database and embeddings server running on this computer"],
       ["superboardKey", "Superboard key", "One code you paste into Superboard"],
       [
         "lighterPoints",

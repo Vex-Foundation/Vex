@@ -65,8 +65,8 @@ export const QUIT_STAGE_SLACK_MS = 1_000;
  * app, and so an automated `app.close()` always returns: nothing on the quit
  * path commits money or durable authority after this point - the Studio
  * refusal pass, the terminal snapshots and the secret scrub all run earlier in
- * the ordered task, and a compose project left running is reconciled by
- * `cleanupOnBoot` on the next launch.
+ * the ordered task, and a Postgres left running is reaped by the next
+ * launch's start (`runtime/native/postgres-supervisor.ts`).
  */
 export const QUIT_TOTAL_DEADLINE_MS = 45_000;
 
@@ -82,11 +82,11 @@ export const QUIT_TASK_DEADLINE_MS = 5_000;
 export const ORDERED_QUIT_DEADLINE_MS = 40_000;
 
 /**
- * `docker compose stop` against a live Postgres is the one quit participant
- * that is legitimately slow: the database gets its own shutdown checkpoint.
- * The largest single budget on the quit path, and still bounded.
+ * Stopping the local runtime's live Postgres is the one quit participant that
+ * is legitimately slow: the database gets its own shutdown checkpoint. The
+ * largest single budget on the quit path, and still bounded.
  */
-export const COMPOSE_QUIT_DEADLINE_MS = 20_000;
+export const RUNTIME_QUIT_DEADLINE_MS = 20_000;
 
 /**
  * Run one shutdown participant under its own deadline.

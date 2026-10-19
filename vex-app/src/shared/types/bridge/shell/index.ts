@@ -2,7 +2,7 @@
  * `VexShellBridge` — vex-app desktop integration surface.
  *
  * Aggregates the shell-side domain bridges: native shell concerns
- * (system, Docker, secret vault, onboarding, settings, telemetry,
+ * (system and the local runtime, secret vault, onboarding, settings, telemetry,
  * support, sudo wallet export) that belong to the Electron host
  * lifecycle rather than the agent runtime.
  *
@@ -13,7 +13,6 @@
 
 import type { CapabilitiesBridge } from "./capabilities.js";
 import type { DatabaseBridge } from "./database.js";
-import type { DockerBridge } from "./docker.js";
 import type { FilesBridge } from "./files.js";
 import type { MarketBridge } from "./market.js";
 import type { LighterTradingBridge } from "./lighter-trading.js";
@@ -34,7 +33,6 @@ import type { WalletBridge } from "./wallet.js";
 
 export type { CapabilitiesBridge } from "./capabilities.js";
 export type { DatabaseBridge } from "./database.js";
-export type { DockerBridge } from "./docker.js";
 export type { FilesBridge } from "./files.js";
 export type { MarketBridge } from "./market.js";
 export type { LighterTradingBridge } from "./lighter-trading.js";
@@ -56,7 +54,6 @@ export type { WalletBridge } from "./wallet.js";
 export interface VexShellBridge {
   readonly capabilities: CapabilitiesBridge;
   readonly system: SystemBridge;
-  readonly docker: DockerBridge;
   readonly database: DatabaseBridge;
   readonly secrets: SecretsBridge;
   readonly wallet: WalletBridge;

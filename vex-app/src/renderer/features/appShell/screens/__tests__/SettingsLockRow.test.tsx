@@ -49,6 +49,10 @@ vi.mock("../../../wallets/ExportPrivateKeyModal.js", () => ({ ExportPrivateKeyMo
 vi.mock("../SettingsScreen/ChainEndpointsSection.js", () => ({ ChainEndpointsSection: () => null }));
 vi.mock("../SettingsScreen/SuperboardKeySection.js", () => ({ SuperboardKeySection: () => null }));
 vi.mock("../SettingsScreen/LighterSection.js", () => ({ LighterSection: () => null }));
+vi.mock("../SettingsScreen/LocalRuntimeSection.js", () => ({ LocalRuntimeSection: () => null }));
+vi.mock("../../../runtime/bootstrap/useNativeRuntimeStatus.js", () => ({
+  useNativeRuntimeStatus: () => ({ status: null, retry: () => {} }),
+}));
 
 const { SETTINGS_SECTIONS } = await import("../SettingsScreen/settings-sections.js");
 const { SettingsSectionView } = await import("../SettingsScreen/SettingsSectionView.js");
