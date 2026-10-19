@@ -351,11 +351,12 @@ describe("pools lane - the final confirmation states what will be signed, and fo
     mount();
     fillValidForm();
     fireEvent.click(screen.getByRole("button", { name: /prepare/i }));
-    await waitFor(() => expect(screen.getByText(/this token's holders/i)).toBeTruthy());
-    expect(screen.getByText(/locked at launch and cannot be undone/i)).toBeTruthy();
-    // Scoped to the CARD: the form above still has its own recipient field, and
+    // Scoped to the CARD: the form above still has its own holders checkbox and
+    // recipient field, so a page-wide wait passes before the card renders, and
     // what must not appear is a recipient row on the thing being authorized.
-    const card = screen.getByRole("region", { name: /what you are authorizing/i });
+    const card = await screen.findByRole("region", { name: /what you are authorizing/i });
+    expect(within(card).getByText(/this token's holders/i)).toBeTruthy();
+    expect(within(card).getByText(/locked at launch and cannot be undone/i)).toBeTruthy();
     expect(within(card).queryByText("Fee recipient")).toBeNull();
     expect(within(card).queryByText(sentinel)).toBeNull();
   });
