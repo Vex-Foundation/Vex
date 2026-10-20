@@ -44,6 +44,7 @@ import type {
 } from "./types.js";
 
 import { loadEnvConfig } from "./config.js";
+import { OPENROUTER_API_BASE_URL } from "../../lib/openrouter-client.js";
 import type { AgentStreamBounds } from "../../lib/agent-config.js";
 import {
   OPENROUTER_APP_URL,
@@ -141,6 +142,7 @@ export class OpenRouterProvider implements InferenceProvider {
 
     this.client = new OpenRouter({
       apiKey: this.apiKey,
+      serverURL: OPENROUTER_API_BASE_URL,
       httpReferer: OPENROUTER_APP_URL,
       appTitle: OPENROUTER_APP_TITLE,
       timeoutMs: OPENROUTER_SDK_TIMEOUT_MS,

@@ -54,7 +54,7 @@ export type EngineErrorCategory = (typeof ENGINE_ERROR_CATEGORIES)[number];
 
 /**
  * `ApiErrorType` -> category. All 27 members of the installed SDK's enum
- * (v1.1.13) have a row; anything else is the open-enum escape and falls to the
+ * (v1.4.25) have a row; anything else is the open-enum escape and falls to the
  * total default in `classifyEngineFailure`.
  *
  * `Record<string, …>` rather than `Record<ApiErrorType, …>` on purpose: the

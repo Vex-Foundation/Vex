@@ -1,7 +1,7 @@
 /**
  * Availability ranking of the endpoint catalogue.
  *
- * The first block replays a REAL, non-empty recorded response (21 endpoints,
+ * The first block replays a REAL, non-empty recorded response (16 endpoints,
  * see `fixtures/openrouter-endpoints/README.md`) through the REAL production
  * wiring — default client, `HTTPClient`, the SDK's own strict inbound schema —
  * with only `fetch` intercepted. A hand-written double cannot prove that
@@ -77,7 +77,7 @@ function option(
   };
 }
 
-/** A raw SDK-shaped row matching the recorded capture. */
+/** A raw SDK-shaped row; values from the `deepinfra/fp4` row of the 2026-07-29 capture. */
 function rawRow(overrides: Record<string, unknown> = {}) {
   return {
     tag: "deepinfra/fp4",
@@ -324,7 +324,8 @@ describe("compareEndpointsByAvailability", () => {
   });
 
   it("reproduces the live incident: the 429'd endpoint ranks below the one that served", () => {
-    // Real 5m/30m/1d values from the recorded capture.
+    // Real 5m/30m/1d values from the 2026-07-29 incident-day capture (in git
+    // history; the 2026-10-20 refresh no longer lists `deepinfra/fp4`).
     const deepinfra = option({
       tag: "deepinfra/fp4",
       availabilityScore: computeAvailabilityScore({

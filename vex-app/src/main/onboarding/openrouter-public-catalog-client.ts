@@ -10,6 +10,7 @@
 
 import {
   HTTPClient,
+  OPENROUTER_API_BASE_URL,
   OpenRouter,
   type Fetcher,
   type ResponseHook,
@@ -37,6 +38,7 @@ export function createPublicOpenRouterClient(
 ): OpenRouter {
   const httpClient = new HTTPClient({ fetcher: options.fetcher });
   return new OpenRouter({
+    serverURL: OPENROUTER_API_BASE_URL,
     httpReferer: OPENROUTER_APP_URL,
     appTitle: OPENROUTER_APP_TITLE,
     timeoutMs: options.timeoutMs,

@@ -10,7 +10,7 @@
  * price and got a saturated pool. AVAILABILITY, not price, decides whether a
  * turn completes — so availability, not price, orders this list.
  *
- * REAL FIELDS ONLY. `PublicEndpoint` (installed `@openrouter/sdk@1.1.13`,
+ * REAL FIELDS ONLY. `PublicEndpoint` (installed `@openrouter/sdk@1.4.25`,
  * `esm/models/publicendpoint.d.ts`) publishes exactly these health signals:
  *
  * - `uptimeLast5m` / `uptimeLast30m` / `uptimeLast1d`: `number | null`.
@@ -26,6 +26,10 @@
  *   came back `null` for all 21 endpoints of `deepseek/deepseek-v4-flash`.
  *   Ranking on a field that is structurally always null would be a fabricated
  *   metric.
+ * - `perfLast30mByWorkload` (new in the 1.4.x SDK): not used for the same
+ *   reason; the SDK documents it as "Only visible when authenticated with an
+ *   API key or cookie", and it was absent from every keyless capture on
+ *   2026-10-20.
  *
  * THE HONEST LIMIT OF UPTIME. OpenRouter's own definition excludes
  * rate-limited requests from the uptime ratio, so a 429 storm like the one

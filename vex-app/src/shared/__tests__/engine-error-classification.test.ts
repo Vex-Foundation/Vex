@@ -102,7 +102,7 @@ describe("classifyEngineFailure - ApiErrorType (stream path)", () => {
     expect(new Set(covered).size).toBe(covered.length);
   });
 
-  it("is 27 members in the currently installed SDK (v1.1.13)", () => {
+  it("is 27 members in the currently installed SDK (v1.4.25)", () => {
     // Not the authority — the set equality above is. This pins the number the
     // Phase 2 spec was written against, so a change in COUNT is visible in the
     // diff rather than only in a set comparison.

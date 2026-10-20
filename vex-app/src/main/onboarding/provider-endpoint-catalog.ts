@@ -2,7 +2,7 @@
  * OpenRouter ENDPOINT catalogue for one model, projected into renderer-safe
  * metadata for the wizard's provider select.
  *
- * `client.endpoints.list({author, slug})` (installed SDK 1.1.13) resolves to
+ * `client.endpoints.list({author, slug})` (installed SDK 1.4.25) resolves to
  * `{ data: { endpoints: PublicEndpoint[] , … } }` — an object property, NOT an
  * array response. Fields are camelCased by the SDK (`tag`,
  * `supportedParameters`, `contextLength`, `quantization`,
