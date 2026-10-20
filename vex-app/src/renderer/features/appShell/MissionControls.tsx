@@ -92,6 +92,7 @@ import {
   useRenewableMissionSource,
 } from "../../lib/api/mission.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
+import { useEnvState } from "../../lib/api/onboarding.js";
 import { cn } from "../../lib/utils.js";
 import { Button } from "../../components/ui/button.js";
 import { Swatch } from "../../components/ui/swatch.js";
@@ -314,6 +315,9 @@ export function MissionControls({
     [],
   );
 
+  const envQuery = useEnvState();
+  const providerMode =
+    envQuery.data?.ok === true && envQuery.data.data.provider.name === "vexcloud" ? "vexcloud" : "openrouter";
   const runtime = readRuntime(runtimeQuery.data);
   // Render gate: only the runtime state is required. The active-run toolbar and
   // every gate below read it; the draft / renew-source are read AFTER this so a
@@ -440,6 +444,7 @@ export function MissionControls({
           <MissionErrorAlert
             stopReason={runtime.stopReason}
             lastError={runtime.lastError}
+            providerMode={providerMode}
             actions={
               <>
                 <Button

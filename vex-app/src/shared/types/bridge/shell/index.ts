@@ -30,6 +30,7 @@ import type { TerminalLinksBridge } from "./terminal-links.js";
 import type { TelemetryBridge } from "./telemetry.js";
 import type { UpdaterBridge } from "./updater.js";
 import type { WalletBridge } from "./wallet.js";
+import type { VexCloudBridge } from "./vex-cloud.js";
 
 export type { CapabilitiesBridge } from "./capabilities.js";
 export type { DatabaseBridge } from "./database.js";
@@ -50,6 +51,7 @@ export type { TerminalLinksBridge } from "./terminal-links.js";
 export type { TelemetryBridge } from "./telemetry.js";
 export type { UpdaterBridge } from "./updater.js";
 export type { WalletBridge } from "./wallet.js";
+export type { VexCloudBridge } from "./vex-cloud.js";
 
 export interface VexShellBridge {
   readonly capabilities: CapabilitiesBridge;
@@ -71,4 +73,6 @@ export interface VexShellBridge {
   readonly terminalInput: TerminalInputBridge;
   readonly files: FilesBridge;
   readonly search: SearchBridge;
+  /** Vex Cloud sign-in and account (the inference provider paid in VEX). */
+  readonly vexCloud: VexCloudBridge;
 }

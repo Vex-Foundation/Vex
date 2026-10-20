@@ -498,6 +498,9 @@ export const ErrorCodes = {
 
   // AgentScan wallet-binding handshake (Sprint 3)
   AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED: "AGENTSCAN_HANDSHAKE_TEMPLATE_REJECTED",
+
+  // Vex Cloud sign-in (EIP-4361 template signer)
+  VEX_CLOUD_SIWE_TEMPLATE_REJECTED: "VEX_CLOUD_SIWE_TEMPLATE_REJECTED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

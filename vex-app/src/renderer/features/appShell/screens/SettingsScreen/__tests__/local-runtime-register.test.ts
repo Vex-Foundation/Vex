@@ -14,6 +14,7 @@ describe("the Local runtime register row", () => {
     expect(visibleSettingsSections(true)).toHaveLength(visibleSettingsSections(false).length + 1);
     expect(settingsNav(true).find((g) => g.name === "The agent")?.items.map((i) => i.id)).toEqual([
       "model",
+      "vexCloud",
       "memory",
       "tuning",
       "localRuntime",

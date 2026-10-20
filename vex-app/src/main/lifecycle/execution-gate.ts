@@ -106,6 +106,8 @@ export const EXECUTION_GATED_CHANNELS: ReadonlySet<string> = new Set<string>([
   CH.wallet.restoreRemoved,
   CH.poolsLaunch.deploy,
   CH.poolsLaunch.claim,
+  // Vex Cloud sign-in signs one EIP-4361 message per in-app wallet.
+  CH.vexCloud.signIn,
   CH.lighterTrading.prepareDeskAction,
   CH.lighterTrading.settleAgentSetup,
   CH.settings.confirmLighterLeverage,

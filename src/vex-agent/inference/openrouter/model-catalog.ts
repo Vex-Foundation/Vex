@@ -10,10 +10,10 @@
 
 import type { OpenRouter } from "@openrouter/sdk";
 
-import type { InferenceConfig } from "../types.js";
+import type { InferenceConfig, ReasoningEffort } from "../types.js";
 import { resolveEffectiveContextLimit } from "../context-window.js";
 import { parseModelMaxCompletionTokens } from "./answer-headroom.js";
-import { normalizeReasoningSupport } from "../reasoning-effort.js";
+import { isReasoningEffort, normalizeReasoningSupport } from "../reasoning-effort.js";
 import logger from "@utils/logger.js";
 import { extractCauseCode } from "../../../lib/error-cause.js";
 import type { AgentStreamBounds } from "../../../lib/agent-config.js";
@@ -80,6 +80,12 @@ export interface ModelConfigSpec {
   readonly streamBounds?: AgentStreamBounds;
   /** Optional pinned endpoint tag (`OPENROUTER_ENDPOINT_TAG`). */
   readonly endpointTag: string | undefined;
+  /**
+   * The backend always receives an effort (Vex Cloud, D10): the catalog's
+   * `reasoning.default_effort` becomes `reasoningEffortDefault`. Absent or
+   * false keeps the bring-your-own-key contract unchanged.
+   */
+  readonly alwaysSendEffort?: boolean;
 }
 
 /**
@@ -214,6 +220,8 @@ export async function fetchModelInferenceConfig(
   // Which efforts the model accepts (E-1 clamp). Unknown stays `null`, and a
   // clamp against an unknown set leaves the request unchanged.
   const reasoningSupport = normalizeReasoningSupport(found.reasoning);
+  const reasoningEffortDefault =
+    spec.alwaysSendEffort === true ? catalogDefaultEffort(found.reasoning, reasoningSupport) : undefined;
 
   // Effective context limit = min(configured, the model's REAL window). The
   // configured value is an operator throttle; the catalog row is the only
@@ -271,6 +279,24 @@ export async function fetchModelInferenceConfig(
       reasoningPricePerM,
       supportsReasoningEffort,
       reasoningSupport,
+      ...(reasoningEffortDefault !== undefined && { reasoningEffortDefault }),
     },
   };
+}
+
+/**
+ * The catalog row's `default_effort`, when it is one of the efforts the row
+ * also lists as supported. Untrusted provider data: anything else is
+ * `undefined`, and the request then carries no default (the gateway applies
+ * its own).
+ */
+function catalogDefaultEffort(
+  raw: unknown,
+  support: ReturnType<typeof normalizeReasoningSupport>,
+): ReasoningEffort | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const value = (raw as Record<string, unknown>).defaultEffort;
+  if (!isReasoningEffort(value)) return undefined;
+  if (support !== null && !support.efforts.includes(value)) return undefined;
+  return value;
 }

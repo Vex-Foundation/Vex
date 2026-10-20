@@ -40,6 +40,7 @@ import {
 //                           with claim-loss discriminated-union outcome.
 import { loadArchivedPrefix } from "./archived-prefix.js";
 import { callChunkerLLM } from "./chunker-call.js";
+import { isInferenceConfigured } from "@vex-agent/inference/config.js";
 import { emitCompactWorkerPermanentlyFailedBug } from "./bug-emit.js";
 import { emitEngineError, errorDetailOf } from "../runtime/error-bus.js";
 import { readMissionErrorSignal } from "../core/runner/mission-error-signal.js";
@@ -103,7 +104,7 @@ export function startCompactJobsExecutor(
       // burn the retry budget and prematurely escalate jobs to
       // permanently_failed. Stay idle until env is wired (operator unlocks
       // OPENROUTER_API_KEY / sets AGENT_MODEL → next tick claims normally).
-      if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
+      if (!isInferenceConfigured()) {
         if (!warnedNoProviderConfig) {
           logger.warn("compact-worker.skip_no_provider_config", { workerId });
           warnedNoProviderConfig = true;

@@ -34,7 +34,13 @@ import {
   providerPersistInputSchema,
   providerPersistResultSchema,
   type ProviderPersistResult,
+  type VexCloudPersistInput,
 } from "@shared/schemas/provider.js";
+import { loadProviderModelCatalog } from "../../onboarding/provider-model-catalog.js";
+import { readVexCloudAccount } from "../../vex-cloud/account.js";
+import { vexCloudRefusalError } from "../../vex-cloud/outcome.js";
+import { productionVexCloudDeps } from "../../vex-cloud/production.js";
+import type { HandlerContext } from "../register-handler.js";
 import { writeProvider } from "../../onboarding/provider-writer.js";
 import { isKnownToolCapableEndpoint } from "../../onboarding/provider-endpoint-catalog.js";
 import { verifyOpenRouterConnection } from "../../onboarding/openrouter-test-client.js";
@@ -76,6 +82,86 @@ async function resolveApiKeyToVerify(
   });
 }
 
+/**
+ * Verify-then-persist for Vex Cloud. The credential is the session
+ * `vexCloud.signIn` stored, so verification is: that session is live on the
+ * backend (`/v1/account`; a 401 removes it), and the model is in the Vex
+ * Cloud catalogue. No completion is sent: a probe would spend VEX.
+ */
+async function persistVexCloud(
+  input: VexCloudPersistInput,
+  ctx: HandlerContext,
+): Promise<Result<ProviderPersistResult>> {
+  const started = Date.now();
+  const deps = productionVexCloudDeps();
+  const account = await readVexCloudAccount({ ...deps.account, api: deps.api }, ctx.signal);
+  if (!account.ok) {
+    return err(vexCloudRefusalError(account.refusal, ctx.requestId, "onboarding"));
+  }
+  if (account.value.state === "signed_out") {
+    return err({
+      code: "provider.api_key_required",
+      domain: "onboarding",
+      message:
+        account.value.reason === "session_expired"
+          ? "Your Vex Cloud session has expired. Sign in to Vex Cloud again, then save."
+          : "Sign in to Vex Cloud first, then save.",
+      retryable: true,
+      userActionable: true,
+      redacted: true,
+      correlationId: ctx.requestId,
+    });
+  }
+
+  let modelListed: boolean;
+  try {
+    const catalogue = await loadProviderModelCatalog({ source: "vexcloud", signal: ctx.signal });
+    modelListed = catalogue.models.some((option) => option.modelId === input.model.trim());
+  } catch (cause) {
+    if (cause instanceof Error && cause.name === "AbortError") throw cause;
+    return err({
+      code: "provider.unavailable",
+      domain: "onboarding",
+      message: "The Vex Cloud model list could not be read, so nothing was saved. Try again in a moment.",
+      retryable: true,
+      userActionable: true,
+      redacted: true,
+      correlationId: ctx.requestId,
+    });
+  }
+  if (!modelListed) {
+    return err({
+      code: "provider.model_unsupported",
+      domain: "onboarding",
+      message: "That model is not offered by Vex Cloud. Pick one from the Vex Cloud list.",
+      retryable: false,
+      userActionable: true,
+      redacted: true,
+      correlationId: ctx.requestId,
+    });
+  }
+
+  const persistResult = await withEnvWriteLock(async () => {
+    const result = await writeProvider(input);
+    if (result.ok) {
+      loadProviderDotenv({ overwrite: true });
+      if (getRuntimeMode() === "native") applyNativeEmbeddingEnv();
+      const { resetProvider } = await import("@vex-agent/inference/registry.js");
+      resetProvider();
+    }
+    return result;
+  });
+  if (!persistResult.ok) return persistResult;
+  const latencyMs = Date.now() - started;
+  log.info(
+    `[ipc:vex:onboarding:providerPersist] provider=vexcloud modelSet=true latencyMs=${latencyMs} correlationId=${ctx.requestId}`,
+  );
+  return {
+    ok: true,
+    data: { fieldsWritten: persistResult.data.fieldsWritten, verifiedLatencyMs: latencyMs },
+  };
+}
+
 export function registerProviderHandler(): () => void {
   return registerHandler({
     channel: CH.onboarding.providerPersist,
@@ -83,6 +169,7 @@ export function registerProviderHandler(): () => void {
     inputSchema: providerPersistInputSchema,
     outputSchema: providerPersistResultSchema,
     handle: async (input, ctx): Promise<Result<ProviderPersistResult>> => {
+      if (input.provider === "vexcloud") return persistVexCloud(input, ctx);
       // Step 0: resolve the key to verify with. The renderer may OMIT
       // `apiKey` to mean "keep the stored one" (delta save from the
       // configured screen), because the stored key never travels to the

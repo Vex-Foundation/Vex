@@ -27,6 +27,7 @@ import {
   type ArchivedPrefixRow,
 } from "./archived-prefix.js";
 import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
+import { isInferenceConfigured } from "@vex-agent/inference/config.js";
 
 export const ChunkerOutputSchema = z.object({
   chunks: z.array(
@@ -61,7 +62,7 @@ export interface ChunkerCallResult {
  * fresh PER CALL.
  *
  * The per-call construction is deliberate, not an oversight: the constructor
- * reads `OPENROUTER_API_KEY` / `AGENT_MODEL` out of `process.env`, which the
+ * reads the active backend's credential and `AGENT_MODEL` out of `process.env`, which the
  * secret vault populates on unlock and scrubs on lock. Reusing a cached
  * provider (or the registry singleton) would pin the worker to whatever
  * credentials and model existed at first use, so a vault unlock or a model
@@ -90,7 +91,7 @@ export async function callChunkerLLM(
   // `pending` with a backoff for retry. Returning an empty array here would
   // let `markCompleted(0 chunks)` silently lose the job — codex flagged this
   // as a permanent-loss bug.
-  if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
+  if (!isInferenceConfigured()) {
     logger.warn("compact-worker.provider_config_missing", { jobId: job.id });
     throw new Error("compact_worker_provider_config_missing");
   }

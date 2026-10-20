@@ -25,6 +25,7 @@ import {
 } from "@vex-agent/inference/openrouter/endpoint-failover.js";
 import logger from "@utils/logger.js";
 import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
+import { isInferenceConfigured } from "@vex-agent/inference/config.js";
 
 /**
  * The provider surface a branch needs.
@@ -54,14 +55,15 @@ export interface BranchInferenceProvider {
  * fresh PER CALL.
  *
  * The per-call construction is deliberate, not an oversight: the constructor
- * reads `OPENROUTER_API_KEY` / `AGENT_MODEL` out of `process.env`, which the
+ * reads the active backend's credential and `AGENT_MODEL` out of `process.env`, which the
  * secret vault populates on unlock and scrubs on lock. Reusing a cached
  * provider (or the registry singleton) would pin the worker to whatever
  * credentials and model existed at first use, so a vault unlock or a model
  * change would not take effect until the app restarted.
  *
- * "Vault memory provider/model" IS exactly these two environment variables —
- * there is no separate memory-model configuration anywhere in the tree.
+ * "Vault memory provider/model" IS exactly this environment (the backend's
+ * credential plus `AGENT_MODEL`) - there is no separate memory-model
+ * configuration anywhere in the tree.
  */
 export async function defaultBranchProvider(): Promise<BranchInferenceProvider> {
   const { OpenRouterProvider } = await import(
@@ -74,7 +76,7 @@ export type BranchProviderFactory = () => Promise<BranchInferenceProvider>;
 
 /** True when the vault has populated the provider credentials. */
 export function hasBranchProviderConfig(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY && process.env.AGENT_MODEL);
+  return isInferenceConfigured();
 }
 
 /** The `model` field we need off the otherwise-opaque provider config. */

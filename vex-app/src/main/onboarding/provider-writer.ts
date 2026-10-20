@@ -23,6 +23,7 @@ import {
   PROVIDER_PERSIST_CANONICAL_ORDER,
   type ProviderPersistFieldName,
   type ProviderPersistInput,
+  type VexCloudPersistInput,
 } from "@shared/schemas/provider.js";
 import { ENV_FILE } from "../paths/config-dir.js";
 import { log } from "../logger/index.js";
@@ -37,6 +38,44 @@ export interface ProviderWriterOptions {
 type CanonicalKey = (typeof PROVIDER_PERSIST_CANONICAL_ORDER)[number];
 
 const PROVIDER_AGENT_VALUE = "openrouter";
+const VEX_CLOUD_AGENT_VALUE = "vexcloud";
+
+function persistFailed(): Result<never> {
+  return err({
+    code: "onboarding.env_persist_failed",
+    domain: "onboarding",
+    message:
+      "Couldn't save provider configuration to disk. Check disk space and permissions, then retry.",
+    retryable: true,
+    userActionable: true,
+    redacted: true,
+    details: { verified: true, partialFieldsWritten: [] },
+  });
+}
+
+/**
+ * Vex Cloud selection: only non-secret `.env` values. The credential is the
+ * Vex Cloud session already in the vault (`vexCloud.signIn`); the stored
+ * OpenRouter key and endpoint pin are left untouched, so switching back to
+ * OpenRouter restores them (the pin is ignored while Vex Cloud is active).
+ */
+async function writeVexCloudProvider(
+  input: VexCloudPersistInput,
+  targetFile: string,
+): Promise<Result<ProviderWriteResult>> {
+  try {
+    stripManagedSecretsFromDotenvFile(targetFile);
+    appendMultipleToDotenvFile(
+      { AGENT_MODEL: input.model, AGENT_PROVIDER: VEX_CLOUD_AGENT_VALUE },
+      targetFile,
+    );
+  } catch (cause) {
+    log.error(`[provider-writer] failed to persist Vex Cloud provider keys to ${targetFile}`, cause);
+    return persistFailed();
+  }
+  log.info(`[provider-writer] persisted Vex Cloud provider keys to ${targetFile}`);
+  return ok({ fieldsWritten: ["AGENT_MODEL", "AGENT_PROVIDER"] });
+}
 
 export interface ProviderWriteResult {
   readonly fieldsWritten: ReadonlyArray<ProviderPersistFieldName>;
@@ -52,6 +91,7 @@ export async function writeProvider(
   options: ProviderWriterOptions = {},
 ): Promise<Result<ProviderWriteResult>> {
   const targetFile = options.envFile ?? ENV_FILE;
+  if (input.provider === "vexcloud") return writeVexCloudProvider(input, targetFile);
 
   // Delta-save: an ABSENT `apiKey` means "keep the stored key". The vault
   // entry is then left completely untouched — we do not read-then-rewrite it,
@@ -102,16 +142,7 @@ export async function writeProvider(
       `[provider-writer] failed to persist provider keys to ${targetFile}`,
       cause,
     );
-    return err({
-      code: "onboarding.env_persist_failed",
-      domain: "onboarding",
-      message:
-        "Couldn't save provider configuration to disk. Check disk space and permissions, then retry.",
-      retryable: true,
-      userActionable: true,
-      redacted: true,
-      details: { verified: true, partialFieldsWritten: [] },
-    });
+    return persistFailed();
   }
 
   log.info(`[provider-writer] persisted provider keys to ${targetFile}`);

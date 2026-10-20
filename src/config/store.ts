@@ -178,6 +178,18 @@ export function poolsAttestationEnabled(): boolean {
   return loadConfig().poolsFunAttestationEnabled === true;
 }
 
+/**
+ * Vex Cloud inference gateway origin (owner decision D18), next to the other
+ * `projectvex.ai` service hosts. A BUILT-IN constant, deliberately NOT a
+ * `services` key: the SIWE messages the app signs bind this host, and the
+ * session bearer is sent to it, so a stored config value must not be able to
+ * repoint either in a shipped build. Development may point at a local
+ * backend through `VEX_DEV_CLOUD_API_URL`, which a packaged build ignores
+ * (`src/lib/vex-cloud-endpoint.ts`). Changing it forces an app update and a
+ * re-sign-in.
+ */
+export const VEX_CLOUD_API_URL = "https://inference.projectvex.ai";
+
 export function getDefaultConfig(): VexConfig {
   return {
     version: 1,

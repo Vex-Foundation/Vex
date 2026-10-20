@@ -20,6 +20,7 @@
  */
 
 import type { ReasoningCapability } from "@shared/schemas/reasoning.js";
+import { activeInferenceProviderMode } from "../vex-cloud/active-mode.js";
 
 /**
  * Upper bound for the pre-S6 pricing-proxy PROBE ONLY
@@ -91,7 +92,11 @@ export async function resolveReasoningCapability(
     const { getModelReasoningCapability } = await import(
       "../onboarding/provider-model-catalog.js"
     );
-    const entry = await getModelReasoningCapability(modelId, { signal });
+    // The catalogue of the backend the engine actually talks to: in Vex Cloud
+    // mode its `/v1/models` publishes `mandatory: true` without `none`, so
+    // the selector never offers Off there.
+    const source = activeInferenceProviderMode();
+    const entry = await getModelReasoningCapability(modelId, { signal, source });
     if (entry !== null) {
       return {
         reasoning: entry.reasoning,

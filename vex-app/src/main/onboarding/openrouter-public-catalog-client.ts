@@ -24,6 +24,13 @@ import {
 export interface PublicCatalogClientOptions {
   readonly timeoutMs: number;
   /**
+   * The catalogue origin. Defaults to OpenRouter; the Vex Cloud catalogue
+   * passes `vexCloudInferenceServerUrl()`. Always explicit: an omitted
+   * `serverURL` would fall back to the `OPENROUTER_BASE_URL` environment
+   * variable inside the SDK.
+   */
+  readonly serverURL?: string | undefined;
+  /**
    * Test-only override of the underlying `fetch`, so tests can drive the REAL
    * production wiring (default client + `HTTPClient`) with a controlled
    * network layer instead of a real fetch.
@@ -38,7 +45,7 @@ export function createPublicOpenRouterClient(
 ): OpenRouter {
   const httpClient = new HTTPClient({ fetcher: options.fetcher });
   return new OpenRouter({
-    serverURL: OPENROUTER_API_BASE_URL,
+    serverURL: options.serverURL ?? OPENROUTER_API_BASE_URL,
     httpReferer: OPENROUTER_APP_URL,
     appTitle: OPENROUTER_APP_TITLE,
     timeoutMs: options.timeoutMs,

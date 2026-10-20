@@ -278,6 +278,7 @@ describe("SettingsScreen", () => {
       "Wallets",
       "API keys",
       "Model",
+      "Vex Cloud",
       "Memory",
       "Tuning",
       "Superboard key",
@@ -301,6 +302,7 @@ describe("SettingsScreen", () => {
       "wallets",
       "apiKeys",
       "model",
+      "vexCloud",
       "memory",
       "tuning",
       "superboardKey",
@@ -346,7 +348,7 @@ describe("SettingsScreen", () => {
     await waitFor(() =>
       expect(document.querySelector("[data-vex-settings-preferences]")).not.toBeNull(),
     );
-    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(10);
     expect(screen.queryByRole("region", { name: "Chain endpoints" })).toBeNull();
   });
 
@@ -577,7 +579,7 @@ describe("SettingsScreen", () => {
     await screen.findByRole("dialog", { name: "Settings" });
     const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
     expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
-      "preferences", "vault", "wallets", "apiKeys", "model", "memory", "tuning", "localRuntime",
+      "preferences", "vault", "wallets", "apiKeys", "model", "vexCloud", "memory", "tuning", "localRuntime",
       "superboardKey", "lighterPoints",
     ]);
     const localRuntime = rows.find(
@@ -596,8 +598,8 @@ describe("SettingsScreen", () => {
     openSettings("localRuntime");
     await screen.findByRole("dialog", { name: "Settings" });
     expect(screen.queryByText("Local runtime (stub)")).toBeNull();
-    // Preferences and the eight sections every runtime lists.
-    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
+    // Preferences and the nine sections every runtime lists.
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(10);
     expect(document.querySelector('[data-vex-settings-row="localRuntime"]')).toBeNull();
   });
 });

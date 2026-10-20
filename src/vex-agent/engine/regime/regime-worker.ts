@@ -7,7 +7,7 @@
  * `stop()`.
  *
  * Tick flow (§5, fail-closed at every step):
- *   1. provider gate  — OPENROUTER_API_KEY + AGENT_MODEL read from process.env
+ *   1. provider gate  - `isInferenceConfigured()` (model + the active backend's credential, from process.env)
  *      EVERY tick (the vault injects on unlock and scrubs on lock; caching the
  *      gate would defeat that). Missing → cheap no-op.
  *   2. source gate    — TAVILY_API_KEY / RETTIWT_API_KEY, also per tick.
@@ -73,6 +73,7 @@ import {
   type RegimeWebResult,
 } from "./regime-prompt.js";
 import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
+import { isInferenceConfigured } from "@vex-agent/inference/config.js";
 
 // ── Injectable IO ────────────────────────────────────────────────────
 
@@ -92,10 +93,11 @@ export interface RegimeWorkerDeps {
 }
 
 /**
- * Default provider factory — the env-driven OpenRouter provider, constructed
- * FRESH per classification (judge.ts pattern). The constructor throws when
- * OPENROUTER_API_KEY / AGENT_MODEL are absent; the tick's provider gate
- * prevents reaching here without them.
+ * Default provider factory - the env-driven, mode-aware provider (OpenRouter or
+ * Vex Cloud), constructed FRESH per classification (judge.ts pattern). The
+ * constructor throws when the active backend's credential or AGENT_MODEL is
+ * absent; the tick's `isInferenceConfigured()` gate prevents reaching here
+ * without them.
  */
 async function defaultProvider(): Promise<JudgeProvider> {
   const { OpenRouterProvider } = await import("@vex-agent/inference/openrouter.js");
@@ -248,7 +250,7 @@ export async function runRegimeTick(
 ): Promise<RegimeTickResult> {
   // Gate 1 — provider config, read from process.env EVERY tick (vault unlock
   // injects, lock scrubs; a tick before unlock must be a cheap no-op).
-  if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
+  if (!isInferenceConfigured()) {
     return { kind: "skipped", reason: "no_provider_config" };
   }
 

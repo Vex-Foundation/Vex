@@ -35,7 +35,9 @@ import { EV } from "@shared/ipc/channels.js";
 import {
   classifyEngineFailure,
   classifyEngineRemedy,
+  type InferenceProviderMode,
 } from "@shared/engine-error-classification.js";
+import { activeInferenceProviderMode } from "../vex-cloud/active-mode.js";
 import { sanitizeEngineErrorDetail } from "@shared/engine-error-sanitizer.js";
 import {
   ENGINE_ERROR_EVENT_TYPE,
@@ -66,6 +68,7 @@ function boundedErrorClass(
  */
 export function toRendererEngineError(
   event: EngineSideErrorEvent,
+  mode: InferenceProviderMode = activeInferenceProviderMode(),
 ): RendererEngineErrorEvent | null {
   // Defensive: the bus is typed, but this bridge is the trust boundary.
   if (event === null || typeof event !== "object") return null;
@@ -99,7 +102,9 @@ export function toRendererEngineError(
     // THE sanitizing seam (owner decree 2026-08-02): the raw in-process
     // message becomes renderer-safe prose here, or null - never verbatim.
     detail: sanitizeEngineErrorDetail(event.detail),
-    remedy: classifyEngineRemedy(signals),
+    // The remedy names the backend that failed: a Vex Cloud 402 is "top up
+    // VEX", never "top up provider credits".
+    remedy: classifyEngineRemedy(signals, mode),
   };
 }
 

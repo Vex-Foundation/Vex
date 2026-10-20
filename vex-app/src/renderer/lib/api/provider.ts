@@ -25,6 +25,7 @@ import {
 } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import type {
+  ProviderName,
   ProviderPersistInput,
   ProviderPersistResult,
   ProviderListModelsResult,
@@ -40,20 +41,23 @@ export async function persistProvider(
 
 const PROVIDER_MODELS_STALE_MS = 3_600_000;
 
-function providerModelsOptions(enabled: boolean) {
+function providerModelsOptions(enabled: boolean, provider: ProviderName) {
   return queryOptions({
-    queryKey: onboardingKeys.providerModels(),
-    queryFn: () => window.vex.onboarding.providerListModels({}),
+    queryKey: onboardingKeys.providerModels(provider),
+    queryFn: () =>
+      window.vex.onboarding.providerListModels(provider === "openrouter" ? {} : { provider }),
     staleTime: PROVIDER_MODELS_STALE_MS,
     retry: false,
     enabled,
   });
 }
 
+/** The model catalogue for a provider: OpenRouter's public list (default) or the Vex Cloud allowlist. */
 export function useProviderModels(
   enabled: boolean = true,
+  provider: ProviderName = "openrouter",
 ): UseQueryResult<Result<ProviderListModelsResult>> {
-  return useQuery(providerModelsOptions(enabled));
+  return useQuery(providerModelsOptions(enabled, provider));
 }
 
 /**

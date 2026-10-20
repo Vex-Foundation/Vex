@@ -117,6 +117,13 @@ export type VexDomain =
    */
   | "poolsLaunch"
   /**
+   * Vex Cloud sign-in and account (phase 1). A routing and ownership label
+   * only, like `poolsLaunch`: its refusals map onto codes that already exist
+   * (`wallet.keystore_locked`, `wallets.invalid_selection`,
+   * `permissions.denied`, `provider.unavailable`, `internal.unexpected`).
+   */
+  | "vexCloud"
+  /**
    * Used by the read-only `sessions.getModel` handler (global runtime
    * model resolution). Existing sessions handlers
    * (`vex:sessions:create|list|get|setPinned|delete`) deliberately keep

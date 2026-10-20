@@ -41,7 +41,7 @@
  */
 
 import { useCallback, useRef, useState, type JSX } from "react";
-import { type ProviderPersistInput } from "@shared/schemas/provider.js";
+import { type ProviderName, type ProviderPersistInput } from "@shared/schemas/provider.js";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
 import { Label } from "../../../components/ui/label.js";
@@ -65,6 +65,8 @@ import { ModelPicker } from "./provider/ModelPicker.js";
 import { EndpointPicker } from "./provider/EndpointPicker.js";
 import { ProviderErrorAlert } from "./provider/ProviderErrorAlert.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
+import { ProviderChoice } from "./provider/ProviderChoice.js";
+import { VexCloudProviderForm } from "./provider/VexCloudProviderForm.js";
 
 export interface ProviderStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
@@ -91,6 +93,8 @@ export function ProviderStep({
   const [serverError, setServerError] = useState<ServerError | null>(null);
   const [successLatencyMs, setSuccessLatencyMs] = useState<number | null>(null);
   const [showOverride, setShowOverride] = useState(false);
+  /** The operator's explicit pick; until then the active provider decides. */
+  const [choiceOverride, setChoiceOverride] = useState<ProviderName | null>(null);
   const apiKeyRef = useRef<HTMLInputElement | null>(null);
 
   const env = envQuery.data?.ok === true ? envQuery.data.data : null;
@@ -99,7 +103,14 @@ export function ProviderStep({
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
   const effectiveEndpointTag = providerState?.endpointTag ?? null;
-  const providerModels = useProviderModels(!configured || showOverride);
+  const choice: ProviderName =
+    choiceOverride ?? (effectiveName === "vexcloud" ? "vexcloud" : "openrouter");
+  const onChoose = useCallback((next: ProviderName) => {
+    setChoiceOverride(next);
+    // Leaving the configured screen: the chosen branch shows its full form.
+    setShowOverride(true);
+  }, []);
+  const providerModels = useProviderModels(choice === "openrouter" && (!configured || showOverride));
   const providerModelsResult = providerModels.data;
   const catalogueModels =
     providerModelsResult?.ok === true ? providerModelsResult.data.models : [];
@@ -224,6 +235,30 @@ export function ProviderStep({
   // Owned by `ConfiguredProviderPanel`: status rows + an inline delta editor
   // that can save a model/routing change WITHOUT re-entering the API key.
   // "Reconfigure" still falls through to the full first-run form below.
+  if (choice === "vexcloud") {
+    // Vex Cloud is its own branch whether configured or not: the account
+    // panel IS the configured screen (state, balance, wallets), and the model
+    // pick saves without a key.
+    return (
+      <VexCloudProviderForm
+        env={env}
+        flowMode={flowMode}
+        choice={<ProviderChoice value={choice} onChange={onChoose} />}
+        activeModel={effectiveName === "vexcloud" ? effectiveModel : null}
+        onSaved={advanceToReview}
+        onContinueWithout={
+          flowMode === "first-pass"
+            ? () => {
+                void advanceToReview();
+              }
+            : null
+        }
+        advancePending={stepAdvance.isPending}
+        advanceError={clientError}
+      />
+    );
+  }
+
   if (configured && !showOverride) {
     return (
       <ConfiguredProviderPanel
@@ -290,6 +325,7 @@ export function ProviderStep({
       }
     >
       <div className="vex-wz-stack">
+        <ProviderChoice value={choice} onChange={onChoose} disabled={submitting} />
         {showConfigureLater ? (
           <p
             role="status"

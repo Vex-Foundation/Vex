@@ -81,7 +81,7 @@ export type ApiKeysState = z.infer<typeof apiKeysStateSchema>;
 export const providerStateSchema = z
   .object({
     configured: z.boolean(),
-    name: z.enum(["openrouter"]).nullable(),
+    name: z.enum(["openrouter", "vexcloud"]).nullable(),
     modelLabel: z.string().max(200).nullable(),
     /**
      * The pinned OpenRouter endpoint tag (`OPENROUTER_ENDPOINT_TAG`), or

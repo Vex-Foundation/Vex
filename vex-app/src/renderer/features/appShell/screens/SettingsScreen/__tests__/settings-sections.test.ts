@@ -101,7 +101,7 @@ describe("the Settings nav", () => {
     expect(SETTINGS_NAV.map((group) => group.items.map((item) => item.id))).toEqual([
       ["preferences"],
       ["vault", "wallets", "apiKeys"],
-      ["model", "memory", "tuning", "localRuntime"],
+      ["model", "vexCloud", "memory", "tuning", "localRuntime"],
       ["superboardKey", "lighterPoints"],
     ]);
     // Flattened, the sections keep the order the registry declares.
@@ -121,7 +121,8 @@ describe("the Settings nav", () => {
       ["vault", "Vault", "The master password that encrypts everything on this machine"],
       ["wallets", "Wallets", "EVM and Solana wallets - add, remove, recover, back up, or export"],
       ["apiKeys", "API keys", "Jupiter, Tavily, Rettiwt, and chain endpoint overrides"],
-      ["model", "Model", "The OpenRouter key and model the agent thinks with"],
+      ["model", "Model", "The provider and model the agent thinks with"],
+      ["vexCloud", "Vex Cloud", "Sign in, linked wallets, and your VEX balance"],
       ["memory", "Memory", "The embedding endpoint behind long-term recall"],
       ["tuning", "Tuning", "Context, output, and sampling limits"],
       ["localRuntime", "Local runtime", "The database and embeddings server running on this computer"],

@@ -26,7 +26,9 @@
 import { assertNever, type VexError } from "@shared/ipc/result.js";
 import {
   classifyEngineFailure,
+  classifyEngineRemedy,
   type EngineFailureSignals,
+  type InferenceProviderMode,
 } from "@shared/engine-error-classification.js";
 
 /** Session lookup failed. Not an engine failure, but the same copy surface. */
@@ -247,11 +249,64 @@ function isCreditExhaustion(signal: EngineFailureSignals): boolean {
 }
 
 /**
+ * Vex Cloud's own statuses (the gateway's 402/401/403/503, phase 1a
+ * `proxy/errors.ts`, `http/app.ts`) mean something different from
+ * OpenRouter's, so they get their own copy. Codes are existing ones; the
+ * message carries the action. `null` falls back to the shared copy.
+ */
+function vexCloudError(signal: EngineFailureSignals, correlationId: string): VexError | null {
+  const base = { domain: "chat" as const, redacted: true as const, correlationId };
+  switch (classifyEngineRemedy(signal, "vexcloud")) {
+    case "vexcloud-top-up":
+      return {
+        ...base,
+        code: "provider.insufficient_credits",
+        message: "Your Vex Cloud balance is too low for this request. Top up VEX, then retry.",
+        retryable: false,
+        userActionable: true,
+      };
+    case "vexcloud-sign-in":
+      return {
+        ...base,
+        code: "provider.invalid_api_key",
+        message: "Your Vex Cloud session has expired or was revoked. Sign in to Vex Cloud again in Settings, then retry.",
+        retryable: false,
+        userActionable: true,
+      };
+    case "vexcloud-account-paused":
+      return {
+        ...base,
+        code: "permissions.denied",
+        message: "Vex Cloud paused this account for review, so the request was not run.",
+        retryable: false,
+        userActionable: false,
+      };
+    case "vexcloud-unavailable":
+      return {
+        ...base,
+        code: "provider.unavailable",
+        message: "Vex Cloud is unavailable right now. Retry in a moment.",
+        retryable: true,
+        userActionable: true,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
  * Map a thrown engine failure to the user-facing `VexError`. Total over the
  * category set; `assertNever` makes a new category a compile error here rather
  * than a silent fall-through to "Unable to process the message".
+ *
+ * `mode` is the backend the engine is configured for. Vex Cloud's own
+ * statuses get Vex Cloud copy; bring-your-own-key copy is unchanged.
  */
-export function classifyEngineError(cause: unknown, correlationId: string): VexError {
+export function classifyEngineError(
+  cause: unknown,
+  correlationId: string,
+  mode: InferenceProviderMode = "openrouter",
+): VexError {
   if (
     cause instanceof Error &&
     (cause.message === "No inference provider available" ||
@@ -261,6 +316,10 @@ export function classifyEngineError(cause: unknown, correlationId: string): VexE
   }
 
   const signal = chatErrorSignal(cause);
+  if (mode === "vexcloud") {
+    const cloud = vexCloudError(signal, correlationId);
+    if (cloud !== null) return cloud;
+  }
   const category = classifyEngineFailure(signal);
 
   switch (category) {

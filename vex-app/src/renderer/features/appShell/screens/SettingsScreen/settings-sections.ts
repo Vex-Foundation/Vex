@@ -79,7 +79,15 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     group: "The agent",
     icon: "model",
     name: "Model",
-    hint: "The OpenRouter key and model the agent thinks with",
+    hint: "The provider and model the agent thinks with",
+  },
+  {
+    id: "vexCloud",
+    group: "The agent",
+    icon: "spark",
+    name: "Vex Cloud",
+    hint: "Sign in, linked wallets, and your VEX balance",
+    lead: "Vex Cloud runs the agent's models paid in VEX. Sign in with your in-app wallets; your keys never leave this computer.",
   },
   {
     id: "memory",
@@ -270,10 +278,22 @@ export function settingsSectionStatus(
     case "model":
       return env.provider.configured
         ? {
-            word: env.provider.name === "openrouter" ? "OpenRouter" : "Configured",
+            word:
+              env.provider.name === "openrouter"
+                ? "OpenRouter"
+                : env.provider.name === "vexcloud"
+                  ? "Vex Cloud"
+                  : "Configured",
             tone: "success",
           }
         : { word: "Not set", tone: "warning" };
+    case "vexCloud":
+      // envState knows whether Vex Cloud is the provider and whether a
+      // session is stored; the live account state is the section's own read.
+      if (env.provider.name !== "vexcloud") return { word: "Not in use", tone: "neutral" };
+      return env.provider.configured
+        ? { word: "In use", tone: "success" }
+        : { word: "Sign in", tone: "warning" };
     case "memory": {
       if (!env.embeddings.allFieldsConfigured) {
         return { word: "Not set", tone: "neutral" };

@@ -23,6 +23,7 @@ import {
 import { getSessionById } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
+import { activeInferenceProviderMode } from "../vex-cloud/active-mode.js";
 
 export function registerChatSteerHandler(): () => void {
   return registerHandler({
@@ -56,7 +57,7 @@ export function registerChatSteerHandler(): () => void {
         log.warn(
           `[ipc:vex:chat:steer] failed kind=${kind} correlationId=${ctx.requestId}`,
         );
-        return err(classifyEngineError(cause, ctx.requestId));
+        return err(classifyEngineError(cause, ctx.requestId, activeInferenceProviderMode()));
       }
     },
   });

@@ -178,6 +178,16 @@ export interface InferenceConfig {
    * treated as "omit".
    */
   reasoningEffort?: ReasoningEffort;
+  /**
+   * The effort sent when no explicit `reasoningEffort` is set. Set by
+   * `loadConfig()` ONLY for Vex Cloud, from its `/v1/models` row
+   * (`reasoning.default_effort`, with `mandatory: true`): Vex Cloud always
+   * receives an effort (owner decision D10), so the answer headroom and the
+   * reservation are sized for the effort that actually runs. Absent in
+   * bring-your-own-key mode, where "no explicit effort" still means no
+   * `reasoning` param at all.
+   */
+  reasoningEffortDefault?: ReasoningEffort;
 }
 
 export type PriceCurrency = "USD";

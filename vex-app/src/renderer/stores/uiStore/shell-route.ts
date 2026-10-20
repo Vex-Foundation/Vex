@@ -98,6 +98,8 @@ export type SettingsSection =
   | "apiKeys"
   | "superboardKey"
   | "model"
+  /** Vex Cloud sign-in, linked wallets and the VEX balance. */
+  | "vexCloud"
   | "memory"
   | "tuning"
   /** The Lighter points campaign; the one section with no wizard step behind it. */

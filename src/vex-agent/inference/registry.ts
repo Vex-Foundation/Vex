@@ -2,9 +2,13 @@
  * Provider registry — resolves and caches the active inference provider.
  *
  * Resolution priority:
- * 1. AGENT_PROVIDER env (explicit choice)
+ * 1. AGENT_PROVIDER env (explicit choice: `openrouter` or `vexcloud`)
  * 2. OPENROUTER_API_KEY present → OpenRouter
  * 3. null (agent won't start)
+ *
+ * Both backends are served by `OpenRouterProvider`: Vex Cloud speaks the
+ * OpenRouter dialect, and the provider's constructor picks the base URL and
+ * the explicit bearer per mode (`openrouter/client-factory.ts`).
  */
 
 import type { InferenceProvider } from "./types.js";
@@ -20,6 +24,9 @@ async function createOpenRouterProvider(): Promise<InferenceProvider> {
 
 const PROVIDER_FACTORIES: Record<string, () => Promise<InferenceProvider>> = {
   "openrouter": createOpenRouterProvider,
+  // Same class, mode-aware construction: the constructor reads
+  // AGENT_PROVIDER=vexcloud and builds the Vex Cloud client.
+  "vexcloud": createOpenRouterProvider,
 };
 
 // ── Singleton cache with concurrency-safe dedup ─────────────────
@@ -84,7 +91,7 @@ async function doResolve(): Promise<InferenceProvider | null> {
   }
 
   logger.error("inference.registry.none_configured", {
-    hint: "Set OPENROUTER_API_KEY and AGENT_MODEL",
+    hint: "Configure OpenRouter (OPENROUTER_API_KEY) or Vex Cloud, and AGENT_MODEL",
   });
   return null;
 }
@@ -147,7 +154,7 @@ export function resetProvider(): void {
  * callers that need the previous selection should snapshot it first.
  */
 export async function switchProvider(
-  name: "openrouter",
+  name: "openrouter" | "vexcloud",
 ): Promise<InferenceProvider | null> {
   process.env.AGENT_PROVIDER = name;
   resetProvider();

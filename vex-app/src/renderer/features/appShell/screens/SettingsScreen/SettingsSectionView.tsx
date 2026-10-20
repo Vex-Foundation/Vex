@@ -25,6 +25,7 @@ import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js
 import { Button } from "../../../../components/ui/button.js";
 import { LighterSection } from "./LighterSection.js";
 import { LocalRuntimeSection } from "./LocalRuntimeSection.js";
+import { VexCloudAccountPanel } from "../../../vexCloud/VexCloudAccountPanel.js";
 import { SettingsHead } from "./SettingsHead.js";
 import { SettingsLockRow } from "./SettingsLockRow.js";
 import {
@@ -105,6 +106,8 @@ function renderSectionContent(
       return <LighterSection />;
     case "localRuntime":
       return <LocalRuntimeSection />;
+    case "vexCloud":
+      return <VexCloudAccountPanel />;
   }
   switch (meta.stepId) {
     case undefined:

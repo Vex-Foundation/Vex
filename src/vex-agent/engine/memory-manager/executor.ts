@@ -46,6 +46,7 @@ import {
   type MemoryJob,
 } from "@vex-agent/db/repos/memory-jobs/index.js";
 import { emitMemoryWorkerPermanentlyFailedBug } from "./bug-emit.js";
+import { isInferenceConfigured } from "@vex-agent/inference/config.js";
 import { emitEngineError, errorDetailOf } from "../runtime/error-bus.js";
 import {
   readMissionErrorSignal,
@@ -123,7 +124,7 @@ export function startMemoryManagerExecutor(
     try {
       // Pre-claim provider-config gate — claim increments attempt_count, so
       // claiming then throwing on missing config would burn the retry budget.
-      if (!process.env.OPENROUTER_API_KEY || !process.env.AGENT_MODEL) {
+      if (!isInferenceConfigured()) {
         if (!warnedNoProviderConfig) {
           memLog.warn("manager", "skipped", { errorCode: "no_provider_config" });
           warnedNoProviderConfig = true;

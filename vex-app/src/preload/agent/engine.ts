@@ -10,6 +10,7 @@
 import { EV } from "../../shared/ipc/channels.js";
 import { compactionPreparationEventSchema } from "../../shared/schemas/compaction-preparation.js";
 import { engineErrorEventSchema } from "../../shared/schemas/engine-error.js";
+import { inferenceNoticeEventSchema } from "../../shared/schemas/inference-notice.js";
 import { transcriptAppendEventSchema } from "../../shared/schemas/messages.js";
 import { missionUpdateEventSchema } from "../../shared/schemas/mission-update.js";
 import { lighterSetupHandoffEventSchema } from "../../shared/schemas/lighter-setup-handoff.js";
@@ -40,4 +41,6 @@ export const engine = {
       lighterSetupHandoffEventSchema,
       cb,
     ),
+  onInferenceNotice: (cb) =>
+    subscribe(EV.engine.inferenceNotice, inferenceNoticeEventSchema, cb),
 } satisfies EngineEventsBridge;

@@ -20,9 +20,9 @@ import type { ExtractionLesson } from "./types.js";
 import { withAuxReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 
 /**
- * Default provider factory — the SAME env-driven OpenRouter provider the judge
- * uses (constructor THROWS when OPENROUTER_API_KEY / AGENT_MODEL are absent;
- * `buildGraphPlan`'s fail-open catch absorbs it).
+ * Default provider factory - the SAME env-driven, mode-aware provider the judge
+ * uses (constructor THROWS when the active backend's credential or AGENT_MODEL
+ * is absent; `buildGraphPlan`'s fail-open catch absorbs it).
  */
 async function defaultProvider(): Promise<JudgeProvider> {
   const { OpenRouterProvider } = await import("@vex-agent/inference/openrouter.js");

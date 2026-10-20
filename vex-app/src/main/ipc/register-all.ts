@@ -52,6 +52,7 @@ import { registerBoardSpotlightHandlers } from "./board-spotlight.js";
 import { registerBoardChartHandlers } from "./board-chart.js";
 import { registerImagesHandlers } from "./images.js";
 import { registerPoolsLaunchHandlers } from "./pools-launch.js";
+import { registerVexCloudHandlers } from "./vex-cloud.js";
 import { registerPortfolioHandlers } from "./portfolio.js";
 import { registerProjectsHandlers } from "./projects/index.js";
 import { registerAgentCoreHandler } from "./onboarding/agent-core.js";
@@ -170,6 +171,8 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // myLaunches are all real; the agent-requested form flow authorizes the
   // drafted intent and resumes the parked turn.
   teardowns.push(...registerPoolsLaunchHandlers());
+  // Vex Cloud sign-in and account (phase 1). `signIn` signs, so it is gated.
+  teardowns.push(...registerVexCloudHandlers());
   // T1: read-only VEX market snapshot for the welcome-screen price widget. The
   // handler serves main's in-memory cache; the external poll + EV.market.vex
   // broadcast are owned by the market service, started in index.ts.

@@ -28,7 +28,7 @@
 
 import { useCallback, useRef, useState, type JSX } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
-import type { ProviderPersistInput } from "@shared/schemas/provider.js";
+import type { ProviderName, ProviderPersistInput } from "@shared/schemas/provider.js";
 import { Button } from "../../../../components/ui/button.js";
 import { Label } from "../../../../components/ui/label.js";
 import { StateWord } from "../../../../components/ui/state-word.js";
@@ -50,7 +50,7 @@ import { ProviderErrorAlert } from "./ProviderErrorAlert.js";
 export interface ConfiguredProviderPanelProps {
   /** The step's own env read, for the Settings section's status word. */
   readonly env?: EnvState | null;
-  readonly providerName: "openrouter" | null;
+  readonly providerName: ProviderName | null;
   /** Currently active `AGENT_MODEL`, or `null` when the probe found none. */
   readonly activeModel: string | null;
   /** Active `OPENROUTER_ENDPOINT_TAG`, or `null` for Auto routing. */

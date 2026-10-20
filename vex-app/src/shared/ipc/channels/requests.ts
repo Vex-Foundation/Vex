@@ -601,6 +601,22 @@ export const CH = {
   },
 
   /**
+   * Vex Cloud (domain `vexCloud`), the inference provider paid in VEX.
+   *
+   * `signIn` SIGNS: main builds one strict EIP-4361 message per in-app EVM
+   * wallet the user consented with (at most three), signs them with the
+   * unlocked vault, and creates the account, signs in, or links new wallets
+   * with a co-signature from an already-linked one. The session bearer goes
+   * to the vault and never crosses this channel. `account` reads balances,
+   * linked wallets and the rate; `signOut` removes the stored session.
+   */
+  vexCloud: {
+    signIn: "vex:vexCloud:signIn",
+    account: "vex:vexCloud:account",
+    signOut: "vex:vexCloud:signOut",
+  },
+
+  /**
    * Vex Studio projects (stage P). A project is a folder under the projects
    * root plus one backing `sessions` row (`mode = 'agent'`,
    * `scope = 'vex_studio'`).

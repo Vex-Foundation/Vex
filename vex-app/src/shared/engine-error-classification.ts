@@ -241,9 +241,50 @@ export const ENGINE_ERROR_REMEDIES = [
   "compact-session",
   /** A rejected image attachment - remove or replace it. */
   "remove-attachment",
+  /** Vex Cloud 402 - the VEX balance cannot cover the request: top up VEX. */
+  "vexcloud-top-up",
+  /** Vex Cloud 401 - the session expired or was revoked: sign in again. */
+  "vexcloud-sign-in",
+  /** Vex Cloud 403 - the account is paused for review. */
+  "vexcloud-account-paused",
+  /** Vex Cloud 503 - the gateway (or its upstream, pricing or registry) is unavailable. */
+  "vexcloud-unavailable",
 ] as const;
 
 export type EngineErrorRemedy = (typeof ENGINE_ERROR_REMEDIES)[number];
+
+/**
+ * Which backend produced the failure. The same status means a different
+ * action per backend: an OpenRouter 402 is "top up provider credits", a Vex
+ * Cloud 402 is "top up VEX"; a Vex Cloud 401 is an expired session, never a
+ * bad key. Pure data, safe in the renderer.
+ */
+export type InferenceProviderMode = "openrouter" | "vexcloud";
+
+/** The Vex Cloud remedy for a status the gateway owns, or `null` to fall back. */
+function vexCloudRemedy(signals: EngineFailureSignals): EngineErrorRemedy | null {
+  if (
+    signals.statusCode === 402 ||
+    signals.errorClass === "PaymentRequiredResponseError" ||
+    signals.errorType === "payment_required"
+  ) {
+    return "vexcloud-top-up";
+  }
+  if (
+    signals.statusCode === 401 ||
+    signals.errorClass === "UnauthorizedResponseError" ||
+    signals.errorType === "authentication"
+  ) {
+    return "vexcloud-sign-in";
+  }
+  if (signals.statusCode === 403 || signals.errorClass === "ForbiddenResponseError") {
+    return "vexcloud-account-paused";
+  }
+  if (signals.statusCode === 503 || signals.errorClass === "ServiceUnavailableResponseError") {
+    return "vexcloud-unavailable";
+  }
+  return null;
+}
 
 /** The account category splits by cause: 402 is funds, 401/403 is config. */
 function isInsufficientFunds(signals: EngineFailureSignals): boolean {
@@ -271,7 +312,12 @@ function isRateLimited(signals: EngineFailureSignals): boolean {
  */
 export function classifyEngineRemedy(
   signals: EngineFailureSignals,
+  mode: InferenceProviderMode = "openrouter",
 ): EngineErrorRemedy | null {
+  if (mode === "vexcloud") {
+    const cloud = vexCloudRemedy(signals);
+    if (cloud !== null) return cloud;
+  }
   switch (classifyEngineFailure(signals)) {
     case "account":
       return isInsufficientFunds(signals) ? "insufficient-funds" : "config-invalid";
