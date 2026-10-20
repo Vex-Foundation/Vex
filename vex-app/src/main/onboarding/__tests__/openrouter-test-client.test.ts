@@ -66,6 +66,7 @@ class FakeOpenRouter {
 }
 
 vi.mock("@vex-lib/openrouter-client.js", () => ({
+  OPENROUTER_API_BASE_URL: "https://openrouter.ai/api/v1",
   OpenRouter: FakeOpenRouter,
   OpenRouterError: FakeOpenRouterError,
   RequestAbortedError: FakeRequestAbortedError,
@@ -136,10 +137,13 @@ describe("verifyOpenRouterConnection", () => {
     expect(sdkSpies.ctor).toHaveBeenCalledTimes(1);
     const opts = sdkSpies.ctor.mock.calls[0]![0] as {
       apiKey: string;
+      serverURL: string;
       retryConfig: { strategy: string };
       debugLogger: { group: () => void; groupEnd: () => void; log: () => void };
     };
     expect(opts.apiKey).toBe("sk-or-test");
+    // Pinned so OPENROUTER_BASE_URL can never redirect the keyed verify call.
+    expect(opts.serverURL).toBe("https://openrouter.ai/api/v1");
     expect(opts.retryConfig.strategy).toBe("none");
     expect(typeof opts.debugLogger.group).toBe("function");
     expect(typeof opts.debugLogger.groupEnd).toBe("function");

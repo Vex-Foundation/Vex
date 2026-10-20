@@ -34,8 +34,8 @@ importers:
         specifier: 5.5.0
         version: 5.5.0(viem@2.54.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.4.3))
       '@openrouter/sdk':
-        specifier: ^1.1.13
-        version: 1.1.13
+        specifier: ^1.4.25
+        version: 1.4.25
       '@solana/spl-token':
         specifier: ^0.4.14
         version: 0.4.14(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -400,8 +400,8 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@openrouter/sdk@1.1.13':
-    resolution: {integrity: sha512-YackGD+eh9oOsmNVafqpJzJphYqJfutrsBKkbawEcrH9de4cBzCuEoIefW4IFtmbTwBgrpHNpISrXUQnCiZp4w==}
+  '@openrouter/sdk@1.4.25':
+    resolution: {integrity: sha512-H218lYMy9WhU5cMigUvW/k+e1BimCqTTP+9PqssdDXnQ0gFCeEME0HTsFGPbR6UgJgyYh2hTct43/9pMcBem5A==}
 
   '@oxc-project/types@0.122.0':
     resolution: {integrity: sha512-oLAl5kBpV4w69UtFZ9xqcmTi+GENWOcPF7FCrczTiBbmC0ibXxCwyvZGbO39rCVEuLGAZM84DH0pUIyyv/YJzA==}
@@ -2421,7 +2421,7 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@openrouter/sdk@1.1.13':
+  '@openrouter/sdk@1.4.25':
     dependencies:
       zod: 4.4.3
 

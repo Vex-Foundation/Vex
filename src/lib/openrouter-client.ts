@@ -22,6 +22,15 @@
  */
 
 export { OpenRouter, HTTPClient } from "@openrouter/sdk";
+
+/**
+ * The only OpenRouter API origin Vex talks to. Every `new OpenRouter(...)` in
+ * production code passes it as `serverURL`: since `@openrouter/sdk@1.4.x` an
+ * omitted server option falls back to the `OPENROUTER_BASE_URL` environment
+ * variable (`esm/lib/config.js` `serverURLFromOptions`), so an unpinned keyed
+ * client could be redirected to another host by the process environment.
+ */
+export const OPENROUTER_API_BASE_URL = "https://openrouter.ai/api/v1";
 export type { Fetcher, ResponseHook } from "@openrouter/sdk/lib/http.js";
 export {
   ConnectionError,

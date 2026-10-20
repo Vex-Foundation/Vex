@@ -40,7 +40,7 @@ async function listEndpointsFromFixture() {
   return client.endpoints.list({ author: "anthropic", slug: "claude-sonnet-4.5" });
 }
 
-describe("endpoints.list — recorded live response parses under SDK 1.1.13", () => {
+describe("endpoints.list - recorded live response parses under SDK 1.4.25", () => {
   it("parses without a schema rejection and yields a NON-EMPTY endpoint list", async () => {
     const response = await listEndpointsFromFixture();
     const endpoints = response.data?.endpoints ?? [];

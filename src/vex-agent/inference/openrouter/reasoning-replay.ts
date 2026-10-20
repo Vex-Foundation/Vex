@@ -14,7 +14,7 @@
  * Reasoning"). This module captures that array for the rounds of ONE turn-loop
  * run and hands it back on the assistant tool-call messages of the same run.
  *
- * WIRE SHAPE (installed `@openrouter/sdk` 1.1.13)
+ * WIRE SHAPE (installed `@openrouter/sdk` 1.4.25)
  *
  * - Request: `ChatAssistantMessage.reasoningDetails` (outbound
  *   `reasoning_details`), `Array<ReasoningDetailUnion>`.

@@ -33,6 +33,7 @@
 
 import {
   ConnectionError,
+  OPENROUTER_API_BASE_URL,
   OpenRouter,
   OpenRouterError,
   RequestAbortedError,
@@ -75,6 +76,7 @@ export interface OpenRouterVerifyOptions {
 function defaultClientFactory(apiKey: string, timeoutMs: number) {
   return new OpenRouter({
     apiKey,
+    serverURL: OPENROUTER_API_BASE_URL,
     debugLogger: OPENROUTER_NOOP_LOGGER,
     retryConfig: { strategy: "none" },
     timeoutMs,

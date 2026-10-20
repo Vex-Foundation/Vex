@@ -82,11 +82,11 @@ describe("loadEndpointCandidates — real recorded catalogue", () => {
       "anthropic/claude-sonnet-4.5",
     );
     const measured = candidates.filter((c) => c.uptimePercent !== null);
-    // Most endpoints are measured; the recorded catalogue also contains one
-    // with NO reading at all (`google-vertex/us-east5`), which is exactly why
-    // `uptimePercent` is nullable and why unknown must sort last.
-    expect(measured.length).toBeGreaterThan(1);
-    expect(measured.length).toBeLessThan(candidates.length);
+    // Every row of the 2026-10-20 capture publishes a 1-day uptime (several
+    // have null 5m/30m windows, which the 1-day preference never reaches), so
+    // every candidate is measured. The unmeasured path is real but absent from
+    // this capture; `rankByUptime` below covers it with an explicit row.
+    expect(measured.length).toBe(candidates.length);
     expect(
       measured.every((c) => (c.uptimePercent ?? -1) >= 0 && (c.uptimePercent ?? 101) <= 100),
     ).toBe(true);
@@ -101,10 +101,12 @@ describe("loadEndpointCandidates — real recorded catalogue", () => {
     expect(uptimes).toEqual([...uptimes].sort((a, b) => b - a));
 
     // Pinned against the recorded data so a ranking regression is visible as a
-    // concrete wrong answer, not just an ordering property.
-    expect(candidates[0]?.tag).toBe("amazon-bedrock/eu-west-1");
+    // concrete wrong answer, not just an ordering property. Every row of this
+    // capture reads 100 on the 1-day window, so the real-data order is the
+    // deterministic tag tiebreak; uptime ORDER between differing readings is
+    // pinned by the row-level `rankByUptime` tests below.
+    expect(candidates[0]?.tag).toBe("amazon-bedrock");
     expect(candidates[0]?.uptimePercent).toBe(100);
-    // …and the unmeasured endpoint is dead last.
     expect(candidates[candidates.length - 1]?.tag).toBe("google-vertex/us-east5");
   });
 
@@ -201,6 +203,15 @@ describe("normalizeEndpointCandidate — untrusted rows", () => {
 });
 
 describe("rankByUptime", () => {
+  it("ranks the HIGHER uptime first even when the tag would order it last", () => {
+    const ranked = rankByUptime([
+      candidate("a/low", 97.5),
+      candidate("z/high", 99.9),
+      candidate("m/mid", 98.75),
+    ]);
+    expect(ranked.map((c) => c.tag)).toEqual(["z/high", "m/mid", "a/low"]);
+  });
+
   it("sorts unknown uptime LAST — an unmeasured endpoint must not outrank a measured one", () => {
     const ranked = rankByUptime([candidate("unknown/x", null), candidate("known/y", 50)]);
     expect(ranked.map((c) => c.tag)).toEqual(["known/y", "unknown/x"]);
