@@ -21,6 +21,16 @@
  * `balance_read_failing`) and nothing is sent; the next tick reads again. It
  * never retries a deposit: an unknown outcome is counted and left for the
  * user to reconcile from History.
+ *
+ * A plan whose network fee bound is above the rule's ceiling is refused
+ * (nothing signed, recorded `refused`, not counted) and the rule reads
+ * suspended `network_fee_above_limit` ("Network fee above your limit"). The
+ * poller tries again after {@link FEE_RETRY_AFTER_MS}, not every tick, so a
+ * fee spike leaves one refused row per interval instead of one per minute.
+ *
+ * Each tick reads the deposits page FIRST, then takes the observation
+ * generation, then reads the balance (`balance-watch.ts`): a credit the page
+ * shows is included in the balance the reference resets to.
  */
 
 import { log } from "../../logger/index.js";
@@ -33,6 +43,8 @@ import { effectiveRuleState, pollerShouldTopUp } from "./rule-policy.js";
 export const AUTO_TOP_UP_POLL_INTERVAL_MS = 60_000;
 /** The first tick after an unlock: soon, but after the window and the runtime settle. */
 export const AUTO_TOP_UP_FIRST_TICK_MS = 5_000;
+/** After a fee refusal, the next attempt waits this long (the rule reads suspended meanwhile). */
+export const FEE_RETRY_AFTER_MS = 10 * 60_000;
 
 export interface PollerDeps extends RecordedExecutionDeps {
   readonly api: Pick<VexCloudApi, "readAccount" | "listDeposits">;
@@ -57,6 +69,18 @@ export interface PollerSnapshot {
   readonly lastTickAt: string | null;
   readonly lastOutcome: PollerTickOutcome | null;
   readonly balanceReadFailing: boolean;
+  /**
+   * The rule version whose last attempt was refused because the network fee
+   * was above its ceiling, or `null`. Keyed by version: an edit (a new
+   * ceiling) clears it for the views at once.
+   */
+  readonly networkFeeAboveLimit: { readonly ruleId: string; readonly version: number } | null;
+}
+
+/** Whether a poller snapshot marks THIS rule version as suspended for its network fee. */
+export function feeSuspended(snapshot: PollerSnapshot, rule: { readonly ruleId: string; readonly version: number }): boolean {
+  const marked = snapshot.networkFeeAboveLimit;
+  return marked !== null && marked.ruleId === rule.ruleId && marked.version === rule.version;
 }
 
 export interface AutoTopUpPoller {
@@ -77,6 +101,8 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
   let lastTickAt: string | null = null;
   let lastOutcome: PollerTickOutcome | null = null;
   let balanceReadFailing = false;
+  /** The last fee refusal (deposit clock, ms) and the rule version it was for, or `null`. Cleared by any other outcome. */
+  let feeRefused: { readonly ruleId: string; readonly version: number; readonly atMs: number } | null = null;
 
   async function tick(signal: AbortSignal): Promise<PollerTickOutcome> {
     const conditions = deps.conditions();
@@ -85,6 +111,9 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
     const bearer = await requireBearer(deps.deposit);
     if (!bearer.ok) return "skipped_signed_out";
 
+    // Deposits first: a credit this page shows is then inside the balance read below.
+    const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
+    const generation = deps.watch.generations.next();
     const read = await deps.api.readAccount(bearer.value, signal);
     if (!read.ok) {
       balanceReadFailing = true;
@@ -92,11 +121,11 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
     }
     balanceReadFailing = false;
     const account = read.value;
-    const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
     const observation = await observeBalance(deps.watch, {
       accountId: account.account_id,
       balanceWei: accountBalanceWei(account),
       newestCreditedDepositId: deposits.ok ? newestCreditedDepositId(deposits.value.items) : null,
+      generation,
     });
 
     const now = deps.deposit.now();
@@ -109,10 +138,18 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
       ...deps.conditions(),
       depositAddressMatches: pinned !== null && account.deposit_address !== null && pinned.toLowerCase() === account.deposit_address.toLowerCase(),
       balanceReadFailing: false,
+      // The poller decides whether to try again itself, below.
+      networkFeeAboveLimit: false,
     });
     if (state.state !== "active") return "suspended";
     if (!pollerShouldTopUp(state, observation.belowAlert)) return "not_triggered";
     if (signal.aborted || admissionClosed) return "skipped_not_ready";
+    if (
+      feeRefused !== null
+      && feeRefused.ruleId === rule.ruleId
+      && feeRefused.version === rule.version
+      && now.getTime() - feeRefused.atMs < FEE_RETRY_AFTER_MS
+    ) return "suspended";
 
     const executed = await executeRecordedDeposit(
       deps,
@@ -128,9 +165,13 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
       signal,
     );
     if (!executed.ok) {
+      feeRefused = executed.refusal.kind === "network_fee_above_limit"
+        ? { ruleId: rule.ruleId, version: rule.version, atMs: deps.deposit.now().getTime() }
+        : null;
       log.info(`[vex-cloud:auto-top-up] poller refused kind=${executed.refusal.kind}`);
       return "refused";
     }
+    feeRefused = null;
     log.info(`[vex-cloud:auto-top-up] poller executed status=${executed.value.status}`);
     return "executed";
   }
@@ -187,7 +228,7 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
       return runTick();
     },
     snapshot() {
-      return { running, lastTickAt, lastOutcome, balanceReadFailing };
+      return { running, lastTickAt, lastOutcome, balanceReadFailing, networkFeeAboveLimit: feeRefused === null ? null : { ruleId: feeRefused.ruleId, version: feeRefused.version } };
     },
   };
 }

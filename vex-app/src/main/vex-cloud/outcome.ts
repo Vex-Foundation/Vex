@@ -107,7 +107,9 @@ export type VexCloudRefusalKind =
   /** A rule field is outside its bounds (amount, count, cap, expiry). */
   | "invalid_rule"
   /** The rule already has an execution in flight. */
-  | "rule_execution_in_flight";
+  | "rule_execution_in_flight"
+  /** The deposit's network fee bound is above the rule's user-approved ceiling. */
+  | "network_fee_above_limit";
 
 export interface VexCloudRefusal {
   readonly kind: VexCloudRefusalKind;
@@ -224,6 +226,8 @@ export function vexCloudRefusalError(
         return { code: "validation.invalid_input", retryable: false, userActionable: true };
       case "rule_execution_in_flight":
         return { code: "validation.invalid_input", retryable: true, userActionable: true };
+      case "network_fee_above_limit":
+        return { code: "wallet.policy_blocked", retryable: true, userActionable: true };
     }
   })();
   return { ...shape, domain, message: refusal.detail, redacted: true, correlationId };

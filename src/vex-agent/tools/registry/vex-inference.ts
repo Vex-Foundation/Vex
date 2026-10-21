@@ -116,16 +116,20 @@ export const VEX_INFERENCE_TOOLS: readonly ToolDef[] = [
     mutating: true,
     pressureSafety: "mutating",
     actionKind: "user_wallet_broadcast",
+    // The handler decides authority (verified card, full permission, the
+    // user's rule) and raises only the complete card: see `internal/vex-inference/deposit.ts`.
+    approvalOwner: "handler",
     visibility: { requiresVexInference: true },
     description:
       "Send the Vex Inference deposit that VexInferenceDepositPrepare prepared. This SPENDS REAL FUNDS: it signs with "
       + "the user's wallet and broadcasts an IRREVERSIBLE VEX transfer on Robinhood Chain to the pinned deposit "
-      + "address. In the app Vex calls it for you right after the prepare, so do not call it yourself. AUTHORITY: in a "
+      + "address. In the app Vex calls it for you right after the prepare, so do not call it yourself: in a restricted "
+      + "session a direct call is refused with needs_user_approval and nothing is signed. AUTHORITY: in a "
       + "restricted session the user approves a card showing every line (amount, wallet, deposit address, fee bound, "
-      + "expiry); a full-permission session executes directly; during a mission the same rules apply under the "
-      + "mission's wallet scope. Without a card it runs only when the user's own auto top-up rule covers it (same "
-      + "wallet, at most the rule's amount, within its daily count and 30-day cap); otherwise it answers "
-      + "needs_user_approval. You cannot create, widen or reuse authority. BEFORE IT SIGNS it re-checks the session "
+      + "expiry), and a rejected card retires the intent; a full-permission session executes directly; during a "
+      + "mission the same rules apply under the mission's wallet scope. Without a card it runs only when the user's "
+      + "own auto top-up rule covers it (same wallet, at most the rule's amount, within its daily count, 30-day cap and "
+      + "network fee limit). You cannot create, widen or reuse authority. BEFORE IT SIGNS it re-checks the session "
       + "wallet, the inventory, the account link, the pinned address against the backend, the minimum, the balances, "
       + "the fee bound, the expiry and the vault; any drift REFUSES BY NAME with nothing signed. RETURNS a DISTINCT "
       + "outcome: confirmed (txHash, transferProven, authority), reverted on chain, broadcast with the outcome "

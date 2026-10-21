@@ -12,7 +12,7 @@ import {
   VEX_INFERENCE_DEPOSIT_CARD_KEYS,
   VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL,
   VEX_INFERENCE_DEPOSIT_PREPARE_TOOL,
-} from "../internal/vex-inference/deposit.js";
+} from "../internal/vex-inference/card.js";
 import { AGENT_DEPOSIT_INTENT_ID } from "../internal/vex-inference/params.js";
 import { VEX_INFERENCE_CHAIN_ID, VEX_INFERENCE_TOKEN_ADDRESS } from "../internal/vex-inference/host.js";
 import {

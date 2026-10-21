@@ -50,7 +50,7 @@ describe("VexInferenceNotice - when it shows", () => {
     const region = screen.getByRole("region", { name: TITLE });
     expect(screen.getByRole("heading", { name: TITLE })).toBeTruthy();
     expect(region.textContent).toContain(
-      "Vex Inference runs the agent on top models and charges your VEX balance per request. 3% comes back as cashback.",
+      "Vex Inference runs the agent on top models and charges your VEX balance per request. 3% of the model cost comes back to you as cashback.",
     );
     expect(VEX_INFERENCE_NOTICE_COPY.title).toBe(TITLE);
     const keys = [...region.querySelectorAll("button")].map((key) => key.textContent);

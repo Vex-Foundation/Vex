@@ -20,8 +20,12 @@
  * |---|---|---|---|
  * | `approved_card` | ignored | executes | `agent_card` |
  * | `full_permission` | ignored | executes | `agent_full_permission` |
- * | `none` | active and covering | executes under the rule, caps shared with the poller | `auto_top_up_agent` |
+ * | `none` | active and covering (wallet, amount, caps, network fee ceiling) | executes under the rule, caps shared with the poller | `auto_top_up_agent` |
  * | `none` | absent or not covering | `needs_user_approval`, intent kept | none |
+ *
+ * `approved_card` arrives only after the engine proved the approval is bound
+ * to this intent's complete card (`approval-binding.ts` in the agent tools);
+ * a rejected card retires the intent ({@link retireAgentDeposit}).
  *
  * At the signing boundary the core re-checks every bound field, the executor
  * re-checks the rule from durable state, and the final check re-asks the
@@ -89,6 +93,7 @@ async function coverage(
   accountId: string,
   from: string,
   amountWei: bigint,
+  maxNetworkFeeWei: bigint,
   depositAddressMatches: boolean,
 ): Promise<AgentDepositIntentView["autoTopUp"]> {
   let rule;
@@ -103,8 +108,8 @@ async function coverage(
   const verdict = ruleCoversAgentDeposit(
     rule,
     usage,
-    { ...deps.conditions(), depositAddressMatches, balanceReadFailing: false },
-    { from, amountWei },
+    { ...deps.conditions(), depositAddressMatches, balanceReadFailing: false, networkFeeAboveLimit: false },
+    { from, amountWei, maxNetworkFeeWei },
   );
   return verdict.covered ? { covered: true, ruleId: rule.ruleId } : { covered: false, reason: verdict.reason };
 }
@@ -137,7 +142,7 @@ export async function prepareAgentDeposit(
   if (!planned.ok) return toHost(planned);
   const plan = planned.value;
   const rateX18 = plan.minimum.rateX18;
-  const autoTopUp = await coverage(deps, account.account_id, plan.from, plan.amountWei, true);
+  const autoTopUp = await coverage(deps, account.account_id, plan.from, plan.amountWei, plan.feeBound.maxNetworkFeeWei, true);
 
   const now = deps.deposit.now();
   const expiresAtMs = now.getTime() + AGENT_DEPOSIT_TTL_MS;
@@ -187,6 +192,13 @@ export function peekAgentDeposit(deps: AgentDepositDeps, sessionId: string, inte
   return found.ok ? { ok: true, value: found.value.view } : found;
 }
 
+/** Retire an intent whose card the user rejected or let expire. A missing or cross-session id is a no-op. */
+export function retireAgentDeposit(deps: AgentDepositDeps, sessionId: string, intentId: string): void {
+  const found = intents.peek(intentId, deps.deposit.now().getTime());
+  if (found.kind === "ok" && found.entry.sessionId !== sessionId) return;
+  intents.drop(intentId);
+}
+
 export async function confirmAgentDeposit(
   deps: AgentDepositDeps,
   request: AgentDepositConfirmRequest,
@@ -212,8 +224,8 @@ export async function confirmAgentDeposit(
     const verdict = ruleCoversAgentDeposit(
       rule,
       usage,
-      { ...deps.conditions(), depositAddressMatches: true, balanceReadFailing: false },
-      { from: view.from, amountWei },
+      { ...deps.conditions(), depositAddressMatches: true, balanceReadFailing: false, networkFeeAboveLimit: false },
+      { from: view.from, amountWei, maxNetworkFeeWei: entry.feeBound.maxNetworkFeeWei },
     );
     if (!verdict.covered) return { ok: true, value: { kind: "needs_user_approval", reason: verdict.reason, intent: view } };
     authority = "auto_top_up_agent";

@@ -19,7 +19,7 @@ import type { VexCloudApi } from "./api-client.js";
 import { accountBalanceWei, newestCreditedDepositId, observeBalance, type BalanceWatchDeps } from "./balance-watch.js";
 import { backendRefusal, requireBearer, type SessionPort } from "./funding/backend-call.js";
 import type { FundingPolicyStore } from "./auto-top-up/funding-store.js";
-import { effectiveRuleState, type RuleConditions } from "./auto-top-up/rule-policy.js";
+import { effectiveRuleState, type ObservedRuleConditions, type RuleConditions } from "./auto-top-up/rule-policy.js";
 import { backendAmountView, pricePerMillionView, vexAmountView } from "./vex-inference-amounts.js";
 
 export interface StatusDeps extends SessionPort {
@@ -27,7 +27,9 @@ export interface StatusDeps extends SessionPort {
   readonly store: FundingPolicyStore;
   readonly watch: BalanceWatchDeps;
   readonly pinnedDepositAddress: () => string | null;
-  readonly conditions: () => Omit<RuleConditions, "depositAddressMatches" | "balanceReadFailing">;
+  readonly conditions: () => Omit<RuleConditions, ObservedRuleConditions>;
+  /** Whether the poller's last attempt for this rule version was refused for its network fee. */
+  readonly networkFeeAboveLimit: (rule: { readonly ruleId: string; readonly version: number }) => boolean;
   readonly now: () => Date;
 }
 
@@ -42,6 +44,10 @@ export async function readVexInferenceStatus(
 ): Promise<HostOutcome<VexInferenceStatusReport>> {
   const bearer = await requireBearer(deps);
   if (!bearer.ok) return toHost(bearer);
+  // Deposits BEFORE the balance read: a credit this page shows is inside the
+  // balance the alert reference resets to; a failed read keeps the stored one.
+  const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
+  const generation = deps.watch.generations.next();
   const read = await deps.api.readAccount(bearer.value, signal);
   if (!read.ok) {
     const refusal = await backendRefusal<never>(deps, read.failure);
@@ -56,12 +62,11 @@ export async function readVexInferenceStatus(
     return refusal.ok ? { ok: false, refusal: { kind: "unavailable", detail: "The usage page could not be read." } } : toHost(refusal);
   }
 
-  // The reference resets on a newly credited deposit; a failed deposits read keeps the stored one.
-  const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
   const observation = await observeBalance(deps.watch, {
     accountId: account.account_id,
     balanceWei: accountBalanceWei(account),
     newestCreditedDepositId: deposits.ok ? newestCreditedDepositId(deposits.value.items) : null,
+    generation,
   });
 
   let model: VexInferenceStatusReport["model"];
@@ -107,6 +112,7 @@ export async function readVexInferenceStatus(
       ...deps.conditions(),
       depositAddressMatches: depositState === "open",
       balanceReadFailing: false,
+      networkFeeAboveLimit: deps.networkFeeAboveLimit(rule),
     });
     autoTopUp = {
       ruleId: rule.ruleId,
@@ -116,6 +122,7 @@ export async function readVexInferenceStatus(
       amountPerTopUp: vexAmountView(rule.amountWei, rateX18),
       maxPerDay: rule.maxPerDay,
       monthlyCap: vexAmountView(rule.monthlyCapWei, rateX18),
+      maxNetworkFeeWei: rule.maxNetworkFeeWei === null ? null : rule.maxNetworkFeeWei.toString(),
       usedLast24Hours: used.countLastDay,
       usedLast30Days: vexAmountView(used.sumLast30DaysWei, rateX18),
       expiresAt: rule.expiresAt.toISOString(),

@@ -10,8 +10,8 @@
 
 import { describe, expect, it } from "vitest";
 import { capsAllow, capsStillHold, effectiveRuleState, ruleCoversAgentDeposit, validateRuleBounds, type RuleConditions } from "../auto-top-up/rule-policy.js";
-import { nextWatchRow, observeBalance, thresholdOf, type BalanceObservation } from "../balance-watch.js";
-import { ACCOUNT_ID, E18, MemoryFundingStore, NOW, OTHER_WALLET, WALLET } from "./support/funding-fakes.js";
+import { createObservationGenerations, nextWatchRow, observeBalance, thresholdOf, type BalanceObservation } from "../balance-watch.js";
+import { ACCOUNT_ID, DEFAULT_FEE_CEILING_WEI, E18, MemoryFundingStore, NOW, OTHER_WALLET, WALLET } from "./support/funding-fakes.js";
 
 const LIVE: RuleConditions = {
   now: NOW,
@@ -21,7 +21,9 @@ const LIVE: RuleConditions = {
   signedInAccountId: ACCOUNT_ID,
   depositAddressMatches: true,
   balanceReadFailing: false,
+  networkFeeAboveLimit: false,
 };
+const FEE = 10n ** 13n;
 
 function rule() {
   return new MemoryFundingStore().seedRule({ amountWei: 6_000n * E18, maxPerDay: 2, monthlyCapWei: 12_000n * E18 });
@@ -73,8 +75,10 @@ describe("effective state (plan 4.4)", () => {
     ["account_changed", { signedInAccountId: "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee" }],
     ["account_changed", { signedInAccountId: null }],
     ["deposit_address_mismatch", { depositAddressMatches: false }],
-    ["deposit_address_mismatch", { depositAddressMatches: null }],
+    // `null` = the backend could not be read: the pin was not compared, so the honest reason is the failing read.
+    ["balance_read_failing", { depositAddressMatches: null }],
     ["balance_read_failing", { balanceReadFailing: true }],
+    ["network_fee_above_limit", { networkFeeAboveLimit: true }],
   ] as const)("is suspended (%s)", (reason, patch) => {
     expect(effectiveRuleState(rule(), usage, { ...LIVE, ...patch })).toEqual({ state: "suspended", reason });
   });
@@ -85,27 +89,39 @@ describe("effective state (plan 4.4)", () => {
     expect(effectiveRuleState({ ...rule(), expiresAt: NOW }, usage, LIVE)).toEqual({ state: "expired" });
     expect(effectiveRuleState({ ...rule(), status: "revoked" }, usage, LIVE)).toEqual({ state: "revoked" });
   });
+
+  it("a rule approved without a network fee ceiling (before migration 179) spends nothing: suspended for its fee", () => {
+    expect(effectiveRuleState({ ...rule(), maxNetworkFeeWei: null }, usage, LIVE)).toEqual({ state: "suspended", reason: "network_fee_above_limit" });
+  });
 });
 
 describe("agent coverage", () => {
   const usage = { countLastDay: 0, sumLast30DaysWei: 0n };
 
   it("covers the same wallet at or under the per-top-up amount within the caps", () => {
-    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET, amountWei: 6_000n * E18 })).toEqual({ covered: true });
-    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET.toLowerCase(), amountWei: 5_000n * E18 })).toEqual({ covered: true });
+    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET, amountWei: 6_000n * E18, maxNetworkFeeWei: FEE })).toEqual({ covered: true });
+    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET.toLowerCase(), amountWei: 5_000n * E18, maxNetworkFeeWei: DEFAULT_FEE_CEILING_WEI })).toEqual({ covered: true });
   });
 
   it("never covers another wallet, a larger amount, a used-up cap or a suspended rule", () => {
-    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: OTHER_WALLET, amountWei: E18 }).covered).toBe(false);
-    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET, amountWei: 6_000n * E18 + 1n }).covered).toBe(false);
-    expect(ruleCoversAgentDeposit(rule(), { countLastDay: 1, sumLast30DaysWei: 7_000n * E18 }, LIVE, { from: WALLET, amountWei: 6_000n * E18 }).covered).toBe(false);
-    expect(ruleCoversAgentDeposit(rule(), usage, { ...LIVE, vaultUnlocked: false }, { from: WALLET, amountWei: E18 }).covered).toBe(false);
+    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: OTHER_WALLET, amountWei: E18, maxNetworkFeeWei: FEE }).covered).toBe(false);
+    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET, amountWei: 6_000n * E18 + 1n, maxNetworkFeeWei: FEE }).covered).toBe(false);
+    expect(ruleCoversAgentDeposit(rule(), { countLastDay: 1, sumLast30DaysWei: 7_000n * E18 }, LIVE, { from: WALLET, amountWei: 6_000n * E18, maxNetworkFeeWei: FEE }).covered).toBe(false);
+    expect(ruleCoversAgentDeposit(rule(), usage, { ...LIVE, vaultUnlocked: false }, { from: WALLET, amountWei: E18, maxNetworkFeeWei: FEE }).covered).toBe(false);
+  });
+
+  it("never covers a fee bound one wei above the rule's network fee ceiling, nor any fee on a rule without one", () => {
+    expect(ruleCoversAgentDeposit(rule(), usage, LIVE, { from: WALLET, amountWei: E18, maxNetworkFeeWei: DEFAULT_FEE_CEILING_WEI + 1n })).toEqual({
+      covered: false,
+      reason: "the network fee bound is above the auto top-up rule's network fee limit",
+    });
+    expect(ruleCoversAgentDeposit({ ...rule(), maxNetworkFeeWei: null }, usage, LIVE, { from: WALLET, amountWei: E18, maxNetworkFeeWei: 1n }).covered).toBe(false);
   });
 });
 
 describe("approvable bounds", () => {
   const minimumWei = 5_000n * E18;
-  const ok = { sourceWallet: WALLET, amountWei: 5_000n * E18, maxPerDay: 1, monthlyCapWei: 5_000n * E18, expiresAt: new Date(NOW.getTime() + 90 * 86_400_000) };
+  const ok = { sourceWallet: WALLET, amountWei: 5_000n * E18, maxPerDay: 1, monthlyCapWei: 5_000n * E18, maxNetworkFeeWei: DEFAULT_FEE_CEILING_WEI, expiresAt: new Date(NOW.getTime() + 90 * 86_400_000) };
 
   it("accepts the minimum amount, a cap of one top-up and exactly 90 days", () => {
     expect(validateRuleBounds(ok, { now: NOW, minimumWei })).toEqual({ ok: true });
@@ -118,6 +134,8 @@ describe("approvable bounds", () => {
     ["monthlyCapWei", { monthlyCapWei: 5_000n * E18 - 1n }],
     ["expiresAt", { expiresAt: new Date(NOW.getTime() + 90 * 86_400_000 + 1) }],
     ["expiresAt", { expiresAt: NOW }],
+    ["maxNetworkFeeWei", { maxNetworkFeeWei: 0n }],
+    ["maxNetworkFeeWei", { maxNetworkFeeWei: 10n ** 16n + 1n }],
   ] as const)("refuses %s out of bounds", (field, patch) => {
     const verdict = validateRuleBounds({ ...ok, ...patch }, { now: NOW, minimumWei });
     expect(verdict.ok).toBe(false);
@@ -141,8 +159,8 @@ describe("low-balance watch", () => {
   it("emits ONE notice per crossing: not on the way down a second time, again only after recovering", async () => {
     const store = new MemoryFundingStore();
     const crossings: BalanceObservation[] = [];
-    const deps = { store, emitCrossing: (o: BalanceObservation) => crossings.push(o) };
-    const observe = (vex: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCreditedDepositId: "dep_1" });
+    const deps = { store, generations: createObservationGenerations(), emitCrossing: (o: BalanceObservation) => crossings.push(o) };
+    const observe = (vex: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCreditedDepositId: "dep_1", generation: deps.generations.next() });
     await observe(100n);
     expect((await observe(19n)).crossed).toBe(true);
     expect((await observe(10n)).crossed).toBe(false);
@@ -154,9 +172,30 @@ describe("low-balance watch", () => {
 
   it("exactly at the threshold is not below it", async () => {
     const store = new MemoryFundingStore();
-    const deps = { store, emitCrossing: () => undefined };
-    await observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: 100n * E18, newestCreditedDepositId: null });
-    expect((await observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: 20n * E18, newestCreditedDepositId: null })).belowAlert).toBe(false);
-    expect((await observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: 20n * E18 - 1n, newestCreditedDepositId: null })).belowAlert).toBe(true);
+    const deps = { store, generations: createObservationGenerations(), emitCrossing: () => undefined };
+    const at = (wei: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: wei, newestCreditedDepositId: null, generation: deps.generations.next() });
+    await at(100n * E18);
+    expect((await at(20n * E18)).belowAlert).toBe(false);
+    expect((await at(20n * E18 - 1n)).belowAlert).toBe(true);
+  });
+
+  it("a stalled read that lands after a newer one is discarded: 1,000 VEX at 20%, a 200 VEX read stalls past a 19 VEX notice, exactly one notice", async () => {
+    const store = new MemoryFundingStore();
+    const crossings: BalanceObservation[] = [];
+    const deps = { store, generations: createObservationGenerations(), emitCrossing: (o: BalanceObservation) => crossings.push(o) };
+    const observe = (vex: bigint, generation: number) =>
+      observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCreditedDepositId: "dep_1", generation });
+    await observe(1_000n, deps.generations.next());
+    // The poller's read STARTS (generation taken) while the balance is 200 VEX, then stalls.
+    const stalledGeneration = deps.generations.next();
+    // Meanwhile a status read sees 19 VEX: below 200, the notice fires.
+    expect((await observe(19n, deps.generations.next())).crossed).toBe(true);
+    // The stalled 200 VEX answer lands now. It must not clear the latch.
+    const late = await observe(200n, stalledGeneration);
+    expect(late).toMatchObject({ stale: true, crossed: false, belowAlert: true, balanceWei: 19n * E18 });
+    // The next fresh read still sees the same dip: no second notice.
+    expect((await observe(18n, deps.generations.next())).crossed).toBe(false);
+    expect(crossings).toHaveLength(1);
+    expect(store.watch.get(ACCOUNT_ID)).toMatchObject({ belowAlert: true, lastBalanceWei: 18n * E18, referenceWei: 1_000n * E18 });
   });
 });

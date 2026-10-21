@@ -51,6 +51,7 @@ import type {
   RejectPrepareOutcome,
 } from "../types.js";
 import { applyPolicyDriftSideEffects, applyRejectSideEffects } from "./reject.js";
+import { retireDepositIntentOfRejectedApproval } from "@vex-agent/tools/internal/vex-inference/approval-binding.js";
 
 /**
  * Reject / expire side effects per origin. `toolResultContent` is only
@@ -62,6 +63,9 @@ export async function dispatchRejectSideEffects(
   snapshot: Extract<RejectSnapshot, { type: "rejected_in_tx" }>,
   toolResultContent: string,
 ): Promise<RejectPrepareOutcome> {
+  // The decision committed: a prepared action bound to this approval may
+  // never be signed later by another call (every origin, before the branch).
+  retireDepositIntentOfRejectedApproval(snapshot.row.session_id, snapshot.row.queue_tool_call);
   if (snapshot.row.origin !== "studio_mcp" && snapshot.row.origin !== "desk") {
     return applyRejectSideEffects(approvalId, snapshot, toolResultContent);
   }
@@ -91,6 +95,7 @@ export async function dispatchPolicyDriftSideEffects(
   snapshot: Extract<ApproveSnapshot, { type: "policy_drift_blocked" }>,
   toolResultContent: string,
 ): Promise<Extract<ApprovePrepareOutcome, { kind: "policy_drift_blocked" }>> {
+  retireDepositIntentOfRejectedApproval(snapshot.row.session_id, snapshot.row.queue_tool_call);
   if (snapshot.row.origin !== "studio_mcp" && snapshot.row.origin !== "desk") {
     return applyPolicyDriftSideEffects(approvalId, snapshot, toolResultContent);
   }

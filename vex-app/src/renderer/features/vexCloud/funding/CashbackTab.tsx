@@ -18,7 +18,7 @@ import { NOT_AVAILABLE } from "./funding-model.js";
 export const CLAIM_STATUS_UNKNOWN =
   "Vex did not get a clear answer from Vex Inference, so this claim may or may not have gone through. Check status repeats the same claim, which cannot pay twice.";
 
-export const NOTHING_TO_CLAIM = "Nothing to claim yet. Cashback is 3% of what your requests cost, credited as Vex Inference settles them.";
+export const NOTHING_TO_CLAIM = "Nothing to claim yet. Cashback is 3% of the model cost of your requests, credited as Vex Inference settles them.";
 
 export function CashbackTab({ account }: { readonly account: VexCloudAccount }): JSX.Element {
   const invalidate = useInvalidateVexCloudFunding();

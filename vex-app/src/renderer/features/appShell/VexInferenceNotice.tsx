@@ -23,7 +23,7 @@ import { focusAgentComposer } from "./composer-focus.js";
 
 export const VEX_INFERENCE_NOTICE_COPY = {
   title: "AI is now paid in VEX",
-  body: "Vex Inference runs the agent on top models and charges your VEX balance per request. 3% comes back as cashback.",
+  body: "Vex Inference runs the agent on top models and charges your VEX balance per request. 3% of the model cost comes back to you as cashback.",
   use: "Use Vex Inference",
   dismiss: "Not now",
 } as const;

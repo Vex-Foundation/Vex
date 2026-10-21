@@ -26,6 +26,7 @@ import {
   type ApprovalEnqueueOutcome as SharedEnqueueOutcome,
 } from "../approval-runtime/enqueue.js";
 import type { IntentPreview } from "../approval-intent-preview.js";
+import { retireDepositIntentOfRejectedApproval } from "@vex-agent/tools/internal/vex-inference/approval-binding.js";
 
 /**
  * Approval-path fail-fast. Puzzle 5 phase 2: approval_intents.action_kind is
@@ -142,6 +143,11 @@ export async function enqueueApprovalIntent(args: {
       return { kind: "clear" };
     },
   );
+  if (outcome.kind === "auto_rejected" && args.result.preparedApprovalBinding !== undefined) {
+    // Rejected inside the enqueue transaction (the run went terminal): the
+    // prepared action it was bound to is retired like any rejected card's.
+    retireDepositIntentOfRejectedApproval(context.sessionId, { proposalBinding: args.result.preparedApprovalBinding });
+  }
   if (outcome.kind === "refused") {
     // Unreachable: the gate above never refuses. Named rather than cast so a
     // future gate change fails here instead of silently losing an approval.

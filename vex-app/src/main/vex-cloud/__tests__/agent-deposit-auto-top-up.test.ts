@@ -24,6 +24,8 @@ const { __resetDepositCoreForTests } = await import("../funding/deposit-core.js"
 const { __resetAgentDepositsForTests, confirmAgentDeposit, peekAgentDeposit, prepareAgentDeposit } = await import("../funding/agent-deposit.js");
 const { __resetExecutorForTests, markRecoveryComplete } = await import("../auto-top-up/executor.js");
 const { createAutoTopUpPoller } = await import("../auto-top-up/poller.js");
+const { createObservationGenerations } = await import("../balance-watch.js");
+const { __resetRuleAuthorityForTests } = await import("../auto-top-up/rule-authority.js");
 const { accountWith, ACCOUNT_ID, depositWorld, E18, MemoryFundingStore, NOW, OTHER_WALLET, TX_HASH, WALLET } = await import("./support/funding-fakes.js");
 import type { AgentDepositRuntimeAuthority } from "@vex-agent/tools/internal/vex-inference/host.js";
 import type { LiveConditions } from "../runtime.js";
@@ -60,6 +62,7 @@ beforeEach(async () => {
   __resetDepositCoreForTests();
   __resetAgentDepositsForTests();
   __resetExecutorForTests();
+  __resetRuleAuthorityForTests();
   await markRecoveryComplete(new MemoryFundingStore(), NOW);
 });
 
@@ -133,7 +136,7 @@ describe("authority", () => {
     // The poller spends the second slot of the day.
     h.world.account = accountWith({ availableWei: 0n });
     h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 1_000n * E18, lastBalanceWei: 1_000n * E18, belowAlert: false, lastCreditedDepositId: null });
-    const poller = createAutoTopUpPoller({ deposit: h.world.deps, store: h.store, conditions: h.agent.conditions, api: { readAccount: h.world.deps.api.readAccount, listDeposits: async () => ({ ok: true, value: { items: [], next_cursor: null } }) }, watch: { store: h.store, emitCrossing: () => undefined }, setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) });
+    const poller = createAutoTopUpPoller({ deposit: h.world.deps, store: h.store, conditions: h.agent.conditions, api: { readAccount: h.world.deps.api.readAccount, listDeposits: async () => ({ ok: true, value: { items: [], next_cursor: null } }) }, watch: { store: h.store, generations: createObservationGenerations(), emitCrossing: () => undefined }, setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) });
     expect(await poller.tickNow()).toBe("executed");
 
     const third = await confirm(h, (await prepared(h)).intentId, { kind: "none" });
@@ -221,7 +224,7 @@ describe("poller", () => {
       store: h.store,
       conditions: h.agent.conditions,
       api: { readAccount: h.world.deps.api.readAccount, listDeposits: async () => ({ ok: true, value: { items: [], next_cursor: null } }) },
-      watch: { store: h.store, emitCrossing: () => undefined },
+      watch: { store: h.store, generations: createObservationGenerations(), emitCrossing: () => undefined },
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (t) => clearTimeout(t),
     });
@@ -261,7 +264,7 @@ describe("poller", () => {
       store: h.store,
       conditions: h.agent.conditions,
       api: { readAccount: async () => ({ ok: false, failure: { kind: "unavailable", status: 503 } }), listDeposits: async () => ({ ok: true, value: { items: [], next_cursor: null } }) },
-      watch: { store: h.store, emitCrossing: () => undefined },
+      watch: { store: h.store, generations: createObservationGenerations(), emitCrossing: () => undefined },
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (t) => clearTimeout(t),
     });

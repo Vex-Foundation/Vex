@@ -26,17 +26,17 @@ import { executionGateState, isExecutionGateOpen } from "../lifecycle/execution-
 import { log } from "../logger/index.js";
 import { isSecretSessionUnlocked, onSecretSessionLifecycle } from "../secrets/session.js";
 import type { VexCloudApi } from "./api-client.js";
-import type { BalanceWatchDeps } from "./balance-watch.js";
+import { createObservationGenerations, type BalanceWatchDeps } from "./balance-watch.js";
 import type { DepositDeps } from "./funding/deposit-core.js";
-import { confirmAgentDeposit, peekAgentDeposit, prepareAgentDeposit, type AgentDepositDeps } from "./funding/agent-deposit.js";
+import { confirmAgentDeposit, peekAgentDeposit, prepareAgentDeposit, retireAgentDeposit, type AgentDepositDeps } from "./funding/agent-deposit.js";
 import { productionFundingPolicyStore, type FundingPolicyStore } from "./auto-top-up/funding-store.js";
-import { createAutoTopUpPoller, type AutoTopUpPoller } from "./auto-top-up/poller.js";
-import type { RuleConditions } from "./auto-top-up/rule-policy.js";
+import { createAutoTopUpPoller, feeSuspended, type AutoTopUpPoller } from "./auto-top-up/poller.js";
+import type { ObservedRuleConditions, RuleConditions } from "./auto-top-up/rule-policy.js";
 import type { RuleOwnerDeps } from "./auto-top-up/rule-proposals.js";
 import type { VexCloudDeps } from "./production.js";
 import { readVexInferenceStatus, type StatusDeps } from "./status.js";
 
-export type LiveConditions = Omit<RuleConditions, "depositAddressMatches" | "balanceReadFailing">;
+export type LiveConditions = Omit<RuleConditions, ObservedRuleConditions>;
 
 // ── signed-in account tracker ────────────────────────────────────────────
 
@@ -95,6 +95,7 @@ export function composeVexInferenceRuntime(
     }));
   const watch: BalanceWatchDeps = {
     store: options.store,
+    generations: createObservationGenerations(),
     emitCrossing: (observation) => {
       emitVexInferenceBalanceLowNotice({
         alertPercent: observation.alertPercent,
@@ -122,6 +123,7 @@ export function composeVexInferenceRuntime(
     pinnedDepositAddress: deps.deposit.pinnedDepositAddress,
     conditions,
     balanceReadFailing: () => poller.snapshot().balanceReadFailing,
+    networkFeeAboveLimit: (rule) => feeSuspended(poller.snapshot(), rule),
     now: deps.deposit.now,
     newRuleId: () => `vxrule-${randomUUID()}`,
   };
@@ -139,12 +141,14 @@ export function vexInferenceHost(runtime: VexInferenceRuntime, deps: VexCloudDep
     watch: runtime.watch,
     pinnedDepositAddress: runtime.deposit.pinnedDepositAddress,
     conditions: runtime.conditions,
+    networkFeeAboveLimit: (rule) => feeSuspended(runtime.poller.snapshot(), rule),
     now: runtime.deposit.now,
   };
   return {
     readStatus: (request, signal) => readVexInferenceStatus(status, request, signal),
     prepareAgentDeposit: (request, signal) => prepareAgentDeposit(agent, request, signal),
     peekAgentDeposit: (sessionId, intentId) => peekAgentDeposit(agent, sessionId, intentId),
+    retireAgentDeposit: (sessionId, intentId) => retireAgentDeposit(agent, sessionId, intentId),
     confirmAgentDeposit: (request, signal) => confirmAgentDeposit(agent, request, signal),
   };
 }

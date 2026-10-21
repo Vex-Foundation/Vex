@@ -147,6 +147,12 @@ export interface VexInferenceStatusReport {
       readonly amountPerTopUp: VexAmountView;
       readonly maxPerDay: number;
       readonly monthlyCap: VexAmountView;
+      /**
+       * The user-approved ceiling on the network fee of ONE top-up, raw ETH
+       * wei (18 decimals); `null` on a rule approved before the ceiling
+       * existed, which spends nothing until the user edits it.
+       */
+      readonly maxNetworkFeeWei: string | null;
       readonly usedLast24Hours: number;
       readonly usedLast30Days: VexAmountView;
       readonly expiresAt: string;
@@ -249,6 +255,12 @@ export interface VexInferenceHost {
   prepareAgentDeposit(request: AgentDepositPrepareRequest, signal: AbortSignal): Promise<HostOutcome<AgentDepositIntentView>>;
   /** The intent as prepared, for this session only; never consumes it. */
   peekAgentDeposit(sessionId: string, intentId: string): HostOutcome<AgentDepositIntentView>;
+  /**
+   * Retire the intent: the user rejected (or let expire) the card bound to it.
+   * Synchronous and idempotent; a missing or cross-session id is a no-op.
+   * After it, peek and confirm answer `proposal_missing`.
+   */
+  retireAgentDeposit(sessionId: string, intentId: string): void;
   confirmAgentDeposit(request: AgentDepositConfirmRequest, signal: AbortSignal): Promise<HostOutcome<AgentDepositConfirmResult>>;
 }
 

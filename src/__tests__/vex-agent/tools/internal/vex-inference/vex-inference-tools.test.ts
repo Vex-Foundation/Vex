@@ -20,12 +20,19 @@ vi.mock("../../../../../vex-agent/tools/internal/wallet/resolve.js", () => ({
 vi.mock("@vex-agent/db/repos/session-reasoning-effort.js", () => ({
   getSessionReasoningEffort: vi.fn(async () => "medium"),
 }));
+// The binding verifier is proven at the dispatcher (`dispatcher-vex-inference-confirm.test.ts`);
+// here only the authority MAPPING of a verified resume is under test.
+vi.mock("@vex-agent/tools/internal/vex-inference/approval-binding.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  verifyDepositApproval: vi.fn(async () => ({ ok: true })),
+}));
 
 const selected = { address: "0x1111111111111111111111111111111111111111" };
 
 const { getVisibleToolDefs, defaultVisibilityContext } = await import("@vex-agent/tools/registry/visibility.js");
 const { registerVexInferenceHost, resetVexInferenceHost, vexInferenceToolAvailability } = await import("@vex-agent/tools/internal/vex-inference/host.js");
-const { handleVexInferenceDepositConfirm, handleVexInferenceDepositPrepare, depositCardArgs } = await import("@vex-agent/tools/internal/vex-inference/deposit.js");
+const { handleVexInferenceDepositConfirm, handleVexInferenceDepositPrepare } = await import("@vex-agent/tools/internal/vex-inference/deposit.js");
+const { depositCardArgs } = await import("@vex-agent/tools/internal/vex-inference/card.js");
 const { handleVexInferenceStatus } = await import("@vex-agent/tools/internal/vex-inference/status.js");
 const { validatePreparedActionFollowUp } = await import("@vex-agent/tools/registry/prepared-action-follow-ups.js");
 const { allowVexCloudDevOverride } = await import("../../../../../lib/vex-cloud-endpoint.js");
@@ -60,6 +67,7 @@ const host: VexInferenceHost = {
   readStatus: vi.fn(async () => ({ ok: false as const, refusal: { kind: "unavailable", detail: "not in this test" } })),
   prepareAgentDeposit: vi.fn(async () => ({ ok: true as const, value: intent() })),
   peekAgentDeposit: vi.fn(() => ({ ok: true as const, value: intent() })),
+  retireAgentDeposit: vi.fn(),
   confirmAgentDeposit: vi.fn(async (request: AgentDepositConfirmRequest) => {
     confirmCalls.push(request);
     return confirmAnswer === "needs"
@@ -194,18 +202,20 @@ describe("the card validator re-derives what could redirect funds", () => {
 describe("confirm authority", () => {
   const args = { intentId: intent().intentId };
 
-  it("restricted, engine-dispatched, no rule: pendingApproval (the card), nothing else", async () => {
+  it("restricted, engine-dispatched, no rule: pendingApproval carrying the complete card binding, nothing else", async () => {
     const result = await handleVexInferenceDepositConfirm(args, makeTestContext({ sessionPermission: "restricted" }));
-    expect(result).toMatchObject({ success: false, pendingApproval: true });
+    expect(result).toMatchObject({ success: false, pendingApproval: true, actionKind: "user_wallet_broadcast" });
     expect(result.output).toMatch(/^needs_user_approval:/);
     expect(result.preparedActionFollowUp).toBeUndefined();
+    expect(result.preparedApprovalBinding?.preview.criticalArgs).toEqual(depositCardArgs(intent()));
     expect(confirmCalls[0]?.authority).toEqual({ kind: "none" });
   });
 
-  it("a confirm the model called directly never raises a card without its lines", async () => {
+  it("a confirm the model called directly never raises a card and never reaches the host", async () => {
     const result = await handleVexInferenceDepositConfirm(args, makeTestContext({ sessionPermission: "restricted", modelOriginated: true }));
     expect(result.pendingApproval).toBeUndefined();
     expect(result.output).toMatch(/^needs_user_approval:.*Call VexInferenceDepositPrepare again/);
+    expect(confirmCalls).toHaveLength(0);
   });
 
   it("maps an approved resume and a full-permission session onto their authorities", async () => {

@@ -335,9 +335,13 @@ export interface ExecuteDepositHooks {
    * The caller's own authority, re-asked in the pre-sign gate (may read
    * durable state; runs before the key exists). `null` = still holds.
    */
-  readonly extraGate?: () => Promise<VexCloudRefusal | null>;
-  /** The caller's own authority, re-asked in the final check (LOCAL only, no network). `null` = still holds. */
-  readonly extraFinal?: () => VexCloudRefusal | null;
+  readonly extraGate?: (request: FinalSignedRequest) => Promise<VexCloudRefusal | null>;
+  /**
+   * The caller's own authority, re-asked in the final check (LOCAL only, no
+   * network, no database), given the exact request about to be signed.
+   * `null` = still holds.
+   */
+  readonly extraFinal?: (request: FinalSignedRequest) => VexCloudRefusal | null;
   /** Called once, after every check passed and right before the key is loaded (the `submitted` audit step). */
   readonly onSigning?: () => Promise<void>;
 }
@@ -424,7 +428,7 @@ export async function executeDeposit(
       gate("insufficient_funds", `This wallet does not hold enough ETH for the network fee. ${NOTHING_SIGNED}`);
     }
     if (hooks.extraGate !== undefined) {
-      const refusal = await hooks.extraGate();
+      const refusal = await hooks.extraGate(request);
       if (refusal !== null) throw new GateRefusal(refusal);
     }
     if (signal.aborted) gate("cancelled", `Cancelled. ${NOTHING_SIGNED}`);
@@ -436,7 +440,7 @@ export async function executeDeposit(
    * Local only: no network call happens here, so nothing can change between
    * this verdict and the bytes being signed.
    */
-  const onFinalCheck = async (): Promise<void> => {
+  const onFinalCheck = async (request: FinalSignedRequest): Promise<void> => {
     if (signal.aborted) gate("cancelled", `Cancelled. ${NOTHING_SIGNED}`);
     if (deps.now().getTime() >= expiresAtMs) gate("proposal_expired", `This deposit approval expired while it was being prepared. ${NOTHING_SIGNED}`);
     if (!deps.isVaultUnlocked()) gate("vault", `Vex is locked. Unlock Vex, then deposit again. ${NOTHING_SIGNED}`);
@@ -447,7 +451,7 @@ export async function executeDeposit(
     if (pinned === null || pinned.toLowerCase() !== to.toLowerCase()) {
       gate("deposit_address_mismatch", `The deposit address built into Vex changed after the deposit was reviewed. ${NOTHING_SIGNED}`);
     }
-    const extra = hooks.extraFinal?.() ?? null;
+    const extra = hooks.extraFinal?.(request) ?? null;
     if (extra !== null) throw new GateRefusal(extra);
   };
 

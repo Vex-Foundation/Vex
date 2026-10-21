@@ -78,6 +78,11 @@ export function isMutatingTool(name: string): boolean {
   return getToolDef(name)?.mutating === true;
 }
 
+/** Whether the tool's handler owns its approval (see `ToolDef.approvalOwner`). Unknown names: false. */
+export function handlerOwnsApproval(name: string): boolean {
+  return getToolDef(name)?.approvalOwner === "handler";
+}
+
 /**
  * Look up the `pressureSafety` classification for a tool. Returns `undefined`
  * when the tool name is not registered - caller decides whether unknown

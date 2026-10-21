@@ -214,6 +214,19 @@ export interface ToolDef {
   returns?: string;
   /** Vex's own fee on this tool. See {@link ToolVexFee}. */
   vexFee?: ToolVexFee;
+  /**
+   * WHO OWNS THE APPROVAL of this mutating tool. Absent: the dispatcher's
+   * generic restricted-mode gate (`dispatcher/protocol-route.ts`) stops the
+   * call before its handler and the card is the argument-derived preview.
+   *
+   * `"handler"`: the handler decides authority itself and the generic gate
+   * is skipped. Allowed only for a handler that (a) never executes in a
+   * restricted session without an authority it proves from trusted state,
+   * (b) asks for approval only with a `preparedApprovalBinding` carrying the
+   * complete card, and (c) verifies on the approved resume that the approval
+   * is bound to that card. `tools/__tests__` pins the allow-list.
+   */
+  approvalOwner?: "handler";
 }
 
 /**

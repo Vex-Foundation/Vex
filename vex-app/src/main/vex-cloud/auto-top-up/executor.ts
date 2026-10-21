@@ -20,10 +20,34 @@
  * 3. plan (fresh reads) unless the caller holds an approved plan;
  * 4. sign through the shared deposit core, whose pre-sign gate re-reads the
  *    rule and its usage (including this row) from durable state and whose
- *    final check re-asks the local authority (expiry, quit, the gate's rule
- *    verdict, the caller's wallet scope);
+ *    final check re-asks the local authority with no I/O (the table below);
  * 5. DECIDE exactly once: `confirmed`, `reverted`, `unknown` (sent, outcome
  *    not known: counted, never retried) or `refused` (nothing signed).
+ *
+ * WHAT EACH STAGE RE-CHECKS for a rule authority (the poller and the agent
+ * under a rule). "Admission" is the row-locked ASK transaction; the
+ * generation is {@link ruleAuthorityGeneration}, captured before admission.
+ *
+ * | Field | Admission (locked row) | Pre-sign gate (fresh DB read, before the key) | Final check (local, after the key and the nonce read) |
+ * |---|---|---|---|
+ * | status `active` | yes | yes | via the generation (every pause or revoke bumps it) |
+ * | version | equals the caller's | equals admission | via the generation (every edit bumps it) |
+ * | expiry | after now | after now | after now, against the clock, from the admitted row |
+ * | account | the signed-in one | the signed-in one | the signed-in one equals the admitted row's |
+ * | source wallet, amount | the rule's | | |
+ * | caps (unknown outcomes count) | one more fits | still hold, this row included | |
+ * | network fee ceiling | the approved plan's bound fits (agent) | the plan's bound and the request's exposure fit | the request's exposure fits the admitted ceiling |
+ * | generation | captured | | unchanged since capture |
+ *
+ * MUTATION VERSUS SIGNING (the serialisation contract). Every edit, pause,
+ * resume and revoke runs through {@link withRuleAuthorityChange}, which bumps
+ * the generation synchronously BEFORE its durable write and again after it.
+ * So a mutation that began before the final check refuses the signing
+ * (recorded `refused`, nothing signed, not counted), and a mutation that
+ * begins after the final check passed applies from the next top-up: the
+ * signature follows the final check with no await that can reach a provider
+ * (`signStageBroadcast`). A plan whose fee bound is above the ceiling is
+ * refused `network_fee_above_limit`.
  *
  * RECOVERY. Until {@link markRecoveryComplete} ran once in this process (the
  * previous process's undecided rows marked `unknown`), every execution is
@@ -44,7 +68,9 @@ import {
 } from "../funding/deposit-core.js";
 import type { DepositExecutionAuthority } from "@vex-agent/db/repos/vex-inference-funding.js";
 import { RuleExecutionInFlightError, type AutoTopUpRuleRow, type FundingPolicyStore, type RuleUsage } from "./funding-store.js";
-import { capsAllow, capsStillHold, type RuleConditions } from "./rule-policy.js";
+import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
+import { capsAllow, capsStillHold, feeWithinRule, NETWORK_FEE_ABOVE_LIMIT, type ObservedRuleConditions, type RuleConditions } from "./rule-policy.js";
+import { ruleAuthorityGeneration } from "./rule-authority.js";
 
 /** How long a poller-planned deposit stays signable: fresh figures, no human in between. */
 export const POLLER_PLAN_TTL_MS = 60_000;
@@ -53,7 +79,7 @@ export interface RecordedExecutionDeps {
   readonly deposit: DepositDeps;
   readonly store: FundingPolicyStore;
   /** Live conditions a rule's state depends on (vault, gate, quit, account). */
-  readonly conditions: () => Omit<RuleConditions, "depositAddressMatches" | "balanceReadFailing">;
+  readonly conditions: () => Omit<RuleConditions, ObservedRuleConditions>;
 }
 
 let recoveryComplete = false;
@@ -98,10 +124,25 @@ type AdmissionRefusal = { readonly kind: VexCloudRefusal["kind"]; readonly detai
 
 const NOTHING = "Nothing was signed or sent.";
 
-/** The admission decision, run inside the ASK transaction with the locked rule row and its usage. */
+/** The signed request's worst-case network fee: gas limit times its max fee per gas. */
+function requestFeeExposure(request: FinalSignedRequest): bigint | null {
+  const perGas = request.maxFeePerGas ?? request.gasPrice;
+  return perGas === undefined ? null : request.gas * perGas;
+}
+
+function feeAboveLimit(detail: string): AdmissionRefusal {
+  return { kind: "network_fee_above_limit", detail: `${NETWORK_FEE_ABOVE_LIMIT}: ${detail} ${NOTHING}` };
+}
+
+/**
+ * The admission decision, run inside the ASK transaction with the locked rule
+ * row and its usage. On admission it records the locked row in `admitted`:
+ * the final check compares against THAT row, never a later read.
+ */
 function admitUnderRule(
   request: RecordedExecutionRequest,
-  conditions: Omit<RuleConditions, "depositAddressMatches" | "balanceReadFailing">,
+  conditions: Omit<RuleConditions, ObservedRuleConditions>,
+  admitted: { row: AutoTopUpRuleRow | null },
 ): (rule: AutoTopUpRuleRow | null, usage: RuleUsage | null) => AdmissionRefusal | null {
   return (rule, usage) => {
     if (rule === null || usage === null) return { kind: "rule_changed", detail: `The auto top-up rule no longer exists. ${NOTHING}` };
@@ -120,6 +161,10 @@ function admitUnderRule(
     if (request.amountWei > rule.amountWei) {
       return { kind: "rule_not_active", detail: `The amount is above the rule's per-top-up amount. ${NOTHING}` };
     }
+    if (rule.maxNetworkFeeWei === null) return feeAboveLimit("this rule has no network fee limit; edit it to set one.");
+    if (request.approved !== null && !feeWithinRule(rule, request.approved.feeBound.maxNetworkFeeWei)) {
+      return feeAboveLimit("the approved deposit's fee bound is higher.");
+    }
     const caps = capsAllow(rule, usage, request.amountWei);
     if (!caps.ok) {
       return {
@@ -129,6 +174,7 @@ function admitUnderRule(
           : `The auto top-up rule's 30-day VEX cap would be exceeded (unknown outcomes count). ${NOTHING}`,
       };
     }
+    admitted.row = rule;
     return null;
   };
 }
@@ -156,6 +202,9 @@ export async function executeRecordedDeposit(
   return withWalletReservation(request.from, async () => {
     const executionId = `vxexec-${randomUUID()}`;
     const askedAt = deps.deposit.now();
+    // Captured BEFORE admission: a change that starts after this point refuses the final check.
+    const admittedGeneration = request.ruleId === null ? 0 : ruleAuthorityGeneration(request.ruleId);
+    const admitted: { row: AutoTopUpRuleRow | null } = { row: null };
     let admission;
     try {
       admission = await deps.store.askExecution<AdmissionRefusal>(
@@ -168,7 +217,7 @@ export async function executeRecordedDeposit(
           depositAddress: request.approved?.to ?? pinned,
           amountWei: request.amountWei,
         },
-        isRule ? admitUnderRule(request, deps.conditions()) : null,
+        isRule ? admitUnderRule(request, deps.conditions(), admitted) : null,
         askedAt,
       );
     } catch (cause) {
@@ -200,21 +249,33 @@ export async function executeRecordedDeposit(
           expiresAtMs: deps.deposit.now().getTime() + POLLER_PLAN_TTL_MS,
         };
       }
+      // The plan's fee bound against the ceiling the rule held when it was admitted.
+      if (isRule && (admitted.row === null || !feeWithinRule(admitted.row, approved.feeBound.maxNetworkFeeWei))) {
+        const refusal = feeAboveLimit("a fresh estimate needs a higher fee bound than your limit allows.");
+        refusalKind = refusal.kind;
+        return refused(refusal.kind, refusal.detail);
+      }
+      const approvedPlan = approved;
 
       /** Set by the gate from durable state; read by the local final check. */
       let ruleHeldAtGate = !isRule;
-      const extraGate = async (): Promise<VexCloudRefusal | null> => {
+      const extraGate = async (signedRequest: FinalSignedRequest): Promise<VexCloudRefusal | null> => {
         if (!isRule || request.ruleId === null) return null;
+        const admittedRow = admitted.row;
         const now = deps.deposit.now();
         const rule = await deps.store.readRule(request.ruleId);
-        if (rule === null || rule.status !== "active" || rule.expiresAt.getTime() <= now.getTime()) {
+        if (rule === null || admittedRow === null || rule.status !== "active" || rule.expiresAt.getTime() <= now.getTime()) {
           return { kind: "rule_not_active", detail: `The auto top-up rule was paused, revoked or expired before signing. ${NOTHING}` };
         }
-        if (request.ruleVersion !== null && rule.version !== request.ruleVersion) {
+        if (rule.version !== admittedRow.version || (request.ruleVersion !== null && rule.version !== request.ruleVersion)) {
           return { kind: "rule_changed", detail: `The auto top-up rule changed before signing. ${NOTHING}` };
         }
         if (deps.conditions().signedInAccountId !== rule.accountId) {
           return { kind: "rule_not_active", detail: `The signed-in Vex Inference account changed before signing. ${NOTHING}` };
+        }
+        const exposure = requestFeeExposure(signedRequest);
+        if (!feeWithinRule(rule, approvedPlan.feeBound.maxNetworkFeeWei) || exposure === null || !feeWithinRule(rule, exposure)) {
+          return feeAboveLimit("the transaction about to be signed needs a higher fee than your limit allows.");
         }
         // The usage INCLUDES this execution's own `asked` row.
         if (!capsStillHold(rule, await deps.store.readRuleUsage(rule.ruleId, now))) {
@@ -223,14 +284,33 @@ export async function executeRecordedDeposit(
         ruleHeldAtGate = true;
         return null;
       };
-      const extraFinal = (): VexCloudRefusal | null => {
+      /** LOCAL ONLY: no database, no network. Runs after the key decryption and the pending-nonce read. */
+      const extraFinal = (signedRequest: FinalSignedRequest): VexCloudRefusal | null => {
         const conditions = deps.conditions();
         if (conditions.quitting) return { kind: "execution_not_ready", detail: `Vex is quitting. ${NOTHING}` };
-        if (!ruleHeldAtGate) return { kind: "rule_not_active", detail: `The auto top-up rule was not confirmed before signing. ${NOTHING}` };
+        if (isRule) {
+          const admittedRow = admitted.row;
+          if (!ruleHeldAtGate || admittedRow === null || request.ruleId === null) {
+            return { kind: "rule_not_active", detail: `The auto top-up rule was not confirmed before signing. ${NOTHING}` };
+          }
+          if (deps.deposit.now().getTime() >= admittedRow.expiresAt.getTime()) {
+            return { kind: "rule_not_active", detail: `The auto top-up rule expired while this top-up was being signed. ${NOTHING}` };
+          }
+          if (ruleAuthorityGeneration(request.ruleId) !== admittedGeneration) {
+            return { kind: "rule_changed", detail: `The auto top-up rule was edited, paused or revoked while this top-up was being signed. ${NOTHING}` };
+          }
+          if (conditions.signedInAccountId !== admittedRow.accountId) {
+            return { kind: "rule_not_active", detail: `The signed-in Vex Inference account changed while this top-up was being signed. ${NOTHING}` };
+          }
+          const exposure = requestFeeExposure(signedRequest);
+          if (exposure === null || !feeWithinRule(admittedRow, exposure)) {
+            return feeAboveLimit("the transaction about to be signed needs a higher fee than your limit allows.");
+          }
+        }
         return request.extraFinal?.() ?? null;
       };
 
-      const outcome = await executeDeposit(deps.deposit, approved, signal, {
+      const outcome = await executeDeposit(deps.deposit, approvedPlan, signal, {
         extraGate,
         extraFinal,
         onSigning: () => deps.store.markExecutionSubmitted(executionId),

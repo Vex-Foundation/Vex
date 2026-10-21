@@ -15,9 +15,16 @@
  * daily count, 30 days for the VEX cap), so a month or day boundary never
  * doubles an allowance. Every execution that was not refused before signing
  * counts, INCLUDING unknown outcomes and the in-flight one.
+ *
+ * NETWORK FEE. Every top-up is signed under a fee bound (gas limit times max
+ * fee per gas). A rule spends only under a bound at most its user-approved
+ * `maxNetworkFeeWei`; a rule without one (approved before migration 179)
+ * spends nothing. A plan above the ceiling is refused, and the rule reads
+ * suspended `network_fee_above_limit` until a plan fits again.
  */
 
 import type { AutoTopUpRuleRow, RuleUsage } from "@vex-agent/db/repos/vex-inference-funding.js";
+import { AUTO_TOP_UP_MAX_NETWORK_FEE_WEI } from "@shared/schemas/vex-cloud-auto-top-up.js";
 
 export const RULE_MAX_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 export const RULE_MAX_PER_DAY = 24;
@@ -30,7 +37,8 @@ export type RuleSuspendReason =
   | "cap_reached"
   | "deposit_address_mismatch"
   | "balance_read_failing"
-  | "account_changed";
+  | "account_changed"
+  | "network_fee_above_limit";
 
 export type EffectiveRuleState =
   | { readonly state: "active" }
@@ -49,7 +57,20 @@ export interface RuleConditions {
   /** Pinned deposit address equal to the backend's. `null` = not read yet. */
   readonly depositAddressMatches: boolean | null;
   readonly balanceReadFailing: boolean;
+  /** The poller's last plan for this rule had a fee bound above the rule's ceiling. */
+  readonly networkFeeAboveLimit: boolean;
 }
+
+/** The live facts every caller supplies itself, per observation. */
+export type ObservedRuleConditions = "depositAddressMatches" | "balanceReadFailing" | "networkFeeAboveLimit";
+
+/** Whether a deposit signed under a fee bound of `maxNetworkFeeWei` fits the rule's approved ceiling. */
+export function feeWithinRule(rule: Pick<AutoTopUpRuleRow, "maxNetworkFeeWei">, maxNetworkFeeWei: bigint): boolean {
+  return rule.maxNetworkFeeWei !== null && maxNetworkFeeWei <= rule.maxNetworkFeeWei;
+}
+
+/** The sentence for a fee above the ceiling, shared by every refusal. */
+export const NETWORK_FEE_ABOVE_LIMIT = "The network fee is above your auto top-up limit";
 
 export type CapVerdict = { readonly ok: true } | { readonly ok: false; readonly which: "daily_count" | "monthly_cap" };
 
@@ -83,8 +104,11 @@ export function effectiveRuleState(
   if (conditions.signedInAccountId === null || conditions.signedInAccountId !== rule.accountId) {
     return { state: "suspended", reason: "account_changed" };
   }
+  // `null` = the backend could not be read, so the pin could not be compared: that is a failing read, not a mismatch.
+  if (conditions.depositAddressMatches === null) return { state: "suspended", reason: "balance_read_failing" };
   if (conditions.depositAddressMatches !== true) return { state: "suspended", reason: "deposit_address_mismatch" };
   if (conditions.balanceReadFailing) return { state: "suspended", reason: "balance_read_failing" };
+  if (rule.maxNetworkFeeWei === null || conditions.networkFeeAboveLimit) return { state: "suspended", reason: "network_fee_above_limit" };
   if (!capsAllow(rule, usage, rule.amountWei).ok) return { state: "suspended", reason: "cap_reached" };
   return { state: "active" };
 }
@@ -97,13 +121,13 @@ export type CoverageVerdict = { readonly covered: true } | { readonly covered: f
  * most the rule's per-top-up amount, and one more execution fits the caps.
  * The trigger (balance below the alert) is NOT required for the agent: the
  * rule bounds how much may move without a card, and the agent's request is
- * the trigger.
+ * the trigger. The intent's fee bound must fit the rule's network fee ceiling.
  */
 export function ruleCoversAgentDeposit(
   rule: AutoTopUpRuleRow,
   usage: RuleUsage,
   conditions: RuleConditions,
-  request: { readonly from: string; readonly amountWei: bigint },
+  request: { readonly from: string; readonly amountWei: bigint; readonly maxNetworkFeeWei: bigint },
 ): CoverageVerdict {
   const state = effectiveRuleState(rule, usage, conditions);
   if (state.state !== "active") {
@@ -114,6 +138,9 @@ export function ruleCoversAgentDeposit(
   }
   if (request.amountWei > rule.amountWei) {
     return { covered: false, reason: "the amount is above the auto top-up rule's per-top-up amount" };
+  }
+  if (!feeWithinRule(rule, request.maxNetworkFeeWei)) {
+    return { covered: false, reason: "the network fee bound is above the auto top-up rule's network fee limit" };
   }
   const caps = capsAllow(rule, usage, request.amountWei);
   if (!caps.ok) {
@@ -127,6 +154,7 @@ export interface RuleBounds {
   readonly amountWei: bigint;
   readonly maxPerDay: number;
   readonly monthlyCapWei: bigint;
+  readonly maxNetworkFeeWei: bigint;
   readonly expiresAt: Date;
 }
 
@@ -145,6 +173,9 @@ export function validateRuleBounds(bounds: RuleBounds, context: { readonly now: 
   }
   if (bounds.monthlyCapWei < bounds.amountWei) {
     return { ok: false, field: "monthlyCapWei", detail: "The 30-day cap must be at least one top-up amount." };
+  }
+  if (bounds.maxNetworkFeeWei <= 0n || bounds.maxNetworkFeeWei > AUTO_TOP_UP_MAX_NETWORK_FEE_WEI) {
+    return { ok: false, field: "maxNetworkFeeWei", detail: "The network fee limit per top-up must be above zero and at most 0.01 ETH." };
   }
   const lifetime = bounds.expiresAt.getTime() - context.now.getTime();
   if (!Number.isFinite(lifetime) || lifetime <= 0) {

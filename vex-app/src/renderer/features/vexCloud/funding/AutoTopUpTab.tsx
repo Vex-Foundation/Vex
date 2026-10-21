@@ -20,8 +20,14 @@ import type {
   VexCloudAutoTopUpRule,
   VexCloudPrepareAutoTopUpInput,
 } from "@shared/schemas/vex-cloud-auto-top-up.js";
-import { ALERT_PERCENT_MAX, ALERT_PERCENT_MIN, AUTO_TOP_UP_MAX_DAYS, AUTO_TOP_UP_MAX_PER_DAY } from "@shared/schemas/vex-cloud-auto-top-up.js";
-import { formatMicroUsd, formatVexExact } from "@shared/vex-cloud-money.js";
+import {
+  ALERT_PERCENT_MAX,
+  ALERT_PERCENT_MIN,
+  AUTO_TOP_UP_DEFAULT_MAX_NETWORK_FEE_TEXT,
+  AUTO_TOP_UP_MAX_DAYS,
+  AUTO_TOP_UP_MAX_PER_DAY,
+} from "@shared/schemas/vex-cloud-auto-top-up.js";
+import { formatMicroUsd, formatUnitsExact, formatVexExact } from "@shared/vex-cloud-money.js";
 import type { VexError } from "@shared/ipc/result.js";
 import { Button } from "../../../components/ui/button.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
@@ -50,6 +56,7 @@ const SUSPEND_WORDS: Readonly<Record<string, string>> = {
   deposit_address_mismatch: "Deposit address mismatch",
   balance_read_failing: "Balance cannot be read",
   account_changed: "Another account is signed in",
+  network_fee_above_limit: "Network fee above your limit",
 };
 
 function ruleLook(rule: VexCloudAutoTopUpRule): { readonly fill: SwatchState; readonly word: string } {
@@ -70,6 +77,9 @@ function errorText(error: VexError): string {
 }
 
 const vex = (wei: string): string => `${formatVexExact(BigInt(wei))} VEX`;
+/** ETH has 18 decimals; exact, every digit that bounds the fee. */
+const eth = (wei: string): string => `${formatUnitsExact(BigInt(wei), 18)} ETH`;
+const ethLimit = (wei: string | null): string => (wei === null ? "Not set (edit the rule to set one)" : `${eth(wei)} per top-up`);
 
 // ── alert ────────────────────────────────────────────────────────────────
 
@@ -159,17 +169,23 @@ interface RuleFormValues {
   readonly amountText: string;
   readonly maxPerDayText: string;
   readonly monthlyCapText: string;
+  readonly maxNetworkFeeText: string;
   readonly expiresInDaysText: string;
 }
 
 function initialValues(rule: VexCloudAutoTopUpRule | null): RuleFormValues {
-  if (rule === null) return { sourceWallet: null, amountText: "", maxPerDayText: "1", monthlyCapText: "", expiresInDaysText: "30" };
+  if (rule === null) {
+    return { sourceWallet: null, amountText: "", maxPerDayText: "1", monthlyCapText: "", maxNetworkFeeText: AUTO_TOP_UP_DEFAULT_MAX_NETWORK_FEE_TEXT, expiresInDaysText: "30" };
+  }
   const days = Math.max(1, Math.min(AUTO_TOP_UP_MAX_DAYS, Math.ceil((Date.parse(rule.expiresAt) - Date.now()) / 86_400_000)));
   return {
     sourceWallet: rule.sourceWallet,
     amountText: formatVexExact(BigInt(rule.amountWei)).replace(/,/g, ""),
     maxPerDayText: String(rule.maxPerDay),
     monthlyCapText: formatVexExact(BigInt(rule.monthlyCapWei)).replace(/,/g, ""),
+    maxNetworkFeeText: rule.maxNetworkFeeWei === null
+      ? AUTO_TOP_UP_DEFAULT_MAX_NETWORK_FEE_TEXT
+      : formatUnitsExact(BigInt(rule.maxNetworkFeeWei), 18).replace(/,/g, ""),
     expiresInDaysText: String(days),
   };
 }
@@ -195,7 +211,7 @@ function RuleForm({
 }): JSX.Element {
   const walletsQuery = useVexCloudDepositWallets(true);
   const [values, setValues] = useState<RuleFormValues>(() => initialValues(rule));
-  const ids = { amount: useId(), perDay: useId(), cap: useId(), days: useId() };
+  const ids = { amount: useId(), perDay: useId(), cap: useId(), fee: useId(), days: useId() };
   const wallets = walletsQuery.data?.ok === true ? walletsQuery.data.data.wallets : [];
   const linked = useMemo(() => new Set(account.wallets.map((wallet) => wallet.address.toLowerCase())), [account.wallets]);
   const firstLinked = wallets.find((wallet) => linked.has(wallet.address.toLowerCase()))?.address ?? null;
@@ -210,6 +226,7 @@ function RuleForm({
     : values.amountText.trim() === "" ? "Enter the VEX amount per top-up."
     : perDay === null ? `Top-ups per day must be a whole number from 1 to ${AUTO_TOP_UP_MAX_PER_DAY}.`
     : values.monthlyCapText.trim() === "" ? "Enter the 30-day cap in VEX."
+    : values.maxNetworkFeeText.trim() === "" ? "Enter the network fee limit per top-up in ETH."
     : days === null ? `The rule can last 1 to ${AUTO_TOP_UP_MAX_DAYS} days.`
     : null;
 
@@ -220,6 +237,7 @@ function RuleForm({
       amountText: values.amountText.trim(),
       maxPerDay: perDay,
       monthlyCapText: values.monthlyCapText.trim(),
+      maxNetworkFeeText: values.maxNetworkFeeText.trim(),
       expiresInDays: days,
     };
     onReview(rule === null ? { action: "create", fields } : { action: "edit", ruleId: rule.ruleId, expectedVersion: rule.version, fields });
@@ -257,12 +275,19 @@ function RuleForm({
           Cap per 30 days (VEX)
           <input id={ids.cap} className={field} inputMode="decimal" value={values.monthlyCapText} onChange={(e) => setValues((v) => ({ ...v, monthlyCapText: e.target.value }))} />
         </label>
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-ink-tertiary" htmlFor={ids.fee}>
+          Network fee limit per top-up (ETH)
+          <input id={ids.fee} className={field} inputMode="decimal" value={values.maxNetworkFeeText} onChange={(e) => setValues((v) => ({ ...v, maxNetworkFeeText: e.target.value }))} />
+        </label>
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-ink-tertiary" htmlFor={ids.days}>
           Expires in days (at most {AUTO_TOP_UP_MAX_DAYS})
           <input id={ids.days} className={field} inputMode="numeric" value={values.expiresInDaysText} onChange={(e) => setValues((v) => ({ ...v, expiresInDaysText: e.target.value }))} />
         </label>
       </div>
       <p className="m-0 text-[13px] text-ink-secondary">Trigger: when your balance is below the low-balance alert.</p>
+      <p className="m-0 text-[13px] text-ink-secondary">
+        A top-up whose network fee would be above your limit is not sent, and the rule waits until the fee fits.
+      </p>
       <p className="m-0 min-h-[20px] text-[13px] text-ink-primary" data-testid="rule-form-problem">{problem ?? ""}</p>
       <div className="flex items-center gap-2">
         <Button type="button" onClick={review} disabled={problem !== null || busy}>
@@ -316,14 +341,21 @@ function RuleApproval({
         { label: "Per top-up", value: <span className="vex-num">{vex(b.amountWei)} ({usd(proposal.amountUsdMicroEstimate)})</span> },
         { label: "Most per 24 hours", value: <span className="vex-num">{b.maxPerDay}</span> },
         { label: "Cap per 30 days", value: <span className="vex-num">{vex(b.monthlyCapWei)} ({usd(proposal.monthlyCapUsdMicroEstimate)})</span> },
+        { label: "Network fee limit", value: <span className="vex-num">{ethLimit(b.maxNetworkFeeWei)}</span> },
         { label: "Trigger", value: `Balance below ${b.alertPercent}% of its reference` },
         { label: "Expires", value: <span className="vex-num">{new Date(b.expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC</span> },
         { label: "Network", value: "Robinhood Chain (4663), token VEX" },
-        { label: "Minimum deposit", value: <span className="vex-num">{vex(proposal.minimumWei)} ({formatMicroUsd(BigInt(proposal.minimumMicroUsd))})</span> },
+        {
+          label: "Minimum deposit",
+          value: proposal.minimumWei === null || proposal.minimumMicroUsd === null
+            ? NOT_AVAILABLE
+            : <span className="vex-num">{vex(proposal.minimumWei)} ({formatMicroUsd(BigInt(proposal.minimumMicroUsd))})</span>,
+        },
       ]}
       risks={[
         { lead: "Signed without asking each time.", text: "While the rule is active and Vex is unlocked, Vex signs these deposits for you, within the bounds above." },
         { lead: "Unknown outcomes count.", text: "A deposit whose outcome is not known counts against both caps and is never sent again." },
+        { lead: "The network fee is capped.", text: "A top-up whose network fee would be above the limit is not sent." },
         { lead: "The agent can use it too.", text: "The agent may deposit without a card within the same bounds; it can never create or widen a rule." },
       ]}
       signedFields={[
@@ -334,6 +366,7 @@ function RuleApproval({
         { label: "Token", value: proposal.token.address },
         { label: "Per top-up (wei)", value: b.amountWei },
         { label: "Cap per 30 days (wei)", value: b.monthlyCapWei },
+        { label: "Network fee limit (ETH wei)", value: b.maxNetworkFeeWei ?? "not set" },
         { label: "Rule expires", value: b.expiresAt },
         { label: "Approval expires", value: proposal.expiresAt },
       ]}
@@ -457,6 +490,8 @@ export function AutoTopUpTab({ account, depositsOpen }: { readonly account: VexC
           <dd className="m-0 vex-num font-mono text-ink-primary">{rule.usedLast24Hours} of {rule.maxPerDay}</dd>
           <dt className="text-ink-tertiary">Used in 30 days</dt>
           <dd className="m-0 vex-num font-mono text-ink-primary">{vex(rule.usedLast30DaysWei)} of {vex(rule.monthlyCapWei)}</dd>
+          <dt className="text-ink-tertiary">Network fee limit</dt>
+          <dd className="m-0 vex-num font-mono text-ink-primary">{ethLimit(rule.maxNetworkFeeWei)}</dd>
           <dt className="text-ink-tertiary">Trigger</dt>
           <dd className="m-0 text-ink-primary">Balance below the low-balance alert</dd>
           <dt className="text-ink-tertiary">Expires</dt>

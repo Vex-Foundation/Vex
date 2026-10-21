@@ -33,6 +33,8 @@ export const ACCOUNT_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 export const TX_HASH: Hex = `0x${"ab".repeat(32)}`;
 const TRANSFER_TOPIC: Hex = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const DAY_MS = 86_400_000;
+/** 0.0001 ETH, the form's default ceiling; the scripted port signs about 0.0000018 ETH. */
+export const DEFAULT_FEE_CEILING_WEI = 10n ** 14n;
 
 export class MemoryFundingStore implements FundingPolicyStore {
   alertPercent = 20;
@@ -75,6 +77,7 @@ export class MemoryFundingStore implements FundingPolicyStore {
       amountWei: input.amountWei,
       maxPerDay: input.maxPerDay,
       monthlyCapWei: input.monthlyCapWei,
+      maxNetworkFeeWei: input.maxNetworkFeeWei,
       triggerKind: "below_alert_percent",
       expiresAt: input.expiresAt,
       status: "active",
@@ -88,7 +91,7 @@ export class MemoryFundingStore implements FundingPolicyStore {
   async editRule(input: RuleEditInput): Promise<AutoTopUpRuleRow | null> {
     const row = this.rules.get(input.ruleId);
     if (row === undefined || row.version !== input.expectedVersion || (row.status !== "active" && row.status !== "paused")) return null;
-    const next = { ...row, sourceWallet: input.sourceWallet.toLowerCase(), amountWei: input.amountWei, maxPerDay: input.maxPerDay, monthlyCapWei: input.monthlyCapWei, expiresAt: input.expiresAt, approvedAt: input.approvedAt, version: row.version + 1 };
+    const next = { ...row, sourceWallet: input.sourceWallet.toLowerCase(), amountWei: input.amountWei, maxPerDay: input.maxPerDay, monthlyCapWei: input.monthlyCapWei, maxNetworkFeeWei: input.maxNetworkFeeWei, expiresAt: input.expiresAt, approvedAt: input.approvedAt, version: row.version + 1 };
     this.rules.set(row.ruleId, next);
     return next;
   }
@@ -188,6 +191,7 @@ export class MemoryFundingStore implements FundingPolicyStore {
       amountWei: 6_000n * E18,
       maxPerDay: 2,
       monthlyCapWei: 12_000n * E18,
+      maxNetworkFeeWei: DEFAULT_FEE_CEILING_WEI,
       triggerKind: "below_alert_percent",
       expiresAt: new Date(NOW.getTime() + 30 * DAY_MS),
       status: "active",
@@ -239,8 +243,14 @@ export class ScriptedPort implements Erc20TransferPort {
   signed = 0;
   /** Runs before the pre-sign gate (a pause or revoke landing after admission). */
   beforeGate: (() => void) | null = null;
-  /** Runs between the key load and the final check (a lock, a pause, a quit arriving there). */
-  beforeFinalCheck: (() => void) | null = null;
+  /**
+   * Runs between the key load and the final check, AWAITED: the window of the
+   * pending-nonce read, where a lock, a pause, a revoke, an edit, a quit or
+   * the rule's expiry can land.
+   */
+  beforeFinalCheck: (() => void | Promise<void>) | null = null;
+  /** The max fee per gas of the request about to be signed (a node filling a higher fee than quoted). */
+  signedMaxFeePerGas = 20_000_000n;
 
   async readVexBalance(): Promise<bigint> {
     return this.vexWei;
@@ -260,13 +270,13 @@ export class ScriptedPort implements Erc20TransferPort {
       gas: 90_000n,
       nonce: 7,
       gasPrice: undefined,
-      maxFeePerGas: 20_000_000n,
+      maxFeePerGas: this.signedMaxFeePerGas,
       maxPriorityFeePerGas: 0n,
     };
     this.beforeGate?.();
     await request.onBeforeSign(signed);
     await request.loadPrivateKey();
-    this.beforeFinalCheck?.();
+    await this.beforeFinalCheck?.();
     await request.onFinalCheck(signed);
     this.signed += 1;
     request.onHashStaged(TX_HASH);

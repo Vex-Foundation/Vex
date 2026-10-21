@@ -12,111 +12,42 @@
  * to the signed-in account, and that the pinned deposit address equals the
  * backend's.
  *
- * AUTHORITY, IN THIS ORDER (the existing policy, unchanged, plus one rule):
+ * CONFIRM OWNS ITS APPROVAL (`approvalOwner: "handler"` on its ToolDef): the
+ * dispatcher's generic restricted gate does not run for it, because that gate
+ * would raise a card showing only the `intentId` and would also stop a
+ * rule-covered follow-up from ever reaching the rule. Instead, in this order:
  *
- * 1. an approved card (`context.approved`): the user approved THIS intent;
- * 2. a full-permission session: executes without a card, exactly as
- *    `WalletSendConfirm` does;
- * 3. otherwise the host checks for an ACTIVE auto top-up rule that covers
- *    the request (same source wallet, amount at most the rule's per-top-up
- *    amount, within its daily count and 30-day cap counted on durable state)
- *    and, only if one does, executes under that rule through the rule's own
- *    execution owner, so the caps are shared with the poller;
- * 4. otherwise `needs_user_approval`: `pendingApproval` raises the card.
- *    Never a silent skip.
+ * | Context | Result |
+ * |---|---|
+ * | approved resume (`context.approved`) | executes ONLY if {@link verifyDepositApproval} proves the approval is of THIS intent's complete card; otherwise refused by name, nothing signed |
+ * | full-permission session | executes without a card, exactly as `WalletSendConfirm` does |
+ * | restricted, called by the MODEL directly | refused by name before the host: the card can only come from the engine's own dispatch after a prepare |
+ * | restricted, engine follow-up, an ACTIVE auto top-up rule covers it | executes under the rule (same wallet, amount, caps, network-fee ceiling), caps shared with the poller |
+ * | restricted, engine follow-up, no rule covers it | `pendingApproval` WITH the complete card binding ({@link depositApprovalBinding}); never a thin card |
+ *
+ * A rejected or expired card retires its intent
+ * (`approval-binding.ts` `retireDepositIntentOfRejectedApproval`).
  *
  * The model cannot create, broaden or reuse authority: there is no
  * parameter for it, a rule is created only by the user in the funding page,
  * and an intent is single use and bound to this session.
  */
 
-import { randomUUID } from "node:crypto";
 import { getAddress } from "viem";
 
 import { resolveSelectedAddress, walletScopeErrorToResult } from "../wallet/resolve.js";
-import type { ApprovalPreviewScalar, ToolResult } from "../../types.js";
+import type { ToolResult } from "../../types.js";
 import type { InternalToolContext } from "../types.js";
 import { fail, ok } from "../types.js";
 import {
   getVexInferenceHost,
   vexInferenceToolAvailability,
   vexInferenceUnavailableSentence,
-  type AgentDepositIntentView,
   type AgentDepositRuntimeAuthority,
 } from "./host.js";
+import { depositApprovalBinding, verifyDepositApproval } from "./approval-binding.js";
+import { depositCardArgs, VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL, VEX_INFERENCE_DEPOSIT_PREPARE_TOOL } from "./card.js";
 import { checkDepositConfirmParams, checkDepositPrepareParams } from "./params.js";
-
-export const VEX_INFERENCE_DEPOSIT_PREPARE_TOOL = "VexInferenceDepositPrepare" as const;
-export const VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL = "VexInferenceDepositConfirm" as const;
-
-/** The exact keys the approval card carries, in display order. The follow-up validator requires exactly these. */
-export const VEX_INFERENCE_DEPOSIT_CARD_KEYS = [
-  "summary",
-  "realFunds",
-  "intentId",
-  "chain",
-  "chainId",
-  "token",
-  "tokenAddress",
-  "tokenDecimals",
-  "amountVex",
-  "amountWei",
-  "amountUsdEstimate",
-  "requested",
-  "from",
-  "depositAddress",
-  "minimumVex",
-  "minimumUsd",
-  "maxNetworkFeeEth",
-  "maxNetworkFeeWei",
-  "gasLimit",
-  "maxFeePerGasWei",
-  "maxPriorityFeePerGasWei",
-  "irreversible",
-  "expiresAt",
-] as const;
-
-/** Exact decimal ETH from wei (18 decimals, trailing zeros removed). */
-function formatEthExact(wei: string): string {
-  const value = BigInt(wei);
-  const whole = value / 10n ** 18n;
-  const fraction = (value % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, "");
-  return fraction.length === 0 ? whole.toString() : `${whole.toString()}.${fraction}`;
-}
-
-/** The card a human approves: every money line, rendered from the host's intent and nothing else. */
-export function depositCardArgs(intent: AgentDepositIntentView): Record<(typeof VEX_INFERENCE_DEPOSIT_CARD_KEYS)[number], ApprovalPreviewScalar> {
-  const usd = intent.amount.usdEstimate === null ? "Not available" : `$${intent.amount.usdEstimate}`;
-  const requested = intent.requested.unit === "VEX"
-    ? `${intent.requested.value} VEX`
-    : `$${intent.requested.value}, converted to VEX at the Vex Inference rate and rounded up to whole wei`;
-  return {
-    summary: `Deposit ${intent.amount.vex} VEX (${usd}) from ${intent.from} into your Vex Inference balance on Robinhood Chain.`,
-    realFunds: "REAL FUNDS: this signs and broadcasts an on-chain VEX transfer from your wallet.",
-    intentId: intent.intentId,
-    chain: "Robinhood Chain (4663)",
-    chainId: intent.chainId,
-    token: intent.token.symbol,
-    tokenAddress: intent.token.address,
-    tokenDecimals: intent.token.decimals,
-    amountVex: intent.amount.vex,
-    amountWei: intent.amount.wei,
-    amountUsdEstimate: usd,
-    requested,
-    from: intent.from,
-    depositAddress: intent.depositAddress,
-    minimumVex: intent.minimum.vex,
-    minimumUsd: intent.minimum.usdEstimate === null ? "Not available" : `$${intent.minimum.usdEstimate}`,
-    maxNetworkFeeEth: `${formatEthExact(intent.networkFee.maxNetworkFeeWei)} ETH at most`,
-    maxNetworkFeeWei: intent.networkFee.maxNetworkFeeWei,
-    gasLimit: intent.networkFee.gasLimit,
-    maxFeePerGasWei: intent.networkFee.maxFeePerGasWei,
-    maxPriorityFeePerGasWei: intent.networkFee.maxPriorityFeePerGasWei,
-    irreversible:
-      "A sent transfer cannot be recalled. It credits your Vex Inference balance; unused VEX can be withdrawn later only to a linked wallet.",
-    expiresAt: intent.expiresAt,
-  };
-}
 
 function unavailable(): ToolResult | null {
   const availability = vexInferenceToolAvailability();
@@ -187,12 +118,6 @@ export async function handleVexInferenceDepositPrepare(
 
 // ── confirm ──────────────────────────────────────────────────────────────
 
-function runtimeAuthority(context: InternalToolContext): AgentDepositRuntimeAuthority {
-  if (context.approved) return { kind: "approved_card", approvalId: context.approvalId ?? null };
-  if (context.sessionPermission === "full") return { kind: "full_permission" };
-  return { kind: "none" };
-}
-
 export async function handleVexInferenceDepositConfirm(
   params: Record<string, unknown>,
   context: InternalToolContext,
@@ -217,6 +142,27 @@ export async function handleVexInferenceDepositConfirm(
     );
   }
 
+  let authority: AgentDepositRuntimeAuthority;
+  if (context.approved) {
+    const verdict = await verifyDepositApproval(context.approvalId, context.sessionId, peeked.value);
+    if (!verdict.ok) return fail(`Deposit not sent (approval_not_bound): ${verdict.reason}`);
+    authority = { kind: "approved_card", approvalId: context.approvalId ?? null };
+  } else if (context.sessionPermission === "full") {
+    authority = { kind: "full_permission" };
+  } else if (context.modelOriginated === true) {
+    // A confirm the MODEL called directly carries no trusted card: only the
+    // engine's own dispatch after a prepare holds the complete preview the
+    // user must read. Refused before the host, so it can neither raise a thin
+    // card nor spend under a rule the user did not see engaged.
+    return fail(
+      "needs_user_approval: in this session a Vex Inference deposit is confirmed only by Vex itself, right after "
+      + `${VEX_INFERENCE_DEPOSIT_PREPARE_TOOL}, which raises the complete card or applies the user's auto top-up rule. `
+      + `Nothing was signed and no funds moved. Call ${VEX_INFERENCE_DEPOSIT_PREPARE_TOOL} again; do not call ${VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL} yourself.`,
+    );
+  } else {
+    authority = { kind: "none" };
+  }
+
   const sourceWalletStillAllowed = (address: string): string | null => {
     const again = scopedWallet(context);
     if (!again.ok) return again.result.output;
@@ -226,22 +172,12 @@ export async function handleVexInferenceDepositConfirm(
   };
 
   const outcome = await host.confirmAgentDeposit(
-    { sessionId: context.sessionId, intentId, authority: runtimeAuthority(context), sourceWalletStillAllowed },
+    { sessionId: context.sessionId, intentId, authority, sourceWalletStillAllowed },
     new AbortController().signal,
   );
   if (!outcome.ok) return fail(`Deposit not sent (${outcome.refusal.kind}): ${outcome.refusal.detail}`);
   const value = outcome.value;
   if (value.kind === "needs_user_approval") {
-    if (context.modelOriginated === true) {
-      // A confirm the MODEL called directly carries no trusted card: only the
-      // engine's own dispatch after a prepare holds the full preview the user
-      // must read. Refuse by name instead of raising a card without its lines.
-      return fail(
-        `needs_user_approval: this deposit needs the user's approval (${value.reason}), and a card can only be raised `
-        + `from a fresh ${VEX_INFERENCE_DEPOSIT_PREPARE_TOOL} call, which Vex confirms itself. Nothing was signed and no funds moved. `
-        + `Call ${VEX_INFERENCE_DEPOSIT_PREPARE_TOOL} again; do not call ${VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL} yourself.`,
-      );
-    }
     return {
       success: false,
       output:
@@ -249,6 +185,11 @@ export async function handleVexInferenceDepositConfirm(
         + `Nothing was signed and no funds moved: intent ${intentId} stays pending until ${value.intent.expiresAt} `
         + "and is consumed only after the user approves the exact deposit shown on the card.",
       pendingApproval: true,
+      // Stamped here, not by the dispatcher fallback: the handler knows the risk class.
+      actionKind: "user_wallet_broadcast",
+      // THE COMPLETE CARD, bound into the approval digest. Every enqueue path
+      // renders this binding instead of an argument-derived preview.
+      preparedApprovalBinding: depositApprovalBinding(value.intent),
     };
   }
   const authorityLine = value.authority === "auto_top_up_rule"
@@ -291,9 +232,4 @@ export async function handleVexInferenceDepositConfirm(
     depositAddress: value.intent.depositAddress,
     chainId: value.intent.chainId,
   });
-}
-
-/** A fresh intent id in the shape the confirm and the follow-up validator require. */
-export function newAgentDepositIntentId(): string {
-  return `vxdep-${randomUUID()}`;
 }

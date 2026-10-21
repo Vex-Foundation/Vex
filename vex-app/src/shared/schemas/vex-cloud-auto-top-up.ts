@@ -33,6 +33,23 @@ export const ALERT_PERCENT_DEFAULT = 20;
 export const AUTO_TOP_UP_MAX_PER_DAY = 24;
 export const AUTO_TOP_UP_MAX_DAYS = 90;
 
+/**
+ * THE NETWORK FEE CEILING per top-up (raw ETH wei, 18 decimals): the most one
+ * automatic deposit may spend on gas, as the fee bound it is signed under
+ * (gas limit times max fee per gas).
+ *
+ * DEFAULT, MEASURED on Robinhood Chain mainnet (chain 4663) 2026-10-21 with
+ * the production transfer port and `depositFeeBound` (read-only calls): a
+ * 6,000 VEX `transfer` estimates 71,463 gas; the quoted max fee is 0.0244 to
+ * 0.0246 gwei with a priority fee of 0 (base fee 0.0202 to 0.0215 gwei over
+ * the last 1,025 blocks). The deposit is signed under gas limit 214,389 and
+ * max fee 0.0488 gwei: a fee bound of 0.0000105 ETH. The default 0.0001 ETH is
+ * about 9.5 times that bound: room for a fee spike, still a few cents.
+ */
+export const AUTO_TOP_UP_DEFAULT_MAX_NETWORK_FEE_TEXT = "0.0001";
+/** The highest ceiling a rule may approve (0.01 ETH): a typo guard, far above any measured fee. */
+export const AUTO_TOP_UP_MAX_NETWORK_FEE_WEI = 10n ** 16n;
+
 const alertPercentSchema = z.number().int().min(ALERT_PERCENT_MIN).max(ALERT_PERCENT_MAX);
 
 // ── alert ────────────────────────────────────────────────────────────────
@@ -70,6 +87,7 @@ export const autoTopUpSuspendReasonSchema = z.enum([
   "deposit_address_mismatch",
   "balance_read_failing",
   "account_changed",
+  "network_fee_above_limit",
 ]);
 
 export const vexCloudAutoTopUpExecutionSchema = z
@@ -95,6 +113,8 @@ export const vexCloudAutoTopUpRuleSchema = z
     amountWei: rawIntegerSchema,
     maxPerDay: z.number().int().min(1).max(AUTO_TOP_UP_MAX_PER_DAY),
     monthlyCapWei: rawIntegerSchema,
+    /** Raw ETH wei; `null` on a rule approved before the ceiling existed (it spends nothing until edited). */
+    maxNetworkFeeWei: rawIntegerSchema.nullable(),
     trigger: z.literal("below_alert_percent"),
     expiresAt: isoTimestampSchema,
     approvedAt: isoTimestampSchema,
@@ -120,6 +140,8 @@ const ruleFieldsSchema = z
     amountText: amountTextSchema,
     maxPerDay: z.number().int().min(1).max(AUTO_TOP_UP_MAX_PER_DAY),
     monthlyCapText: amountTextSchema,
+    /** The network fee ceiling per top-up in ETH, as typed (parsed in main, 18 decimals). */
+    maxNetworkFeeText: amountTextSchema,
     expiresInDays: z.number().int().min(1).max(AUTO_TOP_UP_MAX_DAYS),
   })
   .strict();
@@ -140,6 +162,8 @@ export const vexCloudAutoTopUpBoundsSchema = z
     amountWei: rawIntegerSchema,
     maxPerDay: z.number().int().min(1).max(AUTO_TOP_UP_MAX_PER_DAY),
     monthlyCapWei: rawIntegerSchema,
+    /** Raw ETH wei per top-up. Always set by a create or an edit; `null` only echoes a pre-ceiling rule on pause or revoke. */
+    maxNetworkFeeWei: rawIntegerSchema.nullable(),
     trigger: z.literal("below_alert_percent"),
     alertPercent: alertPercentSchema,
     expiresAt: isoTimestampSchema,
@@ -164,8 +188,13 @@ export const vexCloudAutoTopUpProposalSchema = z
     /** USD estimates at the current rate, micro-USD, or `null` ("Not available"). */
     amountUsdMicroEstimate: rawIntegerSchema.nullable(),
     monthlyCapUsdMicroEstimate: rawIntegerSchema.nullable(),
-    minimumWei: rawIntegerSchema,
-    minimumMicroUsd: rawIntegerSchema,
+    /**
+     * The minimum deposit at the current rate. `null` on a pause or revoke,
+     * which is prepared from the stored rule alone (no backend read, no rate):
+     * stopping spending never waits on the backend.
+     */
+    minimumWei: rawIntegerSchema.nullable(),
+    minimumMicroUsd: rawIntegerSchema.nullable(),
     preparedAt: isoTimestampSchema,
     expiresAt: isoTimestampSchema,
   })

@@ -1,5 +1,6 @@
 /**
- * The durable side of the Vex Inference funding policy (migration 178): the
+ * The durable side of the Vex Inference funding policy (migrations 178 and
+ * 179, the per-top-up network fee ceiling): the
  * low-balance alert setting, the per-account balance watch, the auto top-up
  * standing rule and every deposit execution made under a rule or an agent
  * approval.
@@ -130,6 +131,12 @@ export interface AutoTopUpRuleRow {
   readonly amountWei: bigint;
   readonly maxPerDay: number;
   readonly monthlyCapWei: bigint;
+  /**
+   * The user-approved ceiling on ONE top-up's network fee, raw ETH wei.
+   * `null` only on a rule approved before migration 179: no ceiling was
+   * approved, so the policy treats every fee as above the limit.
+   */
+  readonly maxNetworkFeeWei: bigint | null;
   readonly triggerKind: "below_alert_percent";
   readonly expiresAt: Date;
   readonly status: AutoTopUpRuleStatus;
@@ -145,6 +152,7 @@ interface RuleDbRow {
   readonly amount_wei: string;
   readonly max_per_day: number;
   readonly monthly_cap_wei: string;
+  readonly max_network_fee_wei: string | null;
   readonly trigger_kind: "below_alert_percent";
   readonly expires_at: Date;
   readonly status: AutoTopUpRuleStatus;
@@ -154,7 +162,7 @@ interface RuleDbRow {
 }
 
 const RULE_COLUMNS = `rule_id, account_id, source_wallet, amount_wei::text, max_per_day, monthly_cap_wei::text,
-  trigger_kind, expires_at, status, version, approved_at, updated_at`;
+  max_network_fee_wei::text, trigger_kind, expires_at, status, version, approved_at, updated_at`;
 
 function mapRule(row: RuleDbRow): AutoTopUpRuleRow {
   return {
@@ -164,6 +172,7 @@ function mapRule(row: RuleDbRow): AutoTopUpRuleRow {
     amountWei: BigInt(row.amount_wei),
     maxPerDay: row.max_per_day,
     monthlyCapWei: BigInt(row.monthly_cap_wei),
+    maxNetworkFeeWei: row.max_network_fee_wei === null ? null : BigInt(row.max_network_fee_wei),
     triggerKind: row.trigger_kind,
     expiresAt: row.expires_at,
     status: row.status,
@@ -206,6 +215,7 @@ export interface NewRuleInput {
   readonly amountWei: bigint;
   readonly maxPerDay: number;
   readonly monthlyCapWei: bigint;
+  readonly maxNetworkFeeWei: bigint;
   readonly expiresAt: Date;
   readonly approvedAt: Date;
 }
@@ -214,8 +224,8 @@ export async function insertRule(input: NewRuleInput, db: Executor = getPool()):
   const row = await queryOneWith<RuleDbRow>(
     db,
     `INSERT INTO vex_inference_auto_top_up_rules
-       (rule_id, account_id, source_wallet, amount_wei, max_per_day, monthly_cap_wei, trigger_kind, expires_at, status, approved_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'below_alert_percent', $7, 'active', $8)
+       (rule_id, account_id, source_wallet, amount_wei, max_per_day, monthly_cap_wei, max_network_fee_wei, trigger_kind, expires_at, status, approved_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $9, 'below_alert_percent', $7, 'active', $8)
      RETURNING ${RULE_COLUMNS}`,
     [
       input.ruleId,
@@ -226,6 +236,7 @@ export async function insertRule(input: NewRuleInput, db: Executor = getPool()):
       input.monthlyCapWei.toString(),
       input.expiresAt,
       input.approvedAt,
+      input.maxNetworkFeeWei.toString(),
     ],
   );
   if (row === null) throw new Error("rule insert returned no row");
@@ -240,6 +251,7 @@ export interface RuleEditInput {
   readonly amountWei: bigint;
   readonly maxPerDay: number;
   readonly monthlyCapWei: bigint;
+  readonly maxNetworkFeeWei: bigint;
   readonly expiresAt: Date;
   readonly approvedAt: Date;
 }
@@ -250,7 +262,7 @@ export async function editRule(input: RuleEditInput, db: Executor = getPool()): 
     db,
     `UPDATE vex_inference_auto_top_up_rules
         SET source_wallet = $3, amount_wei = $4, max_per_day = $5, monthly_cap_wei = $6,
-            expires_at = $7, approved_at = $8, version = version + 1, updated_at = now()
+            expires_at = $7, approved_at = $8, max_network_fee_wei = $9, version = version + 1, updated_at = now()
       WHERE rule_id = $1 AND version = $2 AND status IN ('active', 'paused')
       RETURNING ${RULE_COLUMNS}`,
     [
@@ -262,6 +274,7 @@ export async function editRule(input: RuleEditInput, db: Executor = getPool()): 
       input.monthlyCapWei.toString(),
       input.expiresAt,
       input.approvedAt,
+      input.maxNetworkFeeWei.toString(),
     ],
   );
   return row === null ? null : mapRule(row);

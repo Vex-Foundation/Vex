@@ -14,8 +14,19 @@
  *   the row's lock, so concurrent observers (the poller and an account read)
  *   cannot emit twice, and a restart does not re-emit a dip already told.
  *
- * Observed from the poller's account reads, the funding page's alert read and
- * the agent's status read; never from model input.
+ * - OBSERVATIONS ARE ORDERED. Each observation takes a monotonic generation
+ *   ({@link ObservationGenerations}) BEFORE its balance read starts, and the
+ *   write is admitted only when no newer generation was already applied for
+ *   the account. A slow read that lands after a newer one is discarded: it
+ *   can neither clear the latch (and re-arm a second notice for the same
+ *   dip) nor move the reference backwards.
+ * - A CREDIT RESETS THE REFERENCE ONLY WITH A LATER BALANCE. Callers read the
+ *   deposits page BEFORE the generation and the balance read, so a credited
+ *   deposit seen in that page is already included in the balance the reset
+ *   uses.
+ *
+ * Observed from the poller's account reads and the agent's status read;
+ * never from model input.
  */
 
 import type { VexCloudAccountResponse } from "./api-client.js";
@@ -29,6 +40,38 @@ export interface BalanceObservation {
   readonly belowAlert: boolean;
   /** True for exactly the observation that crossed from not-below to below. */
   readonly crossed: boolean;
+  /** True when this read was older than one already applied: nothing was written, the figures are the newer ones. */
+  readonly stale: boolean;
+}
+
+/**
+ * The per-process observation order. `next()` is called before a balance read
+ * starts; `admit` runs inside the watch row's lock and accepts a generation
+ * only if it is newer than every one already applied for that account.
+ * In memory on purpose: a read from a previous process cannot land in this
+ * one, so the order only has to hold within a process. Bounded by the number
+ * of accounts observed.
+ */
+export interface ObservationGenerations {
+  next(): number;
+  admit(accountId: string, generation: number): boolean;
+}
+
+export function createObservationGenerations(): ObservationGenerations {
+  let counter = 0;
+  const applied = new Map<string, number>();
+  return {
+    next: () => {
+      counter += 1;
+      return counter;
+    },
+    admit: (accountId, generation) => {
+      const latest = applied.get(accountId);
+      if (latest !== undefined && generation < latest) return false;
+      applied.set(accountId, generation);
+      return true;
+    },
+  };
 }
 
 export function accountBalanceWei(account: VexCloudAccountResponse): bigint {
@@ -64,20 +107,37 @@ export function nextWatchRow(
 
 export interface BalanceWatchDeps {
   readonly store: Pick<FundingPolicyStore, "readAlertPercent" | "updateBalanceWatch">;
+  readonly generations: ObservationGenerations;
   /** Emit the engine notice for one crossing. */
   readonly emitCrossing: (observation: BalanceObservation) => void;
 }
 
-/** Record one observation and emit the notice when it is the crossing. */
+/**
+ * Record one observation and emit the notice when it is the crossing.
+ * `generation` is the value {@link ObservationGenerations.next} returned
+ * before the balance read started.
+ */
 export async function observeBalance(
   deps: BalanceWatchDeps,
-  input: { readonly accountId: string; readonly balanceWei: bigint; readonly newestCreditedDepositId: string | null },
+  input: {
+    readonly accountId: string;
+    readonly balanceWei: bigint;
+    readonly newestCreditedDepositId: string | null;
+    readonly generation: number;
+  },
 ): Promise<BalanceObservation> {
   const alertPercent = await deps.store.readAlertPercent();
-  const { before, after } = await deps.store.updateBalanceWatch(input.accountId, (current) =>
-    nextWatchRow(current, { ...input, alertPercent }),
-  );
-  const crossed = after.belowAlert && !(before?.belowAlert ?? false);
+  let stale = false;
+  const { before, after } = await deps.store.updateBalanceWatch(input.accountId, (current) => {
+    // Decided under the row lock, so two observations of one account are ordered here.
+    if (current !== null && !deps.generations.admit(input.accountId, input.generation)) {
+      stale = true;
+      return current;
+    }
+    if (current === null) deps.generations.admit(input.accountId, input.generation);
+    return nextWatchRow(current, { accountId: input.accountId, balanceWei: input.balanceWei, newestCreditedDepositId: input.newestCreditedDepositId, alertPercent });
+  });
+  const crossed = !stale && after.belowAlert && !(before?.belowAlert ?? false);
   const observation: BalanceObservation = {
     alertPercent,
     balanceWei: after.lastBalanceWei,
@@ -85,6 +145,7 @@ export async function observeBalance(
     thresholdWei: thresholdOf(after.referenceWei, alertPercent),
     belowAlert: after.belowAlert,
     crossed,
+    stale,
   };
   if (crossed) deps.emitCrossing(observation);
   return observation;

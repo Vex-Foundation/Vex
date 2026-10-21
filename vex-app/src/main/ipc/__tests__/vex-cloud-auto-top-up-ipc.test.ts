@@ -63,6 +63,7 @@ function mount() {
   const store = new MemoryFundingStore();
   let accountGate: Promise<void> | null = null;
   let accountCalls = 0;
+  let backendDown = false;
   const notUsed = async (): Promise<never> => {
     throw new Error("not used in this suite");
   };
@@ -72,6 +73,7 @@ function mount() {
     readAccount: async (_bearer, signal): Promise<VexCloudCall<VexCloudAccountResponse>> => {
       accountCalls += 1;
       if (accountGate !== null) await accountGate;
+      if (backendDown) return { ok: false, failure: { kind: "unavailable", status: 503 } };
       if (signal.aborted) return { ok: false, failure: { kind: "cancelled" } };
       return { ok: true, value: world.account };
     },
@@ -113,6 +115,9 @@ function mount() {
       accountGate = gate;
     },
     accountCalls: () => accountCalls,
+    takeBackendDown: () => {
+      backendDown = true;
+    },
   };
 }
 
@@ -125,7 +130,7 @@ async function call(channel: string, payload: unknown): Promise<{ ok: boolean; d
   return parsed.data;
 }
 
-const FIELDS = { sourceWallet: WALLET, amountText: "6000", maxPerDay: 2, monthlyCapText: "12000", expiresInDays: 30 };
+const FIELDS = { sourceWallet: WALLET, amountText: "6000", maxPerDay: 2, monthlyCapText: "12000", maxNetworkFeeText: "0.0001", expiresInDays: 30 };
 
 beforeEach(() => {
   handlers.clear();
@@ -155,7 +160,7 @@ describe("rule round trip", () => {
       data: {
         action: "create",
         chainId: 4663,
-        bounds: { sourceWallet: WALLET, amountWei: String(6_000n * E18), maxPerDay: 2, monthlyCapWei: String(12_000n * E18), trigger: "below_alert_percent", alertPercent: 20 },
+        bounds: { sourceWallet: WALLET, amountWei: String(6_000n * E18), maxPerDay: 2, monthlyCapWei: String(12_000n * E18), maxNetworkFeeWei: "100000000000000", trigger: "below_alert_percent", alertPercent: 20 },
       },
     });
     const proposal = prepared.data;
@@ -163,8 +168,46 @@ describe("rule round trip", () => {
     expect(String(proposal.depositAddress).toLowerCase()).toBe(w.world.pinned?.toLowerCase());
     expect(w.store.rules.size).toBe(0);
     const submitted = await call(CH.vexCloud.submitAutoTopUp, { proposalId: proposal.proposalId, action: "create", bounds: proposal.bounds });
-    expect(submitted).toMatchObject({ ok: true, data: { rule: { state: "active", maxPerDay: 2 } } });
+    expect(submitted).toMatchObject({ ok: true, data: { rule: { state: "active", maxPerDay: 2, maxNetworkFeeWei: "100000000000000" } } });
     expect(w.store.rules.size).toBe(1);
+    expect([...w.store.rules.values()][0]?.maxNetworkFeeWei).toBe(10n ** 14n);
+  });
+
+  it("refuses a network fee limit of zero, above 0.01 ETH, or not a decimal, and a lowered fee echo", async () => {
+    const w = mount();
+    for (const maxNetworkFeeText of ["0", "0.010000000000000001", "1e-4"]) {
+      expect(await call(CH.vexCloud.prepareAutoTopUp, { action: "create", fields: { ...FIELDS, maxNetworkFeeText } })).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
+    }
+    const proposal = (await call(CH.vexCloud.prepareAutoTopUp, { action: "create", fields: FIELDS })).data;
+    if (proposal === undefined || typeof proposal.bounds !== "object" || proposal.bounds === null) throw new Error("no proposal");
+    const raised = { ...proposal.bounds, maxNetworkFeeWei: "1000000000000000" };
+    expect(await call(CH.vexCloud.submitAutoTopUp, { proposalId: proposal.proposalId, action: "create", bounds: raised })).toMatchObject({ ok: false, error: { code: "validation.invalid_input" } });
+    expect(w.store.rules.size).toBe(0);
+  });
+
+  it("pause and revoke work while Vex Inference is unreachable and has no rate: from the stored rule alone", async () => {
+    const w = mount();
+    const r = w.store.seedRule();
+    w.world.account = { ...accountWith(), rate: { available: false, reason: "no_price" } };
+    w.takeBackendDown();
+    // A change that ENABLES spending still needs the backend.
+    expect(await call(CH.vexCloud.prepareAutoTopUp, { action: "create", fields: FIELDS })).toMatchObject({ ok: false, error: { code: "provider.unavailable" } });
+    const callsBefore = w.accountCalls();
+
+    const pause = (await call(CH.vexCloud.prepareAutoTopUp, { action: "pause", ruleId: r.ruleId, expectedVersion: 1 })).data;
+    if (pause === undefined) throw new Error("pause not prepared");
+    expect(pause).toMatchObject({ action: "pause", minimumWei: null, minimumMicroUsd: null, amountUsdMicroEstimate: null });
+    expect(await call(CH.vexCloud.submitAutoTopUp, { proposalId: pause.proposalId, action: "pause", bounds: pause.bounds })).toMatchObject({ ok: true, data: { rule: { state: "suspended", suspendedReason: "user_paused", version: 2 } } });
+
+    const revoke = (await call(CH.vexCloud.prepareAutoTopUp, { action: "revoke", ruleId: r.ruleId, expectedVersion: 2 })).data;
+    if (revoke === undefined) throw new Error("revoke not prepared");
+    expect(await call(CH.vexCloud.submitAutoTopUp, { proposalId: revoke.proposalId, action: "revoke", bounds: revoke.bounds })).toMatchObject({ ok: true, data: { rule: { state: "revoked" } } });
+    expect(w.store.rules.get(r.ruleId)?.status).toBe("revoked");
+    expect(w.accountCalls()).toBe(callsBefore);
+
+    // The tab still shows the rule from local state while the backend is down.
+    w.store.seedRule({ ruleId: "vxrule-00000000-0000-4000-8000-000000000002" });
+    expect(await call(CH.vexCloud.autoTopUpGet, {})).toMatchObject({ ok: true, data: { rule: { ruleId: "vxrule-00000000-0000-4000-8000-000000000002", state: "suspended", suspendedReason: "balance_read_failing" } } });
   });
 
   it("a submit whose echoed bounds differ from the card changes nothing", async () => {
@@ -206,7 +249,7 @@ describe("boundary", () => {
     [CH.vexCloud.alertSet, { alertPercent: 30 }],
     [CH.vexCloud.autoTopUpGet, {}],
     [CH.vexCloud.prepareAutoTopUp, { action: "create", fields: FIELDS }],
-    [CH.vexCloud.submitAutoTopUp, { proposalId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", action: "create", bounds: { sourceWallet: WALLET, amountWei: "1", maxPerDay: 1, monthlyCapWei: "1", trigger: "below_alert_percent", alertPercent: 20, expiresAt: NOW.toISOString() } }],
+    [CH.vexCloud.submitAutoTopUp, { proposalId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", action: "create", bounds: { sourceWallet: WALLET, amountWei: "1", maxPerDay: 1, monthlyCapWei: "1", maxNetworkFeeWei: "1", trigger: "below_alert_percent", alertPercent: 20, expiresAt: NOW.toISOString() } }],
   ] as const)("%s refuses an untrusted sender before any work", async (channel, payload) => {
     const w = mount();
     assertTrustedSender.mockImplementation(() => {
