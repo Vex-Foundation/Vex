@@ -30,7 +30,58 @@ export type VexCloudRefusalKind =
   /** The server answered off contract. */
   | "invalid_response"
   /** The caller cancelled. */
-  | "cancelled";
+  | "cancelled"
+  // ── funding (phase 2) ──
+  /** No Vex Cloud session is stored, or the backend no longer accepts it. */
+  | "not_signed_in"
+  /** This build pins no deposit address yet ("Deposits open soon"). */
+  | "deposits_not_open"
+  /** The pinned deposit address differs from the backend's: funding is disabled. */
+  | "deposit_address_mismatch"
+  /** The wallet is not one of this app's in-app EVM wallets (any more). */
+  | "wallet_not_in_inventory"
+  /** The typed amount is not a positive VEX amount with at most 18 decimals. */
+  | "invalid_amount"
+  /** Under the backend minimum at its current rate. */
+  | "below_minimum"
+  /** The wallet holds less VEX than the amount, or less ETH than the fee bound. */
+  | "insufficient_funds"
+  /** The backend has no valid VEX/USD rate, so no minimum can be checked. */
+  | "rate_unavailable"
+  /** The proposal's own expiry passed; nothing was signed or sent. */
+  | "proposal_expired"
+  /** No such proposal: already used, never prepared, or dropped. */
+  | "proposal_missing"
+  /** The submit's figures differ from the approved proposal, or a bound field moved since. */
+  | "proposal_changed"
+  /** The local runtime is not ready to sign (the execution gate is closed). */
+  | "execution_not_ready"
+  /** Robinhood Chain could not be read or reached. */
+  | "chain_unavailable"
+  /** The live network fee is above the approved bound. */
+  | "fee_above_bound"
+  /** Withdrawal refusals named by the backend (plan 15.2). */
+  | "destination_not_linked"
+  | "account_paused"
+  | "insufficient_withdrawable"
+  | "daily_limit_exceeded"
+  | "idempotency_key_reused"
+  /** A history page cursor the backend no longer accepts. */
+  | "invalid_cursor"
+  /** No such withdrawal on this account. */
+  | "withdrawal_not_found"
+  /** The backend refused a cashback destination this build does not offer. */
+  | "unsupported_destination"
+  /** The backend has no custody configured: withdrawals are not open yet (503 `withdrawals_unavailable`). */
+  | "withdrawals_not_open"
+  /** A page size the backend refused (400 `invalid_limit`). */
+  | "invalid_limit"
+  /**
+   * The backend refused a field THIS app sent (400 `forbidden_field`,
+   * `invalid_field`, `invalid_idempotency_key`): a contract drift between
+   * this build and Vex Cloud, never the user's input to fix.
+   */
+  | "request_rejected";
 
 export interface VexCloudRefusal {
   readonly kind: VexCloudRefusalKind;
@@ -92,6 +143,46 @@ export function vexCloudRefusalError(
       case "challenge_rejected":
       case "invalid_response":
         return { code: "internal.unexpected", retryable: false, userActionable: false };
+      case "not_signed_in":
+      case "destination_not_linked":
+      case "account_paused":
+        return { code: "permissions.denied", retryable: false, userActionable: true };
+      case "deposits_not_open":
+      case "deposit_address_mismatch":
+        return { code: "wallet.policy_blocked", retryable: false, userActionable: false };
+      case "daily_limit_exceeded":
+        return { code: "wallet.policy_blocked", retryable: false, userActionable: true };
+      case "fee_above_bound":
+        return { code: "wallet.policy_blocked", retryable: true, userActionable: true };
+      case "wallet_not_in_inventory":
+        return { code: "wallets.invalid_selection", retryable: false, userActionable: true };
+      case "invalid_amount":
+      case "below_minimum":
+      case "invalid_cursor":
+      case "withdrawal_not_found":
+        return { code: "validation.invalid_input", retryable: false, userActionable: true };
+      case "proposal_changed":
+        return { code: "validation.invalid_input", retryable: true, userActionable: true };
+      case "insufficient_funds":
+      case "insufficient_withdrawable":
+        return { code: "wallet.insufficient_funds", retryable: false, userActionable: true };
+      case "rate_unavailable":
+      case "chain_unavailable":
+        return { code: "provider.unavailable", retryable: true, userActionable: true };
+      case "proposal_expired":
+        return { code: "approvals.expired", retryable: true, userActionable: true };
+      case "proposal_missing":
+        return { code: "approvals.already_resolved", retryable: true, userActionable: true };
+      case "execution_not_ready":
+        return { code: "services.runtime_starting", retryable: true, userActionable: true };
+      case "idempotency_key_reused":
+      case "unsupported_destination":
+      case "request_rejected":
+        return { code: "internal.unexpected", retryable: false, userActionable: false };
+      case "withdrawals_not_open":
+        return { code: "wallet.policy_blocked", retryable: false, userActionable: false };
+      case "invalid_limit":
+        return { code: "validation.invalid_input", retryable: false, userActionable: false };
     }
   })();
   return { ...shape, domain, message: refusal.detail, redacted: true, correlationId };

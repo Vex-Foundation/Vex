@@ -17,7 +17,9 @@ import type {
 } from "@shared/schemas/vex-cloud.js";
 import type { VexError } from "@shared/ipc/result.js";
 import type { Result } from "@shared/ipc/result.js";
+import { parseRateX18, weiToMicroUsdFloor } from "@shared/vex-cloud-money.js";
 import type { VexCloudAccountResponse, VexCloudApi } from "./api-client.js";
+import { depositPinVerdict } from "./funding/deposit-pin.js";
 import {
   CANCELLED_DETAIL,
   INVALID_RESPONSE_DETAIL,
@@ -28,6 +30,22 @@ import {
 
 function amount(value: { readonly wei: string; readonly usd_micro_estimate: string | null }): VexCloudAmount {
   return { wei: value.wei, decimals: 18, symbol: "VEX", usdMicroEstimate: value.usd_micro_estimate };
+}
+
+/**
+ * `withdrawable_wei` with the backend's own USD estimate method: none is
+ * sent for it, so the USD figure is derived at the account's rate, rounded
+ * down. Absent from an older backend: `null`, shown as "Not available".
+ */
+function withdrawableOf(response: VexCloudAccountResponse): VexCloudAmount | null {
+  if (response.withdrawable_wei === undefined) return null;
+  const rateX18 = response.rate.available ? parseRateX18(response.rate.vex_wei_per_micro_usd) : null;
+  return {
+    wei: response.withdrawable_wei,
+    decimals: 18,
+    symbol: "VEX",
+    usdMicroEstimate: rateX18 === null ? null : weiToMicroUsdFloor(BigInt(response.withdrawable_wei), rateX18).toString(),
+  };
 }
 
 /** Backend account response -> the renderer DTO. Pure. */
@@ -42,6 +60,16 @@ export function toVexCloudAccount(response: VexCloudAccountResponse, readAt: Dat
       reserved: amount(response.balances.reserved),
       pendingWithdrawal: amount(response.balances.pending_withdrawal),
       claimable: amount(response.balances.claimable),
+      cashbackPending: response.balances.cashback_pending === undefined ? null : amount(response.balances.cashback_pending),
+    },
+    withdrawable: withdrawableOf(response),
+    depositAddress: response.deposit_address,
+    limits: {
+      minDepositMicroUsd: response.limits.min_deposit_micro_usd,
+      minWithdrawMicroUsd: response.limits.min_withdraw_micro_usd,
+      provisionalCapMicroUsd: response.limits.provisional_cap_micro_usd,
+      withdrawDailyLimitMicroUsd: response.limits.withdraw_daily_limit_micro_usd ?? null,
+      withdrawDailyRemainingWei: response.limits.withdraw_daily_remaining_wei ?? null,
     },
     rate: response.rate.available
       ? {
@@ -49,6 +77,8 @@ export function toVexCloudAccount(response: VexCloudAccountResponse, readAt: Dat
           source: response.rate.source,
           observedAt: response.rate.observed_at,
           ageSeconds: response.rate.age_seconds,
+          vexWeiPerMicroUsd: response.rate.vex_wei_per_micro_usd,
+          validUntil: response.rate.valid_until,
         }
       : { available: false, reason: response.rate.reason },
     readAt: readAt.toISOString(),
@@ -61,6 +91,8 @@ export interface ReadAccountDeps {
   readonly clearSession: () => Promise<Result<void>>;
   /** In-app EVM wallet addresses, checksummed, inventory order. */
   readonly localWallets: () => readonly string[];
+  /** The deposit address pinned in this build (`resolveVexCloudDepositAddress`), or `null`. */
+  readonly pinnedDepositAddress: () => string | null;
   readonly now: () => Date;
 }
 
@@ -78,7 +110,12 @@ export async function readVexCloudAccount(
   if (read.ok) {
     return {
       ok: true,
-      value: { state: "signed_in", account: toVexCloudAccount(read.value, deps.now()), localWallets },
+      value: {
+        state: "signed_in",
+        account: toVexCloudAccount(read.value, deps.now()),
+        localWallets,
+        depositPin: depositPinVerdict(deps.pinnedDepositAddress(), read.value.deposit_address),
+      },
     };
   }
   switch (read.failure.kind) {

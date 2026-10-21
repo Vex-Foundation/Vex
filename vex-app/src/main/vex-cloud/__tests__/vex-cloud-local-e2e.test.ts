@@ -135,9 +135,23 @@ describe.skipIf(!enabled)("Vex Cloud, local end to end", () => {
         readSession: async () => ({ ok: true as const, data: session }),
         clearSession: () => store(null),
         localWallets: () => listWallets("evm").map((w) => getAddress(w.address)),
+        pinnedDepositAddress: () => null,
         now: () => new Date(),
       },
       clearSession: () => store(null),
+      deposit: {
+        chain: () => {
+          throw new Error("deposits are not exercised against the local gateway in this suite");
+        },
+        listEvmWallets: () => listWallets("evm"),
+        isVaultUnlocked: () => true,
+        isExecutionReady: () => true,
+        pinnedDepositAddress: () => null,
+        loadPrivateKey: async () => {
+          throw new Error("deposits are not exercised against the local gateway in this suite");
+        },
+        now: () => new Date(),
+      },
     });
   });
 

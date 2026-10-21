@@ -1,5 +1,6 @@
 /**
- * Vex Cloud IPC (domain `vexCloud`): `signIn`, `account`, `signOut`.
+ * Vex Cloud IPC (domain `vexCloud`): `signIn`, `account`, `signOut`; the
+ * funding channels (phase 2) are mounted from `./vex-cloud-funding.ts`.
  *
  * THE BOUNDARY THIS FILE DEFENDS. The renderer names the wallets the user saw
  * beside the consent and nothing else. Main signs with the vault, against the
@@ -39,6 +40,7 @@ import { vexCloudRefusalError, type VexCloudRefusal } from "../vex-cloud/outcome
 import { productionVexCloudDeps, type VexCloudDeps } from "../vex-cloud/production.js";
 import { signInToVexCloud } from "../vex-cloud/sign-in.js";
 import { registerHandler } from "./register-handler.js";
+import { registerVexCloudFundingHandlers } from "./vex-cloud-funding.js";
 
 const DOMAIN = "vexCloud" as const;
 
@@ -148,6 +150,11 @@ function registerSignOutHandler(deps: VexCloudDeps): () => void {
 export function registerVexCloudHandlers(
   deps: VexCloudDeps = productionVexCloudDeps(),
 ): ReadonlyArray<() => void> {
-  return [registerSignInHandler(deps), registerAccountHandler(deps), registerSignOutHandler(deps)];
+  return [
+    registerSignInHandler(deps),
+    registerAccountHandler(deps),
+    registerSignOutHandler(deps),
+    ...registerVexCloudFundingHandlers(deps),
+  ];
 }
 

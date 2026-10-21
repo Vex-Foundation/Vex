@@ -11,12 +11,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, type UseMutationResult } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { JSX } from "react";
-import type { Result } from "@shared/ipc/result.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { ProviderPersistInput } from "@shared/schemas/provider.js";
-import type { SetWizardStateInput, WizardState } from "@shared/schemas/wizard.js";
+import type { SetWizardStateInput } from "@shared/schemas/wizard.js";
 
 const mockUseEnvState = vi.fn();
 const mockPersistProvider = vi.fn();
@@ -43,11 +42,10 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
   const { makeMockUseStepAdvance } = await import("../../__tests__/useStepAdvance-mock.js");
   return {
     ...actual,
-    useSetWizardState: () =>
-      ({
-        mutateAsync: (input: SetWizardStateInput) => mockSetWizardMutate(input),
-        isPending: false,
-      }) as unknown as UseMutationResult<Result<WizardState>, Error, SetWizardStateInput>,
+    useSetWizardState: () => ({
+      mutateAsync: (input: SetWizardStateInput) => mockSetWizardMutate(input),
+      isPending: false,
+    }),
     useStepAdvance: makeMockUseStepAdvance(mockSetWizardMutate),
   };
 });
@@ -88,14 +86,31 @@ function signedIn(state: "signed_in" | "signed_out") {
             paused: false,
             wallets: [{ address: "0x1111111111111111111111111111111111111111", linkedAt: "2026-10-20T12:00:00.000Z" }],
             balances: Object.fromEntries(
-              ["available", "provisional", "reserved", "pendingWithdrawal", "claimable"].map((k) => [
+              ["available", "provisional", "reserved", "pendingWithdrawal", "claimable", "cashbackPending"].map((k) => [
                 k,
                 { wei: "0", decimals: 18, symbol: "VEX", usdMicroEstimate: "0" },
               ]),
             ),
-            rate: { available: true, source: "fixed", observedAt: "2026-10-20T12:00:00.000Z", ageSeconds: 1 },
+            withdrawable: null,
+            depositAddress: null,
+            limits: {
+              minDepositMicroUsd: "5000000",
+              minWithdrawMicroUsd: "5000000",
+              provisionalCapMicroUsd: "25000000",
+              withdrawDailyLimitMicroUsd: null,
+              withdrawDailyRemainingWei: null,
+            },
+            rate: {
+              available: true,
+              source: "fixed",
+              observedAt: "2026-10-20T12:00:00.000Z",
+              ageSeconds: 1,
+              vexWeiPerMicroUsd: "1000000000000000",
+              validUntil: "2026-10-20T12:05:00.000Z",
+            },
             readAt: "2026-10-20T12:00:00.000Z",
           },
+          depositPin: { state: "not_open" },
         };
   return { data: { ok: true, data }, isLoading: false, isError: false, refetch: () => undefined };
 }

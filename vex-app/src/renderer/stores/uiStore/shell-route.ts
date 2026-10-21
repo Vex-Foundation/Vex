@@ -136,7 +136,9 @@ export type ShellRoute =
         | "sessions"
         | "howItWorks"
         | "portfolio"
-        | "board";
+        | "board"
+        /** The Vex Cloud funding page: Deposit, Withdraw, Cashback, History. */
+        | "vexCloudFunding";
       readonly origin: ShellScreenOrigin | null;
     }
   /**

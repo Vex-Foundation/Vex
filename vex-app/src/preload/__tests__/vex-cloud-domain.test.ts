@@ -27,7 +27,21 @@ afterEach(() => {
 describe("the Vex Cloud domain is exposed on the shell bridge", () => {
   it("appears as `vexCloud` with exactly the contract surface", () => {
     expect(shellBridge.vexCloud).toBe(vexCloud);
-    expect(Object.keys(vexCloud).sort()).toEqual(["account", "signIn", "signOut"]);
+    expect(Object.keys(vexCloud).sort()).toEqual([
+      "account",
+      "activity",
+      "claimCashback",
+      "depositWallets",
+      "deposits",
+      "prepareDeposit",
+      "prepareWithdrawal",
+      "signIn",
+      "signOut",
+      "submitDeposit",
+      "submitWithdrawal",
+      "usage",
+      "withdrawal",
+    ]);
   });
 });
 
@@ -58,7 +72,17 @@ describe("each method invokes its OWN channel", () => {
 
 describe("the preload refuses an off-contract payload before ipcRenderer", () => {
   it("a smuggled field on signIn never reaches main", async () => {
-    const result = await vexCloud.signIn({ wallets: [WALLET], message: "sign this" } as never).promise;
+    // A variable, not a literal: excess fields pass the type and must be stopped at runtime.
+    const payload = { wallets: [WALLET], message: "sign this" };
+    const result = await vexCloud.signIn(payload).promise;
+    expect(result.ok).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("a smuggled deposit destination never reaches main", async () => {
+    // A variable, not a literal: excess fields pass the type and must be stopped at runtime.
+    const payload = { walletAddress: WALLET, amountText: "6000", to: WALLET };
+    const result = await vexCloud.prepareDeposit(payload).promise;
     expect(result.ok).toBe(false);
     expect(invoke).not.toHaveBeenCalled();
   });

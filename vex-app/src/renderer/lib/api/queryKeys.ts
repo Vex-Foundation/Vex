@@ -399,4 +399,7 @@ export const poolsLaunchKeys = {
 export const vexCloudKeys = {
   all: ["vexCloud"] as const,
   account: () => ["vexCloud", "account"] as const,
+  depositWallets: () => ["vexCloud", "depositWallets"] as const,
+  withdrawal: (id: string) => ["vexCloud", "withdrawal", id] as const,
+  history: (kind: "activity" | "usage" | "deposits") => ["vexCloud", "history", kind] as const,
 };

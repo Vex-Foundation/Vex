@@ -1,6 +1,7 @@
 /**
- * `vex:vexCloud:*` - Vex Cloud sign-in and account (phase 1: no deposits,
- * withdrawals or auto top-up; those are phases 2 and 3).
+ * `vex:vexCloud:*` - Vex Cloud sign-in and account. Funding (deposit,
+ * withdraw, cashback, history) lives in `./vex-cloud-funding.ts`; auto
+ * top-up is phase 3.
  *
  * THE BOUNDARY THIS CONTRACT DEFENDS. The renderer holds no key, no session
  * bearer and no message to sign. It sends the set of in-app EVM wallets the
@@ -46,6 +47,12 @@ export const vexCloudBalancesSchema = z
     reserved: vexCloudAmountSchema,
     pendingWithdrawal: vexCloudAmountSchema,
     claimable: vexCloudAmountSchema,
+    /**
+     * Cashback earned on provisional spend, released when that deposit
+     * finalizes: pending, NOT claimable. `null` from a backend that does not
+     * report it.
+     */
+    cashbackPending: vexCloudAmountSchema.nullable(),
   })
   .strict();
 export type VexCloudBalances = z.infer<typeof vexCloudBalancesSchema>;
@@ -58,6 +65,13 @@ export const vexCloudRateSchema = z.discriminatedUnion("available", [
       source: z.string().regex(/^[a-z0-9_]{1,32}$/),
       observedAt: isoTimestampSchema,
       ageSeconds: z.number().int().nonnegative(),
+      /**
+       * VEX wei per micro-USD as the backend's exact decimal string (up to 18
+       * fractional digits); `@shared/vex-cloud-money.js` `parseRateX18` reads it.
+       */
+      vexWeiPerMicroUsd: z.string().regex(/^[0-9]{1,60}(\.[0-9]{1,18})?$/),
+      /** The backend uses this rate for new decisions strictly before this instant. */
+      validUntil: isoTimestampSchema,
     })
     .strict(),
   z
@@ -77,6 +91,22 @@ export const vexCloudLinkedWalletSchema = z
   })
   .strict();
 
+/**
+ * The backend's money limits, raw: micro-USD integers, and the remaining
+ * daily withdrawal in wei. `null` where the backend sends none (the daily
+ * figures while its rate is unavailable, or a backend that predates them).
+ */
+export const vexCloudLimitsSchema = z
+  .object({
+    minDepositMicroUsd: rawIntegerSchema,
+    minWithdrawMicroUsd: rawIntegerSchema,
+    provisionalCapMicroUsd: rawIntegerSchema,
+    withdrawDailyLimitMicroUsd: rawIntegerSchema.nullable(),
+    withdrawDailyRemainingWei: rawIntegerSchema.nullable(),
+  })
+  .strict();
+export type VexCloudLimits = z.infer<typeof vexCloudLimitsSchema>;
+
 export const vexCloudAccountSchema = z
   .object({
     accountId: z.string().uuid(),
@@ -84,12 +114,40 @@ export const vexCloudAccountSchema = z
     paused: z.boolean(),
     wallets: z.array(vexCloudLinkedWalletSchema).max(VEX_CLOUD_MAX_LINKED_WALLETS).readonly(),
     balances: vexCloudBalancesSchema,
+    /**
+     * What may leave the account now (only finalized deposits reach it), or
+     * `null` from a backend that does not report it yet ("Not available").
+     */
+    withdrawable: vexCloudAmountSchema.nullable(),
+    /** The backend's deposit address, as it reports it; `null` when it has none. */
+    depositAddress: evmAddressSchema.nullable(),
+    limits: vexCloudLimitsSchema,
     rate: vexCloudRateSchema,
     /** When main read this account from the backend. */
     readAt: isoTimestampSchema,
   })
   .strict();
 export type VexCloudAccount = z.infer<typeof vexCloudAccountSchema>;
+
+/**
+ * Funding is enabled only when the deposit address pinned in this build
+ * equals the backend's (plan 15.6). `not_open`: the build pins none yet, or
+ * the backend has none configured ("Deposits open soon"); `mismatch`: the
+ * two differ, funding is disabled
+ * and the screen says so; `matches`: deposits go to `address`.
+ */
+export const vexCloudDepositPinSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("not_open") }).strict(),
+  z.object({ state: z.literal("matches"), address: evmAddressSchema }).strict(),
+  z
+    .object({
+      state: z.literal("mismatch"),
+      pinned: evmAddressSchema,
+      backend: evmAddressSchema,
+    })
+    .strict(),
+]);
+export type VexCloudDepositPin = z.infer<typeof vexCloudDepositPinSchema>;
 
 /** The in-app EVM wallets that would sign, checksummed, in inventory order. */
 const localWalletsSchema = z.array(evmAddressSchema).max(VEX_CLOUD_MAX_LOCAL_WALLETS).readonly();
@@ -117,6 +175,8 @@ export const vexCloudAccountResultSchema = z.discriminatedUnion("state", [
       state: z.literal("signed_in"),
       account: vexCloudAccountSchema,
       localWallets: localWalletsSchema,
+      /** Main's verdict on the deposit address pinned in this build (plan 15.6). */
+      depositPin: vexCloudDepositPinSchema,
     })
     .strict(),
 ]);

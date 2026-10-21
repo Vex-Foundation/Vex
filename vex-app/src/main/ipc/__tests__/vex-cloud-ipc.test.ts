@@ -175,6 +175,7 @@ class FakeGateway implements VexCloudApi {
         wallets: [...this.owners.entries()]
           .filter(([, owner]) => owner === accountId)
           .map(([address]) => ({ address, linked_at: NOW.toISOString() })),
+        deposit_address: null,
         balances: {
           available: amount("1000000000000000000000", "1000000"),
           provisional: amount("0", "0"),
@@ -182,10 +183,28 @@ class FakeGateway implements VexCloudApi {
           pending_withdrawal: amount("0", "0"),
           claimable: amount("0", "0"),
         },
-        rate: { available: true as const, source: "fixed", observed_at: NOW.toISOString(), age_seconds: 42 },
+        rate: {
+          available: true as const,
+          source: "fixed",
+          vex_wei_per_micro_usd: "1000000000000000",
+          observed_at: NOW.toISOString(),
+          age_seconds: 42,
+          valid_until: new Date(NOW.getTime() + 300_000).toISOString(),
+        },
+        limits: { min_deposit_micro_usd: "5000000", min_withdraw_micro_usd: "5000000", provisional_cap_micro_usd: "25000000" },
       },
     };
   });
+
+  // The funding calls are pinned by `vex-cloud-funding-ipc.test.ts`; this
+  // suite never reaches them.
+  listActivity = vi.fn(async () => notUsed());
+  listUsage = vi.fn(async () => notUsed());
+  listDeposits = vi.fn(async () => notUsed());
+  notifyDeposit = vi.fn(async () => notUsed());
+  createWithdrawal = vi.fn(async () => notUsed());
+  readWithdrawal = vi.fn(async () => notUsed());
+  claimCashbackToBalance = vi.fn(async () => notUsed());
 
   private session(accountId: string, created: boolean) {
     const token = `vxs_${"t".repeat(20)}${++this.counter}`;
@@ -195,6 +214,10 @@ class FakeGateway implements VexCloudApi {
       value: { kind: "session" as const, accountId, created, token, expiresAt: new Date(NOW.getTime() + 86_400_000).toISOString() },
     };
   }
+}
+
+function notUsed(): never {
+  throw new Error("funding call not used in this suite");
 }
 
 function reject(status: number, reason: string, address?: string) {
@@ -254,11 +277,21 @@ function world(count: number): World {
           return { ok: true, data: undefined };
         },
         localWallets: () => wallets.map((w) => getAddress(w.entry.address)),
+        pinnedDepositAddress: () => null,
         now: () => NOW,
       },
       clearSession: async () => {
         stored.token = null;
         return { ok: true, data: undefined };
+      },
+      deposit: {
+        chain: () => notUsed(),
+        listEvmWallets: () => wallets.map((w) => w.entry),
+        isVaultUnlocked: () => self.vaultUnlocked,
+        isExecutionReady: () => true,
+        pinnedDepositAddress: () => null,
+        loadPrivateKey: async () => notUsed(),
+        now: () => NOW,
       },
     },
   };
@@ -502,7 +535,14 @@ describe("account", () => {
     const result = expectOk(await call(CH.vexCloud.account, {}));
     expect(result.data.state).toBe("signed_in");
     const account = result.data.account as { rate: unknown; wallets: unknown[] };
-    expect(account.rate).toEqual({ available: true, source: "fixed", observedAt: NOW.toISOString(), ageSeconds: 42 });
+    expect(account.rate).toEqual({
+      available: true,
+      source: "fixed",
+      observedAt: NOW.toISOString(),
+      ageSeconds: 42,
+      vexWeiPerMicroUsd: "1000000000000000",
+      validUntil: new Date(NOW.getTime() + 300_000).toISOString(),
+    });
     expect(account.wallets).toHaveLength(1);
     expect(w.gateway.readAccount.mock.calls.at(-1)?.[0]).toBe(w.stored.token);
   });

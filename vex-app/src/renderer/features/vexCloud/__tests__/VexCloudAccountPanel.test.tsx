@@ -40,8 +40,25 @@ function signedInAccount(overrides: Partial<VexCloudAccount> = {}): VexCloudAcco
       reserved: vexAmount("5000000000000000", null),
       pendingWithdrawal: vexAmount("0", "0"),
       claimable: vexAmount("0", "0"),
+      cashbackPending: vexAmount("0", "0"),
     },
-    rate: { available: true, source: "fixed", observedAt: "2026-10-20T12:00:00.000Z", ageSeconds: 125 },
+    withdrawable: vexAmount("1000000000000000000000", "1000000"),
+    depositAddress: null,
+    limits: {
+      minDepositMicroUsd: "5000000",
+      minWithdrawMicroUsd: "5000000",
+      provisionalCapMicroUsd: "25000000",
+      withdrawDailyLimitMicroUsd: "500000000",
+      withdrawDailyRemainingWei: null,
+    },
+    rate: {
+      available: true,
+      source: "fixed",
+      observedAt: "2026-10-20T12:00:00.000Z",
+      ageSeconds: 125,
+      vexWeiPerMicroUsd: "1000000000000000",
+      validUntil: "2026-10-20T12:05:00.000Z",
+    },
     readAt: "2026-10-20T12:01:00.000Z",
     ...overrides,
   };
@@ -177,7 +194,7 @@ describe("signed out", () => {
 
 describe("signed in", () => {
   it("shows the balance with its unit, USD estimate and rate age; a missing estimate reads Not available", async () => {
-    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1, W2] } });
+    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1, W2], depositPin: { state: "not_open" } } });
     renderPanel();
 
     expect(await screen.findByText("Signed in")).toBeTruthy();
@@ -192,7 +209,7 @@ describe("signed in", () => {
   });
 
   it("names linked and not-linked wallets and offers to link", async () => {
-    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1, W2] } });
+    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1, W2], depositPin: { state: "not_open" } } });
     signIn.mockReturnValue({ promise: new Promise(() => undefined), cancel: vi.fn() });
     renderPanel();
 
@@ -212,6 +229,7 @@ describe("signed in", () => {
         state: "signed_in",
         account: signedInAccount({ rate: { available: false, reason: "stale" }, balances: { ...signedInAccount().balances, available: vexAmount("1000000000000000000", null) } }),
         localWallets: [W1],
+        depositPin: { state: "not_open" },
       },
     });
     renderPanel();
@@ -221,13 +239,13 @@ describe("signed in", () => {
   });
 
   it("a paused account says so", async () => {
-    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount({ paused: true }), localWallets: [W1] } });
+    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount({ paused: true }), localWallets: [W1], depositPin: { state: "not_open" } } });
     renderPanel();
     expect(await screen.findByText("Paused for review")).toBeTruthy();
   });
 
   it("Sign out removes the session and re-reads", async () => {
-    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1] } });
+    account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1], depositPin: { state: "not_open" } } });
     signOut.mockResolvedValue({ ok: true, data: { signedOut: true } });
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));

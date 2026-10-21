@@ -35,7 +35,13 @@ describe("formatUsdEstimate", () => {
 
 describe("formatRateAge", () => {
   it("says how old the rate is, or nothing without one", () => {
-    const at = { available: true as const, source: "fixed", observedAt: "2026-10-20T12:00:00.000Z" };
+    const at = {
+      available: true as const,
+      source: "fixed",
+      observedAt: "2026-10-20T12:00:00.000Z",
+      vexWeiPerMicroUsd: "1000000000000000",
+      validUntil: "2026-10-20T12:05:00.000Z",
+    };
     expect(formatRateAge({ ...at, ageSeconds: 42 })).toBe("rate 42 s old");
     expect(formatRateAge({ ...at, ageSeconds: 125 })).toBe("rate 2 min old");
     expect(formatRateAge({ ...at, ageSeconds: 7_300 })).toBe("rate 2 h old");

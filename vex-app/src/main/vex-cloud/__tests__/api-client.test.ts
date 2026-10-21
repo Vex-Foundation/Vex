@@ -163,3 +163,80 @@ describe("failures stay distinct", () => {
     expect(seen).toHaveLength(0);
   });
 });
+
+describe("phase 2 calls (plan 15.2)", () => {
+  it("a money POST carries the caller's Idempotency-Key and the bearer, and refuses redirects", async () => {
+    const withdrawal = {
+      id: "wd_1",
+      status: "requested",
+      amount_wei: "6000000000000000000000",
+      destination: `0x${"1".repeat(40)}`,
+      tx_hash: null,
+      created_at: "2026-10-21T12:00:00.000Z",
+      updated_at: "2026-10-21T12:00:00.000Z",
+    };
+    const { client, seen } = api(() => json({ withdrawal }, 202));
+    const result = await client.createWithdrawal(
+      "vxs_secret_bearer_value_0001",
+      "vxw_0123456789abcdef",
+      { amountWei: withdrawal.amount_wei, destination: withdrawal.destination },
+      new AbortController().signal,
+    );
+    expect(result).toEqual({ ok: true, value: { withdrawal } });
+    const headers = new Headers(seen[0]?.init.headers);
+    expect(headers.get("idempotency-key")).toBe("vxw_0123456789abcdef");
+    expect(headers.get("authorization")).toBe("Bearer vxs_secret_bearer_value_0001");
+    expect(seen[0]?.init.redirect).toBe("error");
+    expect(JSON.parse(String(seen[0]?.init.body))).toEqual({ amount_wei: withdrawal.amount_wei, destination: withdrawal.destination });
+  });
+
+  it("refuses to send a malformed idempotency key", async () => {
+    const { client, seen } = api(() => json({}));
+    await expect(client.claimCashbackToBalance("vxs_secret_bearer_value_0001", "short", new AbortController().signal)).rejects.toThrow(RangeError);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("a 429 daily_limit_exceeded is a definitive refusal carrying remaining_wei; another 429 is an outage", async () => {
+    const limited = api(() => json({ error: { code: 429, message: "x", metadata: { reason: "daily_limit_exceeded", remaining_wei: "42" } } }, 429));
+    await expect(limited.client.claimCashbackToBalance("vxs_secret_bearer_value_0001", "vxc_0123456789", new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      failure: { kind: "rejected", status: 429, reason: "daily_limit_exceeded", address: null, remainingWei: "42" },
+    });
+    const throttled = api(() => json({ error: { code: 429, message: "x", metadata: { reason: "rate_limited" } } }, 429));
+    await expect(throttled.client.notifyDeposit("vxs_secret_bearer_value_0001", `0x${"a".repeat(64)}`, new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      failure: { kind: "unavailable", status: 429, reason: "rate_limited" },
+    });
+  });
+
+  it("a 503 keeps the backend's reason", async () => {
+    const { client } = api(() => json({ error: { code: 503, message: "x", metadata: { reason: "rate_unavailable" } } }, 503));
+    await expect(client.readWithdrawal("vxs_secret_bearer_value_0001", "wd_1", new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      failure: { kind: "unavailable", status: 503, reason: "rate_unavailable" },
+    });
+  });
+
+  it("round-trips the page cursor opaque and encoded", async () => {
+    const { client, seen } = api(() => json({ items: [], next_cursor: null }));
+    await client.listActivity("vxs_secret_bearer_value_0001", { cursor: "a+b/c=", limit: 10 }, new AbortController().signal);
+    expect(seen[0]?.url).toBe("http://127.0.0.1:8787/v1/account/activity?limit=10&cursor=a%2Bb%2Fc%3D");
+  });
+
+  it("stops reading a body the moment it passes the bound", async () => {
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(64 * 1024));
+        if (pulled > 100) controller.close();
+      },
+    });
+    const { client } = api(() => new Response(stream, { status: 200 }));
+    await expect(client.listUsage("vxs_secret_bearer_value_0001", { cursor: null }, new AbortController().signal)).resolves.toEqual({
+      ok: false,
+      failure: { kind: "invalid_response" },
+    });
+    expect(pulled).toBeLessThan(10);
+  });
+});

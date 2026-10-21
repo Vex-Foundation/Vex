@@ -609,11 +609,27 @@ export const CH = {
    * with a co-signature from an already-linked one. The session bearer goes
    * to the vault and never crosses this channel. `account` reads balances,
    * linked wallets and the rate; `signOut` removes the stored session.
+   *
+   * FUNDING (phase 2). `prepareDeposit` reads and mints a proposal; only
+   * `submitDeposit` SIGNS (a VEX transfer to the pinned deposit address).
+   * `prepareWithdrawal` mints a proposal and its idempotency key;
+   * `submitWithdrawal` asks Vex Cloud to send VEX out. `claimCashback`
+   * moves cashback to the balance. The rest are reads.
    */
   vexCloud: {
     signIn: "vex:vexCloud:signIn",
     account: "vex:vexCloud:account",
     signOut: "vex:vexCloud:signOut",
+    depositWallets: "vex:vexCloud:depositWallets",
+    prepareDeposit: "vex:vexCloud:prepareDeposit",
+    submitDeposit: "vex:vexCloud:submitDeposit",
+    prepareWithdrawal: "vex:vexCloud:prepareWithdrawal",
+    submitWithdrawal: "vex:vexCloud:submitWithdrawal",
+    withdrawal: "vex:vexCloud:withdrawal",
+    claimCashback: "vex:vexCloud:claimCashback",
+    activity: "vex:vexCloud:activity",
+    usage: "vex:vexCloud:usage",
+    deposits: "vex:vexCloud:deposits",
   },
 
   /**

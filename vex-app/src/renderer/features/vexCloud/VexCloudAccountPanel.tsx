@@ -1,8 +1,8 @@
 /**
  * Vex Cloud account, in the R3 Minimal register: the state as a fill and a
  * word, the VEX balance with its unit, its USD estimate and the rate's age,
- * the linked wallets, and Sign in or Sign out. No top-up controls: funding
- * is phase 2.
+ * the linked wallets, and Sign in or Sign out. "Fund" opens the funding page
+ * (a centre page: Deposit, Withdraw, Cashback, History).
  *
  * Shared by the Settings "Vex Cloud" section and the provider step's Vex
  * Cloud branch, so both read and say the same thing.
@@ -28,6 +28,7 @@ import {
   useInvalidateVexCloudState,
   useVexCloudAccount,
 } from "../../lib/api/vex-cloud.js";
+import { useUiStore } from "../../stores/uiStore.js";
 import { formatRateAge, formatUsdEstimate, formatVexAmount, NOT_AVAILABLE } from "./vex-cloud-format.js";
 
 type Action =
@@ -79,12 +80,15 @@ function SignedIn({
   busy,
   onSignOut,
   onLink,
+  onFund,
 }: {
   readonly account: VexCloudAccount;
   readonly localWallets: readonly string[];
   readonly busy: boolean;
   readonly onSignOut: () => void;
   readonly onLink: () => void;
+  /** Open the funding page (Deposit, Withdraw, Cashback, History). */
+  readonly onFund: () => void;
 }): JSX.Element {
   const rateAge = formatRateAge(account.rate);
   const linked = new Set(account.wallets.map((wallet) => wallet.address.toLowerCase()));
@@ -116,6 +120,14 @@ function SignedIn({
           {hasValue(balances.claimable) ? (
             <BalanceRow name="Cashback to claim" amount={balances.claimable} testId="claimable" rateAge={rateAge} />
           ) : null}
+          {balances.cashbackPending !== null && hasValue(balances.cashbackPending) ? (
+            <BalanceRow
+              name="Cashback pending, not claimable yet"
+              amount={balances.cashbackPending}
+              testId="cashbackPending"
+              rateAge={rateAge}
+            />
+          ) : null}
         </dl>
         <p className="m-0 mt-1 text-[12px] text-ink-tertiary">
           {account.rate.available ? null : `USD rate: ${NOT_AVAILABLE}. `}
@@ -144,6 +156,9 @@ function SignedIn({
         </ul>
       </section>
       <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" disabled={busy} onClick={onFund} data-testid="vex-cloud-fund">
+          Fund
+        </Button>
         {unlinkedLocal.length > 0 ? (
           <Button type="button" variant="quiet" size="sm" disabled={busy} onClick={onLink}>
             Link {unlinkedLocal.length === 1 ? "this wallet" : "these wallets"}
@@ -212,6 +227,7 @@ function SignedOut({
 export function VexCloudAccountPanel(): JSX.Element {
   const accountQuery = useVexCloudAccount();
   const invalidate = useInvalidateVexCloudState();
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
   const [action, setAction] = useState<Action>({ kind: "idle" });
   const [message, setMessage] = useState<string | null>(null);
   // Publication guard: a reply that lands after unmount or after a newer
@@ -284,6 +300,7 @@ export function VexCloudAccountPanel(): JSX.Element {
         busy={action.kind !== "idle"}
         onSignOut={() => void signOut()}
         onLink={() => void signIn(view.localWallets)}
+        onFund={() => setShellRoute({ kind: "vexCloudFunding", origin: null })}
       />
     );
   } else {

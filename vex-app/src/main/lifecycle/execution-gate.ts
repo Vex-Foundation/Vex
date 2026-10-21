@@ -108,6 +108,11 @@ export const EXECUTION_GATED_CHANNELS: ReadonlySet<string> = new Set<string>([
   CH.poolsLaunch.claim,
   // Vex Cloud sign-in signs one EIP-4361 message per in-app wallet.
   CH.vexCloud.signIn,
+  // Vex Cloud funding: the deposit signs a VEX transfer; a withdrawal and a
+  // cashback claim move the account's funds on the backend.
+  CH.vexCloud.submitDeposit,
+  CH.vexCloud.submitWithdrawal,
+  CH.vexCloud.claimCashback,
   CH.lighterTrading.prepareDeskAction,
   CH.lighterTrading.settleAgentSetup,
   CH.settings.confirmLighterLeverage,
