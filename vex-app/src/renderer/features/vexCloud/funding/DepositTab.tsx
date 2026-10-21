@@ -7,6 +7,9 @@
  * build pins no address, an error when it differs from the backend's, the
  * form only when they match. Then editing -> preparing -> review (the
  * proposal) -> sending -> sent, with every refusal shown as main worded it.
+ * Only a wallet LINKED to the account can deposit (Vex Cloud credits a
+ * deposit to the account its sender is linked to): the others are listed
+ * but disabled, with the reason and the next step. Main enforces the same.
  * A reply that lands after the user moved on (a newer press, Reject, unmount)
  * is dropped by the generation guard.
  */
@@ -37,6 +40,9 @@ type Step =
   | { readonly kind: "sent"; readonly result: VexCloudSubmitDepositResult };
 
 export const DEPOSITS_OPEN_SOON = "Deposits open soon";
+
+/** Why a wallet in the picker cannot deposit, and what to do (main refuses it too). */
+export const SENDER_NOT_LINKED = "Not linked to your Vex Cloud account. Sign in again to link it.";
 export const DEPOSIT_MISMATCH_TITLE = "Funding is disabled";
 
 function errorText(error: VexError): string {
@@ -91,10 +97,16 @@ function DepositForm({ account }: { readonly account: VexCloudAccount }): JSX.El
   );
 
   const wallets = walletsQuery.data?.ok === true ? walletsQuery.data.data.wallets : [];
+  const linked = useMemo(() => new Set(account.wallets.map((wallet) => wallet.address.toLowerCase())), [account.wallets]);
+  const isLinked = (address: string): boolean => linked.has(address.toLowerCase());
+  const linkedWallets = wallets.filter((wallet) => isLinked(wallet.address));
+  const unlinkedWallets = wallets.filter((wallet) => !isLinked(wallet.address));
+  const firstLinked = linkedWallets[0]?.address ?? null;
   useEffect(() => {
-    if (walletAddress === null && wallets[0] !== undefined) setWalletAddress(wallets[0].address);
-  }, [walletAddress, wallets]);
-  const selected = wallets.find((wallet) => wallet.address === walletAddress) ?? null;
+    if (walletAddress === null && firstLinked !== null) setWalletAddress(firstLinked);
+  }, [walletAddress, firstLinked]);
+  const picked = wallets.find((wallet) => wallet.address === walletAddress) ?? null;
+  const selected = picked !== null && isLinked(picked.address) ? picked : null;
   const rateX18 = rateOf(account.rate);
   const reading = useMemo(
     () =>
@@ -112,9 +124,11 @@ function DepositForm({ account }: { readonly account: VexCloudAccount }): JSX.El
       ? "Reading your wallets."
       : wallets.length === 0
         ? "Add an EVM wallet in Settings, Wallets first."
-        : selected === null
-          ? "Pick a wallet."
-          : reading.problem;
+        : linkedWallets.length === 0
+          ? `None of your wallets can deposit yet. ${SENDER_NOT_LINKED}`
+          : selected === null
+            ? "Pick a wallet."
+            : reading.problem;
 
   const review = (): void => {
     if (selected === null || disabledReason !== null) return;
@@ -229,9 +243,19 @@ function DepositForm({ account }: { readonly account: VexCloudAccount }): JSX.El
               id: wallet.address,
               address: wallet.address,
               label: `${wallet.label} · ${wallet.vexWei === null ? `VEX ${NOT_AVAILABLE}` : `${formatVexExact(BigInt(wallet.vexWei))} VEX`}`,
+              ...(!isLinked(wallet.address) && { disabled: true, note: "not linked" }),
             }))}
             onChange={(next) => setWalletAddress(next)}
           />
+          {unlinkedWallets.length === 0 ? null : (
+            <ul className="m-0 flex list-none flex-col gap-0.5 p-0" data-testid="deposit-unlinked">
+              {unlinkedWallets.map((wallet) => (
+                <li key={wallet.address} className="text-[13px] text-ink-secondary">
+                  {wallet.label} <span className="vex-num font-mono">{shortAddress(wallet.address)}</span>: {SENDER_NOT_LINKED}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor={amountId} className="text-[12px] font-medium text-ink-tertiary">

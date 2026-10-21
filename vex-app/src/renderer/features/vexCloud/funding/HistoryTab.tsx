@@ -3,17 +3,16 @@
  * (each request and what it cost) and deposits, newest first, one page at a
  * time. "Load more" appears exactly when Vex Cloud says more exists, and the
  * foot of every list says whether everything is shown. A failed page is said
- * in words; it never reads as an empty list.
+ * in words; it never reads as an empty list, and a failed NEXT page keeps the
+ * rows above with Retry beside them, never "Showing all".
  */
 
 import { useState, type JSX, type ReactNode } from "react";
-import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
-import type { Result } from "@shared/ipc/result.js";
 import { formatMicroUsd, formatVexExact } from "@shared/vex-cloud-money.js";
 import { Button } from "../../../components/ui/button.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
 import { StateWord } from "../../../components/ui/state-word.js";
-import { useVexCloudActivity, useVexCloudDeposits, useVexCloudUsage } from "../../../lib/api/vex-cloud.js";
+import { useVexCloudActivity, useVexCloudDeposits, useVexCloudUsage, type HistoryQuery } from "../../../lib/api/vex-cloud.js";
 import { activityKindWord, depositItemLook, isEstimatedUsage, NOT_AVAILABLE, shortAddress, tokenWords } from "./funding-model.js";
 
 type HistoryView = "activity" | "usage" | "deposits";
@@ -36,7 +35,7 @@ function PagedList<T>({
   render,
   label,
 }: {
-  readonly query: UseInfiniteQueryResult<InfiniteData<Result<{ readonly items: readonly T[]; readonly nextCursor: string | null }>, string | null>>;
+  readonly query: HistoryQuery<{ readonly items: readonly T[]; readonly nextCursor: string | null }>;
   readonly rowsOf: string;
   readonly empty: string;
   readonly render: (item: T) => ReactNode;
@@ -44,35 +43,42 @@ function PagedList<T>({
 }): JSX.Element {
   if (query.isLoading) return <EmptyBlock scope="History" title={`Reading ${rowsOf}`} loading />;
   const pages = query.data?.pages ?? [];
-  const items = pages.flatMap((page) => (page.ok ? page.data.items : []));
-  const failed = pages.find((page) => !page.ok);
-  if (items.length === 0 && failed !== undefined && !failed.ok) {
+  if (pages.length === 0) {
     return (
       <EmptyBlock
         scope="History"
         state="error"
         title={`Your ${rowsOf} could not be read.`}
-        detail={failed.error.message}
+        detail={query.error?.message ?? "Try again in a moment."}
         action={{ label: "Try again", onClick: () => void query.refetch() }}
       />
     );
   }
-  if (items.length === 0) return <EmptyBlock scope="History" title={empty} />;
+  const items = pages.flatMap((page) => page.items);
+  // The next page failed: the rows above are not the whole list, and the
+  // cursor that failed is still the next one, so Retry asks for it again.
+  const nextPageFailed = query.isFetchNextPageError && query.error !== null;
+  if (items.length === 0 && !query.hasNextPage) return <EmptyBlock scope="History" title={empty} />;
   return (
     <div className="flex flex-col gap-2">
       <ul className="m-0 flex list-none flex-col p-0" aria-label={label}>
         {items.map(render)}
       </ul>
-      {failed !== undefined && !failed.ok ? (
-        <p role="alert" className="m-0 text-[13px] text-ink-primary">
-          The next page could not be read: {failed.error.message}
-        </p>
+      {nextPageFailed ? (
+        <div className="flex items-center gap-3">
+          <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="history-next-failed">
+            The next page could not be read: {query.error.message}
+          </p>
+          <Button type="button" variant="quiet" size="sm" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
+            {query.isFetchingNextPage ? "Loading…" : "Retry"}
+          </Button>
+        </div>
       ) : null}
       <div className="flex items-center gap-3">
         <span className="text-[12.5px] text-ink-tertiary" data-testid="history-foot">
           {query.hasNextPage ? `Showing ${items.length} · more available` : `Showing all ${items.length}`}
         </span>
-        {query.hasNextPage ? (
+        {query.hasNextPage && !nextPageFailed ? (
           <Button type="button" variant="quiet" size="sm" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
             {query.isFetchingNextPage ? "Loading…" : "Load more"}
           </Button>

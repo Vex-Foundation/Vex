@@ -22,8 +22,9 @@
  *    deposit per wallet at a time;
  *  - an unknown deposit outcome stays pending, is never re-sent, and the
  *    notify hint carries the hash;
- *  - withdrawal idempotency: a transport retry of the SAME proposal reuses
- *    its key and gets the same withdrawal; a new proposal gets a new key.
+ *  - withdrawal idempotency: an answer that does not prove a refusal is an
+ *    unknown outcome, and Check status of the SAME proposal reuses its key
+ *    and gets the same withdrawal; a new proposal gets a new key.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -66,6 +67,7 @@ const { getCancelController } = await import("../register-handler.js");
 const { createVexCloudApi } = await import("../../vex-cloud/api-client.js");
 const { __resetDepositStateForTests } = await import("../../vex-cloud/funding/deposit.js");
 const { __resetWithdrawStateForTests } = await import("../../vex-cloud/funding/withdraw.js");
+const { __resetCashbackStateForTests } = await import("../../vex-cloud/funding/cashback.js");
 import type { TransferBroadcastRequest, Erc20TransferPort } from "@tools/evm-chains/erc20-transfer-port.js";
 import type { VexCloudDeps } from "../../vex-cloud/production.js";
 
@@ -355,6 +357,8 @@ class FakeChain implements Erc20TransferPort {
     await request.onBeforeSign(finalRequest);
     this.keyLoads += 1;
     await request.loadPrivateKey();
+    // The pending-nonce re-read, then the final check, then the signature.
+    await request.onFinalCheck(finalRequest);
     request.onHashStaged(TX_HASH);
     this.signedHashes.push(TX_HASH);
     if (this.outcome === "ambiguous") return { kind: "ambiguous", txHash: TX_HASH, stage: "confirm", reason: "receipt wait timed out" };
@@ -498,6 +502,7 @@ beforeEach(() => {
   openExecutionGate();
   __resetDepositStateForTests();
   __resetWithdrawStateForTests();
+  __resetCashbackStateForTests();
 });
 
 afterEach(() => {
@@ -895,16 +900,18 @@ describe("submitWithdrawal and idempotency", () => {
   it("creates the withdrawal with an Idempotency-Key and maps its status", async () => {
     const w = mount();
     const result = expectOk(await call(CH.vexCloud.submitWithdrawal, submit(await prepared())));
+    expect(result.data.outcome).toBe("accepted");
     expect(result.data.withdrawal).toMatchObject({ id: "wd_1", status: "requested", amountWei: String(6_000n * E18), destination: W1 });
     expect(w.gateway.seenKeys).toHaveLength(1);
     expect(w.gateway.seenKeys[0]).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
   });
 
-  it("a transport retry of the SAME proposal reuses its key and gets the same withdrawal", async () => {
+  it("a lost answer is an UNKNOWN outcome; Check status replays the SAME key and gets the same withdrawal", async () => {
     const w = mount();
     const p = await prepared();
     w.gateway.loseNextWithdrawalAnswer = true;
-    expectError(await call(CH.vexCloud.submitWithdrawal, submit(p)), "provider.unavailable", /cannot send it twice/);
+    const unknown = expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p)));
+    expect(unknown.data).toEqual({ outcome: "unknown", proposalId: p.data.proposalId, amountWei: p.data.amountWei, destination: W1 });
     const retried = expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p), "44444444-2222-4333-8444-555555555555"));
     expect(w.gateway.seenKeys).toHaveLength(2);
     expect(w.gateway.seenKeys[1]).toBe(w.gateway.seenKeys[0]);
@@ -963,9 +970,22 @@ describe("submitWithdrawal and idempotency", () => {
 
   it("an unknown backend reason is named, never an unexpected error", async () => {
     const w = mount();
+    w.gateway.forced.set("GET /v1/account", { status: 400, reason: "brand_new_reason" });
+    expectError(await call(CH.vexCloud.prepareWithdrawal, { destination: W1, amountText: "6000" }), "internal.unexpected", /brand_new_reason/);
+  });
+
+  it("an unknown reason on the withdrawal POST does not prove a refusal: the outcome is unknown and the key is kept", async () => {
+    const w = mount();
     const p = await prepared();
     w.gateway.forced.set("POST /v1/withdrawals", { status: 400, reason: "brand_new_reason" });
-    expectError(await call(CH.vexCloud.submitWithdrawal, submit(p)), "internal.unexpected", /brand_new_reason/);
+    expect(expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p))).data.outcome).toBe("unknown");
+    const replayed = expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p), "77777777-2222-4333-8444-555555555555"));
+    expect(replayed.data.outcome).toBe("accepted");
+    const sentKeys = w.gateway.fetch.mock.calls
+      .filter(([, init]) => init?.method === "POST" && new Headers(init.headers).has("idempotency-key"))
+      .map(([, init]) => new Headers(init?.headers).get("idempotency-key"));
+    expect(sentKeys).toHaveLength(2);
+    expect(sentKeys[1]).toBe(sentKeys[0]);
   });
 
   it("reads a withdrawal's status, and a missing one by name", async () => {
@@ -983,8 +1003,8 @@ describe("submitWithdrawal and idempotency", () => {
 describe("claimCashback", () => {
   it("claims to the balance with an idempotency key; a second claim moves nothing", async () => {
     const w = mount();
-    expect(expectOk(await call(CH.vexCloud.claimCashback, {})).data).toEqual({ claimedWei: String(12n * E18) });
-    expect(expectOk(await call(CH.vexCloud.claimCashback, {}, "66666666-2222-4333-8444-555555555555")).data).toEqual({ claimedWei: "0" });
+    expect(expectOk(await call(CH.vexCloud.claimCashback, {})).data).toEqual({ outcome: "claimed", claimedWei: String(12n * E18) });
+    expect(expectOk(await call(CH.vexCloud.claimCashback, {}, "66666666-2222-4333-8444-555555555555")).data).toEqual({ outcome: "claimed", claimedWei: "0" });
     expect(w.gateway.seenKeys).toHaveLength(2);
   });
 

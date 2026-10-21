@@ -143,4 +143,29 @@ describe("SelectMenu", () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("a disabled option is listed with aria-disabled and cannot be chosen by click or keyboard", () => {
+    const onChange = vi.fn();
+    render(
+      <SelectMenu
+        value="a"
+        options={[
+          { value: "a", label: "Alpha" },
+          { value: "b", label: "Beta", disabled: true },
+        ]}
+        ariaLabel="Test select"
+        onChange={onChange}
+      />,
+    );
+    const trigger = screen.getByRole("combobox");
+    fireEvent.click(trigger);
+    const beta = screen.getByRole("option", { name: "Beta" });
+    expect(beta.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(beta);
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
 });

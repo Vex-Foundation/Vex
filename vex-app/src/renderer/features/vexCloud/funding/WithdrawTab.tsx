@@ -5,9 +5,16 @@
  * Cloud" and the daily limit left; after the submit the status is polled
  * until it reads Completed or Returned (fill plus word).
  *
- * A transport failure keeps the approved proposal: pressing the key again
- * sends the SAME request (main reuses its idempotency key), so a retry can
- * never withdraw twice.
+ * TWO STATES THAT LOOK ALIKE AND MUST NOT BE CONFUSED:
+ *  - `reviewing`: the approval was never submitted. Reject is honest here:
+ *    nothing was sent.
+ *  - `outcome_unknown`: the request WAS sent and Vex Cloud's answer did not
+ *    prove a refusal, so the withdrawal may exist. There is no Reject (it
+ *    would claim nothing was sent). "Check status" replays the same request
+ *    with the same idempotency key in main, which can only return the
+ *    existing withdrawal; "Close" keeps the record visible ("Status
+ *    unknown") with History one press away, and a NEW review of the same
+ *    amount to the same wallet stays blocked until the record resolves.
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
@@ -27,18 +34,28 @@ import {
 import { WalletSelect } from "../../appShell/SessionWalletSelect.js";
 import { FundingApprovalCard } from "./FundingApprovalCard.js";
 import { eligibleDestinations, NOT_AVAILABLE, rateOf, readAmount, shortAddress, withdrawalLook } from "./funding-model.js";
+import { unresolvedFor, useUnresolvedWithdrawals, type UnresolvedWithdrawal } from "./unresolved-withdrawals.js";
 
 type Step =
   | { readonly kind: "editing" }
   | { readonly kind: "preparing"; readonly cancel: () => void }
-  | { readonly kind: "review"; readonly proposal: VexCloudWithdrawalProposal; readonly retryNote: string | null }
+  | { readonly kind: "reviewing"; readonly proposal: VexCloudWithdrawalProposal }
   | { readonly kind: "sending"; readonly proposal: VexCloudWithdrawalProposal }
+  | { readonly kind: "outcome_unknown"; readonly record: UnresolvedWithdrawal }
   | { readonly kind: "sent"; readonly withdrawal: VexCloudWithdrawal };
 
 export const WITHDRAWALS_NOT_OPEN = "Withdrawals are not open yet";
 
 export const NO_WITHDRAW_DESTINATION =
   "Withdrawals go only to a wallet that is linked to your Vex Cloud account and is in this app, and none is.";
+
+export const STATUS_UNKNOWN = "Status unknown";
+
+export const OUTCOME_UNKNOWN_DETAIL =
+  "Vex sent this withdrawal to Vex Cloud but did not get a clear answer, so it may or may not have been created. Check status asks again with the same request, which cannot create a second withdrawal.";
+
+export const UNRESOLVED_BLOCKS_REVIEW =
+  "A withdrawal of this amount to this wallet was sent and its status is not known yet. Check its status above before starting another.";
 
 function errorText(error: VexError): string {
   return error.code === "internal.cancelled" ? "Cancelled. Nothing was sent." : error.message;
@@ -47,9 +64,11 @@ function errorText(error: VexError): string {
 export function WithdrawTab({
   account,
   localWallets,
+  onOpenHistory,
 }: {
   readonly account: VexCloudAccount;
   readonly localWallets: readonly string[];
+  readonly onOpenHistory: () => void;
 }): JSX.Element {
   const destinations = useMemo(() => eligibleDestinations(account, localWallets), [account, localWallets]);
   const invalidate = useInvalidateVexCloudFunding();
@@ -58,9 +77,16 @@ export function WithdrawTab({
   const [amountText, setAmountText] = useState("");
   const [step, setStep] = useState<Step>({ kind: "editing" });
   const [message, setMessage] = useState<string | null>(null);
+  const [checking, setChecking] = useState<string | null>(null);
+  const [checkNote, setCheckNote] = useState<{ readonly proposalId: string; readonly text: string } | null>(null);
+  const unresolved = useUnresolvedWithdrawals((state) => state.records);
+  const keepUnresolved = useUnresolvedWithdrawals((state) => state.keep);
+  const resolveUnresolved = useUnresolvedWithdrawals((state) => state.resolve);
   const generation = useRef(0);
+  const mounted = useRef(true);
   useEffect(
     () => () => {
+      mounted.current = false;
       generation.current += 1;
     },
     [],
@@ -74,6 +100,7 @@ export function WithdrawTab({
     max: withdrawable,
     maxLabel: "can be withdrawn now",
   });
+  const blockedBy = unresolvedFor(unresolved, reading.wei, destination);
   const disabledReason =
     destinations.length === 0
       ? NO_WITHDRAW_DESTINATION
@@ -81,7 +108,7 @@ export function WithdrawTab({
         ? "Vex Cloud paused this account for review, so funds cannot leave it right now."
         : destination === null
           ? "Pick a wallet."
-          : reading.problem;
+          : (reading.problem ?? (blockedBy === null ? null : UNRESOLVED_BLOCKS_REVIEW));
 
   if (account.depositAddress === null) {
     // The backend reports no deposit address exactly when it has no custody
@@ -95,7 +122,7 @@ export function WithdrawTab({
       />
     );
   }
-  if (destinations.length === 0) {
+  if (destinations.length === 0 && unresolved.length === 0) {
     return <EmptyBlock scope="Withdraw" title="No wallet to withdraw to" detail={NO_WITHDRAW_DESTINATION} data-testid="withdraw-no-destination" />;
   }
 
@@ -108,7 +135,7 @@ export function WithdrawTab({
     void invocation.promise.then((result) => {
       if (mine !== generation.current) return;
       if (result.ok) {
-        setStep({ kind: "review", proposal: result.data, retryNote: null });
+        setStep({ kind: "reviewing", proposal: result.data });
         return;
       }
       setStep({ kind: "editing" });
@@ -116,33 +143,59 @@ export function WithdrawTab({
     });
   };
 
-  const approve = (proposal: VexCloudWithdrawalProposal): void => {
+  /**
+   * Submit (`proposal` from a review) or replay (`record` of an unknown
+   * outcome): the same IPC call, the same proposal id, so main reuses its key.
+   * A result is never dropped by a newer press: whether a withdrawal exists
+   * is a fact, so an accepted or unknown answer always lands in the store.
+   */
+  const send = (record: UnresolvedWithdrawal, fromReview: boolean): void => {
     const mine = ++generation.current;
     setMessage(null);
-    setStep({ kind: "sending", proposal });
+    setCheckNote(null);
+    setChecking(record.proposalId);
     void submitVexCloudWithdrawal({
-      proposalId: proposal.proposalId,
-      destination: proposal.destination,
-      amountWei: proposal.amountWei,
+      proposalId: record.proposalId,
+      destination: record.destination,
+      amountWei: record.amountWei,
     }).then((result) => {
-      if (result.ok) {
+      if (mounted.current) setChecking((current) => (current === record.proposalId ? null : current));
+      if (result.ok && result.data.outcome === "accepted") {
+        resolveUnresolved(record.proposalId);
         invalidate();
+        if (!mounted.current || mine !== generation.current) return;
         setStep({ kind: "sent", withdrawal: result.data.withdrawal });
         setAmountText("");
         return;
       }
-      if (mine !== generation.current) return;
-      if (result.error.retryable && result.error.code === "provider.unavailable") {
-        // The same proposal, the same key: pressing again cannot withdraw twice.
-        setStep({ kind: "review", proposal, retryNote: result.error.message });
+      if (result.ok) {
+        keepUnresolved(record);
+        if (!mounted.current || mine !== generation.current) return;
+        if (!fromReview) setCheckNote({ proposalId: record.proposalId, text: "Still no clear answer from Vex Cloud. Try Check status again in a moment, or look in History." });
+        setStep((current) => (current.kind === "editing" ? current : { kind: "outcome_unknown", record }));
         return;
       }
-      setStep({ kind: "editing" });
-      setMessage(errorText(result.error));
+      if (fromReview) {
+        if (!mounted.current || mine !== generation.current) return;
+        setStep({ kind: "editing" });
+        setMessage(errorText(result.error));
+        return;
+      }
+      // A check that main answers with "no such proposal" means main settled
+      // it (a definitive answer) or restarted: there is nothing left to replay.
+      if (result.error.code === "approvals.already_resolved") resolveUnresolved(record.proposalId);
+      if (!mounted.current || mine !== generation.current) return;
+      setCheckNote({ proposalId: record.proposalId, text: errorText(result.error) });
+      if (result.error.code === "approvals.already_resolved") setStep({ kind: "editing" });
     });
   };
 
-  if (step.kind === "review" || step.kind === "sending") {
+  const approve = (proposal: VexCloudWithdrawalProposal): void => {
+    setStep({ kind: "sending", proposal });
+    send({ proposalId: proposal.proposalId, amountWei: proposal.amountWei, destination: proposal.destination }, true);
+  };
+
+  if (step.kind === "reviewing" || step.kind === "sending") {
     const proposal = step.proposal;
     const amount = formatVexExact(BigInt(proposal.amountWei));
     return (
@@ -190,18 +243,31 @@ export function WithdrawTab({
           armed={false}
           busy={step.kind === "sending"}
           onReject={() => {
+            // Reachable only while `reviewing`: the card disables Reject once sending starts.
             generation.current += 1;
             setStep({ kind: "editing" });
             setMessage("Withdrawal rejected. Nothing was sent.");
           }}
           onApprove={() => approve(proposal)}
         />
-        {step.kind === "review" && step.retryNote !== null ? (
-          <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="withdraw-retry-note">
-            {step.retryNote}
-          </p>
-        ) : null}
       </div>
+    );
+  }
+
+  if (step.kind === "outcome_unknown") {
+    const record = step.record;
+    return (
+      <OutcomeUnknown
+        record={record}
+        checking={checking === record.proposalId}
+        note={checkNote?.proposalId === record.proposalId ? checkNote.text : null}
+        onCheck={() => send(record, false)}
+        onClose={() => {
+          setCheckNote(null);
+          setStep({ kind: "editing" });
+        }}
+        onOpenHistory={onOpenHistory}
+      />
     );
   }
 
@@ -211,6 +277,31 @@ export function WithdrawTab({
 
   return (
     <section className="flex flex-col gap-4" aria-label="Withdraw VEX" data-testid="withdraw-form">
+      {unresolved.length === 0 ? null : (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Withdrawals with an unknown status" data-testid="withdraw-unresolved">
+          {unresolved.map((record) => (
+            <li key={record.proposalId} className="flex flex-col gap-1.5 border border-rule-ink p-3" data-testid="withdraw-unresolved-row">
+              <StateWord state="error" word={checking === record.proposalId ? "Checking status" : STATUS_UNKNOWN} />
+              <p className="m-0 text-[13px] text-ink-secondary">
+                {formatVexExact(BigInt(record.amountWei))} VEX to <span className="vex-num font-mono">{shortAddress(record.destination)}</span>. It may or may not have been created.
+              </p>
+              {checkNote?.proposalId === record.proposalId ? (
+                <p role="alert" className="m-0 text-[13px] text-ink-primary">
+                  {checkNote.text}
+                </p>
+              ) : null}
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="ink" size="sm" disabled={checking === record.proposalId} onClick={() => send(record, false)}>
+                  Check status
+                </Button>
+                <Button type="button" variant="quiet" size="sm" onClick={onOpenHistory}>
+                  Open History
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex flex-col gap-3 border border-rule-ink p-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor={amountId} className="text-[12px] font-medium text-ink-tertiary">
@@ -277,6 +368,53 @@ export function WithdrawTab({
           {message}
         </p>
       )}
+    </section>
+  );
+}
+
+function OutcomeUnknown({
+  record,
+  checking,
+  note,
+  onCheck,
+  onClose,
+  onOpenHistory,
+}: {
+  readonly record: UnresolvedWithdrawal;
+  readonly checking: boolean;
+  readonly note: string | null;
+  readonly onCheck: () => void;
+  readonly onClose: () => void;
+  readonly onOpenHistory: () => void;
+}): JSX.Element {
+  const checkRef = useRef<HTMLButtonElement | null>(null);
+  // First focus on the safe, informative action; there is no Reject here.
+  useEffect(() => {
+    checkRef.current?.focus();
+  }, []);
+  return (
+    <section className="flex flex-col gap-3 border-[1.5px] border-rule-ink p-4" aria-label="Withdrawal status unknown" data-testid="withdraw-outcome-unknown">
+      <StateWord state="error" word={checking ? "Checking status" : STATUS_UNKNOWN} size={12} live />
+      <p className="m-0 text-[14px] leading-[1.5] text-ink-secondary">{OUTCOME_UNKNOWN_DETAIL}</p>
+      <p className="m-0 text-[13px] text-ink-tertiary">
+        {formatVexExact(BigInt(record.amountWei))} VEX to <span className="vex-num font-mono">{record.destination}</span>
+      </p>
+      {note === null ? null : (
+        <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="withdraw-check-note">
+          {note}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <Button ref={checkRef} type="button" onClick={onCheck} disabled={checking} aria-busy={checking}>
+          {checking ? "Checking…" : "Check status"}
+        </Button>
+        <Button type="button" variant="ink" onClick={onClose}>
+          Close
+        </Button>
+        <Button type="button" variant="quiet" onClick={onOpenHistory}>
+          Open History
+        </Button>
+      </div>
     </section>
   );
 }

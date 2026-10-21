@@ -111,7 +111,7 @@ export function VexCloudFundingPage(): JSX.Element {
           <DepositTab account={account} pin={view.depositPin} />
         </TabsContent>
         <TabsContent value="withdraw" className="pt-5">
-          <WithdrawTab account={account} localWallets={view.localWallets} />
+          <WithdrawTab account={account} localWallets={view.localWallets} onOpenHistory={() => setTab("history")} />
         </TabsContent>
         <TabsContent value="cashback" className="pt-5">
           <CashbackTab account={account} />

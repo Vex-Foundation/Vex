@@ -34,6 +34,12 @@ import { cn } from "../../lib/utils.js";
 export interface SelectMenuOption {
   readonly value: string;
   readonly label: string;
+  /**
+   * Shown but not choosable (`aria-disabled`): the caller states why in its
+   * label or beside the field. Keyboard navigation still visits it, as the
+   * ARIA listbox pattern allows, but Enter, Space and a click do nothing.
+   */
+  readonly disabled?: boolean;
 }
 
 export function SelectMenu({
@@ -98,7 +104,7 @@ export function SelectMenu({
   const choose = useCallback(
     (index: number): void => {
       const opt = options[index];
-      if (opt === undefined) return;
+      if (opt === undefined || opt.disabled === true) return;
       onChange(opt.value);
       setOpen(false);
       buttonRef.current?.focus();
@@ -251,6 +257,7 @@ export function SelectMenu({
                 id={getOptionId(index)}
                 role="option"
                 aria-selected={selected}
+                aria-disabled={opt.disabled === true ? true : undefined}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(index)}
                 // Menu rows: 32 high at 13.5; the selected row keeps its
@@ -262,6 +269,7 @@ export function SelectMenu({
                     : "text-ink-secondary",
                   selected && "text-ink-primary",
                   selected && !active && "bg-interactive-active",
+                  opt.disabled === true && "cursor-not-allowed text-ink-tertiary",
                 )}
               >
                 <span

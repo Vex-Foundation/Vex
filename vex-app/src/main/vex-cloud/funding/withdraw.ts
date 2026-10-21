@@ -10,13 +10,27 @@
  * `destination_not_linked`).
  *
  * ONE IDEMPOTENCY KEY PER APPROVED PROPOSAL. `prepare` mints the proposal
- * and its key together. A submit that ends in a transport failure (network,
- * deadline, 5xx) KEEPS the proposal, so pressing the button again sends the
- * SAME key and the backend answers with the same withdrawal instead of
- * creating a second one. A new proposal always gets a new key. A definitive
- * refusal or a success retires the proposal. Only while the proposal is
- * live: an expired one is refused, and History shows whether an unanswered
- * attempt reached Vex Cloud.
+ * and its key together; a new proposal always gets a new key.
+ *
+ * TWO STORES, BECAUSE THERE ARE TWO STATES.
+ *  - `approved`: prepared, never sent. Its deadline is the approval's: it is
+ *    checked when looked up AND again right before the POST, after the fresh
+ *    account read, so an approval that lapsed while that read ran is refused
+ *    before anything leaves the app.
+ *  - `unresolved`: SENT, and Vex Cloud's answer did not prove a refusal
+ *    (`isDefinitiveRefusal`). The commit outcome is UNKNOWN: the withdrawal
+ *    may exist. The entry and its key are kept, and "Check status" REPLAYS
+ *    the same key with the same body. The backend's idempotency returns the
+ *    existing withdrawal for that key before any other check
+ *    (`VexVirtualsCompute/src/withdrawals/ledger.ts` `requestWithdrawal`).
+ *
+ * A REPLAY IS NOT A NEW APPROVAL. It is the request the user already
+ * approved and sent, repeated byte for byte, so it is allowed after the
+ * approval's expiry and does not re-run the local destination gate: if the
+ * first POST committed, the replay can only return that withdrawal; if it
+ * never landed, the backend runs every check of a create for it (linked,
+ * paused, minimum, withdrawable, daily limit). Only a definitive refusal or a
+ * success retires the key.
  *
  * AUDIT: one `asked` and one `decided` line per submit, correlated.
  */
@@ -27,6 +41,7 @@ import type {
   VexCloudSubmitWithdrawalInput,
   VexCloudSubmitWithdrawalResult,
   VexCloudWithdrawal,
+  VexCloudWithdrawalStatusResult,
   VexCloudWithdrawalProposal,
 } from "@shared/schemas/vex-cloud-funding.js";
 import {
@@ -41,7 +56,7 @@ import {
 import { log } from "../../logger/index.js";
 import type { VexCloudAccountResponse, VexCloudApi, WithdrawalResponse } from "../api-client.js";
 import { refused, type VexCloudOutcome } from "../outcome.js";
-import { backendRefusal, requireBearer, type SessionPort } from "./backend-call.js";
+import { backendRefusal, isDefinitiveRefusal, requireBearer, type SessionPort } from "./backend-call.js";
 import { ProposalStore, type StoredProposal } from "./proposal-store.js";
 
 /** How long a withdrawal approval stays valid. */
@@ -62,12 +77,19 @@ interface WithdrawalEntry extends StoredProposal {
   readonly idempotencyKey: string;
 }
 
-let proposals = new ProposalStore<WithdrawalEntry>();
+/** Retention of a sent proposal whose outcome is unknown: long enough to check it, bounded by the store. */
+export const UNRESOLVED_WITHDRAWAL_RETENTION_MS = 24 * 60 * 60 * 1_000;
+
+/** Prepared and approved, never sent. */
+let approved = new ProposalStore<WithdrawalEntry>();
+/** Sent, outcome unknown: replayable with the same key. */
+let unresolved = new ProposalStore<WithdrawalEntry>();
 let submitting = new Set<string>();
 
 /** Test-only reset. */
 export function __resetWithdrawStateForTests(): void {
-  proposals = new ProposalStore<WithdrawalEntry>();
+  approved = new ProposalStore<WithdrawalEntry>();
+  unresolved = new ProposalStore<WithdrawalEntry>();
   submitting = new Set<string>();
 }
 
@@ -157,7 +179,7 @@ export async function prepareWithdrawal(
   const now = deps.now();
   const expiresAtMs = now.getTime() + WITHDRAWAL_PROPOSAL_TTL_MS;
   const mint = deps.mintIdempotencyKey ?? defaultIdempotencyKey;
-  const entry = proposals.mint((proposalId) => ({
+  const entry = approved.mint(now.getTime(), (proposalId) => ({
     proposalId,
     expiresAtMs,
     idempotencyKey: mint(),
@@ -195,7 +217,11 @@ export async function submitWithdrawal(
   let decided = "refused";
   try {
     const outcome = await runSubmit(deps, input, signal);
-    decided = outcome.ok ? `accepted:${outcome.value.withdrawal.status}` : `refused:${outcome.refusal.kind}`;
+    decided = !outcome.ok
+      ? `refused:${outcome.refusal.kind}`
+      : outcome.value.outcome === "accepted"
+        ? `accepted:${outcome.value.withdrawal.status}`
+        : "unknown";
     return outcome;
   } finally {
     submitting.delete(input.proposalId);
@@ -208,16 +234,21 @@ async function runSubmit(
   input: VexCloudSubmitWithdrawalInput,
   signal: AbortSignal,
 ): Promise<VexCloudOutcome<VexCloudSubmitWithdrawalResult>> {
-  const found = proposals.peek(input.proposalId);
+  const nowMs = deps.now().getTime();
+  const sent = unresolved.peek(input.proposalId, nowMs);
+  if (sent.kind === "ok") return replay(deps, sent.entry, input, signal);
+
+  const found = approved.peek(input.proposalId, nowMs);
   if (found.kind === "missing") {
     return refused("proposal_missing", `This withdrawal was already sent, cancelled or never prepared. ${NOTHING_SENT} Check History before starting a new one.`);
   }
   if (found.kind === "expired") {
-    return refused("proposal_expired", `This withdrawal approval expired. Check History to see whether an earlier attempt reached Vex Cloud, then start a new one.`);
+    return refused("proposal_expired", `This withdrawal approval expired. ${NOTHING_SENT} Review the withdrawal again.`);
   }
-  const { proposal, idempotencyKey } = found.entry;
-  if (input.destination.toLowerCase() !== proposal.destination.toLowerCase() || input.amountWei !== proposal.amountWei) {
-    proposals.drop(proposal.proposalId);
+  const entry = found.entry;
+  const { proposal } = entry;
+  if (!echoMatches(proposal, input)) {
+    approved.drop(proposal.proposalId);
     return refused("proposal_changed", `The amount or destination differs from the withdrawal you reviewed. ${NOTHING_SENT} Review it again.`);
   }
   const bearer = await requireBearer(deps);
@@ -225,37 +256,84 @@ async function runSubmit(
   const read = await deps.api.readAccount(bearer.value, signal);
   if (!read.ok) return backendRefusal(deps, read.failure);
   if (!isEligible(read.value, deps.localWallets(), proposal.destination)) {
-    proposals.drop(proposal.proposalId);
+    approved.drop(proposal.proposalId);
     return refused("destination_not_linked", `That wallet is no longer both linked and in this app. ${NOTHING_SENT}`);
   }
+  // The approval's deadline, AGAIN, after the account read and right before
+  // the POST: a card that lapsed while the read ran is not an approval.
+  if (deps.now().getTime() >= entry.expiresAtMs) {
+    approved.drop(proposal.proposalId);
+    return refused("proposal_expired", `This withdrawal approval expired before it was sent. ${NOTHING_SENT} Review the withdrawal again.`);
+  }
+  if (signal.aborted) return refused("cancelled", `Cancelled. ${NOTHING_SENT}`);
+
+  // THE SEND. From here the withdrawal may exist on Vex Cloud, so the entry
+  // moves to `unresolved` BEFORE the request leaves: whatever happens next,
+  // its key survives until a definitive answer.
+  approved.drop(proposal.proposalId);
+  const kept: WithdrawalEntry = { ...entry, expiresAtMs: deps.now().getTime() + UNRESOLVED_WITHDRAWAL_RETENTION_MS };
+  unresolved.adopt(kept, deps.now().getTime());
+  return post(deps, kept, bearer.value, signal);
+}
+
+/** "Check status": the SAME key and body as the request already sent. Not a new approval, so no expiry or local gate. */
+async function replay(
+  deps: WithdrawDeps,
+  entry: WithdrawalEntry,
+  input: VexCloudSubmitWithdrawalInput,
+  signal: AbortSignal,
+): Promise<VexCloudOutcome<VexCloudSubmitWithdrawalResult>> {
+  if (!echoMatches(entry.proposal, input)) {
+    // Never drop here: the key may already name a withdrawal.
+    return refused("proposal_changed", "The amount or destination differs from the withdrawal that was sent. Check its status from the withdrawal itself.");
+  }
+  const bearer = await requireBearer(deps);
+  if (!bearer.ok) return bearer;
+  return post(deps, entry, bearer.value, signal);
+}
+
+async function post(
+  deps: WithdrawDeps,
+  entry: WithdrawalEntry,
+  bearer: string,
+  signal: AbortSignal,
+): Promise<VexCloudOutcome<VexCloudSubmitWithdrawalResult>> {
+  const { proposal, idempotencyKey } = entry;
   const created = await deps.api.createWithdrawal(
-    bearer.value,
+    bearer,
     idempotencyKey,
     { amountWei: proposal.amountWei, destination: proposal.destination },
     signal,
   );
   if (created.ok) {
-    proposals.drop(proposal.proposalId);
-    return { ok: true, value: { withdrawal: toWithdrawal(created.value) } };
+    unresolved.drop(proposal.proposalId);
+    return { ok: true, value: { outcome: "accepted", withdrawal: toWithdrawal(created.value) } };
   }
-  // A transport failure keeps the proposal and its key for a retry of THIS approval.
-  const transient = created.failure.kind === "unavailable" || created.failure.kind === "cancelled";
-  if (!transient) proposals.drop(proposal.proposalId);
-  const refusal = await backendRefusal<VexCloudSubmitWithdrawalResult>(deps, created.failure);
-  if (!refusal.ok && created.failure.kind === "unavailable") {
-    return refused(
-      refusal.refusal.kind,
-      `${refusal.refusal.detail} Vex Cloud may or may not have received the withdrawal; pressing Withdraw again repeats the same request and cannot send it twice.`,
-    );
+  if (isDefinitiveRefusal(created.failure)) {
+    unresolved.drop(proposal.proposalId);
+    return backendRefusal(deps, created.failure);
   }
-  return refusal;
+  // Not a proven refusal: the withdrawal may exist. Keep the key for "Check status".
+  return {
+    ok: true,
+    value: {
+      outcome: "unknown",
+      proposalId: proposal.proposalId,
+      amountWei: proposal.amountWei,
+      destination: proposal.destination,
+    },
+  };
+}
+
+function echoMatches(proposal: VexCloudWithdrawalProposal, input: VexCloudSubmitWithdrawalInput): boolean {
+  return input.destination.toLowerCase() === proposal.destination.toLowerCase() && input.amountWei === proposal.amountWei;
 }
 
 export async function readWithdrawalStatus(
   deps: WithdrawDeps,
   withdrawalId: string,
   signal: AbortSignal,
-): Promise<VexCloudOutcome<VexCloudSubmitWithdrawalResult>> {
+): Promise<VexCloudOutcome<VexCloudWithdrawalStatusResult>> {
   const bearer = await requireBearer(deps);
   if (!bearer.ok) return bearer;
   const read = await deps.api.readWithdrawal(bearer.value, withdrawalId, signal);

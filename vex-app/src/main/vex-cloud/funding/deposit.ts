@@ -18,11 +18,28 @@
  * | chain | 4663 | the signed request is prepared for the 4663 client |
  * | token | VEX, 18 decimals | the signed `to` is the VEX contract, `value` 0 |
  * | amount (human and wei) | parsed from the typed text | submit echo; signed calldata encodes it; on-chain balance (pending) covers it; still at least the minimum at the backend's CURRENT rate |
- * | from | an inventory wallet | submit echo; still in the inventory; the decrypted key derives it |
+ * | from | an inventory wallet LINKED to the signed-in account (fresh `account.wallets`) | submit echo; still in the inventory; still linked (fresh account read); the decrypted key derives it |
  * | to | the pinned address, equal to the backend's | pinned address re-resolved; backend re-read; signed calldata encodes it |
  * | fee bound | from a fresh estimate | `signStageBroadcast` refuses a request above it; the wallet's ETH covers the signed exposure |
  * | expiry, proposal id | minted here | consumed once; expiry re-checked |
  * | vault, runtime | | vault unlocked; execution gate open |
+ *
+ * WHY THE SENDER MUST BE LINKED. Vex Cloud attributes a deposit by its
+ * on-chain sender, which must be a wallet linked to the account
+ * (`VexVirtualsCompute/src/deposits/ledger.ts`). VEX from an unlinked wallet
+ * lands unattributed (manual recovery), and VEX from a wallet linked to
+ * ANOTHER account credits that account. So the sender is checked against
+ * the account's fresh `wallets` at prepare and again in the pre-sign gate.
+ *
+ * THE FINAL CHECK. The pre-sign gate runs before the key exists, and
+ * `signStageBroadcast` then still awaits the decryption and a nonce read
+ * (`assertReservedNonceMatchesPending`) before it signs. A Stop pressed, an
+ * expiry passed, a lock or an inventory change in that window would otherwise
+ * be signed over. `onFinalCheck` is the transfer port's
+ * `StagedBroadcastHooks.onBeforeSign`: the LAST await before the signature,
+ * after every preparation await. It re-checks the caller's signal, the
+ * expiry, the vault, the execution gate, the inventory, the gate's linked
+ * verdict and the local pin, all locally: no network call happens there.
  *
  * OUTCOMES. A throw anywhere before the send means nothing was broadcast
  * (`signStageBroadcast` contract); it is a refusal. After the send: a
@@ -125,6 +142,14 @@ function findWallet(deps: DepositDeps, address: string): WalletInventoryEntry | 
   return deps.listEvmWallets().find((entry) => entry.address.toLowerCase() === address.toLowerCase());
 }
 
+/** Linked to the signed-in account, per the account's own fresh `wallets`. */
+function isLinkedTo(account: VexCloudAccountResponse, address: string): boolean {
+  return account.wallets.some((wallet) => wallet.address.toLowerCase() === address.toLowerCase());
+}
+
+const SENDER_NOT_LINKED_DETAIL =
+  "That wallet is not linked to your Vex Cloud account, so a deposit from it would not reach your balance. Nothing was signed. Sign in again under Settings, Vex Cloud to link it, or pick a linked wallet.";
+
 function amountRefusal(reason: "empty" | "format" | "too_precise" | "zero"): VexCloudOutcome<never> {
   switch (reason) {
     case "empty":
@@ -223,6 +248,7 @@ export async function prepareDeposit(
   const account = read.value;
   const mismatch = pinRefusal(pinned, account.deposit_address);
   if (mismatch !== null) return mismatch;
+  if (!isLinkedTo(account, entry.address)) return refused("sender_not_linked", SENDER_NOT_LINKED_DETAIL);
   const minimum = minimumOf(account);
   if (!minimum.ok) return minimum;
   if (amount.wei < minimum.value.minimumWei) {
@@ -264,7 +290,7 @@ export async function prepareDeposit(
   }
 
   const now = deps.now();
-  const minted = proposals.mint((proposalId) => {
+  const minted = proposals.mint(now.getTime(), (proposalId) => {
     const proposal: VexCloudDepositProposal = {
       proposalId,
       actor: "user",
@@ -371,7 +397,7 @@ async function runSubmit(
   input: VexCloudSubmitDepositInput,
   signal: AbortSignal,
 ): Promise<VexCloudOutcome<VexCloudSubmitDepositResult>> {
-  const found = proposals.consume(input.proposalId);
+  const found = proposals.consume(input.proposalId, deps.now().getTime());
   if (found.kind === "missing") {
     return refused("proposal_missing", `This deposit was already sent, cancelled or never prepared. ${NOTHING_SIGNED} Review the deposit again.`);
   }
@@ -402,7 +428,10 @@ async function runSubmit(
     return refused("chain_unavailable", `Robinhood Chain is not reachable from this build. ${NOTHING_SIGNED}`);
   }
 
-  /** THE LAST GATE before the key. Every bound field is checked again here. */
+  /** Set by the pre-sign gate from its fresh account read; read by the final check, which makes no call. */
+  let linkedAtGate = false;
+
+  /** THE GATE before the key. Every bound field is checked again here. */
   const onBeforeSign = async (request: FinalSignedRequest): Promise<void> => {
     if (deps.now().getTime() >= expiresAtMs) gate("proposal_expired", `This deposit approval expired while it was being prepared. ${NOTHING_SIGNED}`);
     if (!deps.isExecutionReady()) gate("execution_not_ready", `Vex is not ready to sign right now. ${NOTHING_SIGNED}`);
@@ -426,6 +455,10 @@ async function runSubmit(
     } else {
       const mismatch = pinRefusal(pinned, account.value.deposit_address);
       if (mismatch !== null && !mismatch.ok) throw new GateRefusal(mismatch.refusal);
+      if (!isLinkedTo(account.value, from)) {
+        gate("sender_not_linked", `That wallet is no longer linked to your Vex Cloud account. ${NOTHING_SIGNED} Sign in again under Settings, Vex Cloud to link it.`);
+      }
+      linkedAtGate = true;
       const minimum = minimumOf(account.value);
       if (!minimum.ok) throw new GateRefusal(minimum.refusal);
       if (amountWei < minimum.value.minimumWei) {
@@ -453,6 +486,25 @@ async function runSubmit(
     if (signal.aborted) gate("cancelled", `Cancelled. ${NOTHING_SIGNED}`);
   };
 
+  /**
+   * THE FINAL CHECK, immediately before the signature and after every
+   * preparation await (the key decryption and the nonce read included).
+   * Local only: no network call happens here, so nothing can change between
+   * this verdict and the bytes being signed.
+   */
+  const onFinalCheck = async (): Promise<void> => {
+    if (signal.aborted) gate("cancelled", `Cancelled. ${NOTHING_SIGNED}`);
+    if (deps.now().getTime() >= expiresAtMs) gate("proposal_expired", `This deposit approval expired while it was being prepared. ${NOTHING_SIGNED}`);
+    if (!deps.isVaultUnlocked()) gate("vault", `Vex is locked. Unlock Vex, then deposit again. ${NOTHING_SIGNED}`);
+    if (!deps.isExecutionReady()) gate("execution_not_ready", `Vex is not ready to sign right now. ${NOTHING_SIGNED}`);
+    if (findWallet(deps, from) === undefined) gate("wallet_not_in_inventory", `That wallet is no longer in this app. ${NOTHING_SIGNED}`);
+    if (!linkedAtGate) gate("sender_not_linked", `That wallet's link to your Vex Cloud account was not confirmed. ${NOTHING_SIGNED}`);
+    const pinned = deps.pinnedDepositAddress();
+    if (pinned === null || pinned.toLowerCase() !== to.toLowerCase()) {
+      gate("deposit_address_mismatch", `The deposit address built into Vex changed after you reviewed the deposit. ${NOTHING_SIGNED}`);
+    }
+  };
+
   const loadPrivateKey = async (): Promise<Hex> => {
     if (!deps.isVaultUnlocked()) gate("vault", `Vex is locked. Unlock Vex, then deposit again. ${NOTHING_SIGNED}`);
     const entry = findWallet(deps, from);
@@ -468,6 +520,7 @@ async function runSubmit(
       data,
       feeBound,
       onBeforeSign,
+      onFinalCheck,
       loadPrivateKey,
       onHashStaged: (txHash) => {
         staged.hash = txHash;

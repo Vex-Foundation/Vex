@@ -145,6 +145,35 @@ export async function backendRefusal<T>(port: SessionPort, failure: VexCloudCall
   }
 }
 
+/**
+ * Whether a MUTATION's failure PROVES Vex Cloud refused it, so nothing was
+ * committed and its idempotency key may be retired.
+ *
+ * Proof is a refusal the backend names: a 401 (the session check runs before
+ * any handler), or a 4xx, 429 or 503 carrying a reason this build knows
+ * (every one of them is raised before or instead of the ledger write:
+ * `VexVirtualsCompute/src/withdrawals/ledger.ts` `requestWithdrawal`,
+ * `src/http/custody-routes.ts`). Everything else does not prove refusal and
+ * is an UNKNOWN commit outcome: a body this build cannot read (the write may
+ * have committed), a timeout or network error after the send, a 5xx or a
+ * throttle without a known reason, an unknown reason, and a cancel that
+ * landed while the request was in flight.
+ */
+export function isDefinitiveRefusal(failure: VexCloudCallFailure): boolean {
+  switch (failure.kind) {
+    case "unauthorized":
+      return true;
+    case "rejected":
+      if (failure.reason === null) return failure.status === 404;
+      return DRIFT_REASONS.has(failure.reason) || REASON_KINDS[failure.reason] !== undefined;
+    case "unavailable":
+      return failure.reason !== undefined && REASON_KINDS[failure.reason] !== undefined;
+    case "invalid_response":
+    case "cancelled":
+      return false;
+  }
+}
+
 /** Call with the stored bearer; a failure becomes its named refusal. */
 export async function withBearer<T>(
   port: SessionPort,

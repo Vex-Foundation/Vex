@@ -21,6 +21,7 @@ import type {
   VexCloudUsageResult,
   VexCloudWithdrawalProposal,
   VexCloudWithdrawalStatusInput,
+  VexCloudWithdrawalStatusResult,
 } from "../../../schemas/vex-cloud-funding.js";
 import type { AbortableInvocation } from "../common.js";
 
@@ -60,7 +61,7 @@ export interface VexCloudBridge {
   readonly prepareWithdrawal: (input: VexCloudPrepareWithdrawalInput) => AbortableInvocation<VexCloudWithdrawalProposal>;
   /** Ask Vex Cloud to send the approved withdrawal; a retry of the same proposal reuses its key. */
   readonly submitWithdrawal: (input: VexCloudSubmitWithdrawalInput) => Promise<Result<VexCloudSubmitWithdrawalResult>>;
-  readonly withdrawal: (input: VexCloudWithdrawalStatusInput) => Promise<Result<VexCloudSubmitWithdrawalResult>>;
+  readonly withdrawal: (input: VexCloudWithdrawalStatusInput) => Promise<Result<VexCloudWithdrawalStatusResult>>;
   /** Move all claimable cashback to the balance. */
   readonly claimCashback: () => Promise<Result<VexCloudClaimCashbackResult>>;
   readonly activity: (input: VexCloudPageInput) => Promise<Result<VexCloudActivityResult>>;

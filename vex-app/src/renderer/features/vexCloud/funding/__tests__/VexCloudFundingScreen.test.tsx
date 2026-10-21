@@ -9,6 +9,10 @@
  * a second press before submit echoes the proposal; withdraw offers only
  * wallets that are linked AND in the app and shows the status as a fill plus
  * a word; cashback says why it cannot claim; history says when more exists.
+ * Also: an unlinked wallet is listed but disabled with its reason; a
+ * withdrawal whose outcome is unknown has no Reject, offers Check status
+ * first, survives Close and blocks a duplicate review; an unknown claim says
+ * so; a failed Load more keeps its rows and retries the same cursor.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -17,6 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VexCloudAccount, VexCloudAccountResult, VexCloudDepositPin } from "@shared/schemas/vex-cloud.js";
 import type { VexCloudDepositProposal, VexCloudWithdrawalProposal } from "@shared/schemas/vex-cloud-funding.js";
 import { VexCloudFundingPage } from "../VexCloudFundingScreen.js";
+import { SENDER_NOT_LINKED } from "../DepositTab.js";
+import { OUTCOME_UNKNOWN_DETAIL, UNRESOLVED_BLOCKS_REVIEW } from "../WithdrawTab.js";
+import { CLAIM_STATUS_UNKNOWN } from "../CashbackTab.js";
+import { useUnresolvedWithdrawals } from "../unresolved-withdrawals.js";
 
 const W1 = "0x1111111111111111111111111111111111111111";
 const W2 = "0x2222222222222222222222222222222222222222";
@@ -117,6 +125,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  useUnresolvedWithdrawals.setState({ records: [] });
   for (const fn of Object.values(bridge)) fn.mockReset();
   bridge.account.mockResolvedValue(signedIn());
   bridge.depositWallets.mockReturnValue({
@@ -243,6 +252,27 @@ describe("deposit", () => {
     expect(bridge.submitDeposit).not.toHaveBeenCalled();
   });
 
+  it("a wallet not linked to the account is listed but disabled, with the reason and the next step", async () => {
+    renderPage();
+    const picker = await screen.findByRole("combobox");
+    await waitFor(() => expect(picker.textContent).toContain("Main"));
+    fireEvent.click(picker);
+    const unlinked = screen.getByRole("option", { name: /Trading/ });
+    expect(unlinked.getAttribute("aria-disabled")).toBe("true");
+    expect(unlinked.textContent).toContain("not linked");
+    fireEvent.click(unlinked);
+    expect(screen.getByRole("combobox").textContent).toContain("Main");
+    expect(screen.getByTestId("deposit-unlinked").textContent).toContain(`Trading 0x2222…2222: ${SENDER_NOT_LINKED}`);
+  });
+
+  it("with no linked wallet the form says why it cannot deposit and offers no review", async () => {
+    bridge.account.mockResolvedValue(signedIn(undefined, { wallets: [] }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("deposit-disabled-reason").textContent).toBe(`None of your wallets can deposit yet. ${SENDER_NOT_LINKED}`));
+    await typeAmount("6000");
+    expect((screen.getByRole("button", { name: "Review deposit" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("a refusal from main is shown as main worded it", async () => {
     bridge.prepareDeposit.mockReturnValue({
       promise: Promise.resolve({
@@ -297,7 +327,7 @@ describe("withdraw", () => {
     bridge.prepareWithdrawal.mockReturnValue({ promise: Promise.resolve({ ok: true, data: PROPOSAL }), cancel: vi.fn() });
     bridge.submitWithdrawal.mockResolvedValue({
       ok: true,
-      data: { withdrawal: { id: "wd_1", status: "broadcast", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
+      data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "broadcast", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
     });
     bridge.withdrawal.mockReturnValue(new Promise(() => undefined));
     await openWithdraw();
@@ -316,6 +346,76 @@ describe("withdraw", () => {
     const status = await screen.findByTestId("withdraw-status");
     expect(within(status).getByText("Pending")).toBeTruthy();
   });
+
+  const UNKNOWN = { ok: true, data: { outcome: "unknown", proposalId: PROPOSAL.proposalId, amountWei: PROPOSAL.amountWei, destination: W1 } };
+
+  async function approveInto(answer: unknown): Promise<void> {
+    bridge.prepareWithdrawal.mockReturnValue({ promise: Promise.resolve({ ok: true, data: PROPOSAL }), cancel: vi.fn() });
+    bridge.submitWithdrawal.mockResolvedValueOnce(answer);
+    await openWithdraw();
+    fireEvent.change(await screen.findByLabelText("You withdraw"), { target: { value: "6000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
+    const card = await screen.findByTestId("withdraw-approval");
+    fireEvent.click(within(card).getByRole("button", { name: "Approve withdrawal" }));
+  }
+
+  it("reviewing (never submitted): Reject is offered, first in focus, and says nothing was sent", async () => {
+    bridge.prepareWithdrawal.mockReturnValue({ promise: Promise.resolve({ ok: true, data: PROPOSAL }), cancel: vi.fn() });
+    await openWithdraw();
+    fireEvent.change(await screen.findByLabelText("You withdraw"), { target: { value: "6000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
+    const card = await screen.findByTestId("withdraw-approval");
+    const reject = within(card).getByRole("button", { name: "Reject" });
+    expect(document.activeElement).toBe(reject);
+    fireEvent.click(reject);
+    expect(await screen.findByText("Withdrawal rejected. Nothing was sent.")).toBeTruthy();
+    expect(bridge.submitWithdrawal).not.toHaveBeenCalled();
+  });
+
+  it("outcome_unknown (submitted, unknown): no Reject, Check status first in focus, and the copy states the uncertainty", async () => {
+    await approveInto(UNKNOWN);
+    const block = await screen.findByTestId("withdraw-outcome-unknown");
+    expect(within(block).getByText("Status unknown")).toBeTruthy();
+    expect(block.textContent).toContain(OUTCOME_UNKNOWN_DETAIL);
+    expect(block.textContent).not.toMatch(/Nothing was sent/);
+    expect(within(block).getAllByRole("button").map((b) => b.textContent)).toEqual(["Check status", "Close", "Open History"]);
+    expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
+    expect(document.activeElement?.textContent).toBe("Check status");
+  });
+
+  it("Check status replays the SAME proposal and shows the withdrawal once Vex Cloud answers", async () => {
+    await approveInto(UNKNOWN);
+    bridge.submitWithdrawal.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "debited", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
+    });
+    bridge.withdrawal.mockReturnValue(new Promise(() => undefined));
+    fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Check status" }));
+    expect(await screen.findByTestId("withdraw-status")).toBeTruthy();
+    expect(bridge.submitWithdrawal).toHaveBeenCalledTimes(2);
+    expect(bridge.submitWithdrawal.mock.calls[1]).toEqual([{ proposalId: PROPOSAL.proposalId, destination: W1, amountWei: PROPOSAL.amountWei }]);
+    expect(useUnresolvedWithdrawals.getState().records).toEqual([]);
+  });
+
+  it("Close keeps the record visible as Status unknown, and blocks a new review of the same amount and wallet", async () => {
+    await approveInto(UNKNOWN);
+    fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Close" }));
+    const row = await screen.findByTestId("withdraw-unresolved-row");
+    expect(within(row).getByText("Status unknown")).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "Check status" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("You withdraw"), { target: { value: "6000" } });
+    expect(screen.getByTestId("withdraw-disabled-reason").textContent).toBe(UNRESOLVED_BLOCKS_REVIEW);
+    expect((screen.getByRole("button", { name: "Review withdrawal" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("You withdraw"), { target: { value: "7000" } });
+    expect(screen.getByTestId("withdraw-disabled-reason").textContent).toBe("");
+  });
+
+  it("Open History from an unknown outcome goes to the History tab", async () => {
+    bridge.activity.mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+    await approveInto(UNKNOWN);
+    fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Open History" }));
+    expect(await screen.findByTestId("history-tab")).toBeTruthy();
+  });
 });
 
 describe("cashback", () => {
@@ -329,12 +429,28 @@ describe("cashback", () => {
 
   it("claims to the balance and says what moved", async () => {
     bridge.account.mockResolvedValue(signedIn(undefined, { balances: { ...account().balances, claimable: amount(12n * E18, "12000") } }));
-    bridge.claimCashback.mockResolvedValue({ ok: true, data: { claimedWei: String(12n * E18) } });
+    bridge.claimCashback.mockResolvedValue({ ok: true, data: { outcome: "claimed", claimedWei: String(12n * E18) } });
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: "Cashback" }));
     expect((await screen.findByTestId("cashback-claimable")).textContent).toBe("12 VEX");
     fireEvent.click(screen.getByRole("button", { name: "Claim to balance" }));
     expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
+  });
+
+  it("an unknown claim outcome says so, never Nothing was changed, and offers Check status", async () => {
+    bridge.account.mockResolvedValue(signedIn(undefined, { balances: { ...account().balances, claimable: amount(12n * E18, "12000") } }));
+    bridge.claimCashback.mockResolvedValueOnce({ ok: true, data: { outcome: "unknown" } });
+    bridge.claimCashback.mockResolvedValueOnce({ ok: true, data: { outcome: "claimed", claimedWei: String(12n * E18) } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Cashback" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Claim to balance" }));
+    const outcome = await screen.findByTestId("cashback-outcome");
+    expect(within(outcome).getByText("Status unknown")).toBeTruthy();
+    expect(outcome.textContent).toContain(CLAIM_STATUS_UNKNOWN);
+    expect(outcome.textContent).not.toMatch(/Nothing was changed/);
+    fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+    expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
+    expect(bridge.claimCashback).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -351,6 +467,27 @@ describe("history", () => {
     await waitFor(() => expect(screen.getByTestId("history-foot").textContent).toBe("Showing all 3"));
     expect(bridge.activity).toHaveBeenLastCalledWith({ cursor: "c_2" });
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("a failed Load more keeps the rows, offers Retry of the same cursor, and never says Showing all", async () => {
+    const row = (id: string) => ({ id, kind: "deposit", amountWei: String(E18), status: "credited", txHash: null, createdAt: NOW });
+    bridge.activity
+      .mockResolvedValueOnce({ ok: true, data: { items: [row("a"), row("b")], nextCursor: "c_2" } })
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { code: "provider.unavailable", domain: "vexCloud", message: "Vex Cloud could not be reached.", retryable: true, userActionable: true, redacted: true, correlationId: "c" },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { items: [row("c")], nextCursor: null } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "History" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    expect((await screen.findByTestId("history-next-failed")).textContent).toContain("Vex Cloud could not be reached.");
+    expect(screen.getAllByTestId("history-row")).toHaveLength(2);
+    expect(screen.getByTestId("history-foot").textContent).toBe("Showing 2 · more available");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByTestId("history-foot").textContent).toBe("Showing all 3"));
+    expect(bridge.activity.mock.calls.map((call) => call[0])).toEqual([{ cursor: null }, { cursor: "c_2" }, { cursor: "c_2" }]);
+    expect(screen.queryByTestId("history-next-failed")).toBeNull();
   });
 
   it("labels an estimated usage cost as estimated", async () => {

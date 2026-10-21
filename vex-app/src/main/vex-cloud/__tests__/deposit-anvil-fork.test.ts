@@ -207,7 +207,8 @@ describeFork("Vex Cloud deposit on an Anvil fork of Robinhood Chain", () => {
     const account = {
       account_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
       status: { paused: false, drain_mode: false },
-      wallets: [],
+      // Linked: the sender check passes, so the refusal below is the pin's alone.
+      wallets: [{ address: WALLET.toLowerCase(), linked_at: new Date().toISOString() }],
       deposit_address: DEV_DEPOSIT,
       balances: {
         available: { wei: "0", usd_micro_estimate: "0" },

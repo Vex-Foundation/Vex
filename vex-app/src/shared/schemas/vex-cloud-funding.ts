@@ -257,9 +257,27 @@ export const vexCloudSubmitWithdrawalInputSchema = z
   .strict();
 export type VexCloudSubmitWithdrawalInput = z.infer<typeof vexCloudSubmitWithdrawalInputSchema>;
 
-export const vexCloudSubmitWithdrawalResultSchema = z
-  .object({ withdrawal: vexCloudWithdrawalSchema })
-  .strict();
+/**
+ * What a submit (or its "Check status" replay) learned.
+ *
+ * `accepted`: Vex Cloud answered with the withdrawal. `unknown`: the request
+ * was SENT and the answer did not prove a refusal (a body this build cannot
+ * read, a timeout or network error after the send, a 5xx): the withdrawal
+ * may exist. Main keeps the proposal and its idempotency key, and submitting
+ * the same proposal again replays the SAME key, which can only return the
+ * existing withdrawal. A definitive refusal is an error result, never this.
+ */
+export const vexCloudSubmitWithdrawalResultSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("accepted"), withdrawal: vexCloudWithdrawalSchema }).strict(),
+  z
+    .object({
+      outcome: z.literal("unknown"),
+      proposalId: proposalIdSchema,
+      amountWei: rawIntegerSchema,
+      destination: evmAddressSchema,
+    })
+    .strict(),
+]);
 export type VexCloudSubmitWithdrawalResult = z.infer<typeof vexCloudSubmitWithdrawalResultSchema>;
 
 export const vexCloudWithdrawalStatusInputSchema = z
@@ -267,20 +285,25 @@ export const vexCloudWithdrawalStatusInputSchema = z
   .strict();
 export type VexCloudWithdrawalStatusInput = z.infer<typeof vexCloudWithdrawalStatusInputSchema>;
 
-export const vexCloudWithdrawalStatusResultSchema = vexCloudSubmitWithdrawalResultSchema;
-export type VexCloudWithdrawalStatusResult = VexCloudSubmitWithdrawalResult;
+export const vexCloudWithdrawalStatusResultSchema = z
+  .object({ withdrawal: vexCloudWithdrawalSchema })
+  .strict();
+export type VexCloudWithdrawalStatusResult = z.infer<typeof vexCloudWithdrawalStatusResultSchema>;
 
 // ── claimCashback ────────────────────────────────────────────────────────
 
 /** Phase 2 claims to the balance only; the wallet destination is phase 3 and has no field here. */
 export const vexCloudClaimCashbackInputSchema = z.object({}).strict();
 
-export const vexCloudClaimCashbackResultSchema = z
-  .object({
-    /** What moved to the balance; `0` when nothing was claimable. */
-    claimedWei: rawIntegerSchema,
-  })
-  .strict();
+/**
+ * `claimed`: what moved to the balance (`0` when nothing was claimable).
+ * `unknown`: the claim was sent and the answer did not prove a refusal; main
+ * keeps its key, and the next claim repeats it ("Check status").
+ */
+export const vexCloudClaimCashbackResultSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("claimed"), claimedWei: rawIntegerSchema }).strict(),
+  z.object({ outcome: z.literal("unknown") }).strict(),
+]);
 export type VexCloudClaimCashbackResult = z.infer<typeof vexCloudClaimCashbackResultSchema>;
 
 // ── history: activity, usage, deposits ───────────────────────────────────

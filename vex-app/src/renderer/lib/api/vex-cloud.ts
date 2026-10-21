@@ -23,7 +23,7 @@ import {
   type UseInfiniteQueryResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import type { Result } from "@shared/ipc/result.js";
+import type { Result, VexError } from "@shared/ipc/result.js";
 import type {
   VexCloudAccountResult,
   VexCloudSignInInput,
@@ -45,6 +45,7 @@ import {
   type VexCloudSubmitWithdrawalResult,
   type VexCloudUsageResult,
   type VexCloudWithdrawalProposal,
+  type VexCloudWithdrawalStatusResult,
 } from "@shared/schemas/vex-cloud-funding.js";
 import type { AbortableInvocation } from "@shared/types/bridge/common.js";
 import type { VexCloudBridge } from "@shared/types/bridge/shell/vex-cloud.js";
@@ -171,7 +172,7 @@ export function claimVexCloudCashback(): Promise<Result<VexCloudClaimCashbackRes
 }
 
 /** A withdrawal's status, polled until it reads Completed or Returned. */
-export function useVexCloudWithdrawal(withdrawalId: string | null): UseQueryResult<Result<VexCloudSubmitWithdrawalResult>> {
+export function useVexCloudWithdrawal(withdrawalId: string | null): UseQueryResult<Result<VexCloudWithdrawalStatusResult>> {
   return useQuery(
     queryOptions({
       queryKey: vexCloudKeys.withdrawal(withdrawalId ?? ""),
@@ -195,37 +196,56 @@ export function useVexCloudWithdrawal(withdrawalId: string | null): UseQueryResu
 type HistoryKind = "activity" | "usage" | "deposits";
 
 /**
+ * A history page main refused or could not read, THROWN rather than stored as
+ * a page: a failed page appended to the list would end the chain (no next
+ * cursor) and the foot would read "Showing all N" over a list that is not
+ * complete. Thrown, the query keeps every page that loaded, `hasNextPage`
+ * still comes from the last SUCCESSFUL page, and fetching the next page again
+ * retries the very cursor that failed.
+ */
+export class HistoryPageError extends Error {
+  constructor(readonly error: VexError) {
+    super(error.message);
+    this.name = "HistoryPageError";
+  }
+}
+
+export type HistoryQuery<T> = UseInfiniteQueryResult<InfiniteData<T, string | null>, HistoryPageError>;
+
+/**
  * One history list, cursor-paginated. `hasNextPage` is true exactly when the
- * backend returned a `next_cursor`, so "Load more" never promises rows that
- * do not exist. A failed page stops the chain rather than skipping ahead.
+ * last page that loaded returned a `nextCursor`, so "Load more" never
+ * promises rows that do not exist, and a failed page never reads as the end.
  */
 function useHistory<T extends { readonly nextCursor: string | null }>(
   kind: HistoryKind,
   read: (bridge: VexCloudBridge, cursor: string | null) => Promise<Result<T>>,
   enabled: boolean,
-): UseInfiniteQueryResult<InfiniteData<Result<T>, string | null>> {
-  return useInfiniteQuery({
+): HistoryQuery<T> {
+  return useInfiniteQuery<T, HistoryPageError, InfiniteData<T, string | null>, ReturnType<typeof vexCloudKeys.history>, string | null>({
     queryKey: vexCloudKeys.history(kind),
-    queryFn: async ({ pageParam }): Promise<Result<T>> => {
+    queryFn: async ({ pageParam }): Promise<T> => {
       const bridge = vexCloudBridge();
-      return bridge === null ? BRIDGE_UNAVAILABLE : read(bridge, pageParam);
+      const result = bridge === null ? BRIDGE_UNAVAILABLE : await read(bridge, pageParam);
+      if (!result.ok) throw new HistoryPageError(result.error);
+      return result.data;
     },
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => (lastPage.ok && lastPage.data.nextCursor !== null ? lastPage.data.nextCursor : undefined),
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled,
     retry: false,
   });
 }
 
-export function useVexCloudActivity(enabled: boolean): UseInfiniteQueryResult<InfiniteData<Result<VexCloudActivityResult>, string | null>> {
+export function useVexCloudActivity(enabled: boolean): HistoryQuery<VexCloudActivityResult> {
   return useHistory("activity", (bridge, cursor) => bridge.activity({ cursor }), enabled);
 }
 
-export function useVexCloudUsage(enabled: boolean): UseInfiniteQueryResult<InfiniteData<Result<VexCloudUsageResult>, string | null>> {
+export function useVexCloudUsage(enabled: boolean): HistoryQuery<VexCloudUsageResult> {
   return useHistory("usage", (bridge, cursor) => bridge.usage({ cursor }), enabled);
 }
 
-export function useVexCloudDeposits(enabled: boolean): UseInfiniteQueryResult<InfiniteData<Result<VexCloudDepositsResult>, string | null>> {
+export function useVexCloudDeposits(enabled: boolean): HistoryQuery<VexCloudDepositsResult> {
   return useHistory("deposits", (bridge, cursor) => bridge.deposits({ cursor }), enabled);
 }
 

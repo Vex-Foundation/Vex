@@ -24,6 +24,9 @@ export interface WalletSelectOption {
   readonly id: string;
   readonly address: string;
   readonly label: string;
+  /** Listed but not choosable; `note` says why, after the address. */
+  readonly disabled?: boolean;
+  readonly note?: string;
 }
 
 function shortenAddress(address: string): string {
@@ -62,7 +65,8 @@ export function WalletSelect({
       ...(allowNone ? [{ value: "", label: "None" }] : []),
       ...options.map((w) => ({
         value: w.id,
-        label: `${w.label} (${shortenAddress(w.address)})`,
+        label: `${w.label} (${shortenAddress(w.address)})${w.note === undefined ? "" : `, ${w.note}`}`,
+        ...(w.disabled === true && { disabled: true }),
       })),
     ],
     [options, allowNone],

@@ -9,10 +9,19 @@
  *
  * WHY DEFERRED. The key is decrypted only after every preparation call
  * (estimate, fee fill, nonce) and after the caller's pre-sign gate has
- * passed, and no provider call happens between that gate and the signature
- * (`src/tools/evm-chains/staged-broadcast.ts`, `DeferredEvmSigner`). The
- * nonce owner for (wallet, 4663) is taken inside `signStageBroadcast`, so two
- * Vex flows signing for the same wallet cannot reuse a nonce.
+ * passed (`src/tools/evm-chains/staged-broadcast.ts`, `DeferredEvmSigner`).
+ * The nonce owner for (wallet, 4663) is taken inside `signStageBroadcast`, so
+ * two Vex flows signing for the same wallet cannot reuse a nonce.
+ *
+ * TWO CALLER CHECKS, IN THIS ORDER. `onBeforeSign` is the deferred signer's
+ * gate: it runs before the key exists and may read the chain and the
+ * caller's backend. After it, `signStageBroadcast` still awaits the key
+ * decryption and the pending-nonce re-read (`assertReservedNonceMatchesPending`),
+ * a network round trip. `onFinalCheck` is passed as
+ * `StagedBroadcastHooks.onBeforeSign`, which `signStageBroadcast` awaits
+ * LAST, after both, immediately before the offline signature with no
+ * provider call in between: the place for a cancellation, an expiry or any
+ * other local authority that must still hold when the bytes are signed.
  *
  * THE NONCE IS NOT RESERVED DURABLY here. The durable allocator
  * (`evm_nonce_reservations`) admits a closed set of purposes by a CHECK
@@ -64,8 +73,15 @@ export interface TransferBroadcastRequest {
   /** `transfer(to, amount)` calldata on the VEX token. */
   readonly data: Hex;
   readonly feeBound: StagedFeeExposureLimit;
-  /** THE LAST GATE: runs once after preparation, before the key exists. A throw signs nothing. */
+  /** The gate before the key: runs once after preparation, before the key exists. A throw signs nothing. */
   readonly onBeforeSign: (request: FinalSignedRequest) => Promise<void>;
+  /**
+   * THE FINAL CHECK: runs once after the key decryption and the pending-nonce
+   * read, immediately before the signature. Keep it local (no network call):
+   * nothing it validates can change before the bytes are signed. A throw
+   * signs nothing.
+   */
+  readonly onFinalCheck: (request: FinalSignedRequest) => Promise<void>;
   /** Decrypt the wallet's key, only after the gate passed. A throw signs nothing. */
   readonly loadPrivateKey: () => Promise<Hex>;
   /** Called with the hash after signing and before the send (the transaction exists from here). */
@@ -161,6 +177,7 @@ export function createErc20TransferPort(clients: TransferChainClients, token: Ad
             request.onHashStaged(handles.txHash);
           },
           onAccepted: async () => undefined,
+          onBeforeSign: request.onFinalCheck,
         },
         undefined,
         undefined,

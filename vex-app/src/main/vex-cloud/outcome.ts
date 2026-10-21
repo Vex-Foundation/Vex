@@ -40,6 +40,12 @@ export type VexCloudRefusalKind =
   | "deposit_address_mismatch"
   /** The wallet is not one of this app's in-app EVM wallets (any more). */
   | "wallet_not_in_inventory"
+  /**
+   * The deposit sender is not linked to the signed-in account: Vex Cloud
+   * attributes a deposit by its on-chain sender, so VEX from it would land
+   * unattributed (or credit the account it is linked to).
+   */
+  | "sender_not_linked"
   /** The typed amount is not a positive VEX amount with at most 18 decimals. */
   | "invalid_amount"
   /** Under the backend minimum at its current rate. */
@@ -145,6 +151,7 @@ export function vexCloudRefusalError(
         return { code: "internal.unexpected", retryable: false, userActionable: false };
       case "not_signed_in":
       case "destination_not_linked":
+      case "sender_not_linked":
       case "account_paused":
         return { code: "permissions.denied", retryable: false, userActionable: true };
       case "deposits_not_open":
