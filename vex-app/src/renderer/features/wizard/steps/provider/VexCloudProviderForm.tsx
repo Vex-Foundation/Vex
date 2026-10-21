@@ -1,6 +1,6 @@
 /**
- * The provider step's Vex Cloud branch: sign in (the shared account panel),
- * pick a model from the Vex Cloud list, save.
+ * The provider step's Vex Cloud branch, named "Vex Inference" to the user:
+ * sign in (the shared account panel), pick a model from its list, save.
  *
  * Saving sends `{provider: "vexcloud", model}` and nothing else: no key is
  * typed here, because the credential is the session the sign-in stored. Main
@@ -30,7 +30,7 @@ import { ModelPicker } from "./ModelPicker.js";
 export interface VexCloudProviderFormProps {
   readonly env: EnvState | null;
   readonly flowMode: WizardFlowMode;
-  /** The OpenRouter / Vex Cloud choice, rendered at the top. */
+  /** The Vex Inference / OpenRouter choice, rendered at the top. */
   readonly choice: ReactNode;
   /** The model already in effect when Vex Cloud is the active provider. */
   readonly activeModel: string | null;
@@ -70,11 +70,11 @@ export function VexCloudProviderForm({
       setSavedMs(null);
       const modelId = model.trim();
       if (!signedIn) {
-        setError("Sign in to Vex Cloud first.");
+        setError("Sign in to Vex Inference first.");
         return;
       }
       if (!catalogue.some((option) => option.modelId === modelId)) {
-        setError("Pick a model from the Vex Cloud list.");
+        setError("Pick a model from the Vex Inference list.");
         return;
       }
       setSubmitting(true);
@@ -101,7 +101,7 @@ export function VexCloudProviderForm({
       flowMode={flowMode}
       env={env}
       title="Inference provider"
-      description="Vex Cloud runs the agent's models and charges your VEX balance per request. Your wallet keys and vault contents never leave this computer; only the conversation is sent to the model."
+      description="Vex Inference runs the agent's models and charges your VEX balance per request. Your wallet keys and vault contents never leave this computer; only the conversation is sent to the model."
       formProps={{
         onSubmit: (event) => {
           void onSubmit(event);
@@ -117,7 +117,7 @@ export function VexCloudProviderForm({
             </Button>
           ) : null}
           <Button type="submit" disabled={busy || !signedIn || model.trim().length === 0}>
-            {submitting ? "Checking..." : advancePending ? "Continuing..." : "Use Vex Cloud"}
+            {submitting ? "Checking..." : advancePending ? "Continuing..." : "Use Vex Inference"}
           </Button>
         </>
       }
@@ -143,7 +143,7 @@ export function VexCloudProviderForm({
             }}
           />
           <p className="vex-wz-hint">
-            <span>The models Vex Cloud offers. Prices include the Vex Cloud margin and are charged in VEX.</span>
+            <span>The models Vex Inference offers. Prices include the Vex Inference margin and are charged in VEX.</span>
           </p>
         </div>
         {error !== null || advanceError !== null ? (
@@ -153,7 +153,7 @@ export function VexCloudProviderForm({
         ) : null}
         {savedMs !== null ? (
           <div role="status" data-vex-provider-success="vexcloud" className="text-sm text-ink-primary">
-            Vex Cloud saved ({savedMs}ms). Changes apply the next time the agent starts.
+            Vex Inference saved ({savedMs}ms). Changes apply the next time the agent starts.
           </div>
         ) : null}
       </div>

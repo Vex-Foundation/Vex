@@ -729,7 +729,7 @@ describe("submitDeposit", () => {
     const w = mount();
     const proposal = await prepare();
     w.pinned = OTHER_DEPOSIT;
-    expectError(await call(CH.vexCloud.submitDeposit, submitOf(proposal)), "wallet.policy_blocked", /changed after you reviewed/);
+    expectError(await call(CH.vexCloud.submitDeposit, submitOf(proposal)), "wallet.policy_blocked", /changed after the deposit was reviewed/);
     expect(w.chain.keyLoads).toBe(0);
     expect(w.chain.signedHashes).toHaveLength(0);
   });

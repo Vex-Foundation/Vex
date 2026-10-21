@@ -261,7 +261,7 @@ function vexCloudError(signal: EngineFailureSignals, correlationId: string): Vex
       return {
         ...base,
         code: "provider.insufficient_credits",
-        message: "Your Vex Cloud balance is too low for this request. Top up VEX, then retry.",
+        message: "Your Vex Inference balance is too low for this request. Top up VEX, then retry.",
         retryable: false,
         userActionable: true,
       };
@@ -269,7 +269,7 @@ function vexCloudError(signal: EngineFailureSignals, correlationId: string): Vex
       return {
         ...base,
         code: "provider.invalid_api_key",
-        message: "Your Vex Cloud session has expired or was revoked. Sign in to Vex Cloud again in Settings, then retry.",
+        message: "Your Vex Inference session has expired or was revoked. Sign in to Vex Inference again in Settings, then retry.",
         retryable: false,
         userActionable: true,
       };
@@ -277,7 +277,7 @@ function vexCloudError(signal: EngineFailureSignals, correlationId: string): Vex
       return {
         ...base,
         code: "permissions.denied",
-        message: "Vex Cloud paused this account for review, so the request was not run.",
+        message: "Vex Inference paused this account for review, so the request was not run.",
         retryable: false,
         userActionable: false,
       };
@@ -285,7 +285,7 @@ function vexCloudError(signal: EngineFailureSignals, correlationId: string): Vex
       return {
         ...base,
         code: "provider.unavailable",
-        message: "Vex Cloud is unavailable right now. Retry in a moment.",
+        message: "Vex Inference is unavailable right now. Retry in a moment.",
         retryable: true,
         userActionable: true,
       };

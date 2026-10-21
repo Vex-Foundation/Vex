@@ -56,6 +56,14 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Relay venue bridge preview - always available (owner decision D4).
   BridgeQuoteRelay: async () => (await import("../internal/action-aliases.js")).handleBridgeQuoteRelay,
 
+  // Vex Inference account read and the two-call deposit (desktop host only)
+  VexInferenceStatus: async () =>
+    (await import("../internal/vex-inference/status.js")).handleVexInferenceStatus,
+  VexInferenceDepositPrepare: async () =>
+    (await import("../internal/vex-inference/deposit.js")).handleVexInferenceDepositPrepare,
+  VexInferenceDepositConfirm: async () =>
+    (await import("../internal/vex-inference/deposit.js")).handleVexInferenceDepositConfirm,
+
   // Mission
   MissionDraftUpdate: async () => (await import("../internal/mission.js")).handleMissionDraftUpdate,
   MissionStop: async () => (await import("../internal/mission.js")).handleMissionStop,

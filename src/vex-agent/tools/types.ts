@@ -94,6 +94,16 @@ export interface ToolVisibility {
    * which is the wrong axis here.
    */
   requiresSummaryReady?: boolean;
+  /**
+   * True -> show only while the inference provider is Vex Inference AND a
+   * Vex Inference session is held AND the desktop host is mounted
+   * (`internal/vex-inference/host.ts`, `vexInferenceToolAvailability`).
+   * Read per request from the environment the main process maintains, like
+   * `requiresEnv`, so a provider switch, a sign-out or a vault lock removes
+   * the tools from the next request. The handlers re-check and refuse by
+   * name with the typed reason.
+   */
+  requiresVexInference?: boolean;
 }
 
 /**

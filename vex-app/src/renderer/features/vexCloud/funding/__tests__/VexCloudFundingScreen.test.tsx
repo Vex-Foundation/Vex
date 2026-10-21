@@ -118,6 +118,11 @@ const bridge = {
   activity: vi.fn(),
   usage: vi.fn(),
   deposits: vi.fn(),
+  alertGet: vi.fn(),
+  alertSet: vi.fn(),
+  autoTopUpGet: vi.fn(),
+  prepareAutoTopUp: vi.fn(),
+  submitAutoTopUp: vi.fn(),
 };
 
 function renderPage(options: { readonly strict?: boolean } = {}) {
@@ -135,6 +140,8 @@ beforeEach(() => {
   useUnresolvedWithdrawals.setState({ records: [] });
   for (const fn of Object.values(bridge)) fn.mockReset();
   bridge.account.mockResolvedValue(signedIn());
+  bridge.alertGet.mockResolvedValue({ ok: true, data: { alertPercent: 20, observation: null } });
+  bridge.autoTopUpGet.mockReturnValue({ promise: Promise.resolve({ ok: true, data: { rule: null } }), cancel: vi.fn() });
   bridge.depositWallets.mockReturnValue({
     promise: Promise.resolve({
       ok: true,
@@ -165,21 +172,21 @@ describe("page states", () => {
   it("loading is a word, never figures", () => {
     bridge.account.mockReturnValue(new Promise(() => undefined));
     renderPage();
-    expect(screen.getByText("Checking Vex Cloud")).toBeTruthy();
+    expect(screen.getByText("Checking Vex Inference")).toBeTruthy();
   });
 
   it("signed out points at Settings and offers no form", async () => {
     bridge.account.mockResolvedValue({ ok: true, data: { state: "signed_out", reason: "not_signed_in", localWallets: [W1] } });
     renderPage();
-    expect(await screen.findByText("Sign in to Vex Cloud first.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open Vex Cloud settings" })).toBeTruthy();
+    expect(await screen.findByText("Sign in to Vex Inference first.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Vex Inference settings" })).toBeTruthy();
     expect(screen.queryByRole("tab")).toBeNull();
   });
 
   it("the four tabs in order", async () => {
     renderPage();
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Deposit", "Withdraw", "Cashback", "History"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Deposit", "Withdraw", "Cashback", "Auto top-up", "History"]);
   });
 
   it("Deposits open soon when the build pins no address", async () => {
@@ -230,7 +237,7 @@ describe("deposit", () => {
 
     const card = await screen.findByTestId("deposit-approval");
     expect(within(card).getByText("Real funds")).toBeTruthy();
-    expect(within(card).getByText("Deposit 6,000 VEX to Vex Cloud.")).toBeTruthy();
+    expect(within(card).getByText("Deposit 6,000 VEX to Vex Inference.")).toBeTruthy();
     expect(within(card).getAllByText(DEPOSIT).length).toBeGreaterThan(0);
     expect(within(card).getByText("0.0000072 ETH")).toBeTruthy();
     const buttons = within(card).getAllByRole("button");
@@ -344,7 +351,7 @@ describe("withdraw", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
     expect(bridge.prepareWithdrawal).toHaveBeenCalledWith({ destination: W1, amountText: "6000" });
     const card = await screen.findByTestId("withdraw-approval");
-    expect(within(card).getByText("Funds leave Vex Cloud:")).toBeTruthy();
+    expect(within(card).getByText("Funds leave Vex Inference:")).toBeTruthy();
     expect(within(card).getAllByText(W1).length).toBeGreaterThan(0);
     expect(within(card).getByText("Not available")).toBeTruthy();
     expect(document.activeElement?.textContent).toBe("Reject");
@@ -441,7 +448,7 @@ describe("withdraw", () => {
     });
     fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Check status" }));
     expect((await screen.findByTestId("withdraw-message")).textContent).toBe(
-      "Vex Cloud did not create this withdrawal. That is more than can be withdrawn now. Nothing was moved.",
+      "Vex Inference did not create this withdrawal. That is more than can be withdrawn now. Nothing was moved.",
     );
     expect(useUnresolvedWithdrawals.getState().records).toEqual([]);
     expect(screen.queryByTestId("withdraw-unresolved-row")).toBeNull();
@@ -503,7 +510,7 @@ describe("cashback", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Cashback" }));
     expect((await screen.findByTestId("cashback-claimable")).textContent).toBe("12 VEX");
     fireEvent.click(screen.getByRole("button", { name: "Claim to balance" }));
-    expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
+    expect(await screen.findByText("Claimed 12 VEX to your Vex Inference balance.")).toBeTruthy();
   });
 
   it("an unknown claim outcome says so, never Nothing was changed, and offers Check status", async () => {
@@ -518,7 +525,7 @@ describe("cashback", () => {
     expect(outcome.textContent).toContain(CLAIM_STATUS_UNKNOWN);
     expect(outcome.textContent).not.toMatch(/Nothing was changed/);
     fireEvent.click(screen.getByRole("button", { name: "Check status" }));
-    expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
+    expect(await screen.findByText("Claimed 12 VEX to your Vex Inference balance.")).toBeTruthy();
     expect(bridge.claimCashback).toHaveBeenCalledTimes(2);
   });
 
@@ -528,7 +535,7 @@ describe("cashback", () => {
     renderPage({ strict: true });
     fireEvent.click(await screen.findByRole("tab", { name: "Cashback" }));
     fireEvent.click(await screen.findByRole("button", { name: "Claim to balance" }));
-    expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
+    expect(await screen.findByText("Claimed 12 VEX to your Vex Inference balance.")).toBeTruthy();
   });
 
   it("a refused check of an unknown claim stays Status unknown, shows why, and still offers Check status", async () => {

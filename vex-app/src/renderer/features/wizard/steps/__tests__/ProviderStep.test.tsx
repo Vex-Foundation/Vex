@@ -101,9 +101,13 @@ function envState(
       dbReachable: true,
     },
     walletStatus: { evm: "present", solana: "present" },
+    // An OpenRouter choice without its key yet (`AGENT_PROVIDER=openrouter`):
+    // the step keeps OpenRouter and shows its form. A fresh install (no
+    // provider named) opens on Vex Inference instead; that default is pinned
+    // in `ProviderStep-vexcloud.test.tsx`.
     provider: {
       configured: false,
-      name: null,
+      name: "openrouter",
       modelLabel: null,
       endpointTag: null,
       ...overrides,
@@ -188,7 +192,7 @@ describe("ProviderStep", () => {
     expect(getByText(/anthropic\/claude-sonnet-4\.5/)).toBeTruthy();
   });
 
-  it("renders OpenRouter form when not configured", () => {
+  it("renders the OpenRouter form when OpenRouter is named but not configured", () => {
     mockUseEnvState.mockReturnValue(makeQueryResult(envState()));
     const { container } = renderWithQuery(
       <ProviderStep

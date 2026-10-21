@@ -37,7 +37,7 @@ vi.mock("../../logger/index.js", () => ({
 }));
 
 const { prepareDeposit, submitDeposit, __resetDepositStateForTests } = await import("../funding/deposit.js");
-type DepositDeps = import("../funding/deposit.js").DepositDeps;
+type DepositDeps = import("../funding/deposit-core.js").DepositDeps;
 
 const KEY = `0x${"42".repeat(32)}` as Hex;
 const WALLET = privateKeyToAccount(KEY).address;

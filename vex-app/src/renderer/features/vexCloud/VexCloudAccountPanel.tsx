@@ -1,10 +1,11 @@
 /**
- * Vex Cloud account, in the R3 Minimal register: the state as a fill and a
- * word, the VEX balance with its unit, its USD estimate and the rate's age,
- * the linked wallets, and Sign in or Sign out. "Fund" opens the funding page
- * (a centre page: Deposit, Withdraw, Cashback, History).
+ * Vex Cloud account (named "Vex Inference" to the user), in the R3 Minimal
+ * register: the state as a fill and a word, the VEX balance with its unit,
+ * its USD estimate and the rate's age, the linked wallets, and Sign in or
+ * Sign out. "Fund" opens the funding page (a centre page: Deposit, Withdraw,
+ * Cashback, History).
  *
- * Shared by the Settings "Vex Cloud" section and the provider step's Vex
+ * Shared by the Settings "Vex Inference" section and the provider step's Vex
  * Cloud branch, so both read and say the same thing.
  *
  * THE CONSENT. Signed out, the panel lists the in-app EVM wallets main will
@@ -104,7 +105,7 @@ function SignedIn({
       />
       {account.paused ? (
         <p className="m-0 text-[13px] text-ink-secondary">
-          Vex Cloud paused this account for review. Requests are refused until it is cleared.
+          Vex Inference paused this account for review. Requests are refused until it is cleared.
         </p>
       ) : null}
       <section aria-label="VEX balance">
@@ -193,7 +194,7 @@ function SignedOut({
       />
       {localWallets.length === 0 ? (
         <p className="m-0 text-[13.5px] text-ink-secondary">
-          Vex Cloud signs in with your in-app EVM wallets, and none exists yet. Add one in Wallets first.
+          Vex Inference signs in with your in-app EVM wallets, and none exists yet. Add one in Wallets first.
         </p>
       ) : (
         <>
@@ -212,7 +213,7 @@ function SignedOut({
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="button" disabled={localWallets.length === 0 || signing} onClick={onSignIn}>
-          {signing ? "Signing in…" : "Sign in to Vex Cloud"}
+          {signing ? "Signing in…" : "Sign in to Vex Inference"}
         </Button>
         {action.kind === "signing_in" ? (
           <Button type="button" variant="ink" onClick={action.cancel}>
@@ -276,17 +277,17 @@ export function VexCloudAccountPanel(): JSX.Element {
 
   let body: JSX.Element;
   if (accountQuery.isLoading) {
-    body = <EmptyBlock scope="Vex Cloud" title="Checking Vex Cloud" loading />;
+    body = <EmptyBlock scope="Vex Inference" title="Checking Vex Inference" loading />;
   } else if (view === null) {
     const error = result?.ok === false ? result.error : null;
     body = (
       <EmptyBlock
-        scope="Vex Cloud"
+        scope="Vex Inference"
         state="error"
         title={
           error?.code === "wallet.keystore_locked"
-            ? "Unlock Vex to use Vex Cloud."
-            : "Vex Cloud could not be read."
+            ? "Unlock Vex to use Vex Inference."
+            : "Vex Inference could not be read."
         }
         detail={error?.message ?? "Try again in a moment."}
         action={{ label: "Try again", onClick: () => void accountQuery.refetch() }}

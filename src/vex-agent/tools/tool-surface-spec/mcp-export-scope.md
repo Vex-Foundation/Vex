@@ -24,6 +24,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Memory | NO | session_memory_search, session_memory_resolve_item, long_memory_suggest, long_memory_search, long_memory_get, long_memory_history |
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |
 | Presentation | NO | board_compose |
+| Vex Inference | NO | vex_inference_status, vex_inference_deposit_prepare, vex_inference_deposit_confirm |
 | Knowledge | NO | already retired from the agent surface; stays retired in the export |
 | Meta / discovery | ToolSearch YES (read-only catalog search); execute_tool NO | see below and owner-decisions.md D2 |
 
@@ -87,6 +88,13 @@ The exclusion is enforced in one place and consumed by all three surfaces:
   path has neither the renderer nor the turn loop, so an external agent could
   only stage boards nobody can see. Excluded by the merge decision of
   2026-08-25; revisit if the Studio UI ever renders per-call boards.
+- Vex Inference (`VexInferenceStatus`, `VexInferenceDepositPrepare`,
+  `VexInferenceDepositConfirm`) reads and funds the desktop app's signed-in
+  Vex Inference account, the inference provider that pays for the in-app
+  agent. Its bearer, its funding owners and the user's auto top-up rule live
+  in the app's main process, and the deposit's approval card is raised by the
+  in-app turn loop. An MCP client pays for its own inference and has no such
+  account to fund, so the group is not exported.
 
 ## Design notes for the Studio phase (not Batch 1 work)
 

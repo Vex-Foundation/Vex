@@ -52,12 +52,12 @@ type Step =
 export const WITHDRAWALS_NOT_OPEN = "Withdrawals are not open yet";
 
 export const NO_WITHDRAW_DESTINATION =
-  "Withdrawals go only to a wallet that is linked to your Vex Cloud account and is in this app, and none is.";
+  "Withdrawals go only to a wallet that is linked to your Vex Inference account and is in this app, and none is.";
 
 export const STATUS_UNKNOWN = "Status unknown";
 
 export const OUTCOME_UNKNOWN_DETAIL =
-  "Vex sent this withdrawal to Vex Cloud but did not get a clear answer, so it may or may not have been created. Check status asks again with the same request, which cannot create a second withdrawal.";
+  "Vex sent this withdrawal to Vex Inference but did not get a clear answer, so it may or may not have been created. Check status asks again with the same request, which cannot create a second withdrawal.";
 
 export const LOST_UNRESOLVED_DETAIL =
   "Vex no longer holds this request, so it cannot re-check it here. Look for it in History; do not send it again until you have checked.";
@@ -117,7 +117,7 @@ export function WithdrawTab({
     destinations.length === 0
       ? NO_WITHDRAW_DESTINATION
       : account.paused
-        ? "Vex Cloud paused this account for review, so funds cannot leave it right now."
+        ? "Vex Inference paused this account for review, so funds cannot leave it right now."
         : destination === null
           ? "Pick a wallet."
           : (reading.problem ?? (blockedBy === null ? null : UNRESOLVED_BLOCKS_REVIEW));
@@ -129,7 +129,7 @@ export function WithdrawTab({
       <EmptyBlock
         scope="Withdraw"
         title={WITHDRAWALS_NOT_OPEN}
-        detail="Vex Cloud cannot send VEX out yet. Your balance stays in your account and still pays for requests."
+        detail="Vex Inference cannot send VEX out yet. Your balance stays in your account and still pays for requests."
         data-testid="withdraw-not-open"
       />
     );
@@ -186,13 +186,13 @@ export function WithdrawTab({
         invalidate();
         if (!mounted.current || mine !== generation.current) return;
         setStep({ kind: "editing" });
-        setMessage(`Vex Cloud did not create this withdrawal. ${result.data.detail}`);
+        setMessage(`Vex Inference did not create this withdrawal. ${result.data.detail}`);
         return;
       }
       if (result.ok) {
         keepUnresolved(record);
         if (!mounted.current || mine !== generation.current) return;
-        if (!fromReview) setCheckNote({ proposalId: record.proposalId, text: "Still no clear answer from Vex Cloud. Try Check status again in a moment, or look in History." });
+        if (!fromReview) setCheckNote({ proposalId: record.proposalId, text: "Still no clear answer from Vex Inference. Try Check status again in a moment, or look in History." });
         setStep((current) => (current.kind === "editing" ? current : { kind: "outcome_unknown", record }));
         return;
       }
@@ -229,7 +229,7 @@ export function WithdrawTab({
           testId="withdraw-approval"
           sentence={`Withdraw ${amount} VEX to your wallet ${shortAddress(proposal.destination)}.`}
           source={{
-            left: "From your Vex Cloud balance",
+            left: "From your Vex Inference balance",
             right:
               proposal.withdrawableWei === null ? (
                 `Withdrawable now: ${NOT_AVAILABLE}`
@@ -252,7 +252,7 @@ export function WithdrawTab({
             },
           ]}
           risks={[
-            { lead: "Funds leave Vex Cloud:", text: "this VEX leaves your Vex Cloud balance for the wallet above, and the transfer cannot be undone once it is sent." },
+            { lead: "Funds leave Vex Inference:", text: "this VEX leaves your Vex Inference balance for the wallet above, and the transfer cannot be undone once it is sent." },
           ]}
           signedFields={[
             { label: "Actor", value: "You, from the funding page" },
@@ -464,12 +464,12 @@ function WithdrawalStatus({ initial, onDone }: { readonly initial: VexCloudWithd
       <StateWord state={look.fill} word={look.word} size={12} live />
       <p className="m-0 text-[14px] leading-[1.5] text-ink-secondary">
         {look.word === "Pending"
-          ? "Vex Cloud accepted the withdrawal and is sending it."
+          ? "Vex Inference accepted the withdrawal and is sending it."
           : look.word === "Confirming"
             ? "The transfer is on Robinhood Chain and waiting to be final."
             : look.word === "Completed"
               ? "The VEX reached your wallet."
-              : "The withdrawal did not go through, and the VEX is back in your Vex Cloud balance."}
+              : "The withdrawal did not go through, and the VEX is back in your Vex Inference balance."}
       </p>
       <p className="m-0 text-[13px] text-ink-tertiary">
         {formatVexExact(BigInt(withdrawal.amountWei))} VEX to <span className="vex-num font-mono">{withdrawal.destination}</span>

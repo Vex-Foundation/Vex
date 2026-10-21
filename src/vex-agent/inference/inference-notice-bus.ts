@@ -2,14 +2,16 @@
  * In-process inference NOTICE bus: facts about a request that succeeded but
  * not quite as asked, which the user must be told about (never silently).
  *
- * Today one kind exists: Vex Cloud lowered `max_tokens` (owner decision D16,
- * the `x-vex-max-tokens` disclosure read in `openrouter/round-fetch.ts`).
+ * Two kinds: Vex Cloud lowered `max_tokens` (owner decision D16, the
+ * `x-vex-max-tokens` disclosure read in `openrouter/round-fetch.ts`), and the
+ * Vex Inference balance crossed below the user's alert percent (raised by the
+ * main-process balance watch, `vex-app/src/main/vex-cloud/balance-watch.ts`).
  * The main-side bridge (`vex-app/src/main/agent/inference-notice-bridge.ts`)
  * validates and broadcasts it; the renderer shows it on the session's turn.
  *
  * Same shape as `engine/runtime/error-bus.ts`: a `Set` of listeners,
  * idempotent unsubscribe, a throwing listener isolated from the rest. It
- * lives under `inference/` because the provider is its only producer, and
+ * lives under `inference/` because the provider is its main producer, and
  * the provider must not import the engine runtime.
  *
  * Notices carry bounded codes and integers only, never request or response
@@ -38,7 +40,27 @@ export interface MaxTokensClampedNotice {
   readonly occurredAt: string;
 }
 
-export type InferenceNoticeEvent = MaxTokensClampedNotice;
+/**
+ * The Vex Inference balance crossed below the user's alert percent of its
+ * reference (the high-water mark since the last credited deposit). ONE per
+ * crossing: the main-process balance watch latches it durably. Shown on the
+ * turn of the session that last ran Vex Inference inference.
+ */
+export interface VexInferenceBalanceLowNotice {
+  readonly type: typeof INFERENCE_NOTICE_EVENT_TYPE;
+  readonly kind: "vex_inference_balance_low";
+  readonly sessionId: string;
+  readonly missionRunId: string | null;
+  readonly provider: "vexcloud";
+  readonly alertPercent: number;
+  /** Available plus provisional, raw wei (VEX, 18 decimals). */
+  readonly balanceWei: string;
+  readonly thresholdWei: string;
+  readonly referenceWei: string;
+  readonly occurredAt: string;
+}
+
+export type InferenceNoticeEvent = MaxTokensClampedNotice | VexInferenceBalanceLowNotice;
 export type InferenceNoticeListener = (event: InferenceNoticeEvent) => void;
 
 export class InferenceNoticeBus {
@@ -110,4 +132,58 @@ export function emitMaxTokensClampNotice(
     reason: input.clamp.reason,
     occurredAt: new Date().toISOString(),
   });
+}
+
+// ── Vex Inference low-balance notice ─────────────────────────────────────
+
+/** The session whose turn last ran Vex Inference inference: where a balance notice is shown. */
+let lastVexInferenceTurn: { readonly sessionId: string; readonly missionRunId: string | null } | null = null;
+
+/** Recorded by the provider for every Vex Inference request that belongs to a session. */
+export function noteVexInferenceTurn(sessionId: string | null, missionRunId: string | null): void {
+  if (sessionId === null) return;
+  lastVexInferenceTurn = { sessionId, missionRunId };
+}
+
+/** Test-only. */
+export function resetVexInferenceTurnForTests(): void {
+  lastVexInferenceTurn = null;
+}
+
+/**
+ * Emit the low-balance notice for one crossing. Always logged (amounts and
+ * the percent only); emitted to the bus when a session has run Vex Inference
+ * in this process, so a turn can show it. Without one, the funding page
+ * indication is the record. Returns whether a session received it.
+ */
+export function emitVexInferenceBalanceLowNotice(
+  input: {
+    readonly alertPercent: number;
+    readonly balanceWei: bigint;
+    readonly thresholdWei: bigint;
+    readonly referenceWei: bigint;
+  },
+  bus: InferenceNoticeBus = inferenceNoticeBus,
+): boolean {
+  logger.info("inference.vex_inference_balance_low", {
+    alertPercent: input.alertPercent,
+    balanceWei: input.balanceWei.toString(),
+    thresholdWei: input.thresholdWei.toString(),
+    referenceWei: input.referenceWei.toString(),
+    sessionId: lastVexInferenceTurn?.sessionId ?? null,
+  });
+  if (lastVexInferenceTurn === null) return false;
+  bus.emit({
+    type: INFERENCE_NOTICE_EVENT_TYPE,
+    kind: "vex_inference_balance_low",
+    sessionId: lastVexInferenceTurn.sessionId,
+    missionRunId: lastVexInferenceTurn.missionRunId,
+    provider: "vexcloud",
+    alertPercent: input.alertPercent,
+    balanceWei: input.balanceWei.toString(),
+    thresholdWei: input.thresholdWei.toString(),
+    referenceWei: input.referenceWei.toString(),
+    occurredAt: new Date().toISOString(),
+  });
+  return true;
 }

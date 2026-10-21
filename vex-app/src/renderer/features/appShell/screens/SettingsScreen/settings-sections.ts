@@ -85,9 +85,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     id: "vexCloud",
     group: "The agent",
     icon: "spark",
-    name: "Vex Cloud",
+    name: "Vex Inference",
     hint: "Sign in, linked wallets, and your VEX balance",
-    lead: "Vex Cloud runs the agent's models paid in VEX. Sign in with your in-app wallets; your keys never leave this computer.",
+    lead: "Vex Inference runs the agent's models paid in VEX. Sign in with your in-app wallets; your keys never leave this computer.",
   },
   {
     id: "memory",
@@ -282,7 +282,7 @@ export function settingsSectionStatus(
               env.provider.name === "openrouter"
                 ? "OpenRouter"
                 : env.provider.name === "vexcloud"
-                  ? "Vex Cloud"
+                  ? "Vex Inference"
                   : "Configured",
             tone: "success",
           }

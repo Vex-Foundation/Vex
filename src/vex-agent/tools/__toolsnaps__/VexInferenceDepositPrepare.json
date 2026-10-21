@@ -1,0 +1,53 @@
+{
+  "definition": {
+    "function": {
+      "description": "Prepare a deposit of VEX from the user's wallet into their Vex Inference balance, which pays for this agent's inference. It SPENDS NOTHING and signs nothing: it checks the amount, the wallet and the deposit address and records one intent for VexInferenceDepositConfirm, which is the call that moves funds. Use this when the user asks to top up Vex Inference or VexInferenceStatus shows the balance below the alert. You supply ONLY the amount: `amountIn` as a decimal STRING in `denomination` VEX (default) or USD, converted to VEX at the Vex Inference rate and rounded up to whole wei. The source is the EVM wallet selected for this session, which must be linked to the Vex Inference account; `walletAddress` is optional and must equal it. THERE IS NO destination, token or chain parameter: the destination is the deposit address pinned in this Vex build and checked against the backend, the token is VEX (18 decimals) and the chain Robinhood Chain (4663); any such field is REFUSED BY NAME. Refused also below the $5 minimum at the current rate, above the wallet's VEX, without ETH for the network fee, or while deposits are not open. The intent is scoped to this session and expires in 10 minutes. In the app Vex dispatches the confirm itself. RETURNS summary, intentId, status 'prepared', amount (wei, vex, usdEstimate), requested, from, depositAddress, chainId, token, minimum, networkFee, walletVex, expiresAt and autoTopUp (whether a rule covers it).",
+      "name": "VexInferenceDepositPrepare",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "description": "The amount as a decimal STRING in `denomination`, never a JSON number: VEX with at most 18 decimals (\"125.5\"), or USD with at most 6 decimals and no currency sign (\"20\"). At least the $5 minimum at the current rate.",
+            "type": "string"
+          },
+          "denomination": {
+            "description": "The unit of `amountIn`: VEX (default) or USD, which is converted to VEX at the Vex Inference rate, rounded up to whole wei.",
+            "enum": [
+              "VEX",
+              "USD"
+            ],
+            "type": "string"
+          },
+          "walletAddress": {
+            "description": "Optional. The 0x address of the EVM wallet selected for this session; any other address is refused by name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountIn"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "approval_prepare",
+    "gates": {
+      "declaredVisibility": {
+        "requiresVexInference": true
+      },
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": false
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "mutating",
+    "withheld": true
+  }
+}

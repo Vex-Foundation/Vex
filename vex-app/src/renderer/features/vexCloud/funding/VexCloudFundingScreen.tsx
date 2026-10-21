@@ -1,13 +1,15 @@
 /**
- * The Vex Cloud funding page: a centre page (never a side panel, ELEMENTS
- * section 21), both sidebars standing, opened from Settings, Vex Cloud
- * ("Fund"). The balance in one line, then four tabs: Deposit, Withdraw,
- * Cashback, History.
+ * The Vex Inference funding page: a centre page (never a side panel, ELEMENTS
+ * section 21), both sidebars standing, opened from Settings ("Fund"). The
+ * balance in one line, a "Needs you" line while the balance is below the
+ * low-balance alert, then five tabs: Deposit, Withdraw, Cashback, Auto
+ * top-up, History.
  *
  * The page reads the account the Settings panel reads (one query, one
  * source). Signed out, it says so and points at Settings; it never signs in
- * by itself. Each tab is a deterministic form the user drives; nothing here
- * is reachable by the agent (plan 15.1).
+ * by itself. Each tab is a deterministic form the user drives. The agent has
+ * its own deposit tool with its own approval; an auto top-up rule is created
+ * only here.
  */
 
 import { useState, type JSX } from "react";
@@ -15,17 +17,19 @@ import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs.js";
-import { useVexCloudAccount } from "../../../lib/api/vex-cloud.js";
+import { useVexCloudAccount, useVexCloudAlert } from "../../../lib/api/vex-cloud.js";
+import { StateWord } from "../../../components/ui/state-word.js";
 import { ShellScreen } from "../../appShell/screens/ShellScreen.js";
 import { formatUsdEstimate, formatVexAmount, NOT_AVAILABLE } from "../vex-cloud-format.js";
 import { CashbackTab } from "./CashbackTab.js";
 import { DepositTab } from "./DepositTab.js";
+import { AutoTopUpTab } from "./AutoTopUpTab.js";
 import { HistoryTab } from "./HistoryTab.js";
 import { WithdrawTab } from "./WithdrawTab.js";
 
-export const FUNDING_PAGE_TITLE = "Vex Cloud funds";
+export const FUNDING_PAGE_TITLE = "Vex Inference";
 
-const FUNDING_TABS = ["deposit", "withdraw", "cashback", "history"] as const;
+const FUNDING_TABS = ["deposit", "withdraw", "cashback", "autoTopUp", "history"] as const;
 type FundingTab = (typeof FUNDING_TABS)[number];
 
 function isFundingTab(value: string): value is FundingTab {
@@ -48,17 +52,19 @@ export function VexCloudFundingScreen({
 
 export function VexCloudFundingPage(): JSX.Element {
   const accountQuery = useVexCloudAccount();
+  const alertQuery = useVexCloudAlert(accountQuery.data?.ok === true && accountQuery.data.data.state === "signed_in");
+  const belowAlert = alertQuery.data?.ok === true && alertQuery.data.data.observation?.belowAlert === true;
   const setShellRoute = useUiStore((s) => s.setShellRoute);
   const [tab, setTab] = useState<FundingTab>("deposit");
   const result = accountQuery.data;
 
-  if (accountQuery.isLoading) return <EmptyBlock scope="Vex Cloud" title="Checking Vex Cloud" loading />;
+  if (accountQuery.isLoading) return <EmptyBlock scope="Vex Inference" title="Checking Vex Inference" loading />;
   if (result === undefined || !result.ok) {
     return (
       <EmptyBlock
-        scope="Vex Cloud"
+        scope="Vex Inference"
         state="error"
-        title="Vex Cloud could not be read."
+        title="Vex Inference could not be read."
         detail={result?.ok === false ? result.error.message : "Try again in a moment."}
         action={{ label: "Try again", onClick: () => void accountQuery.refetch() }}
       />
@@ -68,10 +74,10 @@ export function VexCloudFundingPage(): JSX.Element {
   if (view.state === "signed_out") {
     return (
       <EmptyBlock
-        scope="Vex Cloud"
-        title="Sign in to Vex Cloud first."
-        detail="Funding needs a signed-in Vex Cloud account. Sign in with your in-app wallets in Settings."
-        action={{ label: "Open Vex Cloud settings", onClick: () => setShellRoute({ kind: "settings", origin: null, section: "vexCloud" }) }}
+        scope="Vex Inference"
+        title="Sign in to Vex Inference first."
+        detail="Funding needs a signed-in Vex Inference account. Sign in with your in-app wallets in Settings."
+        action={{ label: "Open Vex Inference settings", onClick: () => setShellRoute({ kind: "settings", origin: null, section: "vexCloud" }) }}
         data-testid="funding-signed-out"
       />
     );
@@ -93,18 +99,25 @@ export function VexCloudFundingPage(): JSX.Element {
           {account.withdrawable === null ? NOT_AVAILABLE : formatVexAmount(account.withdrawable)}
         </span>
       </p>
+      {belowAlert ? (
+        <div className="flex items-center gap-3" data-testid="funding-below-alert">
+          <StateWord state="concerned" word="Needs you: balance below your alert" />
+          <span className="text-[13px] text-ink-secondary">Top up VEX below, or set an auto top-up rule.</span>
+        </div>
+      ) : null}
       {account.paused ? (
         <p role="status" className="m-0 border-l-2 border-rule-ink pl-3 text-[13px] text-ink-primary">
-          Vex Cloud paused this account for review. Deposits are still credited; withdrawals wait until it is cleared.
+          Vex Inference paused this account for review. Deposits are still credited; withdrawals wait until it is cleared.
         </p>
       ) : null}
       <Tabs value={tab} onValueChange={(next) => {
           if (isFundingTab(next)) setTab(next);
         }} idScope="vex-cloud-funding">
-        <TabsList aria-label="Vex Cloud funds">
+        <TabsList aria-label="Vex Inference funds">
           <TabsTrigger value="deposit">Deposit</TabsTrigger>
           <TabsTrigger value="withdraw">Withdraw</TabsTrigger>
           <TabsTrigger value="cashback">Cashback</TabsTrigger>
+          <TabsTrigger value="autoTopUp">Auto top-up</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="deposit" className="pt-5">
@@ -115,6 +128,9 @@ export function VexCloudFundingPage(): JSX.Element {
         </TabsContent>
         <TabsContent value="cashback" className="pt-5">
           <CashbackTab account={account} />
+        </TabsContent>
+        <TabsContent value="autoTopUp" className="pt-5">
+          <AutoTopUpTab account={account} depositsOpen={view.depositPin.state === "matches"} />
         </TabsContent>
         <TabsContent value="history" className="pt-5">
           <HistoryTab />

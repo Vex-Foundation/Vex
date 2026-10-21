@@ -51,7 +51,7 @@ import {
   MODEL_CONFIG_STALE_RETRY_MS,
 } from "./config.js";
 import { createInferenceClient, resolveInferenceConnection } from "./openrouter/client-factory.js";
-import { emitMaxTokensClampNotice } from "./inference-notice-bus.js";
+import { emitMaxTokensClampNotice, noteVexInferenceTurn } from "./inference-notice-bus.js";
 
 import logger from "@utils/logger.js";
 import { normalizeOpenRouterError } from "./openrouter/errors.js";
@@ -136,7 +136,7 @@ export class OpenRouterProvider implements InferenceProvider {
     }
 
     this.id = connection.mode;
-    this.displayName = connection.mode === "vexcloud" ? "Vex Cloud" : "OpenRouter";
+    this.displayName = connection.mode === "vexcloud" ? "Vex Inference" : "OpenRouter";
     this.model = env.agentModel;
     this.contextLimit = env.contextLimit;
     // Vex Cloud routes upstream itself: an OpenRouter endpoint pin is an
@@ -180,6 +180,8 @@ export class OpenRouterProvider implements InferenceProvider {
     signal: AbortSignal | undefined,
     context?: InferenceRequestContext,
   ): Promise<SendChatCompletionRequestResponse> {
+    // Where a later Vex Inference balance notice is shown: the last session that ran inference here.
+    if (this.id === "vexcloud") noteVexInferenceTurn(context?.sessionId ?? null, context?.missionRunId ?? null);
     const observers: RoundObservers = {
       // Each 5xx `roundFetch` retries counts as a capacity retry of this
       // attempt, exactly like one the endpoint failover absorbs.

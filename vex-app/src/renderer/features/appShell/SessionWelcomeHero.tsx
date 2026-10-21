@@ -17,6 +17,8 @@
  *       button.vex-welcome__token   "Hide Vex", aria-pressed, over the coin
  *     h1.vex-welcome__greeting    the time-of-day greeting
  *     ErrorCallout?               a read that failed (the database down)
+ *     VexInferenceNotice?         "AI is now paid in VEX", until dismissed or
+ *                                 while another provider (or none) is active
  *
  * The token under her is a toggle (the owner, 2026-10-17, as on the web app):
  * a press closes her back into the token (her assembly backwards, the beam
@@ -70,6 +72,7 @@ import { NEEDS_YOU_UNKNOWN_COPY } from "../vex/needs-you.js";
 import { useVexPresence } from "../vex/useVexPresence.js";
 import { noteVexOnWelcome } from "../vex/vex-dock.js";
 import { vexEmotionOf } from "../vex/vex-emotion.js";
+import { VexInferenceNotice } from "./VexInferenceNotice.js";
 
 /** The composer's root seam, under her on the welcome: where her eyes go while the user types. */
 function findComposer(): HTMLElement | null {
@@ -315,6 +318,7 @@ export function SessionWelcomeHero(): JSX.Element {
           }
         />
       )}
+      <VexInferenceNotice />
     </div>
   );
 }

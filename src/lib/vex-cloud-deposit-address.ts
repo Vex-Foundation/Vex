@@ -3,8 +3,8 @@
  * resolver, read by the deposit prepare AND again by the pre-sign gate, so a
  * change between the two refuses the signature instead of redirecting it.
  *
- * The shipped value is the built-in `VEX_CLOUD_DEPOSIT_ADDRESS` (empty until
- * the production key exists). Development may name a local deposit address
+ * The shipped value is the built-in `VEX_CLOUD_DEPOSIT_ADDRESS` (the
+ * production custody wallet). Development may name a local deposit address
  * through `VEX_DEV_CLOUD_DEPOSIT_ADDRESS`, honoured only when main allowed the
  * development overrides at boot (`!app.isPackaged`): the SAME gate as the API
  * URL (`allowVexCloudDevOverride` in `./vex-cloud-endpoint.ts`), so a packaged
@@ -40,6 +40,5 @@ export function resolveVexCloudDepositAddress(
     const raw = env[VEX_CLOUD_DEV_DEPOSIT_ADDRESS_ENV]?.trim();
     if (raw !== undefined && raw.length > 0) return checksummed(raw);
   }
-  const shipped: string = VEX_CLOUD_DEPOSIT_ADDRESS;
-  return shipped.length === 0 ? null : checksummed(shipped);
+  return checksummed(VEX_CLOUD_DEPOSIT_ADDRESS);
 }

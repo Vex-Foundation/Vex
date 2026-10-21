@@ -41,6 +41,8 @@ import { productionVexCloudDeps, type VexCloudDeps } from "../vex-cloud/producti
 import { signInToVexCloud } from "../vex-cloud/sign-in.js";
 import { registerHandler } from "./register-handler.js";
 import { registerVexCloudFundingHandlers } from "./vex-cloud-funding.js";
+import { registerVexCloudAutoTopUpHandlers } from "./vex-cloud-auto-top-up.js";
+import { startVexInferenceRuntime, stopVexInferenceRuntime, type VexInferenceRuntime } from "../vex-cloud/runtime.js";
 
 const DOMAIN = "vexCloud" as const;
 
@@ -75,7 +77,7 @@ function registerSignInHandler(deps: VexCloudDeps): () => void {
     outputSchema: vexCloudSignInResultSchema,
     handle: async (input, ctx): Promise<Result<VexCloudSignInResult>> => {
       if (signInRunning) {
-        return refuse({ kind: "already_running", detail: "A Vex Cloud sign-in is already running. Wait for it to finish." }, ctx.requestId);
+        return refuse({ kind: "already_running", detail: "A Vex Inference sign-in is already running. Wait for it to finish." }, ctx.requestId);
       }
       signInRunning = true;
       try {
@@ -102,7 +104,7 @@ function registerSignInHandler(deps: VexCloudDeps): () => void {
         return unexpected(
           cause,
           ctx.requestId,
-          "Vex Cloud sign-in stopped unexpectedly. Open Vex Cloud in Settings to see whether you are signed in, then try again.",
+          "Vex Inference sign-in stopped unexpectedly. Open Vex Inference in Settings to see whether you are signed in, then try again.",
         );
       } finally {
         signInRunning = false;
@@ -123,7 +125,7 @@ function registerAccountHandler(deps: VexCloudDeps): () => void {
         if (!outcome.ok) return refuse(outcome.refusal, ctx.requestId);
         return ok(outcome.value);
       } catch (cause) {
-        return unexpected(cause, ctx.requestId, "Your Vex Cloud account could not be read. Try again in a moment.");
+        return unexpected(cause, ctx.requestId, "Your Vex Inference account could not be read. Try again in a moment.");
       }
     },
   });
@@ -146,15 +148,40 @@ function registerSignOutHandler(deps: VexCloudDeps): () => void {
   });
 }
 
-/** Mount point for `register-all.ts`. */
+/**
+ * Mount point for `register-all.ts`. Called with no arguments in production:
+ * the Vex Inference runtime (engine host, auto top-up poller, balance watch)
+ * is started over the production deps and every handler reads the account
+ * through its tracker. A test passing its own `deps` gets no runtime (and no
+ * alert or auto top-up channels) unless it passes one.
+ */
 export function registerVexCloudHandlers(
-  deps: VexCloudDeps = productionVexCloudDeps(),
+  deps?: VexCloudDeps,
+  runtime?: VexInferenceRuntime,
 ): ReadonlyArray<() => void> {
+  const resolved = deps ?? productionVexCloudDeps();
+  const live = runtime ?? (deps === undefined ? startVexInferenceRuntime(resolved) : undefined);
+  const effective: VexCloudDeps = live === undefined
+    ? resolved
+    : {
+      ...resolved,
+      api: { ...resolved.api, readAccount: live.deposit.api.readAccount },
+      clearSession: live.deposit.clearSession,
+      account: { ...resolved.account, clearSession: live.deposit.clearSession },
+    };
   return [
-    registerSignInHandler(deps),
-    registerAccountHandler(deps),
-    registerSignOutHandler(deps),
-    ...registerVexCloudFundingHandlers(deps),
+    registerSignInHandler(effective),
+    registerAccountHandler(effective),
+    registerSignOutHandler(effective),
+    ...registerVexCloudFundingHandlers(effective),
+    ...(live === undefined
+      ? []
+      : [
+        ...registerVexCloudAutoTopUpHandlers(live),
+        () => {
+          void stopVexInferenceRuntime();
+        },
+      ]),
   ];
 }
 

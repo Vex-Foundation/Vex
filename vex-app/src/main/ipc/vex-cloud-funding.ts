@@ -49,8 +49,8 @@ import {
   listDepositWallets,
   prepareDeposit,
   submitDeposit,
-  type DepositDeps,
 } from "../vex-cloud/funding/deposit.js";
+import type { DepositDeps } from "../vex-cloud/funding/deposit-core.js";
 import { readActivity, readDeposits, readUsage, type HistoryDeps } from "../vex-cloud/funding/history.js";
 import {
   prepareWithdrawal,
@@ -182,7 +182,7 @@ export function registerVexCloudFundingHandlers(deps: VexCloudDeps): ReadonlyArr
       inputSchema: vexCloudActivityInputSchema,
       outputSchema: vexCloudActivityResultSchema,
       run: (input, ctx) => readActivity(history, input, ctx.signal),
-      onThrow: "Your Vex Cloud activity could not be read. Try again in a moment.",
+      onThrow: "Your Vex Inference activity could not be read. Try again in a moment.",
     }),
     mount({
       operation: "usage",
@@ -190,7 +190,7 @@ export function registerVexCloudFundingHandlers(deps: VexCloudDeps): ReadonlyArr
       inputSchema: vexCloudUsageInputSchema,
       outputSchema: vexCloudUsageResultSchema,
       run: (input, ctx) => readUsage(history, input, ctx.signal),
-      onThrow: "Your Vex Cloud usage could not be read. Try again in a moment.",
+      onThrow: "Your Vex Inference usage could not be read. Try again in a moment.",
     }),
     mount({
       operation: "deposits",
@@ -198,7 +198,7 @@ export function registerVexCloudFundingHandlers(deps: VexCloudDeps): ReadonlyArr
       inputSchema: vexCloudDepositsInputSchema,
       outputSchema: vexCloudDepositsResultSchema,
       run: (input, ctx) => readDeposits(history, input, ctx.signal),
-      onThrow: "Your Vex Cloud deposits could not be read. Try again in a moment.",
+      onThrow: "Your Vex Inference deposits could not be read. Try again in a moment.",
     }),
   ];
 }

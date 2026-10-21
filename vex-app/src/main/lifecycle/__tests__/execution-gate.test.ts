@@ -292,6 +292,7 @@ const NOT_EXECUTION: ReadonlySet<string> = new Set<string>([
   CH.poolsLaunch.claimPreview, // read-only preview of a claim
   CH.vexCloud.prepareDeposit, // reads and mints a proposal; `submitDeposit` signs
   CH.vexCloud.prepareWithdrawal, // reads and mints a proposal; `submitWithdrawal` moves funds
+  CH.vexCloud.prepareAutoTopUp, // reads and mints a proposal; `submitAutoTopUp` changes the rule
   CH.settings.prepareLighterLeverage, // a preview; `confirm` signs
   CH.lighterTrading.startCandleSubscription, // public market data
   CH.lighterTrading.stopCandleSubscription,

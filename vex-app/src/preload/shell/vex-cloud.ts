@@ -23,6 +23,16 @@ import {
   type VexCloudSubmitWithdrawalInput,
   type VexCloudWithdrawalStatusInput,
 } from "../../shared/schemas/vex-cloud-funding.js";
+import {
+  vexCloudAlertGetInputSchema,
+  vexCloudAlertSetInputSchema,
+  vexCloudAutoTopUpGetInputSchema,
+  vexCloudPrepareAutoTopUpInputSchema,
+  vexCloudSubmitAutoTopUpInputSchema,
+  type VexCloudAlertSetInput,
+  type VexCloudPrepareAutoTopUpInput,
+  type VexCloudSubmitAutoTopUpInput,
+} from "../../shared/schemas/vex-cloud-auto-top-up.js";
 import type { VexCloudBridge } from "../../shared/types/bridge/shell/vex-cloud.js";
 import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
@@ -75,5 +85,20 @@ export const vexCloud = {
   },
   deposits(input: VexCloudPageInput) {
     return invokeWithSchema(CH.vexCloud.deposits, input, vexCloudDepositsInputSchema);
+  },
+  alertGet() {
+    return invokeWithSchema(CH.vexCloud.alertGet, {}, vexCloudAlertGetInputSchema);
+  },
+  alertSet(input: VexCloudAlertSetInput) {
+    return invokeWithSchema(CH.vexCloud.alertSet, input, vexCloudAlertSetInputSchema);
+  },
+  autoTopUpGet() {
+    return abortableInvoke(CH.vexCloud.autoTopUpGet, {}, vexCloudAutoTopUpGetInputSchema);
+  },
+  prepareAutoTopUp(input: VexCloudPrepareAutoTopUpInput) {
+    return abortableInvoke(CH.vexCloud.prepareAutoTopUp, input, vexCloudPrepareAutoTopUpInputSchema);
+  },
+  submitAutoTopUp(input: VexCloudSubmitAutoTopUpInput) {
+    return invokeWithSchema(CH.vexCloud.submitAutoTopUp, input, vexCloudSubmitAutoTopUpInputSchema);
   },
 } satisfies VexCloudBridge;

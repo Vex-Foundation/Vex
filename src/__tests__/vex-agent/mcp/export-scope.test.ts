@@ -82,6 +82,9 @@ const DOC_NAME_TO_LIVE_NAME: Readonly<Record<string, string>> = {
   compact_apply: "CompactApply",
   plan_write: "PlanWrite",
   board_compose: "BoardCompose",
+  vex_inference_status: "VexInferenceStatus",
+  vex_inference_deposit_prepare: "VexInferenceDepositPrepare",
+  vex_inference_deposit_confirm: "VexInferenceDepositConfirm",
 };
 
 /** Group rows of the decision table that enumerate concrete tool names. */

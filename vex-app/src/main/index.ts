@@ -76,6 +76,7 @@ import { installUpdaterAutoCheck } from "./updates/autoCheck.js";
 import { sweepTransientSecrets } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
+import { stopVexInferenceRuntime } from "./vex-cloud/runtime.js";
 import {
   ORDERED_QUIT_DEADLINE_MS,
   QUIT_STAGE_SLACK_MS,
@@ -613,6 +614,9 @@ async function initializeMainRuntime(): Promise<void> {
           stopMemoryManagerWorker,
         ),
         runQuitStage("engine-regime-worker", QUIT_TASK_DEADLINE_MS, stopRegimeWorker),
+        // The auto top-up poller: closes admission and drains an in-flight
+        // deposit (decided and recorded) before Postgres stops.
+        runQuitStage("vex-inference-auto-top-up", QUIT_TASK_DEADLINE_MS, stopVexInferenceRuntime),
         runQuitStage(
           "engine-tool-embedding-reconcile-worker",
           QUIT_TASK_DEADLINE_MS,

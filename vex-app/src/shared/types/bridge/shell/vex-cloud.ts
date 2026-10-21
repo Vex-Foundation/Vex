@@ -23,6 +23,15 @@ import type {
   VexCloudWithdrawalStatusInput,
   VexCloudWithdrawalStatusResult,
 } from "../../../schemas/vex-cloud-funding.js";
+import type {
+  VexCloudAlert,
+  VexCloudAlertSetInput,
+  VexCloudAutoTopUpGetResult,
+  VexCloudAutoTopUpProposal,
+  VexCloudPrepareAutoTopUpInput,
+  VexCloudSubmitAutoTopUpInput,
+  VexCloudSubmitAutoTopUpResult,
+} from "../../../schemas/vex-cloud-auto-top-up.js";
 import type { AbortableInvocation } from "../common.js";
 
 /**
@@ -67,4 +76,13 @@ export interface VexCloudBridge {
   readonly activity: (input: VexCloudPageInput) => Promise<Result<VexCloudActivityResult>>;
   readonly usage: (input: VexCloudPageInput) => Promise<Result<VexCloudUsageResult>>;
   readonly deposits: (input: VexCloudPageInput) => Promise<Result<VexCloudDepositsResult>>;
+  /** The low-balance alert percent and the last observation (balance, reference, threshold). */
+  readonly alertGet: () => Promise<Result<VexCloudAlert>>;
+  readonly alertSet: (input: VexCloudAlertSetInput) => Promise<Result<VexCloudAlert>>;
+  /** The live auto top-up rule with its derived state, caps used and recent executions. */
+  readonly autoTopUpGet: () => AbortableInvocation<VexCloudAutoTopUpGetResult>;
+  /** Mint a rule-change proposal: every bound the rule will hold. Changes nothing. */
+  readonly prepareAutoTopUp: (input: VexCloudPrepareAutoTopUpInput) => AbortableInvocation<VexCloudAutoTopUpProposal>;
+  /** Apply the approved proposal (the card is the approval). Execution-gated. */
+  readonly submitAutoTopUp: (input: VexCloudSubmitAutoTopUpInput) => Promise<Result<VexCloudSubmitAutoTopUpResult>>;
 }

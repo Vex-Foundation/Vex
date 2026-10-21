@@ -109,18 +109,18 @@ function rejectionRefusal(reason: string | null): VexCloudOutcome<never> {
   if (reason === "address_already_linked") {
     return refused(
       "wallet_linked_elsewhere",
-      "One of your wallets is already linked to a different Vex Cloud account. Nothing was linked; Vex Cloud never merges accounts on its own.",
+      "One of your wallets is already linked to a different Vex Inference account. Nothing was linked; Vex Inference never merges accounts on its own.",
     );
   }
   if (reason === "signers_span_accounts") {
     return refused(
       "wallets_span_accounts",
-      "Your wallets belong to different Vex Cloud accounts. Vex Cloud never merges accounts on its own, so nothing was changed.",
+      "Your wallets belong to different Vex Inference accounts. Vex Inference never merges accounts on its own, so nothing was changed.",
     );
   }
   return refused(
     "sign_in_rejected",
-    `Vex Cloud refused the sign-in${reason === null ? "" : ` (${reason})`}. Nothing was stored; try again.`,
+    `Vex Inference refused the sign-in${reason === null ? "" : ` (${reason})`}. Nothing was stored; try again.`,
   );
 }
 
@@ -136,7 +136,7 @@ function checkChallenge(challenge: VexCloudChallenge, binding: VexCloudSiweBindi
 }
 
 const CHALLENGE_REFUSED_DETAIL =
-  "Vex Cloud sent a sign-in challenge for a different host or in an unexpected form. Nothing was signed.";
+  "Vex Inference sent a sign-in challenge for a different host or in an unexpected form. Nothing was signed.";
 
 /**
  * Fetch a challenge, sign it with every wallet in `signers`, and send the
@@ -194,7 +194,7 @@ async function signedRound(
 function signingRefusal(cause: unknown): VexCloudOutcome<never> {
   const code = typeof cause === "object" && cause !== null ? (cause as { code?: unknown }).code : undefined;
   if (code === "KEYSTORE_PASSWORD_NOT_SET") {
-    return refused("vault", "Unlock Vex with your master password, then sign in to Vex Cloud.");
+    return refused("vault", "Unlock Vex with your master password, then sign in to Vex Inference.");
   }
   if (code === "SIGNER_MISMATCH") {
     return refused(
@@ -240,10 +240,10 @@ async function runSignIn(
   signal: AbortSignal,
 ): Promise<VexCloudOutcome<SignInSuccess>> {
   if (!deps.isVaultUnlocked()) {
-    return refused("vault", "Unlock Vex with your master password, then sign in to Vex Cloud.");
+    return refused("vault", "Unlock Vex with your master password, then sign in to Vex Inference.");
   }
   if (wallets.length === 0) {
-    return refused("no_wallets", "Vex Cloud signs in with your in-app EVM wallets, and none exists yet. Add one in Wallets first.");
+    return refused("no_wallets", "Vex Inference signs in with your in-app EVM wallets, and none exists yet. Add one in Wallets first.");
   }
   if (!sameSet(wallets.map((entry) => entry.address), consented)) {
     return refused(

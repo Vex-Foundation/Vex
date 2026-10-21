@@ -54,6 +54,14 @@ vi.mock("../../../lib/api/sessions.js", () => ({
   useSessionsList: () => ({ data: sessionsData, refetch: refetchSessions }),
 }));
 
+// The env read behind the Vex Inference notice: unknown by default, so the
+// notice stays out of every case that does not ask for it (its own suite is
+// `VexInferenceNotice.test.tsx`).
+let envData: unknown = undefined;
+vi.mock("../../../lib/api/onboarding.js", () => ({
+  useEnvState: () => ({ data: envData }),
+}));
+
 // The presence model is pinned by its own suites; here it is the input.
 const retryNeedsYou = vi.fn();
 let presence: VexPresence;
@@ -153,6 +161,8 @@ beforeEach(() => {
   });
   profileWithName(null);
   sessionsData = { ok: true, data: [] };
+  envData = undefined;
+  useUiStore.setState({ vexInferenceNoticeDismissed: false });
   presence = readyPresence();
   lastK2 = null;
   hostBox = null;
@@ -608,6 +618,37 @@ describe("SessionWelcomeHero - the database down", () => {
     };
     render(<SessionWelcomeHero />);
     expect(screen.getByRole("alert").textContent).not.toContain(NEEDS_YOU_UNKNOWN_COPY);
+  });
+});
+
+describe("SessionWelcomeHero - the Vex Inference notice", () => {
+  function openRouterEnv(): unknown {
+    return {
+      ok: true,
+      data: { provider: { configured: true, name: "openrouter", modelLabel: "a/b", endpointTag: null } },
+    };
+  }
+
+  it("seats the notice under the greeting, last in the opening, while OpenRouter is active", () => {
+    envData = openRouterEnv();
+    const { container } = render(<SessionWelcomeHero />);
+    const notice = screen.getByRole("region", { name: "AI is now paid in VEX" });
+    expect(container.querySelector("h1")?.nextElementSibling).toBe(notice);
+    expect(container.querySelector('[data-vex-area="welcome-opening"]')?.lastElementChild).toBe(notice);
+  });
+
+  it("sits under the database-down callout when both show", () => {
+    envData = openRouterEnv();
+    sessionsData = { ok: false, error: { code: "DB_UNAVAILABLE", message: "Database unavailable." } };
+    render(<SessionWelcomeHero />);
+    expect(screen.getByRole("alert").nextElementSibling).toBe(
+      screen.getByRole("region", { name: "AI is now paid in VEX" }),
+    );
+  });
+
+  it("stays out while the env read is unknown", () => {
+    render(<SessionWelcomeHero />);
+    expect(screen.queryByRole("region", { name: "AI is now paid in VEX" })).toBeNull();
   });
 });
 

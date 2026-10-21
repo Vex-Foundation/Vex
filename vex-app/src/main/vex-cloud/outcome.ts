@@ -89,7 +89,25 @@ export type VexCloudRefusalKind =
    * `invalid_field`, `invalid_idempotency_key`): a contract drift between
    * this build and Vex Cloud, never the user's input to fix.
    */
-  | "request_rejected";
+  | "request_rejected"
+  // ── agent deposit and auto top-up ──
+  /**
+   * The agent's deposit needs a human decision: no approval was given, the
+   * session is restricted and no active auto top-up rule covers it.
+   */
+  | "needs_user_approval"
+  /** The auto top-up rule changed since it was reviewed, or no longer exists. */
+  | "rule_changed"
+  /** The rule is paused, revoked, expired, or bound to another account. */
+  | "rule_not_active"
+  /** The rule's daily count or 30-day VEX cap would be exceeded (unknown outcomes count). */
+  | "rule_cap_reached"
+  /** An account may hold one live rule; a second one is refused. */
+  | "rule_exists"
+  /** A rule field is outside its bounds (amount, count, cap, expiry). */
+  | "invalid_rule"
+  /** The rule already has an execution in flight. */
+  | "rule_execution_in_flight";
 
 export interface VexCloudRefusal {
   readonly kind: VexCloudRefusalKind;
@@ -108,9 +126,9 @@ export function refused<T>(kind: VexCloudRefusalKind, detail: string, vaultError
 
 /** Sentences for the transport failures every Vex Cloud call can hit. */
 export const UNAVAILABLE_DETAIL =
-  "Vex Cloud could not be reached. Check your connection and try again in a moment.";
+  "Vex Inference could not be reached. Check your connection and try again in a moment.";
 export const INVALID_RESPONSE_DETAIL =
-  "Vex Cloud answered in a way this version of Vex does not understand. Nothing was changed; update Vex or try again later.";
+  "Vex Inference answered in a way this version of Vex does not understand. Nothing was changed; update Vex or try again later.";
 export const CANCELLED_DETAIL = "Cancelled. Nothing was stored.";
 
 /**
@@ -194,6 +212,18 @@ export function vexCloudRefusalError(
         return { code: "wallet.policy_blocked", retryable: false, userActionable: false };
       case "invalid_limit":
         return { code: "validation.invalid_input", retryable: false, userActionable: false };
+      case "needs_user_approval":
+        return { code: "permissions.denied", retryable: true, userActionable: true };
+      case "rule_changed":
+        return { code: "validation.invalid_input", retryable: true, userActionable: true };
+      case "rule_not_active":
+      case "rule_cap_reached":
+        return { code: "wallet.policy_blocked", retryable: false, userActionable: true };
+      case "rule_exists":
+      case "invalid_rule":
+        return { code: "validation.invalid_input", retryable: false, userActionable: true };
+      case "rule_execution_in_flight":
+        return { code: "validation.invalid_input", retryable: true, userActionable: true };
     }
   })();
   return { ...shape, domain, message: refusal.detail, redacted: true, correlationId };

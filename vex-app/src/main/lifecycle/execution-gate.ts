@@ -113,6 +113,9 @@ export const EXECUTION_GATED_CHANNELS: ReadonlySet<string> = new Set<string>([
   CH.vexCloud.submitDeposit,
   CH.vexCloud.submitWithdrawal,
   CH.vexCloud.claimCashback,
+  // Vex Inference auto top-up: creating or changing the standing rule is the
+  // authority the poller and the agent deposit tool sign under.
+  CH.vexCloud.submitAutoTopUp,
   CH.lighterTrading.prepareDeskAction,
   CH.lighterTrading.settleAgentSetup,
   CH.settings.confirmLighterLeverage,

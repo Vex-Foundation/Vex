@@ -73,31 +73,32 @@ function signalsOf(err: unknown) {
   };
 }
 
-describe("Vex Cloud mode: the gateway's statuses get Vex Cloud copy", () => {
+describe("Vex Cloud mode: the gateway's statuses get Vex Inference copy", () => {
   it("402 asks to top up VEX", async () => {
     const error = classifyEngineError(await thrownFor(402), CORR, "vexcloud");
     expect(error.code).toBe("provider.insufficient_credits");
-    expect(error.message).toMatch(/Top up VEX/);
+    expect(error.message).toBe("Your Vex Inference balance is too low for this request. Top up VEX, then retry.");
     expect(error.message).not.toMatch(/provider account/);
   });
 
-  it("401 asks to sign in to Vex Cloud again, never to fix a key", async () => {
+  it("401 asks to sign in to Vex Inference again, never to fix a key", async () => {
     const error = classifyEngineError(await thrownFor(401), CORR, "vexcloud");
-    expect(error.message).toMatch(/Sign in to Vex Cloud again/);
+    expect(error.message).toMatch(/Sign in to Vex Inference again/);
     expect(error.message).not.toMatch(/API key/);
+    expect(error.message).not.toMatch(/Vex Cloud/);
   });
 
   it("403 says the account is paused", async () => {
     const error = classifyEngineError(await thrownFor(403), CORR, "vexcloud");
     expect(error.code).toBe("permissions.denied");
-    expect(error.message).toMatch(/paused this account/);
+    expect(error.message).toMatch(/^Vex Inference paused this account/);
   });
 
-  it("503 says Vex Cloud is unavailable, retryable", async () => {
+  it("503 says Vex Inference is unavailable, retryable", async () => {
     const error = classifyEngineError(await thrownFor(503), CORR, "vexcloud");
     expect(error.code).toBe("provider.unavailable");
     expect(error.retryable).toBe(true);
-    expect(error.message).toMatch(/Vex Cloud is unavailable/);
+    expect(error.message).toMatch(/Vex Inference is unavailable/);
   });
 
   it("the push event's remedy says the same, per status", async () => {
@@ -105,10 +106,10 @@ describe("Vex Cloud mode: the gateway's statuses get Vex Cloud copy", () => {
       [402, 401, 403, 503].map(async (status) => engineErrorRemedyHint(classifyEngineRemedy(signalsOf(await thrownFor(status)), "vexcloud"))),
     );
     expect(hints).toEqual([
-      "Top up VEX for Vex Cloud, then retry.",
-      "Sign in to Vex Cloud again in Settings, then retry.",
-      "Vex Cloud paused this account for review. Nothing more can run until it is cleared.",
-      "Vex Cloud is unavailable right now. Retry in a moment.",
+      "Top up VEX for Vex Inference, then retry.",
+      "Sign in to Vex Inference again in Settings, then retry.",
+      "Vex Inference paused this account for review. Nothing more can run until it is cleared.",
+      "Vex Inference is unavailable right now. Retry in a moment.",
     ]);
   });
 });

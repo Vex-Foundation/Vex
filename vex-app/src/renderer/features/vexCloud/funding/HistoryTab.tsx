@@ -119,7 +119,7 @@ function UsageList(): JSX.Element {
     <PagedList
       query={query}
       rowsOf="usage"
-      empty="No requests through Vex Cloud yet."
+      empty="No requests through Vex Inference yet."
       label="Usage"
       render={(item) => (
         <li key={item.requestId} className={ROW} data-testid="history-row">

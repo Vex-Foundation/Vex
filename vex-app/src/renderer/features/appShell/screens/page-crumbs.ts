@@ -103,7 +103,7 @@ export function titleBarPageOf(route: ShellRoute): PageTitle | null {
     case "board":
       return { name: "Board", parents: [] };
     case "vexCloudFunding":
-      return { name: "Vex Cloud funds", parents: [] };
+      return { name: "Vex Inference funds", parents: [] };
     case "needsYou":
       return { name: "Needs you", parents: [] };
     case "settings":

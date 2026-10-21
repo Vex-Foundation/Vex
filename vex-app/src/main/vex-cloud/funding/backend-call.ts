@@ -27,8 +27,8 @@ export interface SessionPort {
   readonly clearSession: () => Promise<Result<void>>;
 }
 
-export const NOT_SIGNED_IN_DETAIL = "You are not signed in to Vex Cloud. Sign in under Settings, Vex Cloud, then try again.";
-const SESSION_EXPIRED_DETAIL = "Your Vex Cloud session expired. Sign in again under Settings, Vex Cloud. Nothing was changed.";
+export const NOT_SIGNED_IN_DETAIL = "You are not signed in to Vex Inference. Sign in under Settings, Vex Inference, then try again.";
+const SESSION_EXPIRED_DETAIL = "Your Vex Inference session expired. Sign in again under Settings, Vex Inference. Nothing was changed.";
 
 /** The stored bearer, or the refusal that explains why there is none. */
 export async function requireBearer(port: SessionPort): Promise<VexCloudOutcome<string>> {
@@ -41,15 +41,15 @@ export async function requireBearer(port: SessionPort): Promise<VexCloudOutcome<
 const REASON_KINDS: Readonly<Record<string, { readonly kind: VexCloudRefusalKind; readonly detail: string }>> = {
   below_minimum: {
     kind: "below_minimum",
-    detail: "Vex Cloud refused the amount: it is under the $5 minimum at the current rate. Nothing was moved; enter a larger amount.",
+    detail: "Vex Inference refused the amount: it is under the $5 minimum at the current rate. Nothing was moved; enter a larger amount.",
   },
   destination_not_linked: {
     kind: "destination_not_linked",
-    detail: "Vex Cloud refused the destination: that wallet is not linked to your account. Nothing was moved; pick a linked wallet.",
+    detail: "Vex Inference refused the destination: that wallet is not linked to your account. Nothing was moved; pick a linked wallet.",
   },
   account_paused: {
     kind: "account_paused",
-    detail: "Vex Cloud paused this account for review, so funds cannot leave it right now. Nothing was moved.",
+    detail: "Vex Inference paused this account for review, so funds cannot leave it right now. Nothing was moved.",
   },
   insufficient_withdrawable: {
     kind: "insufficient_withdrawable",
@@ -61,11 +61,11 @@ const REASON_KINDS: Readonly<Record<string, { readonly kind: VexCloudRefusalKind
   },
   idempotency_key_reused: {
     kind: "idempotency_key_reused",
-    detail: "Vex Cloud saw this withdrawal request before with different figures, so it refused it. Nothing new was sent; check History, then start a new withdrawal.",
+    detail: "Vex Inference saw this withdrawal request before with different figures, so it refused it. Nothing new was sent; check History, then start a new withdrawal.",
   },
   rate_unavailable: {
     kind: "rate_unavailable",
-    detail: "Vex Cloud has no current VEX price right now, so it cannot check the minimum. Nothing was moved; try again in a few minutes.",
+    detail: "Vex Inference has no current VEX price right now, so it cannot check the minimum. Nothing was moved; try again in a few minutes.",
   },
   invalid_cursor: {
     kind: "invalid_cursor",
@@ -73,30 +73,30 @@ const REASON_KINDS: Readonly<Record<string, { readonly kind: VexCloudRefusalKind
   },
   unsupported_destination: {
     kind: "unsupported_destination",
-    detail: "Vex Cloud does not support that cashback destination yet. Nothing was claimed.",
+    detail: "Vex Inference does not support that cashback destination yet. Nothing was claimed.",
   },
   deposits_unavailable: {
     kind: "deposits_not_open",
-    detail: "Deposits are not open yet: this Vex Cloud has no deposit address configured. Nothing was sent.",
+    detail: "Deposits are not open yet: this Vex Inference has no deposit address configured. Nothing was sent.",
   },
   withdrawals_unavailable: {
     kind: "withdrawals_not_open",
-    detail: "Withdrawals are not open yet: this Vex Cloud cannot send VEX out right now. Nothing was moved.",
+    detail: "Withdrawals are not open yet: this Vex Inference cannot send VEX out right now. Nothing was moved.",
   },
   invalid_limit: {
     kind: "invalid_limit",
-    detail: "Vex Cloud refused the page size this version of Vex asked for. Update Vex; nothing was changed.",
+    detail: "Vex Inference refused the page size this version of Vex asked for. Update Vex; nothing was changed.",
   },
   withdrawal_not_found: {
     kind: "withdrawal_not_found",
-    detail: "Vex Cloud has no such withdrawal on this account.",
+    detail: "Vex Inference has no such withdrawal on this account.",
   },
 };
 
 /** Reasons that mean THIS app sent something off contract; the field is named. */
 const DRIFT_REASONS: ReadonlySet<string> = new Set(["forbidden_field", "invalid_field", "invalid_idempotency_key"]);
 
-const RATE_LIMITED_DETAIL = "Vex Cloud asked Vex to slow down. Nothing was changed; try again in a minute.";
+const RATE_LIMITED_DETAIL = "Vex Inference asked Vex to slow down. Nothing was changed; try again in a minute.";
 
 /** The backend's failure as a named refusal. Clears the session on 401. */
 export async function backendRefusal<T>(port: SessionPort, failure: VexCloudCallFailure): Promise<VexCloudOutcome<T>> {
@@ -121,17 +121,17 @@ export async function backendRefusal<T>(port: SessionPort, failure: VexCloudCall
       if (failure.reason !== null && DRIFT_REASONS.has(failure.reason)) {
         return refused(
           "request_rejected",
-          `Vex Cloud refused ${failure.field === undefined ? "a field" : `the field "${failure.field}"`} this version of Vex sent (${failure.reason}). Nothing was changed; update Vex.`,
+          `Vex Inference refused ${failure.field === undefined ? "a field" : `the field "${failure.field}"`} this version of Vex sent (${failure.reason}). Nothing was changed; update Vex.`,
         );
       }
       if (failure.status === 404 && failure.reason === null) {
-        return refused("withdrawal_not_found", "Vex Cloud has no such withdrawal on this account.");
+        return refused("withdrawal_not_found", "Vex Inference has no such withdrawal on this account.");
       }
       const known = failure.reason === null ? undefined : REASON_KINDS[failure.reason];
       if (known === undefined) {
         return refused(
           "invalid_response",
-          `Vex Cloud refused the request (${failure.reason ?? `status ${failure.status}`}). Nothing was changed; update Vex or try again later.`,
+          `Vex Inference refused the request (${failure.reason ?? `status ${failure.status}`}). Nothing was changed; update Vex or try again later.`,
         );
       }
       if (known.kind === "daily_limit_exceeded" && failure.remainingWei !== undefined) {
@@ -251,7 +251,7 @@ export async function replaySignedOut<T>(port: SessionPort, what: string): Promi
   if (!cleared.ok) return refused("vault", cleared.error.message, cleared.error as VexError);
   return refused(
     "not_signed_in",
-    `Your Vex Cloud session expired, so Vex could not check this ${what}. Vex still holds the same request: sign in again under Settings, Vex Cloud, then press Check status. Do not send it again.`,
+    `Your Vex Inference session expired, so Vex could not check this ${what}. Vex still holds the same request: sign in again under Settings, Vex Inference, then press Check status. Do not send it again.`,
   );
 }
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import { LINE_ICON_NAMES } from "../../../../../components/icons/line/index.js";
 import {
   SETTINGS_SECTIONS,
   settingsNav,
+  settingsSectionStatus,
   settingsStatusSwatch,
   superboardRegisterStatus,
 } from "../settings-sections.js";
@@ -122,7 +124,7 @@ describe("the Settings nav", () => {
       ["wallets", "Wallets", "EVM and Solana wallets - add, remove, recover, back up, or export"],
       ["apiKeys", "API keys", "Jupiter, Tavily, Rettiwt, and chain endpoint overrides"],
       ["model", "Model", "The provider and model the agent thinks with"],
-      ["vexCloud", "Vex Cloud", "Sign in, linked wallets, and your VEX balance"],
+      ["vexCloud", "Vex Inference", "Sign in, linked wallets, and your VEX balance"],
       ["memory", "Memory", "The embedding endpoint behind long-term recall"],
       ["tuning", "Tuning", "Context, output, and sampling limits"],
       ["localRuntime", "Local runtime", "The database and embeddings server running on this computer"],
@@ -139,5 +141,30 @@ describe("the Settings nav", () => {
     expect(settingsStatusSwatch("success")).toBe("done");
     expect(settingsStatusSwatch("neutral")).toBe("idle");
     expect(settingsStatusSwatch("warning")).toBe("warning");
+  });
+});
+
+describe("the Model and Vex Inference status words", () => {
+  function envWith(provider: EnvState["provider"]): EnvState {
+    // Only `provider` is read for these two sections.
+    return { provider } as EnvState;
+  }
+
+  it("names the configured provider by its user-facing name", () => {
+    expect(
+      settingsSectionStatus("model", envWith({ configured: true, name: "vexcloud", modelLabel: "a/b", endpointTag: null })),
+    ).toEqual({ word: "Vex Inference", tone: "success" });
+    expect(
+      settingsSectionStatus("model", envWith({ configured: true, name: "openrouter", modelLabel: "a/b", endpointTag: null })),
+    ).toEqual({ word: "OpenRouter", tone: "success" });
+  });
+
+  it("keeps the Vex Inference section's own words", () => {
+    expect(
+      settingsSectionStatus("vexCloud", envWith({ configured: false, name: null, modelLabel: null, endpointTag: null })),
+    ).toEqual({ word: "Not in use", tone: "neutral" });
+    expect(
+      settingsSectionStatus("vexCloud", envWith({ configured: true, name: "vexcloud", modelLabel: "a/b", endpointTag: null })),
+    ).toEqual({ word: "In use", tone: "success" });
   });
 });

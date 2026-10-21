@@ -174,15 +174,15 @@ export async function prepareWithdrawal(
   if (!isEligible(account, deps.localWallets(), input.destination)) {
     return refused(
       "destination_not_linked",
-      "Withdrawals go only to a wallet that is linked to your Vex Cloud account and is in this app. Pick one from the list.",
+      "Withdrawals go only to a wallet that is linked to your Vex Inference account and is in this app. Pick one from the list.",
     );
   }
   if (account.status.paused) {
-    return refused("account_paused", `Vex Cloud paused this account for review, so funds cannot leave it right now. ${NOTHING_SENT}`);
+    return refused("account_paused", `Vex Inference paused this account for review, so funds cannot leave it right now. ${NOTHING_SENT}`);
   }
   const rateX18 = account.rate.available ? parseRateX18(account.rate.vex_wei_per_micro_usd) : null;
   if (rateX18 === null) {
-    return refused("rate_unavailable", `Vex Cloud has no current VEX price, so the $5 minimum cannot be checked. ${NOTHING_SENT} Try again in a few minutes.`);
+    return refused("rate_unavailable", `Vex Inference has no current VEX price, so the $5 minimum cannot be checked. ${NOTHING_SENT} Try again in a few minutes.`);
   }
   const minimumMicroUsd = BigInt(account.limits.min_withdraw_micro_usd);
   const minimumWei = microUsdToWeiCeil(minimumMicroUsd, rateX18);
@@ -290,7 +290,7 @@ async function runSubmit(
     approved.drop(proposal.proposalId);
     return refused(
       "account_changed",
-      `You are signed in to a different Vex Cloud account than the one this withdrawal was reviewed for. ${NOTHING_SENT} Review the withdrawal again.`,
+      `You are signed in to a different Vex Inference account than the one this withdrawal was reviewed for. ${NOTHING_SENT} Review the withdrawal again.`,
     );
   }
   if (!isEligible(read.value, deps.localWallets(), proposal.destination)) {
@@ -342,7 +342,7 @@ async function replay(
   if (read.value.account_id !== entry.accountId) {
     return refused(
       "account_changed",
-      "You are signed in to a different Vex Cloud account than the one this withdrawal was sent from, so Vex did not ask about it. Sign in to that account, then press Check status. Do not send it again.",
+      "You are signed in to a different Vex Inference account than the one this withdrawal was sent from, so Vex did not ask about it. Sign in to that account, then press Check status. Do not send it again.",
     );
   }
   return post(deps, entry, bearer.value, signal, "replay");
@@ -374,7 +374,7 @@ async function post(
     if (replayVerdict("withdrawal", created.failure) === "not_created") {
       unresolved.drop(proposal.proposalId);
       const refusal = await backendRefusal<never>(deps, created.failure);
-      const detail = refusal.ok ? "Vex Cloud refused it." : refusal.refusal.detail;
+      const detail = refusal.ok ? "Vex Inference refused it." : refusal.refusal.detail;
       return { ok: true, value: { outcome: "not_created", proposalId: proposal.proposalId, detail } };
     }
     // Raised before the key lookup: says nothing about the original. Keep the key.

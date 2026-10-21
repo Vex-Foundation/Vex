@@ -1,6 +1,8 @@
 /**
- * The Vex Cloud account panel (Settings "Vex Cloud" and the provider step's
- * Vex Cloud branch), against a mocked `window.vex.vexCloud` bridge only.
+ * The Vex Cloud account panel (Settings "Vex Inference" and the provider
+ * step's Vex Inference branch), against a mocked `window.vex.vexCloud` bridge
+ * only. The user-facing name is "Vex Inference"; the panel's own copy never
+ * says "Vex Cloud".
  *
  * Pinned per state: loading is a word and a quiet bar; a locked vault and an
  * outage are said in words with a retry; signed out lists the wallets that
@@ -91,7 +93,7 @@ describe("reads", () => {
   it("loading is a word, never fake figures", () => {
     account.mockReturnValue(new Promise(() => undefined));
     renderPanel();
-    expect(screen.getByText("Checking Vex Cloud")).toBeTruthy();
+    expect(screen.getByText("Checking Vex Inference")).toBeTruthy();
     expect(screen.queryByText(/VEX$/)).toBeNull();
   });
 
@@ -109,7 +111,7 @@ describe("reads", () => {
       },
     });
     renderPanel();
-    expect(await screen.findByText("Unlock Vex to use Vex Cloud.")).toBeTruthy();
+    expect(await screen.findByText("Unlock Vex to use Vex Inference.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(account).toHaveBeenCalledTimes(2));
   });
@@ -130,7 +132,7 @@ describe("signed out", () => {
     expect(within(list).getByText(W2)).toBeTruthy();
     expect(screen.getByText(/No transaction is sent and no funds move/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to Vex Cloud" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Vex Inference" }));
     await waitFor(() => expect(signIn).toHaveBeenCalledWith({ wallets: [W1, W2] }));
     // A success re-reads the account.
     await waitFor(() => expect(account).toHaveBeenCalledTimes(2));
@@ -140,7 +142,9 @@ describe("signed out", () => {
     account.mockResolvedValue({ ok: true, data: { state: "signed_out", reason: "not_signed_in", localWallets: [] } });
     renderPanel();
     expect(await screen.findByText(/none exists yet/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Sign in to Vex Cloud" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/^Vex Inference signs in with your in-app EVM wallets/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Sign in to Vex Inference" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(document.body.textContent).not.toMatch(/Vex Cloud/);
   });
 
   it("an expired session says so", async () => {
@@ -161,7 +165,7 @@ describe("signed out", () => {
     signIn.mockReturnValue({ promise: new Promise((resolve) => (settle = resolve)), cancel });
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Sign in to Vex Cloud" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in to Vex Inference" }));
     expect(await screen.findByRole("button", { name: "Signing in…" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -187,7 +191,7 @@ describe("signed out", () => {
       cancel: vi.fn(),
     });
     renderPanel();
-    fireEvent.click(await screen.findByRole("button", { name: "Sign in to Vex Cloud" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in to Vex Inference" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/already linked to a different Vex Cloud account/);
   });
 });

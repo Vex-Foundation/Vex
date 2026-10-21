@@ -278,7 +278,7 @@ describe("SettingsScreen", () => {
       "Wallets",
       "API keys",
       "Model",
-      "Vex Cloud",
+      "Vex Inference",
       "Memory",
       "Tuning",
       "Superboard key",

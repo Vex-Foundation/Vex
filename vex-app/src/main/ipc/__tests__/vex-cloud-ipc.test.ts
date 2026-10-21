@@ -201,6 +201,7 @@ class FakeGateway implements VexCloudApi {
   listActivity = vi.fn(async () => notUsed());
   listUsage = vi.fn(async () => notUsed());
   listDeposits = vi.fn(async () => notUsed());
+  listModels = vi.fn(async () => notUsed());
   notifyDeposit = vi.fn(async () => notUsed());
   createWithdrawal = vi.fn(async () => notUsed());
   readWithdrawal = vi.fn(async () => notUsed());
@@ -471,7 +472,7 @@ describe("signIn: nothing is signed when it must not be", () => {
     w.gateway.owners.set(w.wallets[1]?.entry.address.toLowerCase() ?? "", "99999999-2222-4333-8444-555555555555");
     mount(w);
     const error = expectError(await call(CH.vexCloud.signIn, { wallets: addresses(w) }), "permissions.denied");
-    expect(error.error.message).toMatch(/different Vex Cloud accounts/);
+    expect(error.error.message).toMatch(/different Vex Inference accounts/);
     expect(w.stored.token).toBeNull();
   });
 

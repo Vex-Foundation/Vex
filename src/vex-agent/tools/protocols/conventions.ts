@@ -81,6 +81,10 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["walletAddress", "an ACCOUNT address (the thing that holds funds)"],
   ["amountIn", "input amount in HUMAN decimal units, as a string"],
   ["amountOut", "output amount in HUMAN decimal units, as a string"],
+  // Not an amount: it names the unit `amountIn` is stated in. Added for the
+  // Vex Inference deposit, which accepts VEX or USD converted at the backend
+  // rate; a separate `amountInUsd` would have given one call two amounts.
+  ["denomination", "the unit a sibling HUMAN amount is stated in (an enum such as VEX or USD), converted server-side"],
   ["amountRaw", "amount in RAW base units; description must name the decimals source"],
   ["depositAmountRaw", "multi-leg lend deposit, raw base units"],
   ["withdrawAmountRaw", "multi-leg lend withdrawal, raw base units"],

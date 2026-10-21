@@ -42,7 +42,7 @@ type Step =
 export const DEPOSITS_OPEN_SOON = "Deposits open soon";
 
 /** Why a wallet in the picker cannot deposit, and what to do (main refuses it too). */
-export const SENDER_NOT_LINKED = "Not linked to your Vex Cloud account. Sign in again to link it.";
+export const SENDER_NOT_LINKED = "Not linked to your Vex Inference account. Sign in again to link it.";
 export const DEPOSIT_MISMATCH_TITLE = "Funding is disabled";
 
 function errorText(error: VexError): string {
@@ -61,7 +61,7 @@ export function DepositTab({
       <EmptyBlock
         scope="Deposit"
         title={DEPOSITS_OPEN_SOON}
-        detail="Vex Cloud deposits are not open yet, so nothing can be sent from here. Your balance still pays for requests."
+        detail="Vex Inference deposits are not open yet, so nothing can be sent from here. Your balance still pays for requests."
         data-testid="deposit-not-open"
       />
     );
@@ -72,7 +72,7 @@ export function DepositTab({
         scope="Deposit"
         state="error"
         title={DEPOSIT_MISMATCH_TITLE}
-        detail={`The deposit address built into Vex (${pin.pinned}) does not match the one Vex Cloud reports (${pin.backend}). Nothing can be sent. Update Vex, and contact support if this stays.`}
+        detail={`The deposit address built into Vex (${pin.pinned}) does not match the one Vex Inference reports (${pin.backend}). Nothing can be sent. Update Vex, and contact support if this stays.`}
         data-testid="deposit-mismatch"
       />
     );
@@ -208,7 +208,7 @@ function DepositForm({ account }: { readonly account: VexCloudAccount }): JSX.El
           {step.result.status === "confirmed"
             ? `The transfer is on Robinhood Chain. ${spendableNowCopy(account.limits.provisionalCapMicroUsd)}`
             : step.result.status === "pending"
-              ? "The transfer was sent and its outcome is not known yet. Vex will not send it again; Vex Cloud credits it when it sees it on chain. Check History in a few minutes."
+              ? "The transfer was sent and its outcome is not known yet. Vex will not send it again; Vex Inference credits it when it sees it on chain. Check History in a few minutes."
               : "The transfer failed on chain, so no VEX moved. The network fee was spent. Review the deposit again to retry."}
         </p>
         {step.result.status === "confirmed" && !step.result.transferProven ? (
@@ -218,7 +218,7 @@ function DepositForm({ account }: { readonly account: VexCloudAccount }): JSX.El
         ) : null}
         <p className="m-0 text-[13px] text-ink-tertiary">
           Transaction <span className="vex-num font-mono text-ink-primary break-all">{step.result.txHash}</span>
-          {step.result.status === "reverted" ? null : step.result.notified ? " · Vex Cloud was told." : " · Vex Cloud will find it on chain."}
+          {step.result.status === "reverted" ? null : step.result.notified ? " · Vex Inference was told." : " · Vex Inference will find it on chain."}
         </p>
         <div>
           <Button type="button" variant="ink" size="sm" onClick={() => setStep({ kind: "editing" })}>
@@ -327,7 +327,7 @@ function DepositApproval({
   return (
     <FundingApprovalCard
       testId="deposit-approval"
-      sentence={`Deposit ${amount} VEX to Vex Cloud.`}
+      sentence={`Deposit ${amount} VEX to Vex Inference.`}
       source={{
         left: (
           <>
@@ -343,13 +343,13 @@ function DepositApproval({
       lines={[
         { label: "You send", value: <><span className="vex-appr__num vex-num">{amount} VEX</span><span className="vex-appr__sub"> · on Robinhood Chain</span></> },
         { label: "To", value: <span className="vex-appr__num vex-num vex-appr__break">{proposal.to}</span> },
-        { label: "Value", value: <>about <span className="vex-appr__num vex-num">{formatMicroUsd(BigInt(proposal.usdMicroEstimate))}</span><span className="vex-appr__sub"> at the Vex Cloud rate</span></> },
+        { label: "Value", value: <>about <span className="vex-appr__num vex-num">{formatMicroUsd(BigInt(proposal.usdMicroEstimate))}</span><span className="vex-appr__sub"> at the Vex Inference rate</span></> },
         { label: "Network fee", value: <>at most <span className="vex-appr__num vex-num">{fee} ETH</span></> },
         { label: "Credited", value: spendableNowCopy(proposal.provisionalCapMicroUsd) },
       ]}
       risks={[
-        { lead: "Real funds:", text: "VEX leaves your wallet for Vex Cloud, and a sent transfer cannot be undone. Unused VEX can be withdrawn later to a linked wallet." },
-        { lead: "Address:", text: "Vex sends only to the deposit address built into this version, and only while Vex Cloud reports the same one." },
+        { lead: "Real funds:", text: "VEX leaves your wallet for Vex Inference, and a sent transfer cannot be undone. Unused VEX can be withdrawn later to a linked wallet." },
+        { lead: "Address:", text: "Vex sends only to the deposit address built into this version, and only while Vex Inference reports the same one." },
       ]}
       signedFields={[
         { label: "Actor", value: "You, from the funding page" },

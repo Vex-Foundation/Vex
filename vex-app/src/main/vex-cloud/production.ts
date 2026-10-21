@@ -21,7 +21,7 @@ import {
   type Erc20TransferPort,
 } from "@tools/evm-chains/erc20-transfer-port.js";
 import { VEX_CLOUD_CHAIN_ID, VEX_TOKEN_ADDRESS } from "@shared/vex-cloud-money.js";
-import type { DepositDeps } from "./funding/deposit.js";
+import type { DepositDeps } from "./funding/deposit-core.js";
 import type { ReadAccountDeps } from "./account.js";
 import { createVexCloudApi, type VexCloudApi } from "./api-client.js";
 import { clearVexCloudSession, readVexCloudSession, storeVexCloudSession } from "./session-store.js";

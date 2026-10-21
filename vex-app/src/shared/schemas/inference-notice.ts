@@ -2,11 +2,14 @@
  * `EV.engine.inferenceNotice` - a request that succeeded, but not quite as
  * asked, which the user must be told about (never silently).
  *
- * One kind today: Vex Cloud lowered `max_tokens` (owner decision D16). The
+ * Two kinds. `max_tokens_clamped`: Vex Cloud lowered `max_tokens` (owner decision D16). The
  * gateway disclosed it in the `x-vex-max-tokens` response header; the engine
  * read it (`inference/openrouter/round-fetch.ts`) and the main-side bridge
  * forwards it here. `balance` means the VEX balance covers no more; a
  * `model_limit` means the request asked above the model's ceiling.
+ *
+ * `vex_inference_balance_low`: the balance crossed below the user's alert
+ * percent (the main-process balance watch).
  *
  * Bounded codes and integers only. Not model-visible: it describes the
  * transport, not the conversation.
@@ -19,7 +22,7 @@ export const INFERENCE_NOTICE_EVENT_TYPE = "engine.inference.notice" as const;
 /** A token count no model comes near; mirrors the engine parser's bound. */
 const tokenCountSchema = z.number().int().min(1).max(10_000_000);
 
-export const inferenceNoticeEventSchema = z
+const maxTokensClampedNoticeSchema = z
   .object({
     type: z.literal(INFERENCE_NOTICE_EVENT_TYPE),
     kind: z.literal("max_tokens_clamped"),
@@ -33,5 +36,32 @@ export const inferenceNoticeEventSchema = z
     occurredAt: z.string().datetime({ offset: true }),
   })
   .strict();
+
+const weiSchema = z.string().regex(/^[0-9]{1,78}$/);
+
+/**
+ * The Vex Inference balance crossed below the user's alert percent of its
+ * reference (the high-water mark since the last credited deposit). One per
+ * crossing. Raw wei strings (VEX, 18 decimals) and the percent only.
+ */
+const vexInferenceBalanceLowNoticeSchema = z
+  .object({
+    type: z.literal(INFERENCE_NOTICE_EVENT_TYPE),
+    kind: z.literal("vex_inference_balance_low"),
+    sessionId: z.string().min(1).max(128),
+    missionRunId: z.string().min(1).max(128).nullable(),
+    provider: z.literal("vexcloud"),
+    alertPercent: z.number().int().min(1).max(90),
+    balanceWei: weiSchema,
+    thresholdWei: weiSchema,
+    referenceWei: weiSchema,
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export const inferenceNoticeEventSchema = z.discriminatedUnion("kind", [
+  maxTokensClampedNoticeSchema,
+  vexInferenceBalanceLowNoticeSchema,
+]);
 
 export type InferenceNoticeEvent = z.infer<typeof inferenceNoticeEventSchema>;

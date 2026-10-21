@@ -226,6 +226,9 @@ describe("registry", () => {
       "BridgeExecuteRelay",
       "SwapExecute",
       "SwapExecuteUniswap",
+      // The Vex Inference deposit confirm signs and broadcasts a VEX transfer
+      // to the pinned deposit address. Its prepare spends nothing.
+      "VexInferenceDepositConfirm",
       "WalletEvmTransactionConfirm",
       "WalletSendConfirm",
       "WalletSolanaTransactionConfirm",

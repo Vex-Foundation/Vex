@@ -630,6 +630,15 @@ export const CH = {
     activity: "vex:vexCloud:activity",
     usage: "vex:vexCloud:usage",
     deposits: "vex:vexCloud:deposits",
+    // Low-balance alert (a read and a setting) and the auto top-up standing
+    // rule. `submitAutoTopUp` creates, edits, pauses, resumes or revokes the
+    // authority the poller and the agent deposit tool spend under, so it is
+    // execution-gated; the rest read or mint a proposal.
+    alertGet: "vex:vexCloud:alertGet",
+    alertSet: "vex:vexCloud:alertSet",
+    autoTopUpGet: "vex:vexCloud:autoTopUpGet",
+    prepareAutoTopUp: "vex:vexCloud:prepareAutoTopUp",
+    submitAutoTopUp: "vex:vexCloud:submitAutoTopUp",
   },
 
   /**

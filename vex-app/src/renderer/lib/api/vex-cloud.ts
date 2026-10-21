@@ -47,6 +47,14 @@ import {
   type VexCloudWithdrawalProposal,
   type VexCloudWithdrawalStatusResult,
 } from "@shared/schemas/vex-cloud-funding.js";
+import type {
+  VexCloudAlert,
+  VexCloudAutoTopUpGetResult,
+  VexCloudAutoTopUpProposal,
+  VexCloudPrepareAutoTopUpInput,
+  VexCloudSubmitAutoTopUpInput,
+  VexCloudSubmitAutoTopUpResult,
+} from "@shared/schemas/vex-cloud-auto-top-up.js";
 import type { AbortableInvocation } from "@shared/types/bridge/common.js";
 import type { VexCloudBridge } from "@shared/types/bridge/shell/vex-cloud.js";
 import { onboardingKeys, vexCloudKeys } from "./queryKeys.js";
@@ -64,7 +72,7 @@ const BRIDGE_UNAVAILABLE: Result<never> = {
   error: {
     code: "internal.contract_violation",
     domain: "system",
-    message: "Vex Cloud isn't available in this build yet.",
+    message: "Vex Inference isn't available in this build yet.",
     retryable: false,
     userActionable: false,
     redacted: true,
@@ -255,4 +263,58 @@ export function useInvalidateVexCloudFunding(): () => void {
   return () => {
     void queryClient.invalidateQueries({ queryKey: vexCloudKeys.all });
   };
+}
+
+// ── low-balance alert and auto top-up ────────────────────────────────────
+
+/** The alert percent and the last balance observation. A read; the setter is a plain call. */
+export function useVexCloudAlert(enabled: boolean): UseQueryResult<Result<VexCloudAlert>> {
+  return useQuery(
+    queryOptions({
+      queryKey: vexCloudKeys.alert(),
+      queryFn: async () => {
+        const bridge = vexCloudBridge();
+        return bridge === null ? BRIDGE_UNAVAILABLE : bridge.alertGet();
+      },
+      enabled,
+      refetchInterval: ACCOUNT_POLL_MS,
+      retry: false,
+    }),
+  );
+}
+
+export function setVexCloudAlertPercent(alertPercent: number): Promise<Result<VexCloudAlert>> {
+  const bridge = vexCloudBridge();
+  return bridge === null ? Promise.resolve(BRIDGE_UNAVAILABLE) : bridge.alertSet({ alertPercent });
+}
+
+/** The live auto top-up rule; aborts the read when the query is dropped. */
+export function useVexCloudAutoTopUp(enabled: boolean): UseQueryResult<Result<VexCloudAutoTopUpGetResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: vexCloudKeys.autoTopUp(),
+      queryFn: async ({ signal }) => {
+        const bridge = vexCloudBridge();
+        if (bridge === null) return BRIDGE_UNAVAILABLE;
+        const invocation = bridge.autoTopUpGet();
+        signal.addEventListener("abort", invocation.cancel, { once: true });
+        return invocation.promise;
+      },
+      enabled,
+      refetchInterval: ACCOUNT_POLL_MS,
+      retry: false,
+    }),
+  );
+}
+
+/** Mint a rule-change proposal. A plain call a button drives, never a query. */
+export function prepareVexCloudAutoTopUp(input: VexCloudPrepareAutoTopUpInput): AbortableInvocation<VexCloudAutoTopUpProposal> {
+  const bridge = vexCloudBridge();
+  return bridge === null ? unavailableInvocation() : bridge.prepareAutoTopUp(input);
+}
+
+/** Apply the approved rule change. A plain call the card's approve key drives. */
+export function submitVexCloudAutoTopUp(input: VexCloudSubmitAutoTopUpInput): Promise<Result<VexCloudSubmitAutoTopUpResult>> {
+  const bridge = vexCloudBridge();
+  return bridge === null ? Promise.resolve(BRIDGE_UNAVAILABLE) : bridge.submitAutoTopUp(input);
 }

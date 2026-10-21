@@ -12,6 +12,7 @@
  * | `POST /v1/auth/verify` | bearer only for `link` | `{account_id, created, token, expires_at}` or `{account_id, linked}` | 400, 401, 403, 409 with `metadata.reason` (and `address`) |
  * | `GET /v1/account` | bearer | balances in wei with a micro-USD estimate, wallets, rate, deposit address, limits | 401 when the session is gone |
  * | `GET /v1/account/activity`, `/usage`, `GET /v1/deposits` | bearer | a page `{items, next_cursor}` | 400 `invalid_cursor` |
+ * | `GET /v1/models` | none | `{data: [{id, pricing: {prompt, completion, internal_reasoning?}, ...}]}`, USD per token, markup included | 503 `registry_unavailable` |
  * | `POST /v1/deposits/notify` | bearer | 202 `{accepted: true}` (a hint; the watcher verifies) | 400 `invalid_tx_hash`, 429 |
  * | `POST /v1/withdrawals` | bearer + `Idempotency-Key` | 202 `{withdrawal}` | 400 `below_minimum`, 403 `destination_not_linked` / `account_paused`, 409 `insufficient_withdrawable` / `idempotency_key_reused`, 429 `daily_limit_exceeded` (`remaining_wei`), 503 `rate_unavailable` |
  * | `GET /v1/withdrawals/:id` | bearer | `{withdrawal}` | 404 |
@@ -186,6 +187,30 @@ export const depositsPageSchema = pageSchema(
 );
 export type DepositsPage = z.infer<typeof depositsPageSchema>;
 
+/**
+ * A USD-per-token price as the gateway publishes it (`registry.ts`
+ * `publishedPrice`: at most 12 decimals, markup included). Kept as text and
+ * converted exactly; never a float.
+ */
+const usdPerTokenText = z.string().regex(/^[0-9]{1,12}(\.[0-9]{1,12})?$/);
+
+/** `GET /v1/models`: only the fields the status read uses are parsed; the rest of each row is ignored. */
+export const modelsResponseSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(200),
+        pricing: z.object({
+          prompt: usdPerTokenText,
+          completion: usdPerTokenText,
+          internal_reasoning: usdPerTokenText.optional(),
+        }),
+      }),
+    )
+    .max(500),
+});
+export type ModelsResponse = z.infer<typeof modelsResponseSchema>;
+
 export const withdrawalResponseSchema = z.object({
   withdrawal: z.object({
     id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
@@ -261,6 +286,8 @@ export interface VexCloudApi {
   listActivity(bearer: string, page: PageQuery, signal: AbortSignal): Promise<VexCloudCall<ActivityPage>>;
   listUsage(bearer: string, page: PageQuery, signal: AbortSignal): Promise<VexCloudCall<UsagePage>>;
   listDeposits(bearer: string, page: PageQuery, signal: AbortSignal): Promise<VexCloudCall<DepositsPage>>;
+  /** The gateway's published model list with its marked-up prices (no bearer needed; sent when held). */
+  listModels(bearer: string | null, signal: AbortSignal): Promise<VexCloudCall<ModelsResponse>>;
   /** A hint to scan this receipt now; attribution still comes only from the watcher's own log read. */
   notifyDeposit(bearer: string, txHash: string, signal: AbortSignal): Promise<VexCloudCall<{ readonly accepted: true }>>;
   createWithdrawal(
@@ -488,6 +515,12 @@ export function createVexCloudApi(options: VexCloudApiOptions = {}): VexCloudApi
     listDeposits(bearer, page, signal) {
       return call("deposits", `/v1/deposits${pageQueryString(page)}`, { method: "GET", bearer }, signal, (json) => {
         const parsed = depositsPageSchema.safeParse(json);
+        return parsed.success ? parsed.data : null;
+      });
+    },
+    listModels(bearer, signal) {
+      return call("models", "/v1/models", { method: "GET", bearer }, signal, (json) => {
+        const parsed = modelsResponseSchema.safeParse(json);
         return parsed.success ? parsed.data : null;
       });
     },

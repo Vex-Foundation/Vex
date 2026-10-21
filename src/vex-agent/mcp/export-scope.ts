@@ -68,6 +68,13 @@ export const NON_EXPORTED_INTERNAL_TOOLS: ReadonlySet<string> = new Set([
   // context. The tool itself is UNCHANGED for the in-app Vex agent, which has
   // no client search of its own (owner decision 2026-09-03).
   "WebResearch",
+  // Vex Inference: the account, its session bearer and the user's auto top-up
+  // rule belong to the desktop app's signed-in Vex Inference session, and the
+  // deposit's approval card is raised by the in-app turn loop. An MCP client
+  // pays for its own inference and has no Vex Inference session to fund.
+  "VexInferenceStatus",
+  "VexInferenceDepositPrepare",
+  "VexInferenceDepositConfirm",
 ]);
 
 /** The read-only catalog-search tool, exported through its own adapter. */

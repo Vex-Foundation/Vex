@@ -109,6 +109,12 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
     label: "Native <-> wrapped-native conversion (1:1, no route; the answer when a swap venue refuses that pair)",
     toolNames: ["WalletWrapPrepare", "WalletWrapConfirm"],
   },
+  // Its own category: the deposit goes to the Vex Inference account that pays
+  // for this agent's inference, never to an address the agent names.
+  {
+    label: "Vex Inference account - balance, prices and usage; deposit VEX to pay for your own inference",
+    toolNames: ["VexInferenceStatus", "VexInferenceDepositPrepare", "VexInferenceDepositConfirm"],
+  },
   { label: "Mission setup draft", toolNames: ["MissionDraftUpdate"] },
   { label: "Mission run stop", toolNames: ["MissionStop"] },
   // NOT mission-only: owner decree 2026-08-03 made waiting available to full

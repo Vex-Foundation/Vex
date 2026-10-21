@@ -1,12 +1,16 @@
 /**
- * The provider step's Vex Cloud branch: the OpenRouter / Vex Cloud choice,
- * the Vex Cloud model list, and a save that carries no key.
+ * The provider step's Vex Cloud branch, named "Vex Inference" to the user:
+ * the Vex Inference / OpenRouter choice, its model list, and a save that
+ * carries no key.
  *
- * Pinned: choosing Vex Cloud shows its branch with the account panel and the
- * Vex Cloud list (never the OpenRouter key field); saving while signed out is
- * not possible; signed in, saving sends `{provider: "vexcloud", model}` and
- * nothing else, then advances; an active Vex Cloud configuration opens on
- * its own branch with the model prefilled.
+ * Pinned: Vex Inference is listed first and marked Recommended (its
+ * accessible name includes the tag); a fresh install (no provider named)
+ * opens on it, while a named provider, an OpenRouter setup included, is never
+ * switched by the default; OpenRouter stays one press away; saving while
+ * signed out is not possible; signed in, saving sends
+ * `{provider: "vexcloud", model}` and nothing else, then advances; an active
+ * Vex Cloud configuration opens on its own branch with the model prefilled;
+ * no user-facing "Vex Cloud" is left on the step.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,6 +55,7 @@ vi.mock("../../../../lib/api/wizard.js", async () => {
 });
 
 const { ProviderStep } = await import("../ProviderStep.js");
+const { defaultProviderChoice } = await import("../provider/ProviderChoice.js");
 
 const CLOUD_MODEL = {
   modelId: "anthropic/claude-haiku-5.5",
@@ -143,25 +148,90 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("ProviderStep - Vex Cloud", () => {
-  it("choosing Vex Cloud shows its branch and no OpenRouter key field", () => {
+const VEX_INFERENCE = { name: "Vex Inference Recommended" } as const;
+const OPENROUTER = { name: "OpenRouter (your key)" } as const;
+
+describe("defaultProviderChoice", () => {
+  it("pre-selects Vex Inference only when a loaded read names no provider", () => {
+    expect(defaultProviderChoice(env())).toBe("vexcloud");
+  });
+
+  it("never switches a named provider, configured or not", () => {
+    expect(defaultProviderChoice(env({ configured: true, name: "openrouter", modelLabel: "a/b" }))).toBe("openrouter");
+    expect(defaultProviderChoice(env({ configured: false, name: "openrouter" }))).toBe("openrouter");
+    expect(defaultProviderChoice(env({ configured: false, name: "vexcloud" }))).toBe("vexcloud");
+  });
+
+  it("claims nothing while the read is unknown: OpenRouter, the step's old form", () => {
+    expect(defaultProviderChoice(null)).toBe("openrouter");
+  });
+});
+
+describe("ProviderStep - Vex Inference", () => {
+  it("a fresh install opens on Vex Inference, listed first and marked Recommended", () => {
     mockAccount.mockReturnValue(signedIn("signed_out"));
     const { getByRole, queryByLabelText, container } = renderStep();
-    expect(queryByLabelText("OpenRouter API key")).not.toBeNull();
 
-    fireEvent.click(getByRole("button", { name: "Vex Cloud (pay in VEX)" }));
+    const options = [...container.querySelectorAll<HTMLButtonElement>("[data-vex-provider-choice]")];
+    expect(options.map((option) => option.dataset["vexProviderChoice"])).toEqual(["vexcloud", "openrouter"]);
+    const vex = getByRole("button", VEX_INFERENCE);
+    expect(vex).toBe(options[0]);
+    expect(vex.getAttribute("aria-pressed")).toBe("true");
+    expect(vex.querySelector("[data-vex-provider-recommended]")?.textContent).toBe("Recommended");
+    expect(vex.getAttribute("aria-describedby")).not.toBeNull();
+    const line = container.querySelector(`[id="${vex.getAttribute("aria-describedby") ?? ""}"]`);
+    expect(line?.textContent).toBe("Pay for AI in VEX. Sign in with your wallets, no API key.");
+    expect(getByRole("button", OPENROUTER).getAttribute("aria-pressed")).toBe("false");
+    // Only Vex Inference carries the tag.
+    expect(container.querySelectorAll("[data-vex-provider-recommended]")).toHaveLength(1);
 
     expect(queryByLabelText("OpenRouter API key")).toBeNull();
     expect(container.querySelector('[data-vex-wizard-provider-form="vexcloud"]')).not.toBeNull();
-    expect(getByRole("button", { name: "Vex Cloud (pay in VEX)" }).getAttribute("aria-pressed")).toBe("true");
     // Signed out: nothing to save yet.
-    expect((getByRole("button", { name: "Use Vex Cloud" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((getByRole("button", { name: "Use Vex Inference" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockPersistProvider).not.toHaveBeenCalled();
+  });
+
+  it("OpenRouter stays one press away, with its own key field", () => {
+    mockAccount.mockReturnValue(signedIn("signed_out"));
+    const { getByRole, queryByLabelText, container } = renderStep();
+    fireEvent.click(getByRole("button", OPENROUTER));
+
+    expect(queryByLabelText("OpenRouter API key")).not.toBeNull();
+    expect(container.querySelector('[data-vex-wizard-provider-form="openrouter"]')).not.toBeNull();
+    expect(getByRole("button", OPENROUTER).getAttribute("aria-pressed")).toBe("true");
+    // The recommendation stays visible on the other branch too.
+    expect(getByRole("button", VEX_INFERENCE).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("a configured OpenRouter setup is never switched, and Vex Inference can be chosen from it", () => {
+    mockAccount.mockReturnValue(signedIn("signed_out"));
+    mockUseEnvState.mockReturnValue({
+      data: { ok: true, data: env({ configured: true, name: "openrouter", modelLabel: "anthropic/claude-sonnet-4.5" }) },
+      isLoading: false,
+      isError: false,
+    });
+    const { getByRole, container } = renderStep("back-edit");
+    expect(container.querySelector('[data-vex-wizard-provider="skip"]')).not.toBeNull();
+    expect(getByRole("button", OPENROUTER).getAttribute("aria-pressed")).toBe("true");
+    expect(getByRole("button", VEX_INFERENCE).getAttribute("aria-pressed")).toBe("false");
+
+    // Pressing the provider already in view changes nothing.
+    fireEvent.click(getByRole("button", OPENROUTER));
+    expect(container.querySelector('[data-vex-wizard-provider="skip"]')).not.toBeNull();
+
+    fireEvent.click(getByRole("button", VEX_INFERENCE));
+    expect(container.querySelector('[data-vex-wizard-provider-form="vexcloud"]')).not.toBeNull();
+
+    // Back to OpenRouter: its configured screen, not a key re-entry.
+    fireEvent.click(getByRole("button", OPENROUTER));
+    expect(container.querySelector('[data-vex-wizard-provider="skip"]')).not.toBeNull();
+    expect(mockPersistProvider).not.toHaveBeenCalled();
   });
 
   it("signed in, saves the model with no key and advances", async () => {
     mockAccount.mockReturnValue(signedIn("signed_in"));
-    const { getByRole, getByLabelText, container } = renderStep();
-    fireEvent.click(getByRole("button", { name: "Vex Cloud (pay in VEX)" }));
+    const { getByLabelText, container } = renderStep();
     fireEvent.change(getByLabelText("Model"), { target: { value: CLOUD_MODEL.modelId } });
 
     const form = container.querySelector('[data-vex-wizard-provider-form="vexcloud"]');
@@ -171,17 +241,19 @@ describe("ProviderStep - Vex Cloud", () => {
     await waitFor(() => expect(mockPersistProvider).toHaveBeenCalledWith({ provider: "vexcloud", model: CLOUD_MODEL.modelId }));
     await waitFor(() => expect(mockOnAdvance).toHaveBeenCalledWith("review"));
     expect(mockUseProviderModels).toHaveBeenCalledWith(true, "vexcloud");
+    expect((await waitFor(() => container.querySelector('[data-vex-provider-success="vexcloud"]')))?.textContent).toMatch(
+      /^Vex Inference saved \(12ms\)\./,
+    );
   });
 
-  it("refuses a model the Vex Cloud list does not offer", async () => {
+  it("refuses a model the Vex Inference list does not offer", async () => {
     mockAccount.mockReturnValue(signedIn("signed_in"));
-    const { getByRole, getByLabelText, container, findByRole } = renderStep();
-    fireEvent.click(getByRole("button", { name: "Vex Cloud (pay in VEX)" }));
+    const { getByLabelText, container, findByRole } = renderStep();
     fireEvent.change(getByLabelText("Model"), { target: { value: "vendor/not-offered" } });
     const form = container.querySelector('[data-vex-wizard-provider-form="vexcloud"]');
     if (form === null) throw new Error("no form");
     fireEvent.submit(form);
-    expect((await findByRole("alert")).textContent).toBe("Pick a model from the Vex Cloud list.");
+    expect((await findByRole("alert")).textContent).toBe("Pick a model from the Vex Inference list.");
     expect(mockPersistProvider).not.toHaveBeenCalled();
   });
 
@@ -196,5 +268,12 @@ describe("ProviderStep - Vex Cloud", () => {
     expect(container.querySelector('[data-vex-wizard-provider-form="vexcloud"]')).not.toBeNull();
     // By id: with a model set, the brand icon joins the label's text.
     expect(container.querySelector<HTMLInputElement>("#vex-provider-cloud-model")?.value).toBe(CLOUD_MODEL.modelId);
+  });
+
+  it("says Vex Inference to the user, never Vex Cloud", () => {
+    mockAccount.mockReturnValue(signedIn("signed_in"));
+    const { container } = renderStep();
+    expect(container.textContent).toMatch(/Vex Inference runs the agent's models/);
+    expect(container.textContent).not.toMatch(/Vex Cloud/);
   });
 });

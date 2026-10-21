@@ -104,8 +104,8 @@ async function persistVexCloud(
       domain: "onboarding",
       message:
         account.value.reason === "session_expired"
-          ? "Your Vex Cloud session has expired. Sign in to Vex Cloud again, then save."
-          : "Sign in to Vex Cloud first, then save.",
+          ? "Your Vex Inference session has expired. Sign in to Vex Inference again, then save."
+          : "Sign in to Vex Inference first, then save.",
       retryable: true,
       userActionable: true,
       redacted: true,
@@ -122,7 +122,7 @@ async function persistVexCloud(
     return err({
       code: "provider.unavailable",
       domain: "onboarding",
-      message: "The Vex Cloud model list could not be read, so nothing was saved. Try again in a moment.",
+      message: "The Vex Inference model list could not be read, so nothing was saved. Try again in a moment.",
       retryable: true,
       userActionable: true,
       redacted: true,
@@ -133,7 +133,7 @@ async function persistVexCloud(
     return err({
       code: "provider.model_unsupported",
       domain: "onboarding",
-      message: "That model is not offered by Vex Cloud. Pick one from the Vex Cloud list.",
+      message: "That model is not offered by Vex Inference. Pick one from the Vex Inference list.",
       retryable: false,
       userActionable: true,
       redacted: true,

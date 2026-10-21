@@ -40,7 +40,7 @@ export async function storeVexCloudSession(token: string): Promise<Result<void>>
     return err({
       code: "internal.unexpected",
       domain: "vexCloud",
-      message: "Vex Cloud returned an empty session. Nothing was stored; sign in again.",
+      message: "Vex Inference returned an empty session. Nothing was stored; sign in again.",
       retryable: true,
       userActionable: true,
       redacted: true,

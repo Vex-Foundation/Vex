@@ -14,7 +14,9 @@ import { SessionInferenceNotice } from "../SessionInferenceNotice.js";
 
 const SESSION = "3f0d2f7a-1c2b-4b3c-8d4e-5f6a7b8c9d0e";
 
-function notice(overrides: Partial<InferenceNoticeEvent> = {}): InferenceNoticeEvent {
+type ClampNotice = Extract<InferenceNoticeEvent, { kind: "max_tokens_clamped" }>;
+
+function notice(overrides: Partial<ClampNotice> = {}): ClampNotice {
   return {
     type: "engine.inference.notice",
     kind: "max_tokens_clamped",
@@ -52,6 +54,31 @@ describe("SessionInferenceNotice", () => {
     expect(status.textContent).toContain("Answer limit lowered");
     expect(status.textContent).toContain("4,096 of 16,384 tokens");
     expect(status.textContent).toContain("Top up VEX");
+  });
+
+  it("a low-balance crossing names the balance, the alert line and the next step", () => {
+    act(() =>
+      useInferenceNoticeStore.getState().record({
+        type: "engine.inference.notice",
+        kind: "vex_inference_balance_low",
+        sessionId: SESSION,
+        missionRunId: null,
+        provider: "vexcloud",
+        alertPercent: 20,
+        balanceWei: "15000000000000000000",
+        thresholdWei: "20000000000000000000",
+        referenceWei: "100000000000000000000",
+        occurredAt: "2026-10-21T12:00:00.000Z",
+      }),
+    );
+    render(<SessionInferenceNotice sessionId={SESSION} />);
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("data-vex-inference-notice")).toBe("balance_low");
+    expect(status.textContent).toContain("Balance low");
+    expect(status.textContent).toContain("15 VEX");
+    expect(status.textContent).toContain("20% alert");
+    expect(status.textContent).toContain("Top up VEX");
+    expect(screen.getByRole("button", { name: "Dismiss the low balance notice" })).toBeTruthy();
   });
 
   it("a model-limit clamp has no top-up advice", () => {

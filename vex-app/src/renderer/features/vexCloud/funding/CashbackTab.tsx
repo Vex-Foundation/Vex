@@ -16,9 +16,9 @@ import { claimVexCloudCashback, useInvalidateVexCloudFunding } from "../../../li
 import { NOT_AVAILABLE } from "./funding-model.js";
 
 export const CLAIM_STATUS_UNKNOWN =
-  "Vex did not get a clear answer from Vex Cloud, so this claim may or may not have gone through. Check status repeats the same claim, which cannot pay twice.";
+  "Vex did not get a clear answer from Vex Inference, so this claim may or may not have gone through. Check status repeats the same claim, which cannot pay twice.";
 
-export const NOTHING_TO_CLAIM = "Nothing to claim yet. Cashback is 3% of what your requests cost, credited as Vex Cloud settles them.";
+export const NOTHING_TO_CLAIM = "Nothing to claim yet. Cashback is 3% of what your requests cost, credited as Vex Inference settles them.";
 
 export function CashbackTab({ account }: { readonly account: VexCloudAccount }): JSX.Element {
   const invalidate = useInvalidateVexCloudFunding();
@@ -62,7 +62,7 @@ export function CashbackTab({ account }: { readonly account: VexCloudAccount }):
       const claimed = BigInt(result.data.claimedWei);
       setOutcome({
         kind: "claimed",
-        text: claimed === 0n ? "Nothing was claimable, so nothing moved." : `Claimed ${formatVexExact(claimed)} VEX to your Vex Cloud balance.`,
+        text: claimed === 0n ? "Nothing was claimable, so nothing moved." : `Claimed ${formatVexExact(claimed)} VEX to your Vex Inference balance.`,
       });
     });
   };

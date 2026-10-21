@@ -39,7 +39,7 @@ export function registerProviderModelsHandler(): () => void {
           domain: "onboarding",
           message:
             source === "vexcloud"
-              ? "The Vex Cloud model list is temporarily unavailable. Try again in a moment."
+              ? "The Vex Inference model list is temporarily unavailable. Try again in a moment."
               : "The OpenRouter model catalogue is temporarily unavailable.",
           retryable: true,
           userActionable: true,

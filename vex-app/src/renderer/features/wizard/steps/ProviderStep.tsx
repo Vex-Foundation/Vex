@@ -65,7 +65,7 @@ import { ModelPicker } from "./provider/ModelPicker.js";
 import { EndpointPicker } from "./provider/EndpointPicker.js";
 import { ProviderErrorAlert } from "./provider/ProviderErrorAlert.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
-import { ProviderChoice } from "./provider/ProviderChoice.js";
+import { defaultProviderChoice, ProviderChoice } from "./provider/ProviderChoice.js";
 import { VexCloudProviderForm } from "./provider/VexCloudProviderForm.js";
 
 export interface ProviderStepProps {
@@ -103,13 +103,20 @@ export function ProviderStep({
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
   const effectiveEndpointTag = providerState?.endpointTag ?? null;
-  const choice: ProviderName =
-    choiceOverride ?? (effectiveName === "vexcloud" ? "vexcloud" : "openrouter");
-  const onChoose = useCallback((next: ProviderName) => {
-    setChoiceOverride(next);
-    // Leaving the configured screen: the chosen branch shows its full form.
-    setShowOverride(true);
-  }, []);
+  // Vex Inference is pre-selected only when no provider is named yet; a named
+  // one (an OpenRouter setup included) is never switched by the default.
+  const choice: ProviderName = choiceOverride ?? defaultProviderChoice(env);
+  const onChoose = useCallback(
+    (next: ProviderName) => {
+      // Pressing the option already in view changes nothing.
+      if (next === choice) return;
+      setChoiceOverride(next);
+      // Another provider shows its full form; coming back to the configured
+      // one shows its configured screen again.
+      setShowOverride(!(configured && next === effectiveName));
+    },
+    [choice, configured, effectiveName],
+  );
   const providerModels = useProviderModels(choice === "openrouter" && (!configured || showOverride));
   const providerModelsResult = providerModels.data;
   const catalogueModels =
@@ -271,6 +278,7 @@ export function ProviderStep({
           void advanceToReview();
         }}
         onReconfigure={() => setShowOverride(true)}
+        choice={<ProviderChoice value={choice} onChange={onChoose} />}
         continuePending={stepAdvance.isPending}
         advanceError={clientError}
       />
