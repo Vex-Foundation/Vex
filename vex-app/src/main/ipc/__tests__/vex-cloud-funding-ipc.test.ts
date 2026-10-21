@@ -988,6 +988,29 @@ describe("submitWithdrawal and idempotency", () => {
     expect(sentKeys[1]).toBe(sentKeys[0]);
   });
 
+  it("a replay refused AFTER the key lookup resolves as not_created through the real wire and output schema", async () => {
+    const w = mount();
+    const p = await prepared();
+    w.gateway.loseNextWithdrawalAnswer = true;
+    expect(expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p))).data.outcome).toBe("unknown");
+    w.gateway.forced.set("POST /v1/withdrawals", { status: 409, reason: "insufficient_withdrawable" });
+    const check = expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p), "88888888-2222-4333-8444-555555555555"));
+    expect(check.data).toEqual({ outcome: "not_created", proposalId: p.data.proposalId, detail: expect.stringMatching(/finalized deposits/) });
+    expectError(await call(CH.vexCloud.submitWithdrawal, submit(p), "99999999-2222-4333-8444-555555555555"), "approvals.already_resolved");
+  });
+
+  it("a replay refused BEFORE the key lookup (503 withdrawals_unavailable) keeps the key", async () => {
+    const w = mount();
+    const p = await prepared();
+    w.gateway.loseNextWithdrawalAnswer = true;
+    expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p)));
+    w.gateway.forced.set("POST /v1/withdrawals", { status: 503, reason: "withdrawals_unavailable" });
+    expect(expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p), "88888888-2222-4333-8444-555555555555")).data.outcome).toBe("unknown");
+    const resolved = expectOk(await call(CH.vexCloud.submitWithdrawal, submit(p), "99999999-2222-4333-8444-555555555555"));
+    expect(resolved.data.outcome).toBe("accepted");
+    expect(w.gateway.withdrawals.size).toBe(1);
+  });
+
   it("reads a withdrawal's status, and a missing one by name", async () => {
     mount();
     expectOk(await call(CH.vexCloud.submitWithdrawal, submit(await prepared())));

@@ -34,6 +34,8 @@ export type VexCloudRefusalKind =
   // ── funding (phase 2) ──
   /** No Vex Cloud session is stored, or the backend no longer accepts it. */
   | "not_signed_in"
+  /** Signed in to a different Vex Cloud account than the one a held request was sent from. */
+  | "account_changed"
   /** This build pins no deposit address yet ("Deposits open soon"). */
   | "deposits_not_open"
   /** The pinned deposit address differs from the backend's: funding is disabled. */
@@ -149,6 +151,8 @@ export function vexCloudRefusalError(
       case "challenge_rejected":
       case "invalid_response":
         return { code: "internal.unexpected", retryable: false, userActionable: false };
+      case "account_changed":
+        return { code: "permissions.denied", retryable: true, userActionable: true };
       case "not_signed_in":
       case "destination_not_linked":
       case "sender_not_linked":

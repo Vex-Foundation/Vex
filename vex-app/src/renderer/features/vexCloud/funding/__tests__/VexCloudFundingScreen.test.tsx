@@ -13,8 +13,13 @@
  * withdrawal whose outcome is unknown has no Reject, offers Check status
  * first, survives Close and blocks a duplicate review; an unknown claim says
  * so; a failed Load more keeps its rows and retries the same cursor.
+ * A check that proves the withdrawal was not created resolves its record; a
+ * check main answers with "no such proposal" keeps it (lost, blocking a
+ * duplicate review) until the user dismisses it; a refused check keeps it.
+ * Submit and claim results are published under React StrictMode.
  */
 
+import { StrictMode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +27,7 @@ import type { VexCloudAccount, VexCloudAccountResult, VexCloudDepositPin } from 
 import type { VexCloudDepositProposal, VexCloudWithdrawalProposal } from "@shared/schemas/vex-cloud-funding.js";
 import { VexCloudFundingPage } from "../VexCloudFundingScreen.js";
 import { SENDER_NOT_LINKED } from "../DepositTab.js";
-import { OUTCOME_UNKNOWN_DETAIL, UNRESOLVED_BLOCKS_REVIEW } from "../WithdrawTab.js";
+import { DISMISS_LOST, LOST_UNRESOLVED_DETAIL, OUTCOME_UNKNOWN_DETAIL, UNRESOLVED_BLOCKS_REVIEW } from "../WithdrawTab.js";
 import { CLAIM_STATUS_UNKNOWN } from "../CashbackTab.js";
 import { useUnresolvedWithdrawals } from "../unresolved-withdrawals.js";
 
@@ -115,13 +120,15 @@ const bridge = {
   deposits: vi.fn(),
 };
 
-function renderPage() {
+function renderPage(options: { readonly strict?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return render(
+  const page = (
     <QueryClientProvider client={client}>
       <VexCloudFundingPage />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  // StrictMode runs every effect's setup, cleanup and setup again, as the app's entry does in development.
+  return render(options.strict === true ? <StrictMode>{page}</StrictMode> : page);
 }
 
 beforeEach(() => {
@@ -305,8 +312,8 @@ describe("withdraw", () => {
     expiresAt: "2026-10-21T12:05:00.000Z",
   };
 
-  async function openWithdraw(): Promise<void> {
-    renderPage();
+  async function openWithdraw(options: { readonly strict?: boolean } = {}): Promise<void> {
+    renderPage(options);
     fireEvent.click(await screen.findByRole("tab", { name: "Withdraw" }));
   }
 
@@ -410,6 +417,68 @@ describe("withdraw", () => {
     expect(screen.getByTestId("withdraw-disabled-reason").textContent).toBe("");
   });
 
+  const ACCEPTED = {
+    ok: true,
+    data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "debited", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
+  };
+
+  it("under StrictMode a submit result is still published (the effect setup restores mounted)", async () => {
+    bridge.prepareWithdrawal.mockReturnValue({ promise: Promise.resolve({ ok: true, data: PROPOSAL }), cancel: vi.fn() });
+    bridge.submitWithdrawal.mockResolvedValueOnce(ACCEPTED);
+    bridge.withdrawal.mockReturnValue(new Promise(() => undefined));
+    await openWithdraw({ strict: true });
+    fireEvent.change(await screen.findByLabelText("You withdraw"), { target: { value: "6000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
+    fireEvent.click(within(await screen.findByTestId("withdraw-approval")).getByRole("button", { name: "Approve withdrawal" }));
+    expect(await screen.findByTestId("withdraw-status")).toBeTruthy();
+  });
+
+  it("a check that proves the withdrawal was not created resolves the record and says why", async () => {
+    await approveInto(UNKNOWN);
+    bridge.submitWithdrawal.mockResolvedValueOnce({
+      ok: true,
+      data: { outcome: "not_created", proposalId: PROPOSAL.proposalId, detail: "That is more than can be withdrawn now. Nothing was moved." },
+    });
+    fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Check status" }));
+    expect((await screen.findByTestId("withdraw-message")).textContent).toBe(
+      "Vex Cloud did not create this withdrawal. That is more than can be withdrawn now. Nothing was moved.",
+    );
+    expect(useUnresolvedWithdrawals.getState().records).toEqual([]);
+    expect(screen.queryByTestId("withdraw-unresolved-row")).toBeNull();
+  });
+
+  it("a check main answers with no such proposal keeps the record, says so, keeps blocking a duplicate, and leaves only on dismiss", async () => {
+    await approveInto(UNKNOWN);
+    bridge.submitWithdrawal.mockResolvedValueOnce({
+      ok: false,
+      error: { code: "approvals.already_resolved", domain: "vexCloud", message: "This withdrawal was already sent, cancelled or never prepared.", retryable: true, userActionable: true, redacted: true, correlationId: "c" },
+    });
+    fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Check status" }));
+    const row = await screen.findByTestId("withdraw-unresolved-row");
+    expect(within(row).getByTestId("withdraw-unresolved-lost").textContent).toBe(LOST_UNRESOLVED_DETAIL);
+    expect(within(row).queryByRole("button", { name: "Check status" })).toBeNull();
+    expect(useUnresolvedWithdrawals.getState().records).toEqual([
+      { proposalId: PROPOSAL.proposalId, amountWei: PROPOSAL.amountWei, destination: W1, lost: true },
+    ]);
+    fireEvent.change(screen.getByLabelText("You withdraw"), { target: { value: "6000" } });
+    expect(screen.getByTestId("withdraw-disabled-reason").textContent).toBe(UNRESOLVED_BLOCKS_REVIEW);
+    fireEvent.click(within(row).getByRole("button", { name: DISMISS_LOST }));
+    expect(useUnresolvedWithdrawals.getState().records).toEqual([]);
+    expect(screen.getByTestId("withdraw-disabled-reason").textContent).toBe("");
+  });
+
+  it("a refused check (session expired) keeps the record and shows why the check failed", async () => {
+    await approveInto(UNKNOWN);
+    const text = "Your Vex Cloud session expired, so Vex could not check this withdrawal. Vex still holds the same request: sign in again under Settings, Vex Cloud, then press Check status. Do not send it again.";
+    bridge.submitWithdrawal.mockResolvedValueOnce({
+      ok: false,
+      error: { code: "permissions.denied", domain: "vexCloud", message: text, retryable: false, userActionable: true, redacted: true, correlationId: "c" },
+    });
+    fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Check status" }));
+    expect((await screen.findByTestId("withdraw-check-note")).textContent).toBe(text);
+    expect(useUnresolvedWithdrawals.getState().records).toEqual([{ proposalId: PROPOSAL.proposalId, amountWei: PROPOSAL.amountWei, destination: W1 }]);
+  });
+
   it("Open History from an unknown outcome goes to the History tab", async () => {
     bridge.activity.mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
     await approveInto(UNKNOWN);
@@ -451,6 +520,33 @@ describe("cashback", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check status" }));
     expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
     expect(bridge.claimCashback).toHaveBeenCalledTimes(2);
+  });
+
+  it("under StrictMode a claim result is still published", async () => {
+    bridge.account.mockResolvedValue(signedIn(undefined, { balances: { ...account().balances, claimable: amount(12n * E18, "12000") } }));
+    bridge.claimCashback.mockResolvedValue({ ok: true, data: { outcome: "claimed", claimedWei: String(12n * E18) } });
+    renderPage({ strict: true });
+    fireEvent.click(await screen.findByRole("tab", { name: "Cashback" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Claim to balance" }));
+    expect(await screen.findByText("Claimed 12 VEX to your Vex Cloud balance.")).toBeTruthy();
+  });
+
+  it("a refused check of an unknown claim stays Status unknown, shows why, and still offers Check status", async () => {
+    bridge.account.mockResolvedValue(signedIn(undefined, { balances: { ...account().balances, claimable: amount(12n * E18, "12000") } }));
+    const text = "Your Vex Cloud session expired, so Vex could not check this cashback claim.";
+    bridge.claimCashback.mockResolvedValueOnce({ ok: true, data: { outcome: "unknown" } });
+    bridge.claimCashback.mockResolvedValueOnce({
+      ok: false,
+      error: { code: "permissions.denied", domain: "vexCloud", message: text, retryable: false, userActionable: true, redacted: true, correlationId: "c" },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Cashback" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Claim to balance" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check status" }));
+    expect((await screen.findByTestId("cashback-check-note")).textContent).toBe(text);
+    const outcome = screen.getByTestId("cashback-outcome");
+    expect(within(outcome).getByText("Status unknown")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
   });
 });
 

@@ -15,6 +15,11 @@
  *    existing withdrawal; "Close" keeps the record visible ("Status
  *    unknown") with History one press away, and a NEW review of the same
  *    amount to the same wallet stays blocked until the record resolves.
+ *
+ * A record resolves only on an answer about the original request (the
+ * withdrawal, or "not created"). A check that main answers with "no such
+ * proposal" means main no longer holds it: the record stays, says so, and
+ * leaves only when the user dismisses it after checking History.
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
@@ -54,6 +59,11 @@ export const STATUS_UNKNOWN = "Status unknown";
 export const OUTCOME_UNKNOWN_DETAIL =
   "Vex sent this withdrawal to Vex Cloud but did not get a clear answer, so it may or may not have been created. Check status asks again with the same request, which cannot create a second withdrawal.";
 
+export const LOST_UNRESOLVED_DETAIL =
+  "Vex no longer holds this request, so it cannot re-check it here. Look for it in History; do not send it again until you have checked.";
+
+export const DISMISS_LOST = "I checked History";
+
 export const UNRESOLVED_BLOCKS_REVIEW =
   "A withdrawal of this amount to this wallet was sent and its status is not known yet. Check its status above before starting another.";
 
@@ -82,15 +92,17 @@ export function WithdrawTab({
   const unresolved = useUnresolvedWithdrawals((state) => state.records);
   const keepUnresolved = useUnresolvedWithdrawals((state) => state.keep);
   const resolveUnresolved = useUnresolvedWithdrawals((state) => state.resolve);
+  const markLost = useUnresolvedWithdrawals((state) => state.markLost);
   const generation = useRef(0);
   const mounted = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set in the setup, not only at creation: StrictMode runs setup, cleanup, setup.
+    mounted.current = true;
+    return () => {
       mounted.current = false;
       generation.current += 1;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const withdrawable = account.withdrawable === null ? null : BigInt(account.withdrawable.wei);
   const reading = readAmount({
@@ -168,6 +180,15 @@ export function WithdrawTab({
         setAmountText("");
         return;
       }
+      if (result.ok && result.data.outcome === "not_created") {
+        // An answer about the original: Vex Cloud found no withdrawal for its key and refused.
+        resolveUnresolved(record.proposalId);
+        invalidate();
+        if (!mounted.current || mine !== generation.current) return;
+        setStep({ kind: "editing" });
+        setMessage(`Vex Cloud did not create this withdrawal. ${result.data.detail}`);
+        return;
+      }
       if (result.ok) {
         keepUnresolved(record);
         if (!mounted.current || mine !== generation.current) return;
@@ -181,12 +202,16 @@ export function WithdrawTab({
         setMessage(errorText(result.error));
         return;
       }
-      // A check that main answers with "no such proposal" means main settled
-      // it (a definitive answer) or restarted: there is nothing left to replay.
-      if (result.error.code === "approvals.already_resolved") resolveUnresolved(record.proposalId);
+      // "No such proposal" on a check says nothing about the original: main
+      // no longer holds it. The record stays, marked lost, until dismissed.
+      if (result.error.code === "approvals.already_resolved") {
+        markLost(record.proposalId);
+        if (!mounted.current || mine !== generation.current) return;
+        setStep({ kind: "editing" });
+        return;
+      }
       if (!mounted.current || mine !== generation.current) return;
       setCheckNote({ proposalId: record.proposalId, text: errorText(result.error) });
-      if (result.error.code === "approvals.already_resolved") setStep({ kind: "editing" });
     });
   };
 
@@ -285,18 +310,29 @@ export function WithdrawTab({
               <p className="m-0 text-[13px] text-ink-secondary">
                 {formatVexExact(BigInt(record.amountWei))} VEX to <span className="vex-num font-mono">{shortAddress(record.destination)}</span>. It may or may not have been created.
               </p>
-              {checkNote?.proposalId === record.proposalId ? (
+              {record.lost === true ? (
+                <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="withdraw-unresolved-lost">
+                  {LOST_UNRESOLVED_DETAIL}
+                </p>
+              ) : checkNote?.proposalId === record.proposalId ? (
                 <p role="alert" className="m-0 text-[13px] text-ink-primary">
                   {checkNote.text}
                 </p>
               ) : null}
               <div className="flex items-center gap-2">
-                <Button type="button" variant="ink" size="sm" disabled={checking === record.proposalId} onClick={() => send(record, false)}>
-                  Check status
-                </Button>
+                {record.lost === true ? null : (
+                  <Button type="button" variant="ink" size="sm" disabled={checking === record.proposalId} onClick={() => send(record, false)}>
+                    Check status
+                  </Button>
+                )}
                 <Button type="button" variant="quiet" size="sm" onClick={onOpenHistory}>
                   Open History
                 </Button>
+                {record.lost === true ? (
+                  <Button type="button" variant="quiet" size="sm" onClick={() => resolveUnresolved(record.proposalId)}>
+                    {DISMISS_LOST}
+                  </Button>
+                ) : null}
               </div>
             </li>
           ))}

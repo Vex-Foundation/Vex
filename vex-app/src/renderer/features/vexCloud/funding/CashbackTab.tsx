@@ -24,31 +24,39 @@ export function CashbackTab({ account }: { readonly account: VexCloudAccount }):
   const invalidate = useInvalidateVexCloudFunding();
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<
-    { readonly kind: "claimed"; readonly text: string } | { readonly kind: "unknown" } | { readonly kind: "refused"; readonly text: string } | null
+    | { readonly kind: "claimed"; readonly text: string }
+    | { readonly kind: "unknown"; readonly note: string | null }
+    | { readonly kind: "refused"; readonly text: string }
+    | null
   >(null);
   const mounted = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set in the setup, not only at creation: StrictMode runs setup, cleanup, setup.
+    mounted.current = true;
+    return () => {
       mounted.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   const claimable = BigInt(account.balances.claimable.wei);
   const usd = account.balances.claimable.usdMicroEstimate;
 
   const claim = (): void => {
+    // A press while the outcome is unknown is a CHECK of that claim, not a new one.
+    const checkingUnknown = outcome?.kind === "unknown";
     setBusy(true);
-    setOutcome(null);
+    setOutcome(checkingUnknown ? { kind: "unknown", note: null } : null);
     void claimVexCloudCashback().then((result) => {
       invalidate();
       if (!mounted.current) return;
       setBusy(false);
       if (!result.ok) {
-        setOutcome({ kind: "refused", text: result.error.message });
+        // A refused CHECK says nothing about the earlier claim: main still holds
+        // its key, so the view stays "Status unknown" and shows why the check failed.
+        setOutcome(checkingUnknown ? { kind: "unknown", note: result.error.message } : { kind: "refused", text: result.error.message });
         return;
       }
       if (result.data.outcome === "unknown") {
-        setOutcome({ kind: "unknown" });
+        setOutcome({ kind: "unknown", note: null });
         return;
       }
       const claimed = BigInt(result.data.claimedWei);
@@ -105,6 +113,11 @@ export function CashbackTab({ account }: { readonly account: VexCloudAccount }):
         <div className="flex flex-col gap-1" data-testid="cashback-outcome">
           <StateWord state="error" word="Status unknown" live />
           <p className="m-0 text-[13px] text-ink-secondary">{CLAIM_STATUS_UNKNOWN}</p>
+          {outcome.note === null ? null : (
+            <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="cashback-check-note">
+              {outcome.note}
+            </p>
+          )}
         </div>
       ) : (
         <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="cashback-outcome">

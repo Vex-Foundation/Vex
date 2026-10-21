@@ -6,8 +6,12 @@
  * so the record survives a tab switch or leaving the funding page. UI-only,
  * never persisted: main's own store is process memory too.
  *
- * A record leaves when a check returns the withdrawal, or when main no longer
- * knows the proposal (it answered or refused definitively, or restarted).
+ * A record leaves only on an answer about the ORIGINAL request: a check that
+ * returns the withdrawal, or one that proves it was not created. When main no
+ * longer holds the proposal (`approvals.already_resolved` on a check), the
+ * record is NOT removed: it is marked `lost`, keeps blocking a new review of
+ * the same amount and wallet, and leaves only when the user dismisses it
+ * after checking History.
  *
  * BOUNDED: at most {@link MAX_UNRESOLVED} records, the oldest evicted first
  * (the same bound as main's proposal store).
@@ -21,11 +25,14 @@ export interface UnresolvedWithdrawal {
   readonly proposalId: string;
   readonly amountWei: string;
   readonly destination: string;
+  /** Main no longer holds this request, so Check status cannot ask about it; only History can. */
+  readonly lost?: boolean;
 }
 
 interface UnresolvedWithdrawalsState {
   readonly records: readonly UnresolvedWithdrawal[];
   readonly keep: (record: UnresolvedWithdrawal) => void;
+  readonly markLost: (proposalId: string) => void;
   readonly resolve: (proposalId: string) => void;
 }
 
@@ -36,6 +43,11 @@ export const useUnresolvedWithdrawals = create<UnresolvedWithdrawalsState>((set)
       const rest = state.records.filter((existing) => existing.proposalId !== record.proposalId);
       const next = [...rest, record];
       return { records: next.length > MAX_UNRESOLVED ? next.slice(next.length - MAX_UNRESOLVED) : next };
+    }),
+  markLost: (proposalId) =>
+    set((state) => {
+      if (!state.records.some((record) => record.proposalId === proposalId && record.lost !== true)) return state;
+      return { records: state.records.map((record) => (record.proposalId === proposalId ? { ...record, lost: true } : record)) };
     }),
   resolve: (proposalId) =>
     set((state) => {

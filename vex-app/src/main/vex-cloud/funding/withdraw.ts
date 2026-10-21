@@ -18,7 +18,8 @@
  *    account read, so an approval that lapsed while that read ran is refused
  *    before anything leaves the app.
  *  - `unresolved`: SENT, and Vex Cloud's answer did not prove a refusal
- *    (`isDefinitiveRefusal`). The commit outcome is UNKNOWN: the withdrawal
+ *    (`isDefinitiveRefusal` for the first send, `replayVerdict` for a
+ *    replay). The commit outcome is UNKNOWN: the withdrawal
  *    may exist. The entry and its key are kept, and "Check status" REPLAYS
  *    the same key with the same body. The backend's idempotency returns the
  *    existing withdrawal for that key before any other check
@@ -29,8 +30,28 @@
  * approval's expiry and does not re-run the local destination gate: if the
  * first POST committed, the replay can only return that withdrawal; if it
  * never landed, the backend runs every check of a create for it (linked,
- * paused, minimum, withdrawable, daily limit). Only a definitive refusal or a
- * success retires the key.
+ * paused, minimum, withdrawable, daily limit).
+ *
+ * A REPLAY'S REFUSAL IS JUDGED BY WHAT IT PROVES ABOUT THE ORIGINAL
+ * (`replayVerdict`, the one table in `backend-call.ts`). Only a success or a
+ * refusal the backend raises AFTER finding no row for the key ("not
+ * created") retires the key. A refusal raised before the lookup (401,
+ * `withdrawals_unavailable`, route validation, 404, a throttle, a 5xx)
+ * proves nothing and keeps it; a 401 still clears the expired session.
+ *
+ * BOUND TO THE ACCOUNT. Vex Cloud looks a key up per account, so the same
+ * key replayed under ANOTHER account would be a brand new withdrawal from
+ * that account. Each entry records the account it was prepared under; the
+ * submit and every replay read the account with the SAME bearer they POST
+ * with and refuse (`account_changed`) without sending when it differs. The
+ * held entry survives a sign-out and a sign-in: only an answer about the
+ * original retires it.
+ *
+ * PROCESS MEMORY. The held entries do not survive an app restart: the vault
+ * re-mirrors every value into the engine's environment and the app database
+ * has no table for them without a migration, so neither is a fit store. The
+ * renderer's record is process memory too, so after a restart neither side
+ * remembers the request; History is where the user finds it.
  *
  * AUDIT: one `asked` and one `decided` line per submit, correlated.
  */
@@ -56,7 +77,14 @@ import {
 import { log } from "../../logger/index.js";
 import type { VexCloudAccountResponse, VexCloudApi, WithdrawalResponse } from "../api-client.js";
 import { refused, type VexCloudOutcome } from "../outcome.js";
-import { backendRefusal, isDefinitiveRefusal, requireBearer, type SessionPort } from "./backend-call.js";
+import {
+  backendRefusal,
+  isDefinitiveRefusal,
+  replaySignedOut,
+  replayVerdict,
+  requireBearer,
+  type SessionPort,
+} from "./backend-call.js";
 import { ProposalStore, type StoredProposal } from "./proposal-store.js";
 
 /** How long a withdrawal approval stays valid. */
@@ -75,6 +103,8 @@ interface WithdrawalEntry extends StoredProposal {
   readonly proposal: VexCloudWithdrawalProposal;
   /** Minted with the proposal; reused by every transport retry of it. */
   readonly idempotencyKey: string;
+  /** The Vex Cloud account the proposal was prepared under; the key means something only there. */
+  readonly accountId: string;
 }
 
 /** Retention of a sent proposal whose outcome is unknown: long enough to check it, bounded by the store. */
@@ -183,6 +213,7 @@ export async function prepareWithdrawal(
     proposalId,
     expiresAtMs,
     idempotencyKey: mint(),
+    accountId: account.account_id,
     proposal: {
       proposalId,
       actor: "user",
@@ -255,6 +286,13 @@ async function runSubmit(
   if (!bearer.ok) return bearer;
   const read = await deps.api.readAccount(bearer.value, signal);
   if (!read.ok) return backendRefusal(deps, read.failure);
+  if (read.value.account_id !== entry.accountId) {
+    approved.drop(proposal.proposalId);
+    return refused(
+      "account_changed",
+      `You are signed in to a different Vex Cloud account than the one this withdrawal was reviewed for. ${NOTHING_SENT} Review the withdrawal again.`,
+    );
+  }
   if (!isEligible(read.value, deps.localWallets(), proposal.destination)) {
     approved.drop(proposal.proposalId);
     return refused("destination_not_linked", `That wallet is no longer both linked and in this app. ${NOTHING_SENT}`);
@@ -273,10 +311,17 @@ async function runSubmit(
   approved.drop(proposal.proposalId);
   const kept: WithdrawalEntry = { ...entry, expiresAtMs: deps.now().getTime() + UNRESOLVED_WITHDRAWAL_RETENTION_MS };
   unresolved.adopt(kept, deps.now().getTime());
-  return post(deps, kept, bearer.value, signal);
+  return post(deps, kept, bearer.value, signal, "first");
 }
 
-/** "Check status": the SAME key and body as the request already sent. Not a new approval, so no expiry or local gate. */
+const WITHDRAWAL = "withdrawal";
+
+/**
+ * "Check status": the SAME key and body as the request already sent. Not a
+ * new approval, so no expiry or local gate, but the account is read with the
+ * bearer the replay POSTs with, so the key is never replayed under another
+ * account. Nothing here drops the entry except an answer about the original.
+ */
 async function replay(
   deps: WithdrawDeps,
   entry: WithdrawalEntry,
@@ -289,7 +334,18 @@ async function replay(
   }
   const bearer = await requireBearer(deps);
   if (!bearer.ok) return bearer;
-  return post(deps, entry, bearer.value, signal);
+  const read = await deps.api.readAccount(bearer.value, signal);
+  if (!read.ok) {
+    if (read.failure.kind === "unauthorized") return replaySignedOut(deps, WITHDRAWAL);
+    return backendRefusal(deps, read.failure);
+  }
+  if (read.value.account_id !== entry.accountId) {
+    return refused(
+      "account_changed",
+      "You are signed in to a different Vex Cloud account than the one this withdrawal was sent from, so Vex did not ask about it. Sign in to that account, then press Check status. Do not send it again.",
+    );
+  }
+  return post(deps, entry, bearer.value, signal, "replay");
 }
 
 async function post(
@@ -297,6 +353,7 @@ async function post(
   entry: WithdrawalEntry,
   bearer: string,
   signal: AbortSignal,
+  send: "first" | "replay",
 ): Promise<VexCloudOutcome<VexCloudSubmitWithdrawalResult>> {
   const { proposal, idempotencyKey } = entry;
   const created = await deps.api.createWithdrawal(
@@ -309,9 +366,19 @@ async function post(
     unresolved.drop(proposal.proposalId);
     return { ok: true, value: { outcome: "accepted", withdrawal: toWithdrawal(created.value) } };
   }
-  if (isDefinitiveRefusal(created.failure)) {
+  if (send === "first" && isDefinitiveRefusal(created.failure)) {
     unresolved.drop(proposal.proposalId);
     return backendRefusal(deps, created.failure);
+  }
+  if (send === "replay") {
+    if (replayVerdict("withdrawal", created.failure) === "not_created") {
+      unresolved.drop(proposal.proposalId);
+      const refusal = await backendRefusal<never>(deps, created.failure);
+      const detail = refusal.ok ? "Vex Cloud refused it." : refusal.refusal.detail;
+      return { ok: true, value: { outcome: "not_created", proposalId: proposal.proposalId, detail } };
+    }
+    // Raised before the key lookup: says nothing about the original. Keep the key.
+    if (created.failure.kind === "unauthorized") return replaySignedOut(deps, WITHDRAWAL);
   }
   // Not a proven refusal: the withdrawal may exist. Keep the key for "Check status".
   return {

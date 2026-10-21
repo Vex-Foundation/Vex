@@ -146,8 +146,11 @@ export async function backendRefusal<T>(port: SessionPort, failure: VexCloudCall
 }
 
 /**
- * Whether a MUTATION's failure PROVES Vex Cloud refused it, so nothing was
- * committed and its idempotency key may be retired.
+ * Whether a MUTATION's FIRST SEND failure PROVES Vex Cloud refused it, so
+ * nothing was committed and its idempotency key may be retired. Only for the
+ * first send of a key: no earlier request with it exists, so a refusal
+ * raised before the key lookup proves as much as one raised after it. A
+ * REPLAY of a key already sent is judged by {@link replayVerdict} instead.
  *
  * Proof is a refusal the backend names: a 401 (the session check runs before
  * any handler), or a 4xx, 429 or 503 carrying a reason this build knows
@@ -172,6 +175,84 @@ export function isDefinitiveRefusal(failure: VexCloudCallFailure): boolean {
     case "cancelled":
       return false;
   }
+}
+
+/**
+ * What a REPLAY's failure proves about the ORIGINAL request sent with the
+ * same idempotency key. A replay is not a first send: a refusal raised
+ * before the backend looks the key up says nothing about whether the first
+ * POST created a row, so it must never retire the key.
+ *
+ *  - `not_created`: the backend looked the key up, found NO row, and then
+ *    refused, so the original never committed.
+ *  - `inconclusive`: everything else. The original may exist; keep the key.
+ */
+export type ReplayVerdict = "not_created" | "inconclusive";
+
+/**
+ * THE REPLAY TABLE, the one place this is decided. A reason is `not_created`
+ * only when the backend raises it AFTER its idempotency lookup found no row
+ * for the key, and only with the status it raises it with. Every reason and
+ * status not listed here is `inconclusive`. Evidence, VexVirtualsCompute
+ * at ff9028d:
+ *
+ * WITHDRAWAL (`POST /v1/withdrawals`, `src/http/custody-routes.ts:118-145`,
+ * `src/withdrawals/ledger.ts` `requestWithdrawal`, lookup at :146-155 under
+ * the account lock taken at :145):
+ *  - not_created, raised after the lookup: `account_paused` 403 (:156),
+ *    `destination_not_linked` 403 (:158), `rate_unavailable` 503 (:160),
+ *    `below_minimum` 400 (:163), `daily_limit_exceeded` 429 (:170),
+ *    `insufficient_withdrawable` 409 (:179).
+ *  - inconclusive, raised BEFORE the lookup: 401 `session_invalid`
+ *    (`app.ts:66`, route :119), 400 `invalid_idempotency_key` (route :120),
+ *    400 `invalid_body` / `forbidden_field` / `invalid_field` (route :121),
+ *    503 `withdrawals_unavailable` (route :130), 404 no route (`app.ts:131`),
+ *    413 and JSON parse 4xx (`app.ts:123-125`).
+ *  - inconclusive, other: 409 `idempotency_key_reused` (:153) is AFTER the
+ *    lookup but proves a row EXISTS for the key, so it is not "not created";
+ *    500 (`app.ts:128`) may come after the commit; 429 throttles, unknown
+ *    reasons, timeouts, cancels and unreadable bodies prove nothing.
+ *
+ * CASHBACK CLAIM (`POST /v1/cashback/claim`, `custody-routes.ts:160-169`,
+ * `src/ledger/cashback.ts` `claimCashbackToBalance`, lookup at :20-24):
+ * the ledger has NO refusal after its lookup (it returns a claim or throws a
+ * 500), and every route refusal (401 :161, 400 `invalid_idempotency_key`
+ * :162, 400 body :163, 400 `unsupported_destination` :165) comes before it.
+ * Only a success resolves a claim replay; the row is empty on purpose.
+ */
+const REPLAY_NOT_CREATED: Readonly<Record<"withdrawal" | "cashback_claim", Readonly<Record<string, number>>>> = {
+  withdrawal: {
+    account_paused: 403,
+    destination_not_linked: 403,
+    rate_unavailable: 503,
+    below_minimum: 400,
+    daily_limit_exceeded: 429,
+    insufficient_withdrawable: 409,
+  },
+  cashback_claim: {},
+};
+
+/** The replay verdict for `failure` under {@link REPLAY_NOT_CREATED}. */
+export function replayVerdict(operation: "withdrawal" | "cashback_claim", failure: VexCloudCallFailure): ReplayVerdict {
+  if (failure.kind !== "rejected" && failure.kind !== "unavailable") return "inconclusive";
+  const reason = failure.kind === "rejected" ? failure.reason : (failure.reason ?? null);
+  if (reason === null || failure.status === null) return "inconclusive";
+  const expectedStatus = Object.hasOwn(REPLAY_NOT_CREATED[operation], reason) ? REPLAY_NOT_CREATED[operation][reason] : undefined;
+  return expectedStatus === failure.status ? "not_created" : "inconclusive";
+}
+
+/**
+ * A 401 during a replay: the session is cleared as on any 401, but the
+ * request is NOT resolved (the session check runs before the key lookup),
+ * so the sentence says the request is still held and how to finish the check.
+ */
+export async function replaySignedOut<T>(port: SessionPort, what: string): Promise<VexCloudOutcome<T>> {
+  const cleared = await port.clearSession();
+  if (!cleared.ok) return refused("vault", cleared.error.message, cleared.error as VexError);
+  return refused(
+    "not_signed_in",
+    `Your Vex Cloud session expired, so Vex could not check this ${what}. Vex still holds the same request: sign in again under Settings, Vex Cloud, then press Check status. Do not send it again.`,
+  );
 }
 
 /** Call with the stored bearer; a failure becomes its named refusal. */

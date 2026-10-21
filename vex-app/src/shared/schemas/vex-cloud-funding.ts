@@ -265,10 +265,21 @@ export type VexCloudSubmitWithdrawalInput = z.infer<typeof vexCloudSubmitWithdra
  * read, a timeout or network error after the send, a 5xx): the withdrawal
  * may exist. Main keeps the proposal and its idempotency key, and submitting
  * the same proposal again replays the SAME key, which can only return the
- * existing withdrawal. A definitive refusal is an error result, never this.
+ * existing withdrawal. `not_created`: only from a replay, when Vex Cloud
+ * looked the key up, found no withdrawal for it and then refused
+ * (`replayVerdict` in `main/vex-cloud/funding/backend-call.ts`): the request
+ * is resolved and nothing was created; `detail` is the refusal's sentence. A
+ * definitive refusal of a FIRST send is an error result, never this.
  */
 export const vexCloudSubmitWithdrawalResultSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("accepted"), withdrawal: vexCloudWithdrawalSchema }).strict(),
+  z
+    .object({
+      outcome: z.literal("not_created"),
+      proposalId: proposalIdSchema,
+      detail: z.string().min(1).max(1_000),
+    })
+    .strict(),
   z
     .object({
       outcome: z.literal("unknown"),
