@@ -2,10 +2,12 @@
  * In-process inference NOTICE bus: facts about a request that succeeded but
  * not quite as asked, which the user must be told about (never silently).
  *
- * Two kinds: Vex Cloud lowered `max_tokens` (owner decision D16, the
- * `x-vex-max-tokens` disclosure read in `openrouter/round-fetch.ts`), and the
+ * Three kinds: Vex Cloud lowered `max_tokens` (owner decision D16, the
+ * `x-vex-max-tokens` disclosure read in `openrouter/round-fetch.ts`), the
  * Vex Inference balance crossed below the user's alert percent (raised by the
- * main-process balance watch, `vex-app/src/main/vex-cloud/balance-watch.ts`).
+ * main-process balance watch, `vex-app/src/main/vex-cloud/balance-watch.ts`),
+ * and a cooling withdrawal this app did not start is waiting (raised once per
+ * withdrawal id by `vex-app/src/main/vex-cloud/funding/withdrawal-origins.ts`).
  * The main-side bridge (`vex-app/src/main/agent/inference-notice-bridge.ts`)
  * validates and broadcasts it; the renderer shows it on the session's turn.
  *
@@ -60,7 +62,27 @@ export interface VexInferenceBalanceLowNotice {
   readonly occurredAt: string;
 }
 
-export type InferenceNoticeEvent = MaxTokensClampedNotice | VexInferenceBalanceLowNotice;
+/**
+ * A cooling Vex Inference withdrawal whose id this app did not create. ONE
+ * per withdrawal id: the main-process record writes its row exactly once.
+ * Shown on the turn of the session that last ran Vex Inference inference;
+ * the funding page, Settings and Needs you carry the Cancel key.
+ */
+export interface VexInferenceForeignWithdrawalNotice {
+  readonly type: typeof INFERENCE_NOTICE_EVENT_TYPE;
+  readonly kind: "vex_inference_foreign_withdrawal";
+  readonly sessionId: string;
+  readonly missionRunId: string | null;
+  readonly provider: "vexcloud";
+  readonly withdrawalId: string;
+  /** Raw wei (VEX, 18 decimals). */
+  readonly amountWei: string;
+  readonly destination: string;
+  readonly releaseAt: string;
+  readonly occurredAt: string;
+}
+
+export type InferenceNoticeEvent = MaxTokensClampedNotice | VexInferenceBalanceLowNotice | VexInferenceForeignWithdrawalNotice;
 export type InferenceNoticeListener = (event: InferenceNoticeEvent) => void;
 
 export class InferenceNoticeBus {
@@ -183,6 +205,45 @@ export function emitVexInferenceBalanceLowNotice(
     balanceWei: input.balanceWei.toString(),
     thresholdWei: input.thresholdWei.toString(),
     referenceWei: input.referenceWei.toString(),
+    occurredAt: new Date().toISOString(),
+  });
+  return true;
+}
+
+// ── Vex Inference withdrawal this app did not start ──────────────────────
+
+/**
+ * Emit the notice for one cooling withdrawal this app did not create. Always
+ * logged (the id and the release time only); emitted to the bus when a
+ * session has run Vex Inference in this process. Returns whether a session
+ * received it; without one, the funding page, Settings and Needs you are the
+ * record.
+ */
+export function emitVexInferenceForeignWithdrawalNotice(
+  input: {
+    readonly withdrawalId: string;
+    readonly amountWei: string;
+    readonly destination: string;
+    readonly releaseAt: string;
+  },
+  bus: InferenceNoticeBus = inferenceNoticeBus,
+): boolean {
+  logger.warn("inference.vex_inference_foreign_withdrawal", {
+    withdrawalId: input.withdrawalId,
+    releaseAt: input.releaseAt,
+    sessionId: lastVexInferenceTurn?.sessionId ?? null,
+  });
+  if (lastVexInferenceTurn === null) return false;
+  bus.emit({
+    type: INFERENCE_NOTICE_EVENT_TYPE,
+    kind: "vex_inference_foreign_withdrawal",
+    sessionId: lastVexInferenceTurn.sessionId,
+    missionRunId: lastVexInferenceTurn.missionRunId,
+    provider: "vexcloud",
+    withdrawalId: input.withdrawalId,
+    amountWei: input.amountWei,
+    destination: input.destination,
+    releaseAt: input.releaseAt,
     occurredAt: new Date().toISOString(),
   });
   return true;

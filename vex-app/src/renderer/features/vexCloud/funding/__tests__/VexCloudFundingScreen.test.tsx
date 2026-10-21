@@ -128,6 +128,9 @@ const bridge = {
   autoTopUpGet: vi.fn(),
   prepareAutoTopUp: vi.fn(),
   submitAutoTopUp: vi.fn(),
+  cancelWithdrawal: vi.fn(),
+  withdrawalNotices: vi.fn(),
+  dismissWithdrawalNotice: vi.fn(),
 };
 
 function renderPage(options: { readonly strict?: boolean } = {}) {
@@ -147,6 +150,7 @@ beforeEach(() => {
   bridge.account.mockResolvedValue(signedIn());
   bridge.alertGet.mockResolvedValue({ ok: true, data: { alertPercent: 20, observation: null } });
   bridge.autoTopUpGet.mockReturnValue({ promise: Promise.resolve({ ok: true, data: { rule: null } }), cancel: vi.fn() });
+  bridge.withdrawalNotices.mockReturnValue({ promise: Promise.resolve({ ok: true, data: { state: "signed_in", notices: [], complete: true, checkedAt: NOW } }), cancel: vi.fn() });
   bridge.depositWallets.mockReturnValue({
     promise: Promise.resolve({
       ok: true,
@@ -388,7 +392,7 @@ describe("withdraw", () => {
     bridge.prepareWithdrawal.mockReturnValue({ promise: Promise.resolve({ ok: true, data: PROPOSAL }), cancel: vi.fn() });
     bridge.submitWithdrawal.mockResolvedValue({
       ok: true,
-      data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "broadcast", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
+      data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "broadcast", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW, releaseAt: null, cancellable: false } },
     });
     bridge.withdrawal.mockReturnValue(new Promise(() => undefined));
     await openWithdraw();
@@ -448,7 +452,7 @@ describe("withdraw", () => {
     await approveInto(UNKNOWN);
     bridge.submitWithdrawal.mockResolvedValueOnce({
       ok: true,
-      data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "debited", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
+      data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "debited", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW, releaseAt: null, cancellable: false } },
     });
     bridge.withdrawal.mockReturnValue(new Promise(() => undefined));
     fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Check status" }));
@@ -473,7 +477,7 @@ describe("withdraw", () => {
 
   const ACCEPTED = {
     ok: true,
-    data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "debited", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW } },
+    data: { outcome: "accepted", withdrawal: { id: "wd_1", status: "debited", amountWei: PROPOSAL.amountWei, destination: W1, txHash: null, createdAt: NOW, updatedAt: NOW, releaseAt: null, cancellable: false } },
   };
 
   it("under StrictMode a submit result is still published (the effect setup restores mounted)", async () => {

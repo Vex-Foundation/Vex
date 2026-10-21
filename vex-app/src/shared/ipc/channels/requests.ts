@@ -630,6 +630,14 @@ export const CH = {
     activity: "vex:vexCloud:activity",
     usage: "vex:vexCloud:usage",
     deposits: "vex:vexCloud:deposits",
+    // The cooling period. `cancelWithdrawal` stops a cooling withdrawal and
+    // returns its VEX to the balance (it moves nothing out, so it is exempt
+    // from the execution gate); `withdrawalNotices` reads the cooling
+    // withdrawals this app did not start; `dismissWithdrawalNotice` is the
+    // user's "It was me" on one of them.
+    cancelWithdrawal: "vex:vexCloud:cancelWithdrawal",
+    withdrawalNotices: "vex:vexCloud:withdrawalNotices",
+    dismissWithdrawalNotice: "vex:vexCloud:dismissWithdrawalNotice",
     // Low-balance alert (a read and a setting) and the auto top-up standing
     // rule. `submitAutoTopUp` creates, edits, pauses, resumes or revokes the
     // authority the poller and the agent deposit tool spend under, so it is

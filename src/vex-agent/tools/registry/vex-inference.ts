@@ -39,13 +39,17 @@ export const VEX_INFERENCE_TOOLS: readonly ToolDef[] = [
       + "summary, account, balances (available, provisional, reserved, claimable, cashbackPending, pendingWithdrawal), "
       + "rate (with ageSeconds), alert (percent, reference, threshold, balance, belowAlert), model (id, effort, "
       + "inputPerMillion, outputPerMillion, reasoningPerMillion), usage, deposits (open and why not), autoTopUp (the "
-      + "user's standing rule and its state). It does not prove a deposit landed: only `balances` after the backend "
+      + "user's standing rule and its state), withdrawals (pending ones: cooling, with releaseAt and cancellable, and "
+      + "in flight; startedInThisApp false on a cooling one means the user should check it). Withdrawals wait a "
+      + "safety delay before they are sent and only the user can cancel one, in the funding page; there is no "
+      + "withdraw or cancel tool. It does not prove a deposit landed: only `balances` after the backend "
       + "has seen the transfer does.",
     returns:
       "RETURNS summary, account, balances (available, provisional, reserved, claimable, cashbackPending, pendingWithdrawal), "
       + "rate (with ageSeconds), alert (percent, reference, threshold, balance, belowAlert), model (id, effort, "
       + "inputPerMillion, outputPerMillion, reasoningPerMillion), usage, deposits (open and why not), autoTopUp (the "
-      + "user's standing rule and its state).",
+      + "user's standing rule and its state), withdrawals (state, pending with id, status, cooling, releaseAt, "
+      + "cancellable, amount, destination, startedInThisApp; complete).",
     parameters: {
       type: "object",
       properties: {

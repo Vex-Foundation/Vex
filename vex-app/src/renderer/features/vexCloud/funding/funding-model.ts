@@ -12,7 +12,7 @@ import type {
   VexCloudSubmitDepositResult,
   VexCloudWithdrawalStatus,
 } from "@shared/schemas/vex-cloud-funding.js";
-import { withdrawalStatusWord, type VexCloudWithdrawalWord } from "@shared/schemas/vex-cloud-funding.js";
+import { withdrawalWord, type VexCloudWithdrawalWord } from "@shared/schemas/vex-cloud-funding.js";
 import {
   formatMicroUsd,
   formatVexExact,
@@ -102,9 +102,47 @@ export interface StatusLook {
   readonly word: string;
 }
 
-export function withdrawalLook(status: VexCloudWithdrawalStatus): StatusLook & { readonly word: VexCloudWithdrawalWord } {
-  const word = withdrawalStatusWord(status);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function pad2(value: number): string {
+  return value < 10 ? `0${value}` : String(value);
+}
+
+/**
+ * A release time on this computer's clock: "21:30" when it falls today,
+ * else "Oct 22, 21:30". `null` for an unparseable value, never "Invalid Date".
+ */
+export function localClock(iso: string, nowMs: number): string | null {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  const clock = `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+  const now = new Date(nowMs);
+  const sameDay = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+  return sameDay ? clock : `${MONTHS[at.getMonth()] ?? ""} ${at.getDate()}, ${clock}`;
+}
+
+/** "Cooling, releases at 21:30" for a cooling withdrawal; else its plain word. */
+export function withdrawalWordText(
+  withdrawal: { readonly status: VexCloudWithdrawalStatus; readonly releaseAt: string | null },
+  nowMs: number,
+): string {
+  const word = withdrawalWord(withdrawal, nowMs);
+  if (word !== "Cooling" || withdrawal.releaseAt === null) return word;
+  const at = localClock(withdrawal.releaseAt, nowMs);
+  return at === null ? "Cooling" : `Cooling, releases at ${at}`;
+}
+
+export function withdrawalLook(
+  withdrawal: { readonly status: VexCloudWithdrawalStatus; readonly releaseAt: string | null },
+  nowMs: number,
+): StatusLook & { readonly word: VexCloudWithdrawalWord } {
+  const word = withdrawalWord(withdrawal, nowMs);
   switch (word) {
+    case "Cooling":
+      // A wait the user can still end: the dotted outline of Paused.
+      return { fill: "sleeping", word };
+    case "Cancelled":
+      return { fill: "idle", word };
     case "Pending":
       return { fill: "ongoing", word };
     case "Confirming":

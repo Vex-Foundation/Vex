@@ -2,8 +2,10 @@
  * Withdraw: an amount and a wallet picked from the ones that are BOTH linked
  * to the account AND in this app (owner decision D5). There is no address
  * field. The approval card says the amount, the destination, "Funds leave Vex
- * Cloud" and the daily limit left; after the submit the status is polled
- * until it reads Completed or Returned (fill plus word).
+ * Cloud", the daily limit left and the safety delay (12 hours before the
+ * submit; after it, the backend's own `releaseAt`); after the submit the
+ * status is polled until it reads Completed, Returned or Cancelled (fill plus
+ * word). While it reads "Cooling, releases at HH:MM" it can be cancelled.
  *
  * TWO STATES THAT LOOK ALIKE AND MUST NOT BE CONFUSED:
  *  - `reviewing`: the approval was never submitted. Reject is honest here:
@@ -24,7 +26,12 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
 import type { VexCloudAccount } from "@shared/schemas/vex-cloud.js";
-import type { VexCloudWithdrawal, VexCloudWithdrawalProposal } from "@shared/schemas/vex-cloud-funding.js";
+import {
+  VEX_CLOUD_WITHDRAW_COOLING_HOURS,
+  type VexCloudWithdrawal,
+  type VexCloudWithdrawalProposal,
+  type VexCloudWithdrawalWord,
+} from "@shared/schemas/vex-cloud-funding.js";
 import { formatMicroUsd, formatVexExact, VEX_CLOUD_CHAIN_ID } from "@shared/vex-cloud-money.js";
 import type { VexError } from "@shared/ipc/result.js";
 import { Button } from "../../../components/ui/button.js";
@@ -38,7 +45,17 @@ import {
 } from "../../../lib/api/vex-cloud.js";
 import { WalletSelect } from "../../appShell/SessionWalletSelect.js";
 import { FundingApprovalCard } from "./FundingApprovalCard.js";
-import { eligibleDestinations, NOT_AVAILABLE, rateOf, readAmount, shortAddress, withdrawalLook } from "./funding-model.js";
+import { CancelWithdrawal } from "./CancelWithdrawal.js";
+import {
+  eligibleDestinations,
+  localClock,
+  NOT_AVAILABLE,
+  rateOf,
+  readAmount,
+  shortAddress,
+  withdrawalLook,
+  withdrawalWordText,
+} from "./funding-model.js";
 import { unresolvedFor, useUnresolvedWithdrawals, type UnresolvedWithdrawal } from "./unresolved-withdrawals.js";
 
 type Step =
@@ -63,6 +80,16 @@ export const LOST_UNRESOLVED_DETAIL =
   "Vex no longer holds this request, so it cannot re-check it here. Look for it in History; do not send it again until you have checked.";
 
 export const DISMISS_LOST = "I checked History";
+
+/**
+ * The card's delay line BEFORE the submit: the delay in hours and the time
+ * it would end if sent now ("about"); the backend's `releaseAt` is the truth
+ * once it answers.
+ */
+export function coolingCardLine(nowMs: number): string {
+  const at = localClock(new Date(nowMs + VEX_CLOUD_WITHDRAW_COOLING_HOURS * 3_600_000).toISOString(), nowMs);
+  return `After a ${VEX_CLOUD_WITHDRAW_COOLING_HOURS}-hour safety delay, at about ${at ?? NOT_AVAILABLE}. You can cancel it until then.`;
+}
 
 export const UNRESOLVED_BLOCKS_REVIEW =
   "A withdrawal of this amount to this wallet was sent and its status is not known yet. Check its status above before starting another.";
@@ -243,6 +270,7 @@ export function WithdrawTab({
             { label: "You receive", value: <><span className="vex-appr__num vex-num">{amount} VEX</span><span className="vex-appr__sub"> · on Robinhood Chain</span></> },
             { label: "Destination", value: <span className="vex-appr__num vex-num vex-appr__break">{proposal.destination}</span> },
             { label: "Value", value: <>about <span className="vex-appr__num vex-num">{formatMicroUsd(BigInt(proposal.usdMicroEstimate))}</span></> },
+            { label: "Released", value: <span data-testid="withdraw-cooling-line">{coolingCardLine(Date.now())}</span> },
             {
               label: "Daily limit left",
               value:
@@ -455,22 +483,37 @@ function OutcomeUnknown({
   );
 }
 
+function statusSentence(word: VexCloudWithdrawalWord, releaseAt: string | null): string {
+  switch (word) {
+    case "Cooling":
+      return `Vex Inference holds this withdrawal for a safety delay and sends it at ${releaseAt ?? NOT_AVAILABLE}. You can cancel it until then.`;
+    case "Pending":
+      return "Vex Inference accepted the withdrawal and is sending it.";
+    case "Confirming":
+      return "The transfer is on Robinhood Chain and waiting to be final.";
+    case "Completed":
+      return "The VEX reached your wallet.";
+    case "Returned":
+      return "The withdrawal did not go through, and the VEX is back in your Vex Inference balance.";
+    case "Cancelled":
+      return "The withdrawal is cancelled and the VEX is back in your Vex Inference balance.";
+  }
+}
+
 function WithdrawalStatus({ initial, onDone }: { readonly initial: VexCloudWithdrawal; readonly onDone: () => void }): JSX.Element {
   const query = useVexCloudWithdrawal(initial.id);
   const withdrawal = query.data?.ok === true ? query.data.data.withdrawal : initial;
-  const look = withdrawalLook(withdrawal.status);
+  const nowMs = Date.now();
+  const look = withdrawalLook(withdrawal, nowMs);
+  const releaseAt = withdrawal.releaseAt === null ? null : localClock(withdrawal.releaseAt, nowMs);
   return (
     <section className="flex flex-col gap-3" aria-label="Withdrawal status" data-testid="withdraw-status">
-      <StateWord state={look.fill} word={look.word} size={12} live />
+      <StateWord state={look.fill} word={withdrawalWordText(withdrawal, nowMs)} size={12} live />
       <p className="m-0 text-[14px] leading-[1.5] text-ink-secondary">
-        {look.word === "Pending"
-          ? "Vex Inference accepted the withdrawal and is sending it."
-          : look.word === "Confirming"
-            ? "The transfer is on Robinhood Chain and waiting to be final."
-            : look.word === "Completed"
-              ? "The VEX reached your wallet."
-              : "The withdrawal did not go through, and the VEX is back in your Vex Inference balance."}
+        {statusSentence(look.word, releaseAt)}
       </p>
+      {/* The backend's `cancellable` (status `debited`) decides the key, not the clock: a released withdrawal not yet signed can still be cancelled. */}
+      {withdrawal.cancellable ? <CancelWithdrawal withdrawalId={withdrawal.id} cancellable /> : null}
       <p className="m-0 text-[13px] text-ink-tertiary">
         {formatVexExact(BigInt(withdrawal.amountWei))} VEX to <span className="vex-num font-mono">{withdrawal.destination}</span>
         {withdrawal.txHash === null ? null : (

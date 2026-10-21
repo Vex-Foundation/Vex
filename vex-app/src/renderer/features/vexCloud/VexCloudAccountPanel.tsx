@@ -31,6 +31,7 @@ import {
 } from "../../lib/api/vex-cloud.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { formatRateAge, formatUsdEstimate, formatVexAmount, NOT_AVAILABLE } from "./vex-cloud-format.js";
+import { WithdrawalNotices } from "./funding/WithdrawalNotices.js";
 
 type Action =
   | { readonly kind: "idle" }
@@ -295,14 +296,17 @@ export function VexCloudAccountPanel(): JSX.Element {
     );
   } else if (view.state === "signed_in") {
     body = (
-      <SignedIn
-        account={view.account}
-        localWallets={view.localWallets}
-        busy={action.kind !== "idle"}
-        onSignOut={() => void signOut()}
-        onLink={() => void signIn(view.localWallets)}
-        onFund={() => setShellRoute({ kind: "vexCloudFunding", origin: null })}
-      />
+      <>
+        <WithdrawalNotices />
+        <SignedIn
+          account={view.account}
+          localWallets={view.localWallets}
+          busy={action.kind !== "idle"}
+          onSignOut={() => void signOut()}
+          onLink={() => void signIn(view.localWallets)}
+          onFund={() => setShellRoute({ kind: "vexCloudFunding", origin: null })}
+        />
+      </>
     );
   } else {
     body = (

@@ -2,7 +2,8 @@
  * The Vex Inference funding page: a centre page (never a side panel, ELEMENTS
  * section 21), both sidebars standing, opened from Settings ("Fund"). The
  * balance in one line, a "Needs you" line while the balance is below the
- * low-balance alert, then five tabs: Deposit, Withdraw, Cashback, Auto
+ * low-balance alert, every cooling withdrawal this app did not start (with
+ * its Cancel key), then five tabs: Deposit, Withdraw, Cashback, Auto
  * top-up, History.
  *
  * The page reads the account the Settings panel reads (one query, one
@@ -28,6 +29,7 @@ import { DepositTab } from "./DepositTab.js";
 import { AutoTopUpTab } from "./AutoTopUpTab.js";
 import { HistoryTab } from "./HistoryTab.js";
 import { WithdrawTab } from "./WithdrawTab.js";
+import { WithdrawalNotices } from "./WithdrawalNotices.js";
 
 export const FUNDING_PAGE_TITLE = "Vex Inference";
 
@@ -113,6 +115,7 @@ export function VexCloudFundingPage(): JSX.Element {
           <span className="text-[13px] text-ink-secondary">Top up VEX below, or set an auto top-up rule.</span>
         </div>
       ) : null}
+      <WithdrawalNotices />
       {account.paused ? (
         <p role="status" className="m-0 border-l-2 border-rule-ink pl-3 text-[13px] text-ink-primary">
           Vex Inference paused this account for review. Deposits are still credited; withdrawals wait until it is cleared.

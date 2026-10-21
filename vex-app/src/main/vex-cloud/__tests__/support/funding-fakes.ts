@@ -3,7 +3,8 @@
  * `FundingPolicyStore` that implements the repository's contract (one live
  * rule per account, the durable single flight per rule, caps counted over
  * every non-refused row, exactly one decision per execution), a scripted
- * ERC-20 transfer port, and a deposit-deps builder. Shared by the policy,
+ * ERC-20 transfer port, a deposit-deps builder, and an in-memory withdrawal
+ * origin store with its guard. Shared by the policy,
  * executor, agent deposit and poller suites; not a test file itself.
  */
 
@@ -22,6 +23,13 @@ import type {
 import { RuleExecutionInFlightError, type FundingPolicyStore } from "../../auto-top-up/funding-store.js";
 import type { VexCloudAccountResponse } from "../../api-client.js";
 import type { DepositDeps } from "../../funding/deposit-core.js";
+import {
+  createWithdrawalOriginGuard,
+  type WithdrawalOriginGuard,
+  type WithdrawalOriginMark,
+  type WithdrawalOriginStore,
+} from "../../funding/withdrawal-origins.js";
+import type { VexCloudWithdrawalNotice } from "@shared/schemas/vex-cloud-funding.js";
 
 export const E18 = 10n ** 18n;
 export const NOW = new Date("2026-10-21T12:00:00.000Z");
@@ -366,4 +374,50 @@ export function depositWorld(): DepositWorld & { readonly deps: DepositDeps } {
     now: () => world.now,
   };
   return Object.assign(world, { deps });
+}
+
+// ── withdrawal origins ───────────────────────────────────────────────────
+
+/** The `vex_inference_withdrawal_origins` contract in memory: insert-once foreign rows, created_here wins. */
+export class MemoryWithdrawalOriginStore implements WithdrawalOriginStore {
+  readonly rows = new Map<string, WithdrawalOriginMark>();
+  private key(accountId: string, withdrawalId: string): string {
+    return `${accountId.toLowerCase()}:${withdrawalId}`;
+  }
+  async recordCreatedHere(accountId: string, withdrawalId: string): Promise<void> {
+    this.rows.set(this.key(accountId, withdrawalId), { origin: "created_here", dismissedAt: null });
+  }
+  async readOrigins(accountId: string, withdrawalIds: readonly string[]): Promise<ReadonlyMap<string, WithdrawalOriginMark>> {
+    const out = new Map<string, WithdrawalOriginMark>();
+    for (const id of withdrawalIds) {
+      const row = this.rows.get(this.key(accountId, id));
+      if (row !== undefined) out.set(id, row);
+    }
+    return out;
+  }
+  async flagForeign(accountId: string, withdrawalId: string): Promise<boolean> {
+    const key = this.key(accountId, withdrawalId);
+    if (this.rows.has(key)) return false;
+    this.rows.set(key, { origin: "foreign", dismissedAt: null });
+    return true;
+  }
+  async dismissForeign(accountId: string, withdrawalId: string): Promise<boolean> {
+    const key = this.key(accountId, withdrawalId);
+    const row = this.rows.get(key);
+    if (row?.origin !== "foreign") return false;
+    this.rows.set(key, { origin: "foreign", dismissedAt: row.dismissedAt ?? NOW });
+    return true;
+  }
+}
+
+/** A guard over an in-memory store that records every notice it emits. */
+export function memoryWithdrawalOrigins(now: () => Date = () => NOW): {
+  readonly store: MemoryWithdrawalOriginStore;
+  readonly guard: WithdrawalOriginGuard;
+  readonly emitted: VexCloudWithdrawalNotice[];
+} {
+  const store = new MemoryWithdrawalOriginStore();
+  const emitted: VexCloudWithdrawalNotice[] = [];
+  const guard = createWithdrawalOriginGuard({ store, now, emitNotice: (notice) => emitted.push(notice) });
+  return { store, guard, emitted };
 }

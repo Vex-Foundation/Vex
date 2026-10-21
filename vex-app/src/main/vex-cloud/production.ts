@@ -26,6 +26,9 @@ import type { ReadAccountDeps } from "./account.js";
 import { createVexCloudApi, type VexCloudApi } from "./api-client.js";
 import { clearVexCloudSession, readVexCloudSession, storeVexCloudSession } from "./session-store.js";
 import type { SignInDeps } from "./sign-in.js";
+import { emitVexInferenceForeignWithdrawalNotice } from "@vex-agent/inference/inference-notice-bus.js";
+import { createWithdrawalOriginGuard, type WithdrawalOriginGuard } from "./funding/withdrawal-origins.js";
+import { productionWithdrawalOriginStore } from "./funding/withdrawal-origin-store.js";
 
 /** Everything the Vex Cloud handlers reach the world through; injected by tests. */
 export interface VexCloudDeps {
@@ -35,6 +38,12 @@ export interface VexCloudDeps {
   readonly clearSession: () => Promise<Result<void>>;
   /** The deposit owner's reach beyond the HTTP client and the session. */
   readonly deposit: Omit<DepositDeps, "api" | "readSession" | "clearSession">;
+  /**
+   * The record of withdrawals this app created and the scan for those it did
+   * not. ONE per process: its create bracket must see every create and every
+   * scan (the funding IPC and the agent status read share it).
+   */
+  readonly withdrawalOrigins: WithdrawalOriginGuard;
 }
 
 /** One chain port per process, built on first use (it resolves the RPC endpoints). */
@@ -42,6 +51,23 @@ let depositChain: Erc20TransferPort | null = null;
 function productionDepositChain(): Erc20TransferPort {
   depositChain ??= createErc20TransferPort(pinnedTransferChainClients(VEX_CLOUD_CHAIN_ID), VEX_TOKEN_ADDRESS);
   return depositChain;
+}
+
+let withdrawalOrigins: WithdrawalOriginGuard | null = null;
+function productionWithdrawalOrigins(): WithdrawalOriginGuard {
+  withdrawalOrigins ??= createWithdrawalOriginGuard({
+    store: productionWithdrawalOriginStore(),
+    now: () => new Date(),
+    emitNotice: (notice) => {
+      emitVexInferenceForeignWithdrawalNotice({
+        withdrawalId: notice.withdrawalId,
+        amountWei: notice.amountWei,
+        destination: notice.destination,
+        releaseAt: notice.releaseAt,
+      });
+    },
+  });
+  return withdrawalOrigins;
 }
 
 function localEvmAddresses(): readonly string[] {
@@ -76,5 +102,6 @@ export function productionVexCloudDeps(): VexCloudDeps {
       loadPrivateKey: async (entry) => (await loadEvmKey(entry)).privateKey,
       now: () => new Date(),
     },
+    withdrawalOrigins: productionWithdrawalOrigins(),
   };
 }

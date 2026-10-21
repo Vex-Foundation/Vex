@@ -6,6 +6,11 @@ import {
   type VexCloudSignInInput,
 } from "../../shared/schemas/vex-cloud.js";
 import {
+  vexCloudCancelWithdrawalInputSchema,
+  vexCloudDismissWithdrawalNoticeInputSchema,
+  vexCloudWithdrawalNoticesInputSchema,
+  type VexCloudCancelWithdrawalInput,
+  type VexCloudDismissWithdrawalNoticeInput,
   vexCloudActivityInputSchema,
   vexCloudClaimCashbackInputSchema,
   vexCloudDepositsInputSchema,
@@ -73,6 +78,15 @@ export const vexCloud = {
   },
   withdrawal(input: VexCloudWithdrawalStatusInput) {
     return invokeWithSchema(CH.vexCloud.withdrawal, input, vexCloudWithdrawalStatusInputSchema);
+  },
+  cancelWithdrawal(input: VexCloudCancelWithdrawalInput) {
+    return abortableInvoke(CH.vexCloud.cancelWithdrawal, input, vexCloudCancelWithdrawalInputSchema);
+  },
+  withdrawalNotices() {
+    return abortableInvoke(CH.vexCloud.withdrawalNotices, {}, vexCloudWithdrawalNoticesInputSchema);
+  },
+  dismissWithdrawalNotice(input: VexCloudDismissWithdrawalNoticeInput) {
+    return invokeWithSchema(CH.vexCloud.dismissWithdrawalNotice, input, vexCloudDismissWithdrawalNoticeInputSchema);
   },
   claimCashback() {
     return invokeWithSchema(CH.vexCloud.claimCashback, {}, vexCloudClaimCashbackInputSchema);

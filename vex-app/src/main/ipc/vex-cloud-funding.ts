@@ -13,6 +13,12 @@
  * (`lifecycle/execution-gate.ts`), after sender validation and before this
  * body. The deposit owner re-checks the gate again right before the key.
  *
+ * `cancelWithdrawal` is NOT gated: it can only return VEX to the balance it
+ * left (exempt, like the other brakes). The renderer names a withdrawal id
+ * and nothing else; main reads the account with the same bearer, mints and
+ * holds the idempotency key. `withdrawalNotices` and
+ * `dismissWithdrawalNotice` read and write only what main itself raised.
+ *
  * NO NEW WIRE CODES: the owners' named refusal kinds map onto existing codes
  * (`vex-cloud/outcome.ts`), and every message names the cause and the next
  * step. LOGGING: operation, outcome kind and correlation id only.
@@ -22,6 +28,12 @@ import type { z } from "zod";
 import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
+  vexCloudCancelWithdrawalInputSchema,
+  vexCloudCancelWithdrawalResultSchema,
+  vexCloudDismissWithdrawalNoticeInputSchema,
+  vexCloudDismissWithdrawalNoticeResultSchema,
+  vexCloudWithdrawalNoticesInputSchema,
+  vexCloudWithdrawalNoticesResultSchema,
   vexCloudActivityInputSchema,
   vexCloudActivityResultSchema,
   vexCloudClaimCashbackInputSchema,
@@ -58,6 +70,12 @@ import {
   submitWithdrawal,
   type WithdrawDeps,
 } from "../vex-cloud/funding/withdraw.js";
+import { cancelWithdrawal, type CancelDeps } from "../vex-cloud/funding/withdraw-cancel.js";
+import {
+  dismissWithdrawalNotice,
+  readWithdrawalNotices,
+  type WithdrawalNoticeDeps,
+} from "../vex-cloud/funding/withdrawal-origins.js";
 import { vexCloudRefusalError, type VexCloudOutcome } from "../vex-cloud/outcome.js";
 import type { VexCloudDeps } from "../vex-cloud/production.js";
 import { registerHandler, type HandlerContext } from "./register-handler.js";
@@ -114,7 +132,15 @@ function mount<I, O>(args: {
 export function registerVexCloudFundingHandlers(deps: VexCloudDeps): ReadonlyArray<() => void> {
   const session = { readSession: deps.account.readSession, clearSession: deps.clearSession };
   const deposit: DepositDeps = { ...deps.deposit, ...session, api: deps.api };
-  const withdraw: WithdrawDeps = { ...session, api: deps.api, localWallets: deps.account.localWallets, now: deps.account.now };
+  const withdraw: WithdrawDeps = {
+    ...session,
+    api: deps.api,
+    localWallets: deps.account.localWallets,
+    now: deps.account.now,
+    origins: deps.withdrawalOrigins,
+  };
+  const cancel: CancelDeps = { ...session, api: deps.api, now: deps.account.now };
+  const notices: WithdrawalNoticeDeps = { ...session, api: deps.api, origins: deps.withdrawalOrigins, now: deps.account.now };
   const history: HistoryDeps = { ...session, api: deps.api };
 
   return [
@@ -167,6 +193,31 @@ export function registerVexCloudFundingHandlers(deps: VexCloudDeps): ReadonlyArr
       outputSchema: vexCloudWithdrawalStatusResultSchema,
       run: (input, ctx) => readWithdrawalStatus(withdraw, input.withdrawalId, ctx.signal),
       onThrow: "The withdrawal status could not be read. Try again in a moment.",
+    }),
+    mount({
+      operation: "cancelWithdrawal",
+      channel: CH.vexCloud.cancelWithdrawal,
+      inputSchema: vexCloudCancelWithdrawalInputSchema,
+      outputSchema: vexCloudCancelWithdrawalResultSchema,
+      run: (input, ctx) => cancelWithdrawal(cancel, input.withdrawalId, ctx.signal, ctx.requestId),
+      // A THROW cannot prove whether the cancel landed; the withdrawal's status does.
+      onThrow: "Vex lost track of this cancel. Check the withdrawal's status before cancelling again.",
+    }),
+    mount({
+      operation: "withdrawalNotices",
+      channel: CH.vexCloud.withdrawalNotices,
+      inputSchema: vexCloudWithdrawalNoticesInputSchema,
+      outputSchema: vexCloudWithdrawalNoticesResultSchema,
+      run: (_input, ctx) => readWithdrawalNotices(notices, ctx.signal),
+      onThrow: "Vex could not check for withdrawals you did not start. Try again in a moment.",
+    }),
+    mount({
+      operation: "dismissWithdrawalNotice",
+      channel: CH.vexCloud.dismissWithdrawalNotice,
+      inputSchema: vexCloudDismissWithdrawalNoticeInputSchema,
+      outputSchema: vexCloudDismissWithdrawalNoticeResultSchema,
+      run: (input, ctx) => dismissWithdrawalNotice(notices, input.withdrawalId, ctx.signal),
+      onThrow: "The notice could not be dismissed. It stays until you try again.",
     }),
     mount({
       operation: "claimCashback",

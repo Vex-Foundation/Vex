@@ -13,7 +13,10 @@
  *     (Recover), `paused_plan_acceptance` (Accept the contract),
  *     `paused_user_form` (Fill in the form);
  *   - `paused_user` and `paused_wake` never count: one is the user's own pause
- *     and the other a sleep the mission ends by itself.
+ *     and the other a sleep the mission ends by itself;
+ *   - a cooling Vex Inference withdrawal this app did not start (main's
+ *     `withdrawalNotices` read): Review opens the funding page, where its
+ *     Cancel and "It was me" keys are.
  *
  * An unreadable approvals inbox is `unknown`, never an empty list. "Needs you ·
  * ?" with a Retry is honest; an empty list after a failed read would be a
@@ -27,13 +30,14 @@
 import type { Result } from "@shared/ipc/result.js";
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import type { VexCloudWithdrawalNotice } from "@shared/schemas/vex-cloud-funding.js";
 import { getSessionTitle } from "../appShell/sessionListModel.js";
 import { approvalProjectDisplay } from "../appShell/approvals/approvals-copy.js";
 
-export type NeedsYouKind = "approval" | "recover" | "contract" | "form";
+export type NeedsYouKind = "approval" | "recover" | "contract" | "form" | "withdrawal";
 
 export interface NeedsYouItem {
-  /** Stable React key: `approval:{id}` or `mission:{sessionId}`. */
+  /** Stable React key: `approval:{id}`, `mission:{sessionId}` or `withdrawal:{id}`. */
   readonly key: string;
   readonly kind: NeedsYouKind;
   /** The action, as the line's title: "Approve bridge", "Recover the mission". */
@@ -67,7 +71,7 @@ export interface NeedsYouModel {
   readonly status: NeedsYouStatus;
   /** `null` while loading or unknown: a count nobody verified is not a zero. */
   readonly count: number | null;
-  /** In reading order: approvals newest first, then the missions that wait. */
+  /** In reading order: approvals newest first, then withdrawals this app did not start, then the missions that wait. */
   readonly items: readonly NeedsYouItem[];
 }
 
@@ -291,6 +295,33 @@ export function missionNeedsYouItems(sessions: readonly SessionListItem[]): read
   return items;
 }
 
+/** Where a withdrawal notice was raised, and its group on the page. */
+export const VEX_INFERENCE_WHERE = "Vex Inference";
+
+/**
+ * A cooling withdrawal this app did not start, as a Needs you item:
+ * "Check a withdrawal you did not start", releasing at its time. Review opens
+ * the funding page; the item itself decides nothing.
+ */
+export function withdrawalNoticeNeedsYouItem(notice: VexCloudWithdrawalNotice, nowMs: number): NeedsYouItem {
+  const at = formatNeedsYouTime(notice.releaseAt, nowMs);
+  return {
+    key: `withdrawal:${notice.withdrawalId}`,
+    kind: "withdrawal",
+    title: "Check a withdrawal you did not start",
+    metaLead: at === null ? VEX_INFERENCE_WHERE : `${VEX_INFERENCE_WHERE} · releases`,
+    metaTime: at,
+    go: "Review",
+    where: VEX_INFERENCE_WHERE,
+    groupKey: "vexInference",
+    sessionId: null,
+    projectId: null,
+    approvalId: null,
+    createdAt: notice.createdAt,
+    expiresAt: notice.releaseAt,
+  };
+}
+
 // -- The model --------------------------------------------------------------
 
 export interface NeedsYouInput {
@@ -300,6 +331,8 @@ export interface NeedsYouInput {
   readonly approvalsErrored: boolean;
   /** The sessions list; `null` while unread or when its read failed. */
   readonly sessions: readonly SessionListItem[] | null;
+  /** Cooling withdrawals this app did not start; empty while unread or signed out. */
+  readonly withdrawalNotices: readonly VexCloudWithdrawalNotice[];
   readonly nowMs: number;
 }
 
@@ -312,7 +345,11 @@ export interface NeedsYouInput {
  * have resolved being a safe overstatement.
  */
 export function needsYouModelOf(input: NeedsYouInput): NeedsYouModel {
-  const missions = input.sessions === null ? [] : missionNeedsYouItems(input.sessions);
+  // Withdrawals first among the non-approval items: a release time is a deadline.
+  const missions = [
+    ...input.withdrawalNotices.map((notice) => withdrawalNoticeNeedsYouItem(notice, input.nowMs)),
+    ...(input.sessions === null ? [] : missionNeedsYouItems(input.sessions)),
+  ];
   const data = input.approvals;
   const rows = data !== undefined && data.ok ? data.data : null;
   const approvals =

@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
+import { useUiStore, type ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { usePendingApprovalsAll } from "../../../lib/api/approvals.js";
@@ -87,7 +87,7 @@ function MissionRow({
       <div className="vex-appr-row">
         <span aria-hidden className="vex-appr-row__pin">
           <Swatch
-            state={item.kind === "recover" ? VEX_STATE_FILL.error : VEX_STATE_FILL.awaiting}
+            state={item.kind === "recover" ? VEX_STATE_FILL.error : item.kind === "withdrawal" ? VEX_STATE_FILL.concerned : VEX_STATE_FILL.awaiting}
             size={10}
           />
         </span>
@@ -216,6 +216,10 @@ export function NeedsYouScreen({
                     <MissionRow
                       item={item}
                       onOpen={() => {
+                        if (item.kind === "withdrawal") {
+                          useUiStore.getState().setShellRoute({ kind: "vexCloudFunding", origin: null });
+                          return;
+                        }
                         if (sessionId !== null) openSession(sessionId);
                       }}
                     />

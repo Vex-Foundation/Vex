@@ -45,7 +45,7 @@ const { registerVexCloudHandlers } = await import("../vex-cloud.js");
 const { getCancelController } = await import("../register-handler.js");
 const { composeVexInferenceRuntime } = await import("../../vex-cloud/runtime.js");
 const { __resetRuleProposalsForTests } = await import("../../vex-cloud/auto-top-up/rule-proposals.js");
-const { ACCOUNT_ID, accountWith, depositWorld, E18, MemoryFundingStore, NOW, WALLET } = await import("../../vex-cloud/__tests__/support/funding-fakes.js");
+const { ACCOUNT_ID, accountWith, depositWorld, E18, MemoryFundingStore, memoryWithdrawalOrigins, NOW, WALLET } = await import("../../vex-cloud/__tests__/support/funding-fakes.js");
 import type { VexCloudApi, VexCloudCall, VexCloudAccountResponse } from "../../vex-cloud/api-client.js";
 import type { VexCloudDeps } from "../../vex-cloud/production.js";
 
@@ -84,6 +84,8 @@ function mount() {
     notifyDeposit: notUsed,
     createWithdrawal: notUsed,
     readWithdrawal: notUsed,
+    listWithdrawals: notUsed,
+    cancelWithdrawal: notUsed,
     claimCashbackToBalance: notUsed,
   };
   const deps: VexCloudDeps = {
@@ -102,6 +104,7 @@ function mount() {
       loadPrivateKey: world.deps.loadPrivateKey,
       now: world.deps.now,
     },
+    withdrawalOrigins: memoryWithdrawalOrigins().guard,
   };
   const runtime = composeVexInferenceRuntime(deps, {
     store,

@@ -38,6 +38,21 @@ function summaryOf(report: VexInferenceStatusReport): string {
       ? "No auto top-up rule."
       : `Auto top-up rule ${report.autoTopUp.state}${report.autoTopUp.suspendedReason === null ? "" : ` (${report.autoTopUp.suspendedReason})`}.`,
   );
+  if (report.withdrawals.state === "unavailable") {
+    parts.push(`Pending withdrawals could not be read (${report.withdrawals.reason}).`);
+  } else if (report.withdrawals.pending.length === 0) {
+    parts.push(report.withdrawals.complete ? "No pending withdrawals." : "No pending withdrawals among the newest ones read.");
+  } else {
+    const cooling = report.withdrawals.pending.filter((item) => item.cooling);
+    const foreign = cooling.filter((item) => !item.startedInThisApp);
+    parts.push(
+      `${report.withdrawals.pending.length} pending withdrawal(s), ${cooling.length} in the cooling period. `
+        + "Only the user can cancel a cooling withdrawal, in Funding, Withdraw; you cannot cancel or start one.",
+    );
+    if (foreign.length > 0) {
+      parts.push(`WARNING: ${foreign.length} cooling withdrawal(s) were NOT started in this app; tell the user to check them and cancel any that were not them.`);
+    }
+  }
   if (report.account.paused) parts.push("The account is PAUSED by Vex Inference.");
   return parts.join(" ");
 }

@@ -1,14 +1,17 @@
 /**
  * Vex Cloud money arithmetic: the one owner main decides with and the
  * renderer displays with. Integer only; the estimate rounds down, the
- * minimum rounds up; the typed amount never passes through a float; the four
- * withdrawal words cover all eleven backend states.
+ * minimum rounds up; the typed amount never passes through a float; the
+ * withdrawal words cover all twelve backend states and the cooling period.
  */
 
 import { describe, expect, it } from "vitest";
 import {
   VEX_CLOUD_WITHDRAWAL_STATUSES,
   withdrawalStatusWord,
+  withdrawalWord,
+  isWithdrawalCooling,
+  isFinalWithdrawalWord,
 } from "../schemas/vex-cloud-funding.js";
 import {
   formatMicroUsd,
@@ -85,7 +88,7 @@ describe("the rate", () => {
 });
 
 describe("withdrawal words", () => {
-  it("maps every backend state to one of four words (plan 15.2)", () => {
+  it("maps every backend state to its word without the clock (plan 15.2, plus Cancelled)", () => {
     expect(Object.fromEntries(VEX_CLOUD_WITHDRAWAL_STATUSES.map((s) => [s, withdrawalStatusWord(s)]))).toEqual({
       requested: "Pending",
       debited: "Pending",
@@ -98,6 +101,20 @@ describe("withdrawal words", () => {
       refunded: "Returned",
       failed: "Returned",
       dropped: "Returned",
+      cancelled: "Cancelled",
     });
+  });
+
+  it("a debited withdrawal reads Cooling only while its release time is ahead", () => {
+    const now = Date.parse("2026-10-21T12:00:00.000Z");
+    const ahead = { status: "debited" as const, releaseAt: "2026-10-22T00:00:00.000Z" };
+    expect(withdrawalWord(ahead, now)).toBe("Cooling");
+    expect(isWithdrawalCooling(ahead, now)).toBe(true);
+    expect(withdrawalWord({ ...ahead, releaseAt: "2026-10-21T11:59:59.000Z" }, now)).toBe("Pending");
+    expect(withdrawalWord({ ...ahead, releaseAt: null }, now)).toBe("Pending");
+    // Only `debited` cools: a signed withdrawal with a future release time is being sent.
+    expect(withdrawalWord({ status: "signed", releaseAt: ahead.releaseAt }, now)).toBe("Pending");
+    expect(isFinalWithdrawalWord("Cancelled")).toBe(true);
+    expect(isFinalWithdrawalWord("Cooling")).toBe(false);
   });
 });

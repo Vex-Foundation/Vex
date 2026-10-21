@@ -113,7 +113,7 @@ export function NeedsYouList({ model, variant, onReview, goLabel }: NeedsYouList
               >
                 <span className="mt-1">
                   <Swatch
-                    state={item.kind === "recover" ? VEX_STATE_FILL.error : VEX_STATE_FILL.awaiting}
+                    state={item.kind === "recover" ? VEX_STATE_FILL.error : item.kind === "withdrawal" ? VEX_STATE_FILL.concerned : VEX_STATE_FILL.awaiting}
                     size={10}
                   />
                 </span>

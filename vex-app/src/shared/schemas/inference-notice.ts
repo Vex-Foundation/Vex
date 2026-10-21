@@ -11,6 +11,9 @@
  * `vex_inference_balance_low`: the balance crossed below the user's alert
  * percent (the main-process balance watch).
  *
+ * `vex_inference_foreign_withdrawal`: a cooling withdrawal on the account
+ * whose id this app did not create (one per withdrawal id).
+ *
  * Bounded codes and integers only. Not model-visible: it describes the
  * transport, not the conversation.
  */
@@ -59,9 +62,26 @@ const vexInferenceBalanceLowNoticeSchema = z
   })
   .strict();
 
+/** A cooling withdrawal this app did not start. Raw wei, the address and the release time only. */
+const vexInferenceForeignWithdrawalNoticeSchema = z
+  .object({
+    type: z.literal(INFERENCE_NOTICE_EVENT_TYPE),
+    kind: z.literal("vex_inference_foreign_withdrawal"),
+    sessionId: z.string().min(1).max(128),
+    missionRunId: z.string().min(1).max(128).nullable(),
+    provider: z.literal("vexcloud"),
+    withdrawalId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    amountWei: weiSchema,
+    destination: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    releaseAt: z.string().datetime({ offset: true }),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 export const inferenceNoticeEventSchema = z.discriminatedUnion("kind", [
   maxTokensClampedNoticeSchema,
   vexInferenceBalanceLowNoticeSchema,
+  vexInferenceForeignWithdrawalNoticeSchema,
 ]);
 
 export type InferenceNoticeEvent = z.infer<typeof inferenceNoticeEventSchema>;

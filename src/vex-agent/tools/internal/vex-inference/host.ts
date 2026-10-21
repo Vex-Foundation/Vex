@@ -158,6 +158,37 @@ export interface VexInferenceStatusReport {
       readonly expiresAt: string;
       readonly trigger: "below_alert_percent";
     };
+  /**
+   * Withdrawals not yet final, newest first: COOLING ones (the safety delay
+   * before the backend sends them, cancellable by the USER in the funding
+   * page until `releaseAt`) and ones in flight. The agent has no withdraw or
+   * cancel tool.
+   */
+  readonly withdrawals:
+    | {
+      readonly state: "read";
+      readonly pending: readonly VexInferencePendingWithdrawalView[];
+      /** `false` when the scan stopped at its page bound with older withdrawals unread. */
+      readonly complete: boolean;
+    }
+    | { readonly state: "unavailable"; readonly reason: string };
+}
+
+export interface VexInferencePendingWithdrawalView {
+  readonly id: string;
+  /** The backend status token (`debited`, `signed`, `broadcast`, `unknown`, ...). */
+  readonly status: string;
+  /** `debited` with `releaseAt` still ahead. */
+  readonly cooling: boolean;
+  /** When the cooling period ends; `null` when the backend reports none. */
+  readonly releaseAt: string | null;
+  /** The backend says the user can still cancel it. */
+  readonly cancellable: boolean;
+  readonly amount: VexAmountView;
+  readonly destination: string;
+  readonly createdAt: string;
+  /** Whether this app's own record says it created this withdrawal. */
+  readonly startedInThisApp: boolean;
 }
 
 export interface VexInferenceStatusRequest {

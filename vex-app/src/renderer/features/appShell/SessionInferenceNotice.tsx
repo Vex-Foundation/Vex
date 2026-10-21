@@ -7,6 +7,9 @@
  * `vex_inference_balance_low`: the balance crossed below the user's alert
  * percent; the next step is to top up (or rely on an auto top-up rule).
  *
+ * `vex_inference_foreign_withdrawal`: a cooling withdrawal this app did not
+ * start is waiting; the next step is the funding page, where Cancel is.
+ *
  * `balance`: the VEX balance covered no more, so a long answer may stop
  * early; the next step is to top up. `model_limit`: the request asked above
  * what the model takes at this effort; nothing to do.
@@ -18,6 +21,7 @@ import { Button } from "../../components/ui/button.js";
 import { StateWord } from "../../components/ui/state-word.js";
 import { useInferenceNoticeStore } from "../../stores/inferenceNoticeStore.js";
 import { formatTokenCount } from "../vexCloud/vex-cloud-format.js";
+import { localClock, shortAddress } from "../vexCloud/funding/funding-model.js";
 import { formatVexExact } from "@shared/vex-cloud-money.js";
 
 interface NoticeCopy {
@@ -38,6 +42,22 @@ function noticeCopy(notice: InferenceNoticeEvent): NoticeCopy {
           Your Vex Inference balance is <span className="vex-num">{formatVexExact(BigInt(notice.balanceWei))}</span> VEX,
           below your {notice.alertPercent}% alert (<span className="vex-num">{formatVexExact(BigInt(notice.thresholdWei))}</span>{" "}
           VEX). Top up VEX in Funding, or let an auto top-up rule do it.
+        </>
+      ),
+    };
+  }
+  if (notice.kind === "vex_inference_foreign_withdrawal") {
+    return {
+      word: "Withdrawal not started here",
+      marker: "foreign_withdrawal",
+      concerned: true,
+      sentence: (
+        <>
+          A withdrawal you did not start in this app is waiting:{" "}
+          <span className="vex-num">{formatVexExact(BigInt(notice.amountWei))}</span> VEX to{" "}
+          <span className="vex-num">{shortAddress(notice.destination)}</span>, releases at{" "}
+          <span className="vex-num">{localClock(notice.releaseAt, Date.now()) ?? notice.releaseAt}</span>. If it was not
+          you, cancel it now in Funding, Withdraw.
         </>
       ),
     };
@@ -91,7 +111,13 @@ export function SessionInferenceNotice({ sessionId }: { readonly sessionId: stri
         size="sm"
         className="ml-auto shrink-0"
         onClick={() => clear(sessionId)}
-        aria-label={notice.kind === "vex_inference_balance_low" ? "Dismiss the low balance notice" : "Dismiss the answer limit notice"}
+        aria-label={
+          notice.kind === "vex_inference_balance_low"
+            ? "Dismiss the low balance notice"
+            : notice.kind === "vex_inference_foreign_withdrawal"
+              ? "Dismiss the withdrawal notice"
+              : "Dismiss the answer limit notice"
+        }
       >
         Dismiss
       </Button>

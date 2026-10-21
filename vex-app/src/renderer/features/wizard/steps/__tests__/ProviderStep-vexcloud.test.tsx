@@ -40,6 +40,11 @@ vi.mock("../../../../lib/api/vex-cloud.js", () => ({
   useInvalidateVexCloudState: () => () => undefined,
   signInToVexCloud: () => ({ promise: new Promise(() => undefined), cancel: () => undefined }),
   signOutOfVexCloud: async () => ({ ok: true, data: { signedOut: true } }),
+  // The account panel also lists withdrawals this app did not start; none here.
+  useVexCloudWithdrawalNotices: () => ({ data: { ok: true, data: { state: "signed_in", notices: [], complete: true, checkedAt: "2026-10-21T12:00:00.000Z" } } }),
+  useInvalidateVexCloudFunding: () => () => undefined,
+  cancelVexCloudWithdrawal: () => ({ promise: new Promise(() => undefined), cancel: () => undefined }),
+  dismissVexCloudWithdrawalNotice: async () => ({ ok: true, data: { dismissed: true } }),
 }));
 vi.mock("../../../../lib/api/wizard.js", async () => {
   const actual = await vi.importActual<typeof import("../../../../lib/api/wizard.js")>("../../../../lib/api/wizard.js");

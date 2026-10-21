@@ -136,6 +136,9 @@ export const EXECUTION_GATE_EXEMPT_CHANNELS: ReadonlySet<string> = new Set<strin
   CH.poolsLaunch.cancelAwaitingForm,
   CH.settings.cancelLighterLeverage,
   CH.wallets.cancelPreparedIntent,
+  // Cancelling a cooling Vex Inference withdrawal returns VEX to the balance;
+  // refusing it during start-up would hold the user's funds on their way out.
+  CH.vexCloud.cancelWithdrawal,
 ]);
 
 export function isExecutionGatedChannel(channel: string): boolean {

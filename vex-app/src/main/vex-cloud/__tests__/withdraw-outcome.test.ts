@@ -31,6 +31,7 @@ const { prepareWithdrawal, submitWithdrawal, WITHDRAWAL_PROPOSAL_TTL_MS, __reset
   "../funding/withdraw.js"
 );
 type WithdrawDeps = import("../funding/withdraw.js").WithdrawDeps;
+const { memoryWithdrawalOrigins } = await import("./support/funding-fakes.js");
 
 const W1 = "0x1111111111111111111111111111111111111111";
 const NOW = new Date("2026-10-21T12:00:00.000Z");
@@ -101,6 +102,7 @@ function world(): { readonly deps: WithdrawDeps; readonly script: Script } {
     },
     localWallets: () => [W1],
     now: () => script.now,
+    origins: memoryWithdrawalOrigins(() => script.now).guard,
     mintIdempotencyKey: () => {
       script.minted += 1;
       return `vxw_test_key_${script.minted}`;

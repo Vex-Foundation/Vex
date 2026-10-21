@@ -81,6 +81,29 @@ describe("SessionInferenceNotice", () => {
     expect(screen.getByRole("button", { name: "Dismiss the low balance notice" })).toBeTruthy();
   });
 
+  it("a withdrawal this app did not start names the amount, the address and the way to cancel it", () => {
+    act(() =>
+      useInferenceNoticeStore.getState().record({
+        type: "engine.inference.notice",
+        kind: "vex_inference_foreign_withdrawal",
+        sessionId: SESSION,
+        missionRunId: null,
+        provider: "vexcloud",
+        withdrawalId: "wd_foreign",
+        amountWei: "6000000000000000000000",
+        destination: "0x2222222222222222222222222222222222222222",
+        releaseAt: "2026-10-22T00:00:00.000Z",
+        occurredAt: "2026-10-21T12:00:00.000Z",
+      }),
+    );
+    render(<SessionInferenceNotice sessionId={SESSION} />);
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("data-vex-inference-notice")).toBe("foreign_withdrawal");
+    expect(status.textContent).toContain("A withdrawal you did not start in this app is waiting: 6,000 VEX to 0x2222…2222");
+    expect(status.textContent).toContain("cancel it now in Funding, Withdraw");
+    expect(screen.getByRole("button", { name: "Dismiss the withdrawal notice" })).toBeTruthy();
+  });
+
   it("a model-limit clamp has no top-up advice", () => {
     act(() => useInferenceNoticeStore.getState().record(notice({ reason: "model_limit", requested: 200_000, effective: 65_536 })));
     render(<SessionInferenceNotice sessionId={SESSION} />);

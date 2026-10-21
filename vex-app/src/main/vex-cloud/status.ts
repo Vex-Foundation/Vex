@@ -10,7 +10,12 @@
  *
  * Partial answers are honest: a failed `/v1/models` read reports the model
  * as `priced: false` with the reason; a failed usage page fails the read
- * rather than claiming there is no usage.
+ * rather than claiming there is no usage; a failed withdrawals scan reports
+ * `withdrawals.state: "unavailable"`, never an empty list.
+ *
+ * The withdrawals scan is the same one the funding page makes
+ * (`funding/withdrawal-origins.ts`): a cooling withdrawal this app did not
+ * create raises its one notice here too.
  */
 
 import type { HostOutcome, VexInferenceStatusReport, VexInferenceStatusRequest } from "@vex-agent/tools/internal/vex-inference/host.js";
@@ -18,12 +23,15 @@ import { parseRateX18 } from "@shared/vex-cloud-money.js";
 import type { VexCloudApi } from "./api-client.js";
 import { accountBalanceWei, newestCreditedDeposit, observeBalance, type BalanceWatchDeps } from "./balance-watch.js";
 import { backendRefusal, requireBearer, type SessionPort } from "./funding/backend-call.js";
+import type { WithdrawalOriginGuard } from "./funding/withdrawal-origins.js";
+import { isWithdrawalCooling, withdrawalStatusWord } from "@shared/schemas/vex-cloud-funding.js";
 import type { FundingPolicyStore } from "./auto-top-up/funding-store.js";
 import { effectiveRuleState, type ObservedRuleConditions, type RuleConditions } from "./auto-top-up/rule-policy.js";
 import { backendAmountView, pricePerMillionView, vexAmountView } from "./vex-inference-amounts.js";
 
 export interface StatusDeps extends SessionPort {
-  readonly api: Pick<VexCloudApi, "readAccount" | "listUsage" | "listDeposits" | "listModels">;
+  readonly api: Pick<VexCloudApi, "readAccount" | "listUsage" | "listDeposits" | "listModels" | "listWithdrawals">;
+  readonly origins: Pick<WithdrawalOriginGuard, "scan">;
   readonly store: FundingPolicyStore;
   readonly watch: BalanceWatchDeps;
   readonly pinnedDepositAddress: () => string | null;
@@ -132,6 +140,39 @@ export async function readVexInferenceStatus(
     };
   }
 
+  let withdrawals: VexInferenceStatusReport["withdrawals"];
+  try {
+    const scan = await deps.origins.scan(deps.api, bearer.value, account.account_id, signal);
+    if (!scan.ok) {
+      const refusal = await backendRefusal<never>(deps, scan.failure);
+      withdrawals = { state: "unavailable", reason: refusal.ok ? "The withdrawals could not be read." : refusal.refusal.detail };
+    } else {
+      const nowMs = deps.now().getTime();
+      withdrawals = {
+        state: "read",
+        complete: scan.value.complete,
+        pending: scan.value.withdrawals
+          .filter((item) => {
+            const word = withdrawalStatusWord(item.status);
+            return word !== "Completed" && word !== "Returned" && word !== "Cancelled";
+          })
+          .map((item) => ({
+            id: item.id,
+            status: item.status,
+            cooling: isWithdrawalCooling({ status: item.status, releaseAt: item.release_at ?? null }, nowMs),
+            releaseAt: item.release_at ?? null,
+            cancellable: item.cancellable === true,
+            amount: vexAmountView(BigInt(item.amount_wei), rateX18),
+            destination: item.destination,
+            createdAt: item.created_at,
+            startedInThisApp: scan.value.origins.get(item.id)?.origin === "created_here",
+          })),
+      };
+    }
+  } catch (cause) {
+    withdrawals = { state: "unavailable", reason: `The record of this app's withdrawals could not be read (${cause instanceof Error ? cause.name : typeof cause}).` };
+  }
+
   const nextCursor = usage.value.next_cursor;
   return {
     ok: true,
@@ -180,6 +221,7 @@ export async function readVexInferenceStatus(
       },
       deposits: { open: depositState === "open", state: depositState, pinnedAddress: pinned, backendAddress },
       autoTopUp,
+      withdrawals,
     },
   };
 }

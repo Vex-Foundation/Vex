@@ -82,6 +82,10 @@ export type VexCloudRefusalKind =
   | "unsupported_destination"
   /** The backend has no custody configured: withdrawals are not open yet (503 `withdrawals_unavailable`). */
   | "withdrawals_not_open"
+  /** The backend has no cancel endpoint (a build from before the cooling period). */
+  | "cancel_unsupported"
+  /** A withdrawal notice the user dismissed is not (or no longer) one this app raised. */
+  | "notice_missing"
   /** A page size the backend refused (400 `invalid_limit`). */
   | "invalid_limit"
   /**
@@ -211,7 +215,10 @@ export function vexCloudRefusalError(
       case "request_rejected":
         return { code: "internal.unexpected", retryable: false, userActionable: false };
       case "withdrawals_not_open":
+      case "cancel_unsupported":
         return { code: "wallet.policy_blocked", retryable: false, userActionable: false };
+      case "notice_missing":
+        return { code: "validation.invalid_input", retryable: false, userActionable: true };
       case "invalid_limit":
         return { code: "validation.invalid_input", retryable: false, userActionable: false };
       case "needs_user_approval":

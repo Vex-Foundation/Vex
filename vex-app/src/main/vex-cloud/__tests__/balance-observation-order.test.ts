@@ -25,7 +25,7 @@ const { readVexInferenceStatus } = await import("../status.js");
 const { createAutoTopUpPoller } = await import("../auto-top-up/poller.js");
 const { __resetExecutorForTests } = await import("../auto-top-up/executor.js");
 const { createObservationGenerations } = await import("../balance-watch.js");
-const { accountWith, ACCOUNT_ID, DEPOSIT, depositWorld, E18, MemoryFundingStore, NOW, WALLET } = await import("./support/funding-fakes.js");
+const { accountWith, ACCOUNT_ID, DEPOSIT, depositWorld, E18, MemoryFundingStore, memoryWithdrawalOrigins, NOW, WALLET } = await import("./support/funding-fakes.js");
 import type { DepositsPage, VexCloudApi } from "../api-client.js";
 import type { StatusDeps } from "../status.js";
 
@@ -63,7 +63,7 @@ function harness() {
   const notUsed = async (): Promise<never> => {
     throw new Error("not used in this suite");
   };
-  const api: Pick<VexCloudApi, "readAccount" | "listUsage" | "listDeposits" | "listModels"> = {
+  const api: Pick<VexCloudApi, "readAccount" | "listUsage" | "listDeposits" | "listModels" | "listWithdrawals"> = {
     readAccount: async () => ({ ok: true, value: accountWith({ availableWei: backend.balanceWei }) }),
     listUsage: async () => ({ ok: true, value: { items: [], next_cursor: null } }),
     listDeposits: async () => {
@@ -73,9 +73,11 @@ function harness() {
       return { ok: true, value: { items: [...(await next)], next_cursor: null } };
     },
     listModels: notUsed,
+    listWithdrawals: async () => ({ ok: true, value: { items: [], next_cursor: null } }),
   };
   const deps: StatusDeps = {
     api,
+    origins: memoryWithdrawalOrigins().guard,
     readSession: async () => ({ ok: true, data: "vxs_test_bearer_000000000001" }),
     clearSession: async () => ({ ok: true, data: undefined }),
     store,

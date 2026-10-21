@@ -74,6 +74,8 @@ export default defineConfig({
       // Vex Inference funding policy: 178's partial unique indexes, cap SQL and
       // concurrent admission, and 179 applied over a populated 178 schema.
       "src/__tests__/integration/repos/vex-inference-funding.int.test.ts",
+      // Vex Inference withdrawal origins (181): one foreign row per id, created_here wins, durable dismissal.
+      "src/__tests__/integration/repos/vex-inference-withdrawal-origins.int.test.ts",
       "src/__tests__/integration/engine/studio-*.int.test.ts",
       // The atomic mission wake claim + stuck-wake repair: crash, concurrency
       // and lock proofs that need real transactions, not embeddings.

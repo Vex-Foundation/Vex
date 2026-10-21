@@ -163,7 +163,12 @@ export type VexCloudSubmitDepositResult = z.infer<typeof vexCloudSubmitDepositRe
 
 // ── withdrawals ──────────────────────────────────────────────────────────
 
-/** The backend's withdrawal states (plan 4.3). */
+/**
+ * The backend's withdrawal states (plan 4.3). `cancelled` is final: the user
+ * cancelled it during the cooling period and the VEX went back to the
+ * balance. A `debited` withdrawal whose `releaseAt` is still ahead is COOLING
+ * (the rolling safety delay before the backend signs it).
+ */
 export const VEX_CLOUD_WITHDRAWAL_STATUSES = [
   "requested",
   "debited",
@@ -176,14 +181,16 @@ export const VEX_CLOUD_WITHDRAWAL_STATUSES = [
   "failed",
   "unknown",
   "dropped",
+  "cancelled",
 ] as const;
 export const vexCloudWithdrawalStatusSchema = z.enum(VEX_CLOUD_WITHDRAWAL_STATUSES);
 export type VexCloudWithdrawalStatus = z.infer<typeof vexCloudWithdrawalStatusSchema>;
 
-/** The four words the app shows (plan 15.2). */
-export type VexCloudWithdrawalWord = "Pending" | "Confirming" | "Completed" | "Returned";
+/** The words the app shows (plan 15.2, plus the cooling period). */
+export type VexCloudWithdrawalWord = "Cooling" | "Pending" | "Confirming" | "Completed" | "Returned" | "Cancelled";
 
-export function withdrawalStatusWord(status: VexCloudWithdrawalStatus): VexCloudWithdrawalWord {
+/** The word a status reads as WITHOUT the clock: a cooling `debited` row reads Pending here; see {@link withdrawalWord}. */
+export function withdrawalStatusWord(status: VexCloudWithdrawalStatus): Exclude<VexCloudWithdrawalWord, "Cooling"> {
   switch (status) {
     case "requested":
     case "debited":
@@ -200,8 +207,39 @@ export function withdrawalStatusWord(status: VexCloudWithdrawalStatus): VexCloud
     case "failed":
     case "dropped":
       return "Returned";
+    case "cancelled":
+      return "Cancelled";
   }
 }
+
+/** Words after which a withdrawal never changes again. */
+export function isFinalWithdrawalWord(word: VexCloudWithdrawalWord): boolean {
+  return word === "Completed" || word === "Returned" || word === "Cancelled";
+}
+
+/**
+ * COOLING: `debited` with a release time still ahead (the backend's own
+ * definition). Whether it can be cancelled is the backend's separate
+ * `cancellable`, never inferred from the clock.
+ */
+export function isWithdrawalCooling(
+  withdrawal: { readonly status: VexCloudWithdrawalStatus; readonly releaseAt: string | null },
+  nowMs: number,
+): boolean {
+  if (withdrawal.status !== "debited" || withdrawal.releaseAt === null) return false;
+  const releaseMs = Date.parse(withdrawal.releaseAt);
+  return Number.isFinite(releaseMs) && releaseMs > nowMs;
+}
+
+export function withdrawalWord(
+  withdrawal: { readonly status: VexCloudWithdrawalStatus; readonly releaseAt: string | null },
+  nowMs: number,
+): VexCloudWithdrawalWord {
+  return isWithdrawalCooling(withdrawal, nowMs) ? "Cooling" : withdrawalStatusWord(withdrawal.status);
+}
+
+/** The cooling period before submit, in words. After submit the backend's `releaseAt` is the truth. */
+export const VEX_CLOUD_WITHDRAW_COOLING_HOURS = 12;
 
 export const vexCloudWithdrawalIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 
@@ -214,6 +252,10 @@ export const vexCloudWithdrawalSchema = z
     txHash: txHashSchema.nullable(),
     createdAt: isoTimestampSchema,
     updatedAt: isoTimestampSchema,
+    /** When the cooling period ends; `null` when the backend reports none (a withdrawal from before cooling). */
+    releaseAt: isoTimestampSchema.nullable(),
+    /** The backend says a cancel can still stop it. Absent from the backend reads `false`. */
+    cancellable: z.boolean(),
   })
   .strict();
 export type VexCloudWithdrawal = z.infer<typeof vexCloudWithdrawalSchema>;
@@ -300,6 +342,77 @@ export const vexCloudWithdrawalStatusResultSchema = z
   .object({ withdrawal: vexCloudWithdrawalSchema })
   .strict();
 export type VexCloudWithdrawalStatusResult = z.infer<typeof vexCloudWithdrawalStatusResultSchema>;
+
+// ── cancelWithdrawal ─────────────────────────────────────────────────────
+
+/** Cancel a cooling withdrawal. The id is the only field: main mints and keeps the idempotency key. */
+export const vexCloudCancelWithdrawalInputSchema = z.object({ withdrawalId: vexCloudWithdrawalIdSchema }).strict();
+export type VexCloudCancelWithdrawalInput = z.infer<typeof vexCloudCancelWithdrawalInputSchema>;
+
+/**
+ * What a cancel (or its "Check status" replay) learned about the withdrawal.
+ *
+ * `cancelled`: it is cancelled and the VEX is back in the balance.
+ * `not_cancelled`: Vex Cloud answered about this withdrawal and it was NOT
+ * cancelled: `in_flight` (already being sent), `final` (already finished),
+ * `not_found` (no such withdrawal on this account). `unknown`: the cancel was
+ * SENT and the answer proves neither; main keeps the cancel's idempotency key
+ * and the next cancel of the same withdrawal replays it.
+ */
+export const vexCloudCancelWithdrawalResultSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("cancelled"), withdrawal: vexCloudWithdrawalSchema }).strict(),
+  z
+    .object({
+      outcome: z.literal("not_cancelled"),
+      reason: z.enum(["in_flight", "final", "not_found"]),
+      withdrawal: vexCloudWithdrawalSchema.nullable(),
+      detail: z.string().min(1).max(1_000),
+    })
+    .strict(),
+  z.object({ outcome: z.literal("unknown"), withdrawalId: vexCloudWithdrawalIdSchema }).strict(),
+]);
+export type VexCloudCancelWithdrawalResult = z.infer<typeof vexCloudCancelWithdrawalResultSchema>;
+
+// ── withdrawals this app did not start ──────────────────────────────────
+
+export const vexCloudWithdrawalNoticesInputSchema = z.object({}).strict();
+
+/** A cooling withdrawal on the account whose id this app did not create, and the user has not dismissed. */
+export const vexCloudWithdrawalNoticeSchema = z
+  .object({
+    withdrawalId: vexCloudWithdrawalIdSchema,
+    amountWei: rawIntegerSchema,
+    destination: evmAddressSchema,
+    releaseAt: isoTimestampSchema,
+    cancellable: z.boolean(),
+    createdAt: isoTimestampSchema,
+  })
+  .strict();
+export type VexCloudWithdrawalNotice = z.infer<typeof vexCloudWithdrawalNoticeSchema>;
+
+/**
+ * `complete: false` when the scan stopped at its page bound with older
+ * withdrawals left unread (they are older than any cooling period the
+ * backend uses by default, but the reader is told it was not everything).
+ */
+export const vexCloudWithdrawalNoticesResultSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("signed_out") }).strict(),
+  z
+    .object({
+      state: z.literal("signed_in"),
+      notices: z.array(vexCloudWithdrawalNoticeSchema).max(500).readonly(),
+      complete: z.boolean(),
+      checkedAt: isoTimestampSchema,
+    })
+    .strict(),
+]);
+export type VexCloudWithdrawalNoticesResult = z.infer<typeof vexCloudWithdrawalNoticesResultSchema>;
+
+/** "It was me": the user started it elsewhere. Recorded so the notice does not return for this id. */
+export const vexCloudDismissWithdrawalNoticeInputSchema = z.object({ withdrawalId: vexCloudWithdrawalIdSchema }).strict();
+export type VexCloudDismissWithdrawalNoticeInput = z.infer<typeof vexCloudDismissWithdrawalNoticeInputSchema>;
+export const vexCloudDismissWithdrawalNoticeResultSchema = z.object({ dismissed: z.literal(true) }).strict();
+export type VexCloudDismissWithdrawalNoticeResult = z.infer<typeof vexCloudDismissWithdrawalNoticeResultSchema>;
 
 // ── claimCashback ────────────────────────────────────────────────────────
 

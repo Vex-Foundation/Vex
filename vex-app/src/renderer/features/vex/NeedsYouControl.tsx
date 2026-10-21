@@ -136,6 +136,12 @@ export function NeedsYouControl(): JSX.Element | null {
       setShellRoute({ kind: "needsYou", origin: null, approvalId: item.approvalId });
       return;
     }
+    if (item.kind === "withdrawal") {
+      // The funding page holds its Cancel and "It was me" keys.
+      triggerRef.current?.focus();
+      setShellRoute({ kind: "vexCloudFunding", origin: null });
+      return;
+    }
     if (item.sessionId !== null) {
       openSession(item.sessionId);
       return;

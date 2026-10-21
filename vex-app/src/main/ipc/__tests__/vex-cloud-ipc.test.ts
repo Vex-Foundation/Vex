@@ -63,6 +63,7 @@ const { openExecutionGate } = await import("../../lifecycle/execution-gate.js");
 const { registerVexCloudHandlers } = await import("../vex-cloud.js");
 const { assertVexCloudSiweMessage } = await import("@tools/wallet/siwe-signing.js");
 const { getCancelController } = await import("../register-handler.js");
+const { memoryWithdrawalOrigins } = await import("../../vex-cloud/__tests__/support/funding-fakes.js");
 import type { VexCloudDeps } from "../../vex-cloud/production.js";
 import type { SignedSiweItem, VexCloudApi, VexCloudCall, VexCloudChallenge } from "../../vex-cloud/api-client.js";
 
@@ -206,6 +207,8 @@ class FakeGateway implements VexCloudApi {
   createWithdrawal = vi.fn(async () => notUsed());
   readWithdrawal = vi.fn(async () => notUsed());
   claimCashbackToBalance = vi.fn(async () => notUsed());
+  listWithdrawals = vi.fn(async () => notUsed());
+  cancelWithdrawal = vi.fn(async () => notUsed());
 
   private session(accountId: string, created: boolean) {
     const token = `vxs_${"t".repeat(20)}${++this.counter}`;
@@ -294,6 +297,7 @@ function world(count: number): World {
         loadPrivateKey: async () => notUsed(),
         now: () => NOW,
       },
+      withdrawalOrigins: memoryWithdrawalOrigins(() => NOW).guard,
     },
   };
   return self;

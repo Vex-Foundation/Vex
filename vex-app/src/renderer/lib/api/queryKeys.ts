@@ -401,6 +401,7 @@ export const vexCloudKeys = {
   account: () => ["vexCloud", "account"] as const,
   depositWallets: () => ["vexCloud", "depositWallets"] as const,
   withdrawal: (id: string) => ["vexCloud", "withdrawal", id] as const,
+  withdrawalNotices: () => ["vexCloud", "withdrawalNotices"] as const,
   history: (kind: "activity" | "usage" | "deposits") => ["vexCloud", "history", kind] as const,
   alert: () => ["vexCloud", "alert"] as const,
   autoTopUp: () => ["vexCloud", "autoTopUp"] as const,

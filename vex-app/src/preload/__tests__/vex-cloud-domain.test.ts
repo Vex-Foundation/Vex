@@ -33,9 +33,11 @@ describe("the Vex Cloud domain is exposed on the shell bridge", () => {
       "alertGet",
       "alertSet",
       "autoTopUpGet",
+      "cancelWithdrawal",
       "claimCashback",
       "depositWallets",
       "deposits",
+      "dismissWithdrawalNotice",
       "prepareAutoTopUp",
       "prepareDeposit",
       "prepareWithdrawal",
@@ -46,6 +48,7 @@ describe("the Vex Cloud domain is exposed on the shell bridge", () => {
       "submitWithdrawal",
       "usage",
       "withdrawal",
+      "withdrawalNotices",
     ]);
   });
 });
@@ -73,6 +76,17 @@ describe("each method invokes its OWN channel", () => {
     await vexCloud.signOut();
     expect(invoke.mock.calls[0]?.[0]).toBe(CH.vexCloud.signOut);
   });
+
+  it("cancelWithdrawal, withdrawalNotices and dismissWithdrawalNotice invoke their own channels", async () => {
+    await vexCloud.cancelWithdrawal({ withdrawalId: "wd_1" }).promise;
+    await vexCloud.withdrawalNotices().promise;
+    await vexCloud.dismissWithdrawalNotice({ withdrawalId: "wd_1" });
+    expect(invoke.mock.calls.map((c) => c[0])).toEqual([
+      CH.vexCloud.cancelWithdrawal,
+      CH.vexCloud.withdrawalNotices,
+      CH.vexCloud.dismissWithdrawalNotice,
+    ]);
+  });
 });
 
 describe("the preload refuses an off-contract payload before ipcRenderer", () => {
@@ -80,6 +94,14 @@ describe("the preload refuses an off-contract payload before ipcRenderer", () =>
     // A variable, not a literal: excess fields pass the type and must be stopped at runtime.
     const payload = { wallets: [WALLET], message: "sign this" };
     const result = await vexCloud.signIn(payload).promise;
+    expect(result.ok).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("a cancel carries only the withdrawal id: a smuggled key never reaches main", async () => {
+    // A variable, not a literal: excess fields pass the type and must be stopped at runtime.
+    const payload = { withdrawalId: "wd_1", idempotencyKey: "vxc_attacker_key" };
+    const result = await vexCloud.cancelWithdrawal(payload).promise;
     expect(result.ok).toBe(false);
     expect(invoke).not.toHaveBeenCalled();
   });

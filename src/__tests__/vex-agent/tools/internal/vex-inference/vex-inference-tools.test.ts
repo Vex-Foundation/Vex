@@ -249,4 +249,60 @@ describe("status", () => {
     expect(result.output).toMatch(/whole number from 1 to 50/);
     expect(host.readStatus).not.toHaveBeenCalled();
   });
+
+  it("shows pending withdrawals with releaseAt and cancellable, and warns about a cooling one not started in this app", async () => {
+    const amount = { wei: "6000000000000000000000", vex: "6000", usdMicroEstimate: "6000000", usdEstimate: "6" };
+    const zero = { wei: "0", vex: "0", usdMicroEstimate: "0", usdEstimate: "0" };
+    const pending = [
+      { id: "wd_mine", status: "debited", cooling: true, releaseAt: "2026-10-22T00:00:00.000Z", cancellable: true, amount, destination: selected.address, createdAt: "2026-10-21T12:00:00.000Z", startedInThisApp: true },
+      { id: "wd_foreign", status: "debited", cooling: true, releaseAt: "2026-10-22T01:00:00.000Z", cancellable: true, amount, destination: DEPOSIT, createdAt: "2026-10-21T13:00:00.000Z", startedInThisApp: false },
+      { id: "wd_sending", status: "broadcast", cooling: false, releaseAt: "2026-10-21T11:00:00.000Z", cancellable: false, amount, destination: selected.address, createdAt: "2026-10-20T23:00:00.000Z", startedInThisApp: true },
+    ];
+    vi.mocked(host.readStatus).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        account: { accountId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", paused: false, drainMode: false },
+        balances: { available: amount, provisional: zero, reserved: zero, claimable: zero, cashbackPending: null, pendingWithdrawal: amount },
+        rate: { available: false, reason: "warming" },
+        alert: { percent: 20, reference: amount, threshold: zero, balance: amount, belowAlert: false },
+        model: { id: "anthropic/claude-haiku-5.5", effort: "medium", priced: false, reason: "not in this test" },
+        usage: { items: [], limit: 10, hasMore: false },
+        deposits: { open: true, state: "open", pinnedAddress: DEPOSIT, backendAddress: DEPOSIT },
+        autoTopUp: { state: "none" },
+        withdrawals: { state: "read", complete: true, pending },
+      },
+    });
+    const result = await handleVexInferenceStatus({}, makeTestContext());
+    expect(result.success).toBe(true);
+    const output = JSON.parse(result.output) as { summary: string; withdrawals: { pending: Array<{ id: string; releaseAt: string; cancellable: boolean }> } };
+    expect(output.withdrawals.pending.map((p) => [p.id, p.releaseAt, p.cancellable])).toEqual([
+      ["wd_mine", "2026-10-22T00:00:00.000Z", true],
+      ["wd_foreign", "2026-10-22T01:00:00.000Z", true],
+      ["wd_sending", "2026-10-21T11:00:00.000Z", false],
+    ]);
+    expect(output.summary).toContain("3 pending withdrawal(s), 2 in the cooling period");
+    expect(output.summary).toContain("you cannot cancel or start one");
+    expect(output.summary).toContain("WARNING: 1 cooling withdrawal(s) were NOT started in this app");
+  });
+
+  it("an unreadable withdrawals scan is said, never an empty list", async () => {
+    const zero = { wei: "0", vex: "0", usdMicroEstimate: "0", usdEstimate: "0" };
+    vi.mocked(host.readStatus).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        account: { accountId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", paused: false, drainMode: false },
+        balances: { available: zero, provisional: zero, reserved: zero, claimable: zero, cashbackPending: null, pendingWithdrawal: zero },
+        rate: { available: false, reason: "warming" },
+        alert: { percent: 20, reference: zero, threshold: zero, balance: zero, belowAlert: false },
+        model: { id: "m", effort: null, priced: false, reason: "not in this test" },
+        usage: { items: [], limit: 10, hasMore: false },
+        deposits: { open: true, state: "open", pinnedAddress: DEPOSIT, backendAddress: DEPOSIT },
+        autoTopUp: { state: "none" },
+        withdrawals: { state: "unavailable", reason: "Vex Inference could not be reached." },
+      },
+    });
+    const output = JSON.parse((await handleVexInferenceStatus({}, makeTestContext())).output) as { summary: string };
+    expect(output.summary).toContain("Pending withdrawals could not be read (Vex Inference could not be reached.)");
+    expect(output.summary).not.toContain("No pending withdrawals");
+  });
 });

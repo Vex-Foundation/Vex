@@ -16,6 +16,8 @@
  * | `POST /v1/deposits/notify` | bearer | 202 `{accepted: true}` (a hint; the watcher verifies) | 400 `invalid_tx_hash`, 429 |
  * | `POST /v1/withdrawals` | bearer + `Idempotency-Key` | 202 `{withdrawal}` | 400 `below_minimum`, 403 `destination_not_linked` / `account_paused`, 409 `insufficient_withdrawable` / `idempotency_key_reused`, 429 `daily_limit_exceeded` (`remaining_wei`), 503 `rate_unavailable` |
  * | `GET /v1/withdrawals/:id` | bearer | `{withdrawal}` | 404 |
+ * | `GET /v1/withdrawals` | bearer | a page `{items, next_cursor}` of withdrawals, newest first | 400 `invalid_cursor` / `invalid_limit` |
+ * | `POST /v1/withdrawals/:id/cancel` | bearer + `Idempotency-Key` | 200 `{withdrawal}` with `status: "cancelled"` | 409 `withdrawal_in_flight` / `withdrawal_final`, 404 `withdrawal_not_found`, 400 `invalid_idempotency_key` |
  * | `POST /v1/cashback/claim` | bearer + `Idempotency-Key` | `{claimed_wei}` | 400 `unsupported_destination` |
  *
  * Every body is parsed strictly by the backend: 400 `forbidden_field` and
@@ -211,30 +213,45 @@ export const modelsResponseSchema = z.object({
 });
 export type ModelsResponse = z.infer<typeof modelsResponseSchema>;
 
-export const withdrawalResponseSchema = z.object({
-  withdrawal: z.object({
-    id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
-    status: z.enum([
-      "requested",
-      "debited",
-      "signed",
-      "broadcast",
-      "included_success",
-      "included_reverted",
-      "completed",
-      "refunded",
-      "failed",
-      "unknown",
-      "dropped",
-    ]),
-    amount_wei: rawInteger,
-    destination: evmAddress,
-    tx_hash: txHash.nullable(),
-    created_at: isoTimestamp,
-    updated_at: isoTimestamp,
-  }),
+/**
+ * One withdrawal. `release_at` and `cancellable` came with the cooling period
+ * (owner decision 2026-10-21): a `debited` withdrawal whose `release_at` is
+ * ahead is cooling and may be cancelled while `cancellable`. Both are
+ * optional so a backend from before the cooling period still parses; absent
+ * they read as "no release time" and "not cancellable", never a guess.
+ */
+const withdrawalSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  status: z.enum([
+    "requested",
+    "debited",
+    "signed",
+    "broadcast",
+    "included_success",
+    "included_reverted",
+    "completed",
+    "refunded",
+    "failed",
+    "unknown",
+    "dropped",
+    "cancelled",
+  ]),
+  amount_wei: rawInteger,
+  destination: evmAddress,
+  tx_hash: txHash.nullable(),
+  created_at: isoTimestamp,
+  updated_at: isoTimestamp,
+  release_at: isoTimestamp.nullable().optional(),
+  cancellable: z.boolean().optional(),
 });
+export type WithdrawalView = z.infer<typeof withdrawalSchema>;
+
+export const withdrawalResponseSchema = z.object({ withdrawal: withdrawalSchema });
 export type WithdrawalResponse = z.infer<typeof withdrawalResponseSchema>;
+
+export const withdrawalsPageSchema = pageSchema(withdrawalSchema);
+export type WithdrawalsPage = z.infer<typeof withdrawalsPageSchema>;
+
 
 const claimResponseSchema = z.object({ claimed_wei: rawInteger });
 const notifyResponseSchema = z.object({ accepted: z.literal(true) });
@@ -297,6 +314,15 @@ export interface VexCloudApi {
     signal: AbortSignal,
   ): Promise<VexCloudCall<WithdrawalResponse>>;
   readWithdrawal(bearer: string, withdrawalId: string, signal: AbortSignal): Promise<VexCloudCall<WithdrawalResponse>>;
+  /** The account's withdrawals, newest first, cursor paginated. */
+  listWithdrawals(bearer: string, page: PageQuery, signal: AbortSignal): Promise<VexCloudCall<WithdrawalsPage>>;
+  /** Cancel a cooling withdrawal; the caller mints the key and reuses it on a transport retry. */
+  cancelWithdrawal(
+    bearer: string,
+    idempotencyKey: string,
+    withdrawalId: string,
+    signal: AbortSignal,
+  ): Promise<VexCloudCall<WithdrawalResponse>>;
   claimCashbackToBalance(
     bearer: string,
     idempotencyKey: string,
@@ -547,6 +573,24 @@ export function createVexCloudApi(options: VexCloudApiOptions = {}): VexCloudApi
         "withdrawal_read",
         `/v1/withdrawals/${encodeURIComponent(withdrawalId)}`,
         { method: "GET", bearer },
+        signal,
+        (json) => {
+          const parsed = withdrawalResponseSchema.safeParse(json);
+          return parsed.success ? parsed.data : null;
+        },
+      );
+    },
+    listWithdrawals(bearer, page, signal) {
+      return call("withdrawals", `/v1/withdrawals${pageQueryString(page)}`, { method: "GET", bearer }, signal, (json) => {
+        const parsed = withdrawalsPageSchema.safeParse(json);
+        return parsed.success ? parsed.data : null;
+      });
+    },
+    cancelWithdrawal(bearer, idempotencyKey, withdrawalId, signal) {
+      return call(
+        "withdrawal_cancel",
+        `/v1/withdrawals/${encodeURIComponent(withdrawalId)}/cancel`,
+        { method: "POST", body: {}, bearer, idempotencyKey },
         signal,
         (json) => {
           const parsed = withdrawalResponseSchema.safeParse(json);

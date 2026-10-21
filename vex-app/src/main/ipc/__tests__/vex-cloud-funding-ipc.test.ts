@@ -24,7 +24,13 @@
  *    notify hint carries the hash;
  *  - withdrawal idempotency: an answer that does not prove a refusal is an
  *    unknown outcome, and Check status of the SAME proposal reuses its key
- *    and gets the same withdrawal; a new proposal gets a new key.
+ *    and gets the same withdrawal; a new proposal gets a new key;
+ *  - the cooling period: a cooling withdrawal cancels through IPC and reads
+ *    Cancelled; an ambiguous cancel keeps its key and Check status replays
+ *    it; `withdrawal_in_flight` says it can no longer be cancelled; the
+ *    cancel is not execution-gated; a cooling withdrawal this app did not
+ *    create raises exactly one notice, cancels, and "It was me" suppresses
+ *    it durably, while one this app created is never a notice.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -68,6 +74,8 @@ const { createVexCloudApi } = await import("../../vex-cloud/api-client.js");
 const { __resetDepositStateForTests } = await import("../../vex-cloud/funding/deposit.js");
 const { __resetWithdrawStateForTests } = await import("../../vex-cloud/funding/withdraw.js");
 const { __resetCashbackStateForTests } = await import("../../vex-cloud/funding/cashback.js");
+const { __resetCancelStateForTests } = await import("../../vex-cloud/funding/withdraw-cancel.js");
+const { memoryWithdrawalOrigins } = await import("../../vex-cloud/__tests__/support/funding-fakes.js");
 import type { TransferBroadcastRequest, Erc20TransferPort } from "@tools/evm-chains/erc20-transfer-port.js";
 import type { VexCloudDeps } from "../../vex-cloud/production.js";
 
@@ -109,6 +117,14 @@ class FakeGateway {
   readonly seenKeys: string[] = [];
   /** The next withdrawal POST commits, then the answer is lost (a 502). */
   loseNextWithdrawalAnswer = false;
+  /** The next cancel POST commits, then the answer is lost (a 502). */
+  loseNextCancelAnswer = false;
+  /** Creates answer as the cooling backend does: `debited`, released in 12 hours, cancellable. */
+  coolingOnCreate = false;
+  /** Every cancel key seen, in order. */
+  readonly cancelKeys: string[] = [];
+  /** The key that cancelled each withdrawal (the backend binds a success to its key). */
+  readonly cancelledBy = new Map<string, string>();
   /** Force the next request to this path to answer with this status and reason. */
   readonly forced = new Map<string, { status: number; reason: string; extra?: Record<string, unknown> }>();
   readonly activity = Array.from({ length: 5 }, (_, i) => ({
@@ -141,6 +157,9 @@ class FakeGateway {
       return this.json({ accepted: true }, 202);
     }
     if (route === "POST /v1/withdrawals") return this.createWithdrawal(headers, typeof init.body === "string" ? init.body : "", body);
+    if (route === "GET /v1/withdrawals") return this.page(url, [...this.byId.values()].reverse());
+    const cancel = /^POST \/v1\/withdrawals\/([^/]+)\/cancel$/.exec(route);
+    if (cancel?.[1] !== undefined) return this.cancelWithdrawal(headers, decodeURIComponent(cancel[1]), body);
     if (route.startsWith("GET /v1/withdrawals/")) {
       const found = this.byId.get(url.pathname.slice("/v1/withdrawals/".length));
       return found === undefined ? this.error(404, "withdrawal_not_found") : this.json({ withdrawal: found });
@@ -241,22 +260,64 @@ class FakeGateway {
     if (this.dailyRemainingWei !== null && amount > this.dailyRemainingWei) {
       return this.error(429, "daily_limit_exceeded", { remaining_wei: this.dailyRemainingWei.toString() });
     }
-    const withdrawal = {
-      id: `wd_${this.withdrawals.size + 1}`,
+    const id = `wd_${this.withdrawals.size + 1}`;
+    const withdrawal: Record<string, unknown> = {
+      id,
       status: "requested",
       amount_wei: amount.toString(),
       destination: String(body.destination),
       tx_hash: null,
       created_at: NOW.toISOString(),
       updated_at: NOW.toISOString(),
+      ...(this.coolingOnCreate && { status: "debited", release_at: new Date(NOW.getTime() + 12 * 3_600_000).toISOString(), cancellable: true }),
     };
     this.withdrawals.set(key, { body: raw, withdrawal });
-    this.byId.set(withdrawal.id, withdrawal);
+    this.byId.set(id, withdrawal);
     if (this.loseNextWithdrawalAnswer) {
       this.loseNextWithdrawalAnswer = false;
       return this.error(502, "upstream_lost");
     }
     return this.json({ withdrawal }, 202);
+  }
+
+  /** A withdrawal already on the account (made elsewhere, or by an earlier create), newest last. */
+  seedWithdrawal(fields: Partial<Record<string, unknown>> & { readonly id: string }): Record<string, unknown> {
+    const withdrawal: Record<string, unknown> = {
+      status: "debited",
+      amount_wei: String(6_000n * E18),
+      destination: W1,
+      tx_hash: null,
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+      release_at: new Date(NOW.getTime() + 12 * 3_600_000).toISOString(),
+      cancellable: true,
+      ...fields,
+    };
+    this.byId.set(fields.id, withdrawal);
+    return withdrawal;
+  }
+
+  /** The backend's cancel (custody-routes.ts, ledger.ts `cancelWithdrawal`): CAS `debited -> cancelled`, success bound to its key. */
+  private cancelWithdrawal(headers: Headers, id: string, body: Record<string, unknown>): Response {
+    const key = headers.get("idempotency-key");
+    if (key === null || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) return this.error(400, "invalid_idempotency_key");
+    if (Object.keys(body).length > 0) return this.error(400, "invalid_field");
+    this.cancelKeys.push(key);
+    const found = this.byId.get(id);
+    if (found === undefined) return this.error(404, "withdrawal_not_found");
+    if (found.status === "debited") {
+      found.status = "cancelled";
+      found.cancellable = false;
+      this.cancelledBy.set(id, key);
+      if (this.loseNextCancelAnswer) {
+        this.loseNextCancelAnswer = false;
+        return this.error(502, "upstream_lost");
+      }
+      return this.json({ withdrawal: found });
+    }
+    if (found.status === "cancelled" && this.cancelledBy.get(id) === key) return this.json({ withdrawal: found });
+    const final = ["completed", "refunded", "failed", "dropped", "cancelled"].includes(String(found.status));
+    return this.error(409, final ? "withdrawal_final" : "withdrawal_in_flight", { withdrawal_status: found.status });
   }
 
   private page(url: URL, items: readonly unknown[]): Response {
@@ -384,6 +445,7 @@ interface World {
   pinned: string | null;
   keyMismatch: boolean;
   keysMinted: number;
+  readonly origins: ReturnType<typeof memoryWithdrawalOrigins>;
   readonly deps: VexCloudDeps;
 }
 
@@ -394,9 +456,11 @@ function entry(address: string, index: number) {
 function world(): World {
   const gateway = new FakeGateway();
   const chain = new FakeChain();
+  const origins = memoryWithdrawalOrigins(() => NOW);
   const self: World = {
     gateway,
     chain,
+    origins,
     session: BEARER,
     vaultUnlocked: true,
     executionReady: true,
@@ -441,6 +505,7 @@ function world(): World {
         },
         now: () => NOW,
       },
+      withdrawalOrigins: origins.guard,
     },
   };
   return self;
@@ -503,6 +568,7 @@ beforeEach(() => {
   __resetDepositStateForTests();
   __resetWithdrawStateForTests();
   __resetCashbackStateForTests();
+  __resetCancelStateForTests();
 });
 
 afterEach(() => {
@@ -1021,6 +1087,171 @@ describe("submitWithdrawal and idempotency", () => {
   });
 });
 
+// ── the cooling period: cancel ───────────────────────────────────────────
+
+describe("cancelWithdrawal", () => {
+  const RELEASE = new Date(NOW.getTime() + 12 * 3_600_000).toISOString();
+
+  it("cancels a cooling withdrawal with an Idempotency-Key; its status then reads cancelled", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_cool" });
+    const before = expectOk(await call(CH.vexCloud.withdrawal, { withdrawalId: "wd_cool" }));
+    expect(before.data.withdrawal).toMatchObject({ status: "debited", releaseAt: RELEASE, cancellable: true });
+    const result = expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_cool" }));
+    expect(result.data).toMatchObject({ outcome: "cancelled", withdrawal: { id: "wd_cool", status: "cancelled", cancellable: false } });
+    expect(w.gateway.cancelKeys).toHaveLength(1);
+    expect(w.gateway.cancelKeys[0]).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
+    const after = expectOk(await call(CH.vexCloud.withdrawal, { withdrawalId: "wd_cool" }, "22222222-2222-4333-8444-555555555555"));
+    expect(after.data.withdrawal).toMatchObject({ status: "cancelled" });
+  });
+
+  it("an ambiguous cancel keeps its key: Check status replays the SAME key and learns it was cancelled", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_cool" });
+    w.gateway.loseNextCancelAnswer = true;
+    const unknown = expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_cool" }));
+    expect(unknown.data).toEqual({ outcome: "unknown", withdrawalId: "wd_cool" });
+    const check = expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_cool" }, "33333333-2222-4333-8444-555555555555"));
+    expect(check.data).toMatchObject({ outcome: "cancelled", withdrawal: { status: "cancelled" } });
+    expect(w.gateway.cancelKeys).toHaveLength(2);
+    expect(w.gateway.cancelKeys[1]).toBe(w.gateway.cancelKeys[0]);
+  });
+
+  it("a definitive answer retires the key: the next cancel of that withdrawal mints a new one", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_sent", status: "signed", cancellable: false });
+    expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_sent" }));
+    expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_sent" }, "33333333-2222-4333-8444-555555555555"));
+    expect(w.gateway.cancelKeys).toHaveLength(2);
+    expect(w.gateway.cancelKeys[1]).not.toBe(w.gateway.cancelKeys[0]);
+  });
+
+  it("withdrawal_in_flight says it is already being sent and can no longer be cancelled", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_sent", status: "broadcast", cancellable: false });
+    const result = expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_sent" }));
+    expect(result.data).toEqual({
+      outcome: "not_cancelled",
+      reason: "in_flight",
+      withdrawal: null,
+      detail: "This withdrawal is already being sent; it can no longer be cancelled.",
+    });
+  });
+
+  it("withdrawal_final is settled by a status read: cancelled under another key reads cancelled, completed reads final", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_other", status: "cancelled", cancellable: false });
+    w.gateway.seedWithdrawal({ id: "wd_done", status: "completed", cancellable: false });
+    expect(expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_other" })).data).toMatchObject({ outcome: "cancelled" });
+    expect(expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_done" }, "33333333-2222-4333-8444-555555555555")).data).toMatchObject({
+      outcome: "not_cancelled",
+      reason: "final",
+      withdrawal: { status: "completed" },
+    });
+  });
+
+  it("a missing withdrawal is named", async () => {
+    mount();
+    expect(expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_404" })).data).toMatchObject({ outcome: "not_cancelled", reason: "not_found" });
+  });
+
+  it("refuses a smuggled key or an off-contract id, sending nothing", async () => {
+    const w = mount();
+    expectError(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_1", idempotencyKey: "vxc_attacker_00" }), "validation.invalid_input");
+    expectError(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "../account" }), "validation.invalid_input");
+    expect(w.gateway.calls).toBe(0);
+  });
+
+  it("signed out refuses by name and sends nothing", async () => {
+    const w = mount();
+    w.session = null;
+    expectError(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_1" }), "permissions.denied", /not signed in/);
+    expect(w.gateway.calls).toBe(0);
+  });
+
+  it("cancelled before the request leaves sends no cancel", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_cool" });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = w.gateway.fetch.getMockImplementation();
+    if (original === undefined) throw new Error("the fake gateway has no implementation");
+    w.gateway.fetch.mockImplementationOnce(async (input, init) => {
+      await gate;
+      return original(input, init);
+    });
+    const pending = call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_cool" });
+    await vi.waitFor(() => expect(w.gateway.fetch).toHaveBeenCalled());
+    getCancelController(REQUEST_ID)?.abort();
+    release();
+    expectError(await pending, "internal.cancelled");
+    expect(w.gateway.cancelKeys).toHaveLength(0);
+    expect(w.gateway.byId.get("wd_cool")?.status).toBe("debited");
+  });
+});
+
+// ── the cooling period: withdrawals this app did not start ───────────────
+
+describe("withdrawalNotices and dismissWithdrawalNotice", () => {
+  it("a cooling withdrawal this app did not create raises exactly one notice; Cancel removes it", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_foreign", destination: W2 });
+    const first = expectOk(await call(CH.vexCloud.withdrawalNotices, {}));
+    expect(first.data).toMatchObject({
+      state: "signed_in",
+      complete: true,
+      notices: [{ withdrawalId: "wd_foreign", amountWei: String(6_000n * E18), destination: W2, cancellable: true }],
+    });
+    expectOk(await call(CH.vexCloud.withdrawalNotices, {}, "22222222-2222-4333-8444-555555555555"));
+    expect(w.origins.emitted.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
+    expect(expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_foreign" })).data).toMatchObject({ outcome: "cancelled" });
+    expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {}, "33333333-2222-4333-8444-555555555555")).data).toMatchObject({ notices: [] });
+  });
+
+  it('"It was me" suppresses it durably: the notice never returns for that id, a new one still does', async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_foreign" });
+    expectOk(await call(CH.vexCloud.withdrawalNotices, {}));
+    expect(expectOk(await call(CH.vexCloud.dismissWithdrawalNotice, { withdrawalId: "wd_foreign" })).data).toEqual({ dismissed: true });
+    expect(w.origins.store.rows.get("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee:wd_foreign")).toMatchObject({ origin: "foreign", dismissedAt: expect.any(Date) });
+    expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {}, "22222222-2222-4333-8444-555555555555")).data).toMatchObject({ notices: [] });
+    w.gateway.seedWithdrawal({ id: "wd_foreign_2" });
+    const later = expectOk(await call(CH.vexCloud.withdrawalNotices, {}, "33333333-2222-4333-8444-555555555555"));
+    expect((later.data.notices as Array<{ withdrawalId: string }>).map((n) => n.withdrawalId)).toEqual(["wd_foreign_2"]);
+    expect(w.origins.emitted).toHaveLength(2);
+  });
+
+  it("a withdrawal this app created is never a notice", async () => {
+    const w = mount();
+    w.gateway.coolingOnCreate = true;
+    const p = expectOk(await call(CH.vexCloud.prepareWithdrawal, { destination: W1, amountText: "6000" }));
+    const sent = expectOk(await call(CH.vexCloud.submitWithdrawal, { proposalId: p.data.proposalId, destination: W1, amountWei: p.data.amountWei }));
+    expect(sent.data.withdrawal).toMatchObject({ status: "debited", cancellable: true });
+    expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {})).data).toMatchObject({ state: "signed_in", notices: [] });
+    expect(w.origins.emitted).toHaveLength(0);
+  });
+
+  it("an id that was never raised cannot be dismissed", async () => {
+    mount();
+    expectError(await call(CH.vexCloud.dismissWithdrawalNotice, { withdrawalId: "wd_never" }), "validation.invalid_input", /no waiting notice/);
+  });
+
+  it("signed out is a state, not an error", async () => {
+    const w = mount();
+    w.session = null;
+    expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {})).data).toEqual({ state: "signed_out" });
+    expect(w.gateway.calls).toBe(0);
+  });
+
+  it("a failed withdrawals read is an error, never an empty list", async () => {
+    const w = mount();
+    w.gateway.forced.set("GET /v1/withdrawals", { status: 503, reason: "database_busy" });
+    expectError(await call(CH.vexCloud.withdrawalNotices, {}), "provider.unavailable");
+  });
+});
+
 // ── cashback ─────────────────────────────────────────────────────────────
 
 describe("claimCashback", () => {
@@ -1103,6 +1334,9 @@ describe("sender validation", () => {
     [CH.vexCloud.prepareWithdrawal, { destination: W1, amountText: "6000" }],
     [CH.vexCloud.submitWithdrawal, { proposalId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", destination: W1, amountWei: "1" }],
     [CH.vexCloud.withdrawal, { withdrawalId: "wd_1" }],
+    [CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_1" }],
+    [CH.vexCloud.withdrawalNotices, {}],
+    [CH.vexCloud.dismissWithdrawalNotice, { withdrawalId: "wd_1" }],
     [CH.vexCloud.claimCashback, {}],
     [CH.vexCloud.activity, { cursor: null }],
     [CH.vexCloud.usage, { cursor: null }],
@@ -1157,5 +1391,8 @@ describe("execution gate", () => {
     expect(w.gateway.calls).toBe(0);
     // Reads stay available: a user can always see their own money.
     expectOk(await call(CH.vexCloud.activity, { cursor: null }));
+    // A cancel returns funds, so it is not gated: the brake works while Vex shuts down.
+    w.gateway.seedWithdrawal({ id: "wd_cool" });
+    expect(expectOk(await call(CH.vexCloud.cancelWithdrawal, { withdrawalId: "wd_cool" })).data).toMatchObject({ outcome: "cancelled" });
   });
 });

@@ -6,6 +6,11 @@ import type {
   VexCloudSignOutResult,
 } from "../../../schemas/vex-cloud.js";
 import type {
+  VexCloudCancelWithdrawalInput,
+  VexCloudCancelWithdrawalResult,
+  VexCloudDismissWithdrawalNoticeInput,
+  VexCloudDismissWithdrawalNoticeResult,
+  VexCloudWithdrawalNoticesResult,
   VexCloudActivityResult,
   VexCloudClaimCashbackResult,
   VexCloudDepositProposal,
@@ -71,6 +76,18 @@ export interface VexCloudBridge {
   /** Ask Vex Cloud to send the approved withdrawal; a retry of the same proposal reuses its key. */
   readonly submitWithdrawal: (input: VexCloudSubmitWithdrawalInput) => Promise<Result<VexCloudSubmitWithdrawalResult>>;
   readonly withdrawal: (input: VexCloudWithdrawalStatusInput) => Promise<Result<VexCloudWithdrawalStatusResult>>;
+  /**
+   * Cancel a cooling withdrawal (its VEX returns to the balance). Main mints
+   * the idempotency key; cancelling the same withdrawal again while the
+   * first answer is unknown replays it ("Check status").
+   */
+  readonly cancelWithdrawal: (input: VexCloudCancelWithdrawalInput) => AbortableInvocation<VexCloudCancelWithdrawalResult>;
+  /** Cooling withdrawals on the account that this app did not start. */
+  readonly withdrawalNotices: () => AbortableInvocation<VexCloudWithdrawalNoticesResult>;
+  /** "It was me": the notice does not return for this withdrawal. */
+  readonly dismissWithdrawalNotice: (
+    input: VexCloudDismissWithdrawalNoticeInput,
+  ) => Promise<Result<VexCloudDismissWithdrawalNoticeResult>>;
   /** Move all claimable cashback to the balance. */
   readonly claimCashback: () => Promise<Result<VexCloudClaimCashbackResult>>;
   readonly activity: (input: VexCloudPageInput) => Promise<Result<VexCloudActivityResult>>;

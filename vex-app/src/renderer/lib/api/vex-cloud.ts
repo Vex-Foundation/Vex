@@ -31,7 +31,12 @@ import type {
   VexCloudSignOutResult,
 } from "@shared/schemas/vex-cloud.js";
 import {
+  isFinalWithdrawalWord,
   withdrawalStatusWord,
+  type VexCloudCancelWithdrawalInput,
+  type VexCloudCancelWithdrawalResult,
+  type VexCloudDismissWithdrawalNoticeResult,
+  type VexCloudWithdrawalNoticesResult,
   type VexCloudActivityResult,
   type VexCloudClaimCashbackResult,
   type VexCloudDepositProposal,
@@ -193,12 +198,51 @@ export function useVexCloudWithdrawal(withdrawalId: string | null): UseQueryResu
       refetchInterval: (query) => {
         const data = query.state.data;
         if (data?.ok !== true) return WITHDRAWAL_POLL_MS;
-        const word = withdrawalStatusWord(data.data.withdrawal.status);
-        return word === "Completed" || word === "Returned" ? false : WITHDRAWAL_POLL_MS;
+        return isFinalWithdrawalWord(withdrawalStatusWord(data.data.withdrawal.status)) ? false : WITHDRAWAL_POLL_MS;
       },
       retry: false,
     }),
   );
+}
+
+/**
+ * Cancel a cooling withdrawal. A plain call the confirmation's key drives,
+ * never a query: a cancel that re-ran itself would act without a press.
+ */
+export function cancelVexCloudWithdrawal(input: VexCloudCancelWithdrawalInput): AbortableInvocation<VexCloudCancelWithdrawalResult> {
+  const bridge = vexCloudBridge();
+  return bridge === null ? unavailableInvocation() : bridge.cancelWithdrawal(input);
+}
+
+/** How often the app checks for withdrawals the user did not start in this app (the account poll's pace). */
+const WITHDRAWAL_NOTICES_POLL_MS = ACCOUNT_POLL_MS;
+
+/**
+ * Cooling withdrawals this app did not start: one query, read by the funding
+ * page, the Settings panel and Needs you, so the three never disagree.
+ * Signed out is `state: "signed_out"`, not an error.
+ */
+export function useVexCloudWithdrawalNotices(enabled: boolean = true): UseQueryResult<Result<VexCloudWithdrawalNoticesResult>> {
+  return useQuery(
+    queryOptions({
+      queryKey: vexCloudKeys.withdrawalNotices(),
+      queryFn: async ({ signal }) => {
+        const bridge = vexCloudBridge();
+        if (bridge === null) return BRIDGE_UNAVAILABLE;
+        const invocation = bridge.withdrawalNotices();
+        signal.addEventListener("abort", invocation.cancel, { once: true });
+        return invocation.promise;
+      },
+      enabled,
+      refetchInterval: WITHDRAWAL_NOTICES_POLL_MS,
+      retry: false,
+    }),
+  );
+}
+
+export function dismissVexCloudWithdrawalNotice(withdrawalId: string): Promise<Result<VexCloudDismissWithdrawalNoticeResult>> {
+  const bridge = vexCloudBridge();
+  return bridge === null ? Promise.resolve(BRIDGE_UNAVAILABLE) : bridge.dismissWithdrawalNotice({ withdrawalId });
 }
 
 type HistoryKind = "activity" | "usage" | "deposits";

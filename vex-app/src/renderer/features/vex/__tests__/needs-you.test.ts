@@ -281,7 +281,7 @@ describe("missionNeedsYouItem", () => {
 });
 
 describe("needsYouModelOf", () => {
-  const base = { approvalsErrored: false, sessions: null, nowMs: NOW } as const;
+  const base = { approvalsErrored: false, sessions: null, withdrawalNotices: [], nowMs: NOW } as const;
 
   it("is loading before the first read, with no count to claim", () => {
     expect(needsYouModelOf({ ...base, approvals: undefined })).toEqual({
@@ -361,5 +361,34 @@ describe("needsYouModelOf", () => {
       sessions: [session({ missionStatus: "paused_plan_acceptance" })],
     });
     expect(model.count).toBe(1);
+  });
+
+  it("a cooling withdrawal this app did not start counts, after approvals and before missions, and opens nothing by itself", () => {
+    const model = needsYouModelOf({
+      ...base,
+      approvals: ok([approval()]),
+      sessions: [session({ missionStatus: "paused_error" })],
+      withdrawalNotices: [
+        {
+          withdrawalId: "wd_foreign",
+          amountWei: "6000000000000000000000",
+          destination: "0x2222222222222222222222222222222222222222",
+          releaseAt: "2026-10-18T00:30:00.000Z",
+          cancellable: true,
+          createdAt: "2026-10-17T12:30:00.000Z",
+        },
+      ],
+    });
+    expect(model.count).toBe(3);
+    expect(model.items.map((item) => item.kind)).toEqual(["approval", "withdrawal", "recover"]);
+    expect(model.items[1]).toMatchObject({
+      key: "withdrawal:wd_foreign",
+      title: "Check a withdrawal you did not start",
+      metaLead: "Vex Inference · releases",
+      metaTime: "Oct 18, 00:30 UTC",
+      go: "Review",
+      sessionId: null,
+      approvalId: null,
+    });
   });
 });

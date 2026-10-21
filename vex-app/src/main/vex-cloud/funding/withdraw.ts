@@ -53,6 +53,12 @@
  * renderer's record is process memory too, so after a restart neither side
  * remembers the request; History is where the user finds it.
  *
+ * EVERY ID THIS APP CREATED IS RECORDED (`withdrawal-origins.ts`): the
+ * create is bracketed so a concurrent scan raises no notice for it, and the
+ * id the answer names is written durably before the bracket closes. A cooling
+ * withdrawal on the account with an id never recorded here is a security
+ * notice.
+ *
  * AUDIT: one `asked` and one `decided` line per submit, correlated.
  */
 
@@ -86,6 +92,7 @@ import {
   type SessionPort,
 } from "./backend-call.js";
 import { ProposalStore, type StoredProposal } from "./proposal-store.js";
+import type { WithdrawalOriginGuard } from "./withdrawal-origins.js";
 
 /** How long a withdrawal approval stays valid. */
 export const WITHDRAWAL_PROPOSAL_TTL_MS = 300_000;
@@ -97,6 +104,8 @@ export interface WithdrawDeps extends SessionPort {
   readonly now: () => Date;
   /** Injected for tests; a fresh random key per proposal in production. */
   readonly mintIdempotencyKey?: () => string;
+  /** Where every withdrawal id this app created is recorded. */
+  readonly origins: Pick<WithdrawalOriginGuard, "beginCreate" | "recordCreatedHere">;
 }
 
 interface WithdrawalEntry extends StoredProposal {
@@ -137,6 +146,8 @@ export function toWithdrawal(response: WithdrawalResponse): VexCloudWithdrawal {
     txHash: w.tx_hash,
     createdAt: w.created_at,
     updatedAt: w.updated_at,
+    releaseAt: w.release_at ?? null,
+    cancellable: w.cancellable === true,
   };
 }
 
@@ -356,12 +367,21 @@ async function post(
   send: "first" | "replay",
 ): Promise<VexCloudOutcome<VexCloudSubmitWithdrawalResult>> {
   const { proposal, idempotencyKey } = entry;
-  const created = await deps.api.createWithdrawal(
-    bearer,
-    idempotencyKey,
-    { amountWei: proposal.amountWei, destination: proposal.destination },
-    signal,
-  );
+  // Bracketed so a scan running meanwhile cannot mistake this withdrawal for
+  // one this app did not start; closed only after its id is recorded.
+  const endCreate = deps.origins.beginCreate();
+  let created: Awaited<ReturnType<WithdrawDeps["api"]["createWithdrawal"]>>;
+  try {
+    created = await deps.api.createWithdrawal(
+      bearer,
+      idempotencyKey,
+      { amountWei: proposal.amountWei, destination: proposal.destination },
+      signal,
+    );
+    if (created.ok) await deps.origins.recordCreatedHere(entry.accountId, created.value.withdrawal.id);
+  } finally {
+    endCreate();
+  }
   if (created.ok) {
     unresolved.drop(proposal.proposalId);
     return { ok: true, value: { outcome: "accepted", withdrawal: toWithdrawal(created.value) } };

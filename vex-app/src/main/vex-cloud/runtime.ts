@@ -137,6 +137,7 @@ export function vexInferenceHost(runtime: VexInferenceRuntime, deps: VexCloudDep
     readSession: runtime.deposit.readSession,
     clearSession: runtime.deposit.clearSession,
     api: { ...deps.api, readAccount: runtime.deposit.api.readAccount },
+    origins: deps.withdrawalOrigins,
     store: runtime.store,
     watch: runtime.watch,
     pinnedDepositAddress: runtime.deposit.pinnedDepositAddress,
