@@ -38,16 +38,21 @@
  * | caps (unknown outcomes count) | one more fits | still hold, this row included | |
  * | network fee ceiling | the approved plan's bound fits (agent) | the plan's bound and the request's exposure fit | the request's exposure fits the admitted ceiling |
  * | generation | captured | | unchanged since capture |
+ * | pending mutation | none (before the ASK, and again under the lock) | | none |
  *
- * MUTATION VERSUS SIGNING (the serialisation contract). Every edit, pause,
- * resume and revoke runs through {@link withRuleAuthorityChange}, which bumps
- * the generation synchronously BEFORE its durable write and again after it.
- * So a mutation that began before the final check refuses the signing
- * (recorded `refused`, nothing signed, not counted), and a mutation that
- * begins after the final check passed applies from the next top-up: the
- * signature follows the final check with no await that can reach a provider
- * (`signStageBroadcast`). A plan whose fee bound is above the ceiling is
- * refused `network_fee_above_limit`.
+ * MUTATION VERSUS SIGNING (the serialisation contract, `rule-authority.ts`).
+ * Every edit, pause, resume and revoke runs through
+ * {@link withRuleAuthorityChange}, which marks the rule PENDING for the whole
+ * mutation and bumps the generation synchronously BEFORE its durable write
+ * and again after it. So an execution cannot be admitted while a mutation is
+ * pending (refused `rule_changed`, nothing written), a mutation that began
+ * before the final check refuses the signing (recorded `refused`, nothing
+ * signed, not counted), and a mutation that begins after the final check
+ * passed applies from the next top-up: the signature follows the final check
+ * with no await that can reach a provider (`signStageBroadcast`). Neither side
+ * waits for the other: a mutation proceeds while an execution is in flight,
+ * and an execution refuses instead of waiting. A plan whose fee bound is above
+ * the ceiling is refused `network_fee_above_limit`.
  *
  * RECOVERY. Until {@link markRecoveryComplete} ran once in this process (the
  * previous process's undecided rows marked `unknown`), every execution is
@@ -70,7 +75,7 @@ import type { DepositExecutionAuthority } from "@vex-agent/db/repos/vex-inferenc
 import { RuleExecutionInFlightError, type AutoTopUpRuleRow, type FundingPolicyStore, type RuleUsage } from "./funding-store.js";
 import type { FinalSignedRequest } from "@tools/evm-chains/staged-broadcast.js";
 import { capsAllow, capsStillHold, feeWithinRule, NETWORK_FEE_ABOVE_LIMIT, type ObservedRuleConditions, type RuleConditions } from "./rule-policy.js";
-import { ruleAuthorityGeneration } from "./rule-authority.js";
+import { ruleAuthorityGeneration, ruleMutationPending } from "./rule-authority.js";
 
 /** How long a poller-planned deposit stays signable: fresh figures, no human in between. */
 export const POLLER_PLAN_TTL_MS = 60_000;
@@ -123,6 +128,7 @@ export interface RecordedExecutionResult extends VexCloudSubmitDepositResult {
 type AdmissionRefusal = { readonly kind: VexCloudRefusal["kind"]; readonly detail: string };
 
 const NOTHING = "Nothing was signed or sent.";
+const RULE_BEING_CHANGED = `The auto top-up rule is being edited, paused or revoked right now. ${NOTHING}`;
 
 /** The signed request's worst-case network fee: gas limit times its max fee per gas. */
 function requestFeeExposure(request: FinalSignedRequest): bigint | null {
@@ -145,6 +151,8 @@ function admitUnderRule(
   admitted: { row: AutoTopUpRuleRow | null },
 ): (rule: AutoTopUpRuleRow | null, usage: RuleUsage | null) => AdmissionRefusal | null {
   return (rule, usage) => {
+    // Under the row lock: a mutation that began while the ASK awaited the lock is still pending here.
+    if (request.ruleId !== null && ruleMutationPending(request.ruleId)) return { kind: "rule_changed", detail: RULE_BEING_CHANGED };
     if (rule === null || usage === null) return { kind: "rule_changed", detail: `The auto top-up rule no longer exists. ${NOTHING}` };
     if (request.ruleVersion !== null && rule.version !== request.ruleVersion) {
       return { kind: "rule_changed", detail: `The auto top-up rule changed since this top-up was decided. ${NOTHING}` };
@@ -204,6 +212,8 @@ export async function executeRecordedDeposit(
     const askedAt = deps.deposit.now();
     // Captured BEFORE admission: a change that starts after this point refuses the final check.
     const admittedGeneration = request.ruleId === null ? 0 : ruleAuthorityGeneration(request.ruleId);
+    // A generation captured while a mutation is pending belongs to that mutation: never admit under it.
+    if (request.ruleId !== null && ruleMutationPending(request.ruleId)) return refused("rule_changed", RULE_BEING_CHANGED);
     const admitted: { row: AutoTopUpRuleRow | null } = { row: null };
     let admission;
     try {
@@ -296,7 +306,7 @@ export async function executeRecordedDeposit(
           if (deps.deposit.now().getTime() >= admittedRow.expiresAt.getTime()) {
             return { kind: "rule_not_active", detail: `The auto top-up rule expired while this top-up was being signed. ${NOTHING}` };
           }
-          if (ruleAuthorityGeneration(request.ruleId) !== admittedGeneration) {
+          if (ruleMutationPending(request.ruleId) || ruleAuthorityGeneration(request.ruleId) !== admittedGeneration) {
             return { kind: "rule_changed", detail: `The auto top-up rule was edited, paused or revoked while this top-up was being signed. ${NOTHING}` };
           }
           if (conditions.signedInAccountId !== admittedRow.accountId) {

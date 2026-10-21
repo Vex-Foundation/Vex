@@ -35,7 +35,7 @@
 
 import { log } from "../../logger/index.js";
 import type { VexCloudApi } from "../api-client.js";
-import { accountBalanceWei, newestCreditedDepositId, observeBalance, type BalanceWatchDeps } from "../balance-watch.js";
+import { accountBalanceWei, newestCreditedDeposit, observeBalance, type BalanceWatchDeps } from "../balance-watch.js";
 import { requireBearer } from "../funding/backend-call.js";
 import { executeRecordedDeposit, markRecoveryComplete, type RecordedExecutionDeps } from "./executor.js";
 import { effectiveRuleState, pollerShouldTopUp } from "./rule-policy.js";
@@ -111,9 +111,10 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
     const bearer = await requireBearer(deps.deposit);
     if (!bearer.ok) return "skipped_signed_out";
 
+    // The generation BEFORE both reads: the deposits page and the balance are one ordered observation.
     // Deposits first: a credit this page shows is then inside the balance read below.
-    const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
     const generation = deps.watch.generations.next();
+    const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
     const read = await deps.api.readAccount(bearer.value, signal);
     if (!read.ok) {
       balanceReadFailing = true;
@@ -124,7 +125,7 @@ export function createAutoTopUpPoller(deps: PollerDeps): AutoTopUpPoller {
     const observation = await observeBalance(deps.watch, {
       accountId: account.account_id,
       balanceWei: accountBalanceWei(account),
-      newestCreditedDepositId: deposits.ok ? newestCreditedDepositId(deposits.value.items) : null,
+      newestCredited: deposits.ok ? newestCreditedDeposit(deposits.value.items) : null,
       generation,
     });
 

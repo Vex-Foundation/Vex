@@ -244,7 +244,7 @@ describeFork("the agent deposit and auto top-up on an Anvil fork of Robinhood Ch
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (t) => clearTimeout(t),
     });
-    feeStore.watch.set(ACCOUNT, { accountId: ACCOUNT, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null });
+    feeStore.watch.set(ACCOUNT, { accountId: ACCOUNT, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null, lastCreditedFinalizedAt: null });
     const before5 = await depositBalance();
     expect(await feePoller.tickNow()).toBe("refused");
     expect(feeStore.executions).toEqual([expect.objectContaining({ authority: "auto_top_up_poller", status: "refused", refusalKind: "network_fee_above_limit", txHash: null })]);

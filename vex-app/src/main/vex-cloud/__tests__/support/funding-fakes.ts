@@ -249,6 +249,8 @@ export class ScriptedPort implements Erc20TransferPort {
    * the rule's expiry can land.
    */
   beforeFinalCheck: (() => void | Promise<void>) | null = null;
+  /** Runs right after the signature, before the outcome is known (a change landing after the final check passed). */
+  afterSign: (() => void) | null = null;
   /** The max fee per gas of the request about to be signed (a node filling a higher fee than quoted). */
   signedMaxFeePerGas = 20_000_000n;
 
@@ -279,6 +281,7 @@ export class ScriptedPort implements Erc20TransferPort {
     await this.beforeFinalCheck?.();
     await request.onFinalCheck(signed);
     this.signed += 1;
+    this.afterSign?.();
     request.onHashStaged(TX_HASH);
     if (this.outcome === "ambiguous") return { kind: "ambiguous", txHash: TX_HASH, stage: "confirm", reason: "receipt timeout" };
     const amount = BigInt(`0x${request.data.slice(74)}`);

@@ -1,0 +1,35 @@
+-- VEX INFERENCE LOW-BALANCE WATCH: the ORDER of the credited-deposit marker.
+--
+-- `vex_inference_balance_watch.last_credited_deposit_id` (migration 178) is
+-- the newest credited deposit seen; a newer one resets the alert reference to
+-- the balance after it. An id alone has no order, so a delayed deposits page
+-- carrying an OLDER credited deposit looked "new" and moved the marker and
+-- the reference backwards. The owner
+-- (`vex-app/src/main/vex-cloud/balance-watch.ts`) now orders credited
+-- deposits by the deposits API's `finalized_at`, then `id`, and never moves
+-- the marker to one ordered before the stored one. This column keeps the
+-- stored marker's `finalized_at` so that comparison survives a restart.
+--
+-- last_credited_finalized_at  the `finalized_at` of the deposit named by
+--                             last_credited_deposit_id. NULL when no marker
+--                             is stored, or on a row written before this
+--                             column existed: such a marker has no order, so
+--                             the owner lets any different credited deposit
+--                             replace it once (the behaviour before 180), and
+--                             every marker written from now on carries one.
+--
+-- COMPATIBILITY. Additive and nullable: code from before 180 ignores the
+-- column. After a downgrade such code can change the id without this column,
+-- leaving the time of an earlier marker, which is never later than the true
+-- one, so a newer credit still advances; the next one rewrites both. Code
+-- from 180 reads a NULL as above. No backfill: the backend's `finalized_at`
+-- for an already-stored id is not known locally, and the next observation of
+-- a newer credit fills it.
+--
+-- WHY A NEW MIGRATION AND NOT AN EDIT OF 178. The runner tracks applied
+-- versions, not file contents (see 179).
+--
+-- IDEMPOTENT: ADD COLUMN IF NOT EXISTS.
+
+ALTER TABLE vex_inference_balance_watch
+  ADD COLUMN IF NOT EXISTS last_credited_finalized_at TIMESTAMPTZ NULL;

@@ -210,6 +210,31 @@ describe("rule round trip", () => {
     expect(await call(CH.vexCloud.autoTopUpGet, {})).toMatchObject({ ok: true, data: { rule: { ruleId: "vxrule-00000000-0000-4000-8000-000000000002", state: "suspended", suspendedReason: "balance_read_failing" } } });
   });
 
+  it("with the account read failing, the page's reads and stops still work and every spending change is refused", async () => {
+    const w = mount();
+    const r = w.store.seedRule();
+    // Prime the locally known account, then the backend goes down.
+    expect(await call(CH.vexCloud.account, {})).toMatchObject({ ok: true, data: { state: "signed_in" } });
+    w.takeBackendDown();
+    expect(await call(CH.vexCloud.account, {})).toMatchObject({ ok: false });
+    expect(await call(CH.vexCloud.autoTopUpGet, {})).toMatchObject({ ok: true, data: { rule: { ruleId: r.ruleId, state: "suspended", suspendedReason: "balance_read_failing" } } });
+
+    // Spending changes need the account: refused, nothing stored.
+    expect(await call(CH.vexCloud.prepareAutoTopUp, { action: "edit", ruleId: r.ruleId, expectedVersion: 1, fields: FIELDS })).toMatchObject({ ok: false, error: { code: "provider.unavailable" } });
+    expect(await call(CH.vexCloud.prepareAutoTopUp, { action: "create", fields: FIELDS })).toMatchObject({ ok: false, error: { code: "provider.unavailable" } });
+
+    const pause = (await call(CH.vexCloud.prepareAutoTopUp, { action: "pause", ruleId: r.ruleId, expectedVersion: 1 })).data;
+    if (pause === undefined) throw new Error("pause not prepared");
+    expect(await call(CH.vexCloud.submitAutoTopUp, { proposalId: pause.proposalId, action: "pause", bounds: pause.bounds })).toMatchObject({ ok: true, data: { rule: { suspendedReason: "user_paused", version: 2 } } });
+    expect(await call(CH.vexCloud.prepareAutoTopUp, { action: "resume", ruleId: r.ruleId, expectedVersion: 2 })).toMatchObject({ ok: false, error: { code: "provider.unavailable" } });
+    expect(w.store.rules.get(r.ruleId)).toMatchObject({ status: "paused", version: 2 });
+
+    const revoke = (await call(CH.vexCloud.prepareAutoTopUp, { action: "revoke", ruleId: r.ruleId, expectedVersion: 2 })).data;
+    if (revoke === undefined) throw new Error("revoke not prepared");
+    expect(await call(CH.vexCloud.submitAutoTopUp, { proposalId: revoke.proposalId, action: "revoke", bounds: revoke.bounds })).toMatchObject({ ok: true, data: { rule: { state: "revoked" } } });
+    expect(w.store.rules.get(r.ruleId)?.status).toBe("revoked");
+  });
+
   it("a submit whose echoed bounds differ from the card changes nothing", async () => {
     const w = mount();
     const prepared = await call(CH.vexCloud.prepareAutoTopUp, { action: "create", fields: FIELDS });

@@ -1,5 +1,5 @@
 /**
- * The Vex Inference funding policy's durable side (migrations 178 and 179,
+ * The Vex Inference funding policy's durable side (migrations 178 to 180,
  * `src/vex-agent/db/repos/vex-inference-funding.ts`) against a REAL Postgres:
  * the constraints no in-memory fake can prove.
  *
@@ -10,7 +10,9 @@
  * two connections at once admit exactly one; expiry retires a rule and bumps
  * its version; the network fee ceiling persists and its CHECK refuses zero;
  * migration 179 applied over a populated 178 schema leaves the old rule's
- * ceiling NULL (it spends nothing until edited).
+ * ceiling NULL (it spends nothing until edited); the credited marker's
+ * `finalized_at` (180) round-trips through the locked watch update, and
+ * running 180 again changes nothing.
  *
  * Does not prove the policy decisions (the vex-app unit suites) or the chain.
  *
@@ -103,6 +105,25 @@ describe("the network fee ceiling (179)", () => {
     const edited = await repo.editRule({ ruleId: rule.ruleId, expectedVersion: 1, sourceWallet: WALLET, amountWei: 6_000n * E18, maxPerDay: 2, monthlyCapWei: 30_000n * E18, maxNetworkFeeWei: 99n, expiresAt: rule.expiresAt, approvedAt: NOW });
     expect(edited).toMatchObject({ maxNetworkFeeWei: 99n, version: 2 });
     await expect(repo.insertRule(newRule({ accountId: OTHER_ACCOUNT, maxNetworkFeeWei: 0n }))).rejects.toMatchObject({ code: "23514" });
+  });
+});
+
+describe("the credited marker's order (180)", () => {
+  it("stores and reads the marker's finalized_at through the locked update; a row without one reads null; 180 is idempotent", async () => {
+    const finalizedAt = new Date("2030-01-15T11:58:30.123Z");
+    const written = await repo.updateBalanceWatch(ACCOUNT, () => ({ accountId: ACCOUNT, referenceWei: 5n * E18, lastBalanceWei: 5n * E18, belowAlert: false, lastCreditedDepositId: "dep_b", lastCreditedFinalizedAt: finalizedAt }));
+    expect(written.before).toBeNull();
+    expect(await repo.readBalanceWatch(ACCOUNT)).toEqual({ accountId: ACCOUNT, referenceWei: 5n * E18, lastBalanceWei: 5n * E18, belowAlert: false, lastCreditedDepositId: "dep_b", lastCreditedFinalizedAt: finalizedAt });
+    const next = await repo.updateBalanceWatch(ACCOUNT, (current) => {
+      if (current === null) throw new Error("row missing");
+      return { ...current, lastBalanceWei: 4n * E18 };
+    });
+    expect(next.before).toMatchObject({ lastCreditedFinalizedAt: finalizedAt });
+    // A row from before 180 (the column left NULL) reads as a marker with no order.
+    await execute("UPDATE vex_inference_balance_watch SET last_credited_finalized_at = NULL WHERE account_id = $1", [ACCOUNT]);
+    expect(await repo.readBalanceWatch(ACCOUNT)).toMatchObject({ lastCreditedDepositId: "dep_b", lastCreditedFinalizedAt: null });
+    await execute(readFileSync(path.resolve("src/vex-agent/db/migrations/180_vex_inference_credited_marker_order.sql"), "utf8"));
+    expect(await queryOne<{ n: number }>("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name = 'vex_inference_balance_watch' AND column_name = 'last_credited_finalized_at'")).toEqual({ n: 1 });
   });
 });
 

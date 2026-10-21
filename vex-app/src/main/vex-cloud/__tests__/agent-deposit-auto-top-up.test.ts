@@ -135,7 +135,7 @@ describe("authority", () => {
 
     // The poller spends the second slot of the day.
     h.world.account = accountWith({ availableWei: 0n });
-    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 1_000n * E18, lastBalanceWei: 1_000n * E18, belowAlert: false, lastCreditedDepositId: null });
+    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 1_000n * E18, lastBalanceWei: 1_000n * E18, belowAlert: false, lastCreditedDepositId: null, lastCreditedFinalizedAt: null });
     const poller = createAutoTopUpPoller({ deposit: h.world.deps, store: h.store, conditions: h.agent.conditions, api: { readAccount: h.world.deps.api.readAccount, listDeposits: async () => ({ ok: true, value: { items: [], next_cursor: null } }) }, watch: { store: h.store, generations: createObservationGenerations(), emitCrossing: () => undefined }, setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) });
     expect(await poller.tickNow()).toBe("executed");
 
@@ -244,7 +244,7 @@ describe("poller", () => {
   it("a concurrent tick joins the running one instead of signing twice", async () => {
     const h = setup();
     h.store.seedRule({ maxPerDay: 5 });
-    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null });
+    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null, lastCreditedFinalizedAt: null });
     h.world.account = accountWith({ availableWei: 1_000n * E18 });
     const p = poller(h);
     const [a, b] = await Promise.all([p.tickNow(), p.tickNow()]);

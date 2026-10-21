@@ -17,6 +17,9 @@
  * check main answers with "no such proposal" keeps it (lost, blocking a
  * duplicate review) until the user dismisses it; a refused check keeps it.
  * Submit and claim results are published under React StrictMode.
+ * A backend outage (the account read fails) still shows the stored auto
+ * top-up rule with working Pause and Revoke and a disabled Edit with its
+ * reason.
  */
 
 import { StrictMode } from "react";
@@ -25,7 +28,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VexCloudAccount, VexCloudAccountResult, VexCloudDepositPin } from "@shared/schemas/vex-cloud.js";
 import type { VexCloudDepositProposal, VexCloudWithdrawalProposal } from "@shared/schemas/vex-cloud-funding.js";
+import type { Result } from "@shared/ipc/result.js";
 import { VexCloudFundingPage } from "../VexCloudFundingScreen.js";
+import { SPENDING_CHANGES_NEED_ACCOUNT } from "../AutoTopUpTab.js";
 import { SENDER_NOT_LINKED } from "../DepositTab.js";
 import { DISMISS_LOST, LOST_UNRESOLVED_DETAIL, OUTCOME_UNKNOWN_DETAIL, UNRESOLVED_BLOCKS_REVIEW } from "../WithdrawTab.js";
 import { CLAIM_STATUS_UNKNOWN } from "../CashbackTab.js";
@@ -107,7 +112,7 @@ const DEPOSIT_PROPOSAL: VexCloudDepositProposal = {
 };
 
 const bridge = {
-  account: vi.fn<() => Promise<{ ok: true; data: VexCloudAccountResult }>>(),
+  account: vi.fn<() => Promise<Result<VexCloudAccountResult>>>(),
   depositWallets: vi.fn(),
   prepareDeposit: vi.fn(),
   submitDeposit: vi.fn(),
@@ -204,6 +209,48 @@ describe("page states", () => {
     expect(screen.getByTestId("deposit-mismatch").textContent).toContain(DEPOSIT);
     expect(screen.getByTestId("deposit-mismatch").textContent).toContain(W2);
     expect(screen.queryByLabelText("You send")).toBeNull();
+  });
+});
+
+describe("a backend outage (the account read fails)", () => {
+  const OUTAGE = { code: "provider.unavailable", domain: "vexCloud", message: "Vex Inference could not be reached.", retryable: true, userActionable: true, redacted: true, correlationId: "c-outage" } as const;
+  const storedRule = {
+    ruleId: "vxrule-00000000-0000-4000-8000-000000000001",
+    version: 1,
+    state: "suspended" as const,
+    suspendedReason: "balance_read_failing",
+    sourceWallet: W1,
+    amountWei: String(6_000n * E18),
+    maxPerDay: 2,
+    monthlyCapWei: String(12_000n * E18),
+    maxNetworkFeeWei: "100000000000000",
+    trigger: "below_alert_percent" as const,
+    expiresAt: "2026-11-20T12:00:00.000Z",
+    approvedAt: NOW,
+    usedLast24Hours: 0,
+    usedLast30DaysWei: "0",
+    recentExecutions: [],
+  };
+
+  it("the stored rule is still shown with working Pause and Revoke; Edit is disabled with the reason; no other tab is offered", async () => {
+    bridge.account.mockResolvedValue({ ok: false, error: OUTAGE });
+    bridge.autoTopUpGet.mockReturnValue({ promise: Promise.resolve({ ok: true, data: { rule: storedRule } }), cancel: vi.fn() });
+    bridge.prepareAutoTopUp.mockReturnValue({ promise: Promise.resolve({ ok: false, error: OUTAGE }), cancel: vi.fn() });
+    renderPage();
+    const page = await screen.findByTestId("funding-page-unavailable");
+    expect(within(page).getByText("Vex Inference could not be read.")).toBeTruthy();
+    const summary = await within(page).findByTestId("rule-summary");
+    expect(within(summary).getByText("Suspended: Balance cannot be read")).toBeTruthy();
+    expect(within(summary).getByRole("button", { name: "Edit" }).hasAttribute("disabled")).toBe(true);
+    expect(within(summary).getByText(SPENDING_CHANGES_NEED_ACCOUNT)).toBeTruthy();
+    expect(screen.queryByRole("tab")).toBeNull();
+    for (const [name, action] of [["Pause", "pause"], ["Revoke", "revoke"]] as const) {
+      const button = within(summary).getByRole("button", { name });
+      expect(button.hasAttribute("disabled")).toBe(false);
+      fireEvent.click(button);
+      expect(bridge.prepareAutoTopUp).toHaveBeenLastCalledWith({ action, ruleId: storedRule.ruleId, expectedVersion: 1 });
+      await waitFor(() => expect(within(summary).getByRole("button", { name }).hasAttribute("disabled")).toBe(false));
+    }
   });
 });
 

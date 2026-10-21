@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { capsAllow, capsStillHold, effectiveRuleState, ruleCoversAgentDeposit, validateRuleBounds, type RuleConditions } from "../auto-top-up/rule-policy.js";
-import { createObservationGenerations, nextWatchRow, observeBalance, thresholdOf, type BalanceObservation } from "../balance-watch.js";
+import { createObservationGenerations, newestCreditedDeposit, nextWatchRow, observeBalance, thresholdOf, type BalanceObservation, type CreditedMarker } from "../balance-watch.js";
 import { ACCOUNT_ID, DEFAULT_FEE_CEILING_WEI, E18, MemoryFundingStore, NOW, OTHER_WALLET, WALLET } from "./support/funding-fakes.js";
 
 const LIVE: RuleConditions = {
@@ -24,6 +24,11 @@ const LIVE: RuleConditions = {
   networkFeeAboveLimit: false,
 };
 const FEE = 10n ** 13n;
+
+/** Credited deposit `n`, finalized `n` minutes after NOW: a higher `n` is a later credit. */
+function credited(n: number): CreditedMarker {
+  return { id: `dep_${n}`, finalizedAt: new Date(NOW.getTime() + n * 60_000) };
+}
 
 function rule() {
   return new MemoryFundingStore().seedRule({ amountWei: 6_000n * E18, maxPerDay: 2, monthlyCapWei: 12_000n * E18 });
@@ -145,22 +150,55 @@ describe("approvable bounds", () => {
 
 describe("low-balance watch", () => {
   it("the reference is the high-water mark, and a new credited deposit resets it to the balance after it", () => {
-    let row = nextWatchRow(null, { accountId: ACCOUNT_ID, balanceWei: 100n * E18, newestCreditedDepositId: "dep_1", alertPercent: 20 });
+    let row = nextWatchRow(null, { accountId: ACCOUNT_ID, balanceWei: 100n * E18, newestCredited: credited(1), alertPercent: 20 });
     expect(row.referenceWei).toBe(100n * E18);
-    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 150n * E18, newestCreditedDepositId: "dep_1", alertPercent: 20 });
+    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 150n * E18, newestCredited: credited(1), alertPercent: 20 });
     expect(row.referenceWei).toBe(150n * E18);
-    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 40n * E18, newestCreditedDepositId: "dep_1", alertPercent: 20 });
+    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 40n * E18, newestCredited: credited(1), alertPercent: 20 });
     expect(row.referenceWei).toBe(150n * E18);
-    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 60n * E18, newestCreditedDepositId: "dep_2", alertPercent: 20 });
+    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 60n * E18, newestCredited: credited(2), alertPercent: 20 });
     expect(row.referenceWei).toBe(60n * E18);
     expect(thresholdOf(150n * E18, 20)).toBe(30n * E18);
+  });
+
+  it("the credited marker never moves to an older credit: an older one neither resets the reference nor replaces the marker", () => {
+    let row = nextWatchRow(null, { accountId: ACCOUNT_ID, balanceWei: 100n * E18, newestCredited: credited(2), alertPercent: 20 });
+    expect(row).toMatchObject({ lastCreditedDepositId: "dep_2", lastCreditedFinalizedAt: credited(2).finalizedAt });
+    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 30n * E18, newestCredited: credited(1), alertPercent: 20 });
+    expect(row).toMatchObject({ lastCreditedDepositId: "dep_2", referenceWei: 100n * E18, lastBalanceWei: 30n * E18 });
+    // Same time, the id breaks the tie (stable, never both ways).
+    const twin = { id: "dep_2b", finalizedAt: credited(2).finalizedAt };
+    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 50n * E18, newestCredited: twin, alertPercent: 20 });
+    expect(row).toMatchObject({ lastCreditedDepositId: "dep_2b", referenceWei: 50n * E18 });
+    row = nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 10n * E18, newestCredited: credited(2), alertPercent: 20 });
+    expect(row).toMatchObject({ lastCreditedDepositId: "dep_2b", referenceWei: 50n * E18 });
+  });
+
+  it("a marker stored without its time (before migration 180) is replaced once by a different credit, then ordered", () => {
+    const legacy = { accountId: ACCOUNT_ID, referenceWei: 100n * E18, lastBalanceWei: 100n * E18, belowAlert: false, lastCreditedDepositId: "dep_9", lastCreditedFinalizedAt: null };
+    const row = nextWatchRow(legacy, { accountId: ACCOUNT_ID, balanceWei: 40n * E18, newestCredited: credited(3), alertPercent: 20 });
+    expect(row).toMatchObject({ lastCreditedDepositId: "dep_3", lastCreditedFinalizedAt: credited(3).finalizedAt, referenceWei: 40n * E18 });
+    expect(nextWatchRow(row, { accountId: ACCOUNT_ID, balanceWei: 20n * E18, newestCredited: credited(1), alertPercent: 20 })).toMatchObject({ lastCreditedDepositId: "dep_3", referenceWei: 40n * E18 });
+  });
+
+  it("the newest credited deposit on a page is chosen by finalized_at then id, never by page position", () => {
+    const at = (n: number) => credited(n).finalizedAt.toISOString();
+    expect(newestCreditedDeposit([
+      // Observed later, so first on the page, but credited earlier.
+      { id: "dep_7", status: "credited", finalized_at: at(1) },
+      { id: "dep_5", status: "credited", finalized_at: at(4) },
+      { id: "dep_6", status: "provisional", finalized_at: null },
+      // Credited without a time cannot be ordered: never a candidate.
+      { id: "dep_8", status: "credited", finalized_at: null },
+    ])).toEqual({ id: "dep_5", finalizedAt: credited(4).finalizedAt });
+    expect(newestCreditedDeposit([{ id: "dep_1", status: "pending", finalized_at: null }])).toBeNull();
   });
 
   it("emits ONE notice per crossing: not on the way down a second time, again only after recovering", async () => {
     const store = new MemoryFundingStore();
     const crossings: BalanceObservation[] = [];
     const deps = { store, generations: createObservationGenerations(), emitCrossing: (o: BalanceObservation) => crossings.push(o) };
-    const observe = (vex: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCreditedDepositId: "dep_1", generation: deps.generations.next() });
+    const observe = (vex: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCredited: credited(1), generation: deps.generations.next() });
     await observe(100n);
     expect((await observe(19n)).crossed).toBe(true);
     expect((await observe(10n)).crossed).toBe(false);
@@ -173,7 +211,7 @@ describe("low-balance watch", () => {
   it("exactly at the threshold is not below it", async () => {
     const store = new MemoryFundingStore();
     const deps = { store, generations: createObservationGenerations(), emitCrossing: () => undefined };
-    const at = (wei: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: wei, newestCreditedDepositId: null, generation: deps.generations.next() });
+    const at = (wei: bigint) => observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: wei, newestCredited: null, generation: deps.generations.next() });
     await at(100n * E18);
     expect((await at(20n * E18)).belowAlert).toBe(false);
     expect((await at(20n * E18 - 1n)).belowAlert).toBe(true);
@@ -184,7 +222,7 @@ describe("low-balance watch", () => {
     const crossings: BalanceObservation[] = [];
     const deps = { store, generations: createObservationGenerations(), emitCrossing: (o: BalanceObservation) => crossings.push(o) };
     const observe = (vex: bigint, generation: number) =>
-      observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCreditedDepositId: "dep_1", generation });
+      observeBalance(deps, { accountId: ACCOUNT_ID, balanceWei: vex * E18, newestCredited: credited(1), generation });
     await observe(1_000n, deps.generations.next());
     // The poller's read STARTS (generation taken) while the balance is 200 VEX, then stalls.
     const stalledGeneration = deps.generations.next();

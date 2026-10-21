@@ -28,7 +28,7 @@ const { __resetAgentDepositsForTests, confirmAgentDeposit, peekAgentDeposit, pre
 const { __resetExecutorForTests, markRecoveryComplete } = await import("../auto-top-up/executor.js");
 const { createAutoTopUpPoller, FEE_RETRY_AFTER_MS, feeSuspended } = await import("../auto-top-up/poller.js");
 const { createObservationGenerations } = await import("../balance-watch.js");
-const { __resetRuleAuthorityForTests } = await import("../auto-top-up/rule-authority.js");
+const { __resetRuleAuthorityForTests, ruleMutationPending } = await import("../auto-top-up/rule-authority.js");
 const { __resetRuleProposalsForTests, prepareAutoTopUp, ruleView, submitAutoTopUp } = await import("../auto-top-up/rule-proposals.js");
 const { accountWith, ACCOUNT_ID, depositWorld, E18, MemoryFundingStore, NOW, WALLET } = await import("./support/funding-fakes.js");
 import type { AgentDepositRuntimeAuthority } from "@vex-agent/tools/internal/vex-inference/host.js";
@@ -100,6 +100,20 @@ async function userChanges(h: Harness, action: "pause" | "revoke" | "edit"): Pro
   if (!applied.ok) throw new Error(`change not applied: ${applied.refusal.kind}`);
 }
 
+/** Hold every rule status write (pause, resume, revoke) until released: the mutation stays PENDING. */
+function holdStatusWrites(h: Harness): { readonly release: () => void } {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = h.store.setRuleStatus.bind(h.store);
+  h.store.setRuleStatus = async (input) => {
+    await gate;
+    return original(input);
+  };
+  return { release: () => release() };
+}
+
 beforeEach(async () => {
   __resetDepositCoreForTests();
   __resetAgentDepositsForTests();
@@ -142,7 +156,7 @@ describe("a rule withdrawn between the gate and the signature (R2)", () => {
     const h = setup();
     h.store.seedRule();
     h.world.account = accountWith({ availableWei: 1_000n * E18 });
-    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null });
+    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null, lastCreditedFinalizedAt: null });
     h.world.port.beforeFinalCheck = () => userChanges(h, "revoke");
     expect(await h.poller.tickNow()).toBe("refused");
     expect(h.world.port.signed).toBe(0);
@@ -160,13 +174,84 @@ describe("a rule withdrawn between the gate and the signature (R2)", () => {
   });
 });
 
+describe("a rule mutation that is still pending (its durable write not settled)", () => {
+  it("an admission while a pause is pending is refused before anything is recorded or signed", async () => {
+    const h = setup();
+    const r = h.store.seedRule();
+    const intent = await prepared(h, "5000");
+    const hold = holdStatusWrites(h);
+    const pausing = userChanges(h, "pause");
+    await vi.waitFor(() => expect(ruleMutationPending(r.ruleId)).toBe(true));
+    // The stored row still reads active: only the pending mark can refuse here.
+    expect(h.store.rules.get(r.ruleId)?.status).toBe("active");
+
+    const outcome = await confirm(h, intent.intentId, { kind: "none" });
+    expect(outcome).toMatchObject({ ok: false, refusal: { kind: "rule_changed" } });
+    expect(outcome.ok ? "" : outcome.refusal.detail).toMatch(/being edited, paused or revoked right now/);
+    expect(h.world.port.signed).toBe(0);
+    expect(h.world.keyLoads).toBe(0);
+    expect(h.store.executions).toHaveLength(0);
+
+    hold.release();
+    await pausing;
+    expect(h.store.rules.get(r.ruleId)?.status).toBe("paused");
+    expect(ruleMutationPending(r.ruleId)).toBe(false);
+  });
+
+  it("a final check while a revoke is pending is refused: nothing signed, recorded refused, not counted", async () => {
+    const h = setup();
+    const r = h.store.seedRule();
+    const intent = await prepared(h, "5000");
+    const hold = holdStatusWrites(h);
+    let revoking: Promise<void> | null = null;
+    h.world.port.beforeFinalCheck = async () => {
+      revoking = userChanges(h, "revoke");
+      await vi.waitFor(() => expect(ruleMutationPending(r.ruleId)).toBe(true));
+    };
+    const outcome = await confirm(h, intent.intentId, { kind: "none" });
+    expect(outcome).toMatchObject({ ok: false, refusal: { kind: "rule_changed" } });
+    expect(h.world.port.signed).toBe(0);
+    expect(h.store.executions).toEqual([expect.objectContaining({ status: "refused", refusalKind: "rule_changed", txHash: null })]);
+    expect(await h.store.readRuleUsage(r.ruleId, NOW)).toEqual({ countLastDay: 0, sumLast30DaysWei: 0n });
+
+    hold.release();
+    await revoking;
+    expect(h.store.rules.get(r.ruleId)?.status).toBe("revoked");
+  });
+
+  it("a pause that begins after the final check passed does not block or undo that top-up, and applies to the next one", async () => {
+    const h = setup();
+    const r = h.store.seedRule({ maxPerDay: 5 });
+    const intent = await prepared(h, "5000");
+    const hold = holdStatusWrites(h);
+    let pausing: Promise<void> | null = null;
+    h.world.port.afterSign = () => {
+      pausing = userChanges(h, "pause");
+    };
+    // The execution finishes while the pause is still pending: neither waits for the other.
+    expect(await confirm(h, intent.intentId, { kind: "none" })).toMatchObject({ ok: true, value: { kind: "executed", status: "confirmed" } });
+    h.world.port.afterSign = null;
+    await vi.waitFor(() => expect(ruleMutationPending(r.ruleId)).toBe(true));
+
+    // While it is pending, the next top-up is refused before admission.
+    expect(await confirm(h, (await prepared(h, "5000")).intentId, { kind: "none" })).toMatchObject({ ok: false, refusal: { kind: "rule_changed" } });
+
+    hold.release();
+    await pausing;
+    expect(h.store.rules.get(r.ruleId)?.status).toBe("paused");
+    // Once it committed, the next top-up is no longer covered by the rule: the card is raised.
+    expect(await confirm(h, (await prepared(h, "5000")).intentId, { kind: "none" })).toMatchObject({ ok: true, value: { kind: "needs_user_approval" } });
+    expect(h.world.port.signed).toBe(1);
+  });
+});
+
 describe("the network fee ceiling (R3)", () => {
   it("the poller refuses a plan above the ceiling, the rule reads suspended, and it does not retry every tick", async () => {
     const h = setup();
     // The scripted plan's fee bound is 180,000 gas at 0.04 gwei = 7.2e12 wei; the ceiling is lower.
     const r = h.store.seedRule({ maxNetworkFeeWei: 5n * 10n ** 12n });
     h.world.account = accountWith({ availableWei: 1_000n * E18 });
-    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null });
+    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null, lastCreditedFinalizedAt: null });
 
     expect(await h.poller.tickNow()).toBe("refused");
     expect(h.world.port.signed).toBe(0);
@@ -217,7 +302,7 @@ describe("the network fee ceiling (R3)", () => {
     const h = setup();
     h.store.seedRule({ maxNetworkFeeWei: null });
     h.world.account = accountWith({ availableWei: 1_000n * E18 });
-    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null });
+    h.store.watch.set(ACCOUNT_ID, { accountId: ACCOUNT_ID, referenceWei: 100_000n * E18, lastBalanceWei: 100_000n * E18, belowAlert: false, lastCreditedDepositId: null, lastCreditedFinalizedAt: null });
     expect(await h.poller.tickNow()).toBe("suspended");
     expect(await confirm(h, (await prepared(h)).intentId, { kind: "none" })).toMatchObject({ ok: true, value: { kind: "needs_user_approval" } });
     expect(h.world.port.signed).toBe(0);

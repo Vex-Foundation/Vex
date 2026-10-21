@@ -5,8 +5,18 @@
  * - The balance is available plus provisional (what can pay for inference).
  * - The REFERENCE is the balance high-water mark since the last credited
  *   deposit: every observation raises it to the balance when higher, and a
- *   newly credited deposit (a deposit id not seen before) resets it to the
- *   balance after that deposit.
+ *   NEWER credited deposit than the stored marker resets it to the balance
+ *   after that deposit.
+ * - THE CREDITED MARKER IS MONOTONIC. The marker is the newest credited
+ *   deposit by the ordering the deposits API gives: `finalized_at` (the time
+ *   the backend credited it), then `id` as a stable tie-break. It never moves
+ *   to a deposit ordered before the stored one, so an old page can neither
+ *   move it back nor reset the reference. Page position is not used: a deposit
+ *   observed earlier can be credited later than one observed after it. A
+ *   credited row without `finalized_at` cannot be ordered and is not a
+ *   candidate. A marker stored before its `finalized_at` was kept (migration
+ *   180) has no order: any different credited deposit replaces it once, as
+ *   before, and the order holds from then on.
  * - The THRESHOLD is `reference * percent / 100`, rounded down to whole wei.
  *   The balance is below the alert when it is strictly under the threshold.
  * - The CROSSING LATCH is durable (`vex_inference_balance_watch.below_alert`):
@@ -14,16 +24,17 @@
  *   the row's lock, so concurrent observers (the poller and an account read)
  *   cannot emit twice, and a restart does not re-emit a dip already told.
  *
- * - OBSERVATIONS ARE ORDERED. Each observation takes a monotonic generation
- *   ({@link ObservationGenerations}) BEFORE its balance read starts, and the
- *   write is admitted only when no newer generation was already applied for
- *   the account. A slow read that lands after a newer one is discarded: it
- *   can neither clear the latch (and re-arm a second notice for the same
- *   dip) nor move the reference backwards.
+ * - OBSERVATIONS ARE ORDERED AS A WHOLE. An observation is a deposits page
+ *   plus a balance read. It takes a monotonic generation
+ *   ({@link ObservationGenerations}) BEFORE its deposits read starts, so both
+ *   reads belong to that generation, and the write is admitted only when no
+ *   newer generation was already applied for the account. A slow observation
+ *   (its deposits page or its balance) that lands after a newer one is
+ *   discarded whole: it can neither clear the latch (and re-arm a second
+ *   notice for the same dip), nor move the marker or the reference backwards.
  * - A CREDIT RESETS THE REFERENCE ONLY WITH A LATER BALANCE. Callers read the
- *   deposits page BEFORE the generation and the balance read, so a credited
- *   deposit seen in that page is already included in the balance the reset
- *   uses.
+ *   deposits page BEFORE the balance, so a credited deposit seen in that page
+ *   is already included in the balance the reset uses.
  *
  * Observed from the poller's account reads and the agent's status read;
  * never from model input.
@@ -45,8 +56,8 @@ export interface BalanceObservation {
 }
 
 /**
- * The per-process observation order. `next()` is called before a balance read
- * starts; `admit` runs inside the watch row's lock and accepts a generation
+ * The per-process observation order. `next()` is called before the
+ * observation's deposits read starts; `admit` runs inside the watch row's lock and accepts a generation
  * only if it is newer than every one already applied for that account.
  * In memory on purpose: a read from a previous process cannot land in this
  * one, so the order only has to hold within a process. Bounded by the number
@@ -82,15 +93,29 @@ export function thresholdOf(referenceWei: bigint, alertPercent: number): bigint 
   return (referenceWei * BigInt(alertPercent)) / 100n;
 }
 
+/** A credited deposit as the marker orders it: `finalized_at`, then `id`. */
+export interface CreditedMarker {
+  readonly id: string;
+  readonly finalizedAt: Date;
+}
+
+/** Whether `candidate` is ordered strictly after the stored marker (`null` id: none stored; `null` time: stored without an order). */
+function creditedAfter(candidate: CreditedMarker, storedId: string | null, storedAt: Date | null): boolean {
+  if (storedId === null) return true;
+  if (candidate.id === storedId) return false;
+  if (storedAt === null) return true;
+  const delta = candidate.finalizedAt.getTime() - storedAt.getTime();
+  return delta > 0 || (delta === 0 && candidate.id > storedId);
+}
+
 /** The pure transition: the stored row and a new observation -> the next row. */
 export function nextWatchRow(
   current: BalanceWatchRow | null,
-  observation: { readonly accountId: string; readonly balanceWei: bigint; readonly newestCreditedDepositId: string | null; readonly alertPercent: number },
+  observation: { readonly accountId: string; readonly balanceWei: bigint; readonly newestCredited: CreditedMarker | null; readonly alertPercent: number },
 ): BalanceWatchRow {
-  const newDeposit =
-    current !== null
-    && observation.newestCreditedDepositId !== null
-    && observation.newestCreditedDepositId !== current.lastCreditedDepositId;
+  const candidate = observation.newestCredited;
+  const advances = candidate !== null && creditedAfter(candidate, current?.lastCreditedDepositId ?? null, current?.lastCreditedFinalizedAt ?? null);
+  const newDeposit = current !== null && advances;
   const referenceWei =
     current === null || newDeposit
       ? observation.balanceWei
@@ -101,7 +126,8 @@ export function nextWatchRow(
     referenceWei,
     lastBalanceWei: observation.balanceWei,
     belowAlert,
-    lastCreditedDepositId: observation.newestCreditedDepositId ?? current?.lastCreditedDepositId ?? null,
+    lastCreditedDepositId: advances ? candidate.id : current?.lastCreditedDepositId ?? null,
+    lastCreditedFinalizedAt: advances ? candidate.finalizedAt : current?.lastCreditedFinalizedAt ?? null,
   };
 }
 
@@ -115,14 +141,14 @@ export interface BalanceWatchDeps {
 /**
  * Record one observation and emit the notice when it is the crossing.
  * `generation` is the value {@link ObservationGenerations.next} returned
- * before the balance read started.
+ * before the observation's deposits read started.
  */
 export async function observeBalance(
   deps: BalanceWatchDeps,
   input: {
     readonly accountId: string;
     readonly balanceWei: bigint;
-    readonly newestCreditedDepositId: string | null;
+    readonly newestCredited: CreditedMarker | null;
     readonly generation: number;
   },
 ): Promise<BalanceObservation> {
@@ -135,7 +161,7 @@ export async function observeBalance(
       return current;
     }
     if (current === null) deps.generations.admit(input.accountId, input.generation);
-    return nextWatchRow(current, { accountId: input.accountId, balanceWei: input.balanceWei, newestCreditedDepositId: input.newestCreditedDepositId, alertPercent });
+    return nextWatchRow(current, { accountId: input.accountId, balanceWei: input.balanceWei, newestCredited: input.newestCredited, alertPercent });
   });
   const crossed = !stale && after.belowAlert && !(before?.belowAlert ?? false);
   const observation: BalanceObservation = {
@@ -151,7 +177,15 @@ export async function observeBalance(
   return observation;
 }
 
-/** The newest CREDITED deposit id on a deposits page (newest first), or `null`. */
-export function newestCreditedDepositId(items: readonly { readonly id: string; readonly status: string }[]): string | null {
-  return items.find((item) => item.status === "credited")?.id ?? null;
+/** The newest CREDITED deposit on a deposits page by `finalized_at` then `id` (never by page position), or `null`. */
+export function newestCreditedDeposit(
+  items: readonly { readonly id: string; readonly status: string; readonly finalized_at: string | null }[],
+): CreditedMarker | null {
+  let newest: CreditedMarker | null = null;
+  for (const item of items) {
+    if (item.status !== "credited" || item.finalized_at === null) continue;
+    const marker = { id: item.id, finalizedAt: new Date(item.finalized_at) };
+    if (newest === null || creditedAfter(marker, newest.id, newest.finalizedAt)) newest = marker;
+  }
+  return newest;
 }

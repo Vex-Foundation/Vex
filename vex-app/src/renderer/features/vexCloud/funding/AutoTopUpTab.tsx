@@ -11,6 +11,12 @@
  *
  * State is a fill plus a word: "Active", "Suspended: Vex is locked",
  * "Revoked", "Expired"; the alert reads "Below alert" or "Above alert".
+ *
+ * WHEN THE ACCOUNT CANNOT BE READ (`account` is `null`, a backend outage):
+ * the tab still shows the stored rule main returns, with Pause and Revoke
+ * working (main prepares and applies them from the stored rule alone). The
+ * changes that enable spending, create, edit and resume, need the account,
+ * so they are disabled and the reason is said in words.
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
@@ -391,7 +397,18 @@ type Step =
   | { readonly kind: "review"; readonly proposal: VexCloudAutoTopUpProposal }
   | { readonly kind: "saving"; readonly proposal: VexCloudAutoTopUpProposal };
 
-export function AutoTopUpTab({ account, depositsOpen }: { readonly account: VexCloudAccount; readonly depositsOpen: boolean }): JSX.Element {
+/** Why create, edit and resume are unavailable while the account cannot be read. */
+export const SPENDING_CHANGES_NEED_ACCOUNT =
+  "Vex Inference could not be read, so a rule cannot be created, edited or resumed right now. Pause and Revoke still work.";
+
+export function AutoTopUpTab({
+  account,
+  depositsOpen,
+}: {
+  /** `null` when the account read failed: only Pause and Revoke are offered. */
+  readonly account: VexCloudAccount | null;
+  readonly depositsOpen: boolean;
+}): JSX.Element {
   const ruleQuery = useVexCloudAutoTopUp(true);
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>({ kind: "idle" });
@@ -402,6 +419,7 @@ export function AutoTopUpTab({ account, depositsOpen }: { readonly account: VexC
   }, []);
 
   const rule = ruleQuery.data?.ok === true ? ruleQuery.data.data.rule : null;
+  const spendingBlocked = account === null ? SPENDING_CHANGES_NEED_ACCOUNT : null;
 
   const prepare = (input: VexCloudPrepareAutoTopUpInput): void => {
     const mine = ++generation.current;
@@ -460,8 +478,10 @@ export function AutoTopUpTab({ account, depositsOpen }: { readonly account: VexC
         action={{ label: "Try again", onClick: () => void ruleQuery.refetch() }}
       />
     );
-  } else if (rule === null || step.kind === "editing") {
-    body = !depositsOpen ? (
+  } else if (rule === null || (account !== null && step.kind === "editing")) {
+    body = account === null ? (
+      <EmptyBlock scope="Auto top-up" title="No auto top-up rule can be set up right now." detail={SPENDING_CHANGES_NEED_ACCOUNT} />
+    ) : !depositsOpen ? (
       <EmptyBlock scope="Auto top-up" title="Deposits are not open." detail="An auto top-up rule needs open deposits. Nothing can be set up yet." />
     ) : (
       <RuleForm
@@ -511,14 +531,17 @@ export function AutoTopUpTab({ account, depositsOpen }: { readonly account: VexC
           </ul>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="ink" onClick={() => setStep({ kind: "editing" })} disabled={step.kind === "preparing"}>Edit</Button>
+          <Button type="button" variant="ink" onClick={() => setStep({ kind: "editing" })} disabled={step.kind === "preparing" || spendingBlocked !== null}>Edit</Button>
           {rule.suspendedReason === "user_paused" ? (
-            <Button type="button" variant="ink" onClick={() => prepare({ action: "resume", ...ref })} disabled={step.kind === "preparing"}>Resume</Button>
+            <Button type="button" variant="ink" onClick={() => prepare({ action: "resume", ...ref })} disabled={step.kind === "preparing" || spendingBlocked !== null}>Resume</Button>
           ) : (
             <Button type="button" variant="ink" onClick={() => prepare({ action: "pause", ...ref })} disabled={step.kind === "preparing"}>Pause</Button>
           )}
           <Button type="button" variant="ink" onClick={() => prepare({ action: "revoke", ...ref })} disabled={step.kind === "preparing"}>Revoke</Button>
         </div>
+        {spendingBlocked === null ? null : (
+          <p className="m-0 text-[13px] text-ink-secondary" data-testid="rule-spending-blocked">{spendingBlocked}</p>
+        )}
       </section>
     );
   }

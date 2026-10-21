@@ -53,6 +53,8 @@ export interface BalanceWatchRow {
   readonly lastBalanceWei: bigint;
   readonly belowAlert: boolean;
   readonly lastCreditedDepositId: string | null;
+  /** The marker's `finalized_at` (migration 180), its order; `null` when none is stored or it predates 180. */
+  readonly lastCreditedFinalizedAt: Date | null;
 }
 
 interface BalanceWatchDbRow {
@@ -61,6 +63,7 @@ interface BalanceWatchDbRow {
   readonly last_balance_wei: string;
   readonly below_alert: boolean;
   readonly last_credited_deposit_id: string | null;
+  readonly last_credited_finalized_at: Date | null;
 }
 
 function mapWatch(row: BalanceWatchDbRow): BalanceWatchRow {
@@ -70,13 +73,14 @@ function mapWatch(row: BalanceWatchDbRow): BalanceWatchRow {
     lastBalanceWei: BigInt(row.last_balance_wei),
     belowAlert: row.below_alert,
     lastCreditedDepositId: row.last_credited_deposit_id,
+    lastCreditedFinalizedAt: row.last_credited_finalized_at,
   };
 }
 
 export async function readBalanceWatch(accountId: string, db: Executor = getPool()): Promise<BalanceWatchRow | null> {
   const row = await queryOneWith<BalanceWatchDbRow>(
     db,
-    `SELECT account_id, reference_wei::text, last_balance_wei::text, below_alert, last_credited_deposit_id
+    `SELECT account_id, reference_wei::text, last_balance_wei::text, below_alert, last_credited_deposit_id, last_credited_finalized_at
        FROM vex_inference_balance_watch WHERE account_id = $1`,
     [accountId],
   );
@@ -97,7 +101,7 @@ export async function updateBalanceWatch(
     await client.query("SELECT pg_advisory_xact_lock(hashtext('vex_inference_balance_watch:' || $1))", [accountId]);
     const found = await queryOneWith<BalanceWatchDbRow>(
       client,
-      `SELECT account_id, reference_wei::text, last_balance_wei::text, below_alert, last_credited_deposit_id
+      `SELECT account_id, reference_wei::text, last_balance_wei::text, below_alert, last_credited_deposit_id, last_credited_finalized_at
          FROM vex_inference_balance_watch WHERE account_id = $1 FOR UPDATE`,
       [accountId],
     );
@@ -105,15 +109,16 @@ export async function updateBalanceWatch(
     const after = decide(before);
     await client.query(
       `INSERT INTO vex_inference_balance_watch
-         (account_id, reference_wei, last_balance_wei, below_alert, last_credited_deposit_id)
-       VALUES ($1, $2, $3, $4, $5)
+         (account_id, reference_wei, last_balance_wei, below_alert, last_credited_deposit_id, last_credited_finalized_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (account_id) DO UPDATE SET
          reference_wei = EXCLUDED.reference_wei,
          last_balance_wei = EXCLUDED.last_balance_wei,
          below_alert = EXCLUDED.below_alert,
          last_credited_deposit_id = EXCLUDED.last_credited_deposit_id,
+         last_credited_finalized_at = EXCLUDED.last_credited_finalized_at,
          updated_at = now()`,
-      [accountId, after.referenceWei.toString(), after.lastBalanceWei.toString(), after.belowAlert, after.lastCreditedDepositId],
+      [accountId, after.referenceWei.toString(), after.lastBalanceWei.toString(), after.belowAlert, after.lastCreditedDepositId, after.lastCreditedFinalizedAt],
     );
     return { before, after };
   });

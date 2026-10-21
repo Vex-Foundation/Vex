@@ -10,6 +10,9 @@
  * as the first focus and a second press needed to create; Reject changes
  * nothing; pause and revoke prepare and submit with no rate or minimum
  * (the backend unreachable), the card saying "Not available" for them.
+ * With the account unreadable (`account` null): Pause and Revoke still
+ * prepare and submit; Edit, Resume and create are disabled or not offered,
+ * with the reason in words.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -17,7 +20,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VexCloudAccount } from "@shared/schemas/vex-cloud.js";
 import type { VexCloudAutoTopUpProposal, VexCloudAutoTopUpRule } from "@shared/schemas/vex-cloud-auto-top-up.js";
-import { AutoTopUpTab } from "../AutoTopUpTab.js";
+import { AutoTopUpTab, SPENDING_CHANGES_NEED_ACCOUNT } from "../AutoTopUpTab.js";
 
 const W1 = "0x1111111111111111111111111111111111111111";
 const DEPOSIT = "0x00000000000000000000000000000000000D3905";
@@ -104,11 +107,11 @@ function ruleIs(value: VexCloudAutoTopUpRule | null): void {
   bridge.autoTopUpGet.mockReturnValue({ promise: Promise.resolve({ ok: true, data: { rule: value } }), cancel: vi.fn() });
 }
 
-function renderTab(options: { readonly depositsOpen?: boolean } = {}) {
+function renderTab(options: { readonly depositsOpen?: boolean; readonly accountUnavailable?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
     <QueryClientProvider client={client}>
-      <AutoTopUpTab account={account()} depositsOpen={options.depositsOpen ?? true} />
+      <AutoTopUpTab account={options.accountUnavailable === true ? null : account()} depositsOpen={options.depositsOpen ?? true} />
     </QueryClientProvider>,
   );
 }
@@ -240,5 +243,48 @@ describe("pause and revoke without the backend (no rate, no minimum)", () => {
     fireEvent.click(within(card).getByRole("button", { name: approve }));
     await waitFor(() => expect(bridge.submitAutoTopUp).toHaveBeenCalledWith({ proposalId: proposal(action).proposalId, action, bounds: proposal(action).bounds }));
     expect(await screen.findByTestId("auto-top-up-message")).toBeTruthy();
+  });
+});
+
+describe("the account cannot be read (a backend outage)", () => {
+  it.each([
+    ["pause", "Pause", "Approve pause", rule({ state: "suspended", suspendedReason: "balance_read_failing" }), rule({ state: "suspended", suspendedReason: "user_paused", version: 2 })],
+    ["revoke", "Revoke", "Approve revoke", rule({ state: "suspended", suspendedReason: "user_paused" }), rule({ state: "revoked", version: 2 })],
+  ] as const)("%s stays reachable and works from the stored rule", async (action, button, approve, before, after) => {
+    ruleIs(before);
+    bridge.prepareAutoTopUp.mockReturnValue({
+      promise: Promise.resolve({ ok: true, data: proposal(action, { minimumWei: null, minimumMicroUsd: null, amountUsdMicroEstimate: null, monthlyCapUsdMicroEstimate: null }) }),
+      cancel: vi.fn(),
+    });
+    bridge.submitAutoTopUp.mockResolvedValue({ ok: true, data: { rule: after } });
+    renderTab({ accountUnavailable: true });
+    const summary = await screen.findByTestId("rule-summary");
+    expect(within(summary).getByTestId("rule-spending-blocked").textContent).toBe(SPENDING_CHANGES_NEED_ACCOUNT);
+    fireEvent.click(within(summary).getByRole("button", { name: button }));
+    expect(bridge.prepareAutoTopUp).toHaveBeenCalledWith({ action, ruleId: RULE_ID, expectedVersion: 1 });
+    fireEvent.click(within(await screen.findByTestId("rule-approval")).getByRole("button", { name: approve }));
+    await waitFor(() => expect(bridge.submitAutoTopUp).toHaveBeenCalledWith({ proposalId: proposal(action).proposalId, action, bounds: proposal(action).bounds }));
+    expect(await screen.findByText(/^Done\. The rule is/)).toBeTruthy();
+  });
+
+  it("edit and resume are disabled with the reason, and pressing them prepares nothing", async () => {
+    ruleIs(rule({ state: "suspended", suspendedReason: "user_paused" }));
+    renderTab({ accountUnavailable: true });
+    const summary = await screen.findByTestId("rule-summary");
+    for (const name of ["Edit", "Resume"]) {
+      const control = within(summary).getByRole("button", { name });
+      expect(control.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(control);
+    }
+    expect(within(summary).getByText(SPENDING_CHANGES_NEED_ACCOUNT)).toBeTruthy();
+    expect(screen.queryByTestId("rule-form")).toBeNull();
+    expect(bridge.prepareAutoTopUp).not.toHaveBeenCalled();
+  });
+
+  it("with no stored rule, create is not offered and the reason is said", async () => {
+    renderTab({ accountUnavailable: true });
+    expect(await screen.findByText("No auto top-up rule can be set up right now.")).toBeTruthy();
+    expect(screen.getByText(SPENDING_CHANGES_NEED_ACCOUNT)).toBeTruthy();
+    expect(screen.queryByTestId("rule-form")).toBeNull();
   });
 });

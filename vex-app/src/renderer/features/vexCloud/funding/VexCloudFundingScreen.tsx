@@ -7,7 +7,9 @@
  *
  * The page reads the account the Settings panel reads (one query, one
  * source). Signed out, it says so and points at Settings; it never signs in
- * by itself. Each tab is a deterministic form the user drives. The agent has
+ * by itself. When the account cannot be read (a backend outage), the page
+ * says so and still offers the Auto top-up section without the account:
+ * stopping spending (Pause, Revoke) never waits on the backend. Each tab is a deterministic form the user drives. The agent has
  * its own deposit tool with its own approval; an auto top-up rule is created
  * only here.
  */
@@ -61,13 +63,19 @@ export function VexCloudFundingPage(): JSX.Element {
   if (accountQuery.isLoading) return <EmptyBlock scope="Vex Inference" title="Checking Vex Inference" loading />;
   if (result === undefined || !result.ok) {
     return (
-      <EmptyBlock
-        scope="Vex Inference"
-        state="error"
-        title="Vex Inference could not be read."
-        detail={result?.ok === false ? result.error.message : "Try again in a moment."}
-        action={{ label: "Try again", onClick: () => void accountQuery.refetch() }}
-      />
+      <div className="flex flex-col gap-5" data-testid="funding-page-unavailable">
+        <EmptyBlock
+          scope="Vex Inference"
+          state="error"
+          title="Vex Inference could not be read."
+          detail={result?.ok === false ? result.error.message : "Try again in a moment."}
+          action={{ label: "Try again", onClick: () => void accountQuery.refetch() }}
+        />
+        <section className="flex flex-col gap-3" aria-label="Auto top-up">
+          <h3 className="m-0 text-[15px] font-medium text-ink-primary">Auto top-up</h3>
+          <AutoTopUpTab account={null} depositsOpen={false} />
+        </section>
+      </div>
     );
   }
   const view = result.data;

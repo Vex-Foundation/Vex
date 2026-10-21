@@ -16,7 +16,7 @@
 import type { HostOutcome, VexInferenceStatusReport, VexInferenceStatusRequest } from "@vex-agent/tools/internal/vex-inference/host.js";
 import { parseRateX18 } from "@shared/vex-cloud-money.js";
 import type { VexCloudApi } from "./api-client.js";
-import { accountBalanceWei, newestCreditedDepositId, observeBalance, type BalanceWatchDeps } from "./balance-watch.js";
+import { accountBalanceWei, newestCreditedDeposit, observeBalance, type BalanceWatchDeps } from "./balance-watch.js";
 import { backendRefusal, requireBearer, type SessionPort } from "./funding/backend-call.js";
 import type { FundingPolicyStore } from "./auto-top-up/funding-store.js";
 import { effectiveRuleState, type ObservedRuleConditions, type RuleConditions } from "./auto-top-up/rule-policy.js";
@@ -44,10 +44,12 @@ export async function readVexInferenceStatus(
 ): Promise<HostOutcome<VexInferenceStatusReport>> {
   const bearer = await requireBearer(deps);
   if (!bearer.ok) return toHost(bearer);
+  // The generation BEFORE both reads, so the deposits page and the balance
+  // belong to one ordered observation (a slower one is discarded whole).
   // Deposits BEFORE the balance read: a credit this page shows is inside the
   // balance the alert reference resets to; a failed read keeps the stored one.
-  const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
   const generation = deps.watch.generations.next();
+  const deposits = await deps.api.listDeposits(bearer.value, { cursor: null, limit: 20 }, signal);
   const read = await deps.api.readAccount(bearer.value, signal);
   if (!read.ok) {
     const refusal = await backendRefusal<never>(deps, read.failure);
@@ -65,7 +67,7 @@ export async function readVexInferenceStatus(
   const observation = await observeBalance(deps.watch, {
     accountId: account.account_id,
     balanceWei: accountBalanceWei(account),
-    newestCreditedDepositId: deposits.ok ? newestCreditedDepositId(deposits.value.items) : null,
+    newestCredited: deposits.ok ? newestCreditedDeposit(deposits.value.items) : null,
     generation,
   });
 
