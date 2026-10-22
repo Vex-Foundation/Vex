@@ -459,6 +459,20 @@ describe("the withdrawal check never produces an all-clear it did not verify", (
     });
   });
 
+  it("a locked vault is a known state like signed out: one approval reads ready with count 1, no unknown copy", () => {
+    expect(needsYouModelOf({ ...approvalsEmpty, approvals: ok([approval()]), withdrawals: { state: "locked" } })).toMatchObject({
+      status: "ready",
+      unknownCopy: null,
+      count: 1,
+    });
+    expect(needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "locked" } })).toEqual({
+      status: "ready",
+      unknownCopy: null,
+      count: 0,
+      items: [],
+    });
+  });
+
   it("a withdrawal check still loading keeps the empty inbox from reading as clear", () => {
     const model = needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "loading" } });
     expect(model.status).toBe("loading");
@@ -488,6 +502,15 @@ describe("needsYouWithdrawalReadOf", () => {
   it("a refetch that threw over a cached signed out is failed, never signed out", () => {
     expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "signed_out" } }, true, [])).toEqual({ state: "failed", lastKnown: [] });
     expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "signed_out" } }, true, [FOREIGN])).toEqual({ state: "failed", lastKnown: [FOREIGN] });
+  });
+
+  it("a locked vault is its own known state and drops the notices held from an earlier read", () => {
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "locked" } }, false, [FOREIGN])).toEqual({ state: "locked" });
+  });
+
+  it("a failure while unlocked is still failed, never locked or clear", () => {
+    expect(needsYouWithdrawalReadOf(NOTICES_FAILED, false, [])).toEqual({ state: "failed", lastKnown: [] });
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "locked" } }, true, [])).toEqual({ state: "failed", lastKnown: [] });
   });
 
   it("carries complete through, and signed out is its own state", () => {

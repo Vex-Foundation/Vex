@@ -105,6 +105,7 @@ function mount() {
       now: world.deps.now,
     },
     withdrawalOrigins: memoryWithdrawalOrigins().guard,
+    vaultState: () => "unlocked",
   };
   const runtime = composeVexInferenceRuntime(deps, {
     store,

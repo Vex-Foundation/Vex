@@ -78,6 +78,7 @@ const { __resetCancelStateForTests } = await import("../../vex-cloud/funding/wit
 const { memoryWithdrawalOrigins } = await import("../../vex-cloud/__tests__/support/funding-fakes.js");
 import type { TransferBroadcastRequest, Erc20TransferPort } from "@tools/evm-chains/erc20-transfer-port.js";
 import type { VexCloudDeps } from "../../vex-cloud/production.js";
+import type { VexCloudVaultState } from "../../vex-cloud/funding/withdrawal-origins.js";
 
 const REQUEST_ID = "11111111-2222-4333-8444-555555555555";
 const NOW = new Date("2026-10-21T12:00:00.000Z");
@@ -440,7 +441,9 @@ interface World {
   readonly gateway: FakeGateway;
   readonly chain: FakeChain;
   session: string | null;
+  sessionReads: number;
   vaultUnlocked: boolean;
+  vaultState: VexCloudVaultState;
   executionReady: boolean;
   pinned: string | null;
   keyMismatch: boolean;
@@ -462,7 +465,9 @@ function world(): World {
     chain,
     origins,
     session: BEARER,
+    sessionReads: 0,
     vaultUnlocked: true,
+    vaultState: "unlocked",
     executionReady: true,
     pinned: DEPOSIT,
     keyMismatch: false,
@@ -480,7 +485,10 @@ function world(): World {
         now: () => NOW,
       },
       account: {
-        readSession: async () => ({ ok: true, data: self.session }),
+        readSession: async () => {
+          self.sessionReads += 1;
+          return { ok: true, data: self.session };
+        },
         clearSession: async () => {
           self.session = null;
           return { ok: true, data: undefined };
@@ -506,6 +514,7 @@ function world(): World {
         now: () => NOW,
       },
       withdrawalOrigins: origins.guard,
+      vaultState: () => self.vaultState,
     },
   };
   return self;
@@ -1243,6 +1252,24 @@ describe("withdrawalNotices and dismissWithdrawalNotice", () => {
     w.session = null;
     expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {})).data).toEqual({ state: "signed_out" });
     expect(w.gateway.calls).toBe(0);
+  });
+
+  it("no vault set up means no session can exist: signed out, with no session read and no gateway call", async () => {
+    const w = mount();
+    w.vaultState = "unconfigured";
+    expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {})).data).toEqual({ state: "signed_out" });
+    expect(w.sessionReads).toBe(0);
+    expect(w.gateway.calls).toBe(0);
+  });
+
+  it("a locked vault is a state, not an error: locked, with no session read and no gateway call", async () => {
+    const w = mount();
+    w.gateway.seedWithdrawal({ id: "wd_foreign" });
+    w.vaultState = "locked";
+    expect(expectOk(await call(CH.vexCloud.withdrawalNotices, {})).data).toEqual({ state: "locked" });
+    expect(w.sessionReads).toBe(0);
+    expect(w.gateway.calls).toBe(0);
+    expect(w.origins.emitted).toHaveLength(0);
   });
 
   it("a failed withdrawals read is an error, never an empty list", async () => {

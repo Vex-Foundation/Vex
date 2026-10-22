@@ -203,6 +203,37 @@ describe("NeedsYouControl: the withdrawal check", () => {
     expect(within(panel).getByText("Check a withdrawal you did not start")).toBeTruthy();
   });
 
+  it("a locked vault claims nothing: one approval reads 'Needs you · 1', never '?'", () => {
+    reads.pending = { data: { ok: true, data: [approval()] } };
+    reads.notices = { data: { ok: true, data: { state: "locked" } } };
+    renderControl();
+    expect(control().textContent).toBe("Needs you · 1");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("locking clears a notice shown by an earlier read", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    reads.notices = { data: signedIn([FOREIGN]) };
+    const view = renderControl();
+    expect(control().textContent).toBe("Needs you · 1");
+    reads.notices = { data: { ok: true, data: { state: "locked" } } };
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <NeedsYouControl />
+      </QueryClientProvider>,
+    );
+    expect(view.container.textContent).toBe("");
+    // The held notice is gone too: a failed read after the lock lists nothing it did not see.
+    reads.notices = { data: noticesFailed() };
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <NeedsYouControl />
+      </QueryClientProvider>,
+    );
+    expect(control().textContent).toBe("Needs you · ?");
+    expect(within(openPanel()).queryByText("Check a withdrawal you did not start")).toBeNull();
+  });
+
   it("signed out claims nothing: an empty inbox draws no control", () => {
     reads.pending = { data: { ok: true, data: [] } };
     const { container } = renderControl();

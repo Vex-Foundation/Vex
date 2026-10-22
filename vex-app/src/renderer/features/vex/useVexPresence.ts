@@ -100,7 +100,7 @@ const NO_WITHDRAWAL_NOTICES: readonly VexCloudWithdrawalNotice[] = [];
  * The withdrawal check, from the one notices query. The notices of the last
  * good signed-in read are held here (state derived from a changing input,
  * the same pattern as `useDoneEdge`), so a failed read keeps them listed;
- * signing out clears them.
+ * signing out or a locked vault clears them.
  */
 function useWithdrawalRead(query: WithdrawalNoticesQuery): NeedsYouWithdrawalRead {
   const { data, isError } = query;

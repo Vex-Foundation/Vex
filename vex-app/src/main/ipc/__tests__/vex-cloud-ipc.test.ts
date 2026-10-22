@@ -298,6 +298,7 @@ function world(count: number): World {
         now: () => NOW,
       },
       withdrawalOrigins: memoryWithdrawalOrigins().guard,
+      vaultState: () => "unlocked",
     },
   };
   return self;

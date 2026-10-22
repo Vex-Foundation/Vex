@@ -341,13 +341,16 @@ export function withdrawalNoticeNeedsYouItem(notice: VexCloudWithdrawalNotice, n
 
 /**
  * The withdrawal check as Needs you sees it. Signed out claims nothing about
- * an account and is not an error. A failed read keeps the notices the last
+ * an account and is not an error. Locked (the vault holding the session is
+ * locked) is a known state like signed out: it claims nothing, lists
+ * nothing and is not an error. A failed read keeps the notices the last
  * good read listed (`lastKnown`): one failed read must not drop a shown
  * notice.
  */
 export type NeedsYouWithdrawalRead =
   | { readonly state: "loading" }
   | { readonly state: "signed_out" }
+  | { readonly state: "locked" }
   | { readonly state: "ready"; readonly notices: readonly VexCloudWithdrawalNotice[]; readonly complete: boolean }
   | { readonly state: "failed"; readonly lastKnown: readonly VexCloudWithdrawalNotice[] };
 
@@ -365,9 +368,15 @@ export function needsYouWithdrawalReadOf(
   if (!data.ok) return { state: "failed", lastKnown };
   // A refetch that threw: the cached answer is stale whatever it said (a cached
   // signed out can predate a sign-in). A good read's notices are the last known.
-  if (errored) return { state: "failed", lastKnown: data.data.state === "signed_out" ? lastKnown : data.data.notices };
-  if (data.data.state === "signed_out") return { state: "signed_out" };
-  return { state: "ready", notices: data.data.notices, complete: data.data.complete };
+  if (errored) return { state: "failed", lastKnown: data.data.state === "signed_in" ? data.data.notices : lastKnown };
+  switch (data.data.state) {
+    case "signed_out":
+      return { state: "signed_out" };
+    case "locked":
+      return { state: "locked" };
+    case "signed_in":
+      return { state: "ready", notices: data.data.notices, complete: data.data.complete };
+  }
 }
 
 export interface NeedsYouInput {
@@ -390,6 +399,7 @@ function withdrawalNoticesOf(read: NeedsYouWithdrawalRead): readonly VexCloudWit
       return read.lastKnown;
     case "loading":
     case "signed_out":
+    case "locked":
       return [];
   }
 }

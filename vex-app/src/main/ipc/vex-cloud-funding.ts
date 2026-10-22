@@ -140,7 +140,13 @@ export function registerVexCloudFundingHandlers(deps: VexCloudDeps): ReadonlyArr
     origins: deps.withdrawalOrigins,
   };
   const cancel: CancelDeps = { ...session, api: deps.api, now: deps.account.now };
-  const notices: WithdrawalNoticeDeps = { ...session, api: deps.api, origins: deps.withdrawalOrigins, now: deps.account.now };
+  const notices: WithdrawalNoticeDeps = {
+    ...session,
+    api: deps.api,
+    origins: deps.withdrawalOrigins,
+    now: deps.account.now,
+    vaultState: deps.vaultState,
+  };
   const history: HistoryDeps = { ...session, api: deps.api };
 
   return [

@@ -195,21 +195,33 @@ export function createWithdrawalOriginGuard(deps: WithdrawalOriginGuardDeps): Wi
 
 // ── the notice surface (funding page, Settings, Needs you) ───────────────
 
+/** The secret vault as the notice read needs it; the session lives inside the vault. */
+export type VexCloudVaultState = "unconfigured" | "locked" | "unlocked";
+
 export interface WithdrawalNoticeDeps extends SessionPort {
   readonly api: Pick<VexCloudApi, "readAccount" | "listWithdrawals">;
   readonly origins: WithdrawalOriginGuard;
   readonly now: () => Date;
+  /** Asked BEFORE the session read: a locked or absent vault is a known state, not a failed read. */
+  readonly vaultState: () => VexCloudVaultState;
 }
 
 /**
  * Read the account (the id the record is keyed by, with the same bearer)
  * and scan its withdrawals. Signed out is a state, not an error: there is no
- * account to scan and nothing is claimed about one.
+ * account to scan and nothing is claimed about one. No vault means no
+ * session can exist (signed out); a locked vault cannot be read, so the
+ * answer is `locked`, which claims nothing about withdrawals either way.
+ * Only an unlocked vault is read, and every failure from there on is an
+ * error, never an empty list.
  */
 export async function readWithdrawalNotices(
   deps: WithdrawalNoticeDeps,
   signal: AbortSignal,
 ): Promise<VexCloudOutcome<VexCloudWithdrawalNoticesResult>> {
+  const vault = deps.vaultState();
+  if (vault === "unconfigured") return { ok: true, value: { state: "signed_out" } };
+  if (vault === "locked") return { ok: true, value: { state: "locked" } };
   const stored = await deps.readSession();
   if (stored.ok && stored.data === null) return { ok: true, value: { state: "signed_out" } };
   const bearer = await requireBearer(deps);

@@ -79,7 +79,8 @@ export function WithdrawalNotices(): JSX.Element | null {
       </p>
     );
   }
-  if (result.data.state === "signed_out") return null;
+  // Signed out and a locked vault claim nothing about withdrawals: no notice, no error.
+  if (result.data.state !== "signed_in") return null;
   const { notices, complete } = result.data;
   if (notices.length === 0 && complete) return null;
   return (

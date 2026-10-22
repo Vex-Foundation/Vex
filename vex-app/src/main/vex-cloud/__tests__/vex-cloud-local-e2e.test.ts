@@ -153,6 +153,7 @@ describe.skipIf(!enabled)("Vex Cloud, local end to end", () => {
         now: () => new Date(),
       },
       withdrawalOrigins: (await import("./support/funding-fakes.js")).memoryWithdrawalOrigins().guard,
+      vaultState: () => "unlocked",
     });
   });
 

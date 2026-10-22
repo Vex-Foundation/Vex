@@ -409,6 +409,8 @@ export type VexCloudWithdrawalNotice = z.infer<typeof vexCloudWithdrawalNoticeSc
  */
 export const vexCloudWithdrawalNoticesResultSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("signed_out") }).strict(),
+  /** The vault is set up but locked: the session cannot be read, so nothing is claimed about withdrawals. Not an error. */
+  z.object({ state: z.literal("locked") }).strict(),
   z
     .object({
       state: z.literal("signed_in"),

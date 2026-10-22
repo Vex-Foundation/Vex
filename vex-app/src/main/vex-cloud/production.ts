@@ -14,7 +14,7 @@ import { signVexCloudSiweMessage } from "@tools/wallet/siwe-signing.js";
 import type { Result } from "@shared/ipc/result.js";
 import { loadEvmKey } from "@tools/wallet/inventory.js";
 import { isExecutionGateOpen } from "../lifecycle/execution-gate.js";
-import { isSecretSessionUnlocked } from "../secrets/session.js";
+import { getSecretSessionStatus, isSecretSessionUnlocked } from "../secrets/session.js";
 import {
   createErc20TransferPort,
   pinnedTransferChainClients,
@@ -27,7 +27,11 @@ import { createVexCloudApi, type VexCloudApi } from "./api-client.js";
 import { clearVexCloudSession, readVexCloudSession, storeVexCloudSession } from "./session-store.js";
 import type { SignInDeps } from "./sign-in.js";
 import { emitVexInferenceForeignWithdrawalNotice } from "@vex-agent/inference/inference-notice-bus.js";
-import { createWithdrawalOriginGuard, type WithdrawalOriginGuard } from "./funding/withdrawal-origins.js";
+import {
+  createWithdrawalOriginGuard,
+  type VexCloudVaultState,
+  type WithdrawalOriginGuard,
+} from "./funding/withdrawal-origins.js";
 import { productionWithdrawalOriginStore } from "./funding/withdrawal-origin-store.js";
 
 /** Everything the Vex Cloud handlers reach the world through; injected by tests. */
@@ -44,6 +48,14 @@ export interface VexCloudDeps {
    * scan (the funding IPC and the agent status read share it).
    */
   readonly withdrawalOrigins: WithdrawalOriginGuard;
+  /** Whether the secret vault (which holds the session) exists and is unlocked. */
+  readonly vaultState: () => VexCloudVaultState;
+}
+
+function productionVaultState(): VexCloudVaultState {
+  const status = getSecretSessionStatus();
+  if (!status.vaultConfigured) return "unconfigured";
+  return status.unlocked ? "unlocked" : "locked";
 }
 
 /** One chain port per process, built on first use (it resolves the RPC endpoints). */
@@ -102,5 +114,6 @@ export function productionVexCloudDeps(): VexCloudDeps {
       now: () => new Date(),
     },
     withdrawalOrigins: productionWithdrawalOrigins(),
+    vaultState: productionVaultState,
   };
 }
