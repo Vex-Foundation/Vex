@@ -22,6 +22,11 @@ import { inferenceSettingsRoute } from "../../../stores/uiStore/shell-route.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { useAvailableModels } from "../../../lib/api/models.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
+import {
+  PROVIDER_DISPLAY_NAME,
+  ProviderMark,
+} from "../../../components/common/ProviderMark.js";
+import { providerNameSchema, type ProviderName } from "@shared/schemas/provider.js";
 
 // Lazy: the plan modal pulls the markdown pipeline - a heavy graph the
 // composer must not pay for until the review actually opens.
@@ -37,6 +42,9 @@ const PlanDisplayModal = lazy(async () => ({
  */
 const OPTIONS_KEY =
   "inline-flex h-7 min-w-0 items-center font-sans text-[13px] leading-5 text-ink-primary transition-colors duration-100 hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
+
+/** The provider mark's box beside the 13 px model name. */
+const MARK_PX = 16;
 
 /** The legacy plan seat: 30 high, 13 sans in ink 2 on the quiet frame. */
 const SEAT_CHIP =
@@ -56,8 +64,16 @@ export function modelDisplayName(modelId: string): string {
     : modelId;
 }
 
-/** The catalogue's name for the model, else its id; the routing prefix trimmed. */
-function useModelName(modelId: string): string {
+/**
+ * The catalogue's entry for the model: its name (else its id), the routing
+ * prefix trimmed, and the provider that serves it (`providerId`, the same
+ * `AGENT_PROVIDER` read the env state reports), or null when the catalogue
+ * has not resolved or names a provider this build does not know.
+ */
+function useModelEntry(modelId: string): {
+  readonly name: string;
+  readonly provider: ProviderName | null;
+} {
   const models = useAvailableModels();
   const entry =
     models.data?.ok === true
@@ -67,7 +83,11 @@ function useModelName(modelId: string): string {
     entry !== undefined && typeof entry.displayName === "string" && entry.displayName.length > 0
       ? entry.displayName
       : modelId;
-  return modelDisplayName(name);
+  const provider = providerNameSchema.safeParse(entry?.providerId);
+  return {
+    name: modelDisplayName(name),
+    provider: provider.success ? provider.data : null,
+  };
 }
 
 export function ComposerModelChip({
@@ -81,18 +101,23 @@ export function ComposerModelChip({
 
 function ModelKey({ modelId }: { readonly modelId: string }): JSX.Element {
   const setShellRoute = useUiStore((s) => s.setShellRoute);
-  const name = useModelName(modelId);
+  const { name, provider } = useModelEntry(modelId);
+  // The mark shows WHO serves the model (Vex Inference or OpenRouter); the
+  // accessible name and the tooltip say it in words. An unknown provider
+  // draws no mark and claims nothing.
+  const served = provider === null ? "" : ` on ${PROVIDER_DISPLAY_NAME[provider]}`;
   return (
-    <Tooltip label={`${modelId} - change it in Settings`} side="top" delayMs={300}>
+    <Tooltip label={`${modelId}${served} - change it in Settings`} side="top" delayMs={300}>
       <button
         type="button"
         data-vex-area="composer-model-chip"
-        aria-label={`Model: ${modelId}. Opens inference settings.`}
-        className={`vex-composer-options__model ${OPTIONS_KEY}`}
+        aria-label={`Model: ${modelId}${served}. Opens inference settings.`}
+        className={`vex-composer-options__model gap-1.5 ${OPTIONS_KEY}`}
         onClick={() =>
           setShellRoute(inferenceSettingsRoute(null))
         }
       >
+        {provider === null ? null : <ProviderMark provider={provider} size={MARK_PX} />}
         <span data-vex-model-label className="min-w-0 max-w-48 flex-1 truncate">
           {name}
         </span>

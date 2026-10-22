@@ -96,18 +96,6 @@ const MODEL_PROVIDER_ICONS: Readonly<Record<string, BrandMark>> = {
   "x-ai": XAI,
 };
 
-/** OpenRouter's own mark in one ink (the provider choice draws it beside its name). */
-export function OpenRouterMark({ size = 16, className }: { readonly size?: number; readonly className?: string }): JSX.Element {
-  return OPENROUTER({
-    width: size,
-    height: size,
-    "aria-hidden": true,
-    focusable: false,
-    className,
-    "data-vex-brand-mark": "openrouter",
-  });
-}
-
 export interface ModelBrandIconProps {
   readonly modelId: string;
   readonly size?: number;
