@@ -44,13 +44,15 @@ function summaryOf(report: VexInferenceStatusReport): string {
     parts.push(report.withdrawals.complete ? "No pending withdrawals." : "No pending withdrawals among the newest ones read.");
   } else {
     const cooling = report.withdrawals.pending.filter((item) => item.cooling);
-    const foreign = cooling.filter((item) => !item.startedInThisApp);
+    // The backend's `cancellable` decides the warning, never the desktop clock: a
+    // released withdrawal not yet signed can still be stopped.
+    const foreign = report.withdrawals.pending.filter((item) => item.cancellable && !item.startedInThisApp);
     parts.push(
       `${report.withdrawals.pending.length} pending withdrawal(s), ${cooling.length} in the cooling period. `
         + "Only the user can cancel a cooling withdrawal, in Funding, Withdraw; you cannot cancel or start one.",
     );
     if (foreign.length > 0) {
-      parts.push(`WARNING: ${foreign.length} cooling withdrawal(s) were NOT started in this app; tell the user to check them and cancel any that were not them.`);
+      parts.push(`WARNING: ${foreign.length} withdrawal(s) that can still be cancelled were NOT started in this app; tell the user to check them and cancel any that were not them.`);
     }
   }
   if (report.account.paused) parts.push("The account is PAUSED by Vex Inference.");

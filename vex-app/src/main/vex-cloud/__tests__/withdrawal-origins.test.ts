@@ -3,15 +3,17 @@
  * against a scripted withdrawals list and the in-memory record.
  *
  * WHAT IT PINS:
- *  - only a COOLING withdrawal (`debited`, release ahead) whose id this app
- *    never recorded is a notice; a recorded one, a released one, a signed one
- *    and a dismissed one are not;
+ *  - only a withdrawal the backend reports `cancellable: true` whose id this
+ *    app never recorded is a notice (released but not yet signed included); a
+ *    recorded one, a non-cancellable one, a signed one and a dismissed one are
+ *    not;
+ *  - the desktop clock decides nothing: a clock 1 hour or 8 days ahead still
+ *    raises the notice for a cancellable foreign withdrawal, on any page;
  *  - exactly one engine notice per id, across repeated scans;
  *  - the create race: while a create is open, or when a record landed after
  *    the scan's durable read, no NEW notice is raised;
  *  - a lost-answer withdrawal recorded later stops being a notice;
- *  - the bounded scan: pages, the horizon stop, and `complete: false` at the
- *    page bound;
+ *  - the bounded scan: pages and `complete: false` at the page bound;
  *  - the agent status read lists pending withdrawals (cooling and in flight)
  *    with `releaseAt`, `cancellable` and `startedInThisApp`.
  *
@@ -19,14 +21,14 @@
  * (the funding IPC suite).
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VexCloudApi, WithdrawalView, WithdrawalsPage } from "../api-client.js";
 
 vi.mock("../../logger/index.js", () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { SCAN_HORIZON_MS, SCAN_MAX_PAGES, SCAN_PAGE_LIMIT } = await import("../funding/withdrawal-origins.js");
+const { SCAN_MAX_PAGES, SCAN_PAGE_LIMIT } = await import("../funding/withdrawal-origins.js");
 const { ACCOUNT_ID, accountWith, DEPOSIT, E18, MemoryFundingStore, memoryWithdrawalOrigins, NOW, WALLET } = await import("./support/funding-fakes.js");
 const { readVexInferenceStatus } = await import("../status.js");
 const { createObservationGenerations } = await import("../balance-watch.js");
@@ -71,7 +73,7 @@ function listOf(items: () => readonly WithdrawalView[]): Pick<VexCloudApi, "list
 const signal = new AbortController().signal;
 
 describe("what is a notice", () => {
-  it("only a cooling withdrawal this app never recorded; recorded, released, signed and dismissed ones are not", async () => {
+  it("only a cancellable withdrawal this app never recorded; recorded, non-cancellable, signed and dismissed ones are not", async () => {
     const { guard, store, emitted } = memoryWithdrawalOrigins();
     await store.recordCreatedHere(ACCOUNT_ID, "wd_mine");
     await store.flagForeign(ACCOUNT_ID, "wd_dismissed");
@@ -79,15 +81,16 @@ describe("what is a notice", () => {
     const api = listOf(() => [
       withdrawal("wd_foreign"),
       withdrawal("wd_mine"),
-      withdrawal("wd_released", { release_at: new Date(NOW.getTime() - HOUR).toISOString() }),
+      withdrawal("wd_released_unsigned", { release_at: new Date(NOW.getTime() - HOUR).toISOString() }),
+      withdrawal("wd_not_cancellable", { cancellable: false }),
       withdrawal("wd_signed", { status: "signed", cancellable: false }),
       withdrawal("wd_dismissed"),
       withdrawal("wd_old_backend", { release_at: undefined, cancellable: undefined }),
     ]);
     const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
     if (!scan.ok) throw new Error("scan failed");
-    expect(scan.value.notices.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
-    expect(emitted.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
+    expect(scan.value.notices.map((n) => n.withdrawalId)).toEqual(["wd_foreign", "wd_released_unsigned"]);
+    expect(emitted.map((n) => n.withdrawalId)).toEqual(["wd_foreign", "wd_released_unsigned"]);
     expect(scan.value.notices[0]).toEqual({
       withdrawalId: "wd_foreign",
       amountWei: String(6_000n * E18),
@@ -120,6 +123,53 @@ describe("what is a notice", () => {
     const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
     expect(scan.ok && scan.value.notices).toEqual([]);
     expect(scan.ok && scan.value.origins.get("wd_lost")?.origin).toBe("created_here");
+  });
+});
+
+describe("the desktop clock decides nothing", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The desktop clock reads `aheadMs` past the backend's time (`NOW`). */
+  function desktopClockAhead(aheadMs: number): void {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(NOW.getTime() + aheadMs));
+  }
+
+  it("a desktop clock 1 hour ahead still raises exactly one notice for a foreign withdrawal the backend says is cancellable", async () => {
+    desktopClockAhead(HOUR);
+    const { guard, emitted } = memoryWithdrawalOrigins();
+    // Backend time NOW; it releases at NOW + 30 min, so 30 minutes remain to cancel.
+    const api = listOf(() => [withdrawal("wd_foreign", { release_at: new Date(NOW.getTime() + HOUR / 2).toISOString() })]);
+    const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
+    expect(scan.ok && scan.value.notices.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
+    expect(scan.ok && scan.value.complete).toBe(true);
+    expect(emitted.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
+  });
+
+  it("a desktop clock 8 days ahead neither ends the scan early nor hides a cancellable foreign withdrawal on a later page", async () => {
+    desktopClockAhead(8 * 24 * HOUR);
+    const { guard, emitted } = memoryWithdrawalOrigins();
+    const items = [
+      ...Array.from({ length: SCAN_PAGE_LIMIT }, (_, i) => withdrawal(`wd_done_${i}`, { status: "completed", cancellable: false })),
+      withdrawal("wd_foreign"),
+    ];
+    const api = listOf(() => items);
+    const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
+    expect(api.reads()).toBe(2);
+    expect(scan.ok && scan.value.complete).toBe(true);
+    expect(scan.ok && scan.value.notices.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
+    expect(emitted.map((n) => n.withdrawalId)).toEqual(["wd_foreign"]);
+  });
+
+  it("a foreign withdrawal the backend says is not cancellable raises nothing, whatever the desktop clock reads", async () => {
+    desktopClockAhead(-HOUR);
+    const { guard, emitted } = memoryWithdrawalOrigins();
+    const api = listOf(() => [withdrawal("wd_foreign", { cancellable: false })]);
+    const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
+    expect(scan.ok && scan.value.notices).toEqual([]);
+    expect(emitted).toEqual([]);
   });
 });
 
@@ -165,18 +215,6 @@ describe("the bounded scan", () => {
     const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
     expect(scan.ok && scan.value.complete).toBe(false);
     expect(api.reads()).toBe(SCAN_MAX_PAGES);
-  });
-
-  it("stops early, complete, once a page reaches withdrawals older than the horizon", async () => {
-    const { guard } = memoryWithdrawalOrigins();
-    const old = new Date(NOW.getTime() - SCAN_HORIZON_MS - HOUR).toISOString();
-    const items = Array.from({ length: SCAN_PAGE_LIMIT * 3 }, (_, i) =>
-      withdrawal(`wd_${i}`, { status: "completed", cancellable: false, created_at: i < SCAN_PAGE_LIMIT ? NOW.toISOString() : old }),
-    );
-    const api = listOf(() => items);
-    const scan = await guard.scan(api, BEARER, ACCOUNT_ID, signal);
-    expect(scan.ok && scan.value.complete).toBe(true);
-    expect(api.reads()).toBe(2);
   });
 
   it("a failed page is the failure, never an empty scan", async () => {

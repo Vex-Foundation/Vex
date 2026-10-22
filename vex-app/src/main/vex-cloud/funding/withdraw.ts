@@ -237,6 +237,7 @@ export async function prepareWithdrawal(
       withdrawableWei: withdrawable === null ? null : withdrawable.toString(),
       dailyRemainingWei: remaining,
       dailyLimitMicroUsd: account.limits.withdraw_daily_limit_micro_usd ?? null,
+      coolingSeconds: account.limits.withdraw_cooling_seconds ?? null,
       preparedAt: now.toISOString(),
       expiresAt: new Date(expiresAtMs).toISOString(),
     },

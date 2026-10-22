@@ -2,8 +2,9 @@
  * Withdraw: an amount and a wallet picked from the ones that are BOTH linked
  * to the account AND in this app (owner decision D5). There is no address
  * field. The approval card says the amount, the destination, "Funds leave Vex
- * Cloud", the daily limit left and the safety delay (12 hours before the
- * submit; after it, the backend's own `releaseAt`); after the submit the
+ * Cloud", the daily limit left and the safety delay (before the submit, the
+ * cooling the backend reported in the proposal, or no number when it reported
+ * none; after it, the backend's own `releaseAt`); after the submit the
  * status is polled until it reads Completed, Returned or Cancelled (fill plus
  * word). While it reads "Cooling, releases at HH:MM" it can be cancelled.
  *
@@ -27,7 +28,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
 import type { VexCloudAccount } from "@shared/schemas/vex-cloud.js";
 import {
-  VEX_CLOUD_WITHDRAW_COOLING_HOURS,
   type VexCloudWithdrawal,
   type VexCloudWithdrawalProposal,
   type VexCloudWithdrawalWord,
@@ -81,14 +81,31 @@ export const LOST_UNRESOLVED_DETAIL =
 
 export const DISMISS_LOST = "I checked History";
 
+/** The card's delay line when the backend reported no cooling period: no number is promised. */
+export const COOLING_UNREPORTED_LINE =
+  "After the safety delay set by Vex Inference. The exact time shows once it is sent. You can cancel it until then.";
+
+/** The card's delay line when the backend reported a cooling period of zero. */
+export const COOLING_NONE_LINE = "Right away: Vex Inference has no safety delay set.";
+
+/** "12-hour", "90-minute", "45-second": the delay as the backend reported it, never rounded. */
+function coolingDelayWords(seconds: number): string {
+  if (seconds % 3_600 === 0) return `${seconds / 3_600}-hour`;
+  if (seconds % 60 === 0) return `${seconds / 60}-minute`;
+  return `${seconds}-second`;
+}
+
 /**
- * The card's delay line BEFORE the submit: the delay in hours and the time
- * it would end if sent now ("about"); the backend's `releaseAt` is the truth
- * once it answers.
+ * The card's delay line BEFORE the submit, from the cooling the backend
+ * reported in the proposal (`coolingSeconds`): the delay and the time it
+ * would end if sent now ("about"); the backend's `releaseAt` is the truth
+ * once it answers. `null` (an older backend) states no number.
  */
-export function coolingCardLine(nowMs: number): string {
-  const at = localClock(new Date(nowMs + VEX_CLOUD_WITHDRAW_COOLING_HOURS * 3_600_000).toISOString(), nowMs);
-  return `After a ${VEX_CLOUD_WITHDRAW_COOLING_HOURS}-hour safety delay, at about ${at ?? NOT_AVAILABLE}. You can cancel it until then.`;
+export function coolingCardLine(coolingSeconds: number | null, nowMs: number): string {
+  if (coolingSeconds === null) return COOLING_UNREPORTED_LINE;
+  if (coolingSeconds === 0) return COOLING_NONE_LINE;
+  const at = localClock(new Date(nowMs + coolingSeconds * 1_000).toISOString(), nowMs);
+  return `After a ${coolingDelayWords(coolingSeconds)} safety delay, at about ${at ?? NOT_AVAILABLE}. You can cancel it until then.`;
 }
 
 export const UNRESOLVED_BLOCKS_REVIEW =
@@ -270,7 +287,7 @@ export function WithdrawTab({
             { label: "You receive", value: <><span className="vex-appr__num vex-num">{amount} VEX</span><span className="vex-appr__sub"> · on Robinhood Chain</span></> },
             { label: "Destination", value: <span className="vex-appr__num vex-num vex-appr__break">{proposal.destination}</span> },
             { label: "Value", value: <>about <span className="vex-appr__num vex-num">{formatMicroUsd(BigInt(proposal.usdMicroEstimate))}</span></> },
-            { label: "Released", value: <span data-testid="withdraw-cooling-line">{coolingCardLine(Date.now())}</span> },
+            { label: "Released", value: <span data-testid="withdraw-cooling-line">{coolingCardLine(proposal.coolingSeconds, Date.now())}</span> },
             {
               label: "Daily limit left",
               value:

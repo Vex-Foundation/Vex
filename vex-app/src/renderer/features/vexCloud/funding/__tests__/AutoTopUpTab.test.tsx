@@ -189,7 +189,7 @@ describe("create", () => {
     }
     expect(within(card).getAllByText(DEPOSIT).length).toBeGreaterThan(0);
     const reject = within(card).getByRole("button", { name: "Reject" });
-    expect(document.activeElement).toBe(reject);
+    await waitFor(() => expect(document.activeElement).toBe(reject));
 
     fireEvent.click(within(card).getByRole("button", { name: "Approve rule" }));
     expect(bridge.submitAutoTopUp).not.toHaveBeenCalled();
@@ -239,7 +239,7 @@ describe("pause and revoke without the backend (no rate, no minimum)", () => {
     expect(within(card).getByText(sentence)).toBeTruthy();
     expect(within(card).getByText("6,000 VEX (Not available)")).toBeTruthy();
     expect(within(card).getAllByText("Not available").length).toBeGreaterThan(0);
-    expect(document.activeElement).toBe(within(card).getByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(document.activeElement).toBe(within(card).getByRole("button", { name: "Reject" })));
     fireEvent.click(within(card).getByRole("button", { name: approve }));
     await waitFor(() => expect(bridge.submitAutoTopUp).toHaveBeenCalledWith({ proposalId: proposal(action).proposalId, action, bounds: proposal(action).bounds }));
     expect(await screen.findByTestId("auto-top-up-message")).toBeTruthy();

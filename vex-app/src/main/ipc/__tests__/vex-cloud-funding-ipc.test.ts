@@ -456,7 +456,7 @@ function entry(address: string, index: number) {
 function world(): World {
   const gateway = new FakeGateway();
   const chain = new FakeChain();
-  const origins = memoryWithdrawalOrigins(() => NOW);
+  const origins = memoryWithdrawalOrigins();
   const self: World = {
     gateway,
     chain,

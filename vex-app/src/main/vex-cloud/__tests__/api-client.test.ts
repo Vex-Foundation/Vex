@@ -240,3 +240,35 @@ describe("phase 2 calls (plan 15.2)", () => {
     expect(pulled).toBeLessThan(10);
   });
 });
+
+describe("the account read (D22 cooling)", () => {
+  const amount = { wei: "1000000000000000000", usd_micro_estimate: null };
+  function accountBody(limits: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      account_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      status: { paused: false, drain_mode: false },
+      wallets: [],
+      deposit_address: "0x00000000000000000000000000000000000D3905",
+      balances: { available: amount, provisional: amount, reserved: amount, pending_withdrawal: amount, claimable: amount },
+      withdrawable_wei: "0",
+      rate: { available: false, reason: "warming" },
+      limits: { min_deposit_micro_usd: "5000000", min_withdraw_micro_usd: "5000000", provisional_cap_micro_usd: "25000000", ...limits },
+    };
+  }
+  const read = async (body: Record<string, unknown>) =>
+    api(() => json(body)).client.readAccount("vxs_secret_bearer_value_0001", new AbortController().signal);
+
+  it("accepts an account with withdraw_cooling_seconds and one from an older backend without it", async () => {
+    const reported = await read(accountBody({ withdraw_cooling_seconds: 3_600 }));
+    expect(reported.ok && reported.value.limits.withdraw_cooling_seconds).toBe(3_600);
+    const older = await read(accountBody());
+    expect(older.ok).toBe(true);
+    expect(older.ok && older.value.limits.withdraw_cooling_seconds).toBeUndefined();
+  });
+
+  it("refuses a cooling value outside the backend's bound or not a whole number of seconds", async () => {
+    for (const value of [604_801, -1, 3_600.5, "3600"]) {
+      await expect(read(accountBody({ withdraw_cooling_seconds: value }))).resolves.toEqual({ ok: false, failure: { kind: "invalid_response" } });
+    }
+  });
+});

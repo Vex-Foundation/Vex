@@ -282,7 +282,35 @@ describe("status", () => {
     ]);
     expect(output.summary).toContain("3 pending withdrawal(s), 2 in the cooling period");
     expect(output.summary).toContain("you cannot cancel or start one");
-    expect(output.summary).toContain("WARNING: 1 cooling withdrawal(s) were NOT started in this app");
+    expect(output.summary).toContain("WARNING: 1 withdrawal(s) that can still be cancelled were NOT started in this app");
+  });
+
+  it("warns about a foreign withdrawal the backend still calls cancellable even when the desktop clock says it is released", async () => {
+    const amount = { wei: "6000000000000000000000", vex: "6000", usdMicroEstimate: "6000000", usdEstimate: "6" };
+    const zero = { wei: "0", vex: "0", usdMicroEstimate: "0", usdEstimate: "0" };
+    const pending = [
+      // The desktop clock runs ahead: `cooling` is false, the backend still says cancellable.
+      { id: "wd_foreign", status: "debited", cooling: false, releaseAt: "2026-10-21T12:30:00.000Z", cancellable: true, amount, destination: DEPOSIT, createdAt: "2026-10-21T00:30:00.000Z", startedInThisApp: false },
+      { id: "wd_signed", status: "broadcast", cooling: false, releaseAt: "2026-10-21T11:00:00.000Z", cancellable: false, amount, destination: DEPOSIT, createdAt: "2026-10-20T23:00:00.000Z", startedInThisApp: false },
+    ];
+    vi.mocked(host.readStatus).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        account: { accountId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", paused: false, drainMode: false },
+        balances: { available: amount, provisional: zero, reserved: zero, claimable: zero, cashbackPending: null, pendingWithdrawal: amount },
+        rate: { available: false, reason: "warming" },
+        alert: { percent: 20, reference: amount, threshold: zero, balance: amount, belowAlert: false },
+        model: { id: "anthropic/claude-haiku-5.5", effort: "medium", priced: false, reason: "not in this test" },
+        usage: { items: [], limit: 10, hasMore: false },
+        deposits: { open: true, state: "open", pinnedAddress: DEPOSIT, backendAddress: DEPOSIT },
+        autoTopUp: { state: "none" },
+        withdrawals: { state: "read", complete: true, pending },
+      },
+    });
+    const result = await handleVexInferenceStatus({}, makeTestContext());
+    const output = JSON.parse(result.output) as { summary: string };
+    expect(output.summary).toContain("2 pending withdrawal(s), 0 in the cooling period");
+    expect(output.summary).toContain("WARNING: 1 withdrawal(s) that can still be cancelled were NOT started in this app");
   });
 
   it("an unreadable withdrawals scan is said, never an empty list", async () => {

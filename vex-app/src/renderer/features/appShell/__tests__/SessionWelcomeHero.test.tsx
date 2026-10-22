@@ -33,7 +33,7 @@ import {
   NO_BACKGROUND_WORK,
   backgroundWorkOf,
 } from "../../vex/background-work.js";
-import { NEEDS_YOU_UNKNOWN_COPY } from "../../vex/needs-you.js";
+import { NEEDS_YOU_UNKNOWN_COPY, NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY } from "../../vex/needs-you.js";
 import { takeVexDock, vexDockPending } from "../../vex/vex-dock.js";
 import type { VexPresence } from "../../vex/useVexPresence.js";
 import { session } from "../../vex/__tests__/fixtures.js";
@@ -141,6 +141,7 @@ function readyPresence(over: Partial<VexPresence> = {}): VexPresence {
     background: NO_BACKGROUND_WORK,
     needsYou: {
       status: "ready",
+      unknownCopy: null,
       count: 0,
       items: [],
       retry: retryNeedsYou,
@@ -589,6 +590,7 @@ describe("SessionWelcomeHero - the database down", () => {
     presence = readyPresence({
       needsYou: {
         status: "unknown",
+        unknownCopy: NEEDS_YOU_UNKNOWN_COPY,
         count: null,
         items: [],
         retry: retryNeedsYou,
@@ -609,6 +611,27 @@ describe("SessionWelcomeHero - the database down", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetchSessions).toHaveBeenCalledTimes(1);
     expect(retryNeedsYou).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the withdrawal check failed when that is the read Needs you could not make", () => {
+    sessionsData = {
+      ok: false,
+      error: { code: "DB_UNAVAILABLE", message: "Database unavailable." },
+    };
+    presence = readyPresence({
+      needsYou: {
+        status: "unknown",
+        unknownCopy: NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY,
+        count: null,
+        items: [],
+        retry: vi.fn(),
+        retrying: false,
+      },
+    });
+    render(<SessionWelcomeHero />);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain(NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY);
+    expect(alert.textContent).not.toContain(NEEDS_YOU_UNKNOWN_COPY);
   });
 
   it("leaves the approvals line out while the approvals read is fine", () => {

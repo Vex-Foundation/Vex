@@ -41,7 +41,7 @@ const ACCOUNT_A = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const ACCOUNT_B = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 const BEARER = "vxs_test_bearer_000000000001";
 
-function account(accountId: string = ACCOUNT_A): VexCloudAccountResponse {
+function account(accountId: string = ACCOUNT_A, coolingSeconds?: number): VexCloudAccountResponse {
   const amount = { wei: String(20_000n * E18), usd_micro_estimate: null };
   return {
     account_id: accountId,
@@ -58,7 +58,12 @@ function account(accountId: string = ACCOUNT_A): VexCloudAccountResponse {
       age_seconds: 1,
       valid_until: new Date(NOW.getTime() + 600_000).toISOString(),
     },
-    limits: { min_deposit_micro_usd: "5000000", min_withdraw_micro_usd: "5000000", provisional_cap_micro_usd: "25000000" },
+    limits: {
+      min_deposit_micro_usd: "5000000",
+      min_withdraw_micro_usd: "5000000",
+      provisional_cap_micro_usd: "25000000",
+      ...(coolingSeconds !== undefined && { withdraw_cooling_seconds: coolingSeconds }),
+    },
   };
 }
 
@@ -90,10 +95,12 @@ interface Script {
   reads: number;
   /** When set, the account read fails with it. */
   readFailure: VexCloudCallFailure | null;
+  /** The account's `limits.withdraw_cooling_seconds`; `undefined` is an older backend that does not send it. */
+  coolingSeconds: number | undefined;
 }
 
 function world(): { readonly deps: WithdrawDeps; readonly script: Script } {
-  const script: Script = { now: NOW, answers: [], keys: [], duringRead: null, minted: 0, session: BEARER, accountId: ACCOUNT_A, reads: 0, readFailure: null };
+  const script: Script = { now: NOW, answers: [], keys: [], duringRead: null, minted: 0, session: BEARER, accountId: ACCOUNT_A, reads: 0, readFailure: null, coolingSeconds: undefined };
   const deps: WithdrawDeps = {
     readSession: async () => ({ ok: true, data: script.session }),
     clearSession: async () => {
@@ -102,7 +109,7 @@ function world(): { readonly deps: WithdrawDeps; readonly script: Script } {
     },
     localWallets: () => [W1],
     now: () => script.now,
-    origins: memoryWithdrawalOrigins(() => script.now).guard,
+    origins: memoryWithdrawalOrigins().guard,
     mintIdempotencyKey: () => {
       script.minted += 1;
       return `vxw_test_key_${script.minted}`;
@@ -112,7 +119,7 @@ function world(): { readonly deps: WithdrawDeps; readonly script: Script } {
         script.reads += 1;
         if (script.readFailure !== null) return { ok: false, failure: script.readFailure };
         script.duringRead?.();
-        return { ok: true, value: account(script.accountId) };
+        return { ok: true, value: account(script.accountId, script.coolingSeconds) };
       },
       createWithdrawal: async (_bearer, key): Promise<VexCloudCall<WithdrawalResponse>> => {
         script.keys.push(key);
@@ -135,6 +142,20 @@ async function prepared(deps: WithdrawDeps): Promise<{ proposalId: string; desti
 
 beforeEach(() => {
   __resetWithdrawStateForTests();
+});
+
+describe("the proposal carries the backend's cooling period (D22)", () => {
+  it.each([
+    [3_600, 3_600],
+    [43_200, 43_200],
+    [undefined, null],
+  ])("limits.withdraw_cooling_seconds %s is the proposal's coolingSeconds %s, never a default", async (reported, expected) => {
+    const { deps, script } = world();
+    script.coolingSeconds = reported;
+    const outcome = await prepareWithdrawal(deps, { destination: W1, amountText: "6000" }, signal());
+    if (!outcome.ok) throw new Error(`prepare refused: ${outcome.refusal.kind}`);
+    expect(outcome.value.coolingSeconds).toBe(expected);
+  });
 });
 
 describe("F3: a mutation whose answer does not prove refusal keeps its key", () => {

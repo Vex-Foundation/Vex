@@ -50,8 +50,13 @@ import {
   type BackgroundWork,
 } from "./background-work.js";
 import { lastUserMessageOf, vexNarration } from "./narration.js";
-import { needsYouModelOf, type NeedsYouModel } from "./needs-you.js";
-import type { VexCloudWithdrawalNotice } from "@shared/schemas/vex-cloud-funding.js";
+import {
+  needsYouModelOf,
+  needsYouWithdrawalReadOf,
+  type NeedsYouModel,
+  type NeedsYouWithdrawalRead,
+} from "./needs-you.js";
+import type { VexCloudWithdrawalNotice, VexCloudWithdrawalNoticesResult } from "@shared/schemas/vex-cloud-funding.js";
 import { useVexCloudWithdrawalNotices } from "../../lib/api/vex-cloud.js";
 import {
   DONE_HOLD_MS,
@@ -74,13 +79,14 @@ import {
 // -- Needs you ---------------------------------------------------------------
 
 export interface NeedsYouResult extends NeedsYouModel {
-  /** Read the approvals inbox again; the unknown state's Retry. */
+  /** Read the approvals inbox and the withdrawal check again; the unknown state's Retry. */
   readonly retry: () => void;
-  /** The inbox is being read right now. */
+  /** Either read is running right now. */
   readonly retrying: boolean;
 }
 
 type ApprovalsQuery = UseQueryResult<Result<ReadonlyArray<ApprovalPendingGlobalDto>>>;
+type WithdrawalNoticesQuery = UseQueryResult<Result<VexCloudWithdrawalNoticesResult>>;
 
 function useSessionRows(): readonly SessionListItem[] | null {
   const query = useSessionsList();
@@ -90,35 +96,56 @@ function useSessionRows(): readonly SessionListItem[] | null {
 
 const NO_WITHDRAWAL_NOTICES: readonly VexCloudWithdrawalNotice[] = [];
 
-/** The cooling withdrawals this app did not start, from the one notices query; none while unread, signed out or failed. */
-function useWithdrawalNoticeRows(): readonly VexCloudWithdrawalNotice[] {
-  const data = useVexCloudWithdrawalNotices().data;
-  return data !== undefined && data.ok && data.data.state === "signed_in" ? data.data.notices : NO_WITHDRAWAL_NOTICES;
+/**
+ * The withdrawal check, from the one notices query. The notices of the last
+ * good signed-in read are held here (state derived from a changing input,
+ * the same pattern as `useDoneEdge`), so a failed read keeps them listed;
+ * signing out clears them.
+ */
+function useWithdrawalRead(query: WithdrawalNoticesQuery): NeedsYouWithdrawalRead {
+  const { data, isError } = query;
+  const [held, setHeld] = useState<{
+    readonly source: WithdrawalNoticesQuery["data"];
+    readonly notices: readonly VexCloudWithdrawalNotice[];
+  }>({ source: undefined, notices: NO_WITHDRAWAL_NOTICES });
+  if (data !== undefined && data !== held.source && data.ok) {
+    setHeld({
+      source: data,
+      notices: data.data.state === "signed_in" ? data.data.notices : NO_WITHDRAWAL_NOTICES,
+    });
+  }
+  return useMemo(
+    () => needsYouWithdrawalReadOf(data, isError, held.notices),
+    [data, isError, held.notices],
+  );
 }
 
 function useNeedsYouResult(
   approvals: ApprovalsQuery,
   sessions: readonly SessionListItem[] | null,
-  withdrawalNotices: readonly VexCloudWithdrawalNotice[],
+  notices: WithdrawalNoticesQuery,
 ): NeedsYouResult {
   const { data, isError, isFetching, refetch } = approvals;
+  const withdrawals = useWithdrawalRead(notices);
   const model = useMemo(
     () =>
       needsYouModelOf({
         approvals: data,
         approvalsErrored: isError,
         sessions,
-        withdrawalNotices,
+        withdrawals,
         nowMs: Date.now(),
       }),
-    [data, isError, sessions, withdrawalNotices],
+    [data, isError, sessions, withdrawals],
   );
+  const refetchNotices = notices.refetch;
   return {
     ...model,
     retry: () => {
       void refetch();
+      void refetchNotices();
     },
-    retrying: isFetching,
+    retrying: isFetching || notices.isFetching,
   };
 }
 
@@ -126,8 +153,8 @@ function useNeedsYouResult(
 export function useNeedsYou(): NeedsYouResult {
   const approvals = usePendingApprovalsAll();
   const sessions = useSessionRows();
-  const withdrawalNotices = useWithdrawalNoticeRows();
-  return useNeedsYouResult(approvals, sessions, withdrawalNotices);
+  const notices = useVexCloudWithdrawalNotices();
+  return useNeedsYouResult(approvals, sessions, notices);
 }
 
 // -- Signals -----------------------------------------------------------------
@@ -307,7 +334,7 @@ export function useVexPresence(options: VexPresenceOptions = {}): VexPresence {
 
   const approvalsQuery = usePendingApprovalsAll();
   const sessions = useSessionRows();
-  const withdrawalNotices = useWithdrawalNoticeRows();
+  const withdrawalNotices = useVexCloudWithdrawalNotices();
   const needsYou = useNeedsYouResult(approvalsQuery, sessions, withdrawalNotices);
 
   // -- approvals: this chat's own, or app-wide when no chat is open

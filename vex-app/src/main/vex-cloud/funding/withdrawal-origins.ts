@@ -2,12 +2,18 @@
  * WITHDRAWALS THIS APP DID NOT START: the security notice of the cooling
  * period (owner decision 2026-10-21).
  *
- * A Vex Inference withdrawal now waits a rolling cooling period (12 hours by
- * default) before the backend sends it, and can be cancelled until then. A
- * cooling withdrawal on the account whose id this app did NOT create may be
+ * A Vex Inference withdrawal now waits a cooling period set by the backend
+ * before the backend sends it, and can be cancelled until then. A
+ * cancellable withdrawal on the account whose id this app did NOT create may be
  * someone else spending the account with a stolen session, so it is shown as
- * a notice with a Cancel key until it is cancelled, released, or the user
+ * a notice with a Cancel key until it is cancelled, signed, or the user
  * says "It was me".
+ *
+ * ELIGIBILITY IS THE BACKEND'S. A withdrawal is a notice while the backend
+ * reports `cancellable: true` (it does so while the withdrawal is `debited`,
+ * cooling or released but not yet signed). The desktop clock never decides
+ * it: a clock running ahead would otherwise hide a withdrawal that can still
+ * be stopped.
  *
  * AUTHORITY. Whether a withdrawal is "ours" is decided ONLY from the durable
  * record this owner keeps (`vex_inference_withdrawal_origins`, migration
@@ -33,12 +39,9 @@
  * and the notice disappears.
  *
  * BOUNDED SCAN. Pages of {@link SCAN_PAGE_LIMIT}, newest first, at most
- * {@link SCAN_MAX_PAGES}, stopping early once a page reaches withdrawals
- * created more than {@link SCAN_HORIZON_MS} ago: the backend's cooling is 12
- * hours by default and at most 604800 seconds (7 days, its configuration
- * bound), and it runs from each withdrawal's own request time, so nothing
- * created before the horizon can still be cooling. Stopping at the page bound with
- * more left is reported as `complete: false`, never as "nothing else".
+ * {@link SCAN_MAX_PAGES}. There is no early stop by creation time: that
+ * would rest on the desktop clock. Stopping at the page bound with more left
+ * is reported as `complete: false`, never as "nothing else".
  */
 
 import type {
@@ -46,7 +49,6 @@ import type {
   VexCloudWithdrawalNotice,
   VexCloudWithdrawalNoticesResult,
 } from "@shared/schemas/vex-cloud-funding.js";
-import { isWithdrawalCooling } from "@shared/schemas/vex-cloud-funding.js";
 import { log } from "../../logger/index.js";
 import type { VexCloudApi, VexCloudCallFailure, WithdrawalView } from "../api-client.js";
 import { refused, type VexCloudOutcome } from "../outcome.js";
@@ -54,7 +56,6 @@ import { backendRefusal, requireBearer, type SessionPort } from "./backend-call.
 
 export const SCAN_PAGE_LIMIT = 100;
 export const SCAN_MAX_PAGES = 5;
-export const SCAN_HORIZON_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export interface WithdrawalOriginMark {
   readonly origin: "created_here" | "foreign";
@@ -101,7 +102,6 @@ export interface WithdrawalOriginGuard {
 
 export interface WithdrawalOriginGuardDeps {
   readonly store: WithdrawalOriginStore;
-  readonly now: () => Date;
   /** Emit the engine notice for one newly raised id. */
   readonly emitNotice: (notice: VexCloudWithdrawalNotice) => void;
 }
@@ -118,10 +118,6 @@ export function noticeOf(withdrawal: WithdrawalView): VexCloudWithdrawalNotice |
   };
 }
 
-function cooling(withdrawal: WithdrawalView, nowMs: number): boolean {
-  return isWithdrawalCooling({ status: withdrawal.status, releaseAt: withdrawal.release_at ?? null }, nowMs);
-}
-
 export function createWithdrawalOriginGuard(deps: WithdrawalOriginGuardDeps): WithdrawalOriginGuard {
   let openCreates = 0;
   /** Bumped by every record of a create; a scan that read the store before a bump raises nothing new. */
@@ -133,7 +129,6 @@ export function createWithdrawalOriginGuard(deps: WithdrawalOriginGuardDeps): Wi
     signal: AbortSignal,
   ): Promise<{ readonly ok: true; readonly items: WithdrawalView[]; readonly complete: boolean } | { readonly ok: false; readonly failure: VexCloudCallFailure }> {
     const items: WithdrawalView[] = [];
-    const horizonMs = deps.now().getTime() - SCAN_HORIZON_MS;
     let cursor: string | null = null;
     for (let page = 0; page < SCAN_MAX_PAGES; page += 1) {
       const read = await api.listWithdrawals(bearer, { cursor, limit: SCAN_PAGE_LIMIT }, signal);
@@ -141,8 +136,6 @@ export function createWithdrawalOriginGuard(deps: WithdrawalOriginGuardDeps): Wi
       items.push(...read.value.items);
       cursor = read.value.next_cursor;
       if (cursor === null) return { ok: true, items, complete: true };
-      const last = read.value.items.at(-1);
-      if (last !== undefined && Date.parse(last.created_at) < horizonMs) return { ok: true, items, complete: true };
     }
     return { ok: true, items, complete: false };
   }
@@ -168,7 +161,6 @@ export function createWithdrawalOriginGuard(deps: WithdrawalOriginGuardDeps): Wi
     async scan(api, bearer, accountId, signal) {
       const read = await readPages(api, bearer, signal);
       if (!read.ok) return read;
-      const nowMs = deps.now().getTime();
       const ids = read.items.map((item) => item.id);
       const epochBefore = epoch;
       const origins = await deps.store.readOrigins(accountId, ids);
@@ -177,7 +169,7 @@ export function createWithdrawalOriginGuard(deps: WithdrawalOriginGuardDeps): Wi
       const mayRaise = openCreates === 0 && epoch === epochBefore;
       const notices: VexCloudWithdrawalNotice[] = [];
       for (const item of read.items) {
-        if (!cooling(item, nowMs)) continue;
+        if (item.cancellable !== true) continue;
         const notice = noticeOf(item);
         if (notice === null) continue;
         const mark = origins.get(item.id);

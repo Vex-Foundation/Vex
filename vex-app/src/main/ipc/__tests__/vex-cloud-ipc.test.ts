@@ -297,7 +297,7 @@ function world(count: number): World {
         loadPrivateKey: async () => notUsed(),
         now: () => NOW,
       },
-      withdrawalOrigins: memoryWithdrawalOrigins(() => NOW).guard,
+      withdrawalOrigins: memoryWithdrawalOrigins().guard,
     },
   };
   return self;

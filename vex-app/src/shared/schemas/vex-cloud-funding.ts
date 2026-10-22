@@ -238,8 +238,13 @@ export function withdrawalWord(
   return isWithdrawalCooling(withdrawal, nowMs) ? "Cooling" : withdrawalStatusWord(withdrawal.status);
 }
 
-/** The cooling period before submit, in words. After submit the backend's `releaseAt` is the truth. */
-export const VEX_CLOUD_WITHDRAW_COOLING_HOURS = 12;
+/**
+ * The longest cooling period Vex Inference can be configured with, in
+ * seconds (7 days, the backend's own configuration bound). The effective
+ * value is the backend's `limits.withdraw_cooling_seconds`; this app never
+ * assumes one.
+ */
+export const VEX_CLOUD_WITHDRAW_COOLING_MAX_SECONDS = 604_800;
 
 export const vexCloudWithdrawalIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 
@@ -284,6 +289,13 @@ export const vexCloudWithdrawalProposalSchema = z
     /** The daily limit left, or `null` when the backend has no figure (rate unavailable). */
     dailyRemainingWei: rawIntegerSchema.nullable(),
     dailyLimitMicroUsd: rawIntegerSchema.nullable(),
+    /**
+     * The cooling period the backend reported when this was prepared, in
+     * seconds; `null` when the backend did not report one (an older
+     * deployment). The card states no number then. After the submit the
+     * backend's `releaseAt` is the truth.
+     */
+    coolingSeconds: z.number().int().nonnegative().max(VEX_CLOUD_WITHDRAW_COOLING_MAX_SECONDS).nullable(),
     preparedAt: isoTimestampSchema,
     expiresAt: isoTimestampSchema,
   })

@@ -14,14 +14,15 @@
  *     `paused_user_form` (Fill in the form);
  *   - `paused_user` and `paused_wake` never count: one is the user's own pause
  *     and the other a sleep the mission ends by itself;
- *   - a cooling Vex Inference withdrawal this app did not start (main's
+ *   - a cancellable Vex Inference withdrawal this app did not start (main's
  *     `withdrawalNotices` read): Review opens the funding page, where its
  *     Cancel and "It was me" keys are.
  *
- * An unreadable approvals inbox is `unknown`, never an empty list. "Needs you ·
- * ?" with a Retry is honest; an empty list after a failed read would be a
- * false all-clear on a surface that exists to say something waits for a
- * signature. The list never approves anything: Review opens the card, and the
+ * An unreadable approvals inbox is `unknown`, never an empty list, and so is
+ * a withdrawal check that failed or could not read every withdrawal. "Needs
+ * you · ?" with a Retry is honest; an empty list after a failed read would be
+ * a false all-clear on a surface that exists to say something waits for a
+ * signature. The notices shown before a failed withdrawal check stay listed. The list never approves anything: Review opens the card, and the
  * REAL FUNDS decision stays in the approval card's own two-step flow.
  *
  * Pure: the clock arrives as `nowMs`.
@@ -30,7 +31,7 @@
 import type { Result } from "@shared/ipc/result.js";
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
-import type { VexCloudWithdrawalNotice } from "@shared/schemas/vex-cloud-funding.js";
+import type { VexCloudWithdrawalNotice, VexCloudWithdrawalNoticesResult } from "@shared/schemas/vex-cloud-funding.js";
 import { getSessionTitle } from "../appShell/sessionListModel.js";
 import { approvalProjectDisplay } from "../appShell/approvals/approvals-copy.js";
 
@@ -69,6 +70,8 @@ export type NeedsYouStatus = "loading" | "ready" | "unknown";
 
 export interface NeedsYouModel {
   readonly status: NeedsYouStatus;
+  /** What could not be checked, in words, while `unknown`; else `null`. */
+  readonly unknownCopy: string | null;
   /** `null` while loading or unknown: a count nobody verified is not a zero. */
   readonly count: number | null;
   /** In reading order: approvals newest first, then withdrawals this app did not start, then the missions that wait. */
@@ -78,6 +81,18 @@ export interface NeedsYouModel {
 /** The existing "could not check" copy, for the tooltip and the live region. */
 export const NEEDS_YOU_UNKNOWN_COPY =
   "Couldn't check for pending approvals. Some may be waiting for your signature.";
+
+/** The withdrawal check failed: a withdrawal this app did not start may be waiting. */
+export const NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY =
+  "Couldn't check for withdrawals you did not start. One may still be waiting to be cancelled.";
+
+/** The withdrawal check stopped at its page bound with more withdrawals left. */
+export const NEEDS_YOU_WITHDRAWALS_INCOMPLETE_COPY =
+  "Couldn't check every withdrawal on your Vex Inference account. One you did not start may still be waiting to be cancelled.";
+
+/** Both checks failed. */
+export const NEEDS_YOU_ALL_UNKNOWN_COPY =
+  "Couldn't check for pending approvals or for withdrawals you did not start. Some may be waiting for you.";
 
 export const NEEDS_YOU_EMPTY_COPY = "Nothing needs you.";
 
@@ -299,7 +314,7 @@ export function missionNeedsYouItems(sessions: readonly SessionListItem[]): read
 export const VEX_INFERENCE_WHERE = "Vex Inference";
 
 /**
- * A cooling withdrawal this app did not start, as a Needs you item:
+ * A cancellable withdrawal this app did not start, as a Needs you item:
  * "Check a withdrawal you did not start", releasing at its time. Review opens
  * the funding page; the item itself decides nothing.
  */
@@ -324,6 +339,37 @@ export function withdrawalNoticeNeedsYouItem(notice: VexCloudWithdrawalNotice, n
 
 // -- The model --------------------------------------------------------------
 
+/**
+ * The withdrawal check as Needs you sees it. Signed out claims nothing about
+ * an account and is not an error. A failed read keeps the notices the last
+ * good read listed (`lastKnown`): one failed read must not drop a shown
+ * notice.
+ */
+export type NeedsYouWithdrawalRead =
+  | { readonly state: "loading" }
+  | { readonly state: "signed_out" }
+  | { readonly state: "ready"; readonly notices: readonly VexCloudWithdrawalNotice[]; readonly complete: boolean }
+  | { readonly state: "failed"; readonly lastKnown: readonly VexCloudWithdrawalNotice[] };
+
+/**
+ * The withdrawal check from the one notices query: its last answer, whether
+ * the query errored (a thrown failure, not an application `Result`), and the
+ * notices of the last good signed-in read.
+ */
+export function needsYouWithdrawalReadOf(
+  data: Result<VexCloudWithdrawalNoticesResult> | undefined,
+  errored: boolean,
+  lastKnown: readonly VexCloudWithdrawalNotice[],
+): NeedsYouWithdrawalRead {
+  if (data === undefined) return errored ? { state: "failed", lastKnown } : { state: "loading" };
+  if (!data.ok) return { state: "failed", lastKnown };
+  // A refetch that threw: the cached answer is stale whatever it said (a cached
+  // signed out can predate a sign-in). A good read's notices are the last known.
+  if (errored) return { state: "failed", lastKnown: data.data.state === "signed_out" ? lastKnown : data.data.notices };
+  if (data.data.state === "signed_out") return { state: "signed_out" };
+  return { state: "ready", notices: data.data.notices, complete: data.data.complete };
+}
+
 export interface NeedsYouInput {
   /** The approvals inbox read; `undefined` while it has not answered. */
   readonly approvals: Result<ReadonlyArray<ApprovalPendingGlobalDto>> | undefined;
@@ -331,23 +377,48 @@ export interface NeedsYouInput {
   readonly approvalsErrored: boolean;
   /** The sessions list; `null` while unread or when its read failed. */
   readonly sessions: readonly SessionListItem[] | null;
-  /** Cooling withdrawals this app did not start; empty while unread or signed out. */
-  readonly withdrawalNotices: readonly VexCloudWithdrawalNotice[];
+  /** The check for withdrawals this app did not start. */
+  readonly withdrawals: NeedsYouWithdrawalRead;
   readonly nowMs: number;
 }
 
+function withdrawalNoticesOf(read: NeedsYouWithdrawalRead): readonly VexCloudWithdrawalNotice[] {
+  switch (read.state) {
+    case "ready":
+      return read.notices;
+    case "failed":
+      return read.lastKnown;
+    case "loading":
+    case "signed_out":
+      return [];
+  }
+}
+
+/** Why the withdrawal check cannot clear, or `null` when it can. */
+function withdrawalsUnknownCopy(read: NeedsYouWithdrawalRead): string | null {
+  if (read.state === "failed") return NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY;
+  if (read.state === "ready" && !read.complete) return NEEDS_YOU_WITHDRAWALS_INCOMPLETE_COPY;
+  return null;
+}
+
 /**
- * The Needs you model. The status follows the approvals inbox alone, because
- * it is the read whose silence would be a false all-clear: a failed read is
- * `unknown`, and a failed refetch over an earlier EMPTY read is `unknown` too,
- * since repeating that empty answer would be a clear nobody verified. A failed
- * refetch that still holds earlier rows keeps them, an approval that may since
- * have resolved being a safe overstatement.
+ * The Needs you model. The status follows the two reads whose silence would
+ * be a false all-clear: the approvals inbox and the withdrawal check.
+ *
+ * Approvals: a failed read is `unknown`, and a failed refetch over an earlier
+ * EMPTY read is `unknown` too, since repeating that empty answer would be a
+ * clear nobody verified. A failed refetch that still holds earlier rows keeps
+ * them, an approval that may since have resolved being a safe overstatement.
+ *
+ * Withdrawals: a failed check, or one that stopped before the last
+ * withdrawal (`complete: false`), is `unknown` whatever else is listed, and
+ * keeps the notices already known. Every item that is known stays listed in
+ * every status; only the count waits for both checks.
  */
 export function needsYouModelOf(input: NeedsYouInput): NeedsYouModel {
   // Withdrawals first among the non-approval items: a release time is a deadline.
   const missions = [
-    ...input.withdrawalNotices.map((notice) => withdrawalNoticeNeedsYouItem(notice, input.nowMs)),
+    ...withdrawalNoticesOf(input.withdrawals).map((notice) => withdrawalNoticeNeedsYouItem(notice, input.nowMs)),
     ...(input.sessions === null ? [] : missionNeedsYouItems(input.sessions)),
   ];
   const data = input.approvals;
@@ -360,9 +431,20 @@ export function needsYouModelOf(input: NeedsYouInput): NeedsYouModel {
           .map((row) => approvalNeedsYouItem(row, input.nowMs));
   const items = [...approvals, ...missions];
 
-  if (data !== undefined && !data.ok) return { status: "unknown", count: null, items: missions };
-  if (approvals.length > 0) return { status: "ready", count: items.length, items };
-  if (input.approvalsErrored) return { status: "unknown", count: null, items: missions };
-  if (data === undefined) return { status: "loading", count: null, items: missions };
-  return { status: "ready", count: items.length, items };
+  const approvalsUnknown =
+    (data !== undefined && !data.ok) || (input.approvalsErrored && approvals.length === 0);
+  const withdrawalsCopy = withdrawalsUnknownCopy(input.withdrawals);
+  if (approvalsUnknown || withdrawalsCopy !== null) {
+    const unknownCopy = !approvalsUnknown
+      ? withdrawalsCopy
+      : withdrawalsCopy === null
+        ? NEEDS_YOU_UNKNOWN_COPY
+        : NEEDS_YOU_ALL_UNKNOWN_COPY;
+    return { status: "unknown", unknownCopy, count: null, items };
+  }
+  if (approvals.length > 0) return { status: "ready", unknownCopy: null, count: items.length, items };
+  if (data === undefined || input.withdrawals.state === "loading") {
+    return { status: "loading", unknownCopy: null, count: null, items };
+  }
+  return { status: "ready", unknownCopy: null, count: items.length, items };
 }

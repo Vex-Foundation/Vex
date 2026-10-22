@@ -51,6 +51,7 @@
 
 import { z } from "zod";
 import { resolveVexCloudOrigin } from "@vex-lib/vex-cloud-endpoint.js";
+import { VEX_CLOUD_WITHDRAW_COOLING_MAX_SECONDS } from "@shared/schemas/vex-cloud-funding.js";
 import { log } from "../logger/index.js";
 
 /** Per-request deadline. The calls are small JSON exchanges. */
@@ -134,6 +135,8 @@ export const accountResponseSchema = z.object({
     provisional_cap_micro_usd: rawInteger,
     withdraw_daily_limit_micro_usd: rawInteger.optional(),
     withdraw_daily_remaining_wei: rawInteger.nullable().optional(),
+    /** The effective withdrawal cooling in seconds; absent from backends deployed before it was reported. */
+    withdraw_cooling_seconds: z.number().int().nonnegative().max(VEX_CLOUD_WITHDRAW_COOLING_MAX_SECONDS).optional(),
   }),
 });
 export type VexCloudAccountResponse = z.infer<typeof accountResponseSchema>;

@@ -293,7 +293,7 @@ describe("deposit", () => {
     expect(within(card).getByText("0.0000072 ETH")).toBeTruthy();
     const buttons = within(card).getAllByRole("button");
     expect(buttons.map((b) => b.textContent)).toEqual(["Reject", "Approve deposit"]);
-    expect(document.activeElement).toBe(buttons[0]);
+    await waitFor(() => expect(document.activeElement).toBe(buttons[0]));
 
     fireEvent.click(within(card).getByRole("button", { name: "Approve deposit" }));
     expect(bridge.submitDeposit).not.toHaveBeenCalled();
@@ -366,6 +366,7 @@ describe("withdraw", () => {
     withdrawableWei: String(10_000n * E18),
     dailyRemainingWei: null,
     dailyLimitMicroUsd: "500000000",
+    coolingSeconds: 43_200,
     preparedAt: NOW,
     expiresAt: "2026-10-21T12:05:00.000Z",
   };
@@ -405,7 +406,7 @@ describe("withdraw", () => {
     expect(within(card).getByText("Funds leave Vex Inference:")).toBeTruthy();
     expect(within(card).getAllByText(W1).length).toBeGreaterThan(0);
     expect(within(card).getByText("Not available")).toBeTruthy();
-    expect(document.activeElement?.textContent).toBe("Reject");
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Reject"));
     fireEvent.click(within(card).getByRole("button", { name: "Approve withdrawal" }));
     expect(bridge.submitWithdrawal).toHaveBeenCalledWith({ proposalId: PROPOSAL.proposalId, destination: W1, amountWei: PROPOSAL.amountWei });
     const status = await screen.findByTestId("withdraw-status");
@@ -431,7 +432,7 @@ describe("withdraw", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
     const card = await screen.findByTestId("withdraw-approval");
     const reject = within(card).getByRole("button", { name: "Reject" });
-    expect(document.activeElement).toBe(reject);
+    await waitFor(() => expect(document.activeElement).toBe(reject));
     fireEvent.click(reject);
     expect(await screen.findByText("Withdrawal rejected. Nothing was sent.")).toBeTruthy();
     expect(bridge.submitWithdrawal).not.toHaveBeenCalled();
@@ -445,7 +446,7 @@ describe("withdraw", () => {
     expect(block.textContent).not.toMatch(/Nothing was sent/);
     expect(within(block).getAllByRole("button").map((b) => b.textContent)).toEqual(["Check status", "Close", "Open History"]);
     expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
-    expect(document.activeElement?.textContent).toBe("Check status");
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Check status"));
   });
 
   it("Check status replays the SAME proposal and shows the withdrawal once Vex Cloud answers", async () => {

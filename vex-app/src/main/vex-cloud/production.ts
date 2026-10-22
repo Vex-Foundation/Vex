@@ -57,7 +57,6 @@ let withdrawalOrigins: WithdrawalOriginGuard | null = null;
 function productionWithdrawalOrigins(): WithdrawalOriginGuard {
   withdrawalOrigins ??= createWithdrawalOriginGuard({
     store: productionWithdrawalOriginStore(),
-    now: () => new Date(),
     emitNotice: (notice) => {
       emitVexInferenceForeignWithdrawalNotice({
         withdrawalId: notice.withdrawalId,

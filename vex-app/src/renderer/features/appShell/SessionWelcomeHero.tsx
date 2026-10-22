@@ -68,7 +68,7 @@ import { type Box, fitFor, tokenBox } from "../../components/vex/k2/k2-rig.js";
 import { K2TokenButton, targetBox } from "../../components/vex/k2/K2TokenButton.js";
 import { useMorning } from "../../components/vex/k2/k2-morning.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
-import { NEEDS_YOU_UNKNOWN_COPY } from "../vex/needs-you.js";
+import { NEEDS_YOU_ALL_UNKNOWN_COPY } from "../vex/needs-you.js";
 import { useVexPresence } from "../vex/useVexPresence.js";
 import { noteVexOnWelcome } from "../vex/vex-dock.js";
 import { vexEmotionOf } from "../vex/vex-emotion.js";
@@ -280,8 +280,8 @@ export function SessionWelcomeHero(): JSX.Element {
 
   // The database down (reference d3x-database-down): the sessions read is the
   // one the sidebar already holds; when it failed, its own message heads the
-  // callout, and the approvals inbox's "could not check" line joins it when
-  // that read failed too. Retry reads both again; nothing is computed.
+  // callout, and Needs you's "could not check" line (approvals, withdrawals
+  // or both) joins it when that read failed too. Retry reads both again; nothing is computed.
   const sessionsQuery = useSessionsList();
   const sessionsData = sessionsQuery.data;
   const readFailure =
@@ -300,7 +300,7 @@ export function SessionWelcomeHero(): JSX.Element {
           className="vex-welcome__alert"
           data-vex-welcome-alert=""
           title={readFailure}
-          hint={needsYouUnknown ? NEEDS_YOU_UNKNOWN_COPY : undefined}
+          hint={needsYouUnknown ? (presence.needsYou.unknownCopy ?? NEEDS_YOU_ALL_UNKNOWN_COPY) : undefined}
           actions={
             <>
               <button

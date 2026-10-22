@@ -2,7 +2,9 @@
  * The cooling period on the funding page, against a mocked
  * `window.vex.vexCloud` bridge.
  *
- * Pinned: the approval card states the 12-hour delay and a release time;
+ * Pinned: the approval card states the delay the backend reported in the
+ * proposal (1 hour for 3600 s, 12 hours for 43200 s) and a release time, and
+ * no number at all when the backend reported none;
  * a cooling withdrawal reads "Cooling, releases at HH:MM" with a Cancel key;
  * Cancel asks "Cancel this withdrawal? The VEX returns to your balance." with
  * Reject as the first focus, and the confirmed cancel turns the row into
@@ -21,6 +23,7 @@ import type { VexCloudWithdrawal, VexCloudWithdrawalNotice, VexCloudWithdrawalPr
 import { VexCloudFundingPage } from "../VexCloudFundingScreen.js";
 import { CANCEL_CONFIRM, CANCEL_UNKNOWN_DETAIL } from "../CancelWithdrawal.js";
 import { IT_WAS_ME } from "../WithdrawalNotices.js";
+import { COOLING_UNREPORTED_LINE } from "../WithdrawTab.js";
 import { useUnresolvedWithdrawals } from "../unresolved-withdrawals.js";
 
 const W1 = "0x1111111111111111111111111111111111111111";
@@ -82,6 +85,7 @@ const PROPOSAL: VexCloudWithdrawalProposal = {
   withdrawableWei: String(10_000n * E18),
   dailyRemainingWei: null,
   dailyLimitMicroUsd: "500000000",
+  coolingSeconds: 43_200,
   preparedAt: NOW,
   expiresAt: "2026-10-21T12:05:00.000Z",
 };
@@ -170,17 +174,32 @@ async function sendWithdrawal(withdrawal: VexCloudWithdrawal): Promise<HTMLEleme
 }
 
 describe("the approval card", () => {
-  it("states the 12-hour safety delay, the release time, and that it can be cancelled until then", async () => {
-    bridge.prepareWithdrawal.mockReturnValue(invocation({ ok: true, data: PROPOSAL }));
+  async function cardLine(coolingSeconds: number | null): Promise<HTMLElement> {
+    bridge.prepareWithdrawal.mockReturnValue(invocation({ ok: true, data: { ...PROPOSAL, coolingSeconds } }));
     renderPage();
     fireEvent.click(await screen.findByRole("tab", { name: "Withdraw" }));
     fireEvent.change(await screen.findByLabelText("You withdraw"), { target: { value: "6000" } });
     fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
     const card = await screen.findByTestId("withdraw-approval");
-    const line = within(card).getByTestId("withdraw-cooling-line").textContent ?? "";
-    const expectedAt = local(new Date(Date.now() + 12 * HOUR).toISOString());
-    expect(line).toBe(`After a 12-hour safety delay, at about ${expectedAt}. You can cancel it until then.`);
     expect(within(card).getByText("Released")).toBeTruthy();
+    return within(card).getByTestId("withdraw-cooling-line");
+  }
+
+  it.each([
+    [3_600, "1-hour", HOUR],
+    [43_200, "12-hour", 12 * HOUR],
+    [5_400, "90-minute", 1.5 * HOUR],
+  ])("a backend cooling of %s s reads a %s safety delay, its release time, and that it can be cancelled until then", async (coolingSeconds, words, delayMs) => {
+    const line = (await cardLine(coolingSeconds)).textContent ?? "";
+    const expectedAt = local(new Date(Date.now() + delayMs).toISOString());
+    expect(line).toBe(`After a ${words} safety delay, at about ${expectedAt}. You can cancel it until then.`);
+  });
+
+  it("states no number when the backend did not report its cooling period", async () => {
+    const line = (await cardLine(null)).textContent ?? "";
+    expect(line).toBe(COOLING_UNREPORTED_LINE);
+    expect(line).toBe("After the safety delay set by Vex Inference. The exact time shows once it is sent. You can cancel it until then.");
+    expect(line).not.toMatch(/[0-9]/);
   });
 });
 
@@ -192,7 +211,7 @@ describe("a cooling withdrawal", () => {
     fireEvent.click(within(status).getByRole("button", { name: "Cancel" }));
     const confirm = await screen.findByTestId("withdraw-cancel-confirm");
     expect(within(confirm).getByText(CANCEL_CONFIRM)).toBeTruthy();
-    expect(document.activeElement?.textContent).toBe("Reject");
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Reject"));
     // No REAL FUNDS card: a cancel only returns funds.
     expect(within(status).queryByText("REAL FUNDS")).toBeNull();
     const cancelled = { ...withdrawal, status: "cancelled" as const, cancellable: false };

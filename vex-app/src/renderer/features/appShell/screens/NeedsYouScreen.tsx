@@ -26,7 +26,7 @@ import { Swatch } from "../../../components/ui/swatch.js";
 import { usePendingApprovalsAll } from "../../../lib/api/approvals.js";
 import {
   NEEDS_YOU_EMPTY_COPY,
-  NEEDS_YOU_UNKNOWN_COPY,
+  NEEDS_YOU_ALL_UNKNOWN_COPY,
   needsYouMetaText,
   type NeedsYouItem,
 } from "../../vex/needs-you.js";
@@ -165,7 +165,7 @@ export function NeedsYouScreen({
           <EmptyBlock
             scope="Needs you"
             state="error"
-            title={NEEDS_YOU_UNKNOWN_COPY}
+            title={model.unknownCopy ?? NEEDS_YOU_ALL_UNKNOWN_COPY}
             // While the read runs again there is no key to press twice; the
             // block says so instead.
             detail={model.retrying ? "Checking again" : undefined}

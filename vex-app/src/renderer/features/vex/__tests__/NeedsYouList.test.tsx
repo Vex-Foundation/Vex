@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 function model(overrides: Partial<NeedsYouListModel> = {}): NeedsYouListModel {
-  return { status: "ready", items: [], retry: vi.fn(), retrying: false, ...overrides };
+  return { status: "ready", unknownCopy: null, items: [], retry: vi.fn(), retrying: false, ...overrides };
 }
 
 function itemsOf(...candidates: Array<NeedsYouItem | null>): NeedsYouItem[] {
@@ -111,7 +111,7 @@ describe("NeedsYouList states", () => {
 
   it("an unreadable inbox says so and offers Retry, never the empty line", () => {
     const retry = vi.fn();
-    render(<NeedsYouList model={model({ status: "unknown", retry })} variant="panel" onReview={vi.fn()} />);
+    render(<NeedsYouList model={model({ status: "unknown", unknownCopy: NEEDS_YOU_UNKNOWN_COPY, retry })} variant="panel" onReview={vi.fn()} />);
     expect(screen.getByText(NEEDS_YOU_UNKNOWN_COPY)).toBeTruthy();
     expect(screen.queryByText(NEEDS_YOU_EMPTY_COPY)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -129,7 +129,7 @@ describe("NeedsYouList states", () => {
   it("still lists the missions that wait when the inbox is unreadable", () => {
     render(
       <NeedsYouList
-        model={model({ status: "unknown", items: itemsOf(RECOVER) })}
+        model={model({ status: "unknown", unknownCopy: NEEDS_YOU_UNKNOWN_COPY, items: itemsOf(RECOVER) })}
         variant="panel"
         onReview={vi.fn()}
       />,

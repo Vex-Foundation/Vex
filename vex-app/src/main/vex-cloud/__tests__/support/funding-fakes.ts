@@ -411,13 +411,13 @@ export class MemoryWithdrawalOriginStore implements WithdrawalOriginStore {
 }
 
 /** A guard over an in-memory store that records every notice it emits. */
-export function memoryWithdrawalOrigins(now: () => Date = () => NOW): {
+export function memoryWithdrawalOrigins(): {
   readonly store: MemoryWithdrawalOriginStore;
   readonly guard: WithdrawalOriginGuard;
   readonly emitted: VexCloudWithdrawalNotice[];
 } {
   const store = new MemoryWithdrawalOriginStore();
   const emitted: VexCloudWithdrawalNotice[] = [];
-  const guard = createWithdrawalOriginGuard({ store, now, emitNotice: (notice) => emitted.push(notice) });
+  const guard = createWithdrawalOriginGuard({ store, emitNotice: (notice) => emitted.push(notice) });
   return { store, guard, emitted };
 }
