@@ -328,9 +328,9 @@ export function vexInferenceToolAvailability(
 export function vexInferenceUnavailableSentence(reason: VexInferenceUnavailableReason): string {
   switch (reason) {
     case "provider_not_vex_inference":
-      return "Vex Inference tools are unavailable: the inference provider is not Vex Inference. Nothing was read or sent. The user can switch the provider to Vex Inference in Settings.";
+      return "Vex Inference tools are unavailable: the inference provider is not Vex Inference. Nothing was read or sent. The user can switch the provider to Vex Inference in Settings, Inference.";
     case "not_signed_in":
-      return "Vex Inference tools are unavailable: no Vex Inference session is held (signed out, or Vex is locked). Nothing was read or sent. The user can unlock Vex and sign in under Settings, Vex Inference.";
+      return "Vex Inference tools are unavailable: no Vex Inference session is held (signed out, or Vex is locked). Nothing was read or sent. The user can unlock Vex and sign in under Settings, Inference.";
     case "host_not_mounted":
       return "Vex Inference tools are unavailable in this runtime: the desktop app is not running them. Nothing was read or sent.";
   }

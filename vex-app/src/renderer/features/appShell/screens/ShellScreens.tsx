@@ -86,6 +86,7 @@ export function ShellScreens(): JSX.Element {
           key="settings"
           origin={route.origin}
           section={route.section}
+          inferenceProvider={route.inferenceProvider ?? null}
           onClose={close}
         />
       ) : route.kind === "portfolio" ? (

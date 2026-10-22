@@ -241,6 +241,22 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     );
   });
 
+  it("the model key opens Settings, Inference, on the active provider", async () => {
+    const { useUiStore } = await import("../../../../stores/uiStore.js");
+    models = [{ modelId: "openai/gpt-6-luna", reasoning: null }];
+    const { container } = mountDocked();
+    const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens inference settings.");
+    fireEvent.click(chip);
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "settings",
+      origin: null,
+      section: "inference",
+      inferenceProvider: null,
+    });
+    useUiStore.setState({ shellRoute: { kind: "none" } });
+  });
+
   it("an unrouted model id passes through the display trim untouched", () => {
     // Only the FIRST provider segment is cut; a bare id has nothing to cut,
     // and a variant suffix after the model name must survive.

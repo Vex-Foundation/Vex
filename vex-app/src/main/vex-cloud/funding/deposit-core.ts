@@ -101,7 +101,7 @@ export function isLinkedTo(account: VexCloudAccountResponse, address: string): b
 }
 
 export const SENDER_NOT_LINKED_DETAIL =
-  "That wallet is not linked to your Vex Inference account, so a deposit from it would not reach your balance. Nothing was signed. Sign in again under Settings, Vex Inference to link it, or pick a linked wallet.";
+  "That wallet is not linked to your Vex Inference account, so a deposit from it would not reach your balance. Nothing was signed. Sign in again under Settings, Inference to link it, or pick a linked wallet.";
 
 const RATE_UNAVAILABLE_DETAIL =
   "Vex Inference has no current VEX price, so the $5 minimum cannot be checked. Nothing was signed; try again in a few minutes.";
@@ -400,7 +400,7 @@ export async function executeDeposit(
       const mismatch = pinRefusal(pinned, account.value.deposit_address);
       if (mismatch !== null && !mismatch.ok) throw new GateRefusal(mismatch.refusal);
       if (!isLinkedTo(account.value, from)) {
-        gate("sender_not_linked", `That wallet is no longer linked to your Vex Inference account. ${NOTHING_SIGNED} Sign in again under Settings, Vex Inference to link it.`);
+        gate("sender_not_linked", `That wallet is no longer linked to your Vex Inference account. ${NOTHING_SIGNED} Sign in again under Settings, Inference to link it.`);
       }
       linkedAtGate = true;
       const minimum = minimumOf(account.value);

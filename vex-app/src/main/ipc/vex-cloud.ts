@@ -104,7 +104,7 @@ function registerSignInHandler(deps: VexCloudDeps): () => void {
         return unexpected(
           cause,
           ctx.requestId,
-          "Vex Inference sign-in stopped unexpectedly. Open Vex Inference in Settings to see whether you are signed in, then try again.",
+          "Vex Inference sign-in stopped unexpectedly. Open Settings, Inference, to see whether you are signed in, then try again.",
         );
       } finally {
         signInRunning = false;

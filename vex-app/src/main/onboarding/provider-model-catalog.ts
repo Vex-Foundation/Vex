@@ -33,6 +33,7 @@ import {
   type ProviderListModelsResult,
   type ProviderModelOption,
 } from "@shared/schemas/provider.js";
+import { usdPerMillionFromPerToken } from "@shared/usd-per-million.js";
 import {
   createReasoningCapabilityHook,
   type ModelReasoningCapabilityEntry,
@@ -124,14 +125,6 @@ function callerAbortError(): Error {
   return Object.assign(new Error("Catalogue request cancelled"), { name: "AbortError" });
 }
 
-function parsePricePerMillion(raw: unknown): number | null {
-  if (raw === undefined || raw === null || raw === "") return null;
-  const perToken = Number(raw);
-  if (!Number.isFinite(perToken) || perToken < 0) return null;
-  const perMillion = perToken * 1_000_000;
-  return Number.isFinite(perMillion) ? perMillion : null;
-}
-
 function providerIdFor(modelId: string): string {
   const slash = modelId.indexOf("/");
   const raw = slash > 0 ? modelId.slice(0, slash) : "openrouter";
@@ -181,8 +174,10 @@ function normalizeModel(model: {
       model.contextLength > 0
         ? model.contextLength
         : null,
-    pricingInputPerMillion: parsePricePerMillion(model.pricing.prompt),
-    pricingOutputPerMillion: parsePricePerMillion(model.pricing.completion),
+    // Exact decimal text, never a float: for Vex Inference these are the
+    // prices charged, margin included, and the picker must not round them.
+    pricingInputPerMillion: usdPerMillionFromPerToken(model.pricing.prompt),
+    pricingOutputPerMillion: usdPerMillionFromPerToken(model.pricing.completion),
     ...(created !== undefined && { created }),
   };
 }

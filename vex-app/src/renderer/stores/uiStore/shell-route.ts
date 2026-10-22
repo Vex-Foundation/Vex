@@ -31,6 +31,7 @@
  * session-scoped register behind the user's back.
  */
 
+import type { ProviderName } from "@shared/schemas/provider.js";
 import type { SessionModeFilter } from "../uiStore.js";
 import type { RuntimeMode } from "./runtime-mode.js";
 
@@ -97,9 +98,12 @@ export type SettingsSection =
   | "wallets"
   | "apiKeys"
   | "superboardKey"
-  | "model"
-  /** Vex Cloud sign-in, linked wallets and the VEX balance. */
-  | "vexCloud"
+  /**
+   * The inference provider (Vex Inference or OpenRouter) and its model, with
+   * the Vex Inference account (sign-in, linked wallets, the VEX balance)
+   * under the Vex Inference choice.
+   */
+  | "inference"
   | "memory"
   | "tuning"
   /** The Lighter points campaign; the one section with no wizard step behind it. */
@@ -202,6 +206,12 @@ export type ShellRoute =
       readonly kind: "settings";
       readonly origin: ShellScreenOrigin | null;
       readonly section: SettingsSection | null;
+      /**
+       * `inference` only: the provider choice the section opens on. Absent or
+       * null shows the active provider. Showing a choice never switches the
+       * provider; only that choice's own save does.
+       */
+      readonly inferenceProvider?: ProviderName | null;
     }
   | {
       readonly kind: "tokenHistory";
@@ -209,6 +219,18 @@ export type ShellRoute =
       readonly token: ShellRouteToken;
       readonly returnTo: ShellRouteReturnTo;
     };
+
+/**
+ * Settings opened on the Inference section, showing `provider`'s choice (the
+ * Vex Inference account, or the OpenRouter form), or the active provider
+ * with null. Every way into the Vex Inference account (Fund's way back, the
+ * welcome notice, the funding page's sign-in pointer) lands through this.
+ */
+export function inferenceSettingsRoute(
+  provider: ProviderName | null,
+): Extract<ShellRoute, { readonly kind: "settings" }> {
+  return { kind: "settings", origin: null, section: "inference", inferenceProvider: provider };
+}
 
 /**
  * WHAT AN OPEN AGENT SCAN SCREEN IS NARROWED TO - the closed union every

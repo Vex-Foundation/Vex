@@ -35,6 +35,7 @@ import { SENDER_NOT_LINKED } from "../DepositTab.js";
 import { DISMISS_LOST, LOST_UNRESOLVED_DETAIL, OUTCOME_UNKNOWN_DETAIL, UNRESOLVED_BLOCKS_REVIEW } from "../WithdrawTab.js";
 import { CLAIM_STATUS_UNKNOWN } from "../CashbackTab.js";
 import { useUnresolvedWithdrawals } from "../unresolved-withdrawals.js";
+import { useUiStore } from "../../../../stores/uiStore.js";
 
 const W1 = "0x1111111111111111111111111111111111111111";
 const W2 = "0x2222222222222222222222222222222222222222";
@@ -188,7 +189,14 @@ describe("page states", () => {
     bridge.account.mockResolvedValue({ ok: true, data: { state: "signed_out", reason: "not_signed_in", localWallets: [W1] } });
     renderPage();
     expect(await screen.findByText("Sign in to Vex Inference first.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open Vex Inference settings" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open Vex Inference settings" }));
+    // Settings, Inference, with the Vex Inference account shown.
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "settings",
+      origin: null,
+      section: "inference",
+      inferenceProvider: "vexcloud",
+    });
     expect(screen.queryByRole("tab")).toBeNull();
   });
 

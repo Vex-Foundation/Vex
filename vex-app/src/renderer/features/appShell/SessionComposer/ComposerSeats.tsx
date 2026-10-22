@@ -18,6 +18,7 @@
 
 import { lazy, Suspense, type JSX, type ReactNode } from "react";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { inferenceSettingsRoute } from "../../../stores/uiStore/shell-route.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { useAvailableModels } from "../../../lib/api/models.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
@@ -86,10 +87,10 @@ function ModelKey({ modelId }: { readonly modelId: string }): JSX.Element {
       <button
         type="button"
         data-vex-area="composer-model-chip"
-        aria-label={`Model: ${modelId}. Opens model settings.`}
+        aria-label={`Model: ${modelId}. Opens inference settings.`}
         className={`vex-composer-options__model ${OPTIONS_KEY}`}
         onClick={() =>
-          setShellRoute({ kind: "settings", origin: null, section: "model" })
+          setShellRoute(inferenceSettingsRoute(null))
         }
       >
         <span data-vex-model-label className="min-w-0 max-w-48 flex-1 truncate">

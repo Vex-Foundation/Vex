@@ -67,8 +67,8 @@ const CLOUD_MODEL = {
   displayName: "Anthropic: Claude Haiku 5.5",
   providerId: "anthropic",
   contextLength: 1_000_000,
-  pricingInputPerMillion: 0.115,
-  pricingOutputPerMillion: 0.575,
+  pricingInputPerMillion: "0.115",
+  pricingOutputPerMillion: "0.575",
 };
 
 function env(provider: Partial<EnvState["provider"]> = {}): EnvState {
@@ -125,10 +125,18 @@ function signedIn(state: "signed_in" | "signed_out") {
   return { data: { ok: true, data }, isLoading: false, isError: false, refetch: () => undefined };
 }
 
-function renderStep(flowMode: "first-pass" | "back-edit" = "first-pass") {
+function renderStep(
+  flowMode: "first-pass" | "back-edit" = "first-pass",
+  settings: { readonly requestedChoice?: "vexcloud" | "openrouter" | null; readonly onChoiceChange?: (choice: string) => void } = {},
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const ui: JSX.Element = (
-    <ProviderStep completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]} onAdvance={mockOnAdvance} flowMode={flowMode} />
+    <ProviderStep
+      completedSteps={["keystore", "wallets", "apiKeys", "embedding", "agentCore"]}
+      onAdvance={mockOnAdvance}
+      flowMode={flowMode}
+      {...settings}
+    />
   );
   return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
@@ -280,5 +288,44 @@ describe("ProviderStep - Vex Inference", () => {
     const { container } = renderStep();
     expect(container.textContent).toMatch(/Vex Inference runs the agent's models/);
     expect(container.textContent).not.toMatch(/Vex Cloud/);
+  });
+
+  it("marks Vex Inference with the flat vx disc and OpenRouter with its own one-ink mark", () => {
+    mockAccount.mockReturnValue(signedIn("signed_out"));
+    const { getByRole } = renderStep();
+    const token = getByRole("button", VEX_INFERENCE).querySelector('[data-vex-provider-mark="vexcloud"] [data-vex-vx-token] svg');
+    expect(token).not.toBeNull();
+    expect([token?.getAttribute("width"), token?.getAttribute("height")]).toEqual(["20", "20"]);
+    // Decorative beside the visible name: hidden from assistive technology.
+    expect(token?.getAttribute("aria-hidden")).toBe("true");
+    expect(getByRole("button", VEX_INFERENCE).querySelector("img")).toBeNull();
+    const mark = getByRole("button", OPENROUTER).querySelector('svg[data-vex-brand-mark="openrouter"]');
+    expect(mark?.getAttribute("fill")).toBe("currentColor");
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    // The option's name stays its words: the marks add nothing to it.
+    expect(getByRole("button", OPENROUTER).getAttribute("aria-labelledby")).not.toBeNull();
+  });
+
+  it("Settings can show the Vex Inference account while OpenRouter stays the active provider", () => {
+    mockAccount.mockReturnValue(signedIn("signed_in"));
+    mockUseEnvState.mockReturnValue({
+      data: { ok: true, data: env({ configured: true, name: "openrouter", modelLabel: "anthropic/claude-sonnet-4.5" }) },
+      isLoading: false,
+      isError: false,
+    });
+    const onChoiceChange = vi.fn();
+    const { getByRole, container } = renderStep("back-edit", { requestedChoice: "vexcloud", onChoiceChange });
+    expect(getByRole("button", VEX_INFERENCE).getAttribute("aria-pressed")).toBe("true");
+    // The account (balances, Fund) is in view; nothing was saved or switched.
+    expect(container.querySelector('[data-vex-cloud-state="signed_in"]')).not.toBeNull();
+    expect(getByRole("button", { name: "Fund" })).not.toBeNull();
+    expect(mockPersistProvider).not.toHaveBeenCalled();
+    expect(onChoiceChange).not.toHaveBeenCalled();
+
+    // A press is reported (the Settings route follows it) and shows the active provider's screen.
+    fireEvent.click(getByRole("button", OPENROUTER));
+    expect(onChoiceChange).toHaveBeenCalledWith("openrouter");
+    expect(container.querySelector('[data-vex-wizard-provider="skip"]')).not.toBeNull();
+    expect(mockPersistProvider).not.toHaveBeenCalled();
   });
 });

@@ -44,8 +44,8 @@ const CATALOGUE_MODEL = {
   displayName: "Claude Sonnet 4.5",
   providerId: "anthropic",
   contextLength: 200_000,
-  pricingInputPerMillion: 3,
-  pricingOutputPerMillion: 15,
+  pricingInputPerMillion: "3",
+  pricingOutputPerMillion: "15",
 };
 
 const ENDPOINT = {

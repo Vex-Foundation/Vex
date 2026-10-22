@@ -4,7 +4,7 @@
  * Pinned, against the env read and the real ui store: the exact copy; shown
  * while OpenRouter or no provider is named; never while Vex Inference
  * (`vexcloud`) is named, configured or not, and never while the read is
- * loading or failed; "Use Vex Inference" opens the Model section in Settings
+ * loading or failed; "Use Vex Inference" opens Settings, Inference, on Vex Inference
  * and saves nothing; "Not now" persists the dismissal, hands the caret to the
  * composer and keeps the card away on the next mount; both keys are native
  * buttons inside a region named by the title; no blue fill (the send key
@@ -89,10 +89,15 @@ describe("VexInferenceNotice - when it shows", () => {
 });
 
 describe("VexInferenceNotice - its keys", () => {
-  it("Use Vex Inference opens the provider setting in Settings and dismisses nothing", () => {
+  it("Use Vex Inference opens Settings, Inference, on the Vex Inference choice and dismisses nothing", () => {
     render(<VexInferenceNotice />);
     fireEvent.click(screen.getByRole("button", { name: "Use Vex Inference" }));
-    expect(useUiStore.getState().shellRoute).toEqual({ kind: "settings", origin: null, section: "model" });
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "settings",
+      origin: null,
+      section: "inference",
+      inferenceProvider: "vexcloud",
+    });
     expect(useUiStore.getState().vexInferenceNoticeDismissed).toBe(false);
   });
 

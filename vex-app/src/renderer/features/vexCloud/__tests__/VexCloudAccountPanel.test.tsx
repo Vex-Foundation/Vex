@@ -1,14 +1,16 @@
 /**
- * The Vex Cloud account panel (Settings "Vex Inference" and the provider
- * step's Vex Inference branch), against a mocked `window.vex.vexCloud` bridge
+ * The Vex Cloud account panel (the provider step's Vex Inference choice, in
+ * onboarding and in Settings, Inference), against a mocked `window.vex.vexCloud` bridge
  * only. The user-facing name is "Vex Inference"; the panel's own copy never
  * says "Vex Cloud".
  *
  * Pinned per state: loading is a word and a quiet bar; a locked vault and an
  * outage are said in words with a retry; signed out lists the wallets that
  * will sign and the one Sign in press sends EXACTLY that list; no wallet
- * means no Sign in; signed in shows the balance with its unit, its USD
- * estimate and the rate age, a missing estimate reads "Not available",
+ * means no Sign in; signed in shows the balance with its unit and its USD
+ * estimate per row, the rate and its age ONCE under the balances, deposit
+ * credit not final yet in the backend's own terms (usable for AI now,
+ * withdrawable once final), a missing estimate reads "Not available",
  * linked and not-linked wallets are named; an expired session says so;
  * Cancel cancels; Sign out removes the session.
  */
@@ -197,19 +199,58 @@ describe("signed out", () => {
 });
 
 describe("signed in", () => {
-  it("shows the balance with its unit, USD estimate and rate age; a missing estimate reads Not available", async () => {
+  it("shows the balance with its unit and USD estimate per row; a missing estimate reads Not available", async () => {
     account.mockResolvedValue({ ok: true, data: { state: "signed_in", account: signedInAccount(), localWallets: [W1, W2], depositPin: { state: "not_open" } } });
     renderPanel();
 
     expect(await screen.findByText("Signed in")).toBeTruthy();
     const available = document.querySelector('[data-vex-cloud-balance="available"]');
     expect(available?.textContent).toContain("1,234.56 VEX");
-    expect(document.querySelector('[data-vex-cloud-usd="available"]')?.textContent).toBe("about $1.23 · rate 2 min old");
+    expect(document.querySelector('[data-vex-cloud-usd="available"]')?.textContent).toBe("about $1.23");
     const reserved = document.querySelector('[data-vex-cloud-balance="reserved"]');
     expect(reserved?.textContent).toContain("less than 0.01 VEX");
     expect(document.querySelector('[data-vex-cloud-usd="reserved"]')?.textContent).toBe("USD estimate: Not available");
     // Zero phase-2 balances are not drawn.
     expect(document.querySelector('[data-vex-cloud-balance="claimable"]')).toBeNull();
+  });
+
+  it("states the rate and its age once for the whole block, never per row", async () => {
+    const balances = {
+      ...signedInAccount().balances,
+      provisional: vexAmount("2000000000000000000000", "2000000"),
+      pendingWithdrawal: vexAmount("3000000000000000000", "3000"),
+      claimable: vexAmount("4000000000000000000", "4000"),
+    };
+    account.mockResolvedValue({
+      ok: true,
+      data: { state: "signed_in", account: signedInAccount({ balances }), localWallets: [W1], depositPin: { state: "not_open" } },
+    });
+    renderPanel();
+    await screen.findByText("Signed in");
+    const rows = [...document.querySelectorAll("[data-vex-cloud-balance]")];
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    for (const row of rows) expect(row.textContent).not.toMatch(/rate|old/);
+    // 10^15 wei per micro-USD: one VEX is 1,000 micro-USD.
+    const line = document.querySelector("[data-vex-cloud-rate-line]");
+    expect(line?.textContent).toBe("1 VEX = $0.001, rate 2 min old. Balances as of " + new Date("2026-10-20T12:01:00.000Z").toLocaleTimeString() + ".");
+    expect(document.body.textContent?.match(/rate 2 min old/g)).toHaveLength(1);
+  });
+
+  it("says what a deposit not final yet can and cannot do, in the backend's terms", async () => {
+    const balances = { ...signedInAccount().balances, provisional: vexAmount("2000000000000000000000", "2000000") };
+    account.mockResolvedValue({
+      ok: true,
+      data: { state: "signed_in", account: signedInAccount({ balances }), localWallets: [W1], depositPin: { state: "not_open" } },
+    });
+    renderPanel();
+    await screen.findByText("Signed in");
+    const row = document.querySelector('[data-vex-cloud-balance="provisional"]');
+    expect(row?.textContent).toContain("Deposit credit, not final yet");
+    expect(row?.textContent).toContain("2,000.00 VEX");
+    expect(document.querySelector('[data-vex-cloud-note="provisional"]')?.textContent).toBe(
+      "Usable for AI now. Moves to Available once the deposit is final; only then can it be withdrawn.",
+    );
+    expect(screen.queryByText("Pending deposits")).toBeNull();
   });
 
   it("names linked and not-linked wallets and offers to link", async () => {

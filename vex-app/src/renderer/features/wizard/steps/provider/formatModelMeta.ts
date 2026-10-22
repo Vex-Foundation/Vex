@@ -1,4 +1,5 @@
 import type { ProviderModelOption } from "@shared/schemas/provider.js";
+import { usdDecimalFromNumber } from "@shared/usd-per-million.js";
 
 export function formatContextLength(value: number): string {
   if (value >= 1_000_000) {
@@ -8,11 +9,24 @@ export function formatContextLength(value: number): string {
   return String(value);
 }
 
+/**
+ * Exact USD decimal text -> "$0.14375", "$11.5", "$1,250": every digit the
+ * provider published, thousands grouped, never rounded. A Vex Inference
+ * price is what is charged, so a shorter figure would understate it.
+ */
+export function formatUsdPerMillion(decimalText: string): string {
+  const [whole = "0", fraction] = decimalText.split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction === undefined ? `$${grouped}` : `$${grouped}.${fraction}`;
+}
+
+/**
+ * A per-1M price that crossed as a number (the OpenRouter endpoint list) ->
+ * its published digits ("$0.575", "$11.5"), via `usdDecimalFromNumber`.
+ */
 export function formatPrice(value: number): string {
-  if (value === 0) return "$0";
-  if (value < 0.01) return `$${Number(value.toPrecision(2))}`;
-  if (value < 1) return `$${Number(value.toFixed(2))}`;
-  return `$${Number(value.toFixed(value < 10 ? 2 : 0))}`;
+  const text = usdDecimalFromNumber(value);
+  return text === null ? "Not available" : formatUsdPerMillion(text);
 }
 
 export function formatModelMeta(model: ProviderModelOption): string {
@@ -23,10 +37,10 @@ export function formatModelMeta(model: ProviderModelOption): string {
 
   const prices: string[] = [];
   if (model.pricingInputPerMillion !== null) {
-    prices.push(`${formatPrice(model.pricingInputPerMillion)} in`);
+    prices.push(`${formatUsdPerMillion(model.pricingInputPerMillion)} in`);
   }
   if (model.pricingOutputPerMillion !== null) {
-    prices.push(`${formatPrice(model.pricingOutputPerMillion)} out`);
+    prices.push(`${formatUsdPerMillion(model.pricingOutputPerMillion)} out`);
   }
   if (prices.length > 0) parts.push(`${prices.join(" / ")} per 1M`);
   return parts.join(" · ");

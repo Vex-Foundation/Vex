@@ -1,6 +1,7 @@
 /**
  * The welcome's Vex Inference notice: "AI is now paid in VEX", under the
- * greeting, with "Use Vex Inference" (opens the provider setting in Settings)
+ * greeting, with "Use Vex Inference" (opens Settings, Inference, on the Vex
+ * Inference choice)
  * and "Not now" (dismisses it for good).
  *
  * Shown only while the env read is known and names a provider other than
@@ -19,6 +20,7 @@ import { useId, type JSX } from "react";
 import { Button } from "../../components/ui/button.js";
 import { useEnvState } from "../../lib/api/onboarding.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { inferenceSettingsRoute } from "../../stores/uiStore/shell-route.js";
 import { focusAgentComposer } from "./composer-focus.js";
 
 export const VEX_INFERENCE_NOTICE_COPY = {
@@ -53,7 +55,7 @@ export function VexInferenceNotice(): JSX.Element | null {
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => setShellRoute({ kind: "settings", origin: null, section: "model" })}
+          onClick={() => setShellRoute(inferenceSettingsRoute("vexcloud"))}
         >
           {VEX_INFERENCE_NOTICE_COPY.use}
         </Button>

@@ -21,6 +21,7 @@
  */
 
 import { z } from "zod";
+import { USD_DECIMAL_PATTERN } from "../usd-per-million.js";
 
 /**
  * The inference backends (owner decision D1): `openrouter` is bring your own
@@ -141,8 +142,15 @@ export const providerModelOptionSchema = z
     displayName: z.string().trim().min(1).max(200),
     providerId: z.string().trim().min(1).max(64),
     contextLength: z.number().int().positive().nullable(),
-    pricingInputPerMillion: z.number().finite().nonnegative().nullable(),
-    pricingOutputPerMillion: z.number().finite().nonnegative().nullable(),
+    /**
+     * USD per one million prompt tokens as exact decimal text ("0.14375"),
+     * shifted from the provider's per-token string without a float; null when
+     * the provider states no plain price. For Vex Inference it is the price
+     * charged, margin included.
+     */
+    pricingInputPerMillion: z.string().regex(USD_DECIMAL_PATTERN).nullable(),
+    /** USD per one million completion tokens, exact decimal text, as above. */
+    pricingOutputPerMillion: z.string().regex(USD_DECIMAL_PATTERN).nullable(),
     /**
      * Unix seconds the model was published (`Model.created`). OPTIONAL and
      * additive: an older cached payload, or a future catalogue row that stops

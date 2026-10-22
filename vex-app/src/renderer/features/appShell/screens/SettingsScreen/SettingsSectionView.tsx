@@ -8,6 +8,7 @@
  */
 
 import { useState, type JSX } from "react";
+import type { ProviderName } from "@shared/schemas/provider.js";
 import type { WalletChain } from "@shared/schemas/wallets.js";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
@@ -25,7 +26,6 @@ import { ExportPrivateKeyModal } from "../../../wallets/ExportPrivateKeyModal.js
 import { Button } from "../../../../components/ui/button.js";
 import { LighterSection } from "./LighterSection.js";
 import { LocalRuntimeSection } from "./LocalRuntimeSection.js";
-import { VexCloudAccountPanel } from "../../../vexCloud/VexCloudAccountPanel.js";
 import { SettingsHead } from "./SettingsHead.js";
 import { SettingsLockRow } from "./SettingsLockRow.js";
 import {
@@ -55,12 +55,18 @@ export function SettingsSectionView({
   superboard,
   completedSteps,
   onReturn,
+  inferenceProvider = null,
+  onInferenceChoiceChange,
 }: {
   readonly meta: SectionMeta;
   readonly env: EnvState | null;
   readonly superboard: SuperboardKeyStatus | null;
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onReturn: () => void;
+  /** Inference only: the provider choice to show (null: the active provider). */
+  readonly inferenceProvider?: ProviderName | null;
+  /** Inference only: the provider choice now in view. */
+  readonly onInferenceChoiceChange?: (choice: ProviderName) => void;
 }): JSX.Element {
   const stepProps = {
     completedSteps,
@@ -83,7 +89,7 @@ export function SettingsSectionView({
           lead={meta.lead ?? meta.hint}
         />
       ) : null}
-      {renderSectionContent(meta, stepProps)}
+      {renderSectionContent(meta, stepProps, inferenceProvider, onInferenceChoiceChange)}
       {meta.id === "vault" ? <SettingsLockRow /> : null}
       {meta.id === "apiKeys" ? <ChainEndpointsSection /> : null}
       {meta.id === "wallets" ? <><WalletRemovalSection /><ExportPrivateKeySection env={env} /></> : null}
@@ -98,6 +104,8 @@ function renderSectionContent(
     readonly onAdvance: (next: WizardStepId) => void;
     readonly flowMode: "back-edit";
   },
+  inferenceProvider: ProviderName | null,
+  onInferenceChoiceChange: ((choice: ProviderName) => void) | undefined,
 ): JSX.Element | null {
   switch (meta.id) {
     case "superboardKey":
@@ -106,8 +114,6 @@ function renderSectionContent(
       return <LighterSection />;
     case "localRuntime":
       return <LocalRuntimeSection />;
-    case "vexCloud":
-      return <VexCloudAccountPanel />;
   }
   switch (meta.stepId) {
     case undefined:
@@ -123,7 +129,13 @@ function renderSectionContent(
     case "agentCore":
       return <AgentCoreStep {...props} />;
     case "provider":
-      return <ProviderStep {...props} />;
+      return (
+        <ProviderStep
+          {...props}
+          requestedChoice={inferenceProvider}
+          {...(onInferenceChoiceChange !== undefined && { onChoiceChange: onInferenceChoiceChange })}
+        />
+      );
   }
 }
 

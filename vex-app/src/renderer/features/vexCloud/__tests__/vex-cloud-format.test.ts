@@ -1,7 +1,7 @@
 /** Integer formatting of Vex Cloud figures: rounded down, never invented. */
 
 import { describe, expect, it } from "vitest";
-import { formatRateAge, formatTokenCount, formatUsdEstimate, formatVexAmount } from "../vex-cloud-format.js";
+import { formatRateAge, formatTokenCount, formatUsdEstimate, formatUsdPerVex, formatVexAmount } from "../vex-cloud-format.js";
 
 const vex = (wei: string) => ({ wei, decimals: 18 as const, symbol: "VEX" as const, usdMicroEstimate: null });
 
@@ -46,6 +46,32 @@ describe("formatRateAge", () => {
     expect(formatRateAge({ ...at, ageSeconds: 125 })).toBe("rate 2 min old");
     expect(formatRateAge({ ...at, ageSeconds: 7_300 })).toBe("rate 2 h old");
     expect(formatRateAge({ available: false, reason: "stale" })).toBeNull();
+  });
+});
+
+describe("formatUsdPerVex", () => {
+  const at = {
+    available: true as const,
+    source: "twap",
+    observedAt: "2026-10-20T12:00:00.000Z",
+    ageSeconds: 60,
+    validUntil: "2026-10-20T12:05:00.000Z",
+  };
+  it.each([
+    // 10^15 wei per micro-USD: 1 VEX is 1,000 micro-USD.
+    ["1000000000000000", "$0.001"],
+    // 1 VEX = $0.0018 as the backend formats it (18 fractional digits, truncated).
+    ["555555555555555.555555555555555555", "$0.0018"],
+    // Four significant digits, rounded DOWN: never above the backend's rate.
+    ["543478260869565.217391304347826086", "$0.00184"],
+    ["1000000000000", "$1"],
+    ["999999999999", "$1"],
+  ])("%s wei per micro-USD -> %s per VEX", (rate, expected) => {
+    expect(formatUsdPerVex({ ...at, vexWeiPerMicroUsd: rate })).toBe(expected);
+  });
+
+  it("claims nothing without a rate", () => {
+    expect(formatUsdPerVex({ available: false, reason: "stale" })).toBeNull();
   });
 });
 

@@ -12,13 +12,43 @@
  *
  * Each option's accessible name is its name plus its tag ("Vex Inference
  * Recommended"); its one line is the description.
+ *
+ * Each name has its mark before it: the flat vx disc (`VxToken`, the product
+ * mark beside Vex's messages) for Vex Inference, and OpenRouter's own one-ink
+ * mark from the brand set the model picker uses. Both are decorative beside
+ * the visible name.
  */
 
 import { useId, type JSX } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { ProviderName } from "@shared/schemas/provider.js";
 import { Chip } from "../../../../components/ui/chip.js";
+import { VxToken } from "../../../../components/ui/vx-token.js";
 import { cn } from "../../../../lib/utils.js";
+import { OpenRouterMark } from "./ModelBrandIcon.js";
+
+/** The mark's box beside a 14 px name (the OpenRouter box is `size-5`, the same 20). */
+const MARK_PX = 20;
+
+function ProviderMark({ value }: { readonly value: ProviderName }): JSX.Element {
+  switch (value) {
+    case "vexcloud":
+      return (
+        <span className="inline-flex shrink-0" data-vex-provider-mark="vexcloud">
+          <VxToken size={MARK_PX} />
+        </span>
+      );
+    case "openrouter":
+      return (
+        <span
+          className="inline-flex size-5 shrink-0 items-center justify-center"
+          data-vex-provider-mark="openrouter"
+        >
+          <OpenRouterMark size={16} />
+        </span>
+      );
+  }
+}
 
 interface ProviderOption {
   readonly value: ProviderName;
@@ -94,6 +124,7 @@ export function ProviderChoice({
               )}
             >
               <span className="vex-wz-picker__t flex min-w-0 items-center gap-2.5">
+                <ProviderMark value={option.value} />
                 <span id={nameId}>{option.label}</span>
                 {option.recommended ? (
                   <Chip state="done" id={tagId} data-vex-provider-recommended="">

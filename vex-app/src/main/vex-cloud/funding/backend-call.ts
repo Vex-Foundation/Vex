@@ -27,8 +27,8 @@ export interface SessionPort {
   readonly clearSession: () => Promise<Result<void>>;
 }
 
-export const NOT_SIGNED_IN_DETAIL = "You are not signed in to Vex Inference. Sign in under Settings, Vex Inference, then try again.";
-const SESSION_EXPIRED_DETAIL = "Your Vex Inference session expired. Sign in again under Settings, Vex Inference. Nothing was changed.";
+export const NOT_SIGNED_IN_DETAIL = "You are not signed in to Vex Inference. Sign in under Settings, Inference, then try again.";
+const SESSION_EXPIRED_DETAIL = "Your Vex Inference session expired. Sign in again under Settings, Inference. Nothing was changed.";
 
 /** The stored bearer, or the refusal that explains why there is none. */
 export async function requireBearer(port: SessionPort): Promise<VexCloudOutcome<string>> {
@@ -251,7 +251,7 @@ export async function replaySignedOut<T>(port: SessionPort, what: string): Promi
   if (!cleared.ok) return refused("vault", cleared.error.message, cleared.error as VexError);
   return refused(
     "not_signed_in",
-    `Your Vex Inference session expired, so Vex could not check this ${what}. Vex still holds the same request: sign in again under Settings, Vex Inference, then press Check status. Do not send it again.`,
+    `Your Vex Inference session expired, so Vex could not check this ${what}. Vex still holds the same request: sign in again under Settings, Inference, then press Check status. Do not send it again.`,
   );
 }
 

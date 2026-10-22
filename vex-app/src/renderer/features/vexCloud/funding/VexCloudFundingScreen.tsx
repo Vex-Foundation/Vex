@@ -18,6 +18,7 @@
 import { useState, type JSX } from "react";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
+import { inferenceSettingsRoute } from "../../../stores/uiStore/shell-route.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs.js";
 import { useVexCloudAccount, useVexCloudAlert } from "../../../lib/api/vex-cloud.js";
@@ -86,8 +87,8 @@ export function VexCloudFundingPage(): JSX.Element {
       <EmptyBlock
         scope="Vex Inference"
         title="Sign in to Vex Inference first."
-        detail="Funding needs a signed-in Vex Inference account. Sign in with your in-app wallets in Settings."
-        action={{ label: "Open Vex Inference settings", onClick: () => setShellRoute({ kind: "settings", origin: null, section: "vexCloud" }) }}
+        detail="Funding needs a signed-in Vex Inference account. Sign in with your in-app wallets in Settings, Inference."
+        action={{ label: "Open Vex Inference settings", onClick: () => setShellRoute(inferenceSettingsRoute("vexcloud")) }}
         data-testid="funding-signed-out"
       />
     );

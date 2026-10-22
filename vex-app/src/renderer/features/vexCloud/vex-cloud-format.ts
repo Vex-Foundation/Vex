@@ -9,6 +9,7 @@
  */
 
 import type { VexCloudAmount, VexCloudRate } from "@shared/schemas/vex-cloud.js";
+import { parseRateX18, weiToMicroUsdFloor } from "@shared/vex-cloud-money.js";
 
 /** The words a missing figure reads as (ELEMENTS law 7). */
 export const NOT_AVAILABLE = "Not available";
@@ -51,6 +52,32 @@ export function formatRateAge(rate: VexCloudRate): string | null {
   if (minutes < 60) return `rate ${minutes} min old`;
   const hours = Math.floor(minutes / 60);
   return `rate ${hours} h old`;
+}
+
+/** Pico-USD (10^-12 USD) per VEX: one VEX is 10^18 wei, 10^24 wei is 10^6 VEX. */
+const WEI_PER_MEGA_VEX = 10n ** 24n;
+/** Significant digits the rate line keeps, rounded down. */
+const RATE_DIGITS = 4;
+
+/**
+ * What one VEX is worth at the backend's rate, for the line under the
+ * balances: `$0.0018` (four significant digits, rounded DOWN, so the rate
+ * is never stated above the backend's), or `null` without a usable rate.
+ * Integer arithmetic only.
+ */
+export function formatUsdPerVex(rate: VexCloudRate): string | null {
+  if (!rate.available) return null;
+  const rateX18 = parseRateX18(rate.vexWeiPerMicroUsd);
+  if (rateX18 === null) return null;
+  // micro-USD for 10^6 VEX is pico-USD for one VEX.
+  const pico = weiToMicroUsdFloor(WEI_PER_MEGA_VEX, rateX18);
+  if (pico === 0n) return "less than $0.000000000001";
+  const digits = pico.toString();
+  const kept = digits.length <= RATE_DIGITS ? digits : digits.slice(0, RATE_DIGITS).padEnd(digits.length, "0");
+  const padded = kept.padStart(13, "0");
+  const whole = padded.slice(0, padded.length - 12).replace(/^0+(?=[0-9])/, "");
+  const fraction = padded.slice(padded.length - 12).replace(/0+$/, "");
+  return fraction.length === 0 ? `$${groupThousands(whole)}` : `$${groupThousands(whole)}.${fraction}`;
 }
 
 /** `1234` -> `1,234`: token counts in notices. */
