@@ -103,3 +103,30 @@ export function formatMicroUsd(microUsd: bigint): string {
   const dollars = (cents / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `$${dollars}.${(cents % 100n).toString().padStart(2, "0")}`;
 }
+
+/**
+ * A USD ESTIMATE (an amount valued at the backend's rate) as its two parts,
+ * the words it needs and the figure, so a caller can set the figure in mono
+ * and the words in sans. `about $0.37` for a cent or more (rounded down);
+ * `less than $0.01` for a positive amount under a cent, which already says
+ * the value is approximate and never takes "about" as well; `$0.00` for
+ * nothing. This is the ONE place an estimate's wording is decided: callers
+ * never prefix "about" themselves.
+ */
+export interface UsdEstimateParts {
+  readonly qualifier: "about" | "less than" | null;
+  readonly figure: string;
+}
+
+export function usdEstimateParts(microUsd: bigint): UsdEstimateParts {
+  if (microUsd < 0n) throw new RangeError("usdEstimateParts expects a non-negative amount");
+  if (microUsd === 0n) return { qualifier: null, figure: "$0.00" };
+  if (microUsd < 10_000n) return { qualifier: "less than", figure: "$0.01" };
+  return { qualifier: "about", figure: formatMicroUsd(microUsd) };
+}
+
+/** The same estimate as one string: `about $0.37`, `less than $0.01`, `$0.00`. */
+export function formatMicroUsdEstimate(microUsd: bigint): string {
+  const parts = usdEstimateParts(microUsd);
+  return parts.qualifier === null ? parts.figure : `${parts.qualifier} ${parts.figure}`;
+}

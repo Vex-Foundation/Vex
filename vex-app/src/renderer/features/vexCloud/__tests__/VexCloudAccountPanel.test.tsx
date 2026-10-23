@@ -214,6 +214,24 @@ describe("signed in", () => {
     expect(document.querySelector('[data-vex-cloud-balance="claimable"]')).toBeNull();
   });
 
+  it("a USD estimate under a cent reads \"less than $0.01\", never \"about less than $0.01\"", async () => {
+    const base = signedInAccount();
+    account.mockResolvedValue({
+      ok: true,
+      data: {
+        state: "signed_in",
+        account: { ...base, balances: { ...base.balances, reserved: vexAmount("3700000000000000", "3700") } },
+        localWallets: [W1, W2],
+        depositPin: { state: "not_open" },
+      },
+    });
+    renderPanel();
+
+    expect(await screen.findByText("Signed in")).toBeTruthy();
+    expect(document.querySelector('[data-vex-cloud-usd="reserved"]')?.textContent).toBe("less than $0.01");
+    expect(document.querySelector('[data-vex-cloud-usd="available"]')?.textContent).toBe("about $1.23");
+  });
+
   it("states the rate and its age once for the whole block, never per row", async () => {
     const balances = {
       ...signedInAccount().balances,

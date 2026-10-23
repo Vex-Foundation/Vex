@@ -29,7 +29,7 @@ import {
   useVexCloudDepositWallets,
 } from "../../../lib/api/vex-cloud.js";
 import { WalletSelect } from "../../appShell/SessionWalletSelect.js";
-import { FundingApprovalCard } from "./FundingApprovalCard.js";
+import { FundingApprovalCard, UsdEstimateValue } from "./FundingApprovalCard.js";
 import { depositResultLook, NOT_AVAILABLE, rateOf, readAmount, shortAddress, spendableNowCopy } from "./funding-model.js";
 
 type Step =
@@ -343,7 +343,7 @@ function DepositApproval({
       lines={[
         { label: "You send", value: <><span className="vex-appr__num vex-num">{amount} VEX</span><span className="vex-appr__sub"> · on Robinhood Chain</span></> },
         { label: "To", value: <span className="vex-appr__num vex-num vex-appr__break">{proposal.to}</span> },
-        { label: "Value", value: <>about <span className="vex-appr__num vex-num">{formatMicroUsd(BigInt(proposal.usdMicroEstimate))}</span><span className="vex-appr__sub"> at the Vex Inference rate</span></> },
+        { label: "Value", value: <><UsdEstimateValue microUsd={proposal.usdMicroEstimate} /><span className="vex-appr__sub"> at the Vex Inference rate</span></> },
         { label: "Network fee", value: <>at most <span className="vex-appr__num vex-num">{fee} ETH</span></> },
         { label: "Credited", value: spendableNowCopy(proposal.provisionalCapMicroUsd) },
       ]}

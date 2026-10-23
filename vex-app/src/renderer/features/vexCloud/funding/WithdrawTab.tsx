@@ -44,7 +44,7 @@ import {
   useVexCloudWithdrawal,
 } from "../../../lib/api/vex-cloud.js";
 import { WalletSelect } from "../../appShell/SessionWalletSelect.js";
-import { FundingApprovalCard } from "./FundingApprovalCard.js";
+import { FundingApprovalCard, UsdEstimateValue } from "./FundingApprovalCard.js";
 import { CancelWithdrawal } from "./CancelWithdrawal.js";
 import {
   eligibleDestinations,
@@ -57,6 +57,7 @@ import {
   withdrawalWordText,
 } from "./funding-model.js";
 import { unresolvedFor, useUnresolvedWithdrawals, type UnresolvedWithdrawal } from "./unresolved-withdrawals.js";
+import { formatVexWei } from "../vex-cloud-format.js";
 
 type Step =
   | { readonly kind: "editing" }
@@ -286,7 +287,7 @@ export function WithdrawTab({
           lines={[
             { label: "You receive", value: <><span className="vex-appr__num vex-num">{amount} VEX</span><span className="vex-appr__sub"> · on Robinhood Chain</span></> },
             { label: "Destination", value: <span className="vex-appr__num vex-num vex-appr__break">{proposal.destination}</span> },
-            { label: "Value", value: <>about <span className="vex-appr__num vex-num">{formatMicroUsd(BigInt(proposal.usdMicroEstimate))}</span></> },
+            { label: "Value", value: <UsdEstimateValue microUsd={proposal.usdMicroEstimate} /> },
             { label: "Released", value: <span data-testid="withdraw-cooling-line">{coolingCardLine(proposal.coolingSeconds, Date.now())}</span> },
             {
               label: "Daily limit left",
@@ -353,7 +354,7 @@ export function WithdrawTab({
             <li key={record.proposalId} className="flex flex-col gap-1.5 border border-rule-ink p-3" data-testid="withdraw-unresolved-row">
               <StateWord state="error" word={checking === record.proposalId ? "Checking status" : STATUS_UNKNOWN} />
               <p className="m-0 text-[13px] text-ink-secondary">
-                {formatVexExact(BigInt(record.amountWei))} VEX to <span className="vex-num font-mono">{shortAddress(record.destination)}</span>. It may or may not have been created.
+                {formatVexWei(record.amountWei)} to <span className="vex-num font-mono">{shortAddress(record.destination)}</span>. It may or may not have been created.
               </p>
               {record.lost === true ? (
                 <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="withdraw-unresolved-lost">
@@ -407,7 +408,7 @@ export function WithdrawTab({
           <p id={`${amountId}-usd`} className="m-0 text-[13px] text-ink-tertiary">
             {reading.usdLine ?? `USD estimate: ${NOT_AVAILABLE}`}
             {" · "}withdrawable now{" "}
-            <span className="vex-num font-mono">{withdrawable === null ? NOT_AVAILABLE : `${formatVexExact(withdrawable)} VEX`}</span>
+            <span className="vex-num font-mono">{withdrawable === null ? NOT_AVAILABLE : formatVexWei(withdrawable)}</span>
             {" · "}minimum {formatMicroUsd(BigInt(account.limits.minWithdrawMicroUsd))}
           </p>
         </div>
@@ -427,7 +428,7 @@ export function WithdrawTab({
           <span className="vex-num font-mono">
             {account.limits.withdrawDailyRemainingWei === null
               ? NOT_AVAILABLE
-              : `${formatVexExact(BigInt(account.limits.withdrawDailyRemainingWei))} VEX`}
+              : formatVexWei(account.limits.withdrawDailyRemainingWei)}
           </span>
         </p>
       </div>
@@ -478,7 +479,7 @@ function OutcomeUnknown({
       <StateWord state="error" word={checking ? "Checking status" : STATUS_UNKNOWN} size={12} live />
       <p className="m-0 text-[14px] leading-[1.5] text-ink-secondary">{OUTCOME_UNKNOWN_DETAIL}</p>
       <p className="m-0 text-[13px] text-ink-tertiary">
-        {formatVexExact(BigInt(record.amountWei))} VEX to <span className="vex-num font-mono">{record.destination}</span>
+        {formatVexWei(record.amountWei)} to <span className="vex-num font-mono">{record.destination}</span>
       </p>
       {note === null ? null : (
         <p role="alert" className="m-0 text-[13px] text-ink-primary" data-testid="withdraw-check-note">
@@ -532,7 +533,7 @@ function WithdrawalStatus({ initial, onDone }: { readonly initial: VexCloudWithd
       {/* The backend's `cancellable` (status `debited`) decides the key, not the clock: a released withdrawal not yet signed can still be cancelled. */}
       {withdrawal.cancellable ? <CancelWithdrawal withdrawalId={withdrawal.id} cancellable /> : null}
       <p className="m-0 text-[13px] text-ink-tertiary">
-        {formatVexExact(BigInt(withdrawal.amountWei))} VEX to <span className="vex-num font-mono">{withdrawal.destination}</span>
+        {formatVexWei(withdrawal.amountWei)} to <span className="vex-num font-mono">{withdrawal.destination}</span>
         {withdrawal.txHash === null ? null : (
           <>
             {" · "}transaction <span className="vex-num font-mono break-all">{withdrawal.txHash}</span>

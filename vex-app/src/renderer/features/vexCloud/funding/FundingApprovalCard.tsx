@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
+import { usdEstimateParts } from "@shared/vex-cloud-money.js";
 import { Stamp } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { utcClock } from "./funding-model.js";
@@ -36,6 +37,20 @@ export interface FundingRisk {
 export interface FundingSignedField {
   readonly label: string;
   readonly value: string;
+}
+
+/**
+ * A money line's USD estimate (main's integer micro-USD): the words from the
+ * shared estimate owner ("about", "less than") in sans, the figure in mono.
+ */
+export function UsdEstimateValue({ microUsd }: { readonly microUsd: string }): JSX.Element {
+  const usd = usdEstimateParts(BigInt(microUsd));
+  return (
+    <>
+      {usd.qualifier === null ? null : `${usd.qualifier} `}
+      <span className="vex-appr__num vex-num">{usd.figure}</span>
+    </>
+  );
 }
 
 const KEY = "inline-flex h-10 items-center justify-center border px-[18px] text-[14px] font-medium leading-none focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed";

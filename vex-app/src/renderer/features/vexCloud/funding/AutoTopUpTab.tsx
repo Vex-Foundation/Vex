@@ -33,7 +33,7 @@ import {
   AUTO_TOP_UP_MAX_DAYS,
   AUTO_TOP_UP_MAX_PER_DAY,
 } from "@shared/schemas/vex-cloud-auto-top-up.js";
-import { formatMicroUsd, formatUnitsExact, formatVexExact } from "@shared/vex-cloud-money.js";
+import { formatMicroUsd, formatMicroUsdEstimate, formatUnitsExact, formatVexExact } from "@shared/vex-cloud-money.js";
 import type { VexError } from "@shared/ipc/result.js";
 import { Button } from "../../../components/ui/button.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
@@ -52,6 +52,7 @@ import { vexCloudKeys } from "../../../lib/api/queryKeys.js";
 import { WalletSelect } from "../../appShell/SessionWalletSelect.js";
 import { FundingApprovalCard } from "./FundingApprovalCard.js";
 import { NOT_AVAILABLE, utcClock } from "./funding-model.js";
+import { formatVexWei } from "../vex-cloud-format.js";
 
 const SUSPEND_WORDS: Readonly<Record<string, string>> = {
   user_paused: "Paused by you",
@@ -82,7 +83,8 @@ function errorText(error: VexError): string {
   return error.message;
 }
 
-const vex = (wei: string): string => `${formatVexExact(BigInt(wei))} VEX`;
+/** Exact, every digit: the approval card, where the user consents to the amount. */
+const vexExact = (wei: string): string => `${formatVexExact(BigInt(wei))} VEX`;
 /** ETH has 18 decimals; exact, every digit that bounds the fee. */
 const eth = (wei: string): string => `${formatUnitsExact(BigInt(wei), 18)} ETH`;
 const ethLimit = (wei: string | null): string => (wei === null ? "Not set (edit the rule to set one)" : `${eth(wei)} per top-up`);
@@ -156,9 +158,9 @@ function AlertSetting(): JSX.Element {
         <p className="m-0 text-[13px] text-ink-tertiary">Balance reference: {NOT_AVAILABLE} until the next balance read.</p>
       ) : (
         <p className="m-0 text-[13px] text-ink-tertiary" data-testid="alert-observation">
-          Balance <span className="vex-num font-mono text-ink-primary">{vex(observation.balanceWei)}</span> · alert line{" "}
-          <span className="vex-num font-mono text-ink-primary">{vex(observation.thresholdWei)}</span> · reference{" "}
-          <span className="vex-num font-mono text-ink-primary">{vex(observation.referenceWei)}</span>
+          Balance <span className="vex-num font-mono text-ink-primary">{formatVexWei(observation.balanceWei)}</span> · alert line{" "}
+          <span className="vex-num font-mono text-ink-primary">{formatVexWei(observation.thresholdWei)}</span> · reference{" "}
+          <span className="vex-num font-mono text-ink-primary">{formatVexWei(observation.referenceWei)}</span>
         </p>
       )}
       <p className="m-0 min-h-[20px] text-[13px] text-ink-primary" role="status">
@@ -332,21 +334,21 @@ function RuleApproval({
 }): JSX.Element {
   const b = proposal.bounds;
   const copy = ACTION_COPY[proposal.action];
-  const usd = (micro: string | null): string => (micro === null ? NOT_AVAILABLE : `about ${formatMicroUsd(BigInt(micro))}`);
+  const usd = (micro: string | null): string => (micro === null ? NOT_AVAILABLE : formatMicroUsdEstimate(BigInt(micro)));
   const sentence =
     proposal.action === "revoke"
       ? "Revoke the auto top-up rule. No automatic deposit runs after this."
       : proposal.action === "pause"
         ? "Pause the auto top-up rule. No automatic deposit runs while it is paused."
-        : `${copy.verb} an auto top-up rule: send up to ${vex(b.amountWei)} from your wallet to Vex Inference whenever your balance is below ${b.alertPercent}% of its reference.`;
+        : `${copy.verb} an auto top-up rule: send up to ${vexExact(b.amountWei)} from your wallet to Vex Inference whenever your balance is below ${b.alertPercent}% of its reference.`;
   return (
     <FundingApprovalCard
       sentence={sentence}
       source={{ left: <>From <span className="vex-num font-mono break-all">{b.sourceWallet}</span></>, right: <>To Vex Inference <span className="vex-num font-mono break-all">{proposal.depositAddress}</span></> }}
       lines={[
-        { label: "Per top-up", value: <span className="vex-num">{vex(b.amountWei)} ({usd(proposal.amountUsdMicroEstimate)})</span> },
+        { label: "Per top-up", value: <span className="vex-num">{vexExact(b.amountWei)} ({usd(proposal.amountUsdMicroEstimate)})</span> },
         { label: "Most per 24 hours", value: <span className="vex-num">{b.maxPerDay}</span> },
-        { label: "Cap per 30 days", value: <span className="vex-num">{vex(b.monthlyCapWei)} ({usd(proposal.monthlyCapUsdMicroEstimate)})</span> },
+        { label: "Cap per 30 days", value: <span className="vex-num">{vexExact(b.monthlyCapWei)} ({usd(proposal.monthlyCapUsdMicroEstimate)})</span> },
         { label: "Network fee limit", value: <span className="vex-num">{ethLimit(b.maxNetworkFeeWei)}</span> },
         { label: "Trigger", value: `Balance below ${b.alertPercent}% of its reference` },
         { label: "Expires", value: <span className="vex-num">{new Date(b.expiresAt).toISOString().slice(0, 16).replace("T", " ")} UTC</span> },
@@ -355,7 +357,7 @@ function RuleApproval({
           label: "Minimum deposit",
           value: proposal.minimumWei === null || proposal.minimumMicroUsd === null
             ? NOT_AVAILABLE
-            : <span className="vex-num">{vex(proposal.minimumWei)} ({formatMicroUsd(BigInt(proposal.minimumMicroUsd))})</span>,
+            : <span className="vex-num">{vexExact(proposal.minimumWei)} ({formatMicroUsd(BigInt(proposal.minimumMicroUsd))})</span>,
         },
       ]}
       risks={[
@@ -505,11 +507,11 @@ export function AutoTopUpTab({
           <dt className="text-ink-tertiary">From</dt>
           <dd className="m-0 vex-num font-mono break-all text-ink-primary">{rule.sourceWallet}</dd>
           <dt className="text-ink-tertiary">Per top-up</dt>
-          <dd className="m-0 vex-num font-mono text-ink-primary">{vex(rule.amountWei)}</dd>
+          <dd className="m-0 vex-num font-mono text-ink-primary">{formatVexWei(rule.amountWei)}</dd>
           <dt className="text-ink-tertiary">Used in 24 hours</dt>
           <dd className="m-0 vex-num font-mono text-ink-primary">{rule.usedLast24Hours} of {rule.maxPerDay}</dd>
           <dt className="text-ink-tertiary">Used in 30 days</dt>
-          <dd className="m-0 vex-num font-mono text-ink-primary">{vex(rule.usedLast30DaysWei)} of {vex(rule.monthlyCapWei)}</dd>
+          <dd className="m-0 vex-num font-mono text-ink-primary">{formatVexWei(rule.usedLast30DaysWei)} of {formatVexWei(rule.monthlyCapWei)}</dd>
           <dt className="text-ink-tertiary">Network fee limit</dt>
           <dd className="m-0 vex-num font-mono text-ink-primary">{ethLimit(rule.maxNetworkFeeWei)}</dd>
           <dt className="text-ink-tertiary">Trigger</dt>
@@ -523,7 +525,7 @@ export function AutoTopUpTab({
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-[13px]" data-testid="rule-executions">
             {rule.recentExecutions.map((row) => (
               <li key={row.executionId} className="text-ink-secondary">
-                <span className="vex-num font-mono">{utcClock(row.askedAt)}</span> · {vex(row.amountWei)} ·{" "}
+                <span className="vex-num font-mono">{utcClock(row.askedAt)}</span> · {formatVexWei(row.amountWei)} ·{" "}
                 {row.status === "unknown" ? "outcome unknown (counted, not resent)" : row.status}
                 {row.authority === "auto_top_up_agent" ? " · by the agent" : ""}
               </li>

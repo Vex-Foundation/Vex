@@ -39,10 +39,10 @@ import {
 import { useUiStore } from "../../stores/uiStore.js";
 import {
   formatRateAge,
-  formatUsdEstimate,
   formatUsdPerVex,
   formatVexAmount,
   NOT_AVAILABLE,
+  usdEstimateOf,
 } from "./vex-cloud-format.js";
 import { WithdrawalNotices } from "./funding/WithdrawalNotices.js";
 
@@ -71,7 +71,7 @@ function BalanceRow({
   readonly amount: VexCloudAmount;
   readonly testId: string;
 }): JSX.Element {
-  const usd = formatUsdEstimate(amount.usdMicroEstimate);
+  const usd = usdEstimateOf(amount.usdMicroEstimate);
   return (
     <div className={ROW} data-vex-cloud-balance={testId}>
       <dt className="text-[14px] text-ink-primary">
@@ -89,7 +89,8 @@ function BalanceRow({
             `USD estimate: ${NOT_AVAILABLE}`
           ) : (
             <>
-              about <span className="vex-num font-mono">{usd}</span>
+              {usd.qualifier === null ? null : `${usd.qualifier} `}
+              <span className="vex-num font-mono">{usd.figure}</span>
             </>
           )}
         </span>

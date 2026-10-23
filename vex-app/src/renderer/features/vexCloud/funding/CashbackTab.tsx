@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState, type JSX } from "react";
 import type { VexCloudAccount } from "@shared/schemas/vex-cloud.js";
-import { formatMicroUsd, formatVexExact } from "@shared/vex-cloud-money.js";
+import { formatMicroUsdEstimate, formatVexExact } from "@shared/vex-cloud-money.js";
 import { Button } from "../../../components/ui/button.js";
 import { StateWord } from "../../../components/ui/state-word.js";
 import { claimVexCloudCashback, useInvalidateVexCloudFunding } from "../../../lib/api/vex-cloud.js";
@@ -75,7 +75,7 @@ export function CashbackTab({ account }: { readonly account: VexCloudAccount }):
           {formatVexExact(claimable)} VEX
         </span>
         <span className="text-[13px] text-ink-tertiary">
-          {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : `about ${formatMicroUsd(BigInt(usd))}`}
+          {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : formatMicroUsdEstimate(BigInt(usd))}
         </span>
         <p className="m-0 mt-2 text-[13px] text-ink-secondary">
           Claiming adds it to your Vex Inference balance at once.

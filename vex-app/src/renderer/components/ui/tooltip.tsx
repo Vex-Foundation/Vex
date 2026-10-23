@@ -3,11 +3,21 @@
  * day, paper at night; docs/design/R3-MINIMAL.md section 12).
  * The anchor is the child element itself (cloneElement, no wrapper node), so
  * attaching a tooltip never changes the anchor's layout context. The bubble
- * is position:fixed with coordinates from the anchor's rect at show time, so
- * it escapes ancestor overflow clipping without a portal. Copy arrives via
- * the `label` prop.
+ * is position:fixed with coordinates from the anchor's rect at show time, and
+ * it is PORTALED out of the anchor's subtree. Fixed positioning escapes
+ * overflow but not a STACKING CONTEXT: the bubble's z-index only counts
+ * inside its nearest one, and the shell's centre column is one (`relative
+ * z-10`, AppShell) under the left sidebar (`relative z-20`). Left in place, a
+ * bubble wider than the space left of its anchor ran under the sidebar and
+ * read as cut at the column's left edge (the composer's model key at 1440,
+ * measured in Chromium). A transform or `contain` on an ancestor would trap
+ * it the same way as a containing block. It goes to the nearest `<dialog>`
+ * when the anchor sits in one (a modal dialog is the top layer, which
+ * `document.body` would paint under), else to `document.body`, as the menu
+ * and the hover card already do. Copy arrives via the `label` prop.
  */
 
+import { createPortal } from "react-dom";
 import {
   cloneElement,
   useCallback,
@@ -79,6 +89,8 @@ export function Tooltip({
     x: number;
     top: number;
     bottom: number;
+    /** Where the bubble is portaled, read from the anchor at show time. */
+    host: Element;
   } | null>(null);
   // Where the bubble actually sits: the requested side until the viewport
   // refuses it.
@@ -164,7 +176,7 @@ export function Tooltip({
         : side === "left"
           ? r.left - OFFSET
           : r.left + r.width / 2;
-    setPos({ x, top: r.top, bottom: r.bottom });
+    setPos({ x, top: r.top, bottom: r.bottom, host: portalHostFor(el) });
   };
   const showAfterHoverDelay = (): void => {
     cancelShow();
@@ -208,21 +220,32 @@ export function Tooltip({
           hide();
         },
       })}
-      {pos !== null && (
-        <span
-          ref={bubble}
-          className="vex-tooltip"
-          data-side={placement}
-          style={{
-            left: pos.x,
-            top: y,
-            ...(maxWidth === undefined ? {} : { maxWidth }),
-          }}
-          role="tooltip"
-        >
-          {resolvedLabel}
-        </span>
-      )}
+      {pos !== null &&
+        createPortal(
+          <span
+            ref={bubble}
+            className="vex-tooltip"
+            data-side={placement}
+            style={{
+              left: pos.x,
+              top: y,
+              ...(maxWidth === undefined ? {} : { maxWidth }),
+            }}
+            role="tooltip"
+          >
+            {resolvedLabel}
+          </span>,
+          pos.host,
+        )}
     </>
   );
+}
+
+/**
+ * The bubble's portal host: the anchor's own `<dialog>` when it has one (the
+ * top layer paints over `document.body`), else `document.body`. Neither is a
+ * containing block for a fixed child once a dialog's entrance has settled.
+ */
+function portalHostFor(anchorEl: HTMLElement): Element {
+  return anchorEl.closest("dialog") ?? document.body;
 }

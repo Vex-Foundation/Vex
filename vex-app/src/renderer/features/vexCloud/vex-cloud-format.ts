@@ -9,7 +9,14 @@
  */
 
 import type { VexCloudAmount, VexCloudRate } from "@shared/schemas/vex-cloud.js";
-import { parseRateX18, weiToMicroUsdFloor } from "@shared/vex-cloud-money.js";
+import {
+  parseRateX18,
+  usdEstimateParts,
+  VEX_DECIMALS,
+  VEX_SYMBOL,
+  weiToMicroUsdFloor,
+  type UsdEstimateParts,
+} from "@shared/vex-cloud-money.js";
 
 /** The words a missing figure reads as (ELEMENTS law 7). */
 export const NOT_AVAILABLE = "Not available";
@@ -19,28 +26,33 @@ function groupThousands(digits: string): string {
 }
 
 /**
- * `1234567891234567891234` wei -> `1,234.56 VEX` (two decimals, rounded down).
- * A positive amount under 0.01 reads `less than 0.01 VEX`, never `0.00`.
+ * THE display form of a VEX amount everywhere the Inference UI states one:
+ * `1234567891234567891234` wei -> `1,234.56 VEX` (two decimals, rounded
+ * down, so the screen never shows more than there is). A positive amount
+ * under 0.01 reads `less than 0.01 VEX`, never `0.00`. Inputs and approval
+ * cards show the exact amount instead (`formatVexExact`): there the user
+ * consents to every digit.
  */
-export function formatVexAmount(amount: VexCloudAmount): string {
-  const wei = BigInt(amount.wei);
-  const unit = 10n ** BigInt(amount.decimals);
-  const hundredths = (wei * 100n) / unit;
-  if (wei > 0n && hundredths === 0n) return `less than 0.01 ${amount.symbol}`;
+export function formatVexWei(wei: string | bigint): string {
+  const raw = typeof wei === "bigint" ? wei : BigInt(wei);
+  const hundredths = (raw * 100n) / 10n ** BigInt(VEX_DECIMALS);
+  if (raw > 0n && hundredths === 0n) return `less than 0.01 ${VEX_SYMBOL}`;
   const whole = hundredths / 100n;
   const fraction = (hundredths % 100n).toString().padStart(2, "0");
-  return `${groupThousands(whole.toString())}.${fraction} ${amount.symbol}`;
+  return `${groupThousands(whole.toString())}.${fraction} ${VEX_SYMBOL}`;
 }
 
-/** Integer micro-USD -> `$12.34` (rounded down), or `null` when there is no estimate. */
-export function formatUsdEstimate(usdMicro: string | null): string | null {
-  if (usdMicro === null) return null;
-  const micro = BigInt(usdMicro);
-  const cents = micro / 10_000n;
-  if (micro > 0n && cents === 0n) return "less than $0.01";
-  const dollars = cents / 100n;
-  const fraction = (cents % 100n).toString().padStart(2, "0");
-  return `$${groupThousands(dollars.toString())}.${fraction}`;
+/** A backend balance in its display form (the schema pins 18 decimals and VEX). */
+export function formatVexAmount(amount: VexCloudAmount): string {
+  return formatVexWei(amount.wei);
+}
+
+/**
+ * The backend's micro-USD estimate as its words and figure (`about $12.34`,
+ * `less than $0.01`, `$0.00`), or `null` when there is no estimate.
+ */
+export function usdEstimateOf(usdMicro: string | null): UsdEstimateParts | null {
+  return usdMicro === null ? null : usdEstimateParts(BigInt(usdMicro));
 }
 
 /** How old the rate behind the USD estimate is, in words, or `null` when there is no rate. */

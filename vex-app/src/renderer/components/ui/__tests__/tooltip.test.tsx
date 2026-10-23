@@ -111,4 +111,39 @@ describe("Tooltip", () => {
     );
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
+  // The shell's centre column is a stacking context (`relative z-10`) under
+  // the left sidebar (`z-20`): a bubble left inside it, z-index or not, paints
+  // under the sidebar wherever it reaches past the column's left edge (the
+  // composer's model key at 1440). jsdom paints nothing, so the contract
+  // pinned here is the one that decides it: the bubble leaves the anchor's
+  // subtree for the document body.
+  it("portals the bubble out of the anchor's stacking context to the document body", () => {
+    render(
+      <div data-testid="row" style={{ position: "relative", zIndex: 10, overflow: "hidden" }}>
+        <Tooltip label="hint" side="top">
+          <button type="button">anchor</button>
+        </Tooltip>
+      </div>,
+    );
+    fireEvent.mouseEnter(anchorButton());
+    const bubble = screen.getByRole("tooltip");
+    expect(screen.getByTestId("row").contains(bubble)).toBe(false);
+    expect(bubble.parentElement).toBe(document.body);
+    fireEvent.mouseLeave(anchorButton());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("keeps the bubble inside the anchor's dialog, the top layer the body paints under", () => {
+    render(
+      <dialog open data-testid="dialog">
+        <div style={{ containerType: "inline-size" }}>
+          <Tooltip label="hint" side="top">
+            <button type="button">anchor</button>
+          </Tooltip>
+        </div>
+      </dialog>,
+    );
+    fireEvent.mouseEnter(anchorButton());
+    expect(screen.getByRole("tooltip").parentElement).toBe(screen.getByTestId("dialog"));
+  });
 });

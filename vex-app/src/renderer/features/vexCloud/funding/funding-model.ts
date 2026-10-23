@@ -15,6 +15,7 @@ import type {
 import { withdrawalWord, type VexCloudWithdrawalWord } from "@shared/schemas/vex-cloud-funding.js";
 import {
   formatMicroUsd,
+  formatMicroUsdEstimate,
   formatVexExact,
   microUsdToWeiCeil,
   parseRateX18,
@@ -32,7 +33,7 @@ export function rateOf(rate: VexCloudRate): bigint | null {
 export interface AmountReading {
   /** The parsed amount, or `null` while the text is not a usable amount. */
   readonly wei: bigint | null;
-  /** "about $12.34", or `null` without an amount or a rate. */
+  /** "about $12.34" or "less than $0.01", or `null` without an amount or a rate. */
   readonly usdLine: string | null;
   /** Why the amount cannot be submitted yet, in words; `null` when it can. */
   readonly problem: string | null;
@@ -62,7 +63,7 @@ export function readAmount(args: {
             : "Use digits and one point, for example 125.5.";
     return { wei: null, usdLine: null, problem };
   }
-  const usdLine = args.rateX18 === null ? null : `about ${formatMicroUsd(weiToMicroUsdFloor(parsed.wei, args.rateX18))}`;
+  const usdLine = args.rateX18 === null ? null : formatMicroUsdEstimate(weiToMicroUsdFloor(parsed.wei, args.rateX18));
   if (args.rateX18 === null) {
     return { wei: parsed.wei, usdLine, problem: "The VEX price is not available right now, so the minimum cannot be checked." };
   }

@@ -288,3 +288,67 @@ describe("the account cannot be read (a backend outage)", () => {
     expect(screen.queryByTestId("rule-form")).toBeNull();
   });
 });
+
+describe("VEX figures", () => {
+  // The release capture's balance: 998.822910592527374555 VEX.
+  const ODD = "998822910592527374555";
+  const ODD_RULE = "6000123456789012345678";
+
+  it("the alert line and the rule summary show VEX at two decimals, never 18", async () => {
+    bridge.alertGet.mockResolvedValue({
+      ok: true,
+      data: { alertPercent: 20, observation: { balanceWei: ODD, referenceWei: ODD, thresholdWei: "199764582118505474911", belowAlert: false } },
+    });
+    ruleIs(
+      rule({
+        amountWei: ODD_RULE,
+        usedLast30DaysWei: "1234567891234567891234",
+        recentExecutions: [
+          {
+            executionId: "vxexec-00000000-0000-4000-8000-000000000001",
+            authority: "auto_top_up_poller",
+            amountWei: ODD_RULE,
+            status: "confirmed",
+            refusalKind: null,
+            txHash: null,
+            askedAt: NOW,
+            decidedAt: NOW,
+          },
+        ],
+      }),
+    );
+    renderTab();
+
+    const observation = await screen.findByTestId("alert-observation");
+    expect(observation.textContent).toBe("Balance 998.82 VEX · alert line 199.76 VEX · reference 998.82 VEX");
+    const summary = await screen.findByTestId("rule-summary");
+    expect(within(summary).getByText("6,000.12 VEX")).toBeTruthy();
+    expect(within(summary).getByText("1,234.56 VEX of 12,000.00 VEX")).toBeTruthy();
+    expect(within(screen.getByTestId("rule-executions")).getByText(/6,000\.12 VEX/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\d\.\d{3,} VEX/);
+  });
+
+  it("the approval card keeps every digit of the amount, and an estimate under a cent reads \"less than $0.01\"", async () => {
+    bridge.prepareAutoTopUp.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: proposal("create", {
+          bounds: { ...proposal("create").bounds, amountWei: ODD_RULE },
+          amountUsdMicroEstimate: "3700",
+        }),
+      }),
+      cancel: vi.fn(),
+    });
+    renderTab();
+    await screen.findByTestId("rule-form");
+    fireEvent.change(screen.getByLabelText("VEX per top-up (at least the $5 minimum)"), { target: { value: "6000.123456789012345678" } });
+    fireEvent.change(screen.getByLabelText("Cap per 30 days (VEX)"), { target: { value: "12000" } });
+    fireEvent.change(screen.getByLabelText("Most top-ups per 24 hours (1 to 24)"), { target: { value: "2" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Review rule" }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Review rule" }));
+
+    const card = await screen.findByTestId("rule-approval");
+    expect(within(card).getByText("6,000.123456789012345678 VEX (less than $0.01)")).toBeTruthy();
+    expect(card.textContent).not.toContain("about less than");
+  });
+});

@@ -24,7 +24,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui
 import { useVexCloudAccount, useVexCloudAlert } from "../../../lib/api/vex-cloud.js";
 import { StateWord } from "../../../components/ui/state-word.js";
 import { ShellScreen } from "../../appShell/screens/ShellScreen.js";
-import { formatUsdEstimate, formatVexAmount, NOT_AVAILABLE } from "../vex-cloud-format.js";
+import { formatMicroUsdEstimate } from "@shared/vex-cloud-money.js";
+import { formatVexAmount, NOT_AVAILABLE } from "../vex-cloud-format.js";
 import { CashbackTab } from "./CashbackTab.js";
 import { DepositTab } from "./DepositTab.js";
 import { AutoTopUpTab } from "./AutoTopUpTab.js";
@@ -94,7 +95,7 @@ export function VexCloudFundingPage(): JSX.Element {
     );
   }
   const { account } = view;
-  const usd = formatUsdEstimate(account.balances.available.usdMicroEstimate);
+  const usd = account.balances.available.usdMicroEstimate;
 
   return (
     <div className="flex flex-col gap-5" data-testid="funding-page">
@@ -104,7 +105,7 @@ export function VexCloudFundingPage(): JSX.Element {
           {formatVexAmount(account.balances.available)}
         </span>
         {" · "}
-        {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : `about ${usd}`}
+        {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : formatMicroUsdEstimate(BigInt(usd))}
         {" · "}withdrawable now{" "}
         <span className="vex-num font-mono text-ink-primary">
           {account.withdrawable === null ? NOT_AVAILABLE : formatVexAmount(account.withdrawable)}

@@ -1,7 +1,14 @@
 /** Integer formatting of Vex Cloud figures: rounded down, never invented. */
 
 import { describe, expect, it } from "vitest";
-import { formatRateAge, formatTokenCount, formatUsdEstimate, formatUsdPerVex, formatVexAmount } from "../vex-cloud-format.js";
+import {
+  formatRateAge,
+  formatTokenCount,
+  formatUsdPerVex,
+  formatVexAmount,
+  formatVexWei,
+  usdEstimateOf,
+} from "../vex-cloud-format.js";
 
 const vex = (wei: string) => ({ wei, decimals: 18 as const, symbol: "VEX" as const, usdMicroEstimate: null });
 
@@ -20,16 +27,32 @@ describe("formatVexAmount", () => {
   });
 });
 
-describe("formatUsdEstimate", () => {
+describe("formatVexWei", () => {
+  it.each([
+    // The release capture's withdrawable balance: two decimals, rounded down.
+    ["998822910592527374555", "998.82 VEX"],
+    ["0", "0.00 VEX"],
+    ["1", "less than 0.01 VEX"],
+    ["6000123456789012345678", "6,000.12 VEX"],
+  ])("%s wei -> %s", (wei, expected) => {
+    expect(formatVexWei(wei)).toBe(expected);
+    expect(formatVexWei(BigInt(wei))).toBe(expected);
+  });
+});
+
+describe("usdEstimateOf", () => {
   it.each([
     [null, null],
-    ["0", "$0.00"],
-    ["1234567", "$1.23"],
-    ["1239999", "$1.23"],
-    ["9999", "less than $0.01"],
-    ["1000000000000", "$1,000,000.00"],
-  ])("%s micro-USD -> %s", (micro, expected) => {
-    expect(formatUsdEstimate(micro)).toBe(expected);
+    ["0", { qualifier: null, figure: "$0.00" }],
+    ["1234567", { qualifier: "about", figure: "$1.23" }],
+    ["1239999", { qualifier: "about", figure: "$1.23" }],
+    // Under a cent is "less than", never "about less than".
+    ["9999", { qualifier: "less than", figure: "$0.01" }],
+    ["1", { qualifier: "less than", figure: "$0.01" }],
+    ["10000", { qualifier: "about", figure: "$0.01" }],
+    ["1000000000000", { qualifier: "about", figure: "$1,000,000.00" }],
+  ])("%s micro-USD -> %j", (micro, expected) => {
+    expect(usdEstimateOf(micro)).toEqual(expected);
   });
 });
 

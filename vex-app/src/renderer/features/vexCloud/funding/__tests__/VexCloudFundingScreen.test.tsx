@@ -552,6 +552,41 @@ describe("withdraw", () => {
     fireEvent.click(within(await screen.findByTestId("withdraw-outcome-unknown")).getByRole("button", { name: "Open History" }));
     expect(await screen.findByTestId("history-tab")).toBeTruthy();
   });
+  it("the form shows VEX at two decimals and the card keeps every digit (the release capture's 18 decimals)", async () => {
+    const ODD = 998_822_910_592_527_374_555n;
+    const DAILY = "500123456789012345678";
+    bridge.account.mockResolvedValue(
+      signedIn(undefined, {
+        balances: { ...account().balances, available: amount(ODD, "3700") },
+        withdrawable: amount(ODD, "998822"),
+        limits: { ...account().limits, minWithdrawMicroUsd: "1000", withdrawDailyRemainingWei: DAILY },
+      }),
+    );
+    bridge.prepareWithdrawal.mockReturnValue({
+      promise: Promise.resolve({
+        ok: true,
+        data: { ...PROPOSAL, amountWei: ODD.toString(), usdMicroEstimate: "998822", withdrawableWei: ODD.toString(), dailyRemainingWei: DAILY, minimumMicroUsd: "1000" },
+      }),
+      cancel: vi.fn(),
+    });
+    await openWithdraw();
+    const form = await screen.findByTestId("withdraw-form");
+    expect(form.textContent).toContain("withdrawable now 998.82 VEX");
+    expect(form.textContent).toContain("Daily limit left: 500.12 VEX");
+    expect(form.textContent).not.toMatch(/\d\.\d{3,} VEX/);
+    // The page's own line: an estimate under a cent is "less than $0.01".
+    const top = screen.getByTestId("funding-available").parentElement;
+    expect(top?.textContent).toContain("998.82 VEX · less than $0.01 · withdrawable now 998.82 VEX");
+    expect(top?.textContent).not.toContain("about less than");
+
+    fireEvent.change(screen.getByLabelText("You withdraw"), { target: { value: "998.822910592527374555" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Review withdrawal" }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Review withdrawal" }));
+    const card = await screen.findByTestId("withdraw-approval");
+    expect(within(card).getByText("Withdraw 998.822910592527374555 VEX to your wallet 0x1111…1111.")).toBeTruthy();
+    expect(within(card).getByText("500.123456789012345678 VEX")).toBeTruthy();
+    expect(card.textContent).toContain("about $0.99");
+  });
 });
 
 describe("cashback", () => {

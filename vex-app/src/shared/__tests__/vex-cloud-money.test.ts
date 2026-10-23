@@ -15,11 +15,13 @@ import {
 } from "../schemas/vex-cloud-funding.js";
 import {
   formatMicroUsd,
+  formatMicroUsdEstimate,
   formatUnitsExact,
   formatVexExact,
   microUsdToWeiCeil,
   parseRateX18,
   parseVexAmountText,
+  usdEstimateParts,
   weiToMicroUsdFloor,
 } from "../vex-cloud-money.js";
 
@@ -66,6 +68,23 @@ describe("formatting", () => {
     expect(formatMicroUsd(6_000_999n)).toBe("$6.00");
     expect(formatMicroUsd(1n)).toBe("less than $0.01");
     expect(formatMicroUsd(0n)).toBe("$0.00");
+  });
+
+  it.each([
+    [0n, "$0.00"],
+    [1n, "less than $0.01"],
+    [9_999n, "less than $0.01"],
+    [10_000n, "about $0.01"],
+    [370_000n, "about $0.37"],
+    [6_000_999n, "about $6.00"],
+  ])("words a USD estimate of %s micro-USD as %s, never \"about less than\"", (micro, expected) => {
+    expect(formatMicroUsdEstimate(micro)).toBe(expected);
+    const parts = usdEstimateParts(micro);
+    expect(parts.qualifier === null ? parts.figure : `${parts.qualifier} ${parts.figure}`).toBe(expected);
+  });
+
+  it("refuses a negative estimate rather than wording it", () => {
+    expect(() => usdEstimateParts(-1n)).toThrow(RangeError);
   });
 });
 
