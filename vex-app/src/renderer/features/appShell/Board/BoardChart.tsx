@@ -445,7 +445,7 @@ export function BoardChart({
  * credit renders, the click does nothing). `target=_blank` therefore opens the
  * system browser rather than a child window.
  */
-function ChartAttribution(): JSX.Element {
+export function ChartAttribution(): JSX.Element {
   return (
     <p
       data-vex-area="board-chart-attribution"
