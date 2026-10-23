@@ -13,6 +13,7 @@ import {
   effectiveMissionReasoningEffort,
   missionDefaultReasoningEffortFor,
 } from "./reasoning-effort.js";
+import type { MissionModelChoice } from "../types.js";
 
 const ContractSnapshotSchema = z.object({
   version: z.literal(1),
@@ -23,7 +24,15 @@ const ContractSnapshotSchema = z.object({
 
 export type MissionRunContractSnapshot = z.infer<typeof ContractSnapshotSchema>;
 
-export function buildMissionRunContractSnapshot(mission: Mission): MissionRunContractSnapshot {
+export function buildMissionRunContractSnapshot(
+  mission: Mission,
+  /**
+   * The default model (`AGENT_MODEL` on the active backend) at the moment of
+   * start (F06), frozen when the contract names none. `null` freezes no model,
+   * and the run then runs on whatever the default is at each slice.
+   */
+  defaultModel: MissionModelChoice | null = null,
+): MissionRunContractSnapshot {
   const frozen = freezeDraft(mission);
   return {
     version: 1,
@@ -40,6 +49,9 @@ export function buildMissionRunContractSnapshot(mission: Mission): MissionRunCon
           frozen.draft.reasoningEffort,
           missionDefaultReasoningEffortFor(mission.contractHashVersion),
         ),
+        // F06: freeze the EFFECTIVE model, the contract's own or the default
+        // at start, so a later change of the default never moves the run.
+        model: frozen.draft.model ?? defaultModel,
       },
     },
   };
