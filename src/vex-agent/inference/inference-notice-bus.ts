@@ -2,12 +2,14 @@
  * In-process inference NOTICE bus: facts about a request that succeeded but
  * not quite as asked, which the user must be told about (never silently).
  *
- * Three kinds: Vex Cloud lowered `max_tokens` (owner decision D16, the
+ * Four kinds: Vex Cloud lowered `max_tokens` (owner decision D16, the
  * `x-vex-max-tokens` disclosure read in `openrouter/round-fetch.ts`), the
  * Vex Inference balance crossed below the user's alert percent (raised by the
  * main-process balance watch, `vex-app/src/main/vex-cloud/balance-watch.ts`),
- * and a cooling withdrawal this app did not start is waiting (raised once per
- * withdrawal id by `vex-app/src/main/vex-cloud/funding/withdrawal-origins.ts`).
+ * a cooling withdrawal this app did not start is waiting (raised once per
+ * withdrawal id by `vex-app/src/main/vex-cloud/funding/withdrawal-origins.ts`),
+ * and a session's own model was picked under the other backend so the turn
+ * ran on the default (F06, `engine/core/runner/session-model.ts`).
  * The main-side bridge (`vex-app/src/main/agent/inference-notice-bridge.ts`)
  * validates and broadcasts it; the renderer shows it on the session's turn.
  *
@@ -82,7 +84,32 @@ export interface VexInferenceForeignWithdrawalNotice {
   readonly occurredAt: string;
 }
 
-export type InferenceNoticeEvent = MaxTokensClampedNotice | VexInferenceBalanceLowNotice | VexInferenceForeignWithdrawalNotice;
+/**
+ * A session's own model (F06) was picked under the other inference backend,
+ * so this turn ran on the default model instead. Raised by the runner
+ * (`engine/core/runner/session-model.ts`) on every such turn; the latest one
+ * per session is shown until the operator picks again or dismisses it.
+ */
+export interface SessionModelFallbackNotice {
+  readonly type: typeof INFERENCE_NOTICE_EVENT_TYPE;
+  readonly kind: "session_model_fallback";
+  readonly sessionId: string;
+  readonly missionRunId: null;
+  /** The active backend, which the turn ran on. */
+  readonly provider: string;
+  /** The default model the turn ran on. */
+  readonly model: string;
+  /** The backend and model the session's pick names. */
+  readonly pickedProvider: string;
+  readonly pickedModel: string;
+  readonly occurredAt: string;
+}
+
+export type InferenceNoticeEvent =
+  | MaxTokensClampedNotice
+  | VexInferenceBalanceLowNotice
+  | VexInferenceForeignWithdrawalNotice
+  | SessionModelFallbackNotice;
 export type InferenceNoticeListener = (event: InferenceNoticeEvent) => void;
 
 export class InferenceNoticeBus {
@@ -152,6 +179,36 @@ export function emitMaxTokensClampNotice(
     requested: input.clamp.requested,
     effective: input.clamp.effective,
     reason: input.clamp.reason,
+    occurredAt: new Date().toISOString(),
+  });
+}
+
+// ── Session model picked under the other backend (F06) ──────────────────
+
+/**
+ * Emit the notice that a session's own model was picked under the other
+ * backend and this turn ran on the default model. The runner logs the fact
+ * itself; this only reaches the session's turn.
+ */
+export function emitSessionModelFallbackNotice(
+  input: {
+    readonly sessionId: string;
+    readonly provider: string;
+    readonly model: string;
+    readonly pickedProvider: string;
+    readonly pickedModel: string;
+  },
+  bus: InferenceNoticeBus = inferenceNoticeBus,
+): void {
+  bus.emit({
+    type: INFERENCE_NOTICE_EVENT_TYPE,
+    kind: "session_model_fallback",
+    sessionId: input.sessionId,
+    missionRunId: null,
+    provider: input.provider,
+    model: input.model,
+    pickedProvider: input.pickedProvider,
+    pickedModel: input.pickedModel,
     occurredAt: new Date().toISOString(),
   });
 }
