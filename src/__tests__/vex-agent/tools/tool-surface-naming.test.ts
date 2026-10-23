@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 185-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 186-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -198,7 +198,9 @@ describe("G2 - publicName mapping gate", () => {
     // 145 -> 185 on the Lighter integration (2026-09-07): the 40 Lighter tools
     // (Core and Robinhood Chain), every one a new identity with its own mapping
     // row in `mappings/lighter.json`; nothing was reclaimed or retired.
-    expect(PROTOCOL_TOOLS.length).toBe(185);
+    // 185 -> 186 on the Lighter technical analysis (2026-10-23):
+    // `lighter.technicalAnalysis`, a new identity with its own mapping row.
+    expect(PROTOCOL_TOOLS.length).toBe(186);
   });
 });
 

@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 213
+- exported tools: 214
 - internal: 29
-- protocol: 184 across 12 namespaces
+- protocol: 185 across 12 namespaces
 - always loaded: 29
-- read-only: 129
+- read-only: 130
 - destructive: 63
 
 ## Internal tools
@@ -176,6 +176,7 @@ free. Both texts live on the tool
 | lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 709 | - | none (read) |
 | lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |
 | lighter__system_get | Read Lighter system status | protocol | yes | no | no | - | 462 | - | none (read) |
+| lighter__technical_analysis_get | Technical analysis of a Lighter market | protocol | yes | no | no | - | 951 | - | none (read) |
 | lighter__trades_list | Read Lighter account trades | protocol | yes | no | no | - | 520 | - | none (read) |
 | lighter__withdraw | Submit an approved Lighter withdrawal | protocol | no | yes | no | - | 787 | - | - |
 | lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | protocol | no | yes | no | - | 685 | - | - |

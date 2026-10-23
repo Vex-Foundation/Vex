@@ -38,6 +38,7 @@ const LIGHTER_TOOL_IDS = [
   "lighter.orderbook",
   "lighter.recentTrades",
   "lighter.candles",
+  "lighter.technicalAnalysis",
   "lighter.fees.approve.prepare",
   "lighter.fees.approve",
   "lighter.order.cancel.prepare",

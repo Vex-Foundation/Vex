@@ -61,6 +61,7 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   lighter__account_onboarding_status: "Check Lighter account onboarding readiness",
   lighter__api_keys_inspect: "Inspect Lighter API-key registrations",
   lighter__candles_list: "Read Lighter market candles",
+  lighter__technical_analysis_get: "Technical analysis of a Lighter market",
   lighter__deposit: "Execute an approved Lighter deposit",
   lighter__deposit_prepare: "Prepare a Lighter deposit approval",
   lighter__deposit_status: "Check a Lighter deposit's status",

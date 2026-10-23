@@ -937,6 +937,21 @@
           ]
         },
         {
+          "label": "Technical analysis",
+          "summary": "Read EMA 20/50/200, RSI, MACD, Bollinger bands, ATR and plain trend signals for one Lighter market, on closed candles only.",
+          "toolPrefixes": [
+            "lighter.technicalAnalysis"
+          ],
+          "hints": [
+            "technicals",
+            "rsi",
+            "macd",
+            "moving averages",
+            "overbought",
+            "trend read"
+          ]
+        },
+        {
           "label": "Accounts and positions",
           "summary": "Read public Lighter account state, positions with their current per-market leverage and margin mode, and API-key metadata by account index or owning wallet address.",
           "toolPrefixes": [
@@ -1397,6 +1412,7 @@
     "lighter.orderbook": "b638f5afcbd92ec0b8804e9ec69d097a0f377c3324bf0e8db2f6516348c9cacf",
     "lighter.recentTrades": "10d74d77a13bc63941b3e51621a3d701b4039070cb3b29abf25c50fe90b97031",
     "lighter.candles": "46e3c0bd2fc589109b7be5aec77cdb1c4bd17ac4001d057c17712bbc2fe3cb2d",
+    "lighter.technicalAnalysis": "920446cc48784294ebc9ebb988083666d4f89f135c178c48acb5388ce1b88fb9",
     "lighter.fees.approve.prepare": "fe0fbb997e02de9e012a2ca6e5c0b807521f7de63f40043634c397dbc0f89d95",
     "lighter.fees.approve": "0e5ed4eafc6edf47c59aa28e1c56e070d8e7b4d1167a2a06e2ad246c9d6d15c5",
     "lighter.order.cancel.prepare": "fbbc0c74e4af388f2c4d6be70bbfecc532c84b21989b5310fe4703ba09d8a8ec",

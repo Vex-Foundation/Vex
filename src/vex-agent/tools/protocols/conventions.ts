@@ -678,6 +678,8 @@ export const CANONICAL_PARAM_KEYS: ReadonlyMap<string, string> = new Map([
   ["inverted", "report on the OTHER side of a pair (quote per base, or the quote token) - orientation, never a filter"],
   ["startAtMs", "inclusive lower bound of a time window, in epoch MILLISECONDS; the unit is in the key because a seconds value lands in 1970"],
   ["endAtMs", "inclusive upper bound of a time window, in epoch MILLISECONDS; pairs with startAtMs"],
+  // -- Technical analysis (lighter, dexscreener) ----------------------
+  ["bars", "how many CLOSED candles an analysis's price facts cover; the tool's own warm-up read comes on top, so it is not a row cap like countBack"],
   ["maxPages", "ceiling on PROVIDER pages an internal walk may fetch; the bound is reported when hit, with a cursor for the rest"],
   ["deadlineMs", "wall-clock budget for an internal walk, in MILLISECONDS; the sibling bound of maxPages and reported the same way"],
   ["beforeBlock", "EXCLUSIVE upper block bound for a continuation; takes back the `nextBeforeBlock` a truncated walk returned, so withheld rows stay reachable"],

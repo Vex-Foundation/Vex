@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 213
+- tools: 214
 - Vex tools: 29
-- protocol tools: 184 across 12 protocols
+- protocol tools: 185 across 12 protocols
 - destructive: 63
 
 ## Vex tools
@@ -184,6 +184,7 @@ whether its provider key is configured on this machine.
 | lighter__positions_list | List Lighter positions | read-only | no | - |
 | lighter__recent_trades_list | Read recent public Lighter trades | read-only | no | - |
 | lighter__system_get | Read Lighter system status | read-only | no | - |
+| lighter__technical_analysis_get | Technical analysis of a Lighter market | read-only | no | - |
 | lighter__trades_list | Read Lighter account trades | read-only | no | - |
 | lighter__withdraw | Submit an approved Lighter withdrawal | mutating | yes | - |
 | lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | mutating | yes | - |
