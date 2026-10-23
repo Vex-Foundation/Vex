@@ -27,6 +27,13 @@
  * record is parked here and retried on subsequent requests until it lands, so
  * the durable truth materialises instead of being lost. An entry that still
  * owes a write is never evicted; eviction targets clean entries only.
+ *
+ * KEYED BY SESSION AND MODEL (F06). A session may change its model, and an
+ * endpoint tag belongs to one model's endpoint list: a switch made while the
+ * session ran model A must never route model B, and a background caller on
+ * `AGENT_MODEL` (the compaction branch, the memory judge) must never inherit
+ * a switch the session made on its own pick. Each (session, model) pair has
+ * its own failure run, switch and read-through.
  */
 
 /**
@@ -34,6 +41,12 @@
  * dropping one would discard the very fact we are trying to persist.
  */
 export const MAX_TRACKED_SESSIONS = 256;
+
+/** One session on one model: the unit every piece of failover state belongs to. */
+export interface EndpointStateKey {
+  readonly sessionId: string;
+  readonly model: string;
+}
 
 /** The durable record a session still owes, shaped as the repo takes it. */
 export interface PendingEndpointSwitchPersist {
@@ -56,6 +69,11 @@ interface SessionEndpointState {
 
 const states = new Map<string, SessionEndpointState>();
 
+/** NUL cannot appear in a session id or a model id, so the pair is unambiguous. */
+function mapKey(key: EndpointStateKey): string {
+  return `${key.sessionId}\u0000${key.model}`;
+}
+
 /**
  * Evict oldest-inserted entries past the cap, SKIPPING any that still owe a
  * durable write. If every entry is dirty the map is allowed to exceed the cap
@@ -67,14 +85,14 @@ const states = new Map<string, SessionEndpointState>();
  */
 function evictCleanOverflow(): void {
   if (states.size <= MAX_TRACKED_SESSIONS) return;
-  for (const [sessionId, state] of states) {
+  for (const [entryKey, state] of states) {
     if (states.size <= MAX_TRACKED_SESSIONS) return;
-    if (state.pendingPersist === null) states.delete(sessionId);
+    if (state.pendingPersist === null) states.delete(entryKey);
   }
 }
 
-function stateFor(sessionId: string): SessionEndpointState {
-  const existing = states.get(sessionId);
+function stateFor(key: EndpointStateKey): SessionEndpointState {
+  const existing = states.get(mapKey(key));
   if (existing !== undefined) return existing;
 
   const created: SessionEndpointState = {
@@ -83,7 +101,7 @@ function stateFor(sessionId: string): SessionEndpointState {
     hydrated: false,
     pendingPersist: null,
   };
-  states.set(sessionId, created);
+  states.set(mapKey(key), created);
   evictCleanOverflow();
   return created;
 }
@@ -94,21 +112,21 @@ function stateFor(sessionId: string): SessionEndpointState {
  * {@link recordCapacitySuccess}), so two unrelated failures an hour apart never
  * add up to a switch.
  */
-export function recordCapacityFailure(sessionId: string): number {
-  const state = stateFor(sessionId);
+export function recordCapacityFailure(key: EndpointStateKey): number {
+  const state = stateFor(key);
   state.consecutiveCapacityFailures += 1;
   return state.consecutiveCapacityFailures;
 }
 
 /** A request succeeded — the failure run is broken. */
-export function recordCapacitySuccess(sessionId: string): void {
-  const state = states.get(sessionId);
+export function recordCapacitySuccess(key: EndpointStateKey): void {
+  const state = states.get(mapKey(key));
   if (state !== undefined) state.consecutiveCapacityFailures = 0;
 }
 
 /** The endpoint this session switched to, or `null` while still on the pin. */
-export function getSwitchedEndpointTag(sessionId: string): string | null {
-  return states.get(sessionId)?.switchedTag ?? null;
+export function getSwitchedEndpointTag(key: EndpointStateKey): string | null {
+  return states.get(mapKey(key))?.switchedTag ?? null;
 }
 
 /**
@@ -120,22 +138,22 @@ export function getSwitchedEndpointTag(sessionId: string): string | null {
  * A committed switch is HYDRATED by definition — we know this session's truth
  * because we just made it, so no read-through is owed.
  */
-export function commitEndpointSwitch(sessionId: string, tag: string): void {
-  const state = stateFor(sessionId);
+export function commitEndpointSwitch(key: EndpointStateKey, tag: string): void {
+  const state = stateFor(key);
   state.switchedTag = tag;
   state.consecutiveCapacityFailures = 0;
   state.hydrated = true;
 }
 
-export function hasSwitched(sessionId: string): boolean {
-  return getSwitchedEndpointTag(sessionId) !== null;
+export function hasSwitched(key: EndpointStateKey): boolean {
+  return getSwitchedEndpointTag(key) !== null;
 }
 
 // ── read-through hydration ───────────────────────────────────────
 
 /** Whether the durable table has already been consulted for this session. */
-export function isHydrated(sessionId: string): boolean {
-  return states.get(sessionId)?.hydrated === true;
+export function isHydrated(key: EndpointStateKey): boolean {
+  return states.get(mapKey(key))?.hydrated === true;
 }
 
 /**
@@ -144,41 +162,54 @@ export function isHydrated(sessionId: string): boolean {
  * already happened and is already persisted, so it owes no write and must not
  * be counted as a fresh switch.
  */
-export function adoptPersistedSwitch(sessionId: string, tag: string): void {
-  const state = stateFor(sessionId);
+export function adoptPersistedSwitch(key: EndpointStateKey, tag: string): void {
+  const state = stateFor(key);
   state.switchedTag = tag;
   state.hydrated = true;
   state.pendingPersist = null;
 }
 
 /** Mark the read-through done for a session that had never switched. */
-export function markHydrated(sessionId: string): void {
-  stateFor(sessionId).hydrated = true;
+export function markHydrated(key: EndpointStateKey): void {
+  stateFor(key).hydrated = true;
 }
 
 // ── pending durable write ────────────────────────────────────────
 
 export function markPersistPending(
-  sessionId: string,
+  key: EndpointStateKey,
   record: PendingEndpointSwitchPersist,
 ): void {
-  stateFor(sessionId).pendingPersist = record;
+  stateFor(key).pendingPersist = record;
 }
 
 export function getPersistPending(
-  sessionId: string,
+  key: EndpointStateKey,
 ): PendingEndpointSwitchPersist | null {
-  return states.get(sessionId)?.pendingPersist ?? null;
+  return states.get(mapKey(key))?.pendingPersist ?? null;
 }
 
-export function clearPersistPending(sessionId: string): void {
-  const state = states.get(sessionId);
+export function clearPersistPending(key: EndpointStateKey): void {
+  const state = states.get(mapKey(key));
   if (state !== undefined) state.pendingPersist = null;
 }
 
-/** Drop one session's state (session end, and the test seam). */
-export function clearSessionEndpointState(sessionId: string): void {
-  states.delete(sessionId);
+/**
+ * Drop a session's state: for one model when `model` is given (the session
+ * moved off it, F06), else for every model the session ran (session end, and
+ * the test seam). An entry that still owes a durable write is kept, like
+ * eviction keeps it, so clearing never loses a switch record.
+ */
+export function clearSessionEndpointState(sessionId: string, model?: string): void {
+  if (model !== undefined) {
+    const key = mapKey({ sessionId, model });
+    if (states.get(key)?.pendingPersist === null) states.delete(key);
+    return;
+  }
+  const prefix = `${sessionId}\u0000`;
+  for (const [entryKey, state] of states) {
+    if (entryKey.startsWith(prefix) && state.pendingPersist === null) states.delete(entryKey);
+  }
 }
 
 /** Drop ALL state. Test seam only — the map is process-global. */
@@ -186,7 +217,7 @@ export function resetAllSessionEndpointState(): void {
   states.clear();
 }
 
-/** Tracked-session count. Test seam for the eviction contract. */
+/** Tracked (session, model) count. Test seam for the eviction contract. */
 export function trackedSessionCount(): number {
   return states.size;
 }

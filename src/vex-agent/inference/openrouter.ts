@@ -249,7 +249,9 @@ export class OpenRouterProvider implements InferenceProvider {
       return { loadCandidates: async () => [], endpointRouting: "disabled" };
     }
     return {
-      loadCandidates: () => loadEndpointCandidates(this.client, this.model),
+      // The request's model, not `AGENT_MODEL`: a session on another model
+      // (F06) switches among THAT model's endpoints.
+      loadCandidates: (model) => loadEndpointCandidates(this.client, model),
     };
   }
 
