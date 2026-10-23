@@ -58,6 +58,7 @@ describe("mission mapper", () => {
         maxLaunchValueDecimals: null,
         maxLaunchCount: null,
         reasoningEffort: null,
+        model: null,
       });
     });
 

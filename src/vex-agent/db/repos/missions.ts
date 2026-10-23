@@ -412,6 +412,28 @@ export async function mergeConstraintReasoningEffort(
   );
 }
 
+/**
+ * Merge the F06 mission model into `constraints_json` without clobbering
+ * siblings. Same lock contract as {@link mergeConstraintReasoningEffort}: the
+ * caller holds the row lock (`getMissionForUpdate`). `null` clears it.
+ */
+export async function mergeConstraintModel(
+  client: PoolClient,
+  id: string,
+  model: { readonly provider: string; readonly modelId: string } | null,
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET constraints_json =
+              COALESCE(constraints_json, '{}'::jsonb)
+              || jsonb_build_object('model', $2::jsonb),
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, model === null ? null : JSON.stringify({ provider: model.provider, modelId: model.modelId })],
+  );
+}
+
 export async function mergeConstraintLaunchCeilings(
   client: PoolClient,
   id: string,

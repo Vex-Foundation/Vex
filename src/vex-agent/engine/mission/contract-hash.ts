@@ -92,11 +92,17 @@
  *     never set it hashes as `medium`, the default while v8 was current. A
  *     mission accepted under v7 or earlier still verifies against its recorded
  *     version (the field is absent from that material) and runs at `medium`.
- *   - v9 - CURRENT (Kairos E-1 follow-up). Same shape as v8; only the default
+ *   - v9 - FROZEN (Kairos E-1 follow-up). Same shape as v8; only the default
  *     changes: a draft that never set the effort hashes as `high`, the value it
  *     now runs at. The bump is what keeps a v8 acceptance of an unset effort
  *     bound to `medium` (the value that user accepted) instead of silently
  *     re-reading it as `high`.
+ *   - v10 - CURRENT (F06). Adds `model`, the `{ provider, modelId }` every
+ *     model call of the run uses, hashed as the stored value or `null` (not
+ *     set: the run uses the default model at start). Without the bump the
+ *     model could change after acceptance without dirtying it. A mission
+ *     accepted under v9 or earlier verifies against its recorded version (the
+ *     field is absent from that material) and runs on the default.
  *
  * Normalization rules:
  *
@@ -125,7 +131,8 @@ import {
   effectiveMissionReasoningEffort,
   missionDefaultReasoningEffortFor,
 } from "./reasoning-effort.js";
-import { MISSION_REASONING_EFFORTS } from "../types.js";
+import { MISSION_MODEL_PROVIDERS, MISSION_REASONING_EFFORTS } from "../types.js";
+import { normalizeMissionModel } from "./model-choice.js";
 import {
   CanonicalContractMaterialLegacyV2Schema,
   normalizeLegacyHyperliquidRiskV2,
@@ -133,7 +140,7 @@ import {
 } from "./contract-hash-legacy-v2.js";
 
 /** Bumped when the canonical shape or hashing rules change. Produced for every new draft. */
-export const CONTRACT_HASH_VERSION = 9;
+export const CONTRACT_HASH_VERSION = 10;
 export const LEGACY_CONTRACT_HASH_VERSION = 1;
 /**
  * Frozen historical version — see the "Version history" note above. Accepted
@@ -164,6 +171,8 @@ export const LEGACY_V6_CONTRACT_HASH_VERSION = 6;
 /** Frozen six-field deployed-capital contract, before the E-1 reasoning effort. */
 export const LEGACY_V7_CONTRACT_HASH_VERSION = 7;
 export const LEGACY_V8_CONTRACT_HASH_VERSION = 8;
+/** Frozen E-1 shape with the `high` default, before the F06 model. */
+export const LEGACY_V9_CONTRACT_HASH_VERSION = 9;
 export type ContractHashVersion =
   | typeof LEGACY_CONTRACT_HASH_VERSION
   | typeof LEGACY_V2_CONTRACT_HASH_VERSION
@@ -173,6 +182,7 @@ export type ContractHashVersion =
   | typeof LEGACY_V6_CONTRACT_HASH_VERSION
   | typeof LEGACY_V7_CONTRACT_HASH_VERSION
   | typeof LEGACY_V8_CONTRACT_HASH_VERSION
+  | typeof LEGACY_V9_CONTRACT_HASH_VERSION
   | typeof CONTRACT_HASH_VERSION;
 
 /**
@@ -195,6 +205,7 @@ export function isKnownContractHashVersion(
     || version === LEGACY_V6_CONTRACT_HASH_VERSION
     || version === LEGACY_V7_CONTRACT_HASH_VERSION
     || version === LEGACY_V8_CONTRACT_HASH_VERSION
+    || version === LEGACY_V9_CONTRACT_HASH_VERSION
     || version === CONTRACT_HASH_VERSION;
 }
 
@@ -288,9 +299,18 @@ const CanonicalContractMaterialV8Schema = CanonicalContractMaterialV7Schema.omit
   reasoningEffort: z.enum(MISSION_REASONING_EFFORTS),
 }).strict();
 
-/** v9 - v8's shape; unset effort hashes as the current default (`high`). */
+/** v9 - FROZEN: v8's shape; unset effort hashes as the current default (`high`). */
 const CanonicalContractMaterialV9Schema = CanonicalContractMaterialV8Schema.omit({ v: true }).extend({
+  v: z.literal(LEGACY_V9_CONTRACT_HASH_VERSION),
+}).strict();
+
+/** v10 - v9's fields plus the run's model (F06), the stored choice or `null`. */
+const CanonicalContractMaterialV10Schema = CanonicalContractMaterialV9Schema.omit({ v: true }).extend({
   v: z.literal(CONTRACT_HASH_VERSION),
+  model: z.object({
+    provider: z.enum(MISSION_MODEL_PROVIDERS),
+    modelId: z.string(),
+  }).strict().nullable(),
 }).strict();
 
 export type CanonicalContractMaterial =
@@ -302,7 +322,8 @@ export type CanonicalContractMaterial =
   | z.infer<typeof CanonicalContractMaterialV6Schema>
   | z.infer<typeof CanonicalContractMaterialV7Schema>
   | z.infer<typeof CanonicalContractMaterialV8Schema>
-  | z.infer<typeof CanonicalContractMaterialV9Schema>;
+  | z.infer<typeof CanonicalContractMaterialV9Schema>
+  | z.infer<typeof CanonicalContractMaterialV10Schema>;
 
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
@@ -459,7 +480,20 @@ export function buildContractMaterial(
       ),
     });
   }
-  return CanonicalContractMaterialV9Schema.parse({
+  if (version === LEGACY_V9_CONTRACT_HASH_VERSION) {
+    return CanonicalContractMaterialV9Schema.parse({
+      v: LEGACY_V9_CONTRACT_HASH_VERSION,
+      ...base,
+      ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
+      maxLaunchCount: normalizeLaunchCount(draft.maxLaunchCount),
+      deployedCapital: normalizeDeployedCapital(draft.deployedCapital),
+      reasoningEffort: effectiveMissionReasoningEffort(
+        draft.reasoningEffort,
+        missionDefaultReasoningEffortFor(LEGACY_V9_CONTRACT_HASH_VERSION),
+      ),
+    });
+  }
+  return CanonicalContractMaterialV10Schema.parse({
     v: CONTRACT_HASH_VERSION,
     ...base,
     ...normalizeLaunchCeiling(draft.maxLaunchValueRaw, draft.maxLaunchValueDecimals),
@@ -473,6 +507,9 @@ export function buildContractMaterial(
       draft.reasoningEffort,
       missionDefaultReasoningEffortFor(CONTRACT_HASH_VERSION),
     ),
+    // F06 - the stored model through the same normalizer the mapper reads it
+    // with; not set (or unreadable) hashes as `null`.
+    model: normalizeMissionModel(draft.model),
   });
 }
 
