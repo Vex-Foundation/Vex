@@ -22,6 +22,7 @@ import { registerMissionRetryHandler } from "./retry.js";
 import { registerMissionSetAutoRetryHandler } from "./set-auto-retry.js";
 import { registerMissionSetLaunchCeilingsHandler } from "./set-launch-ceilings.js";
 import { registerMissionSetReasoningEffortHandler } from "./set-reasoning-effort.js";
+import { registerMissionSetModelHandler } from "./set-model.js";
 import { registerMissionStartHandler } from "./start.js";
 import { registerMissionStopHandler } from "./stop.js";
 import { registerMissionUpdateDraftHandler } from "./update-draft.js";
@@ -43,6 +44,7 @@ export function registerMissionHandlers(): ReadonlyArray<() => void> {
     registerMissionSetAutoRetryHandler(),
     registerMissionSetLaunchCeilingsHandler(),
     registerMissionSetReasoningEffortHandler(),
+    registerMissionSetModelHandler(),
     registerMissionRestartWithInstructionHandler(),
   ];
 }

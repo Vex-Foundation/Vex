@@ -42,7 +42,8 @@ import {
 } from "../../lib/api/mission.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
 import { useAvailableModels } from "../../lib/api/models.js";
-import { defaultModelOption } from "../../lib/model-options.js";
+import { defaultModelOption, findModelOption } from "../../lib/model-options.js";
+import { ModelSection } from "./MissionContractModal/ModelSection.js";
 import { DialogClose } from "../../components/ui/dialog.js";
 import {
   Sheet,
@@ -108,11 +109,15 @@ export function MissionContractModal({
   const planGate = resolvePlanGate(readPlan(planQuery.data), planReadState);
   const accept = useAcceptMissionContract();
   const autoRetry = useSetAutoRetry();
-  // Kairos E-1: the current model and its efforts, so the effort section can
+  // Kairos E-1: the run's model and its efforts, so the effort section can
   // say which level the run will actually use (the same source the composer
-  // reads). `null` until known: the section then shows the pick alone.
+  // reads): the contract's own model (F06), else the default. `null` until
+  // known: the section then shows the pick alone.
   const modelsQuery = useAvailableModels();
-  const currentModel = defaultModelOption(modelsQuery.data);
+  const contractModelId = draft?.constraints.model?.modelId ?? null;
+  const currentModel =
+    (contractModelId === null ? null : findModelOption(modelsQuery.data, contractModelId)) ??
+    defaultModelOption(modelsQuery.data);
   const effortModel =
     currentModel !== null && currentModel.reasoning !== null
       ? { modelId: currentModel.modelId, capability: currentModel.reasoning }
@@ -265,6 +270,14 @@ export function MissionContractModal({
                   missionId={state.draft.missionId}
                   constraints={state.draft.constraints}
                   editable={state.draft.status === "draft" || state.draft.status === "ready"}
+                />
+                {/* F06: the run's model, contract material, set on this card only. */}
+                <ModelSection
+                  sessionId={sessionId}
+                  missionId={state.draft.missionId}
+                  constraints={state.draft.constraints}
+                  editable={state.draft.status === "draft" || state.draft.status === "ready"}
+                  models={modelsQuery.data}
                 />
                 {/* Kairos E-1: the run's reasoning effort, contract material. */}
                 <ReasoningEffortSection
