@@ -69,8 +69,9 @@ describe("dexscreener manifest", () => {
   // this is the only step in the namespace's history that made it smaller.
   // 14 before stage S4 added the deep-dive family (4): the pair safety report,
   // candles, trades and the trader leaderboard. All four are NEW identities.
-  it("has 18 tools total", () => {
-    expect(DEXSCREENER_TOOLS).toHaveLength(18);
+  // 18 before the technical analysis (F08) added one more read about one pool.
+  it("has 19 tools total", () => {
+    expect(DEXSCREENER_TOOLS).toHaveLength(19);
   });
 
   const EXPECTED_TOOL_IDS = [
@@ -101,10 +102,12 @@ describe("dexscreener manifest", () => {
     "dexscreener.candles",
     "dexscreener.trades",
     "dexscreener.top.traders",
+    // Technical analysis (F08): the shared indicator engine on one named pool.
+    "dexscreener.technicalAnalysis",
   ];
 
   it("expected toolId count matches manifest count", () => {
-    expect(EXPECTED_TOOL_IDS).toHaveLength(18);
+    expect(EXPECTED_TOOL_IDS).toHaveLength(19);
   });
 
   for (const toolId of EXPECTED_TOOL_IDS) {

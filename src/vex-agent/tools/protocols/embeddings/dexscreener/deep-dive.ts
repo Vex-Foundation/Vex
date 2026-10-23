@@ -88,6 +88,34 @@ export const DEXSCREENER_DEEP_DIVE_DISCOVERY = {
     chains: DEXSCREENER_CHAINS,
   },
 
+  "dexscreener.technicalAnalysis": {
+    canonicalSummary:
+      "Technical analysis of one pool on closed candles: EMA 20/50/200, RSI, MACD, Bollinger, ATR and trend signals.",
+    embeddingText: embeddingText(
+      `Technical analysis of one named DEX pool on any chain, on closed candles ` +
+        `only: EMA 20, 50 and 200, RSI 14, MACD, Bollinger bands, ATR and plain ` +
+        `trend signals such as overbought or oversold and price above or below ` +
+        `its moving averages, at 5m, 15m, 1h, 4h or daily candles. Use this when ` +
+        `the user wants technicals, indicators or a trend read for a pool. Example ` +
+        `queries: 4h technicals for this pool, RSI on this pair, is this token ` +
+        `overbought, MACD daily for the pool.`,
+    ),
+    aliases: [
+      "technical analysis",
+      "technicals",
+      "indicators",
+      "RSI",
+      "MACD",
+      "analiza techniczna",
+    ],
+    exampleIntents: [
+      "4h technicals for this pool",
+      "RSI on this pair",
+      "czy ten token jest wykupiony",
+    ],
+    chains: DEXSCREENER_CHAINS,
+  },
+
   "dexscreener.trades": {
     canonicalSummary:
       "Trade-by-trade history for a pair with a counterparty profile on every row, filters on side, size, time, and wallet.",
@@ -163,7 +191,7 @@ export const DEXSCREENER_DEEP_DIVE_DISCOVERY = {
  * Guard the count, matching the sibling embedding modules: a passage silently
  * dropped in a merge would degrade retrieval without failing any type check.
  */
-const EXPECTED_COUNT = 4;
+const EXPECTED_COUNT = 5;
 if (Object.keys(DEXSCREENER_DEEP_DIVE_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `DEXSCREENER_DEEP_DIVE_DISCOVERY has ${Object.keys(DEXSCREENER_DEEP_DIVE_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

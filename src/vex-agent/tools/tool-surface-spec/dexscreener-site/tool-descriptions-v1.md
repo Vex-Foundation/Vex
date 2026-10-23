@@ -624,3 +624,34 @@ the provider's profile-carrying tokens only; the ranking is the provider's
 opaque score (`providerRank`); there is no server-side total; the same token
 can repeat across pages with disjoint aggregates and repeats are flagged by
 token. For metric-exact league tables use the pair screening tools.
+
+## 19. dexscreener__technical_analysis_get (`dexscreener.technicalAnalysis`)
+
+Added with F08 (technical analysis), 2026-10-23. This block was drafted with
+the tool to the authoring rules above and is PENDING the coordinator's review
+under D-DS7; until then the shipped retrieval fields match this draft, so a
+coordinator edit here is the one path to changing them.
+
+canonicalSummary: Technical analysis of one pool on closed candles: EMA
+20/50/200, RSI, MACD, Bollinger, ATR and trend signals.
+
+embeddingText:
+Technical analysis of one named DEX pool on any chain, on closed candles
+only: EMA 20, 50 and 200, RSI 14, MACD, Bollinger bands, ATR and plain trend
+signals such as overbought or oversold and price above or below its moving
+averages, at 5m, 15m, 1h, 4h or daily candles. Use this when the user wants
+technicals, indicators or a trend read for a pool. Example queries: 4h
+technicals for this pool, RSI on this pair, is this token overbought, MACD
+daily for the pool.
+
+aliases: technical analysis, technicals, indicators, RSI, MACD, analiza
+techniczna
+exampleIntents: "4h technicals for this pool", "RSI on this pair", "czy ten
+token jest wykupiony"
+
+description (model-visible draft):
+Technical analysis of one named pool on closed candles only, at 5m, 15m, 1h,
+4h or 1d. Returns price facts, EMA 20/50/200, RSI 14, MACD 12/26/9, Bollinger
+20/2, ATR 14, six plain signals, the last ten closes and `asOf`, the close of
+the newest closed candle used. The pool is picked first with the search or
+token-pool tools; there is no token address input. Needs the site bridge.

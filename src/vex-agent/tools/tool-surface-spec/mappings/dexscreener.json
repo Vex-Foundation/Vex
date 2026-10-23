@@ -82,6 +82,11 @@
       "rationale": "Flat resource plus `list`. `candles` is the word users and every charting surface use for OHLCV bars, and the tool returns a series of them, so the `_list` verb is literal. No resource prefix is needed: nothing else in the fleet lists candles, and the pair is a parameter rather than a namespace segment. NEW in S4; the public API DexScreener exposes has no candle endpoint at all, so nothing was retired here."
     },
     {
+      "toolId": "dexscreener.technicalAnalysis",
+      "publicName": "dexscreener__technical_analysis_get",
+      "rationale": "Flat resource plus `get`: one computed reading of one pool (the indicator bundle on closed candles), not a list of rows. Named like its Lighter sibling `lighter__technical_analysis_get` so the two venues read as one capability."
+    },
+    {
       "toolId": "dexscreener.trades",
       "publicName": "dexscreener__trades_list",
       "rationale": "Flat resource plus `list`. `trades` and not `transactions`: the rows are swaps and liquidity events on one pool, which is what a trader calls trades, and `transactions` would collide semantically with wallet-level transaction history in other namespaces. NEW in S4."

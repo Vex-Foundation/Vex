@@ -149,9 +149,11 @@ describe("the exported inventory covers exactly the export scope", () => {
     // 213 -> 214 on the Lighter technical analysis (2026-10-23):
     // `lighter__technical_analysis_get`, a read of public candles with no
     // session binding, exported like `lighter__candles_list` (184 -> 185).
-    expect(inventory).toHaveLength(214);
+    // 214 -> 215 with `dexscreener__technical_analysis_get`, exported like
+    // `dexscreener__candles_list`, which reads through the same bridge (185 -> 186).
+    expect(inventory).toHaveLength(215);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(29);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(185);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(186);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

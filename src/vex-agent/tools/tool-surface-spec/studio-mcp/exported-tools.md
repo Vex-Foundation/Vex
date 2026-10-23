@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 214
+- exported tools: 215
 - internal: 29
-- protocol: 185 across 12 namespaces
+- protocol: 186 across 12 namespaces
 - always loaded: 29
-- read-only: 130
+- read-only: 131
 - destructive: 63
 
 ## Internal tools
@@ -104,6 +104,7 @@ free. Both texts live on the tool
 | dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2580 | - | none (read) |
 | dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2199 | - | none (read) |
 | dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | protocol | yes | no | no | - | 2808 | - | none (read) |
+| dexscreener__technical_analysis_get | Technical analysis of a DEX pool | protocol | yes | no | no | - | 1624 | - | none (read) |
 | dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 3038 | - | none (read) |
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 | - | none (read) |
 | dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 6552 | - | none (read) |

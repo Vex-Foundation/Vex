@@ -109,6 +109,7 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
       "Chain and DEX catalog",
       "Token safety and holders",
       "Price history and charts",
+      "Technical analysis",
       "Trades and trader leaderboard",
     ],
     coverageNote:
@@ -251,6 +252,20 @@ export const DEXSCREENER_NAVIGATION: ProtocolNamespaceNavigation = {
         "volatility",
         "market cap history",
         "daily chart",
+      ],
+    },
+    {
+      label: "Technical analysis",
+      summary:
+        "EMA 20/50/200, RSI, MACD, Bollinger bands, ATR and plain trend signals for one named pool, on closed candles only, at 5m to 1d.",
+      toolPrefixes: ["dexscreener.technicalAnalysis"],
+      hints: [
+        "technicals",
+        "RSI",
+        "MACD",
+        "moving averages",
+        "overbought",
+        "trend read",
       ],
     },
     {

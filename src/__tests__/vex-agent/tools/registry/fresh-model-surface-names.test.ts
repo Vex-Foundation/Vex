@@ -303,7 +303,8 @@ describe("fresh model surface teaches no protocol publicName", () => {
       applyPosture(posture);
       clearDiscoveredTools(SESSION);
       const dexNames = PUBLIC_NAMES.filter((name) => name.startsWith("dexscreener__"));
-      expect(dexNames).toHaveLength(18);
+      // 19 with `dexscreener__technical_analysis_get` (F08).
+      expect(dexNames).toHaveLength(19);
       for (const subject of MODES) {
         const surface = [
           ...buildPromptStack(subject.engine).staticLayers,

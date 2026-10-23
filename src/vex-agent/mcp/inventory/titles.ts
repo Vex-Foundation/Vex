@@ -177,6 +177,7 @@ export const STUDIO_TOOL_TITLES: Readonly<Record<string, string>> = {
   dexscreener__pairs_batch_get: "Batch-read pairs or tokens",
   dexscreener__pair_details_get: "Read a pair's safety report",
   dexscreener__candles_list: "Read a pair's OHLCV candles",
+  dexscreener__technical_analysis_get: "Technical analysis of a DEX pool",
   dexscreener__trades_list: "List a pair's trades",
   dexscreener__top_traders_list: "Rank a pair's top wallets",
 

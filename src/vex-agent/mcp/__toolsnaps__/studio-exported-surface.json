@@ -1,5 +1,5 @@
 {
-  "toolCount": 214,
+  "toolCount": 215,
   "tools": [
     {
       "alwaysLoad": true,
@@ -3736,6 +3736,66 @@
       "requiresEnv": null,
       "title": "Read the DEX Screener spotlight feeds",
       "toolId": "dexscreener.spotlight"
+    },
+    {
+      "alwaysLoad": false,
+      "descriptionBytes": 1624,
+      "destructiveHint": false,
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bars": {
+            "description": "How many closed candles the price facts cover, an integer from 30 to 200 (100 when omitted). The indicators always read the warm-up on top.",
+            "type": "number"
+          },
+          "chain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ],
+            "description": "Chain slug the pool lives on, for example solana, ethereum, bsc, base or robinhood. Chain slug/alias, or the numeric chain id `TokenFind` returns (e.g. `base` or `8453`). A pair or token address is only unique within one chain, so this is required; an unknown slug is refused by name with the nearest catalog matches rather than answered with zero rows."
+          },
+          "dryRun": {
+            "description": "Simulate this call instead of executing it. Runtime control parameter: when true the call is treated as a preview and nothing is broadcast.",
+            "type": "boolean"
+          },
+          "interval": {
+            "description": "Candle size to analyse: 5m, 15m, 1h, 4h or 1d. Any other value is rejected.",
+            "enum": [
+              "5m",
+              "15m",
+              "1h",
+              "4h",
+              "1d"
+            ],
+            "type": "string"
+          },
+          "pairAddress": {
+            "description": "The pool (pair) address, from dexscreener__pairs_search, dexscreener__token_pairs_list or a screening board. On EVM chains it must be the provider's CHECKSUM spelling, as those tools return it: the lowercased form is answered with zero rows. Solana addresses are passed verbatim.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "chain",
+          "pairAddress",
+          "interval"
+        ],
+        "type": "object"
+      },
+      "kind": "protocol",
+      "namespace": "dexscreener",
+      "publicName": "dexscreener__technical_analysis_get",
+      "readOnlyHint": true,
+      "requiresEnv": null,
+      "title": "Technical analysis of a DEX pool",
+      "toolId": "dexscreener.technicalAnalysis"
     },
     {
       "alwaysLoad": false,

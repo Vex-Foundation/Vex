@@ -135,7 +135,7 @@ describe("G2 - publicName mapping gate", () => {
     );
   });
 
-  it("the mapped surface is the whole 186-tool catalog (drift alarm, not a cap)", () => {
+  it("the mapped surface is the whole 187-tool catalog (drift alarm, not a cap)", () => {
     // Not a limit: a Batch-2 addition updates this number together with its
     // mapping row, so the count and the map can never diverge silently.
     // 137 before the Batch 2 near-duplicate merges (owner decision D7) retired
@@ -200,7 +200,8 @@ describe("G2 - publicName mapping gate", () => {
     // row in `mappings/lighter.json`; nothing was reclaimed or retired.
     // 185 -> 186 on the Lighter technical analysis (2026-10-23):
     // `lighter.technicalAnalysis`, a new identity with its own mapping row.
-    expect(PROTOCOL_TOOLS.length).toBe(186);
+    // 186 -> 187 with its DexScreener sibling `dexscreener.technicalAnalysis`.
+    expect(PROTOCOL_TOOLS.length).toBe(187);
   });
 });
 

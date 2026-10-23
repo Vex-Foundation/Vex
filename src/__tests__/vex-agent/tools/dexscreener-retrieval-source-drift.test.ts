@@ -112,8 +112,8 @@ const SHIPPED: Record<string, ToolDiscoveryMetadata> = {
 describe("DexScreener retrieval text matches the coordinator's source document", () => {
   const authored = parseSource();
 
-  it("parses all 18 authored tool blocks", () => {
-    expect(authored).toHaveLength(18);
+  it("parses all 19 authored tool blocks", () => {
+    expect(authored).toHaveLength(19);
   });
 
   it("ships exactly the toolIds the document authors, and no others", () => {

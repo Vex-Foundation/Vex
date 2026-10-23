@@ -830,6 +830,21 @@
           ]
         },
         {
+          "label": "Technical analysis",
+          "summary": "EMA 20/50/200, RSI, MACD, Bollinger bands, ATR and plain trend signals for one named pool, on closed candles only, at 5m to 1d.",
+          "toolPrefixes": [
+            "dexscreener.technicalAnalysis"
+          ],
+          "hints": [
+            "technicals",
+            "RSI",
+            "MACD",
+            "moving averages",
+            "overbought",
+            "trend read"
+          ]
+        },
+        {
           "label": "Trades and trader leaderboard",
           "summary": "Who traded one pool: trade-by-trade history with a counterparty wallet profile on every row and filters on side, size, time and wallet, plus a bounded leaderboard of the wallets that bought or sold the most. Venue-local cash flow, never profit.",
           "toolPrefixes": [
@@ -1390,6 +1405,7 @@
     "dexscreener.trending": "da459270a98bbc84dcdfe52fe43055cb987784252e33ffc66d5ef1f1d0bf13a2",
     "dexscreener.pair.details": "7d4a07844c7dfc1b015914f005d480573dfd35cdd9e66e6b857867b3d52a7765",
     "dexscreener.candles": "ec4208a537b585fbbe9fe738762e0c19e8acda5aef87535a108ba8944d26633d",
+    "dexscreener.technicalAnalysis": "d2214cad79fbe067a02b0820e9e975686342c16708c2643144c8c6901e9dca5d",
     "dexscreener.trades": "4c2b77b44fac2cd2611b2d022ffa98282ed8d84b8925bae6836ad402bd2218fd",
     "dexscreener.top.traders": "9f1027005be3b748c1e1a8b2fcfda5bb57b1e9db11ac07e54a4e7ce7fb202c17",
     "lighter.account.onboarding.status": "25004c8bfe502b4d0dd3161aa95dccc136f044188065383fed68ea7cf6f9525a",
