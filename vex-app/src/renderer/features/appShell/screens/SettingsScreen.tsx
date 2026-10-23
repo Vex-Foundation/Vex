@@ -7,7 +7,15 @@
  * form in `flowMode="back-edit"` or its own integration view
  * (`SettingsScreen/SettingsSectionView.tsx`; per-chain private-key export
  * lives ONLY in its Wallets branch). The `settings` ShellRoute carries an
- * optional deep-link `section`; none lands on Preferences.
+ * optional deep-link `section`; none lands on Preferences. On the Inference
+ * section it may also name the provider choice to show
+ * (`inferenceProvider`, `inferenceSettingsRoute`), so every way into the Vex
+ * Inference account lands on it without switching the provider.
+ *
+ * The route follows what is on screen: picking a section or a provider
+ * choice replaces the route in place (the page trail never pushes a move
+ * within one page), so a page opened from here (Fund) closes back to the
+ * same section and choice.
  *
  * Chrome, dialog semantics, Escape and the FLIP morph belong to `ShellScreen`
  * (the page sheet, section 12); the title bar names the page, so there is no
@@ -21,9 +29,11 @@
 
 import { useEffect, useState, type JSX } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import type {
-  SettingsSection,
-  ShellScreenOrigin,
+import type { ProviderName } from "@shared/schemas/provider.js";
+import {
+  useUiStore,
+  type SettingsSection,
+  type ShellScreenOrigin,
 } from "../../../stores/uiStore.js";
 import { EASE_STANDARD } from "../../../lib/motion/index.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
@@ -50,11 +60,14 @@ function prefersReducedMotion(): boolean {
 export function SettingsScreen({
   origin,
   section: initialSection,
+  inferenceProvider = null,
   onClose,
 }: {
   readonly origin: ShellScreenOrigin | null;
   /** Deep-linked section from the route; null lands on Preferences. */
   readonly section: SettingsSection | null;
+  /** Inference only: the provider choice to show; null shows the active provider. */
+  readonly inferenceProvider?: ProviderName | null;
   readonly onClose: () => void;
 }): JSX.Element {
   // null is Preferences, the page's landing section.
@@ -84,8 +97,16 @@ export function SettingsScreen({
       ? null
       : (visibleSettingsSections(native).find((s) => s.id === section) ?? null);
   const selected: SettingsNavId = activeMeta === null ? "preferences" : activeMeta.id;
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
+  // Same-kind route moves replace in place (page-trail.ts), so this keeps
+  // the way back true without stepping through sections on close.
   const select = (id: SettingsNavId): void => {
-    setSection(id === "preferences" ? null : id);
+    const next = id === "preferences" ? null : id;
+    setSection(next);
+    setShellRoute({ kind: "settings", origin, section: next, inferenceProvider: null });
+  };
+  const onInferenceChoiceChange = (choice: ProviderName): void => {
+    setShellRoute({ kind: "settings", origin, section: "inference", inferenceProvider: choice });
   };
 
   return (
@@ -115,7 +136,9 @@ export function SettingsScreen({
                     env={env}
                     superboard={superboard}
                     completedSteps={completedSteps}
-                    onReturn={() => setSection(null)}
+                    onReturn={() => select("preferences")}
+                    inferenceProvider={inferenceProvider}
+                    onInferenceChoiceChange={onInferenceChoiceChange}
                   />
                 )}
               </motion.div>

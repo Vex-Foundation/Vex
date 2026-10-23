@@ -4,12 +4,13 @@
  * Mirrors the engine's runtime resolution so the wizard's skip card
  * reflects what the engine will actually pick at next startup:
  *
- *   1. If `AGENT_PROVIDER` is set to "openrouter" explicitly → use it.
+ *   1. If `AGENT_PROVIDER` is set to "openrouter" or "vexcloud" explicitly → use it.
  *   2. Else if OpenRouter key in vault + `AGENT_MODEL` both present → openrouter.
  *   3. Else → null (not configured).
  *
  * `configured` = `name !== null` AND prerequisites met:
  *   - openrouter: OPENROUTER_API_KEY + AGENT_MODEL both present.
+ *   - vexcloud: a stored Vex Cloud session + AGENT_MODEL both present.
  *
  * `modelLabel`:
  *   - openrouter → AGENT_MODEL value (or null if missing). Capped at 200
@@ -40,6 +41,7 @@ export async function probeProvider(envPath: string): Promise<ProviderState> {
       readEnvValue(envPath, PROVIDER_ENDPOINT_TAG_ENV_KEY),
     ]);
   const hasOpenRouterKey = secretPresence.secrets.OPENROUTER_API_KEY === true;
+  const hasVexCloudSession = secretPresence.secrets.VEX_CLOUD_SESSION_TOKEN === true;
   // Routing label only — read straight from `.env`, capped like the model
   // label so a hand-edited file cannot push an unbounded string across IPC.
   const endpointTag = capLabel(endpointTagValue);
@@ -51,6 +53,16 @@ export async function probeProvider(envPath: string): Promise<ProviderState> {
   // skip-card would say "openrouter configured" while the engine refuses
   // to start.
   if (agentProvider !== null) {
+    if (agentProvider === "vexcloud") {
+      // Vex Cloud: the credential is the stored session. Routing pins are an
+      // OpenRouter lever the engine ignores here, so none is reported.
+      return {
+        configured: hasVexCloudSession && modelValue !== null,
+        name: "vexcloud",
+        modelLabel: capLabel(modelValue),
+        endpointTag: null,
+      };
+    }
     if (agentProvider === "openrouter") {
       const openrouterReady = hasOpenRouterKey && modelValue !== null;
       return {

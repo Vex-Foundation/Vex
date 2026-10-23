@@ -1,0 +1,42 @@
+{
+  "definition": {
+    "function": {
+      "description": "Read the user's Vex Inference account: the VEX balance that pays for this agent's own inference, what the current model costs, recent usage, and the funding state. Use this before suggesting a top-up, when the user asks what they have left or what a model costs, or after a deposit to see it credited. It spends nothing and signs nothing. Every amount carries its unit: `wei` is raw VEX at 18 decimals, `vex` the exact decimal, `usdMicroEstimate` millionths of a dollar at the Vex Inference rate (null when no rate is valid). Prices are per one million tokens, markup included, in USD and in VEX at the current rate. Usage is the newest requests first, `limit` rows (default 10, max 50, refused above, never clamped); when `usage.hasMore` is true pass `usage.nextCursor` back verbatim as `cursor` for the next page. RETURNS summary, account, balances (available, provisional, reserved, claimable, cashbackPending, pendingWithdrawal), rate (with ageSeconds), alert (percent, reference, threshold, balance, belowAlert), model (id, effort, inputPerMillion, outputPerMillion, reasoningPerMillion), usage, deposits (open and why not), autoTopUp (the user's standing rule and its state), withdrawals (pending ones: cooling, with releaseAt and cancellable, and in flight; startedInThisApp false on a cooling one means the user should check it). Withdrawals wait a safety delay before they are sent and only the user can cancel one, in the funding page; there is no withdraw or cancel tool. It does not prove a deposit landed: only `balances` after the backend has seen the transfer does.",
+      "name": "VexInferenceStatus",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "The usage page to continue from: exactly the `usage.nextCursor` the previous reply returned. Never compute or edit one.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "How many recent usage rows to return, a whole number from 1 to 50 (default 10). Above the maximum is refused by name, never clamped.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "gates": {
+      "declaredVisibility": {
+        "requiresVexInference": true
+      },
+      "measured": {
+        "hiddenWithoutEnvGates": false,
+        "visibleInMissionSetup": false
+      },
+      "proactive": false,
+      "requiresEnv": null,
+      "showOnlyWhenEnvMissing": null
+    },
+    "kind": "internal",
+    "mutating": false,
+    "pressureSafety": "read_only",
+    "withheld": true
+  }
+}

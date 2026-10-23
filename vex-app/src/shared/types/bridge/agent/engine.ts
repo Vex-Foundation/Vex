@@ -15,6 +15,7 @@
 
 import type { CompactionPreparationEvent } from "@shared/schemas/compaction-preparation.js";
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
+import type { InferenceNoticeEvent } from "@shared/schemas/inference-notice.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
 import type { LighterSetupHandoffEvent } from "@shared/schemas/lighter-setup-handoff.js";
@@ -126,5 +127,15 @@ export interface EngineEventsBridge {
    */
   readonly onLighterSetupRequested: (
     cb: (event: LighterSetupHandoffEvent) => void,
+  ) => () => void;
+
+  /**
+   * Subscribe to `EV.engine.inferenceNotice` - a request that succeeded but
+   * not as asked (the Vex Cloud D16 `max_tokens` clamp). The renderer shows
+   * it on the session's turn; it is never model-visible. Returns an
+   * idempotent unsubscribe function.
+   */
+  readonly onInferenceNotice: (
+    cb: (event: InferenceNoticeEvent) => void,
   ) => () => void;
 }

@@ -10,16 +10,16 @@ const MODELS: ReadonlyArray<ProviderModelOption> = [
     displayName: "Anthropic: Claude Sonnet 4.5",
     providerId: "anthropic",
     contextLength: 200_000,
-    pricingInputPerMillion: 3,
-    pricingOutputPerMillion: 15,
+    pricingInputPerMillion: "3",
+    pricingOutputPerMillion: "15",
   },
   {
     modelId: "openai/gpt-5.2",
     displayName: "OpenAI: GPT-5.2",
     providerId: "openai",
     contextLength: 400_000,
-    pricingInputPerMillion: 1.75,
-    pricingOutputPerMillion: 14,
+    pricingInputPerMillion: "1.75",
+    pricingOutputPerMillion: "14",
   },
 ];
 

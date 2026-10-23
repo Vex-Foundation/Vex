@@ -6,8 +6,9 @@
  * Pins:
  *   - `shellRoute = { kind: "settings", section: null }` mounts the page
  *     through ShellScreens as a titled modal dialog ("Settings") with ONE nav:
- *     four groups (App, Security and wallets, The agent, Connections), nine
- *     rows, the page landing on Preferences,
+ *     four groups (App, Security and wallets, The agent, Connections), eight
+ *     sections and Preferences (ONE Inference row; the separate Vex Inference row is gone), the
+ *     page landing on Preferences,
  *   - status WORDS derive from envState (success / neutral / warning
  *     vocabulary - "Protected", "Both chains", "Jupiter missing", ...), each
  *     beside a fill swatch, Preferences has none,
@@ -15,7 +16,11 @@
  *     says so with `aria-current`), hosting the wizard step form in
  *     `flowMode="back-edit"`; the Preferences row returns,
  *   - a route `section` deep-links straight into a section (the welcome
- *     Portfolio "Add wallet" path),
+ *     Portfolio "Add wallet" path); on Inference the route also names the
+ *     provider choice to show, and every old way into the Vex Inference tab
+ *     lands there with Vex Inference shown,
+ *   - the route follows the section and the provider choice on screen, so a
+ *     page opened from Settings (Fund) closes back to the same place,
  *   - a step form's save (`onAdvance`) returns to Preferences,
  *   - Superboard key and Lighter draw their own head (name, status word, lead),
  *   - per-chain private-key export lives ONLY in the Wallets section, gated on
@@ -56,6 +61,18 @@ vi.mock("../HowVexWorksScreen.js", () => ({ HowVexWorksScreen: () => null }));
 vi.mock("../AssetsScreen.js", () => ({ AssetsScreen: () => null }));
 vi.mock("../AgentScanScreen.js", () => ({ AgentScanScreen: () => null }));
 vi.mock("../TokenHistoryScreen.js", () => ({ TokenHistoryScreen: () => null }));
+// The funding page as a real page shell (Escape closes through the page
+// trail) around a stub body: its own suite owns the body.
+vi.mock("../../../vexCloud/funding/VexCloudFundingScreen.js", async () => {
+  const { ShellScreen } = await import("../ShellScreen.js");
+  return {
+    VexCloudFundingScreen: ({ origin, onClose }: { readonly origin: null; readonly onClose: () => void }) => (
+      <ShellScreen title="Vex Inference" origin={origin} onClose={onClose}>
+        <p>Funding page (stub)</p>
+      </ShellScreen>
+    ),
+  };
+});
 
 // The wizard public gate - step-form stubs expose exactly the contract the
 // screen drives: flowMode + the save-returns-to-register wire (onAdvance).
@@ -72,14 +89,34 @@ function stepStub(name: string) {
     </div>
   );
 }
+/** The provider step stub also shows the choice it was asked for and reports a press. */
+function ProviderStepStub({
+  flowMode,
+  onAdvance,
+  requestedChoice,
+  onChoiceChange,
+}: StepStubProps & {
+  readonly requestedChoice?: string | null;
+  readonly onChoiceChange?: (choice: "vexcloud" | "openrouter") => void;
+}) {
+  return (
+    <div data-vex-step-stub="provider" data-vex-step-flow={flowMode} data-vex-requested-choice={requestedChoice ?? "active"}>
+      <button type="button" onClick={() => onAdvance("review")}>
+        Save provider (stub)
+      </button>
+      <button type="button" onClick={() => onChoiceChange?.("vexcloud")}>
+        Choose Vex Inference (stub)
+      </button>
+    </div>
+  );
+}
 vi.mock("../../../wizard/index.js", () => ({
   KeystoreStep: stepStub("keystore"),
   WalletsStep: stepStub("wallets"),
   ApiKeysStep: stepStub("apiKeys"),
   EmbeddingStep: stepStub("embedding"),
   AgentCoreStep: stepStub("agentCore"),
-  ProviderStep: stepStub("provider"),
-
+  ProviderStep: ProviderStepStub,
 }));
 
 vi.mock("../../../wallets/WalletRemovalSection.js", () => ({ WalletRemovalSection: () => <div>Remove a wallet</div> }));
@@ -277,7 +314,7 @@ describe("SettingsScreen", () => {
       "Vault",
       "Wallets",
       "API keys",
-      "Model",
+      "Inference",
       "Memory",
       "Tuning",
       "Superboard key",
@@ -290,7 +327,10 @@ describe("SettingsScreen", () => {
     expect(within(navRow("wallets")).getByText("Both chains")).not.toBeNull();
     expect(within(navRow("apiKeys")).getByText("Configured")).not.toBeNull();
     expect(within(navRow("superboardKey")).getByText("Linked")).not.toBeNull();
-    expect(within(navRow("model")).getByText("OpenRouter")).not.toBeNull();
+    // The Inference row's word is the active provider.
+    expect(within(navRow("inference")).getByText("OpenRouter")).not.toBeNull();
+    expect(within(nav).queryByRole("button", { name: /^Model/ })).toBeNull();
+    expect(within(nav).queryByRole("button", { name: /^Vex Inference/ })).toBeNull();
     expect(within(navRow("memory")).getByText("Reachable")).not.toBeNull();
     expect(within(navRow("tuning")).getByText("Saved")).not.toBeNull();
     expect(within(navRow("lighterPoints")).getByText("Open")).not.toBeNull();
@@ -300,7 +340,7 @@ describe("SettingsScreen", () => {
       "vault",
       "wallets",
       "apiKeys",
-      "model",
+      "inference",
       "memory",
       "tuning",
       "superboardKey",
@@ -577,7 +617,7 @@ describe("SettingsScreen", () => {
     await screen.findByRole("dialog", { name: "Settings" });
     const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
     expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
-      "preferences", "vault", "wallets", "apiKeys", "model", "memory", "tuning", "localRuntime",
+      "preferences", "vault", "wallets", "apiKeys", "inference", "memory", "tuning", "localRuntime",
       "superboardKey", "lighterPoints",
     ]);
     const localRuntime = rows.find(
@@ -599,5 +639,54 @@ describe("SettingsScreen", () => {
     // Preferences and the eight sections every runtime lists.
     expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
     expect(document.querySelector('[data-vex-settings-row="localRuntime"]')).toBeNull();
+  });
+});
+
+describe("SettingsScreen - one Inference tab", () => {
+  function requestedChoice(): string | null {
+    return document.querySelector("[data-vex-step-stub=\"provider\"]")?.getAttribute("data-vex-requested-choice") ?? null;
+  }
+
+  it("lands every Vex Inference entry on Inference with Vex Inference shown", async () => {
+    const { inferenceSettingsRoute } = await import("../../../../stores/uiStore/shell-route.js");
+    render(<ShellScreens />);
+    act(() => {
+      useUiStore.getState().setShellRoute(inferenceSettingsRoute("vexcloud"));
+    });
+    await screen.findByRole("dialog", { name: "Settings" });
+    expect(document.querySelector('[data-vex-settings-section="inference"]')).not.toBeNull();
+    expect(navRow("inference").getAttribute("aria-current")).toBe("page");
+    expect(requestedChoice()).toBe("vexcloud");
+  });
+
+  it("opens Inference on the active provider when no choice is named", async () => {
+    render(<ShellScreens />);
+    openSettings("inference");
+    await screen.findByText("Save provider (stub)");
+    expect(requestedChoice()).toBe("active");
+  });
+
+  it("closes a page opened from the Vex Inference choice back to that choice (Fund's way back)", async () => {
+    render(<ShellScreens />);
+    openSettings();
+    await screen.findByRole("dialog", { name: "Settings" });
+    fireEvent.click(navRow("inference"));
+    await screen.findByText("Save provider (stub)");
+    // The route follows the section, replacing in place.
+    expect(useUiStore.getState().shellRoute).toMatchObject({ kind: "settings", section: "inference", inferenceProvider: null });
+
+    // OpenRouter is active; the operator looks at the Vex Inference account.
+    fireEvent.click(screen.getByRole("button", { name: "Choose Vex Inference (stub)" }));
+    expect(useUiStore.getState().shellRoute).toMatchObject({ kind: "settings", section: "inference", inferenceProvider: "vexcloud" });
+
+    // Fund opens the funding page; Escape returns to the same section and choice.
+    act(() => {
+      useUiStore.getState().setShellRoute({ kind: "vexCloudFunding", origin: null });
+    });
+    await screen.findByText("Funding page (stub)");
+    fireEvent.keyDown(window, { key: "Escape" });
+    await screen.findByText("Save provider (stub)");
+    expect(useUiStore.getState().shellRoute).toMatchObject({ kind: "settings", section: "inference", inferenceProvider: "vexcloud" });
+    expect(requestedChoice()).toBe("vexcloud");
   });
 });

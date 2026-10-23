@@ -20,13 +20,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
+import { useUiStore, type ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { usePendingApprovalsAll } from "../../../lib/api/approvals.js";
 import {
   NEEDS_YOU_EMPTY_COPY,
-  NEEDS_YOU_UNKNOWN_COPY,
+  NEEDS_YOU_ALL_UNKNOWN_COPY,
   needsYouMetaText,
   type NeedsYouItem,
 } from "../../vex/needs-you.js";
@@ -87,7 +87,7 @@ function MissionRow({
       <div className="vex-appr-row">
         <span aria-hidden className="vex-appr-row__pin">
           <Swatch
-            state={item.kind === "recover" ? VEX_STATE_FILL.error : VEX_STATE_FILL.awaiting}
+            state={item.kind === "recover" ? VEX_STATE_FILL.error : item.kind === "withdrawal" ? VEX_STATE_FILL.concerned : VEX_STATE_FILL.awaiting}
             size={10}
           />
         </span>
@@ -165,7 +165,7 @@ export function NeedsYouScreen({
           <EmptyBlock
             scope="Needs you"
             state="error"
-            title={NEEDS_YOU_UNKNOWN_COPY}
+            title={model.unknownCopy ?? NEEDS_YOU_ALL_UNKNOWN_COPY}
             // While the read runs again there is no key to press twice; the
             // block says so instead.
             detail={model.retrying ? "Checking again" : undefined}
@@ -216,6 +216,10 @@ export function NeedsYouScreen({
                     <MissionRow
                       item={item}
                       onOpen={() => {
+                        if (item.kind === "withdrawal") {
+                          useUiStore.getState().setShellRoute({ kind: "vexCloudFunding", origin: null });
+                          return;
+                        }
                         if (sessionId !== null) openSession(sessionId);
                       }}
                     />

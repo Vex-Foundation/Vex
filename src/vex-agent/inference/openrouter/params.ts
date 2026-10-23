@@ -133,6 +133,11 @@ export function buildOpenRouterParams(
   // callers that pass no context — see `InferenceRequestContext`.
   const sessionId = resolveStickyRoutingKey(context);
 
+  // The effort that goes on the wire: the explicit choice, else (Vex Cloud
+  // only, D10) the catalog default the backend always expects. Without a
+  // default this is exactly `config.reasoningEffort`, as before.
+  const sentEffort = config.reasoningEffort ?? config.reasoningEffortDefault;
+
   const params: ChatRequest = {
     model: config.model,
     messages: mapMessages(
@@ -156,9 +161,9 @@ export function buildOpenRouterParams(
     // retired; an unconditional default risked sending an unadvertised
     // effort to models with a narrower advertised set). Explicit "none" is
     // sent verbatim, not treated as omission.
-    ...(config.reasoningEffort !== undefined &&
+    ...(sentEffort !== undefined &&
       config.supportsReasoningEffort && {
-        reasoning: { effort: toChatRequestEffort(config.reasoningEffort) },
+        reasoning: { effort: toChatRequestEffort(sentEffort) },
       }),
     // API-level output-format enforcement (F31 Layer B). Omitted by default so
     // every caller that passes nothing keeps a byte-identical wire request.
@@ -189,7 +194,7 @@ export function buildOpenRouterParams(
   const headroom = resolveAnswerHeadroomMaxTokens({
     configuredMaxTokens: config.maxOutputTokens,
     model: config.model,
-    sentEffort: config.supportsReasoningEffort ? config.reasoningEffort : undefined,
+    sentEffort: config.supportsReasoningEffort ? sentEffort : undefined,
     modelMaxCompletionTokens: config.modelMaxCompletionTokens,
     contextLimit: config.contextLimit,
     endpointPinned: config.endpointTag !== undefined,

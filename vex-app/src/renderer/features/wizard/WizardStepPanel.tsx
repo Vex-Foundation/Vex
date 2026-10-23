@@ -70,7 +70,7 @@ export interface WizardStepPanelFormProps {
    * ProviderStep carries `data-vex-wizard-provider-form="openrouter"` on its
    * `<form>`; forwarded verbatim when present.
    */
-  readonly providerFormAttr?: "openrouter";
+  readonly providerFormAttr?: "openrouter" | "vexcloud";
 }
 
 export interface WizardStepPanelProps {

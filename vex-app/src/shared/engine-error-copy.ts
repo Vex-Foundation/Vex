@@ -107,6 +107,10 @@ const REMEDY_HINT: Readonly<Record<EngineErrorRemedy, string>> = {
   "provider-down": "Wait for the provider to recover, then retry.",
   "compact-session": "Compact this session or start a new one.",
   "remove-attachment": "Remove or replace the attached image, then retry.",
+  "vexcloud-top-up": "Top up VEX for Vex Inference, then retry.",
+  "vexcloud-sign-in": "Sign in to Vex Inference again in Settings, then retry.",
+  "vexcloud-account-paused": "Vex Inference paused this account for review. Nothing more can run until it is cleared.",
+  "vexcloud-unavailable": "Vex Inference is unavailable right now. Retry in a moment.",
 };
 
 /** Imperative action hint for a remedy; null when there is none to suggest. */

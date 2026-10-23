@@ -49,6 +49,7 @@ import { withTransaction } from "@vex-agent/db/client.js";
 import { emitMissionUpdate } from "@vex-agent/engine/runtime/mission-bus.js";
 import logger from "@utils/logger.js";
 import { riskLevelFromActionKind } from "@vex-agent/tools/risk-level.js";
+import { handlerOwnsApproval } from "@vex-agent/tools/registry/lookup.js";
 import {
   buildApprovalToolCall,
   computeRequestDigest,
@@ -221,6 +222,14 @@ export async function enqueueApprovalIntentWithGate(
   input: EnqueueApprovalInput,
   gate: EnqueuePreInsertGate,
 ): Promise<ApprovalEnqueueOutcome> {
+  // A handler-owned approval (`ToolDef.approvalOwner`) is enqueued ONLY with
+  // the handler's complete-card binding. Without it the card below would be
+  // the argument-derived preview, which for such a tool is exactly the thin
+  // card the handler exists to prevent: refuse rather than show it.
+  if (handlerOwnsApproval(input.toolName) && input.preparedApprovalBinding === undefined) {
+    logger.error("engine.approval.handler_owned_without_binding", { tool: input.toolName });
+    return { kind: "refused", reason: "handler_owned_approval_without_binding" };
+  }
   const approvalId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const intentRiskLevel = riskLevelFromActionKind(input.intentActionKind);
   const result = input.result;

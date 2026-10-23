@@ -25,6 +25,7 @@ import {
 } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
+import { activeInferenceProviderMode } from "../vex-cloud/active-mode.js";
 
 export function registerChatSubmitHandler(): () => void {
   return registerHandler({
@@ -111,7 +112,7 @@ export function registerChatSubmitHandler(): () => void {
         log.warn(
           `[ipc:vex:chat:submit] failed kind=${kind}${detail} correlationId=${ctx.requestId}`,
         );
-        return err(classifyEngineError(cause, ctx.requestId));
+        return err(classifyEngineError(cause, ctx.requestId, activeInferenceProviderMode()));
       }
     },
   });

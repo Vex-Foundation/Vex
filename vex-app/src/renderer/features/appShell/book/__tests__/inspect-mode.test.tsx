@@ -21,7 +21,7 @@ const PRESENCE: VexPresence = {
   timerStartedAt: null,
   narration: null,
   background: { count: 0, items: [], label: null, summary: null },
-  needsYou: { status: "ready", count: 0, items: [], retry: () => {}, retrying: false },
+  needsYou: { status: "ready", unknownCopy: null, count: 0, items: [], retry: () => {}, retrying: false },
   live: false,
 };
 

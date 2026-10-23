@@ -94,6 +94,16 @@ export interface ToolVisibility {
    * which is the wrong axis here.
    */
   requiresSummaryReady?: boolean;
+  /**
+   * True -> show only while the inference provider is Vex Inference AND a
+   * Vex Inference session is held AND the desktop host is mounted
+   * (`internal/vex-inference/host.ts`, `vexInferenceToolAvailability`).
+   * Read per request from the environment the main process maintains, like
+   * `requiresEnv`, so a provider switch, a sign-out or a vault lock removes
+   * the tools from the next request. The handlers re-check and refuse by
+   * name with the typed reason.
+   */
+  requiresVexInference?: boolean;
 }
 
 /**
@@ -204,6 +214,19 @@ export interface ToolDef {
   returns?: string;
   /** Vex's own fee on this tool. See {@link ToolVexFee}. */
   vexFee?: ToolVexFee;
+  /**
+   * WHO OWNS THE APPROVAL of this mutating tool. Absent: the dispatcher's
+   * generic restricted-mode gate (`dispatcher/protocol-route.ts`) stops the
+   * call before its handler and the card is the argument-derived preview.
+   *
+   * `"handler"`: the handler decides authority itself and the generic gate
+   * is skipped. Allowed only for a handler that (a) never executes in a
+   * restricted session without an authority it proves from trusted state,
+   * (b) asks for approval only with a `preparedApprovalBinding` carrying the
+   * complete card, and (c) verifies on the approved resume that the approval
+   * is bound to that card. `tools/__tests__` pins the allow-list.
+   */
+  approvalOwner?: "handler";
 }
 
 /**

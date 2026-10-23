@@ -14,13 +14,20 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { providerPersistInputSchema } from "../provider.js";
+import { providerPersistInputSchema, type OpenRouterPersistInput } from "../provider.js";
 
 const MODEL = "anthropic/claude-sonnet-4.5";
 
+/** Parse through the full union and prove it chose the OpenRouter member. */
+function parseOpenRouter(input: unknown): OpenRouterPersistInput {
+  const parsed = providerPersistInputSchema.parse(input);
+  if (parsed.provider !== "openrouter") throw new Error("expected the openrouter member");
+  return parsed;
+}
+
 describe("providerPersistInputSchema - optional apiKey", () => {
   it("accepts a payload with NO apiKey and leaves the field absent", () => {
-    const parsed = providerPersistInputSchema.parse({
+    const parsed = parseOpenRouter({
       provider: "openrouter",
       model: MODEL,
     });
@@ -31,7 +38,7 @@ describe("providerPersistInputSchema - optional apiKey", () => {
   });
 
   it("still accepts the first-run payload unchanged (backward compatible)", () => {
-    const parsed = providerPersistInputSchema.parse({
+    const parsed = parseOpenRouter({
       provider: "openrouter",
       apiKey: "  sk-or-first-run  ",
       model: MODEL,

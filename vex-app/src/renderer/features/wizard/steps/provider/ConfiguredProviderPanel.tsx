@@ -26,9 +26,9 @@
  * form uses the same field groups as the first-run form.
  */
 
-import { useCallback, useRef, useState, type JSX } from "react";
+import { useCallback, useRef, useState, type JSX, type ReactNode } from "react";
 import type { EnvState } from "@shared/schemas/onboarding.js";
-import type { ProviderPersistInput } from "@shared/schemas/provider.js";
+import type { ProviderName, ProviderPersistInput } from "@shared/schemas/provider.js";
 import { Button } from "../../../../components/ui/button.js";
 import { Label } from "../../../../components/ui/label.js";
 import { StateWord } from "../../../../components/ui/state-word.js";
@@ -50,7 +50,7 @@ import { ProviderErrorAlert } from "./ProviderErrorAlert.js";
 export interface ConfiguredProviderPanelProps {
   /** The step's own env read, for the Settings section's status word. */
   readonly env?: EnvState | null;
-  readonly providerName: "openrouter" | null;
+  readonly providerName: ProviderName | null;
   /** Currently active `AGENT_MODEL`, or `null` when the probe found none. */
   readonly activeModel: string | null;
   /** Active `OPENROUTER_ENDPOINT_TAG`, or `null` for Auto routing. */
@@ -60,6 +60,12 @@ export interface ConfiguredProviderPanelProps {
   readonly onContinue: () => void;
   /** Reveal the full first-run form (unchanged legacy path). */
   readonly onReconfigure: () => void;
+  /**
+   * The provider choice, shown above the configured facts while not editing,
+   * so Vex Inference can be chosen from here without a reconfigure. Choosing
+   * opens that branch's form; nothing is saved until it saves.
+   */
+  readonly choice?: ReactNode;
   readonly continuePending: boolean;
   /** Step-advance failure text owned by the hosting step. */
   readonly advanceError: string | null;
@@ -93,6 +99,7 @@ export function ConfiguredProviderPanel({
   flowMode,
   onContinue,
   onReconfigure,
+  choice = null,
   continuePending,
   advanceError,
 }: ConfiguredProviderPanelProps): JSX.Element {
@@ -306,6 +313,7 @@ export function ConfiguredProviderPanel({
       }
     >
       <div className="vex-wz-stack">
+        {editing ? null : choice}
         {editing ? (
           <>
             <div className="vex-wz-group">

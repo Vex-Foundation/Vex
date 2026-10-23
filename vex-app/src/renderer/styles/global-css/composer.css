@@ -127,6 +127,39 @@
   outline-offset: 3px;
 }
 
+/* The Vex Inference notice under the greeting ("AI is now paid in VEX"): a
+ * quiet 1px frame on the paper across the 720 column, 14 above the field; the
+ * title 15 / 500, the line 13.5 / 1.5 ink 2, then its two small keys (no blue
+ * fill: the send key stays the view's one). It does not move, so reduced
+ * motion has nothing to collapse. */
+.vex-welcome__notice {
+  width: min(720px, 100%);
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-base);
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+.vex-welcome__notice-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.vex-welcome__notice-body {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-welcome__notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* The task rows under the composer: 42 high, 15 ink 2, a blue icon, the quiet
  * rule between rows. The slot keeps its height while the rows hide for typing,
  * so nothing below the field reflows. */
@@ -177,6 +210,7 @@
     grid-template-areas:
       "stage greeting"
       "stage alert"
+      "stage notice"
       "stage dock";
     align-content: center;
     justify-content: center;
@@ -203,6 +237,10 @@
   }
   .vex-welcome__alert {
     grid-area: alert;
+    width: 100%;
+  }
+  .vex-welcome__notice {
+    grid-area: notice;
     width: 100%;
   }
   [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock] {

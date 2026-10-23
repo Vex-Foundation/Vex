@@ -40,8 +40,8 @@
  * panel's typed `formProps.providerFormAttr` slot.
  */
 
-import { useCallback, useRef, useState, type JSX } from "react";
-import { type ProviderPersistInput } from "@shared/schemas/provider.js";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { type ProviderName, type ProviderPersistInput } from "@shared/schemas/provider.js";
 import { type WizardStepId } from "@shared/schemas/wizard.js";
 import { Button } from "../../../components/ui/button.js";
 import { Label } from "../../../components/ui/label.js";
@@ -65,11 +65,21 @@ import { ModelPicker } from "./provider/ModelPicker.js";
 import { EndpointPicker } from "./provider/EndpointPicker.js";
 import { ProviderErrorAlert } from "./provider/ProviderErrorAlert.js";
 import { RAIL_WARNING_CHROME } from "./step-chrome.js";
+import { defaultProviderChoice, ProviderChoice } from "./provider/ProviderChoice.js";
+import { VexCloudProviderForm } from "./provider/VexCloudProviderForm.js";
 
 export interface ProviderStepProps {
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onAdvance: (next: WizardStepId) => void;
   readonly flowMode: WizardFlowMode;
+  /**
+   * Settings: the provider choice to show (a deep link names Vex Inference to
+   * open its account). Null or absent shows the active provider. Showing a
+   * choice saves nothing and never switches the provider.
+   */
+  readonly requestedChoice?: ProviderName | null;
+  /** Settings: the operator pressed a provider choice (the route follows it). */
+  readonly onChoiceChange?: (choice: ProviderName) => void;
 }
 
 const VERIFY_AND_SAVE_MIN_DELAY_MS = 0;
@@ -78,6 +88,8 @@ export function ProviderStep({
   completedSteps,
   onAdvance,
   flowMode,
+  requestedChoice = null,
+  onChoiceChange,
 }: ProviderStepProps): JSX.Element {
   const envQuery = useEnvState();
   const stepAdvance = useStepAdvance();
@@ -90,7 +102,15 @@ export function ProviderStep({
   const [clientError, setClientError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<ServerError | null>(null);
   const [successLatencyMs, setSuccessLatencyMs] = useState<number | null>(null);
+  /** The operator pressed Reconfigure on the configured provider's screen. */
   const [showOverride, setShowOverride] = useState(false);
+  /** The operator's explicit pick or the requested one; until then the active provider decides. */
+  const [choiceOverride, setChoiceOverride] = useState<ProviderName | null>(requestedChoice);
+  // A later request (a deep link into the open section) shows its choice; the
+  // echo of the operator's own press changes nothing.
+  useEffect(() => {
+    setChoiceOverride(requestedChoice);
+  }, [requestedChoice]);
   const apiKeyRef = useRef<HTMLInputElement | null>(null);
 
   const env = envQuery.data?.ok === true ? envQuery.data.data : null;
@@ -99,7 +119,26 @@ export function ProviderStep({
   const effectiveName = providerState?.name ?? null;
   const effectiveModel = providerState?.modelLabel ?? null;
   const effectiveEndpointTag = providerState?.endpointTag ?? null;
-  const providerModels = useProviderModels(!configured || showOverride);
+  // Vex Inference is pre-selected only when no provider is named yet; a named
+  // one (an OpenRouter setup included) is never switched by the default.
+  const choice: ProviderName = choiceOverride ?? defaultProviderChoice(env);
+  const onChoose = useCallback(
+    (next: ProviderName) => {
+      // Pressing the option already in view changes nothing.
+      if (next === choice) return;
+      setChoiceOverride(next);
+      // Another provider shows its full form (the configured screen belongs
+      // to the active provider only); coming back to the configured one shows
+      // its configured screen again.
+      setShowOverride(false);
+      onChoiceChange?.(next);
+    },
+    [choice, onChoiceChange],
+  );
+  // The configured screen shows only the provider in effect; any other choice
+  // is that provider's full form.
+  const showConfigured = configured && choice === effectiveName && !showOverride;
+  const providerModels = useProviderModels(choice === "openrouter" && !showConfigured);
   const providerModelsResult = providerModels.data;
   const catalogueModels =
     providerModelsResult?.ok === true ? providerModelsResult.data.models : [];
@@ -224,7 +263,31 @@ export function ProviderStep({
   // Owned by `ConfiguredProviderPanel`: status rows + an inline delta editor
   // that can save a model/routing change WITHOUT re-entering the API key.
   // "Reconfigure" still falls through to the full first-run form below.
-  if (configured && !showOverride) {
+  if (choice === "vexcloud") {
+    // Vex Cloud is its own branch whether configured or not: the account
+    // panel IS the configured screen (state, balance, wallets), and the model
+    // pick saves without a key.
+    return (
+      <VexCloudProviderForm
+        env={env}
+        flowMode={flowMode}
+        choice={<ProviderChoice value={choice} onChange={onChoose} />}
+        activeModel={effectiveName === "vexcloud" ? effectiveModel : null}
+        onSaved={advanceToReview}
+        onContinueWithout={
+          flowMode === "first-pass"
+            ? () => {
+                void advanceToReview();
+              }
+            : null
+        }
+        advancePending={stepAdvance.isPending}
+        advanceError={clientError}
+      />
+    );
+  }
+
+  if (showConfigured) {
     return (
       <ConfiguredProviderPanel
         env={env}
@@ -236,6 +299,7 @@ export function ProviderStep({
           void advanceToReview();
         }}
         onReconfigure={() => setShowOverride(true)}
+        choice={<ProviderChoice value={choice} onChange={onChoose} />}
         continuePending={stepAdvance.isPending}
         advanceError={clientError}
       />
@@ -290,6 +354,7 @@ export function ProviderStep({
       }
     >
       <div className="vex-wz-stack">
+        <ProviderChoice value={choice} onChange={onChoose} disabled={submitting} />
         {showConfigureLater ? (
           <p
             role="status"

@@ -15,6 +15,7 @@ import type { Permission, SessionKind } from "@vex-agent/engine/types.js";
 import type { ContextUsageBand } from "@vex-agent/engine/core/context-band.js";
 
 import { TOOLS } from "./lookup.js";
+import { vexInferenceToolAvailability } from "../internal/vex-inference/host.js";
 
 /**
  * Session-aware context for tool surface projection. Built by engine runners
@@ -262,6 +263,10 @@ function passesVisibility(
   // preparation state resolves to "not ready" upstream, so the tool simply is
   // not offered rather than being offered and then refusing.
   if (v.requiresSummaryReady && !ctx.hasCompactionSummaryReady) return false;
+
+  // Vex Inference gate - the provider, the session and the desktop host, read
+  // per request (a sign-out or a lock removes the tools from the next one).
+  if (v.requiresVexInference && !vexInferenceToolAvailability().available) return false;
 
   return true;
 }

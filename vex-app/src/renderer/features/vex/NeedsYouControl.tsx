@@ -34,7 +34,7 @@ import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
 import { cn } from "../../lib/utils.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
-import { NEEDS_YOU_UNKNOWN_COPY, type NeedsYouItem, type NeedsYouStatus } from "./needs-you.js";
+import { NEEDS_YOU_ALL_UNKNOWN_COPY, type NeedsYouItem, type NeedsYouStatus } from "./needs-you.js";
 import { useNeedsYou } from "./useVexPresence.js";
 import { VEX_STATE_FILL } from "./vex-state.js";
 
@@ -136,6 +136,12 @@ export function NeedsYouControl(): JSX.Element | null {
       setShellRoute({ kind: "needsYou", origin: null, approvalId: item.approvalId });
       return;
     }
+    if (item.kind === "withdrawal") {
+      // The funding page holds its Cancel and "It was me" keys.
+      triggerRef.current?.focus();
+      setShellRoute({ kind: "vexCloudFunding", origin: null });
+      return;
+    }
     if (item.sessionId !== null) {
       openSession(item.sessionId);
       return;
@@ -191,7 +197,7 @@ export function NeedsYouControl(): JSX.Element | null {
             className="vex-tb-needs__retry"
             data-vex-area="needs-you-retry"
             disabled={model.retrying}
-            aria-label={model.retrying ? "Checking approvals again" : "Retry checking approvals"}
+            aria-label={model.retrying ? "Checking again" : "Retry checking what needs you"}
             onClick={model.retry}
           >
             {model.retrying ? "Checking" : "Retry"}
@@ -207,7 +213,7 @@ export function NeedsYouControl(): JSX.Element | null {
       ) : null}
       {status === "unknown" ? (
         <span role="status" className="sr-only" data-vex-area="needs-you-status" data-state="unknown">
-          {NEEDS_YOU_UNKNOWN_COPY}
+          {model.unknownCopy ?? NEEDS_YOU_ALL_UNKNOWN_COPY}
         </span>
       ) : null}
 

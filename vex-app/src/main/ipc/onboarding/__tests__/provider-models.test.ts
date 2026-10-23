@@ -42,7 +42,7 @@ describe("providerListModels handler", () => {
       payload: {},
     });
     expect(result).toMatchObject({ ok: true, data: { models: [] } });
-    expect(mockLoad).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) });
+    expect(mockLoad).toHaveBeenCalledWith({ source: "openrouter", signal: expect.any(AbortSignal) });
   });
 
   it("maps failures to a redacted retryable error", async () => {

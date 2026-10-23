@@ -11,6 +11,14 @@
  * `AbortSignal` only detaches THAT caller's wait — it never cancels the
  * shared fetch, so one cancelled IPC request can't starve every other
  * waiter (D1a).
+ *
+ * TWO CATALOGUES, ONE MECHANISM. `source: "openrouter"` (the default) reads
+ * the OpenRouter public catalogue; `source: "vexcloud"` reads the Vex Cloud
+ * allowlist from its own `/v1/models` (OpenRouter row shape, our prices,
+ * `reasoning.mandatory: true` without `none`, a per-model `default_effort`).
+ * Each source keeps its own snapshot, TTL, in-flight fetch and cooldown, so
+ * a Vex Cloud outage never empties the OpenRouter list and vice versa. Both
+ * reads are keyless.
  */
 
 import type {
@@ -19,11 +27,13 @@ import type {
   ResponseHook,
 } from "@vex-lib/openrouter-client.js";
 import { createPublicOpenRouterClient } from "./openrouter-public-catalog-client.js";
+import { vexCloudInferenceServerUrl } from "@vex-lib/vex-cloud-endpoint.js";
 import {
   PROVIDER_MODEL_CATALOG_MAX,
   type ProviderListModelsResult,
   type ProviderModelOption,
 } from "@shared/schemas/provider.js";
+import { usdPerMillionFromPerToken } from "@shared/usd-per-million.js";
 import {
   createReasoningCapabilityHook,
   type ModelReasoningCapabilityEntry,
@@ -45,7 +55,12 @@ const CATALOG_FAILURE_COOLDOWN_MS = 10_000;
 
 type ModelsClient = Pick<OpenRouter["models"], "list">;
 
+/** Which catalogue: OpenRouter's public one, or Vex Cloud's allowlist. */
+export type ProviderCatalogSource = "openrouter" | "vexcloud";
+
 export interface LoadProviderModelCatalogOptions {
+  /** Defaults to `openrouter`. */
+  readonly source?: ProviderCatalogSource;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
   readonly clientFactory?: () => { readonly models: ModelsClient };
@@ -63,13 +78,28 @@ interface CatalogSnapshot {
   readonly modelMetadata: ReadonlyMap<string, ModelReasoningCapabilityEntry> | null;
 }
 
-let cached: CatalogSnapshot | null = null;
-let cachedAtMs = 0;
-let inFlight: Promise<CatalogSnapshot> | null = null;
-let cooldownUntilMs = 0;
-let lastFailureCause: unknown = null;
+interface CatalogState {
+  cached: CatalogSnapshot | null;
+  cachedAtMs: number;
+  inFlight: Promise<CatalogSnapshot> | null;
+  cooldownUntilMs: number;
+  lastFailureCause: unknown;
+}
 
-function defaultClientFactory(responseHook: ResponseHook, fetcher?: Fetcher): OpenRouter {
+function emptyState(): CatalogState {
+  return { cached: null, cachedAtMs: 0, inFlight: null, cooldownUntilMs: 0, lastFailureCause: null };
+}
+
+const states: Record<ProviderCatalogSource, CatalogState> = {
+  openrouter: emptyState(),
+  vexcloud: emptyState(),
+};
+
+function defaultClientFactory(
+  source: ProviderCatalogSource,
+  responseHook: ResponseHook,
+  fetcher?: Fetcher,
+): OpenRouter {
   // The keyless-client security invariant lives in
   // `openrouter-public-catalog-client.ts` — shared with the endpoint
   // catalogue so the two public reads cannot drift apart.
@@ -77,6 +107,7 @@ function defaultClientFactory(responseHook: ResponseHook, fetcher?: Fetcher): Op
     timeoutMs: CATALOG_TIMEOUT_MS,
     fetcher,
     responseHook,
+    ...(source === "vexcloud" && { serverURL: vexCloudInferenceServerUrl() }),
   });
 }
 
@@ -92,14 +123,6 @@ function isCatalogueAbort(value: unknown): boolean {
 
 function callerAbortError(): Error {
   return Object.assign(new Error("Catalogue request cancelled"), { name: "AbortError" });
-}
-
-function parsePricePerMillion(raw: unknown): number | null {
-  if (raw === undefined || raw === null || raw === "") return null;
-  const perToken = Number(raw);
-  if (!Number.isFinite(perToken) || perToken < 0) return null;
-  const perMillion = perToken * 1_000_000;
-  return Number.isFinite(perMillion) ? perMillion : null;
 }
 
 function providerIdFor(modelId: string): string {
@@ -151,8 +174,10 @@ function normalizeModel(model: {
       model.contextLength > 0
         ? model.contextLength
         : null,
-    pricingInputPerMillion: parsePricePerMillion(model.pricing.prompt),
-    pricingOutputPerMillion: parsePricePerMillion(model.pricing.completion),
+    // Exact decimal text, never a float: for Vex Inference these are the
+    // prices charged, margin included, and the picker must not round them.
+    pricingInputPerMillion: usdPerMillionFromPerToken(model.pricing.prompt),
+    pricingOutputPerMillion: usdPerMillionFromPerToken(model.pricing.completion),
     ...(created !== undefined && { created }),
   };
 }
@@ -182,6 +207,7 @@ function compareModels(a: ProviderModelOption, b: ProviderModelOption): number {
 }
 
 async function fetchCatalogue(
+  source: ProviderCatalogSource,
   options: Pick<LoadProviderModelCatalogOptions, "clientFactory" | "fetcher">,
 ): Promise<CatalogSnapshot> {
   const capability = createReasoningCapabilityHook();
@@ -190,7 +216,7 @@ async function fetchCatalogue(
   // bounded only by its own `timeoutMs`, never by any one caller's
   // AbortSignal (D1a).
   const client = (
-    options.clientFactory ?? (() => defaultClientFactory(capability.hook, options.fetcher))
+    options.clientFactory ?? (() => defaultClientFactory(source, capability.hook, options.fetcher))
   )();
   const response = await client.models.list(
     { outputModalities: "text", supportedParameters: "tools" },
@@ -220,14 +246,18 @@ async function fetchCatalogue(
   };
 }
 
-function startFetch(options: LoadProviderModelCatalogOptions): Promise<CatalogSnapshot> {
+function startFetch(
+  source: ProviderCatalogSource,
+  state: CatalogState,
+  options: LoadProviderModelCatalogOptions,
+): Promise<CatalogSnapshot> {
   const now = options.now ?? Date.now;
-  return fetchCatalogue(options)
+  return fetchCatalogue(source, options)
     .then((snapshot) => {
-      cached = snapshot;
-      cachedAtMs = now();
-      cooldownUntilMs = 0;
-      lastFailureCause = null;
+      state.cached = snapshot;
+      state.cachedAtMs = now();
+      state.cooldownUntilMs = 0;
+      state.lastFailureCause = null;
       return snapshot;
     })
     .catch((cause: unknown) => {
@@ -236,13 +266,13 @@ function startFetch(options: LoadProviderModelCatalogOptions): Promise<CatalogSn
       // otherwise a cache that goes stale past its TTL during an outage
       // re-fires the network on every single subsequent call instead of
       // respecting the cooldown window (the bug this comment replaces).
-      lastFailureCause = cause;
-      cooldownUntilMs = now() + CATALOG_FAILURE_COOLDOWN_MS;
-      if (cached !== null) return cached;
+      state.lastFailureCause = cause;
+      state.cooldownUntilMs = now() + CATALOG_FAILURE_COOLDOWN_MS;
+      if (state.cached !== null) return state.cached;
       throw cause;
     })
     .finally(() => {
-      inFlight = null;
+      state.inFlight = null;
     });
 }
 
@@ -277,24 +307,26 @@ function attachCaller(
 async function loadCatalogSnapshot(
   options: LoadProviderModelCatalogOptions,
 ): Promise<CatalogSnapshot> {
+  const source = options.source ?? "openrouter";
+  const state = states[source];
   const now = (options.now ?? Date.now)();
 
-  if (cached !== null && now - cachedAtMs < CATALOG_TTL_MS) {
-    return cached;
+  if (state.cached !== null && now - state.cachedAtMs < CATALOG_TTL_MS) {
+    return state.cached;
   }
 
-  if (inFlight === null) {
+  if (state.inFlight === null) {
     // Inside the cooldown window, never attempt the network regardless of
     // whether a stale cache exists — serve the stale snapshot when there is
     // one, or fail fast with the last cause when there is none.
-    if (now < cooldownUntilMs) {
-      if (cached !== null) return cached;
-      throw lastFailureCause ?? new Error("OpenRouter model catalogue temporarily unavailable");
+    if (now < state.cooldownUntilMs) {
+      if (state.cached !== null) return state.cached;
+      throw state.lastFailureCause ?? new Error("Model catalogue temporarily unavailable");
     }
-    inFlight = startFetch(options);
+    state.inFlight = startFetch(source, state, options);
   }
 
-  return attachCaller(inFlight, options.signal);
+  return attachCaller(state.inFlight, options.signal);
 }
 
 export async function loadProviderModelCatalog(
@@ -321,9 +353,6 @@ export async function getModelReasoningCapability(
 }
 
 export function __resetProviderModelCatalogForTests(): void {
-  cached = null;
-  cachedAtMs = 0;
-  inFlight = null;
-  cooldownUntilMs = 0;
-  lastFailureCause = null;
+  states.openrouter = emptyState();
+  states.vexcloud = emptyState();
 }

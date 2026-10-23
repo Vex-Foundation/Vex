@@ -21,11 +21,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
 import type { Result } from "@shared/ipc/result.js";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import type { VexCloudWithdrawalNotice, VexCloudWithdrawalNoticesResult } from "@shared/schemas/vex-cloud-funding.js";
 import { approval, session } from "./fixtures.js";
 
 const mockApprove = vi.fn();
 const mockReject = vi.fn();
 const mockRefetch = vi.fn(async () => undefined);
+const mockRefetchNotices = vi.fn(async () => undefined);
 
 const reads = vi.hoisted(() => ({
   pending: { data: undefined } as {
@@ -34,6 +36,12 @@ const reads = vi.hoisted(() => ({
     isFetching?: boolean;
   },
   sessions: [] as SessionListItem[],
+  // Signed out by default: the withdrawal check claims nothing and blocks nothing.
+  notices: { data: { ok: true, data: { state: "signed_out" } } } as {
+    data: Result<VexCloudWithdrawalNoticesResult> | undefined;
+    isError?: boolean;
+    isFetching?: boolean;
+  },
 }));
 
 vi.mock("../../../lib/api/approvals.js", () => ({
@@ -46,6 +54,14 @@ vi.mock("../../../lib/api/approvals.js", () => ({
   useGlobalApprovalsLiveSync: () => {},
   useApprove: () => ({ mutate: mockApprove, isPending: false }),
   useReject: () => ({ mutate: mockReject, isPending: false }),
+}));
+vi.mock("../../../lib/api/vex-cloud.js", () => ({
+  useVexCloudWithdrawalNotices: () => ({
+    isError: false,
+    isFetching: false,
+    refetch: mockRefetchNotices,
+    ...reads.notices,
+  }),
 }));
 vi.mock("../../../lib/api/sessions.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../lib/api/sessions.js")>();
@@ -107,7 +123,9 @@ beforeEach(() => {
   mockApprove.mockReset();
   mockReject.mockReset();
   mockRefetch.mockClear();
+  mockRefetchNotices.mockClear();
   reads.pending = { data: undefined };
+  reads.notices = { data: { ok: true, data: { state: "signed_out" } } };
   reads.sessions = [];
   useUiStore.setState({
     runtimeMode: "agent",
@@ -119,6 +137,108 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   document.body.innerHTML = "";
+});
+
+const FOREIGN: VexCloudWithdrawalNotice = {
+  withdrawalId: "wd_foreign",
+  amountWei: "6000000000000000000000",
+  destination: "0x2222222222222222222222222222222222222222",
+  releaseAt: "2026-10-18T00:30:00.000Z",
+  cancellable: true,
+  createdAt: "2026-10-17T12:30:00.000Z",
+};
+
+function signedIn(notices: VexCloudWithdrawalNotice[], complete = true): Result<VexCloudWithdrawalNoticesResult> {
+  return { ok: true, data: { state: "signed_in", notices, complete, checkedAt: "2026-10-17T12:30:00.000Z" } };
+}
+
+function noticesFailed(): Result<VexCloudWithdrawalNoticesResult> {
+  return {
+    ok: false,
+    error: {
+      code: "internal.unexpected",
+      domain: "vexCloud",
+      message: "Vex Inference could not be reached.",
+      retryable: true,
+      userActionable: false,
+      redacted: true,
+      correlationId: "req-w",
+    },
+  };
+}
+
+describe("NeedsYouControl: the withdrawal check", () => {
+  it("a failed withdrawal check over an empty inbox is '?' with Retry, never a clear; Retry re-reads both", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    reads.notices = { data: noticesFailed() };
+    renderControl();
+    expect(control().textContent).toBe("Needs you · ?");
+    expect(screen.getByRole("status").textContent).toContain("Couldn't check for withdrawals you did not start");
+    fireEvent.click(screen.getByRole("button", { name: "Retry checking what needs you" }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(mockRefetchNotices).toHaveBeenCalledTimes(1);
+  });
+
+  it("an incomplete scan is '?', never 'Nothing needs you'", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    reads.notices = { data: signedIn([], false) };
+    renderControl();
+    expect(control().textContent).toBe("Needs you · ?");
+    expect(screen.getByRole("status").textContent).toContain("Couldn't check every withdrawal");
+  });
+
+  it("a notice shown once stays listed when the next read fails", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    reads.notices = { data: signedIn([FOREIGN]) };
+    const view = renderControl();
+    expect(control().textContent).toBe("Needs you · 1");
+    reads.notices = { data: noticesFailed() };
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <NeedsYouControl />
+      </QueryClientProvider>,
+    );
+    expect(control().textContent).toBe("Needs you · ?");
+    const panel = openPanel();
+    expect(within(panel).getByText("Check a withdrawal you did not start")).toBeTruthy();
+  });
+
+  it("a locked vault claims nothing: one approval reads 'Needs you · 1', never '?'", () => {
+    reads.pending = { data: { ok: true, data: [approval()] } };
+    reads.notices = { data: { ok: true, data: { state: "locked" } } };
+    renderControl();
+    expect(control().textContent).toBe("Needs you · 1");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("locking clears a notice shown by an earlier read", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    reads.notices = { data: signedIn([FOREIGN]) };
+    const view = renderControl();
+    expect(control().textContent).toBe("Needs you · 1");
+    reads.notices = { data: { ok: true, data: { state: "locked" } } };
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <NeedsYouControl />
+      </QueryClientProvider>,
+    );
+    expect(view.container.textContent).toBe("");
+    // The held notice is gone too: a failed read after the lock lists nothing it did not see.
+    reads.notices = { data: noticesFailed() };
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <NeedsYouControl />
+      </QueryClientProvider>,
+    );
+    expect(control().textContent).toBe("Needs you · ?");
+    expect(within(openPanel()).queryByText("Check a withdrawal you did not start")).toBeNull();
+  });
+
+  it("signed out claims nothing: an empty inbox draws no control", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    const { container } = renderControl();
+    expect(container.textContent).toBe("");
+  });
 });
 
 describe("NeedsYouControl: the four states", () => {
@@ -151,8 +271,9 @@ describe("NeedsYouControl: the four states", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Couldn't check for pending approvals",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Retry checking approvals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry checking what needs you" }));
     expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(mockRefetchNotices).toHaveBeenCalledTimes(1);
     expect(mockApprove).not.toHaveBeenCalled();
     expect(mockReject).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -161,7 +282,7 @@ describe("NeedsYouControl: the four states", () => {
   it("FAILED: Retry is disabled while the re-read is in flight", () => {
     reads.pending = { data: failed(), isFetching: true };
     renderControl();
-    const retry = screen.getByRole("button", { name: "Checking approvals again" });
+    const retry = screen.getByRole("button", { name: "Checking again" });
     expect(retry.hasAttribute("disabled")).toBe(true);
   });
 

@@ -67,6 +67,7 @@ import { startEventLoopTelemetry } from "./telemetry/event-loop-delay.js";
 import { EVENT_LOOP_STALL_PROFILER, startStallProfiler } from "./telemetry/stall-profiler.js";
 import { takeScryptKdfStats } from "@utils/scrypt-async.js";
 import { registerAllIpcHandlers } from "./ipc/register-all.js";
+import { allowVexCloudDevOverride } from "@vex-lib/vex-cloud-endpoint.js";
 import {
   configureUpdater,
   removeUpdaterEventListeners,
@@ -75,6 +76,7 @@ import { installUpdaterAutoCheck } from "./updates/autoCheck.js";
 import { sweepTransientSecrets } from "./lifecycle/secret-cleanup.js";
 import { globalCleanup } from "./lifecycle/cleanup-registry.js";
 import { makeOrderedQuitCleanup } from "./lifecycle/ordered-quit-cleanup.js";
+import { stopVexInferenceRuntime } from "./vex-cloud/runtime.js";
 import {
   ORDERED_QUIT_DEADLINE_MS,
   QUIT_STAGE_SLACK_MS,
@@ -356,6 +358,11 @@ async function initializeMainRuntime(): Promise<void> {
     : path.resolve(__dirname, "../../dist/renderer");
   installAppProtocolHandler(rendererRoot);
 
+  // 6b. Vex Cloud host: the development override (`VEX_DEV_CLOUD_API_URL`)
+  // is honoured only in an unpackaged build. Decided here, by the privileged
+  // process, before any IPC or engine call can resolve the host.
+  allowVexCloudDevOverride(!app.isPackaged);
+
   // 7. IPC surface
   const uninstallLighterOrderCreateExecutionDeps = installLighterOrderCreateExecutionDeps();
   globalCleanup.add(() => {
@@ -607,6 +614,9 @@ async function initializeMainRuntime(): Promise<void> {
           stopMemoryManagerWorker,
         ),
         runQuitStage("engine-regime-worker", QUIT_TASK_DEADLINE_MS, stopRegimeWorker),
+        // The auto top-up poller: closes admission and drains an in-flight
+        // deposit (decided and recorded) before Postgres stops.
+        runQuitStage("vex-inference-auto-top-up", QUIT_TASK_DEADLINE_MS, stopVexInferenceRuntime),
         runQuitStage(
           "engine-tool-embedding-reconcile-worker",
           QUIT_TASK_DEADLINE_MS,

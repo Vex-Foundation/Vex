@@ -66,6 +66,7 @@ import {
 } from "../../components/ui/error-boundary.js";
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
+import { useInferenceNoticeRetentionSync } from "../../lib/api/inference-notices.js";
 import {
   useActivityProgressInvalidation,
   useActivityResolvedInvalidation,
@@ -88,6 +89,7 @@ function AppShellContent(): JSX.Element {
   // compact failure for a session the user is not currently looking at must
   // still be waiting for them when they select it.
   useEngineErrorRetentionSync();
+  useInferenceNoticeRetentionSync();
   // App-wide activity pushes (settled and progress) refresh the portfolio
   // queries wherever the user is, not only on the Portfolio page. Mounted
   // once, here (the page mounts none of its own), so each push invalidates

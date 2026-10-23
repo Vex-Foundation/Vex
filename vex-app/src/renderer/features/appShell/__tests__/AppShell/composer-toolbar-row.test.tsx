@@ -53,6 +53,7 @@ vi.mock("../../../../lib/api/runtime.js", () => ({
 let models: ReadonlyArray<{
   modelId: string;
   reasoning: ReasoningCapability | null;
+  providerId?: string;
 }> | null = null;
 vi.mock("../../../../lib/api/models.js", () => ({
   useAvailableModels: () => ({
@@ -239,6 +240,58 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(chip.getAttribute("aria-label")).toContain(
       "deepseek/deepseek-v4-pro",
     );
+  });
+
+  it("the model key opens Settings, Inference, on the active provider", async () => {
+    const { useUiStore } = await import("../../../../stores/uiStore.js");
+    models = [{ modelId: "openai/gpt-6-luna", reasoning: null }];
+    const { container } = mountDocked();
+    const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens inference settings.");
+    fireEvent.click(chip);
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "settings",
+      origin: null,
+      section: "inference",
+      inferenceProvider: null,
+    });
+    useUiStore.setState({ shellRoute: { kind: "none" } });
+  });
+
+  it("the model key wears the vx disc when Vex Inference serves the model, and says so", () => {
+    models = [{ modelId: "openai/gpt-6-luna", reasoning: null, providerId: "vexcloud" }];
+    const { container } = mountDocked();
+    const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    const disc = chip.querySelector('[data-vex-provider-mark="vexcloud"] [data-vex-vx-token] svg');
+    expect([disc?.getAttribute("width"), disc?.getAttribute("height")]).toEqual(["16", "16"]);
+    expect(disc?.getAttribute("aria-hidden")).toBe("true");
+    // The mark comes before the name, and the words carry the provider.
+    expect(chip.firstElementChild?.getAttribute("data-vex-provider-mark")).toBe("vexcloud");
+    expect(chip.getAttribute("aria-label")).toBe(
+      "Model: openai/gpt-6-luna on Vex Inference. Opens inference settings.",
+    );
+    expect(chip.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
+  });
+
+  it("the model key wears OpenRouter's one-ink mark when OpenRouter serves the model", () => {
+    models = [{ modelId: "deepseek/deepseek-v4-pro", reasoning: null, providerId: "openrouter" }];
+    const { container } = mountDocked();
+    const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    const mark = chip.querySelector('[data-vex-provider-mark="openrouter"] svg[data-vex-brand-mark="openrouter"]');
+    expect(mark?.getAttribute("fill")).toBe("currentColor");
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(chip.querySelector('[data-vex-provider-mark="vexcloud"]')).toBeNull();
+    expect(chip.getAttribute("aria-label")).toBe(
+      "Model: deepseek/deepseek-v4-pro on OpenRouter. Opens inference settings.",
+    );
+  });
+
+  it("an unknown provider draws no mark and claims no provider", () => {
+    models = [{ modelId: "openai/gpt-6-luna", reasoning: null, providerId: "somewhere-else" }];
+    const { container } = mountDocked();
+    const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    expect(chip.querySelector("[data-vex-provider-mark]")).toBeNull();
+    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens inference settings.");
   });
 
   it("an unrouted model id passes through the display trim untouched", () => {

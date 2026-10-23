@@ -10,8 +10,8 @@
  * FUNDS approval stays in its own card with its own two-step confirm.
  *
  * Status is a fill plus a word: the target swatch for a decision, the ink cross
- * for a mission that needs Recover. An unreadable inbox says so and offers
- * Retry, an empty one says "Nothing needs you."; neither is ever drawn as the
+ * for a mission that needs Recover. An unreadable inbox or withdrawal check
+ * says which and offers Retry, an empty one says "Nothing needs you."; neither is ever drawn as the
  * other. Paper, ink, one blue, radius 0, no shadow.
  */
 
@@ -19,8 +19,8 @@ import type { JSX } from "react";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { cn } from "../../../lib/utils.js";
 import {
+  NEEDS_YOU_ALL_UNKNOWN_COPY,
   NEEDS_YOU_EMPTY_COPY,
-  NEEDS_YOU_UNKNOWN_COPY,
   type NeedsYouItem,
   type NeedsYouStatus,
 } from "../needs-you.js";
@@ -31,6 +31,8 @@ export type NeedsYouListVariant = "panel" | "sidebar";
 
 export interface NeedsYouListModel {
   readonly status: NeedsYouStatus;
+  /** What could not be checked, while `unknown`. */
+  readonly unknownCopy: string | null;
   readonly items: readonly NeedsYouItem[];
   readonly retry: () => void;
   readonly retrying: boolean;
@@ -87,7 +89,7 @@ export function NeedsYouList({ model, variant, onReview, goLabel }: NeedsYouList
       ) : null}
       {status === "unknown" ? (
         <div role="status" className="flex items-start justify-between gap-3 pb-1.5">
-          <p className="text-[13.5px] leading-5 text-ink-primary">{NEEDS_YOU_UNKNOWN_COPY}</p>
+          <p className="text-[13.5px] leading-5 text-ink-primary">{model.unknownCopy ?? NEEDS_YOU_ALL_UNKNOWN_COPY}</p>
           <button
             type="button"
             disabled={model.retrying}
@@ -113,7 +115,7 @@ export function NeedsYouList({ model, variant, onReview, goLabel }: NeedsYouList
               >
                 <span className="mt-1">
                   <Swatch
-                    state={item.kind === "recover" ? VEX_STATE_FILL.error : VEX_STATE_FILL.awaiting}
+                    state={item.kind === "recover" ? VEX_STATE_FILL.error : item.kind === "withdrawal" ? VEX_STATE_FILL.concerned : VEX_STATE_FILL.awaiting}
                     size={10}
                   />
                 </span>

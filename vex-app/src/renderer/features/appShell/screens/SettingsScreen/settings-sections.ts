@@ -74,12 +74,12 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     hint: "Jupiter, Tavily, Rettiwt, and chain endpoint overrides",
   },
   {
-    id: "model",
+    id: "inference",
     stepId: "provider",
     group: "The agent",
     icon: "model",
-    name: "Model",
-    hint: "The OpenRouter key and model the agent thinks with",
+    name: "Inference",
+    hint: "Vex Inference or OpenRouter, and the model the agent thinks with",
   },
   {
     id: "memory",
@@ -267,13 +267,19 @@ export function settingsSectionStatus(
       }
       return { word: "Configured", tone: "success" };
     }
-    case "model":
-      return env.provider.configured
-        ? {
-            word: env.provider.name === "openrouter" ? "OpenRouter" : "Configured",
-            tone: "success",
-          }
-        : { word: "Not set", tone: "warning" };
+    case "inference":
+      // The active provider is the word: the account behind Vex Inference is
+      // the section's own live read, never claimed here.
+      if (!env.provider.configured) return { word: "Not set", tone: "warning" };
+      return {
+        word:
+          env.provider.name === "openrouter"
+            ? "OpenRouter"
+            : env.provider.name === "vexcloud"
+              ? "Vex Inference"
+              : "Configured",
+        tone: "success",
+      };
     case "memory": {
       if (!env.embeddings.allFieldsConfigured) {
         return { word: "Not set", tone: "neutral" };

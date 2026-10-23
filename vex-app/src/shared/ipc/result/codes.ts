@@ -123,6 +123,7 @@ export const VEX_DOMAINS = [
   "images",
   "shellBackdrop",
   "poolsLaunch",
+  "vexCloud",
   "sessions",
   "projects",
   "preload",

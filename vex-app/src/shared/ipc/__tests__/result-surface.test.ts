@@ -169,6 +169,8 @@ describe("result barrel surface", () => {
       // of its own — its refusals map onto codes that already exist, so the
       // VEX_ERROR_CODES pin above is deliberately unchanged.
       "poolsLaunch",
+      // Vex Cloud sign-in and account: a routing label, no new error code.
+      "vexCloud",
       "sessions",
       // Vex Studio projects (stage P): the project entity itself. It grants no
       // authority of its own - a project's permission and wallet scope are

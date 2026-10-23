@@ -31,7 +31,14 @@ import logger from "@utils/logger.js";
 
 // ── ENV-loaded config (validated at startup) ─────────────────────
 
-export type ProviderType = "openrouter";
+/**
+ * Which inference backend the engine talks to (owner decision D1):
+ * `openrouter` is bring-your-own-key, `vexcloud` is the Vex Cloud gateway
+ * paid in VEX. Both speak the OpenRouter dialect through one client
+ * (`openrouter/client-factory.ts`); they differ in base URL, bearer, and the
+ * OpenRouter-only levers (endpoint pins, failover candidates, balance).
+ */
+export type ProviderType = "openrouter" | "vexcloud";
 
 export interface EnvConfig {
   /** Explicit provider choice — auto-detected if not set */
@@ -40,6 +47,11 @@ export interface EnvConfig {
   contextLimit: number;
   /** OpenRouter API key — required if provider=openrouter */
   openrouterApiKey: string | null;
+  /**
+   * Vex Cloud session bearer (`VEX_CLOUD_SESSION_TOKEN`, vault-mirrored) -
+   * required if provider=vexcloud. A SECRET: never logged, never in a URL.
+   */
+  vexCloudSessionToken: string | null;
   /** Model ID — required for OpenRouter */
   agentModel: string | null;
   /**
@@ -74,7 +86,51 @@ export interface EnvConfig {
   streamBounds: AgentStreamBounds;
 }
 
-const VALID_PROVIDERS = new Set<string>(["openrouter"]);
+const VALID_PROVIDERS = new Set<string>(["openrouter", "vexcloud"]);
+
+type EnvReader = Readonly<Record<string, string | undefined>>;
+
+function presentValue(env: EnvReader, key: string): string | null {
+  const value = env[key]?.trim();
+  return value === undefined || value.length === 0 ? null : value;
+}
+
+/**
+ * The backend the engine resolves to, read the way the registry reads it:
+ * an explicit `AGENT_PROVIDER` wins; with none set it is OpenRouter (the
+ * key-presence fallback). An unrecognised explicit value is `null`: the
+ * registry refuses to start on it, so nothing may treat it as configured.
+ */
+export function resolveInferenceMode(env: EnvReader = process.env): ProviderType | null {
+  const raw = env.AGENT_PROVIDER?.trim().toLowerCase();
+  if (raw === undefined || raw.length === 0) return "openrouter";
+  return VALID_PROVIDERS.has(raw) ? (raw as ProviderType) : null;
+}
+
+/**
+ * THE gate every background worker asks before it claims work that needs a
+ * model call: is an inference backend configured AND credentialed right now?
+ *
+ *   - a model is always required (`AGENT_MODEL`);
+ *   - OpenRouter needs its key (`OPENROUTER_API_KEY`);
+ *   - Vex Cloud needs a session bearer (`VEX_CLOUD_SESSION_TOKEN`).
+ *
+ * Both credentials live in the vault and are mirrored into env only while it
+ * is unlocked, so a locked vault answers `false` and the workers stay idle
+ * instead of constructing a provider that throws. Replaces six inline
+ * `OPENROUTER_API_KEY && AGENT_MODEL` checks that could not see Vex Cloud.
+ */
+export function isInferenceConfigured(env: EnvReader = process.env): boolean {
+  if (presentValue(env, "AGENT_MODEL") === null) return false;
+  switch (resolveInferenceMode(env)) {
+    case "openrouter":
+      return presentValue(env, "OPENROUTER_API_KEY") !== null;
+    case "vexcloud":
+      return presentValue(env, "VEX_CLOUD_SESSION_TOKEN") !== null;
+    case null:
+      return false;
+  }
+}
 
 /**
  * Load and validate all inference ENV variables.
@@ -90,7 +146,7 @@ export function loadEnvConfig(): EnvConfig {
   let agentProvider: ProviderType | null = null;
   if (rawProvider !== null) {
     if (!VALID_PROVIDERS.has(rawProvider)) {
-      errors.push(`AGENT_PROVIDER="${rawProvider}" is invalid. Must be: openrouter`);
+      errors.push(`AGENT_PROVIDER="${rawProvider}" is invalid. Must be: openrouter or vexcloud`);
     } else {
       agentProvider = rawProvider as ProviderType;
     }
@@ -98,6 +154,8 @@ export function loadEnvConfig(): EnvConfig {
 
   // OPENROUTER_API_KEY + AGENT_MODEL — strings, no numeric validation.
   const openrouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? null;
+  const rawCloudToken = process.env.VEX_CLOUD_SESSION_TOKEN?.trim() ?? "";
+  const vexCloudSessionToken = rawCloudToken.length > 0 ? rawCloudToken : null;
   const agentModel = process.env.AGENT_MODEL?.trim() ?? null;
   const rawEndpointTag = process.env.OPENROUTER_ENDPOINT_TAG?.trim() ?? "";
   const openrouterEndpointTag = rawEndpointTag.length > 0 ? rawEndpointTag : null;
@@ -160,6 +218,7 @@ export function loadEnvConfig(): EnvConfig {
     agentProvider,
     contextLimit: agentParse.value.contextLimit,
     openrouterApiKey,
+    vexCloudSessionToken,
     agentModel,
     openrouterEndpointTag,
     temperature: agentParse.value.temperature,

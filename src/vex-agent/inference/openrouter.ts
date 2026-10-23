@@ -17,13 +17,12 @@
  * @see https://openrouter.ai/docs/quickstart
  */
 
-import { OpenRouter } from "@openrouter/sdk";
+import type { OpenRouter } from "@openrouter/sdk";
 import { MetadataLevel } from "@openrouter/sdk/models/metadatalevel.js";
 import type { ChatRequest } from "@openrouter/sdk/models/chatrequest.js";
 import type { ChatResult } from "@openrouter/sdk/models/chatresult.js";
 import type { ChatStreamChunk } from "@openrouter/sdk/models/chatstreamchunk.js";
 import type { EventStream } from "@openrouter/sdk/lib/event-streams.js";
-import { HTTPClient } from "@openrouter/sdk/lib/http.js";
 import type { RetryConfig } from "@openrouter/sdk/lib/retries.js";
 import type {
   SendChatCompletionRequestRequest,
@@ -43,17 +42,16 @@ import type {
   RequestCost,
 } from "./types.js";
 
-import { loadEnvConfig } from "./config.js";
-import { OPENROUTER_API_BASE_URL } from "../../lib/openrouter-client.js";
+import { loadEnvConfig, type ProviderType } from "./config.js";
 import type { AgentStreamBounds } from "../../lib/agent-config.js";
 import {
-  OPENROUTER_APP_URL,
-  OPENROUTER_APP_TITLE,
   OPENROUTER_SDK_TIMEOUT_MS,
   OPENROUTER_LOW_BALANCE_USD,
   MODEL_CONFIG_CACHE_TTL_MS,
   MODEL_CONFIG_STALE_RETRY_MS,
 } from "./config.js";
+import { createInferenceClient, resolveInferenceConnection } from "./openrouter/client-factory.js";
+import { emitMaxTokensClampNotice, noteVexInferenceTurn } from "./inference-notice-bus.js";
 
 import logger from "@utils/logger.js";
 import { normalizeOpenRouterError } from "./openrouter/errors.js";
@@ -65,11 +63,8 @@ import { REASONING_REPLAY_ENABLED, shouldReplayReasoning } from "./openrouter/re
 import { computeRequestCost } from "./openrouter/cost.js";
 import { consumeOpenRouterStream } from "./openrouter/stream.js";
 import { requireNonEmptyOpenRouterStream } from "./openrouter/non-empty-stream.js";
-import {
-  OPENROUTER_5XX_RETRY_BACKOFF,
-  roundFetch,
-  withRoundSignal,
-} from "./openrouter/round-fetch.js";
+import { withRoundSignal, type RoundObservers } from "./openrouter/round-fetch.js";
+import type { MaxTokensClamp } from "./openrouter/max-tokens-clamp.js";
 import { asChatResult, asEventStream } from "./openrouter/chat-send.js";
 import {
   fetchModelInferenceConfig,
@@ -96,10 +91,10 @@ const SDK_RETRY_OFF: RetryConfig = { strategy: "none" };
 // ── Provider ─────────────────────────────────────────────────────
 
 export class OpenRouterProvider implements InferenceProvider {
-  readonly id = "openrouter";
-  readonly displayName = "OpenRouter";
+  /** `openrouter` (bring your own key) or `vexcloud`; also stamped on every config. */
+  readonly id: ProviderType;
+  readonly displayName: string;
 
-  private readonly apiKey: string;
   private readonly model: string;
   private readonly contextLimit: number;
   private readonly temperature: number | undefined;
@@ -122,38 +117,37 @@ export class OpenRouterProvider implements InferenceProvider {
   private staleServeUntil = 0;
   private inFlight: Promise<InferenceConfig | null> | null = null;
 
+  /**
+   * MODE-AWARE CONSTRUCTION. Every site that builds a provider (the registry,
+   * the memory judge, entity extraction, the compaction chunker and branch
+   * calls, the regime worker) calls this constructor, so the backend choice is
+   * made here once: `AGENT_PROVIDER=vexcloud` builds the Vex Cloud client with
+   * the session bearer, anything else the bring-your-own-key client. Throws
+   * by name when the selected backend's credential or `AGENT_MODEL` is absent;
+   * background callers ask `isInferenceConfigured()` first.
+   */
   constructor() {
     const env = loadEnvConfig();
 
-    if (!env.openrouterApiKey) {
-      throw new Error("OPENROUTER_API_KEY is required for OpenRouter provider");
-    }
+    // Throws by name when the selected backend's credential is absent.
+    const connection = resolveInferenceConnection(env);
     if (!env.agentModel) {
       throw new Error("AGENT_MODEL is required for OpenRouter provider");
     }
 
-    this.apiKey = env.openrouterApiKey;
+    this.id = connection.mode;
+    this.displayName = connection.mode === "vexcloud" ? "Vex Inference" : "OpenRouter";
     this.model = env.agentModel;
     this.contextLimit = env.contextLimit;
-    this.endpointTag = env.openrouterEndpointTag ?? undefined;
+    // Vex Cloud routes upstream itself: an OpenRouter endpoint pin is an
+    // OpenRouter lever and is IGNORED there, never forwarded.
+    this.endpointTag =
+      connection.mode === "vexcloud" ? undefined : env.openrouterEndpointTag ?? undefined;
     this.temperature = env.temperature ?? undefined;
     this.maxOutputTokens = env.maxOutputTokens;
     this.streamBounds = env.streamBounds;
-
-    this.client = new OpenRouter({
-      apiKey: this.apiKey,
-      serverURL: OPENROUTER_API_BASE_URL,
-      httpReferer: OPENROUTER_APP_URL,
-      appTitle: OPENROUTER_APP_TITLE,
-      timeoutMs: OPENROUTER_SDK_TIMEOUT_MS,
-      retryConfig: {
-        strategy: "backoff",
-        backoff: { ...OPENROUTER_5XX_RETRY_BACKOFF },
-      },
-      // Tears a signal-carrying send's body down explicitly on abort, and runs
-      // its 5xx retries with abortable waits (see `openrouter/round-fetch.ts`).
-      httpClient: new HTTPClient({ fetcher: roundFetch }),
-    });
+    // Explicit `serverURL` and bearer per mode, never the SDK's env fallback.
+    this.client = createInferenceClient(connection);
   }
 
   // ── send options (cancellation + deadline) ──────────────────────
@@ -186,12 +180,28 @@ export class OpenRouterProvider implements InferenceProvider {
     signal: AbortSignal | undefined,
     context?: InferenceRequestContext,
   ): Promise<SendChatCompletionRequestResponse> {
+    // Where a later Vex Inference balance notice is shown: the last session that ran inference here.
+    if (this.id === "vexcloud") noteVexInferenceTurn(context?.sessionId ?? null, context?.missionRunId ?? null);
+    const observers: RoundObservers = {
+      // Each 5xx `roundFetch` retries counts as a capacity retry of this
+      // attempt, exactly like one the endpoint failover absorbs.
+      onServerRetry: context?.onCapacityFailure,
+      // D16: Vex Cloud lowered `max_tokens` (balance or model limit). Read
+      // from the response head on JSON and SSE alike, never silent.
+      onMaxTokensClamp: (clamp: MaxTokensClamp) => {
+        emitMaxTokensClampNotice({
+          provider: this.id,
+          model: this.model,
+          sessionId: context?.sessionId ?? null,
+          missionRunId: context?.missionRunId ?? null,
+          clamp,
+        });
+      },
+    };
     return withRoundSignal(
       signal,
       () => this.client.chat.send(request, this.sendOptions(signal)),
-      // Each 5xx `roundFetch` retries counts as a capacity retry of this
-      // attempt, exactly like one the endpoint failover absorbs.
-      context?.onCapacityFailure,
+      observers,
     );
   }
 
@@ -217,6 +227,13 @@ export class OpenRouterProvider implements InferenceProvider {
   // shape rather than this class still find it. Named on the interface it
   // serves, not on the class internals, so exposing it adds no new coupling.
   failoverDeps(): EndpointFailoverDeps {
+    if (this.id === "vexcloud") {
+      // Vex Cloud owns upstream routing: no OpenRouter endpoint list to switch
+      // to, and a sticky switch recorded under bring-your-own-key is not
+      // re-applied (it would send an OpenRouter `provider.order`). Capacity
+      // failures still get the bounded retry.
+      return { loadCandidates: async () => [], endpointRouting: "disabled" };
+    }
     return {
       loadCandidates: () => loadEndpointCandidates(this.client, this.model),
     };
@@ -304,6 +321,9 @@ export class OpenRouterProvider implements InferenceProvider {
       maxOutputTokens: this.maxOutputTokens,
       streamBounds: this.streamBounds,
       endpointTag: this.endpointTag,
+      // Vex Cloud publishes `reasoning.mandatory: true` and a per-model
+      // `default_effort`, and always receives an effort (D10).
+      alwaysSendEffort: this.id === "vexcloud",
     });
   }
 
@@ -550,6 +570,9 @@ export class OpenRouterProvider implements InferenceProvider {
   // ── getBalance ──────────────────────────────────────────────────
 
   async getBalance(): Promise<ProviderBalance | null> {
+    // The OpenRouter credits endpoints do not exist on Vex Cloud; its VEX
+    // balance is the backend account's (`vexCloud.account`), never this path.
+    if (this.id === "vexcloud") return null;
     // Try management key endpoint first (richer data)
     try {
       const res = await this.client.credits.getCredits();

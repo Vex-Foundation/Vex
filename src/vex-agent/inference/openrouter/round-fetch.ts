@@ -40,11 +40,26 @@
  * in the same `AsyncLocalStorage` scope) is called once per retried 5xx with
  * `SERVER_ERROR_5XX_RETRY_CLASS`, so the attempt timer counts it and the
  * runtime report keeps a retried send out of its retry-free latency.
+ *
+ * THE D16 DISCLOSURE (Vex Cloud). When the gateway lowers `max_tokens` it
+ * says so in the `x-vex-max-tokens` response header, on JSON and SSE
+ * responses alike, because the SDK strips unknown body fields. The head of
+ * the FINAL response (after any 5xx retry) is read here and handed to the
+ * send's `onMaxTokensClamp` observer; an unreadable value is logged, never
+ * guessed. A send that carries the observer but no signal still runs in a
+ * scope so the head is observed; its fetch is otherwise the SDK's own.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { delay } from "@utils/cancellation.js";
+import logger from "@utils/logger.js";
+
+import {
+  MAX_TOKENS_CLAMP_HEADER,
+  parseMaxTokensClampHeader,
+  type MaxTokensClamp,
+} from "./max-tokens-clamp.js";
 
 /**
  * The SDK retry policy for 5xx (`openrouter.ts` client `retryConfig`), shared
@@ -60,24 +75,52 @@ export const OPENROUTER_5XX_RETRY_BACKOFF = {
 /** The capacity-retry class reported for each 5xx this module retries. */
 export const SERVER_ERROR_5XX_RETRY_CLASS = "server_error_5xx";
 
-interface RoundScope {
-  readonly signal: AbortSignal;
-  readonly onServerRetry: ((reasonClass: string) => void) | undefined;
+/** Observation hooks for one send. Observation only: neither changes the request. */
+export interface RoundObservers {
+  /** Told about each 5xx this module retries. */
+  readonly onServerRetry?: ((reasonClass: string) => void) | undefined;
+  /** Told when the final response discloses a Vex Cloud `max_tokens` clamp. */
+  readonly onMaxTokensClamp?: ((clamp: MaxTokensClamp) => void) | undefined;
+}
+
+interface RoundScope extends RoundObservers {
+  /** The caller's signal, or `undefined` for a send that only needs observing. */
+  readonly signal: AbortSignal | undefined;
 }
 
 const roundScope = new AsyncLocalStorage<RoundScope>();
 
 /**
  * Run one SDK send with `signal` as the signal this module tears the body down
- * on, and `onServerRetry` as the observer told about each 5xx it retries.
- * `undefined` signal runs `send` unchanged (the SDK then retries 5xx itself).
+ * on, and `observers` told about retried 5xx and the D16 disclosure.
+ * An `undefined` signal with no clamp observer runs `send` unchanged (the SDK
+ * then retries 5xx itself); with a clamp observer it still only observes.
  */
 export function withRoundSignal<T>(
   signal: AbortSignal | undefined,
   send: () => Promise<T>,
-  onServerRetry?: (reasonClass: string) => void,
+  observers: RoundObservers = {},
 ): Promise<T> {
-  return signal === undefined ? send() : roundScope.run({ signal, onServerRetry }, send);
+  if (signal === undefined && observers.onMaxTokensClamp === undefined) return send();
+  return roundScope.run({ signal, ...observers }, send);
+}
+
+/** Read the D16 disclosure off a final response head and tell the observer. */
+function observeMaxTokensClamp(scope: RoundScope, response: Response): void {
+  if (scope.onMaxTokensClamp === undefined) return;
+  const raw = response.headers.get(MAX_TOKENS_CLAMP_HEADER);
+  if (raw === null) return;
+  const clamp = parseMaxTokensClampHeader(raw);
+  if (clamp === null) {
+    // Never silent, never guessed: the gateway said something we cannot read.
+    logger.warn("inference.max_tokens_clamp_unreadable", { status: response.status });
+    return;
+  }
+  try {
+    scope.onMaxTokensClamp(clamp);
+  } catch {
+    // Observation must never change the response.
+  }
 }
 
 /** Tell the send's observer about one retried 5xx. Observation only. */
@@ -249,6 +292,12 @@ export async function roundFetch(input: FetchInput, init?: RequestInit): Promise
   const scope = roundScope.getStore();
   if (scope === undefined) return init === undefined ? fetch(input) : fetch(input, init);
   const { signal } = scope;
+  if (signal === undefined) {
+    // Observed but not owned: the SDK's own fetch, byte for byte, plus the head read.
+    const response = init === undefined ? await fetch(input) : await fetch(input, init);
+    observeMaxTokensClamp(scope, response);
+    return response;
+  }
 
   const { controller, unlink } = linkedController(signal, requestSignalOf(input, init));
   const linked = controller.signal;
@@ -258,6 +307,7 @@ export async function roundFetch(input: FetchInput, init?: RequestInit): Promise
       const response = await send(input, init, linked);
       const expired = Date.now() - start > OPENROUTER_5XX_RETRY_BACKOFF.maxElapsedTime;
       if (!isRetryableStatus(response.status) || expired) {
+        observeMaxTokensClamp(scope, response);
         // From here the body owns the link; it unlinks once the body ends.
         return bindBodyToSignal(response, linked, unlink);
       }

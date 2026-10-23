@@ -229,6 +229,13 @@ export interface UiState {
    */
   readonly welcomeVexShown: boolean;
   /**
+   * Whether the user dismissed the welcome's "AI is now paid in VEX" notice
+   * ("Not now"). A UI preference only: it hides the card and grants or
+   * changes nothing about the provider. False by default. Persisted; a
+   * payload without it hydrates to the default.
+   */
+  readonly vexInferenceNoticeDismissed: boolean;
+  /**
    * @deprecated The previous frame's left page drag width. The R3 sidebars
    * have fixed widths and the frame no longer reads it; it stays persisted
    * and coerced this release (expand-only).
@@ -446,6 +453,8 @@ export interface UiState {
   readonly setShowAvatar: (value: boolean) => void;
   /** Show (true) or hide (false) Vex's hologram on the welcome only. */
   readonly setWelcomeVexShown: (value: boolean) => void;
+  /** Dismiss the welcome's Vex Inference notice (true), or bring it back. */
+  readonly setVexInferenceNoticeDismissed: (value: boolean) => void;
   /**
    * The left sidebar's nav: one press, one store change (see
    * `navigationTarget`). `origin` is the pressed row's rect, for the page's
@@ -593,6 +602,7 @@ export const useUiStore = create<UiState>()(
       vexOpenLighter: false,
       showAvatar: true,
       welcomeVexShown: true,
+      vexInferenceNoticeDismissed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,
       sidebarNarrowExpanded: false,
@@ -636,6 +646,8 @@ export const useUiStore = create<UiState>()(
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),
       setShowAvatar: (showAvatar) => set({ showAvatar }),
       setWelcomeVexShown: (welcomeVexShown) => set({ welcomeVexShown }),
+      setVexInferenceNoticeDismissed: (vexInferenceNoticeDismissed) =>
+        set({ vexInferenceNoticeDismissed }),
       navigate: (destination, origin = null) =>
         set((state) => {
           const target = navigationTarget(destination, state.sessionModeFilter, origin);

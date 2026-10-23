@@ -72,9 +72,11 @@ export interface JudgeCallResult {
 }
 
 /**
- * Default provider factory — constructs the env-driven OpenRouter provider. The
- * constructor THROWS when OPENROUTER_API_KEY / AGENT_MODEL are absent (the
- * executor's pre-claim gate prevents reaching here without them).
+ * Default provider factory - constructs the env-driven provider, mode-aware
+ * (bring-your-own-key OpenRouter or Vex Cloud, chosen inside the
+ * constructor). The constructor THROWS when the active backend's credential or
+ * AGENT_MODEL is absent (the executor's pre-claim `isInferenceConfigured()`
+ * gate prevents reaching here without them).
  */
 async function defaultProvider(): Promise<JudgeProvider> {
   const { OpenRouterProvider } = await import("@vex-agent/inference/openrouter.js");

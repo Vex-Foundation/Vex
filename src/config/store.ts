@@ -178,6 +178,30 @@ export function poolsAttestationEnabled(): boolean {
   return loadConfig().poolsFunAttestationEnabled === true;
 }
 
+/**
+ * Vex Cloud inference gateway origin (owner decision D18), next to the other
+ * `projectvex.ai` service hosts. A BUILT-IN constant, deliberately NOT a
+ * `services` key: the SIWE messages the app signs bind this host, and the
+ * session bearer is sent to it, so a stored config value must not be able to
+ * repoint either in a shipped build. Development may point at a local
+ * backend through `VEX_DEV_CLOUD_API_URL`, which a packaged build ignores
+ * (`src/lib/vex-cloud-endpoint.ts`). Changing it forces an app update and a
+ * re-sign-in.
+ */
+export const VEX_CLOUD_API_URL = "https://inference.projectvex.ai";
+
+/**
+ * The Vex Cloud deposit address this build sends VEX to (plan 15.6). A
+ * BUILT-IN constant for the same reason as `VEX_CLOUD_API_URL`: a deposit's
+ * destination must not come from a stored setting, the server or the model.
+ * This is the production custody wallet, the same address as the backend's
+ * `DEPOSIT_ADDRESS` (owner decision 2026-10-21), stored EIP-55 checksummed.
+ * Development may set `VEX_DEV_CLOUD_DEPOSIT_ADDRESS`, which a packaged
+ * build ignores (`src/lib/vex-cloud-deposit-address.ts`). Changing it forces
+ * an app update.
+ */
+export const VEX_CLOUD_DEPOSIT_ADDRESS = "0xf36aed1c11A3140594609969DC6646c9F8a981C5";
+
 export function getDefaultConfig(): VexConfig {
   return {
     version: 1,

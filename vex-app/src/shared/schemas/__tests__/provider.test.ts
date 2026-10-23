@@ -10,8 +10,8 @@ const validModel = {
   displayName: "Anthropic: Claude Sonnet 4.5",
   providerId: "anthropic",
   contextLength: 200_000,
-  pricingInputPerMillion: 3,
-  pricingOutputPerMillion: 15,
+  pricingInputPerMillion: "3",
+  pricingOutputPerMillion: "15",
 };
 
 describe("provider model catalogue schemas", () => {
@@ -29,9 +29,17 @@ describe("provider model catalogue schemas", () => {
     expect(
       providerModelOptionSchema.safeParse({
         ...validModel,
-        pricingInputPerMillion: -1,
+        pricingInputPerMillion: "-1",
       }).success,
     ).toBe(false);
+  });
+
+  it("carries per-1M prices as exact decimal text, never a float", () => {
+    expect(providerModelOptionSchema.safeParse({ ...validModel, pricingInputPerMillion: "0.14375" }).success).toBe(true);
+    // A number, an exponent and a padded zero are not the canonical text.
+    for (const bad of [0.14375, "1.4375e-1", "0.5750", "00.5", ""]) {
+      expect(providerModelOptionSchema.safeParse({ ...validModel, pricingInputPerMillion: bad }).success).toBe(false);
+    }
   });
 
   it("enforces the catalogue bound", () => {

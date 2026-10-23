@@ -32,6 +32,7 @@ import { SESSION_MEMORY_TOOLS } from "./session-memory.js";
 import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
 import { BOARD_TOOLS } from "./board.js";
+import { VEX_INFERENCE_TOOLS } from "./vex-inference.js";
 
 // Order matters - the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -50,6 +51,8 @@ export const TOOLS: readonly ToolDef[] = [
   ...WALLET_TOOLS,
   ...WALLET_TRANSACTION_TOOLS,
   ...WALLET_WRAP_TOOLS,
+  // Vex Inference account and deposit: offered only under that provider with a session.
+  ...VEX_INFERENCE_TOOLS,
   ...UNITS_TOOLS,
   ...COMPACT_TOOLS,
   ...SESSION_MEMORY_TOOLS,
@@ -73,6 +76,11 @@ export function isInternalTool(name: string): boolean {
 
 export function isMutatingTool(name: string): boolean {
   return getToolDef(name)?.mutating === true;
+}
+
+/** Whether the tool's handler owns its approval (see `ToolDef.approvalOwner`). Unknown names: false. */
+export function handlerOwnsApproval(name: string): boolean {
+  return getToolDef(name)?.approvalOwner === "handler";
 }
 
 /**

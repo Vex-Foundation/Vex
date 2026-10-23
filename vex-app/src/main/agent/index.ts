@@ -26,6 +26,7 @@ import { createAgentBugReportSink } from "../support/agent-bug-report-sink.js";
 import { setupCompactionPreparationBridge } from "./compaction-preparation-bridge.js";
 import { setupControlBridge } from "./control-bridge.js";
 import { setupErrorBridge } from "./error-bridge.js";
+import { setupInferenceNoticeBridge } from "./inference-notice-bridge.js";
 import { setupLaunchFormBridge } from "./launch-form-bridge.js";
 import { setupLighterSetupBridge } from "./lighter-setup-bridge.js";
 import { setupActivityProgressBridge } from "./activity-progress-bridge.js";
@@ -55,6 +56,8 @@ export function setupAgentBridges(): () => Promise<void> {
   // Error channel — bounded failure codes for turns, missions, wakes,
   // compact jobs and approval resumes. Without it these die in a log.
   teardowns.push(setupErrorBridge());
+  // D16: the Vex Cloud `max_tokens` clamp, shown on the session's turn.
+  teardowns.push(setupInferenceNoticeBridge());
   // Mission surface push — replaces the draft/diff/approval discovery polls.
   teardowns.push(setupMissionUpdateBridge());
   // Compaction v2 — committed `compaction_preparations` transitions, so the

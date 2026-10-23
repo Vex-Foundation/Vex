@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
 import { LINE_ICON_NAMES } from "../../../../../components/icons/line/index.js";
 import {
   SETTINGS_SECTIONS,
   settingsNav,
+  settingsSectionStatus,
   settingsStatusSwatch,
   superboardRegisterStatus,
 } from "../settings-sections.js";
@@ -101,7 +103,7 @@ describe("the Settings nav", () => {
     expect(SETTINGS_NAV.map((group) => group.items.map((item) => item.id))).toEqual([
       ["preferences"],
       ["vault", "wallets", "apiKeys"],
-      ["model", "memory", "tuning", "localRuntime"],
+      ["inference", "memory", "tuning", "localRuntime"],
       ["superboardKey", "lighterPoints"],
     ]);
     // Flattened, the sections keep the order the registry declares.
@@ -121,7 +123,7 @@ describe("the Settings nav", () => {
       ["vault", "Vault", "The master password that encrypts everything on this machine"],
       ["wallets", "Wallets", "EVM and Solana wallets - add, remove, recover, back up, or export"],
       ["apiKeys", "API keys", "Jupiter, Tavily, Rettiwt, and chain endpoint overrides"],
-      ["model", "Model", "The OpenRouter key and model the agent thinks with"],
+      ["inference", "Inference", "Vex Inference or OpenRouter, and the model the agent thinks with"],
       ["memory", "Memory", "The embedding endpoint behind long-term recall"],
       ["tuning", "Tuning", "Context, output, and sampling limits"],
       ["localRuntime", "Local runtime", "The database and embeddings server running on this computer"],
@@ -138,5 +140,24 @@ describe("the Settings nav", () => {
     expect(settingsStatusSwatch("success")).toBe("done");
     expect(settingsStatusSwatch("neutral")).toBe("idle");
     expect(settingsStatusSwatch("warning")).toBe("warning");
+  });
+});
+
+describe("the Inference status word", () => {
+  function envWith(provider: EnvState["provider"]): EnvState {
+    // Only `provider` is read for this section.
+    return { provider } as EnvState;
+  }
+
+  it("is the active provider, by its user-facing name", () => {
+    expect(
+      settingsSectionStatus("inference", envWith({ configured: true, name: "vexcloud", modelLabel: "a/b", endpointTag: null })),
+    ).toEqual({ word: "Vex Inference", tone: "success" });
+    expect(
+      settingsSectionStatus("inference", envWith({ configured: true, name: "openrouter", modelLabel: "a/b", endpointTag: null })),
+    ).toEqual({ word: "OpenRouter", tone: "success" });
+    expect(
+      settingsSectionStatus("inference", envWith({ configured: false, name: null, modelLabel: null, endpointTag: null })),
+    ).toEqual({ word: "Not set", tone: "warning" });
   });
 });

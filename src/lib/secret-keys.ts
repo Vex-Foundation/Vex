@@ -9,6 +9,11 @@ export const VAULT_SECRET_KEYS = [
   // rate limits. Deliberately NOT a `requiresEnv` on any relay manifest - that
   // would hide the bridge tools from every keyless user.
   "RELAY_API_KEY",
+  // Vex Cloud session bearer (opaque, issued by `/v1/auth/verify`). Mirrored
+  // into the engine's env on unlock like the OpenRouter key, so the engine's
+  // Vex Cloud client reads it the same way, and scrubbed on relock with every
+  // other managed key. Never in a URL, a log, or a renderer payload.
+  "VEX_CLOUD_SESSION_TOKEN",
   // Polymarket integration removed (Agent Scan §4.6): the 4 POLYMARKET_* keys
   // were dropped from this registry deliberately. Any already-vaulted values
   // are NOT migrated or purged here - the vault's `extraSecrets` retention

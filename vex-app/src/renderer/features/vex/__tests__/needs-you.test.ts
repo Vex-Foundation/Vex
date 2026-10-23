@@ -1,7 +1,8 @@
 /**
  * Needs you: the item mapping per approval (expiry or since, where it was
  * raised, the action word per tool family) and per mission status, and the
- * model's honest status for a loading, failed or empty inbox.
+ * model's honest status for a loading, failed or empty inbox, and for a
+ * withdrawal check that is loading, failed, incomplete or signed out.
  */
 
 import { describe, expect, it } from "vitest";
@@ -14,9 +15,16 @@ import {
   approvalNeedsYouItem,
   formatNeedsYouTime,
   missionNeedsYouItem,
+  NEEDS_YOU_ALL_UNKNOWN_COPY,
+  NEEDS_YOU_UNKNOWN_COPY,
+  NEEDS_YOU_WITHDRAWALS_INCOMPLETE_COPY,
+  NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY,
   needsYouMetaText,
   needsYouModelOf,
+  needsYouWithdrawalReadOf,
+  type NeedsYouWithdrawalRead,
 } from "../needs-you.js";
+import type { VexCloudWithdrawalNotice, VexCloudWithdrawalNoticesResult } from "@shared/schemas/vex-cloud-funding.js";
 import { approval, session } from "./fixtures.js";
 
 const NOW = Date.parse("2026-10-17T12:30:00.000Z");
@@ -280,12 +288,36 @@ describe("missionNeedsYouItem", () => {
   });
 });
 
+const FOREIGN: VexCloudWithdrawalNotice = {
+  withdrawalId: "wd_foreign",
+  amountWei: "6000000000000000000000",
+  destination: "0x2222222222222222222222222222222222222222",
+  releaseAt: "2026-10-18T00:30:00.000Z",
+  cancellable: true,
+  createdAt: "2026-10-17T12:30:00.000Z",
+};
+
+const NOTICES_FAILED: Result<VexCloudWithdrawalNoticesResult> = {
+  ok: false,
+  error: {
+    code: "internal.unexpected",
+    domain: "vexCloud",
+    message: "Vex Inference could not be reached.",
+    retryable: true,
+    userActionable: false,
+    redacted: true,
+    correlationId: "test",
+  },
+};
+
 describe("needsYouModelOf", () => {
-  const base = { approvalsErrored: false, sessions: null, nowMs: NOW } as const;
+  const CHECKED: NeedsYouWithdrawalRead = { state: "ready", notices: [], complete: true };
+  const base = { approvalsErrored: false, sessions: null, withdrawals: CHECKED, nowMs: NOW } as const;
 
   it("is loading before the first read, with no count to claim", () => {
     expect(needsYouModelOf({ ...base, approvals: undefined })).toEqual({
       status: "loading",
+      unknownCopy: null,
       count: null,
       items: [],
     });
@@ -294,6 +326,7 @@ describe("needsYouModelOf", () => {
   it("is ready and empty only after a read that listed nothing", () => {
     expect(needsYouModelOf({ ...base, approvals: ok([]) })).toEqual({
       status: "ready",
+      unknownCopy: null,
       count: 0,
       items: [],
     });
@@ -302,6 +335,7 @@ describe("needsYouModelOf", () => {
   it("is unknown, never empty, after a failed read", () => {
     expect(needsYouModelOf({ ...base, approvals: FAILED })).toEqual({
       status: "unknown",
+      unknownCopy: NEEDS_YOU_UNKNOWN_COPY,
       count: null,
       items: [],
     });
@@ -361,5 +395,126 @@ describe("needsYouModelOf", () => {
       sessions: [session({ missionStatus: "paused_plan_acceptance" })],
     });
     expect(model.count).toBe(1);
+  });
+
+  it("a cancellable withdrawal this app did not start counts, after approvals and before missions, and opens nothing by itself", () => {
+    const model = needsYouModelOf({
+      ...base,
+      approvals: ok([approval()]),
+      sessions: [session({ missionStatus: "paused_error" })],
+      withdrawals: { state: "ready", notices: [FOREIGN], complete: true },
+    });
+    expect(model.count).toBe(3);
+    expect(model.items.map((item) => item.kind)).toEqual(["approval", "withdrawal", "recover"]);
+    expect(model.items[1]).toMatchObject({
+      key: "withdrawal:wd_foreign",
+      title: "Check a withdrawal you did not start",
+      metaLead: "Vex Inference · releases",
+      metaTime: "Oct 18, 00:30 UTC",
+      go: "Review",
+      sessionId: null,
+      approvalId: null,
+    });
+  });
+});
+
+describe("the withdrawal check never produces an all-clear it did not verify", () => {
+  const approvalsEmpty = { approvals: ok([]), approvalsErrored: false, sessions: null, nowMs: NOW } as const;
+
+  it("a failed withdrawal check over an empty inbox and no waiting mission is unknown, never Nothing needs you", () => {
+    const model = needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "failed", lastKnown: [] } });
+    expect(model).toEqual({ status: "unknown", unknownCopy: NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY, count: null, items: [] });
+  });
+
+  it("an incomplete scan (complete: false) is unknown coverage, even with nothing listed", () => {
+    const model = needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "ready", notices: [], complete: false } });
+    expect(model).toEqual({ status: "unknown", unknownCopy: NEEDS_YOU_WITHDRAWALS_INCOMPLETE_COPY, count: null, items: [] });
+  });
+
+  it("a failed check keeps the notices already shown, listed but uncounted", () => {
+    const model = needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "failed", lastKnown: [FOREIGN] } });
+    expect(model.status).toBe("unknown");
+    expect(model.count).toBeNull();
+    expect(model.items.map((item) => item.key)).toEqual(["withdrawal:wd_foreign"]);
+  });
+
+  it("a failed check is unknown even when approvals are pending", () => {
+    const model = needsYouModelOf({ ...approvalsEmpty, approvals: ok([approval()]), withdrawals: { state: "failed", lastKnown: [] } });
+    expect(model.status).toBe("unknown");
+    expect(model.count).toBeNull();
+    expect(model.items.map((item) => item.kind)).toEqual(["approval"]);
+  });
+
+  it("both checks failed names both", () => {
+    const model = needsYouModelOf({ ...approvalsEmpty, approvals: FAILED, withdrawals: { state: "failed", lastKnown: [] } });
+    expect(model.unknownCopy).toBe(NEEDS_YOU_ALL_UNKNOWN_COPY);
+  });
+
+  it("signed out claims nothing about an account and is not an error: an empty inbox reads Nothing needs you", () => {
+    expect(needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "signed_out" } })).toEqual({
+      status: "ready",
+      unknownCopy: null,
+      count: 0,
+      items: [],
+    });
+  });
+
+  it("a locked vault is a known state like signed out: one approval reads ready with count 1, no unknown copy", () => {
+    expect(needsYouModelOf({ ...approvalsEmpty, approvals: ok([approval()]), withdrawals: { state: "locked" } })).toMatchObject({
+      status: "ready",
+      unknownCopy: null,
+      count: 1,
+    });
+    expect(needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "locked" } })).toEqual({
+      status: "ready",
+      unknownCopy: null,
+      count: 0,
+      items: [],
+    });
+  });
+
+  it("a withdrawal check still loading keeps the empty inbox from reading as clear", () => {
+    const model = needsYouModelOf({ ...approvalsEmpty, withdrawals: { state: "loading" } });
+    expect(model.status).toBe("loading");
+    expect(model.count).toBeNull();
+  });
+});
+
+describe("needsYouWithdrawalReadOf", () => {
+  const signedIn = (notices: VexCloudWithdrawalNotice[], complete = true): Result<VexCloudWithdrawalNoticesResult> => ({
+    ok: true,
+    data: { state: "signed_in", notices, complete, checkedAt: "2026-10-17T12:30:00.000Z" },
+  });
+
+  it("is loading before the first answer, and failed (with what was known) when the first read threw", () => {
+    expect(needsYouWithdrawalReadOf(undefined, false, [])).toEqual({ state: "loading" });
+    expect(needsYouWithdrawalReadOf(undefined, true, [FOREIGN])).toEqual({ state: "failed", lastKnown: [FOREIGN] });
+  });
+
+  it("a failed Result keeps the last good read's notices", () => {
+    expect(needsYouWithdrawalReadOf(NOTICES_FAILED, false, [FOREIGN])).toEqual({ state: "failed", lastKnown: [FOREIGN] });
+  });
+
+  it("a refetch that threw over a good read is failed, keeping that read's notices", () => {
+    expect(needsYouWithdrawalReadOf(signedIn([FOREIGN]), true, [])).toEqual({ state: "failed", lastKnown: [FOREIGN] });
+  });
+
+  it("a refetch that threw over a cached signed out is failed, never signed out", () => {
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "signed_out" } }, true, [])).toEqual({ state: "failed", lastKnown: [] });
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "signed_out" } }, true, [FOREIGN])).toEqual({ state: "failed", lastKnown: [FOREIGN] });
+  });
+
+  it("a locked vault is its own known state and drops the notices held from an earlier read", () => {
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "locked" } }, false, [FOREIGN])).toEqual({ state: "locked" });
+  });
+
+  it("a failure while unlocked is still failed, never locked or clear", () => {
+    expect(needsYouWithdrawalReadOf(NOTICES_FAILED, false, [])).toEqual({ state: "failed", lastKnown: [] });
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "locked" } }, true, [])).toEqual({ state: "failed", lastKnown: [] });
+  });
+
+  it("carries complete through, and signed out is its own state", () => {
+    expect(needsYouWithdrawalReadOf(signedIn([FOREIGN], false), false, [])).toEqual({ state: "ready", notices: [FOREIGN], complete: false });
+    expect(needsYouWithdrawalReadOf({ ok: true, data: { state: "signed_out" } }, false, [FOREIGN])).toEqual({ state: "signed_out" });
   });
 });

@@ -12,6 +12,7 @@
 import type { ToolCallRequest, ToolResult } from "../types.js";
 import type { InternalToolContext } from "../internal/types.js";
 import { isInternalTool, isMutatingTool } from "../registry.js";
+import { handlerOwnsApproval } from "../registry/lookup.js";
 import { executeProtocolTool } from "../protocols/runtime.js";
 import { resolveExecuteToolParams } from "../protocols/runtime/flat-args.js";
 import {
@@ -219,7 +220,17 @@ async function routeInternalTool(
   if (!loader) {
     return { success: false, output: `Unknown internal tool: ${call.name}` };
   }
-  if (isMutatingTool(call.name) && context.sessionPermission === "restricted" && !context.approved) {
+  // A tool whose handler OWNS its approval (`ToolDef.approvalOwner`) skips
+  // this generic gate: the gate's card would carry only the call's arguments
+  // (for a deposit confirm, an intent id with no amount or destination), and
+  // it would stop a call the handler can authorize from trusted state (the
+  // user's auto top-up rule). That handler raises the complete card itself.
+  if (
+    isMutatingTool(call.name)
+    && context.sessionPermission === "restricted"
+    && !context.approved
+    && !handlerOwnsApproval(call.name)
+  ) {
     logger.info("tools.dispatch.approval_required", {
       tool: call.name,
       permission: context.sessionPermission,

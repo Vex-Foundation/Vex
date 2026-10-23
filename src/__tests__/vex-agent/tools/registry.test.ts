@@ -226,6 +226,9 @@ describe("registry", () => {
       "BridgeExecuteRelay",
       "SwapExecute",
       "SwapExecuteUniswap",
+      // The Vex Inference deposit confirm signs and broadcasts a VEX transfer
+      // to the pinned deposit address. Its prepare spends nothing.
+      "VexInferenceDepositConfirm",
       "WalletEvmTransactionConfirm",
       "WalletSendConfirm",
       "WalletSolanaTransactionConfirm",
@@ -235,6 +238,15 @@ describe("registry", () => {
       // records one durable intent, and spends nothing.
       "WalletWrapConfirm",
     ]);
+  });
+
+  it("only VexInferenceDepositConfirm owns its approval in the handler, and it stays mutating and signing", () => {
+    // `approvalOwner: "handler"` skips the dispatcher's generic restricted gate.
+    // Every name added here must raise ONLY a complete-card binding and verify
+    // it on the approved resume (`internal/vex-inference/approval-binding.ts`).
+    const owners = getAllTools().filter((t) => t.approvalOwner === "handler");
+    expect(owners.map((t) => t.name)).toEqual(["VexInferenceDepositConfirm"]);
+    expect(owners[0]).toMatchObject({ mutating: true, pressureSafety: "mutating", actionKind: "user_wallet_broadcast" });
   });
 
   // ── Visibility filtering ────────────────────────────────────────

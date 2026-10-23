@@ -104,6 +104,14 @@ export interface EndpointFailoverDeps {
    * Injected for tests; defaults to the `session_endpoint_switches` repo.
    */
   readonly loadPersistedSwitch?: typeof getLatestEndpointSwitch;
+  /**
+   * `disabled` for a backend that routes upstream itself (Vex Cloud): no
+   * endpoint switch is ever made, and a switch recorded for the session under
+   * another backend is not re-applied, because its tag would leave as an
+   * OpenRouter `provider.order`. Capacity failures still get the bounded
+   * retry. Absent means `enabled`.
+   */
+  readonly endpointRouting?: "enabled" | "disabled";
 }
 
 /**
@@ -303,6 +311,7 @@ export async function resolveSessionInferenceConfig(
   deps: EndpointFailoverDeps,
 ): Promise<InferenceConfig> {
   if (sessionId === null) return config;
+  if (deps.endpointRouting === "disabled") return config;
   // Read through to the durable row first: after a restart or an eviction the
   // map has no entry, and answering "not switched" here would hand the caller
   // the stale pin.
@@ -500,6 +509,7 @@ async function maybeSwitch(input: SwitchAttempt): Promise<InferenceConfig | null
     input;
 
   if (sessionId === null) return null;
+  if (deps.endpointRouting === "disabled") return null;
   if (!failure.switchable) return null;
   if (consecutiveFailures < CONSECUTIVE_FAILURES_BEFORE_SWITCH) return null;
   if (hasSwitched(sessionId)) return null;

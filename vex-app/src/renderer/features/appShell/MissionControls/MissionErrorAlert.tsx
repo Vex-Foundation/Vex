@@ -12,6 +12,7 @@ import type { JSX, ReactNode } from "react";
 import {
   classifyEngineFailure,
   classifyEngineRemedy,
+  type InferenceProviderMode,
 } from "@shared/engine-error-classification.js";
 import {
   engineErrorCopy,
@@ -78,6 +79,7 @@ export function MissionErrorAlert({
   lastError,
   actions,
   notes,
+  providerMode = "openrouter",
 }: {
   readonly stopReason: string | null;
   readonly lastError: RuntimeStateDto["lastError"];
@@ -85,6 +87,8 @@ export function MissionErrorAlert({
   readonly actions?: ReactNode;
   /** Status lines under the keys (why Recover is unavailable). */
   readonly notes?: ReactNode;
+  /** The backend the engine is configured for; a Vex Cloud 402 reads "top up VEX". */
+  readonly providerMode?: InferenceProviderMode;
 }): JSX.Element {
   // `provider_error` names the stop reason, not the cause - it covers both
   // inference and runtime errors, so the generic copy must not claim a
@@ -112,7 +116,7 @@ export function MissionErrorAlert({
   // carries the same bounded signals, so the paused card can also name the
   // one action that clears the failure.
   const remedyHint =
-    signals === null ? null : engineErrorRemedyHint(classifyEngineRemedy(signals));
+    signals === null ? null : engineErrorRemedyHint(classifyEngineRemedy(signals, providerMode));
 
   // CAUSE-SPECIFIC COPY WINS over the classifier and over the generic arms.
   // `restart_orphan` and `tool_call_loop` are NAMED causes with a known story:

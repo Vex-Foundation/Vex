@@ -218,5 +218,11 @@ export const EV = {
     missionUpdate: "vex:event:engine:missionUpdate",
     compactionPreparation: "vex:event:engine:compactionPreparation",
     lighterSetupRequested: "vex:event:engine:lighterSetupRequested",
+    /**
+     * A request ran, but not as asked, and the user must be told: the Vex
+     * Cloud D16 `max_tokens` clamp. Validated with
+     * `inferenceNoticeEventSchema` at the preload boundary.
+     */
+    inferenceNotice: "vex:event:engine:inferenceNotice",
   },
 } as const;

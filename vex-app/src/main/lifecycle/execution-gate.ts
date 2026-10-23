@@ -106,6 +106,16 @@ export const EXECUTION_GATED_CHANNELS: ReadonlySet<string> = new Set<string>([
   CH.wallet.restoreRemoved,
   CH.poolsLaunch.deploy,
   CH.poolsLaunch.claim,
+  // Vex Cloud sign-in signs one EIP-4361 message per in-app wallet.
+  CH.vexCloud.signIn,
+  // Vex Cloud funding: the deposit signs a VEX transfer; a withdrawal and a
+  // cashback claim move the account's funds on the backend.
+  CH.vexCloud.submitDeposit,
+  CH.vexCloud.submitWithdrawal,
+  CH.vexCloud.claimCashback,
+  // Vex Inference auto top-up: creating or changing the standing rule is the
+  // authority the poller and the agent deposit tool sign under.
+  CH.vexCloud.submitAutoTopUp,
   CH.lighterTrading.prepareDeskAction,
   CH.lighterTrading.settleAgentSetup,
   CH.settings.confirmLighterLeverage,
@@ -126,6 +136,9 @@ export const EXECUTION_GATE_EXEMPT_CHANNELS: ReadonlySet<string> = new Set<strin
   CH.poolsLaunch.cancelAwaitingForm,
   CH.settings.cancelLighterLeverage,
   CH.wallets.cancelPreparedIntent,
+  // Cancelling a cooling Vex Inference withdrawal returns VEX to the balance;
+  // refusing it during start-up would hold the user's funds on their way out.
+  CH.vexCloud.cancelWithdrawal,
 ]);
 
 export function isExecutionGatedChannel(channel: string): boolean {

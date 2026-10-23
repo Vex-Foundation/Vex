@@ -56,6 +56,15 @@ vi.mock("../../../../lib/api/approvals.js", () => ({
   useApprove: () => ({ mutate: mockApprove, isPending: false }),
   useReject: () => ({ mutate: mockReject, isPending: false }),
 }));
+// Signed out: the withdrawal check claims nothing and blocks nothing here.
+// One stable answer, as the query cache keeps its data's identity between renders.
+const SIGNED_OUT = { ok: true, data: { state: "signed_out" } } as const;
+const NOTICES_FAILED = { ok: false, error: { code: "internal.unexpected", message: "Vex Inference could not be reached." } } as const;
+let noticesData: typeof SIGNED_OUT | typeof NOTICES_FAILED = SIGNED_OUT;
+vi.mock("../../../../lib/api/vex-cloud.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../lib/api/vex-cloud.js")>()),
+  useVexCloudWithdrawalNotices: () => ({ data: noticesData, isError: false, isFetching: false, refetch: () => Promise.resolve() }),
+}));
 vi.mock("../../../../lib/api/sessions.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../../lib/api/sessions.js")>();
   return {
@@ -66,7 +75,7 @@ vi.mock("../../../../lib/api/sessions.js", async (importOriginal) => {
 
 const { NeedsYouScreen } = await import("../NeedsYouScreen.js");
 const { REVIEW_OPEN_POLL_MS } = await import("../../GlobalApprovals.js");
-const { NEEDS_YOU_UNKNOWN_COPY } = await import("../../../vex/needs-you.js");
+const { NEEDS_YOU_UNKNOWN_COPY, NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY } = await import("../../../vex/needs-you.js");
 const { useUiStore } = await import("../../../../stores/uiStore.js");
 
 const LEAD = "Review the details before approving an action. Nothing signs until you confirm.";
@@ -232,6 +241,7 @@ beforeEach(() => {
   refetchIntervals.length = 0;
   reads.pending = { data: undefined };
   reads.sessions = [];
+  noticesData = SIGNED_OUT;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   resetStore();
 });
@@ -798,6 +808,17 @@ describe("NeedsYouScreen: empty, checking and failed reads", () => {
     renderPage();
 
     expect(screen.getByText(NEEDS_YOU_UNKNOWN_COPY)).not.toBeNull();
+    expect(screen.queryByText(EMPTY)).toBeNull();
+  });
+
+  it("a failed withdrawal check over an empty inbox says that check failed, never empty", () => {
+    reads.pending = { data: { ok: true, data: [] } };
+    noticesData = NOTICES_FAILED;
+    renderPage();
+
+    expect(pageEl().getAttribute("data-state")).toBe("unknown");
+    expect(screen.getByText(NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY)).not.toBeNull();
+    expect(screen.queryByText(NEEDS_YOU_UNKNOWN_COPY)).toBeNull();
     expect(screen.queryByText(EMPTY)).toBeNull();
   });
 

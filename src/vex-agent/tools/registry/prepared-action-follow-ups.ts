@@ -7,6 +7,14 @@ import type {
   ApprovalPreviewScalar,
   PreparedActionFollowUp,
 } from "../types.js";
+import { resolveVexCloudDepositAddress } from "../../../lib/vex-cloud-deposit-address.js";
+import {
+  VEX_INFERENCE_DEPOSIT_CARD_KEYS,
+  VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL,
+  VEX_INFERENCE_DEPOSIT_PREPARE_TOOL,
+} from "../internal/vex-inference/card.js";
+import { AGENT_DEPOSIT_INTENT_ID } from "../internal/vex-inference/params.js";
+import { VEX_INFERENCE_CHAIN_ID, VEX_INFERENCE_TOKEN_ADDRESS } from "../internal/vex-inference/host.js";
 import {
   LIGHTER_SETTLEMENT_ASSET_DECIMALS,
 } from "@tools/lighter/wallet-funding/constants.js";
@@ -213,7 +221,18 @@ export type ValidatedPreparedActionFollowUp =
   | ValidatedLighterWithdrawalFollowUp
   | ValidatedLighterWithdrawalClaimFollowUp
   | ValidatedLighterKeyRegistrationFollowUp
-  | ValidatedLighterFeeAuthorizationFollowUp;
+  | ValidatedLighterFeeAuthorizationFollowUp
+  | ValidatedVexInferenceDepositFollowUp;
+
+export interface ValidatedVexInferenceDepositFollowUp {
+  readonly toolName: "VexInferenceDepositConfirm";
+  readonly args: { readonly intentId: string };
+  readonly expiresAt: string;
+  readonly approvalPreview: {
+    readonly toolName: "VexInferenceDepositConfirm";
+    readonly criticalArgs: Record<string, ApprovalPreviewScalar>;
+  };
+}
 
 export type PreparedActionFollowUpValidation =
   | { readonly ok: true; readonly followUp: ValidatedPreparedActionFollowUp }
@@ -441,6 +460,13 @@ export function validatePreparedActionFollowUp(
     && candidate.args.toolId === "lighter.withdraw.claim"
   ) {
     return validateLighterWithdrawalClaimFollowUp(candidate);
+  }
+
+  if (
+    sourceToolName === VEX_INFERENCE_DEPOSIT_PREPARE_TOOL
+    && candidate.toolName === VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL
+  ) {
+    return validateVexInferenceDepositFollowUp(candidate);
   }
 
   if (
@@ -1517,4 +1543,61 @@ function validateLighterOcoFollowUp(candidate: PreparedActionFollowUp): Prepared
     toolName: "execute_tool", args: { toolId: "lighter.order.create", params: { intentId } },
     expiresAt: candidate.expiresAt, approvalPreview: { toolName: "order.create", namespace: "lighter", criticalArgs },
   } };
+}
+
+/**
+ * VexInferenceDepositPrepare -> VexInferenceDepositConfirm. The card must
+ * carry EXACTLY the deposit lines, and the three that could redirect or
+ * re-denominate funds are re-derived here from this build's own constants
+ * rather than trusted: the chain is 4663, the token is VEX, and the deposit
+ * address is the one pinned in this build. A card naming anything else is
+ * refused before any approval exists.
+ */
+function validateVexInferenceDepositFollowUp(
+  candidate: PreparedActionFollowUp,
+): PreparedActionFollowUpValidation {
+  const invalid = { ok: false, reason: "invalid_contract" } as const;
+  if (!Number.isFinite(Date.parse(candidate.expiresAt))) return invalid;
+  if (Object.keys(candidate.args).join(",") !== "intentId") return invalid;
+  const intentId = candidate.args.intentId;
+  if (typeof intentId !== "string" || !AGENT_DEPOSIT_INTENT_ID.test(intentId)) return invalid;
+  const preview = candidate.approvalPreview;
+  if (preview.toolName !== VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL || preview.namespace !== undefined) return invalid;
+  if (Object.keys(preview.criticalArgs).sort().join(",") !== [...VEX_INFERENCE_DEPOSIT_CARD_KEYS].sort().join(",")) {
+    return invalid;
+  }
+  const criticalArgs: Record<string, ApprovalPreviewScalar> = {};
+  for (const key of VEX_INFERENCE_DEPOSIT_CARD_KEYS) {
+    const value = preview.criticalArgs[key];
+    if (!isScalar(value)) return invalid;
+    criticalArgs[key] = value;
+  }
+  const pinned = resolveVexCloudDepositAddress();
+  if (
+    pinned === null
+    || criticalArgs.intentId !== intentId
+    || criticalArgs.chainId !== VEX_INFERENCE_CHAIN_ID
+    || criticalArgs.token !== "VEX"
+    || criticalArgs.tokenDecimals !== 18
+    || typeof criticalArgs.tokenAddress !== "string"
+    || criticalArgs.tokenAddress.toLowerCase() !== VEX_INFERENCE_TOKEN_ADDRESS.toLowerCase()
+    || typeof criticalArgs.depositAddress !== "string"
+    || criticalArgs.depositAddress.toLowerCase() !== pinned.toLowerCase()
+    || typeof criticalArgs.amountWei !== "string"
+    || !/^[1-9][0-9]{0,77}$/.test(criticalArgs.amountWei)
+    || typeof criticalArgs.from !== "string"
+    || !/^0x[0-9a-fA-F]{40}$/.test(criticalArgs.from)
+    || criticalArgs.expiresAt !== candidate.expiresAt
+  ) {
+    return invalid;
+  }
+  return {
+    ok: true,
+    followUp: {
+      toolName: VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL,
+      args: { intentId },
+      expiresAt: candidate.expiresAt,
+      approvalPreview: { toolName: VEX_INFERENCE_DEPOSIT_CONFIRM_TOOL, criticalArgs },
+    },
+  };
 }

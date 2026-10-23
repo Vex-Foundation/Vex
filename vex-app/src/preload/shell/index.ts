@@ -34,6 +34,7 @@ import { terminalLinks } from "./terminal-links.js";
 import { telemetry } from "./telemetry.js";
 import { updater } from "./updater.js";
 import { wallet } from "./wallet.js";
+import { vexCloud } from "./vex-cloud.js";
 
 export const shellBridge = {
   capabilities,
@@ -55,4 +56,5 @@ export const shellBridge = {
   terminalInput,
   files,
   search,
+  vexCloud,
 } satisfies VexShellBridge;

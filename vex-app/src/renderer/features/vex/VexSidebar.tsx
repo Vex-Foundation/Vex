@@ -374,10 +374,15 @@ function NeedsYouSection({
  * already open scrolls its card into view; one raised elsewhere opens its
  * session (mode first, then the selection, then the page closed, as the
  * approvals inbox always has); an approval with no session (a Studio project's)
- * opens the Needs you page, where its card is; a mission opens its session.
+ * opens the Needs you page, where its card is; a mission opens its session; a
+ * withdrawal this app did not start opens the funding page.
  */
 export function openNeedsYouItem(item: NeedsYouItem): void {
   const ui = useUiStore.getState();
+  if (item.kind === "withdrawal") {
+    ui.setShellRoute({ kind: "vexCloudFunding", origin: null });
+    return;
+  }
   if (item.sessionId === null) {
     ui.setShellRoute({ kind: "needsYou", origin: null });
     return;

@@ -121,10 +121,34 @@ const VIRTUALS_ATTRIBUTION_SIGN_SITE = resolve(
   "vex-agent/tools/protocols/virtuals/handlers/launch/attribute.ts",
 );
 
+/**
+ * The Vex Cloud sign-in signer, admitted 2026-10-20 (Vex Cloud phase 1b). A
+ * FIFTH text-signing module, and a new shape: EIP-4361 (SIWE) messages for
+ * the Vex Cloud gateway, one per in-app EVM wallet, proving ownership to
+ * create, sign in to, or link wallets to a Vex Cloud account.
+ *
+ * Containment, the same three angles as the others:
+ *  - its signer refuses anything but the exact whole-message shape (fixed
+ *    statement, chain 4663, version 1, `urn:vex:` resources in canonical
+ *    order, no request id, no scheme) and any address but the wallet's own,
+ *    BEFORE the keystore is touched;
+ *  - nothing under `src/` may import it: its only caller is the Electron main
+ *    process's sign-in owner (`vex-app/src/main/vex-cloud/production.ts`),
+ *    which binds every message to the host it dials and refuses a server
+ *    challenge naming another;
+ *  - its statement literal lives in this one module.
+ * A SIWE message is not a transaction and authorizes no transfer; the Vex
+ * Cloud backend treats it as login only (withdrawals are a separate,
+ * backend-side flow to linked wallets).
+ */
+const VEX_CLOUD_SIWE_SIGNING_MODULE = resolve(ROOT, "tools/wallet/siwe-signing.ts");
+const VEX_CLOUD_SIWE_STATEMENT_LITERAL = "Sign in to Vex Cloud with this wallet.";
+
 const ALLOWED_SIGNING_MODULES = [
   HANDSHAKE_SIGNING_MODULE,
   POOLS_ATTRIBUTION_SIGN_SITE,
   VIRTUALS_ATTRIBUTION_SIGN_SITE,
+  VEX_CLOUD_SIWE_SIGNING_MODULE,
 ];
 
 /**
@@ -302,6 +326,17 @@ describe("signing-oracle guard — only the named modules may produce VEX-attest
 
     const handshakeSigningSource = readFileSync(HANDSHAKE_SIGNING_MODULE, "utf-8");
     expect(handshakeSigningSource).toContain("AgentScan Handshake v1");
+
+    const siweSigningSource = readFileSync(VEX_CLOUD_SIWE_SIGNING_MODULE, "utf-8");
+    expect(siweSigningSource).toContain(VEX_CLOUD_SIWE_STATEMENT_LITERAL);
+    expect(siweSigningSource).toContain("urn:vex:intent:");
+    expect(siweSigningSource).toContain("assertVexCloudSiweMessage(message)");
+  });
+
+  it("nothing under src/ imports the Vex Cloud SIWE signer, and its statement lives only there", () => {
+    const files = listTsFiles(ROOT);
+    expect(findExclusivityViolations(files, "siwe-signing", [VEX_CLOUD_SIWE_SIGNING_MODULE])).toEqual([]);
+    expect(findRawStringViolations(files, VEX_CLOUD_SIWE_STATEMENT_LITERAL, [VEX_CLOUD_SIWE_SIGNING_MODULE])).toEqual([]);
   });
 
   it("only the orchestrator may import handshake-signing.js, and only the pools sign site may import its builder", () => {

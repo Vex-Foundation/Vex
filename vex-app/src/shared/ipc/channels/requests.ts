@@ -601,6 +601,55 @@ export const CH = {
   },
 
   /**
+   * Vex Cloud (domain `vexCloud`), the inference provider paid in VEX.
+   *
+   * `signIn` SIGNS: main builds one strict EIP-4361 message per in-app EVM
+   * wallet the user consented with (at most three), signs them with the
+   * unlocked vault, and creates the account, signs in, or links new wallets
+   * with a co-signature from an already-linked one. The session bearer goes
+   * to the vault and never crosses this channel. `account` reads balances,
+   * linked wallets and the rate; `signOut` removes the stored session.
+   *
+   * FUNDING (phase 2). `prepareDeposit` reads and mints a proposal; only
+   * `submitDeposit` SIGNS (a VEX transfer to the pinned deposit address).
+   * `prepareWithdrawal` mints a proposal and its idempotency key;
+   * `submitWithdrawal` asks Vex Cloud to send VEX out. `claimCashback`
+   * moves cashback to the balance. The rest are reads.
+   */
+  vexCloud: {
+    signIn: "vex:vexCloud:signIn",
+    account: "vex:vexCloud:account",
+    signOut: "vex:vexCloud:signOut",
+    depositWallets: "vex:vexCloud:depositWallets",
+    prepareDeposit: "vex:vexCloud:prepareDeposit",
+    submitDeposit: "vex:vexCloud:submitDeposit",
+    prepareWithdrawal: "vex:vexCloud:prepareWithdrawal",
+    submitWithdrawal: "vex:vexCloud:submitWithdrawal",
+    withdrawal: "vex:vexCloud:withdrawal",
+    claimCashback: "vex:vexCloud:claimCashback",
+    activity: "vex:vexCloud:activity",
+    usage: "vex:vexCloud:usage",
+    deposits: "vex:vexCloud:deposits",
+    // The cooling period. `cancelWithdrawal` stops a cooling withdrawal and
+    // returns its VEX to the balance (it moves nothing out, so it is exempt
+    // from the execution gate); `withdrawalNotices` reads the cooling
+    // withdrawals this app did not start; `dismissWithdrawalNotice` is the
+    // user's "It was me" on one of them.
+    cancelWithdrawal: "vex:vexCloud:cancelWithdrawal",
+    withdrawalNotices: "vex:vexCloud:withdrawalNotices",
+    dismissWithdrawalNotice: "vex:vexCloud:dismissWithdrawalNotice",
+    // Low-balance alert (a read and a setting) and the auto top-up standing
+    // rule. `submitAutoTopUp` creates, edits, pauses, resumes or revokes the
+    // authority the poller and the agent deposit tool spend under, so it is
+    // execution-gated; the rest read or mint a proposal.
+    alertGet: "vex:vexCloud:alertGet",
+    alertSet: "vex:vexCloud:alertSet",
+    autoTopUpGet: "vex:vexCloud:autoTopUpGet",
+    prepareAutoTopUp: "vex:vexCloud:prepareAutoTopUp",
+    submitAutoTopUp: "vex:vexCloud:submitAutoTopUp",
+  },
+
+  /**
    * Vex Studio projects (stage P). A project is a folder under the projects
    * root plus one backing `sessions` row (`mode = 'agent'`,
    * `scope = 'vex_studio'`).

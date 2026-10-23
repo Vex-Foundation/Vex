@@ -106,13 +106,29 @@ describe("provider model catalogue", () => {
         modelId: "openai/gpt",
         displayName: "GPT",
         providerId: "openai",
-        pricingInputPerMillion: 0.0004,
+        pricingInputPerMillion: "0.0004",
+        pricingOutputPerMillion: "15",
       }),
     ]);
     expect(client.list).toHaveBeenCalledWith(
       { outputModalities: "text", supportedParameters: "tools" },
       expect.objectContaining({ timeoutMs: 15_000 }),
     );
+  });
+
+  it("shifts the published per-token text to exact per-1M text (live Vex Inference prices)", async () => {
+    // Measured on GET https://inference.projectvex.ai/v1/models, 2026-10-22.
+    const client = clientFactory([
+      model({ id: "openai/gpt-6-luna", name: "OpenAI: GPT-6 Luna", pricing: { prompt: "0.00000014375", completion: "0.000000575" } }),
+      model({ id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5", pricing: { prompt: "0.0000023", completion: "0.0000115" } }),
+      // OpenRouter's router sentinel: no fixed price, so none is stated.
+      model({ id: "openrouter/auto", name: "Auto Router", pricing: { prompt: "-1", completion: "-1" } }),
+    ]);
+    const result = await loadProviderModelCatalog({ clientFactory: client.factory });
+    const byId = new Map(result.models.map((row) => [row.modelId, row]));
+    expect(byId.get("openai/gpt-6-luna")).toMatchObject({ pricingInputPerMillion: "0.14375", pricingOutputPerMillion: "0.575" });
+    expect(byId.get("anthropic/claude-sonnet-5.5")).toMatchObject({ pricingInputPerMillion: "2.3", pricingOutputPerMillion: "11.5" });
+    expect(byId.get("openrouter/auto")).toMatchObject({ pricingInputPerMillion: null, pricingOutputPerMillion: null });
   });
 
   it("deduplicates normalized ids with first occurrence winning", async () => {

@@ -74,18 +74,23 @@ export type PreInferenceCeilingOutcome =
  * Measure the request that WOULD be sent for this envelope.
  *
  * Provider-specific by necessity — the byte count is only meaningful against a
- * real wire format. OpenRouter is the only provider in `inference/registry.ts`;
- * a second one must add its own exact measurement here rather than inherit
+ * real wire format. Both providers in `inference/registry.ts` send the
+ * OpenRouter wire format through the same `buildOpenRouterParams` (Vex Cloud
+ * is an OpenRouter-dialect gateway), so both are measured by it; any other
+ * provider must add its own exact measurement here rather than inherit
  * OpenRouter's, and until it does it measures as `unmeasurable`, which fails
  * closed to the ordinary barrier instead of guessing its wire size.
  */
+/** Providers whose requests are built by `buildOpenRouterParams`. */
+const OPENROUTER_WIRE_PROVIDERS: ReadonlySet<string> = new Set(["openrouter", "vexcloud"]);
+
 export function measureInferenceEnvelopeBytes(args: {
   readonly providerMessages: ProviderMessage[];
   readonly tools: ToolDefinition[];
   readonly config: InferenceConfig;
   readonly context?: InferenceRequestContext;
 }): EnvelopeMeasurement {
-  if (args.config.provider !== "openrouter") {
+  if (!OPENROUTER_WIRE_PROVIDERS.has(args.config.provider)) {
     return { kind: "unmeasurable", provider: args.config.provider };
   }
 

@@ -106,13 +106,13 @@ function presence(overrides: Partial<VexPresence> = {}): VexPresence {
       label: "1 mission running",
       summary: "1 mission running · Weekly rebalance",
     },
-    needsYou: { status: "ready", count: 0, items: [], retry: vi.fn(), retrying: false },
+    needsYou: { status: "ready", unknownCopy: null, count: 0, items: [], retry: vi.fn(), retrying: false },
     ...overrides,
   };
 }
 
 function needs(items: NeedsYouItem[]): VexPresence["needsYou"] {
-  return { status: "ready", count: items.length, items, retry: vi.fn(), retrying: false };
+  return { status: "ready", unknownCopy: null, count: items.length, items, retry: vi.fn(), retrying: false };
 }
 
 function sidebar(): HTMLElement {
@@ -446,7 +446,7 @@ describe("VexSidebar, Needs you", () => {
 
   it("says a read it could not make is unknown, never zero", () => {
     presenceRef.current = presence({
-      needsYou: { status: "unknown", count: null, items: [], retry: vi.fn(), retrying: false },
+      needsYou: { status: "unknown", unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.", count: null, items: [], retry: vi.fn(), retrying: false },
     });
     render(<VexSidebar open onHide={() => {}} />);
     expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you · ?");

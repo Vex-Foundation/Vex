@@ -65,6 +65,7 @@ import { useIsChatSubmitting } from "../../lib/api/chat.js";
 import { useEngineErrorLiveSync } from "../../lib/api/engine-errors.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { SessionErrorBanner } from "./SessionErrorBanner.js";
+import { SessionInferenceNotice } from "./SessionInferenceNotice.js";
 import { SessionSleepBanner } from "./SessionSleepBanner.js";
 import { useUsageLiveSync } from "../../lib/api/usage.js";
 import { useWindowTitleSync } from "../../lib/window-title.js";
@@ -302,6 +303,9 @@ export function SessionPanel({
             <div className={readingColumn}>
               {activeSession !== null ? (
                 <SessionErrorBanner sessionId={activeSession.id} />
+              ) : null}
+              {activeSession !== null ? (
+                <SessionInferenceNotice sessionId={activeSession.id} />
               ) : null}
               {activeSession !== null ? (
                 <SessionSleepBanner sessionId={activeSession.id} />

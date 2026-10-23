@@ -39,6 +39,17 @@ vi.mock("../../../lib/api/approvals.js", () => ({
     refetch: () => Promise.resolve(),
   }),
 }));
+// Signed out: the withdrawal check claims nothing and blocks nothing here.
+// One stable answer, as the query cache keeps its data's identity between renders.
+const SIGNED_OUT = { ok: true, data: { state: "signed_out" } } as const;
+vi.mock("../../../lib/api/vex-cloud.js", () => ({
+  useVexCloudWithdrawalNotices: () => ({
+    data: SIGNED_OUT,
+    isError: false,
+    isFetching: false,
+    refetch: () => Promise.resolve(),
+  }),
+}));
 vi.mock("../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({
     data: mocks.runtime === undefined ? undefined : { ok: true, data: mocks.runtime },

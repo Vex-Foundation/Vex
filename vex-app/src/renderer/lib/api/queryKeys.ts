@@ -28,7 +28,9 @@ export const onboardingKeys = {
   all: ["onboarding"] as const,
   envState: () => ["onboarding", "envState"] as const,
   wizardState: () => ["onboarding", "wizardState"] as const,
-  providerModels: () => ["onboarding", "providerModels"] as const,
+  /** Per catalogue source: the OpenRouter public list or the Vex Cloud allowlist. */
+  providerModels: (provider: "openrouter" | "vexcloud" = "openrouter") =>
+    ["onboarding", "providerModels", provider] as const,
   providerEndpoints: (modelId: string) =>
     ["onboarding", "providerEndpoints", modelId] as const,
   // C3 — full-archive restore screen. Metadata-only backup listing (no
@@ -392,3 +394,15 @@ export const poolsLaunchKeys = {
     ["poolsLaunch", "awaiting", sessionId] as const,
 };
 
+
+/** Vex Cloud sign-in and account (phase 1). */
+export const vexCloudKeys = {
+  all: ["vexCloud"] as const,
+  account: () => ["vexCloud", "account"] as const,
+  depositWallets: () => ["vexCloud", "depositWallets"] as const,
+  withdrawal: (id: string) => ["vexCloud", "withdrawal", id] as const,
+  withdrawalNotices: () => ["vexCloud", "withdrawalNotices"] as const,
+  history: (kind: "activity" | "usage" | "deposits") => ["vexCloud", "history", kind] as const,
+  alert: () => ["vexCloud", "alert"] as const,
+  autoTopUp: () => ["vexCloud", "autoTopUp"] as const,
+};

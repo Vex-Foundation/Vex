@@ -24,6 +24,9 @@ export interface WalletSelectOption {
   readonly id: string;
   readonly address: string;
   readonly label: string;
+  /** Listed but not choosable; `note` says why, after the address. */
+  readonly disabled?: boolean;
+  readonly note?: string;
 }
 
 function shortenAddress(address: string): string {
@@ -37,6 +40,7 @@ export function WalletSelect({
   value,
   options,
   onChange,
+  allowNone = true,
 }: {
   /** Full accessible name, kept sr-only (e.g. "EVM wallet"). */
   readonly label: string;
@@ -47,19 +51,25 @@ export function WalletSelect({
   readonly value: string | null;
   readonly options: ReadonlyArray<WalletSelectOption>;
   readonly onChange: (id: string | null) => void;
+  /**
+   * Offer "None" (chat-only for that chain). Default true; a picker where a
+   * wallet is required (the Vex Cloud funding page) passes false.
+   */
+  readonly allowNone?: boolean;
 }): JSX.Element {
   const labelId = useId();
   const menuOptions = useMemo<ReadonlyArray<SelectMenuOption>>(
     () => [
       // "" is the chat-only sentinel; SelectMenu speaks plain strings, so we
       // map it back to null on change below.
-      { value: "", label: "None" },
+      ...(allowNone ? [{ value: "", label: "None" }] : []),
       ...options.map((w) => ({
         value: w.id,
-        label: `${w.label} (${shortenAddress(w.address)})`,
+        label: `${w.label} (${shortenAddress(w.address)})${w.note === undefined ? "" : `, ${w.note}`}`,
+        ...(w.disabled === true && { disabled: true }),
       })),
     ],
-    [options],
+    [options, allowNone],
   );
 
   return (

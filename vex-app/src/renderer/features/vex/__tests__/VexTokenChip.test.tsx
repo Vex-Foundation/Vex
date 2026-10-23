@@ -37,6 +37,7 @@ function arrange(overrides: Partial<VexPresence> = {}): void {
     background: NO_BACKGROUND_WORK,
     needsYou: {
       status: "ready",
+      unknownCopy: null,
       count: 0,
       items: [],
       retry: () => undefined,

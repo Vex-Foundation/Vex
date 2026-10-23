@@ -145,6 +145,7 @@ export const PERSISTED_UI_KEYS = [
   "vexOpenPages",
   "showAvatar",
   "welcomeVexShown",
+  "vexInferenceNoticeDismissed",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -487,6 +488,12 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     welcomeVexShown: coerceBooleanPreference(
       incoming?.welcomeVexShown,
       current.welcomeVexShown,
+    ),
+    // The welcome notice's dismissal, added the same way (no hop): absent or
+    // off-shape degrades to the store's default, the notice shown.
+    vexInferenceNoticeDismissed: coerceBooleanPreference(
+      incoming?.vexInferenceNoticeDismissed,
+      current.vexInferenceNoticeDismissed,
     ),
   };
 }
