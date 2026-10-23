@@ -84,6 +84,12 @@ const PURE_VEX_LIB_MODULES = new Set([
   // null in the DB mapper with no error anywhere. Pure by construction: zod
   // schemas and a text predicate, no privileged imports.
   "@vex-lib/board/index.js",
+  // The shared technical indicators (`src/lib/indicators/`). ONE definition
+  // across the agent runtime's technical analysis and the renderer that draws
+  // the same studies on the Lighter desk and the analysis card - two copies
+  // would drift into the chat quoting an RSI the chart beside it does not
+  // draw. Pure by construction: arithmetic only, no imports at all.
+  "@vex-lib/indicators/index.js",
 ]);
 
 function isForbiddenRootAliasImport(spec) {
