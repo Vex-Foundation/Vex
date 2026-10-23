@@ -8,7 +8,7 @@ overrides:
   axios: 1.20.0
   follow-redirects: 1.16.1
   form-data: 4.0.6
-  ip-address: 10.7.1
+  ip-address: 10.7.4
   socket.io-parser: 4.2.7
   uuid@>=11.0.0 <12: 11.1.1
   jayson>ws: 7.5.11
@@ -1349,8 +1349,8 @@ packages:
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
 
-  ip-address@10.7.1:
-    resolution: {integrity: sha512-4OUAqU9Z1i3vCnS05hzGiFnEMDpQ+62pAD/MVQOp83fYyNC8GleCqaS0QikQBmcWCrKFiUs/B8ztRRiYOAXuCA==}
+  ip-address@10.7.4:
+    resolution: {integrity: sha512-DWBMKyeM25D70nrIiTkgQth59/G+naKOTep6huF9j+GmeK3DMD60Zvxg5d5qQnz+38AHgou6ean2LECX+lrKDg==}
     engines: {node: '>= 12'}
 
   is-binary-path@2.1.0:
@@ -3452,7 +3452,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  ip-address@10.7.1: {}
+  ip-address@10.7.4: {}
 
   is-binary-path@2.1.0:
     dependencies:
@@ -3945,7 +3945,7 @@ snapshots:
 
   socks@2.8.8:
     dependencies:
-      ip-address: 10.7.1
+      ip-address: 10.7.4
       smart-buffer: 4.2.0
 
   source-map-js@1.2.1: {}
