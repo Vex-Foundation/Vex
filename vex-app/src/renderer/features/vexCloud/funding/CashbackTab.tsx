@@ -78,7 +78,7 @@ export function CashbackTab({ account }: { readonly account: VexCloudAccount }):
           {usd === null ? `USD estimate: ${NOT_AVAILABLE}` : `about ${formatMicroUsd(BigInt(usd))}`}
         </span>
         <p className="m-0 mt-2 text-[13px] text-ink-secondary">
-          Claiming adds it to your Vex Cloud balance at once. Claiming to a wallet comes later.
+          Claiming adds it to your Vex Inference balance at once.
         </p>
         <p className="m-0 text-[13px] text-ink-tertiary" data-testid="cashback-pending">
           Pending, not claimable yet:{" "}

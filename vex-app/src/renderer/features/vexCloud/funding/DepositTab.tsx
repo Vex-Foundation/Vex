@@ -213,7 +213,7 @@ function DepositForm({ account }: { readonly account: VexCloudAccount }): JSX.El
         </p>
         {step.result.status === "confirmed" && !step.result.transferProven ? (
           <p className="m-0 text-[13px] text-ink-primary">
-            The receipt did not show the exact transfer amount. Vex Cloud credits what its watcher sees on chain.
+            The receipt did not show the exact transfer amount. Vex Inference credits what its watcher sees on chain.
           </p>
         ) : null}
         <p className="m-0 text-[13px] text-ink-tertiary">
