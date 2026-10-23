@@ -86,7 +86,7 @@ describe("P-3 OFF is the old FIFO cap exactly", () => {
 
   it("states the pre-P-3 displacement sentence unchanged", () => {
     expect(buildDisplacementWarning(["x.a"])).toBe(
-      "\"x.a\" is no longer callable by name - this session keeps the most recent 40 "
+      "\"x.a\" is no longer callable by name - this session keeps the most recent 41 "
       + "discovered tools. Search for or select them again if you still need them.",
     );
   });
