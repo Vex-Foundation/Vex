@@ -4,7 +4,7 @@
   "datasetId": "tool-discovery-seed",
   "datasetVersion": "v3-agent-116",
   "status": "captured",
-  "capturedAt": "2026-10-06T22:46:44.924Z",
+  "capturedAt": "2026-10-23T21:41:47.464Z",
   "metrics": {
     "overall": {
       "count": 109,
@@ -28,8 +28,8 @@
         "recall1": 0.404,
         "recall5": 0.614,
         "coverage5": 0.526,
-        "mrr5": 0.465,
-        "groupMrr5": 0.424
+        "mrr5": 0.464,
+        "groupMrr5": 0.423
       }
     },
     "intentShapes": {
@@ -112,8 +112,8 @@
         "recall1": 0.421,
         "recall5": 0.684,
         "coverage5": 0.632,
-        "mrr5": 0.492,
-        "groupMrr5": 0.466
+        "mrr5": 0.489,
+        "groupMrr5": 0.463
       },
       "prediction_discovery": {
         "count": 6,
@@ -176,7 +176,7 @@
   "notes": [
     "dataset tool-discovery-seed@v3-agent-116, mode lexical, 109 cases evaluated.",
     "overall recall@1 0.404, recall@5 0.606, coverage@5 0.514, mrr@5 0.467, groupMrr@5 0.423.",
-    "Measured delta vs previous baseline (v3-agent-116, captured 2026-09-07T18:07:37.176Z): 19 metric values moved; overall recall@5 0.587 -> 0.606, overall mrr@5 0.457 -> 0.467, case count 109 -> 109.",
-    "Reviewed against e570c56f1: the earlier venue-guidance rewrite improves three workflow queries; the current close guidance does not change these rankings. Dataset, case count and comparison tolerance are unchanged."
+    "Measured delta vs previous baseline (v3-agent-116, captured 2026-10-06T22:46:44.924Z): 4 metric values moved; overall recall@5 0.606 -> 0.606, overall mrr@5 0.467 -> 0.467, case count 109 -> 109.",
+    "Reviewed for lighter.technicalAnalysis (+1 advertised tool, 185 -> 186): two group MRR values dropped by at most 0.003 as one more Lighter candidate competes for the seed queries; overall recall and MRR are unchanged. Dataset, case count and comparison tolerance are unchanged."
   ]
 }

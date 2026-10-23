@@ -46,8 +46,11 @@ export function liveCatalogToolCount(): number {
  * Robinhood Chain reads, order previews and executions, funding, withdrawals,
  * key registration, fee authorization), a pure +40 on a new namespace, and
  * every affected baseline recaptured in the same change.
+ * 186 with `lighter.technicalAnalysis` (2026-10-23), a read-only analysis of one
+ * Lighter market's closed candles: one new identity on an existing namespace, a
+ * pure +1, and every affected lexical baseline recaptured in the same change.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 185;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 186;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.
