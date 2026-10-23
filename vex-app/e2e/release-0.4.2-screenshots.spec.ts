@@ -7,14 +7,15 @@
  *   VEX_RELEASE_SHOTS=1
  *   VEX_RELEASE_SHOTS_DIR=<where the JPEGs go>
  *   VEX_RELEASE_SHOTS_PROFILE=<a throwaway config dir, reused across runs>
- *   VEX_RELEASE_SHOTS_PRIVATE_KEY=<the test wallet's key, never logged>
+ *   VEX_RELEASE_SHOTS_KEY_FILE=<a dotenv file holding the perf wallets' keys>
+ *   VEX_RELEASE_SHOTS_WALLET=<which perf wallet to import, e.g. 2 for VEX_PERF_2_PRIVATE_KEY>
  *   VEX_RELEASE_SHOTS_MODEL=<a verified embeddings model to hard-link>
  *   VEX_RELEASE_SHOTS_ONLY=<comma list of stages, default: all>
  *   VEX_RELEASE_SHOTS_DEBUG=<optional: a page dump per wizard step>
  *
- * Stages, in order: provider, deposit, auto-top-up, withdraw, chat (the one
- * paid turn), composer, account (a second paid turn, so "Reserved for running
- * requests" is non-zero), site-account, site. A shot that cannot be taken is
+ * Stages, in order: provider, account (the account panel at rest), deposit,
+ * auto-top-up, withdraw, chat (the one paid turn), composer, site-models,
+ * site. A shot that cannot be taken is
  * logged as SKIPPED with its reason and added to the test's annotations.
  * Run it from vex-app after the build:
  *   pnpm exec playwright test --project=electron-smoke e2e/release-0.4.2-screenshots.spec.ts
@@ -26,8 +27,13 @@
  * MONEY. The deposit and auto top-up stages open the approval card, capture
  * it and press Reject. The withdrawal stage only checks whether the account
  * can withdraw at all; creating and cancelling the withdrawal for the cooling
- * shot is a by-hand step. No other paid action runs except two short chat
- * turns on a cheap model.
+ * shot is a by-hand step. No other paid action runs except one short chat
+ * turn on a cheap model.
+ *
+ * The wallet key is read from the key file inside the test process only. It
+ * is never printed, and every *PRIVATE_KEY* variable is stripped from the
+ * app's environment; the key reaches the app only through the masked import
+ * field.
  */
 
 import { randomBytes } from "node:crypto";
@@ -39,6 +45,8 @@ import { APP_DIR, MAIN_BUNDLE, selectShellWindow } from "./fixtures/electron-app
 const OUT_DIR = process.env["VEX_RELEASE_SHOTS_DIR"] ?? "";
 const PROFILE = process.env["VEX_RELEASE_SHOTS_PROFILE"] ?? "";
 const MODEL = process.env["VEX_RELEASE_SHOTS_MODEL"] ?? "";
+const KEY_FILE = process.env["VEX_RELEASE_SHOTS_KEY_FILE"] ?? "";
+const WALLET = process.env["VEX_RELEASE_SHOTS_WALLET"] ?? "";
 const ONLY = new Set(
   (process.env["VEX_RELEASE_SHOTS_ONLY"] ?? "").split(",").map((s) => s.trim()).filter((s) => s !== ""),
 );
@@ -53,8 +61,6 @@ const WITHDRAW_PROBE_VEX = "998";
 const AUTO_TOP_UP = { perTopUp: "3000", perDay: "1", cap: "9000", fee: "0.0005", days: "30" } as const;
 /** The one composer turn: one line, so the answer is short and cheap. */
 const CHAT_PROMPT = "Say hello in one short sentence.";
-/** One short paid turn that runs long enough for "Reserved for running requests" to be non-zero. */
-const RESERVED_PROMPT = "Write a 300-word story about a lighthouse.";
 const TARGET = `${process.platform}-${process.arch === "arm64" ? "arm64" : "x64"}`;
 /** Built trees (native-runtime/out) win over the fetched ones, as in development. */
 const NATIVE_DIR = [
@@ -83,7 +89,7 @@ function appEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-    if (key === "VEX_RELEASE_SHOTS_PRIVATE_KEY" || /PRIVATE_KEY/.test(key)) continue;
+    if (/PRIVATE_KEY/.test(key)) continue;
     env[key] = value;
   }
   env["VEX_CONFIG_DIR"] = PROFILE;
@@ -145,10 +151,22 @@ async function bootToWizardOrShell(page: Page): Promise<void> {
   }
 }
 
+/**
+ * The chosen perf wallet's key, VEX_PERF_<n>_PRIVATE_KEY from the key file.
+ * Errors name the variable, never the value.
+ */
 function walletKey(): string {
-  const key = process.env["VEX_RELEASE_SHOTS_PRIVATE_KEY"] ?? "";
+  if (KEY_FILE === "" || !/^[0-9]+$/.test(WALLET)) {
+    throw new Error("set VEX_RELEASE_SHOTS_KEY_FILE and VEX_RELEASE_SHOTS_WALLET (a perf wallet number) to import a wallet");
+  }
+  const name = `VEX_PERF_${WALLET}_PRIVATE_KEY`;
+  const line = readFileSync(KEY_FILE, "utf8")
+    .split(/\r?\n/)
+    .map((l) => /^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(l))
+    .find((m) => m?.[1] === name);
+  const key = (line?.[2] ?? "").replace(/^["']|["']$/g, "");
   if (!/^(0x)?[0-9a-fA-F]{64}$/.test(key)) {
-    throw new Error("VEX_RELEASE_SHOTS_PRIVATE_KEY is missing or not a 32-byte hex key");
+    throw new Error(`${name} is missing from the key file or is not a 32-byte hex key`);
   }
   return key;
 }
@@ -183,6 +201,8 @@ async function walkWizard(page: Page, onProvider: (pane: ReturnType<typeof activ
           await pane.locator("#vex-keystore-password").fill(password);
           await pane.locator("#vex-keystore-confirm").fill(password);
           await pane.getByRole("button", { name: /Save and continue/ }).click();
+          // Sealing a new vault can take a while; wait for "Saving..." to clear.
+          await expect(pane.getByRole("button", { name: /^Saving/ })).toHaveCount(0, { timeout: 180_000 });
         } else {
           await pane.getByRole("button", { name: /^Continue$/ }).click();
         }
@@ -308,6 +328,16 @@ test("captures the v0.4.2 release screenshots", async ({}, testInfo) => {
       await shot(page, "0.4.2-inference-provider-choice.jpg");
     }
 
+    if (wants("account")) {
+      // The account panel at rest: balances, any deposit credit not final yet,
+      // the one rate line and the linked wallets.
+      await openSettings(page, "Inference");
+      await page.locator('[data-vex-cloud-balance="reserved"]').filter({ visible: true }).first().scrollIntoViewIfNeeded();
+      await page.mouse.move(10, 890);
+      await shot(page, "0.4.2-inference-account.jpg");
+      await shot(page, "site/site-inference-account.jpg");
+    }
+
     if (wants("deposit")) {
       // Review deposit, capture the card, Reject. Never Approve.
       await openFunding(page, "Deposit");
@@ -402,36 +432,17 @@ test("captures the v0.4.2 release screenshots", async ({}, testInfo) => {
       await expect(modelKey).toBeVisible();
       await page.mouse.move(10, 890);
       await page.waitForTimeout(600);
-      // No tooltip: at 1440 it is clipped by the transcript column's left edge.
-      await shot(page, "0.4.2-composer-provider-mark.jpg");
       await shot(page, "site/site-chat-inference.jpg");
+      // The provider tooltip, portaled out of the centre column since 0.4.2.
+      await modelKey.hover();
+      await expect(page.getByRole("tooltip").filter({ visible: true }).first()).toBeVisible({ timeout: 5_000 });
+      await shot(page, "0.4.2-composer-provider-mark.jpg");
+      await page.mouse.move(10, 890);
       await page.emulateMedia({ reducedMotion: null });
     }
 
-    if (wants("account")) {
-      await openSession(page);
-      const box = page.locator("textarea").filter({ visible: true }).first();
-      await box.fill(RESERVED_PROMPT);
-      await box.press("Enter");
-      await page.waitForTimeout(1500);
-      let reservedSeen = false;
-      for (let i = 0; i < 8 && !reservedSeen; i += 1) {
-        await openSettings(page, i % 2 === 0 ? "Inference" : "Preferences");
-        if (i % 2 !== 0) continue;
-        const reserved = page.locator('[data-vex-cloud-balance="reserved"]').filter({ visible: true }).first();
-        const text = (await reserved.textContent().catch(() => "")) ?? "";
-        reservedSeen = !/0\.00 VEX/.test(text) && /VEX/.test(text);
-      }
-      console.log(`reserved row non-zero while the turn ran: ${String(reservedSeen)}`);
-      await shot(page, "0.4.2-inference-account.jpg");
-      // Let the turn finish: closing the app mid-turn would cut it off.
-      await openSession(page);
-      await expect(page.getByText(/^Thinking$/).filter({ visible: true })).toHaveCount(0, { timeout: 180_000 });
-    }
-
-    if (wants("site-account")) {
+    if (wants("site-models")) {
       await openSettings(page, "Inference");
-      await shot(page, "site/site-inference-account.jpg");
       const combo = page.locator("#vex-provider-cloud-model").filter({ visible: true }).first();
       const options = page.getByRole("option").filter({ visible: true });
       for (let attempt = 0; attempt < 4; attempt += 1) {

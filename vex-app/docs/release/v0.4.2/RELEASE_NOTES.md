@@ -36,8 +36,6 @@ This release covers the work merged after **0.4.1**.
 ## 02 · Deposit
 ### VEX in, from the app.
 
-![Vex Inference · Deposit: the approval card with amount, sending wallet, deposit address, network fee bound and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-deposit-approval.jpg)
-
 **01 · One transfer.** Pick a linked wallet and an amount. VEX sends that VEX on Robinhood Chain to the Vex Inference deposit address. The transfer pays a small network fee in ETH on Robinhood Chain.
 
 **02 · The address is built in.** The deposit address ships inside the app. It does not come from a setting, the server or the agent. Before anything is signed, VEX checks that Vex Inference reports the same address. If they differ, nothing is sent.
@@ -73,8 +71,6 @@ This release covers the work merged after **0.4.1**.
 
 ## 04 · Withdraw
 ### Out, with a safety delay you can stop.
-
-![Vex Inference · Withdraw: a withdrawal cooling, "releases at HH:MM", with its Cancel key](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-withdraw-cooling.jpg)
 
 **01 · Only to your own wallets.** A withdrawal goes only to a wallet that is linked to your Vex Inference account and is in this app.
 
@@ -124,7 +120,7 @@ This release covers the work merged after **0.4.1**.
 ## 08 · Which provider, at a glance
 ### Marks that mean something.
 
-![The composer's model key with the vx disc for a Vex Inference model](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-composer-provider-mark.jpg)
+![The composer's model key with the vx disc for a Vex Inference model, its tooltip naming the provider in words](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-composer-provider-mark.jpg)
 
 **01 · In the composer.** The model key now starts with the mark of the provider serving it: the flat vx disc for Vex Inference, OpenRouter's own mark for OpenRouter. The tooltip and screen readers say the provider in words.
 
@@ -155,15 +151,4 @@ This release covers the work merged after **0.4.1**.
 
 ---
 
-## Screenshots to capture
-
-Save each as JPG in `vex-app/docs/release/v0.4.2/` with the file name below. After they are committed, replace `8beb8afe837399af47c080da1c2da7e81aa31904` in every image link above with that commit's full SHA (the v0.4.1 notes pin their images the same way).
-
-1. `0.4.2-inference-provider-choice.jpg`: Settings · Inference, the provider choice with Vex Inference first and marked Recommended, OpenRouter (your key) below it. Signed-in state, so the Vex Inference panel shows under the choice.
-2. `0.4.2-inference-deposit-approval.jpg`: Vex Inference funding page, Deposit tab, the approval card after Review deposit: amount, sending wallet, deposit address, network fee bound, expiry, and the "Spendable now up to $25.00" line. Use a small amount; do not send it unless a real deposit is intended.
-3. `0.4.2-inference-account.jpg`: Settings · Inference, Vex Inference account panel right after a deposit: Available, Reserved for running requests (ideally while a turn runs), Deposit credit not final yet, the single "1 VEX = $..., rate N min old" line, and the linked wallets.
-4. `0.4.2-inference-withdraw-cooling.jpg`: Withdraw tab, a withdrawal in its cooling period reading "Cooling, releases at HH:MM" with the Cancel key visible. Optionally a second shot of the withdrawal approval card with the Released line and Daily limit left.
-5. `0.4.2-inference-auto-top-up.jpg`: Auto top-up tab, the rule approval card (source wallet, per top-up, most per 24 hours, cap per 30 days, network fee limit, expiry), with the Low-balance alert setting visible.
-6. `0.4.2-composer-provider-mark.jpg`: a session composer with a Vex Inference model selected, the vx disc on the model key; tooltip open if it fits.
-
-Optional, not referenced above: the welcome page with the "AI is now paid in VEX" notice (OpenRouter configured), and the foreign-withdrawal notice in Needs you with Cancel and It was me (needs a withdrawal started outside the app).
+Screenshots of the deposit approval card and of a cooling withdrawal will be added in a later revision of these notes.
