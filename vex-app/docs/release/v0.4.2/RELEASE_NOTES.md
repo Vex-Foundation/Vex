@@ -19,7 +19,7 @@ This release covers the work merged after **0.4.1**.
 ## 01 · Vex Inference
 ### Pick it, sign in, go.
 
-![Settings · Inference: Vex Inference listed first and marked Recommended, next to OpenRouter (your key)](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-provider-choice.jpg)
+![Settings · Inference: Vex Inference listed first and marked Recommended, next to OpenRouter (your key)](https://raw.githubusercontent.com/Vex-Foundation/Vex/a178ab919a517ece5ce0b3e2df7d86648b6e0a2e/vex-app/docs/release/v0.4.2/0.4.2-inference-provider-choice.jpg)
 
 **01 · Listed first.** In the setup wizard and in Settings, Vex Inference sits at the top, marked **Recommended**, with **OpenRouter (your key)** right below it. It is picked for you only when no provider is set up yet. Already on OpenRouter? Nothing changes until you choose.
 
@@ -53,7 +53,7 @@ This release covers the work merged after **0.4.1**.
 ## 03 · What a request costs
 ### Held first, charged what it cost.
 
-![Settings · Inference: the Vex Inference account with Available, Reserved for running requests, Deposit credit not final yet, and one rate line](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-account.jpg)
+![Settings · Inference: the Vex Inference account with Available, Reserved for running requests, Deposit credit not final yet, and one rate line](https://raw.githubusercontent.com/Vex-Foundation/Vex/a178ab919a517ece5ce0b3e2df7d86648b6e0a2e/vex-app/docs/release/v0.4.2/0.4.2-inference-account.jpg)
 
 **01 · Held, not guessed.** Each request holds its worst-case cost from your balance while it runs. You see it as **Reserved for running requests**.
 
@@ -96,7 +96,7 @@ This release covers the work merged after **0.4.1**.
 ## 06 · Auto top-up
 ### A rule you write once.
 
-![Vex Inference · Auto top-up: the rule approval card with source wallet, amount per top-up, most per 24 hours, cap per 30 days, network fee limit and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-auto-top-up.jpg)
+![Vex Inference · Auto top-up: the rule approval card with source wallet, amount per top-up, most per 24 hours, cap per 30 days, network fee limit and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/a178ab919a517ece5ce0b3e2df7d86648b6e0a2e/vex-app/docs/release/v0.4.2/0.4.2-inference-auto-top-up.jpg)
 
 **01 · You set the bounds.** Source wallet, amount per top-up, most per 24 hours, a cap per 30 days, a network fee limit per top-up and an expiry. The rule exists only once you approve it on its card.
 
@@ -120,7 +120,7 @@ This release covers the work merged after **0.4.1**.
 ## 08 · Which provider, at a glance
 ### Marks that mean something.
 
-![The composer's model key with the vx disc for a Vex Inference model, its tooltip naming the provider in words](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-composer-provider-mark.jpg)
+![The composer's model key with the vx disc for a Vex Inference model, its tooltip naming the provider in words](https://raw.githubusercontent.com/Vex-Foundation/Vex/a178ab919a517ece5ce0b3e2df7d86648b6e0a2e/vex-app/docs/release/v0.4.2/0.4.2-composer-provider-mark.jpg)
 
 **01 · In the composer.** The model key now starts with the mark of the provider serving it: the flat vx disc for Vex Inference, OpenRouter's own mark for OpenRouter. The tooltip and screen readers say the provider in words.
 
