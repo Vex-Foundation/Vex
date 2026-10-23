@@ -90,6 +90,12 @@ const PURE_VEX_LIB_MODULES = new Set([
   // would drift into the chat quoting an RSI the chart beside it does not
   // draw. Pure by construction: arithmetic only, no imports at all.
   "@vex-lib/indicators/index.js",
+  // The technical analysis result contract (`src/lib/market-analysis/`). ONE
+  // definition across the engine that produces a result, the channel the
+  // analysis card re-reads through and the card that parses a tool act's
+  // output; two copies would drift into a card that silently stops drawing a
+  // result the engine still produces. Pure by construction: imports only zod.
+  "@vex-lib/market-analysis/result-schema.js",
 ]);
 
 function isForbiddenRootAliasImport(spec) {

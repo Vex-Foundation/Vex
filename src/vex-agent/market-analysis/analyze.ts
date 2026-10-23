@@ -37,7 +37,7 @@ export interface AnalysisBundle {
   readonly low: number;
   readonly indicators: AnalysisIndicators;
   readonly signals: AnalysisSignals;
-  readonly recent: readonly {
+  readonly recent: {
     readonly closeTime: string;
     readonly close: number;
     readonly rsi14: number | null;
