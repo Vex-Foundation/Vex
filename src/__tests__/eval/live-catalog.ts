@@ -49,8 +49,10 @@ export function liveCatalogToolCount(): number {
  * 186 with `lighter.technicalAnalysis` (2026-10-23), a read-only analysis of one
  * Lighter market's closed candles: one new identity on an existing namespace, a
  * pure +1, and every affected lexical baseline recaptured in the same change.
+ * 187 with its DexScreener sibling `dexscreener.technicalAnalysis`, again one
+ * new identity on an existing namespace and the baselines recaptured with it.
  */
-export const PINNED_LIVE_CATALOG_TOOL_COUNT = 186;
+export const PINNED_LIVE_CATALOG_TOOL_COUNT = 187;
 
 /**
  * The candidate count every dense and lexical measurement must have seen.

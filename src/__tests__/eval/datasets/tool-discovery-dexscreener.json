@@ -1,7 +1,7 @@
 {
-  "version": "dexscreener-v5",
+  "version": "dexscreener-v6",
   "namespace": "dexscreener",
-  "description": "Retrieval-verification dataset for the dexscreener namespace. Every live tool carries at least one blind row (outcome phrased without naming the brand) and at least one protocol-aware row (the brand is named), with the exact full toolId as the expectation. v2 (stage S2b) added the eight site-screening tools: the six leaderboard boards, the chain catalog and the token-level screen. v3 (stage S3) added the three resolve and market-context tools that stage could land: the single-pair live snapshot, the paid-attention spotlight, and the explicit-identity batch refresh. v4 (stage S3.5) is the first revision that REMOVES rows. The 12 public-API tools were retired whole and alias-free (owner decision D-DS2), so 26 rows lost their subject. They were handled in three ways, never left dangling. RETARGETED, because the user intent survives on a new owner: the known-pool-address rows to the single-pair snapshot, the many-known-identities rows to the batch refresh, the profile and boost feed rows to the spotlight document, and the narrative drill-down rows to the narrative aggregate that now yields the metaIds the screening boards take. REMOVED, because plan 4.6 records them as named omissions (owner decision D-DS3) and no tool answers them: the community-takeover feed, the per-token promotional-order ledger, and the ad-placement feed (paid ads survive only as an `onlyAds` FILTER on the screening boards, which is not a feed anyone can ask for). ADDED: rows for the three tools S3.5 landed on reclaimed identities, phrased around the capabilities that are actually new on them - server-side chain scoping on search, deepest-of-returned-window routing on the token pool list, and per-chain aggregates on narratives - because a reclaimed toolId whose rows only describe the retired behaviour would prove nothing about the tool that now holds it. v5 (stage S4) adds the deep-dive family: `pair.details`, `candles`, `trades` and `top.traders`. These are the namespace's first contract-level and wallet-level tools, so none of their rows are retargeted from a retired subject - every one is new intent that no DexScreener tool could answer before. Each tool carries at least one blind row and one protocol-aware row, plus one multi-tool row for the safety-then-chart-then-flow sequence the plan's section 5 describes, which is the sequence the four tools exist to make possible in one namespace.",
+  "description": "Retrieval-verification dataset for the dexscreener namespace. Every live tool carries at least one blind row (outcome phrased without naming the brand) and at least one protocol-aware row (the brand is named), with the exact full toolId as the expectation. v2 (stage S2b) added the eight site-screening tools: the six leaderboard boards, the chain catalog and the token-level screen. v3 (stage S3) added the three resolve and market-context tools that stage could land: the single-pair live snapshot, the paid-attention spotlight, and the explicit-identity batch refresh. v4 (stage S3.5) is the first revision that REMOVES rows. The 12 public-API tools were retired whole and alias-free (owner decision D-DS2), so 26 rows lost their subject. They were handled in three ways, never left dangling. RETARGETED, because the user intent survives on a new owner: the known-pool-address rows to the single-pair snapshot, the many-known-identities rows to the batch refresh, the profile and boost feed rows to the spotlight document, and the narrative drill-down rows to the narrative aggregate that now yields the metaIds the screening boards take. REMOVED, because plan 4.6 records them as named omissions (owner decision D-DS3) and no tool answers them: the community-takeover feed, the per-token promotional-order ledger, and the ad-placement feed (paid ads survive only as an `onlyAds` FILTER on the screening boards, which is not a feed anyone can ask for). ADDED: rows for the three tools S3.5 landed on reclaimed identities, phrased around the capabilities that are actually new on them - server-side chain scoping on search, deepest-of-returned-window routing on the token pool list, and per-chain aggregates on narratives - because a reclaimed toolId whose rows only describe the retired behaviour would prove nothing about the tool that now holds it. v5 (stage S4) adds the deep-dive family: `pair.details`, `candles`, `trades` and `top.traders`. These are the namespace's first contract-level and wallet-level tools, so none of their rows are retargeted from a retired subject - every one is new intent that no DexScreener tool could answer before. Each tool carries at least one blind row and one protocol-aware row, plus one multi-tool row for the safety-then-chart-then-flow sequence the plan's section 5 describes, which is the sequence the four tools exist to make possible in one namespace. v6 (F08) adds `technicalAnalysis`, the shared indicator engine on one named pool: one blind row phrased as the indicators a trader asks for, and one protocol-aware row, both new intent rather than retargeted rows, because no earlier tool computed an indicator.",
   "queries": [
     {
       "query": "find the pools trading a token when I only know its ticker PEPE and not its contract address",
@@ -770,6 +770,34 @@
       "expectedCoverageGroups": [
         [
           "dexscreener.candles"
+        ]
+      ]
+    },
+    {
+      "query": "what do RSI, MACD and the moving averages say about this pool on the 4 hour chart",
+      "awareness": "blind",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.technicalAnalysis"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.technicalAnalysis"
+        ]
+      ]
+    },
+    {
+      "query": "DexScreener technical analysis for this pair on daily candles, is it overbought",
+      "awareness": "protocol-aware",
+      "scenario": "market_research",
+      "intentShape": "single",
+      "expectedToolIds": [
+        "dexscreener.technicalAnalysis"
+      ],
+      "expectedCoverageGroups": [
+        [
+          "dexscreener.technicalAnalysis"
         ]
       ]
     },
