@@ -56,6 +56,7 @@ vi.mock("../../../lib/api/runtime.js", () => ({
   }),
 }));
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSession: () => ({ data: { ok: true, data: mocks.sessionItem } }),
   useSessionsList: () => ({ data: { ok: true, data: mocks.sessions } }),
 }));

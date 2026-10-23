@@ -2,11 +2,12 @@
  * Composer reasoning-effort resolution (S6/D3-D6, E2/E3 extract).
  *
  * Per-model reasoning capability + the effective per-turn pick, sourced from
- * the GLOBAL model query (`useAvailableModels`, always-warm single cache key)
- * on BOTH stages instead of a per-session query: Vex uses one global model
- * for every session, so welcome never needs to wait for a session id to
- * exist, and a freshly-created session's composer never races a cold
- * per-session cache entry either.
+ * the composer's model row (F06, `composer-model.ts`: the pending menu pick,
+ * else the session's own model, else the default) in the models list
+ * (`useAvailableModels`, always-warm single cache key) on BOTH stages: the
+ * welcome stage reads the default's row, so it never waits for a session id
+ * to exist, and a picked model's effort set is offered the moment it is
+ * picked.
  *
  * `reasoningCapability` is the D4-set-normalized FINAL selectable set, or
  * `null` = "no selector" (mission sessions never mount one — their ingress
@@ -21,6 +22,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import type { ModelOptionDto } from "@shared/schemas/models.js";
 import {
   selectDefaultReasoningEffort,
   type ReasoningCapability,
@@ -31,8 +33,6 @@ import { useUiStore } from "../../stores/uiStore.js";
 
 export interface ComposerReasoningEffort {
   readonly reasoningCapability: ReasoningCapability | null;
-  /** The global model's id — feeds the provider brand mark beside the effort slot. */
-  readonly globalModelId: string | null;
   /**
    * Only the true WELCOME stage (no session selected at all) or a resolved
    * agent-mode session counts as agent-stage by default — a session that IS
@@ -52,6 +52,8 @@ export interface ComposerReasoningEffort {
 export function useComposerReasoningEffort(
   sessionId: string | null,
   activeSession: SessionListItem | null,
+  /** The composer's model row (`useComposerModel`), `null` until known. */
+  modelOption: ModelOptionDto | null,
 ): ComposerReasoningEffort {
   // Per-session reasoning-effort pick (S6/D5) — launch-ephemeral, RAW from
   // the store (undefined = the user never picked).
@@ -72,14 +74,7 @@ export function useComposerReasoningEffort(
 
   const modelsQuery = useAvailableModels();
   const modelsResolved = modelsQuery.data !== undefined;
-  const reasoningCapability =
-    modelsQuery.data?.ok === true
-      ? (modelsQuery.data.data.models[0]?.reasoning ?? null)
-      : null;
-  const globalModelId =
-    modelsQuery.data?.ok === true
-      ? (modelsQuery.data.data.models[0]?.modelId ?? null)
-      : null;
+  const reasoningCapability = modelOption?.reasoning ?? null;
   const reasoningStageIsAgent =
     sessionId === null || activeSession?.mode === "agent";
   const carryReasoningEffort =
@@ -112,7 +107,6 @@ export function useComposerReasoningEffort(
 
   return {
     reasoningCapability,
-    globalModelId,
     reasoningStageIsAgent,
     modelsResolved,
     effectiveReasoningEffort,

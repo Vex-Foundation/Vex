@@ -12,6 +12,7 @@ vi.mock("../../../../lib/api/lighter-trading.js", () => ({
 }));
 
 vi.mock("../../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionsList: () => ({ data: { ok: true, data: [] }, isLoading: false, isError: false }),
 }));
 

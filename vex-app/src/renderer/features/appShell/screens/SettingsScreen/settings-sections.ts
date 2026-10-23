@@ -79,7 +79,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     group: "The agent",
     icon: "model",
     name: "Inference",
-    hint: "Vex Inference or OpenRouter, and the model the agent thinks with",
+    hint: "Vex Inference or OpenRouter, the default model for new sessions, and the model for background work",
   },
   {
     id: "memory",

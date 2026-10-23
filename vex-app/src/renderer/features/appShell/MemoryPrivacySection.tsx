@@ -11,7 +11,8 @@
  */
 
 import type { JSX } from "react";
-import { defaultModelOption, useAvailableModels } from "../../lib/api/models.js";
+import { useAvailableModels } from "../../lib/api/models.js";
+import { defaultModelOption } from "../../lib/model-options.js";
 import { SECTION, SectionHead } from "./MemoryPanelShared.js";
 
 export function MemoryPrivacySection(): JSX.Element {

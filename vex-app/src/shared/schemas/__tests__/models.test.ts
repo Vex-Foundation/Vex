@@ -7,7 +7,8 @@ import {
 } from "../models.js";
 
 describe("models schemas", () => {
-  it("modelsListSourceSchema accepts env-derived and unconfigured sources", () => {
+  it("modelsListSourceSchema accepts catalogue, env-derived and unconfigured sources", () => {
+    expect(modelsListSourceSchema.safeParse("catalog").success).toBe(true);
     expect(modelsListSourceSchema.safeParse("global_default").success).toBe(true);
     expect(modelsListSourceSchema.safeParse("unconfigured").success).toBe(true);
   });
@@ -26,6 +27,7 @@ describe("models schemas", () => {
       pricingInputPerMillion: null,
       pricingOutputPerMillion: null,
       reasoning: null,
+      isDefault: true,
     });
     expect(parsed.success).toBe(true);
   });
@@ -58,6 +60,7 @@ describe("models schemas", () => {
         defaultEnabled: true,
         mandatory: false,
       },
+      isDefault: true,
     });
     expect(parsed.success).toBe(true);
   });
@@ -90,6 +93,7 @@ describe("models schemas", () => {
             pricingInputPerMillion: null,
             pricingOutputPerMillion: null,
             reasoning: null,
+            isDefault: true,
           },
         ],
         fetchedAt: null,

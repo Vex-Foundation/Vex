@@ -41,7 +41,8 @@ import {
   useSetAutoRetry,
 } from "../../lib/api/mission.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
-import { defaultModelOption, useAvailableModels } from "../../lib/api/models.js";
+import { useAvailableModels } from "../../lib/api/models.js";
+import { defaultModelOption } from "../../lib/model-options.js";
 import { DialogClose } from "../../components/ui/dialog.js";
 import {
   Sheet,

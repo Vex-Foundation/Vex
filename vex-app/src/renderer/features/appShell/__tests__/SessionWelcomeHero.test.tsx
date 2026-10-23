@@ -51,6 +51,7 @@ vi.mock("../../../lib/api/user-profile.js", () => ({
 const refetchSessions = vi.fn();
 let sessionsData: unknown = { ok: true, data: [] };
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionsList: () => ({ data: sessionsData, refetch: refetchSessions }),
 }));
 

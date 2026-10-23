@@ -28,7 +28,7 @@ import { formatTokenCount } from "../vexCloud/vex-cloud-format.js";
 import { localClock, shortAddress } from "../vexCloud/funding/funding-model.js";
 import { formatVexExact } from "@shared/vex-cloud-money.js";
 import { PROVIDER_DISPLAY_NAME } from "../../components/common/ProviderMark.js";
-import { modelDisplayName } from "./SessionComposer/ComposerSeats.js";
+import { modelDisplayName } from "./SessionComposer/model-display-name.js";
 
 interface NoticeCopy {
   readonly word: string;

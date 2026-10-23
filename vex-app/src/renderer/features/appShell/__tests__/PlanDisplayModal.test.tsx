@@ -42,6 +42,7 @@ const mockSetPlanMode: {
 } = { mutate: vi.fn(), isPending: false, isError: false, data: undefined };
 
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionPlan: (...a: unknown[]) => mockUseSessionPlan(...a),
   useAcceptPlan: () => mockAcceptPlan,
   useSetPlanMode: () => mockSetPlanMode,
