@@ -104,6 +104,31 @@ describe("SessionInferenceNotice", () => {
     expect(screen.getByRole("button", { name: "Dismiss the withdrawal notice" })).toBeTruthy();
   });
 
+  it("a pick made under the other backend names both models and the way to change it", () => {
+    act(() =>
+      useInferenceNoticeStore.getState().record({
+        type: "engine.inference.notice",
+        kind: "session_model_fallback",
+        sessionId: SESSION,
+        missionRunId: null,
+        provider: "vexcloud",
+        model: "anthropic/claude-haiku-5.5",
+        pickedProvider: "openrouter",
+        pickedModel: "deepseek/deepseek-v4-flash",
+        occurredAt: "2026-10-23T12:00:00.000Z",
+      }),
+    );
+    render(<SessionInferenceNotice sessionId={SESSION} />);
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("data-vex-inference-notice")).toBe("session_model_fallback");
+    expect(status.textContent).toContain("Ran on your default model");
+    expect(status.textContent).toContain(
+      "This session's model, deepseek-v4-flash, was picked for OpenRouter, so this turn ran on claude-haiku-5.5, your default for Vex Inference.",
+    );
+    expect(status.textContent).toContain("Pick a model in the composer");
+    expect(screen.getByRole("button", { name: "Dismiss the model notice" })).toBeTruthy();
+  });
+
   it("a model-limit clamp has no top-up advice", () => {
     act(() => useInferenceNoticeStore.getState().record(notice({ reason: "model_limit", requested: 200_000, effective: 65_536 })));
     render(<SessionInferenceNotice sessionId={SESSION} />);
