@@ -19,7 +19,7 @@ This release covers the work merged after **0.4.1**.
 ## 01 · Vex Inference
 ### Pick it, sign in, go.
 
-![Settings · Inference: Vex Inference listed first and marked Recommended, next to OpenRouter (your key)](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.2/0.4.2-inference-provider-choice.jpg)
+![Settings · Inference: Vex Inference listed first and marked Recommended, next to OpenRouter (your key)](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-provider-choice.jpg)
 
 **01 · Listed first.** In the setup wizard and in Settings, Vex Inference sits at the top, marked **Recommended**, with **OpenRouter (your key)** right below it. It is picked for you only when no provider is set up yet. Already on OpenRouter? Nothing changes until you choose.
 
@@ -36,7 +36,7 @@ This release covers the work merged after **0.4.1**.
 ## 02 · Deposit
 ### VEX in, from the app.
 
-![Vex Inference · Deposit: the approval card with amount, sending wallet, deposit address, network fee bound and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.2/0.4.2-inference-deposit-approval.jpg)
+![Vex Inference · Deposit: the approval card with amount, sending wallet, deposit address, network fee bound and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-deposit-approval.jpg)
 
 **01 · One transfer.** Pick a linked wallet and an amount. VEX sends that VEX on Robinhood Chain to the Vex Inference deposit address. The transfer pays a small network fee in ETH on Robinhood Chain.
 
@@ -55,7 +55,7 @@ This release covers the work merged after **0.4.1**.
 ## 03 · What a request costs
 ### Held first, charged what it cost.
 
-![Settings · Inference: the Vex Inference account with Available, Reserved for running requests, Deposit credit not final yet, and one rate line](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.2/0.4.2-inference-account.jpg)
+![Settings · Inference: the Vex Inference account with Available, Reserved for running requests, Deposit credit not final yet, and one rate line](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-account.jpg)
 
 **01 · Held, not guessed.** Each request holds its worst-case cost from your balance while it runs. You see it as **Reserved for running requests**.
 
@@ -74,7 +74,7 @@ This release covers the work merged after **0.4.1**.
 ## 04 · Withdraw
 ### Out, with a safety delay you can stop.
 
-![Vex Inference · Withdraw: a withdrawal cooling, "releases at HH:MM", with its Cancel key](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.2/0.4.2-inference-withdraw-cooling.jpg)
+![Vex Inference · Withdraw: a withdrawal cooling, "releases at HH:MM", with its Cancel key](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-withdraw-cooling.jpg)
 
 **01 · Only to your own wallets.** A withdrawal goes only to a wallet that is linked to your Vex Inference account and is in this app.
 
@@ -100,7 +100,7 @@ This release covers the work merged after **0.4.1**.
 ## 06 · Auto top-up
 ### A rule you write once.
 
-![Vex Inference · Auto top-up: the rule approval card with source wallet, amount per top-up, most per 24 hours, cap per 30 days, network fee limit and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.2/0.4.2-inference-auto-top-up.jpg)
+![Vex Inference · Auto top-up: the rule approval card with source wallet, amount per top-up, most per 24 hours, cap per 30 days, network fee limit and expiry](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-inference-auto-top-up.jpg)
 
 **01 · You set the bounds.** Source wallet, amount per top-up, most per 24 hours, a cap per 30 days, a network fee limit per top-up and an expiry. The rule exists only once you approve it on its card.
 
@@ -124,7 +124,7 @@ This release covers the work merged after **0.4.1**.
 ## 08 · Which provider, at a glance
 ### Marks that mean something.
 
-![The composer's model key with the vx disc for a Vex Inference model](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.2/0.4.2-composer-provider-mark.jpg)
+![The composer's model key with the vx disc for a Vex Inference model](https://raw.githubusercontent.com/Vex-Foundation/Vex/8beb8afe837399af47c080da1c2da7e81aa31904/vex-app/docs/release/v0.4.2/0.4.2-composer-provider-mark.jpg)
 
 **01 · In the composer.** The model key now starts with the mark of the provider serving it: the flat vx disc for Vex Inference, OpenRouter's own mark for OpenRouter. The tooltip and screen readers say the provider in words.
 
@@ -157,7 +157,7 @@ This release covers the work merged after **0.4.1**.
 
 ## Screenshots to capture
 
-Save each as JPG in `vex-app/docs/release/v0.4.2/` with the file name below. After they are committed, replace `<SCREENSHOTS_COMMIT>` in every image link above with that commit's full SHA (the v0.4.1 notes pin their images the same way).
+Save each as JPG in `vex-app/docs/release/v0.4.2/` with the file name below. After they are committed, replace `8beb8afe837399af47c080da1c2da7e81aa31904` in every image link above with that commit's full SHA (the v0.4.1 notes pin their images the same way).
 
 1. `0.4.2-inference-provider-choice.jpg`: Settings · Inference, the provider choice with Vex Inference first and marked Recommended, OpenRouter (your key) below it. Signed-in state, so the Vex Inference panel shows under the choice.
 2. `0.4.2-inference-deposit-approval.jpg`: Vex Inference funding page, Deposit tab, the approval card after Review deposit: amount, sending wallet, deposit address, network fee bound, expiry, and the "Spendable now up to $25.00" line. Use a small amount; do not send it unless a real deposit is intended.
