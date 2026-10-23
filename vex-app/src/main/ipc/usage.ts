@@ -31,6 +31,7 @@ import {
   getLastTurn,
   getSessionTotals,
 } from "../database/usage-db.js";
+import { getSessionModelPick } from "../database/sessions-db.js";
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 
@@ -46,22 +47,37 @@ import { registerHandler } from "./register-handler.js";
  * and about to compact. The gauge and the bands must divide by one number.
  *
  * Source order:
- *   1. the loaded inference config's `contextLimit` — post-clamp, the truth;
+ *   1. the SESSION's inference config's `contextLimit` (F06: its own model's
+ *      window, clamped to the summarizer's, exactly as the engine loads it
+ *      through `loadSessionInferenceConfig`) — post-clamp, the truth;
  *   2. the env value, when no provider/config is available yet (onboarding,
  *      provider removed) — better than no gauge, and it is what the engine
  *      would use if the catalog window stayed unknown;
  *   3. `null` when `AGENT_CONTEXT_LIMIT` is invalid — the engine would reject
  *      it, so the gauge says "unavailable" rather than faking the default.
  */
-async function resolveContextLimit(): Promise<number | null> {
+async function resolveContextLimit(sessionId: string): Promise<number | null> {
   const parsed = parseAgentEnv(process.env);
   if (parsed.errors.some((e) => e.key === AGENT_CONTEXT_LIMIT.key)) return null;
 
   try {
     const { resolveProvider } = await import("@vex-agent/inference/registry.js");
     const provider = await resolveProvider();
-    const config = await provider?.loadConfig();
-    if (config) return config.contextLimit;
+    if (provider !== null) {
+      const { loadSessionInferenceConfig } = await import(
+        "@vex-agent/engine/core/runner/session-model.js"
+      );
+      // The app's own read of the pick (no engine pool needed), and quiet:
+      // a gauge read is not a turn, so it raises no fallback notice.
+      const config = await loadSessionInferenceConfig(provider, sessionId, undefined, {
+        readPick: async (id) => {
+          const pick = await getSessionModelPick(id);
+          return pick.ok ? pick.data : null;
+        },
+        quiet: true,
+      });
+      return config.contextLimit;
+    }
   } catch (cause) {
     // A catalog fetch failure must not remove the gauge — fall through to the
     // configured value, which is exactly what the engine falls back to when
@@ -128,7 +144,7 @@ function registerGetContextWindowHandler(): () => void {
     inputSchema: contextWindowInputSchema,
     outputSchema: contextWindowResultSchema,
     handle: async (input, ctx): Promise<Result<ContextWindowResult>> => {
-      const contextLimit = await resolveContextLimit();
+      const contextLimit = await resolveContextLimit(input.sessionId);
       const read = await getContextWindow(input.sessionId, contextLimit);
       // Stamp the engine's pressure bands onto a present window, so the
       // renderer's meter markers stay tied to the thresholds that actually

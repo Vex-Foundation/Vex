@@ -128,6 +128,7 @@ function modelsState(
         pricingInputPerMillion: null,
         pricingOutputPerMillion: null,
         reasoning,
+        isDefault: true,
       },
     ],
   };

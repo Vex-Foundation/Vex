@@ -315,18 +315,21 @@ export type SessionExportMarkdownResult = z.infer<
   typeof sessionExportMarkdownResultSchema
 >;
 
-// ── Global runtime model resolution ──────────────────────────────────────
+// ── Session model resolution (F06) ──────────────────────────────────────
 //
-// Vex uses a single global model for every session, resolved by the
-// engine from `AGENT_PROVIDER`/`AGENT_MODEL`. There is no per-session
-// model: `sessions.getModel` is read-only and reports the resolved
-// global model so the chat header can show it.
+// A session runs on its own pick (`sessions.model_*`, migration 182, written
+// by the engine when a chat turn carries one), else on the global default
+// resolved from `AGENT_PROVIDER`/`AGENT_MODEL`. `sessions.getModel` is
+// read-only and reports the model the session's next turn runs on.
 //
-// `source` discriminates the two real states: `"global_default"` means
-// the resolver read `AGENT_PROVIDER`/`AGENT_MODEL`; `"unconfigured"`
-// means neither is set (renderer surfaces "Model not configured").
+// `source` discriminates the three states: `"session"` means the session's
+// own pick on the active backend; `"global_default"` means the default
+// (never picked, or picked under the other backend, which the next turn
+// says in a notice); `"unconfigured"` means neither env value is set
+// (renderer surfaces "Model not configured").
 
 export const sessionModelSourceSchema = z.enum([
+  "session",
   "global_default",
   "unconfigured",
 ]);
@@ -341,9 +344,8 @@ export const sessionModelDtoSchema = z
     modelId: z.string().nullable(),
     source: sessionModelSourceSchema,
     /**
-     * Always `null` — the model is global runtime config, not a
-     * per-session override, so there is no per-session update timestamp.
-     * Kept on the DTO for a stable shape the chat header can render.
+     * When the operator last picked (`sessions.model_updated_at`) for
+     * `source: "session"`; `null` for the global default and unconfigured.
      */
     updatedAt: z.string().datetime({ offset: true }).nullable(),
     /**

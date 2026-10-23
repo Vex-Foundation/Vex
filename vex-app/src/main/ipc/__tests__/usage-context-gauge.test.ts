@@ -26,7 +26,12 @@ const mocks = vi.hoisted(() => ({
   getSessionTotals: vi.fn(),
   getLastTurn: vi.fn(),
   resolveProvider: vi.fn(),
+  getSessionModelPick: vi.fn(),
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock("../../database/sessions-db.js", () => ({
+  getSessionModelPick: (...a: unknown[]) => mocks.getSessionModelPick(...a),
 }));
 
 vi.mock("electron", () => ({
@@ -77,7 +82,54 @@ beforeEach(() => {
   handlers.clear();
   delete process.env.AGENT_CONTEXT_LIMIT;
   mocks.getContextWindow.mockResolvedValue({ ok: true, data: null });
+  mocks.getSessionModelPick.mockResolvedValue({ ok: true, data: null });
   registerUsageHandlers();
+});
+
+describe("usage.getContextWindow follows the session's own model (F06)", () => {
+  /** Default 200k; the session's pick is whatever window `picked` names. */
+  function providerWith(picked: Record<string, number>) {
+    return {
+      id: "openrouter",
+      loadConfig: async (options?: { readonly model?: string }) => {
+        const model = options?.model ?? "vendor/default";
+        const window = model === "vendor/default" ? 200_000 : picked[model];
+        return window === undefined ? null : { model, contextLimit: window };
+      },
+    };
+  }
+
+  function pick(provider: string, modelId: string) {
+    return { ok: true, data: { provider, modelId, updatedAt: "2026-10-23T10:00:00.000Z" } };
+  }
+
+  it("divides by a narrower session model's own window", async () => {
+    mocks.resolveProvider.mockResolvedValue(providerWith({ "vendor/narrow": 64_000 }));
+    mocks.getSessionModelPick.mockResolvedValue(pick("openrouter", "vendor/narrow"));
+
+    await callGetContextWindow();
+
+    expect(mocks.getSessionModelPick).toHaveBeenCalledWith(SESSION);
+    expect(limitPassedToDb()).toBe(64_000);
+  });
+
+  it("caps a wider session model at the summarizer's window, as the engine does", async () => {
+    mocks.resolveProvider.mockResolvedValue(providerWith({ "vendor/wide": 1_000_000 }));
+    mocks.getSessionModelPick.mockResolvedValue(pick("openrouter", "vendor/wide"));
+
+    await callGetContextWindow();
+
+    expect(limitPassedToDb()).toBe(200_000);
+  });
+
+  it("a pick made under the other backend divides by the default", async () => {
+    mocks.resolveProvider.mockResolvedValue(providerWith({ "vendor/narrow": 64_000 }));
+    mocks.getSessionModelPick.mockResolvedValue(pick("vexcloud", "vendor/narrow"));
+
+    await callGetContextWindow();
+
+    expect(limitPassedToDb()).toBe(200_000);
+  });
 });
 
 afterEach(() => {

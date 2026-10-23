@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   buildPoolConfig: vi.fn(),
   closePool: vi.fn(),
   submitOperatorInstruction: vi.fn(),
+  loadProviderModelCatalog: vi.fn(),
   log: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -59,6 +60,10 @@ vi.mock("@vex-agent/engine/index.js", () => ({
 
 vi.mock("../../logger/index.js", () => ({
   log: mocks.log,
+}));
+
+vi.mock("../../onboarding/provider-model-catalog.js", () => ({
+  loadProviderModelCatalog: mocks.loadProviderModelCatalog,
 }));
 
 const { registerChatSubmitHandler } = await import("../chat.js");
@@ -206,6 +211,111 @@ describe("registerChatSubmitHandler", () => {
       undefined,
     );
     expect(mocks.log.debug).toHaveBeenCalled();
+  });
+
+  describe("the session's model pick (F06)", () => {
+    const CATALOG = {
+      models: [
+        { modelId: "openai/gpt-6-luna", displayName: "GPT-6 Luna", providerId: "openai", contextLength: 1_050_000, pricingInputPerMillion: "1.25", pricingOutputPerMillion: "10" },
+      ],
+    };
+    const previousProvider = process.env.AGENT_PROVIDER;
+
+    beforeEach(() => {
+      mocks.loadProviderModelCatalog.mockResolvedValue(CATALOG);
+      process.env.AGENT_PROVIDER = "openrouter";
+    });
+
+    afterEach(() => {
+      if (previousProvider === undefined) delete process.env.AGENT_PROVIDER;
+      else process.env.AGENT_PROVIDER = previousProvider;
+    });
+
+    async function submit(mode: "agent" | "mission", model: unknown) {
+      const row = makeSessionRow({ mode, initialGoal: "Existing" });
+      mocks.getSessionById.mockResolvedValue({ ok: true, data: row });
+      registerChatSubmitHandler();
+      const fn = handlers.get(CH.chat.submit)!;
+      const result = (await fn(trustedSender, {
+        requestId: "r-model",
+        payload: { sessionId: row.id, message: "hello", model },
+      })) as { ok: boolean; error?: { code: string; message: string; retryable: boolean } };
+      return { row, result };
+    }
+
+    it("forwards a pick the active backend lists, checked against its catalogue", async () => {
+      const { row, result } = await submit("agent", { provider: "openrouter", modelId: "openai/gpt-6-luna" });
+      expect(result.ok).toBe(true);
+      expect(mocks.loadProviderModelCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({ source: "openrouter" }),
+      );
+      expect(mocks.submitOperatorInstruction).toHaveBeenCalledWith(
+        row.id,
+        "hello",
+        expect.any(AbortSignal),
+        { model: { provider: "openrouter", modelId: "openai/gpt-6-luna" } },
+      );
+    });
+
+    it("refuses a model the active backend does not list, before the engine", async () => {
+      const { result } = await submit("agent", { provider: "openrouter", modelId: "vendor/not-listed" });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("validation.invalid_input");
+      expect(result.error?.message).toContain("vendor/not-listed");
+      expect(mocks.submitOperatorInstruction).not.toHaveBeenCalled();
+    });
+
+    it("refuses a pick made for the other backend", async () => {
+      process.env.AGENT_PROVIDER = "vexcloud";
+      const { result } = await submit("agent", { provider: "openrouter", modelId: "openai/gpt-6-luna" });
+      expect(result.ok).toBe(false);
+      expect(result.error?.message).toContain("Vex Inference");
+      expect(mocks.loadProviderModelCatalog).not.toHaveBeenCalled();
+      expect(mocks.submitOperatorInstruction).not.toHaveBeenCalled();
+    });
+
+    it("an unreadable catalogue is a retryable refusal, never an unchecked pick", async () => {
+      mocks.loadProviderModelCatalog.mockRejectedValue(new Error("offline"));
+      const { result } = await submit("agent", { provider: "openrouter", modelId: "openai/gpt-6-luna" });
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("provider.unavailable");
+      expect(result.error?.retryable).toBe(true);
+      expect(mocks.submitOperatorInstruction).not.toHaveBeenCalled();
+    });
+
+    it("strips a pick for a mission session; its model is the contract's", async () => {
+      const { row, result } = await submit("mission", { provider: "openrouter", modelId: "openai/gpt-6-luna" });
+      expect(result.ok).toBe(true);
+      expect(mocks.loadProviderModelCatalog).not.toHaveBeenCalled();
+      expect(mocks.submitOperatorInstruction).toHaveBeenCalledWith(
+        row.id,
+        "hello",
+        expect.any(AbortSignal),
+        undefined,
+      );
+    });
+
+    it("refuses a malformed model id at the schema", async () => {
+      const { result } = await submit("agent", { provider: "openrouter", modelId: "-bad id" });
+      expect(result.ok).toBe(false);
+      expect(mocks.submitOperatorInstruction).not.toHaveBeenCalled();
+    });
+
+    it("names the model when the engine refuses a delisted session model", async () => {
+      const refusal = Object.assign(new Error("The session's model vendor/gone is no longer offered by openrouter."), {
+        code: "session_model_unavailable",
+        modelId: "vendor/gone",
+        provider: "openrouter",
+        reason: "delisted",
+      });
+      mocks.submitOperatorInstruction.mockRejectedValue(refusal);
+      const { result } = await submit("agent", undefined);
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("validation.invalid_input");
+      expect(result.error?.message).toBe(
+        "This session's model, vendor/gone, is no longer offered by OpenRouter. Pick another model in the composer, then retry.",
+      );
+    });
   });
 
   it("maps missing provider failures to a user-actionable chat error", async () => {

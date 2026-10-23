@@ -71,7 +71,13 @@ export class SessionModelUnavailableError extends Error {
 }
 
 export interface LoadSessionInferenceConfigDeps {
+  /** The pick reader; defaults to the engine repo. The host passes its own. */
   readonly readPick?: typeof sessionModelRepo.getSessionModel;
+  /**
+   * A READ of the session's config, not a turn (the context gauge): no
+   * fallback notice, because no turn ran on the default.
+   */
+  readonly quiet?: boolean;
 }
 
 /**
@@ -128,6 +134,7 @@ export async function loadSessionInferenceConfig(
 
   if (pick.provider !== provider.id) {
     const fallback = await loadDefaultConfig(provider);
+    if (deps.quiet === true) return fallback;
     logger.info("engine.session_model.backend_fallback", {
       sessionId,
       pickedProvider: pick.provider,

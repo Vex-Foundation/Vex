@@ -41,7 +41,7 @@ import {
   useSetAutoRetry,
 } from "../../lib/api/mission.js";
 import { useSessionPlan } from "../../lib/api/sessions.js";
-import { useAvailableModels } from "../../lib/api/models.js";
+import { defaultModelOption, useAvailableModels } from "../../lib/api/models.js";
 import { DialogClose } from "../../components/ui/dialog.js";
 import {
   Sheet,
@@ -111,9 +111,9 @@ export function MissionContractModal({
   // say which level the run will actually use (the same source the composer
   // reads). `null` until known: the section then shows the pick alone.
   const modelsQuery = useAvailableModels();
-  const currentModel = modelsQuery.data?.ok === true ? modelsQuery.data.data.models[0] : undefined;
+  const currentModel = defaultModelOption(modelsQuery.data);
   const effortModel =
-    currentModel !== undefined && currentModel.reasoning !== null
+    currentModel !== null && currentModel.reasoning !== null
       ? { modelId: currentModel.modelId, capability: currentModel.reasoning }
       : null;
 
