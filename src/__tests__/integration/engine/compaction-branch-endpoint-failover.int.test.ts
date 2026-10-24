@@ -150,7 +150,7 @@ describe("compaction branches honour the session's switched endpoint", () => {
 
   it("branch A uses the switched endpoint and re-resolves its price and window", async () => {
     const { sessionId } = await forkWithCorpus();
-    commitEndpointSwitch(sessionId, SWITCHED_TAG);
+    commitEndpointSwitch({ sessionId, model: "vendor/memory-model" }, SWITCHED_TAG);
     // The durable audit row is written by the same policy in production; it is
     // recorded here to pin that it does NOT drive routing.
     await recordEndpointSwitch({
@@ -180,7 +180,7 @@ describe("compaction branches honour the session's switched endpoint", () => {
 
   it("branch B uses the switched endpoint too", async () => {
     const { sessionId } = await forkWithCorpus();
-    commitEndpointSwitch(sessionId, SWITCHED_TAG);
+    commitEndpointSwitch({ sessionId, model: "vendor/memory-model" }, SWITCHED_TAG);
 
     const provider = recordingProvider(CHUNKS_OUT);
     const outcome = await runChunksBranchTick("chunks-worker", {
@@ -197,7 +197,7 @@ describe("compaction branches honour the session's switched endpoint", () => {
     // the app actually runs today: ROUTING follows the switch, while price and
     // window stay at model-level values.
     const { sessionId } = await forkWithCorpus();
-    commitEndpointSwitch(sessionId, SWITCHED_TAG);
+    commitEndpointSwitch({ sessionId, model: "vendor/memory-model" }, SWITCHED_TAG);
 
     const provider = recordingProvider(SUMMARY_OUT);
     await runSummaryBranchTick("summary-worker", {
@@ -211,7 +211,7 @@ describe("compaction branches honour the session's switched endpoint", () => {
 
   it("is a complete no-op for a session that never switched", async () => {
     const { sessionId } = await forkWithCorpus();
-    expect(getSwitchedEndpointTag(sessionId)).toBeNull();
+    expect(getSwitchedEndpointTag({ sessionId, model: "vendor/memory-model" })).toBeNull();
 
     const provider = recordingProvider(SUMMARY_OUT);
     await runSummaryBranchTick("summary-worker", {

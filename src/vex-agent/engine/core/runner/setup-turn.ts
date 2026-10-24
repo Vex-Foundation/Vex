@@ -27,6 +27,7 @@ import type { PromptStackOptions } from "../../prompts/index.js";
 import { getOpenAITools, type ToolVisibilityBase } from "@vex-agent/tools/registry.js";
 import { computeBand } from "../context-band.js";
 import { resolveProvider } from "@vex-agent/inference/registry.js";
+import { loadSessionInferenceConfig } from "./session-model.js";
 import { appendEngineMessage, appendMessage } from "@vex-agent/engine/events/index.js";
 import logger from "@utils/logger.js";
 import { releaseLeaseAndEmitControlState } from "../../runtime/release-and-emit.js";
@@ -49,8 +50,10 @@ export async function processMissionSetupTurn(
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
 
-  const config = await provider.loadConfig();
-  if (!config) throw new Error("No inference config available");
+  // The session's own model (F06). The host strips a pick for mission
+  // sessions, so this is the default unless the session picked before it
+  // became a mission; the RUN's model is the accepted contract's.
+  const config = await loadSessionInferenceConfig(provider, sessionId);
 
   // Puzzle 03 — claim the session lease BEFORE the first state
   // mutation (codex blocker #2). A concurrent setup turn / chat

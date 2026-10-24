@@ -96,6 +96,19 @@ export const MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "high";
  */
 export const LEGACY_MISSION_DEFAULT_REASONING_EFFORT: MissionReasoningEffort = "medium";
 
+/**
+ * The inference backends a mission's model may name (F06): bring-your-own-key
+ * OpenRouter and Vex Inference. Declared here because this module imports
+ * nothing outside `engine/types/`; the same two values as `ProviderType`.
+ */
+export const MISSION_MODEL_PROVIDERS = ["openrouter", "vexcloud"] as const;
+
+/** A mission's model: the backend it is chosen under and the catalogue id. */
+export interface MissionModelChoice {
+  readonly provider: (typeof MISSION_MODEL_PROVIDERS)[number];
+  readonly modelId: string;
+}
+
 /** Required fields for a mission to transition from draft → ready. */
 export interface MissionDraft {
   title: string | null;
@@ -157,6 +170,15 @@ export interface MissionDraft {
    * clears acceptance.
    */
   reasoningEffort: MissionReasoningEffort | null;
+  /**
+   * The model every inference call of this mission's run uses (F06).
+   * `null` means not set: the run uses the default (`AGENT_MODEL`) at start.
+   * Contract material from hash v10: FROZEN for the run with the rest of the
+   * accepted contract (`engine/mission/model.ts`). HOST-AUTHORED ONLY, through
+   * the contract card (deliberately absent from `patch-parser.ts`); any write
+   * clears acceptance.
+   */
+  model: MissionModelChoice | null;
 }
 
 /**

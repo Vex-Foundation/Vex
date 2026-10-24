@@ -41,6 +41,7 @@ const reads = vi.hoisted(() => ({
   needsYouCount: 3 as number | null,
 }));
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSession: (id: string | null) => ({
     data: id === null ? undefined : { ok: true, data: reads.session },
   }),

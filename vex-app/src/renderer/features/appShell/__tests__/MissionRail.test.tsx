@@ -35,6 +35,7 @@ const mockUseRenewableMissionSource = vi.fn();
 const mockUseRuntimeState = vi.fn();
 
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSession: (...a: unknown[]) => mockUseSession(...a),
   useSessionPlan: (...a: unknown[]) => mockUseSessionPlan(...a),
 }));

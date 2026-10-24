@@ -100,6 +100,7 @@ vi.mock("../../../../lib/api/usage.js", () => ({
 
 let sessionPlan: { enabled: boolean; accepted: boolean } | null = null;
 vi.mock("../../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionPlan: () => ({ data: { ok: true, data: sessionPlan } }),
   useExportSessionMarkdown: () => ({ isPending: false, mutate: vi.fn() }),
 }));

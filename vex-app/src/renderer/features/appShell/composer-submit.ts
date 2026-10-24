@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { ReasoningEffort } from "@shared/schemas/reasoning.js";
+import type { SessionModelPick } from "@shared/schemas/models.js";
 import { useIsChatSubmitting, useSubmitChat } from "../../lib/api/chat.js";
 import { useRequestStop, useRuntimeState } from "../../lib/api/runtime.js";
 import {
@@ -67,12 +68,13 @@ export type ComposerNotice =
        * `reasoningEffort` is the exact value that rode the FAILED submit
        * (`null` = the field was omitted): Retry resends the same turn
        * verbatim, even if the selector moved since — a retry is not a new
-       * choice.
+       * choice. `model` is the model pick that rode it, the same way (F06).
        */
       readonly retry?: {
         readonly sessionId: string;
         readonly message: string;
         readonly reasoningEffort: ReasoningEffort | null;
+        readonly model: SessionModelPick | null;
       };
     }
   | null;
@@ -153,6 +155,8 @@ export function useComposerSubmit(
   activeSession: SessionListItem | null,
   carryReasoningEffort: boolean,
   effectiveReasoningEffort: ReasoningEffort | null,
+  /** The model menu's pending pick for this session (F06), carried by the next send. */
+  carriedModelPick: SessionModelPick | null = null,
 ): ComposerSubmit {
   // Destructure stable members: `mutateAsync`/`stop` are referentially stable
   // (observer-bound + useCallback), so the hand-off effect below depends on
@@ -175,6 +179,7 @@ export function useComposerSubmit(
   const setSessionReasoningEffort = useUiStore(
     (s) => s.setSessionReasoningEffort,
   );
+  const clearSessionModelPick = useUiStore((s) => s.clearSessionModelPick);
   const askIntent = useBoardAskIntentStore((s) => s.intent);
   const consumeBoardAskIntent = useBoardAskIntentStore(
     (s) => s.consumeBoardAskIntent,
@@ -277,6 +282,7 @@ export function useComposerSubmit(
     async (
       message: string,
       reasoningOverride?: ReasoningEffort | null,
+      modelOverride?: SessionModelPick | null,
     ): Promise<void> => {
       const targetSessionId = sessionId;
       if (targetSessionId === null || inFlightRef.current.has(targetSessionId)) {
@@ -297,6 +303,9 @@ export function useComposerSubmit(
           : carryReasoningEffort
             ? effectiveReasoningEffort
             : null;
+      // F06: the pending model pick rides the send the same way; a Retry
+      // resends the pick that rode the failed one.
+      const carriedModel = modelOverride !== undefined ? modelOverride : carriedModelPick;
       try {
         const outcome = await submitTurn({
           sessionId: targetSessionId,
@@ -304,7 +313,17 @@ export function useComposerSubmit(
           ...(carriedReasoningEffort !== null && {
             reasoningEffort: carriedReasoningEffort,
           }),
+          ...(carriedModel !== null && { model: carriedModel }),
         });
+        // A turn that ran persisted the pick: the session's model query now
+        // reports it, so the pending pick is done - unless the operator
+        // picked again while it was in flight.
+        if (outcome.ok && carriedModel !== null) {
+          const pending = useUiStore.getState().modelPickBySession[targetSessionId];
+          if (pending?.modelId === carriedModel.modelId && pending.provider === carriedModel.provider) {
+            clearSessionModelPick(targetSessionId);
+          }
+        }
         if (sessionIdRef.current !== targetSessionId) return;
         if (!outcome.ok) {
           const armRetry =
@@ -319,6 +338,7 @@ export function useComposerSubmit(
                 sessionId: targetSessionId,
                 message,
                 reasoningEffort: carriedReasoningEffort,
+                model: carriedModel,
               },
             });
           } else {
@@ -347,6 +367,7 @@ export function useComposerSubmit(
                 sessionId: targetSessionId,
                 message,
                 reasoningEffort: carriedReasoningEffort,
+                model: carriedModel,
               },
             }),
           });
@@ -364,13 +385,15 @@ export function useComposerSubmit(
       activeSession,
       carryReasoningEffort,
       effectiveReasoningEffort,
+      carriedModelPick,
+      clearSessionModelPick,
     ],
   );
 
   const onRetry = useCallback((): void => {
     const r = notice?.retry;
     if (r === undefined || r.sessionId !== sessionId) return;
-    void runChatSubmit(r.message, r.reasoningEffort);
+    void runChatSubmit(r.message, r.reasoningEffort, r.model);
   }, [notice, sessionId, runChatSubmit]);
 
   // Welcome→create hand-off: when this composer mounts for the freshly

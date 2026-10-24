@@ -30,7 +30,10 @@
  *    Never swallowed silently;
  *  - on switching, price and context window are RE-RESOLVED from the new
  *    endpoint, because sibling endpoints of one model differ in both and a
- *    stale price would put a knowingly wrong number in `usage_log.cost`.
+ *    stale price would put a knowingly wrong number in `usage_log.cost`;
+ *  - all of it is per SESSION AND MODEL (F06): the request's `config.model`
+ *    picks the state, the candidates and the durable row, so a switch made on
+ *    one model never routes another.
  *
  * This module is the public entry point; the pieces live in the sibling folder
  * of the same name (classification, backoff policy, candidate catalogue,
@@ -60,6 +63,7 @@ import {
   nextRetryDelayMs,
 } from "./endpoint-failover/retry-policy.js";
 import {
+  type EndpointStateKey,
   adoptPersistedSwitch,
   clearPersistPending,
   commitEndpointSwitch,
@@ -91,10 +95,11 @@ export {
  */
 export interface EndpointFailoverDeps {
   /**
-   * Candidate endpoints for the configured model, ranked highest-uptime-first.
-   * Called only on the failure path and when re-resolving a sticky switch.
+   * Candidate endpoints for `model` (the request's), ranked
+   * highest-uptime-first. Called only on the failure path and when
+   * re-resolving a sticky switch.
    */
-  readonly loadCandidates: () => Promise<readonly EndpointCandidate[]>;
+  readonly loadCandidates: (model: string) => Promise<readonly EndpointCandidate[]>;
   /** Injected for tests; defaults to a real timer. */
   readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Injected for tests; defaults to the `session_endpoint_switches` repo. */
@@ -182,28 +187,31 @@ export function endpointFailoverDepsFrom(source: unknown): EndpointFailoverDeps 
  * refusing the turn because a provenance table is unavailable would be worse.
  */
 async function hydrateSessionEndpoint(
-  sessionId: string,
+  key: EndpointStateKey,
   deps: EndpointFailoverDeps,
 ): Promise<void> {
-  if (isHydrated(sessionId)) return;
+  if (isHydrated(key)) return;
   try {
     const persisted = await (deps.loadPersistedSwitch ?? getLatestEndpointSwitch)(
-      sessionId,
+      key.sessionId,
+      key.model,
     );
     if (persisted === null) {
-      markHydrated(sessionId);
+      markHydrated(key);
       return;
     }
-    adoptPersistedSwitch(sessionId, persisted.newEndpoint);
+    adoptPersistedSwitch(key, persisted.newEndpoint);
     logger.info("inference.openrouter.endpoint_switch_rehydrated", {
-      sessionId,
+      sessionId: key.sessionId,
+      model: key.model,
       endpointTag: persisted.newEndpoint,
       switchedAt: persisted.createdAt,
       reasonClass: persisted.reasonClass,
     });
   } catch (err) {
     logger.warn("inference.openrouter.endpoint_switch_hydrate_failed", {
-      sessionId,
+      sessionId: key.sessionId,
+      model: key.model,
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -219,21 +227,21 @@ async function hydrateSessionEndpoint(
  * rather than best-effort. Cheap: does nothing at all unless a write is owed.
  */
 async function flushPendingPersist(
-  sessionId: string,
+  key: EndpointStateKey,
   deps: EndpointFailoverDeps,
 ): Promise<void> {
-  const pending = getPersistPending(sessionId);
+  const pending = getPersistPending(key);
   if (pending === null) return;
   try {
     await (deps.persistSwitch ?? recordEndpointSwitch)(pending);
-    clearPersistPending(sessionId);
+    clearPersistPending(key);
     logger.info("inference.openrouter.endpoint_switch_persist_recovered", {
-      sessionId,
+      sessionId: key.sessionId,
       newEndpoint: pending.newEndpoint,
     });
   } catch (err) {
     logger.warn("inference.openrouter.endpoint_switch_persist_retry_failed", {
-      sessionId,
+      sessionId: key.sessionId,
       newEndpoint: pending.newEndpoint,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -252,7 +260,7 @@ async function candidatesFor(
 ): Promise<readonly EndpointCandidate[]> {
   const injected = config.endpointCandidates;
   if (injected !== undefined && injected.length > 0) return injected;
-  return deps.loadCandidates();
+  return deps.loadCandidates(config.model);
 }
 
 /**
@@ -312,11 +320,14 @@ export async function resolveSessionInferenceConfig(
 ): Promise<InferenceConfig> {
   if (sessionId === null) return config;
   if (deps.endpointRouting === "disabled") return config;
+  // The switch belongs to the model it was made on: a caller on another model
+  // (a session's own pick, or `AGENT_MODEL` for a background call) sees none.
+  const key: EndpointStateKey = { sessionId, model: config.model };
   // Read through to the durable row first: after a restart or an eviction the
   // map has no entry, and answering "not switched" here would hand the caller
   // the stale pin.
-  await hydrateSessionEndpoint(sessionId, deps);
-  const tag = getSwitchedEndpointTag(sessionId);
+  await hydrateSessionEndpoint(key, deps);
+  const tag = getSwitchedEndpointTag(key);
   if (tag === null) return config;
   if (tag === config.endpointTag) return config;
 
@@ -408,11 +419,13 @@ export async function sendWithEndpointFailover<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const sessionId = context?.sessionId ?? null;
+  const key: EndpointStateKey | null =
+    sessionId === null ? null : { sessionId, model: config.model };
   const sleep = deps.sleep ?? defaultSleep;
 
   // Settle any durable write a previous switch still owes, before this request
   // can add another decision on top of an unrecorded one.
-  if (sessionId !== null) await flushPendingPersist(sessionId, deps);
+  if (key !== null) await flushPendingPersist(key, deps);
 
   // Hydrates from the durable row on a map miss, so the config below is the
   // session's real current endpoint even right after a restart.
@@ -426,7 +439,7 @@ export async function sendWithEndpointFailover<T>(
   for (;;) {
     try {
       const result = await attempt(effectiveConfig);
-      if (sessionId !== null) recordCapacitySuccess(sessionId);
+      if (key !== null) recordCapacitySuccess(key);
       return result;
     } catch (err) {
       const failure = classifyCapacityFailure(err);
@@ -439,7 +452,7 @@ export async function sendWithEndpointFailover<T>(
         // Measurement must never change the failover decision.
       }
       const consecutiveFailures =
-        sessionId !== null ? recordCapacityFailure(sessionId) : (localFailures += 1);
+        key !== null ? recordCapacityFailure(key) : (localFailures += 1);
 
       logger.warn("inference.openrouter.capacity_failure", {
         model: effectiveConfig.model,
@@ -454,7 +467,7 @@ export async function sendWithEndpointFailover<T>(
       if (attemptsMade >= MAX_CAPACITY_ATTEMPTS) throw err;
 
       const switched = await maybeSwitch({
-        sessionId,
+        key,
         failure,
         consecutiveFailures,
         baseConfig: config,
@@ -489,7 +502,7 @@ export async function sendWithEndpointFailover<T>(
 }
 
 interface SwitchAttempt {
-  readonly sessionId: string | null;
+  readonly key: EndpointStateKey | null;
   readonly failure: CapacityFailure;
   readonly consecutiveFailures: number;
   /** Operator's original config — the switch re-resolves from THIS, not from a
@@ -505,14 +518,14 @@ interface SwitchAttempt {
  * failures yet, no session to make sticky, already switched, or no candidate.
  */
 async function maybeSwitch(input: SwitchAttempt): Promise<InferenceConfig | null> {
-  const { sessionId, failure, consecutiveFailures, baseConfig, effectiveConfig, deps } =
-    input;
+  const { key, failure, consecutiveFailures, baseConfig, effectiveConfig, deps } = input;
 
-  if (sessionId === null) return null;
+  if (key === null) return null;
   if (deps.endpointRouting === "disabled") return null;
   if (!failure.switchable) return null;
   if (consecutiveFailures < CONSECUTIVE_FAILURES_BEFORE_SWITCH) return null;
-  if (hasSwitched(sessionId)) return null;
+  if (hasSwitched(key)) return null;
+  const { sessionId } = key;
 
   const candidates = await candidatesFor(baseConfig, deps);
   const target = selectSwitchTarget(candidates, effectiveConfig.endpointTag);
@@ -538,10 +551,10 @@ async function maybeSwitch(input: SwitchAttempt): Promise<InferenceConfig | null
   // PERSIST FIRST, adopt second — the durable row is what makes the switch
   // survive a restart, so it must exist before the routing change does.
   const persisted = await persistSwitchFirst(deps, record);
-  commitEndpointSwitch(sessionId, target.tag);
+  commitEndpointSwitch(key, target.tag);
   // Write failed: the switch still happens (the turn is being rescued), and the
   // record is parked so every later request retries it until it lands.
-  if (!persisted) markPersistPending(sessionId, record);
+  if (!persisted) markPersistPending(key, record);
 
   logger.warn("inference.openrouter.endpoint_switched", {
     sessionId,

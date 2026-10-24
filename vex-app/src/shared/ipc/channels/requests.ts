@@ -192,6 +192,7 @@ export const CH = {
     setLaunchCeilings: "vex:mission:setLaunchCeilings",
     /** Host writer for the mission contract's reasoning effort (Kairos E-1). */
     setReasoningEffort: "vex:mission:setReasoningEffort",
+    setModel: "vex:mission:setModel",
     /**
      * Post-stop affordance: hand a stopped mission a new operator instruction
      * and restart it, instead of forcing the user to build a new mission from

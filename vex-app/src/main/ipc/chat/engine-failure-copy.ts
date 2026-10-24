@@ -295,6 +295,47 @@ function vexCloudError(signal: EngineFailureSignals, correlationId: string): Vex
 }
 
 /**
+ * The engine's `SessionModelUnavailableError` (F06), read by its own
+ * properties like every other signal here: the session's model is not on the
+ * active backend's catalogue (`delisted`), or a fresh pick named the other
+ * backend (`backend_changed`). The model id is a validated catalogue id.
+ */
+function sessionModelUnavailable(
+  cause: unknown,
+): { readonly modelId: string; readonly reason: "delisted" | "backend_changed" } | null {
+  if (typeof cause !== "object" || cause === null) return null;
+  const rec = cause as Record<string, unknown>;
+  const own = (key: string): unknown =>
+    Object.prototype.hasOwnProperty.call(rec, key) ? rec[key] : undefined;
+  if (own("code") !== "session_model_unavailable") return null;
+  const modelId = own("modelId");
+  const reason = own("reason");
+  if (typeof modelId !== "string" || modelId.length === 0 || modelId.length > 200) return null;
+  if (reason !== "delisted" && reason !== "backend_changed") return null;
+  return { modelId, reason };
+}
+
+function sessionModelUnavailableError(
+  failure: { readonly modelId: string; readonly reason: "delisted" | "backend_changed" },
+  mode: InferenceProviderMode,
+  correlationId: string,
+): VexError {
+  const backend = mode === "vexcloud" ? "Vex Inference" : "OpenRouter";
+  return {
+    code: "validation.invalid_input",
+    domain: "chat",
+    message:
+      failure.reason === "delisted"
+        ? `This session's model, ${failure.modelId}, is no longer offered by ${backend}. Pick another model in the composer, then retry.`
+        : `${failure.modelId} was picked for another inference backend than ${backend}. Pick a model again, then retry.`,
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId,
+  };
+}
+
+/**
  * Map a thrown engine failure to the user-facing `VexError`. Total over the
  * category set; `assertNever` makes a new category a compile error here rather
  * than a silent fall-through to "Unable to process the message".
@@ -314,6 +355,9 @@ export function classifyEngineError(
   ) {
     return providerUnavailableError(correlationId);
   }
+
+  const sessionModel = sessionModelUnavailable(cause);
+  if (sessionModel !== null) return sessionModelUnavailableError(sessionModel, mode, correlationId);
 
   const signal = chatErrorSignal(cause);
   if (mode === "vexcloud") {

@@ -10,7 +10,7 @@ import type {
   ChatSubmitInput,
   ChatSubmitResult,
 } from "@shared/schemas/chat.js";
-import { approvalsKeys, isUsageQueryForSession } from "./queryKeys.js";
+import { approvalsKeys, isUsageQueryForSession, sessionModelKeys } from "./queryKeys.js";
 import { sessionKeys } from "./sessions.js";
 
 /**
@@ -115,6 +115,14 @@ export function useSubmitChat(): UseSubmitChatResult {
         predicate: (query) =>
           isUsageQueryForSession(query.queryKey, variables.sessionId),
       });
+      // F06: a send that carried a model pick persisted it; the session's
+      // model query now reports it (and the context window, refreshed above,
+      // divides by its window).
+      if (variables.model !== undefined) {
+        void queryClient.invalidateQueries({
+          queryKey: sessionModelKeys.detail(variables.sessionId),
+        });
+      }
     },
   });
 

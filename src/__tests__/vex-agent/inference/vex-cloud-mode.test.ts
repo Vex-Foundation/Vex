@@ -254,3 +254,34 @@ describe("D16: the max_tokens disclosure reaches the notice bus", () => {
     expect(notices).toHaveLength(0);
   });
 });
+
+describe("F06: a session's own model on Vex Cloud", () => {
+  it("one provider resolves each model with that model's own default effort", async () => {
+    // AGENT_MODEL stays Haiku (medium); the session picks Sonnet (high).
+    const provider = new OpenRouterProvider();
+    const fallback = await provider.loadConfig();
+    const picked = await provider.loadConfig({ model: "anthropic/claude-sonnet-5.5" });
+    const argon = await provider.loadConfig({ model: "google/gemini-4-argon" });
+
+    expect(fallback?.model).toBe("anthropic/claude-haiku-5.5");
+    expect(fallback?.reasoningEffortDefault).toBe("medium");
+    expect(picked?.model).toBe("anthropic/claude-sonnet-5.5");
+    expect(picked?.reasoningEffortDefault).toBe("high");
+    expect(argon?.reasoningSupport?.efforts).toEqual(["medium", "high"]);
+    // No OpenRouter endpoint pin ever rides a Vex Cloud config.
+    expect(picked?.endpointTag).toBeUndefined();
+  });
+
+  it("the max_tokens notice names the model the request ran on", async () => {
+    const provider = new OpenRouterProvider();
+    const picked = await provider.loadConfig({ model: "anthropic/claude-sonnet-5.5" });
+    if (picked === null) throw new Error("expected a config for the picked model");
+    clampHeader = "requested=16384; effective=4096; reason=balance";
+
+    await provider.chatCompletion([{ role: "user", content: "hi" }], [], picked, CONTEXT);
+
+    expect(notices).toEqual([
+      expect.objectContaining({ kind: "max_tokens_clamped", model: "anthropic/claude-sonnet-5.5" }),
+    ]);
+  });
+});

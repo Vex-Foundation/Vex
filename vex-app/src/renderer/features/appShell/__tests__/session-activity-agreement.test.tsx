@@ -42,6 +42,7 @@ vi.mock("../../../lib/api/chat.js", () => ({
   useIsChatSubmitting: () => false,
 }));
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionPlan: () => ({ data: { ok: true, data: null } }),
   useSession: () => ({ data: { ok: true, data: null } }),
   useSessionsList: () => ({ data: { ok: true, data: [] } }),

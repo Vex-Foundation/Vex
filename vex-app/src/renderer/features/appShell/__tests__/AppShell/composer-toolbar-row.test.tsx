@@ -34,10 +34,11 @@ import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { resetDraftsForTest } from "../../../../lib/composer-drafts.js";
 import { resetComposerQueueForTest } from "../../../../lib/composer-queue.js";
 
+const submitMock = vi.hoisted(() => vi.fn());
 vi.mock("../../../../lib/api/chat.js", () => ({
   useSubmitChat: () => ({
     isPending: false,
-    mutateAsync: vi.fn(),
+    mutateAsync: submitMock,
     stop: vi.fn(),
   }),
   // R3-F1 session-scoped the composer's pending read; this suite never
@@ -54,10 +55,28 @@ let models: ReadonlyArray<{
   modelId: string;
   reasoning: ReasoningCapability | null;
   providerId?: string;
+  isDefault?: boolean;
 }> | null = null;
 vi.mock("../../../../lib/api/models.js", () => ({
   useAvailableModels: () => ({
-    data: models === null ? undefined : { ok: true, data: { models } },
+    data:
+      models === null
+        ? undefined
+        : {
+            ok: true,
+            data: {
+              // The DTO fields this suite does not vary, as the real list carries them.
+              models: models.map((m) => ({
+                isDefault: true,
+                displayName: m.modelId,
+                brand: "vendor",
+                contextLength: null,
+                pricingInputPerMillion: null,
+                pricingOutputPerMillion: null,
+                ...m,
+              })),
+            },
+          },
   }),
 }));
 
@@ -85,6 +104,7 @@ vi.mock("../../../../lib/api/compaction-preparation.js", () => ({
 }));
 
 vi.mock("../../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionPlan: () => ({ data: { ok: true, data: null } }),
   useExportSessionMarkdown: () => ({ isPending: false, mutate: vi.fn() }),
 }));
@@ -242,13 +262,15 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     );
   });
 
-  it("the model key opens Settings, Inference, on the active provider", async () => {
+  it("in an agent session the model key opens the model menu; its footer opens Settings, Inference", async () => {
     const { useUiStore } = await import("../../../../stores/uiStore.js");
     models = [{ modelId: "openai/gpt-6-luna", reasoning: null }];
     const { container } = mountDocked();
     const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
-    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens inference settings.");
+    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens the model menu.");
     fireEvent.click(chip);
+    expect(container.querySelector('[data-vex-area="composer-model-menu"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Default model and key in Settings" }));
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "settings",
       origin: null,
@@ -268,7 +290,7 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     // The mark comes before the name, and the words carry the provider.
     expect(chip.firstElementChild?.getAttribute("data-vex-provider-mark")).toBe("vexcloud");
     expect(chip.getAttribute("aria-label")).toBe(
-      "Model: openai/gpt-6-luna on Vex Inference. Opens inference settings.",
+      "Model: openai/gpt-6-luna on Vex Inference. Opens the model menu.",
     );
     expect(chip.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
   });
@@ -282,7 +304,7 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     expect(mark?.getAttribute("aria-hidden")).toBe("true");
     expect(chip.querySelector('[data-vex-provider-mark="vexcloud"]')).toBeNull();
     expect(chip.getAttribute("aria-label")).toBe(
-      "Model: deepseek/deepseek-v4-pro on OpenRouter. Opens inference settings.",
+      "Model: deepseek/deepseek-v4-pro on OpenRouter. Opens the model menu.",
     );
   });
 
@@ -291,7 +313,40 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     const { container } = mountDocked();
     const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
     expect(chip.querySelector("[data-vex-provider-mark]")).toBeNull();
-    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens inference settings.");
+    expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens the model menu.");
+  });
+
+  it("F06: a model picked in the menu shows at once and rides the next send", async () => {
+    const { useUiStore } = await import("../../../../stores/uiStore.js");
+    submitMock.mockResolvedValue({
+      ok: true,
+      data: { text: "ok", toolCallsMade: 0, pendingApprovals: [], stopReason: null, missionStatus: null, treatedAsInitialGoal: false },
+    });
+    models = [
+      { modelId: "openai/gpt-6-luna", reasoning: null, providerId: "openrouter" },
+      { modelId: "anthropic/claude-sonnet-4.5", reasoning: null, providerId: "openrouter", isDefault: false },
+    ];
+    const { container } = mountDocked();
+    const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    fireEvent.click(chip);
+    fireEvent.click(
+      container.querySelector('[data-vex-model-option="anthropic/claude-sonnet-4.5"]') as HTMLElement,
+    );
+    expect(container.querySelector("[data-vex-model-label]")?.textContent).toBe("claude-sonnet-4.5");
+
+    const field = container.querySelector("textarea") as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "hello" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    await vi.waitFor(() => expect(submitMock).toHaveBeenCalled());
+    expect(submitMock.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: SESSION,
+      message: "hello",
+      model: { provider: "openrouter", modelId: "anthropic/claude-sonnet-4.5" },
+    });
+    // A send that ran clears the pending pick (the session's model query reports it now).
+    await vi.waitFor(() => expect(useUiStore.getState().modelPickBySession[SESSION]).toBeUndefined());
+    submitMock.mockReset();
+    useUiStore.setState({ modelPickBySession: {} });
   });
 
   it("an unrouted model id passes through the display trim untouched", () => {

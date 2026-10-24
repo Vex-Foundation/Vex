@@ -9,6 +9,7 @@ import { z } from "zod";
 import { sessionIdField, missionIdField } from "./_common.js";
 import { MISSION_MAX_LAUNCH_COUNT } from "./draft.js";
 import { reasoningEffortSchema } from "../reasoning.js";
+import { sessionModelPickSchema } from "../models.js";
 
 // ── acceptContract ──────────────────────────────────────────────
 
@@ -310,3 +311,35 @@ export const missionSetAutoRetryResultSchema = z.discriminatedUnion(
 export type MissionSetAutoRetryResult = z.infer<
   typeof missionSetAutoRetryResultSchema
 >;
+
+// ── setModel (F06) ───────────────────────────────────────────────
+
+/**
+ * The mission's model, set on the contract card before acceptance. Main
+ * checks it against the ACTIVE backend's catalogue. Contract-hash material
+ * (v10), so a write clears a prior acceptance, and a started mission refuses
+ * the write (`blocked_status`): its run uses the model frozen in its own
+ * contract snapshot. `null` clears it (the default model at start).
+ */
+export const missionSetModelInputSchema = z
+  .object({
+    sessionId: sessionIdField,
+    missionId: missionIdField,
+    model: sessionModelPickSchema.nullable(),
+  })
+  .strict();
+export type MissionSetModelInput = z.infer<typeof missionSetModelInputSchema>;
+
+export const missionSetModelResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("updated"),
+      model: sessionModelPickSchema.nullable(),
+      acceptanceCleared: z.boolean(),
+    })
+    .strict(),
+  z.object({ outcome: z.literal("not_found") }).strict(),
+  z.object({ outcome: z.literal("blocked_status"), status: z.string() }).strict(),
+  z.object({ outcome: z.literal("invalid"), reason: z.string() }).strict(),
+]);
+export type MissionSetModelResult = z.infer<typeof missionSetModelResultSchema>;

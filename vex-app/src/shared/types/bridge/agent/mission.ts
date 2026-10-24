@@ -25,6 +25,8 @@ import type {
   MissionSetLaunchCeilingsResult,
   MissionSetReasoningEffortInput,
   MissionSetReasoningEffortResult,
+  MissionSetModelInput,
+  MissionSetModelResult,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
@@ -95,6 +97,12 @@ export interface MissionBridge {
   readonly setReasoningEffort: (
     input: MissionSetReasoningEffortInput,
   ) => Promise<Result<MissionSetReasoningEffortResult>>;
+  /**
+   * The mission contract's model (F06). Contract-hash material: the engine
+   * clears acceptance on a write. Main checks the model against the active
+   * backend's catalogue.
+   */
+  readonly setModel: (input: MissionSetModelInput) => Promise<Result<MissionSetModelResult>>;
   /**
    * Post-stop restart: append the user's "do this differently" instruction and
    * start a NEW run against the SAME already-accepted contract. Refuses with

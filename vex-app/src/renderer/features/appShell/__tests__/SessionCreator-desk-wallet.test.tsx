@@ -27,6 +27,7 @@ let walletsResult: unknown = {
 let runtimeMode = "lighter";
 
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useCreateSession: () => ({ mutateAsync: createMutateAsync, isPending: false }),
 }));
 vi.mock("../../../lib/api/session-wallets.js", () => ({

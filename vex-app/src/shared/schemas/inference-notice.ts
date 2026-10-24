@@ -2,7 +2,7 @@
  * `EV.engine.inferenceNotice` - a request that succeeded, but not quite as
  * asked, which the user must be told about (never silently).
  *
- * Two kinds. `max_tokens_clamped`: Vex Cloud lowered `max_tokens` (owner decision D16). The
+ * Four kinds. `max_tokens_clamped`: Vex Cloud lowered `max_tokens` (owner decision D16). The
  * gateway disclosed it in the `x-vex-max-tokens` response header; the engine
  * read it (`inference/openrouter/round-fetch.ts`) and the main-side bridge
  * forwards it here. `balance` means the VEX balance covers no more; a
@@ -13,6 +13,9 @@
  *
  * `vex_inference_foreign_withdrawal`: a cooling withdrawal on the account
  * whose id this app did not create (one per withdrawal id).
+ *
+ * `session_model_fallback`: the session's own model (F06) was picked under
+ * the other inference backend, so the turn ran on the default model.
  *
  * Bounded codes and integers only. Not model-visible: it describes the
  * transport, not the conversation.
@@ -78,10 +81,36 @@ const vexInferenceForeignWithdrawalNoticeSchema = z
   })
   .strict();
 
+/** A catalogue model id, the shape `chat.submit` accepts for a pick. */
+const noticeModelIdSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/);
+
+/**
+ * F06: the session's own model was picked under the other inference backend,
+ * so the turn ran on the default model. Backend names and model ids only.
+ */
+const sessionModelFallbackNoticeSchema = z
+  .object({
+    type: z.literal(INFERENCE_NOTICE_EVENT_TYPE),
+    kind: z.literal("session_model_fallback"),
+    sessionId: z.string().min(1).max(128),
+    missionRunId: z.null(),
+    provider: z.enum(["openrouter", "vexcloud"]),
+    model: noticeModelIdSchema,
+    pickedProvider: z.enum(["openrouter", "vexcloud"]),
+    pickedModel: noticeModelIdSchema,
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 export const inferenceNoticeEventSchema = z.discriminatedUnion("kind", [
   maxTokensClampedNoticeSchema,
   vexInferenceBalanceLowNoticeSchema,
   vexInferenceForeignWithdrawalNoticeSchema,
+  sessionModelFallbackNoticeSchema,
 ]);
 
 export type InferenceNoticeEvent = z.infer<typeof inferenceNoticeEventSchema>;

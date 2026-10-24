@@ -16,6 +16,9 @@ import type {
 } from "@vex-agent/inference/types.js";
 import { hydrateEngineSession } from "../hydrate.js";
 import * as sessionEffortRepo from "@vex-agent/db/repos/session-reasoning-effort.js";
+import * as sessionModelRepo from "@vex-agent/db/repos/session-model.js";
+import { clearSessionEndpointState } from "@vex-agent/inference/openrouter/endpoint-failover.js";
+import { loadSessionInferenceConfig, type SessionModelChoice } from "./session-model.js";
 import { clampReasoningEffort } from "@vex-agent/inference/reasoning-effort.js";
 import type { TurnLoopConfig } from "../turn-loop.js";
 import { runTurnLoop } from "../turn-loop.js";
@@ -88,6 +91,13 @@ export interface TurnRequestOptions {
    * never change a non-advertising model's request shape or cost.
    */
   readonly reasoningEffort?: ReasoningEffort;
+  /**
+   * Operator-chosen model for THIS turn and every later turn of the session
+   * (F06). The host validated it against the active backend's catalogue;
+   * the engine loads its config (`loadSessionInferenceConfig`) and persists
+   * it under the lease, so wake continuations and resumes run on it too.
+   */
+  readonly model?: SessionModelChoice;
 }
 
 /**
@@ -108,8 +118,10 @@ export async function processAgentTurn(
   const provider = await resolveProvider();
   if (!provider) throw new Error("No inference provider available");
 
-  const config = await provider.loadConfig();
-  if (!config) throw new Error("No inference config available");
+  // The turn's own pick, else the session's, else the default (F06). Loaded
+  // BEFORE the lease and the first write, so a model that cannot run refuses
+  // the turn with nothing appended.
+  const config = await loadSessionInferenceConfig(provider, sessionId, options?.model);
 
   // Stamp the per-turn reasoning effort on OUR config copy (loadConfig hands
   // out caller-owned clones, never the cached reference). The support gate
@@ -148,6 +160,17 @@ export async function processAgentTurn(
     // run at the same effort instead of the provider default.
     if (options?.reasoningEffort !== undefined) {
       await sessionEffortRepo.setSessionReasoningEffort(sessionId, options.reasoningEffort);
+    }
+    // Persist the operator's model pick (F06, migration 182) for the same
+    // reason. Moving off a model drops that model's in-memory failover state
+    // for the session, so no stale failure count survives a later return to
+    // it (the durable switch row stays the authority).
+    if (options?.model !== undefined) {
+      const previous = await sessionModelRepo.getSessionModel(sessionId);
+      await sessionModelRepo.setSessionModel(sessionId, options.model.provider, options.model.modelId);
+      if (previous !== null && previous.modelId !== options.model.modelId) {
+        clearSessionEndpointState(sessionId, previous.modelId);
+      }
     }
 
     // Save user message (FIRST state mutation, under lease)
@@ -291,8 +314,8 @@ export async function continueAgentSessionUnderLease(
     const provider = await resolveProvider();
     if (!provider) throw new Error("No inference provider available");
 
-    const config = await provider.loadConfig();
-    if (!config) throw new Error("No inference config available");
+    // The session's own model (F06): a wake continuation runs on the pick.
+    const config = await loadSessionInferenceConfig(provider, sessionId);
 
     return await runAgentTurnUnderLease(
       sessionId,

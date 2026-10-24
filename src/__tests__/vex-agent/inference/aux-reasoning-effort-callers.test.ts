@@ -4,6 +4,10 @@
  * provider default or a chat pick. One stub provider per caller records the
  * config it was handed; no network, no DB (the stub config carries no
  * `provider`, so the session endpoint re-resolution is skipped).
+ *
+ * F06: every background call also runs on the DEFAULT model (`AGENT_MODEL`),
+ * never a session's own pick: each `loadConfig` the callers make is recorded
+ * and must carry no model.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,9 +36,15 @@ const LOADED: StubConfig = {
   reasoningEffort: "high",
 };
 
+/** Every `loadConfig` argument list a background caller passed (F06). */
+const loadCalls: unknown[][] = [];
+
 function recordingProvider(content: string, seen: unknown[]): () => Promise<JudgeProvider> {
   return async () => ({
-    loadConfig: async () => ({ ...LOADED }),
+    loadConfig: async (...args: unknown[]) => {
+      loadCalls.push(args);
+      return { ...LOADED };
+    },
     chatCompletionSimple: async (_messages, config) => {
       seen.push(config);
       return { content, usage: { cost: 0 } };
@@ -121,6 +131,13 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  // F06: no background caller asks for a model, so each runs on the default.
+  expect(loadCalls.length).toBeGreaterThan(0);
+  for (const args of loadCalls) {
+    const options = args[0] as { readonly model?: unknown } | undefined;
+    expect(options?.model).toBeUndefined();
+  }
+  loadCalls.length = 0;
 });
 
 describe("background calls send the aux reasoning effort", () => {

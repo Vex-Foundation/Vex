@@ -10,6 +10,7 @@ import {
   LEGACY_V6_CONTRACT_HASH_VERSION,
   LEGACY_V7_CONTRACT_HASH_VERSION,
   LEGACY_V8_CONTRACT_HASH_VERSION,
+  LEGACY_V9_CONTRACT_HASH_VERSION,
   buildContractMaterial,
   isKnownContractHashVersion,
   canonicalStringify,
@@ -20,6 +21,7 @@ import type { DeployedCapital, MissionDraft } from "../../../../vex-agent/engine
 
 function makeDraft(overrides: Partial<MissionDraft> = {}): MissionDraft {
   return {
+    model: null,
     title: "SOL DCA",
     goal: "Accumulate 10 SOL",
     capitalSource: "wallet",
@@ -299,8 +301,8 @@ describe("contract-hash", () => {
     });
 
     it("is the version produced for a new draft", () => {
-      expect(CONTRACT_HASH_VERSION).toBe(9);
-      expect(buildContractMaterial(makeDraft()).v).toBe(9);
+      expect(CONTRACT_HASH_VERSION).toBe(10);
+      expect(buildContractMaterial(makeDraft()).v).toBe(10);
     });
 
     it("carries the ceiling pair in the canonical material", () => {
@@ -308,7 +310,7 @@ describe("contract-hash", () => {
         makeDraft({ maxLaunchValueRaw: "2000000000000000", maxLaunchValueDecimals: 18 }),
       );
       expect(material).toMatchObject({
-        v: 9,
+        v: 10,
         maxLaunchValueRaw: "2000000000000000",
         maxLaunchValueDecimals: 18,
       });
@@ -372,7 +374,7 @@ describe("contract-hash", () => {
 
     it("carries the count ceiling in the current material and changes the hash when it moves", () => {
       const material = buildContractMaterial(makeDraft({ maxLaunchCount: 3 }));
-      expect(material).toMatchObject({ v: 9, maxLaunchCount: 3 });
+      expect(material).toMatchObject({ v: 10, maxLaunchCount: 3 });
       expect(computeContractHash(makeDraft({ maxLaunchCount: 3 }))).not.toBe(
         computeContractHash(makeDraft({ maxLaunchCount: 4 })),
       );
@@ -404,10 +406,10 @@ describe("contract-hash", () => {
       // The single allowlist `commit-start`, `diff`, `renew` and `acceptance`
       // all gate on — a bump that forgot one of them used to mean a mission of
       // that vintage could never start, renew, or stop showing as dirty.
-      for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+      for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
         expect(isKnownContractHashVersion(version)).toBe(true);
       }
-      expect(isKnownContractHashVersion(10)).toBe(false);
+      expect(isKnownContractHashVersion(11)).toBe(false);
       expect(isKnownContractHashVersion(null)).toBe(false);
     });
 
@@ -748,7 +750,11 @@ describe("contract-hash", () => {
     });
 
     it("hashes a new draft that never set it as high, the effort it runs at", () => {
-      expect(buildContractMaterial(makeDraft())).toMatchObject({ v: 9, reasoningEffort: "high" });
+      expect(buildContractMaterial(makeDraft())).toMatchObject({ v: 10, reasoningEffort: "high" });
+      expect(buildContractMaterial(makeDraft(), LEGACY_V9_CONTRACT_HASH_VERSION)).toMatchObject({
+        v: 9,
+        reasoningEffort: "high",
+      });
       expect(computeContractHash(makeDraft())).toBe(computeContractHash(makeDraft({ reasoningEffort: "high" })));
     });
 
@@ -767,8 +773,40 @@ describe("contract-hash", () => {
 
     it("hashes v8 and v9 of the same draft differently", () => {
       expect(computeContractHash(makeDraft({ reasoningEffort: "high" }), LEGACY_V8_CONTRACT_HASH_VERSION)).not.toBe(
-        computeContractHash(makeDraft({ reasoningEffort: "high" })),
+        computeContractHash(makeDraft({ reasoningEffort: "high" }), LEGACY_V9_CONTRACT_HASH_VERSION),
       );
+    });
+  });
+
+  describe("v10 mission model (F06)", () => {
+    const SONNET = { provider: "vexcloud", modelId: "anthropic/claude-sonnet-5.5" } as const;
+
+    it("carries the stored model, or null when the contract names none", () => {
+      expect(buildContractMaterial(makeDraft())).toMatchObject({ v: 10, model: null });
+      expect(buildContractMaterial(makeDraft({ model: SONNET }))).toMatchObject({ v: 10, model: SONNET });
+    });
+
+    it("binds the model: a different model or backend is a different contract", () => {
+      const base = computeContractHash(makeDraft());
+      const sonnet = computeContractHash(makeDraft({ model: SONNET }));
+      const onOpenRouter = computeContractHash(makeDraft({ model: { ...SONNET, provider: "openrouter" } }));
+      expect(sonnet).not.toBe(base);
+      expect(onOpenRouter).not.toBe(sonnet);
+    });
+
+    it("v9 material is frozen: no model key, and the model never moves a v9 hash", () => {
+      const v9 = buildContractMaterial(makeDraft({ model: SONNET }), LEGACY_V9_CONTRACT_HASH_VERSION);
+      expect(v9).not.toHaveProperty("model");
+      expect(computeContractHash(makeDraft({ model: SONNET }), LEGACY_V9_CONTRACT_HASH_VERSION)).toBe(
+        computeContractHash(makeDraft(), LEGACY_V9_CONTRACT_HASH_VERSION),
+      );
+    });
+
+    it("an unreadable stored model hashes as not set", () => {
+      // A row written by another build: read back as untyped JSON.
+      const stored: unknown = { provider: "anthropic", modelId: "x/y" };
+      const bogus = stored as MissionDraft["model"];
+      expect(computeContractHash(makeDraft({ model: bogus }))).toBe(computeContractHash(makeDraft()));
     });
   });
 });

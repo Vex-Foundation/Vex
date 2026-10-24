@@ -58,6 +58,7 @@ const actions = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionsList: () => ({
     isLoading: false,
     data: { ok: true, data: harness.rows },

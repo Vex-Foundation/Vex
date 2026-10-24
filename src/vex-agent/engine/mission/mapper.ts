@@ -8,6 +8,7 @@
 import type { MissionDraft } from "../types.js";
 import { normalizeDeployedCapital } from "./deployed-capital.js";
 import { normalizeMissionReasoningEffort } from "./reasoning-effort.js";
+import { normalizeMissionModel } from "./model-choice.js";
 import { formatRawAmount } from "@vex-agent/tools/protocols/amount-display.js";
 import type { Mission, MissionDraftRow } from "@vex-agent/db/repos/missions.js";
 
@@ -61,6 +62,8 @@ export function missionToDraft(m: Mission): MissionDraft {
         : null,
     // E-1 - an unknown stored value reads as not set (the default applies).
     reasoningEffort: normalizeMissionReasoningEffort(constraints?.reasoningEffort),
+    // F06 - an unreadable stored model reads as not set (the default applies).
+    model: normalizeMissionModel(constraints?.model),
   };
 }
 
@@ -119,7 +122,8 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
     draft.maxLaunchValueRaw !== undefined ||
     draft.maxLaunchValueDecimals !== undefined ||
     draft.maxLaunchCount !== undefined ||
-    draft.reasoningEffort !== undefined
+    draft.reasoningEffort !== undefined ||
+    draft.model !== undefined
   ) {
     row.constraints_json = {
       ...(draft.deadline !== undefined ? { deadline: draft.deadline } : {}),
@@ -140,6 +144,9 @@ export function domainToRow(draft: Partial<MissionDraft>): MissionDraftRow {
       ...(draft.reasoningEffort !== undefined
         ? { reasoningEffort: draft.reasoningEffort }
         : {}),
+      // F06 - written only by the host contract card (`set-model.ts`);
+      // `patch-parser.ts` never yields this key.
+      ...(draft.model !== undefined ? { model: draft.model } : {}),
     };
   }
 
