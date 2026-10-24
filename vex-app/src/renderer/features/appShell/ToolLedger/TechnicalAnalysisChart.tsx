@@ -5,13 +5,21 @@
  * instance is imperative and DOM-owning, so it lives in a ref, is created once
  * per subject inside an effect, and is released by `chart.remove()` in that
  * effect's cleanup (which is also what makes StrictMode's double effect safe).
- * `fitContent()` runs once per subject, when its data lands. Colours come from
- * the semantic aliases through the board's palette bridge and are re-read
- * when the theme flips, so there is no second palette.
+ * Colours come from the semantic aliases through the board's palette bridge
+ * and are re-read when the theme flips, so there is no second palette.
+ *
+ * VIEWPORT: the read carries every closed bar loaded, warm-up included, but
+ * the card's numbers describe only the newest `windowBars`. The chart frames
+ * exactly that window, never `fitContent()`, so what is on screen is what the
+ * numbers cover. The card settles its width after the data lands, and the
+ * library keeps its bar spacing across a resize, which left the newest bars
+ * off screen. So the frame is re-applied on every resize until the reader
+ * scrolls or zooms, and never after.
  *
  * The EMA lines are computed HERE with `@vex-lib/indicators`, the same module
- * the engine reads, over the candles this chart draws. Labels are never drawn
- * by the library; the legend under the canvas names the lines in words.
+ * the engine reads, over every candle read, so they are warm across the whole
+ * framed window. Labels are never drawn by the library; the legend under the
+ * canvas names the lines in words.
  */
 
 import { useEffect, useRef, type JSX } from "react";
@@ -33,8 +41,19 @@ export interface TechnicalAnalysisChartProps {
   /** Identity of what is drawn. A change means a new chart and a new fit. */
   readonly subjectKey: string;
   readonly candles: readonly TechnicalAnalysisCandle[];
+  /** Closed bars the card's numbers cover: the newest this many are framed. */
+  readonly windowBars: number;
   /** Accessible name for the chart figure. */
   readonly label: string;
+}
+
+/**
+ * The logical range that frames the newest `windowBars` of `count` bars, with
+ * one empty slot on the right so the last candle does not touch the axis.
+ */
+export function analysisWindowRange(count: number, windowBars: number): { from: number; to: number } {
+  const shown = Math.max(1, Math.min(count, Math.floor(windowBars)));
+  return { from: count - shown - 0.5, to: count + 0.5 };
 }
 
 /** Places after the point that keep about four significant digits on the axis. */
@@ -58,12 +77,16 @@ function lineData(candles: readonly TechnicalAnalysisCandle[], period: number) {
   });
 }
 
-export function TechnicalAnalysisChart({ subjectKey, candles, label }: TechnicalAnalysisChartProps): JSX.Element {
+export function TechnicalAnalysisChart({ subjectKey, candles, windowBars, label }: TechnicalAnalysisChartProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick", Time> | null>(null);
   const fastRef = useRef<ISeriesApi<"Line", Time> | null>(null);
   const slowRef = useRef<ISeriesApi<"Line", Time> | null>(null);
+  /** The frame the data effect last chose; the resize observer re-applies it. */
+  const frameRef = useRef<{ from: number; to: number } | null>(null);
+  /** Set by the reader's first scroll or zoom: from then on the viewport is theirs. */
+  const readerMovedRef = useRef(false);
   const precision = axisPrecision(candles[candles.length - 1]?.c ?? 0);
 
   // ── The instance. One per subject and precision - nothing else. ─────────
@@ -127,7 +150,27 @@ export function TechnicalAnalysisChart({ subjectKey, candles, label }: Technical
     });
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-vex-theme"] });
 
+    // The frame follows the card's width until the reader takes the viewport.
+    readerMovedRef.current = false;
+    const markReaderMoved = () => {
+      readerMovedRef.current = true;
+    };
+    container.addEventListener("pointerdown", markReaderMoved);
+    container.addEventListener("wheel", markReaderMoved, { passive: true });
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            const frame = frameRef.current;
+            if (frame === null || readerMovedRef.current || container.clientWidth === 0) return;
+            chart.timeScale().setVisibleLogicalRange(frame);
+          });
+    resizeObserver?.observe(container);
+
     return () => {
+      resizeObserver?.disconnect();
+      container.removeEventListener("pointerdown", markReaderMoved);
+      container.removeEventListener("wheel", markReaderMoved);
       themeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -153,8 +196,10 @@ export function TechnicalAnalysisChart({ subjectKey, candles, label }: Technical
     );
     fastRef.current?.setData(lineData(candles, 20));
     slowRef.current?.setData(lineData(candles, 50));
-    chart.timeScale().fitContent();
-  }, [candles, subjectKey, precision]);
+    const frame = analysisWindowRange(candles.length, windowBars);
+    frameRef.current = frame;
+    chart.timeScale().setVisibleLogicalRange(frame);
+  }, [candles, windowBars, subjectKey, precision]);
 
   return (
     <figure className="m-0">

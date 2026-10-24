@@ -222,6 +222,7 @@ export function TechnicalAnalysisResult({ result }: { readonly result: AnalysisR
             <TechnicalAnalysisChart
               subjectKey={`${marketLine(result)}:${interval}`}
               candles={live.candles}
+              windowBars={live.bars}
               label={`${marketLine(result)}, ${interval} candles with EMA 20 and EMA 50`}
             />
           </Suspense>
