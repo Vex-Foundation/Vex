@@ -58,6 +58,20 @@
  *    agent / full              measured 110,942 B over 33 tools  ceiling 113,200
  *    mission run / restricted  measured 112,167 B over 34 tools  ceiling 114,400
  *    the two shortcuts          measured  4,406 B                bound     4,500
+ *
+ *  2026-10-24, watchlist and price alerts (F01). `Watchlist` and `PriceAlert`
+ *  join the hot set: they are internal tools, and internal tools are always
+ *  loaded (ToolSearch discovers protocol tools only). Together they cost
+ *  3,437 B on every turn, for the one way a chat can follow a token or set an
+ *  alert. Their descriptions were cut to what the model cannot decide without
+ *  them (when to use it, notify-only and no card, the limits, the latency, the
+ *  own-words guard); the result shapes live in `returns`, served by
+ *  vex_ToolDescribe, not in the block. Every byte ceiling holds unchanged; the
+ *  COUNT rises from 32 to 34, which is the decision this entry records.
+ *
+ *    agent / restricted        measured 104,088 B over 34 tools  ceiling 104,600
+ *    agent / full              measured 111,750 B over 35 tools  ceiling 113,200
+ *    mission run / restricted  measured 112,975 B over 36 tools  ceiling 114,400
  */
 
 import { describe, it, expect } from "vitest";
@@ -117,6 +131,6 @@ describe("always-loaded tool block byte ceilings", () => {
     // The COUNT, not only the bytes: a new always-loaded tool is a budget
     // decision even when it is small, because every one of them is paid on
     // every turn of every session.
-    expect(getVisibleToolDefs(defaultVisibilityContext())).toHaveLength(32);
+    expect(getVisibleToolDefs(defaultVisibilityContext())).toHaveLength(34);
   });
 });

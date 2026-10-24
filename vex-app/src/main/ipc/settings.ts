@@ -7,6 +7,7 @@ import { CH } from "@shared/ipc/channels.js";
 import { err, ok, type Result, type VexError } from "@shared/ipc/result.js";
 import {
   preferencesSchema,
+  setNotificationPreferencesInputSchema,
   type Preferences,
 } from "@shared/schemas/preferences.js";
 import {
@@ -363,6 +364,19 @@ export function registerSettingsHandlers(): Array<() => void> {
         } else {
           await disableSentry();
         }
+        return ok(next);
+      },
+    })
+  );
+
+  handlers.push(
+    registerHandler({
+      channel: CH.settings.setNotificationPreferences,
+      domain: "settings",
+      inputSchema: setNotificationPreferencesInputSchema,
+      outputSchema: preferencesSchema,
+      handle: async ({ priceAlertsOs }): Promise<Result<Preferences>> => {
+        const next = await preferencesStore.update({ notifications: { priceAlertsOs } });
         return ok(next);
       },
     })

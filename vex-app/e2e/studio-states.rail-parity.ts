@@ -414,9 +414,9 @@ export function registerRailParityScenarios(
     // THE I6 ASSERTION, and it is a number on purpose. The pane was a fixed 256px
     // box (`h-64`) inside a scrolling rail. The R3 column puts the nav above
     // the Studio body (docs/design/R3-MINIMAL.md section 4), so at 900px the
-    // split holds about 420px: the explorer's default share (0.55) gives it
-    // more than the projects pane above it and well over 200px, which a fixed
-    // box could not do at every window height.
+    // split holds about 360px once every nav row is drawn: the explorer's
+    // default share (0.6) gives it more than the projects pane above it and
+    // over 200px, which a fixed box could not do at every window height.
     const paneBox = await explorerPane.boundingBox();
     const projectsBox = await sidebar.locator('[data-vex-rail-pane="projects"]').boundingBox();
     expect(paneBox, "the explorer pane has no layout box").not.toBeNull();

@@ -29,6 +29,8 @@ const OWN_CLIENT_ALLOWED = [
   "dim-lock.ts",
   "memory-jobs-db.ts",
   "mission-runs-db.ts",
+  // The price-alert worker's schema probe (F01), the sync-db.ts shape.
+  "price-alerts-db.ts",
   "regime-db.ts",
   // Its default runner is the old fresh-client path; the pool installs
   // itself as the runner on load (pinned below).

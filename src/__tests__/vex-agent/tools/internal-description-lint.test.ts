@@ -79,7 +79,8 @@ describe("G2 - internal tool description lint", () => {
     // 41 -> 44: the Vex Inference status read and deposit pair
     // (`registry/vex-inference.ts`), all three inside the basic lane, which is
     // why that count moved 20 -> 23 in the same step.
-    expect(SUBJECTS).toHaveLength(44);
+    // 44 -> 46: `Watchlist` and `PriceAlert` (`registry/alerts.ts`, F01).
+    expect(SUBJECTS).toHaveLength(46);
     expect(BASIC_LANE.size, "basic-lane coverage changed").toBe(23);
 
     // The 19 the basic rule never saw (18 + `BoardCompose`), and the 14 it
@@ -88,7 +89,8 @@ describe("G2 - internal tool description lint", () => {
     for (const name of BASIC_LANE) {
       expect(linted.has(name), `${name} is outside the ActionKind lane`).toBe(true);
     }
-    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(21);
+    // 21 -> 23: `Watchlist` and `PriceAlert` sit outside the basic lane.
+    expect([...linted].filter((name) => !BASIC_LANE.has(name))).toHaveLength(23);
   });
 
   // The blast radius of the split: without the overlap, no committed rule can

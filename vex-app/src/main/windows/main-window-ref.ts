@@ -41,3 +41,21 @@ export function setMainWindow(window: BrowserWindow): void {
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow.get();
 }
+
+let mainWindowOpener: (() => Promise<BrowserWindow>) | null = null;
+
+/**
+ * The entry registers the window factory once, so a leaf module can reopen the
+ * window without importing `main-window.ts`. Importing it from anywhere but
+ * the entry, even lazily, makes it a shared chunk and carries the `app://`
+ * scheme registration out of `dist/main/index.js`, where it must run before
+ * the app is ready (`scripts/check-privileged-bundles.mjs`).
+ */
+export function setMainWindowOpener(open: () => Promise<BrowserWindow>): void {
+  mainWindowOpener = open;
+}
+
+/** A new main window from the registered factory; `null` before the entry registered one. */
+export async function openMainWindow(): Promise<BrowserWindow | null> {
+  return mainWindowOpener === null ? null : mainWindowOpener();
+}

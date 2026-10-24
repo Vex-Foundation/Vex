@@ -305,6 +305,7 @@ const NOT_EXECUTION: ReadonlySet<string> = new Set<string>([
   CH.updater.cancelDownload,
   CH.updater.restartAndInstallNow,
   CH.terminal.confirmPort, // a terminal data-plane handshake
+  CH.alerts.cancelPriceAlert, // marks a local alert row cancelled; no agent work, nothing signs
 ]);
 
 const EXECUTION_VERB =

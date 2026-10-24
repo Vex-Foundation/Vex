@@ -143,6 +143,8 @@ export type ShellRoute =
         | "howItWorks"
         | "portfolio"
         | "board"
+        /** The user's followed tokens and price alerts (F01). */
+        | "watchlist"
         /** The Vex Cloud funding page: Deposit, Withdraw, Cashback, History. */
         | "vexCloudFunding";
       readonly origin: ShellScreenOrigin | null;
@@ -389,7 +391,7 @@ export function assetsScopeKey(scope: AssetsRouteScope): string {
  *
  *  - Chat: agent mode, no page.
  *  - Missions: agent mode, no page, the sessions filter on its Mission tab.
- *  - Portfolio, Board, Settings: their page routes, in the current mode.
+ *  - Portfolio, Board, Watchlist, Settings: their page routes, in the current mode.
  *  - Lighter, Studio: their runtime modes, no page.
  */
 export type NavDestination =
@@ -397,6 +399,7 @@ export type NavDestination =
   | "missions"
   | "portfolio"
   | "board"
+  | "watchlist"
   | "lighter"
   | "studio"
   | "settings";
@@ -433,6 +436,8 @@ export function navigationTarget(
       return { mode: null, route: { kind: "portfolio", origin }, sessionModeFilter: current };
     case "board":
       return { mode: null, route: { kind: "board", origin }, sessionModeFilter: current };
+    case "watchlist":
+      return { mode: null, route: { kind: "watchlist", origin }, sessionModeFilter: current };
     case "settings":
       return {
         mode: null,
@@ -482,6 +487,8 @@ export function selectNavDestination(
       return "portfolio";
     case "board":
       return "board";
+    case "watchlist":
+      return "watchlist";
     default:
       return null;
   }

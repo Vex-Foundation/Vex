@@ -99,9 +99,10 @@ import {
   classifyRateClass,
   parseRetryAfterMs,
 } from "./throttle.js";
-import type { PairsResponse, TokensPairsResponse, TokensResponse } from "./types.js";
+import type { PairsResponse, SearchResponse, TokensPairsResponse, TokensResponse } from "./types.js";
 import {
   validatePairsResponse,
+  validateSearchResponse,
   validateTokensPairsResponse,
   validateTokensResponse,
 } from "./validation/pairs.js";
@@ -248,4 +249,18 @@ export function readTokensPairs(
     validateTokensResponse,
     options,
   );
+}
+
+/**
+ * The public pair search, `GET /latest/dex/search?q=`. Keyless JSON, one
+ * window of about 30 pairs across every chain: the provider takes no chain
+ * filter here, so a caller wanting one chain filters the answer and must say
+ * that a busy ticker elsewhere can leave little for its chain. The chain-scoped
+ * site search (`endpoints/search.ts`) is preferred where its bridge is up.
+ */
+export function readSearchPairs(
+  query: string,
+  options?: DexScreenerRequestOptions,
+): Promise<SearchResponse> {
+  return request(`/latest/dex/search?q=${encodeURIComponent(query)}`, validateSearchResponse, options);
 }

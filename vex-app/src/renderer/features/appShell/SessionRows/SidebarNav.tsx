@@ -1,6 +1,6 @@
 /**
  * THE LEFT SIDEBAR'S NAV (docs/design/R3-MINIMAL.md section 4): Chat,
- * Missions, Portfolio, Board, Lighter, Studio, Settings. Each row is 34 high
+ * Missions, Portfolio, Board, Watchlist, Lighter, Studio, Settings. Each row is 34 high
  * with a 16px line icon in ink 2, gap 11, 14 type; the selected row takes the
  * selection wash, blue type, weight 500 and a blue icon. On the 56px rail the
  * rows are 40 x 40 keys, icon only, with the name as the tooltip and the
@@ -28,6 +28,7 @@ import {
   LinePortfolio,
   LineSettings,
   LineStudio,
+  LineWatchlist,
   type LineIconComponent,
 } from "../../../components/icons/line/index.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
@@ -48,6 +49,7 @@ const NAV_ROWS: readonly {
   { destination: "missions", label: "Missions", Icon: LineMissions },
   { destination: "portfolio", label: "Portfolio", Icon: LinePortfolio },
   { destination: "board", label: "Board", Icon: LineBoard },
+  { destination: "watchlist", label: "Watchlist", Icon: LineWatchlist },
   { destination: "lighter", label: "Lighter", Icon: LineLighter },
   { destination: "studio", label: "Studio", Icon: LineStudio },
   { destination: "settings", label: "Settings", Icon: LineSettings },

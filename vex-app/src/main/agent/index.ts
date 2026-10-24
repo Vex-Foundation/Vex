@@ -32,6 +32,7 @@ import { setupLighterSetupBridge } from "./lighter-setup-bridge.js";
 import { setupActivityProgressBridge } from "./activity-progress-bridge.js";
 import { setupActivityResolvedBridge } from "./activity-resolved-bridge.js";
 import { setupMissionUpdateBridge } from "./mission-update-bridge.js";
+import { setupPriceAlertBridge } from "./price-alert-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupStudioSettlementBridge } from "./studio-settlement-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
@@ -85,6 +86,9 @@ export function setupAgentBridges(): () => Promise<void> {
   // bridge the external coding agent's blocked call would wait out its whole
   // expiry even though the answer is already durable.
   teardowns.push(setupStudioSettlementBridge());
+  // F01 - a price alert fired. The in-app notice and, with no window focused,
+  // an OS notification; without it a fired alert waits for the next page read.
+  teardowns.push(setupPriceAlertBridge());
 
   // Puzzle 03 — install the production BugReportSink for engine emit
   // points (turn-loop / wake / compact). Teardown resets to noop.

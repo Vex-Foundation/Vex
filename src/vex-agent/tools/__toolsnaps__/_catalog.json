@@ -1,5 +1,5 @@
 {
-  "internalRegisteredCount": 44,
+  "internalRegisteredCount": 46,
   "internalVisibleOrder": [
     "ToolSearch",
     "lighter_rhc_onboarding_status",
@@ -18,6 +18,8 @@
     "WebResearch",
     "TwitterAccount",
     "AgentScan",
+    "Watchlist",
+    "PriceAlert",
     "MissionStop",
     "LoopDefer",
     "ChainRead",
@@ -43,7 +45,7 @@
     "BoardCompose"
   ],
   "maxDiscoveredToolsPerSession": 41,
-  "maxSimultaneousModelVisibleTools": 81,
+  "maxSimultaneousModelVisibleTools": 83,
   "protocolToolIds": [
     "dexscreener.candles",
     "dexscreener.chains",

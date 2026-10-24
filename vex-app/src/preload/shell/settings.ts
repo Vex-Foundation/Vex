@@ -50,6 +50,10 @@ import {
   type ReconcileLighterLeverageInput,
   type SetLighterTradingLimitsInput,
 } from "../../shared/schemas/lighter-trading-limits.js";
+import {
+  setNotificationPreferencesInputSchema,
+  type SetNotificationPreferencesInput,
+} from "../../shared/schemas/preferences.js";
 import { abortableInvoke, invokeWithSchema } from "../_dispatch.js";
 
 const setTelemetryConsentInputSchema = z
@@ -101,6 +105,13 @@ export const settings = {
       CH.settings.setTelemetryConsent,
       input,
       setTelemetryConsentInputSchema
+    );
+  },
+  setNotificationPreferences(input: SetNotificationPreferencesInput) {
+    return invokeWithSchema(
+      CH.settings.setNotificationPreferences,
+      input,
+      setNotificationPreferencesInputSchema,
     );
   },
   getLighterIntegration(input: GetLighterIntegrationInput) {

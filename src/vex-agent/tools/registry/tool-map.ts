@@ -47,6 +47,7 @@ export const TOOL_MAP_CATEGORIES: readonly ToolMapCategory[] = [
   },
   { label: "Live state reads", toolNames: ["WalletBalances", "ChainRead", "AgentScan"] },
   { label: "Local-chain token pinning (Robinhood - DB bookmark, no tx)", toolNames: ["WalletTrackToken"] },
+  { label: "Watchlist and price alerts (notify only, never trade - no card)", toolNames: ["Watchlist", "PriceAlert"] },
   { label: "Token resolution", toolNames: ["TokenFind"] },
   // Sits with the reads because it is one: exact arithmetic the model must not
   // do in its head (wei/gwei, raw/human, bps, USD).

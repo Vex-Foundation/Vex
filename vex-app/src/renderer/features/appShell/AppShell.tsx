@@ -68,6 +68,7 @@ import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { useInferenceNoticeRetentionSync } from "../../lib/api/inference-notices.js";
 import { useUserMcpNotices } from "../../lib/user-mcp-notices.js";
+import { usePriceAlertNotices } from "../../lib/api/alerts.js";
 import {
   useActivityProgressInvalidation,
   useActivityResolvedInvalidation,
@@ -93,6 +94,9 @@ function AppShellContent(): JSX.Element {
   useInferenceNoticeRetentionSync();
   // F12: a user MCP server changed its tools or stopped answering.
   useUserMcpNotices();
+  // F01: a fired price alert raises its notice wherever the user is, and the
+  // ones that fired with no window open are shown once on mount.
+  usePriceAlertNotices();
   // App-wide activity pushes (settled and progress) refresh the portfolio
   // queries wherever the user is, not only on the Portfolio page. Mounted
   // once, here (the page mounts none of its own), so each push invalidates

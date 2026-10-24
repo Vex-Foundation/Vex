@@ -23,6 +23,7 @@ import {
   useSubmitKeyBehavior,
   type SubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
+import { usePriceAlertsOsSetting } from "../../../../lib/api/notification-preferences.js";
 import { studioPlatform } from "../../studio/keybindings-labels.js";
 import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
 import { SettingsAvatarPreview } from "./SettingsAvatarPreview.js";
@@ -226,6 +227,27 @@ function NotificationsRow(): JSX.Element {
   );
 }
 
+/**
+ * Price alerts (F01): an OS notification when an alert fires and no Vex window
+ * is focused. Main keeps the setting, because main raises the notification;
+ * the in-app notice always shows. Until main answers, the switch shows on,
+ * the default.
+ */
+function PriceAlertNotificationsRow(): JSX.Element {
+  const { enabled, busy, setEnabled } = usePriceAlertsOsSetting();
+  return (
+    <SwitchRow
+      title="Price alert notifications"
+      help="Show a system notification when a price alert fires and Vex is in the background. While the vault is locked it says only that an alert fired."
+      enabled={enabled}
+      onToggle={() => {
+        if (!busy) setEnabled(!enabled);
+      }}
+      seam="data-vex-settings-price-alert-notifications"
+    />
+  );
+}
+
 function TerminalPasteWarningRow(): JSX.Element {
   const enabled = useUiStore((state) => state.terminalPasteWarning);
   const setEnabled = useUiStore((state) => state.setTerminalPasteWarning);
@@ -262,6 +284,7 @@ export function SettingsPreferences(): JSX.Element {
         <SettingsBackdropRow />
         <SubmitKeyRow />
         <NotificationsRow />
+        <PriceAlertNotificationsRow />
         <TerminalPasteWarningRow />
       </div>
     </section>

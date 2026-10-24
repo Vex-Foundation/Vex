@@ -289,6 +289,18 @@ export const marketKeys = {
 };
 
 /**
+ * Watchlist and price alerts (F01) - one entry for the page's snapshot: the
+ * followed tokens with prices, the active alerts and the fired ones. Kept
+ * fresh by a 60 s refetch while the page is open, by every mutation, and by
+ * the main-pushed `EV.alerts.priceAlertFired` event.
+ */
+export const alertsKeys = {
+  all: ["alerts"] as const,
+  watchlist: () => ["alerts", "watchlist"] as const,
+  tokenSearch: (chain: string, query: string) => ["alerts", "tokenSearch", chain, query] as const,
+};
+
+/**
  * Vex Studio host status (B0) - one global entry. Kept live by
  * `useStudioHostStatus`'s effect (main-pushed `EV.studio.hostStatus` events ->
  * cache); the query itself is only the first read.
