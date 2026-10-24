@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { requireValue } from "../../helpers/require-value.js";
 
 import { analyze, sig } from "../../../vex-agent/market-analysis/analyze.js";
 import type { AnalysisBar, CandleLoadRequest, LoadedCandles } from "../../../vex-agent/market-analysis/bars.js";
@@ -43,7 +44,7 @@ const line = (n: number, start = 100): AnalysisBar[] =>
 describe("closedBars", () => {
   it("keeps a bar that closes exactly at the cut-off and drops one a millisecond later", () => {
     const bars = line(3);
-    const cutoff = bars[1]!.closeTime;
+    const cutoff = requireValue(bars[1]).closeTime;
     expect(closedBars(bars, cutoff, HOUR).bars).toHaveLength(2);
     const early = closedBars(bars, cutoff - 1, HOUR);
     expect(early.bars).toHaveLength(1);
@@ -99,7 +100,7 @@ describe("analyze", () => {
     expect(result.recent).toHaveLength(10);
     expect(result.recent.at(-1)).toMatchObject({
       close: 319,
-      closeTime: new Date(bars.at(-1)!.closeTime).toISOString(),
+      closeTime: new Date(requireValue(bars.at(-1)).closeTime).toISOString(),
       rsi14: 100,
     });
   });
@@ -151,13 +152,13 @@ describe("runTechnicalAnalysis", () => {
   it("drops the forming bar, reports what it did, and names the newest closed bar", async () => {
     const bars = line(221);
     // The cut-off falls inside the last bar's bucket: it is still forming.
-    const fetchedAtMs = bars[220]!.openTime + 1_000;
+    const fetchedAtMs = requireValue(bars[220]).openTime + 1_000;
     const { load, requests } = fakeLoader(bars, fetchedAtMs);
     const outcome = await runTechnicalAnalysis(load, { interval: "1h" });
     expect(requests).toEqual([{ interval: "1h", count: 220, untilMs: null }]);
     if (!outcome.ok) throw new Error("expected an analysis");
     expect(outcome.closed).toHaveLength(220);
-    expect(outcome.analysis.asOf).toBe(new Date(bars[219]!.closeTime).toISOString());
+    expect(outcome.analysis.asOf).toBe(new Date(requireValue(bars[219]).closeTime).toISOString());
     expect(outcome.analysis.bars).toBe(100);
     expect(outcome.analysis.closedCandles).toEqual({
       droppedForming: 1,
@@ -180,8 +181,8 @@ describe("runTechnicalAnalysis", () => {
 
   it("cuts at `untilMs` when it is earlier than the fetch", async () => {
     const bars = line(260);
-    const { load, requests } = fakeLoader(bars, bars[259]!.closeTime);
-    const untilMs = bars[229]!.closeTime;
+    const { load, requests } = fakeLoader(bars, requireValue(bars[259]).closeTime);
+    const untilMs = requireValue(bars[229]).closeTime;
     const outcome = await runTechnicalAnalysis(load, { interval: "1h", bars: 50, untilMs });
     expect(requests[0]?.untilMs).toBe(untilMs);
     if (!outcome.ok) throw new Error("expected an analysis");

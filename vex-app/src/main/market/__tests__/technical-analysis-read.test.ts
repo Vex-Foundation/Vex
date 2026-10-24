@@ -20,6 +20,8 @@ import {
   readTechnicalAnalysis,
   type TechnicalAnalysisReadDeps,
 } from "../technical-analysis-read.js";
+import type { LoadCandles } from "@vex-agent/market-analysis/bars.js";
+import type { TechnicalAnalysisInput, TechnicalAnalysisOutcome } from "@vex-agent/market-analysis/run.js";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 20, 12);
@@ -57,8 +59,18 @@ function closed(n: number) {
   }));
 }
 
-function deps(outcome: unknown): TechnicalAnalysisReadDeps & { readonly run: ReturnType<typeof vi.fn> } {
-  return { run: vi.fn(async () => outcome), now: () => NOW } as never;
+/**
+ * A fake engine: `run` answers `outcome` and records every call in `calls`.
+ * A vi.fn cannot stand in for the generic `run` itself, so the mock only
+ * records and the function keeps the real signature.
+ */
+function deps(outcome: unknown) {
+  const calls = vi.fn<(load: unknown, input: TechnicalAnalysisInput) => void>();
+  const run: TechnicalAnalysisReadDeps["run"] = async <M,>(load: LoadCandles<M>, input: TechnicalAnalysisInput) => {
+    calls(load, input);
+    return outcome as TechnicalAnalysisOutcome<M>;
+  };
+  return { run, now: () => NOW, calls };
 }
 
 afterEach(() => __resetTechnicalAnalysisReadLimiterForTests());
@@ -80,7 +92,7 @@ describe("readTechnicalAnalysis", () => {
     if (!out.ok) throw new Error("expected an analysis");
     expect(out.candles).toHaveLength(TECHNICAL_ANALYSIS_CHART_MAX_CANDLES);
     expect(out.candles.at(-1)).toEqual({ t: NOW - HOUR, o: 399, h: 400, l: 398, c: 399 });
-    expect(fake.run.mock.calls[0]?.[1]).toEqual({ interval: "1h", untilMs: NOW });
+    expect(fake.calls.mock.calls[0]?.[1]).toEqual({ interval: "1h", untilMs: NOW });
   });
 
   it("drops the transport name from a DexScreener market", async () => {
@@ -97,7 +109,7 @@ describe("readTechnicalAnalysis", () => {
     );
     expect(technicalAnalysisReadOutputSchema.safeParse(out).success).toBe(true);
     expect(out).not.toHaveProperty("transport");
-    expect(fake.run.mock.calls[0]?.[1]).toEqual({ interval: "1h", bars: 30, untilMs: null });
+    expect(fake.calls.mock.calls[0]?.[1]).toEqual({ interval: "1h", bars: 30, untilMs: null });
   });
 
   it("answers a refusal as a value with its sentence, and never repeats a Lighter provider failure", async () => {
@@ -122,6 +134,6 @@ describe("readTechnicalAnalysis", () => {
     const limited = await readTechnicalAnalysis(input, undefined, fake);
     expect(limited).toMatchObject({ ok: false, reason: "source_unavailable" });
     expect((limited as { message: string }).message).toContain("try again in 60 seconds");
-    expect(fake.run).toHaveBeenCalledTimes(TECHNICAL_ANALYSIS_READS_PER_MINUTE);
+    expect(fake.calls).toHaveBeenCalledTimes(TECHNICAL_ANALYSIS_READS_PER_MINUTE);
   });
 });

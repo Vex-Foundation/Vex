@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { requireValue } from "../../helpers/require-value.js";
 
 import { DexScreenerSiteErrorCodes, siteError } from "@tools/dexscreener/site-errors.js";
 import type { RecentCandles } from "@tools/dexscreener/candles-read.js";
@@ -80,9 +81,9 @@ describe("createDexscreenerCandleLoader", () => {
   it("drops and counts a bar with a missing or non-numeric USD price, and carries no volume", async () => {
     const candles = series(3, NOW - 2 * HOUR);
     const broken = [
-      { ...candles[0]!, closeUsd: null },
-      { ...candles[1]!, highUsd: "not a number" },
-      candles[2]!,
+      { ...requireValue(candles[0]), closeUsd: null },
+      { ...requireValue(candles[1]), highUsd: "not a number" },
+      requireValue(candles[2]),
     ];
     const load = createDexscreenerCandleLoader({ chain: "ethereum", pairAddress: PAIR }, undefined, deps(broken));
     const loaded = await load({ interval: "1h", count: 220, untilMs: null });

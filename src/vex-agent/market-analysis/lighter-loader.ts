@@ -27,7 +27,7 @@ export interface LighterAnalysisMarket {
   readonly marketType: "perp" | "spot";
 }
 
-type LighterAnalysisClient = Pick<ReturnType<typeof getLighterClient>, "getCandles" | "getMarketDetails">;
+export type LighterAnalysisClient = Pick<ReturnType<typeof getLighterClient>, "getCandles" | "getMarketDetails">;
 
 /** Provider seconds become milliseconds, as the desk normalises them. */
 function epochMs(value: number): number {

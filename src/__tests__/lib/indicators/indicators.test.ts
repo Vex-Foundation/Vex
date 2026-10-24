@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { requireValue } from "../../helpers/require-value.js";
 
 import {
   atr,
@@ -47,7 +48,7 @@ describe("moving averages", () => {
   it("matches the StockCharts 10-day EMA worked example", () => {
     const series = ema(STOCKCHARTS_CLOSES, 10);
     expect(series.slice(0, 9)).toEqual(Array(9).fill(null));
-    STOCKCHARTS_EMA_10.forEach((expected, i) => expectWithin(series[i + 9]!, expected, 0.01));
+    STOCKCHARTS_EMA_10.forEach((expected, i) => expectWithin(requireValue(series[i + 9]), expected, 0.01));
   });
 
   it("seeds the EMA with the simple average at index period - 1", () => {
