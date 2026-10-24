@@ -207,7 +207,10 @@ export function ComposerModelMenu({
   let flatIndex = -1;
 
   return (
-    <div ref={rootRef} className="relative min-w-0">
+    // The key is capped at this wrapper (`max-w-full`): the frame shrinks in a
+    // narrow composer, and an uncapped key ran its name over "Reasoning:". The
+    // floor keeps the mark and the start of the name in view.
+    <div ref={rootRef} className="relative min-w-[5.5rem]">
       <button
         ref={keyRef}
         type="button"
@@ -217,7 +220,7 @@ export function ComposerModelMenu({
         aria-label={`Model: ${modelId}${served}. Opens the model menu.`}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
-        className={cn("vex-composer-options__model", KEY_CLASS)}
+        className={cn("vex-composer-options__model max-w-full", KEY_CLASS)}
       >
         {backend.success ? <ProviderMark provider={backend.data} size={MARK_PX} /> : null}
         <span data-vex-model-label className="min-w-0 max-w-48 flex-1 truncate">
