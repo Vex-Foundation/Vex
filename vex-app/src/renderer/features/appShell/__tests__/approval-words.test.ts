@@ -273,6 +273,15 @@ describe("approvalSentence", () => {
     expect(approvalSentence(approvalFrom(BRIDGE_NAMESPACED))).toBe("Bridge 1 USDC from Base to Arbitrum.");
   });
 
+  it("reads a call to the user's own MCP tool", () => {
+    const mcp: ApprovalPreview = {
+      toolName: "deepwiki / read_wiki_structure",
+      namespace: "mcp",
+      criticalArgs: { server: "deepwiki", tool: "read_wiki_structure", arguments: "{}" },
+    };
+    expect(approvalSentence(approvalFrom(mcp))).toBe("Call read_wiki_structure on your MCP server deepwiki.");
+  });
+
   it("reads a swap", () => {
     expect(approvalSentence(approvalFrom(KYBER))).toBe("Swap 1.5 ETH for USDC on Base.");
     expect(approvalSentence(approvalFrom(JUPITER))).toBe("Swap 2 SOL for USDC on Solana.");

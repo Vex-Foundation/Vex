@@ -24,6 +24,7 @@ import {
   actionKindWords,
   approvalExpiryWords,
   approvalSentence,
+  isUserMcpApproval,
   riskSentences,
   riskTagIsInk,
   riskTagWord,
@@ -381,9 +382,10 @@ export function ApprovalDetails({
         <span className="vex-appr__eyebrow">Approval needed</span>
         <span className="vex-appr__sp" />
         {expiry !== null ? <span className="vex-appr__expiry">{withFigures(expiry)}</span> : null}
-        {/* REAL FUNDS: the reversed ink stamp, on every card; every desktop
-            wallet is a real wallet. */}
-        <Stamp data-testid="real-funds-stamp" className="shrink-0" />
+        {/* REAL FUNDS: the reversed ink stamp, on every card that can move
+            funds; every desktop wallet is a real wallet. A call to the user's
+            own MCP tool signs nothing and carries no stamp. */}
+        {isUserMcpApproval(summary) ? null : <Stamp data-testid="real-funds-stamp" className="shrink-0" />}
         {riskTag !== null ? (
           <Tag data-testid="risk-chip" quiet={!riskTagIsInk(summary.riskLevel)} className="shrink-0">
             {riskTag}
