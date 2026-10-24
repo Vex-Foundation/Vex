@@ -40,9 +40,9 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** Store a token, or remove it with `null`. Throws `UserMcpTokenLockedError` while locked. */
-export function writeUserMcpToken(serverId: string, token: string | null): Promise<void> {
+export async function writeUserMcpToken(serverId: string, token: string | null): Promise<void> {
   const key = keyFor(serverId);
-  return serialize(async () => {
+  await serialize(async () => {
     const password = requireUnlockedMasterPassword();
     if (!password.ok) throw new UserMcpTokenLockedError();
     await writeSecretVaultExtraSecrets(

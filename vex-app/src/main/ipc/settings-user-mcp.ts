@@ -21,6 +21,7 @@ import {
   setToolEnabled,
 } from "@vex-agent/db/repos/user-mcp.js";
 import { addServer, recheckServer } from "@vex-agent/user-mcp/store.js";
+import { refreshUserMcpTools } from "@vex-agent/tools/user-mcp/admitted.js";
 import { userMcpToolName } from "@vex-agent/user-mcp/names.js";
 import { MAX_DISPLAY_SCHEMA_CHARS, MAX_ENABLED_TOOLS, MAX_SERVERS } from "@vex-agent/user-mcp/limits.js";
 import { CH } from "@shared/ipc/channels.js";
@@ -133,6 +134,8 @@ async function withDb(
     await whenEngineDbReady({ signal: ctx.signal });
     const refused = await fn();
     if (refused !== null) return refused;
+    // The engine offers tools from a snapshot; every Settings change replaces it.
+    await refreshUserMcpTools();
     return ok(await buildUserMcpList());
   } catch (cause) {
     log.warn(`[ipc:vex:settings:${label}] failed correlationId=${ctx.requestId}`, cause instanceof Error ? cause.name : "non_error");
