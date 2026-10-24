@@ -12,9 +12,14 @@
  * the card's numbers describe only the newest `windowBars`. The chart frames
  * exactly that window, never `fitContent()`, so what is on screen is what the
  * numbers cover. The card settles its width after the data lands, and the
- * library keeps its bar spacing across a resize, which left the newest bars
- * off screen. So the frame is re-applied on every resize until the reader
- * scrolls or zooms, and never after.
+ * library keeps its bar spacing across a resize, so the frame is re-applied on
+ * every resize until the reader drags the chart, and never after.
+ *
+ * THE WHEEL BELONGS TO THE TRANSCRIPT. The card sits in a scrolling chat, and
+ * the library's default wheel handling panned and zoomed the chart whenever a
+ * page scroll passed over it, sliding it back into the warm-up bars. Wheel
+ * scroll and wheel zoom are off; the reader pans by dragging, and a vertical
+ * touch swipe scrolls the page.
  *
  * The EMA lines are computed HERE with `@vex-lib/indicators`, the same module
  * the engine reads, over every candle read, so they are warm across the whole
@@ -85,7 +90,7 @@ export function TechnicalAnalysisChart({ subjectKey, candles, windowBars, label 
   const slowRef = useRef<ISeriesApi<"Line", Time> | null>(null);
   /** The frame the data effect last chose; the resize observer re-applies it. */
   const frameRef = useRef<{ from: number; to: number } | null>(null);
-  /** Set by the reader's first scroll or zoom: from then on the viewport is theirs. */
+  /** Set by the reader's first drag or pinch: from then on the viewport is theirs. */
   const readerMovedRef = useRef(false);
   const precision = axisPrecision(candles[candles.length - 1]?.c ?? 0);
 
@@ -108,7 +113,8 @@ export function TechnicalAnalysisChart({ subjectKey, candles, windowBars, label 
       rightPriceScale: { borderColor: palette.grid },
       timeScale: { borderColor: palette.grid, timeVisible: true },
       kineticScroll: { touch: !reduced, mouse: false },
-      handleScale: { axisPressedMouseMove: false },
+      handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: false },
     });
     const priceFormat = { type: "price" as const, precision, minMove: 10 ** -precision };
     const candlesSeries = chart.addSeries(CandlestickSeries, {
@@ -156,7 +162,6 @@ export function TechnicalAnalysisChart({ subjectKey, candles, windowBars, label 
       readerMovedRef.current = true;
     };
     container.addEventListener("pointerdown", markReaderMoved);
-    container.addEventListener("wheel", markReaderMoved, { passive: true });
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
@@ -170,7 +175,6 @@ export function TechnicalAnalysisChart({ subjectKey, candles, windowBars, label 
     return () => {
       resizeObserver?.disconnect();
       container.removeEventListener("pointerdown", markReaderMoved);
-      container.removeEventListener("wheel", markReaderMoved);
       themeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
