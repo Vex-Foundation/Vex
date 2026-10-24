@@ -26,7 +26,7 @@
  * reading is not a buy or sell signal, and the card says so.
  */
 
-import { lazy, Suspense, useState, type JSX } from "react";
+import { lazy, Suspense, useCallback, useState, type JSX } from "react";
 
 import {
   ANALYSIS_INTERVALS,
@@ -192,6 +192,18 @@ export function TechnicalAnalysisResult({ result }: { readonly result: AnalysisR
   const failed = read.data !== undefined && read.data.ok === false;
   // The reply's interval shows the reply's own numbers; another interval shows the read's.
   const shown: AnalysisResult | null = isReply ? result : live;
+  // Older history for the chart's left edge: the same read, cut off at the
+  // oldest candle held. No more history is an empty page; anything else
+  // (the read limit, a provider outage) is null, so the next pan retries.
+  const loadOlder = useCallback(
+    async (beforeMs: number) => {
+      const page = await window.vex.market.readTechnicalAnalysis({ ...readInputFor(result, interval), until: beforeMs });
+      if (!page.ok) return null;
+      if (page.data.ok) return page.data.candles;
+      return page.data.reason === "not_enough_history" || page.data.reason === "no_candles" ? [] : null;
+    },
+    [result, interval],
+  );
 
   return (
     <div data-vex-area="technical-analysis-result" className="mb-4 mt-1 border border-rule bg-surface-base px-[18px] py-4">
@@ -223,6 +235,7 @@ export function TechnicalAnalysisResult({ result }: { readonly result: AnalysisR
               subjectKey={`${marketLine(result)}:${interval}`}
               candles={live.candles}
               windowBars={live.bars}
+              loadOlder={loadOlder}
               label={`${marketLine(result)}, ${interval} candles with EMA 20 and EMA 50`}
             />
           </Suspense>

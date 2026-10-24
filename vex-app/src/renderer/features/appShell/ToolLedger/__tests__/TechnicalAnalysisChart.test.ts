@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { analysisWindowRange, axisPrecision } from "../TechnicalAnalysisChart.js";
+import { analysisWindowRange, axisPrecision, pinchRange, prependOlder } from "../TechnicalAnalysisChart.js";
+
+const bar = (t: number) => ({ t, o: 1, h: 1, l: 1, c: 1 });
+
+describe("prependOlder", () => {
+  it("puts strictly older bars in front, oldest first, and reports the shift", () => {
+    const held = [bar(300), bar(400)];
+    const { merged, added } = prependOlder(held, [bar(200), bar(100), bar(300), bar(400)]);
+    expect(merged.map((c) => c.t)).toEqual([100, 200, 300, 400]);
+    expect(added).toBe(2);
+  });
+
+  it("drops duplicates inside the older page", () => {
+    const { merged, added } = prependOlder([bar(300)], [bar(100), bar(100), bar(200)]);
+    expect(merged.map((c) => c.t)).toEqual([100, 200, 300]);
+    expect(added).toBe(2);
+  });
+
+  it("keeps the held series when nothing older came back", () => {
+    const held = [bar(300)];
+    const { merged, added } = prependOlder(held, [bar(300), bar(500)]);
+    expect(merged).toBe(held);
+    expect(added).toBe(0);
+  });
+});
+
+describe("pinchRange", () => {
+  it("zooms in about the anchor on a negative delta", () => {
+    const next = pinchRange({ from: 0, to: 100 }, 50, -50);
+    expect(next.to - next.from).toBeLessThan(100);
+    expect((next.from + next.to) / 2).toBeCloseTo(50);
+  });
+
+  it("never narrows below ten bars", () => {
+    const next = pinchRange({ from: 0, to: 20 }, 10, -1_000);
+    expect(next.to - next.from).toBeCloseTo(10);
+  });
+});
 
 describe("analysisWindowRange", () => {
   it("frames the newest window, not the warm-up bars before it", () => {
