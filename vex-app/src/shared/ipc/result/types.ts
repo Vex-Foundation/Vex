@@ -77,6 +77,12 @@ export type VexDomain =
    */
   | "market"
   /**
+   * F01 - the user's watchlist and price alerts (`alerts.*`). A routing and
+   * ownership label only: refusals are values in the result DTO, and DB
+   * unavailability maps to `internal.unexpected` like the other read domains.
+   */
+  | "alerts"
+  /**
    * B0 - read-only Vex Studio MCP host status (`studio.hostStatus`). Main's
    * host owns the listener and publishes every lifecycle transition on
    * `EV.studio.hostStatus`; the handler only reads the in-memory cache, so

@@ -329,6 +329,19 @@ export const CH = {
     refresh: "vex:portfolio:refresh",
   },
 
+  // Watchlist and price alerts (F01). The user's followed tokens and the
+  // alerts that notify once; nothing here trades or signs. Main waits for the
+  // engine database, then calls the one engine service the chat tools also
+  // use, so the limits and refusals are identical from either path. A
+  // refusal is a value the page shows by name, never an IPC error.
+  alerts: {
+    getWatchlist: "vex:alerts:getWatchlist",
+    editWatchlist: "vex:alerts:editWatchlist",
+    setPriceAlert: "vex:alerts:setPriceAlert",
+    cancelPriceAlert: "vex:alerts:cancelPriceAlert",
+    acknowledgeFired: "vex:alerts:acknowledgeFired",
+  },
+
   // Market - read-only live VEX token metrics for the welcome-screen price
   // widget (T1). `getVexSnapshot` returns main's in-memory cache (no network
   // call from the handler); the live poll + `EV.market.vex` broadcast are owned

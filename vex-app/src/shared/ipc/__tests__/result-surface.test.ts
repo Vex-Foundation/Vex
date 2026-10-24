@@ -160,6 +160,8 @@ describe("result barrel surface", () => {
       "memory",
       "portfolio",
       "market",
+      // F01: a routing label only; alert refusals are values in the DTO.
+      "alerts",
       "studio",
       "images",
       // The user's own wallpaper: a preference with a byte store behind it,
