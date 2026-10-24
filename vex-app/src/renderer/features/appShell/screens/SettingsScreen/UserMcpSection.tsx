@@ -142,7 +142,10 @@ function ToolRow({
       ) : null}
       {tool.status === "drifted" ? (
         <div className="flex flex-wrap items-center gap-3">
-          <Swatch state="warning" label="Changed by the server" />
+          <span className="inline-flex items-center gap-2 text-[13px] text-ink-primary">
+            <Swatch state="warning" />
+            Changed by the server, so it is off
+          </span>
           <Button
             variant="quiet"
             size="sm"
@@ -248,7 +251,10 @@ function ServerCard({ server }: { readonly server: UserMcpServerDto }): JSX.Elem
           <span className="text-[15px] font-medium text-ink-primary">{server.name}</span>
           <span className="break-all font-mono text-[12px] text-ink-tertiary">{server.endpoint}</span>
         </div>
-        <Swatch state={state.swatch} label={state.word} />
+        <span className="inline-flex items-center gap-2 text-[13px] text-ink-primary" data-vex-user-mcp-state>
+          <Swatch state={state.swatch} />
+          {state.word}
+        </span>
       </div>
       <p className={noteClass}>
         {server.networkScope === "local" ? "On this computer. " : ""}

@@ -121,7 +121,7 @@ describe("UserMcpSection", () => {
     );
     settings.recheckUserMcpServer.mockResolvedValueOnce(ok(list([tool({})])));
     renderSection();
-    expect(await screen.findByText("Changed by the server")).not.toBeNull();
+    expect(await screen.findByText("Changed by the server, so it is off")).not.toBeNull();
     expect(screen.getByText(/Not supported: input: "oneOf" is not supported/)).not.toBeNull();
     expect((document.querySelector('[data-vex-user-mcp-enable="weird"]') as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Review again" }));
