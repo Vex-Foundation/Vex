@@ -224,5 +224,11 @@ export const EV = {
      * `inferenceNoticeEventSchema` at the preload boundary.
      */
     inferenceNotice: "vex:event:engine:inferenceNotice",
+    /**
+     * F12: the recheck turned some of a user MCP server's tools off because
+     * the server changed them, or the server stopped answering. Validated with
+     * `userMcpChangedEventSchema` at the preload boundary.
+     */
+    userMcpChanged: "vex:event:engine:userMcpChanged",
   },
 } as const;

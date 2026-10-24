@@ -74,6 +74,17 @@ export const userMcpListDtoSchema = z
   })
   .strict();
 
+/** `EV.engine.userMcpChanged`: what the recheck turned off, or a server that stopped answering. */
+export const userMcpChangedEventSchema = z
+  .object({
+    serverId: id,
+    serverName: z.string().min(1).max(100),
+    tools: z.array(z.string().min(1).max(200)).max(100),
+    reason: z.enum(["changed", "not_answering"]),
+  })
+  .strict();
+
+export type UserMcpChangedEvent = z.infer<typeof userMcpChangedEventSchema>;
 export type AddUserMcpServerInput = z.infer<typeof addUserMcpServerInputSchema>;
 export type RemoveUserMcpServerInput = z.infer<typeof removeUserMcpServerInputSchema>;
 export type SetUserMcpTokenInput = z.infer<typeof setUserMcpTokenInputSchema>;

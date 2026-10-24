@@ -10,6 +10,7 @@
 import { EV } from "../../shared/ipc/channels.js";
 import { compactionPreparationEventSchema } from "../../shared/schemas/compaction-preparation.js";
 import { engineErrorEventSchema } from "../../shared/schemas/engine-error.js";
+import { userMcpChangedEventSchema } from "../../shared/schemas/user-mcp.js";
 import { inferenceNoticeEventSchema } from "../../shared/schemas/inference-notice.js";
 import { transcriptAppendEventSchema } from "../../shared/schemas/messages.js";
 import { missionUpdateEventSchema } from "../../shared/schemas/mission-update.js";
@@ -43,4 +44,6 @@ export const engine = {
     ),
   onInferenceNotice: (cb) =>
     subscribe(EV.engine.inferenceNotice, inferenceNoticeEventSchema, cb),
+  onUserMcpChanged: (cb) =>
+    subscribe(EV.engine.userMcpChanged, userMcpChangedEventSchema, cb),
 } satisfies EngineEventsBridge;

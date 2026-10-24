@@ -39,6 +39,7 @@ export function makeEngineBridgeStub(
     onCompactionPreparation: () => noopUnsubscribe,
     onLighterSetupRequested: () => noopUnsubscribe,
     onInferenceNotice: () => noopUnsubscribe,
+    onUserMcpChanged: () => noopUnsubscribe,
     ...overrides,
   };
 }
