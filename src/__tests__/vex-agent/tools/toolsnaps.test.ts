@@ -108,7 +108,8 @@ describe("tool contract snapshots", () => {
     // shortcuts so setup state is visible without protocol discovery.
     // 41 -> 44: the Vex Inference status read and deposit pair
     // (`registry/vex-inference.ts`), offered only under that provider.
-    expect(internal).toHaveLength(44);
+    // 44 -> 46: `Watchlist` and `PriceAlert` (`registry/alerts.ts`, F01).
+    expect(internal).toHaveLength(46);
 
     // The TOTAL is asserted STRUCTURALLY - every registered tool and every
     // manifest gets exactly one contract, and nothing else does. A literal was
@@ -142,8 +143,11 @@ describe("tool contract snapshots", () => {
     // are offered in every session the baseline can represent.
     // 38 -> 40, worst case 78 -> 80: both Lighter environment-specific
     // onboarding-status shortcuts are model-visible.
-    expect(internalVisibleOrder).toHaveLength(40);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(80);
+    // 40 -> 42, worst case 80 -> 82: `Watchlist` and `PriceAlert` declare no
+    // visibility gate, so both are offered in every session the baseline can
+    // represent (F01).
+    expect(internalVisibleOrder).toHaveLength(42);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(82);
   });
 
   it("derives its env gates from the live catalogs", () => {

@@ -104,6 +104,10 @@ export const INTERNAL_TOOL_LOADERS: Readonly<Record<string, InternalHandlerLoade
   // Wallet
   WalletBalances: async () => (await import("../internal/wallet/read.js")).handleWalletBalances,
   WalletTrackToken: async () => (await import("../internal/wallet/track.js")).handleWalletTrackToken,
+
+  // Watchlist and price alerts (F01): local writes over the alerts service.
+  Watchlist: async () => (await import("../internal/alerts/watchlist.js")).handleWatchlist,
+  PriceAlert: async () => (await import("../internal/alerts/price-alert.js")).handlePriceAlert,
   WalletSendPrepare: async () => (await import("../internal/wallet/send.js")).handleWalletSendPrepare,
   WalletSendConfirm: async () => (await import("../internal/wallet/send.js")).handleWalletSendConfirm,
 

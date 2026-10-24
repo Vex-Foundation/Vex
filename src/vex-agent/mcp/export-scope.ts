@@ -75,6 +75,11 @@ export const NON_EXPORTED_INTERNAL_TOOLS: ReadonlySet<string> = new Set([
   "VexInferenceStatus",
   "VexInferenceDepositPrepare",
   "VexInferenceDepositConfirm",
+  // Watchlist and price alerts: an alert's only effect is a notice for the
+  // person at this machine, which an external coding agent can neither see
+  // nor need, and the watchlist is personal data (owner decision 2026-10-24).
+  "Watchlist",
+  "PriceAlert",
 ]);
 
 /** The read-only catalog-search tool, exported through its own adapter. */
