@@ -162,7 +162,13 @@ export function clampBookWidth(px: number): number {
  */
 export const STUDIO_RAIL_EXPLORER_SHARE_MIN = 0.2;
 export const STUDIO_RAIL_EXPLORER_SHARE_MAX = 0.8;
-export const STUDIO_RAIL_EXPLORER_SHARE_DEFAULT = 0.55;
+/**
+ * 0.6, raised from 0.55 when the Watchlist joined the nav: the nav sits above
+ * the Studio body, so each nav row takes height from this split, and at a
+ * 900px window 0.55 left the explorer just under the 200px the rail-parity
+ * e2e (I6) holds it to. A saved share is the user's and is kept.
+ */
+export const STUDIO_RAIL_EXPLORER_SHARE_DEFAULT = 0.6;
 
 /**
  * Clamp a live drag of the rail's vertical seam.

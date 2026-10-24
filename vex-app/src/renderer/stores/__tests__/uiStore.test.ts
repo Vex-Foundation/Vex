@@ -316,7 +316,7 @@ describe("uiStore", () => {
       // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
       // to come back the size they chose. Its default rides here so a fresh
       // install hydrates into a defined share rather than `undefined`.
-      studioRailExplorerShare: 0.55,
+      studioRailExplorerShare: 0.6,
       // The LAST STUDIO LOCATION (v17). A relaunch returns to the shell and
       // the project the user left, which is what the Studio welcome's copy
       // promises; both values are coerced on the way back in and the id is
@@ -675,7 +675,7 @@ describe("uiStore", () => {
       // class as `sidebarWidth`: the user sets it by dragging a seam, and it has
       // to come back the size they chose. Its default rides here so a fresh
       // install hydrates into a defined share rather than `undefined`.
-      studioRailExplorerShare: 0.55,
+      studioRailExplorerShare: 0.6,
       // The LAST STUDIO LOCATION (v17). A relaunch returns to the shell and
       // the project the user left, which is what the Studio welcome's copy
       // promises; both values are coerced on the way back in and the id is
