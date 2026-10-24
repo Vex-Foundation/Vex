@@ -162,6 +162,10 @@ vi.mock("../../../../lib/api/superboard-key.js", () => ({
   useGenerateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
   useRotateSuperboardKey: () => ({ mutate: () => undefined, isPending: false }),
 }));
+vi.mock("../../../../lib/api/user-mcp.js", () => ({
+  useUserMcpList: () => ({ data: undefined }),
+}));
+vi.mock("../SettingsScreen/UserMcpSection.js", () => ({ UserMcpSection: () => <div>Tools (MCP) body</div> }));
 vi.mock("../../../../lib/api/lighter-points.js", () => ({
   useLighterPoints: () => ({
     state: { kind: "ready", result: { rows: [], walletCount: 0 } },
@@ -344,6 +348,7 @@ describe("SettingsScreen", () => {
       "memory",
       "tuning",
       "superboardKey",
+      "userMcp",
       "lighterPoints",
     ]);
     // No numerals: a line icon per row (decorative), and a fill swatch beside
@@ -386,7 +391,7 @@ describe("SettingsScreen", () => {
     await waitFor(() =>
       expect(document.querySelector("[data-vex-settings-preferences]")).not.toBeNull(),
     );
-    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(10);
     expect(screen.queryByRole("region", { name: "Chain endpoints" })).toBeNull();
   });
 
@@ -618,7 +623,7 @@ describe("SettingsScreen", () => {
     const rows = Array.from(document.querySelectorAll("[data-vex-settings-row]"));
     expect(rows.map((row) => row.getAttribute("data-vex-settings-row"))).toEqual([
       "preferences", "vault", "wallets", "apiKeys", "inference", "memory", "tuning", "localRuntime",
-      "superboardKey", "lighterPoints",
+      "superboardKey", "userMcp", "lighterPoints",
     ]);
     const localRuntime = rows.find(
       (row) => row.getAttribute("data-vex-settings-row") === "localRuntime",
@@ -637,7 +642,7 @@ describe("SettingsScreen", () => {
     await screen.findByRole("dialog", { name: "Settings" });
     expect(screen.queryByText("Local runtime (stub)")).toBeNull();
     // Preferences and the eight sections every runtime lists.
-    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(9);
+    expect(document.querySelectorAll("[data-vex-settings-row]")).toHaveLength(10);
     expect(document.querySelector('[data-vex-settings-row="localRuntime"]')).toBeNull();
   });
 });
