@@ -11,6 +11,7 @@ import { toOpenAITools } from "../types.js";
 
 import { getVisibleToolDefs, type ToolVisibilityContext } from "./visibility.js";
 import { buildInjectedProtocolTools } from "./injected-protocol-tools.js";
+import { buildUserMcpTools } from "../user-mcp/admitted.js";
 
 /**
  * Get tools as OpenAI format, filtered for the given session context.
@@ -35,7 +36,16 @@ import { buildInjectedProtocolTools } from "./injected-protocol-tools.js";
  *    missing-required-param loops. Do not "fix" the churn by caching a stale
  *    tools array - a schema the model can see but the dispatcher would reject
  *    is worse than a cache miss.
+ *
+ * THE USER'S OWN MCP TOOLS (F12) come third and last: the tools the user
+ * turned on in Settings, in interactive agent sessions only. They change only
+ * when Settings or a recheck changes them, so they sit after the injected
+ * block and leave the stable prefix alone.
  */
 export function getOpenAITools(ctx: ToolVisibilityContext): OpenAITool[] {
-  return [...toOpenAITools(getVisibleToolDefs(ctx)), ...buildInjectedProtocolTools(ctx)];
+  return [
+    ...toOpenAITools(getVisibleToolDefs(ctx)),
+    ...buildInjectedProtocolTools(ctx),
+    ...buildUserMcpTools(ctx),
+  ];
 }
