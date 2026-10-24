@@ -19,6 +19,7 @@ import {
   type StudioRefusalReason,
 } from "../studio/approval-refusals.js";
 import { globalCleanup } from "../lifecycle/cleanup-registry.js";
+import { registerAlertsHandlers } from "./alerts.js";
 import { registerApprovalsHandlers } from "./approvals.js";
 import { registerCancelHandler } from "./cancel.js";
 import { registerCapabilitiesHandler } from "./capabilities.js";
@@ -139,6 +140,9 @@ export function registerAllIpcHandlers(): () => Promise<void> {
   // aggregates proj_balances + proj_portfolio_snapshots into a renderer-safe
   // DTO. Renderer supplies only scope (+ sessionId); addresses never cross.
   teardowns.push(...registerPortfolioHandlers());
+  // F01 Watchlist and price alerts: the page's channels over the one engine
+  // service the chat tools share. Local rows only; nothing trades or signs.
+  teardowns.push(...registerAlertsHandlers());
   teardowns.push(...registerImagesHandlers());
   teardowns.push(...registerBoardIconHandlers());
   // T4: the board's LIVE lease. Unlike every other push channel here, its

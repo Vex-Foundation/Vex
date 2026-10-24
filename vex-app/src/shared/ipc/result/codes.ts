@@ -119,6 +119,7 @@ export const VEX_DOMAINS = [
   "memory",
   "portfolio",
   "market",
+  "alerts",
   "studio",
   "images",
   "shellBackdrop",
