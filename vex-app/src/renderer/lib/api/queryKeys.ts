@@ -295,6 +295,7 @@ export const marketKeys = {
 export const alertsKeys = {
   all: ["alerts"] as const,
   watchlist: () => ["alerts", "watchlist"] as const,
+  tokenSearch: (chain: string, query: string) => ["alerts", "tokenSearch", chain, query] as const,
 };
 
 /**

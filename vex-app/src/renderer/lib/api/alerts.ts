@@ -10,7 +10,7 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
-import type { PriceAlertFiredEventDto, WatchlistSnapshotDto } from "@shared/schemas/alerts.js";
+import type { PriceAlertFiredEventDto, SearchTokensResult, WatchlistSnapshotDto } from "@shared/schemas/alerts.js";
 import { firedAlertSentence } from "@shared/alerts-copy.js";
 import { notify } from "../notifications/index.js";
 import { useUiStore } from "../../stores/uiStore.js";
@@ -24,6 +24,25 @@ export function useWatchlist(): UseQueryResult<Result<WatchlistSnapshotDto>> {
     queryKey: alertsKeys.watchlist(),
     queryFn: () => window.vex.alerts.getWatchlist(),
     refetchInterval: WATCHLIST_REFRESH_MS,
+    retry: 0,
+  });
+}
+
+/**
+ * The add form's token search. One read per chain and settled query; a
+ * superseded query aborts through TanStack's signal, and an answer is kept
+ * for 30 s so retyping the same ticker does not ask DexScreener again.
+ */
+export function useTokenSearch(
+  chain: string,
+  query: string,
+  enabled: boolean,
+): UseQueryResult<Result<SearchTokensResult>> {
+  return useQuery({
+    queryKey: alertsKeys.tokenSearch(chain, query),
+    queryFn: () => window.vex.alerts.searchTokens({ chain, query }),
+    enabled,
+    staleTime: 30_000,
     retry: 0,
   });
 }

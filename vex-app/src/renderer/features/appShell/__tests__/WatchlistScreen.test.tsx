@@ -12,6 +12,19 @@ import { WatchlistPage } from "../screens/WatchlistScreen.js";
 
 const WETH = "0x4200000000000000000000000000000000000006";
 const NOW = "2026-10-24T12:00:00.000Z";
+const PASTED = "0x0000000000000000000000000000000000000001";
+const BRETT_HIT = {
+  address: "0x532f27101965dd16442E59d40670FaF5eBB142E4",
+  symbol: "BRETT",
+  name: "Brett",
+  priceUsd: "0.004663",
+  liquidityUsd: 2_100_000,
+  volume24hUsd: 222_297,
+  poolCount: 14,
+  dexId: "aerodrome",
+  pairAddress: "0xpool1",
+};
+const COPYCAT_HIT = { ...BRETT_HIT, address: "0x9999999999999999999999999999999999999999", volume24hUsd: 3, poolCount: 1 };
 const ACTIVE_ID = "6f1c2a4e-8b3d-4c5e-9f10-1a2b3c4d5e6f";
 const FIRED_ID = "7a2d3b5f-9c4e-4d6f-8a21-2b3c4d5e6f70";
 
@@ -72,6 +85,7 @@ const alerts = {
   setPriceAlert: vi.fn(),
   cancelPriceAlert: vi.fn(),
   acknowledgeFired: vi.fn(),
+  searchTokens: vi.fn(),
   onPriceAlertFired: vi.fn(() => () => undefined),
   onOpenWatchlist: vi.fn(() => () => undefined),
 };
@@ -111,10 +125,58 @@ describe("WatchlistPage", () => {
     });
     renderPage();
     const field = await screen.findByTestId("watchlist-add-address");
-    fireEvent.change(field, { target: { value: "0xnope" } });
+    fireEvent.change(field, { target: { value: PASTED } });
     fireEvent.click(screen.getByRole("button", { name: "Follow" }));
     expect((await screen.findByTestId("watchlist-add-refusal")).textContent).toBe("That is not a Base token address.");
-    expect(alerts.editWatchlist).toHaveBeenCalledWith({ action: "add", chain: "base", tokenAddress: "0xnope" });
+    expect(alerts.editWatchlist).toHaveBeenCalledWith({ action: "add", chain: "base", tokenAddress: PASTED });
+    // A pasted address is followed as it is: nothing is searched.
+    expect(alerts.searchTokens).not.toHaveBeenCalled();
+  });
+
+  it("searches a typed ticker on the chosen chain and follows the picked token by its address", async () => {
+    alerts.searchTokens.mockResolvedValue({
+      ok: true,
+      data: { ok: true, chain: "base", query: "BRETT", source: "chain_search", tokens: [BRETT_HIT, COPYCAT_HIT] },
+    });
+    alerts.editWatchlist.mockResolvedValue({ ok: true, data: { ok: true, action: "add", item: SNAPSHOT.items[0], created: true } });
+    renderPage();
+    const field = await screen.findByTestId("watchlist-add-address");
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "BRETT" } });
+    // A ticker alone is not an address: Follow waits for a pick.
+    expect(screen.getByRole("button", { name: "Follow" })).toHaveProperty("disabled", true);
+    const options = await screen.findAllByTestId("watchlist-token-option");
+    expect(alerts.searchTokens).toHaveBeenCalledWith({ chain: "base", query: "BRETT" });
+    expect(options).toHaveLength(2);
+    expect(options[0]?.textContent).toContain("0x532f…42E4");
+    expect(options[0]?.textContent).toContain("$222k 24h volume · 14 pools");
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(screen.getByTestId("watchlist-add-picked").textContent).toContain("BRETT on Base");
+    fireEvent.click(screen.getByRole("button", { name: "Follow" }));
+    await waitFor(() =>
+      expect(alerts.editWatchlist).toHaveBeenCalledWith({
+        action: "add",
+        chain: "base",
+        tokenAddress: BRETT_HIT.address,
+        label: "BRETT",
+      }),
+    );
+  });
+
+  it("says so when nothing on the chain matches", async () => {
+    alerts.searchTokens.mockResolvedValue({
+      ok: true,
+      data: { ok: true, chain: "base", query: "ZZZQ", source: "chain_search", tokens: [] },
+    });
+    renderPage();
+    const field = await screen.findByTestId("watchlist-add-address");
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "ZZZQ" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("watchlist-token-status").textContent).toBe(
+        'No Base token matches "ZZZQ". Paste its address instead.',
+      ),
+    );
   });
 
   it("sets an alert from a row with the token's identity", async () => {
