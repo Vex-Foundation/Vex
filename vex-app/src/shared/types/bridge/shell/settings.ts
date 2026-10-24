@@ -1,7 +1,7 @@
 import type { ChainEndpoints } from "../../../schemas/chain-endpoints.js";
 import type { Result } from "../../../ipc/result.js";
 import type { AbortableInvocation } from "../common.js";
-import type { Preferences } from "../../../schemas/preferences.js";
+import type { Preferences, SetNotificationPreferencesInput } from "../../../schemas/preferences.js";
 import type { SuperboardKeyStatus } from "../../../schemas/superboard-key.js";
 import type { UserProfile } from "../../../schemas/user-profile.js";
 import type {
@@ -36,6 +36,10 @@ export interface SettingsBridge {
   readonly setTelemetryConsent: (input: {
     readonly enabled: boolean;
   }) => Promise<Result<Preferences>>;
+  /** The OS notifications main raises outside a turn (F01 price alerts). */
+  readonly setNotificationPreferences: (
+    input: SetNotificationPreferencesInput,
+  ) => Promise<Result<Preferences>>;
   readonly getLighterIntegration: (
     input: GetLighterIntegrationInput,
   ) => Promise<Result<LighterIntegrationState>>;

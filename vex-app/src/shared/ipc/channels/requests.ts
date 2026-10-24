@@ -383,6 +383,8 @@ export const CH = {
     setChainEndpoints: "vex:settings:setChainEndpoints",
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
+    // The OS notifications main raises outside a turn (F01 price alerts).
+    setNotificationPreferences: "vex:settings:setNotificationPreferences",
     getLighterIntegration: "vex:settings:getLighterIntegration",
     setLighterIntegration: "vex:settings:setLighterIntegration",
     inspectLighterCredentialConnections:

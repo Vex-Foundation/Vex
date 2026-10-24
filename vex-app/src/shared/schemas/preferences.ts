@@ -73,6 +73,19 @@ export const preferencesSchema = z
       })
       .strict()
       .default({ backdrop: null }),
+
+    /**
+     * OS notifications main raises on its own, outside a turn (F01):
+     * `priceAlertsOs` shows a fired price alert when no Vex window is focused.
+     * The in-app notice always shows. A `.default(...)` for the same reason as
+     * `shell` above: an install without the key must not reset to defaults.
+     */
+    notifications: z
+      .object({
+        priceAlertsOs: z.boolean(),
+      })
+      .strict()
+      .default({ priceAlertsOs: true }),
   })
   .strict();
 
@@ -85,4 +98,12 @@ export const defaultPreferences: Preferences = {
   updater: { lastCheckedAt: null },
   ui: { reducedMotion: "auto" },
   shell: { backdrop: null },
+  notifications: { priceAlertsOs: true },
 };
+
+export const setNotificationPreferencesInputSchema = z
+  .object({
+    priceAlertsOs: z.boolean(),
+  })
+  .strict();
+export type SetNotificationPreferencesInput = z.infer<typeof setNotificationPreferencesInputSchema>;
