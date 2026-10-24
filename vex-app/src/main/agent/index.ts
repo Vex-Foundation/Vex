@@ -36,6 +36,8 @@ import { setupPriceAlertBridge } from "./price-alert-bridge.js";
 import { setupStreamBridge } from "./stream-bridge.js";
 import { setupStudioSettlementBridge } from "./studio-settlement-bridge.js";
 import { setupTranscriptBridge } from "./transcript-bridge.js";
+import { registerUserMcpTokenReader } from "@vex-agent/user-mcp/token-reader.js";
+import { readUserMcpTokenFromVault } from "../secrets/user-mcp-token.js";
 
 /**
  * Mount every agent-side bridge and return a single teardown that
@@ -61,6 +63,9 @@ export function setupAgentBridges(): () => Promise<void> {
   teardowns.push(setupInferenceNoticeBridge());
   // Mission surface push — replaces the draft/diff/approval discovery polls.
   teardowns.push(setupMissionUpdateBridge());
+  // F12: the engine reads a user MCP server's bearer token from the vault
+  // through this seam, once per call, and fails closed without it.
+  teardowns.push(registerUserMcpTokenReader(readUserMcpTokenFromVault));
   // Compaction v2 — committed `compaction_preparations` transitions, so the
   // apply button reflects readiness on push rather than on a fast poll.
   teardowns.push(setupCompactionPreparationBridge());

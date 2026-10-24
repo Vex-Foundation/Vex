@@ -1,5 +1,22 @@
 import { chainEndpointsSchema, getChainEndpointsInputSchema, setChainEndpointsInputSchema, type ChainEndpoints } from "../../shared/schemas/chain-endpoints.js";
 import { z } from "zod";
+import {
+  addUserMcpServerInputSchema,
+  listUserMcpInputSchema,
+  recheckUserMcpServerInputSchema,
+  removeUserMcpServerInputSchema,
+  setUserMcpTokenInputSchema,
+  setUserMcpToolAutoRunInputSchema,
+  setUserMcpToolEnabledInputSchema,
+  userMcpListDtoSchema,
+  type AddUserMcpServerInput,
+  type RecheckUserMcpServerInput,
+  type RemoveUserMcpServerInput,
+  type SetUserMcpTokenInput,
+  type SetUserMcpToolAutoRunInput,
+  type SetUserMcpToolEnabledInput,
+  type UserMcpListDto,
+} from "../../shared/schemas/user-mcp.js";
 import { CH } from "../../shared/ipc/channels.js";
 import {
   userProfileSchema,
@@ -51,6 +68,34 @@ export const settings = {
   async setChainEndpoints(input: ChainEndpoints) {
     const result = await invokeWithSchema<ChainEndpoints>(CH.settings.setChainEndpoints, input, setChainEndpointsInputSchema);
     return result.ok ? { ...result, data: chainEndpointsSchema.parse(result.data) } : result;
+  },
+  async listUserMcp() {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.listUserMcp, {}, listUserMcpInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
+  },
+  async addUserMcpServer(input: AddUserMcpServerInput) {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.addUserMcpServer, input, addUserMcpServerInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
+  },
+  async removeUserMcpServer(input: RemoveUserMcpServerInput) {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.removeUserMcpServer, input, removeUserMcpServerInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
+  },
+  async setUserMcpToken(input: SetUserMcpTokenInput) {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.setUserMcpToken, input, setUserMcpTokenInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
+  },
+  async setUserMcpToolEnabled(input: SetUserMcpToolEnabledInput) {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.setUserMcpToolEnabled, input, setUserMcpToolEnabledInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
+  },
+  async setUserMcpToolAutoRun(input: SetUserMcpToolAutoRunInput) {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.setUserMcpToolAutoRun, input, setUserMcpToolAutoRunInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
+  },
+  async recheckUserMcpServer(input: RecheckUserMcpServerInput) {
+    const result = await invokeWithSchema<UserMcpListDto>(CH.settings.recheckUserMcpServer, input, recheckUserMcpServerInputSchema);
+    return result.ok ? { ...result, data: userMcpListDtoSchema.parse(result.data) } : result;
   },
   getPreferences() {
     return invokeWithSchema(CH.settings.getPreferences, {});

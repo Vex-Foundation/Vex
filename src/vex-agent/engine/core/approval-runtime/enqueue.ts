@@ -83,11 +83,21 @@ export function buildApprovalIntentPreview(
   input: ApprovalIntentPreviewInput,
 ): IntentPreview {
   const binding = input.preparedApprovalBinding;
+  const external = input.result.externalToolPreview;
   return (
     (binding === undefined
       ? undefined
       : buildDurableApprovalCard(input.toolName, binding))
     ?? input.trustedPreview
+    // F12: a call to the user's own MCP tool shows the server, the tool and
+    // the exact arguments that will leave, not the allow-listed subset.
+    ?? (external === undefined
+      ? undefined
+      : {
+          toolName: `${external.server} / ${external.tool}`,
+          namespace: "mcp",
+          criticalArgs: { server: external.server, tool: external.tool, arguments: external.argumentsJson },
+        })
     ?? buildIntentPreview(
       input.toolName,
       input.toolArgs,

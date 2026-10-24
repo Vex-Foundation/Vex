@@ -18,6 +18,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { ReasoningEffort } from "@shared/schemas/chat.js";
+import type { SessionModelPick } from "@shared/schemas/models.js";
 
 export const MAX_RENDER_LOGS = 500;
 
@@ -333,6 +334,13 @@ export interface UiState {
    * partialize), so a fresh launch re-derives from the model's default.
    */
   readonly reasoningEffortBySession: Readonly<Record<string, ReasoningEffort>>;
+  /**
+   * Per-session model pick from the composer's model menu (F06), PENDING
+   * until the next send carries it on `chat.submit` (the engine persists it
+   * then, and the session's model query reports it). Cleared after a
+   * successful send. NOT persisted — launch-ephemeral, like the effort.
+   */
+  readonly modelPickBySession: Readonly<Record<string, SessionModelPick>>;
   /** See `ReviewModal`. NOT persisted — see partialize. */
   readonly reviewModal: ReviewModal;
   /**
@@ -538,6 +546,8 @@ export interface UiState {
     sessionId: string,
     effort: ReasoningEffort,
   ) => void;
+  readonly setSessionModelPick: (sessionId: string, pick: SessionModelPick) => void;
+  readonly clearSessionModelPick: (sessionId: string) => void;
   readonly setSigningState: (value: "idle" | "signing" | "signed") => void;
   readonly setReviewModal: (value: ReviewModal) => void;
   readonly setHideDustBalances: (value: boolean) => void;
@@ -623,6 +633,7 @@ export const useUiStore = create<UiState>()(
       lighterSetupRequested: false,
       signingState: "idle",
       reasoningEffortBySession: {},
+      modelPickBySession: {},
       reviewModal: "none",
       hideDustBalances: true,
       notificationsEnabled: true,
@@ -707,6 +718,16 @@ export const useUiStore = create<UiState>()(
             [sessionId]: effort,
           },
         })),
+      setSessionModelPick: (sessionId, pick) =>
+        set((state) => ({
+          modelPickBySession: { ...state.modelPickBySession, [sessionId]: pick },
+        })),
+      clearSessionModelPick: (sessionId) =>
+        set((state) => {
+          if (!(sessionId in state.modelPickBySession)) return state;
+          const { [sessionId]: _cleared, ...rest } = state.modelPickBySession;
+          return { modelPickBySession: rest };
+        }),
       setSigningState: (signingState) => set({ signingState }),
       setReviewModal: (reviewModal) => set({ reviewModal }),
       setHideDustBalances: (hideDustBalances) => set({ hideDustBalances }),

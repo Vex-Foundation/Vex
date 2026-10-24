@@ -284,6 +284,8 @@ export const updaterKeys = {
 export const marketKeys = {
   all: ["market"] as const,
   snapshot: () => ["market", "vex", "snapshot"] as const,
+  /** One analysis card read: the market identity, interval and cut-off are the key. */
+  technicalAnalysis: (input: unknown) => ["market", "technicalAnalysis", input] as const,
 };
 
 /**

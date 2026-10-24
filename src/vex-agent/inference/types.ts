@@ -528,8 +528,12 @@ export interface InferenceProvider {
    * the provider catalog (misconfig/delisting) or when the very first fetch
    * fails (no last-good to fall back on). The returned object is owned by the
    * caller — implementations must not hand out a shared mutable reference.
+   *
+   * `options.model` loads a catalogue model other than the configured default
+   * (a session's own pick, F06); absent means the default, exactly as before.
+   * The cache is per model.
    */
-  loadConfig(): Promise<InferenceConfig | null>;
+  loadConfig(options?: { readonly model?: string }): Promise<InferenceConfig | null>;
 
   /**
    * Non-streaming chat completion with tool calling.

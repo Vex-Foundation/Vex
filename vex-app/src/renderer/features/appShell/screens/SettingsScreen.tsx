@@ -38,6 +38,7 @@ import {
 import { EASE_STANDARD } from "../../../lib/motion/index.js";
 import { useEnvState } from "../../../lib/api/onboarding.js";
 import { useSuperboardKey } from "../../../lib/api/superboard-key.js";
+import { useUserMcpList } from "../../../lib/api/user-mcp.js";
 import { useWizardState } from "../../../lib/api/wizard.js";
 import { useIsNativeRuntime } from "../../../lib/api/system.js";
 import { ShellScreen } from "./ShellScreen.js";
@@ -83,6 +84,8 @@ export function SettingsScreen({
   const env = envQuery.data?.ok === true ? envQuery.data.data : null;
   const superboardQuery = useSuperboardKey();
   const superboard = superboardQuery.data?.ok === true ? superboardQuery.data.data : null;
+  const userMcpQuery = useUserMcpList();
+  const userMcp = userMcpQuery.data?.ok === true ? userMcpQuery.data.data : null;
   const wizardStateQuery = useWizardState();
   const completedSteps =
     wizardStateQuery.data?.ok === true
@@ -115,6 +118,7 @@ export function SettingsScreen({
         <SettingsRegister
           env={env}
           superboard={superboard}
+          userMcp={userMcp}
           selected={selected}
           onSelect={select}
         />
@@ -135,6 +139,7 @@ export function SettingsScreen({
                     meta={activeMeta}
                     env={env}
                     superboard={superboard}
+                    userMcp={userMcp}
                     completedSteps={completedSteps}
                     onReturn={() => select("preferences")}
                     inferenceProvider={inferenceProvider}

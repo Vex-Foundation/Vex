@@ -90,6 +90,7 @@ import { installEngineLogBridge } from "./agent/engine-log-bridge.js";
 import { exposeAppVersionToEngine } from "./agent/engine-env.js";
 import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
+import { setupUserMcpRecheckWorker } from "./agent/user-mcp-recheck-worker.js";
 import { setupCompactionPreparationWorker } from "./agent/compaction-preparation-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
 import { setupPriceAlertWorker } from "./agent/price-alert-worker.js";
@@ -460,6 +461,11 @@ async function initializeMainRuntime(): Promise<void> {
   // (the executor's own pre-claim OPENROUTER_API_KEY + AGENT_MODEL gate).
   const stopWakeWorker = setupWakeWorker();
 
+  // 6a-user-mcp (F12). Re-reads the user's own MCP servers' tool lists every
+  // six hours, turns off tools a server changed, and loads the snapshot of
+  // tools offered to the model. Idle until the engine database is migrated.
+  const stopUserMcpRecheckWorker = setupUserMcpRecheckWorker();
+
   // 6a-sync. Own the engine sync executor so post-mutation protocol_sync_runs
   // drain into refreshed balance/portfolio projections (otherwise every
   // mutating protocol tool enqueues a run that sits pending forever and the
@@ -615,6 +621,7 @@ async function initializeMainRuntime(): Promise<void> {
           stopCompactionPreparationWorker,
         ),
         runQuitStage("engine-wake-worker", QUIT_TASK_DEADLINE_MS, stopWakeWorker),
+        runQuitStage("engine-user-mcp-recheck-worker", QUIT_TASK_DEADLINE_MS, stopUserMcpRecheckWorker),
         runQuitStage("engine-sync-worker", QUIT_TASK_DEADLINE_MS, stopSyncWorker),
         runQuitStage("engine-price-alert-worker", QUIT_TASK_DEADLINE_MS, stopPriceAlertWorker),
         runQuitStage(

@@ -60,6 +60,7 @@ vi.mock("../../../../lib/api/messages.js", () => ({
   flattenTranscriptPages: () => [],
 }));
 vi.mock("../../../../lib/api/usage.js", () => ({
+  useContextWindow: () => ({ data: undefined }),
   useUsageLiveSync: () => undefined,
 }));
 vi.mock("../../../../lib/api/streams.js", () => ({

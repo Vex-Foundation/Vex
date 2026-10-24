@@ -146,9 +146,14 @@ describe("the exported inventory covers exactly the export scope", () => {
     // executions, funding, withdrawals, key registration, fee authorization)
     // plus the two always-loaded onboarding shortcuts, which are INTERNAL
     // registry tools (27 -> 29) rather than protocol manifests (144 -> 184).
-    expect(inventory).toHaveLength(213);
+    // 213 -> 214 on the Lighter technical analysis (2026-10-23):
+    // `lighter__technical_analysis_get`, a read of public candles with no
+    // session binding, exported like `lighter__candles_list` (184 -> 185).
+    // 214 -> 215 with `dexscreener__technical_analysis_get`, exported like
+    // `dexscreener__candles_list`, which reads through the same bridge (185 -> 186).
+    expect(inventory).toHaveLength(215);
     expect(inventory.filter((t) => t.kind === "internal")).toHaveLength(29);
-    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(184);
+    expect(inventory.filter((t) => t.kind === "protocol")).toHaveLength(186);
   });
 
   it("keeps WebResearch OUT of tools/list while the in-app registry keeps it", () => {

@@ -67,6 +67,7 @@ import {
 import { useNetworkOnline } from "../../lib/use-network-online.js";
 import { useEngineErrorRetentionSync } from "../../lib/api/engine-errors.js";
 import { useInferenceNoticeRetentionSync } from "../../lib/api/inference-notices.js";
+import { useUserMcpNotices } from "../../lib/user-mcp-notices.js";
 import { usePriceAlertNotices } from "../../lib/api/alerts.js";
 import {
   useActivityProgressInvalidation,
@@ -91,6 +92,8 @@ function AppShellContent(): JSX.Element {
   // still be waiting for them when they select it.
   useEngineErrorRetentionSync();
   useInferenceNoticeRetentionSync();
+  // F12: a user MCP server changed its tools or stopped answering.
+  useUserMcpNotices();
   // F01: a fired price alert raises its notice wherever the user is, and the
   // ones that fired with no window open are shown once on mount.
   usePriceAlertNotices();

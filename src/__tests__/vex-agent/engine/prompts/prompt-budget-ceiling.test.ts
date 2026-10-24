@@ -265,14 +265,28 @@ function context(overrides: Partial<EngineContext>): EngineContext {
  *
  * The two mission-setup ceilings sat 3 bytes above their measurement before
  * this change; they are lowered to the measurement here.
+ *
+ * REVIEWED CEILING MOVE, technical analysis (F08, 2026-10-23). NET +20 bytes
+ * in every mode, identical in all six because the only static text that moved
+ * is one label, "Technical analysis; ", added to the DexScreener capability
+ * areas line, which that namespace advertises in the prompt. The tool's own
+ * contract stays in ToolSearch results, not in the prefix; its Lighter sibling
+ * costs nothing here because lighter does not advertise its facets.
+ *
+ *   agent / restricted          55,993 -> 56,013
+ *   agent / full                56,694 -> 56,714
+ *   mission setup / restricted  62,619 -> 62,639
+ *   mission setup / full        62,638 -> 62,658
+ *   mission run / restricted    61,801 -> 61,821
+ *   mission run / full          61,616 -> 61,636
  */
 const MODES = [
-  { name: "agent / restricted", context: context({}), ceiling: 55_993 },
-  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 56_694 },
-  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 62_619 },
-  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 62_638 },
-  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 61_801 },
-  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 61_616 },
+  { name: "agent / restricted", context: context({}), ceiling: 56_013 },
+  { name: "agent / full", context: context({ sessionPermission: "full" }), ceiling: 56_714 },
+  { name: "mission setup / restricted", context: context({ sessionKind: "mission" }), ceiling: 62_639 },
+  { name: "mission setup / full", context: context({ sessionKind: "mission", sessionPermission: "full" }), ceiling: 62_658 },
+  { name: "mission run / restricted", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1" }), ceiling: 61_821 },
+  { name: "mission run / full", context: context({ sessionKind: "mission", missionId: "m-1", missionRunId: "r-1", sessionPermission: "full" }), ceiling: 61_636 },
 ] as const;
 
 beforeAll(() => {

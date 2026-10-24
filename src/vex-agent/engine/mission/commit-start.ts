@@ -52,6 +52,7 @@ import {
   isKnownContractHashVersion,
 } from "./contract-hash.js";
 import type { MissionBaseline } from "./baseline.js";
+import type { MissionModelChoice } from "../types.js";
 import { extractLegacyHyperliquidRiskV2, missionToDraft } from "./mapper.js";
 import {
   buildMissionRunContractSnapshot,
@@ -71,6 +72,11 @@ export interface CommitMissionStartInput {
    * never updated.
    */
   readonly baseline: MissionBaseline;
+  /**
+   * The default model the caller loaded (F06), frozen into the run's snapshot
+   * when the contract names none. Pure data, like the baseline.
+   */
+  readonly defaultModel?: MissionModelChoice | null;
 }
 
 export type CommitMissionStartOutcome =
@@ -253,7 +259,7 @@ export async function commitMissionStart(
     //    exactly what the host accepted (and what step 3 just
     //    rehashed). The snapshot is the source of truth for resumed
     //    runs even if the mission row later moves back to draft.
-    const contractSnapshot = buildMissionRunContractSnapshot(mission);
+    const contractSnapshot = buildMissionRunContractSnapshot(mission, input.defaultModel ?? null);
 
     // 8. createRun inside the same tx; the FK on `mission_runs.mission_id`
     //    references the row we just flipped.

@@ -412,8 +412,12 @@ function recordAttemptTiming(
       // switch made during the attempt is adopted in memory before it returns
       // or throws, so this is the endpoint that served (or last failed) it -
       // the same answer `resolveSessionInferenceConfig` gives for pricing,
-      // read synchronously so the recorder does no IO.
-      endpointTag: getSwitchedEndpointTag(context.sessionId) ?? config.endpointTag ?? null,
+      // read synchronously so the recorder does no IO. Keyed by the model the
+      // attempt ran on, as the failover keys it.
+      endpointTag:
+        getSwitchedEndpointTag({ sessionId: context.sessionId, model: config.model }) ??
+        config.endpointTag ??
+        null,
       servingProvider: response?.servingProvider ?? null,
       requestedEffort,
       bufferedFallback: snapshot.bufferedFallback,

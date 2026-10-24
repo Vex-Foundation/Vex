@@ -48,11 +48,14 @@ function LocalRuntimeHead({ meta }: { readonly meta: SectionMeta }): JSX.Element
 }
 import { SuperboardKeySection } from "./SuperboardKeySection.js";
 import { ChainEndpointsSection } from "./ChainEndpointsSection.js";
+import { UserMcpSection } from "./UserMcpSection.js";
+import type { UserMcpListDto } from "@shared/schemas/user-mcp.js";
 
 export function SettingsSectionView({
   meta,
   env,
   superboard,
+  userMcp = null,
   completedSteps,
   onReturn,
   inferenceProvider = null,
@@ -61,6 +64,8 @@ export function SettingsSectionView({
   readonly meta: SectionMeta;
   readonly env: EnvState | null;
   readonly superboard: SuperboardKeyStatus | null;
+  /** The Tools (MCP) list, for its head's status word; `null` until it loads. */
+  readonly userMcp?: UserMcpListDto | null;
   readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onReturn: () => void;
   /** Inference only: the provider choice to show (null: the active provider). */
@@ -85,7 +90,13 @@ export function SettingsSectionView({
       ) : meta.stepId === undefined ? (
         <SettingsHead
           title={meta.name}
-          status={settingsSectionStatus(meta.id, env, superboard)}
+          status={settingsSectionStatus(
+            meta.id,
+            env,
+            superboard,
+            null,
+            userMcp,
+          )}
           lead={meta.lead ?? meta.hint}
         />
       ) : null}
@@ -110,6 +121,8 @@ function renderSectionContent(
   switch (meta.id) {
     case "superboardKey":
       return <SuperboardKeySection />;
+    case "userMcp":
+      return <UserMcpSection />;
     case "lighterPoints":
       return <LighterSection />;
     case "localRuntime":

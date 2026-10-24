@@ -26,6 +26,7 @@ import {
 import { log } from "../logger/index.js";
 import { registerHandler } from "./register-handler.js";
 import { activeInferenceProviderMode } from "../vex-cloud/active-mode.js";
+import { checkModelPick } from "./chat/model-pick.js";
 
 export function registerChatSubmitHandler(): () => void {
   return registerHandler({
@@ -71,6 +72,22 @@ export function registerChatSubmitHandler(): () => void {
         );
       }
 
+      // F06: same rule for the model pick — a mission's model is the accepted
+      // contract's, never a per-turn choice. An agent session's pick is
+      // checked against the ACTIVE backend's catalogue before the engine sees
+      // it, so an unknown or foreign id never reaches a provider.
+      const requestedModel =
+        input.model !== undefined && session.data.mode !== "mission" ? input.model : undefined;
+      if (input.model !== undefined && session.data.mode === "mission") {
+        log.debug(
+          `[ipc:vex:chat:submit] stripped model for mission session correlationId=${ctx.requestId}`,
+        );
+      }
+      if (requestedModel !== undefined) {
+        const refused = await checkModelPick(requestedModel, ctx.requestId, ctx.signal);
+        if (refused !== null) return err(refused);
+      }
+
       try {
         const { submitOperatorInstruction } = await import(
           "@vex-agent/engine/index.js"
@@ -82,10 +99,16 @@ export function registerChatSubmitHandler(): () => void {
           // S6: per-turn reasoning effort, validated by chatSubmitInputSchema.
           // Absent (or stripped above for a mission session) → the field is
           // omitted entirely and the provider selects its own default; there
-          // is no engine-side "medium" fallback.
-          forwardedReasoningEffort === undefined
+          // is no engine-side "medium" fallback. F06: the checked model pick
+          // rides the same options object.
+          forwardedReasoningEffort === undefined && requestedModel === undefined
             ? undefined
-            : { reasoningEffort: forwardedReasoningEffort },
+            : {
+                ...(forwardedReasoningEffort !== undefined && {
+                  reasoningEffort: forwardedReasoningEffort,
+                }),
+                ...(requestedModel !== undefined && { model: requestedModel }),
+              },
         );
         log.info(
           `[ipc:vex:chat:submit] ok sessionId=${input.sessionId} ` +

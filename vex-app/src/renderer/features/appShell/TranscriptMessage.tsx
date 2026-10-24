@@ -35,6 +35,10 @@ import {
   MissionStopResult,
   readMissionStopResult,
 } from "./ToolLedger/MissionStopResult.js";
+import {
+  TechnicalAnalysisResult,
+  readTechnicalAnalysisResult,
+} from "./ToolLedger/TechnicalAnalysisResult.js";
 import { ExplorerRefLinks } from "./ToolLedger/ExplorerRefLinks.js";
 import { ToolGroupRow } from "./ToolLedger/ToolGroupRow.js";
 import { ToolDisclosure } from "./ToolDisclosure.js";
@@ -463,6 +467,13 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               <MissionStopResult key={call.toolCallId} result={stopResult} />
             ) : null;
           })}
+          {/* Nor may an analysis the user asked for. */}
+          {(row.calls ?? []).map((call) => {
+            const analysis = readTechnicalAnalysisResult(call);
+            return analysis !== null ? (
+              <TechnicalAnalysisResult key={`ta-${call.toolCallId}`} result={analysis} />
+            ) : null;
+          })}
         </div>
       );
     case "notice":
@@ -503,6 +514,10 @@ function ToolSteps({
     key: act.toolCallId,
     result: readMissionStopResult(act),
   }));
+  const analyses = acts.map((act) => ({
+    key: act.toolCallId,
+    result: readTechnicalAnalysisResult(act),
+  }));
   return (
     <>
       {acts.length > 1 ? (
@@ -520,6 +535,9 @@ function ToolSteps({
       )}
       {stopResults.map(({ key, result }) =>
         result !== null ? <MissionStopResult key={key} result={result} /> : null,
+      )}
+      {analyses.map(({ key, result }) =>
+        result !== null ? <TechnicalAnalysisResult key={`ta-${key}`} result={result} /> : null,
       )}
     </>
   );

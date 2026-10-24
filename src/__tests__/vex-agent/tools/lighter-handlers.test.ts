@@ -18,6 +18,7 @@ import type {
   LighterTrade,
 } from "@tools/lighter/types.js";
 import { getPrimaryEvmEntry } from "@tools/wallet/inventory.js";
+import { lighterAnalysisResultSchema } from "../../../lib/market-analysis/result-schema.js";
 
 const TEST_EVM_WALLET = vi.hoisted(() => ({
   id: "evm_legacy",
@@ -4504,6 +4505,69 @@ describe("Lighter agent read handlers", () => {
     });
     expect(fits.windowNarrowed).toBe(false);
     expect(fits.windowNote).toBeNull();
+  });
+
+  it("runs a technical analysis on closed candles and returns the shared result contract", async () => {
+    const hour = 60 * 60 * 1_000;
+    const now = Date.now();
+    const lastOpen = Math.floor(now / hour) * hour;
+    // 221 rows ending with the bucket that is forming now: 220 closed, one not.
+    mocks.client.getCandles.mockResolvedValue({
+      code: 200,
+      r: "1h",
+      c: Array.from({ length: 221 }, (_, index) => {
+        const close = 100 + index;
+        return { t: lastOpen - (220 - index) * hour, o: close, h: close + 1, l: close - 1, c: close, v: 1, V: 100, i: String(index + 1) };
+      }),
+    });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [{ symbol: "ETH", market_id: 0, market_type: "perp" }],
+      spot_order_book_details: [],
+    });
+
+    const data = await callJson("lighter.technicalAnalysis", { environment: "rhc", marketId: 0, interval: "1h" });
+
+    expect(mocks.client.getCandles).toHaveBeenLastCalledWith("rhc", expect.objectContaining({
+      marketId: 0,
+      resolution: "1h",
+      countBack: 220,
+      setTimestampToEnd: false,
+    }));
+    expect(lighterAnalysisResultSchema.safeParse(data).success).toBe(true);
+    expect(data).toMatchObject({
+      venue: "lighter",
+      environment: "rhc",
+      marketId: 0,
+      symbol: "ETH",
+      marketType: "perp",
+      interval: "1h",
+      bars: 100,
+      price: 319,
+      asOf: new Date(lastOpen).toISOString(),
+      source: "live_lighter_public_api",
+    });
+    expect((data.closedCandles as Record<string, unknown>).droppedForming).toBe(1);
+  });
+
+  it("refuses a technical analysis with a sentence that carries its code", async () => {
+    mocks.client.getCandles.mockResolvedValue({ code: 200, r: "1h", c: [] });
+    mocks.client.getMarketDetails.mockResolvedValue({
+      code: 200,
+      order_book_details: [{ symbol: "ETH", market_id: 0, market_type: "perp" }],
+      spot_order_book_details: [],
+    });
+    expect(await callFail("lighter.technicalAnalysis", { environment: "rhc", marketId: 0, interval: "1h" }))
+      .toContain("(no_candles)");
+
+    mocks.client.getMarketDetails.mockResolvedValue({ code: 200, order_book_details: [], spot_order_book_details: [] });
+    expect(await callFail("lighter.technicalAnalysis", { environment: "rhc", marketId: 9, interval: "1h" }))
+      .toContain("(market_not_found)");
+
+    expect(await callFail("lighter.technicalAnalysis", { environment: "rhc", marketId: 0, interval: "2h" }))
+      .toContain("interval must be 5m, 15m, 1h, 4h, 1d");
+    expect(await callFail("lighter.technicalAnalysis", { environment: "rhc", marketId: 0, interval: "1h", bars: 10 }))
+      .toContain("bars must be an integer from 30 to 200");
   });
 
   it("rejects missing or invalid params before reaching the client", async () => {

@@ -135,6 +135,7 @@ describe("engine types", () => {
         maxLaunchValueDecimals: null,
         maxLaunchCount: null,
         reasoningEffort: null,
+        model: null,
       };
       // Puzzle 04 removed `stopConditionsAccepted` from MissionDraft —
       // acceptance is host-only via `missions.accepted_contract_hash`.
@@ -142,7 +143,7 @@ describe("engine types", () => {
       // C3 added `deployedCapital` (the typed measurement base; optional, so it
       // is NOT in MISSION_DRAFT_REQUIRED_FIELDS).
       // E-1 added `reasoningEffort` (optional; null runs at medium).
-      expect(Object.keys(draft)).toHaveLength(17);
+      expect(Object.keys(draft)).toHaveLength(18);
     });
 
     it("accepts populated values", () => {
@@ -171,6 +172,7 @@ describe("engine types", () => {
         maxLaunchValueDecimals: 18,
         maxLaunchCount: 3,
         reasoningEffort: null,
+        model: null,
       };
       expect(draft.title).toBe("SOL DCA Strategy");
       expect(draft.allowedChains).toEqual(["solana"]);

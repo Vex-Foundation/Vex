@@ -156,7 +156,7 @@ describe("Vex Cloud mode", () => {
   it("offers no endpoint candidates and disables endpoint routing", async () => {
     const deps = new OpenRouterProvider().failoverDeps();
     expect(deps.endpointRouting).toBe("disabled");
-    await expect(deps.loadCandidates()).resolves.toEqual([]);
+    await expect(deps.loadCandidates("anthropic/claude-haiku-5.5")).resolves.toEqual([]);
     expect(captured).toHaveLength(0);
   });
 });

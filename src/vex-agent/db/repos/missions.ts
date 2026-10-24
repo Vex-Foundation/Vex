@@ -9,7 +9,7 @@
 import type { PoolClient } from "pg";
 
 import { query, queryOne, execute, queryOneWith, executeWith } from "../client.js";
-import { jsonb, jsonbPlaceholder } from "../params.js";
+import { jsonb, jsonbPlaceholder, nullableJsonb } from "../params.js";
 
 const MISSION_DRAFT_COLUMN_KINDS = {
   title: "scalar",
@@ -409,6 +409,28 @@ export async function mergeConstraintReasoningEffort(
             updated_at = NOW()
       WHERE id = $1`,
     [id, reasoningEffort],
+  );
+}
+
+/**
+ * Merge the F06 mission model into `constraints_json` without clobbering
+ * siblings. Same lock contract as {@link mergeConstraintReasoningEffort}: the
+ * caller holds the row lock (`getMissionForUpdate`). `null` clears it.
+ */
+export async function mergeConstraintModel(
+  client: PoolClient,
+  id: string,
+  model: { readonly provider: string; readonly modelId: string } | null,
+): Promise<void> {
+  await executeWith(
+    client,
+    `UPDATE missions
+        SET constraints_json =
+              COALESCE(constraints_json, '{}'::jsonb)
+              || jsonb_build_object('model', ${jsonbPlaceholder(2)}),
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id, nullableJsonb(model === null ? null : { provider: model.provider, modelId: model.modelId })],
   );
 }
 

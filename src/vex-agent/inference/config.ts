@@ -261,6 +261,14 @@ export const MODEL_CONFIG_CACHE_TTL_MS = 3_600_000;
  */
 export const MODEL_CONFIG_STALE_RETRY_MS = 30_000;
 
+/**
+ * Models whose config the provider caches at once (F06). A session may run
+ * any catalogue model, so the `loadConfig` cache is keyed by model id; 16
+ * covers every model a desktop user plausibly rotates through in an hour, and
+ * an evicted entry only costs one `/models` read on its next turn.
+ */
+export const MODEL_CONFIG_CACHE_MAX_ENTRIES = 16;
+
 /** OpenRouter app URL for rankings */
 export const OPENROUTER_APP_URL = "https://vexlabs.ai";
 

@@ -370,3 +370,17 @@ describe("resolveToolIdentity - generic wrappers", () => {
     expect(identity.category).toBe("discovery");
   });
 });
+
+describe("the user's own MCP tools (F12)", () => {
+  it("present as a generic tool with no venue mark, never the row-id noise", () => {
+    expect(resolveToolIdentity("mcp_t3f2504e04f8941d3", '{"q":"vex"}')).toEqual({
+      protocol: null,
+      title: "Your MCP tool",
+      category: "tool",
+    });
+  });
+
+  it("does not match a lookalike", () => {
+    expect(resolveToolIdentity("mcp_t3f2504e04f8941d3x", null).title).not.toBe("Your MCP tool");
+  });
+});

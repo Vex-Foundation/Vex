@@ -524,7 +524,7 @@ describe("turn — cost is priced against the switched endpoint (owner decision 
   };
 
   it("prices the response with the NEW endpoint's rates once the session switched", async () => {
-    commitEndpointSwitch("session-switched", SWITCHED.tag);
+    commitEndpointSwitch({ sessionId: "session-switched", model: "anthropic/claude-sonnet-4" }, SWITCHED.tag);
     const provider = providerWithCatalogue();
 
     await executeTurn(context(), [], null, provider as any, pinnedConfig as any, []);
@@ -880,7 +880,7 @@ describe("turn - inference attempt timing", () => {
   });
 
   it("records the endpoint the session switched to, not the pre-send pin", async () => {
-    commitEndpointSwitch("session-t", "google-vertex");
+    commitEndpointSwitch({ sessionId: "session-t", model: "anthropic/claude-sonnet-4" }, "google-vertex");
     const boom = Object.assign(new Error("x"), { name: "ProviderError" });
     const row = await recordThrown(boom);
     // Thrown attempts carry it too - the recorder does no IO to find it.

@@ -143,11 +143,12 @@ describe("tool contract snapshots", () => {
     // are offered in every session the baseline can represent.
     // 38 -> 40, worst case 78 -> 80: both Lighter environment-specific
     // onboarding-status shortcuts are model-visible.
-    // 40 -> 42, worst case 80 -> 82: `Watchlist` and `PriceAlert` declare no
+    // 40 -> 42, worst case 80 -> 83: `Watchlist` and `PriceAlert` declare no
     // visibility gate, so both are offered in every session the baseline can
-    // represent (F01).
+    // represent (F01), and the discovered-tool cap rose 40 -> 41 when
+    // `lighter.technicalAnalysis` made lighter a 41-tool namespace (F08).
     expect(internalVisibleOrder).toHaveLength(42);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(82);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(83);
   });
 
   it("derives its env gates from the live catalogs", () => {

@@ -37,6 +37,8 @@ import logger from "@utils/logger.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { handleToolSearch } from "./tool-search.js";
 import { INTERNAL_TOOL_LOADERS } from "./internal-loaders.js";
+import { isUserMcpToolName } from "@vex-agent/user-mcp/names.js";
+import { routeUserMcpTool } from "../user-mcp/route.js";
 
 export async function routeToolCall(
   call: ToolCallRequest,
@@ -89,6 +91,14 @@ export async function routeToolCall(
       { toolId, params: resolved.params },
       toProtocolExecutionContext(call, context, "in_app_form"),
     );
+  }
+
+  // The user's own MCP tools (F12). `mcp_t<16 hex>` carries no `__`, so the
+  // injected lane below would never claim it; it is routed first anyway so
+  // the order cannot matter. The lane re-reads the tool's row, asks for
+  // approval unless the user let it run without asking, and only reads.
+  if (isUserMcpToolName(call.name)) {
+    return routeUserMcpTool(call, context);
   }
 
   // Injected discovered-tool lane (owner decision 2026-08-03, SPEC §7 Q1).

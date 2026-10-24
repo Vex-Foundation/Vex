@@ -179,6 +179,15 @@ function lighterOrderSentence(args: Args): string | null {
   return sentence(joinWords([action, where]));
 }
 
+/**
+ * A call to one of the user's own MCP tools (F12): the engine marks its
+ * preview with the `mcp` namespace. Nothing is signed and no wallet is
+ * involved, so the card drops the real-funds stamp and says what will run.
+ */
+export function isUserMcpApproval(summary: Pick<ApprovalSummaryDto, "preview">): boolean {
+  return summary.preview?.namespace === "mcp";
+}
+
 /** The longest summary a card will set as its title; a longer one stays a row. */
 const SUMMARY_SENTENCE_MAX = 160;
 
@@ -188,6 +197,11 @@ const SUMMARY_SENTENCE_MAX = 160;
  */
 export function approvalSentence(summary: ApprovalTarget): string {
   const args = summary.preview?.criticalArgs ?? null;
+  if (isUserMcpApproval(summary)) {
+    const tool = argText(args, "tool");
+    const server = argText(args, "server");
+    if (tool !== null && server !== null) return sentence(`Call ${tool} on your MCP server ${server}`);
+  }
   if (args !== null) {
     const built = (() => {
       if (typeof args.toolId === "string" && args.toolId.startsWith("lighter.")) {

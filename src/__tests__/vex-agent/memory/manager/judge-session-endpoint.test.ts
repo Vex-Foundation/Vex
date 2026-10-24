@@ -139,7 +139,7 @@ describe("judge provider call — compaction-aligned", () => {
   });
 
   it("runs against the session's SWITCHED endpoint, price and window included", async () => {
-    commitEndpointSwitch(SESSION_ID, SWITCHED.tag);
+    commitEndpointSwitch({ sessionId: SESSION_ID, model: "deepseek/deepseek-v4-pro" }, SWITCHED.tag);
 
     await callJudge(ctx(SESSION_ID), async () => providerWithCatalogue(seen));
 

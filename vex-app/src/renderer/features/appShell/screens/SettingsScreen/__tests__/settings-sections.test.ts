@@ -104,7 +104,7 @@ describe("the Settings nav", () => {
       ["preferences"],
       ["vault", "wallets", "apiKeys"],
       ["inference", "memory", "tuning", "localRuntime"],
-      ["superboardKey", "lighterPoints"],
+      ["superboardKey", "userMcp", "lighterPoints"],
     ]);
     // Flattened, the sections keep the order the registry declares.
     expect(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.id)).slice(1)).toEqual(
@@ -123,11 +123,12 @@ describe("the Settings nav", () => {
       ["vault", "Vault", "The master password that encrypts everything on this machine"],
       ["wallets", "Wallets", "EVM and Solana wallets - add, remove, recover, back up, or export"],
       ["apiKeys", "API keys", "Jupiter, Tavily, Rettiwt, and chain endpoint overrides"],
-      ["inference", "Inference", "Vex Inference or OpenRouter, and the model the agent thinks with"],
+      ["inference", "Inference", "Vex Inference or OpenRouter, the default model for new sessions, and the model for background work"],
       ["memory", "Memory", "The embedding endpoint behind long-term recall"],
       ["tuning", "Tuning", "Context, output, and sampling limits"],
       ["localRuntime", "Local runtime", "The database and embeddings server running on this computer"],
       ["superboardKey", "Superboard key", "One code you paste into Superboard"],
+      ["userMcp", "Tools (MCP)", "MCP servers you add, and the read-only tools your chats may use"],
       [
         "lighterPoints",
         "Lighter",

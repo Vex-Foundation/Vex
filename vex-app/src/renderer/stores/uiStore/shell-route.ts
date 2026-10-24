@@ -98,6 +98,8 @@ export type SettingsSection =
   | "wallets"
   | "apiKeys"
   | "superboardKey"
+  /** The user's own MCP servers and their read-only tools (F12). */
+  | "userMcp"
   /**
    * The inference provider (Vex Inference or OpenRouter) and its model, with
    * the Vex Inference account (sign-in, linked wallets, the VEX balance)

@@ -20,6 +20,7 @@ vi.mock("../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({ data: runtimeData.current, isError: false }),
 }));
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionPlan: () => ({ data: { ok: true, data: null } }),
 }));
 

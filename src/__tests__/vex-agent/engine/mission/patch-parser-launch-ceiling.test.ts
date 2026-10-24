@@ -33,6 +33,8 @@ describe("patch-parser — the launch ceiling is host-authored only (C6 / rule 9
       "maxLaunchCount",
       "maxLaunchValueDecimals",
       "maxLaunchValueRaw",
+      // F06: the run's model is the contract card's alone.
+      "model",
     ]);
   });
 

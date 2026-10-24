@@ -110,7 +110,7 @@ describe("branch provider call — failover deps come from the provider", () => 
   });
 
   it("re-resolves the switched endpoint's PRICE and WINDOW with no injected deps", async () => {
-    commitEndpointSwitch(SESSION_ID, SWITCHED.tag);
+    commitEndpointSwitch({ sessionId: SESSION_ID, model: "deepseek/deepseek-v4-flash" }, SWITCHED.tag);
     const seen: InferenceConfig[] = [];
 
     await runBranch(providerWithCatalogue(seen));
@@ -136,7 +136,7 @@ describe("branch provider call — failover deps come from the provider", () => 
     // Degraded, not broken: a stub or a non-OpenRouter provider yields no
     // candidates, and owner decision 4 (route to the switched endpoint) still
     // holds — only the numbers fall back.
-    commitEndpointSwitch(SESSION_ID, SWITCHED.tag);
+    commitEndpointSwitch({ sessionId: SESSION_ID, model: "deepseek/deepseek-v4-flash" }, SWITCHED.tag);
     const seen: InferenceConfig[] = [];
 
     await runBranch({
@@ -160,7 +160,7 @@ describe("endpointFailoverDepsFrom", () => {
     const deps = endpointFailoverDepsFrom({
       failoverDeps: () => ({ loadCandidates: async () => [SWITCHED] }),
     });
-    await expect(deps.loadCandidates()).resolves.toEqual([SWITCHED]);
+    await expect(deps.loadCandidates("deepseek/deepseek-v4-flash")).resolves.toEqual([SWITCHED]);
   });
 
   it.each([
@@ -171,6 +171,6 @@ describe("endpointFailoverDepsFrom", () => {
     ["undefined", undefined],
   ])("falls back to empty candidates for %s — total, never throws", async (_label, source) => {
     const deps = endpointFailoverDepsFrom(source);
-    await expect(deps.loadCandidates()).resolves.toEqual([]);
+    await expect(deps.loadCandidates("deepseek/deepseek-v4-flash")).resolves.toEqual([]);
   });
 });

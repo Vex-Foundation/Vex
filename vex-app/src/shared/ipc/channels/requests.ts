@@ -192,6 +192,7 @@ export const CH = {
     setLaunchCeilings: "vex:mission:setLaunchCeilings",
     /** Host writer for the mission contract's reasoning effort (Kairos E-1). */
     setReasoningEffort: "vex:mission:setReasoningEffort",
+    setModel: "vex:mission:setModel",
     /**
      * Post-stop affordance: hand a stopped mission a new operator instruction
      * and restart it, instead of forcing the user to build a new mission from
@@ -349,6 +350,10 @@ export const CH = {
   // by the main-process market service. Renderer never fetches external APIs.
   market: {
     getVexSnapshot: "vex:market:getVexSnapshot",
+    // The technical analysis card's chart and timeframe switch: main runs the
+    // engine the protocol tools use, with the same loaders. Read-only; it
+    // starts no agent turn, tool dispatch or signature.
+    readTechnicalAnalysis: "vex:market:readTechnicalAnalysis",
   },
 
   // Light it up - bounded Lighter reads. Main owns every provider request;
@@ -382,6 +387,15 @@ export const CH = {
   settings: {
     getChainEndpoints: "vex:settings:getChainEndpoints",
     setChainEndpoints: "vex:settings:setChainEndpoints",
+    // The user's own MCP servers (F12). Settings only: chat can call an
+    // enabled tool but never reach these channels, so trust is widened here.
+    listUserMcp: "vex:settings:listUserMcp",
+    addUserMcpServer: "vex:settings:addUserMcpServer",
+    removeUserMcpServer: "vex:settings:removeUserMcpServer",
+    setUserMcpToken: "vex:settings:setUserMcpToken",
+    setUserMcpToolEnabled: "vex:settings:setUserMcpToolEnabled",
+    setUserMcpToolAutoRun: "vex:settings:setUserMcpToolAutoRun",
+    recheckUserMcpServer: "vex:settings:recheckUserMcpServer",
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
     // The OS notifications main raises outside a turn (F01 price alerts).

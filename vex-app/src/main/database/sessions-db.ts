@@ -38,6 +38,7 @@ export {
 } from "./sessions/wallet-scope.js";
 export { setInitialMissionGoalIfUnset } from "./sessions/mission-goal.js";
 export { getSessionById, listSessions } from "./sessions/read.js";
+export { getSessionModelPick, type SessionModelPickRow } from "./sessions/model-pick.js";
 export { getSessionExportMessages } from "./sessions/export-history.js";
 export { softDeleteSessionWithClient, softDeleteSession } from "./sessions/delete.js";
 export { setSessionPinnedWithClient, setSessionPinned } from "./sessions/pin.js";

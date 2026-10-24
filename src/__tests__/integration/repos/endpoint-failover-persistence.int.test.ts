@@ -80,14 +80,14 @@ describe("session_endpoint_switches (migration 059)", () => {
       reasonClass: "rate_limited_shared_pool",
     });
 
-    const latest = await getLatestEndpointSwitch(sessionId);
+    const latest = await getLatestEndpointSwitch(sessionId, "m/x");
     expect(latest?.newEndpoint).toBe("baidu/fp8");
     expect(latest?.reasonClass).toBe("rate_limited_shared_pool");
   });
 
   it("returns null for a session that never switched", async () => {
     const sessionId = await makeSession();
-    expect(await getLatestEndpointSwitch(sessionId)).toBeNull();
+    expect(await getLatestEndpointSwitch(sessionId, "m/x")).toBeNull();
   });
 
   it("recovers the NEWEST row when history exists at all", async () => {
@@ -105,7 +105,7 @@ describe("session_endpoint_switches (migration 059)", () => {
       });
     }
     expect(await listEndpointSwitches(sessionId)).toHaveLength(2);
-    expect((await getLatestEndpointSwitch(sessionId))?.newEndpoint).toBe("novita/fp8");
+    expect((await getLatestEndpointSwitch(sessionId, "m/x"))?.newEndpoint).toBe("novita/fp8");
   });
 
   it("scopes rows per session", async () => {
@@ -118,6 +118,23 @@ describe("session_endpoint_switches (migration 059)", () => {
       reasonClass: "provider_unavailable",
     });
     expect(await listEndpointSwitches(b)).toEqual([]);
+  });
+
+  it("scopes the latest switch per model (F06)", async () => {
+    // A tag belongs to one model's endpoint list: a session that switched on
+    // model A and now runs model B (or a background call on AGENT_MODEL) must
+    // not be routed to A's endpoint.
+    const sessionId = await makeSession();
+    await recordEndpointSwitch({
+      sessionId,
+      model: "m/a",
+      previousEndpoint: "deepinfra/fp4",
+      newEndpoint: "baidu/fp8",
+      reasonClass: "rate_limited_shared_pool",
+    });
+
+    expect((await getLatestEndpointSwitch(sessionId, "m/a"))?.newEndpoint).toBe("baidu/fp8");
+    expect(await getLatestEndpointSwitch(sessionId, "m/b")).toBeNull();
   });
 
   it("cascades with its session", async () => {

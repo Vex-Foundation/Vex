@@ -70,6 +70,8 @@ import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
   LIGHTER_AGENT_ACCOUNT_POSITION_MAX,
   LIGHTER_AGENT_ACCOUNT_ROW_MAX,
+  readAnalysisBars,
+  readAnalysisInterval,
   readAccountOrderLimit,
   readApiKeyIndex,
   readApiKeyLimit,
@@ -138,6 +140,9 @@ import {
   takeLighterDeskPrewarmOwnership,
 } from "../desk-prewarm.js";
 import { judgeLighterSigningOwnership } from "../signing-ownership.js";
+import { createLighterCandleLoader } from "@vex-agent/market-analysis/lighter-loader.js";
+import { describeAnalysisRefusal } from "@vex-agent/market-analysis/refusals.js";
+import { runTechnicalAnalysis } from "@vex-agent/market-analysis/run.js";
 
 // An engine session reads only its selected wallet's provider-owned account,
 // even if another wallet has the sole saved trading key. Trusted default
@@ -1795,6 +1800,40 @@ export const LIGHTER_READ_HANDLERS: Record<string, ProtocolHandler> = {
     } catch (err) {
       return fail(`Lighter candles unavailable (${failureDetail("lighter.candles", err)})`);
     }
+  },
+
+  "lighter.technicalAnalysis": async (params) => {
+    const environment = readEnvironment(params);
+    if (!environment.ok) return fail(environment.reason);
+    const marketId = readMarketId(params, true);
+    if (!marketId.ok) return fail(marketId.reason);
+    const interval = readAnalysisInterval(params);
+    if (!interval.ok) return fail(interval.reason);
+    const bars = readAnalysisBars(params);
+    if (!bars.ok) return fail(bars.reason);
+
+    const outcome = await runTechnicalAnalysis(
+      createLighterCandleLoader({ environment: environment.value, marketId: marketId.value! }),
+      { interval: interval.value, ...(bars.value === undefined ? {} : { bars: bars.value }) },
+    );
+    if (!outcome.ok) {
+      const detail = outcome.reason === "source_unavailable"
+        ? failureDetail("lighter.technicalAnalysis", outcome.cause)
+        : outcome.detail;
+      return fail(describeAnalysisRefusal("Lighter", outcome.reason, detail));
+    }
+    return ok({
+      ...outcome.market,
+      ...outcome.analysis,
+      ...liveProvenance(environment.value, "lighter.technicalAnalysis", [
+        LIGHTER_ENDPOINT_PATHS.orderBookDetails,
+        LIGHTER_ENDPOINT_PATHS.candles,
+      ], {
+        marketId: marketId.value,
+        interval: interval.value,
+        bars: outcome.analysis.bars,
+      }),
+    });
   },
 
   "lighter.key.register.status": async (params, context) => {

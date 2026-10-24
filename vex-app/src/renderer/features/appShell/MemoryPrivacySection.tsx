@@ -12,15 +12,14 @@
 
 import type { JSX } from "react";
 import { useAvailableModels } from "../../lib/api/models.js";
+import { defaultModelOption } from "../../lib/model-options.js";
 import { SECTION, SectionHead } from "./MemoryPanelShared.js";
 
 export function MemoryPrivacySection(): JSX.Element {
   const models = useAvailableModels();
-  const res = models.data;
-  const model =
-    res !== undefined && res.ok && res.data.source === "global_default"
-      ? (res.data.models[0] ?? null)
-      : null;
+  // The configured default, never a session's own pick (F06): background
+  // work, memory included, always runs on `AGENT_MODEL`.
+  const model = defaultModelOption(models.data);
 
   return (
     <section data-vex-section="memory-privacy" className={SECTION}>

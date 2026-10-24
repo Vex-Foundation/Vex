@@ -49,6 +49,7 @@ vi.mock("../../../lib/api/messages.js", () => ({
   flattenTranscriptPages: () => [],
 }));
 vi.mock("../../../lib/api/usage.js", () => ({
+  useContextWindow: () => ({ data: undefined }),
   useUsageLiveSync: () => undefined,
 }));
 // The engine-error channel mounts a subscriber from SessionPanel for EVERY
