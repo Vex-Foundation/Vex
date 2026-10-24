@@ -32,6 +32,7 @@ import { boardSparkline } from "./board-sparkline.js";
 import { boardSpotlight } from "./board-spotlight.js";
 import { boardChart } from "./board-chart.js";
 import { images } from "./images.js";
+import { alerts } from "./alerts.js";
 import { portfolio } from "./portfolio.js";
 import { projects } from "./projects.js";
 import { runtime } from "./runtime.js";
@@ -55,6 +56,7 @@ export const agentBridge = {
   memory,
   memoryInspector,
   portfolio,
+  alerts,
   projects,
   images,
   boardIcons,
