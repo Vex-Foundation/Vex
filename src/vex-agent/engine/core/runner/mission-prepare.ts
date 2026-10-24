@@ -56,6 +56,7 @@ import {
   type CommitMissionStartOutcome,
 } from "../../mission/commit-start.js";
 import { missionToDraft } from "../../mission/mapper.js";
+import { normalizeMissionModel } from "../../mission/model-choice.js";
 import type { MissionRunContractSnapshot } from "../../mission/run-contract.js";
 import {
   claimSessionLease,
@@ -282,6 +283,8 @@ export async function prepareMissionStart(
       missionId: input.missionId,
       runId,
       baseline,
+      // F06: the default the run freezes when the contract names no model.
+      defaultModel: normalizeMissionModel({ provider: provider.id, modelId: config.model }),
     });
     if (commit.outcome !== "committed") {
       return mapCommitOutcomeToPrepareOutcome(commit);

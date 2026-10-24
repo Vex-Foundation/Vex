@@ -49,6 +49,12 @@ const mocks = vi.hoisted(() => ({
   // path they always have; individual tests override it to exercise the
   // primary catalog path.
   getModelReasoningCapability: vi.fn().mockResolvedValue(null),
+  // F06: the models list reads the active backend's catalogue. Defaults to
+  // a failed fetch, so the single-option tests below keep exercising the
+  // `global_default` fallback they always have.
+  loadProviderModelCatalog: vi.fn().mockRejectedValue(new Error("catalogue offline")),
+  // F06: sessions.getModel reads the session's own pick; none by default.
+  getSessionModelPick: vi.fn().mockResolvedValue({ ok: true, data: null }),
   log: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -121,6 +127,12 @@ vi.mock("@vex-agent/inference/registry.js", () => ({
 // never triggers a real `/models` fetch.
 vi.mock("../../../onboarding/provider-model-catalog.js", () => ({
   getModelReasoningCapability: mocks.getModelReasoningCapability,
+  loadProviderModelCatalog: mocks.loadProviderModelCatalog,
+}));
+
+vi.mock("../../../database/sessions-db.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getSessionModelPick: mocks.getSessionModelPick,
 }));
 
 const { registerMessagesHandlers } = await import("../../messages.js");
@@ -152,6 +164,8 @@ function untrustedSender(): TestIpcEvent {
 beforeEach(() => {
   handlers.clear();
   vi.clearAllMocks();
+  mocks.loadProviderModelCatalog.mockRejectedValue(new Error("catalogue offline"));
+  mocks.getSessionModelPick.mockResolvedValue({ ok: true, data: null });
   registerMessagesHandlers();
   registerUsageHandlers();
   registerCompactionHandlers();
@@ -250,6 +264,115 @@ describe("models handler", () => {
     expect(result.ok).toBe(true);
     const data = result.data as { models: { reasoning: unknown }[] };
     expect(data.models[0]!.reasoning).toBeNull();
+  });
+});
+
+function catalogRow(modelId: string, prompt: string | null, contextLength: number | null) {
+  return {
+    modelId,
+    displayName: modelId,
+    providerId: modelId.slice(0, modelId.indexOf("/")),
+    contextLength,
+    pricingInputPerMillion: prompt,
+    pricingOutputPerMillion: prompt === null ? null : "15",
+  };
+}
+
+describe("models handler: the active backend's catalogue (F06)", () => {
+  it("lists every row with the default FIRST and marked, exact prices kept", async () => {
+    process.env.AGENT_PROVIDER = "openrouter";
+    process.env.AGENT_MODEL = "anthropic/claude-sonnet-4.5";
+    mocks.loadProviderModelCatalog.mockResolvedValue({
+      models: [
+        catalogRow("openai/gpt-6-luna", "1.25", 1_050_000),
+        catalogRow("anthropic/claude-sonnet-4.5", "3", 200_000),
+        catalogRow("google/gemini-3.8-flash", "0.14375", null),
+      ],
+    });
+
+    const result = await call(CH.models.listAvailable, {});
+    expect(result.ok).toBe(true);
+    const data = result.data as {
+      source: string;
+      models: Array<{ modelId: string; isDefault: boolean; providerId: string; brand: string; pricingInputPerMillion: string | null; contextLength: number | null }>;
+    };
+    expect(data.source).toBe("catalog");
+    expect(data.models.map((m) => [m.modelId, m.isDefault])).toEqual([
+      ["anthropic/claude-sonnet-4.5", true],
+      ["openai/gpt-6-luna", false],
+      ["google/gemini-3.8-flash", false],
+    ]);
+    // The backend serves every row; the vendor is the brand.
+    expect(data.models.every((m) => m.providerId === "openrouter")).toBe(true);
+    expect(data.models[1]?.brand).toBe("openai");
+    expect(data.models[2]?.pricingInputPerMillion).toBe("0.14375");
+    expect(data.models[0]?.contextLength).toBe(200_000);
+    expect(mocks.loadProviderModelCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "openrouter" }),
+    );
+  });
+
+  it("reads the Vex Inference allowlist in Vex Cloud mode", async () => {
+    process.env.AGENT_PROVIDER = "vexcloud";
+    process.env.AGENT_MODEL = "anthropic/claude-haiku-5.5";
+    mocks.loadProviderModelCatalog.mockResolvedValue({
+      models: [catalogRow("anthropic/claude-haiku-5.5", "1", 1_000_000)],
+    });
+
+    const result = await call(CH.models.listAvailable, {});
+    const data = result.data as { models: Array<{ providerId: string }> };
+    expect(mocks.loadProviderModelCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "vexcloud" }),
+    );
+    expect(data.models[0]?.providerId).toBe("vexcloud");
+  });
+
+  it("still lists a default the catalogue no longer has, first", async () => {
+    process.env.AGENT_PROVIDER = "openrouter";
+    process.env.AGENT_MODEL = "vendor/retired";
+    mocks.loadProviderModelCatalog.mockResolvedValue({
+      models: [catalogRow("openai/gpt-6-luna", "1.25", 1_050_000)],
+    });
+
+    const result = await call(CH.models.listAvailable, {});
+    const data = result.data as { models: Array<{ modelId: string; isDefault: boolean; contextLength: number | null }> };
+    expect(data.models[0]).toMatchObject({ modelId: "vendor/retired", isDefault: true, contextLength: null });
+    expect(data.models).toHaveLength(2);
+  });
+});
+
+describe("sessions.getModel: the session's own pick (F06)", () => {
+  it("reports a pick made under the active backend as source session", async () => {
+    process.env.AGENT_PROVIDER = "openrouter";
+    process.env.AGENT_MODEL = "anthropic/claude-sonnet-4.5";
+    mocks.getSessionModelPick.mockResolvedValue({
+      ok: true,
+      data: { provider: "openrouter", modelId: "openai/gpt-6-luna", updatedAt: "2026-10-23T10:00:00.000Z" },
+    });
+
+    const result = await call(CH.sessions.getModel, { sessionId: SESSION });
+    expect(result.data).toMatchObject({
+      source: "session",
+      provider: "openrouter",
+      modelId: "openai/gpt-6-luna",
+      updatedAt: "2026-10-23T10:00:00.000Z",
+    });
+  });
+
+  it("reports the default for a pick made under the other backend", async () => {
+    process.env.AGENT_PROVIDER = "vexcloud";
+    process.env.AGENT_MODEL = "anthropic/claude-haiku-5.5";
+    mocks.getSessionModelPick.mockResolvedValue({
+      ok: true,
+      data: { provider: "openrouter", modelId: "openai/gpt-6-luna", updatedAt: "2026-10-23T10:00:00.000Z" },
+    });
+
+    const result = await call(CH.sessions.getModel, { sessionId: SESSION });
+    expect(result.data).toMatchObject({
+      source: "global_default",
+      modelId: "anthropic/claude-haiku-5.5",
+      updatedAt: null,
+    });
   });
 });
 

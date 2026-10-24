@@ -34,6 +34,9 @@ import {
 import { PostStopRedirectHint } from "./PostStopRedirectHint.js";
 import { useComposerFieldGrow } from "./composer-field-grow.js";
 import { useComposerReasoningEffort } from "./composer-reasoning.js";
+import { useComposerModel } from "./composer-model.js";
+import { useContextWindow } from "../../lib/api/usage.js";
+import { inferenceSettingsRoute } from "../../stores/uiStore/shell-route.js";
 import { useComposerSubmit } from "./composer-submit.js";
 import { ComposerField } from "./ComposerField.js";
 import { ComposerQuickActions } from "./ComposerQuickActions.js";
@@ -118,15 +121,17 @@ export function SessionComposer({
   // stays for soft, detail-derived UI only.
   const sessionId = activeSessionId;
   const stage = variant ?? (sessionId === null ? "hero" : "docked");
+  // F06: the model the next turn runs on (pending pick, session model or
+  // default) drives both the model key and the effort set.
+  const composerModel = useComposerModel(sessionId, activeSession);
   const {
     reasoningCapability,
-    globalModelId,
     reasoningStageIsAgent,
     modelsResolved,
     effectiveReasoningEffort,
     carryReasoningEffort,
     handleReasoningPick,
-  } = useComposerReasoningEffort(sessionId, activeSession);
+  } = useComposerReasoningEffort(sessionId, activeSession, composerModel.option);
   const {
     draft,
     setDraft,
@@ -147,7 +152,14 @@ export function SessionComposer({
     activeSession,
     carryReasoningEffort,
     effectiveReasoningEffort,
+    composerModel.canPick ? composerModel.pendingPick : null,
   );
+  const contextWindowQuery = useContextWindow(sessionId);
+  const conversationTokens =
+    contextWindowQuery.data?.ok === true && contextWindowQuery.data.data !== null
+      ? contextWindowQuery.data.data.tokensUsed
+      : null;
+  const setShellRoute = useUiStore((s) => s.setShellRoute);
 
   // The ink "Waiting for approval" frame: a mission run parked for approval,
   // or a decision waiting in this session's pending approvals.
@@ -458,8 +470,18 @@ export function SessionComposer({
           <div className="vex-composer-bar @container flex items-center justify-between gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <ComposerOptions
-                modelId={globalModelId}
+                modelId={composerModel.modelId}
                 effortResolved={modelsResolved}
+                {...(composerModel.canPick && {
+                  menu: {
+                    options: composerModel.options,
+                    onPick: composerModel.pick,
+                    // Never changes under a running turn.
+                    disabled: submitPending,
+                    conversationTokens,
+                    onOpenSettings: () => setShellRoute(inferenceSettingsRoute(null)),
+                  },
+                })}
                 effort={
                   reasoningCapability !== null &&
                   reasoningStageIsAgent &&

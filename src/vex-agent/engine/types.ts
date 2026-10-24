@@ -47,6 +47,7 @@ export type {
   MissionPatch,
   DeployedCapital,
   MissionReasoningEffort,
+  MissionModelChoice,
 } from "./types/mission-draft.js";
 export {
   MISSION_DRAFT_REQUIRED_FIELDS,
@@ -54,6 +55,7 @@ export {
   MISSION_REASONING_EFFORTS,
   MISSION_DEFAULT_REASONING_EFFORT,
   LEGACY_MISSION_DEFAULT_REASONING_EFFORT,
+  MISSION_MODEL_PROVIDERS,
 } from "./types/mission-draft.js";
 export type {
   EngineContext,

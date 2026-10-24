@@ -4,12 +4,14 @@
  * legacy-plan chip, both in the bar's LEADING cluster.
  *
  * The options control is one 30 high frame holding two keys (`.vex-composer-
- * options`, console.css): the model's name and the reasoning effort. The
- * runtime model is GLOBAL (env-resolved, no per-session mutation channel), so
- * the model key opens Settings -> Model instead of offering a picker and draws
- * no chevron; the effort key is the `ReasoningEffortSelect` menu and carries
- * the chevron at the end of the frame. The name comes from the model catalogue
- * (`useAvailableModels`, the shared cache key), else the id.
+ * options`, console.css): the model's name and the reasoning effort. In a
+ * resolved agent session the model key is the model menu (F06,
+ * `ComposerModelMenu`: the session's own model, picked per session);
+ * elsewhere (the welcome stage, a mission session) it shows the model and
+ * opens Settings, with no chevron. The effort key is the
+ * `ReasoningEffortSelect` menu and carries the chevron at the end of the
+ * frame. The name comes from the model catalogue (`useAvailableModels`, the
+ * shared cache key), else the id.
  *
  * SHRINK CONTRACT (codex Bug 3). The frame and the model key may shrink
  * (`min-w-0`, no `shrink-0`), and the model label owns the ellipsis. Labels
@@ -27,6 +29,8 @@ import {
   ProviderMark,
 } from "../../../components/common/ProviderMark.js";
 import { providerNameSchema, type ProviderName } from "@shared/schemas/provider.js";
+import { modelDisplayName } from "./model-display-name.js";
+import { ComposerModelMenu, type ComposerModelMenuProps } from "./ComposerModelMenu.js";
 
 // Lazy: the plan modal pulls the markdown pipeline - a heavy graph the
 // composer must not pay for until the review actually opens.
@@ -50,19 +54,7 @@ const MARK_PX = 16;
 const SEAT_CHIP =
   "vex-composer-chip inline-flex h-[30px] min-w-0 items-center gap-1.5 px-2 font-sans text-[13px] leading-5 text-ink-secondary transition-colors duration-100 hover:bg-interactive-hover hover:text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
-/**
- * DISPLAY-ONLY trim of the routing prefix: `deepseek/deepseek-v4-pro` reads
- * as `deepseek-v4-pro` (owner QA round 3 follow-up). Only the FIRST segment
- * is cut - an id with no `/` passes through, and a variant suffix (`:free`)
- * survives. The FULL id stays the source of truth everywhere else: the
- * accessible name, the tooltip, the settings screen, and every request path.
- */
-export function modelDisplayName(modelId: string): string {
-  const slash = modelId.indexOf("/");
-  return slash > 0 && slash < modelId.length - 1
-    ? modelId.slice(slash + 1)
-    : modelId;
-}
+export { modelDisplayName };
 
 /**
  * The catalogue's entry for the model: its name (else its id), the routing
@@ -135,12 +127,15 @@ export function ComposerOptions({
   modelId,
   effort,
   effortResolved,
+  menu,
 }: {
   readonly modelId: string | null;
   /** The effort key, or `null` when the model has no reasoning selector. */
   readonly effort: ReactNode | null;
   /** False while the catalogue is unresolved: no "Reasoning:" before a placeholder. */
   readonly effortResolved: boolean;
+  /** The model menu (F06) for a session that can pick; absent shows the display-only key. */
+  readonly menu?: Omit<ComposerModelMenuProps, "modelId">;
 }): JSX.Element | null {
   if (modelId === null && effort === null) return null;
   return (
@@ -148,7 +143,11 @@ export function ComposerOptions({
       data-vex-area="composer-options"
       className="vex-composer-options min-w-0"
     >
-      <ComposerModelChip modelId={modelId} />
+      {modelId !== null && menu !== undefined ? (
+        <ComposerModelMenu modelId={modelId} {...menu} />
+      ) : (
+        <ComposerModelChip modelId={modelId} />
+      )}
       {effort !== null && effortResolved ? (
         <>
           {modelId !== null ? (

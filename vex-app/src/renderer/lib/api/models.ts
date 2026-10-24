@@ -1,9 +1,11 @@
 /**
- * Models TanStack Query hook (global model resolution).
+ * Models TanStack Query hook: the model list a session can pick from (F06).
  *
- * Read-only — returns `source: "global_default"` (single env-derived
- * option) or `source: "unconfigured"` (empty list). No network call. A
- * future OpenRouter catalogue fetch could enrich the option metadata.
+ * Read-only — `source: "catalog"` (the active backend's tool-capable
+ * catalogue, the configured default first and marked `isDefault`),
+ * `"global_default"` (the catalogue was unreadable: the single env-derived
+ * option) or `"unconfigured"` (empty list). Main reads the keyless
+ * catalogue; the renderer never calls a provider.
  */
 
 import {

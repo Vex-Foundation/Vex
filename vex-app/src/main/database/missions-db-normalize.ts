@@ -27,6 +27,7 @@ import {
   type MissionDeployedCapital,
 } from "@shared/schemas/mission.js";
 import { reasoningEffortSchema } from "@shared/schemas/reasoning.js";
+import { sessionModelPickSchema } from "@shared/schemas/models.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import { SOL_MINT } from "@tools/solana-ecosystem/shared/solana-constants.js";
 import { formatExecutedAmountHuman } from "./agent-activity-amount.js";
@@ -191,6 +192,10 @@ export function normaliseConstraints(raw: unknown): MissionConstraints {
   if (reasoningEffortSchema.safeParse(rec["reasoningEffort"]).success) {
     projection.reasoningEffort = reasoningEffortSchema.parse(rec["reasoningEffort"]);
   }
+  // F06 mission model: only a well-formed pick projects; anything else is
+  // omitted and the card shows the default the run would use.
+  const model = sessionModelPickSchema.safeParse(rec["model"]);
+  if (model.success) projection.model = model.data;
   // Phase 4d-5 — host-only auto-retry opt-in. Boolean-only; absent/wrong
   // type leaves the key off the DTO (the renderer treats absence as off).
   if (typeof rec["autoRetryEnabled"] === "boolean") {

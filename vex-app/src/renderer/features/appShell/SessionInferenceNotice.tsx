@@ -10,6 +10,10 @@
  * `vex_inference_foreign_withdrawal`: a cooling withdrawal this app did not
  * start is waiting; the next step is the funding page, where Cancel is.
  *
+ * `session_model_fallback`: the session's own model was picked under the
+ * other inference backend, so the turn ran on the default model (F06); the
+ * next step is the composer's model menu.
+ *
  * `balance`: the VEX balance covered no more, so a long answer may stop
  * early; the next step is to top up. `model_limit`: the request asked above
  * what the model takes at this effort; nothing to do.
@@ -23,6 +27,8 @@ import { useInferenceNoticeStore } from "../../stores/inferenceNoticeStore.js";
 import { formatTokenCount } from "../vexCloud/vex-cloud-format.js";
 import { localClock, shortAddress } from "../vexCloud/funding/funding-model.js";
 import { formatVexExact } from "@shared/vex-cloud-money.js";
+import { PROVIDER_DISPLAY_NAME } from "../../components/common/ProviderMark.js";
+import { modelDisplayName } from "./SessionComposer/model-display-name.js";
 
 interface NoticeCopy {
   readonly word: string;
@@ -32,6 +38,21 @@ interface NoticeCopy {
 }
 
 function noticeCopy(notice: InferenceNoticeEvent): NoticeCopy {
+  if (notice.kind === "session_model_fallback") {
+    return {
+      word: "Ran on your default model",
+      marker: "session_model_fallback",
+      concerned: true,
+      sentence: (
+        <>
+          This session&apos;s model, <span className="vex-num">{modelDisplayName(notice.pickedModel)}</span>, was
+          picked for {PROVIDER_DISPLAY_NAME[notice.pickedProvider]}, so this turn ran on{" "}
+          <span className="vex-num">{modelDisplayName(notice.model)}</span>, your default for{" "}
+          {PROVIDER_DISPLAY_NAME[notice.provider]}. Pick a model in the composer to change it.
+        </>
+      ),
+    };
+  }
   if (notice.kind === "vex_inference_balance_low") {
     return {
       word: "Balance low",
@@ -116,7 +137,9 @@ export function SessionInferenceNotice({ sessionId }: { readonly sessionId: stri
             ? "Dismiss the low balance notice"
             : notice.kind === "vex_inference_foreign_withdrawal"
               ? "Dismiss the withdrawal notice"
-              : "Dismiss the answer limit notice"
+              : notice.kind === "session_model_fallback"
+                ? "Dismiss the model notice"
+                : "Dismiss the answer limit notice"
         }
       >
         Dismiss

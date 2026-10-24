@@ -30,3 +30,28 @@ describe("the foreign withdrawal notice on the wire", () => {
     expect(inferenceNoticeEventSchema.safeParse({ ...NOTICE, amountWei: "6000.5" }).success).toBe(false);
   });
 });
+
+const FALLBACK = {
+  type: "engine.inference.notice",
+  kind: "session_model_fallback",
+  sessionId: "session-1",
+  missionRunId: null,
+  provider: "vexcloud",
+  model: "anthropic/claude-haiku-5.5",
+  pickedProvider: "openrouter",
+  pickedModel: "deepseek/deepseek-v4-flash",
+  occurredAt: "2026-10-23T12:00:00.000Z",
+} as const;
+
+describe("the session model fallback notice on the wire (F06)", () => {
+  it("parses the engine's shape", () => {
+    expect(inferenceNoticeEventSchema.safeParse(FALLBACK).success).toBe(true);
+  });
+
+  it("refuses an extra field, an unknown backend and a malformed model id", () => {
+    expect(inferenceNoticeEventSchema.safeParse({ ...FALLBACK, prompt: "x" }).success).toBe(false);
+    expect(inferenceNoticeEventSchema.safeParse({ ...FALLBACK, pickedProvider: "anthropic" }).success).toBe(false);
+    expect(inferenceNoticeEventSchema.safeParse({ ...FALLBACK, pickedModel: "-model with spaces" }).success).toBe(false);
+    expect(inferenceNoticeEventSchema.safeParse({ ...FALLBACK, missionRunId: "run-1" }).success).toBe(false);
+  });
+});

@@ -13,6 +13,7 @@
 import { z } from "zod";
 
 import { reasoningEffortSchema } from "../reasoning.js";
+import { sessionModelPickSchema } from "../models.js";
 
 export const MISSION_DRAFT_TITLE_MAX = 200;
 export const MISSION_DRAFT_GOAL_MAX = 4000;
@@ -76,6 +77,12 @@ export const missionConstraintsSchema = z
      * the agent's draft tool or the host through `mission.setReasoningEffort`.
      */
     reasoningEffort: reasoningEffortSchema.nullable().optional(),
+    /**
+     * F06 - the model every model call of the run uses, `{ provider, modelId }`.
+     * Contract-hash material (v10). Absent or null runs on the default model
+     * at start. Written ONLY by the host through `mission.setModel`.
+     */
+    model: sessionModelPickSchema.nullable().optional(),
   })
   .strict();
 export type MissionConstraints = z.infer<typeof missionConstraintsSchema>;

@@ -71,6 +71,7 @@ vi.mock("../../../../lib/api/usage.js", () => ({
   useContextWindow: () => ({ data: undefined }),
 }));
 vi.mock("../../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionPlan: () => ({ data: { ok: true, data: null } }),
   useExportSessionMarkdown: () => ({ isPending: false, mutate: vi.fn() }),
 }));
@@ -128,6 +129,7 @@ function modelsState(
         pricingInputPerMillion: null,
         pricingOutputPerMillion: null,
         reasoning,
+        isDefault: true,
       },
     ],
   };

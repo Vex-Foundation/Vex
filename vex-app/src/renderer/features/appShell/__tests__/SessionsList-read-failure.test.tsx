@@ -48,6 +48,7 @@ vi.mock("../../../stores/uiStore.js", () => {
 });
 
 vi.mock("../../../lib/api/sessions.js", () => ({
+  useSessionModel: () => ({ data: undefined }),
   useSessionsList: () => harness.query,
   useSetSessionPinned: () => ({
     isPending: false,

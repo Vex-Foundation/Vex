@@ -378,6 +378,7 @@ describe("MemoryPanel", () => {
             pricingInputPerMillion: null,
             pricingOutputPerMillion: null,
             reasoning: null,
+            isDefault: true,
           },
         ],
         fetchedAt: null,

@@ -64,9 +64,14 @@ export async function recordEndpointSwitch(record: EndpointSwitchRecord): Promis
  * this row a session would silently return to the pinned endpoint that already
  * ran out of capacity and switch all over again. The durable row is the
  * authority, the map is just a cache of it.
+ *
+ * Scoped to `model` (F06): an endpoint tag belongs to one model's endpoint
+ * list, so a switch recorded while the session ran another model (or one a
+ * background caller on `AGENT_MODEL` reads) is not this model's switch.
  */
 export async function getLatestEndpointSwitch(
   sessionId: string,
+  model: string,
 ): Promise<EndpointSwitchRow | null> {
   const rows = await query<{
     session_id: string;
@@ -79,9 +84,10 @@ export async function getLatestEndpointSwitch(
     `SELECT session_id, model, previous_endpoint, new_endpoint, reason_class, created_at
        FROM session_endpoint_switches
       WHERE session_id = $1
+        AND model = $2
       ORDER BY created_at DESC, id DESC
       LIMIT 1`,
-    [sessionId],
+    [sessionId, model],
   );
 
   const row = rows[0];

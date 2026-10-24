@@ -74,11 +74,17 @@ const ALLOWED_ENUM_KEYS = new Set<keyof MissionDraft>(["reasoningEffort"]);
  * They are HOST-AUTHORED ONLY. The model READS its ceiling through
  * `draftToPromptContext` and chooses an amount up to it. Pinned by
  * `mission/patch-parser-launch-ceiling.test.ts`.
+ *
+ * `model` (F06, owner decision 2026-10-23) is the run's inference model. The
+ * agent may not choose it: a model that picks a more expensive model for a run
+ * the user then accepts is spending the user's money on its own say-so. The
+ * contract card (`set-model.ts`) is its only writer.
  */
 const MODEL_FORBIDDEN_KEYS = new Set<keyof MissionDraft>([
   "maxLaunchValueRaw",
   "maxLaunchValueDecimals",
   "maxLaunchCount",
+  "model",
 ]);
 
 const ALL_ALLOWED_KEYS = new Set<string>(

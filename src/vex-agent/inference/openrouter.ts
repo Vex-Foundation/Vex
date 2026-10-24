@@ -49,6 +49,7 @@ import {
   OPENROUTER_LOW_BALANCE_USD,
   MODEL_CONFIG_CACHE_TTL_MS,
   MODEL_CONFIG_STALE_RETRY_MS,
+  MODEL_CONFIG_CACHE_MAX_ENTRIES,
 } from "./config.js";
 import { createInferenceClient, resolveInferenceConnection } from "./openrouter/client-factory.js";
 import { emitMaxTokensClampNotice, noteVexInferenceTurn } from "./inference-notice-bus.js";
@@ -88,6 +89,20 @@ const ROUTING_METADATA_ENABLED = MetadataLevel.Enabled;
 /** Per-send override: the SDK does not retry; `roundFetch` does, abortably. */
 const SDK_RETRY_OFF: RetryConfig = { strategy: "none" };
 
+/** One model's cached config and its fetch bookkeeping (F4 semantics, per model). */
+interface ModelConfigCacheEntry {
+  /** Last SUCCESSFUL config — canonical, never handed out by reference. */
+  config: InferenceConfig | null;
+  cachedAt: number;
+  staleServeUntil: number;
+  inFlight: Promise<InferenceConfig | null> | null;
+}
+
+/** Which model `loadConfig` resolves; absent means `AGENT_MODEL`. */
+interface LoadConfigOptions {
+  readonly model?: string;
+}
+
 // ── Provider ─────────────────────────────────────────────────────
 
 export class OpenRouterProvider implements InferenceProvider {
@@ -105,17 +120,14 @@ export class OpenRouterProvider implements InferenceProvider {
   private readonly endpointTag: string | undefined;
   private readonly client: OpenRouter;
 
-  // ── loadConfig cache (F4) ───────────────────────────────────────
+  // ── loadConfig cache (F4, keyed by model for F06) ───────────────
   // `loadConfig()` is called once per turn but `/models` pricing is stable.
-  // We memoize the last SUCCESSFUL config and reuse it for the TTL, dedup
-  // concurrent fetches, and serve the last-good config on a transient
-  // metadata failure (throttled). `cachedConfig` is the single canonical
-  // reference — every return path hands out a fresh shallow copy so callers
-  // can never mutate the cache.
-  private cachedConfig: InferenceConfig | null = null;
-  private cachedAt = 0;
-  private staleServeUntil = 0;
-  private inFlight: Promise<InferenceConfig | null> | null = null;
+  // We memoize the last SUCCESSFUL config per model and reuse it for the TTL,
+  // dedup concurrent fetches, and serve the last-good config on a transient
+  // metadata failure (throttled). Each entry's `config` is the single
+  // canonical reference for its model — every return path hands out a fresh
+  // shallow copy so callers can never mutate the cache.
+  private readonly configCache = new Map<string, ModelConfigCacheEntry>();
 
   /**
    * MODE-AWARE CONSTRUCTION. Every site that builds a provider (the registry,
@@ -191,7 +203,9 @@ export class OpenRouterProvider implements InferenceProvider {
       onMaxTokensClamp: (clamp: MaxTokensClamp) => {
         emitMaxTokensClampNotice({
           provider: this.id,
-          model: this.model,
+          // The model this request ran on: a session may run a model other
+          // than `AGENT_MODEL` (F06), and the request carries its own.
+          model: request.chatRequest.model ?? this.model,
           sessionId: context?.sessionId ?? null,
           missionRunId: context?.missionRunId ?? null,
           clamp,
@@ -235,15 +249,19 @@ export class OpenRouterProvider implements InferenceProvider {
       return { loadCandidates: async () => [], endpointRouting: "disabled" };
     }
     return {
-      loadCandidates: () => loadEndpointCandidates(this.client, this.model),
+      // The request's model, not `AGENT_MODEL`: a session on another model
+      // (F06) switches among THAT model's endpoints.
+      loadCandidates: (model) => loadEndpointCandidates(this.client, model),
     };
   }
 
-  // ── loadConfig (cached) ─────────────────────────────────────────
+  // ── loadConfig (cached, per model) ──────────────────────────────
   //
   // F4: the raw `/models` fetch lives in `_fetchConfig()`; this wrapper
   // memoizes the result so the per-turn call sites do not each hit the
-  // network. Semantics:
+  // network. F06 keys the cache by model id (`options.model`, default
+  // `AGENT_MODEL`) so a session on another catalogue model gets that model's
+  // own window, prices and reasoning support. Semantics, per model entry:
   //   - fresh hit (within TTL) → cached config (copied);
   //   - concurrent calls → share one in-flight fetch, each gets its own copy;
   //   - transient metadata failure WITH a last-good → serve stale (copied),
@@ -254,56 +272,83 @@ export class OpenRouterProvider implements InferenceProvider {
   // The cached object is canonical and never handed out by reference — every
   // return is a fresh shallow copy.
 
-  async loadConfig(): Promise<InferenceConfig | null> {
+  async loadConfig(options?: LoadConfigOptions): Promise<InferenceConfig | null> {
+    const model = options?.model ?? this.model;
+    const entry = this.cacheEntryFor(model);
     const now = Date.now();
 
     // 1. Fresh cache hit.
-    if (this.cachedConfig && now - this.cachedAt < MODEL_CONFIG_CACHE_TTL_MS) {
-      return { ...this.cachedConfig };
+    if (entry.config && now - entry.cachedAt < MODEL_CONFIG_CACHE_TTL_MS) {
+      return { ...entry.config };
     }
     // 2. Concurrent dedup — await the canonical fetch, copy per caller.
-    if (this.inFlight) {
-      const c = await this.inFlight;
+    if (entry.inFlight) {
+      const c = await entry.inFlight;
       return c ? { ...c } : null;
     }
     // 3. Throttled stale-serve: a recent metadata failure left a last-good
     //    config and we're inside the retry window — serve stale without a
     //    network call.
-    if (this.cachedConfig && now < this.staleServeUntil) {
-      return { ...this.cachedConfig };
+    if (entry.config && now < entry.staleServeUntil) {
+      return { ...entry.config };
     }
 
     // 4. Fetch. The stored promise resolves to the CANONICAL reference (or
     //    null) — never a copy — so all awaiters clone independently.
-    this.inFlight = this._fetchConfig()
+    entry.inFlight = this._fetchConfig(model)
       .then((result) => {
         if (result.kind === "success") {
-          this.cachedConfig = result.config;
-          this.cachedAt = Date.now();
-          this.staleServeUntil = 0;
-          return this.cachedConfig;
+          entry.config = result.config;
+          entry.cachedAt = Date.now();
+          entry.staleServeUntil = 0;
+          return entry.config;
         }
-        if (result.kind === "metadata_unavailable" && this.cachedConfig) {
+        if (result.kind === "metadata_unavailable" && entry.config) {
           // Transient `/models` failure but we have a last-good — serve it and
           // throttle the next refetch attempt so we don't block every turn.
-          this.staleServeUntil = Date.now() + MODEL_CONFIG_STALE_RETRY_MS;
+          entry.staleServeUntil = Date.now() + MODEL_CONFIG_STALE_RETRY_MS;
           logger.warn("inference.openrouter.config_stale_served", {
-            model: this.model,
-            cachedAt: new Date(this.cachedAt).toISOString(),
+            model,
+            cachedAt: new Date(entry.cachedAt).toISOString(),
           });
-          return this.cachedConfig;
+          return entry.config;
         }
         // `model_not_found` (surface delisting/misconfig), or metadata failure
         // with no last-good to fall back on.
         return null;
       })
       .finally(() => {
-        this.inFlight = null;
+        entry.inFlight = null;
       });
 
     // 5. Starter clones the canonical result too.
-    const c = await this.inFlight;
+    const c = await entry.inFlight;
     return c ? { ...c } : null;
+  }
+
+  /**
+   * The cache entry for one model, created on first use. Past the cap the
+   * oldest-inserted entry goes first, skipping `AGENT_MODEL` (every background
+   * caller reads it) and any entry with a fetch in flight (its awaiters hold
+   * the entry, and dropping it would let a second fetch start beside it).
+   */
+  private cacheEntryFor(model: string): ModelConfigCacheEntry {
+    const existing = this.configCache.get(model);
+    if (existing !== undefined) return existing;
+
+    const created: ModelConfigCacheEntry = {
+      config: null,
+      cachedAt: 0,
+      staleServeUntil: 0,
+      inFlight: null,
+    };
+    this.configCache.set(model, created);
+    for (const [key, entry] of this.configCache) {
+      if (this.configCache.size <= MODEL_CONFIG_CACHE_MAX_ENTRIES) break;
+      if (key === this.model || key === model || entry.inFlight !== null) continue;
+      this.configCache.delete(key);
+    }
+    return created;
   }
 
   // ── _fetchConfig (uncached `/models` read) ──────────────────────
@@ -312,17 +357,22 @@ export class OpenRouterProvider implements InferenceProvider {
   // pricing parse and outcome classification. This wrapper exists only to
   // supply the provider's own identity/limits.
 
-  private async _fetchConfig(): Promise<ModelConfigFetchResult> {
+  private async _fetchConfig(model: string): Promise<ModelConfigFetchResult> {
     return fetchModelInferenceConfig(this.client, {
       providerId: this.id,
-      model: this.model,
+      model,
       contextLimit: this.contextLimit,
       temperature: this.temperature,
       maxOutputTokens: this.maxOutputTokens,
       streamBounds: this.streamBounds,
-      endpointTag: this.endpointTag,
+      // The pin was verified for `AGENT_MODEL` alone (the wizard's endpoint
+      // step), and with `allowFallbacks: false` the same tag on another model
+      // can leave no eligible endpoint. Another model runs on the backend's
+      // own routing. (Already `undefined` on Vex Cloud.)
+      endpointTag: model === this.model ? this.endpointTag : undefined,
       // Vex Cloud publishes `reasoning.mandatory: true` and a per-model
-      // `default_effort`, and always receives an effort (D10).
+      // `default_effort`, and always receives an effort (D10) — for every
+      // model, so each entry carries its own `reasoningEffortDefault`.
       alwaysSendEffort: this.id === "vexcloud",
     });
   }

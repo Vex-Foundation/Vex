@@ -37,6 +37,7 @@ import {
   resolveMissionPromptContext,
 } from "../../mission/run-contract.js";
 import { resolveFrozenDeadlineMs } from "../../mission/mission-deadline.js";
+import { loadMissionInferenceConfig } from "../../mission/model.js";
 import {
   frozenMissionReasoningEffort,
   withMissionReasoningEffort,
@@ -182,6 +183,15 @@ export async function runPreparedMissionStart(
 
     const hydrated = await hydrateEngineSession(prepared.sessionId);
     if (!hydrated) throw new Error(`Session ${prepared.sessionId} not found`);
+    // F06: the FROZEN model of the accepted contract, never another one. A
+    // model that cannot run throws here, inside the protected try, and the
+    // run parks in `paused_error` naming it.
+    const config = await loadMissionInferenceConfig(
+      prepared.provider,
+      prepared.config,
+      prepared.contractSnapshot,
+      prepared.sessionId,
+    );
 
     const promptOptions: PromptStackOptions = {
       missionRunContext: {
@@ -202,7 +212,7 @@ export async function runPreparedMissionStart(
     const tools = toToolDefinitions(
       getOpenAITools({
         ...baseVisibility,
-        contextUsageBand: computeBand(hydrated.tokenCount, prepared.config.contextLimit),
+        contextUsageBand: computeBand(hydrated.tokenCount, config.contextLimit),
         hasSessionMemory: false,
         // Compaction axes are FALSE here by design: this is the runner's
         // pre-loop bootstrap tools array, built before any per-turn preparation
@@ -221,7 +231,7 @@ export async function runPreparedMissionStart(
       // Full-Autonomous agent session (owner decision 2026-07-29); a restricted
       // mission is byte-identical to before (`DEFAULT_LOOP_CONFIG`'s 50).
       maxIterations: maxIterationsForPermission(prepared.permission),
-      contextLimit: prepared.config.contextLimit,
+      contextLimit: config.contextLimit,
       baseVisibility,
     // The lease this runner actually holds. Threaded so the compaction-apply
     // boundary action can PROVE ownership (equality against the live lease)
@@ -253,7 +263,7 @@ export async function runPreparedMissionStart(
       // E-1: the FROZEN contract effort (default medium), clamped to the
       // model, on every inference call of this slice. Read from the same
       // immutable snapshot as the deadline, never the live mission row.
-      withMissionReasoningEffort(prepared.config, frozenMissionReasoningEffort(prepared.contractSnapshot)),
+      withMissionReasoningEffort(config, frozenMissionReasoningEffort(prepared.contractSnapshot)),
       tools,
       loopConfig,
       promptOptions,
@@ -362,6 +372,14 @@ export async function resumePreparedMissionRun(
     }
 
     const hydrated = await hydrateEngineSession(prepared.run.sessionId);
+    // F06: the model frozen in THIS run's snapshot (the resume reads the run
+    // row, never the live mission), as at start.
+    const config = await loadMissionInferenceConfig(
+      prepared.provider,
+      prepared.config,
+      prepared.run.contractSnapshotJson,
+      prepared.run.sessionId,
+    );
     if (!hydrated) {
       throw new Error(`Session ${prepared.run.sessionId} not found`);
     }
@@ -395,7 +413,7 @@ export async function resumePreparedMissionRun(
     const tools = toToolDefinitions(
       getOpenAITools({
         ...baseVisibility,
-        contextUsageBand: computeBand(hydrated.tokenCount, prepared.config.contextLimit),
+        contextUsageBand: computeBand(hydrated.tokenCount, config.contextLimit),
         hasSessionMemory: false,
         // Compaction axes are FALSE here by design: this is the runner's
         // pre-loop bootstrap tools array, built before any per-turn preparation
@@ -413,7 +431,7 @@ export async function resumePreparedMissionRun(
       // Same rule on resume as on start; a resumed slice must not silently get
       // a different budget from the one the run started with.
       maxIterations: maxIterationsForPermission(permission),
-      contextLimit: prepared.config.contextLimit,
+      contextLimit: config.contextLimit,
       baseVisibility,
       // The lease this resume actually runs under — same contract as a mission
       // start above, so a resumed slice can consume a prepared cutover too.
@@ -443,7 +461,7 @@ export async function resumePreparedMissionRun(
       // E-1: the FROZEN contract effort (default medium), clamped to the
       // model, on every inference call of this slice. Read from the same
       // immutable snapshot as the deadline, never the live mission row.
-      withMissionReasoningEffort(prepared.config, frozenMissionReasoningEffort(prepared.run.contractSnapshotJson)),
+      withMissionReasoningEffort(config, frozenMissionReasoningEffort(prepared.run.contractSnapshotJson)),
       tools,
       loopConfig,
       promptOptions,

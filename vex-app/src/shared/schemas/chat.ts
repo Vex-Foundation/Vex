@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { INITIAL_GOAL_MAX_LENGTH } from "./sessions.js";
 import { reasoningEffortSchema } from "./reasoning.js";
+import { sessionModelPickSchema } from "./models.js";
 
 export const CHAT_MESSAGE_MAX_LENGTH = INITIAL_GOAL_MAX_LENGTH;
 
@@ -45,6 +46,15 @@ export const chatSubmitInputSchema = z
      * mission interrupt/resume paths.
      */
     reasoningEffort: reasoningEffortSchema.optional(),
+    /**
+     * The session's model pick (F06). Optional + additive. Absent means "no
+     * new pick": the turn runs on the session's persisted pick, else the
+     * default. Present, main checks it against the ACTIVE backend's
+     * catalogue and the engine persists it, so every later turn of the
+     * session (wake continuations and resumes included) runs on it.
+     * Stripped for mission sessions, whose model is the accepted contract's.
+     */
+    model: sessionModelPickSchema.optional(),
   })
   .strict();
 export type ChatSubmitInput = z.infer<typeof chatSubmitInputSchema>;

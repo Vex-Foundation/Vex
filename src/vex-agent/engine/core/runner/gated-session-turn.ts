@@ -118,8 +118,9 @@ export async function runStopGatedSessionTurn(
     const { resolveProvider } = await import("@vex-agent/inference/registry.js");
     const provider = await resolveProvider();
     if (!provider) throw new Error("No inference provider available");
-    const config = await provider.loadConfig();
-    if (!config) throw new Error("No inference config available");
+    // The session's own model (F06): a resume runs on the operator's pick.
+    const { loadSessionInferenceConfig } = await import("./session-model.js");
+    const config = await loadSessionInferenceConfig(provider, input.sessionId);
 
     if (input.beforeTurn !== undefined) await input.beforeTurn();
 

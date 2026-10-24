@@ -51,6 +51,8 @@ import type {
   MissionSetLaunchCeilingsResult,
   MissionSetReasoningEffortInput,
   MissionSetReasoningEffortResult,
+  MissionSetModelInput,
+  MissionSetModelResult,
   MissionSetAutoRetryResult,
   MissionStartInput,
   MissionStartResult,
@@ -301,6 +303,26 @@ export function useSetReasoningEffort(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) => window.vex.mission.setReasoningEffort(input),
+    retry: false,
+    onSettled: (_result, _error, input) => {
+      qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });
+      qc.invalidateQueries({ queryKey: missionKeys.diffsForSession(input.sessionId) });
+    },
+  });
+}
+
+/**
+ * The mission contract's model (F06). Contract-hash material, so the draft
+ * and the diff queries are invalidated, as for the reasoning effort.
+ */
+export function useSetMissionModel(): UseMutationResult<
+  Result<MissionSetModelResult>,
+  Error,
+  MissionSetModelInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) => window.vex.mission.setModel(input),
     retry: false,
     onSettled: (_result, _error, input) => {
       qc.invalidateQueries({ queryKey: missionKeys.draft(input.sessionId) });

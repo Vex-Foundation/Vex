@@ -97,7 +97,7 @@ describe("resolveEffectiveInferenceConfig — the loop's per-iteration window", 
 
   it("hands the loop the SWITCHED endpoint's narrower window", async () => {
     resetAllSessionEndpointState();
-    commitEndpointSwitch("s1", NARROW.tag);
+    commitEndpointSwitch({ sessionId: "s1", model: "deepseek/deepseek-v4-flash" }, NARROW.tag);
 
     const effective = await resolveEffectiveInferenceConfig(
       baseConfig,
@@ -119,7 +119,7 @@ describe("resolveEffectiveInferenceConfig — the loop's per-iteration window", 
     // config's — the loop's value stays the ceiling and a switch may only
     // tighten it.
     resetAllSessionEndpointState();
-    commitEndpointSwitch("s3", NARROW.tag);
+    commitEndpointSwitch({ sessionId: "s3", model: "deepseek/deepseek-v4-flash" }, NARROW.tag);
     const wide = { ...NARROW, contextLength: 1_000_000 };
     const effective = await resolveEffectiveInferenceConfig(baseConfig, 64_000, "s3", {
       id: "openrouter",

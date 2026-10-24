@@ -105,6 +105,7 @@ function reasoningModelsResult(
           pricingInputPerMillion: null,
           pricingOutputPerMillion: null,
           reasoning,
+          isDefault: true,
         },
       ],
     },
