@@ -112,6 +112,11 @@
       "rationale": "Single-market OHLCV candle series."
     },
     {
+      "toolId": "lighter.technicalAnalysis",
+      "publicName": "lighter__technical_analysis_get",
+      "rationale": "One computed reading of one market: the indicator bundle on closed candles, not a list of rows."
+    },
+    {
       "toolId": "lighter.order.cancel.prepare",
       "publicName": "lighter__order_cancel_prepare",
       "rationale": "Approval preparation for one order cancel."

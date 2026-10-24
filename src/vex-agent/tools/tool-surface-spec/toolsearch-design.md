@@ -339,7 +339,9 @@ dispatcher would reject is worse than a cache miss.
 
 Nothing in this design changes the retention model.
 
-- `MAX_DISCOVERED_TOOLS_PER_SESSION` stays 40 (`discovered-tools.ts`).
+- `MAX_DISCOVERED_TOOLS_PER_SESSION` stays 40 (`discovered-tools.ts`). Raised
+  to 41 with the select maximum on 2026-10-23, when lighter reached 41 tools;
+  see the comments on both constants.
 - FIFO displacement stays; re-selecting a tool refreshes its position.
 - Displaced ids stay NAMED to the model. Today `describe_tools` names them and
   `discover_tools` names them through `buildDisplacementWarning`

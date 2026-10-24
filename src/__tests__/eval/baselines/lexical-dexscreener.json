@@ -1,45 +1,45 @@
 {
-  "version": "dexscreener-v5",
+  "version": "dexscreener-v6",
   "mode": "lexical",
   "datasetId": "tool-discovery-dexscreener",
-  "datasetVersion": "dexscreener-v5",
+  "datasetVersion": "dexscreener-v6",
   "status": "captured",
-  "capturedAt": "2026-09-07T18:07:42.192Z",
+  "capturedAt": "2026-10-23T22:04:20.602Z",
   "metrics": {
     "overall": {
-      "count": 62,
-      "recall1": 0.435,
-      "recall5": 0.694,
-      "coverage5": 0.677,
-      "mrr5": 0.534,
-      "groupMrr5": 0.532
+      "count": 64,
+      "recall1": 0.438,
+      "recall5": 0.688,
+      "coverage5": 0.672,
+      "mrr5": 0.533,
+      "groupMrr5": 0.531
     },
     "awareness": {
       "blind": {
-        "count": 38,
-        "recall1": 0.263,
-        "recall5": 0.526,
-        "coverage5": 0.5,
-        "mrr5": 0.351,
-        "groupMrr5": 0.348
+        "count": 39,
+        "recall1": 0.256,
+        "recall5": 0.513,
+        "coverage5": 0.487,
+        "mrr5": 0.342,
+        "groupMrr5": 0.339
       },
       "protocolAware": {
-        "count": 24,
-        "recall1": 0.708,
-        "recall5": 0.958,
-        "coverage5": 0.958,
-        "mrr5": 0.823,
-        "groupMrr5": 0.823
+        "count": 25,
+        "recall1": 0.72,
+        "recall5": 0.96,
+        "coverage5": 0.96,
+        "mrr5": 0.83,
+        "groupMrr5": 0.83
       }
     },
     "intentShapes": {
       "single": {
-        "count": 61,
-        "recall1": 0.443,
-        "recall5": 0.689,
-        "coverage5": 0.689,
-        "mrr5": 0.539,
-        "groupMrr5": 0.539
+        "count": 63,
+        "recall1": 0.444,
+        "recall5": 0.683,
+        "coverage5": 0.683,
+        "mrr5": 0.538,
+        "groupMrr5": 0.538
       },
       "cross": {
         "count": 0,
@@ -108,12 +108,12 @@
         "groupMrr5": 0
       },
       "market_research": {
-        "count": 62,
-        "recall1": 0.435,
-        "recall5": 0.694,
-        "coverage5": 0.677,
-        "mrr5": 0.534,
-        "groupMrr5": 0.532
+        "count": 64,
+        "recall1": 0.438,
+        "recall5": 0.688,
+        "coverage5": 0.672,
+        "mrr5": 0.533,
+        "groupMrr5": 0.531
       },
       "prediction_discovery": {
         "count": 0,
@@ -174,8 +174,14 @@
     }
   },
   "notes": [
-    "dataset tool-discovery-dexscreener@dexscreener-v5, mode lexical, 62 cases evaluated.",
-    "overall recall@1 0.435, recall@5 0.694, coverage@5 0.677, mrr@5 0.534, groupMrr@5 0.532.",
-    "Measured delta: none, metrics are identical to the previous baseline."
-  ]
+    "dataset tool-discovery-dexscreener@dexscreener-v6, mode lexical, 64 cases evaluated.",
+    "overall recall@1 0.438, recall@5 0.688, coverage@5 0.672, mrr@5 0.533, groupMrr@5 0.531.",
+    "Measured delta vs previous baseline (dexscreener-v5, captured 2026-09-07T18:07:42.192Z): 30 metric values moved; overall recall@5 0.694 -> 0.688, overall mrr@5 0.534 -> 0.533, case count 62 -> 64."
+  ],
+  "reconciliation": {
+    "reconciledAt": "2026-10-23T22:04:20.602Z",
+    "previousVersion": "dexscreener-v5",
+    "previousCaseCount": 62,
+    "reason": "Previous baseline was captured against dataset dexscreener-v5 (62 cases) on 2026-09-07T18:07:42.192Z; the canonical dataset is now dexscreener-v6 (64 cases). The baseline was STALE: it was never recaptured after the dataset changed, so this update re-anchors it against the current dataset. The dataset contract and its quality floors were NOT changed."
+  }
 }

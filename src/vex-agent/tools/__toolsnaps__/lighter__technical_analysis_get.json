@@ -1,0 +1,56 @@
+{
+  "definition": {
+    "function": {
+      "description": "Technical analysis of one Lighter market (perpetual or spot) on Core or Robinhood Chain, on closed candles only. Use when the user asks for technicals, indicators, RSI, MACD, moving averages, Bollinger bands, ATR or a trend read for a known Lighter market id. Returns price, change, high and low over the bars asked for; EMA 20/50/200, RSI 14, MACD 12/26/9, Bollinger 20/2 and ATR 14 (the fixed set, no selection); six plain signals (price against EMA 20 and 50, EMA 20 against EMA 50, RSI zone at 70 and 30, MACD histogram sign, position against the bands); the last 10 closes with RSI and histogram; and `asOf`, the close time of the newest CLOSED candle used. The forming candle is never used; dropped, missing and widened candles are counted in `closedCandles`. Reads 220 candles or bars + 60, whichever is more, so the slow indicators are warm. A reading is not a buy or sell signal. Read-only: no account lookup, signing, order or approval path.",
+      "name": "lighter__technical_analysis_get",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "bars": {
+            "description": "How many closed candles the price facts cover, an integer from 30 to 200 (100 when omitted). The indicators always read the warm-up on top.",
+            "type": "number"
+          },
+          "environment": {
+            "description": "Optional public Lighter environment to read: core for Lighter Core, rhc for Robinhood Chain. Defaults to rhc for conversational Lighter requests. Any other value is rejected.",
+            "enum": [
+              "core",
+              "rhc"
+            ],
+            "type": "string"
+          },
+          "interval": {
+            "description": "Candle size to analyse: 5m, 15m, 1h, 4h or 1d. Any other value is rejected.",
+            "enum": [
+              "5m",
+              "15m",
+              "1h",
+              "4h",
+              "1d"
+            ],
+            "type": "string"
+          },
+          "marketId": {
+            "description": "Numeric Lighter market id from lighter__markets_list, as an integer from 0 to 65535. It names the order book to read.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "marketId",
+          "interval"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  "metadata": {
+    "actionKind": "read",
+    "advertised": true,
+    "kind": "protocol",
+    "lifecycle": "active",
+    "mutating": false,
+    "namespace": "lighter",
+    "requiresEnv": null,
+    "toolId": "lighter.technicalAnalysis"
+  }
+}

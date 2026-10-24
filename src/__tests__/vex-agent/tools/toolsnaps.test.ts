@@ -142,8 +142,11 @@ describe("tool contract snapshots", () => {
     // are offered in every session the baseline can represent.
     // 38 -> 40, worst case 78 -> 80: both Lighter environment-specific
     // onboarding-status shortcuts are model-visible.
+    // Worst case 80 -> 81: the discovered-tool cap rose 40 -> 41 when
+    // `lighter.technicalAnalysis` made lighter a 41-tool namespace; the
+    // internal count is unmoved.
     expect(internalVisibleOrder).toHaveLength(40);
-    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(80);
+    expect(internalVisibleOrder.length + MAX_DISCOVERED_TOOLS_PER_SESSION).toBe(81);
   });
 
   it("derives its env gates from the live catalogs", () => {

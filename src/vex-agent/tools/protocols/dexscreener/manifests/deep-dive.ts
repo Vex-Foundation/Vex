@@ -56,6 +56,14 @@ import {
   TOP_TRADER_SORTS,
   WALK_BOUNDS_CLAUSE,
 } from "./deep-dive-params.js";
+import {
+  ANALYSIS_BARS_DEFAULT,
+  ANALYSIS_BARS_MAX,
+  ANALYSIS_BARS_MIN,
+  ANALYSIS_INTERVALS,
+  ANALYSIS_READ_MIN,
+  ANALYSIS_WARMUP_BARS,
+} from "../../../../../lib/market-analysis/result-schema.js";
 
 /* ------------------------------------------------------------------ */
 /* Params shared by the three pair-keyed tools                         */
@@ -686,6 +694,69 @@ export const DEEP_DIVE_TOOLS: readonly ProtocolToolManifest[] = [
       limit: 48,
     },
     discovery: DEXSCREENER_DEEP_DIVE_DISCOVERY["dexscreener.candles"],
+  },
+
+  {
+    toolId: "dexscreener.technicalAnalysis",
+    publicName: "dexscreener__technical_analysis_get",
+    namespace: "dexscreener",
+    lifecycle: "active",
+    description:
+      "Technical analysis of ONE named DEX pool on any chain DexScreener covers (EVM and Solana), "
+      + "on closed candles only. Use when the user asks for technicals, indicators, RSI, MACD, "
+      + "moving averages, Bollinger bands, ATR or a trend read for a pool. Pick the pool first with "
+      + "dexscreener__pairs_search or dexscreener__token_pairs_list: there is no tokenAddress here, "
+      + "so a pool is never chosen silently. "
+      + "Returns price, change, high and low over the bars asked for; EMA 20/50/200, RSI 14, MACD "
+      + "12/26/9, Bollinger 20/2 and ATR 14 (the fixed set, no selection); six plain signals (price "
+      + "against EMA 20 and 50, EMA 20 against EMA 50, RSI zone at 70 and 30, MACD histogram sign, "
+      + "position against the bands); the last 10 closes with RSI and histogram; and `asOf`, the "
+      + "close time of the newest CLOSED candle used. The forming candle is never used, whatever "
+      + "the provider says about it. Prices are the provider's USD columns, read as numbers for "
+      + "analysis only; a bar whose USD high or low does not cover its own open and close is "
+      + "widened and counted in `closedCandles.normalized`, missing buckets are counted in "
+      + "`closedCandles.gaps` and never filled, and `sparse` is true when they exceed a tenth of "
+      + `the window. Reads ${ANALYSIS_READ_MIN} candles or bars + ${ANALYSIS_WARMUP_BARS}, whichever `
+      + "is more. Needs the desktop app's site bridge: without it the tool refuses with "
+      + "no_candle_source rather than answering empty. A reading is not a buy or sell signal. "
+      + "Read-only: no wallet, signing, order or approval path. "
+      + `${SCREEN_SOURCE_OBSERVATION_CLAUSE}`,
+    mutating: false,
+    actionKind: "read",
+    params: [
+      CHAIN_PARAM,
+      {
+        key: "pairAddress",
+        type: "string",
+        required: true,
+        description:
+          "The pool (pair) address, from dexscreener__pairs_search, dexscreener__token_pairs_list "
+          + "or a screening board. On EVM chains it must be the provider's CHECKSUM spelling, as "
+          + "those tools return it: the lowercased form is answered with zero rows. Solana "
+          + "addresses are passed verbatim.",
+      },
+      {
+        key: "interval",
+        type: "string",
+        required: true,
+        enum: ANALYSIS_INTERVALS,
+        description: "Candle size to analyse: 5m, 15m, 1h, 4h or 1d. Any other value is rejected.",
+      },
+      {
+        key: "bars",
+        type: "number",
+        description:
+          `How many closed candles the price facts cover, an integer from ${ANALYSIS_BARS_MIN} to `
+          + `${ANALYSIS_BARS_MAX} (${ANALYSIS_BARS_DEFAULT} when omitted). The indicators always `
+          + "read the warm-up on top.",
+      },
+    ],
+    exampleParams: {
+      chain: "ethereum",
+      pairAddress: "0xA43fe16908251ee70EF74718545e4FE6C5cCEc9f",
+      interval: "4h",
+    },
+    discovery: DEXSCREENER_DEEP_DIVE_DISCOVERY["dexscreener.technicalAnalysis"],
   },
 
   {

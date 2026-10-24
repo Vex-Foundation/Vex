@@ -8,6 +8,10 @@ import {
 } from "@tools/lighter/constants.js";
 import { executeProtocolTool } from "@vex-agent/tools/protocols/runtime.js";
 import type { ProtocolExecutionContext } from "@vex-agent/tools/protocols/types.js";
+import {
+  ANALYSIS_INTERVAL_MS,
+  lighterAnalysisResultSchema,
+} from "../../lib/market-analysis/result-schema.js";
 
 const RUN_LIVE = process.env.VEX_LIGHTER_LIVE === "1";
 const describeLive = RUN_LIVE ? describe : describe.skip;
@@ -239,6 +243,52 @@ describeLive("Lighter live market data through protocol runtime", () => {
       expect(candleRows.length).toBeLessThanOrEqual(100);
       expect(finiteNumber(candles.count)).toBe(candleRows.length);
       expect(finiteNumber(candles.totalProviderRows)).toBeGreaterThanOrEqual(candleRows.length);
+
+      for (const interval of ["1h", "1d"] as const) {
+        const fetchedBefore = Date.now();
+        const analysis = await runTool("lighter.technicalAnalysis", {
+          environment,
+          marketId: market.marketId,
+          interval,
+        });
+        const fetchedAfter = Date.now();
+        expect(lighterAnalysisResultSchema.safeParse(analysis).success).toBe(true);
+        expect(analysis).toMatchObject({ venue: "lighter", environment, marketId: market.marketId, interval });
+        expectLiveProvenance(analysis, {
+          environment,
+          toolId: "lighter.technicalAnalysis",
+          endpointPaths: [LIGHTER_ENDPOINT_PATHS.orderBookDetails, LIGHTER_ENDPOINT_PATHS.candles],
+          marketId: market.marketId,
+        });
+        // The newest bar used has CLOSED: its close is not after the read, and
+        // it is no more than one interval behind it.
+        const asOf = Date.parse(stringValue(analysis.asOf));
+        expect(asOf).toBeLessThanOrEqual(fetchedAfter);
+        expect(fetchedBefore - asOf).toBeLessThan(ANALYSIS_INTERVAL_MS[interval] * 2);
+        const indicators = analysis.indicators as Record<string, unknown>;
+        for (const key of ["ema20", "ema50", "rsi14", "macd", "macdSignal", "bollingerUpper", "bollingerLower", "atr14"]) {
+          finiteNumber(indicators[key]);
+        }
+        process.stdout.write(
+          `${JSON.stringify({
+            event: "lighter.live.technical_analysis",
+            environment,
+            marketId: market.marketId,
+            symbol: analysis.symbol,
+            marketType: analysis.marketType,
+            interval,
+            asOf: analysis.asOf,
+            fetchedAt: analysis.fetchedAt,
+            bars: analysis.bars,
+            price: analysis.price,
+            ema20: indicators.ema20,
+            ema200: indicators.ema200,
+            rsi14: indicators.rsi14,
+            atr14: indicators.atr14,
+            closedCandles: analysis.closedCandles,
+          })}\n`,
+        );
+      }
 
       process.stdout.write(
         `${JSON.stringify({

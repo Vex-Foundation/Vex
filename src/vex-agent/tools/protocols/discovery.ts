@@ -75,10 +75,16 @@ export const MAX_DISCOVERY_LIMIT = 20;
  * `MAX_DISCOVERED_TOOLS_PER_SESSION` must be >= this value, which is what
  * guarantees a single call can never evict its own results. They are SEPARATE
  * constants and the invariant is `>=`, not equality: retention policy and
- * response-size policy must be able to move independently. They are equal at 40
+ * response-size policy must be able to move independently. They are equal at 41
  * today.
+ *
+ * RAISED 40 → 41 (2026-10-23) when `lighter.technicalAnalysis` made lighter the
+ * first 41-tool advertised namespace, the case the test above exists to catch.
+ * Raised by exactly one so a whole-lighter select still fits, with NO tail left;
+ * the tool-call eval this file asks for before a raise has not been run, and
+ * the raise is pending the owner's ruling rather than settled by it.
  */
-export const MAX_SELECT_TOOL_NAMES = 40;
+export const MAX_SELECT_TOOL_NAMES = 41;
 
 /**
  * Said whenever ranked rows are a lexical fallback for a failed dense attempt

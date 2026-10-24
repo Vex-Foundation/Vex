@@ -68,14 +68,16 @@ describe("DexScreener agent source policy", () => {
     const advertisedNames = PROTOCOL_TOOLS
       .filter((tool) => tool.namespace === "dexscreener")
       .map((tool) => tool.publicName);
-    expect(advertisedNames).toHaveLength(18);
+    // 19 with `dexscreener__technical_analysis_get` (F08).
+    expect(advertisedNames).toHaveLength(19);
 
     const facetLine = section.split("\n").find((line) => line.startsWith("capability areas:"));
     expect(facetLine).toBeDefined();
     const declaration = MARKET_PROTOCOL_NAVIGATION
       .find((entry) => entry.namespace === "dexscreener")?.declaration;
     expect(declaration?.advertiseFacetsInPrompt).toBe(true);
-    expect(declaration?.facets).toHaveLength(9);
+    // 10 with the Technical analysis facet (F08).
+    expect(declaration?.facets).toHaveLength(10);
     for (const facet of declaration?.facets ?? []) {
       expect(facetLine).toContain(facet.toLowerCase());
     }
