@@ -6,6 +6,7 @@ import type {
   CancelPriceAlertResult,
   EditWatchlistInput,
   EditWatchlistResult,
+  PriceAlertFiredEventDto,
   SetPriceAlertInput,
   SetPriceAlertResult,
   WatchlistSnapshotDto,
@@ -26,4 +27,8 @@ export interface AlertsBridge {
   readonly setPriceAlert: (input: SetPriceAlertInput) => Promise<Result<SetPriceAlertResult>>;
   readonly cancelPriceAlert: (input: CancelPriceAlertInput) => Promise<Result<CancelPriceAlertResult>>;
   readonly acknowledgeFired: (input: AcknowledgeFiredInput) => Promise<Result<AcknowledgeFiredResult>>;
+  /** One fired alert, pushed after the engine's claim committed. Returns the unsubscribe. */
+  readonly onPriceAlertFired: (cb: (event: PriceAlertFiredEventDto) => void) => () => void;
+  /** Main asks to show the Watchlist page (the user clicked the OS notification). */
+  readonly onOpenWatchlist: (cb: () => void) => () => void;
 }
