@@ -75,6 +75,8 @@ export default defineConfig({
       // index, and the repo's locked limits under concurrent writers.
       "src/__tests__/integration/migrations/184-watchlist-price-alerts.int.test.ts",
       "src/__tests__/integration/repos/price-alerts.int.test.ts",
+      // The poller's tick: claim once, record the fire, announce once.
+      "src/__tests__/integration/alerts/price-alert-executor.int.test.ts",
       // Vex Inference funding policy: 178's partial unique indexes, cap SQL and
       // concurrent admission, and 179 applied over a populated 178 schema.
       "src/__tests__/integration/repos/vex-inference-funding.int.test.ts",
