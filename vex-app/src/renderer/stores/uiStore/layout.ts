@@ -28,7 +28,7 @@ export type VexPageClass = "chat" | "pages" | "lighter";
 
 /**
  * The table pages: Portfolio and its subpages (Agent Scan, All assets, Token
- * history), Board and Settings.
+ * history), Board, Watchlist and Settings.
  */
 const TABLE_PAGE_ROUTES: ReadonlySet<ShellRoute["kind"]> = new Set<ShellRoute["kind"]>([
   "portfolio",
@@ -36,6 +36,7 @@ const TABLE_PAGE_ROUTES: ReadonlySet<ShellRoute["kind"]> = new Set<ShellRoute["k
   "assets",
   "tokenHistory",
   "board",
+  "watchlist",
   "settings",
 ]);
 

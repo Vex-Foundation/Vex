@@ -121,13 +121,14 @@ beforeEach(() => {
 });
 
 describe("the nav", () => {
-  it("lists Chat, Missions, Portfolio, Board, Lighter, Studio and Settings, in order", () => {
+  it("lists Chat, Missions, Portfolio, Board, Watchlist, Lighter, Studio and Settings, in order", () => {
     renderSidebar();
     expect(within(nav()).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Chat",
       "Missions",
       "Portfolio",
       "Board",
+      "Watchlist",
       "Lighter",
       "Studio",
       "Settings",
@@ -349,7 +350,7 @@ describe("the rail", () => {
     expect(screen.queryByRole("button", { name: "Chats" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" }).textContent).toBe("");
     expect(navRow("Portfolio").textContent).toBe("");
-    expect(within(nav()).getAllByRole("button")).toHaveLength(7);
+    expect(within(nav()).getAllByRole("button")).toHaveLength(8);
     // No session rows on the rail; the account is the box alone.
     expect(document.querySelector("[data-vex-ls-item]")).toBeNull();
     expect(screen.getByTestId("account").getAttribute("data-open")).toBe("false");
