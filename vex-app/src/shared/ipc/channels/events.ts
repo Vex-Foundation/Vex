@@ -157,6 +157,22 @@ export const EV = {
     activityProgress: "vex:event:portfolio:activityProgress",
   },
   /**
+   * Watchlist and price alerts (F01).
+   *
+   * `priceAlertFired` carries one fired alert, broadcast to every window AFTER
+   * the engine's single-shot claim has committed, validated with
+   * `priceAlertFiredEventSchema` at both boundaries. The renderer raises the
+   * in-app notice and re-reads the watchlist.
+   *
+   * `openWatchlist` has no payload: main sends it when the user clicks the OS
+   * notification, after it has focused or recreated the window, and the
+   * renderer opens the Watchlist page.
+   */
+  alerts: {
+    priceAlertFired: "vex:event:alerts:priceAlertFired",
+    openWatchlist: "vex:event:alerts:openWatchlist",
+  },
+  /**
    * Vex Studio terminals (stage B2).
    *
    * `port` is NOT an ordinary event: it is the channel main uses to TRANSFER a

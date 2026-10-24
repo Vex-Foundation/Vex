@@ -173,6 +173,7 @@ describe("SettingsPreferences", () => {
       "Background",
       "Enter key",
       "Notifications",
+      "Price alert notifications",
       "Multi-line paste warning",
     ]);
   });

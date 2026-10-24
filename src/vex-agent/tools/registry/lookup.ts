@@ -33,6 +33,7 @@ import { LONG_MEMORY_TOOLS } from "./long-memory.js";
 import { PLAN_TOOLS } from "./plan.js";
 import { BOARD_TOOLS } from "./board.js";
 import { VEX_INFERENCE_TOOLS } from "./vex-inference.js";
+import { PRICE_ALERT_TOOLS } from "./alerts.js";
 
 // Order matters - the LLM sees tools in this order, which can subtly bias
 // proactive selection. Protocol discovery comes first because it is the
@@ -45,6 +46,8 @@ export const TOOLS: readonly ToolDef[] = [
   ...WEB_TOOLS,
   ...TWITTER_ACCOUNT_TOOLS,
   ...PORTFOLIO_TOOLS,
+  // Watchlist and price alerts: local writes that only notify (F01).
+  ...PRICE_ALERT_TOOLS,
   ...MISSION_TOOLS,
   ...AUTONOMY_TOOLS,
   ...EVM_TOOLS,

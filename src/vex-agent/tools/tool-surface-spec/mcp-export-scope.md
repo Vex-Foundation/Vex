@@ -25,6 +25,7 @@ The MCP server exports the tool surface EXCEPT the session-bound groups:
 | Engine / runtime | NO | mission_draft_update, mission_stop, loop_defer, compact_apply, plan_write |
 | Presentation | NO | board_compose |
 | Vex Inference | NO | vex_inference_status, vex_inference_deposit_prepare, vex_inference_deposit_confirm |
+| Watchlist and alerts | NO | watchlist, price_alert |
 | Knowledge | NO | already retired from the agent surface; stays retired in the export |
 | Meta / discovery | ToolSearch YES (read-only catalog search); execute_tool NO | see below and owner-decisions.md D2 |
 
@@ -95,6 +96,11 @@ The exclusion is enforced in one place and consumed by all three surfaces:
   in the app's main process, and the deposit's approval card is raised by the
   in-app turn loop. An MCP client pays for its own inference and has no such
   account to fund, so the group is not exported.
+- Watchlist and alerts (`Watchlist`, `PriceAlert`) follow tokens and set price
+  alerts that only notify, in the app and as a system notification. That
+  notice is for the person at this machine; an external coding agent can
+  neither see it nor need it, and the watchlist is personal data. Not
+  exported (owner decision 2026-10-24).
 
 ## Design notes for the Studio phase (not Batch 1 work)
 

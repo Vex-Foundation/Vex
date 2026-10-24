@@ -30,6 +30,7 @@ import type { BoardSparklineBridge } from "./board-sparkline.js";
 import type { BoardSpotlightBridge } from "./board-spotlight.js";
 import type { BoardChartBridge } from "./board-chart.js";
 import type { ImagesBridge } from "./images.js";
+import type { AlertsBridge } from "./alerts.js";
 import type { PortfolioBridge } from "./portfolio.js";
 import type { ProjectsBridge } from "./projects.js";
 import type { RuntimeBridge } from "./runtime.js";
@@ -51,6 +52,7 @@ export type { ModelsBridge } from "./models.js";
 export type { BoardIconsBridge } from "./board-icons.js";
 export type { BoardLiveBridge } from "./board-live.js";
 export type { ImagesBridge } from "./images.js";
+export type { AlertsBridge } from "./alerts.js";
 export type { PortfolioBridge } from "./portfolio.js";
 export type { ProjectsBridge } from "./projects.js";
 export type { RuntimeBridge } from "./runtime.js";
@@ -78,6 +80,8 @@ export interface VexAgentBridge {
   readonly memoryInspector: MemoryInspectorBridge;
   /** Read-only dual-scope POSITION portfolio: global inventory / session scope (stage 3). */
   readonly portfolio: PortfolioBridge;
+  /** The user's watchlist and price alerts (F01): local rows that notify, never trade. */
+  readonly alerts: AlertsBridge;
   /**
    * Vex Studio projects (stage P): folder plus backing session. No filesystem
    * capability crosses this boundary - main owns the root and the folder name.

@@ -36,6 +36,7 @@ import { SettingsScreen } from "./SettingsScreen.js";
 import { TokenHistoryScreen } from "./TokenHistoryScreen.js";
 import { PortfolioScreen } from "./PortfolioScreen.js";
 import { BoardScreen } from "./BoardScreen.js";
+import { WatchlistScreen } from "./WatchlistScreen.js";
 import { NeedsYouScreen } from "./NeedsYouScreen.js";
 import { VexCloudFundingScreen } from "../../vexCloud/funding/VexCloudFundingScreen.js";
 
@@ -93,6 +94,8 @@ export function ShellScreens(): JSX.Element {
         <PortfolioScreen key="portfolio" origin={route.origin} onClose={close} />
       ) : route.kind === "board" ? (
         <BoardScreen key="board" origin={route.origin} onClose={close} />
+      ) : route.kind === "watchlist" ? (
+        <WatchlistScreen key="watchlist" origin={route.origin} onClose={close} />
       ) : route.kind === "vexCloudFunding" ? (
         <VexCloudFundingScreen key="vexCloudFunding" origin={route.origin} onClose={close} />
       ) : route.kind === "needsYou" ? (

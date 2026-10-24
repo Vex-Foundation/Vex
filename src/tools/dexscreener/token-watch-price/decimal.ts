@@ -71,6 +71,15 @@ export function multiplyDecimalByInteger(value: BoundedDecimal, factor: number):
 }
 
 /**
+ * `a * b`, exactly: units times units, scales added. Both inputs are already
+ * bounded by {@link parseBoundedDecimal} (or derived from bounded values), so
+ * the product stays bounded too.
+ */
+export function multiplyBoundedDecimals(a: BoundedDecimal, b: BoundedDecimal): BoundedDecimal {
+  return { units: a.units * b.units, scale: a.scale + b.scale };
+}
+
+/**
  * `a / b` truncated to {@link DECIMAL_DIVISION_SCALE} fractional digits, or
  * `null` when `b` is zero. Truncation (never rounding) keeps the result a value
  * the divisor could actually produce; 20 digits is far below the precision at
