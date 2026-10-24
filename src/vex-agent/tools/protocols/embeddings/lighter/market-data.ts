@@ -482,9 +482,22 @@ export const LIGHTER_MARKET_DATA_DISCOVERY = {
     sourceClass: "protocol_native",
     sideEffectLevel: "none",
   },
+  "lighter.technicalAnalysis": {
+    embeddingText: embeddingText(
+      `Technical analysis of one Lighter perpetual or spot market on Core or Robinhood Chain on closed candles: EMA 20, 50 and 200, RSI 14, MACD, Bollinger bands, ATR and plain trend signals for a chosen interval. ` +
+      `Use when: the user asks for technicals, indicators, RSI, MACD, moving averages, overbought or oversold, or a trend read for a known Lighter market id. ` +
+      `Returns price facts, the indicator values, six signals, the last ten closes and the close time of the newest closed candle used. ` +
+      `Example queries: lighter eth 4h technicals, rsi on lighter market 0, is btc overbought on lighter, macd rhc 1h.`,
+    ),
+    aliases: ["lighter technical analysis", "lighter indicators", "lighter rsi", "lighter macd"],
+    exampleIntents: ["lighter eth 4h technicals", "rsi on lighter market 0", "is btc overbought on lighter"],
+    ecosystems: ["lighter", "robinhood-chain"],
+    sourceClass: "protocol_native",
+    sideEffectLevel: "none",
+  },
 } satisfies Record<string, ToolDiscoveryMetadata>;
 
-const EXPECTED_COUNT = 37;
+const EXPECTED_COUNT = 38;
 if (Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length !== EXPECTED_COUNT) {
   throw new Error(
     `LIGHTER_MARKET_DATA_DISCOVERY has ${Object.keys(LIGHTER_MARKET_DATA_DISCOVERY).length} entries, expected ${EXPECTED_COUNT}.`,

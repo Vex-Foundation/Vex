@@ -53,9 +53,9 @@ whether its provider key is configured on this machine.
 
 ## Totals
 
-- tools: 213
+- tools: 215
 - Vex tools: 29
-- protocol tools: 184 across 12 protocols
+- protocol tools: 186 across 12 protocols
 - destructive: 63
 
 ## Vex tools
@@ -112,6 +112,7 @@ whether its provider key is configured on this machine.
 | dexscreener__pairs_top_list | Rank DEX pairs by a metric | read-only | no | - |
 | dexscreener__pairs_trending_list | List trending DEX pairs | read-only | no | - |
 | dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | read-only | no | - |
+| dexscreener__technical_analysis_get | Technical analysis of a DEX pool | read-only | no | - |
 | dexscreener__token_pairs_list | List a token's DEX pools | read-only | no | - |
 | dexscreener__tokens_screen | Screen tokens across chains | read-only | no | - |
 | dexscreener__top_traders_list | Rank a pair's top wallets | read-only | no | - |
@@ -184,6 +185,7 @@ whether its provider key is configured on this machine.
 | lighter__positions_list | List Lighter positions | read-only | no | - |
 | lighter__recent_trades_list | Read recent public Lighter trades | read-only | no | - |
 | lighter__system_get | Read Lighter system status | read-only | no | - |
+| lighter__technical_analysis_get | Technical analysis of a Lighter market | read-only | no | - |
 | lighter__trades_list | Read Lighter account trades | read-only | no | - |
 | lighter__withdraw | Submit an approved Lighter withdrawal | mutating | yes | - |
 | lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | mutating | yes | - |

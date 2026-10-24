@@ -10,6 +10,14 @@ import {
   LIGHTER_ORDER_SIDES,
 } from "@tools/lighter/order-preview.js";
 import type { ProtocolParamDef, ProtocolToolManifest } from "../../types.js";
+import {
+  ANALYSIS_BARS_DEFAULT,
+  ANALYSIS_BARS_MAX,
+  ANALYSIS_BARS_MIN,
+  ANALYSIS_INTERVALS,
+  ANALYSIS_READ_MIN,
+  ANALYSIS_WARMUP_BARS,
+} from "../../../../../lib/market-analysis/result-schema.js";
 import { LIGHTER_MARKET_DATA_DISCOVERY } from "../../embeddings/lighter/market-data.js";
 import {
   LIGHTER_AGENT_CANDLE_OUTPUT_MAX,
@@ -680,5 +688,41 @@ export const LIGHTER_READ_TOOLS: readonly ProtocolToolManifest[] = [
       countBack: 24,
     },
     discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.candles"],
+  },
+  {
+    toolId: "lighter.technicalAnalysis",
+    publicName: "lighter__technical_analysis_get",
+    namespace: "lighter",
+    lifecycle: "active",
+    description:
+      "Technical analysis of one Lighter market (perpetual or spot) on Core or Robinhood Chain, on closed candles only. Use when the user asks for technicals, indicators, RSI, MACD, moving averages, Bollinger bands, ATR or a trend read for a known Lighter market id. "
+      + "Returns price, change, high and low over the bars asked for; EMA 20/50/200, RSI 14, MACD 12/26/9, Bollinger 20/2 and ATR 14 (the fixed set, no selection); six plain signals (price against EMA 20 and 50, EMA 20 against EMA 50, RSI zone at 70 and 30, MACD histogram sign, position against the bands); the last 10 closes with RSI and histogram; and `asOf`, the close time of the newest CLOSED candle used. The forming candle is never used; dropped, missing and widened candles are counted in `closedCandles`. "
+      + `Reads ${ANALYSIS_READ_MIN} candles or bars + ${ANALYSIS_WARMUP_BARS}, whichever is more, so the slow indicators are warm. A reading is not a buy or sell signal. Read-only: no account lookup, signing, order or approval path.`,
+    mutating: false,
+    actionKind: "read",
+    params: [
+      ENVIRONMENT_PARAM,
+      MARKET_ID_REQUIRED_PARAM,
+      {
+        key: "interval",
+        type: "string",
+        required: true,
+        enum: ANALYSIS_INTERVALS,
+        description:
+          "Candle size to analyse: 5m, 15m, 1h, 4h or 1d. Any other value is rejected.",
+      },
+      {
+        key: "bars",
+        type: "number",
+        description:
+          `How many closed candles the price facts cover, an integer from ${ANALYSIS_BARS_MIN} to ${ANALYSIS_BARS_MAX} (${ANALYSIS_BARS_DEFAULT} when omitted). The indicators always read the warm-up on top.`,
+      },
+    ],
+    exampleParams: {
+      environment: "rhc",
+      marketId: 0,
+      interval: "4h",
+    },
+    discovery: LIGHTER_MARKET_DATA_DISCOVERY["lighter.technicalAnalysis"],
   },
 ];

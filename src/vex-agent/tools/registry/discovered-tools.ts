@@ -68,8 +68,13 @@ import { DISCOVERED_TOOL_LRU_CAP } from "./discovery-policy.js";
  * asks for a whole namespace, and the alternative is telling it it has 34 tools
  * while giving it 24. Do not raise either bound further without a tool-call
  * eval. Whatever is displaced is NAMED to the agent - see the return value.
+ *
+ * RAISED 40 → 41 (2026-10-23) with `MAX_SELECT_TOOL_NAMES`, because the cap
+ * must stay >= that bound and lighter reached 41 tools with
+ * `lighter.technicalAnalysis`. One tool, and pending the owner's ruling on the
+ * eval above (`protocols/discovery.ts`).
  */
-export const MAX_DISCOVERED_TOOLS_PER_SESSION = 40;
+export const MAX_DISCOVERED_TOOLS_PER_SESSION = 41;
 
 /** Memory-bounding guard on tracked sessions - a dropped entry just re-fails-closed to "nothing discovered". */
 const MAX_TRACKED_SESSIONS = 10_000;

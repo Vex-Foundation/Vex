@@ -42,8 +42,8 @@
     "PlanWrite",
     "BoardCompose"
   ],
-  "maxDiscoveredToolsPerSession": 40,
-  "maxSimultaneousModelVisibleTools": 80,
+  "maxDiscoveredToolsPerSession": 41,
+  "maxSimultaneousModelVisibleTools": 81,
   "protocolToolIds": [
     "dexscreener.candles",
     "dexscreener.chains",
@@ -58,6 +58,7 @@
     "dexscreener.pairs.trending",
     "dexscreener.search",
     "dexscreener.spotlight",
+    "dexscreener.technicalAnalysis",
     "dexscreener.tokenPairs",
     "dexscreener.tokens.screen",
     "dexscreener.top.traders",
@@ -112,6 +113,7 @@
     "lighter.positions",
     "lighter.recentTrades",
     "lighter.system",
+    "lighter.technicalAnalysis",
     "lighter.trades",
     "lighter.withdraw",
     "lighter.withdraw.claim",

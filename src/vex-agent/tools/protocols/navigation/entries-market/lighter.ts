@@ -58,6 +58,7 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
       "Markets and system",
       "Depth and trade tape",
       "Candles",
+      "Technical analysis",
       "Accounts and positions",
       "My orders and fills",
       "Order preview and approval-gated create",
@@ -115,6 +116,13 @@ export const LIGHTER_NAVIGATION: ProtocolNamespaceNavigation = {
       summary: "Read OHLCV candle history for one Lighter market using epoch-millisecond windows.",
       toolPrefixes: ["lighter.candles"],
       hints: ["candles", "ohlcv", "price history", "chart", "volatility"],
+    },
+    {
+      label: "Technical analysis",
+      summary:
+        "Read EMA 20/50/200, RSI, MACD, Bollinger bands, ATR and plain trend signals for one Lighter market, on closed candles only.",
+      toolPrefixes: ["lighter.technicalAnalysis"],
+      hints: ["technicals", "rsi", "macd", "moving averages", "overbought", "trend read"],
     },
     {
       label: "Accounts and positions",

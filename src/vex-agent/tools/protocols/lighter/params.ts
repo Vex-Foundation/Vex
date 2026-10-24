@@ -24,6 +24,12 @@ import {
   type LighterEnvironment,
   type LighterMarketFilter,
 } from "@tools/lighter/constants.js";
+import {
+  ANALYSIS_BARS_MAX,
+  ANALYSIS_BARS_MIN,
+  ANALYSIS_INTERVALS,
+  type AnalysisInterval,
+} from "../../../../lib/market-analysis/result-schema.js";
 
 export const LIGHTER_AGENT_MARKET_LIMIT_DEFAULT = 25;
 export const LIGHTER_AGENT_MARKET_LIMIT_MAX = 50;
@@ -266,6 +272,22 @@ export function readTimestamp(
 
 export function readSetTimestampToEnd(params: Record<string, unknown>): boolean | undefined {
   return readBoolean(params, "setTimestampToEnd");
+}
+
+export function readAnalysisInterval(params: Record<string, unknown>): ParamRead<AnalysisInterval> {
+  const interval = readEnum(params, "interval", ANALYSIS_INTERVALS, true);
+  if (!interval.ok) return interval;
+  return { ok: true, value: interval.value as AnalysisInterval };
+}
+
+/** Closed bars a technical analysis covers; `undefined` means the engine's default. */
+export function readAnalysisBars(params: Record<string, unknown>): ParamRead<number | undefined> {
+  const value = readNumber(params, "bars");
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!Number.isInteger(value) || value < ANALYSIS_BARS_MIN || value > ANALYSIS_BARS_MAX) {
+    return { ok: false, reason: `bars must be an integer from ${ANALYSIS_BARS_MIN} to ${ANALYSIS_BARS_MAX}.` };
+  }
+  return { ok: true, value };
 }
 
 export function readCountBack(params: Record<string, unknown>): ParamRead<number | undefined> {

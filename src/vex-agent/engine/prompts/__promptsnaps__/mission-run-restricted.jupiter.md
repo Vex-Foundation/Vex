@@ -327,7 +327,7 @@ Contains mutating tools (may require approval).
 
 ### dexscreener
 DexScreener is read-only market research for indexed automated-market-maker pairs and the provider's own narrative and promotion labels.
-Capability areas: Market screening and leaderboards; Search and token pools; Pair snapshot and batch refresh; Narratives and market context; Paid attention and promotion feeds; Chain and DEX catalog; Token safety and holders; Price history and charts; Trades and trader leaderboard. Name the area you need in a ToolSearch query on this namespace; the tools it returns become callable by name.
+Capability areas: Market screening and leaderboards; Search and token pools; Pair snapshot and batch refresh; Narratives and market context; Paid attention and promotion feeds; Chain and DEX catalog; Token safety and holders; Price history and charts; Technical analysis; Trades and trader leaderboard. Name the area you need in a ToolSearch query on this namespace; the tools it returns become callable by name.
 Read: Resolve a name or ticker symbol to an exact chain and contract address, screen the population server-side, list one token's pools, read a pool address live, refresh known addresses, aggregate narratives per chain, read paid boosts, and list the chain and dex catalog.
 Quote: No quote capability is available. Observations are display data, not a fresh executable quote.
 Act: No action capability is available. This namespace never signs, broadcasts, buys, sells, or changes provider data.

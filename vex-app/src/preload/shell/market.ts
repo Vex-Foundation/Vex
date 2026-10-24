@@ -1,5 +1,6 @@
 import { CH, EV } from "../../shared/ipc/channels.js";
 import { vexMarketSnapshotSchema } from "../../shared/schemas/market.js";
+import { technicalAnalysisReadInputSchema } from "../../shared/schemas/technical-analysis.js";
 import type { MarketBridge } from "../../shared/types/bridge/shell/market.js";
 import { invokeWithSchema, subscribe } from "../_dispatch.js";
 
@@ -18,5 +19,8 @@ export const market = {
   },
   onVexUpdate(cb) {
     return subscribe(EV.market.vex, vexMarketSnapshotSchema, cb);
+  },
+  readTechnicalAnalysis(input) {
+    return invokeWithSchema(CH.market.readTechnicalAnalysis, input, technicalAnalysisReadInputSchema);
   },
 } satisfies MarketBridge;

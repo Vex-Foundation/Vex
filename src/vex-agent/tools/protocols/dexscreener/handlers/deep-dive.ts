@@ -13,6 +13,7 @@ import type { ProtocolHandler } from "../../types.js";
 import { guarded } from "./deep-dive/_shared.js";
 import { runCandles } from "./deep-dive/candles.js";
 import { runPairDetails } from "./deep-dive/pair-details.js";
+import { runTechnicalAnalysisTool } from "./deep-dive/technical-analysis.js";
 import { runTopTraders } from "./deep-dive/top-traders.js";
 import { runTrades } from "./deep-dive/trades.js";
 
@@ -22,6 +23,9 @@ export const DEXSCREENER_DEEP_DIVE_HANDLERS: Record<string, ProtocolHandler> = {
   ),
   "dexscreener.candles": guarded("dexscreener__candles_list", (p, s) =>
     runCandles(p, s)
+  ),
+  "dexscreener.technicalAnalysis": guarded("dexscreener__technical_analysis_get", (p, s) =>
+    runTechnicalAnalysisTool(p, s)
   ),
   "dexscreener.trades": guarded("dexscreener__trades_list", (p, s) =>
     runTrades(p, s)

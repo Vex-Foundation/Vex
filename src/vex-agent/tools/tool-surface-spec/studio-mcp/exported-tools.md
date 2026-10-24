@@ -43,11 +43,11 @@ free. Both texts live on the tool
 
 ## Totals
 
-- exported tools: 213
+- exported tools: 215
 - internal: 29
-- protocol: 184 across 12 namespaces
+- protocol: 186 across 12 namespaces
 - always loaded: 29
-- read-only: 129
+- read-only: 131
 - destructive: 63
 
 ## Internal tools
@@ -104,6 +104,7 @@ free. Both texts live on the tool
 | dexscreener__pairs_top_list | Rank DEX pairs by a metric | protocol | yes | no | no | - | 2580 | - | none (read) |
 | dexscreener__pairs_trending_list | List trending DEX pairs | protocol | yes | no | no | - | 2199 | - | none (read) |
 | dexscreener__spotlight_get | Read the DEX Screener spotlight feeds | protocol | yes | no | no | - | 2808 | - | none (read) |
+| dexscreener__technical_analysis_get | Technical analysis of a DEX pool | protocol | yes | no | no | - | 1624 | - | none (read) |
 | dexscreener__token_pairs_list | List a token's DEX pools | protocol | yes | no | no | - | 3038 | - | none (read) |
 | dexscreener__tokens_screen | Screen tokens across chains | protocol | yes | no | no | - | 1994 | - | none (read) |
 | dexscreener__top_traders_list | Rank a pair's top wallets | protocol | yes | no | no | - | 6552 | - | none (read) |
@@ -176,6 +177,7 @@ free. Both texts live on the tool
 | lighter__positions_list | List Lighter positions | protocol | yes | no | no | - | 709 | - | none (read) |
 | lighter__recent_trades_list | Read recent public Lighter trades | protocol | yes | no | no | - | 472 | - | none (read) |
 | lighter__system_get | Read Lighter system status | protocol | yes | no | no | - | 462 | - | none (read) |
+| lighter__technical_analysis_get | Technical analysis of a Lighter market | protocol | yes | no | no | - | 951 | - | none (read) |
 | lighter__trades_list | Read Lighter account trades | protocol | yes | no | no | - | 520 | - | none (read) |
 | lighter__withdraw | Submit an approved Lighter withdrawal | protocol | no | yes | no | - | 787 | - | - |
 | lighter__withdraw_claim | Broadcast an approved Lighter withdrawal claim | protocol | no | yes | no | - | 685 | - | - |

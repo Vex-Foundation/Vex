@@ -336,6 +336,10 @@ export const CH = {
   // by the main-process market service. Renderer never fetches external APIs.
   market: {
     getVexSnapshot: "vex:market:getVexSnapshot",
+    // The technical analysis card's chart and timeframe switch: main runs the
+    // engine the protocol tools use, with the same loaders. Read-only; it
+    // starts no agent turn, tool dispatch or signature.
+    readTechnicalAnalysis: "vex:market:readTechnicalAnalysis",
   },
 
   // Light it up - bounded Lighter reads. Main owns every provider request;
