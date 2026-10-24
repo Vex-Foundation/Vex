@@ -591,6 +591,18 @@ export interface ToolResult {
    */
   actionKind?: ActionKind;
   /**
+   * F12: the approval card for a call to one of the user's own MCP tools. Set
+   * ONLY by `tools/user-mcp/route.ts`, from validated arguments, never from
+   * model text: the server, the tool, and the exact arguments that will be
+   * sent. The allow-listed preview would drop almost all of them, and a card
+   * must show what leaves.
+   */
+  externalToolPreview?: {
+    readonly server: string;
+    readonly tool: string;
+    readonly argumentsJson: string;
+  };
+  /**
    * Stage-7 prequote-gate binding. Set ONLY by `executeProtocolTool` when the
    * execute-time prequote gate ALLOWS a swap execute and the call still needs
    * restricted-mode approval - it carries the matched prequote's safety

@@ -14,6 +14,7 @@ import { LineIcon } from "../../../../components/icons/line/index.js";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { useIsNativeRuntime } from "../../../../lib/api/system.js";
 import { useNativeRuntimeStatus } from "../../../runtime/bootstrap/useNativeRuntimeStatus.js";
+import type { UserMcpListDto } from "@shared/schemas/user-mcp.js";
 import {
   settingsNav,
   settingsSectionStatus,
@@ -24,11 +25,14 @@ import {
 export function SettingsRegister({
   env,
   superboard,
+  userMcp = null,
   selected,
   onSelect,
 }: {
   readonly env: EnvState | null;
   readonly superboard: SuperboardKeyStatus | null;
+  /** The Tools (MCP) list, for its status word; `null` until it loads. */
+  readonly userMcp?: UserMcpListDto | null;
   readonly selected: SettingsNavId;
   readonly onSelect: (id: SettingsNavId) => void;
 }): JSX.Element {
@@ -49,7 +53,7 @@ export function SettingsRegister({
               const status =
                 item.id === "preferences"
                   ? null
-                  : settingsSectionStatus(item.id, env, superboard, runtimeStatus);
+                  : settingsSectionStatus(item.id, env, superboard, runtimeStatus, userMcp);
               return (
                 <button
                   key={item.id}

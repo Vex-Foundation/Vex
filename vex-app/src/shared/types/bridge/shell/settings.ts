@@ -1,4 +1,13 @@
 import type { ChainEndpoints } from "../../../schemas/chain-endpoints.js";
+import type {
+  AddUserMcpServerInput,
+  RecheckUserMcpServerInput,
+  RemoveUserMcpServerInput,
+  SetUserMcpTokenInput,
+  SetUserMcpToolAutoRunInput,
+  SetUserMcpToolEnabledInput,
+  UserMcpListDto,
+} from "../../../schemas/user-mcp.js";
 import type { Result } from "../../../ipc/result.js";
 import type { AbortableInvocation } from "../common.js";
 import type { Preferences } from "../../../schemas/preferences.js";
@@ -32,6 +41,13 @@ import type {
 export interface SettingsBridge {
   readonly getChainEndpoints: (input: { chainId: number }) => Promise<Result<ChainEndpoints>>;
   readonly setChainEndpoints: (input: ChainEndpoints) => Promise<Result<ChainEndpoints>>;
+  readonly listUserMcp: () => Promise<Result<UserMcpListDto>>;
+  readonly addUserMcpServer: (input: AddUserMcpServerInput) => Promise<Result<UserMcpListDto>>;
+  readonly removeUserMcpServer: (input: RemoveUserMcpServerInput) => Promise<Result<UserMcpListDto>>;
+  readonly setUserMcpToken: (input: SetUserMcpTokenInput) => Promise<Result<UserMcpListDto>>;
+  readonly setUserMcpToolEnabled: (input: SetUserMcpToolEnabledInput) => Promise<Result<UserMcpListDto>>;
+  readonly setUserMcpToolAutoRun: (input: SetUserMcpToolAutoRunInput) => Promise<Result<UserMcpListDto>>;
+  readonly recheckUserMcpServer: (input: RecheckUserMcpServerInput) => Promise<Result<UserMcpListDto>>;
   readonly getPreferences: () => Promise<Result<Preferences>>;
   readonly setTelemetryConsent: (input: {
     readonly enabled: boolean;

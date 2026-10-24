@@ -13,6 +13,7 @@ import { getActionKind } from "../registry.js";
 import { isMutatingProtocolAlias } from "../mutating-aliases.js";
 import { dispatchTargetIsMutating } from "./mutating-targets.js";
 import { resolveInjectedProtocolTool } from "../registry/injected-protocol-tools.js";
+import { isUserMcpToolName } from "@vex-agent/user-mcp/names.js";
 
 /**
  * Tools always allowed while a plan is pending acceptance - the safe-control
@@ -73,7 +74,8 @@ export async function checkPlanAcceptanceDeny(
     || resolveInjectedProtocolTool(call.name) !== undefined;
   const allowed = isProtocolExecution
     ? !dispatchTargetIsMutating(call) // non-mutating target (read/quote/preview) ok
-    : getActionKind(call.name) === "read"; // read-kind internal tools ok
+    : getActionKind(call.name) === "read" // read-kind internal tools ok
+      || isUserMcpToolName(call.name); // the user's own MCP tools only read (F12)
 
   if (allowed) return null;
 

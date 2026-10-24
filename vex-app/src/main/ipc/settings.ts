@@ -62,6 +62,7 @@ import type { RotateShareTokenOutcome } from "@vex-agent/agentscan/register-shar
 import type { ShareTokenRotationAvailability } from "@vex-agent/agentscan/share-token-rotation-capability.js";
 
 import { registerChainEndpointSettingsHandlers } from "./settings-chain-endpoints.js";
+import { registerUserMcpSettingsHandlers } from "./settings-user-mcp.js";
 import { registerLighterTradingSettingsHandlers } from "./settings-lighter-trading.js";
 
 const empty = z.object({}).strict();
@@ -174,6 +175,7 @@ export function registerSettingsHandlers(): Array<() => void> {
   resetShareTokenLastAttempt();
   const handlers: Array<() => void> = [
     ...registerChainEndpointSettingsHandlers(),
+    ...registerUserMcpSettingsHandlers(),
     ...registerLighterTradingSettingsHandlers(),
   ];
 
