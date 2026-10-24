@@ -178,12 +178,13 @@ export function createUserMcpFetch(conn: UserMcpConnection, deps: UserMcpFetchDe
       dispatcher,
     });
     if (response.status === 401 || response.status === 403) unauthorized = true;
-    if (response.body === null) return response as unknown as Response;
-    return new Response(capBody(response.body as ReadableStream<Uint8Array>, MAX_RESPONSE_BYTES), {
+    const responseInit = {
       status: response.status,
       statusText: response.statusText,
       headers: Object.fromEntries(response.headers.entries()),
-    });
+    };
+    if (response.body === null) return new Response(null, responseInit);
+    return new Response(capBody(response.body as ReadableStream<Uint8Array>, MAX_RESPONSE_BYTES), responseInit);
   };
   return {
     fetch: fetchFn,
