@@ -8,6 +8,7 @@
 
 import type { EnvState } from "@shared/schemas/onboarding.js";
 import type { SuperboardKeyStatus } from "@shared/schemas/superboard-key.js";
+import type { UserMcpListDto } from "@shared/schemas/user-mcp.js";
 import type { NativeRuntimeStatus } from "@shared/schemas/system.js";
 import type { WizardStepId } from "@shared/schemas/wizard.js";
 import type { LineIconName } from "../../../../components/icons/line/index.js";
@@ -113,6 +114,14 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SectionMeta> = [
     name: "Superboard key",
     hint: "One code you paste into Superboard",
     lead: "One code, generated once. Paste it in Superboard.",
+  },
+  {
+    id: "userMcp",
+    group: "Connections",
+    icon: "spark",
+    name: "Tools (MCP)",
+    hint: "MCP servers you add, and the read-only tools your chats may use",
+    lead: "Add an MCP server of your own. Its tools stay off until you turn them on.",
   },
   {
     id: "lighterPoints",
@@ -239,13 +248,23 @@ export function localRuntimeRegisterStatus(
   }
 }
 
+/** "2 in use" when tools are on; a server not answering outranks it. */
+export function userMcpRegisterStatus(list: UserMcpListDto | null): SettingsStatus {
+  if (list === null) return { word: "-", tone: "neutral" };
+  if (list.servers.some((server) => server.status === "error")) return { word: "Not answering", tone: "warning" };
+  if (list.enabledCount > 0) return { word: `${list.enabledCount} in use`, tone: "success" };
+  return { word: list.servers.length > 0 ? "None in use" : "None added", tone: "neutral" };
+}
+
 export function settingsSectionStatus(
   section: SettingsSection,
   env: EnvState | null,
   superboard: SuperboardKeyStatus | null = null,
   runtime: NativeRuntimeStatus | null = null,
+  userMcp: UserMcpListDto | null = null,
 ): SettingsStatus {
   if (section === "superboardKey") return superboardRegisterStatus(superboard);
+  if (section === "userMcp") return userMcpRegisterStatus(userMcp);
   if (section === "localRuntime") return localRuntimeRegisterStatus(runtime);
   if (env === null) return { word: "-", tone: "neutral" };
   switch (section) {

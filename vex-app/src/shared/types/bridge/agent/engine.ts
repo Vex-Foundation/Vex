@@ -16,6 +16,7 @@
 import type { CompactionPreparationEvent } from "@shared/schemas/compaction-preparation.js";
 import type { EngineErrorEvent } from "@shared/schemas/engine-error.js";
 import type { InferenceNoticeEvent } from "@shared/schemas/inference-notice.js";
+import type { UserMcpChangedEvent } from "@shared/schemas/user-mcp.js";
 import type { TranscriptAppendEvent } from "@shared/schemas/messages.js";
 import type { MissionUpdateEvent } from "@shared/schemas/mission-update.js";
 import type { LighterSetupHandoffEvent } from "@shared/schemas/lighter-setup-handoff.js";
@@ -137,5 +138,14 @@ export interface EngineEventsBridge {
    */
   readonly onInferenceNotice: (
     cb: (event: InferenceNoticeEvent) => void,
+  ) => () => void;
+
+  /**
+   * Subscribe to `EV.engine.userMcpChanged` (F12): the recheck turned some of
+   * a user MCP server's tools off, or the server stopped answering. Returns an
+   * idempotent unsubscribe function.
+   */
+  readonly onUserMcpChanged: (
+    cb: (event: UserMcpChangedEvent) => void,
   ) => () => void;
 }

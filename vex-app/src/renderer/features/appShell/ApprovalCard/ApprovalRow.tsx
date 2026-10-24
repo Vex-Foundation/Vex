@@ -16,7 +16,7 @@ import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { Stamp } from "../../../components/ui/stamp.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { approvalActorLine } from "../approvals/approvals-copy.js";
-import { approvalExpiryWords, approvalSentence, approvalToolTitle } from "./approval-sentence.js";
+import { approvalExpiryWords, approvalSentence, approvalToolTitle, isUserMcpApproval } from "./approval-sentence.js";
 import { rejectKeyWords } from "./ApprovalDecisionActions.js";
 
 const ROW_KEY =
@@ -103,7 +103,7 @@ export function ApprovalRow({
       </span>
       <p className="vex-appr-row__meta">
         <span>{meta}</span>
-        <Stamp data-testid="real-funds-stamp" className="vex-appr-row__stamp" />
+        {isUserMcpApproval(summary) ? null : <Stamp data-testid="real-funds-stamp" className="vex-appr-row__stamp" />}
       </p>
       {inlineError !== null ? (
         <p role="alert" className="vex-appr__error vex-appr-row__error">

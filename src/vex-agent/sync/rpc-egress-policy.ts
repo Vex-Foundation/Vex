@@ -80,7 +80,7 @@ export interface DispatchableRequestInit extends RequestInit {
 }
 
 /** Why an egress decision refused. Named so a log line says which control fired. */
-export type EgressRefusal = "non_public_address" | "no_address";
+export type EgressRefusal = "non_public_address" | "non_loopback_address" | "no_address";
 
 /** How far down an error's `cause` chain the egress classifier looks. undici nests one level; four is slack. */
 const EGRESS_CAUSE_MAX_DEPTH = 4;
@@ -133,6 +133,42 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 5_000;
  * exactly one address is returned).
  */
 export function pinPublicAddress(resolve: LookupFunction): LookupFunction {
+  return pinAddress(resolve, isPublicIpAddress, "non_public_address");
+}
+
+/**
+ * A dispatcher that can only reach THIS COMPUTER: every resolved address must
+ * be loopback (`127.0.0.0/8`, `::1`, or `::ffff:127.0.0.0/104`), pinned the
+ * same way as the public dispatcher. For a server the user runs locally (the
+ * user MCP servers' "on this computer" scope). LAN, link-local and every
+ * public address are refused. Same ownership rule: the caller closes it.
+ */
+export function createPinnedLoopbackEgressDispatcher(options?: {
+  readonly lookup?: LookupFunction;
+  readonly connectTimeoutMs?: number;
+}): Dispatcher {
+  const resolve = options?.lookup ?? dnsLookup;
+  return new Agent({
+    connect: {
+      timeout: options?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      lookup: pinLoopbackAddress(resolve),
+    },
+  });
+}
+
+/** The loopback lookup that decides and pins; exported for the transport test. */
+export function pinLoopbackAddress(resolve: LookupFunction): LookupFunction {
+  // IPv4 first: `localhost` often resolves `::1` first while a local server
+  // listens on `127.0.0.1` only, and the pin keeps exactly one address.
+  return pinAddress(resolve, isLoopbackIpAddress, "non_loopback_address", (a, b) => a.family - b.family);
+}
+
+function pinAddress(
+  resolve: LookupFunction,
+  admit: (address: string) => boolean,
+  refusal: Exclude<EgressRefusal, "no_address">,
+  order?: (a: LookupAddress, b: LookupAddress) => number,
+): LookupFunction {
   return (hostname, lookupOptions, callback) => {
     resolve(hostname, { ...lookupOptions, all: true }, (err, resolved) => {
       if (err) {
@@ -145,15 +181,15 @@ export function pinPublicAddress(resolve: LookupFunction): LookupFunction {
         return;
       }
       for (const entry of addresses) {
-        if (!isPublicIpAddress(entry.address)) {
-          callback(new RpcEgressRefusedError(hostname, "non_public_address"), "", undefined);
+        if (!admit(entry.address)) {
+          callback(new RpcEgressRefusedError(hostname, refusal), "", undefined);
           return;
         }
       }
       // PIN: one validated address, so the socket goes exactly where the check
       // ran. `options.all` is `true` for every undici call (measured), but the
       // single-address shape is honoured too rather than assumed away.
-      const pinned = addresses[0];
+      const pinned = order === undefined ? addresses[0] : [...addresses].sort(order)[0];
       if (!pinned) {
         callback(new RpcEgressRefusedError(hostname, "no_address"), "", undefined);
         return;
@@ -300,6 +336,27 @@ export function isPublicIpAddress(address: string): boolean {
   const ipv6 = parseIpv6(bare);
   if (ipv6) return !isNonPublicIpv6(ipv6);
   return false; // not an IP literal at all: this function only clears addresses.
+}
+
+/**
+ * True only for a loopback address: `127.0.0.0/8`, `::1`, or an IPv4-mapped
+ * loopback (`::ffff:127.0.0.1`). Anything unparsable is `false`.
+ */
+export function isLoopbackIpAddress(address: string): boolean {
+  const bare = bareHost(address);
+  const ipv4 = parseIpv4(bare);
+  if (ipv4) return ipv4[0] === 127;
+  const ipv6 = parseIpv6(bare);
+  if (!ipv6) return false;
+  if (ipv6.slice(0, 15).every((b) => b === 0) && ipv6[15] === 1) return true;
+  const mapped = ipv6.slice(0, 10).every((b) => b === 0) && ipv6[10] === 0xff && ipv6[11] === 0xff;
+  return mapped && ipv6[12] === 127;
+}
+
+/** True iff `host` (a URL hostname, brackets allowed) is an IPv4 or IPv6 literal. */
+export function isIpLiteralHost(host: string): boolean {
+  const bare = bareHost(host);
+  return parseIpv4(bare) !== null || parseIpv6(bare) !== null;
 }
 
 /**

@@ -317,6 +317,13 @@ export function resolveToolIdentity(
     return { protocol: null, title: humanizeToolName(toolName), category: "tool" };
   }
 
+  // One of the user's own MCP tools (F12): its name is derived from a row id,
+  // so humanizing it would print noise. The approval card and the result name
+  // the server and the tool.
+  if (/^mcp_t[0-9a-f]{16}$/.test(toolName)) {
+    return { protocol: null, title: "Your MCP tool", category: "tool" };
+  }
+
   const name = toolName.toLowerCase();
 
   // `describe_tools` fetches the FULL manifests for ids a ranked discovery

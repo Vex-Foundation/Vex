@@ -104,7 +104,7 @@ describe("the Settings nav", () => {
       ["preferences"],
       ["vault", "wallets", "apiKeys"],
       ["inference", "memory", "tuning", "localRuntime"],
-      ["superboardKey", "lighterPoints"],
+      ["superboardKey", "userMcp", "lighterPoints"],
     ]);
     // Flattened, the sections keep the order the registry declares.
     expect(SETTINGS_NAV.flatMap((group) => group.items.map((item) => item.id)).slice(1)).toEqual(
@@ -128,6 +128,7 @@ describe("the Settings nav", () => {
       ["tuning", "Tuning", "Context, output, and sampling limits"],
       ["localRuntime", "Local runtime", "The database and embeddings server running on this computer"],
       ["superboardKey", "Superboard key", "One code you paste into Superboard"],
+      ["userMcp", "Tools (MCP)", "MCP servers you add, and the read-only tools your chats may use"],
       [
         "lighterPoints",
         "Lighter",

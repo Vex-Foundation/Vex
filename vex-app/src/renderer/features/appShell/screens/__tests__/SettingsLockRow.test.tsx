@@ -47,6 +47,7 @@ vi.mock("../../../wizard/index.js", () => ({
 vi.mock("../../../wallets/WalletRemovalSection.js", () => ({ WalletRemovalSection: () => null }));
 vi.mock("../../../wallets/ExportPrivateKeyModal.js", () => ({ ExportPrivateKeyModal: () => null }));
 vi.mock("../SettingsScreen/ChainEndpointsSection.js", () => ({ ChainEndpointsSection: () => null }));
+vi.mock("../SettingsScreen/UserMcpSection.js", () => ({ UserMcpSection: () => null }));
 vi.mock("../SettingsScreen/SuperboardKeySection.js", () => ({ SuperboardKeySection: () => null }));
 vi.mock("../SettingsScreen/LighterSection.js", () => ({ LighterSection: () => null }));
 vi.mock("../SettingsScreen/LocalRuntimeSection.js", () => ({ LocalRuntimeSection: () => null }));

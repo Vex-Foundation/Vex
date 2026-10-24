@@ -947,6 +947,24 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     ["a desk click", { origin: "desk", riskLevel: "info", actionKind: "read" }],
   ];
 
+  it("does not stamp a call to the user's own MCP tool as real funds, and says what will run", () => {
+    renderCard(
+      makeSummary({
+        toolName: "mcp:deepwiki / read_wiki_structure",
+        actionKind: "read",
+        riskLevel: "info",
+        preview: {
+          toolName: "deepwiki / read_wiki_structure",
+          namespace: "mcp",
+          criticalArgs: { server: "deepwiki", tool: "read_wiki_structure", arguments: '{"repoName":"facebook/react"}' },
+        },
+      }),
+      false,
+    );
+    expect(screen.queryByTestId("real-funds-stamp")).toBeNull();
+    expect(screen.getByText("Call read_wiki_structure on your MCP server deepwiki.")).toBeTruthy();
+  });
+
   for (const [label, over] of CASES) {
     it(`stamps ${label} REAL FUNDS inside the ink frame`, () => {
       renderCard(makeSummary(over), false);
