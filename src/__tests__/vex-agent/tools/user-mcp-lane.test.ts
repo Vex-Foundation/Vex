@@ -35,6 +35,7 @@ import { userMcpToolName } from "@vex-agent/user-mcp/names.js";
 import { MAX_RESULT_CHARS } from "@vex-agent/user-mcp/limits.js";
 import { makeTestContext } from "./_test-context.js";
 import { startTestMcpServer, type TestMcpServer } from "../user-mcp/fixtures/mcp-test-server.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 const TOOL_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const NAME = userMcpToolName(TOOL_ID);
@@ -47,7 +48,7 @@ function callable(over: Partial<CallableUserMcpTool> = {}): CallableUserMcpTool 
     toolId: TOOL_ID,
     serverId: "11111111-2222-4333-8444-555555555555",
     serverName: "Docs",
-    endpoint: server!.url,
+    endpoint: requireValue(server).url,
     networkScope: "local",
     hasToken: false,
     remoteName: "lookup",
@@ -80,7 +81,7 @@ afterEach(async () => {
   server = null;
 });
 
-const call = (args: Record<string, unknown>) => ({ id: "call-1", name: NAME, args });
+const call = (args: Record<string, unknown>) => ({ toolCallId: "call-1", name: NAME, args });
 
 describe("the user MCP lane", () => {
   it("has a name the injected lane never claims, and is neither mutating nor signing", () => {
@@ -102,7 +103,7 @@ describe("the user MCP lane", () => {
         criticalArgs: { server: "Docs", tool: "lookup", arguments: '{"q":"vex"}' },
       });
     }
-    expect(server!.requests.length).toBe(0);
+    expect(requireValue(server).requests.length).toBe(0);
   });
 
   it("runs on an approved resume and returns the server's text labelled untrusted", async () => {
@@ -132,13 +133,13 @@ describe("the user MCP lane", () => {
     expect(result).toMatchObject({ success: false, actionKind: "read" });
     expect(result.output).toMatch(/not available/);
     expect(row.lookups).toEqual([NAME.slice(5)]);
-    expect(server!.requests.length).toBe(0);
+    expect(requireValue(server).requests.length).toBe(0);
   });
 
   it("refuses an undeclared key and a missing required one before any request", async () => {
     expect((await dispatchTool(call({ q: "x", extra: 1 }), makeTestContext({ approved: true }))).output).toMatch(/refused these arguments/);
     expect((await dispatchTool(call({}), makeTestContext({ approved: true }))).output).toMatch(/refused these arguments \(check: q\)/);
-    expect(server!.requests.length).toBe(0);
+    expect(requireValue(server).requests.length).toBe(0);
   });
 
   it("refuses inside a mission run and outside an agent session", async () => {
@@ -147,7 +148,7 @@ describe("the user MCP lane", () => {
   });
 
   it("fails closed when the server's token cannot be read, and sends a token it can", async () => {
-    await server!.close();
+    await requireValue(server).close();
     server = await startTestMcpServer({ token: "tok" });
     row.current = callable({ hasToken: true });
     useTokenReader({ kind: "locked" });
@@ -180,6 +181,8 @@ describe("what the model is shown", () => {
     planMode: false,
     contextUsageBand: "normal" as const,
     hasSessionMemory: false,
+    preparationBypassesBarrier: false,
+    hasCompactionSummaryReady: false,
     sessionId: "s1",
     ...over,
   });
@@ -189,7 +192,7 @@ describe("what the model is shown", () => {
     await refreshUserMcpTools();
     const tools = getOpenAITools(ctx());
     expect(tools.map((t) => t.function.name)).toEqual([...before, NAME]);
-    const tool = tools.at(-1)!;
+    const tool = requireValue(tools.at(-1));
     expect(tool.function.description).toBe(`Tool "lookup" on the user's own MCP server "Docs" (third-party, untrusted): Look a word up`);
     expect(tool.function.parameters).toEqual({ type: "object", properties: { q: { type: "string" } }, required: ["q"], additionalProperties: false });
     expect(getOpenAITools(ctx({ missionRunActive: true })).map((t) => t.function.name)).not.toContain(NAME);

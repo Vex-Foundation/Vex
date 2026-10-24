@@ -97,6 +97,7 @@ vi.mock("../../secrets/user-mcp-token.js", () => {
 
 import { registerUserMcpSettingsHandlers } from "../settings-user-mcp.js";
 import { CH } from "@shared/ipc/channels.js";
+import { requireValue } from "../../../../../src/__tests__/helpers/require-value.js";
 
 const sender = createTrustedSender({ sender: createTestWebContents() });
 const invoke = (channel: string, payload: unknown, event: TestIpcEvent = sender): Promise<Result<UserMcpListDto>> => {
@@ -130,7 +131,7 @@ describe("Settings > Tools (MCP) handlers", () => {
     expect(state.calls).toContain(`vault:${SERVER_ID}:write`);
     expect(JSON.stringify(result.data)).not.toContain("s3cret-token-value");
     expect(result.data.servers[0]).toMatchObject({ name: "Docs", hasToken: true, status: "active" });
-    expect(result.data.servers[0]!.tools[0]).toMatchObject({ remoteName: "lookup", modelName: "mcp_t3f2504e04f8941d3", enabled: false });
+    expect(requireValue(result.data.servers[0]).tools[0]).toMatchObject({ remoteName: "lookup", modelName: "mcp_t3f2504e04f8941d3", enabled: false });
     expect(result.data).toMatchObject({ enabledCount: 0, maxEnabled: 8, maxServers: 5 });
   });
 

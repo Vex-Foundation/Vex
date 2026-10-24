@@ -110,7 +110,7 @@ export async function startTestMcpServer(options: { token?: string; state?: Part
     const request = new Request(`http://${req.headers.host}${req.url ?? "/"}`, {
       method: req.method,
       headers,
-      ...(body.length > 0 ? { body } : {}),
+      ...(body.length > 0 ? { body: new Uint8Array(body) } : {}),
     });
     const response = await handler.fetch(request);
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));

@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Result } from "@shared/ipc/result.js";
+import { err as errResult, ok as okResult, type Result } from "@shared/ipc/result.js";
 import type { UserMcpListDto, UserMcpToolDto } from "@shared/schemas/user-mcp.js";
 import { UserMcpSection, USER_MCP_INTRO } from "../UserMcpSection.js";
+import { requireValue } from "../../../../../../../../src/__tests__/helpers/require-value.js";
 
 const SERVER = "11111111-2222-4333-8444-555555555555";
 
@@ -44,9 +45,17 @@ function list(tools: UserMcpToolDto[], status: "active" | "error" = "active"): U
   };
 }
 
-const ok = (data: UserMcpListDto): Result<UserMcpListDto> => ({ ok: true, data }) as Result<UserMcpListDto>;
+const ok = (data: UserMcpListDto): Result<UserMcpListDto> => okResult(data);
 const refused = (message: string): Result<UserMcpListDto> =>
-  ({ ok: false, error: { code: "validation.invalid_input", message } }) as unknown as Result<UserMcpListDto>;
+  errResult({
+    code: "validation.invalid_input",
+    domain: "settings",
+    retryable: false,
+    userActionable: true,
+    redacted: true,
+    correlationId: "test",
+    message,
+  });
 
 const settings = {
   listUserMcp: vi.fn(),
@@ -69,7 +78,7 @@ function renderSection(): void {
 
 beforeEach(() => {
   for (const fn of Object.values(settings)) fn.mockReset();
-  (window as unknown as { vex: unknown }).vex = { settings };
+  Object.assign(window, { vex: { settings } });
 });
 afterEach(() => cleanup());
 
@@ -92,12 +101,12 @@ describe("UserMcpSection", () => {
     settings.setUserMcpToolEnabled.mockResolvedValueOnce(ok(list([tool({ enabled: true })])));
     renderSection();
     await screen.findByText("Docs");
-    fireEvent.click(document.querySelector('[data-vex-user-mcp-enable="lookup"]')!);
+    fireEvent.click(requireValue(document.querySelector('[data-vex-user-mcp-enable="lookup"]')));
     await waitFor(() => expect(settings.setUserMcpToolEnabled).toHaveBeenCalledWith({ toolId: tool({}).id, enabled: true }));
     await waitFor(() => expect(screen.getByText(/1 of 8 tools in use/)).not.toBeNull());
 
     settings.setUserMcpToolAutoRun.mockResolvedValueOnce(refused("NOT_READ_ONLY: Only a tool its server declares read-only can run without asking."));
-    fireEvent.click(document.querySelector('[data-vex-user-mcp-autorun="lookup"]')!);
+    fireEvent.click(requireValue(document.querySelector('[data-vex-user-mcp-autorun="lookup"]')));
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Only a tool its server declares read-only can run without asking.");
   });
 
@@ -128,10 +137,10 @@ describe("UserMcpSection", () => {
     await screen.findByText(/0 of 8 tools in use/);
     const form = document.querySelector("[data-vex-user-mcp-add]") as HTMLFormElement;
     const inputs = form.querySelectorAll("input");
-    fireEvent.change(inputs[0]!, { target: { value: "Docs" } });
-    fireEvent.change(inputs[1]!, { target: { value: "https://mcp.example.com/mcp" } });
-    fireEvent.change(inputs[2]!, { target: { value: "s3cret" } });
-    expect(inputs[2]!.getAttribute("type")).toBe("password");
+    fireEvent.change(requireValue(inputs[0]), { target: { value: "Docs" } });
+    fireEvent.change(requireValue(inputs[1]), { target: { value: "https://mcp.example.com/mcp" } });
+    fireEvent.change(requireValue(inputs[2]), { target: { value: "s3cret" } });
+    expect(requireValue(inputs[2]).getAttribute("type")).toBe("password");
     fireEvent.click(screen.getByRole("button", { name: "Add server" }));
     await waitFor(() =>
       expect(settings.addUserMcpServer).toHaveBeenCalledWith({ name: "Docs", endpoint: "https://mcp.example.com/mcp", token: "s3cret" }),

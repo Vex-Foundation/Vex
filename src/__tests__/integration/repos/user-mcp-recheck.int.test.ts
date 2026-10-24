@@ -16,6 +16,7 @@ import { __resetUserMcpAdminWindowForTests, addServer } from "@vex-agent/user-mc
 import { registerUserMcpTokenReader, type UserMcpTokenRead } from "@vex-agent/user-mcp/token-reader.js";
 import { startTestMcpServer, type TestMcpServer } from "../../vex-agent/user-mcp/fixtures/mcp-test-server.js";
 import { resetDb } from "../setup/fixtures.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 let server: TestMcpServer | null;
 let unregister: () => void;
@@ -51,7 +52,8 @@ describe("the recheck worker", () => {
     server = await startTestMcpServer();
     const added = await addServer({ name: "Docs", endpoint: server.url, token: null }, deps);
     if (!added.ok) throw new Error("add failed");
-    const lookup = (await listServersWithTools())[0]!.tools.find((t) => t.remoteName === "lookup")!;
+    const entry = requireValue((await listServersWithTools())[0]);
+    const lookup = requireValue(entry.tools.find((t) => t.remoteName === "lookup"));
     await setToolEnabled(lookup.id, true);
 
     const notices: UserMcpNotice[] = [];
@@ -93,6 +95,6 @@ describe("the recheck worker", () => {
     }
     await worker.stop();
     expect(notices).toEqual([{ serverId: added.serverId, serverName: "Docs", tools: [], reason: "not_answering" }]);
-    expect((await listServersWithTools())[0]!.server.status).toBe("error");
+    expect(requireValue((await listServersWithTools())[0]).server.status).toBe("error");
   });
 });

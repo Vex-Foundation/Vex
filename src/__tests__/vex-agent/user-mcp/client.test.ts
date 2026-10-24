@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { callRemoteTool, listRemoteTools, UserMcpOperationError } from "@vex-agent/user-mcp/client.js";
 import { MAX_RESULT_CHARS, MAX_TOOLS_PER_SERVER } from "@vex-agent/user-mcp/limits.js";
 import { startTestMcpServer, type TestMcpServer } from "./fixtures/mcp-test-server.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 let server: TestMcpServer | null = null;
 afterEach(async () => {
@@ -31,10 +32,10 @@ describe("listRemoteTools", () => {
     server = await startTestMcpServer();
     const tools = await listRemoteTools(local(server.url));
     expect(tools.map((t) => t.name).sort()).toEqual(["big", "fails", "lookup", "write_note"]);
-    const lookup = tools.find((t) => t.name === "lookup")!;
+    const lookup = requireValue(tools.find((t) => t.name === "lookup"));
     expect(lookup).toMatchObject({ description: "Look a word up", readOnlyHint: true });
     expect(lookup.inputSchema).toMatchObject({ type: "object", properties: { q: { type: "string" } }, required: ["q"] });
-    expect(tools.find((t) => t.name === "write_note")!.readOnlyHint).toBe(false);
+    expect(requireValue(tools.find((t) => t.name === "write_note")).readOnlyHint).toBe(false);
   });
 
   it(`stops at ${MAX_TOOLS_PER_SERVER} tools`, async () => {

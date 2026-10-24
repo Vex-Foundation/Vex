@@ -25,6 +25,7 @@ import { registerUserMcpTokenReader, type UserMcpTokenRead } from "@vex-agent/us
 import { makeTestContext } from "../../vex-agent/tools/_test-context.js";
 import { startTestMcpServer, type TestMcpServer } from "../../vex-agent/user-mcp/fixtures/mcp-test-server.js";
 import { makeSession, resetDb } from "../setup/fixtures.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 let server: TestMcpServer;
 let unregister: () => void;
@@ -51,7 +52,7 @@ afterEach(async () => {
   await refreshUserMcpTools();
 });
 
-const agentCtx = { permission: "restricted" as const, sessionKind: "agent" as const, missionRunActive: false, planMode: false, contextUsageBand: "normal" as const, hasSessionMemory: false };
+const agentCtx = { permission: "restricted" as const, sessionKind: "agent" as const, missionRunActive: false, planMode: false, contextUsageBand: "normal" as const, hasSessionMemory: false, preparationBypassesBarrier: false, hasCompactionSummaryReady: false };
 
 describe("user MCP end to end", () => {
   it("adds, offers, asks, runs, drifts, fails closed and removes", async () => {
@@ -62,9 +63,9 @@ describe("user MCP end to end", () => {
     );
     if (!added.ok) throw new Error(`add failed: ${added.reason}`);
     expect(vault.get(added.serverId)).toBe("s3cret");
-    const tools = (await listServersWithTools())[0]!.tools;
-    const lookup = tools.find((t) => t.remoteName === "lookup")!;
-    const write = tools.find((t) => t.remoteName === "write_note")!;
+    const tools = requireValue((await listServersWithTools())[0]).tools;
+    const lookup = requireValue(tools.find((t) => t.remoteName === "lookup"));
+    const write = requireValue(tools.find((t) => t.remoteName === "write_note"));
     const name = userMcpToolName(lookup.id);
 
     // Nothing is offered until the user turns a tool on.
@@ -79,7 +80,7 @@ describe("user MCP end to end", () => {
     const sessionId = await makeSession();
     const ctx = makeTestContext({ sessionId });
     const requestsBefore = server.requests.length;
-    const pending = await dispatchTool({ id: "call-1", name, args: { q: "vex" } }, ctx);
+    const pending = await dispatchTool({ toolCallId: "call-1", name, args: { q: "vex" } }, ctx);
     expect(pending).toMatchObject({ pendingApproval: true, actionKind: "read" });
     expect(server.requests.length).toBe(requestsBefore);
     const enqueued = await enqueueApprovalIntentWithGate(
@@ -115,18 +116,18 @@ describe("user MCP end to end", () => {
     expect(queued?.tool_call).toMatchObject({ command: name, args: { q: "vex" } });
 
     // The approved resume runs it, with the token, and labels the text untrusted.
-    const ran = await dispatchTool({ id: "call-1", name, args: { q: "vex" } }, { ...ctx, approved: true });
+    const ran = await dispatchTool({ toolCallId: "call-1", name, args: { q: "vex" } }, { ...ctx, approved: true });
     expect(JSON.parse(ran.output)).toEqual({ server: "Docs", tool: "lookup", untrusted: true, text: 'found: {"q":"vex"}', truncated: false });
     expect(server.requests.at(-1)?.authorization).toBe("Bearer s3cret");
 
     // Run without asking: only the read-only tool may.
     expect(await setToolAutoRun(write.id, true)).toEqual({ ok: false, reason: "not_read_only" });
     expect(await setToolAutoRun(lookup.id, true)).toEqual({ ok: true });
-    expect((await dispatchTool({ id: "call-2", name, args: { q: "auto" } }, ctx)).success).toBe(true);
+    expect((await dispatchTool({ toolCallId: "call-2", name, args: { q: "auto" } }, ctx)).success).toBe(true);
 
     // Locked vault: the token server fails closed.
     locked = true;
-    expect((await dispatchTool({ id: "call-3", name, args: { q: "x" } }, ctx)).output).toMatch(/locked/);
+    expect((await dispatchTool({ toolCallId: "call-3", name, args: { q: "x" } }, ctx)).output).toMatch(/locked/);
     locked = false;
 
     // The server changes the schema; a recheck turns the tool off and a resume refuses.
@@ -135,7 +136,7 @@ describe("user MCP end to end", () => {
     expect(recheck).toMatchObject({ ok: true, changed: ["lookup"] });
     await refreshUserMcpTools();
     expect(getOpenAITools(agentCtx).map((t) => t.function.name)).not.toContain(name);
-    expect((await dispatchTool({ id: "call-1", name, args: { q: "vex" } }, { ...ctx, approved: true })).output).toMatch(/not available/);
+    expect((await dispatchTool({ toolCallId: "call-1", name, args: { q: "vex" } }, { ...ctx, approved: true })).output).toMatch(/not available/);
 
     // Remove: the rows go, and (as main does) the vault entry goes first.
     vault.delete(added.serverId);

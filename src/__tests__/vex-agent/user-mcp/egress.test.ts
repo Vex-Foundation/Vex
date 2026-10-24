@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { checkEndpoint, createUserMcpFetch, MAX_ENDPOINT_CHARS } from "@vex-agent/user-mcp/egress.js";
 import { MAX_RESPONSE_BYTES } from "@vex-agent/user-mcp/limits.js";
 import { isLoopbackIpAddress } from "@vex-agent/sync/rpc-egress-policy.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 describe("checkEndpoint", () => {
   const cases: Array<[string, ReturnType<typeof checkEndpoint>]> = [
@@ -62,27 +63,28 @@ async function serve(handler: Parameters<typeof createServer>[1]): Promise<numbe
   seen = [];
   http = createServer((req, res) => {
     seen.push({ url: req.url ?? "", authorization: req.headers.authorization ?? null });
-    handler!(req, res);
+    requireValue(handler)(req, res);
   });
   http.on("connection", () => {
     connections += 1;
   });
-  await new Promise<void>((resolve) => http!.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => requireValue(http).listen(0, "127.0.0.1", resolve));
   return (http.address() as AddressInfo).port;
 }
 
 afterEach(async () => {
   if (http) {
     http.closeAllConnections();
-    await new Promise<void>((resolve) => http!.close(() => resolve()));
+    await new Promise<void>((resolve) => requireValue(http).close(() => resolve()));
     http = null;
   }
 });
 
-const lookupTo = (...addresses: string[]): LookupFunction =>
-  ((_host: string, _options: unknown, callback: (err: Error | null, addresses: Array<{ address: string; family: number }>) => void) => {
+const lookupTo =
+  (...addresses: string[]): LookupFunction =>
+  (_host, _options, callback) => {
     callback(null, addresses.map((address) => ({ address, family: address.includes(":") ? 6 : 4 })));
-  }) as unknown as LookupFunction;
+  };
 
 async function failure(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -121,7 +123,7 @@ describe("createUserMcpFetch", () => {
   it("never follows a redirect", async () => {
     const port = await serve((req, res) => {
       if (req.url === "/mcp") {
-        res.writeHead(302, { location: `http://127.0.0.1:${(http!.address() as AddressInfo).port}/elsewhere` });
+        res.writeHead(302, { location: `http://127.0.0.1:${(requireValue(http).address() as AddressInfo).port}/elsewhere` });
         res.end();
         return;
       }

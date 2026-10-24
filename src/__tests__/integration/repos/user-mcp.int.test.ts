@@ -25,6 +25,7 @@ import {
 import { MAX_ENABLED_TOOLS } from "@vex-agent/user-mcp/limits.js";
 import { userMcpToolName, userMcpToolNamePrefix } from "@vex-agent/user-mcp/names.js";
 import { resetDb } from "../setup/fixtures.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 beforeEach(async () => {
   await resetDb();
@@ -46,10 +47,10 @@ async function addServer(tools: readonly ListedToolRecord[], endpoint = `https:/
   const id = randomUUID();
   await insertServerWithTools({ id, name: "Docs", endpoint, networkScope: "public", hasToken: false, tools });
   const [entry] = (await listServersWithTools()).filter((e) => e.server.id === id);
-  return { id, tools: entry!.tools };
+  return { id, tools: requireValue(entry).tools };
 }
 
-const byName = (tools: readonly { remoteName: string; id: string }[], name: string) => tools.find((t) => t.remoteName === name)!;
+const byName = (tools: readonly { remoteName: string; id: string }[], name: string) => requireValue(tools.find((t) => t.remoteName === name));
 
 describe("user_mcp tables (migration 183)", () => {
   it("stores a server with every tool off, and an unsupported tool as unsupported", async () => {
@@ -75,13 +76,13 @@ describe("user_mcp tables (migration 183)", () => {
     for (const name of names.slice(0, MAX_ENABLED_TOOLS)) {
       expect(await setToolEnabled(byName(tools, name).id, true)).toEqual({ ok: true });
     }
-    expect(await setToolEnabled(byName(tools, names[MAX_ENABLED_TOOLS]!).id, true)).toEqual({ ok: false, reason: "cap_reached" });
+    expect(await setToolEnabled(byName(tools, requireValue(names[MAX_ENABLED_TOOLS])).id, true)).toEqual({ ok: false, reason: "cap_reached" });
     expect(await setToolEnabled(byName(tools, "weird").id, true)).toEqual({ ok: false, reason: "not_active" });
 
     const t0 = byName(tools, "t0").id;
     expect(await setToolAutoRun(t0, true)).toEqual({ ok: true });
     expect(await setToolEnabled(t0, false)).toEqual({ ok: true });
-    const after = (await listServersWithTools())[0]!.tools;
+    const after = requireValue((await listServersWithTools())[0]).tools;
     expect(byName(after, "t0")).toMatchObject({ enabled: false, autoRun: false });
   });
 
@@ -105,7 +106,7 @@ describe("user_mcp tables (migration 183)", () => {
   it("resolves a callable tool by its model name, and not once it is off or its server fails", async () => {
     const { id: serverId, tools } = await addServer([tool("search", { readOnlyHint: true })]);
     const toolId = byName(tools, "search").id;
-    const prefix = userMcpToolNamePrefix(userMcpToolName(toolId))!;
+    const prefix = requireValue(userMcpToolNamePrefix(userMcpToolName(toolId)));
     expect(await getCallableToolByNamePrefix(prefix)).toBeNull();
     await setToolEnabled(toolId, true);
     expect(await getCallableToolByNamePrefix(prefix)).toMatchObject({ toolId, serverId, remoteName: "search", serverName: "Docs" });
@@ -139,7 +140,7 @@ describe("user_mcp tables (migration 183)", () => {
     expect([...outcome.changed].sort()).toEqual(["changed", "gone", "lost_hint"]);
     expect(outcome.added).toEqual(["brand_new"]);
 
-    const after = (await listServersWithTools())[0]!.tools;
+    const after = requireValue((await listServersWithTools())[0]).tools;
     for (const name of ["changed", "gone", "lost_hint"]) {
       expect(byName(after, name)).toMatchObject({ status: "drifted", enabled: false, autoRun: false });
     }
@@ -153,7 +154,7 @@ describe("user_mcp tables (migration 183)", () => {
     );
     expect(again.reviewed).toBe(true);
     expect(again.changed).toEqual([]);
-    const reviewed = byName((await listServersWithTools())[0]!.tools, "changed");
+    const reviewed = byName(requireValue((await listServersWithTools())[0]).tools, "changed");
     expect(reviewed).toMatchObject({ status: "active", enabled: false, schemaHash: "hash-changed-v2" });
   });
 

@@ -11,6 +11,7 @@ import { registerUserMcpTokenReader, type UserMcpTokenRead } from "@vex-agent/us
 import { ADMIN_OPS_PER_MINUTE } from "@vex-agent/user-mcp/limits.js";
 import { startTestMcpServer, type TestMcpServer } from "../../vex-agent/user-mcp/fixtures/mcp-test-server.js";
 import { resetDb } from "../setup/fixtures.js";
+import { requireValue } from "../../helpers/require-value.js";
 
 let server: TestMcpServer | null = null;
 let unregister: (() => void) | null = null;
@@ -50,7 +51,7 @@ afterEach(async () => {
 
 async function only() {
   const [entry] = await listServersWithTools();
-  return entry!;
+  return requireValue(entry);
 }
 
 describe("addServer", () => {
@@ -62,7 +63,7 @@ describe("addServer", () => {
     expect(entry.server).toMatchObject({ name: "Docs", networkScope: "local", hasToken: false, status: "active" });
     expect(entry.tools.map((t) => t.remoteName).sort()).toEqual(["big", "fails", "lookup", "write_note"]);
     expect(entry.tools.every((t) => !t.enabled && !t.autoRun)).toBe(true);
-    expect(entry.tools.find((t) => t.remoteName === "lookup")!.readOnlyHint).toBe(true);
+    expect(requireValue(entry.tools.find((t) => t.remoteName === "lookup")).readOnlyHint).toBe(true);
   });
 
   it("refuses a wrong token and stores nothing; a right one goes to the vault", async () => {
@@ -121,7 +122,7 @@ describe("recheckServer", () => {
     useVaultReader(true);
     expect(await recheckServer(added.serverId)).toEqual({ ok: false, reason: "vault_locked" });
     expect(server.requests.length).toBe(requests);
-    expect((await getServer(added.serverId))!.failures).toBe(0);
+    expect(requireValue(await getServer(added.serverId)).failures).toBe(0);
     useVaultReader(false);
     expect((await recheckServer(added.serverId)).ok).toBe(true);
   });
@@ -136,7 +137,7 @@ describe("recheckServer", () => {
     expect(await recheckServer(added.serverId, fast)).toMatchObject({ ok: false, reason: "unreachable", movedToError: false });
     expect(await recheckServer(added.serverId, fast)).toMatchObject({ ok: false, movedToError: false });
     expect(await recheckServer(added.serverId, fast)).toMatchObject({ ok: false, movedToError: true });
-    expect((await getServer(added.serverId))!.status).toBe("error");
+    expect(requireValue(await getServer(added.serverId)).status).toBe("error");
   });
 
   it(`limits Settings to ${ADMIN_OPS_PER_MINUTE} adds and checks a minute`, async () => {
