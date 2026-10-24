@@ -23,12 +23,15 @@ import {
   editWatchlistInputSchema,
   editWatchlistResultSchema,
   getWatchlistInputSchema,
+  searchTokensInputSchema,
+  searchTokensResultSchema,
   setPriceAlertInputSchema,
   setPriceAlertResultSchema,
   watchlistSnapshotSchema,
   type AcknowledgeFiredResult,
   type CancelPriceAlertResult,
   type EditWatchlistResult,
+  type SearchTokensResult,
   type SetPriceAlertResult,
   type WatchlistSnapshotDto,
 } from "@shared/schemas/alerts.js";
@@ -70,6 +73,28 @@ async function withService<T>(
       return err(cancelledError("alerts", ctx.requestId));
     }
     log.warn(`[ipc:vex:alerts:${label}] failed correlationId=${ctx.requestId}`, cause);
+    return err(unexpectedError(ctx.requestId));
+  }
+}
+
+/**
+ * The add form's token search. It reads DexScreener only and stores nothing,
+ * so it does not wait for the engine database; a cancelled call (the user kept
+ * typing) is `internal.cancelled`.
+ */
+async function searchTokens(
+  input: { readonly chain: string; readonly query: string },
+  ctx: HandlerContext,
+): Promise<Result<SearchTokensResult>> {
+  try {
+    const { searchAlertTokens } = await import("@vex-agent/alerts/token-search.js");
+    const result = await searchAlertTokens({ chain: input.chain, query: input.query, signal: ctx.signal });
+    return ok(searchTokensResultSchema.parse(result));
+  } catch (cause) {
+    if (ctx.signal.aborted || isAbortError(cause)) {
+      return err(cancelledError("alerts", ctx.requestId));
+    }
+    log.warn(`[ipc:vex:alerts:searchTokens] failed correlationId=${ctx.requestId}`, cause);
     return err(unexpectedError(ctx.requestId));
   }
 }
@@ -147,6 +172,14 @@ export function registerAlertsHandlers(): Array<() => void> {
         withService(ctx, "acknowledgeFired", (service) =>
           service.acknowledgeFired({ alertIds: input.alertIds, clear: input.clear }),
         ),
+    }),
+
+    registerHandler({
+      channel: CH.alerts.searchTokens,
+      domain: "alerts",
+      inputSchema: searchTokensInputSchema,
+      outputSchema: searchTokensResultSchema,
+      handle: (input, ctx): Promise<Result<SearchTokensResult>> => searchTokens(input, ctx),
     }),
   ];
 }

@@ -13,6 +13,7 @@ type Handler = (event: TestIpcEvent, raw: unknown) => Promise<unknown>;
 const handlers = vi.hoisted(() => new Map<string, Handler>());
 const mocks = vi.hoisted(() => ({
   whenEngineDbReady: vi.fn(),
+  searchAlertTokens: vi.fn(),
   readWatchlist: vi.fn(),
   addToWatchlist: vi.fn(),
   removeFromWatchlist: vi.fn(),
@@ -41,6 +42,10 @@ vi.mock("@vex-agent/alerts/service.js", () => ({
   setPriceAlert: (...args: unknown[]) => mocks.setPriceAlert(...args),
   cancelPriceAlert: (...args: unknown[]) => mocks.cancelPriceAlert(...args),
   acknowledgeFired: (...args: unknown[]) => mocks.acknowledgeFired(...args),
+}));
+
+vi.mock("@vex-agent/alerts/token-search.js", () => ({
+  searchAlertTokens: (...args: unknown[]) => mocks.searchAlertTokens(...args),
 }));
 
 const { registerAlertsHandlers } = await import("../alerts.js");
@@ -119,6 +124,39 @@ describe("vex.alerts handlers", () => {
     const result = await call(CH.alerts.getWatchlist, {});
     expect(result).toEqual({ ok: true, data: SNAPSHOT });
     expect(mocks.whenEngineDbReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("searches tokens on a chain without waiting for the engine database", async () => {
+    mocks.searchAlertTokens.mockResolvedValue({
+      ok: true,
+      chain: "base",
+      query: "BRETT",
+      source: "chain_search",
+      tokens: [
+        {
+          address: "0x532f27101965dd16442E59d40670FaF5eBB142E4",
+          symbol: "BRETT",
+          name: "Brett",
+          priceUsd: "0.004663",
+          liquidityUsd: 2_100_000,
+          volume24hUsd: 222_297,
+          poolCount: 14,
+          dexId: "aerodrome",
+          pairAddress: "0xpool",
+        },
+      ],
+    });
+    const result = await call(CH.alerts.searchTokens, { chain: "base", query: "BRETT" });
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({ ok: true, source: "chain_search", tokens: [{ symbol: "BRETT", poolCount: 14 }] });
+    expect(mocks.searchAlertTokens).toHaveBeenCalledWith(expect.objectContaining({ chain: "base", query: "BRETT" }));
+    expect(mocks.whenEngineDbReady).not.toHaveBeenCalled();
+  });
+
+  it("refuses a one-character search at the IPC schema", async () => {
+    const result = await call(CH.alerts.searchTokens, { chain: "base", query: "B" });
+    expect(result.ok).toBe(false);
+    expect(mocks.searchAlertTokens).not.toHaveBeenCalled();
   });
 
   it("adds a token and names the action in the result", async () => {

@@ -340,6 +340,7 @@ export const CH = {
     setPriceAlert: "vex:alerts:setPriceAlert",
     cancelPriceAlert: "vex:alerts:cancelPriceAlert",
     acknowledgeFired: "vex:alerts:acknowledgeFired",
+    searchTokens: "vex:alerts:searchTokens",
   },
 
   // Market - read-only live VEX token metrics for the welcome-screen price

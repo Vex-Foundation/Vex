@@ -226,3 +226,51 @@ export const priceAlertFiredEventSchema = z
   })
   .strict();
 export type PriceAlertFiredEventDto = z.infer<typeof priceAlertFiredEventSchema>;
+
+// -- Token search (the add form's ticker picker) ------------------------------
+
+/** What the add form sends: a chain from the closed set and what was typed. */
+export const searchTokensInputSchema = z
+  .object({
+    chain: z.string().trim().min(1).max(32),
+    query: z.string().trim().min(2).max(64),
+  })
+  .strict();
+export type SearchTokensInput = z.infer<typeof searchTokensInputSchema>;
+
+/** One token DexScreener knows on that chain, its pools summed. */
+export const tokenSearchHitDtoSchema = z
+  .object({
+    address: z.string().min(1).max(128),
+    symbol: z.string().min(1).max(32),
+    name: z.string().min(1).max(80).nullable(),
+    priceUsd: z.string().max(64).nullable(),
+    liquidityUsd: z.number().nonnegative().nullable(),
+    volume24hUsd: z.number().nonnegative().nullable(),
+    poolCount: z.number().int().positive(),
+    dexId: z.string().min(1).max(64),
+    pairAddress: z.string().min(1).max(128),
+  })
+  .strict();
+export type TokenSearchHitDto = z.infer<typeof tokenSearchHitDtoSchema>;
+
+export const searchTokensResultSchema = z.union([
+  z
+    .object({
+      ok: z.literal(true),
+      chain: z.string().min(1).max(32),
+      query: z.string().min(1).max(64),
+      /** `chain_search` narrows on DexScreener; `public_search` filters a cross-chain window. */
+      source: z.enum(["chain_search", "public_search"]),
+      tokens: z.array(tokenSearchHitDtoSchema).max(12),
+    })
+    .strict(),
+  z
+    .object({
+      ok: z.literal(false),
+      reason: z.enum(["unsupported_chain", "invalid_query", "search_unavailable"]),
+      message: z.string().min(1).max(500),
+    })
+    .strict(),
+]);
+export type SearchTokensResult = z.infer<typeof searchTokensResultSchema>;

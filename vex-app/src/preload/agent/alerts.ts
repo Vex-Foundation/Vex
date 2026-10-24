@@ -6,11 +6,13 @@ import {
   editWatchlistInputSchema,
   getWatchlistInputSchema,
   priceAlertFiredEventSchema,
+  searchTokensInputSchema,
   setPriceAlertInputSchema,
 } from "../../shared/schemas/alerts.js";
 import type {
   AcknowledgeFiredInput,
   CancelPriceAlertInput,
+  SearchTokensInput,
   EditWatchlistInput,
   SetPriceAlertInput,
 } from "../../shared/schemas/alerts.js";
@@ -36,6 +38,9 @@ export const alerts = {
   },
   acknowledgeFired(input: AcknowledgeFiredInput) {
     return invokeWithSchema(CH.alerts.acknowledgeFired, input, acknowledgeFiredInputSchema);
+  },
+  searchTokens(input: SearchTokensInput) {
+    return invokeWithSchema(CH.alerts.searchTokens, input, searchTokensInputSchema);
   },
   onPriceAlertFired(cb) {
     return subscribe(EV.alerts.priceAlertFired, priceAlertFiredEventSchema, cb);

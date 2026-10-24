@@ -7,6 +7,8 @@ import type {
   EditWatchlistInput,
   EditWatchlistResult,
   PriceAlertFiredEventDto,
+  SearchTokensInput,
+  SearchTokensResult,
   SetPriceAlertInput,
   SetPriceAlertResult,
   WatchlistSnapshotDto,
@@ -27,6 +29,8 @@ export interface AlertsBridge {
   readonly setPriceAlert: (input: SetPriceAlertInput) => Promise<Result<SetPriceAlertResult>>;
   readonly cancelPriceAlert: (input: CancelPriceAlertInput) => Promise<Result<CancelPriceAlertResult>>;
   readonly acknowledgeFired: (input: AcknowledgeFiredInput) => Promise<Result<AcknowledgeFiredResult>>;
+  /** Tokens DexScreener knows on one chain for a typed ticker, name or address. Read only. */
+  readonly searchTokens: (input: SearchTokensInput) => Promise<Result<SearchTokensResult>>;
   /** One fired alert, pushed after the engine's claim committed. Returns the unsubscribe. */
   readonly onPriceAlertFired: (cb: (event: PriceAlertFiredEventDto) => void) => () => void;
   /** Main asks to show the Watchlist page (the user clicked the OS notification). */
