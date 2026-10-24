@@ -32,7 +32,7 @@ import { log } from "../logger/index.js";
 import { showBackgroundNotice } from "../notifications/background-notice.js";
 import { preferencesStore } from "../preferences/store.js";
 import { isSecretSessionUnlocked } from "../secrets/session.js";
-import { getMainWindow } from "../windows/main-window-ref.js";
+import { getMainWindow, openMainWindow } from "../windows/main-window-ref.js";
 
 /** A recreated window loads before React subscribes; the route is sent again after this. */
 const REOPEN_ROUTE_DELAY_MS = 1_000;
@@ -54,7 +54,8 @@ export interface PriceAlertBridgeDeps {
   readonly osNoticesEnabled: () => Promise<boolean>;
   readonly isUnlocked: () => boolean;
   readonly getWindow: () => WatchlistWindow | null;
-  readonly createWindow: () => Promise<WatchlistWindow>;
+  /** `null` when no window factory is registered yet (before the first window). */
+  readonly createWindow: () => Promise<WatchlistWindow | null>;
 }
 
 const DEFAULT_DEPS: PriceAlertBridgeDeps = {
@@ -64,8 +65,8 @@ const DEFAULT_DEPS: PriceAlertBridgeDeps = {
   osNoticesEnabled: async () => (await preferencesStore.load()).notifications.priceAlertsOs,
   isUnlocked: isSecretSessionUnlocked,
   getWindow: getMainWindow,
-  // Imported lazily: the window module pulls the whole window graph.
-  createWindow: async () => (await import("../windows/main-window.js")).createMainWindow(),
+  // Never an import of `main-window.ts`: see `setMainWindowOpener`.
+  createWindow: openMainWindow,
 };
 
 /** The DTO, named field by field: never `...event`. */
@@ -97,6 +98,7 @@ export async function openWatchlistWindow(deps: PriceAlertBridgeDeps = DEFAULT_D
     return;
   }
   const created = await deps.createWindow();
+  if (created === null) return;
   created.webContents.send(EV.alerts.openWatchlist);
   setTimeout(() => {
     if (!created.isDestroyed()) created.webContents.send(EV.alerts.openWatchlist);

@@ -115,7 +115,7 @@ import { disposeStudioApprovalBroker } from "./studio/approval-broker.js";
 import { refuseAllPendingStudioIntents } from "./studio/approval-refusals.js";
 import { disposeStudioDispatchPoisonRetry } from "./secrets/session.js";
 import { createMainWindow } from "./windows/main-window.js";
-import { getMainWindow } from "./windows/main-window-ref.js";
+import { getMainWindow, setMainWindowOpener } from "./windows/main-window-ref.js";
 import { installMinimalMenu } from "./menu.js";
 import {
   disableSentry,
@@ -687,6 +687,9 @@ async function initializeMainRuntime(): Promise<void> {
   // has settled. While the runtime is not up the window shows the launch
   // pipeline's own starting state, and every execution request is refused,
   // typed, with nothing run.
+  // Leaf modules (the price alert click) reopen the window through this,
+  // never by importing the window module themselves.
+  setMainWindowOpener(createMainWindow);
   await createMainWindow();
 
   // 7c. THE VEX STUDIO READINESS BARRIER, then the Studio MCP host, off the
