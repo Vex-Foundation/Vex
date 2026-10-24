@@ -368,6 +368,15 @@ export const CH = {
   settings: {
     getChainEndpoints: "vex:settings:getChainEndpoints",
     setChainEndpoints: "vex:settings:setChainEndpoints",
+    // The user's own MCP servers (F12). Settings only: chat can call an
+    // enabled tool but never reach these channels, so trust is widened here.
+    listUserMcp: "vex:settings:listUserMcp",
+    addUserMcpServer: "vex:settings:addUserMcpServer",
+    removeUserMcpServer: "vex:settings:removeUserMcpServer",
+    setUserMcpToken: "vex:settings:setUserMcpToken",
+    setUserMcpToolEnabled: "vex:settings:setUserMcpToolEnabled",
+    setUserMcpToolAutoRun: "vex:settings:setUserMcpToolAutoRun",
+    recheckUserMcpServer: "vex:settings:recheckUserMcpServer",
     getPreferences: "vex:settings:getPreferences",
     setTelemetryConsent: "vex:settings:setTelemetryConsent",
     getLighterIntegration: "vex:settings:getLighterIntegration",
