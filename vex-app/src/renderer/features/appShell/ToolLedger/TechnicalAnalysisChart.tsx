@@ -238,8 +238,10 @@ export function TechnicalAnalysisChart({
       }
       if (event.deltaX !== 0) markReaderMoved();
     };
-    container.addEventListener("pointerdown", markReaderMoved);
-    container.addEventListener("wheel", onWheel, { passive: false });
+    // Capture phase: the library's own handlers sit on an inner element, and
+    // the reader's move must be known before the pan they start lands.
+    container.addEventListener("pointerdown", markReaderMoved, { capture: true });
+    container.addEventListener("wheel", onWheel, { passive: false, capture: true });
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
@@ -250,11 +252,13 @@ export function TechnicalAnalysisChart({
           });
     resizeObserver?.observe(container);
 
-    // Older history when the reader nears the left edge.
+    // Older history when the reader nears the left edge. Only the reader's own
+    // move asks: the range events drawing the first data are not a pan, and a
+    // read spent on them comes out of the channel's per-minute budget.
     const onRange = (range: LogicalRange | null) => {
       const load = loadOlderRef.current;
       const held = heldRef.current;
-      if (range === null || load === undefined || held.length === 0) return;
+      if (range === null || load === undefined || held.length === 0 || !readerMovedRef.current) return;
       if (range.from > LOAD_OLDER_WITHIN_BARS || loadingOlderRef.current || historyEndRef.current) return;
       loadingOlderRef.current = true;
       const requestedFor = held;
@@ -269,6 +273,9 @@ export function TechnicalAnalysisChart({
           }
           const before = chart.timeScale().getVisibleLogicalRange();
           heldRef.current = merged;
+          // The analysed window moved right by the bars put in front of it.
+          const frame = frameRef.current;
+          if (frame !== null) frameRef.current = { from: frame.from + added, to: frame.to + added };
           drawSeries(merged);
           if (before !== null) {
             chart.timeScale().setVisibleLogicalRange({ from: before.from + added, to: before.to + added });
@@ -283,8 +290,8 @@ export function TechnicalAnalysisChart({
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
       resizeObserver?.disconnect();
-      container.removeEventListener("pointerdown", markReaderMoved);
-      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("pointerdown", markReaderMoved, { capture: true });
+      container.removeEventListener("wheel", onWheel, { capture: true });
       themeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
