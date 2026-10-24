@@ -92,6 +92,7 @@ import { setupCompactWorker } from "./agent/compact-worker.js";
 import { setupWakeWorker } from "./agent/wake-worker.js";
 import { setupCompactionPreparationWorker } from "./agent/compaction-preparation-worker.js";
 import { setupSyncWorker } from "./agent/sync-worker.js";
+import { setupPriceAlertWorker } from "./agent/price-alert-worker.js";
 import { setupMemoryManagerWorker } from "./agent/memory-manager-worker.js";
 import { setupRegimeWorker } from "./agent/regime-worker.js";
 import { setupToolEmbeddingReconcileWorker } from "./agent/tool-embedding-reconcile-worker.js";
@@ -472,6 +473,13 @@ async function initializeMainRuntime(): Promise<void> {
   exposeAppVersionToEngine();
   const stopSyncWorker = setupSyncWorker();
 
+  // 6a-alerts. Own the engine's price alert poller (F01) so the user's alerts
+  // actually fire. Like sync there is NO provider gate: it reads public
+  // DexScreener prices and writes only alert rows, with no key and no signer,
+  // so it keeps running while the vault is locked. It stays idle until the
+  // price_alerts schema is ready (supervisor probe).
+  const stopPriceAlertWorker = setupPriceAlertWorker();
+
   // 6a-memory. Own the engine memory_manager executor so enqueued memory_jobs
   // (consolidate sweeps from long_memory_suggest) actually curate candidates into
   // long-term knowledge — otherwise every suggestion sits pending forever. Like
@@ -595,7 +603,7 @@ async function initializeMainRuntime(): Promise<void> {
         QUIT_TASK_DEADLINE_MS,
         disposeStudioWriteRepairOwner,
       );
-      // The seven engine workers drain CONCURRENTLY - they share no handle
+      // The eight engine workers drain CONCURRENTLY - they share no handle
       // with each other - but each one is its own named stage, so a drain
       // that will not finish says which worker it was instead of stalling
       // the whole set anonymously.
@@ -608,6 +616,7 @@ async function initializeMainRuntime(): Promise<void> {
         ),
         runQuitStage("engine-wake-worker", QUIT_TASK_DEADLINE_MS, stopWakeWorker),
         runQuitStage("engine-sync-worker", QUIT_TASK_DEADLINE_MS, stopSyncWorker),
+        runQuitStage("engine-price-alert-worker", QUIT_TASK_DEADLINE_MS, stopPriceAlertWorker),
         runQuitStage(
           "engine-memory-manager-worker",
           QUIT_TASK_DEADLINE_MS,

@@ -34,6 +34,7 @@ vi.mock("../../database/engine-db-readiness.js", () => ({
 }));
 vi.mock("../../database/wake-db.js", () => ({ probeLoopWakeReady: vi.fn() }));
 vi.mock("../../database/sync-db.js", () => ({ probeProtocolSyncReady: vi.fn() }));
+vi.mock("../../database/price-alerts-db.js", () => ({ probePriceAlertsReady: vi.fn() }));
 vi.mock("../../database/compaction-db.js", () => ({ probeCompactJobsReady: vi.fn() }));
 vi.mock("../../database/compaction-preparation-db.js", () => ({
   probeCompactionPreparationsReady: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock("../../database/tool-embeddings-db.js", () => ({ probeToolEmbeddingsRead
 
 const { setupWakeWorker } = await import("../wake-worker.js");
 const { setupSyncWorker } = await import("../sync-worker.js");
+const { setupPriceAlertWorker } = await import("../price-alert-worker.js");
 const { setupCompactWorker } = await import("../compact-worker.js");
 const { setupCompactionPreparationWorker } = await import(
   "../compaction-preparation-worker.js"
@@ -90,6 +92,11 @@ const WORKERS: readonly WorkerCase[] = [
     label: "[sync-worker]",
     start: ({ work, probeReady, ensureDbUrl }) =>
       setupSyncWorker({ ensureDbUrl, probeReady, startExecutor: work as never, intervalMs: 20 }),
+  },
+  {
+    label: "[price-alert-worker]",
+    start: ({ work, probeReady, ensureDbUrl }) =>
+      setupPriceAlertWorker({ ensureDbUrl, probeReady, startExecutor: work, intervalMs: 20 }),
   },
   {
     label: "[compact-worker]",
