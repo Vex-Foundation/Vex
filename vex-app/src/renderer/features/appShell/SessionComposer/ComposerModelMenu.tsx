@@ -208,9 +208,9 @@ export function ComposerModelMenu({
 
   return (
     // The key is capped at this wrapper (`max-w-full`): the frame shrinks in a
-    // narrow composer, and an uncapped key ran its name over "Reasoning:". The
-    // floor keeps the mark and the start of the name in view.
-    <div ref={rootRef} className="relative min-w-[5.5rem]">
+    // narrow composer, and an uncapped key ran its name over "Reasoning:".
+    // The wrapper stays `min-w-0`, the toolbar's shrink chain (Bug 3).
+    <div ref={rootRef} className="relative min-w-0">
       <button
         ref={keyRef}
         type="button"
