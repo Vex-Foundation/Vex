@@ -74,10 +74,12 @@ describe("setMissionModel", () => {
   });
 
   it("refuses a malformed model before opening a transaction", async () => {
+    // What a caller outside the IPC schema could hand over.
+    const malformed: unknown = { provider: "anthropic", modelId: "x" };
     const r = await setMissionModel({
       sessionId: "session-1",
       missionId: "mission-1",
-      model: { provider: "anthropic", modelId: "x" } as unknown as typeof SONNET,
+      model: malformed as typeof SONNET,
     });
     expect(r).toEqual({ outcome: "invalid", reason: "Unknown model." });
     expect(mockGetMissionForUpdate).not.toHaveBeenCalled();

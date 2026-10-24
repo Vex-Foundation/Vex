@@ -235,7 +235,8 @@ describe("registerChatSubmitHandler", () => {
       const row = makeSessionRow({ mode, initialGoal: "Existing" });
       mocks.getSessionById.mockResolvedValue({ ok: true, data: row });
       registerChatSubmitHandler();
-      const fn = handlers.get(CH.chat.submit)!;
+      const fn = handlers.get(CH.chat.submit);
+      if (fn === undefined) throw new Error("chat.submit is not registered");
       const result = (await fn(trustedSender, {
         requestId: "r-model",
         payload: { sessionId: row.id, message: "hello", model },

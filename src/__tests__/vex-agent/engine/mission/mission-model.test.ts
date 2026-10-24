@@ -65,7 +65,7 @@ function snapshotWith(model: unknown): Record<string, unknown> {
 }
 
 function mission(constraintsJson: Record<string, unknown>): Mission {
-  return {
+  const row: Mission = {
     id: "mission-1",
     rootSessionId: "session-1",
     status: "ready",
@@ -81,7 +81,14 @@ function mission(constraintsJson: Record<string, unknown>): Mission {
     constraintsJson,
     contractHashVersion: 10,
     acceptedContractHash: null,
-  } as unknown as Mission;
+    acceptedContractAt: null,
+    acceptedContractBy: null,
+    createdAt: "2026-10-23",
+    updatedAt: "2026-10-23",
+    approvedAt: null,
+    renewedFromMissionId: null,
+  };
+  return row;
 }
 
 describe("normalizeMissionModel / frozenMissionModel", () => {

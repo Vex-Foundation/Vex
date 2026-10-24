@@ -803,7 +803,9 @@ describe("contract-hash", () => {
     });
 
     it("an unreadable stored model hashes as not set", () => {
-      const bogus = { provider: "anthropic", modelId: "x/y" } as unknown as MissionDraft["model"];
+      // A row written by another build: read back as untyped JSON.
+      const stored: unknown = { provider: "anthropic", modelId: "x/y" };
+      const bogus = stored as MissionDraft["model"];
       expect(computeContractHash(makeDraft({ model: bogus }))).toBe(computeContractHash(makeDraft()));
     });
   });
