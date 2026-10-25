@@ -25,7 +25,7 @@ This release covers the work merged after **0.4.2**.
 
 **02 · Type the ticker, pick the token.** Choose a chain and type a ticker or a name. VEX lists what DexScreener knows on that chain, with each token's short address, price, 24 hour volume and number of pools. Arrow keys and Enter work. Pasting an address still works too.
 
-![The token picker on Base: typing BRETT lists the real BRETT first, with its address, price, 24 hour volume and pool count](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-ticker-picker.jpg)
+![The token picker on Solana: typing BONK lists the real Bonk first, with $653k of 24 hour volume across 27 pools, and the copies below it at $2 to $39 in one pool each](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-ticker-picker.jpg)
 
 **03 · The real one first.** Many tokens share one ticker. The list puts the token that actually trades first, by 24 hour volume, because a liquidity figure is cheap to fake. Searching BONK on Solana, two copies claiming $50M and $23M of liquidity traded $2 that day. The real BONK, trading about $700k that day across many pools, comes first. The address is always on the row, so you can check.
 
@@ -39,6 +39,8 @@ This release covers the work merged after **0.4.2**.
 **02 · From the page or from chat.** Use **Set alert** on a row, or just ask: "tell me when SOL is above 250". Both go through the same rules, so the limits and the answers are the same. Up to 20 alerts can wait at once.
 
 **03 · It only tells you.** When an alert fires you get a notice in VEX with **Open watchlist**. If VEX is not the window in front, you also get a system notification, and clicking it brings VEX up on the Watchlist. An alert never buys or sells anything.
+
+![A fired price alert in VEX: "Bonk on Solana rose 0.01%, at $0.000002999." with Open watchlist](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-price-alert.jpg)
 
 **04 · Locked screen, quiet notice.** While your vault is locked, the system notification says only "A price alert fired. Unlock Vex to see it.", so your tokens and levels don't show on a locked screen. Prefer no system notifications at all? Turn off **Price alert notifications** in Settings.
 
@@ -89,7 +91,7 @@ This release covers the work merged after **0.4.2**.
 
 **03 · Every call asks first.** When the agent wants to use one of your tools, an approval card shows the server, the tool and the exact arguments that will be sent. Nothing leaves until you approve.
 
-![An approval card for a call to the user's own MCP tool: "Call read_wiki_structure on your MCP server deepwiki." with the server, tool and arguments](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-mcp-approval.jpg)
+![An approval card for a call to the user's own MCP tool: "Call read_wiki_structure on your MCP server deepwiki.", requested by VEX's agent, with Reject and Approve](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-mcp-approval.jpg)
 
 **04 · Read only, by design.** Your tools can only read and return text. They can never prepare a swap, a transfer or any other action. If a server marks a tool as read-only, you may let it **Run without asking**, and only in Settings.
 
