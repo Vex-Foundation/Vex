@@ -3,9 +3,10 @@
  *
  * Pages backward through `useTranscriptInfinite` (newest page first). Renders
  * loading / error / empty / list (`SessionTranscript/TranscriptStates.tsx`).
- * The whole scroll model - follow-stream with reader ownership, force-scroll
- * on the reader's own words, the jump pill, prepend anchoring and per-session
- * position persistence - lives in `SessionTranscript/useTranscriptScroll.ts`.
+ * The whole scroll model - the newest user turn anchored at the top with the
+ * reply streaming beneath it, reader ownership, tail following at the floor,
+ * the jump pill, prepend anchoring and per-session position persistence -
+ * lives in `SessionTranscript/useTranscriptScroll.ts`.
  *
  * WHO SCROLLS. Inside the resident shell the transcript is ORDINARY FLOW
  * CONTENT: `SessionPanel`'s scroll body (`[data-vex-conversation-scroll]`) is
@@ -196,6 +197,7 @@ export function SessionTranscript({
     scrollNodeRef,
     scrollNodeEpoch,
     columnRef,
+    followMode,
     showLatest,
     jumpToLatest,
   } = useTranscriptScroll({
@@ -244,6 +246,7 @@ export function SessionTranscript({
         ref={scrollRef}
         data-vex-area="chat-transcript"
         data-state="ready"
+        data-vex-follow-mode={followMode}
         // SCROLLBAR (owner visual round 2026-07-30): the scroller spans the
         // full column width so the bar hugs its OUTER edge,
         // `scrollbar-gutter: stable` reserves the track so content never
@@ -287,8 +290,8 @@ export function SessionTranscript({
           />
         ) : null}
         </div>
-      {/* The jump to the latest message - taken on its own only for the
-          reader's own words; for everything else the key offers it instead.
+      {/* The jump to the latest message - offered while the reader is free,
+          or while an anchored reply has run past the bottom of the view.
           A ZERO-HEIGHT STICKY SLOT (deepseek ChatView's idiom): it never
           extends `scrollHeight`, so raising the pill cannot itself move the
           floor the pill is measured against. It rides above the sticky
