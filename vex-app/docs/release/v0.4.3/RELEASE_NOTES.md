@@ -19,7 +19,7 @@ This release covers the work merged after **0.4.2**.
 ## 01 · Watchlist
 ### Follow a token by its ticker.
 
-![The Watchlist page: followed tokens with price, 24 hour change and pool, an active alert waiting and a fired alert with its time and price](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-watchlist.jpg)
+![The Watchlist page: followed tokens with price, 24 hour change and pool, an active alert waiting and a fired alert with its time and price](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-watchlist.jpg)
 
 **01 · Its own page.** **Watchlist** sits in the sidebar, right after Board. Follow up to **30 tokens**. Each row shows the price now, the 24 hour change and the pool the price came from, with **Set alert** and **Remove** at the end. The page refreshes every minute on its own.
 
@@ -27,7 +27,7 @@ This release covers the work merged after **0.4.2**.
 
 **03 · Type the ticker, pick the token.** Choose a chain and type a ticker or a name. VEX lists what DexScreener knows on that chain, with each token's short address, price, 24 hour volume and number of pools. Arrow keys and Enter work. Pasting an address still works too.
 
-![The token picker on Solana: typing BONK lists the real Bonk first, with $653k of 24 hour volume across 27 pools, and the copies below it at $2 to $39 in one pool each](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-ticker-picker.jpg)
+![The token picker on Solana: typing BONK lists the real Bonk first, with $653k of 24 hour volume across 27 pools, and the copies below it at $2 to $39 in one pool each](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-ticker-picker.jpg)
 
 **04 · The real one first.** Many tokens share one ticker. The list puts the token that actually trades first, by 24 hour volume, then by number of pools, then by liquidity, because a liquidity figure is cheap to fake. Searching BONK on Solana, two copies claiming $50M and $23M of liquidity traded $2 that day. The real BONK, trading about $700k that day across many pools, comes first. The address is always on the row, so you can check.
 
@@ -48,7 +48,7 @@ Following a token is not a position. Nothing on this page holds, buys or sells a
 
 **04 · It only tells you.** When an alert fires you get a notice in VEX with **Open watchlist**. If VEX is not the window in front, you also get a system notification, and clicking it brings VEX up on the Watchlist, even with the window closed. An alert never buys or sells anything.
 
-![A fired price alert in VEX: "Bonk on Solana rose 0.01%, at $0.000002999." with Open watchlist](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-price-alert.jpg)
+![A fired price alert in VEX: "Bonk on Solana rose 0.01%, at $0.000002999." with Open watchlist](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-price-alert.jpg)
 
 **05 · Locked screen, quiet notice.** While your vault is locked, the system notification says only "A price alert fired. Unlock Vex to see it.", so your tokens and levels don't show on a locked screen. Prefer no system notifications at all? Turn off **Price alert notifications** in Settings.
 
@@ -63,7 +63,7 @@ An alert is a heads-up, not a stop-loss. It cannot place, change or cancel an or
 ## 03 · Reading while it writes
 ### Your question at the top. The answer beneath it.
 
-![A chat mid-reply: the question "Give me a detailed read on ETH right now" held at the top, the agent's steps and a Lighter market card streaming beneath it past the bottom of the screen, the jump arrow showing, and above the composer "Agent · Writing" with three dots and the clock at 1:13](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-reading-while-it-writes.jpg)
+![A chat mid-reply: the question "Give me a detailed read on ETH right now" held at the top, the agent's steps and a Lighter market card streaming beneath it past the bottom of the screen, the jump arrow showing, and above the composer "Agent · Writing" with three dots and the clock at 1:13](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-reading-while-it-writes.jpg)
 
 **01 · The question stays in view.** When you send a message, VEX moves it to the top of the chat and the answer grows downward beneath it. The view doesn't move while the answer streams, so you read a long answer from its first line instead of chasing its last.
 
@@ -82,7 +82,7 @@ The line above the composer only describes the turn. Stop agent is still the one
 ## 04 · A model per chat
 ### Pick the brain for this conversation.
 
-![The composer's model menu open upward: a search field, the Default model first, models grouped by maker with context size and price per million tokens](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-model-picker.jpg)
+![The composer's model menu open upward: a search field, the Default model first, models grouped by maker with context size and price per million tokens](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-model-picker.jpg)
 
 **01 · Right in the composer.** The model name in the composer is now a menu. Your Settings model comes first, marked **Default**, then every model grouped by its maker, newest first. Only models that can use tools are listed. Each row shows its context size and its price per million tokens, input and output, such as "200k ctx · $3 in / $15 out per 1M". Search by name or id.
 
@@ -97,7 +97,7 @@ The line above the composer only describes the turn. Stop agent is still the one
 ## 05 · Technical analysis
 ### Read the chart, in the chat.
 
-![A technical analysis card in the chat: ETH on Lighter, 4h candles with EMA 20 and EMA 50, the indicator values and the signals in words](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-technical-analysis.jpg)
+![A technical analysis card in the chat: ETH on Lighter, 4h candles with EMA 20 and EMA 50, the indicator values and the signals in words](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-technical-analysis.jpg)
 
 **01 · Ask for the technicals.** "4h technicals on ETH on Lighter", for a Lighter perp or spot market, or on any DEX pool DexScreener covers, on the EVM chains and Solana. Lighter candles come from Lighter's public API; pool candles come from DexScreener.
 
@@ -116,7 +116,7 @@ It is a reading of past prices, not a buy or sell signal, and the card says so.
 ## 06 · Your own MCP tools
 ### Plug in a server. Every call asks first.
 
-![Settings · Tools (MCP): CoinGecko added by its address and connected with no token, its execute tool marked read-only by the server and on for chats, with Run without asking available, and DexPaprika connected below](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-mcp-coingecko.jpg)
+![Settings · Tools (MCP): CoinGecko added by its address and connected with no token, its execute tool marked read-only by the server and on for chats, with Run without asking available, and DexPaprika connected below](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-mcp-coingecko.jpg)
 
 **01 · Add a server.** Settings now has **Tools (MCP)**. Add an MCP server by its address, with a token if it needs one. VEX connects over Streamable HTTP, lists up to 100 of its tools, and shows what each one takes. Up to **5 servers**. Two market-data servers work with no token at all: CoinGecko at `https://mcp.api.coingecko.com/mcp` and DexPaprika at `https://mcp.dexpaprika.com/streamable-http`.
 
@@ -124,7 +124,7 @@ It is a reading of past prices, not a buy or sell signal, and the card says so.
 
 **03 · Every call asks first.** When the agent wants to use one of your tools, an approval card shows the server, the tool and the exact arguments that will be sent, in Restricted and Full access alike. Nothing leaves until you approve.
 
-![An approval card for a call to the user's own DexPaprika tool: "Call getTopTokens on your MCP server DexPaprika.", with the exact arguments it will send: the top 5 tokens on Base by 24 hour volume](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-mcp-dexpaprika.jpg)
+![An approval card for a call to the user's own DexPaprika tool: "Call getTopTokens on your MCP server DexPaprika.", with the exact arguments it will send: the top 5 tokens on Base by 24 hour volume](https://raw.githubusercontent.com/Vex-Foundation/Vex/444c57e667d32c945f04cde2a358c9bcd54f08b2/vex-app/docs/release/v0.4.3/0.4.3-mcp-dexpaprika.jpg)
 
 **04 · Read only, by design.** Your tools can only read and return text. They can never prepare a swap, a transfer or any other action, and their card carries no real-funds stamp because no funds move. If a server marks a tool as read-only and you've turned it on, you may let it **Run without asking**, and only in Settings.
 
