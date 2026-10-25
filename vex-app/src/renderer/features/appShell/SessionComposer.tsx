@@ -348,6 +348,7 @@ export function SessionComposer({
             mode={activeSession.mode === "mission" ? "mission" : "agent"}
             missionStatus={runStatus}
             activity={runtimeActivity}
+            awaitingApproval={awaitingApproval}
           />
         ) : null}
         {sessionId !== null ? (

@@ -18,6 +18,7 @@ import {
   MESSAGE_ROW_COLUMNS,
   type MessageRow,
   nextCursorFor,
+  readerItems,
   toDto,
 } from "./mappers.js";
 
@@ -59,7 +60,7 @@ export async function listMessages(
       const rows = result.rows.map(toDto);
       const overflow = rows.length > limit;
       const trimmed = overflow ? rows.slice(0, limit) : rows;
-      const items = trimmed.slice().reverse();
+      const items = readerItems(result.rows, trimmed).reverse();
       const nextCursor = overflow ? nextCursorFor(trimmed) : null;
       return ok({
         items,

@@ -27,9 +27,9 @@
  * reader position, in the same commit a live row mounts in. A transform on the
  * row itself would fold the animation's opening offset into the restored
  * `scrollTop`; a descendant's transform cannot move its parent's border box,
- * so the model always measures an untransformed row. (The pre-follow model
- * needed the same rule for its pre-paint top-anchor measurement - the reason
- * moved with the scroll swap, the rule did not.)
+ * so the model always measures an untransformed row. The same holds for the
+ * top anchor: a sent row is written to the top of the view in the commit it
+ * mounts in, while its `vex-message-send` entry is still offset.
  *
  * `data-vex-anchor-key` is `transcriptEntryKey(row)`, not `row.id`: a tool
  * GROUP borrows its first call's id, so the id alone is not a stable identity

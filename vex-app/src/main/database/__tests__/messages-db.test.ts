@@ -355,6 +355,60 @@ describe("messages-db mapper", () => {
     expect(result.data.items[0]).not.toHaveProperty("metadata");
   });
 
+  it("drops the model-only approval_resolved cue while the page still counts it", async () => {
+    const row = (id: number, messageType: string | null, content: string) => ({
+      id,
+      session_id: SESSION,
+      role: messageType === null ? "assistant" : "user",
+      content,
+      tool_call_id: null,
+      tool_calls: null,
+      created_at: `2026-10-25T13:00:0${id}.000Z`,
+      source: messageType === null ? null : "engine",
+      message_type: messageType,
+    });
+    // DESC order, one more than the limit: the cue is the newest row.
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        row(3, "approval_resolved", "[Engine: approval_resolved - Continue.]"),
+        row(2, null, "Retrying with corrected code."),
+        row(1, null, "I'll pull a broad market read."),
+      ],
+    });
+
+    const result = await getMessageTail(SESSION, 2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items.map((item) => item.id)).toEqual([2]);
+    expect(result.data.items.some((item) => item.content.includes("[Engine:"))).toBe(false);
+    // The cut still counts the hidden row: the next page starts below row 2.
+    expect(result.data.hasMore).toBe(true);
+    expect(result.data.nextCursor?.id).toBe(2);
+  });
+
+  it("keeps every other engine notice, such as a wake banner", async () => {
+    mocks.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 4,
+          session_id: SESSION,
+          role: "system",
+          content: "Run resumed",
+          tool_call_id: null,
+          tool_calls: null,
+          created_at: "2026-10-25T13:00:04.000Z",
+          source: "engine",
+          message_type: "wake_banner",
+        },
+      ],
+    });
+
+    const result = await listMessages(SESSION, null, 5);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.items.map((item) => item.kind)).toEqual(["runtime_notice"]);
+  });
+
   /**
    * M6. The disposition is the engine's own typed record of what it did, and
    * the renderer's delivery words are read from it. Flattened away, the row

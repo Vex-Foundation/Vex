@@ -58,6 +58,51 @@
   }
 }
 
+/* The run strip's live dots (owner request 2026-10-25): the transcript holds
+ * the newest user turn at the top while the reply streams, so the turn's live
+ * row can sit below the fold; the strip above the composer is always in view
+ * and these dots say the run is still at work. Three dots in the one blue
+ * rise in turn. The loop rides live state only: the strip draws them while a
+ * run works and swaps them for the still target fill while a decision waits.
+ * Transform and opacity only. Reduced motion: held still, fully drawn. */
+@keyframes vex-live-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.vex-live-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 10px;
+}
+.vex-live-dots > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: vex-live-dot 1.2s ease-in-out infinite;
+}
+.vex-live-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.vex-live-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-live-dots > span {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Session-enter: the SessionPanel welcome↔session (and session↔session)
  * fluid resolve, owner-decreed removal of the distorted-glass regression
  * (2026-07-20): the previous round's SVG feDisplacementMap filter warped

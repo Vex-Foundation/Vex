@@ -22,8 +22,8 @@
  *  4. status arrival and removal move nothing while the reader owns the view.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 
@@ -32,6 +32,7 @@ import {
   SESSION,
   freshClient,
   getScroller,
+  installLayout,
   installScrollMetrics,
   listMock,
   msg,
@@ -40,6 +41,7 @@ import {
   resetTranscriptEnv,
   setVex,
   startChatTurn,
+  type ScriptedLayout,
 } from "./transcript-harness.js";
 
 function makeWrapper(client: QueryClient) {
@@ -48,7 +50,10 @@ function makeWrapper(client: QueryClient) {
   };
 }
 
-afterEach(resetTranscriptEnv);
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetTranscriptEnv();
+});
 
 async function mountWithRow(client: QueryClient) {
   setVex();
@@ -116,17 +121,25 @@ describe("SessionTranscript - the pending turn's in-flow status", () => {
   });
 
   it("a PINNED reader follows the status arriving and leaving", async () => {
+    // Geometry in place from the first commit (`installLayout`): the model
+    // lands at the floor on mount and only follows reported growth, so the
+    // old post-mount script plus a bare `scroll` event no longer re-lands it.
+    const geometry: ScriptedLayout = {
+      scrollHeight: 500,
+      clientHeight: 200,
+      rows: new Map(),
+      writes: 0,
+    };
+    installLayout(geometry);
     const client = freshClient();
     const { container } = await mountWithRow(client);
     const scroller = getScroller(container);
-    const geometry = installScrollMetrics(scroller, 500, 200);
-    fireEvent.scroll(scroller);
     expect(scroller.scrollTop).toBe(300);
 
     // The status is real conversation geometry: it grows the flow, and a
     // pinned reader is carried with it.
     let settle: () => void = () => undefined;
-    geometry.setHeight(560);
+    geometry.scrollHeight = 560;
     act(() => {
       settle = startChatTurn(client);
     });
@@ -134,7 +147,7 @@ describe("SessionTranscript - the pending turn's in-flow status", () => {
 
     // It leaves when the turn settles; the floor comes back and the pinned
     // reader lands on it rather than being stranded above it.
-    geometry.setHeight(500);
+    geometry.scrollHeight = 500;
     act(() => {
       settle();
     });

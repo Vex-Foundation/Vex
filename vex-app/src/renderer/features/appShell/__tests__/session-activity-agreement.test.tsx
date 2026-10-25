@@ -53,6 +53,8 @@ vi.mock("../../../lib/api/messages.js", async (importOriginal) => {
 });
 vi.mock("../../../stores/streamStore.js", () => ({
   useStreamPreview: () => null,
+  // The run strip's live step reads the lease beside the preview.
+  useSessionLeaseHeld: () => false,
 }));
 vi.mock("../../../stores/uiStore.js", () => ({
   useUiStore: (select: (s: { activeSessionId: string; runtimeMode: "agent" }) => unknown) =>
