@@ -196,20 +196,103 @@ export function installScrollMetrics(
 }
 
 /**
+ * Scripted LAYOUT for the transcript scroller and its rows, in place from the
+ * FIRST commit. `installScrollMetrics` scripts one element after it mounts,
+ * which is too late for what the scroll model does in its mount commit (the
+ * landing, a saved-position restore, a send's anchor). This scripts the
+ * `Element.prototype` accessors instead, for every
+ * `[data-vex-area="chat-transcript"]` scroller and every row listed in
+ * `rows`; everything else measures 0, as jsdom does. Mutate the object to
+ * change the geometry. Restore with `vi.restoreAllMocks()`.
+ *
+ * The scroller's `scrollTop` clamps to its floor on write and on read, as an
+ * engine does, and a row's box is its content offset minus that `scrollTop`,
+ * with the scroller's box at the viewport top.
+ */
+export interface ScriptedLayout {
+  scrollHeight: number;
+  clientHeight: number;
+  /** Row content offsets by `data-vex-entry-id`; unlisted rows measure 0. */
+  readonly rows: Map<string, number>;
+  /** `scrollTop` assignments the scroller received, reader ones included. */
+  writes: number;
+}
+
+const TRANSCRIPT_SCROLLER = '[data-vex-area="chat-transcript"]';
+
+function box(top: number, height: number): DOMRect {
+  return {
+    x: 0,
+    y: top,
+    top,
+    bottom: top + height,
+    left: 0,
+    right: 0,
+    width: 0,
+    height,
+    toJSON: () => ({}),
+  };
+}
+
+export function installLayout(layout: ScriptedLayout): void {
+  const tops = new WeakMap<Element, number>();
+  const isScroller = (element: Element): boolean =>
+    element.matches(TRANSCRIPT_SCROLLER);
+  const clamp = (value: number): number =>
+    Math.max(0, Math.min(value, layout.scrollHeight - layout.clientHeight));
+  const topOf = (element: Element): number => clamp(tops.get(element) ?? 0);
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(
+    function (this: Element) {
+      return isScroller(this) ? layout.scrollHeight : 0;
+    },
+  );
+  vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(
+    function (this: Element) {
+      return isScroller(this) ? layout.clientHeight : 0;
+    },
+  );
+  vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(
+    function (this: Element) {
+      return isScroller(this) ? topOf(this) : 0;
+    },
+  );
+  vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(
+    function (this: Element, value: number) {
+      if (!isScroller(this)) return;
+      layout.writes += 1;
+      tops.set(this, clamp(value));
+    },
+  );
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element) {
+      if (isScroller(this)) return box(0, layout.clientHeight);
+      const id = this.getAttribute("data-vex-entry-id");
+      const offset = id === null ? undefined : layout.rows.get(id);
+      const scroller = this.closest(TRANSCRIPT_SCROLLER);
+      if (offset === undefined || scroller === null) return box(0, 0);
+      return box(offset - topOf(scroller), 40);
+    },
+  );
+}
+
+/**
  * READER INPUT, of any device: a delivered position that deviates from the
- * model's observed-top ledger. Every scroll case must go through this rather
- * than assigning `scrollTop` directly, because the difference between a reader
- * scroll and a programmatic write is the whole subject.
+ * model's observed-top ledger, then the gesture's `scrollend`, which settles
+ * the controller's 500ms reader sample at once (no wall clock). Every scroll
+ * case must go through this rather than assigning `scrollTop` directly,
+ * because the difference between a reader scroll and a programmatic write is
+ * the whole subject.
  */
 export function readerScroll(element: HTMLElement, top: number): void {
   element.scrollTop = top;
   fireEvent.scroll(element);
+  fireEvent(element, new Event("scrollend"));
 }
 
 /**
- * A manually-driven ResizeObserver. The follow model owns column, seat and
- * scrollport growth through ONE observer; `notify()` is how a test says "the
- * column just grew" without a wall clock.
+ * A manually-driven ResizeObserver. The follow model learns of column, seat,
+ * session content and scrollport growth through ONE observer; `notify()` is
+ * how a test says "the column just grew" without a wall clock.
  */
 export function installResizeObserver(): { notify: () => void; observed: number } {
   const state = { notify: () => {}, observed: 0 };
