@@ -15,6 +15,7 @@ const SESSION = "00000000-0000-4000-8000-0000000000e1";
 const DUE_AT = "2026-08-28T12:04:00.000Z";
 
 const runtimeData = vi.hoisted(() => ({ current: null as unknown }));
+const pendingCount = vi.hoisted(() => ({ current: 0 }));
 
 vi.mock("../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({ data: runtimeData.current, isError: false }),
@@ -24,6 +25,13 @@ vi.mock("../../../lib/api/sessions.js", () => ({
   useSessionPlan: () => ({ data: { ok: true, data: null } }),
 }));
 
+vi.mock("../../../lib/api/approvals.js", () => ({
+  usePendingApprovals: () => ({
+    data: { ok: true, data: Array.from({ length: pendingCount.current }, () => ({})) },
+  }),
+}));
+
+const { useStreamStore } = await import("../../../stores/streamStore.js");
 const { ComposerMissionStrip } = await import(
   "../SessionComposer/ComposerMissionStrip.js"
 );
@@ -52,7 +60,30 @@ function strip(): HTMLElement | null {
 afterEach(() => {
   cleanup();
   runtimeData.current = null;
+  pendingCount.current = 0;
+  useStreamStore.setState({ bySessionId: {} });
 });
+
+/** A live turn calling a tool, started 42 seconds ago. */
+function streamCalling(): void {
+  useStreamStore.setState({
+    bySessionId: {
+      [SESSION]: {
+        streamId: "s1",
+        text: "",
+        phase: "streaming",
+        toolName: "wallet_send",
+        reasoningSegments: [],
+        reasoningText: "",
+        reasoningTokens: null,
+        startedAtMs: Date.now() - 42_000,
+        errorType: null,
+        errorDetail: null,
+        status: "calling",
+      },
+    },
+  });
+}
 
 describe("ComposerMissionStrip", () => {
   it("names a running mission in sentence case, with no limits it cannot read", () => {
@@ -93,6 +124,37 @@ describe("ComposerMissionStrip", () => {
     expect(strip()?.textContent).toContain(`Wakes at ${wakeTime(DUE_AT)}`);
     expect(strip()?.getAttribute("data-vex-activity")).toBe("sleeping");
     expect(strip()?.querySelector("[data-vex-cell]")).toBeNull();
+  });
+
+  it("moves the dots behind the live row's word and clock while an agent runs", () => {
+    streamCalling();
+    renderStrip("agent", null, { kind: "running" });
+    expect(strip()?.getAttribute("data-vex-live-step")).toBe("moving");
+    expect(strip()?.querySelector("[data-vex-live-dots]")).not.toBeNull();
+    expect(strip()?.textContent).toMatch(/Agent · Calling /);
+    expect(strip()?.querySelector("[data-vex-strip-clock]")?.textContent).toBe("0:42");
+  });
+
+  it("keeps the band's word and the dots between rounds", () => {
+    renderStrip("agent", null, { kind: "running" });
+    expect(strip()?.textContent).toContain("Agent · Running");
+    expect(strip()?.querySelector("[data-vex-live-dots]")).not.toBeNull();
+    expect(strip()?.querySelector("[data-vex-strip-clock]")).toBeNull();
+  });
+
+  it("stills the dots while a decision waits on the reader", () => {
+    streamCalling();
+    pendingCount.current = 1;
+    renderStrip("mission", "running");
+    expect(strip()?.getAttribute("data-vex-live-step")).toBe("awaiting");
+    expect(strip()?.textContent).toContain("Mission · Waiting for approval");
+    expect(strip()?.querySelector("[data-vex-live-dots]")).toBeNull();
+  });
+
+  it("draws no dots for a sleeping agent", () => {
+    renderStrip("agent", null, { kind: "sleeping", nextWakeAt: DUE_AT });
+    expect(strip()?.hasAttribute("data-vex-live-step")).toBe(false);
+    expect(strip()?.querySelector("[data-vex-live-dots]")).toBeNull();
   });
 
   it("publishes its key and note cells for the session while mounted, and withdraws them", () => {

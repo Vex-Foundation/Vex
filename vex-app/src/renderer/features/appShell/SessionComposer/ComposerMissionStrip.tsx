@@ -28,10 +28,17 @@
 import { lazy, Suspense, useCallback, useState, type JSX } from "react";
 import type { RuntimeActivity } from "@shared/schemas/runtime.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
+import { usePendingApprovals } from "../../../lib/api/approvals.js";
 import { useRuntimeState } from "../../../lib/api/runtime.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { cn } from "../../../lib/utils.js";
 import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
+import {
+  useSessionLeaseHeld,
+  useStreamPreview,
+} from "../../../stores/streamStore.js";
+import { ElapsedCounter } from "../TurnIsland/ElapsedCounter.js";
+import { resolveComposerLiveStep, type ComposerLiveStep } from "./composer-live-step.js";
 import {
   formatWakeTime,
   readSessionActivityReadout,
@@ -92,6 +99,9 @@ const SETTLED: ReadonlySet<MissionRunStatus> = new Set([
 /** Proposal copy (section 7): what a mission paused on an error is not doing. */
 const NOT_MONITORING = "Not monitoring the market";
 
+/** The transcript's fallback poll for pending approvals; one query key, shared. */
+const PENDING_APPROVALS_REFETCH_MS = 60_000;
+
 export function ComposerMissionStrip({
   sessionId,
   mode,
@@ -124,14 +134,36 @@ export function ComposerMissionStrip({
   const controlsRef = useCellRef(sessionId, "controls");
   const notesRef = useCellRef(sessionId, "notes");
 
+  // The turn's live row, read from the same stream store, lease push and
+  // pending-approvals query the transcript reads (`composer-live-step.ts`).
+  const preview = useStreamPreview(sessionId);
+  const leaseHeld = useSessionLeaseHeld(sessionId);
+  const pendingQuery = usePendingApprovals(sessionId, {
+    refetchInterval: PENDING_APPROVALS_REFETCH_MS,
+  });
+  const awaitingApproval =
+    pendingQuery.data?.ok === true && pendingQuery.data.data.length > 0;
+
   const band = resolveBand(mode, missionStatus, activity, wakeDueAt);
   if (band === null) return null;
   const inkFrame = mode === "mission" && missionStatus === "paused_error";
+  const running =
+    mode === "mission"
+      ? missionStatus === "running"
+      : band.activityState === "running";
+  const live = resolveComposerLiveStep(running, preview, awaitingApproval, leaseHeld);
+  const text =
+    live?.label != null
+      ? `${mode === "mission" ? "Mission" : "Agent"} · ${live.label}`
+      : band.text;
+  const fact: StripFact | null =
+    live?.detail != null ? { label: live.detail, figure: null } : band.fact;
   return (
     <div
       data-vex-area="composer-mission-strip"
       data-status={band.dataStatus}
       data-vex-activity={band.activityState ?? undefined}
+      data-vex-live-step={liveStepState(live)}
       className="flex w-full flex-col"
     >
       {mode === "mission" ? (
@@ -145,27 +177,40 @@ export function ComposerMissionStrip({
             : "border border-b-0 border-rule",
         )}
       >
-        <span className="inline-flex min-w-0 shrink-0 items-center gap-2.5">
+        <span className="inline-flex min-w-0 items-center gap-2.5">
           <span aria-hidden className="inline-flex shrink-0 text-accent-primary">
-            <Swatch state={band.swatch} size={10} />
+            {live !== null && !live.awaiting ? (
+              <LiveDots />
+            ) : (
+              <Swatch state={live?.awaiting ? "awaiting" : band.swatch} size={10} />
+            )}
           </span>
-          <span className="truncate font-medium">{band.text}</span>
+          <span className="truncate font-medium">{text}</span>
         </span>
-        {band.fact !== null ? (
+        {fact !== null ? (
           <>
             <span aria-hidden className="h-4 w-px shrink-0 bg-rule-quiet" />
             <span className="inline-flex min-w-0 items-baseline gap-1.5 truncate text-[12.5px] text-ink-tertiary">
-              {band.fact.label}
-              {band.fact.figure !== null ? " " : null}
-              {band.fact.figure !== null ? (
+              {fact.label}
+              {fact.figure !== null ? " " : null}
+              {fact.figure !== null ? (
                 <span className="font-mono vex-num text-[12.5px] tracking-[-0.01em] text-ink-primary">
-                  {band.fact.figure}
+                  {fact.figure}
                 </span>
               ) : null}
             </span>
           </>
         ) : null}
         <span className="min-w-0 flex-1" />
+        {live?.startedAtMs != null ? (
+          <span
+            data-vex-strip-clock=""
+            aria-hidden
+            className="shrink-0 text-[12px] text-accent-primary"
+          >
+            <ElapsedCounter startedAtMs={live.startedAtMs} />
+          </span>
+        ) : null}
         {missionStatus !== null && plan !== null && plan.enabled ? (
           <button
             type="button"
@@ -196,6 +241,27 @@ export function ComposerMissionStrip({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The moving dots while a run works (owner request 2026-10-25): three dots in
+ * the one blue rise in turn (`.vex-live-dots`, chronos-motion.css). Held
+ * still under reduced motion.
+ */
+function LiveDots(): JSX.Element {
+  return (
+    <span data-vex-live-dots="" className="vex-live-dots">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+/** `data-vex-live-step`: moving, awaiting, or absent while no run is live. */
+function liveStepState(live: ComposerLiveStep | null): string | undefined {
+  if (live === null) return undefined;
+  return live.awaiting ? "awaiting" : "moving";
 }
 
 /** A stable callback ref that publishes one strip cell for the session. */
