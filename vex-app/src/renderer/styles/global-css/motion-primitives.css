@@ -62,9 +62,10 @@
  *
  * The class rides an INNER wrapper, never the row element that carries
  * `data-vex-entry-id` / `data-vex-anchor-key`. That element is what the
- * follow-stream scroll model measures with `getBoundingClientRect()` when it
- * captures and restores a paging anchor or a saved reader position, and it
- * measures it in the same commit the row mounts in. A transform on the row
+ * transcript scroll model measures with `getBoundingClientRect()` when it
+ * captures and restores a paging anchor or a saved reader position, or holds
+ * a sent row at the top, and it measures it in the same commit the row mounts
+ * in. A transform on the row
  * itself would fold the animation's opening offset into the restored
  * `scrollTop`; a descendant's transform cannot move its parent's border box,
  * so the model always measures an untransformed row.

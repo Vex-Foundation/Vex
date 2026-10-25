@@ -317,6 +317,17 @@ export function SessionPanel({
                 <MissionControls sessionId={activeSession.id} />
               ) : null}
             </div>
+            {/* THE TAIL SPACE - the last child of the session content, after
+                the approvals, so a card that appears mid-reply sits right
+                under the reply. The transcript's scroll model sizes it so the
+                floor can reach the newest user turn held at the top; it
+                shrinks as the reply fills it, and is 0 on opening a session.
+                See `SessionTranscript/useTranscriptScroll.ts`. */}
+            <div
+              aria-hidden="true"
+              data-vex-transcript-tail=""
+              className="shrink-0"
+            />
           </div>
         )}
 

@@ -15,7 +15,7 @@
  * mount, where the transcript owns its own overflow; inside the resident shell
  * `SessionPanel`'s scroll body is the scrollport instead and these classes go
  * inert (`chat-transcript.css`). Everything the arrangement must not break -
- * follow ownership, the force-scroll on the reader's own words, prepend
+ * follow ownership, the top anchor on the reader's own words, prepend
  * anchoring, the jump-to-latest key - is pinned next door in
  * `scroll-model.test.tsx`.
  */

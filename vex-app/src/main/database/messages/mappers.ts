@@ -392,6 +392,37 @@ function extractInterruptDisposition(
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * Engine `message_type`s written for the MODEL alone, never for the reader.
+ * `approval_resolved` is the cue that wakes the agent after an approval
+ * ("[Engine: approval_resolved - ...]", engine
+ * `approval-runtime/resume-cue.ts`): the decision itself already shows as the
+ * approval card and the tool's result, so the cue drew a paragraph of prompt
+ * text into the chat. String-literal mirror, like the constants above.
+ */
+const MODEL_ONLY_MESSAGE_TYPES: ReadonlySet<string> = new Set([
+  "approval_resolved",
+]);
+
+/**
+ * The page's items without the rows written for the model alone. Applied
+ * AFTER the page is cut, so `nextCursor` and `hasMore` still count every row
+ * and paging never skips or repeats one; a page may carry fewer items than
+ * its limit.
+ */
+export function readerItems(
+  rows: readonly MessageRow[],
+  items: readonly SessionMessageDto[],
+): SessionMessageDto[] {
+  const hidden = new Set<number>();
+  for (const row of rows) {
+    if (row.message_type !== null && MODEL_ONLY_MESSAGE_TYPES.has(row.message_type)) {
+      hidden.add(row.id);
+    }
+  }
+  return items.filter((item) => !hidden.has(item.id));
+}
+
 export function nextCursorFor(items: readonly SessionMessageDto[]): MessageCursor | null {
   if (items.length === 0) return null;
   const last = items[items.length - 1];
