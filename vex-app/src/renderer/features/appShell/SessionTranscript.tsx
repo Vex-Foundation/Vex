@@ -177,8 +177,8 @@ export function SessionTranscript({
       : `${preview.streamId}:${preview.phase}:${preview.status}:${preview.toolName ?? ""}:${preview.text.length}:${preview.reasoningSegments.length}:${preview.reasoningText.length}:${leaseHeld ? "lease" : ""}`;
 
   // The newest steering mark. A change is the reader's own words entering a
-  // running turn, so the scroll model force-scrolls to it exactly as it does
-  // for a sent user row - the steer is otherwise invisible mid-transcript.
+  // running turn, so the scroll model anchors it at the top exactly as it
+  // does a sent user row - the steer is otherwise invisible mid-transcript.
   const steeringSig = useMemo<string | null>(() => {
     for (let i = rows.length - 1; i >= 0; i -= 1) {
       const row = rows[i];
