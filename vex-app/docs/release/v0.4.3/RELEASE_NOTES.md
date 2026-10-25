@@ -63,6 +63,8 @@ An alert is a heads-up, not a stop-loss. It cannot place, change or cancel an or
 ## 03 · Reading while it writes
 ### Your question at the top. The answer beneath it.
 
+![A chat mid-reply: the question "Give me a detailed read on ETH right now" held at the top, the agent's steps and a Lighter market card streaming beneath it past the bottom of the screen, the jump arrow showing, and above the composer "Agent · Writing" with three dots and the clock at 1:13](https://raw.githubusercontent.com/Vex-Foundation/Vex/d169ec806ab92a3639ae73bf20953c2b066cd907/vex-app/docs/release/v0.4.3/0.4.3-reading-while-it-writes.jpg)
+
 **01 · The question stays in view.** When you send a message, VEX moves it to the top of the chat and the answer grows downward beneath it. The view doesn't move while the answer streams, so you read a long answer from its first line instead of chasing its last.
 
 **02 · You take the view when you scroll.** Scroll up or down while the answer streams and VEX leaves the view where you put it. Scroll back to the very bottom, or press the arrow above the composer, and the chat follows the newest text again for the rest of the answer.
