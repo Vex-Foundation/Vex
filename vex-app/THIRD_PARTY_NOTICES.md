@@ -12,6 +12,18 @@ motion choreography, and the inline SVG icon glyph set under
 `src/renderer/components/icons/` - are adapted from deepseek-harness
 (https://github.com/deepseek-ai/deepseek-harness).
 
+The transcript's scroll-follow controller
+(`src/renderer/features/appShell/SessionTranscript/scrollFollow.ts`) and its
+suite (`src/renderer/features/appShell/__tests__/SessionTranscript/scroll-follow.test.ts`)
+are adapted from deepseek-harness 0.2.0-rc.2, commit
+`639ed015397290b3745d163aafe02ffee4aa3f84`: `packages/client/ui-chat`
+`use-scroll-follow.ts`, `use-chat-reading.ts`, `use-chat-viewport.ts` and
+`tests/scroll-follow.client.spec.ts`, by way of the VEX Cloud port
+(`apps/web/src/components/chat/thread/scroll-follow.ts`). Modifications: one
+controller class, top anchoring of the newest user turn with a tail space,
+load-older shifts and saved-position restores. Both files carry the
+attribution header.
+
 Copyright (c) 2026 DeepSeek
 
 Licensed under the MIT License:
