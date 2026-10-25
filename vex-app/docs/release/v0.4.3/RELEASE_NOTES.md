@@ -12,7 +12,7 @@ Nothing here trades on its own. Alerts only tell you, the analysis is only a rea
 
 This release covers the work merged after **0.4.2**.
 
-**88 commits · Watchlist and price alerts · Reading while it writes · A model per chat · Technical analysis · Your own MCP tools · Three database migrations, applied on first launch**
+**89 commits · Watchlist and price alerts · Reading while it writes · A model per chat · Technical analysis · Your own MCP tools · Three database migrations, applied on first launch**
 
 ---
 
