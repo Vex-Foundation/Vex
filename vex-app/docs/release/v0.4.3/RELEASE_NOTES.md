@@ -150,7 +150,7 @@ It is a reading of past prices, not a buy or sell signal, and the card says so.
 ## 08 · Performance and verification
 ### Checked before it ships.
 
-All nine CI checks passed on the merged main commit: **25,571 core tests**, desktop suites on **Linux (16,010), macOS (15,907) and Windows (15,939)**, **893 real PostgreSQL tests**, packaging and bridge checks, and **155 end-to-end tests** with one flaky case passing on retry. Existing optional and platform-specific skips remain. [Main CI results](https://github.com/Vex-Foundation/Vex/actions/runs/40138944977).
+All nine CI checks passed on the merged main commit: **25,571 core tests**, desktop suites on **Linux (16,066), macOS (15,963) and Windows (15,995)**, **893 real PostgreSQL tests**, packaging and bridge checks, and **156 end-to-end tests** with no failed or flaky cases. Existing optional and platform-specific skips remain. [Main CI results](https://github.com/Vex-Foundation/Vex/actions/runs/40201161080).
 
 Each feature was also tried in the app itself before it merged: a watchlist and a fired alert on Solana, a model switch mid-chat, technical analysis of ETH on Lighter with its chart, calls to the CoinGecko and DexPaprika MCP servers through their approval cards, and a long answer streaming beneath its question with the live line above the composer.
 
