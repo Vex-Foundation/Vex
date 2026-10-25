@@ -28,7 +28,6 @@
 import { lazy, Suspense, useCallback, useState, type JSX } from "react";
 import type { RuntimeActivity } from "@shared/schemas/runtime.js";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
-import { usePendingApprovals } from "../../../lib/api/approvals.js";
 import { useRuntimeState } from "../../../lib/api/runtime.js";
 import { useSessionPlan } from "../../../lib/api/sessions.js";
 import { cn } from "../../../lib/utils.js";
@@ -99,20 +98,24 @@ const SETTLED: ReadonlySet<MissionRunStatus> = new Set([
 /** Proposal copy (section 7): what a mission paused on an error is not doing. */
 const NOT_MONITORING = "Not monitoring the market";
 
-/** The transcript's fallback poll for pending approvals; one query key, shared. */
-const PENDING_APPROVALS_REFETCH_MS = 60_000;
-
 export function ComposerMissionStrip({
   sessionId,
   mode,
   missionStatus,
   activity,
+  awaitingApproval = false,
 }: {
   readonly sessionId: string;
   /** Session mode - decides which of the two sources names the state. */
   readonly mode: "mission" | "agent";
   readonly missionStatus: MissionRunStatus | null;
   readonly activity: RuntimeActivity | null;
+  /**
+   * A decision waits on the reader: the composer's own reading (a run parked
+   * on approval, or this session's pending approvals list). The live step
+   * stops its dots on it.
+   */
+  readonly awaitingApproval?: boolean;
 }): JSX.Element | null {
   const [planOpen, setPlanOpen] = useState(false);
   // Only a MISSION session has an action plan to review or a run to read; an
@@ -134,15 +137,10 @@ export function ComposerMissionStrip({
   const controlsRef = useCellRef(sessionId, "controls");
   const notesRef = useCellRef(sessionId, "notes");
 
-  // The turn's live row, read from the same stream store, lease push and
-  // pending-approvals query the transcript reads (`composer-live-step.ts`).
+  // The turn's live row, read from the same stream store and lease push the
+  // transcript reads (`composer-live-step.ts`).
   const preview = useStreamPreview(sessionId);
   const leaseHeld = useSessionLeaseHeld(sessionId);
-  const pendingQuery = usePendingApprovals(sessionId, {
-    refetchInterval: PENDING_APPROVALS_REFETCH_MS,
-  });
-  const awaitingApproval =
-    pendingQuery.data?.ok === true && pendingQuery.data.data.length > 0;
 
   const band = resolveBand(mode, missionStatus, activity, wakeDueAt);
   if (band === null) return null;

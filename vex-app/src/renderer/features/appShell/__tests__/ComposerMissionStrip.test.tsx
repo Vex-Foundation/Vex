@@ -15,7 +15,6 @@ const SESSION = "00000000-0000-4000-8000-0000000000e1";
 const DUE_AT = "2026-08-28T12:04:00.000Z";
 
 const runtimeData = vi.hoisted(() => ({ current: null as unknown }));
-const pendingCount = vi.hoisted(() => ({ current: 0 }));
 
 vi.mock("../../../lib/api/runtime.js", () => ({
   useRuntimeState: () => ({ data: runtimeData.current, isError: false }),
@@ -23,12 +22,6 @@ vi.mock("../../../lib/api/runtime.js", () => ({
 vi.mock("../../../lib/api/sessions.js", () => ({
   useSessionModel: () => ({ data: undefined }),
   useSessionPlan: () => ({ data: { ok: true, data: null } }),
-}));
-
-vi.mock("../../../lib/api/approvals.js", () => ({
-  usePendingApprovals: () => ({
-    data: { ok: true, data: Array.from({ length: pendingCount.current }, () => ({})) },
-  }),
 }));
 
 const { useStreamStore } = await import("../../../stores/streamStore.js");
@@ -47,9 +40,16 @@ function renderStrip(
   mode: "mission" | "agent",
   missionStatus: MissionRunStatus | null,
   activity: RuntimeActivity | null = { kind: "none" },
+  awaitingApproval = false,
 ) {
   return render(
-    createElement(ComposerMissionStrip, { sessionId: SESSION, mode, missionStatus, activity }),
+    createElement(ComposerMissionStrip, {
+      sessionId: SESSION,
+      mode,
+      missionStatus,
+      activity,
+      awaitingApproval,
+    }),
   );
 }
 
@@ -60,7 +60,6 @@ function strip(): HTMLElement | null {
 afterEach(() => {
   cleanup();
   runtimeData.current = null;
-  pendingCount.current = 0;
   useStreamStore.setState({ bySessionId: {} });
 });
 
@@ -147,8 +146,7 @@ describe("ComposerMissionStrip", () => {
 
   it("stills the dots while a decision waits on the reader", () => {
     streamCalling();
-    pendingCount.current = 1;
-    renderStrip("mission", "running");
+    renderStrip("mission", "running", { kind: "none" }, true);
     expect(strip()?.getAttribute("data-vex-live-step")).toBe("awaiting");
     expect(strip()?.textContent).toContain("Mission · Waiting for approval");
     expect(strip()?.querySelector("[data-vex-live-dots]")).toBeNull();
