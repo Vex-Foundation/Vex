@@ -4,6 +4,7 @@ import { ok, type Result, type VexError } from "@shared/ipc/result.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import {
   MESSAGE_ROW_COLUMNS,
+  readerItems,
   toDto,
   type MessageRow,
 } from "../messages/mappers.js";
@@ -37,7 +38,7 @@ export async function getSessionExportMessages(
          ORDER BY created_at ASC, id ASC`,
         [sessionId],
       );
-      return ok(result.rows.map(toDto));
+      return ok(readerItems(result.rows, result.rows.map(toDto)));
     } catch (cause) {
       return dbError("getSessionExportMessages failed", cause);
     }

@@ -14,6 +14,7 @@ import {
   MESSAGE_ROW_COLUMNS,
   type MessageRow,
   nextCursorFor,
+  readerItems,
   toDto,
 } from "./mappers.js";
 
@@ -37,7 +38,7 @@ export async function getMessageTail(
       // list mounts at the bottom and the next page is "older above".
       const overflow = rows.length > limit;
       const trimmed = overflow ? rows.slice(0, limit) : rows;
-      const items = trimmed.slice().reverse();
+      const items = readerItems(result.rows, trimmed).reverse();
       const nextCursor = overflow ? nextCursorFor(trimmed) : null;
       return ok({
         items,

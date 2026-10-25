@@ -10,6 +10,7 @@ import { withClient, dbError } from "./connection.js";
 import {
   MESSAGE_ROW_COLUMNS,
   type MessageRow,
+  readerItems,
   toDto,
   toIso,
 } from "./mappers.js";
@@ -70,11 +71,12 @@ export async function getMessageAround(
             [sessionId, anchorIso, anchor.id, after],
           );
 
-      const items = [
+      const windowRows = [
         ...beforeRows.rows.slice().reverse(),
         ...anchorRow.rows,
         ...afterRows.rows,
-      ].map(toDto);
+      ];
+      const items = readerItems(windowRows, windowRows.map(toDto));
       return ok({ items, nextCursor: null, hasMore: false });
     } catch (cause) {
       return dbError("getMessageAround query failed", cause);
