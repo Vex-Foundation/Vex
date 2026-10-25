@@ -83,15 +83,15 @@ This release covers the work merged after **0.4.2**.
 ## 05 · Your own MCP tools
 ### Plug in a server. Every call asks first.
 
-![Settings · Tools (MCP): a server added by URL, its tools listed and off until turned on, one tool on](https://raw.githubusercontent.com/Vex-Foundation/Vex/a4a24b207300fc18d7408e8fac5a73fa7ba4e506/vex-app/docs/release/v0.4.3/0.4.3-mcp-tools.jpg)
+![Settings · Tools (MCP): CoinGecko added by its address and connected with no token, its execute tool marked read-only by the server and on for chats, with Run without asking available, and DexPaprika connected below](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-mcp-coingecko.jpg)
 
-**01 · Add a server.** Settings now has **Tools (MCP)**. Add an MCP server by its address, with a token if it needs one. VEX connects, lists its tools, and shows what each one takes. Up to 5 servers.
+**01 · Add a server.** Settings now has **Tools (MCP)**. Add an MCP server by its address, with a token if it needs one. VEX connects, lists its tools, and shows what each one takes. Up to 5 servers. Two market-data servers work with no token at all: CoinGecko at `https://mcp.api.coingecko.com/mcp` and DexPaprika at `https://mcp.dexpaprika.com/streamable-http`.
 
 **02 · Off until you say.** Every tool starts off. Turn on the ones you want, up to 8 at a time.
 
 **03 · Every call asks first.** When the agent wants to use one of your tools, an approval card shows the server, the tool and the exact arguments that will be sent. Nothing leaves until you approve.
 
-![An approval card for a call to the user's own MCP tool: "Call read_wiki_structure on your MCP server deepwiki.", requested by VEX's agent, with Reject and Approve](https://raw.githubusercontent.com/Vex-Foundation/Vex/a4a24b207300fc18d7408e8fac5a73fa7ba4e506/vex-app/docs/release/v0.4.3/0.4.3-mcp-approval.jpg)
+![An approval card for a call to the user's own DexPaprika tool: "Call getTopTokens on your MCP server DexPaprika.", with the exact arguments it will send: the top 5 tokens on Base by 24 hour volume](https://raw.githubusercontent.com/Vex-Foundation/Vex/<SCREENSHOTS_COMMIT>/vex-app/docs/release/v0.4.3/0.4.3-mcp-dexpaprika.jpg)
 
 **04 · Read only, by design.** Your tools can only read and return text. They can never prepare a swap, a transfer or any other action. If a server marks a tool as read-only, you may let it **Run without asking**, and only in Settings.
 
