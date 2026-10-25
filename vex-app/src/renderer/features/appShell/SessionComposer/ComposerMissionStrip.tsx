@@ -179,13 +179,16 @@ export function ComposerMissionStrip({
       >
         <span className="inline-flex min-w-0 items-center gap-2.5">
           <span aria-hidden className="inline-flex shrink-0 text-accent-primary">
-            {live !== null && !live.awaiting ? (
-              <LiveDots />
-            ) : (
-              <Swatch state={live?.awaiting ? "awaiting" : band.swatch} size={10} />
-            )}
+            <Swatch state={live?.awaiting ? "awaiting" : band.swatch} size={10} />
           </span>
           <span className="truncate font-medium">{text}</span>
+          {/* The dots lead the words forward, where the next step lands
+              (owner 2026-10-25), never before the state's fill. */}
+          {live !== null && !live.awaiting ? (
+            <span aria-hidden className="inline-flex shrink-0 text-accent-primary">
+              <LiveDots />
+            </span>
+          ) : null}
         </span>
         {fact !== null ? (
           <>

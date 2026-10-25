@@ -132,6 +132,9 @@ describe("ComposerMissionStrip", () => {
     expect(strip()?.getAttribute("data-vex-live-step")).toBe("moving");
     expect(strip()?.querySelector("[data-vex-live-dots]")).not.toBeNull();
     expect(strip()?.textContent).toMatch(/Agent · Calling /);
+    // The dots lead the words forward: they follow the label, never precede it.
+    const dotsSlot = strip()?.querySelector("[data-vex-live-dots]")?.parentElement;
+    expect(dotsSlot?.previousElementSibling?.textContent).toMatch(/^Agent · Calling /);
     expect(strip()?.querySelector("[data-vex-strip-clock]")?.textContent).toBe("0:42");
   });
 
