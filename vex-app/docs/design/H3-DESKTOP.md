@@ -425,3 +425,138 @@ What desktop stops doing, because R3 does it and H3 forbids it:
 - Save-Data on `html` as an attribute (S1-13), so the wipe collapses in CSS as well as in JS.
 
 Any JS timer paired with these durations follows the policy's cross-file pair rule.
+
+---
+
+## Appendix A. Words, keys and taglines
+
+Every word the H3 app screens show, and the word desktop shows in its place. "Same" means desktop uses H3's word. "Left out" means desktop has no real source for it. Where H3's word would be false on desktop, the desktop column gives a true one and the last column says why. Words are written in sentence case in code and shown in caps where the label style applies (section 2.3). Sample values on the captures (chat titles, figures, "Grow ETH") are not words and are not listed. Proposals marked "proposed" are for the row that builds the screen to confirm.
+
+### A.1 Header
+| H3 | Desktop | Why |
+|---|---|---|
+| CLOUD, beside the mark | the mark alone | desktop is not Cloud. Open: a word beside the mark, if the owner wants one |
+| READY, THINKING 0:03, WAITING FOR APPROVAL, DONE | Ready, Listening, Thinking, Working, Waiting for approval, Done, Concerned, Error, Sleeping, Waking up (`features/vex/vex-state.ts`), with the timer while Thinking or Working | desktop's state machine has ten states |
+| HIDE VEX, SHOW VEX | same | |
+| keycaps CTRL, SHIFT, B | same on Windows and Linux; ⌘, ⇧, B on macOS | each platform's keys (section A.9) |
+| "SAMPLE DATA" under the chat title | the chat's kind and access: "Agent · Restricted", "Mission · Full access"; a page's own line, or none | "SAMPLE DATA" marks the mockup |
+| MAINNET, REAL FUNDS, a chevron | MAINNET and REAL FUNDS, no chevron | desktop is mainnet only; there is nothing to choose |
+| PAUSE ALL | left out | desktop has per-run pause and stop and Lock Vex, which stops signing, not workers |
+
+### A.2 Chats column
+| H3 | Desktop | Why |
+|---|---|---|
+| NEW CHAT | same | |
+| Search chats | same | |
+| CHAT, STRATEGIES, MISSIONS, MARKETS, PORTFOLIO, ACTIVITY, SETTINGS | Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board, Settings | no strategies; Markets is today's Watchlist and Activity today's Agent Scan; Lighter, Studio and Board are desktop's |
+| CHATS | same | |
+| TODAY, YESTERDAY, EARLIER | Pinned, Today, Yesterday, Earlier | "Earlier" replaces desktop's "Older"; pinned chats are desktop's |
+| a time, or RUNNING or WAITING | a time, or Running, Paused, Waiting or Sleeping | desktop's chat rows have four states |
+| You, Account and settings | same | |
+
+### A.3 The console
+| H3 | Desktop | Why |
+|---|---|---|
+| NEEDS YOU and a count | same | |
+| "Nothing needs you." | same | |
+| "Approve swap: 200 USDC → ETH" | the decision from desktop's approval sentence (`approvalSentence`), for example "Swap 200 USDC for ETH on Base"; for a mission, "Recover the mission", "Accept the contract" or "Fill in the form" | desktop builds the sentence from the signed arguments; missions wait on these three decisions too |
+| "Mainnet, real funds · since 12:40" | same, or "expires {time} UTC" when the approval has an expiry | |
+| REVIEW | same | |
+| "1 mission running on Mainnet · Grow ETH" | same form: "1 mission running on Mainnet · {title}", "2 missions running on Mainnet"; with none, "No mission running" (proposed) | the row stays so her box never moves (section 1.5); H3 draws no empty row |
+| "2 strategies running" | left out | no strategies |
+| strategy rows: name, pair, venue and timeframe, MAINNET, a switch | left out | no strategies |
+| AI PERMISSION | same | |
+| "Restricted access: always asks before acting." | "Restricted: every mutating transaction requires your approval." or "Full access: auto-executes approved tools without prompting per call." | desktop's own words for its two modes (`ComposerPermissionSeat.tsx`); Restricted does not ask before reading |
+| "Change in Settings" | "Set when this chat was created." (proposed) | a chat's permission is set at creation and locked; Settings cannot change it |
+| RECENT ACTIVITY | same | |
+| FILLED | Confirmed | desktop knows a transaction confirmed, not an order filled (`agent-scan-outcome.ts`) |
+| RUNNING | Submitted, awaiting confirmation | desktop's pending word |
+| DID NOT EXECUTE | Failed, Refunded or Status unknown, as the entry says | "did not execute" for a rejected approval needs the approval history, which activity does not join yet |
+| OPEN ACTIVITY | same; it opens Activity | |
+| the first-close hint: "Show Vex" and keycaps | same | |
+
+### A.4 The welcome
+| H3 | Desktop | Why |
+|---|---|---|
+| "Ready when you are." | same | |
+| VEX CAN TRADE FOR YOU | same | Vex swaps, bridges and trades Lighter perps on desktop |
+| EVERY ORDER IS CHECKED AGAINST YOUR PAUSES, LIMITS, AND THE POLICY | "Your keys stay on this computer." (proposed) | desktop has no spend limits and no global pause; its keys are local (`AGENTS.md`) |
+| Check wallet balances / "What's in my wallet?" | same, and the line becomes the prompt Send seeds | true |
+| Review the market / "What's moving in crypto today, and why?" | same, and the line becomes the prompt | true |
+| Create a mission / "I want to set up a mission. Ask me for its goal, markets, capital and how long it runs." | Create a mission / "Start a mission: Vex drafts its contract and you accept it." (proposed) | on desktop the key opens the mission form rather than seeding a prompt |
+| Analyze BTC 4h / "Analyze BTC/USDT on the 4h chart and create a strategy from it" | Analyze BTC 4h / "Analyze BTC/USDT on the 4h chart." | no strategies; the market name follows the analysis tool (S6a-04) |
+| (none) | "Trade perps on Lighter", today's fourth suggestion | Open: it leaves the two-by-two grid for the nav's Lighter entry (default), or the grid grows |
+
+### A.5 The composer and the status strip
+| H3 | Desktop | Why |
+|---|---|---|
+| "Ask Vex..." | same, as the resting placeholder; desktop keeps its own placeholders for a mission, a running turn and the Lighter desk | |
+| SEND | same | |
+| (STOP, not drawn) | "Stop agent", "Stop mission", "Stop turn" | desktop's stop names what it stops |
+| the image key | left out | no attachments |
+| "DeepSeek V4.1 Flash 1017" and "HIGH" | the model's name from the catalogue and its effort | |
+| FUNDS REQUIRE APPROVAL | same in Restricted; FULL ACCESS in Full access | |
+| DAILY BUDGET, a meter and "38%" | CONTEXT, its meter and the real share ("Context 21%") | desktop has no daily budget; the context meter is real |
+
+### A.6 Taglines
+The tagline cell says the moment. H3 draws two.
+
+| Moment | H3 | Desktop | Why |
+|---|---|---|---|
+| the welcome and an idle chat | AN AI TRADING AGENT, INSIDE YOUR LIMITS. | AN AI TRADING AGENT, ON YOUR COMPUTER. (proposed) | desktop has no spend limits to be inside |
+| a card waiting | CHECK THE CARD, THEN DECIDE. | same | |
+
+The second clause of each is muted. Open: the taglines for the other moments (thinking, done, an error); default, the first line. Settled by the mockup source or the owner.
+
+### A.7 The chat and the money card
+| H3 | Desktop | Why |
+|---|---|---|
+| THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history shows "{n} steps" only | desktop does not store a turn's duration |
+| CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order", else "Confirm this action" | desktop's card serves every tool family (`approvalActionWord`) |
+| MAINNET, REAL FUNDS | same | every desktop approval moves real funds |
+| "Swap 200 USDC for ETH on Base." | desktop's sentence from the signed arguments; else "{tool title}: review the signed fields" | |
+| "This places a real order on mainnet. It cannot be undone." | same for a swap or an order; "This sends real funds on mainnet. It cannot be undone." for a transfer or a bridge (proposed) | |
+| FROM, "Your trading wallet on Base", "Available 1,240.55 USDC" | left out | the card has no source wallet or balance today |
+| AMOUNT TO SWAP, an editable field, and "At most what you hold is sold..." | YOU SEND, as signed | the card shows the signed arguments; a new amount is a new proposal |
+| QUOTED PRICE | left out | no separate quoted price |
+| YOU RECEIVE, "Not available" | same | |
+| SLIPPAGE LIMIT | MINIMUM RECEIPT, with the slippage limit in its note | desktop's real line |
+| FEES, "Vex fee 0.25% of the amount: about 0.5 USDC" | FEES, the Vex fee as the engine states it | |
+| NETWORK FEE, "Not available" | same | |
+| TOTAL DEBIT, "Not available" | shown only when every part is known | desktop never shows a total it cannot add up |
+| "up to 10,000 USD per order, 50,000 USD a day", "Change in Settings" | left out | no spend limits (F04 has not started) |
+| ALL SIGNED FIELDS | same | |
+| "Tell Vex what to do instead" | same, for the reason field | the reason reaches Vex |
+| REJECT | same; "Click again to confirm reject" when armed | |
+| the tick box, "I understand real funds can be lost" | left out | desktop keeps its two-step confirm |
+| CTRL+ENTER APPROVES, ESC REJECTS | left out; the middle cell says "Press Approve twice: the first press arms it for 4 s." on a card that needs two presses, and "Nothing signs until you approve." on one that does not (proposed) | no card shortcuts on desktop |
+| APPROVE SWAP | "Approve swap", "Approve bridge", "Approve order", "Approve transfer", else "Approve"; Lighter's own words for a deposit and trading fees; "Click again to confirm approve" when armed | desktop's action words |
+
+### A.8 The receipt, pages and the page strip
+| H3 | Desktop | Why |
+|---|---|---|
+| SWAP · MAINNET, a time, FILLED | the kind, MAINNET, the time, and desktop's outcome word (Confirmed) | |
+| "USDC → ETH · Base (your trading wallet)" | the pair, the chain and the wallet's name from the activity entry | |
+| SELL, VALUE (USD), RECEIVED, VEX FEE | those the activity entry holds | |
+| APPROVAL, "Approved by you" | left out | approvals are not joined to activity yet |
+| OVERVIEW, WALLET, "Updated 12:41" | the page's own tabs; "Updated {time}" | |
+| PAPER, LIVE · MAINNET, REAL FUNDS | the REAL FUNDS stamp alone | no paper mode |
+| "Real money on mainnet. Equity = the cash and open positions of your 2 running live strategies." | "Real money on mainnet. Total value of your {n} on-chain wallets · Lighter is shown separately." | no strategies; desktop's total is wallets, with Lighter apart |
+| EQUITY, "of $25,000.00 allocated" | the wallet total; no "allocated" | nothing is allocated |
+| TODAY, 7 DAYS, ALL TIME "trading P&L", "realized and open" | left out; the change since the last snapshot | no P&L history over these spans |
+| DRAWDOWN "worst running strategy"; RUNNING "3 open positions" | left out | no strategies |
+| EQUITY chart: 7 DAYS, 30 DAYS, 90 DAYS | 24 H, 7 D, 30 D | the balance snapshots reach these spans once their IPC exists (S7-05) |
+| ALLOCATION, "62% in use", by venue | left out | no allocation |
+| OPEN POSITIONS, "Marked at the live price. Stopping a strategy closes its positions at market." | OPEN POSITIONS for Lighter perps, without the strategy line | positions are real only for Lighter |
+| MARKET, QUANTITY, ENTRY, COST, PRICE, OPEN PNL, STOP-LOSS, TARGET; CLOSE, STOP | Lighter's columns: Position, Size, Entry, Mark, Liq. price, Margin, uPnL | desktop's real position fields |
+| the page strip: NEEDS YOU, the decision, the missions cell, the strategies cell, OPEN ACTIVITY | the same without the strategies cell | |
+
+### A.9 Keys
+| Key | H3 | Desktop |
+|---|---|---|
+| Ctrl+Shift+B; Cmd+Shift+B on macOS | opens and closes her section from anywhere; unbound on Linux in Cloud | the same on Windows, Linux and macOS (section 4.4) |
+| Cmd or Ctrl+Shift+Period | (none) | still opens and closes her for one release, then goes |
+| Esc | never closes her; on a card, the first clears a typed instruction and the next rejects | never closes her; never decides a card |
+| Ctrl+Enter | approves the card | not bound |
+
+Keycap spellings: CTRL, SHIFT, B on Windows and Linux; ⌘, ⇧, B on macOS. The first-close hint spells them in title case on Windows and Linux (Ctrl, Shift, B). Tooltips and accessible names use the key's name and the chord: "Show Vex (Ctrl+Shift+B)", "Hide Vex (⇧⌘B)".
