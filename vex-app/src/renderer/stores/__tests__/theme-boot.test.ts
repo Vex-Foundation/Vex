@@ -21,6 +21,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { coerceThemePreference, VEX_THEME } from "../uiStore/theme.js";
+import { stampSaveData } from "../../lib/motion/use-still-frame.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BOOT_SOURCE = readFileSync(
@@ -37,6 +38,7 @@ const BOOT_SOURCE = readFileSync(
 function runBoot(
   payload: string | null,
   prefersDark: boolean | undefined,
+  navigator?: unknown,
 ): { theme: string | undefined; getItem: ReturnType<typeof vi.fn> } {
   document.documentElement.removeAttribute("data-vex-theme");
   document.documentElement.style.removeProperty("color-scheme");
@@ -47,8 +49,30 @@ function runBoot(
       ? {}
       : { matchMedia: vi.fn(() => ({ matches: prefersDark })) }),
   };
-  runInNewContext(BOOT_SOURCE, { window: win, document });
+  runInNewContext(BOOT_SOURCE, {
+    window: win,
+    document,
+    ...(navigator === undefined ? {} : { navigator }),
+  });
   return { theme: document.documentElement.dataset["vexTheme"], getItem };
+}
+
+/** A connection whose Save-Data preference the test can flip and announce. */
+function connectionOf(saveData: boolean | undefined): {
+  saveData: boolean | undefined;
+  addEventListener: (type: string, listener: () => void) => void;
+  fire: () => void;
+} {
+  const listeners: Array<() => void> = [];
+  return {
+    saveData,
+    addEventListener: (type, listener) => {
+      if (type === "change") listeners.push(listener);
+    },
+    fire: () => {
+      for (const listener of listeners) listener();
+    },
+  };
 }
 
 /** The persisted shape older releases wrote. */
@@ -58,6 +82,7 @@ const stored = (themePreference: string, version = 22): string =>
 afterEach(() => {
   vi.restoreAllMocks();
   document.documentElement.removeAttribute("data-vex-theme");
+  document.documentElement.removeAttribute("data-still");
   document.documentElement.style.removeProperty("color-scheme");
 });
 
@@ -85,6 +110,52 @@ describe("theme-boot pre-paint stamp (dark only)", () => {
     expect(runBoot(null, false).theme).toBe(VEX_THEME);
     for (const value of ["celeris", "system", "chronos", "robinhood", undefined, 42]) {
       expect(coerceThemePreference(value)).toBe(VEX_THEME);
+    }
+  });
+});
+
+describe("theme-boot pre-paint stamp (Save-Data)", () => {
+  // docs/design/H3-DESKTOP.md section 3.7: Save-Data reaches CSS as
+  // `data-still` on <html>, stamped before first paint by the same rule as
+  // `stampSaveData` (lib/motion/use-still-frame.ts).
+  const still = (): boolean => document.documentElement.hasAttribute("data-still");
+
+  it("stamps data-still before first paint when the connection asks to save data", () => {
+    runBoot(null, true, { connection: connectionOf(true) });
+    expect(still()).toBe(true);
+    expect(document.documentElement.getAttribute("data-still")).toBe("");
+  });
+
+  it.each([
+    ["no navigator", undefined],
+    ["no connection", {}],
+    ["Save-Data off", { connection: connectionOf(false) }],
+    ["Save-Data unknown", { connection: connectionOf(undefined) }],
+  ])("leaves motion on with %s", (_case, navigator) => {
+    document.documentElement.setAttribute("data-still", "");
+    runBoot(null, true, navigator);
+    expect(still()).toBe(false);
+  });
+
+  it("follows the connection when its preference changes", () => {
+    const connection = connectionOf(false);
+    runBoot(null, true, { connection });
+    expect(still()).toBe(false);
+    connection.saveData = true;
+    connection.fire();
+    expect(still()).toBe(true);
+    connection.saveData = false;
+    connection.fire();
+    expect(still()).toBe(false);
+  });
+
+  it("agrees with stampSaveData for every connection state", () => {
+    for (const saveData of [true, false, undefined]) {
+      runBoot(null, true, { connection: connectionOf(saveData) });
+      const fromBoot = still();
+      document.documentElement.removeAttribute("data-still");
+      stampSaveData(document.documentElement, { saveData });
+      expect(still(), String(saveData)).toBe(fromBoot);
     }
   });
 });

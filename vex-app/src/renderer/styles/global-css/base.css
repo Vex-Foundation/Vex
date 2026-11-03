@@ -1,7 +1,7 @@
 /* GLOBAL PAGE FOUNDATION: unscoped rules with no single feature owner:
  * the ::selection accent, the html/body/#root base surface, the weight
- * synthesis switch, the placeholder ink, the V10 shape law and the WCAG
- * reduced-motion catch-all.
+ * synthesis switch, the placeholder ink, the V10 shape law, the WCAG
+ * reduced-motion catch-all and its Save-Data twin.
  * The catch-all is a HARD dependency for every effect without a dedicated
  * reduced-motion override (including the looping badge shimmer and backdrop
  * drift); never drop this import and never add layer(...) to it. */
@@ -121,5 +121,24 @@ html {
     transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* SAVE-DATA lands motion at once too (docs/design/H3-DESKTOP.md section 3.7;
+ * MOTION-POLICY.md "Reduced motion"). Save-Data has no media query, so
+ * `data-still` on <html> carries it: public/theme-boot.js stamps it before
+ * first paint and keeps it current (`stampSaveData`,
+ * lib/motion/use-still-frame.ts). The rule is the reduced-motion catch-all
+ * above, word for word, with the same one opt-out: the JS still frame
+ * (`useStillFrame`) and this rule then agree, so a CSS-only motion such as
+ * Kimm's clip-path wipe lands at once in both. */
+html[data-still] *:not([data-vex-motion-opacity]),
+html[data-still] *:not([data-vex-motion-opacity])::before,
+html[data-still] *:not([data-vex-motion-opacity])::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
 }
 

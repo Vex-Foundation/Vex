@@ -132,6 +132,13 @@ and where each part is stated:
 - the K2 hologram paints one settled frame (`use-still-frame.ts`): her dock
   into the sidebar is her simply appearing, and a hide does not wait for her
   close, the column goes at once;
+- Save-Data asks for the same still frame, and since it has no media query
+  it reaches CSS as `data-still` on `<html>`: `public/theme-boot.js` stamps
+  it before first paint and follows the connection's change event
+  (`stampSaveData`, `use-still-frame.ts`), and `base.css` carries a twin of
+  the reduced-motion catch-all under it, with the same one opt-out. A
+  CSS-only motion, Kimm's clip-path wipe included
+  (`docs/design/H3-DESKTOP.md` section 3.7), lands at once under either;
 - the stage and the shell crossfade over a fixed 240ms linear (the opt-out
   above). Nothing slides.
 
