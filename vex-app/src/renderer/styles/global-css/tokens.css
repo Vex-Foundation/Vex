@@ -386,24 +386,27 @@
    * main/main-window.ts) so first paint and the plate are one surface: the
    * H3 ground. */
   --vex-alias-gate-plate: var(--color-h3-ground);
-  /* On the night print every type is paper (docs/design/R3-MINIMAL.md
-   * section 1.1): the giant counter and the step numerals too, where the
-   * peri-hi counter measured 1.34:1. The unlock field and its Unlock box are
-   * night fields; the box keeps a half-peri edge so it reads on the print. */
-  --vex-alias-gate-counter: var(--color-paper);
-  --vex-alias-gate-field: var(--color-night-1);
-  --vex-alias-gate-go-rule: rgba(163, 171, 255, 0.5);
-  --vex-alias-gate-border: rgba(243, 244, 247, 0.22);
-  --vex-alias-gate-input: rgba(243, 244, 247, 0.32);
-  --vex-alias-gate-muted: rgba(243, 244, 247, 0.08);
+  /* On the print every type is the ink (docs/design/H3-DESKTOP.md section
+   * 2.1; R3 measured the peri-hi counter at 1.34:1 there and moved it to
+   * paper first): the giant counter and the step numerals too. The unlock
+   * field and its Unlock box are cells, a control at rest; the box is edged
+   * in the chosen rule so it reads on the print, where R3 drew a half-peri
+   * edge. Every rule is white at an alpha, in the sheet's idiom. */
+  --vex-alias-gate-counter: var(--color-h3-ink);
+  --vex-alias-gate-field: var(--color-h3-cell);
+  --vex-alias-gate-go-rule: var(--vex-alias-rule-chosen);
+  --vex-alias-gate-border: var(--vex-alias-rule-chosen);
+  --vex-alias-gate-input: rgba(255, 255, 255, 0.32);
+  --vex-alias-gate-muted: rgba(255, 255, 255, 0.08);
   /* Field fill and inline-code chips on the plate. */
   --vex-alias-gate-well: var(--vex-alias-field);
   /* 1px rails, progress tracks and quiet chips on the plate. */
-  --vex-alias-gate-rail: rgba(243, 244, 247, 0.1);
-  /* Multi-line log/command plates (command blocks, migration errors). */
-  --vex-alias-gate-code: var(--color-night-0);
-  /* Alert-rail ink: the status inks themselves, no mixing toward white or
-   * black (status is a fill pattern now, the ink only has to read). */
+  --vex-alias-gate-rail: rgba(255, 255, 255, 0.1);
+  /* Multi-line log/command plates (command blocks, migration errors): the
+   * well step, the cell. */
+  --vex-alias-gate-code: var(--color-h3-cell);
+  /* Alert-rail ink: the status inks themselves, the ink (a status word is
+   * never the colour, section 2.2), with no mixing toward white or black. */
   --vex-alias-gate-danger-text: var(--vex-alias-state-error);
   --vex-alias-gate-warn-text: var(--vex-alias-state-warn-label);
 

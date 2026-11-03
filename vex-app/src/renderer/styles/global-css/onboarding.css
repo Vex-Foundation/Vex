@@ -1,4 +1,5 @@
-/* Shared onboarding accent: the one blue (the periwinkle at night). Applied
+/* Shared onboarding accent: the accent as type, which H3 sets in ink (the
+ * blue is a key's fill only, docs/design/H3-DESKTOP.md section 2.1). Applied
  * via the `data-vex-onboarding="true"` attribute on the outer wrapper of
  * each onboarding screen (systemCheck, runtimeMigration, runtimeBootstrap,
  * migrations, wizard, unlock). Shared primitives read
@@ -8,7 +9,7 @@
   --vex-onboarding-accent: var(--color-accent-primary);
   /* Project the onboarding accent through the shadcn aliases so stock
    * Button/Input/focus-ring inside wizard forms and the unlock screen
-   * speak the same blue. */
+   * speak the same accent as the shell. */
   --color-primary: var(--vex-onboarding-accent);
   --color-ring: var(--vex-onboarding-accent);
 }

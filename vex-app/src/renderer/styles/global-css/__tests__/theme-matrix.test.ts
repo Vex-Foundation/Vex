@@ -393,17 +393,29 @@ describe("pre-shell plate", () => {
     expect(mainWindowTs).not.toContain("nativeTheme");
   });
 
-  it("sets the stage type on the night print in paper", () => {
-    // docs/design/R3-MINIMAL.md section 1.1: on the night print every type is
-    // paper and blue never sits on dark ground. The giant counter was the
-    // one exception the design measured at 1.34:1 (peri-hi on the night
-    // sky); it is paper there now.
-    expect(chronosBlock).toContain("--vex-alias-gate-counter: var(--color-paper)");
+  it("sets the stage type on the print in ink", () => {
+    // docs/design/H3-DESKTOP.md section 2.1: every type on the print is the
+    // ink and the blue never sits on dark ground as type. The giant counter
+    // was the one exception R3 measured at 1.34:1 (peri-hi on the night
+    // sky); it is the ink now.
+    expect(chronosBlock).toContain("--vex-alias-gate-counter: var(--color-h3-ink)");
     expect(chronosBlock).toContain("--vex-alias-title: var(--color-h3-ink)");
     expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-h3-ink)");
-    // The unlock field and its box are night fields: never the white field
-    // on the print.
-    expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-night-1)");
+    // The unlock field and its box are cells, a control at rest: never a
+    // white field on the print.
+    expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-h3-cell)");
+    // The print's decode ground is the plate alias in every host, so it is
+    // the ground first paint already painted.
+    for (const plate of [".vex-stage-plate__plate", ".vex-stage-plate__full"]) {
+      expect(ruleBody(gateCss, plate), plate).toContain("background: var(--vex-alias-gate-plate);");
+    }
+    // Every pre-shell alias reaches the H3 tier or white at an alpha, never
+    // an R3 primitive.
+    const r3 = [...declarations(chronosBlock)]
+      .filter(([name]) => name.startsWith("--vex-alias-gate-"))
+      .filter(([, value]) => /var\(--color-(?:night|night-0|night-1|night-2|paper|peri|peri-hi|type-2|type-3|blue|blue-hi)\)|rgba\(243, 244, 247|rgba\(163, 171, 255/.test(value))
+      .map(([name]) => name);
+    expect(r3).toEqual([]);
     // Every rule that sets type on the stage reads these aliases, never a
     // literal colour. The wake and unlock title is the room's one blue
     // (`accent-primary`: the blue by day, the periwinkle at night, spec

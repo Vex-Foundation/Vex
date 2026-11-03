@@ -21,17 +21,16 @@
  * The step bodies share one vocabulary (label and value rows, provider rows,
  * number rows, the model picker, the review grid, the card), so a form reads
  * the same in both hosts. Radius 0, no shadow, no blur, no gradient ramp; every
- * colour is an alias except the plate's day ground (spec section 1.1, the value
- * chronos-gate.css paints the stage plate with) and the selection wash, which
- * has no alias yet (blue at 7.5% by day, periwinkle at 10% at night, the value
- * settings.css draws its selected row with). */
+ * colour is an alias. R3 excepted two literals, the plate's day ground and a
+ * periwinkle selection wash: the day ground left with the light room, and the
+ * wash is the H3 selected step, `--vex-alias-interactive-active`. */
 
 /* ============================================================ *
  *  The wizard frame                                             *
  * ============================================================ */
 .vex-wz {
   --wz-pad: 72px;
-  --wz-sel: rgba(163, 171, 255, 0.1);
+  --wz-sel: var(--vex-alias-interactive-active);
   position: relative;
   display: grid;
   grid-template-columns: min(480px, 33.333vw) minmax(0, 1fr);
@@ -43,18 +42,18 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-wzs {
-  --wz-sel: rgba(163, 171, 255, 0.1);
+  --wz-sel: var(--vex-alias-interactive-active);
 }
 
 /* The plate: the night plateau print (wizard position 50% 80%), its grain
  * and Vex rising from the token; no state word under her (owner). The ground
- * shows while the photograph decodes. The day print stays hidden: the app is
- * dark only. */
+ * shows while the photograph decodes: the plate alias, the H3 ground. The
+ * day print stays hidden: the app is dark only. */
 .vex-wz__plate {
   position: relative;
   overflow: hidden;
   isolation: isolate;
-  background: var(--color-night-0);
+  background: var(--vex-alias-gate-plate);
 }
 .vex-wz__print {
   position: absolute;
