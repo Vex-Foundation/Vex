@@ -38,6 +38,7 @@ import {
   type WindowOs,
 } from "../../lib/use-window-chrome.js";
 import { applyThemeToDocument, type VexTheme } from "../../stores/uiStore/theme.js";
+import { H3_HARNESS_MARK } from "./mark.js";
 import "./harness.css";
 
 const params = new URLSearchParams(window.location.search);
@@ -71,6 +72,7 @@ function Harness(): JSX.Element {
     <div
       className="vex-h3-harness"
       data-vex-area="h3-harness"
+      data-vex-harness={H3_HARNESS_MARK}
       data-vex-h3-ready={ready ? "true" : undefined}
     />
   );

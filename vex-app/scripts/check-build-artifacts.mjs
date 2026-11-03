@@ -46,6 +46,12 @@
  *      its privileged helper.
  *   13. The native runtime lock (native-runtime.lock.json) is well formed and
  *      pins every target the app packages.
+ *   14. The H3 shell harness (src/renderer/dev/h3-shell/, its fixtures and
+ *      the stand-in art under standins/) never ships: no module outside the
+ *      harness imports it, and nothing of it reaches dist/ - not by path, not
+ *      as a byte-identical copy, not by an emitted asset name, not under the
+ *      stand-ins' `kimm-standin-*` name, and not as bundled code carrying the
+ *      harness's marks.
  *
  * Exit non-zero on any violation.
  */
@@ -614,6 +620,149 @@ check("native runtime lock - pins every packaged target", () => {
   for (const target of NATIVE_RUNTIME_TARGETS) {
     const entry = lock.targets[target.name];
     console.log(`    ${target.name} ${entry.asset} sha256 ${entry.sha256} tree ${entry.treeSha256} (${lock.release})`);
+  }
+});
+
+// 14. THE H3 SHELL HARNESS NEVER SHIPS.
+//
+// `src/renderer/dev/h3-shell/` renders the real shell over a stand-in preload
+// bridge and typed fixture data - a waiting swap for 200 USDC, a filled
+// receipt, a Portfolio of sample balances - and, under standins/, crops of the
+// mockup art used until the real art lands. All of it is dev scaffolding that
+// `vite.h3-shell.config.ts` alone serves. A build that carried any of it would
+// ship sample money figures beside real ones, which AGENTS.md forbids outright
+// ("never present mocks, stubs, fake providers, or simulated proof as
+// production behavior"), so the gate is two-sided:
+//
+//   a. SOURCE: no module outside the harness imports from it. This is the
+//      gate that keeps the fixtures unimportable; tests are exempt, because a
+//      test that reuses a fixture never reaches a bundle.
+//   b. DIST: nothing of the harness is in dist/, by five independent tells -
+//      a path segment (`h3-shell`, `standins`), a byte-identical copy of any
+//      harness file (the stand-in art, a copied page or sheet), an emitted
+//      asset named after a stand-in or harness asset (Vite's
+//      `[name]-[hash][ext]`), the stand-ins' own `kimm-standin` name prefix
+//      (which holds even for a crop re-encoded on its way into the bundle,
+//      and even on a branch that does not carry the crops), and bundled code
+//      or CSS carrying the harness's
+//      marks. The marks are strings the harness keeps at RUNTIME, so they
+//      survive minification where a comment would not: `vex-h3-shell-harness`
+//      (`H3_HARNESS_MARK`, which the stand-in bridge and the fixtures carry)
+//      and `__vexH3Harness` (the control surface's window property).
+const H3_HARNESS_DIR = path.join(root, "src", "renderer", "dev", "h3-shell");
+const H3_HARNESS_MARKS = ["vex-h3-shell-harness", "__vexH3Harness"];
+const H3_DIST_SEGMENTS = new Set(["h3-shell", "standins"]);
+// The stand-in art's own naming rule (standins/manifest.ts): every crop is
+// `kimm-standin-*.webp` and sits above Vite's inline limit, so a build that
+// reached one would emit `assets/kimm-standin-<hash>.webp`. Refused by prefix
+// as well as by digest, so a re-encoded crop is caught too.
+const H3_DIST_NAME_PREFIXES = ["kimm-standin"];
+const CODE_EXTENSIONS = /\.(tsx?|jsx?|mts|cts|mjs|cjs)$/;
+const TEXT_EXTENSIONS = /\.(m?js|cjs|css|html?|json|svg|txt|map|md)$/i;
+
+function walkFiles(dir) {
+  const out = [];
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) out.push(...walkFiles(full));
+    else if (ent.isFile()) out.push(full);
+  }
+  return out;
+}
+
+function isInside(child, parent) {
+  const rel = path.relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+check("H3 shell harness - nothing outside the harness imports it", () => {
+  const srcDir = path.join(root, "src");
+  const rendererDir = path.join(srcDir, "renderer");
+  // Every way a module names another one: static and type imports,
+  // re-exports, dynamic import(), `new URL(..., import.meta.url)` and Vite's
+  // import.meta.glob. Comments that mention the harness are not imports and
+  // are not matched.
+  const specifierRe =
+    /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|new\s+URL\(\s*|import\.meta\.glob\(\s*\[?\s*)["'`]([^"'`]+)["'`]/g;
+  const violations = [];
+  const walk = (dir) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === "node_modules" || ent.name === "__tests__" || ent.name === "test") continue;
+        if (isInside(full, H3_HARNESS_DIR)) continue;
+        walk(full);
+      } else if (CODE_EXTENSIONS.test(ent.name) && !/\.test\.[cm]?[jt]sx?$/.test(ent.name)) {
+        const src = readFileSync(full, "utf8");
+        for (const m of src.matchAll(specifierRe)) {
+          const spec = m[1];
+          let target = null;
+          if (spec.startsWith("./") || spec.startsWith("../")) target = path.resolve(path.dirname(full), spec);
+          else if (spec.startsWith("@/")) target = path.resolve(rendererDir, spec.slice(2));
+          else if (spec.startsWith("/")) target = path.resolve(rendererDir, spec.slice(1));
+          if (target !== null && isInside(target, H3_HARNESS_DIR)) {
+            violations.push(`${path.relative(root, full)}: imports "${spec}"`);
+          }
+        }
+      }
+    }
+  };
+  walk(srcDir);
+  if (violations.length > 0) {
+    throw new Error(
+      `Production code reaches the H3 shell harness (its fixtures and stand-ins are dev-only):\n    ${violations.join("\n    ")}`
+    );
+  }
+});
+
+check("H3 shell harness - no harness file, fixture or stand-in art in dist/", () => {
+  const distDir = path.join(root, "dist");
+  if (!existsSync(distDir)) throw new Error(`missing: ${distDir}`);
+  const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
+
+  // What the harness is made of: the digest of every non-empty file (an empty
+  // one would match every empty file in dist/), and the stems of the files a
+  // bundler emits under their own name - the media, font and data files,
+  // which is the stand-in art first of all. Code, sheets and pages are
+  // renamed into chunks, so the marks below are what finds them.
+  const harnessDigests = new Map();
+  const assetStems = [];
+  for (const file of existsSync(H3_HARNESS_DIR) ? walkFiles(H3_HARNESS_DIR) : []) {
+    if (statSync(file).size > 0) harnessDigests.set(sha(file), path.relative(root, file));
+    const base = path.basename(file);
+    if (/\.(png|jpe?g|webp|avif|gif|svg|woff2?|ttf|otf|mp4|webm|json|bin)$/i.test(base)) {
+      const ext = path.extname(base);
+      assetStems.push({ stem: base.slice(0, base.length - ext.length), ext, source: path.relative(root, file) });
+    }
+  }
+
+  const violations = [];
+  for (const file of walkFiles(distDir)) {
+    const rel = path.relative(distDir, file);
+    const hit = rel.split(path.sep).find((segment) => H3_DIST_SEGMENTS.has(segment));
+    if (hit !== undefined) violations.push(`dist/${rel}: a harness path ("${hit}")`);
+
+    const base = path.basename(file);
+    const prefix = H3_DIST_NAME_PREFIXES.find((p) => base.startsWith(p));
+    if (prefix !== undefined) violations.push(`dist/${rel}: stand-in art by name ("${prefix}")`);
+    for (const { stem, ext, source } of assetStems) {
+      if (stem.length > 0 && base.endsWith(ext) && (base === `${stem}${ext}` || base.startsWith(`${stem}-`))) {
+        violations.push(`dist/${rel}: emitted under the name of ${source}`);
+      }
+    }
+
+    const copyOf = harnessDigests.get(sha(file));
+    if (copyOf !== undefined) violations.push(`dist/${rel}: a byte-identical copy of ${copyOf}`);
+
+    if (TEXT_EXTENSIONS.test(base)) {
+      const text = readFileSync(file, "utf8");
+      for (const mark of H3_HARNESS_MARKS) {
+        if (text.includes(mark)) violations.push(`dist/${rel}: carries the harness mark "${mark}"`);
+      }
+    }
+  }
+  if (violations.length > 0) {
+    throw new Error(`H3 shell harness reached the build:\n    ${violations.join("\n    ")}`);
   }
 });
 
