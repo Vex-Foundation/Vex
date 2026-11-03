@@ -67,9 +67,11 @@ describe("board surface tokens", () => {
     expect(chronos).toContain(`${alias}:`);
   });
 
-  it.each(boardAliases)("resolves %s to a paper step", (alias) => {
+  it.each(boardAliases)("resolves %s to an H3 surface step", (alias) => {
+    // The ground, or the raised step for a hovered card
+    // (docs/design/H3-DESKTOP.md section 2.1).
     const value = new RegExp(`${alias}:\\s*([^;]+);`).exec(chronos)?.[1]?.trim();
-    expect(value).toMatch(/^var\(--color-(night|night-0|night-1|night-2)\)$/);
+    expect(value).toMatch(/^var\(--color-h3-(ground|raised)\)$/);
   });
 
   it.each([

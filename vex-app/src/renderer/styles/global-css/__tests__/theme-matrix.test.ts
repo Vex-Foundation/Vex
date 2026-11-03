@@ -357,13 +357,14 @@ describe("pre-shell plate", () => {
   });
 
   it("keeps the plate equal to the main-window backgroundColor", () => {
-    // main/main-window.ts paints the window before the bundle loads; the
-    // plate and the page ground must be that same night paper, so first
-    // paint and the plate are one surface.
+    // main/main-window.ts paints the window before the bundle loads, and the
+    // pre-shell plate is what it paints under: the two must be one surface.
+    // The shell's own ground has moved to H3's (#010203); the window and the
+    // plate follow it in the next change, with the caption overlay.
     expect(chronosBlock).toContain("--vex-alias-gate-plate: var(--color-night)");
-    expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-night)");
     expect(tokensCss).toContain("--color-night: #1b1412");
     expect(mainWindowTs).toContain('backgroundColor: "#1b1412"');
+    expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-h3-ground)");
   });
 
   it("sets the stage type on the night print in paper", () => {
@@ -372,8 +373,8 @@ describe("pre-shell plate", () => {
     // one exception the design measured at 1.34:1 (peri-hi on the night
     // sky); it is paper there now.
     expect(chronosBlock).toContain("--vex-alias-gate-counter: var(--color-paper)");
-    expect(chronosBlock).toContain("--vex-alias-title: var(--color-paper)");
-    expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-paper)");
+    expect(chronosBlock).toContain("--vex-alias-title: var(--color-h3-ink)");
+    expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-h3-ink)");
     // The unlock field and its box are night fields: never the white field
     // on the print.
     expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-night-1)");
@@ -407,9 +408,10 @@ describe("pre-shell plate", () => {
       expect(match, `${theme} overlay colours not found`).not.toBeNull();
       return { color: (match?.[1] ?? "").toLowerCase(), symbolColor: (match?.[2] ?? "").toLowerCase() };
     };
+    // Until the caption follows the H3 ground (the next change), it stays on
+    // the first-paint plate it was cut for.
     expect(overlay("chronos")).toEqual({ color: "#1b1412", symbolColor: "#f3f4f7" });
-    expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-night)");
-    expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-paper)");
+    expect(chronosBlock).toContain("--vex-alias-gate-plate: var(--color-night)");
   });
 });
 

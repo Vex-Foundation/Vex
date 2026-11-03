@@ -140,11 +140,12 @@ describe("the resolver (load-bearing)", () => {
   it("resolves the V10 values it is measuring", () => {
     // If resolution silently degraded, every ratio below would be measured
     // against the wrong colour and still pass.
-    expect(resolveHex([chronos], "--vex-alias-bg-base")).toBe("#1b1412");
+    expect(resolveHex([chronos], "--vex-alias-bg-base")).toBe("#010203");
     expect(resolveHex([chronos], "--vex-alias-state-warn")).toBe("#a3abff");
-    expect(resolveHex([chronos], "--vex-alias-state-success")).toBe("#f3f4f7");
-    expect(resolveHex([chronos], "--vex-alias-state-error")).toBe("#f3f4f7");
-    expect(resolveHex([chronos], "--vex-alias-composer")).toBe("#221a17");
+    expect(resolveHex([chronos], "--vex-alias-state-success")).toBe("#f3f5f9");
+    expect(resolveHex([chronos], "--vex-alias-state-error")).toBe("#f3f5f9");
+    expect(resolveHex([chronos], "--vex-alias-composer")).toBe("#010203");
+    expect(resolveHex([chronos], "--vex-alias-label-tertiary")).toBe("#808693");
     expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#4cd685");
     expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7b7b");
   });
