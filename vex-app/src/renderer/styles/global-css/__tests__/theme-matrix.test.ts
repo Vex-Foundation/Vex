@@ -78,8 +78,69 @@ const gateAliases = [
 ].sort();
 
 /**
- * The 23 primitives (docs/design/R3-MINIMAL.md section 1), and nothing else:
- * the V10 colours plus the trading pair, two per room.
+ * The H3 primitives: the design sheet's oklch values ("v99 frame language",
+ * the VEX Cloud round 3 mockup, app variant H3), as [lightness 0-1, chroma,
+ * hue]. tokens.css carries each as its sRGB hex; the suite converts these
+ * itself and holds the sheet to them, so a hand-typed hex cannot drift from
+ * the design.
+ */
+const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
+  "--color-h3-page": [0.09, 0.012, 264],
+  "--color-h3-panel": [0.085, 0.008, 264],
+  "--color-h3-cell": [0.11, 0.006, 264],
+  "--color-h3-raised": [0.13, 0.004, 264],
+  "--color-h3-ink": [0.97, 0.005, 264],
+  "--color-h3-ink-2": [0.8, 0.012, 264],
+  "--color-h3-muted": [0.62, 0.02, 264],
+  "--color-h3-blue": [0.452, 0.313, 264.1],
+  "--color-h3-blue-hover": [0.56, 0.28, 264],
+  "--color-h3-live": [0.78, 0.13, 150],
+  "--color-h3-err": [0.74, 0.17, 27],
+};
+
+/** Björn Ottosson's OKLab -> linear sRGB, then the sRGB transfer function. */
+function oklchToSrgb(lightness: number, chroma: number, hue: number): [number, number, number] {
+  const radians = (hue * Math.PI) / 180;
+  const a = chroma * Math.cos(radians);
+  const b = chroma * Math.sin(radians);
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const linear = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+  const encoded = linear.map((c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055));
+  return encoded as [number, number, number];
+}
+
+const inSrgb = (rgb: readonly number[]): boolean => rgb.every((c) => c >= -1e-6 && c <= 1 + 1e-6);
+
+/**
+ * The CSS Color 4 gamut map, in its plain form: hold lightness and hue and
+ * bisect the chroma down until the colour fits sRGB. A value already inside
+ * sRGB is returned as it is.
+ */
+function oklchToHex(lightness: number, chroma: number, hue: number): string {
+  let rgb = oklchToSrgb(lightness, chroma, hue);
+  if (!inSrgb(rgb)) {
+    let [low, high] = [0, chroma];
+    for (let step = 0; step < 40; step++) {
+      const mid = (low + high) / 2;
+      if (inSrgb(oklchToSrgb(lightness, mid, hue))) low = mid;
+      else high = mid;
+    }
+    rgb = oklchToSrgb(lightness, low, hue);
+  }
+  return `#${rgb
+    .map((c) => Math.round(Math.min(1, Math.max(0, c)) * 255).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+/**
+ * The primitives, and nothing else: the V10 colours (docs/design/R3-MINIMAL.md
+ * section 1) plus the trading pair, two per room, and the H3 set.
  */
 const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-white": "#ffffff",
@@ -105,17 +166,61 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-down": "#c2272e",
   "--color-up-night": "#4cd685",
   "--color-down-night": "#ff7b7b",
+  "--color-h3-page": "#020205",
+  "--color-h3-panel": "#010203",
+  "--color-h3-cell": "#040406",
+  "--color-h3-raised": "#070709",
+  "--color-h3-ink": "#f3f5f9",
+  "--color-h3-ink-2": "#babec6",
+  "--color-h3-muted": "#808693",
+  "--color-h3-blue": "#0000ff",
+  "--color-h3-blue-hover": "#2561ff",
+  "--color-h3-live": "#76cf8a",
+  "--color-h3-err": "#ff7f73",
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 23 primitives, at their values", () => {
+  it("holds exactly the 34 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(23);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(34);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
+  });
+
+  it("lands its oklch converter on sRGB's fixed points: pure blue, white and black", () => {
+    // Load-bearing: if the conversion drifted, every H3 check below would
+    // compare a wrong hex with a wrong hex and pass. Pure blue at full
+    // precision (the sheet rounds it to 45.2% 0.313 264.1).
+    expect(oklchToHex(0.45201372, 0.31321437, 264.05202)).toBe("#0000ff");
+    expect(oklchToHex(1, 0, 0)).toBe("#ffffff");
+    expect(oklchToHex(0, 0, 0)).toBe("#000000");
+  });
+
+  it.each(Object.entries(H3_SHEET))("holds %s to the sheet's oklch value", (name, [l, c, h]) => {
+    // Within one step per channel: the sheet rounds lightness and chroma to
+    // three places, which moves a channel by up to one step (its blue lands
+    // on #0100ff; the captures paint the key #0000ff, sRGB's own blue).
+    const hex = PRIMITIVES[name];
+    expect(hex, `${name} is not a primitive`).toBeDefined();
+    const channels = (value: string): number[] =>
+      [1, 3, 5].map((at) => parseInt(value.slice(at, at + 2), 16));
+    const sheet = channels(oklchToHex(l, c, h));
+    const token = channels(hex ?? "");
+    sheet.forEach((value, index) => {
+      expect(Math.abs(value - (token[index] ?? -9)), `${name} channel ${String(index)}`).toBeLessThanOrEqual(1);
+    });
+  });
+
+  it("names the two values the gamut map moved, and only those", () => {
+    // The blue hover and the red sit outside sRGB as the sheet states them;
+    // every other H3 value is inside and converts unchanged.
+    const moved = Object.entries(H3_SHEET)
+      .filter(([, [l, c, h]]) => !inSrgb(oklchToSrgb(l, c, h)))
+      .map(([name]) => name);
+    expect(moved).toEqual(["--color-h3-blue-hover", "--color-h3-err"]);
   });
 
   it("kills Tailwind's default palette, so no stray hue can compile", () => {
