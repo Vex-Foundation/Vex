@@ -74,9 +74,9 @@ Open: Cloud's own breakpoints and widths, and whether Cloud's chat has a floor. 
 | Window width | Chats | Vex | Chat | Note |
 |---|---|---|---|---|
 | 1000 to 1023 | 76 rail | a band | 924 to 947 | the band layout; desktop's minimum window is 1000 x 720 (`src/main/windows/bounds.ts`) |
-| 1024 | 248 | 307 | 469 | no plate; the rule extended |
-| 1180 | 248 | 354 | 578 | |
-| 1224 | 248 | 367 | 609 | the first run's window on a 1440px display (85% of the work area) |
+| 1024 | 248 | 307 | 469 | no plate; the rule extended. Desktop starts the chats folded here: 76, 307, 641 (section 4.12) |
+| 1180 | 248 | 354 | 578 | desktop folded: 76, 354, 750 |
+| 1224 | 248 | 367 | 609 | the first run's window on a 1440px display (85% of the work area); desktop folded: 76, 367, 781 |
 | 1280 | 248 | 384 | 648 | the stored default window, 1280 x 800 |
 | 1366 | 248 | 410 | 708 | |
 | 1440 | 248 | 432 | 760 | the 1440 captures |
@@ -88,7 +88,7 @@ What follows from the rule:
 - The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first of the money rule's three legs (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
 - There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is 469, narrower than any plate. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3), and whether Cloud moves the band seam above 1024. Settled in the harness at 1024 and 1280 and with Cloud.
 - In a chat, the Vex column's width never depends on whether her section is open. On pages, closing her folds the column to a line (section 1.9).
-- Open: what the sidebar key does at 1024 and up; it is drawn but never pressed. Presumed: it folds the chats column to the 76px rail and the chat takes the freed 172px. A fold the person asks for may move a card; her section never does.
+- Open: what the sidebar key does at 1024 and up; it is drawn but never pressed. Presumed: it folds the chats column to the 76px rail and the chat takes the freed 172px. A fold the person asks for may move a card; her section never does. Desktop builds the presumption, and from 1024 to 1267 starts the chats folded (section 4.12).
 
 ### 1.3 The header row
 76 high, one row of cells across the window. It is mounted once, because it hosts the app-wide approvals sync (`RunningHead.tsx`: preload allows one subscriber per event), and every cell that is not a control is a window drag region (`.vex-drag`).
@@ -539,6 +539,15 @@ Already known for those plates:
 
 ### 4.11 What Cloud and desktop must agree on
 The column rule and tiers (section 1.2), the words of every element both apps show (Appendix A, where desktop says "same"), the keys (Appendix A.9, less desktop's old chord and its Linux binding), the timings and the push curve (section 3.1), the mood list (section 1.6) and the open-and-closed memory rule (section 3.5). These go to desu; Cloud's answers are recorded here when they come, and each "Open" line above that Cloud settles is rewritten then.
+
+### 4.12 The chats column from 1024 to 1267
+Decided on 3 November 2026, for S2-07: desktop keeps the chat at 640 or more wherever the window allows, by folding the chats column rather than bending the column rule (section 1.2), which stays as printed.
+
+- From 1268 up the chats column is the person's stored choice: 248 open, the 76px rail folded. 1268 is the first width at which 248 + 30% + 640 fits (248 + 380 + 640); at 1267 the chat would be 639.
+- From 1024 to 1267 the chats column starts folded to the 76px rail, so the chat keeps at least 640 (641 at 1024: 76 + 307 + 641; 811 at 1267). The sidebar key and the rail's Expand key still open it there. That opening is an unsaved override, as R3's narrow tier had (the store's `sidebarNarrowExpanded`): the chat then takes what the rule leaves (469 at 1024), and leaving the tier, past 1267 or under 1024, clears it, so the next entry starts folded again. The stored choice is never rewritten.
+- Under 1024 the band (section 1.10) folds the chats whatever either says, and the rail has no Expand key there.
+- Nothing about her section enters this: the Vex column is 30% of the window at every width, and the fold is only what the shell asks the solver (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`). A fold the person asks for may move a card (section 1.2); her section never does.
+- Open: whether Cloud folds its chats under 1268 too. Settled with Cloud.
 
 ---
 

@@ -24,8 +24,9 @@
  *
  * - The LEFT column hosts the sessions sidebar in agent mode, the Studio
  *   projects and explorer in Studio, and the vx mark on the rail in Lighter.
- *   Its widths are fixed (264, 224 at the medium tier, the 56px rail closed);
- *   there is no drag handle.
+ *   Its widths are fixed (H3's 248 and the 76px rail; R3's 56px rail on the
+ *   desk); there is no drag handle. From 1024 to 1267 it starts folded
+ *   (H3-DESKTOP.md section 4.12) and under 1024 it is the rail.
  * - The CENTRE is the mode's surface. Pages (Memory, Settings, Portfolio and
  *   the rest) open INSIDE the centre (`ShellScreens`), so both sidebars stay
  *   standing.
@@ -56,7 +57,10 @@ import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   LIGHTER_CHAT_MIN,
   RAIL_WIDTH,
+  computeH3ShellColumns,
   computeShellColumns,
+  h3GridTemplateColumns,
+  h3ShellTier,
   lighterChatDragMax,
   shellColumnOrder,
   shellFrameKind,
@@ -276,21 +280,25 @@ function ShellFrame({
     return () => window.removeEventListener("keydown", onZenKey);
   }, [lighter, lighterZen, setZenMode, zenAssistantOpen, zenControlsOpen]);
 
-  // Under the medium tier the left sidebar (agent and Studio) closes to its
-  // rail; a manual toggle there flips the ephemeral re-expand override instead
-  // of the persisted preference. Crossing back into the medium tier clears the
-  // override so the next narrow entry starts at the rail again. Lighter has no
-  // left sidebar of its own; the same ephemeral flag opens its top bar drawer.
-  const tier = shellTier(viewport);
-  const narrow = tier === "narrow";
+  // THE TIERS. The agent shell and Studio stand on H3's
+  // (docs/design/H3-DESKTOP.md sections 1.2 and 4.12): from 1268 up the
+  // chats column is the stored choice; from 1024 to 1267 (the medium tier)
+  // it starts folded to the 76px rail so the chat keeps 640, and the sidebar
+  // key flips the ephemeral override instead of the stored choice; under
+  // 1024 (the band) it is the rail, whatever either says. Leaving the medium
+  // tier clears the override, so the next entry starts folded again. The
+  // Lighter desk keeps R3's tiers; it has no left sidebar of its own, and
+  // the same ephemeral flag opens its top bar drawer.
+  const tier = lighter ? shellTier(viewport) : h3ShellTier(viewport);
+  const overrideTier = !lighter && tier === "medium";
   useEffect(() => {
-    if (!lighter && !narrow) setSidebarNarrowExpanded(false);
-  }, [lighter, narrow, setSidebarNarrowExpanded]);
-  const leftAsked = narrow ? sidebarNarrowExpanded : leftOpen;
+    if (!lighter && !overrideTier) setSidebarNarrowExpanded(false);
+  }, [lighter, overrideTier, setSidebarNarrowExpanded]);
+  const leftAsked = overrideTier ? sidebarNarrowExpanded : leftOpen;
   const toggleSidebar = useCallback((): void => {
-    if (lighter || narrow) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
+    if (lighter || overrideTier) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
     else setLeftOpen(!leftOpen);
-  }, [lighter, narrow, sidebarNarrowExpanded, setSidebarNarrowExpanded, setLeftOpen, leftOpen]);
+  }, [lighter, overrideTier, sidebarNarrowExpanded, setSidebarNarrowExpanded, setLeftOpen, leftOpen]);
 
   // WELCOME stage, per mode: no session (agent), no project (Studio); Lighter
   // has none, the desk is always resident. Vex sits in the centre there, so
@@ -302,21 +310,33 @@ function ShellFrame({
     ? false
     : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
-  // A hidden Vex keeps nothing: her column closes to zero width.
-  const cols: ShellColumns = computeShellColumns({
-    viewport,
-    mode: runtimeMode,
-    left: leftAsked,
-    vex: vexOpen,
-    welcome: welcomeStage,
-    lighterChat: Math.max(1, viewport * lighterChatShare),
-    zen,
-  });
+  // THE TRACKS. The agent shell and Studio: H3's solve, chats | Vex | chat,
+  // the Vex column 30% of the frame. Its width is a function of the window
+  // alone; a Vex the person hid, and the welcome, which has none yet, fold
+  // it to 0 for now (the solver's strip), the chat taking the room. The
+  // Lighter desk: R3's solve, its chat share included. A hidden Vex keeps
+  // nothing there either: her column closes to zero width.
+  const h3Cols = lighter
+    ? null
+    : computeH3ShellColumns({ viewport, chats: leftAsked, vexStrip: welcomeStage || !vexOpen });
+  const cols: ShellColumns =
+    h3Cols === null
+      ? computeShellColumns({
+          viewport,
+          mode: runtimeMode,
+          left: leftAsked,
+          vex: vexOpen,
+          welcome: welcomeStage,
+          lighterChat: Math.max(1, viewport * lighterChatShare),
+          zen,
+        })
+      : { left: h3Cols.chats, center: h3Cols.chat, vex: h3Cols.vex };
   const colsRef = useRef(cols);
   colsRef.current = cols;
-  // Derived auto-close: the stored choice stays `true`, the column collapses.
+  // R3's derived auto-close: the stored choice stays `true`, the column
+  // collapses. H3 has none, so there the column is open exactly when asked.
   const vexEffectiveOpen = !zen && vexOpen && cols.vex > 0;
-  const rail = cols.left <= RAIL_WIDTH;
+  const rail = h3Cols === null ? cols.left <= RAIL_WIDTH : h3Cols.chatsRail;
   // What the left column's content renders: Lighter's drawer state, or the
   // solved column (open, or its rail).
   const sidebarCollapsed = lighter ? !sidebarNarrowExpanded : rail;
@@ -353,9 +373,10 @@ function ShellFrame({
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
     // desk keeps R3's rail | desk | chat.
-    gridTemplateColumns: lighter
-      ? `${cols.left}px minmax(0, 1fr) ${cols.vex}px`
-      : `${cols.left}px ${cols.vex}px minmax(0, 1fr)`,
+    gridTemplateColumns:
+      h3Cols === null
+        ? `${cols.left}px minmax(0, 1fr) ${cols.vex}px`
+        : h3GridTemplateColumns(h3Cols),
     // head | body | foot (docs/design/H3-DESKTOP.md section 1.1): the header
     // row holds the header's cells; the bottom row holds none yet, so it is 0.
     // The Lighter desk keeps R3's one-row frame, its title row its own.
@@ -363,19 +384,22 @@ function ShellFrame({
     // The Lighter desk's title row reserves the caption buttons wherever the
     // right column under them is narrower than they are (lighter-desk.css).
     "--vex-vex-track": `${cols.vex}px`,
-    // Where a page starts in the window: past the left column. The page
-    // itself sits inside the centre (shell.css resets it there); this value
-    // is the frame-level box its entrance morph measures against.
-    "--vex-overlay-left": `${cols.left}px`,
+    // Where a page starts in the window: where the chat does, past the
+    // chats and Vex's column (H3), past the left column (R3). The page itself
+    // sits inside the centre (shell.css resets it there); this value is the
+    // frame-level box its entrance morph measures against.
+    "--vex-overlay-left": `${h3Cols === null ? cols.left : h3Cols.chatLeft}px`,
   };
 
   // The header's cells over the columns (docs/design/H3-DESKTOP.md section
-  // 1.3), on its own grid: the chats cells over the left track, the Vex key
-  // over the Vex column, as wide as the column, or as the key where the
-  // column is closed.
+  // 1.3), on its own grid: the chats cells over the chats track, the Vex key
+  // over the Vex column, 30% of the frame even where the body folds the
+  // column (the frame solved without the fold), and as wide as the key in
+  // the band, which has no Vex column.
+  const headVex = computeH3ShellColumns({ viewport, chats: leftAsked }).vex;
   const headColumns = shellHeadTemplateColumns({
     chats: cols.left,
-    vex: cols.vex > 0 ? cols.vex : null,
+    vex: headVex > 0 ? headVex : null,
     vexBetween: true,
   });
 
@@ -403,6 +427,8 @@ function ShellFrame({
             onCreate={onCreate}
             collapsed={sidebarCollapsed}
             onToggleSidebar={toggleSidebar}
+            // The band keeps the rail whatever is asked: no way to open it.
+            expandable={tier !== "band"}
             headless
           />
         </div>

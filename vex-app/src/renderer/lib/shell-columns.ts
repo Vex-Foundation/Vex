@@ -27,7 +27,8 @@
  * override, the page class), handed in as booleans.
  *
  * The H3 frame has its own solver at the end of this file
- * (computeH3ShellColumns). Nothing uses it yet; everything above is R3's.
+ * (computeH3ShellColumns), which the agent shell and Studio stand on.
+ * Everything above is R3's, and the Lighter desk's until its own restyle.
  */
 
 /** Resolved widths for one frame. */
@@ -191,8 +192,8 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
 
 /**
  * The H3 frame (docs/design/H3-DESKTOP.md, the layout numbers and tiers),
- * solved beside R3's above. Nothing uses it yet: the shell switches over in
- * its own commit, and the Lighter desk keeps computeShellColumns.
+ * solved beside R3's above. The agent shell and Studio stand on it; the
+ * Lighter desk keeps computeShellColumns.
  *
  * H3 moves Vex between the chats and the chat:
  *
@@ -230,6 +231,13 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  * floor. With the chats folded the columns layout never takes the chat under
  * 641, and the band never under 924 from the window minimum up.
  *
+ * The desktop's own rule sits on top, in what the shell ASKS (section 4.12):
+ * from H3_COLUMNS_MIN to H3_CHATS_OPEN_MIN (1024 to 1267, h3ShellTier's
+ * "medium") the chats column starts folded to the rail, so the chat keeps
+ * at least H3_CHAT_MIN (640); the person may open it there, an unsaved
+ * override the shell clears when the window leaves the tier. The solver only
+ * takes the answer as `chats`.
+ *
  * Every width is an integer and the three add back up to the frame, so the
  * grid can hand the chat minmax(0, 1fr) and land exactly on `chat`.
  */
@@ -251,6 +259,29 @@ export const H3_VEX_PERCENT = 30;
 
 /** The H3 frame's two layouts: three columns from H3_COLUMNS_MIN up, the band under it. */
 export type H3ShellLayout = "columns" | "band";
+
+/**
+ * The chat's floor with the chats column open, the one R3 kept: the width a
+ * waiting card's rows were laid out for. H3's own rule has no floor; the
+ * desktop keeps it by folding the chats where it would not hold.
+ */
+export const H3_CHAT_MIN = 640;
+
+/**
+ * From this frame width up the chats column follows the stored choice: the
+ * first width at which 248 + 30% + H3_CHAT_MIN fits (1268: 248 + 380 + 640;
+ * at 1267 the chat would be 639). Under it, down to H3_COLUMNS_MIN, it
+ * starts folded.
+ */
+export const H3_CHATS_OPEN_MIN = 1268;
+
+/**
+ * The H3 frame's three tiers: "wide" from H3_CHATS_OPEN_MIN up (the chats as
+ * the person left them), "medium" from H3_COLUMNS_MIN (the chats folded
+ * unless opened here), "band" under it (the rail, and Vex as a band). Each
+ * seam belongs to the wider side, as shellTier's do.
+ */
+export type H3ShellTier = "wide" | "medium" | "band";
 
 /**
  * Where the Vex console is drawn in one frame: its own column; the band under
@@ -320,6 +351,13 @@ function h3VexWidth(width: number): number {
  */
 export function h3ShellLayout(viewport: number): H3ShellLayout {
   return h3FrameWidth(viewport) >= H3_COLUMNS_MIN ? "columns" : "band";
+}
+
+/** The H3 tier for a frame width, rounded first as the solver rounds. */
+export function h3ShellTier(viewport: number): H3ShellTier {
+  const width = h3FrameWidth(viewport);
+  if (width < H3_COLUMNS_MIN) return "band";
+  return width >= H3_CHATS_OPEN_MIN ? "wide" : "medium";
 }
 
 /**
