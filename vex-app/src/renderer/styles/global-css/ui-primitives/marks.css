@@ -211,13 +211,13 @@ html[data-still] .vex-swatch {
 }
 
 .vex-stamp {
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-label);
   background: var(--vex-alias-rule-ink);
   color: var(--vex-alias-label-on-primary);
 }
 
 .vex-tag {
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   border: 1px solid var(--vex-alias-rule-ink);
   color: var(--vex-alias-label-primary);
 }

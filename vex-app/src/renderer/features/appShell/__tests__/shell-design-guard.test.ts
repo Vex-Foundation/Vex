@@ -55,9 +55,13 @@
  * which no renderer glob should inline:
  *
  *   6. no Departure Mono anywhere in the renderer's code or sheets;
- *   7. no `font-mono` with `uppercase` in one class string, and no sheet rule
- *      in the mono face with caps: words are Instrument Sans in sentence
- *      case and caps belong to tags (`.vex-stamp`, `.vex-tag`) alone;
+ *   7. mono caps only through their register: H3 sets the money card's
+ *      field labels in mono caps (docs/design/H3-DESKTOP.md section 2.3), so
+ *      a sheet rule may set the mono face with caps only for the field-label
+ *      register (`.vex-field-label`) and the tags (`.vex-stamp`, `.vex-tag`);
+ *      a call site reaches it through the class, never through a
+ *      `font-mono` and `uppercase` pair of utilities. And every caps rule in
+ *      a sheet is tracked: H3 never sets caps untracked;
  *   8. no import of the retired eagle modules (the print plate, the flock
  *      engine, its agent state, the sprite classifier) and no reference to
  *      the eagle or bird art;
@@ -558,8 +562,28 @@ const DEPARTURE = /Departure Mono|departure-mono/i;
 // in either order; a variant prefix (`md:uppercase`) counts.
 const MONO_CAPS_CLASS =
   /["'`][^"'`\n]*(?<![\w-])font-mono(?![\w-])[^"'`\n]*(?<![\w-])uppercase(?![\w-])|["'`][^"'`\n]*(?<![\w-])uppercase(?![\w-])[^"'`\n]*(?<![\w-])font-mono(?![\w-])/;
-/** Tags own the only caps in the app (ui-primitives/marks.css). */
-const TAG_SELECTOR = /\.vex-(?:stamp|tag)\b/;
+/**
+ * The registers allowed mono caps: the tags (ui-primitives/marks.css) and the
+ * money card's field labels (type.css).
+ */
+const TAG_SELECTOR = /\.vex-(?:stamp|tag|field-label)\b/;
+
+/**
+ * Each rule in the sheet that sets caps with no tracking, by selector. The
+ * shared tag and stamp rule is exempt: its two variants set the tracking.
+ */
+function untrackedCapsRules(css: string): string[] {
+  const offenders: string[] = [];
+  for (const match of stripCssComments(css).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = (match[1] ?? "").trim();
+    const body = match[2] ?? "";
+    if (!/text-transform:\s*uppercase/.test(body)) continue;
+    if (/letter-spacing:/.test(body)) continue;
+    if (/^\.vex-stamp,\s*\.vex-tag$/.test(selector)) continue;
+    offenders.push(selector);
+  }
+  return offenders;
+}
 
 /** Each rule in the sheet whose body sets the mono face and caps, by selector. */
 function monoCapsRules(css: string): string[] {
@@ -656,12 +680,22 @@ describe("shell design guard (R3 bans)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("sets no word in JetBrains Mono caps: no font-mono with uppercase, no mono caps rule", () => {
+  it("sets mono caps only through the field-label register and the tags", () => {
     const classes = RENDERER_CODE.filter((c) => MONO_CAPS_CLASS.test(c.text)).map((c) => c.file);
     const rules = RENDERER_SHEETS.flatMap((c) =>
       monoCapsRules(c.text).map((selector) => `${c.file} :: ${selector}`),
     );
     expect([...classes, ...rules]).toEqual([]);
+    // The register exists, so the allowance is not a hole.
+    const type = RENDERER_SHEETS.find((c) => c.file === "type.css")?.text ?? "";
+    expect(stripCssComments(type)).toMatch(/\.vex-field-label \{[^}]*font-family: var\(--font-mono\);[^}]*text-transform: uppercase;/);
+  });
+
+  it("tracks every caps rule in every sheet", () => {
+    const rules = RENDERER_SHEETS.flatMap((c) =>
+      untrackedCapsRules(c.text).map((selector) => `${c.file} :: ${selector}`),
+    );
+    expect(rules).toEqual([]);
   });
 
   it("sets no display type in the retired serif: no sheet reads it, and its token names the sans", () => {
@@ -726,13 +760,19 @@ describe("shell design guard (R3 bans)", () => {
     expect(MONO_CAPS_CLASS.test('className="font-mono-ish not-uppercase"')).toBe(false);
   });
 
-  it("flags a mono caps rule but lets a tag keep its caps", () => {
+  it("flags a mono caps rule but lets a tag and the field-label register keep theirs", () => {
     expect(
       monoCapsRules(".x { font-family: var(--font-mono); text-transform: uppercase; }"),
     ).toEqual([".x"]);
     expect(
       monoCapsRules(".vex-tag, .vex-stamp { font-family: var(--font-mono); text-transform: uppercase; }"),
     ).toEqual([]);
+    expect(
+      monoCapsRules(".vex-field-label { font-family: var(--font-mono); text-transform: uppercase; }"),
+    ).toEqual([]);
+    expect(untrackedCapsRules(".x { text-transform: uppercase; }")).toEqual([".x"]);
+    expect(untrackedCapsRules(".x { text-transform: uppercase; letter-spacing: 0.08em; }")).toEqual([]);
+    expect(untrackedCapsRules(".vex-stamp,\n.vex-tag { text-transform: uppercase; }")).toEqual([]);
     expect(monoCapsRules(".x { font-family: var(--font-sans); text-transform: uppercase; }")).toEqual([]);
     expect(
       monoCapsRules("/* .x { font-family: var(--font-mono); text-transform: uppercase; } */"),

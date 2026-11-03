@@ -191,15 +191,17 @@
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   --font-serif: var(--font-display);
 
-  /* Caps tracking. R3 sets caps on tags only (REAL FUNDS, HIGH RISK: 11px,
-   * 600, docs/design/R3-MINIMAL.md section 1); labels and status words are
-   * sentence case with no tracking. These steps stay for the caps call sites
-   * that each screen converts in its own pass. */
-  --tracking-eyebrow: 0.18em;
-  --tracking-status: 0.14em;
-  --tracking-chip: 0.12em;
-  --tracking-caption: 0.06em;
-  --tracking-tape: 0.24em;
+  /* Caps tracking (docs/design/H3-DESKTOP.md section 2.3). H3 sets every
+   * label in caps at ONE tracking, the sheet's 0.08em: the label register
+   * (type.css), the tags and stamps, the card's mono field labels. R3's
+   * stepped scale (0.06 to 0.24em) collapses onto it; the old names stay so
+   * their call sites keep compiling, each the same 0.08em. */
+  --tracking-label: 0.08em;
+  --tracking-eyebrow: var(--tracking-label);
+  --tracking-status: var(--tracking-label);
+  --tracking-chip: var(--tracking-label);
+  --tracking-caption: var(--tracking-label);
+  --tracking-tape: var(--tracking-label);
 }
 
 /* Alias tier - the one room, on :root. The theme attribute still rides on

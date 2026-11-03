@@ -2,7 +2,8 @@
  *  THE TYPE REGISTER: labels, figures and the two prose voices  *
  * ============================================================ *
  *
- * docs/design/R3-MINIMAL.md section 1.3. globals.css imports this sheet in
+ * docs/design/H3-DESKTOP.md section 2.3 (R3-MINIMAL.md section 1.3 before
+ * it). globals.css imports this sheet in
  * the slot the retired landing motif sheet held, after book.css and before
  * motion-primitives.css, so every rule here keeps its place in the cascade:
  * it beats the sheets above it and loses to the screen sheets below it on
@@ -10,38 +11,42 @@
  * also beats Tailwind's `@layer utilities` at the call site. */
 
 /* -------------------------------------------------------------------------
- * THE TYPOGRAPHY REGISTER (R3, docs/design/R3-MINIMAL.md section 1)
+ * THE TYPOGRAPHY REGISTER (H3, docs/design/H3-DESKTOP.md section 2.3)
  *
- * Instrument Sans (--font-sans) is every UI word: reading 15, rows 14, meta
- * 13, small 12, labels and status words included, all in sentence case.
- * JetBrains Mono (--font-mono) is every figure, address, time and duration,
- * with `.vex-num` below. Display type is the sans too (H3 retired
- * Instrument Serif; --font-serif names the sans for the call sites left).
- * Caps belong to tags alone (REAL FUNDS, HIGH RISK: 11px, 600), which own
- * their classes in ui-primitives/marks.css. The
- * classes below own family, scale, case and tracking at the CLASS level, so
- * their call sites change register in one edit: this sheet is unlayered, so
- * a call site's `uppercase`, `tracking-*` or `font-mono` utility loses to it.
+ * Be Vietnam Pro (--font-sans) is every word: sentences, names and values in
+ * sentence case, LABELS IN CAPS. Roboto Mono (--font-mono) is every figure,
+ * balance, address, time and duration, with `.vex-num` below, and the money
+ * card's field labels (`.vex-field-label`). Display type is the sans too
+ * (--font-serif names the sans for the call sites left).
+ *
+ * A label is written in sentence case in the source and uppercased by the
+ * class here, so a screen reader reads words, not letters. Every caps label
+ * is tracked 0.08em (--tracking-label), the sheet's own value. Weights are
+ * the two the face ships: 600 for section heads, 400 for everything else.
+ *
+ * The classes below own family, scale, case and tracking at the CLASS
+ * level, so their call sites change register in one edit: this sheet is
+ * unlayered, so a call site's `uppercase`, `tracking-*` or `font-mono`
+ * utility loses to it.
  * ------------------------------------------------------------------------- */
 
-/* Eyebrow: the section and field label (a form legend, a section head, a
- * dialog's small title). 13px Instrument Sans 500 in sentence case on the
- * second ink, the field label of the kit. */
+/* Eyebrow: the section head and the field label (a form legend, a section
+ * head, a dialog's small title): 13px caps, 600, tracked, in ink, as H3
+ * draws NEEDS YOU, CHATS and RECENT ACTIVITY. */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
   font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--color-ink-secondary);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-ink-primary);
 }
 
-/* Micro: the caption register (group heads, stepper lines, trailing meta).
- * 12px Instrument Sans in sentence case, the kit's small step, everywhere:
- * the pre-shell and the shell read one size, so the old size and tracking
- * hooks are gone.
+/* Micro: the caption register (group heads such as TODAY, stepper lines,
+ * trailing meta). 12px caps, 400, tracked, the sheet's small label step,
+ * everywhere: the pre-shell and the shell read one size.
  *
  * Sets NO color and no display: every call site owns its own text tier and
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
@@ -50,20 +55,20 @@
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 /* Micro-LABEL: THE app-wide label stamp (status words, version stamps,
  * dates, counts, inline tags).
  *
- * R3 sets it in Instrument Sans at the kit's small step:
+ * H3 sets it in the sans at the small label step:
  *
- *   font-size   12px      (labels are 12 or 13; this is the small one)
+ *   font-size   12px      (labels run 11 to 14; this is the small one)
  *   font-weight 400
- *   case        none      (sentence case: the class outranks a call site's
- *                          `uppercase`, so every label converts here)
- *   tracking    normal    (caps tracking belongs to tags alone)
+ *   case        uppercase (the source stays sentence case, so assistive
+ *                          tech reads words; the class paints the caps)
+ *   tracking    0.08em    (--tracking-label, every caps label's one value)
  *   tabular-nums          (a label that carries figures must not jitter a
  *                          column)
  *
@@ -80,18 +85,33 @@
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
-/* The meta step: 13px, for the label that is a small key or a chip's word. */
+/* The meta step: 13px, for the label that is a small key, a status word or
+ * a chip's word (THOUGHT FOR, the status strip, the chats list's tags). */
 .vex-micro-label--wide {
   font-size: 13px;
 }
 
-/* Figures: JetBrains Mono with tabular figures, so a column of numbers
- * holds still while it updates. Every figure, address, time and duration
- * carries it (with or without the `font-mono` utility beside it). */
+/* Field label: the money card's and the receipt's field labels (FROM,
+ * AMOUNT TO SWAP, QUOTED PRICE), which H3 sets in MONO caps, 13, 400,
+ * tracked like every label. The one register where the mono face takes
+ * caps; `shell-design-guard.test.ts` keeps mono caps to it and the tags.
+ * Sets no colour: the call site owns its ink tier. */
+.vex-field-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Figures: Roboto Mono with tabular figures, so a column of numbers holds
+ * still while it updates. Every figure, address, time and duration carries
+ * it (with or without the `font-mono` utility beside it). */
 .vex-num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
