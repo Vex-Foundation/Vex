@@ -84,6 +84,12 @@ import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 export interface VexSidebarProps {
   /** Whether the column is open; the frame solved it (0px track when closed). */
   readonly open: boolean;
+  /**
+   * Where the frame seats her: her own column, or under 1024 the band under
+   * the header, over the chat (docs/design/H3-DESKTOP.md section 1.10), where
+   * the same parts lie in one row (vex-sidebar.css).
+   */
+  readonly seat?: "column" | "band";
   /** The hide key: the frame writes the page class's stored choice. */
   readonly onHide: () => void;
 }
@@ -105,7 +111,7 @@ function plateOnScreen(aside: HTMLElement): boolean {
   return plate !== null && plate.closest("[hidden]") === null;
 }
 
-export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
+export function VexSidebar({ open, onHide, seat = "column" }: VexSidebarProps): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const theme = useUiStore((s) => s.theme);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
@@ -165,6 +171,7 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
       data-vex-area="vex-sidebar"
       data-vex-vex-open={open ? "true" : "false"}
       data-vex-vs-mode={runtimeMode}
+      data-vex-seat={seat}
       data-vex-vs-closing={open && closing ? "" : undefined}
       inert={open && closing}
       // On the desk the column carries the Lighter role scope, as the desk

@@ -220,6 +220,8 @@ H3 draws the band only on the phone and prints one box at 900. What is known:
 
 Desktop's default, derived for S2-08: the 76 header with the rail's cell (the mark), the Vex key, the chat title, the network cell and the caption reserve; the console line across the window right of the rail; her band under the console line while open; the chat under that.
 
+Built in S2-08: the band is a row of the frame under the header, over the chat's track, 132 high at every desktop width (`H3_BAND_HEIGHT`): the Vex column's own parts laid in one row, its head (44) over her state and Needs you beside her portrait (88). Its height is a function of nothing, so a card under it never moves when a turn starts, waits or ends. The chats rail runs from the header to the foot beside it. A page shows no band (the strip, section 1.9).
+
 Open: the band's heights at a desktop width; whether the band may stand open over a waiting card (the proof's narrow rows were read with "states closed"); the header cells at this width. Settled in the harness at 1000 x 720 and with Cloud.
 
 ---

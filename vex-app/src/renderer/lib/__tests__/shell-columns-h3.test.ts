@@ -17,6 +17,7 @@ import {
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
+  H3_BAND_HEIGHT,
   H3_CHAT_MIN,
   H3_CHATS_OPEN_MIN,
   h3ShellTier,
@@ -370,6 +371,16 @@ describe("the frame's rows", () => {
     expect(shellGridTemplateRows({ head: false, foot: false })).toBe("0px minmax(0, 1fr) 0px");
     expect(shellGridTemplateRows({ head: true, foot: false })).toBe("var(--head-h) minmax(0, 1fr) 0px");
     expect(shellGridTemplateRows({ head: true, foot: true })).toBe("var(--head-h) minmax(0, 1fr) 72px");
+  });
+
+  it("under 1024 puts Vex's band between the header and the body, a fixed 132", () => {
+    expect(H3_BAND_HEIGHT).toBe(132);
+    expect(shellGridTemplateRows({ head: true, foot: false, band: true })).toBe(
+      "var(--head-h) 132px minmax(0, 1fr) 0px",
+    );
+    expect(shellGridTemplateRows({ head: true, foot: true, band: false })).toBe(
+      "var(--head-h) minmax(0, 1fr) 72px",
+    );
   });
 
   it("keeps the bottom row at the plates' 72, and no row is auto", () => {
