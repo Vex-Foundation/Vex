@@ -25,11 +25,13 @@
  * chip already reads as hidden ("Show Vex", not pressed), and a press keeps
  * her instead.
  *
- * THE SHORTCUT, Cmd or Ctrl + Shift + Period (`vex-toggle-shortcut.ts`), is
- * the same press from the keyboard, bound while the chip is mounted (so
- * nowhere without a Vex column: not on the welcome, not in Zen) and
- * suspended while a modal dialog is open, as the Studio table is. The
- * tooltip spells it.
+ * THE SHORTCUT, Cmd or Ctrl + Shift + B (`vex-toggle-shortcut.ts`; for one
+ * release R3's Cmd or Ctrl + Shift + Period still works, unspelled), is the
+ * same press from the keyboard, bound while the chip is mounted (so nowhere
+ * without a Vex column: not on the welcome, not in Zen) and suspended while
+ * a modal dialog is open, as the Studio table is. The tooltip spells only
+ * the new chord. H3 moves the listener to the shell, so it holds from
+ * anywhere (docs/design/H3-DESKTOP.md section 4.4).
  *
  * THE ANNOUNCER of the state word (`VexStateAnnouncer`) sits beside the
  * button, never inside it, so the button's name stays "Vex, {word}".

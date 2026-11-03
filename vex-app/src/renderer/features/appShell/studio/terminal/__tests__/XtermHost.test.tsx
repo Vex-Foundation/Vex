@@ -387,9 +387,14 @@ describe("XtermHost and the chords Studio owns", () => {
     }
   });
 
-  it("lets the Vex toggle travel on to the window, uncancelled and unsent", () => {
-    // Cmd or Ctrl + Shift + Period is the app's own chord, not a Studio row:
-    // refused here so the document listener that toggles Vex hears it.
+  it.each([
+    ["Ctrl + Shift + B", { code: "KeyB", key: "B", keyCode: 66 }],
+    ["the retiring Ctrl + Shift + Period", { code: "Period", key: ">", keyCode: 190 }],
+  ])("lets the Vex toggle, %s, travel on to the window, uncancelled and unsent", (_name, key) => {
+    // The toggle is the app's own chord, not a Studio row (Studio's B row is
+    // Ctrl + B with Shift up): refused here so the document listener that
+    // toggles Vex hears it. The retiring Period alias is refused the same way
+    // for as long as it still toggles her.
     const captured: { handler: ((event: KeyboardEvent) => boolean) | null } = {
       handler: null,
     };
@@ -406,12 +411,12 @@ describe("XtermHost and the chords Studio owns", () => {
     const press = captured.handler;
     if (press === null) throw new Error("the host attached no key handler");
 
-    const toggle = { code: "Period", key: ">", ctrlKey: true, shiftKey: true, cancelable: true };
+    const toggle = { code: key.code, key: key.key, ctrlKey: true, shiftKey: true, cancelable: true };
     expect(press(new KeyboardEvent("keydown", toggle))).toBe(false);
     const heard = vi.fn();
     document.addEventListener("keydown", heard);
     try {
-      const event = typeChord({ ...toggle, keyCode: 190 });
+      const event = typeChord({ ...toggle, keyCode: key.keyCode });
       expect(sentToShell()).toBe("");
       expect(event.defaultPrevented).toBe(false);
       expect(heard).toHaveBeenCalledTimes(1);
