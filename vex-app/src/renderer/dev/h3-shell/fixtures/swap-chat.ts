@@ -236,6 +236,24 @@ export function swapChatAnswers(stage: SwapStage): BridgeAnswers {
     mission: { getDraft: () => ok(null) },
     usage: {
       getContextWindow: () => ok({ sessionId: SWAP_CHAT.id, tokensUsed: 18_400, contextLimit: MODEL.contextLength }),
+      // The last settled turn's rollup: the quote turn while the card waits,
+      // the execute turn once it has filled. A live turn has none of its own.
+      getLastTurn: () =>
+        ok(stage === "thinking" ? null : {
+          sessionId: SWAP_CHAT.id,
+          latestRoundPromptTokens: 9_240,
+          latestRoundCachedTokens: 6_100,
+          turnCompletionTokens: stage === "filled" ? 520 : 410,
+          turnReasoningTokens: 180,
+          turnCacheWriteTokens: 0,
+          turnCost: stage === "filled" ? 0.0264 : 0.0213,
+          turnCachedSavings: 0.0081,
+          roundCount: 3,
+          currency: "USD",
+          provider: MODEL.providerId,
+          model: MODEL.modelId,
+          latestRoundAt: isoAt(-(stage === "filled" ? 55 : 21) * SECOND),
+        }),
     },
     sessions: {
       getModel: () =>
