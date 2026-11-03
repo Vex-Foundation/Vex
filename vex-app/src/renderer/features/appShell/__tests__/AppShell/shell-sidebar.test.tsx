@@ -947,9 +947,9 @@ describe("AppShell", () => {
     // jsdom: no ResizeObserver, viewport = window.innerWidth. The welcome
     // stage has no Vex column yet: Vex sits in the centre there.
     expect(frame?.style.gridTemplateColumns).toBe("248px 0px minmax(0, 1fr)");
-    // H3's head | body | foot rows: the header row holds the header's cells;
-    // the bottom row none yet.
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 0px");
+    // H3's head | body | foot rows: the header row holds the header's cells,
+    // the bottom row its cells (section 1.8).
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 72px");
     expect(frame?.getAttribute("data-vex-frame")).toBe("h3");
     expect(frame?.getAttribute("data-vex-tier")).toBe("wide");
     expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("0px");
@@ -1072,6 +1072,41 @@ describe("AppShell", () => {
     ).toBe("76px 307px minmax(0, 1fr)");
   });
 
+  it("holds the account cell, the tagline cell and the chat's foot in a 72 bottom row", () => {
+    // docs/design/H3-DESKTOP.md section 1.8.
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 72px");
+    expect(frame?.style.getPropertyValue("--vex-foot-h")).toBe("72px");
+    // The account row moved out of the sidebar into the account cell.
+    const account = view.container.querySelector<HTMLElement>("[data-vex-area='account-cell']");
+    expect(account?.querySelector("[data-vex-area='sidebar-profile']")).not.toBeNull();
+    expect(
+      view.container.querySelector("[data-vex-area='sessions-sidebar'] [data-vex-area='sidebar-profile']"),
+    ).toBeNull();
+    expect(view.container.querySelectorAll("[data-vex-area='sidebar-profile']")).toHaveLength(1);
+    // The tagline cell is an empty slot for now.
+    const tagline = view.container.querySelector<HTMLElement>("[data-vex-area='tagline-cell']");
+    expect(tagline?.childElementCount).toBe(0);
+    expect(tagline?.classList.contains("vex-drag")).toBe(true);
+    // Each cell follows its column in the DOM: chats, account, Vex, tagline, chat.
+    const order = Array.from(frame?.children ?? [])
+      .map((el) =>
+        el.classList.contains("vex-left-page") ? "chats"
+          : el.classList.contains("vex-shell-account") ? "account"
+            : el.classList.contains("vex-shell-vex") ? "vex"
+              : el.classList.contains("vex-shell-tagline") ? "tagline"
+                : el.classList.contains("vex-shell-centre") ? "chat"
+                  : null,
+      )
+      .filter((name) => name !== null);
+    expect(order).toEqual(["chats", "account", "vex", "tagline", "chat"]);
+    // Folded to the rail, the account cell is the rail's box.
+    fireEvent.click(screen.getByRole("button", { name: /Collapse sessions sidebar/i }));
+    expect(account?.hasAttribute("data-rail")).toBe(true);
+  });
+
   it("under 1024 seats Vex as the band under the header, over the chat", () => {
     // docs/design/H3-DESKTOP.md section 1.10: no Vex track; a fourth row of
     // the frame, a fixed 132, holds her over the chat's track.
@@ -1081,14 +1116,14 @@ describe("AppShell", () => {
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-seat")).toBe("band");
     expect(frame?.style.gridTemplateColumns).toBe("76px 0px minmax(0, 1fr)");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 132px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 132px minmax(0, 1fr) 72px");
     const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
     expect(aside?.getAttribute("data-vex-seat")).toBe("band");
     expect(aside?.getAttribute("data-vex-vex-open")).toBe("true");
     // A page has no band: the strip.
     act(() => useUiStore.getState().navigate("portfolio"));
     expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 72px");
   });
 
   it("under 1024 the band keeps the rail, with no Expand key to open it", () => {

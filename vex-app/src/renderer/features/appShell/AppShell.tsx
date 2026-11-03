@@ -57,6 +57,7 @@ import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   LIGHTER_CHAT_MIN,
   RAIL_WIDTH,
+  H3_FOOT_HEIGHT,
   computeH3ShellColumns,
   computeShellColumns,
   h3GridTemplateColumns,
@@ -73,6 +74,7 @@ import {
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
+import { SidebarProfile } from "./SidebarProfile.js";
 import { ShellHeader } from "./ShellHeader.js";
 import { StudioCenter } from "./studio/StudioCenter.js";
 import { StudioSidebar } from "./studio/sidebar/StudioSidebar.js";
@@ -374,7 +376,7 @@ function ShellFrame({
   // interpolates length-to-length (`auto` <-> length is not interpolable and
   // once swept the right column through the centre on the welcome edge).
   const frameStyle: CSSProperties &
-    Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
+    Record<"--vex-vex-track" | "--vex-overlay-left" | "--vex-foot-h", string> = {
     // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
     // desk keeps R3's rail | desk | chat.
     gridTemplateColumns:
@@ -382,9 +384,13 @@ function ShellFrame({
         ? `${cols.left}px minmax(0, 1fr) ${cols.vex}px`
         : h3GridTemplateColumns(h3Cols),
     // head | body | foot (docs/design/H3-DESKTOP.md section 1.1): the header
-    // row holds the header's cells; the bottom row holds none yet, so it is 0.
-    // The Lighter desk keeps R3's one-row frame, its title row its own.
-    gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: false, band }),
+    // row holds the header's cells, the bottom row the account cell, the
+    // tagline cell and the chat's composer seat (section 1.8). The Lighter
+    // desk keeps R3's one-row frame, its title row and account row its own.
+    gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: !lighter, band }),
+    // The bottom row's height, for the chat's composer seat inside the
+    // centre, which runs on into the row.
+    "--vex-foot-h": `${String(H3_FOOT_HEIGHT)}px`,
     // The Lighter desk's title row reserves the caption buttons wherever the
     // right column under them is narrower than they are (lighter-desk.css).
     "--vex-vex-track": `${cols.vex}px`,
@@ -569,10 +575,37 @@ function ShellFrame({
     </div>
   );
 
-  const columnOf: Readonly<Record<ShellColumnName, JSX.Element>> = {
-    chats: leftColumn,
-    vex: vexColumn,
-    chat: centreColumn,
+  /* THE BOTTOM ROW (docs/design/H3-DESKTOP.md section 1.8), 72 high across
+   * the window in H3's frame:
+   *   - the ACCOUNT cell under the chats column: the account row
+   *     (`SidebarProfile`), moved out of the sidebars, which are headless
+   *     here; on the rail, its box alone;
+   *   - the TAGLINE cell under the Vex column: an empty slot until the
+   *     tagline says the moment (S3-10); 0 wide where her column is;
+   *   - the chat's composer seat: the centre runs on into the row, so the
+   *     composer ends at the window's foot under the chat (composer.css).
+   * Each follows its column in the DOM, so focus reaches a column's foot
+   * before the next column. */
+  const accountCell = (
+    <div
+      key="account"
+      className="vex-shell-account vex-ls"
+      data-vex-area="account-cell"
+      data-rail={rail || undefined}
+    >
+      <footer className="vex-ls-foot" data-rail-foot>
+        <SidebarProfile sidebarOpen={!rail} />
+      </footer>
+    </div>
+  );
+  const taglineCell = (
+    <div key="tagline" className="vex-shell-tagline vex-drag" data-vex-area="tagline-cell" />
+  );
+
+  const columnOf: Readonly<Record<ShellColumnName, readonly JSX.Element[]>> = {
+    chats: lighter ? [leftColumn] : [leftColumn, accountCell],
+    vex: lighter ? [vexColumn] : [vexColumn, taglineCell],
+    chat: [centreColumn],
   };
 
   return (
@@ -619,10 +652,11 @@ function ShellFrame({
       />
 
       {/* The columns in their order (docs/design/H3-DESKTOP.md section 1):
-        * chats | Vex | chat in the agent shell and Studio, so Vex's column
-        * comes before the chat in focus order too; the Lighter desk keeps
-        * R3's rail | desk | chat until its own restyle. */}
-      {shellColumnOrder(runtimeMode).map((name) => columnOf[name])}
+        * chats | Vex | chat in the agent shell and Studio, each with its
+        * bottom row cell after it, so Vex's column comes before the chat in
+        * focus order too; the Lighter desk keeps R3's rail | desk | chat
+        * until its own restyle. */}
+      {shellColumnOrder(runtimeMode).flatMap((name) => columnOf[name])}
 
       {chatHandle ? (
         <ShellDragHandle

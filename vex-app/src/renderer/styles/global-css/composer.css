@@ -267,6 +267,17 @@
   [data-vex-composer-dock] {
   padding-bottom: 22px;
 }
+/* In H3's frame (docs/design/H3-DESKTOP.md section 1.8) the chat's column runs
+ * on into the bottom row, so this floor ends at the window's foot, in the
+ * row's chat cell: never shorter than the row (`--vex-foot-h`, the frame's),
+ * its composer sitting on the row's foot. A taller composer, a draft grown
+ * past one line, rises over the transcript; the frame's row keeps its 72. */
+.vex-shell-frame[data-vex-frame="h3"]
+  [data-vex-area="session-panel"][data-vex-session-surface="shell"][data-phase="active"]
+  [data-vex-composer-seat] {
+  justify-content: flex-end;
+  min-height: var(--vex-foot-h, 0px);
+}
 
 /* SETTLING - a session is opening and its transcript is still unknown, so
  * hero-vs-docked is unknowable. The seat stays MOUNTED (residency is the whole

@@ -17,7 +17,9 @@
  *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
  *            with a 12px gap above and below (`SidebarNav`).
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
- *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`).
+ *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`); under
+ *            the frame's header it is the bottom row's account cell
+ *            instead (`headless`).
  *
  * The rail keeps the same order as 40 x 40 keys with their names as tooltips,
  * under the Expand key (the panel icon, the collapse key's twin, the one way
@@ -72,9 +74,10 @@ interface SessionsListProps {
   /** Whether the rail opens into the sidebar; false on the Lighter desk. */
   readonly expandable?: boolean;
   /**
-   * The frame's header draws this column's head cells (the logo cell and
-   * the sidebar key, `ShellHeader`), so the column starts with its body. The
-   * Lighter desk's rail keeps its own head on the rail's cap.
+   * The frame draws this column's head and foot cells: the logo cell and
+   * the sidebar key in its header (`ShellHeader`), the account cell in its
+   * bottom row. The column holds only its body. The Lighter desk's rail
+   * keeps its own head on the rail's cap and its own account row.
    */
   readonly headless?: boolean;
 }
@@ -357,9 +360,13 @@ export function SessionsList({
         <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
       )}
 
-      <footer className="vex-ls-foot" data-rail-foot>
-        <SidebarProfile sidebarOpen={!rail} />
-      </footer>
+      {/* The account row: the frame's bottom row draws it under this column
+        * (its account cell) when the header draws the head. */}
+      {headless ? null : (
+        <footer className="vex-ls-foot" data-rail-foot>
+          <SidebarProfile sidebarOpen={!rail} />
+        </footer>
+      )}
 
       <SessionDeleteDialog
         session={removeTarget}

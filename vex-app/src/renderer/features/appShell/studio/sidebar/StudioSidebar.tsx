@@ -207,8 +207,9 @@ export interface StudioSidebarProps {
   /** Test seam; production uses the window's registry. */
   readonly explorerRegistry?: ExplorerRegistry;
   /**
-   * The frame's header draws this column's head cells (the logo cell and
-   * the sidebar key, `ShellHeader`), so the column starts with its body.
+   * The frame draws this column's head and foot cells: the logo cell and
+   * the sidebar key in its header (`ShellHeader`), the account cell in its
+   * bottom row. The column holds only its body.
    */
   readonly headless?: boolean;
 }
@@ -684,9 +685,13 @@ export function StudioSidebar({
         <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
       ) : null}
 
-      <footer className="vex-ls-foot" data-rail-foot>
-        <SidebarProfile sidebarOpen={wide} />
-      </footer>
+      {/* The account row: the frame's bottom row draws it under this column
+        * (its account cell) when the header draws the head. */}
+      {headless ? null : (
+        <footer className="vex-ls-foot" data-rail-foot>
+          <SidebarProfile sidebarOpen={wide} />
+        </footer>
+      )}
     </aside>
   );
 }
