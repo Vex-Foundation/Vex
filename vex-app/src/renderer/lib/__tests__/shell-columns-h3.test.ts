@@ -17,6 +17,9 @@ import {
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
+  H3_CHAT_MIN,
+  H3_CHATS_OPEN_MIN,
+  h3ShellTier,
   shellColumnOrder,
   shellFrameKind,
   shellGridTemplateRows,
@@ -297,6 +300,29 @@ describe("invariants", () => {
     expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the desktop's tiers (H3-DESKTOP.md section 4.12)", () => {
+  it("names the band, the medium tier and the wide tier, each seam to the wider side", () => {
+    expect(H3_CHATS_OPEN_MIN).toBe(1268);
+    expect(H3_CHAT_MIN).toBe(640);
+    expect([1000, 1023, 1023.4].map(h3ShellTier)).toEqual(["band", "band", "band"]);
+    expect([1023.5, 1024, 1267].map(h3ShellTier)).toEqual(["medium", "medium", "medium"]);
+    expect([1268, 1280, 1440, 2560].map(h3ShellTier)).toEqual(["wide", "wide", "wide", "wide"]);
+  });
+
+  it("puts the seam where the open chats would first take the chat under 640", () => {
+    expect(h3(1267, true).chat).toBe(639);
+    expect(h3(1268, true).chat).toBe(640);
+  });
+
+  it("keeps the chat at 640 or more wherever the shell asks the chats as the tier says", () => {
+    for (let width = 1000; width <= 2560; width += 1) {
+      const tier = h3ShellTier(width);
+      const cols = h3(width, tier === "wide");
+      expect(cols.chat, String(width)).toBeGreaterThanOrEqual(H3_CHAT_MIN);
+    }
   });
 });
 
