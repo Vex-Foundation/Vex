@@ -1,7 +1,7 @@
-/* VEX design tokens: R3 Minimal on the V10 colours, the three-tier system
- * (docs/design/R3-MINIMAL.md section 1).
+/* VEX design tokens: H3, the three-tier system (docs/design/H3-DESKTOP.md
+ * section 2; R3-MINIMAL.md section 1 before it).
  *
- *   static  -> @theme primitives (paper, ink, the one blue, Night Ledger).
+ *   static  -> @theme primitives (the H3 set, the candle pair, white).
  *              NEVER consumed by components; the design guard bans raw hexes
  *              in TSX.
  *   alias   -> semantic CSS vars on :root: ONE room, no theme override
@@ -24,11 +24,9 @@
  * Celeris, the light room, retired with the "system" choice, so the alias tier
  * is the :root block alone and nothing re-points it. `data-vex-theme` still
  * reads "chronos" on documentElement (uiStore/theme.ts), so every reader
- * keyed on the attribute keeps working. Until each role moves onto the H3
- * primitives below it is the Night Ledger: the darkest tones of the sepia
- * prints as paper (#1b1412), the website paper as ink, and the blue lifted to
- * a periwinkle of the same hue (#a3abff) wherever it must be read; the true
- * #0000c0 stays a FILL behind white type.
+ * keyed on the attribute keeps working. Every role reads the H3 primitives
+ * below; R3's Night Ledger (the sepia night paper, its periwinkle and the
+ * #0000c0 fill) retired with the last role that read it.
  *
  * STATUS IS A COLOURED SQUARE BESIDE AN INK WORD (docs/design/H3-DESKTOP.md
  * section 2.2). The word is always ink; the square carries the colour, and
@@ -47,26 +45,6 @@
   --color-white: #ffffff;
   --color-black: #000000;
 
-  /* Static tier - the website paper, now the night room's ink, and the one
-   * blue as a fill. The day room's paper 2, its ink ramp and its trading pair
-   * retired with Celeris. */
-  --color-paper: #f3f4f7;
-  /* Logo blue: the fill behind white type (the primary key, the send key). */
-  --color-blue: #0000c0;
-  /* Tweet blue: the blue fill's hover. */
-  --color-blue-hi: #0000ff;
-
-  /* Static tier - Night Ledger (chronos). Measured on night: paper 16.53:1,
-   * type-2 9.39:1, type-3 6.18:1, peri 8.50:1, peri-hi 4.59:1. */
-  --color-night-0: #150f0d;
-  --color-night: #1b1412;
-  --color-night-1: #221a17;
-  --color-night-2: #2a201c;
-  --color-type-2: #bbbabb;
-  --color-type-3: #989697;
-  --color-peri: #a3abff;
-  --color-peri-hi: #6470ff;
-
   /* Static tier - the one sanctioned exception to status by fill:
    * candlesticks and their volume bars, inside the Lighter chart only. */
   --color-candle-up: #22c55e;
@@ -77,8 +55,7 @@
    * square cells told apart by 1px white rules, one saturated blue for
    * primary keys, status as a small coloured square beside an ink word, and
    * gains and losses in green and red type. Declared here first and consumed
-   * by the alias tier one role at a time, so a commit that lands them changes
-   * no pixel on its own.
+   * by the alias tier, which reads nothing else for colour.
    *
    * TWO SOURCES, as the contract's table gives them. The review sheet's own
    * tokens (stated in oklch; each primitive below is its sRGB hex, with the
@@ -430,8 +407,10 @@
    * surface, foreground, cursor and selection are literals rather than paper
    * aliases: a running program reads the background through OSC 11, so this
    * surface is a wire contract and moves only with a retune of the terminal
-   * itself. It reads on the night field #221a17 (night-1) in paper ink with
-   * the periwinkle cursor.
+   * itself. It reads on R3's night field #221a17 in R3's paper ink with the
+   * periwinkle cursor, as literals now that those primitives retired: the
+   * terminal keeps its surface until Studio's own H3 plate retunes it
+   * (docs/design/H3-DESKTOP.md section 4.9).
    *
    * RGB IS A WIRE CONTRACT. xterm answers OSC 11 with background alpha
    * dropped, so the background is an explicit opaque eight-digit hex. The

@@ -164,24 +164,13 @@ function oklchToHex(lightness: number, chroma: number, hue: number): string {
 }
 
 /**
- * The primitives, and nothing else: the V10 colours the night room still
- * reads (docs/design/R3-MINIMAL.md section 1), the night trading pair and the
- * H3 set. The day room's paper 2, ink ramp and trading pair retired with it.
+ * The primitives, and nothing else: white and black (Tailwind's kill list
+ * re-declares them), the candle pair and the H3 set. R3's colours retired
+ * once no alias, sheet or component read them.
  */
 const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-white": "#ffffff",
   "--color-black": "#000000",
-  "--color-paper": "#f3f4f7",
-  "--color-blue": "#0000c0",
-  "--color-blue-hi": "#0000ff",
-  "--color-night-0": "#150f0d",
-  "--color-night": "#1b1412",
-  "--color-night-1": "#221a17",
-  "--color-night-2": "#2a201c",
-  "--color-type-2": "#bbbabb",
-  "--color-type-3": "#989697",
-  "--color-peri": "#a3abff",
-  "--color-peri-hi": "#6470ff",
   "--color-candle-up": "#22c55e",
   "--color-candle-down": "#ef4444",
   "--color-h3-ground": "#010203",
@@ -202,13 +191,13 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 30 primitives, at their values", () => {
+  it("holds exactly the 19 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(30);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(19);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 

@@ -155,21 +155,22 @@ describe("terminal palette tokens", () => {
     expect(tokensCss).not.toContain('[data-vex-theme="celeris"]');
   });
 
-  it.each([["chronos", chronos, "--color-night-1"]])(
-    "pins surface opacity and OSC 11 RGB to a V10 primitive (%s)",
-    (name, body, primitive) => {
+  it.each([["chronos", chronos, "#221a17"]])(
+    "pins surface opacity and OSC 11 RGB to the terminal's own surface (%s)",
+    (name, body, surface) => {
     // The room has a stable reading ground. OSC 11 reports its RGB, so the
-    // surface is a wire contract and is held to a named primitive: the night
-    // field (night-1). It does NOT follow the room's paper
-    // (--vex-alias-bg-base): a program that asked once must keep getting the
-    // same answer until the terminal itself is retuned.
+    // surface is a wire contract and is pinned here: R3's night field,
+    // #221a17, kept as the terminal's own literal after the primitive
+    // retired, until Studio's H3 plate retunes the terminal. It does NOT
+    // follow the room's ground (--vex-alias-bg-base): a program that asked
+    // once must keep getting the same answer.
     const value = declarationValue(body, "--vex-alias-term-background");
     expect(value, `${name} must not use the keyword xterm rejects`).not.toBe("transparent");
     const match = /^#([0-9a-f]{6})([0-9a-f]{2})$/.exec(value ?? "");
     expect(match, `${name} background "${String(value)}" is not an 8-digit hex`).not.toBeNull();
     if (match === null) return;
     expect(match[2], `${name} background alpha`).toBe("ff");
-    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(resolveHex(tokensCss, primitive));
+    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(surface);
     },
   );
 
