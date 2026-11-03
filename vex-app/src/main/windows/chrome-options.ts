@@ -1,18 +1,23 @@
 /**
- * Window chrome per OS (docs/design/R3-MINIMAL.md section 2.2). Pure: no Electron import, so the
- * title bar contract is unit-testable and the overlay IPC handler can share
- * the colour table without loading the window factory.
+ * Window chrome per OS (docs/design/R3-MINIMAL.md section 2.2; the geometry
+ * is H3's, docs/design/H3-DESKTOP.md section 4.7). Pure: no Electron import,
+ * so the title bar contract is unit-testable and the overlay IPC handler can
+ * share the colour table without loading the window factory.
  *
- * `titleBarStyle: "hidden"` everywhere; the renderer's 44px head rows are the
- * drag region. macOS keeps the traffic lights, placed on the print. Windows
- * and Linux draw the native window controls as an overlay over the top 43px,
- * the head row less its bottom rule.
+ * `titleBarStyle: "hidden"` everywhere; the renderer's 76px head row (H3's
+ * header, and every screen's top row with it) is the drag region. macOS keeps
+ * the traffic lights, centred on that row. Windows and Linux draw the native
+ * window controls as an overlay over the top 75px, the head row less its
+ * bottom rule.
  */
 
 import type { TitleBarTheme } from "@shared/schemas/system.js";
 
-/** Height of every renderer head row (`--head-h` in window-chrome.css). */
-export const TITLE_BAR_HEIGHT = 44;
+/**
+ * Height of the renderer's head row at the window's top edge (`--head-h` in
+ * window-chrome.css): H3's header, measured from its rule at y 75 to 76.
+ */
+export const TITLE_BAR_HEIGHT = 76;
 
 /** The 1px rule at the foot of every head row. */
 export const HEAD_RULE_WIDTH = 1;
@@ -26,8 +31,13 @@ export const HEAD_RULE_WIDTH = 1;
  */
 export const TITLE_BAR_OVERLAY_HEIGHT = TITLE_BAR_HEIGHT - HEAD_RULE_WIDTH;
 
-/** macOS traffic light inset (docs/design/R3-MINIMAL.md section 2.2). */
-export const TRAFFIC_LIGHT_POSITION = { x: 20, y: 16 } as const;
+/**
+ * macOS traffic light inset (docs/design/H3-DESKTOP.md section 4.7): 12px
+ * lights 8 apart from x 20, so they span 20 to 72, and y 32 centres them on
+ * the 76px head row ((76 - 12) / 2). The header's logo cell starts its mark
+ * after them, at 92.
+ */
+export const TRAFFIC_LIGHT_POSITION = { x: 20, y: 32 } as const;
 
 /**
  * Overlay colours. Constants here because tokens.css is renderer-only.

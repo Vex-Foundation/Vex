@@ -128,6 +128,11 @@
 }
 .vex-shell-frame[data-vex-frame="h3"] > :is(.vex-left-page, .vex-shell-centre, .vex-shell-vex) {
   grid-row: 2 / -1;
+  /* Under the header no column meets the window's top any more, so a head
+   * row a column still draws of its own (R3's, until its slice retires it:
+   * the Vex sidebar's "Vex" row) keeps R3's 44 rather than the window's
+   * head row (window-chrome.css). */
+  --head-h: 44px;
 }
 
 /* The one drag handle left, Lighter's chat share, is a frame child (columns
