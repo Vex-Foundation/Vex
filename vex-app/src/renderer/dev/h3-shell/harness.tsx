@@ -27,7 +27,10 @@
  * Windows caption reservations in `window-chrome.css` are the product's, and
  * a capture taken on a Linux runner still shows the mac window unless asked
  * otherwise. The theme goes through the uiStore's own document writer for the
- * same reason.
+ * same reason. What the operating system draws over the window is stood in
+ * for (`chrome-standin.ts`): the traffic lights on a mac window, the caption
+ * overlay on a Windows one, with `--overlay-w` set to its width as Window
+ * Controls Overlay sets it in the app.
  *
  * DETERMINISM. `boot.ts` runs before every product module: it empties the
  * origin's persisted UI state, freezes the clock at one instant and seeds
@@ -67,6 +70,12 @@ import {
 import { useUiStore } from "../../stores/uiStore.js";
 import { applyThemeToDocument, type VexTheme } from "../../stores/uiStore/theme.js";
 import { installHarnessBridge, type HarnessBridge } from "./bridge.js";
+import {
+  STANDIN_CAPTION_OVERLAY,
+  STANDIN_LIGHT_GAP,
+  STANDIN_LIGHT_SIZE,
+  STANDIN_TRAFFIC_LIGHTS,
+} from "./chrome-standin.js";
 import { H3_HARNESS_MARK } from "./mark.js";
 import { HARNESS_STATES, stateById } from "./states/index.js";
 import type { HarnessState } from "./states/types.js";
@@ -95,6 +104,52 @@ applyWindowChrome(
   OS,
   OS === "win" ? "overlay" : detectChrome(OS, undefined),
 );
+// Window Controls Overlay reports its width through env(); a page has none,
+// so the reserve the shell keeps for the buttons is set here, as wide as the
+// buttons the stand-in draws.
+if (OS === "win") {
+  document.documentElement.style.setProperty("--overlay-w", `${String(STANDIN_CAPTION_OVERLAY.width)}px`);
+}
+
+/**
+ * The operating system's chrome over the window, stood in for: three 12px
+ * lights from the inset on a mac window, the caption overlay's box at the top
+ * right of a Windows one, both above the page and never hit-tested.
+ */
+function WindowChromeStandin(): JSX.Element | null {
+  if (OS === "mac") {
+    return (
+      <div aria-hidden className="vex-h3-harness__lights" data-vex-h3-standin="traffic-lights">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            style={{
+              left: STANDIN_TRAFFIC_LIGHTS.x + i * (STANDIN_LIGHT_SIZE + STANDIN_LIGHT_GAP),
+              top: STANDIN_TRAFFIC_LIGHTS.y,
+              width: STANDIN_LIGHT_SIZE,
+              height: STANDIN_LIGHT_SIZE,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (OS === "win") {
+    return (
+      <div
+        aria-hidden
+        className="vex-h3-harness__caption"
+        data-vex-h3-standin="caption-overlay"
+        style={{ width: STANDIN_CAPTION_OVERLAY.width, height: STANDIN_CAPTION_OVERLAY.height }}
+      >
+        <span>-</span>
+        <span>□</span>
+        <span>×</span>
+      </div>
+    );
+  }
+  return null;
+}
 
 /**
  * Point the store where the state says, before the first render. The view is
@@ -176,6 +231,7 @@ function Harness({
         </ErrorBoundary>
         <ToastHost />
       </MotionConfig>
+      <WindowChromeStandin />
     </div>
   );
 }
