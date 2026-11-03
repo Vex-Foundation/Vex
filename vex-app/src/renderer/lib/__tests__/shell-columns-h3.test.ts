@@ -18,6 +18,7 @@ import {
   h3GridTemplateColumns,
   h3ShellLayout,
   shellGridTemplateRows,
+  shellHeadTemplateColumns,
   type H3ShellColumns,
 } from "../shell-columns.js";
 
@@ -294,6 +295,31 @@ describe("invariants", () => {
     expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the header's cells", () => {
+  it("names each cell's lines, the Vex key between the chats and the chat in H3's order", () => {
+    expect(shellHeadTemplateColumns({ chats: 248, vex: 432, vexBetween: true })).toBe(
+      "[chats-start] 248px [chats-end vex-start] 432px [vex-end title-start] minmax(0, 1fr) " +
+        "[title-end funds-start] auto [funds-end reserve-start] var(--overlay-w) [reserve-end]",
+    );
+  });
+
+  it("puts the Vex key at the right end, as wide as the key, over R3's right-hand column", () => {
+    expect(shellHeadTemplateColumns({ chats: 264, vex: null, vexBetween: false })).toBe(
+      "[chats-start] 264px [chats-end title-start] minmax(0, 1fr) [title-end funds-start] auto " +
+        "[funds-end vex-start] auto [vex-end reserve-start] var(--overlay-w) [reserve-end]",
+    );
+  });
+
+  it("always ends in the caption reserve, the window's top-right corner", () => {
+    for (const vexBetween of [false, true]) {
+      for (const vex of [null, 0, 307]) {
+        const template = shellHeadTemplateColumns({ chats: 76, vex, vexBetween });
+        expect(template.endsWith(" reserve-start] var(--overlay-w) [reserve-end]")).toBe(true);
+      }
+    }
   });
 });
 

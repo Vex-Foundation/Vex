@@ -422,13 +422,28 @@ describe("the Studio host pill", () => {
 });
 
 describe("the right cluster", () => {
-  it("keeps the spec's order: page keys, Notices, Needs you, the chip", () => {
+  it("keeps the spec's order: page keys, Notices, Needs you; the chip in its own cell", () => {
     const head = renderHead("agent", SESSION);
     const flank = head.querySelector(".vex-running-head__flank");
     const order = Array.from(flank?.querySelectorAll("[data-testid]") ?? []).map((el) =>
       el.getAttribute("data-testid"),
     );
+    expect(order).toEqual(["export-control", "notices", "needs-you"]);
+    // The chip is the Vex key cell's, over the Vex column (H3-DESKTOP.md
+    // section 1.3), the title cell's sibling.
+    const cell = document.querySelector("[data-vex-head-cell='vex-key']");
+    expect(cell?.querySelector("[data-testid='token-chip']")).not.toBeNull();
+    expect(cell?.nextElementSibling).toBe(head);
+  });
+
+  it("on the desk the chip still ends the cluster, in the desk's title row", () => {
+    renderHead("lighter", SESSION, { vex: { open: true, onToggle: () => undefined } });
+    const flank = document.querySelector(".vex-running-head__flank");
+    const order = Array.from(flank?.querySelectorAll("[data-testid]") ?? []).map((el) =>
+      el.getAttribute("data-testid"),
+    );
     expect(order).toEqual(["export-control", "notices", "needs-you", "token-chip"]);
+    expect(document.querySelector("[data-vex-head-cell]")).toBeNull();
   });
 
   it("Needs you is present in EVERY mode, the welcome included", () => {
@@ -481,8 +496,8 @@ describe("the token chip", () => {
   });
 
   it("is absent where there is no Vex column: the welcome, Zen", () => {
-    const welcome = renderHead("agent", null, { empty: true });
-    expect(welcome.querySelector("[data-testid='token-chip']")).toBeNull();
+    renderHead("agent", null, { empty: true });
+    expect(screen.queryByTestId("token-chip")).toBeNull();
     cleanup();
     renderHead("lighter", SESSION, { vex: null });
     expect(screen.queryByTestId("token-chip")).toBeNull();
@@ -498,11 +513,16 @@ describe("the token chip", () => {
 });
 
 describe("the head row", () => {
-  it("is the window's drag region, one 44px row", () => {
+  it("is two of the header's cells, both window drag regions", () => {
+    // The header element itself is the frame's (`ShellHeader`); the running
+    // head draws the Vex key cell and the title cell inside it.
     const head = renderHead("agent", SESSION);
-    expect(head.tagName).toBe("HEADER");
+    expect(head.tagName).toBe("DIV");
+    expect(head.getAttribute("data-vex-head-cell")).toBe("title");
     expect(head.classList.contains("vex-running-head")).toBe(true);
     expect(head.classList.contains("vex-drag")).toBe(true);
+    const vexKey = document.querySelector("[data-vex-head-cell='vex-key']");
+    expect(vexKey?.classList.contains("vex-drag")).toBe(true);
   });
 
   it("clears its rule on the welcome stage only", () => {

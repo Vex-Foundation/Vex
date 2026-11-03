@@ -841,10 +841,11 @@ describe("AppShell", () => {
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
-  it("crowns the sidebar rail with the static logo mark, not a VEX wordmark", () => {
+  it("crowns the chats column with the static logo mark, not a VEX wordmark", () => {
     const view = renderShell();
+    // The logo cell is the header's, over the chats column.
     const sidebar = view.container.querySelector(
-      "[data-vex-area='sessions-sidebar']",
+      "[data-vex-area='shell-head'] [data-vex-head-cell='logo']",
     );
     // The rail brand is now a plain <img> logo mark (the particle canvas was
     // retired) — [data-vex-home-mark], the clean monogram. The mark carries no
@@ -909,8 +910,10 @@ describe("AppShell", () => {
     // jsdom: no ResizeObserver, viewport = window.innerWidth. The welcome
     // stage has no right column: Vex sits in the centre there.
     expect(frame?.style.gridTemplateColumns).toBe("264px minmax(0, 1fr) 0px");
-    // H3's head | body | foot rows; neither window-wide row holds a cell yet.
-    expect(frame?.style.gridTemplateRows).toBe("0px minmax(0, 1fr) 0px");
+    // H3's head | body | foot rows: the header row holds the header's cells;
+    // the bottom row none yet.
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 0px");
+    expect(frame?.getAttribute("data-vex-frame")).toBe("h3");
     expect(frame?.getAttribute("data-vex-tier")).toBe("wide");
     expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("0px");
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBeNull();
@@ -942,7 +945,7 @@ describe("AppShell", () => {
     expect(solved(1000)).toBe("56px minmax(0, 1fr) 224px");
   });
 
-  it("under 1180 keeps the left at its rail, with its cap across the head row", () => {
+  it("under 1180 keeps the left at its rail, the header's logo cell over it", () => {
     setWindowWidth(1024);
     useUiStore.setState({ activeSessionId: "s-1" });
     const view = renderShell();
@@ -951,7 +954,12 @@ describe("AppShell", () => {
     expect(frame?.getAttribute("data-vex-sidebar-collapsed")).toBe("true");
     const page = view.container.querySelector("[data-vex-area='left-page']");
     expect(page?.getAttribute("data-vex-left-page")).toBe("spine");
-    expect(page?.querySelector(".vex-left-page__cap")).not.toBeNull();
+    // The header runs across the rail: no cap of the rail's own, and the
+    // logo cell stands alone over it.
+    expect(page?.querySelector(".vex-left-page__cap")).toBeNull();
+    const chats = view.container.querySelector("[data-vex-area='shell-head'] [data-vex-head-cell='chats']");
+    expect(chats?.hasAttribute("data-rail")).toBe(true);
+    expect(chats?.querySelector("[data-vex-head-cell='sidebar-key']")).toBeNull();
   });
 
   it("under 1180 a re-opened left closes Vex (derived), and showing Vex folds it back", () => {
@@ -1004,12 +1012,22 @@ describe("AppShell", () => {
     expect(view.container.querySelector("[data-vex-running-head-fold]")).toBeNull();
     const head = view.container.querySelector("[data-vex-area='shell-status-strip']");
     expect(head?.classList.contains("vex-drag")).toBe(true);
-    // The welcome head has nothing to say: its rule is clear.
+    // The welcome head has nothing to say.
     expect(head?.hasAttribute("data-empty")).toBe(true);
-    // The open sidebar's head row clears the macOS traffic lights.
-    const sidebarHead = view.container.querySelector("[data-vex-area='sessions-sidebar'] header");
-    expect(sidebarHead?.classList.contains("vex-drag")).toBe(true);
+    // The header is one drag region, and so is each of its cells that is not
+    // a control; the chats cell clears the macOS traffic lights.
+    const header = view.container.querySelector("[data-vex-area='shell-head']");
+    expect(header?.classList.contains("vex-drag")).toBe(true);
+    for (const cell of ["chats", "vex-key", "title", "funds", "caption-reserve"]) {
+      expect(
+        header?.querySelector(`[data-vex-head-cell='${cell}']`)?.classList.contains("vex-drag"),
+        cell,
+      ).toBe(true);
+    }
+    const sidebarHead = header?.querySelector("[data-vex-head-cell='chats']");
     expect(sidebarHead?.classList.contains("vex-lights-start")).toBe(true);
+    // The sidebar no longer draws a head row of its own under the header.
+    expect(view.container.querySelector("[data-vex-area='sessions-sidebar'] header")).toBeNull();
   });
 
   it("keeps the right track NUMERIC on both sides of the welcome<->session edge", () => {

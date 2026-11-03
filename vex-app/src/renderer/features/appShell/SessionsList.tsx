@@ -7,8 +7,9 @@
  *
  * Open, top to bottom:
  *
- *   HEAD     44 high: the vx wordmark and the collapse key
- *            (`AgentSidebarHeader`).
+ *   HEAD     the vx wordmark and the collapse key (`AgentSidebarHeader`):
+ *            the frame's header draws them in its cells over this column
+ *            (`headless`), so the column itself starts with ACTIONS.
  *   ACTIONS  New chat (500; "New mission" on the Mission tab) and Search, as
  *            nav rows. Search turns its row into the field with the All,
  *            Agent and Mission tabs under it, New chat staying above it;
@@ -70,6 +71,12 @@ interface SessionsListProps {
   readonly onToggleSidebar: () => void;
   /** Whether the rail opens into the sidebar; false on the Lighter desk. */
   readonly expandable?: boolean;
+  /**
+   * The frame's header draws this column's head cells (the logo cell and
+   * the sidebar key, `ShellHeader`), so the column starts with its body. The
+   * Lighter desk's rail keeps its own head on the rail's cap.
+   */
+  readonly headless?: boolean;
 }
 
 /** Proposal copy (section 4): the search mode's closing hint. */
@@ -80,6 +87,7 @@ export function SessionsList({
   collapsed,
   onToggleSidebar,
   expandable = true,
+  headless = false,
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -245,10 +253,13 @@ export function SessionsList({
       {rail ? (
         <>
           {/* The rail's head row is the frame's paper cap; the mark sits on
-            * it where the OS draws no traffic lights. */}
-          <div className="vex-ls-railhead vex-no-drag">
-            <SidebarHomeSigil sidebarOpen={false} />
-          </div>
+            * it where the OS draws no traffic lights. Under the frame's
+            * header the logo cell is the header's. */}
+          {headless ? null : (
+            <div className="vex-ls-railhead vex-no-drag">
+              <SidebarHomeSigil sidebarOpen={false} />
+            </div>
+          )}
           <div className="vex-ls-body">
             {expandable ? (
               <>
@@ -285,7 +296,7 @@ export function SessionsList({
         </>
       ) : (
         <>
-          <AgentSidebarHeader onCollapse={onToggleSidebar} />
+          {headless ? null : <AgentSidebarHeader onCollapse={onToggleSidebar} />}
           <div className="vex-ls-body">
             {searchOpen ? (
               <div className="vex-ls-find">

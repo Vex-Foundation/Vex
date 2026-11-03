@@ -106,7 +106,10 @@
 .vex-shell-frame[data-dragging] {
   transition: none;
 }
-/* Each column's place: its own track, every row. */
+/* Each column's place: its own track, every row. In H3's frame (the agent
+ * shell and Studio) the header (ShellHeader, title-bar.css) takes the first
+ * row across every track and the columns stand under it; the Lighter desk
+ * keeps R3's one row, its header box-less. */
 .vex-shell-frame > .vex-left-page {
   grid-column: 1;
   grid-row: 1 / -1;
@@ -118,6 +121,13 @@
 .vex-shell-frame > .vex-shell-vex {
   grid-column: 3;
   grid-row: 1 / -1;
+}
+.vex-shell-frame > .vex-shell-head {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+.vex-shell-frame[data-vex-frame="h3"] > :is(.vex-left-page, .vex-shell-centre, .vex-shell-vex) {
+  grid-row: 2 / -1;
 }
 
 /* The one drag handle left, Lighter's chat share, is a frame child (columns
@@ -198,9 +208,10 @@
   }
 }
 
-/* The rail's paper cap: the head row runs across it, rule included, and the
- * rail's content starts under it, clear of the macOS traffic lights. A window
- * drag region like every head row. */
+/* The rail's paper cap, on the Lighter desk's R3 frame only (under H3's
+ * header the rail starts below it): the head row runs across it, rule
+ * included, and the rail's content starts under it, clear of the macOS
+ * traffic lights. A window drag region like every head row. */
 .vex-left-page__cap {
   position: absolute;
   z-index: 3;
@@ -219,11 +230,11 @@
   height: 100%;
   min-height: 0;
 }
-[data-vex-left-page="spine"] > .vex-left-page__content {
+.vex-shell-frame[data-vex-frame="r3"] [data-vex-left-page="spine"] > .vex-left-page__content {
   padding-top: var(--head-h);
 }
 
-/* The title bar's own rules live in title-bar.css. */
+/* The title bar's own rules live in title-bar.css, the header's with them. */
 /* The welcome stage's clear head row runs across the rail's cap too. */
 .vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {
   border-bottom-color: transparent;

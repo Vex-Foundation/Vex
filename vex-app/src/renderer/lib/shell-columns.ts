@@ -389,3 +389,42 @@ export function shellGridTemplateRows(rows: ShellRows): string {
   const foot = rows.foot ? `${String(H3_FOOT_HEIGHT)}px` : "0px";
   return `${head} minmax(0, 1fr) ${foot}`;
 }
+
+/**
+ * THE HEADER'S CELLS (docs/design/H3-DESKTOP.md section 1.3): one row across
+ * the window with a grid of its own, so a cell keeps its width where the body
+ * under it folds (a page's strip leaves the Vex track 0 while the Vex key
+ * stays in its cell). Each cell is placed by its named lines:
+ *
+ *   chats    the logo cell and the sidebar key, over the chats column
+ *   vex      the Vex key, over the Vex column
+ *   title    the chat's title and the title bar's cluster
+ *   funds    the static network statement (Mainnet, Real funds)
+ *   reserve  the Windows and Linux caption buttons' reserve, `--overlay-w`
+ *            wide (0 on macOS and on a native frame), a drag region with
+ *            nothing in it
+ *
+ * `vexBetween` puts the Vex key over a Vex column between the chats and the
+ * chat (H3's order); without it the key sits at the right end beside the
+ * reserve, over R3's right-hand Vex column. `vex` null sizes the key's cell
+ * to the key.
+ */
+export interface ShellHeadInput {
+  /** The chats track under the logo and sidebar key cells. */
+  readonly chats: number;
+  /** The Vex key cell's width; null is as wide as the key. */
+  readonly vex: number | null;
+  /** The Vex key cell stands between the chats and the chat. */
+  readonly vexBetween: boolean;
+}
+
+/** The header's own column template, with each cell's named lines. */
+export function shellHeadTemplateColumns(input: ShellHeadInput): string {
+  const chats = `[chats-start] ${String(input.chats)}px [chats-end`;
+  const vex = input.vex === null ? "auto" : `${String(input.vex)}px`;
+  const rest = "minmax(0, 1fr) [title-end funds-start] auto [funds-end";
+  const reserve = "reserve-start] var(--overlay-w) [reserve-end]";
+  return input.vexBetween
+    ? `${chats} vex-start] ${vex} [vex-end title-start] ${rest} ${reserve}`
+    : `${chats} title-start] ${rest} vex-start] ${vex} [vex-end ${reserve}`;
+}

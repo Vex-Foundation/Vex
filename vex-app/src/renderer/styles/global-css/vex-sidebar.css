@@ -44,6 +44,11 @@
   padding: 0 calc(var(--overlay-w) + 10px) 0 18px;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
+/* Under H3's header (docs/design/H3-DESKTOP.md section 1.3) the column's
+ * head no longer meets the caption buttons: the header reserves them. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs__head {
+  padding-right: 10px;
+}
 .vex-vs__title {
   font-size: 14px;
   font-weight: 500;

@@ -5,29 +5,37 @@
  *
  * on grid tracks solved by `lib/shell-columns.ts`, plus the new-session modal.
  * The grid also has H3's two window-wide rows (docs/design/H3-DESKTOP.md
- * section 1.1), a header row over the columns and a bottom row under them;
- * neither holds a cell yet, so both are 0 and each column spans all three.
+ * section 1.1), a header row over the columns and a bottom row under them.
  * The frame owns viewport measurement, the narrow override, the derived Vex
  * auto-close and Lighter's chat share drag; column CONTENT belongs to
  * SessionsList / StudioSidebar / SessionPanel / VexSidebar.
+ *
+ * - THE HEADER (`ShellHeader`, H3-DESKTOP.md section 1.3) is the first row,
+ *   one row of cells across the window and its drag region: the logo cell
+ *   and the sidebar key over the left column, the chat's title and the
+ *   title bar's cluster (`RunningHead`, mounted once) over the centre, the
+ *   token chip over the Vex column, the static Mainnet and Real funds, and
+ *   the caption buttons' reserve. The columns stand under it. The bottom row
+ *   holds no cell yet, so it is 0.
  *
  * - The LEFT column hosts the sessions sidebar in agent mode, the Studio
  *   projects and explorer in Studio, and the vx mark on the rail in Lighter.
  *   Its widths are fixed (264, 224 at the medium tier, the 56px rail closed);
  *   there is no drag handle.
- * - The CENTRE opens with the RUNNING HEAD (`RunningHead`), the 44px drag row,
- *   then the mode's surface. Pages (Memory, Settings, Portfolio and the rest)
- *   open INSIDE the centre (`ShellScreens`), so both sidebars stay standing.
+ * - The CENTRE is the mode's surface. Pages (Memory, Settings, Portfolio and
+ *   the rest) open INSIDE the centre (`ShellScreens`), so both sidebars stay
+ *   standing.
  * - The RIGHT column is Vex's (`VexSidebar`, docs/design/R3-MINIMAL.md
  *   section 5): open in chat by default, hidden by default on the table pages
  *   and on the Lighter desk, and absent on the welcome stage. Hidden is zero
  *   width; the title bar's token chip brings her back.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
- * stays the e2e/test selector. On the Lighter desk the left sidebar is always
- * its rail and the centre opens with the desk's own title row
- * (`LighterSidebar`, docs/design/R3-MINIMAL.md section 9.3), which carries the
- * title bar's cluster.
+ * stays the e2e/test selector. The Lighter desk keeps R3's one-row frame
+ * until its own restyle: no header row, the left sidebar always its rail,
+ * and the centre opening with the desk's own title row (`LighterSidebar`,
+ * docs/design/R3-MINIMAL.md section 9.3), which carries the title bar's
+ * cluster.
  */
 
 import {
@@ -46,13 +54,14 @@ import {
   computeShellColumns,
   lighterChatDragMax,
   shellGridTemplateRows,
+  shellHeadTemplateColumns,
   shellTier,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
-import { RunningHead } from "./RunningHead.js";
+import { ShellHeader } from "./ShellHeader.js";
 import { StudioCenter } from "./studio/StudioCenter.js";
 import { StudioSidebar } from "./studio/sidebar/StudioSidebar.js";
 import { AgentLaunchFormHost } from "./token-launch/AgentLaunchFormHost.js";
@@ -331,12 +340,12 @@ function ShellFrame({
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     gridTemplateColumns: `${cols.left}px minmax(0, 1fr) ${cols.vex}px`,
-    // head | body | foot (docs/design/H3-DESKTOP.md section 1.1). Neither the
-    // header row nor the bottom row holds a cell yet, so both are 0 and every
-    // column spans all three rows (shell.css): the body is the whole window.
-    gridTemplateRows: shellGridTemplateRows({ head: false, foot: false }),
-    // The running head reserves the caption buttons wherever the right column
-    // under them is narrower than they are (shell.css).
+    // head | body | foot (docs/design/H3-DESKTOP.md section 1.1): the header
+    // row holds the header's cells; the bottom row holds none yet, so it is 0.
+    // The Lighter desk keeps R3's one-row frame, its title row its own.
+    gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: false }),
+    // The Lighter desk's title row reserves the caption buttons wherever the
+    // right column under them is narrower than they are (lighter-desk.css).
     "--vex-vex-track": `${cols.vex}px`,
     // Where a page starts in the window: past the left column. The page
     // itself sits inside the centre (shell.css resets it there); this value
@@ -344,12 +353,24 @@ function ShellFrame({
     "--vex-overlay-left": `${cols.left}px`,
   };
 
+  // The header's cells over the columns (docs/design/H3-DESKTOP.md section
+  // 1.3), on its own grid: the chats cells over the left track, the Vex key
+  // at the right end over R3's right-hand Vex column, as wide as the key.
+  const headColumns = shellHeadTemplateColumns({
+    chats: cols.left,
+    vex: null,
+    vexBetween: false,
+  });
+
   return (
     <div
       ref={frameRef}
       className="vex-shell-frame relative z-10 h-full min-w-0 flex-1"
       style={frameStyle}
       data-vex-area="shell-frame"
+      // H3's frame (the header row over the columns) in the agent shell and
+      // Studio; the Lighter desk keeps R3's until its own restyle.
+      data-vex-frame={lighter ? "r3" : "h3"}
       data-vex-tier={tier}
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
@@ -359,6 +380,28 @@ function ShellFrame({
         ? zenControlsOpen ? "open" : "closed"
         : undefined}
     >
+      {/* THE HEADER, the frame's first child in every mode and layout: it
+        * mounts the running head, and with it the approvals live sync, ONCE
+        * (`ShellHeader.tsx`). Preload allows one subscriber per event kind
+        * per window, so its place in the tree never changes. */}
+      <ShellHeader
+        runtimeMode={runtimeMode}
+        activeSessionId={activeSessionId}
+        empty={runtimeMode === "agent" && activeSessionId === null && !pageOpen}
+        // The token chip toggles the column the frame SOLVED, not the stored
+        // choice: a column the narrow tier closed reads closed, and its press
+        // opens it (the store action also clears the narrow override). No
+        // column on the welcome or in Zen, so no toggle there.
+        vex={
+          welcomeStage || zen
+            ? null
+            : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) }
+        }
+        columns={headColumns}
+        chatsRail={rail}
+        onToggleSidebar={toggleSidebar}
+      />
+
       {/* TRACK 1 - the left sidebar: the sessions sidebar (agent), the
         * projects and explorer (Studio), its rail on the Lighter desk.
         * The column stays overflow-visible so nothing the sidebar opens is
@@ -368,7 +411,9 @@ function ShellFrame({
         data-vex-area="left-page"
         data-vex-left-page={rail ? "spine" : "page"}
       >
-        {rail ? (
+        {/* The rail's paper cap across R3's head row, on the desk only: under
+          * the header the rail starts below it. */}
+        {rail && lighter ? (
           <div aria-hidden className="vex-left-page__cap vex-drag" />
         ) : null}
         {runtimeMode === "agent" ? (
@@ -377,11 +422,13 @@ function ShellFrame({
               onCreate={onCreate}
               collapsed={sidebarCollapsed}
               onToggleSidebar={toggleSidebar}
+              headless
             />
           </div>
         ) : studio ? (
           <div className="vex-left-page__content">
             <StudioSidebar
+              headless
               collapsed={sidebarCollapsed}
               onToggleSidebar={toggleSidebar}
               activeProjectId={activeProjectId}
@@ -406,32 +453,13 @@ function ShellFrame({
         ) : null}
       </div>
 
-      {/* TRACK 2 - the centre: its running head, then the mode's surface, and
-        * the pages over both inside this column. */}
+      {/* TRACK 2 - the centre: the mode's surface under the header, and the
+        * pages over it inside this column. */}
       <section className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-        {/* THE RUNNING HEAD, mounted ONCE for the whole frame regardless of
-          * mode. It carries `GlobalApprovals`, which owns the approvals live
-          * sync, and preload allows one subscriber per event kind per window -
-          * so a per-shell head would mean two subscriptions across a mode
-          * switch. See `RunningHead.tsx`. */}
-        <RunningHead
-          runtimeMode={runtimeMode}
-          activeSessionId={activeSessionId}
-          empty={runtimeMode === "agent" && activeSessionId === null && !pageOpen}
-          // The token chip toggles the column the frame SOLVED, not the stored
-          // choice: a column the narrow tier closed reads closed, and its
-          // press opens it (the store action also clears the narrow override).
-          // No column on the welcome or in Zen, so no toggle there.
-          vex={
-            welcomeStage || zen
-              ? null
-              : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) }
-          }
-        />
-
         {/* The Lighter desk's title row: the centre's head row on the desk,
-          * with the title bar's cluster portalled into its right end. In Zen
-          * it folds to a handle over the chart. */}
+          * with the title bar's cluster portalled into its right end (the
+          * header draws no cells there). In Zen it folds to a handle over
+          * the chart. */}
         {lighter ? (
           <LighterSidebar
             collapsed={sidebarCollapsed}
@@ -460,10 +488,10 @@ function ShellFrame({
 
         {/* The centre's own error boundary (R3-MINIMAL.md section 12): a
           * surface or page that throws is replaced by the recovery card
-          * between the two sidebars, which stay standing. The running head
-          * stays outside it (it owns the approvals live sync). Reset by the
-          * mode, the session and the page, so a healthy subject is never
-          * blacked out by the one that failed. */}
+          * between the two sidebars, which stay standing. The header stays
+          * outside it (it owns the approvals live sync). Reset by the mode,
+          * the session and the page, so a healthy subject is never blacked
+          * out by the one that failed. */}
         <ErrorBoundary
           surface="shell.centre"
           extent="region"
