@@ -17,6 +17,10 @@
  * It is called with the SAME server-resolved address allow-list every query
  * here binds, and it cannot widen it.
  *
+ * `getPortfolioHistory` (the wallet total over time) lives here for one reason:
+ * it must resolve its wallets through `resolveAddresses`, the one function that
+ * turns a scope into an allow-list. Its SQL is `./portfolio/snapshot-history.ts`.
+ *
  * SECURITY (non-negotiable):
  *  - GLOBAL is an EXPLICIT address allow-list. EVERY SELECT carries
  *    `WHERE wallet_address = ANY($1::text[])` with a bound, finite array.
@@ -62,6 +66,11 @@ import type {
   PositionChainDto,
   PositionTokenDto,
 } from "@shared/schemas/portfolio.js";
+import {
+  PORTFOLIO_HISTORY_MAX_POINTS,
+  type PortfolioHistoryDto,
+  type PortfolioHistoryInput,
+} from "@shared/schemas/portfolio-history.js";
 import { familyForChainId } from "@shared/chains/display.js";
 import { sanitizeTokenName } from "@shared/token-name-sanitizer.js";
 import { solanaRouteMintFromPersistedAddress } from "@tools/solana-ecosystem/shared/solana-asset-identity.js";
@@ -70,6 +79,7 @@ import { getSessionWalletScope } from "./sessions-db.js";
 import { readProjectPortfolioScope } from "./projects/portfolio-scope.js";
 import { readChainReadIssues } from "./portfolio/chain-read-status.js";
 import { readSnapshotBases } from "./portfolio/snapshot-basis.js";
+import { readSnapshotHistory } from "./portfolio/snapshot-history.js";
 import { buildPoolConfig } from "./db-config.js";
 import { runWithMainDbClient } from "./main-ipc-pg-pool.js";
 import { log } from "../logger/index.js";
@@ -668,6 +678,58 @@ export async function getPortfolio(
       });
     } catch (cause) {
       return dbError("getPortfolio query failed", cause);
+    }
+  });
+}
+
+/**
+ * The wallet total over time for the requested scope and range: complete
+ * snapshot cycles on the read's own SETTLED + IN TRANSIT basis, oldest first,
+ * bounded at `PORTFOLIO_HISTORY_MAX_POINTS` (see
+ * `./portfolio/snapshot-history.ts` for the SQL, the range cut and the
+ * thinning rule).
+ *
+ * `input.wallets` is resolved by `resolveAddresses`, the same call
+ * `getPortfolio` makes, so the history covers exactly the wallets the figures
+ * beside it cover: a `walletAddress` outside the inventory or a `walletId`
+ * outside the project is refused by name, and an empty scope answers with no
+ * points BEFORE any SQL. Logging is the scope, the range and COUNTS only.
+ */
+export async function getPortfolioHistory(
+  input: PortfolioHistoryInput,
+  correlationId = "",
+): Promise<Result<PortfolioHistoryDto, VexError>> {
+  const resolved = await resolveAddresses(input.wallets, correlationId);
+  if (!resolved.ok) return resolved;
+  const addresses = resolved.data;
+  const scope = input.wallets.scope;
+
+  if (addresses.length === 0) {
+    return ok({ scope, range: input.range, walletCount: 0, groupCount: 0, sampled: false, points: [] });
+  }
+
+  return withClient(async (client) => {
+    try {
+      const history = await readSnapshotHistory(
+        client,
+        addresses,
+        input.range,
+        PORTFOLIO_HISTORY_MAX_POINTS,
+      );
+      log.info(
+        `[portfolio-db] getPortfolioHistory ok scope=${scope} range=${input.range} ` +
+          `wallets=${addresses.length} groups=${history.groupCount} points=${history.points.length}`,
+      );
+      return ok({
+        scope,
+        range: input.range,
+        walletCount: addresses.length,
+        groupCount: history.groupCount,
+        sampled: history.groupCount > history.points.length,
+        points: history.points,
+      });
+    } catch (cause) {
+      return dbError("getPortfolioHistory query failed", cause);
     }
   });
 }
