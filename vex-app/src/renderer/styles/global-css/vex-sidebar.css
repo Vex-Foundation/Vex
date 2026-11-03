@@ -1,6 +1,8 @@
-/* THE VEX SIDEBAR (docs/design/R3-MINIMAL.md section 5): the right column,
- * Vex's own. Paper with a 1px quiet rule on its left, the same ground as the
- * centre; information first (state, narration, background work, Needs you),
+/* THE VEX SIDEBAR (docs/design/R3-MINIMAL.md section 5): Vex's own column,
+ * between the chats and the chat (docs/design/H3-DESKTOP.md section 1; the
+ * right-hand column on the Lighter desk). Paper with a 1px quiet rule on the
+ * side that meets the chat, the same ground as the centre; information first
+ * (state, narration, background work, Needs you),
  * then the 280px print window with her hologram, then the avatar switch.
  * Width is the frame's (256, 240, 224; 0 hidden); the column only fills its
  * track. Radius 0, no shadow, no blur, tokens only.
@@ -29,6 +31,16 @@
 /* Hidden is zero width: no rule may stand in a 0px track. */
 .vex-vs[data-vex-vex-open="false"] {
   border-left: 0;
+}
+/* Between the chats and the chat (docs/design/H3-DESKTOP.md section 1) the
+ * chats column draws the rule on her left, so hers is on her right, against
+ * the chat. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs {
+  border-left: 0;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-vex-open="false"] {
+  border-right: 0;
 }
 
 /* The head row: a window drag region whose content keeps clear of the

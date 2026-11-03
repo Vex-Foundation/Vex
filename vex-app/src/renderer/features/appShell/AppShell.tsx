@@ -1,9 +1,13 @@
 /**
- * Main app shell: three calm columns (docs/design/R3-MINIMAL.md section 2),
+ * Main app shell: three calm columns in H3's order (docs/design/H3-DESKTOP.md
+ * section 1; R3-MINIMAL.md section 2 for what each column holds),
  *
- *   left sidebar | centre | Vex sidebar
+ *   left sidebar (the chats) | Vex sidebar | centre (the chat)
  *
  * on grid tracks solved by `lib/shell-columns.ts`, plus the new-session modal.
+ * Vex's column sits between the chats and the chat in the agent shell and
+ * Studio, in the DOM as on screen, so focus reaches her before the chat; the
+ * Lighter desk keeps R3's left sidebar | centre | Vex sidebar.
  * The grid also has H3's two window-wide rows (docs/design/H3-DESKTOP.md
  * section 1.1), a header row over the columns and a bottom row under them.
  * The frame owns viewport measurement, the narrow override, the derived Vex
@@ -25,10 +29,11 @@
  * - The CENTRE is the mode's surface. Pages (Memory, Settings, Portfolio and
  *   the rest) open INSIDE the centre (`ShellScreens`), so both sidebars stay
  *   standing.
- * - The RIGHT column is Vex's (`VexSidebar`, docs/design/R3-MINIMAL.md
- *   section 5): open in chat by default, hidden by default on the table pages
- *   and on the Lighter desk, and absent on the welcome stage. Hidden is zero
- *   width; the title bar's token chip brings her back.
+ * - The VEX column (`VexSidebar`, docs/design/R3-MINIMAL.md section 5) is
+ *   open in chat by default, hidden by default on the table pages and on the
+ *   Lighter desk (where it is the right-hand column), and absent on the
+ *   welcome stage. Hidden is zero width; the header's token chip brings her
+ *   back.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
  * stays the e2e/test selector. The Lighter desk keeps R3's one-row frame
@@ -339,7 +344,11 @@ function ShellFrame({
   // once swept the right column through the centre on the welcome edge).
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
-    gridTemplateColumns: `${cols.left}px minmax(0, 1fr) ${cols.vex}px`,
+    // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
+    // desk keeps R3's rail | desk | chat.
+    gridTemplateColumns: lighter
+      ? `${cols.left}px minmax(0, 1fr) ${cols.vex}px`
+      : `${cols.left}px ${cols.vex}px minmax(0, 1fr)`,
     // head | body | foot (docs/design/H3-DESKTOP.md section 1.1): the header
     // row holds the header's cells; the bottom row holds none yet, so it is 0.
     // The Lighter desk keeps R3's one-row frame, its title row its own.
@@ -355,12 +364,172 @@ function ShellFrame({
 
   // The header's cells over the columns (docs/design/H3-DESKTOP.md section
   // 1.3), on its own grid: the chats cells over the left track, the Vex key
-  // at the right end over R3's right-hand Vex column, as wide as the key.
+  // over the Vex column, as wide as the column, or as the key where the
+  // column is closed.
   const headColumns = shellHeadTemplateColumns({
     chats: cols.left,
-    vex: null,
-    vexBetween: false,
+    vex: cols.vex > 0 ? cols.vex : null,
+    vexBetween: true,
   });
+
+  // The three columns, each keyed so a change of order moves its node and
+  // never remounts it.
+  /* TRACK 1 - the left sidebar, the chats column: the sessions sidebar
+   * (agent), the projects and explorer (Studio), its rail on the Lighter desk.
+   * The column stays overflow-visible so nothing the sidebar opens is
+   * cut at its edge. */
+  const leftColumn = (
+    <div
+      key="left"
+      className="vex-left-page relative z-20 h-full min-h-0 min-w-0"
+      data-vex-area="left-page"
+      data-vex-left-page={rail ? "spine" : "page"}
+    >
+      {/* The rail's paper cap across R3's head row, on the desk only: under
+        * the header the rail starts below it. */}
+      {rail && lighter ? (
+        <div aria-hidden className="vex-left-page__cap vex-drag" />
+      ) : null}
+      {runtimeMode === "agent" ? (
+        <div className="vex-left-page__content">
+          <SessionsList
+            onCreate={onCreate}
+            collapsed={sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+            headless
+          />
+        </div>
+      ) : studio ? (
+        <div className="vex-left-page__content">
+          <StudioSidebar
+            headless
+            collapsed={sidebarCollapsed}
+            onToggleSidebar={toggleSidebar}
+            activeProjectId={activeProjectId}
+            onSelectProject={setActiveProjectId}
+            onSelectWelcome={() => setActiveProjectId(null)}
+          />
+        </div>
+      ) : cols.left > 0 ? (
+        // Lighter keeps the left sidebar on its rail: New chat, Search, the
+        // nav and the account. It never opens into the sidebar, so it has
+        // no Expand key; the desk's drawer opens from Markets & sessions.
+        // Keyed, so the agent sidebar's own state never carries across a
+        // mode switch.
+        <div key="lighter-rail" className="vex-left-page__content">
+          <SessionsList
+            onCreate={onCreate}
+            collapsed
+            expandable={false}
+            onToggleSidebar={toggleSidebar}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+
+  /* The centre, the chat's column: the mode's surface under the header, and
+   * the pages over it inside this column. The last track in the agent shell
+   * and Studio, the middle one on the Lighter desk. */
+  const centreColumn = (
+    <section
+      key="centre"
+      className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+    >
+      {/* The Lighter desk's title row: the centre's head row on the desk,
+        * with the title bar's cluster portalled into its right end (the
+        * header draws no cells there). In Zen it folds to a handle over
+        * the chart. */}
+      {lighter ? (
+        <LighterSidebar
+          collapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
+          zenMode={lighterZen}
+          zenAssistantOpen={zenAssistantOpen}
+          zenControlsOpen={zenControlsOpen}
+          onToggleZen={() => setZenMode(!lighterZen)}
+          onToggleZenControls={() => setZenControlsOpen((current) => !current)}
+          onToggleZenAssistant={() => {
+            if (zenAssistantOpen) setZenAssistantOpen(false);
+            else openZenAssistant();
+          }}
+        />
+      ) : null}
+
+      {/* G10 - the offline row: only an actual outage renders it. A row of
+        * the centre column under its head row (R3-MINIMAL.md section 12,
+        * the d3x-offline mockup), so the left sidebar's New chat, Vex's
+        * state line and the transcript's top all stay uncovered; a page
+        * opened while offline starts under it (overlay.css). */}
+      <ConnectionBanner
+        reconnecting={!networkOnline}
+        label="Offline: waiting for the network to come back"
+      />
+
+      {/* The centre's own error boundary (R3-MINIMAL.md section 12): a
+        * surface or page that throws is replaced by the recovery card
+        * between the two sidebars, which stay standing. The header stays
+        * outside it (it owns the approvals live sync). Reset by the mode,
+        * the session and the page, so a healthy subject is never blacked
+        * out by the one that failed. */}
+      <ErrorBoundary
+        surface="shell.centre"
+        extent="region"
+        resetKey={`${runtimeMode}:${activeSessionId ?? ""}:${shellRouteKind}`}
+        actions={shellRouteKind === "none" ? NO_ACTIONS : CLOSE_PAGE_ACTIONS}
+        fallback={(props) => (
+          <div className="min-h-0 flex-1">
+            <ErrorBoundaryFallback
+              {...props}
+              title="Something in Vex stopped rendering"
+              extent="region"
+            />
+          </div>
+        )}
+      >
+        <div className="min-h-0 flex-1">
+          {/* In Lighter mode the conversation lives in the right column
+           * (`LighterChatRail`), so the center is the desk alone. */}
+          {lighter ? (
+            <LighterCenter
+              zenMode={lighterZen}
+              onOpenZenAssistant={openZenAssistant}
+            />
+          ) : studio ? <StudioCenter /> : <SessionPanel />}
+        </div>
+
+        {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you,
+          * the money registers): one paper sheet over the centre, absolute
+          * inside this column so it never reflows a track. */}
+        <ShellScreens />
+      </ErrorBoundary>
+    </section>
+  );
+
+  /* Vex's column: between the chats and the chat (track 2) in the agent
+   * shell and Studio, at the right (track 3) on the Lighter desk. Empty on
+   * the welcome stage, where she stands in the centre; in Lighter's Zen it
+   * is the assistant overlay. */
+  const vexColumn = (
+    <div
+      key="vex"
+      className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible"
+    >
+      {/* Mounted in every session - the sidebar owns its hidden rendering,
+       * so a derived auto-close never remounts the column. `vexEffectiveOpen`
+       * folds the solve into the open flag WITHOUT touching the stored
+       * choice. */}
+      {welcomeStage ? null : (
+        <VexSidebar
+          open={zen ? zenAssistantOpen : vexEffectiveOpen}
+          onHide={() => {
+            if (zen) setZenAssistantOpen(false);
+            else setVexOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -402,146 +571,11 @@ function ShellFrame({
         onToggleSidebar={toggleSidebar}
       />
 
-      {/* TRACK 1 - the left sidebar: the sessions sidebar (agent), the
-        * projects and explorer (Studio), its rail on the Lighter desk.
-        * The column stays overflow-visible so nothing the sidebar opens is
-        * cut at its edge. */}
-      <div
-        className="vex-left-page relative z-20 h-full min-h-0 min-w-0"
-        data-vex-area="left-page"
-        data-vex-left-page={rail ? "spine" : "page"}
-      >
-        {/* The rail's paper cap across R3's head row, on the desk only: under
-          * the header the rail starts below it. */}
-        {rail && lighter ? (
-          <div aria-hidden className="vex-left-page__cap vex-drag" />
-        ) : null}
-        {runtimeMode === "agent" ? (
-          <div className="vex-left-page__content">
-            <SessionsList
-              onCreate={onCreate}
-              collapsed={sidebarCollapsed}
-              onToggleSidebar={toggleSidebar}
-              headless
-            />
-          </div>
-        ) : studio ? (
-          <div className="vex-left-page__content">
-            <StudioSidebar
-              headless
-              collapsed={sidebarCollapsed}
-              onToggleSidebar={toggleSidebar}
-              activeProjectId={activeProjectId}
-              onSelectProject={setActiveProjectId}
-              onSelectWelcome={() => setActiveProjectId(null)}
-            />
-          </div>
-        ) : cols.left > 0 ? (
-          // Lighter keeps the left sidebar on its rail: New chat, Search, the
-          // nav and the account. It never opens into the sidebar, so it has
-          // no Expand key; the desk's drawer opens from Markets & sessions.
-          // Keyed, so the agent sidebar's own state never carries across a
-          // mode switch.
-          <div key="lighter-rail" className="vex-left-page__content">
-            <SessionsList
-              onCreate={onCreate}
-              collapsed
-              expandable={false}
-              onToggleSidebar={toggleSidebar}
-            />
-          </div>
-        ) : null}
-      </div>
-
-      {/* TRACK 2 - the centre: the mode's surface under the header, and the
-        * pages over it inside this column. */}
-      <section className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-        {/* The Lighter desk's title row: the centre's head row on the desk,
-          * with the title bar's cluster portalled into its right end (the
-          * header draws no cells there). In Zen it folds to a handle over
-          * the chart. */}
-        {lighter ? (
-          <LighterSidebar
-            collapsed={sidebarCollapsed}
-            onToggleSidebar={toggleSidebar}
-            zenMode={lighterZen}
-            zenAssistantOpen={zenAssistantOpen}
-            zenControlsOpen={zenControlsOpen}
-            onToggleZen={() => setZenMode(!lighterZen)}
-            onToggleZenControls={() => setZenControlsOpen((current) => !current)}
-            onToggleZenAssistant={() => {
-              if (zenAssistantOpen) setZenAssistantOpen(false);
-              else openZenAssistant();
-            }}
-          />
-        ) : null}
-
-        {/* G10 - the offline row: only an actual outage renders it. A row of
-          * the centre column under its head row (R3-MINIMAL.md section 12,
-          * the d3x-offline mockup), so the left sidebar's New chat, Vex's
-          * state line and the transcript's top all stay uncovered; a page
-          * opened while offline starts under it (overlay.css). */}
-        <ConnectionBanner
-          reconnecting={!networkOnline}
-          label="Offline: waiting for the network to come back"
-        />
-
-        {/* The centre's own error boundary (R3-MINIMAL.md section 12): a
-          * surface or page that throws is replaced by the recovery card
-          * between the two sidebars, which stay standing. The header stays
-          * outside it (it owns the approvals live sync). Reset by the mode,
-          * the session and the page, so a healthy subject is never blacked
-          * out by the one that failed. */}
-        <ErrorBoundary
-          surface="shell.centre"
-          extent="region"
-          resetKey={`${runtimeMode}:${activeSessionId ?? ""}:${shellRouteKind}`}
-          actions={shellRouteKind === "none" ? NO_ACTIONS : CLOSE_PAGE_ACTIONS}
-          fallback={(props) => (
-            <div className="min-h-0 flex-1">
-              <ErrorBoundaryFallback
-                {...props}
-                title="Something in Vex stopped rendering"
-                extent="region"
-              />
-            </div>
-          )}
-        >
-          <div className="min-h-0 flex-1">
-            {/* In Lighter mode the conversation lives in the right column
-             * (`LighterChatRail`), so the center is the desk alone. */}
-            {lighter ? (
-              <LighterCenter
-                zenMode={lighterZen}
-                onOpenZenAssistant={openZenAssistant}
-              />
-            ) : studio ? <StudioCenter /> : <SessionPanel />}
-          </div>
-
-          {/* Pages (Memory, Sessions, Settings, Portfolio, Board, Needs you,
-            * the money registers): one paper sheet over the centre, absolute
-            * inside this column so it never reflows a track. */}
-          <ShellScreens />
-        </ErrorBoundary>
-      </section>
-
-      {/* TRACK 3 - Vex's column. Empty on the welcome stage, where she
-        * stands in the centre; in Lighter's Zen it is the assistant overlay. */}
-      <div className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
-        {/* Mounted in every session - the sidebar owns its hidden rendering,
-         * so a derived auto-close never remounts the column. `vexEffectiveOpen`
-         * folds the solve into the open flag WITHOUT touching the stored
-         * choice. */}
-        {welcomeStage ? null : (
-          <VexSidebar
-            open={zen ? zenAssistantOpen : vexEffectiveOpen}
-            onHide={() => {
-              if (zen) setZenAssistantOpen(false);
-              else setVexOpen(false);
-            }}
-          />
-        )}
-      </div>
+      {/* The columns in their order (docs/design/H3-DESKTOP.md section 1):
+        * chats | Vex | chat in the agent shell and Studio, so Vex's column
+        * comes before the chat in focus order too; the Lighter desk keeps
+        * R3's rail | desk | chat until its own restyle. */}
+      {lighter ? [leftColumn, centreColumn, vexColumn] : [leftColumn, vexColumn, centreColumn]}
 
       {chatHandle ? (
         <ShellDragHandle
