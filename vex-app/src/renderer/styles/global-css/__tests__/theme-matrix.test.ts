@@ -338,9 +338,22 @@ describe("the trading pair and the night edge", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("edges a blue fill in periwinkle on the night paper", () => {
-    expect(chronos.get("--vex-alias-button-accent-fill")).toBe("var(--color-blue)");
-    expect(chronos.get("--vex-alias-button-accent-edge")).toBe("var(--color-peri)");
+  it("fills the primary key with the bare H3 blue, and its hover with the blue hover", () => {
+    // docs/design/H3-DESKTOP.md section 2.4: the blue fills primary keys and
+    // nothing else; the captures draw it with no edge.
+    expect(chronos.get("--vex-alias-button-accent-fill")).toBe("var(--color-h3-blue)");
+    expect(chronos.get("--vex-alias-button-accent-hover")).toBe("var(--color-h3-blue-hover)");
+    expect(chronos.get("--vex-alias-button-accent-ink")).toBe("var(--color-white)");
+    expect(chronos.get("--vex-alias-button-accent-edge")).toBe("transparent");
+    // ...and nothing else: no type, line, ring or wash alias reaches it.
+    const blueOutsideKeys = [...chronos]
+      .filter(([name]) => !name.startsWith("--vex-alias-button-accent-"))
+      .filter(([, value]) => /var\(--color-(?:h3-blue|h3-blue-hover|blue|blue-hi|peri|peri-hi)\)/.test(value))
+      .map(([name]) => name);
+    expect(blueOutsideKeys).toEqual([]);
+    // The accent as type is the ink, and so is the focus ring.
+    expect(chronos.get("--vex-alias-accent-primary")).toBe("var(--color-h3-ink)");
+    expect(chronos.get("--vex-alias-focus")).toBe("var(--color-h3-ink)");
     expect(themeInline.get("--color-button-accent-edge")).toBe(
       "var(--vex-alias-button-accent-edge)",
     );
@@ -394,7 +407,7 @@ describe("pre-shell plate", () => {
       expect(body).toMatch(/color: var\(--vex-alias-(?:gate-counter|title|accent-primary)\)/);
       expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
     }
-    expect(chronosBlock).toContain("--vex-alias-accent-primary: var(--color-peri)");
+    expect(chronosBlock).toContain("--vex-alias-accent-primary: var(--color-h3-ink)");
   });
 
   it("keeps the native title bar overlay on the ground and its ink, for every theme the schema names", () => {

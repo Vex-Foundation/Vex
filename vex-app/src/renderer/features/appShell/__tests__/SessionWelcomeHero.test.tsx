@@ -498,7 +498,7 @@ describe("SessionWelcomeHero - the seat glides as the stage changes", () => {
 });
 
 describe("SessionWelcomeHero - the greeting", () => {
-  it("is set in the accent as type, the periwinkle on the night paper, never the night title's paper", () => {
+  it("is set in the accent as type, which H3 sets in ink: the blue is never type on the ground", () => {
     const css = readFileSync(
       join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
       "utf8",
@@ -509,9 +509,9 @@ describe("SessionWelcomeHero - the greeting", () => {
       join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
       "utf8",
     );
-    // The token it reads: the periwinkle, in the one room.
-    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-peri);");
-    expect(tokens).toContain("--color-peri: #a3abff;");
+    // The token it reads: the ink (docs/design/H3-DESKTOP.md section 2.1).
+    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-h3-ink);");
+    expect(tokens).toContain("--color-h3-ink: #f3f5f9;");
   });
 
   it("sets the greeting in the serif title and keeps the honest preview disclosure as its tooltip", () => {
