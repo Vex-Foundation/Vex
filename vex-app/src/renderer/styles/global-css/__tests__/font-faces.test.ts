@@ -65,6 +65,15 @@ const H3_FACES: readonly BundledFace[] = [
       "be-vietnam-pro-latin-ext-600-normal.woff2": "600",
     },
   },
+  {
+    // Static 400 only: H3 sets every figure at 400.
+    family: "Roboto Mono",
+    licence: "RobotoMono-OFL.txt",
+    files: {
+      "roboto-mono-latin-400-normal.woff2": "400",
+      "roboto-mono-latin-ext-400-normal.woff2": "400",
+    },
+  },
 ];
 
 describe.each(H3_FACES)("the bundled $family", ({ family, licence, files }) => {

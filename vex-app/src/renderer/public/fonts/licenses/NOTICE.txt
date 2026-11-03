@@ -28,6 +28,10 @@ Shipped (static WOFF2, latin + latin-ext subsets, 400 + 600 upright):
   /fonts/be-vietnam-pro-latin-600-normal.woff2
   /fonts/be-vietnam-pro-latin-ext-600-normal.woff2
 
+Shipped (static WOFF2, latin + latin-ext subsets, 400 upright):
+  /fonts/roboto-mono-latin-400-normal.woff2           - "Roboto Mono" (H3 figures)
+  /fonts/roboto-mono-latin-ext-400-normal.woff2
+
 Inter Tight is the Google Fonts / gstatic subset build of the upstream
 rsms/inter-tight (c) 2022 The Inter Project Authors family. JetBrains Mono
 is the Fontsource-packaged build (fontsource.org) of the upstream OFL
@@ -43,4 +47,7 @@ is the face for every figure and for code. Doto was retired in UIUX round 3
 Be Vietnam Pro is the Fontsource-packaged build (npm
 @fontsource/be-vietnam-pro 5.3.0) of bettergui/BeVietnamPro ((c) 2021 The
 Be Vietnam Pro Project Authors), license BeVietnamPro-OFL.txt. It is the
-H3 text face (2026-11-03).
+H3 text face (2026-11-03). Roboto Mono is the Fontsource-packaged build
+(npm @fontsource/roboto-mono 5.3.0) of googlefonts/robotomono ((c) 2015
+The Roboto Mono Project Authors), license RobotoMono-OFL.txt, static 400
+only. It is the H3 figures face (2026-11-03); code stays on JetBrains Mono.
