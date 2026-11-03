@@ -352,3 +352,40 @@ export function computeH3ShellColumns(input: H3ShellInput): H3ShellColumns {
 export function h3GridTemplateColumns(cols: H3ShellColumns): string {
   return `${String(cols.chats)}px ${String(cols.vex)}px minmax(0, 1fr)`;
 }
+
+/**
+ * THE FRAME'S ROWS (docs/design/H3-DESKTOP.md section 1.1): one header row
+ * across the window, the columns' body, and one bottom row across the window.
+ *
+ *   head  the header's cells; its height is the window's head row,
+ *         `--head-h` in window-chrome.css, which the main process mirrors for
+ *         the traffic lights and the caption overlay (chrome-options.ts), so
+ *         the CSS keeps the one source and the template names it
+ *   body  the three columns, the rest of the window
+ *   foot  the bottom row's cells
+ *
+ * A row the frame does not draw yet is 0: every column then spans all three
+ * rows (shell.css) and the body is the whole window, exactly R3's one-row
+ * frame. Like the columns, no row is `auto`, so nothing a cell holds can
+ * change a row's height.
+ */
+export interface ShellRows {
+  /** The header row stands. */
+  readonly head: boolean;
+  /** The bottom row stands. */
+  readonly foot: boolean;
+}
+
+/**
+ * The bottom row's height: measured, its top rule at y 827 to 828 of the
+ * 900-high plates. Fixed: the composer in its chat cell grows upward over the
+ * transcript and never changes the row.
+ */
+export const H3_FOOT_HEIGHT = 72;
+
+/** The grid's row template: head | body | foot. */
+export function shellGridTemplateRows(rows: ShellRows): string {
+  const head = rows.head ? "var(--head-h)" : "0px";
+  const foot = rows.foot ? `${String(H3_FOOT_HEIGHT)}px` : "0px";
+  return `${head} minmax(0, 1fr) ${foot}`;
+}

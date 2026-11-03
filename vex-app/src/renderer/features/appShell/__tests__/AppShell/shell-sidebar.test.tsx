@@ -909,6 +909,8 @@ describe("AppShell", () => {
     // jsdom: no ResizeObserver, viewport = window.innerWidth. The welcome
     // stage has no right column: Vex sits in the centre there.
     expect(frame?.style.gridTemplateColumns).toBe("264px minmax(0, 1fr) 0px");
+    // H3's head | body | foot rows; neither window-wide row holds a cell yet.
+    expect(frame?.style.gridTemplateRows).toBe("0px minmax(0, 1fr) 0px");
     expect(frame?.getAttribute("data-vex-tier")).toBe("wide");
     expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("0px");
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBeNull();

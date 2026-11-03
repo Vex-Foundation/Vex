@@ -11,11 +11,13 @@ import { describe, expect, it } from "vitest";
 import {
   H3_CHATS_WIDTH,
   H3_COLUMNS_MIN,
+  H3_FOOT_HEIGHT,
   H3_RAIL_WIDTH,
   H3_VEX_PERCENT,
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
+  shellGridTemplateRows,
   type H3ShellColumns,
 } from "../shell-columns.js";
 
@@ -292,5 +294,22 @@ describe("invariants", () => {
     expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the frame's rows", () => {
+  it("is head | body | foot, a row the frame does not draw being 0", () => {
+    expect(shellGridTemplateRows({ head: false, foot: false })).toBe("0px minmax(0, 1fr) 0px");
+    expect(shellGridTemplateRows({ head: true, foot: false })).toBe("var(--head-h) minmax(0, 1fr) 0px");
+    expect(shellGridTemplateRows({ head: true, foot: true })).toBe("var(--head-h) minmax(0, 1fr) 72px");
+  });
+
+  it("keeps the bottom row at the plates' 72, and no row is auto", () => {
+    expect(H3_FOOT_HEIGHT).toBe(72);
+    for (const head of [false, true]) {
+      for (const foot of [false, true]) {
+        expect(shellGridTemplateRows({ head, foot })).not.toContain("auto");
+      }
+    }
   });
 });

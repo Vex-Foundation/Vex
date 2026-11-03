@@ -4,6 +4,9 @@
  *   left sidebar | centre | Vex sidebar
  *
  * on grid tracks solved by `lib/shell-columns.ts`, plus the new-session modal.
+ * The grid also has H3's two window-wide rows (docs/design/H3-DESKTOP.md
+ * section 1.1), a header row over the columns and a bottom row under them;
+ * neither holds a cell yet, so both are 0 and each column spans all three.
  * The frame owns viewport measurement, the narrow override, the derived Vex
  * auto-close and Lighter's chat share drag; column CONTENT belongs to
  * SessionsList / StudioSidebar / SessionPanel / VexSidebar.
@@ -42,6 +45,7 @@ import {
   RAIL_WIDTH,
   computeShellColumns,
   lighterChatDragMax,
+  shellGridTemplateRows,
   shellTier,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
@@ -327,6 +331,10 @@ function ShellFrame({
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     gridTemplateColumns: `${cols.left}px minmax(0, 1fr) ${cols.vex}px`,
+    // head | body | foot (docs/design/H3-DESKTOP.md section 1.1). Neither the
+    // header row nor the bottom row holds a cell yet, so both are 0 and every
+    // column spans all three rows (shell.css): the body is the whole window.
+    gridTemplateRows: shellGridTemplateRows({ head: false, foot: false }),
     // The running head reserves the caption buttons wherever the right column
     // under them is narrower than they are (shell.css).
     "--vex-vex-track": `${cols.vex}px`,
@@ -491,7 +499,7 @@ function ShellFrame({
 
       {/* TRACK 3 - Vex's column. Empty on the welcome stage, where she
         * stands in the centre; in Lighter's Zen it is the assistant overlay. */}
-      <div className="lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
+      <div className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible">
         {/* Mounted in every session - the sidebar owns its hidden rendering,
          * so a derived auto-close never remounts the column. `vexEffectiveOpen`
          * folds the solve into the open flag WITHOUT touching the stored
