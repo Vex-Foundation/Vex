@@ -161,3 +161,68 @@
   descent-override: 24.38%;
   line-gap-override: 0%;
 }
+
+/* Be Vietnam Pro - the H3 text face (OFL 1.1, BeVietnamPro-OFL.txt in
+ * fonts/licenses/; the Fontsource build of bettergui/BeVietnamPro). Two
+ * STATIC weights, 400 and 600, each in a latin and a latin-ext subset: H3
+ * sets its words in those two and no others. There is no weight axis, so with
+ * weight synthesis off (base.css) a 500 request renders the 400 file and a
+ * 700 request the 600 file, by the CSS font-matching rules, and nothing is
+ * faked. Upright only: an italic request synthesises an oblique, as it does
+ * for Instrument Sans. Bundled ahead of its use; --font-sans moves onto it in
+ * its own change (tokens.css). */
+@font-face {
+  font-family: "Be Vietnam Pro";
+  src: url("/fonts/be-vietnam-pro-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Be Vietnam Pro";
+  src: url("/fonts/be-vietnam-pro-latin-ext-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Be Vietnam Pro";
+  src: url("/fonts/be-vietnam-pro-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Be Vietnam Pro";
+  src: url("/fonts/be-vietnam-pro-latin-ext-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* Be Vietnam Pro 400: unitsPerEm 1000, ascent 1000, descent -265, line gap 0
+ * (USE_TYPO_METRICS is set), weighted average advance 0.4868em against
+ * Arial's 0.4411em. These two advances were measured with capsize's English
+ * weighting (a-z and the space); the Instrument Sans twin above used a
+ * slightly different letter table, which is why its Arial figure reads
+ * 0.4396em. Each twin is internally consistent, which is all a size-adjust
+ * needs. */
+@font-face {
+  font-family: "Be Vietnam Pro Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+  size-adjust: 110.36%;
+  ascent-override: 90.61%;
+  descent-override: 24.01%;
+  line-gap-override: 0%;
+}
