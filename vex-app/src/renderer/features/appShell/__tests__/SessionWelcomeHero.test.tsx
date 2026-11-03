@@ -159,7 +159,7 @@ beforeEach(() => {
     activeSessionId: null,
     showAvatar: true,
     welcomeVexShown: true,
-    theme: "celeris",
+    theme: "chronos",
   });
   profileWithName(null);
   sessionsData = { ok: true, data: [] };
@@ -174,12 +174,12 @@ beforeEach(() => {
 });
 
 describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
-  it("stands Vex on her welcome stage, on day paper", () => {
+  it("stands Vex on her welcome stage, on night paper: the app is dark only", () => {
     const { container } = render(<SessionWelcomeHero />);
     const stage = container.querySelector("[data-vex-welcome-stage]");
     const host = stage?.querySelector("[data-vex-k2]");
     expect(host?.getAttribute("data-vex-k2")).toBe("welcome");
-    expect(host?.getAttribute("data-vex-k2-ground")).toBe("paper");
+    expect(host?.getAttribute("data-vex-k2-ground")).toBe("night");
     expect(host?.className).toContain("vex-welcome__vex");
     expect(lastK2?.tokenOnly).toBe(false);
   });
@@ -213,14 +213,6 @@ describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
     } finally {
       composer.remove();
     }
-  });
-
-  it("stands her on night paper in Chronos", () => {
-    useUiStore.setState({ theme: "chronos" });
-    const { container } = render(<SessionWelcomeHero />);
-    expect(
-      container.querySelector("[data-vex-k2]")?.getAttribute("data-vex-k2-ground"),
-    ).toBe("night");
   });
 
   it("leaves the note that docks her into the Vex sidebar on the first message", () => {

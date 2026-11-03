@@ -42,6 +42,7 @@ import {
   setSubmitKeyBehavior,
 } from "../../../../lib/composer-submission-policy.js";
 import { notifications } from "../../../../lib/notifications/index.js";
+import { COMPOSER_COMMANDS } from "../../commands/directory.js";
 
 /**
  * The transient toast is a notification-model entry since B2.2: the store that
@@ -399,7 +400,9 @@ describe("composer capsule - slash commands (combobox)", () => {
     field.focus();
     typeDraft("/");
     const listbox = screen.getByRole("listbox", { name: "Composer commands" });
-    expect(listbox.querySelectorAll('[role="option"]').length).toBe(5);
+    // Four since /theme retired with the light room (the app is dark only).
+    expect(listbox.querySelectorAll('[role="option"]').length).toBe(COMPOSER_COMMANDS.length);
+    expect(COMPOSER_COMMANDS).toHaveLength(4);
     expect(document.activeElement).toBe(field);
   });
 

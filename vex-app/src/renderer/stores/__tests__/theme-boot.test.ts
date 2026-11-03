@@ -3,16 +3,16 @@
  *
  * The script cannot be imported: CSP keeps it a separate classic script that
  * runs before the bundle, so it is read from disk and executed in a jsdom
- * context the way the browser runs it. It duplicates the resolve + write
- * pair from `stores/uiStore/theme.ts` by contract, and this spec is what
- * keeps the two honest - the drift it catches is a theme FLASH on boot, or
- * (before round 2) a dark first paint for a light-mode user.
+ * context the way the browser runs it. It mirrors `stores/uiStore/theme.ts`
+ * by contract, and this spec is what keeps the two honest - the drift it
+ * catches is a theme FLASH on boot.
  *
- * Covered: the `system` default with no payload, the OS resolve in both
- * directions, an explicit preference overriding the OS, closed-union
- * coercion of a tampered payload, an unparseable payload, and the
- * matchMedia-unavailable safe-fail that mirrors `systemPrefersDark()`, and the
- * v13 migration the script mirrors from `stores/uiStore/persistence.ts`.
+ * H3 is DARK ONLY. The contract is that the script stamps the one room
+ * whatever the machine says: on a fresh install, over every payload an older
+ * release could have written (an explicit Celeris, the retired "system", a
+ * tampered value, an unparseable one), under a light OS and without
+ * matchMedia - and that it does not read the payload at all, since every
+ * stored choice now coerces to the same room in the store.
  */
 
 import { readFileSync } from "node:fs";
@@ -20,11 +20,7 @@ import { runInNewContext } from "node:vm";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  DEFAULT_THEME_PREFERENCE,
-  resolveTheme,
-  type VexTheme,
-} from "../uiStore/theme.js";
+import { coerceThemePreference, VEX_THEME } from "../uiStore/theme.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BOOT_SOURCE = readFileSync(
@@ -36,26 +32,27 @@ const BOOT_SOURCE = readFileSync(
  * Run the boot script against a stubbed storage payload and OS scheme.
  * @param payload - raw `vex-ui` localStorage value, or null for a fresh install.
  * @param prefersDark - OS scheme; `undefined` removes matchMedia entirely.
- * @returns the theme the script stamped on documentElement.
+ * @returns the theme the script stamped, and the storage stub to inspect.
  */
 function runBoot(
   payload: string | null,
   prefersDark: boolean | undefined,
-): string | undefined {
+): { theme: string | undefined; getItem: ReturnType<typeof vi.fn> } {
   document.documentElement.removeAttribute("data-vex-theme");
   document.documentElement.style.removeProperty("color-scheme");
+  const getItem = vi.fn(() => payload);
   const win = {
-    localStorage: { getItem: vi.fn(() => payload) },
+    localStorage: { getItem },
     ...(prefersDark === undefined
       ? {}
       : { matchMedia: vi.fn(() => ({ matches: prefersDark })) }),
   };
   runInNewContext(BOOT_SOURCE, { window: win, document });
-  return document.documentElement.dataset["vexTheme"];
+  return { theme: document.documentElement.dataset["vexTheme"], getItem };
 }
 
-/** The persisted shape the script reads. */
-const stored = (themePreference: string, version = 13): string =>
+/** The persisted shape older releases wrote. */
+const stored = (themePreference: string, version = 22): string =>
   JSON.stringify({ state: { themePreference }, version });
 
 afterEach(() => {
@@ -64,71 +61,30 @@ afterEach(() => {
   document.documentElement.style.removeProperty("color-scheme");
 });
 
-describe("theme-boot pre-paint stamp", () => {
-  it("defaults to 'system' and follows a LIGHT OS on a fresh install", () => {
-    expect(DEFAULT_THEME_PREFERENCE).toBe("system");
-    expect(runBoot(null, false)).toBe("celeris");
-    expect(document.documentElement.style.colorScheme).toBe("light");
-  });
-
-  it("defaults to 'system' and follows a DARK OS on a fresh install", () => {
-    expect(runBoot(null, true)).toBe("chronos");
-    expect(document.documentElement.style.colorScheme).toBe("dark");
-  });
-
+describe("theme-boot pre-paint stamp (dark only)", () => {
   it.each([
-    ["celeris", true, "celeris"],
-    ["celeris", false, "celeris"],
-    ["chronos", true, "chronos"],
-    ["chronos", false, "chronos"],
-  ] as const)(
-    "an explicit '%s' ignores the OS scheme (prefersDark=%s)",
-    (preference, prefersDark, expected) => {
-      expect(runBoot(stored(preference), prefersDark)).toBe(expected);
-    },
-  );
-
-  it("coerces a tampered preference to the default instead of stamping it", () => {
-    expect(runBoot(stored("neon-hack"), false)).toBe("celeris");
-    expect(runBoot(stored("robinhood"), true)).toBe("chronos");
+    ["a fresh install", null],
+    ["an explicit Celeris", stored("celeris")],
+    ["the retired system choice", stored("system")],
+    ["an explicit Chronos", stored("chronos")],
+    ["a pre-v13 Chronos", stored("chronos", 12)],
+    ["a tampered value", stored("neon-hack")],
+    ["an unparseable payload", "{not json"],
+  ])("stamps the one dark room over %s, whatever the OS says", (_case, payload) => {
+    for (const prefersDark of [true, false, undefined]) {
+      expect(runBoot(payload, prefersDark).theme).toBe("chronos");
+      expect(document.documentElement.style.colorScheme).toBe("dark");
+    }
   });
 
-  it("mirrors the v13 migration: a pre-v13 'chronos' boots as 'system'", () => {
-    // On a v12 payload `chronos` was the old DEFAULT, not a choice, and
-    // rehydration rewrites it to `system`. Without this mirror an upgrading
-    // install painted chronos and then flipped to celeris on a light OS the
-    // moment the bundle hydrated (round-3 codex 4.4).
-    expect(runBoot(stored("chronos", 12), false)).toBe("celeris");
-    expect(document.documentElement.style.colorScheme).toBe("light");
-    expect(runBoot(stored("chronos", 12), true)).toBe("chronos");
+  it("reads nothing from storage: there is no choice left to read", () => {
+    expect(runBoot(stored("celeris"), false).getItem).not.toHaveBeenCalled();
   });
 
-  it("leaves a v13 'chronos' and any explicit 'celeris' alone", () => {
-    // The migration is one-time and re-picking chronos in Settings must stick.
-    expect(runBoot(stored("chronos", 13), false)).toBe("chronos");
-    expect(runBoot(stored("celeris", 12), true)).toBe("celeris");
+  it("agrees with the store: the room it stamps is the one every payload coerces to", () => {
+    expect(runBoot(null, false).theme).toBe(VEX_THEME);
+    for (const value of ["celeris", "system", "chronos", "robinhood", undefined, 42]) {
+      expect(coerceThemePreference(value)).toBe(VEX_THEME);
+    }
   });
-
-  it("survives an unparseable payload", () => {
-    expect(runBoot("{not json", false)).toBe("celeris");
-  });
-
-  it("reports DARK when matchMedia is unavailable, like systemPrefersDark()", () => {
-    // The safe fail for an ink-rooted app: an unknowable OS scheme must not
-    // paint the light plate under a dark window.
-    expect(runBoot(null, undefined)).toBe("chronos");
-  });
-
-  it.each([
-    [true, "chronos"],
-    [false, "celeris"],
-  ] as const)(
-    "agrees with resolveTheme() for the default preference (prefersDark=%s)",
-    (prefersDark, expected: VexTheme) => {
-      expect(runBoot(null, prefersDark)).toBe(
-        resolveTheme(DEFAULT_THEME_PREFERENCE, prefersDark),
-      );
-      expect(runBoot(null, prefersDark)).toBe(expected);
-    },
-  );
 });

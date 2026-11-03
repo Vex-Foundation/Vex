@@ -1,13 +1,14 @@
 /**
  * The Preferences section of the Settings page (docs/design/R3-MINIMAL.md
  * section 9.6): the head, then one row per setting under a hairline rule:
- * Appearance (the theme choice, a segmented control), Show avatar (with its
- * "Looking at you" preview under it while it is on), Open Vex's sidebar in
- * chats, the Session permission explainer, the Background image
- * (`SettingsBackdropRow`), the composer Enter key and the two switches.
+ * Show avatar (with its "Looking at you" preview under it while it is on),
+ * Open Vex's sidebar in chats, the Session permission explainer, the
+ * Background image (`SettingsBackdropRow`), the composer Enter key and the
+ * two switches.
  *
- * Appearance selection follows the PERSISTED preference, never the resolved
- * active theme, so "System" stays selected while the OS decides the paint.
+ * There is no Appearance row: H3 is dark only (the H3 revamp plan, decision
+ * 6), so Celeris and the "System" choice left with the theme picker, and a
+ * saved choice migrates to dark (`uiStore/persistence.ts`, v23).
  * Show avatar and Open Vex's sidebar in chats are the two persisted layout
  * preferences `showAvatar` and `vexOpenChat`; the chat slot is written
  * directly because the frame's own setter writes the CURRENT page's slot, and
@@ -17,7 +18,6 @@
 import { type JSX, type ReactNode } from "react";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
-import type { VexThemePreference } from "../../../../stores/uiStore/theme.js";
 import {
   setSubmitKeyBehavior,
   useSubmitKeyBehavior,
@@ -29,17 +29,6 @@ import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
 import { SettingsAvatarPreview } from "./SettingsAvatarPreview.js";
 import { SettingsBackdropRow } from "./SettingsBackdropRow.js";
 import { SettingsHead } from "./SettingsHead.js";
-
-interface ThemeChoice {
-  readonly id: VexThemePreference;
-  readonly label: string;
-}
-
-const THEME_CHOICES: ReadonlyArray<ThemeChoice> = [
-  { id: "chronos", label: "Chronos · Dark" },
-  { id: "celeris", label: "Celeris · Light" },
-  { id: "system", label: "System · Match OS" },
-];
 
 interface SubmitChoice {
   readonly id: SubmitKeyBehavior;
@@ -71,32 +60,6 @@ function PrefRow({
       </div>
       <div className="vex-pref__control">{children}</div>
     </div>
-  );
-}
-
-function AppearanceRow(): JSX.Element {
-  const preference = useUiStore((state) => state.themePreference);
-  const setThemePreference = useUiStore((state) => state.setThemePreference);
-  return (
-    <PrefRow
-      title="Appearance"
-      help="Chronos is the night ledger, Celeris the day paper."
-      seam="data-vex-settings-appearance"
-    >
-      <div className="vex-seg" role="group" aria-label="Appearance">
-        {THEME_CHOICES.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={preference === id}
-            data-vex-theme-cube={id}
-            onClick={() => setThemePreference(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </PrefRow>
   );
 }
 
@@ -276,7 +239,6 @@ export function SettingsPreferences(): JSX.Element {
         lead="How Vex looks and behaves on this machine."
       />
       <div className="vex-prefs__list">
-        <AppearanceRow />
         <ShowAvatarRow />
         <SettingsAvatarPreview />
         <OpenInChatsRow />

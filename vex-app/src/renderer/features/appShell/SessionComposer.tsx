@@ -175,8 +175,6 @@ export function SessionComposer({
   const [dropActive, setDropActive] = useState(false);
 
   // ── slash commands (B9/B12) ────────────────────────────────────────────
-  const theme = useUiStore((s) => s.theme);
-  const setThemePreference = useUiStore((s) => s.setThemePreference);
   const onLighterDesk = useUiStore((s) => s.runtimeMode === "lighter");
   const runtimeQuery = useRuntimeState(sessionId);
   const runStatus = readRunStatus(runtimeQuery.data);
@@ -194,13 +192,8 @@ export function SessionComposer({
       clearDraft: () => clearDraft(draftKeyFor(sessionId)),
       openPlan: () => setPlanOpen(true),
       openExport: () => setExportOpen(true),
-      toggleTheme: () => {
-        const next = theme === "chronos" ? "celeris" : "chronos";
-        setThemePreference(next);
-        return next === "celeris" ? "Celeris (light)" : "Chronos (dark)";
-      },
     }),
-    [sessionId, plan, theme, setThemePreference],
+    [sessionId, plan],
   );
 
   const onCommandPick = useCallback(

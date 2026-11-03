@@ -81,8 +81,12 @@ const seq = pick<"sleep-wake" | "open-close" | "token" | "none">(
 const toggle = params.get("token") === "1" || seq === "token";
 const hour = requestedHour(window.location.search);
 
+// The store holds one room since H3 went dark only (uiStore/theme.ts), so
+// `?theme=celeris` survives only as the document attribute, which still picks
+// the day print and the day sheet rules until they retire; her own room
+// reads the store and is always dark.
 document.documentElement.dataset["vexTheme"] = chronos ? "chronos" : "celeris";
-useUiStore.setState({ theme: chronos ? "chronos" : "celeris" });
+useUiStore.setState({ theme: "chronos" });
 
 function Ground(): JSX.Element {
   if (ground === "print") {
