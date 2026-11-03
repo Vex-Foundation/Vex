@@ -309,6 +309,13 @@ export const CH = {
   // which is the single source of executed-activity truth.)
   portfolio: {
     read: "vex:portfolio:read",
+    // The wallet total over time (the Portfolio page's equity chart) -
+    // read-only. The renderer sends a range and the SAME scope `read` takes;
+    // main resolves it through `read`'s own address allow-list and returns
+    // complete snapshot cycles from `proj_portfolio_snapshots` on `read`'s
+    // settled + in-transit basis, bounded at 500 points. Timestamps and USD
+    // figures only; no address crosses the boundary.
+    readHistory: "vex:portfolio:readHistory",
     // Chronos-shell - read-only, global-scope per-token TX history (the
     // click-through screen from a Balances/Assets token row). Server resolves
     // the GLOBAL configured wallet inventory (same allow-list as `read`'s
