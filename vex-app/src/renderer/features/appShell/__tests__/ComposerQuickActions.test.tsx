@@ -1,13 +1,16 @@
 /**
- * ComposerQuickActions - the welcome's task rows under the composer
- * (docs/design/R3-MINIMAL.md section 7, reference d2). Pins the R3 contract:
- * four task-first rows in the design's order, each a blue line icon and its
- * label; a prompt row seeds the draft with its full prompt, and "Create a
- * mission" opens the new session form instead of seeding a chat message.
+ * ComposerQuickActions - the welcome's suggestions (docs/design/H3-DESKTOP.md
+ * Appendix A.4; drawn as R3's task rows under the composer,
+ * docs/design/R3-MINIMAL.md section 7, until S6a-03). Pins H3's four in its
+ * order, each a blue line icon and its label, with a muted line that is the
+ * prompt Send seeds; "Create a mission" opens the new session form instead of
+ * seeding a chat message; "Analyze BTC 4h" asks for what the technical
+ * analysis tool really does, and no suggestion asks for a strategy.
  */
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { ANALYSIS_INTERVALS } from "@vex-lib/market-analysis/result-schema.js";
 import { ComposerQuickActions } from "../ComposerQuickActions.js";
 import { QUICK_ACTIONS } from "../composer-quick-actions.js";
 
@@ -21,14 +24,14 @@ function renderRows(
 }
 
 describe("ComposerQuickActions", () => {
-  it("renders the four task rows in the design's order, each an icon and its label", () => {
+  it("renders H3's four suggestions in its order, each an icon and its label", () => {
     renderRows();
     const rows = screen.getAllByRole("button");
     expect(rows.map((row) => row.textContent)).toEqual([
       "Check wallet balances",
       "Review the market",
       "Create a mission",
-      "Trade perps on Lighter",
+      "Analyze BTC 4h",
     ]);
     for (const row of rows) {
       // The icon is decoration: hidden from assistive tech, the label names
@@ -49,11 +52,38 @@ describe("ComposerQuickActions", () => {
     expect(container.textContent).not.toMatch(/\b0[1234]\b/);
   });
 
-  it("the Lighter row seeds the typed desk command, so Send opens the desk", () => {
+  it("words each suggestion as Appendix A.4 does, its line the prompt Send seeds", () => {
+    expect(QUICK_ACTIONS.map((action) => [action.label, action.line])).toEqual([
+      ["Check wallet balances", "What's in my wallet?"],
+      ["Review the market", "What's moving in crypto today, and why?"],
+      ["Create a mission", "Start a mission: Vex drafts its contract and you accept it."],
+      ["Analyze BTC 4h", "Analyze the BTC perpetual on Lighter on the 4h chart."],
+    ]);
+    for (const action of QUICK_ACTIONS) {
+      if (action.kind === "prompt") expect(action.prompt, action.label).toBe(action.line);
+    }
+  });
+
+  it("Analyze BTC 4h asks the analysis tool for a market and an interval it serves", () => {
     const onPick = vi.fn();
     renderRows(onPick);
-    fireEvent.click(screen.getByRole("button", { name: /trade perps on lighter/i }));
-    expect(onPick).toHaveBeenCalledWith("Light it up.");
+    fireEvent.click(screen.getByRole("button", { name: /analyze btc 4h/i }));
+    const prompt = onPick.mock.calls[0]?.[0] as string;
+    expect(prompt).toBe("Analyze the BTC perpetual on Lighter on the 4h chart.");
+    // Lighter's technical analysis reads one Lighter market at one of its
+    // intervals; 4h is one of them.
+    expect(ANALYSIS_INTERVALS as readonly string[]).toContain("4h");
+    expect(prompt).toContain("4h");
+    expect(prompt).toContain("Lighter");
+    // No market the tool does not list: Lighter settles in USDC or USDG.
+    expect(prompt).not.toMatch(/USDT/);
+  });
+
+  it("asks for no strategy and leaves the Lighter desk to the nav", () => {
+    for (const action of QUICK_ACTIONS) {
+      expect(`${action.label} ${action.line} ${action.prompt}`, action.label).not.toMatch(/strateg/i);
+    }
+    expect(QUICK_ACTIONS.some((action) => action.prompt === "Light it up.")).toBe(false);
   });
 
   it("seeds the draft with the row's full prompt", () => {
