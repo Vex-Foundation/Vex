@@ -21,15 +21,15 @@ describe("chromeOptionsFor", () => {
     }
   });
 
-  it.each(["win32", "linux"] as const)("%s: hidden title bar with a 43px overlay per theme", (platform) => {
-    expect(chromeOptionsFor(platform, "celeris")).toEqual({
-      titleBarStyle: "hidden",
-      titleBarOverlay: { height: 43, color: "#F3F4F7", symbolColor: "#0A0D18" },
-    });
-    expect(chromeOptionsFor(platform, "chronos")).toEqual({
-      titleBarStyle: "hidden",
-      titleBarOverlay: { height: 43, color: "#1B1412", symbolColor: "#F3F4F7" },
-    });
+  it.each(["win32", "linux"] as const)("%s: hidden title bar with a 43px overlay on the H3 ground, whatever the theme", (platform) => {
+    // Dark only (docs/design/H3-DESKTOP.md section 4.5): the schema's second
+    // theme paints the same dark caption.
+    for (const theme of ["chronos", "celeris"] as const) {
+      expect(chromeOptionsFor(platform, theme)).toEqual({
+        titleBarStyle: "hidden",
+        titleBarOverlay: { height: 43, color: "#010203", symbolColor: "#F3F5F9" },
+      });
+    }
   });
 
   it("linux native-frame fallback returns no chrome options", () => {

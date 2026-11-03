@@ -356,15 +356,18 @@ describe("pre-shell plate", () => {
     expect(plate).not.toMatch(/\brgba?\(/i);
   });
 
-  it("keeps the plate equal to the main-window backgroundColor", () => {
-    // main/main-window.ts paints the window before the bundle loads, and the
-    // pre-shell plate is what it paints under: the two must be one surface.
-    // The shell's own ground has moved to H3's (#010203); the window and the
-    // plate follow it in the next change, with the caption overlay.
-    expect(chronosBlock).toContain("--vex-alias-gate-plate: var(--color-night)");
-    expect(tokensCss).toContain("--color-night: #1b1412");
-    expect(mainWindowTs).toContain('backgroundColor: "#1b1412"');
+  it("keeps the window, the plate and the ground one surface: the H3 ground", () => {
+    // main/main-window.ts paints the window before the bundle loads; the
+    // pre-shell plate and the shell's ground must be that same colour, so
+    // first paint, the plate and the shell are one surface
+    // (docs/design/H3-DESKTOP.md section 2.1). Electron takes a hex, so the
+    // tie runs through the primitive's own value.
+    expect(chronosBlock).toContain("--vex-alias-gate-plate: var(--color-h3-ground)");
     expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-h3-ground)");
+    const ground = /--color-h3-ground:\s*(#[0-9a-f]{6});/.exec(tokensCss)?.[1];
+    expect(ground).toBe("#010203");
+    expect(mainWindowTs).toContain(`backgroundColor: "${ground ?? ""}"`);
+    expect(mainWindowTs).not.toContain("nativeTheme");
   });
 
   it("sets the stage type on the night print in paper", () => {
@@ -394,24 +397,23 @@ describe("pre-shell plate", () => {
     expect(chronosBlock).toContain("--vex-alias-accent-primary: var(--color-peri)");
   });
 
-  it("keeps the native title bar overlay on the page paper and its ink", () => {
+  it("keeps the native title bar overlay on the ground and its ink, for every theme the schema names", () => {
     // main/windows/chrome-options.ts cannot read tokens.css (main process), so
     // it carries the overlay colours as constants; they must stay the room's
-    // own paper and ink, or the window controls sit on a strip of another
-    // colour. (The main process still keeps a light pair for the schema's
-    // second value; the renderer never asks for it.)
-    const overlay = (theme: string): { color: string; symbolColor: string } => {
-      const match = new RegExp(
-        `${theme}:\\s*\\{\\s*color:\\s*"(#[0-9a-f]{6})",\\s*symbolColor:\\s*"(#[0-9a-f]{6})"`,
-        "i",
-      ).exec(chromeOptionsTs);
-      expect(match, `${theme} overlay colours not found`).not.toBeNull();
-      return { color: (match?.[1] ?? "").toLowerCase(), symbolColor: (match?.[2] ?? "").toLowerCase() };
-    };
-    // Until the caption follows the H3 ground (the next change), it stays on
-    // the first-paint plate it was cut for.
-    expect(overlay("chronos")).toEqual({ color: "#1b1412", symbolColor: "#f3f4f7" });
-    expect(chronosBlock).toContain("--vex-alias-gate-plate: var(--color-night)");
+    // own ground and ink, or the window controls sit on a strip of another
+    // colour. The schema's second theme takes the same dark pair: the app is
+    // dark only, so no value the IPC accepts can paint a light caption.
+    const pair = /DARK_OVERLAY\s*=\s*\{\s*color:\s*"(#[0-9a-f]{6})",\s*symbolColor:\s*"(#[0-9a-f]{6})"/i.exec(
+      chromeOptionsTs,
+    );
+    expect(pair, "the overlay colours are not found").not.toBeNull();
+    expect((pair?.[1] ?? "").toLowerCase()).toBe("#010203");
+    expect((pair?.[2] ?? "").toLowerCase()).toBe("#f3f5f9");
+    expect(chromeOptionsTs).toMatch(/celeris:\s*DARK_OVERLAY,\s*chronos:\s*DARK_OVERLAY,/);
+    expect(tokensCss).toContain("--color-h3-ground: #010203;");
+    expect(tokensCss).toContain("--color-h3-ink: #f3f5f9;");
+    expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-h3-ground)");
+    expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-h3-ink)");
   });
 });
 

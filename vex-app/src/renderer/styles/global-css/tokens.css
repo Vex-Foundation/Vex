@@ -361,9 +361,10 @@
    * and what the `[data-vex-gate="true"]` scope re-projects onto the
    * shadcn/utility names for the paper leaf.
    *
-   * `gate-plate` must equal the main-window `backgroundColor` (#1b1412,
-   * main/main-window.ts) so first paint and the plate are one surface. */
-  --vex-alias-gate-plate: var(--color-night);
+   * `gate-plate` must equal the main-window `backgroundColor` (#010203,
+   * main/main-window.ts) so first paint and the plate are one surface: the
+   * H3 ground. */
+  --vex-alias-gate-plate: var(--color-h3-ground);
   /* On the night print every type is paper (docs/design/R3-MINIMAL.md
    * section 1.1): the giant counter and the step numerals too, where the
    * peri-hi counter measured 1.34:1. The unlock field and its Unlock box are
