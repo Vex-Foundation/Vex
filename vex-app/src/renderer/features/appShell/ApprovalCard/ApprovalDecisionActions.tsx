@@ -88,6 +88,24 @@ const REASON_INPUT =
   "h-10 min-w-0 flex-1 border border-rule bg-surface-field px-3 font-sans text-[14px] text-ink-primary caret-accent-primary placeholder:text-ink-tertiary focus-visible:border-accent-primary focus-visible:outline-none disabled:text-ink-tertiary";
 
 /**
+ * THE REASON FIELD'S WORDS (docs/design/H3-DESKTOP.md section 4.3 and
+ * Appendix A.7). H3 words the field as what it is for: "Tell Vex what to do
+ * instead". That is true here because the reason really reaches Vex: the
+ * engine sanitises it and renders it into the rejection's tool result, which
+ * is model-visible transcript content (`prepareReject`,
+ * `src/vex-agent/engine/core/approval-runtime.ts`), so the agent reads it on
+ * its next step.
+ *
+ * It travels with Reject and only with Reject: there is no Enter to send it,
+ * no message of its own, and an Approve never carries it. So the placeholder
+ * stays H3's words, and the field's accessible name, which a screen reader
+ * says with no Reject key beside it, adds how and when it goes: optional, and
+ * sent when you reject. Words only; the field behaves as it always has.
+ */
+export const REJECT_REASON_PLACEHOLDER = "Tell Vex what to do instead";
+export const REJECT_REASON_LABEL = "Tell Vex what to do instead (optional, sent when you reject)";
+
+/**
  * What the Reject key says and how it is named, in each of its states. One
  * source for the card's footer and the Needs you row, so the two keys can never
  * word a rejection differently.
@@ -149,8 +167,8 @@ export function ApprovalDecisionActions({
           onChange={(e) => onRejectReasonChange(e.target.value)}
           disabled={inFlight}
           maxLength={APPROVAL_REJECT_REASON_MAX}
-          aria-label="Reason for rejecting (optional)"
-          placeholder="Reason (optional)"
+          aria-label={REJECT_REASON_LABEL}
+          placeholder={REJECT_REASON_PLACEHOLDER}
           className={`${REASON_INPUT}${wrapReasonOnNarrow ? " @max-[640px]:basis-full" : ""}`}
         />
       ) : null}
