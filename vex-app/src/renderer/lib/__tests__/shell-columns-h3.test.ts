@@ -1,0 +1,296 @@
+/**
+ * The H3 column solver (docs/design/H3-DESKTOP.md, the layout numbers and
+ * tiers), pinned at the parity widths (1000, 1023, 1024, 1280, 1366, 1440,
+ * 1920, 2560), each with the chats open and folded and a page's strip on and
+ * off; at the band seam one pixel on each side; and through the invariants
+ * the grid relies on (integers, nothing negative, the tracks add back up to
+ * the frame).
+ */
+
+import { describe, expect, it } from "vitest";
+import {
+  H3_CHATS_WIDTH,
+  H3_COLUMNS_MIN,
+  H3_RAIL_WIDTH,
+  H3_VEX_PERCENT,
+  computeH3ShellColumns,
+  h3GridTemplateColumns,
+  h3ShellLayout,
+  type H3ShellColumns,
+} from "../shell-columns.js";
+
+/** One frame, as the shell will ask: the stored chats choice and a page's strip. */
+function h3(viewport: number, chats: boolean, vexStrip = false): H3ShellColumns {
+  return computeH3ShellColumns({ viewport, chats, vexStrip });
+}
+
+/** The three tracks in the grid's order: chats | Vex | chat. */
+function tracks(cols: H3ShellColumns): readonly [number, number, number] {
+  return [cols.chats, cols.vex, cols.chat];
+}
+
+/** Every track adds back up to the frame. */
+function total(cols: H3ShellColumns): number {
+  return cols.chats + cols.vex + cols.chat;
+}
+
+describe("the H3 geometry", () => {
+  it("states the plates' widths and the band seam", () => {
+    expect([H3_CHATS_WIDTH, H3_RAIL_WIDTH, H3_VEX_PERCENT]).toEqual([248, 76, 30]);
+    expect(H3_COLUMNS_MIN).toBe(1024);
+  });
+});
+
+describe("the proof plates", () => {
+  it("1440: chats 248, Vex 432, chat 760, the chat starting at 680", () => {
+    expect(h3(1440, true)).toEqual({
+      layout: "columns",
+      chats: 248,
+      vex: 432,
+      chat: 760,
+      chatsRail: false,
+      vexSeat: "column",
+      chatLeft: 680,
+    });
+  });
+
+  it("2560: the chat starts at x 1016", () => {
+    expect(h3(2560, true).chatLeft).toBe(1016);
+    expect(tracks(h3(2560, true))).toEqual([248, 768, 1544]);
+  });
+});
+
+/**
+ * Each parity width four ways: chats open, chats folded, and the same two with
+ * a page's strip. Under 1024 the four are the same band; from 1024 up folding
+ * the chats hands the chat 172 and the strip hands it the Vex column.
+ */
+describe("the parity widths, chats open and folded, strip off and on", () => {
+  it("1000 x 720, the window minimum: the band, 76 | 0 | 924 every way", () => {
+    expect(tracks(h3(1000, true))).toEqual([76, 0, 924]);
+    expect(tracks(h3(1000, false))).toEqual([76, 0, 924]);
+    expect(tracks(h3(1000, true, true))).toEqual([76, 0, 924]);
+    expect(tracks(h3(1000, false, true))).toEqual([76, 0, 924]);
+  });
+
+  it("1023, the last band pixel: 76 | 0 | 947 every way", () => {
+    expect(tracks(h3(1023, true))).toEqual([76, 0, 947]);
+    expect(tracks(h3(1023, false))).toEqual([76, 0, 947]);
+    expect(tracks(h3(1023, true, true))).toEqual([76, 0, 947]);
+    expect(tracks(h3(1023, false, true))).toEqual([76, 0, 947]);
+  });
+
+  it("1024, the first column pixel: 248 | 307 | 469, folded 76 | 307 | 641", () => {
+    expect(tracks(h3(1024, true))).toEqual([248, 307, 469]);
+    expect(tracks(h3(1024, false))).toEqual([76, 307, 641]);
+    expect(tracks(h3(1024, true, true))).toEqual([248, 0, 776]);
+    expect(tracks(h3(1024, false, true))).toEqual([76, 0, 948]);
+  });
+
+  it("1280 x 800, the stored default: 248 | 384 | 648", () => {
+    expect(tracks(h3(1280, true))).toEqual([248, 384, 648]);
+    expect(tracks(h3(1280, false))).toEqual([76, 384, 820]);
+    expect(tracks(h3(1280, true, true))).toEqual([248, 0, 1032]);
+    expect(tracks(h3(1280, false, true))).toEqual([76, 0, 1204]);
+  });
+
+  it("1366 x 768: 248 | 410 | 708", () => {
+    expect(tracks(h3(1366, true))).toEqual([248, 410, 708]);
+    expect(tracks(h3(1366, false))).toEqual([76, 410, 880]);
+    expect(tracks(h3(1366, true, true))).toEqual([248, 0, 1118]);
+    expect(tracks(h3(1366, false, true))).toEqual([76, 0, 1290]);
+  });
+
+  it("1440 x 900, the plate: 248 | 432 | 760", () => {
+    expect(tracks(h3(1440, true))).toEqual([248, 432, 760]);
+    expect(tracks(h3(1440, false))).toEqual([76, 432, 932]);
+    expect(tracks(h3(1440, true, true))).toEqual([248, 0, 1192]);
+    expect(tracks(h3(1440, false, true))).toEqual([76, 0, 1364]);
+  });
+
+  it("1920 x 1080: 248 | 576 | 1096", () => {
+    expect(tracks(h3(1920, true))).toEqual([248, 576, 1096]);
+    expect(tracks(h3(1920, false))).toEqual([76, 576, 1268]);
+    expect(tracks(h3(1920, true, true))).toEqual([248, 0, 1672]);
+    expect(tracks(h3(1920, false, true))).toEqual([76, 0, 1844]);
+  });
+
+  it("2560, the second plate: 248 | 768 | 1544", () => {
+    expect(tracks(h3(2560, true))).toEqual([248, 768, 1544]);
+    expect(tracks(h3(2560, false))).toEqual([76, 768, 1716]);
+    expect(tracks(h3(2560, true, true))).toEqual([248, 0, 2312]);
+    expect(tracks(h3(2560, false, true))).toEqual([76, 0, 2484]);
+  });
+});
+
+describe("the band seam", () => {
+  it("is exact and belongs to the wider side: 1024 is columns, 1023 the band", () => {
+    expect(h3ShellLayout(H3_COLUMNS_MIN - 1)).toBe("band");
+    expect(h3ShellLayout(H3_COLUMNS_MIN)).toBe("columns");
+    expect(h3ShellLayout(H3_COLUMNS_MIN + 1)).toBe("columns");
+    expect(h3ShellLayout(1000)).toBe("band");
+  });
+
+  it("rounds a fractional frame first, as the solver does", () => {
+    expect(h3ShellLayout(1023.4)).toBe("band");
+    expect(h3ShellLayout(1023.5)).toBe("columns");
+    expect(h3(1023.5, true).layout).toBe("columns");
+  });
+
+  it("in the band the chats are the rail whatever the stored choice says", () => {
+    expect(h3(1000, true)).toEqual({
+      layout: "band",
+      chats: 76,
+      vex: 0,
+      chat: 924,
+      chatsRail: true,
+      vexSeat: "band",
+      chatLeft: 76,
+    });
+    expect(h3(1000, false)).toEqual(h3(1000, true));
+  });
+
+  it("a page's strip wins over the band", () => {
+    expect(h3(1000, true, true)).toEqual({
+      layout: "band",
+      chats: 76,
+      vex: 0,
+      chat: 924,
+      chatsRail: true,
+      vexSeat: "strip",
+      chatLeft: 76,
+    });
+  });
+});
+
+describe("what the grid reads", () => {
+  it("the layout, where Vex is drawn and whether the chats are the rail", () => {
+    const seat = (cols: H3ShellColumns) => [cols.layout, cols.vexSeat, cols.chatsRail] as const;
+    expect(seat(h3(1440, true))).toEqual(["columns", "column", false]);
+    expect(seat(h3(1440, false))).toEqual(["columns", "column", true]);
+    expect(seat(h3(1440, true, true))).toEqual(["columns", "strip", false]);
+    expect(seat(h3(1440, false, true))).toEqual(["columns", "strip", true]);
+    expect(seat(h3(1000, true))).toEqual(["band", "band", true]);
+    expect(seat(h3(1000, true, true))).toEqual(["band", "strip", true]);
+  });
+
+  it("the x where the chat starts", () => {
+    expect(h3(1280, true).chatLeft).toBe(632);
+    expect(h3(1366, true).chatLeft).toBe(658);
+    expect(h3(1440, false).chatLeft).toBe(508);
+    expect(h3(1440, true, true).chatLeft).toBe(248);
+    expect(h3(1023, true).chatLeft).toBe(76);
+  });
+
+  it("the column template, in H3's order, with the chat as the 1fr track", () => {
+    expect(h3GridTemplateColumns(h3(1440, true))).toBe("248px 432px minmax(0, 1fr)");
+    expect(h3GridTemplateColumns(h3(1440, false, true))).toBe("76px 0px minmax(0, 1fr)");
+    expect(h3GridTemplateColumns(h3(1000, true))).toBe("76px 0px minmax(0, 1fr)");
+  });
+});
+
+describe("the Vex column", () => {
+  it("is 30% of the frame to the nearest pixel, halves up", () => {
+    // 1366 x 0.3 = 409.8: nearest, not floor.
+    expect(h3(1366, true).vex).toBe(410);
+    // 1024 x 0.3 = 307.2 rounds down; 1025 x 0.3 = 307.5 rounds up.
+    expect(h3(1024, true).vex).toBe(307);
+    expect(h3(1025, true).vex).toBe(308);
+  });
+
+  it("keeps its width when the chats fold; the chat gains the difference", () => {
+    for (let viewport = H3_COLUMNS_MIN; viewport <= 2560; viewport += 1) {
+      const open = h3(viewport, true);
+      const folded = h3(viewport, false);
+      const label = String(viewport);
+      expect(folded.vex, label).toBe(open.vex);
+      expect(folded.chat - open.chat, label).toBe(H3_CHATS_WIDTH - H3_RAIL_WIDTH);
+    }
+  });
+
+  it("folds to a page's strip at 0 and hands the chat its whole width", () => {
+    for (const viewport of [1024, 1280, 1366, 1440, 1920, 2560]) {
+      for (const chats of [false, true]) {
+        const column = h3(viewport, chats);
+        const strip = h3(viewport, chats, true);
+        const label = `${String(viewport)} ${String(chats)}`;
+        expect(strip.vex, label).toBe(0);
+        expect(strip.chats, label).toBe(column.chats);
+        expect(strip.chat, label).toBe(column.chat + column.vex);
+      }
+    }
+  });
+});
+
+/**
+ * H3 keeps the plate rule rather than R3's 640 centre floor. These pin where
+ * that matters, so a change to either is a visible decision.
+ */
+describe("no centre floor", () => {
+  it("with the chats open the chat is under 640 from 1024 to 1267, and 640 at 1268", () => {
+    expect(h3(1024, true).chat).toBe(469);
+    expect(h3(1267, true).chat).toBe(639);
+    expect(h3(1268, true).chat).toBe(640);
+  });
+
+  it("with the chats folded the columns never take the chat under 641", () => {
+    for (let viewport = H3_COLUMNS_MIN; viewport <= 2560; viewport += 1) {
+      expect(h3(viewport, false).chat, String(viewport)).toBeGreaterThanOrEqual(641);
+    }
+  });
+
+  it("the band never takes the chat under 924 from the window minimum up", () => {
+    for (let viewport = 1000; viewport < H3_COLUMNS_MIN; viewport += 1) {
+      expect(h3(viewport, true).chat, String(viewport)).toBeGreaterThanOrEqual(924);
+    }
+  });
+});
+
+describe("invariants", () => {
+  const widths = [
+    ...Array.from({ length: 3001 }, (_, i) => i),
+    1000.4,
+    1023.4,
+    1023.5,
+    1365.6,
+    1439.5,
+  ];
+
+  it("integers, nothing negative, and the tracks add back up to the frame", () => {
+    for (const viewport of widths) {
+      for (const chats of [false, true]) {
+        for (const vexStrip of [false, true]) {
+          const cols = h3(viewport, chats, vexStrip);
+          const label = `${String(viewport)} ${String(chats)} ${String(vexStrip)}`;
+          for (const track of tracks(cols)) {
+            expect(Number.isInteger(track), label).toBe(true);
+            expect(track, label).toBeGreaterThanOrEqual(0);
+          }
+          expect(total(cols), label).toBe(Math.round(viewport));
+          expect(cols.chatLeft, label).toBe(cols.chats + cols.vex);
+          expect(cols.layout, label).toBe(h3ShellLayout(viewport));
+          expect(cols.chatsRail, label).toBe(cols.chats !== H3_CHATS_WIDTH);
+        }
+      }
+    }
+  });
+
+  it("only the Vex column has a Vex track; the band and the strip are drawn in the chat", () => {
+    for (const viewport of widths) {
+      for (const chats of [false, true]) {
+        for (const vexStrip of [false, true]) {
+          const cols = h3(viewport, chats, vexStrip);
+          const label = `${String(viewport)} ${String(chats)} ${String(vexStrip)}`;
+          expect(cols.vex > 0, label).toBe(cols.vexSeat === "column");
+        }
+      }
+    }
+  });
+
+  it("a frame narrower than the rail is all rail; a width that is not one solves as 0", () => {
+    expect(tracks(h3(50, true))).toEqual([50, 0, 0]);
+    expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
+    expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
+    expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
+  });
+});
