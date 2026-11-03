@@ -21,5 +21,9 @@ export const newChat: HarnessState = {
       sessions: { get: ({ id }) => ok(chatById(id)) },
     }),
   ui: { activeSessionId: null, shellRoute: { kind: "none" } },
-  ready: '[data-vex-screen="appShell"]:has([data-vex-area="welcome-opening"]):has([data-vex-ls-item="row"])',
+  // The welcome, and the left column settled: its chat rows, or - under the
+  // medium tier, where the column folds - its rail, which lists none.
+  ready:
+    '[data-vex-screen="appShell"]:has([data-vex-area="welcome-opening"])'
+    + ':is(:has([data-vex-ls-item="row"]), :has([data-vex-left-page="spine"]))',
 };
