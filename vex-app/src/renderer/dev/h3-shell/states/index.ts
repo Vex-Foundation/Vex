@@ -10,6 +10,7 @@
 
 import { baseAnswers } from "../fixtures/base.js";
 import { newChat } from "./new-chat.js";
+import { thinking } from "./thinking.js";
 import type { HarnessState } from "./types.js";
 
 const shell: HarnessState = {
@@ -20,7 +21,7 @@ const shell: HarnessState = {
   ready: '[data-vex-screen="appShell"]',
 };
 
-export const HARNESS_STATES: readonly HarnessState[] = [shell, newChat];
+export const HARNESS_STATES: readonly HarnessState[] = [shell, newChat, thinking];
 
 export const DEFAULT_STATE = shell;
 

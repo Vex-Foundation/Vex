@@ -115,13 +115,15 @@ function pointStore(state: HarnessState): void {
 }
 
 /**
- * The ready stamp: the state's own element is on screen and no query is in
- * flight, for two frames running (one frame can be the commit before an
- * effect's follow-up fetch starts).
+ * The ready stamp: the state's own element is on screen, what the state
+ * delivered after mount has landed, and no query is in flight - for two
+ * frames running (one frame can be the commit before an effect's follow-up
+ * fetch starts).
  */
-function useReady(selector: string, client: QueryClient): boolean {
+function useReady(selector: string, client: QueryClient, delivered: boolean): boolean {
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    if (!delivered) return undefined;
     let raf = 0;
     let settled = 0;
     const tick = (): void => {
@@ -132,7 +134,7 @@ function useReady(selector: string, client: QueryClient): boolean {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [selector, client]);
+  }, [selector, client, delivered]);
   return ready;
 }
 
@@ -143,14 +145,22 @@ function Harness({
   readonly state: HarnessState;
   readonly client: QueryClient;
 }): JSX.Element {
-  const ready = useReady(state.ready, client);
+  const [delivered, setDelivered] = useState(state.afterMount === undefined);
+  const ready = useReady(state.ready, client, delivered);
   // After the first commit, so the shell's own subscriptions exist; once per
   // load, because StrictMode replays effects and an event emitted twice is a
-  // second event.
+  // second event. The settle is a module-level promise for the same reason:
+  // the replayed effect must wait on the one delivery, not start another.
   useEffect(() => {
-    if (bridge === null || afterMountRan) return;
-    afterMountRan = true;
-    state.afterMount?.(bridge);
+    if (bridge === null || state.afterMount === undefined) return;
+    afterMount ??= state.afterMount(bridge);
+    let live = true;
+    void afterMount.then(() => {
+      if (live) setDelivered(true);
+    });
+    return () => {
+      live = false;
+    };
   }, [state]);
   return (
     <div
@@ -191,7 +201,7 @@ function StateIndex(): JSX.Element {
 }
 
 let bridge: HarnessBridge | null = null;
-let afterMountRan = false;
+let afterMount: Promise<void> | null = null;
 if (STATE !== null) {
   bridge = installHarnessBridge(STATE.answers());
   pointStore(STATE);

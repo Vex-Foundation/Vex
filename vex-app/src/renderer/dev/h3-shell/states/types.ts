@@ -13,7 +13,8 @@
  * card, the turn, the page). The harness stamps `data-vex-h3-ready` only after
  * it is present AND no query is still fetching, which is what a spec waits
  * for. `afterMount` is for what only arrives as an event in the product - a
- * live stream delta, a control-state push - and receives the bridge's `emit`.
+ * live stream delta, a control-state push - and receives the bridge's `emit`;
+ * the ready stamp also waits for the promise it returns.
  */
 
 import type { UiState } from "../../../stores/uiStore.js";
@@ -44,5 +45,6 @@ export interface HarnessState {
   readonly ui: HarnessUi;
   /** A selector that is on screen once this state has rendered. */
   readonly ready: string;
-  readonly afterMount?: (bridge: HarnessBridge) => void;
+  /** Settles when what it delivered is on screen; the ready stamp waits for it. */
+  readonly afterMount?: (bridge: HarnessBridge) => Promise<void>;
 }

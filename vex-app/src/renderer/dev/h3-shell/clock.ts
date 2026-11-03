@@ -36,6 +36,15 @@ export const DAY = 24 * HOUR;
 
 const RealDate = Date;
 
+/**
+ * The instant the clock reads: `H3_NOW` for the whole life of a state, except
+ * inside `atInstant`. A state whose product code stamps "now" when an event
+ * arrives (a live turn's clock starts at its first delta) delivers that event
+ * at an earlier instant and then comes back here, so the elapsed figure on
+ * screen is an exact, fixed number rather than the time the load took.
+ */
+let reading = H3_NOW;
+
 type DateParts = [number, number, number?, number?, number?, number?, number?];
 
 class HarnessDate extends RealDate {
@@ -43,13 +52,30 @@ class HarnessDate extends RealDate {
   // which is "now": `new Date(y, m, d)` is how the chat list finds the start
   // of the local day, and it must stay the real calendar arithmetic.
   constructor(...args: [] | [string | number | Date] | DateParts) {
-    if (args.length === 0) super(H3_NOW);
+    if (args.length === 0) super(reading);
     else if (args.length === 1) super(args[0]);
     else super(...(args as DateParts));
   }
 
   static override now(): number {
-    return H3_NOW;
+    return reading;
+  }
+}
+
+/**
+ * Run `deliver` with the clock reading `instant`, hold it there for `holdMs`
+ * of real time (long enough for the stream store's 16 ms coalescing flush to
+ * stamp it), then return the clock to `H3_NOW`.
+ */
+export async function atInstant(instant: number, deliver: () => void, holdMs = 120): Promise<void> {
+  reading = instant;
+  try {
+    deliver();
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, holdMs);
+    });
+  } finally {
+    reading = H3_NOW;
   }
 }
 
