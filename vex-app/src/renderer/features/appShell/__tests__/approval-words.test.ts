@@ -19,6 +19,7 @@ import {
   addressIn,
   approvalExpiryWords,
   approvalFamily,
+  approvalPlace,
   approvalReviewWord,
   approvalSentence,
   approvalToolTitle,
@@ -421,6 +422,45 @@ describe("approvalSentence", () => {
         expect(sentence.trim()).toBe(sentence);
         expect(sentence.length).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+// -- Place ----------------------------------------------------------------------
+
+describe("approvalPlace", () => {
+  it("names a bridge's two ends, a swap's or a send's chain", () => {
+    expect(approvalPlace(approvalFrom(BRIDGE))).toBe("Base to Arbitrum");
+    expect(approvalPlace(approvalFrom(BRIDGE_NAMESPACED))).toBe("Base to Arbitrum");
+    expect(approvalPlace(approvalFrom(dropped(BRIDGE, "toChain")))).toBe("Base");
+    expect(approvalPlace(approvalFrom(dropped(BRIDGE, "fromChain")))).toBeNull();
+    expect(approvalPlace(approvalFrom(KYBER))).toBe("Base");
+    expect(approvalPlace(approvalFrom(JUPITER))).toBe("Solana");
+    expect(approvalPlace(approvalFrom(SEND_USDC))).toBe("Base");
+    expect(approvalPlace(approvalFrom(GENERIC_TX))).toBe("Base");
+  });
+
+  it("names the Lighter deployment a Lighter call binds, else Lighter", () => {
+    expect(approvalPlace(approvalFrom(LIGHTER_MARKET))).toBe("Lighter");
+    const core = previewOf("order.create", { ...LIGHTER_MARKET_ARGS, environment: "core" }, "lighter");
+    const rhc = previewOf("order.create", { ...LIGHTER_MARKET_ARGS, environment: "rhc" }, "lighter");
+    const unknown = previewOf("order.create", { ...LIGHTER_MARKET_ARGS, environment: "elsewhere" }, "lighter");
+    expect(approvalPlace(approvalFrom(core))).toBe("Lighter Core");
+    expect(approvalPlace(approvalFrom(rhc))).toBe("Robinhood Chain");
+    expect(approvalPlace(approvalFrom(unknown))).toBe("Lighter");
+  });
+
+  it("says nothing when the arguments name no place", () => {
+    expect(approvalPlace(makeSummary())).toBeNull();
+    expect(approvalPlace(approvalFrom(dropped(KYBER, "chain")))).toBeNull();
+  });
+
+  it("never carries a figure or an absent value", () => {
+    for (const preview of ALL_PREVIEWS) {
+      const place = approvalPlace(approvalFrom(preview));
+      if (place === null) continue;
+      expect(place).not.toMatch(/\d/);
+      expect(place).not.toMatch(NOT_A_VALUE);
     }
   });
 });
