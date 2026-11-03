@@ -423,7 +423,7 @@ describe("VexSidebar, Needs you", () => {
     const section = area("vex-needs-you");
     expect(section?.querySelector("h3")?.textContent).toBe("Needs you · 1");
     const review = within(section ?? sidebar()).getByRole("button", {
-      name: "Review ↓: Approve bridge",
+      name: `Review ↓: ${item.title}`,
     });
     fireEvent.click(review);
     // The chat stays the open one; the page over it closes so the card shows.
@@ -440,7 +440,7 @@ describe("VexSidebar, Needs you", () => {
     );
     presenceRef.current = presence({ needsYou: needs([item]) });
     render(<VexSidebar open onHide={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Review: Approve bridge" }));
+    fireEvent.click(screen.getByRole("button", { name: `Review: ${item.title}` }));
     expect(useUiStore.getState().activeSessionId).toBe(other);
   });
 

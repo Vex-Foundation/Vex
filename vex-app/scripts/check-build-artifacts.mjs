@@ -19,7 +19,10 @@
  *      base-uri 'none', frame-ancestors 'none', form-action 'none'.
  *   6. Brand assets in dist/renderer/ — exist, decode cleanly, match expected
  *      dimensions, fit byte budget, carry no EXIF/IPTC/XMP metadata
- *      (privacy hygiene for self-custodial wallet binary).
+ *      (privacy hygiene for self-custodial wallet binary). An entry
+ *      registered before its file exists (Kimm's art) is skipped while the
+ *      file is absent from the renderer's public source and checked in full
+ *      once it is there.
  *   7. Compiled CSS contains no bare `--color-*` references in property values
  *      (must be wrapped in `var(...)`). Catches Tailwind v4 arbitrary-value
  *      footgun: `text-[--color-foo]` compiles to `color:--color-foo` (broken)
@@ -65,6 +68,7 @@ import {
   privilegedBundleChecks,
 } from "./check-privileged-bundles.mjs";
 import { nativeArtifactChecks } from "./check-native-artifacts.mjs";
+import { brandAssetPlan, KIMM_BRAND_ASSETS } from "./kimm-brand-assets.mjs";
 import {
   builtLighterSignerDir,
   evaluateBuiltLighterSigners,
@@ -292,15 +296,32 @@ check("renderer source — no localStorage/sessionStorage/dangerouslySetInnerHTM
 });
 
 // 6. brand assets — exist, decode, expected dimensions, byte budget, no EXIF
-// EMPTY registry: vex.jpg was the only pinned raster and the transcript now
-// draws the inline `VexMark` SVG (UIUX round 2), so nothing is pinned today.
-// Kept as the gate for the next raster brand asset - add its entry here and
-// the matching copy step in copy-brand-assets.mjs together.
-const BRAND_ASSETS = [];
+// vex.jpg was the only pinned raster until the transcript drew the inline
+// `VexMark` SVG (UIUX round 2). A re-encoded brand asset takes its entry here
+// and the matching copy step in copy-brand-assets.mjs together.
+//
+// Kimm's art (H3, plan rows S4-01 and S4-18) arrives from the designer byte
+// for byte into src/renderer/public/art/kimm/, with no copy step. Its entries
+// are registered before the files exist (`awaited`, kimm-brand-assets.mjs,
+// where the budgets and their reasons are): absent from the public source,
+// an entry is reported and skipped; present, it is checked in full, and its
+// width and height must be pinned there first.
+const BRAND_ASSETS = [...KIMM_BRAND_ASSETS];
+const RENDERER_PUBLIC_DIR = path.join(root, "src", "renderer", "public");
 
 await checkAsync("brand assets — exist, decode, dimensions, byte budget, no EXIF/IPTC/XMP", async () => {
   const issues = [];
+  const awaiting = [];
   for (const expect of BRAND_ASSETS) {
+    const plan = brandAssetPlan(expect, RENDERER_PUBLIC_DIR);
+    if (plan === "awaiting") {
+      awaiting.push(expect.file);
+      continue;
+    }
+    if (plan === "unpinned") {
+      issues.push(`${expect.file}: arrived, but its width and height are not pinned in the registry`);
+      continue;
+    }
     const full = path.join(root, "dist", "renderer", expect.file);
     if (!existsSync(full)) {
       issues.push(`${expect.file}: missing in dist/renderer/`);
@@ -329,6 +350,9 @@ await checkAsync("brand assets — exist, decode, dimensions, byte budget, no EX
     if (meta.iptc) issues.push(`${expect.file}: carries IPTC metadata`);
     if (meta.xmp) issues.push(`${expect.file}: carries XMP metadata`);
   }
+  // Said, not hidden: a skipped entry shows in every build log until its file
+  // lands.
+  for (const file of awaiting) console.log(`    awaited, not in the source yet: ${file}`);
   if (issues.length > 0) {
     throw new Error(`Brand asset issues:\n    ${issues.join("\n    ")}`);
   }

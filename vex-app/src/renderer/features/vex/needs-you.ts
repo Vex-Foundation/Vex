@@ -1,14 +1,16 @@
 /**
  * NEEDS YOU: everything that waits for a decision of the user's, as one list
- * (docs/design/R3-MINIMAL.md sections 3 and 5). One model feeds the title bar
- * panel, the Vex sidebar and the Needs you page, so the three can never count
- * differently.
+ * (docs/design/R3-MINIMAL.md sections 3 and 5; the H3 row in
+ * docs/design/H3-DESKTOP.md section 1.5 and Appendix A.3). One model feeds the
+ * title bar panel, the Vex sidebar and the Needs you page, so the three can
+ * never count differently.
  *
  * What enters the list, and what never does:
  *
- *   - every pending approval, app-wide (`usePendingApprovalsAll`), each named
- *     by its action ("Approve bridge"), where it was raised, and when it
- *     expires, or since when it has been waiting;
+ *   - every pending approval, app-wide (`usePendingApprovalsAll`), titled with
+ *     the card's own sentence ("Swap 200 USDC for ETH on Base."), then where
+ *     it acts and when it expires, or since when it has been waiting
+ *     ("Base, real funds · since 12:40 UTC");
  *   - a mission session that needs a decision to go on: `paused_error`
  *     (Recover), `paused_plan_acceptance` (Accept the contract),
  *     `paused_user_form` (Fill in the form);
@@ -22,8 +24,20 @@
  * a withdrawal check that failed or could not read every withdrawal. "Needs
  * you · ?" with a Retry is honest; an empty list after a failed read would be
  * a false all-clear on a surface that exists to say something waits for a
- * signature. The notices shown before a failed withdrawal check stay listed. The list never approves anything: Review opens the card, and the
- * REAL FUNDS decision stays in the approval card's own two-step flow.
+ * signature. The notices shown before a failed withdrawal check stay listed.
+ * The list never approves anything: Review opens the card, and the REAL FUNDS
+ * decision stays in the approval card's own two-step flow.
+ *
+ * An approval row's words are the card's words. Its title is
+ * `approvalSentence`, the sentence that titles the card, built only from the
+ * signed arguments, so the row can never show a figure the card does not; with
+ * nothing to build from it is the card's own "{tool title}: review the signed
+ * fields". Its meta line names the place from the same arguments
+ * (`approvalPlace`: the chain, a bridge's two ends, the Lighter deployment),
+ * or "Mainnet" when they name none (desktop is mainnet only, section 4.2),
+ * then "real funds" exactly where the card wears its REAL FUNDS stamp. A call
+ * to the user's own MCP tool signs nothing and wears no stamp, so its line
+ * names where it was raised instead, as every row did before H3.
  *
  * Pure: the clock arrives as `nowMs`.
  */
@@ -34,6 +48,12 @@ import type { SessionListItem } from "@shared/schemas/sessions.js";
 import type { VexCloudWithdrawalNotice, VexCloudWithdrawalNoticesResult } from "@shared/schemas/vex-cloud-funding.js";
 import { getSessionTitle } from "../appShell/sessionListModel.js";
 import { approvalProjectDisplay } from "../appShell/approvals/approvals-copy.js";
+import {
+  approvalPlace,
+  approvalSentence,
+  isUserMcpApproval,
+} from "../appShell/ApprovalCard/approval-sentence.js";
+import { formatNeedsYouTime } from "./needs-you-words.js";
 
 export type NeedsYouKind = "approval" | "recover" | "contract" | "form" | "withdrawal";
 
@@ -41,13 +61,17 @@ export interface NeedsYouItem {
   /** Stable React key: `approval:{id}`, `mission:{sessionId}` or `withdrawal:{id}`. */
   readonly key: string;
   readonly kind: NeedsYouKind;
-  /** The action, as the line's title: "Approve bridge", "Recover the mission". */
+  /**
+   * The decision, as the line's title: an approval's card sentence ("Swap 200
+   * USDC for ETH on Base."), else the action ("Recover the mission").
+   */
   readonly title: string;
   /**
    * The line under the title, in two parts so the time can be set as a figure:
-   * where it was raised and what the time means ("Agent session · expires"),
-   * then the time itself ("15:30 UTC"), `null` when there is none to give.
-   * `needsYouMetaText` joins them.
+   * where it acts or was raised and what the time means ("Base, real funds ·
+   * expires", "Weekly rebalance · paused on an error"), then the time itself
+   * ("15:30 UTC"), `null` when there is none to give. `needsYouMetaText`
+   * joins them.
    */
   readonly metaLead: string;
   readonly metaTime: string | null;
@@ -96,99 +120,12 @@ export const NEEDS_YOU_ALL_UNKNOWN_COPY =
 
 export const NEEDS_YOU_EMPTY_COPY = "Nothing needs you.";
 
-// -- Approval action words ------------------------------------------------
+// -- The shared words ----------------------------------------------------
 
-export const APPROVAL_ACTION_WORDS = {
-  bridge: "Approve bridge",
-  order: "Approve order",
-  swap: "Approve swap",
-  transfer: "Approve transfer",
-  other: "Approve",
-} as const;
-
-type ApprovalActionTarget = Pick<ApprovalPendingGlobalDto, "toolName" | "preview">;
-
-/** Every name the approval carries for its tool, lower-cased, most specific first. */
-function toolNamesOf(approval: ApprovalActionTarget): readonly string[] {
-  const names: string[] = [];
-  const preview = approval.preview;
-  if (preview !== null) {
-    const toolId = preview.criticalArgs["toolId"];
-    if (typeof toolId === "string" && toolId.length > 0) names.push(toolId);
-    if (preview.namespace !== undefined && preview.toolName.length > 0) {
-      names.push(`${preview.namespace}.${preview.toolName}`);
-    }
-    names.push(preview.toolName);
-  }
-  if (approval.toolName !== null) names.push(approval.toolName);
-  return names.map((name) => name.toLowerCase());
-}
-
-const LIGHTER_ORDER = /^lighter[.:](order|position)([.:]|$)/;
-const LIGHTER_TRANSFER = /^lighter[.:](deposit|withdraw)([.:]|$)/;
-const BRIDGE = /bridge/;
-// The engine's mutating aliases carry no separator: `SwapExecute` and
-// `SwapExecuteUniswap` are swaps, `WalletSendConfirm` is a wallet send.
-const SWAP = /(^|[.:_])swap($|[.:_])|trade_execute|^swapexecute/;
-const TRANSFER = /(^|[.:_])(send|transfer)($|[.:_])|^walletsendconfirm$/;
-
-/**
- * The action-named approve word for a tool family: bridge, order (Lighter
- * orders and positions), swap, transfer; plain "Approve" for any other tool.
- * Decided from the names the approval itself carries, never from its
- * arguments, so a family is claimed only when the tool says so.
- */
-export function approvalActionWord(approval: ApprovalActionTarget): string {
-  const names = toolNamesOf(approval);
-  const some = (pattern: RegExp): boolean => names.some((name) => pattern.test(name));
-  if (some(LIGHTER_ORDER)) return APPROVAL_ACTION_WORDS.order;
-  if (some(LIGHTER_TRANSFER)) return APPROVAL_ACTION_WORDS.transfer;
-  if (some(BRIDGE)) return APPROVAL_ACTION_WORDS.bridge;
-  if (some(SWAP)) return APPROVAL_ACTION_WORDS.swap;
-  if (some(TRANSFER)) return APPROVAL_ACTION_WORDS.transfer;
-  return APPROVAL_ACTION_WORDS.other;
-}
-
-// -- Time -----------------------------------------------------------------
-
-const MONTHS: readonly string[] = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-function pad2(value: number): string {
-  return value < 10 ? `0${value}` : String(value);
-}
-
-/**
- * An instant in UTC, so the same row reads the same on every machine and the
- * zone is on the line: "15:30 UTC" when it falls on today's UTC date, else
- * "Oct 12, 15:30 UTC". `null` for an unparseable value, so the line says
- * nothing rather than "Invalid Date".
- */
-export function formatNeedsYouTime(iso: string, nowMs: number): string | null {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return null;
-  const clock = `${pad2(at.getUTCHours())}:${pad2(at.getUTCMinutes())} UTC`;
-  const now = new Date(nowMs);
-  const sameDay =
-    at.getUTCFullYear() === now.getUTCFullYear() &&
-    at.getUTCMonth() === now.getUTCMonth() &&
-    at.getUTCDate() === now.getUTCDate();
-  if (sameDay) return clock;
-  const month = MONTHS[at.getUTCMonth()] ?? "";
-  return `${month} ${at.getUTCDate()}, ${clock}`;
-}
+// The action-word table and the time words live in a leaf module the card's
+// sentence also reads (see its note); they are re-exported here so every
+// older importer of this module stands.
+export { APPROVAL_ACTION_WORDS, approvalActionWord, formatNeedsYouTime } from "./needs-you-words.js";
 
 // -- Items ----------------------------------------------------------------
 
@@ -209,23 +146,36 @@ function whereOf(row: ApprovalPendingGlobalDto): { where: string; groupKey: stri
   return { where: "Background approval", groupKey: "background" };
 }
 
-/** The meta line as one string: "Agent session · expires 15:30 UTC". */
+/** The meta line as one string: "Base, real funds · expires 15:30 UTC". */
 export function needsYouMetaText(item: Pick<NeedsYouItem, "metaLead" | "metaTime">): string {
   return item.metaTime === null ? item.metaLead : `${item.metaLead} ${item.metaTime}`;
 }
 
-/** "{where} · expires 15:30 UTC", or "{where} · since 12:05 UTC" with no expiry. */
+/** Desktop's network, for an approval whose arguments name no chain (section 4.2). */
+export const NEEDS_YOU_NETWORK_WORD = "Mainnet";
+
+/**
+ * Where an approval acts, as its meta line leads: "Base, real funds",
+ * "Mainnet, real funds" when the arguments name no place; for a call to the
+ * user's own MCP tool, which moves no funds, where it was raised.
+ */
+export function approvalPlaceLead(row: ApprovalPendingGlobalDto, raisedIn: string): string {
+  if (isUserMcpApproval(row)) return raisedIn;
+  return `${approvalPlace(row) ?? NEEDS_YOU_NETWORK_WORD}, real funds`;
+}
+
+/** "{place} · expires 15:30 UTC", or "{place} · since 12:05 UTC" with no expiry. */
 function approvalMeta(
   row: ApprovalPendingGlobalDto,
-  where: string,
+  place: string,
   nowMs: number,
 ): Pick<NeedsYouItem, "metaLead" | "metaTime"> {
   const expiry = row.expiresAt === null ? null : formatNeedsYouTime(row.expiresAt, nowMs);
-  if (expiry !== null) return { metaLead: `${where} · expires`, metaTime: expiry };
+  if (expiry !== null) return { metaLead: `${place} · expires`, metaTime: expiry };
   const since = formatNeedsYouTime(row.createdAt, nowMs);
   return since === null
-    ? { metaLead: where, metaTime: null }
-    : { metaLead: `${where} · since`, metaTime: since };
+    ? { metaLead: place, metaTime: null }
+    : { metaLead: `${place} · since`, metaTime: since };
 }
 
 /** One pending approval as a Needs you item. */
@@ -234,8 +184,8 @@ export function approvalNeedsYouItem(row: ApprovalPendingGlobalDto, nowMs: numbe
   return {
     key: `approval:${row.id}`,
     kind: "approval",
-    title: approvalActionWord(row),
-    ...approvalMeta(row, where, nowMs),
+    title: approvalSentence(row),
+    ...approvalMeta(row, approvalPlaceLead(row, where), nowMs),
     go: "Review",
     where,
     groupKey,

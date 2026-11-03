@@ -13,7 +13,10 @@
  *   - the R3 card (docs/design/R3-MINIMAL.md section 8): the plain sentence,
  *     the money lines with "Not available" where the tool quoted nothing, the
  *     action-named key by tool family, and the row the Needs you page folds a
- *     card to, whose Reject keeps the same two-step confirm.
+ *     card to, whose Reject keeps the same two-step confirm;
+ *   - the reject reason in H3's words, "Tell Vex what to do instead"
+ *     (docs/design/H3-DESKTOP.md Appendix A.7), named as what goes with Reject
+ *     and nothing else: no Enter sends it, and Approve never carries it.
  */
 
 import { readFileSync } from "node:fs";
@@ -43,6 +46,9 @@ vi.mock("../../../lib/api/approvals.js", () => ({
 }));
 
 const { ApprovalCard } = await import("../ApprovalCard.js");
+const { REJECT_REASON_LABEL, REJECT_REASON_PLACEHOLDER } = await import(
+  "../ApprovalCard/ApprovalDecisionActions.js"
+);
 
 const SESSION = "00000000-0000-4000-8000-00000000aa01";
 
@@ -114,11 +120,11 @@ describe("ApprovalCard", () => {
         <ApprovalCard summary={makeSummary({ origin: "agent" })} sessionId={SESSION} focusOnMount={false} />
       </QueryClientProvider>,
     );
-    expect(screen.getByLabelText("Reason for rejecting (optional)")).toBeTruthy();
+    expect(screen.getByLabelText(REJECT_REASON_LABEL)).toBeTruthy();
     expect(screen.getByText("Vex's own agent")).toBeTruthy();
     unmount();
     renderCard(makeSummary({ origin: "desk" }), false);
-    expect(screen.queryByLabelText("Reason for rejecting (optional)")).toBeNull();
+    expect(screen.queryByLabelText(REJECT_REASON_LABEL)).toBeNull();
     expect(screen.getByText("You, from the Lighter desk")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /reject/i }));
     fireEvent.click(screen.getByRole("button", { name: /reject/i }));
@@ -432,13 +438,44 @@ describe("ApprovalCard", () => {
   // every refusal reached the model as "No reason provided" and the agent had
   // nothing to adapt to.
 
+  it("words the reason as H3 does, and names it as what goes with Reject", () => {
+    renderCard(
+      makeSummary({ riskLevel: "low", actionKind: "local_write" }),
+      false,
+    );
+    expect(REJECT_REASON_PLACEHOLDER).toBe("Tell Vex what to do instead");
+    expect(REJECT_REASON_LABEL).toBe("Tell Vex what to do instead (optional, sent when you reject)");
+    const field = screen.getByRole("textbox", { name: REJECT_REASON_LABEL });
+    expect(field.getAttribute("placeholder")).toBe(REJECT_REASON_PLACEHOLDER);
+    // The old words are gone from the card.
+    expect(screen.queryByPlaceholderText("Reason (optional)")).toBeNull();
+    expect(screen.queryByLabelText("Reason for rejecting (optional)")).toBeNull();
+  });
+
+  it("sends nothing on Enter in the reason: it travels with Reject only", () => {
+    renderCard(
+      makeSummary({ riskLevel: "low", actionKind: "local_write" }),
+      false,
+    );
+    const field = screen.getByRole("textbox", { name: REJECT_REASON_LABEL });
+    fireEvent.change(field, { target: { value: "Use USDC on Base instead" } });
+    fireEvent.keyDown(field, { key: "Enter", code: "Enter" });
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
+    expect(mockRejectMutate).toHaveBeenCalledWith(
+      { id: "appr-1", reason: "Use USDC on Base instead" },
+      expect.any(Object),
+    );
+  });
+
   it("sends the typed reason with the reject payload", () => {
     renderCard(
       makeSummary({ riskLevel: "low", actionKind: "local_write" }),
       false,
     );
     fireEvent.change(
-      screen.getByRole("textbox", { name: /reason for rejecting/i }),
+      screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
       { target: { value: "Slippage too high" } },
     );
     fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
@@ -455,7 +492,7 @@ describe("ApprovalCard", () => {
       false,
     );
     fireEvent.change(
-      screen.getByRole("textbox", { name: /reason for rejecting/i }),
+      screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
       { target: { value: "   " } },
     );
     fireEvent.click(screen.getByRole("button", { name: /^reject$/i }));
@@ -474,7 +511,7 @@ describe("ApprovalCard", () => {
       false,
     );
     fireEvent.change(
-      screen.getByRole("textbox", { name: /reason for rejecting/i }),
+      screen.getByRole("textbox", { name: REJECT_REASON_LABEL }),
       { target: { value: "not this one" } },
     );
     fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));

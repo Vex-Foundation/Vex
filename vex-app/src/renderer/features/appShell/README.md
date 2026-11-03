@@ -94,8 +94,9 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   card is scrolled to with Reject focused, other approvals open the Needs you page.
 - Token chip (`features/vex/VexTokenChip.tsx`): disc, state swatch, word, live
   timer, and "n mission running" only while Vex is hidden. It toggles Vex
-  (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + Period
-  (`vex-toggle-shortcut.ts`, `KeyboardEvent.code`, never Alt) is the same press,
+  (`aria-pressed`, "Hide Vex" or "Show Vex"). Cmd or Ctrl + Shift + B
+  (`vex-toggle-shortcut.ts`, `KeyboardEvent.code`, never Alt; R3's Cmd or Ctrl +
+  Shift + Period still works for one release, unspelled) is the same press,
   off under a modal. `VexStateAnnouncer` is the one live region of the word.
 
 ## Pages in the centre (`screens/`, section 9.6)

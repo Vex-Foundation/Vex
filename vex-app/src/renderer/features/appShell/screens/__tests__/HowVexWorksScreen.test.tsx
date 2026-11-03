@@ -134,7 +134,7 @@ describe("HowVexWorksScreen", () => {
   it("names the Vex toggle's chord, and puts no state word on the welcome", () => {
     const { container } = renderPage();
     const text = container.querySelector(".vex-article__col")?.textContent ?? "";
-    expect(text).toContain("or Ctrl+Shift+. (Cmd+Shift+. on a Mac), changes that.");
+    expect(text).toContain("or Ctrl+Shift+B (Cmd+Shift+B on a Mac), changes that.");
     // the owner: no state word under Vex on the welcome or the start-up screens
     expect(text).not.toContain("and on the welcome screen");
     expect(text).toContain("The welcome screen and the start-up screens show her without a word.");

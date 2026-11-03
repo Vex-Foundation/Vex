@@ -283,9 +283,11 @@ export function XtermHost({
     // to the document listener that owns the Studio table. See the module
     // header for why that path does not `preventDefault`.
     //
-    // The VEX TOGGLE (Cmd or Ctrl + Shift + Period) is refused the same way:
+    // The VEX TOGGLE (Cmd or Ctrl + Shift + B, and for one release its
+    // retiring alias Cmd or Ctrl + Shift + Period) is refused the same way:
     // it is not a Studio row but the app's own chord, and its listener is on
-    // the document too (`features/vex/vex-toggle-shortcut.ts`).
+    // the document too (`features/vex/vex-toggle-shortcut.ts`). Studio's own
+    // B row is Ctrl or Cmd + B with Shift up, so the two never meet.
     entry.terminal.attachCustomKeyEventHandler((event) => {
       const action = decideTerminalClipboardAction(event, {
         hasSelection: entry.terminal.hasSelection(),
