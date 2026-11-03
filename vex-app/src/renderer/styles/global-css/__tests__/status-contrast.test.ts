@@ -1,12 +1,18 @@
 /**
- * STATUS IS SHOWN BY FILL, AND EVERY INK IS READABLE - a measured contrast
- * contract over the alias tier, in the one room (the app is dark only).
+ * A STATUS IS A COLOURED SQUARE BESIDE AN INK WORD, AND EVERY INK IS READABLE
+ * - a measured contrast contract over the alias tier, in the one room (the
+ * app is dark only). docs/design/H3-DESKTOP.md section 2.2 replaces R3's
+ * "status by fill, never by colour":
  *
- * V10 collapses status to fill: success and error are the ink (paper at
- * night), attention is the one blue (the periwinkle at night), and the state
- * itself is carried by a swatch's pattern, never by a hue. That collapse is
- * pinned here as an identity, so a green, amber or red cannot creep back in
- * under an old alias name.
+ *   - the WORD is ink, always: success, attention and error collapse onto the
+ *     primary label, pinned as an identity, so no hue can creep back into a
+ *     status word under an old alias name;
+ *   - the SQUARE beside it carries the colour, and green (filled), red (did
+ *     not execute) and grey (running) are the only ones; each square owes the
+ *     3:1 for graphics on every cell it can sit on, and the FILLED stamp
+ *     carries its white word at the body floor;
+ *   - gains and losses in trading values take their own green and red as
+ *     TYPE, lighter than the squares, and neither pair is ever the other.
  *
  * The rest of the file MEASURES rather than pins. It reads tokens.css,
  * resolves each alias through the static tier, and computes the
@@ -19,8 +25,8 @@
  * is measured with its own ink. The REAL FUNDS block measures
  * the approval card's keys, its ink frame and its reversed stamp: the one
  * card that moves money must read in every state a hand can put it in. The
- * last block measures the trading pair (docs/design/R3-MINIMAL.md section 1),
- * a value colour on trading figures only and never a status.
+ * last block measures the gain and loss pair, a value colour on trading
+ * figures only and never a status.
  *
  * Deliberately OUT of scope: the sixteen `--vex-alias-term-*` ANSI slots, a
  * wire contract owned by `terminal-palette-tokens.test.ts`.
@@ -106,6 +112,8 @@ function contrast(a: string, b: string): number {
 const AA_BODY = 4.5;
 /** Large text: the serif counters and numerals (24px and up). */
 const AA_LARGE = 3;
+/** A graphic beside a word (WCAG 1.4.11): the status squares. */
+const AA_GRAPHIC = 3;
 
 function ratio(blocks: readonly string[], ink: string, ground: string): number {
   return Number(contrast(resolveHex(blocks, ink), resolveHex(blocks, ground)).toFixed(2));
@@ -126,7 +134,7 @@ const FAMILIES = [
     name: "warn",
     ink: ["--vex-alias-state-warn", "--vex-alias-state-warn-label"],
     wash: "--vex-alias-state-warn-wash",
-    collapsesTo: "--vex-alias-accent-primary",
+    collapsesTo: "--vex-alias-label-primary",
   },
   {
     name: "error",
@@ -144,19 +152,21 @@ describe("the resolver (load-bearing)", () => {
     expect(resolveHex([chronos], "--vex-alias-state-warn")).toBe("#f3f5f9");
     expect(resolveHex([chronos], "--vex-alias-state-success")).toBe("#f3f5f9");
     expect(resolveHex([chronos], "--vex-alias-state-error")).toBe("#f3f5f9");
+    expect(resolveHex([chronos], "--vex-alias-state-success-mark")).toBe("#1d7e3f");
+    expect(resolveHex([chronos], "--vex-alias-state-error-mark")).toBe("#c22226");
     expect(resolveHex([chronos], "--vex-alias-composer")).toBe("#010203");
     expect(resolveHex([chronos], "--vex-alias-label-tertiary")).toBe("#808693");
-    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#4cd685");
-    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7b7b");
+    expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#76cf8a");
+    expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7a6e");
   });
 });
 
-describe("status by fill, never by colour", () => {
+describe("status words are ink", () => {
   for (const theme of THEMES) {
     for (const family of FAMILIES) {
       it(`${theme.name}: the ${family.name} inks collapse onto ${family.collapsesTo}`, () => {
-        // The identity, not a likeness: done and errors ARE the ink, attention
-        // IS the one blue. A status hue would have to break this equality.
+        // The identity, not a likeness: every status word IS the ink. A
+        // status hue in a word would have to break this equality.
         for (const ink of family.ink) {
           expect(resolveHex(theme.blocks, ink), `${ink} in ${theme.name}`).toBe(
             resolveHex(theme.blocks, family.collapsesTo),
@@ -194,6 +204,54 @@ describe("status by fill, never by colour", () => {
         expect(wash).toBeGreaterThan(ground);
       });
     }
+  }
+});
+
+/**
+ * The status squares (section 2.2) and the cells a status row can stand on:
+ * the ground, a control at rest, a key cell and raised 2.
+ */
+const STATUS_MARKS = [
+  ["filled", "--vex-alias-state-success-mark", "--color-h3-status-green"],
+  ["did not execute", "--vex-alias-state-error-mark", "--color-h3-status-red"],
+  ["running", "--vex-alias-state-running-mark", "--color-h3-muted"],
+] as const;
+const MARK_GROUNDS = [
+  "--vex-alias-bg-base",
+  "--vex-alias-bg-layer-3",
+  "--vex-alias-interactive-solid",
+  "--vex-alias-interactive-active",
+] as const;
+
+describe("status squares carry green, red and grey", () => {
+  for (const theme of THEMES) {
+    for (const [status, mark, primitive] of STATUS_MARKS) {
+      it(`${theme.name}: the ${status} square is ${primitive}`, () => {
+        expect(resolveHex(theme.blocks, mark)).toBe(resolveHex(theme.blocks, primitive));
+      });
+
+      it(`${theme.name}: the ${status} square clears ${AA_GRAPHIC}:1 on every cell it sits on`, () => {
+        const failures = MARK_GROUNDS.map((ground) => [ground, ratio(theme.blocks, mark, ground)] as const)
+          .filter(([, value]) => value < AA_GRAPHIC)
+          .map(([ground, value]) => `${ground} ${value}:1`);
+        expect(failures, mark).toEqual([]);
+      });
+    }
+
+    it(`${theme.name}: the three square colours are three colours, and none is a word's ink`, () => {
+      const marks = STATUS_MARKS.map(([, mark]) => resolveHex(theme.blocks, mark));
+      expect(new Set(marks).size).toBe(marks.length);
+      expect(marks).not.toContain(resolveHex(theme.blocks, "--vex-alias-label-primary"));
+    });
+
+    it(`${theme.name}: the FILLED stamp carries its white word at ${AA_BODY}:1`, () => {
+      expect(resolveHex(theme.blocks, "--vex-alias-stamp-filled")).toBe(
+        resolveHex(theme.blocks, "--vex-alias-state-success-mark"),
+      );
+      expect(
+        ratio(theme.blocks, "--vex-alias-stamp-filled-ink", "--vex-alias-stamp-filled"),
+      ).toBeGreaterThanOrEqual(AA_BODY);
+    });
   }
 });
 
@@ -315,11 +373,11 @@ describe("REAL FUNDS key contrast", () => {
 });
 
 /**
- * THE TRADING PAIR (docs/design/R3-MINIMAL.md section 1): up and down on
- * trading values only (a signed uPnL, Long and Short, bids and asks). It
- * reads as text on every ground text sits on, carries the ink of a solid
- * Long or Short key, and is never a status: no state ink resolves to it, so
- * a state keeps its fill and its word.
+ * GAINS AND LOSSES (docs/design/H3-DESKTOP.md section 2.2): the sheet's
+ * --live and --err as type, on trading values only (a signed P&L, Long and
+ * Short, bids and asks). The pair reads as text on every ground text sits
+ * on, carries the ink of a solid Long or Short key, and is never a status:
+ * no state word and no status square resolves to it.
  */
 const TRADE_INKS = ["--vex-alias-trade-up", "--vex-alias-trade-down"] as const;
 
@@ -341,12 +399,15 @@ describe("the trading pair", () => {
       });
     }
 
-    it(`${theme.name}: no status ink is a trading colour`, () => {
+    it(`${theme.name}: no status word or square is a trading colour`, () => {
       const trade = new Set(TRADE_INKS.map((ink) => resolveHex(theme.blocks, ink)));
       for (const family of FAMILIES) {
         for (const ink of family.ink) {
           expect(trade.has(resolveHex(theme.blocks, ink)), `${ink} in ${theme.name}`).toBe(false);
         }
+      }
+      for (const [, mark] of STATUS_MARKS) {
+        expect(trade.has(resolveHex(theme.blocks, mark)), `${mark} in ${theme.name}`).toBe(false);
       }
     });
   }

@@ -1,9 +1,11 @@
 /* Status marks, R3 (docs/design/R3-MINIMAL.md sections 1 and 5): the swatch,
  * the state word, the flat vx token, the chip, the stamp and the tag, the cell
- * meter and the quiet loading line. Status is shown by fill, never by colour:
- * every mark draws in the current text colour, so it sits in an ink or a blue
- * row unchanged. Instrument Sans for words, the mono face for figures, caps
- * only on stamps and tags. */
+ * meter and the quiet loading line. Every mark draws in the current text
+ * colour, so its colour is the caller's. H3 (docs/design/H3-DESKTOP.md
+ * section 2.2) colours the square and never the word: a square takes
+ * `text-success-mark` (filled), `text-danger-mark` (did not execute) or
+ * `text-running-mark` (running), or stays ink (waiting, Vex's own state),
+ * beside an ink word; each component moves onto those as it restyles. */
 
 /* ── Swatch ────────────────────────────────────────────────────────────────
  * data-s: done | ongoing | warning | draft | idle | error (V10 names, kept)

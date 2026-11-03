@@ -184,8 +184,6 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-peri-hi": "#6470ff",
   "--color-candle-up": "#22c55e",
   "--color-candle-down": "#ef4444",
-  "--color-up-night": "#4cd685",
-  "--color-down-night": "#ff7b7b",
   "--color-h3-ground": "#010203",
   "--color-h3-cell": "#040406",
   "--color-h3-raised": "#070709",
@@ -204,13 +202,13 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 32 primitives, at their values", () => {
+  it("holds exactly the 30 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(32);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(30);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 
@@ -315,11 +313,13 @@ describe("the trading pair and the night edge", () => {
   const chronos = declarations(chronosBlock);
   const themeInline = declarations(ruleBody(tokensCss, "@theme inline"));
 
-  it("paints the night pair", () => {
-    expect(chronos.get("--vex-alias-trade-up")).toBe("var(--color-up-night)");
-    expect(chronos.get("--vex-alias-trade-down")).toBe("var(--color-down-night)");
-    // Type on a solid Long or Short key: the night paper.
-    expect(chronos.get("--vex-alias-trade-ink")).toBe("var(--color-night)");
+  it("paints gains and losses in the sheet's type colours", () => {
+    // docs/design/H3-DESKTOP.md section 2.2: the sheet's --live and --err,
+    // replacing R3's night trading pair.
+    expect(chronos.get("--vex-alias-trade-up")).toBe("var(--color-h3-gain)");
+    expect(chronos.get("--vex-alias-trade-down")).toBe("var(--color-h3-loss)");
+    // Type on a solid Long or Short key: the ground.
+    expect(chronos.get("--vex-alias-trade-ink")).toBe("var(--color-h3-ground)");
   });
 
   it("projects the pair into its utilities through the aliases", () => {
@@ -329,13 +329,23 @@ describe("the trading pair and the night edge", () => {
   });
 
   it("keeps the trading primitives off every alias but the trading ones", () => {
-    // Status is a fill and a word, never a hue: no state, label, accent or
-    // rule alias may reach the trading pair.
+    // A status is a square and an ink word, never a gain or a loss: no state,
+    // label, accent or rule alias may reach the gain and loss pair, and only
+    // the status-mark and stamp aliases reach the status green and red.
     const offenders = [...chronos]
       .filter(([name]) => name.startsWith("--vex-alias-") && !name.startsWith("--vex-alias-trade-"))
-      .filter(([, value]) => /var\(--color-(?:up|down)(?:-night)?\)/.test(value))
+      .filter(([, value]) => /var\(--color-h3-(?:gain|loss)\)/.test(value))
       .map(([name]) => name);
     expect(offenders).toEqual([]);
+    const statusColour = [...chronos]
+      .filter(([, value]) => /var\(--color-h3-status-(?:green|red)\)/.test(value))
+      .map(([name]) => name)
+      .sort();
+    expect(statusColour).toEqual([
+      "--vex-alias-stamp-filled",
+      "--vex-alias-state-error-mark",
+      "--vex-alias-state-success-mark",
+    ]);
   });
 
   it("fills the primary key with the bare H3 blue, and its hover with the blue hover", () => {
