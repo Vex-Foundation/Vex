@@ -106,10 +106,11 @@
 .vex-shell-frame[data-dragging] {
   transition: none;
 }
-/* Each column's place: its own track, every row. In H3's frame (the agent
+/* Each column's place: its own track, every row, in R3's order (left |
+ * centre | Vex), which the Lighter desk keeps. In H3's frame (the agent
  * shell and Studio) the header (ShellHeader, title-bar.css) takes the first
- * row across every track and the columns stand under it; the Lighter desk
- * keeps R3's one row, its header box-less. */
+ * row across every track and the columns stand under it in H3's order; the
+ * Lighter desk keeps R3's one row, its header box-less. */
 .vex-shell-frame > .vex-left-page {
   grid-column: 1;
   grid-row: 1 / -1;
@@ -125,6 +126,14 @@
 .vex-shell-frame > .vex-shell-head {
   grid-column: 1 / -1;
   grid-row: 1;
+}
+/* H3's order (docs/design/H3-DESKTOP.md section 1): chats | Vex | chat, the
+ * Vex column between the chats and the chat; the DOM follows it (AppShell). */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-vex {
+  grid-column: 2;
+}
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-centre {
+  grid-column: 3;
 }
 .vex-shell-frame[data-vex-frame="h3"] > :is(.vex-left-page, .vex-shell-centre, .vex-shell-vex) {
   grid-row: 2 / -1;

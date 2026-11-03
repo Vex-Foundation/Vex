@@ -1,6 +1,8 @@
 /**
- * THE VEX SIDEBAR: the right column of the shell, Vex's own
- * (docs/design/R3-MINIMAL.md section 5). Information first, then her face:
+ * THE VEX SIDEBAR: Vex's own column, between the chats and the chat
+ * (docs/design/H3-DESKTOP.md section 1; the right-hand column on the Lighter
+ * desk), as R3 drew it (docs/design/R3-MINIMAL.md section 5). Information
+ * first, then her face:
  *
  *   aside[data-vex-area="vex-sidebar"][data-vex-vex-open]
  *     head            "Vex" and the hide key (44, a window drag row)
@@ -50,7 +52,7 @@
  */
 
 import { useEffect, useRef, useState, type JSX } from "react";
-import { LineBack, LinePanelRight } from "../../components/icons/line/index.js";
+import { LineBack, LinePanelLeft, LinePanelRight } from "../../components/icons/line/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { useProject } from "../../lib/api/projects.js";
 import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
@@ -224,7 +226,9 @@ function VexSidebarContent({
           onClick={() => requestVexHide(onHide)}
           className="vex-vs__key"
         >
-          <LinePanelRight size={16} />
+          {/* The panel the key folds, on the side it stands: the right on
+            * the Lighter desk, the left of the chat everywhere else. */}
+          {lighter ? <LinePanelRight size={16} /> : <LinePanelLeft size={16} />}
         </button>
       </header>
 
