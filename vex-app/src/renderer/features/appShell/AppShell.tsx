@@ -333,9 +333,13 @@ function ShellFrame({
       : { left: h3Cols.chats, center: h3Cols.chat, vex: h3Cols.vex };
   const colsRef = useRef(cols);
   colsRef.current = cols;
+  // Under 1024 Vex is the band under the header, over the chat
+  // (docs/design/H3-DESKTOP.md section 1.10): no track of her own, a row.
+  const band = h3Cols?.vexSeat === "band";
   // R3's derived auto-close: the stored choice stays `true`, the column
-  // collapses. H3 has none, so there the column is open exactly when asked.
-  const vexEffectiveOpen = !zen && vexOpen && cols.vex > 0;
+  // collapses. H3 has none, so there the column (or the band) is open
+  // exactly when asked.
+  const vexEffectiveOpen = !zen && vexOpen && (cols.vex > 0 || band);
   const rail = h3Cols === null ? cols.left <= RAIL_WIDTH : h3Cols.chatsRail;
   // What the left column's content renders: Lighter's drawer state, or the
   // solved column (open, or its rail).
@@ -380,7 +384,7 @@ function ShellFrame({
     // head | body | foot (docs/design/H3-DESKTOP.md section 1.1): the header
     // row holds the header's cells; the bottom row holds none yet, so it is 0.
     // The Lighter desk keeps R3's one-row frame, its title row its own.
-    gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: false }),
+    gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: false, band }),
     // The Lighter desk's title row reserves the caption buttons wherever the
     // right column under them is narrower than they are (lighter-desk.css).
     "--vex-vex-track": `${cols.vex}px`,
@@ -555,6 +559,7 @@ function ShellFrame({
       {welcomeStage ? null : (
         <VexSidebar
           open={zen ? zenAssistantOpen : vexEffectiveOpen}
+          seat={band ? "band" : "column"}
           onHide={() => {
             if (zen) setZenAssistantOpen(false);
             else setVexOpen(false);
@@ -579,6 +584,9 @@ function ShellFrame({
       // H3's frame (the header row over the columns) in the agent shell and
       // Studio; the Lighter desk keeps R3's until its own restyle.
       data-vex-frame={frameKind}
+      // Where Vex is drawn (H3): her column, the band under the header, or a
+      // page's strip; the band's row placement keys off it (shell.css).
+      data-vex-seat={h3Cols?.vexSeat}
       data-vex-tier={tier}
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}

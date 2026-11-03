@@ -440,3 +440,30 @@
     transition: none;
   }
 }
+
+/* THE BAND (docs/design/H3-DESKTOP.md section 1.10): under 1024 the same
+ * parts lie in one row under the header, over the chat, at the band's fixed
+ * height (H3_BAND_HEIGHT, the frame's row): the head row on top, then her
+ * state and Needs you, which scroll, beside her portrait, which crops to the
+ * row. The avatar switch stays in Settings. Her rule is under her. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="band"] {
+  border-right: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-vs[data-vex-seat="band"] .vex-vs__body {
+  flex-direction: row;
+}
+.vex-vs[data-vex-seat="band"] .vex-vs__info {
+  flex: 1 1 auto;
+  padding-bottom: 12px;
+}
+.vex-vs[data-vex-seat="band"] .vex-vs__spacer,
+.vex-vs[data-vex-seat="band"] .vex-vs__foot {
+  display: none;
+}
+.vex-vs[data-vex-seat="band"] .vex-vs-plate {
+  width: 176px;
+  height: auto;
+  border-top: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}

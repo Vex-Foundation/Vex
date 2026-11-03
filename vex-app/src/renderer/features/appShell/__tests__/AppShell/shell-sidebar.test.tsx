@@ -1072,6 +1072,25 @@ describe("AppShell", () => {
     ).toBe("76px 307px minmax(0, 1fr)");
   });
 
+  it("under 1024 seats Vex as the band under the header, over the chat", () => {
+    // docs/design/H3-DESKTOP.md section 1.10: no Vex track; a fourth row of
+    // the frame, a fixed 132, holds her over the chat's track.
+    setWindowWidth(1000);
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.getAttribute("data-vex-seat")).toBe("band");
+    expect(frame?.style.gridTemplateColumns).toBe("76px 0px minmax(0, 1fr)");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 132px minmax(0, 1fr) 0px");
+    const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
+    expect(aside?.getAttribute("data-vex-seat")).toBe("band");
+    expect(aside?.getAttribute("data-vex-vex-open")).toBe("true");
+    // A page has no band: the strip.
+    act(() => useUiStore.getState().navigate("portfolio"));
+    expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) 0px");
+  });
+
   it("under 1024 the band keeps the rail, with no Expand key to open it", () => {
     setWindowWidth(1000);
     useUiStore.setState({ activeSessionId: "s-1", leftOpen: true });

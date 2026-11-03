@@ -442,7 +442,22 @@ export interface ShellRows {
   readonly head: boolean;
   /** The bottom row stands. */
   readonly foot: boolean;
+  /**
+   * Vex's band stands under the header, over the chat (the band layout's
+   * vexSeat "band", section 1.10): a fourth row between the header and the
+   * body, H3_BAND_HEIGHT high.
+   */
+  readonly band?: boolean;
 }
+
+/**
+ * Vex's band under 1024 (docs/design/H3-DESKTOP.md section 1.10), chosen for
+ * S2-08 where H3 prints no desktop height: the column's own head row (44)
+ * and one 88 row of her state, Needs you and her portrait. A function of
+ * nothing: the band rests whatever she says or shows, so a card under it
+ * never moves when a turn starts, ends or waits.
+ */
+export const H3_BAND_HEIGHT = 132;
 
 /**
  * The bottom row's height: measured, its top rule at y 827 to 828 of the
@@ -451,11 +466,12 @@ export interface ShellRows {
  */
 export const H3_FOOT_HEIGHT = 72;
 
-/** The grid's row template: head | body | foot. */
+/** The grid's row template: head | body | foot, or head | band | body | foot. */
 export function shellGridTemplateRows(rows: ShellRows): string {
   const head = rows.head ? "var(--head-h)" : "0px";
   const foot = rows.foot ? `${String(H3_FOOT_HEIGHT)}px` : "0px";
-  return `${head} minmax(0, 1fr) ${foot}`;
+  const band = rows.band === true ? ` ${String(H3_BAND_HEIGHT)}px` : "";
+  return `${head}${band} minmax(0, 1fr) ${foot}`;
 }
 
 /**
