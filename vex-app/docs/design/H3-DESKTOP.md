@@ -2,7 +2,7 @@
 
 VEX Desktop's next look, H3, is a grid of square cells on a near-black ground: the chats column on the left, Vex's column in the middle, the chat on the right, one header row across all three and one bottom row under them. Vex's column holds the Vex key, her console and Kimm's section, the illustrated figure the person opens and closes. Opening or closing her section never moves a waiting money card.
 
-This document is the desktop's contract for H3, in the shape of `R3-MINIMAL.md`. R3-MINIMAL stays the source of truth for a screen until the slice that restyles it lands (the revamp plan's build order); the last slice points R3-MINIMAL here. Once a slice lands, code comments cite this file as `docs/design/H3-DESKTOP.md section N`.
+This document is the desktop's contract for H3, in the shape of `R3-MINIMAL.md`. R3-MINIMAL stays the source of truth for a screen until the slice that restyles it lands; the last slice points R3-MINIMAL here. Once a slice lands, code comments cite this file as `docs/design/H3-DESKTOP.md section N`. Row IDs such as S1-03 are the feature rows of the revamp plan (`.context/revamp-ui-plan.md`, kept locally by the lead), one commit each.
 
 The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 November 2026. Cloud builds the same design in `Jcaster99/Vex` (`apps/web`). No H3 branch was on that remote on 3 November 2026, so both apps start from the same mockup; wherever this document derives a number the mockup does not print, the number is reconciled with Cloud once Cloud's branch exists.
 
@@ -221,3 +221,107 @@ H3 draws the band only on the phone and prints one box at 900. What is known:
 Desktop's default, derived for S2-08: the 76 header with the rail's cell (the mark), the Vex key, the chat title, the network cell and the caption reserve; the console line across the window right of the rail; her band under the console line while open; the chat under that.
 
 Open: the band's heights at a desktop width; whether the band may stand open over a waiting card (the proof's narrow rows were read with "states closed"); the header cells at this width. Settled in the harness at 1000 x 720 and with Cloud.
+
+---
+
+## 2. Tokens and type
+
+### 2.1 Colour
+Two sources: the review sheet's own CSS tokens (the mockup page that frames the plates, drawn in the same language as the app screens) and what the app captures show. The sRGB values are converted from the sheet's OKLCH. Role names here are roles; S1-03 sets the names in `tokens.css`.
+
+| Role | Sheet token and value | sRGB | App captures, measured | Desktop takes |
+|---|---|---|---|---|
+| ground | `--page` oklch(9% 0.012 264); `--panel` oklch(8.5% 0.008 264) | #020205; #010203 | #000002 to #020202 (OKLCH 7 to 8.5%) in every column, no readable hue | oklch(8.5% 0.008 264), #010203 |
+| cell | `--cell` oklch(11% 0.006 264) | #040406 | #050407: the New chat cell, the composer's model cell, the greyed approve key | the sheet value |
+| raised | `--raised` oklch(13% 0.004 264) | #070709 | #070709: the REVIEW and REJECT keys | the sheet value |
+| raised 2 | none | | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell; #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
+| bubble | none | | #212325 (25.5%): the person's message bubble; #151718 (20%): their avatar disc | #212325 |
+| selected row | none | | a gradient from #181A1C (21.6%) at the chats column's left edge to the ground at its right | as measured |
+| ink | `--ink` oklch(97% 0.005 264) | #F3F5F9 | glyph peaks up to #FFFFFF | the sheet value |
+| ink 2 | `--ink-2` oklch(80% 0.012 264) | #BABEC6 | "Nothing needs you." and Portfolio's lead line peak at #ABADAE, read as ink 2 | the sheet value |
+| muted | `--muted` oklch(62% 0.02 264) | #808693 | group heads and times peak at #8B8D91 to #9C9E9D, at or a little above the sheet value | the sheet value |
+| rule | `--rule` oklch(100% 0 0 / 0.07) | #131415 over the ground | #0E0E10 to #101211 | the sheet value |
+| chosen rule | `--rule-chosen` oklch(100% 0 0 / 0.24) | #3E3F3F over the ground | #2F3133 above TOTAL DEBIT; #38373A on keycap borders | the sheet value |
+| blue | `--blue` oklch(45.2% 0.313 264.1) | #0000FF | #0000FF: SEND, Portfolio's LIVE · MAINNET key | the sheet value |
+| blue hover | `--blue-hover` oklch(56% 0.28 264) | #1557FF | not drawn | the sheet value |
+| gain | `--live` oklch(78% 0.13 150) | #76CF8A | Portfolio's +$182.40 peaks at #88D09E | the sheet value, as type |
+| loss | `--err` oklch(74% 0.17 27) | #FF7A6E | no loss is drawn as type | the sheet value, as type |
+| status green | none | | #1B813F (a square), #1D7E3F (the FILLED stamp): about oklch(52% 0.13 150) | #1D7E3F |
+| status red | none | | #C22226 (a square): about oklch(53% 0.19 27) | #C22226 |
+| status grey | none | | #8F9190 (RUNNING in the chats list); #3B3D3D (RUNNING in recent activity) | muted |
+
+Where the app screens differ from the sheet:
+1. **The ground is closer to black.** It matches `--panel` (8.5%) better than `--page` (9%) and shows no blue tint at WebP's resolution; the two differ by one to three sRGB steps. Desktop's ground is #010203. The window's `backgroundColor` (`src/main/windows/main-window.ts`, today `#1b1412`) and the Windows caption overlay colour (`src/main/windows/chrome-options.ts`, today `#1B1412`) take the same value, since the theme-matrix test ties them to the ground (S1-06).
+2. **There are raised steps above `--raised`.** The bubbles, the selected tab and the open fold cell use fills between 15 and 26% that the sheet has no token for. Desktop adds raised 2 and bubble as measured.
+3. **Status fills are darker than `--live` and `--err`.** The sheet's green and red are type colours, which the app uses for gains and losses; the status squares and the FILLED stamp use a darker green and red.
+4. **Two greys mark running.** Desktop uses muted for every running or pending square.
+
+Open: the exact values of every "none" row and of the ground. Settled by the mockup source from the designer; the measured values stand until then.
+
+### 2.2 Status
+A status is a square of about 6px and a word in caps, 13, ink. (The words' glyph peaks, #CED0CF to #DDDFDE, are lighter than ink 2, so they are ink.)
+
+| Status | Square | H3's word | Where H3 draws it |
+|---|---|---|---|
+| filled | status green | FILLED | recent activity; the receipt's stamp, a green fill with a white word |
+| running | status grey | RUNNING | the chats list, recent activity |
+| waiting | ink | WAITING | the chats list |
+| did not execute | status red | DID NOT EXECUTE | recent activity |
+| Vex's state | ink; an outline at Ready | READY, THINKING, WAITING FOR APPROVAL, DONE | the Vex key |
+
+Desktop's true words for these are in Appendix A.
+
+Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.
+
+The REAL FUNDS stamp in a card is an ink fill with ground-coloured caps (12) and a hatch glyph, about 105 x 23. In the header the same glyph and words stand without the fill.
+
+Contrast on the ground (#010203), computed from the values above:
+
+| Pair | Ratio |
+|---|---|
+| ink, ink 2, muted on the ground | 19.0, 11.1, 5.7 |
+| gain, loss on the ground | 10.9, 8.2 |
+| white on blue, on blue hover | 8.6, 5.5 |
+| white on status green, on status red | 5.1, 5.9 |
+| status green, status red squares on the ground | 4.1, 3.5 (marks beside a word: above the 3:1 for graphics) |
+| blue on the ground | 2.4: blue is never type on the ground |
+
+### 2.3 Type
+- **Families.** Be Vietnam Pro, 400 and 600, for every word. Roboto Mono 400 with tabular figures for figures, balances, addresses, the money card's field labels and the receipt's labels. Both are bundled as local woff2 files with their licences (S1-01, S1-02). Instrument Sans and Instrument Serif retire. Terminals and code keep `--font-code` (JetBrains Mono) until Studio's own plate says otherwise (section 4.9).
+- **Labels.** Caps with 0.08em tracking (the sheet's value; the measured widths were not checked against the font files). Labels are sans, except the money card's and the receipt's field labels, which are mono caps. Mono with caps, banned by R3's `shell-design-guard.test.ts`, is H3's style for those labels.
+- **Weights,** read by eye: 600 for section heads (NEEDS YOU, CHATS, AI PERMISSION, RECENT ACTIVITY, Portfolio's EQUITY, ALLOCATION and OPEN POSITIONS), the tagline and Portfolio's equity figure; 400 for everything else.
+- **Links** are ink with an underline ("Change in Settings"), never blue.
+
+Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70em and Roboto Mono's as 0.711em. One image pixel of cap height is 1.3px of size at this scale, so each size is plus or minus 1. The sheet's own labels run 12 to 13; the app's labels measure 11 to 14.
+
+| Use | Face, size, weight | Captures |
+|---|---|---|
+| Portfolio's equity figure | sans 33, 600 | portfolio |
+| Portfolio's tile figures | sans 24, 400; gains in the gain colour | portfolio |
+| the card's sentence; the Needs you row's decision; the tagline | sans 20; the tagline 600 in caps, its second clause muted | approval, welcome |
+| the greeting; the reason field | sans 18, 400 | welcome, approval |
+| suggestion titles; the composer field; the person's message; the permission sentence | sans 16 to 17, 400 | welcome, approval |
+| rows: chat rows, "Search chats", the chat title, "Nothing needs you.", activity rows, the card's consequence line, "You"; REVIEW and the page tabs; nav labels | sans 15 (nav labels 14 to 15), caps where they are keys or labels | welcome, approval, portfolio |
+| the state word, MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
+| HIDE VEX or SHOW VEX in the Vex key, CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
+| the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 13, caps | approval |
+| group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY, keycap letters | sans 11 to 12, caps (times are figures) | welcome |
+| a tag inside a row (MAINNET on a strategy row) | sans 10, caps | welcome |
+| figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
+
+Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source.
+
+### 2.4 Cells, rules and keys
+- Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
+- A cell's text sits 24 in from its left edge (section 1.3).
+- **Primary key:** the blue fill with white caps, 14 (SEND; the card's decision key). One blue cell in view at a time. Hover takes blue hover.
+- **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
+- **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
+- **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
+- **Keycaps:** 19 high, a 1px chosen-rule border, caps letters 11 to 12, 3 to 4 apart; CTRL about 40 wide, SHIFT about 42, B about 23 (measured). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
+- **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
+- **Switch** (strategy rows; not on desktop): 36 x 20, a 1px light border, the thumb a light square at the right when on.
+- **Tick box** (the card's middle cell; not on desktop, section 4.3): 18 x 18, a 1px light border.
+- **The receipt's stamp:** a status green fill with white caps (FILLED), about 60 x 24 on the phone capture.
+
+These replace R3's tokens and its guard contracts: the 23 primitives and both themes in `theme-matrix.test.ts`, the sentence-case register in `micro-label-register.test.ts`, the mono-caps ban in `shell-design-guard.test.ts` and status by fill in `status-contrast.test.ts`. Each is rewritten as an H3 contract in the slice that changes what it guards.
