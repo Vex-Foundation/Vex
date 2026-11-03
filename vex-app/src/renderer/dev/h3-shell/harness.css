@@ -1,0 +1,31 @@
+/* The renderer's own stylesheet, verbatim, plus the source glob Tailwind
+ * would otherwise infer from the Vite root.
+ *
+ * `vite.h3-shell.config.ts` roots the dev server at THIS directory, so
+ * Tailwind's automatic content detection would scan only the harness and emit
+ * none of the utilities the shell's components carry - a shell drawn without
+ * its `flex`, `h-full` and `min-w-0` is a layout the product does not have.
+ * `@source` points it back at the whole renderer tree, which is exactly what
+ * `vite.renderer.config.ts` gives it. */
+@import "../../styles/globals.css";
+@source "../../";
+
+/* THE WINDOW. The harness page IS the Electron window's content area: the
+ * frame takes the viewport exactly, never scrolls, and paints the shell's own
+ * ground, so a capture at 1440x900 is the window at 1440x900 and nothing the
+ * harness adds can move a column. Everything inside it is the product's. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.vex-h3-harness {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+}

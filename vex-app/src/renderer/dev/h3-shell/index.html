@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" data-vex-theme="chronos">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The product CSP with the renderer dev server's own relaxations and
+      nothing else: Vite's HMR client and the React refresh preamble need
+      inline script and eval, and its injected styles need inline style
+      (`vite.renderer.config.ts`, devCspRelaxer). `img-src` stays the
+      product's `'self' data:` and `connect-src` reaches only this server, so
+      a capture can never depend on a request that left the machine. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://127.0.0.1:5274 http://127.0.0.1:5274; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    />
+    <title>Vex H3 shell harness</title>
+    <link
+      rel="preload"
+      href="/fonts/instrument-sans-latin-var.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./harness.tsx"></script>
+  </body>
+</html>
