@@ -808,6 +808,39 @@ describe("AppShell", () => {
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
+  it("keeps the Lighter desk's chat on the right, its drag handle on the chat's left edge", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false, vexOpenLighter: true });
+    useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.getAttribute("data-vex-frame")).toBe("r3");
+    // R3's order, in the DOM as on screen: rail | desk | chat.
+    const order = Array.from(frame?.children ?? [])
+      .map((el) =>
+        el.classList.contains("vex-left-page") ? "chats"
+          : el.classList.contains("vex-shell-vex") ? "vex"
+            : el.classList.contains("vex-shell-centre") ? "chat"
+              : null,
+      )
+      .filter((name) => name !== null);
+    expect(order).toEqual(["chats", "chat", "vex"]);
+    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 461px");
+    // One frame row, no header row: the desk's title row is its own.
+    expect(frame?.style.gridTemplateRows).toBe("0px minmax(0, 1fr) 0px");
+    // The handle grips the chat's left edge: 1440 - 461.
+    const handle = screen.getByRole("separator", { name: "Resize the Vex panel" });
+    expect(handle.style.left).toBe("979px");
+    // A step to the left widens the chat on the right.
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(frame?.style.gridTemplateColumns).toMatch(/^56px minmax\(0, 1fr\) 4\d\dpx$/);
+    const after = Number(/(\d+)px$/.exec(frame?.style.gridTemplateColumns ?? "")?.[1]);
+    expect(after).toBeGreaterThan(461);
+    act(() => {
+      useUiStore.getState().setRuntimeMode("agent");
+      useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
+    });
+  });
+
   it("sizes the Lighter agent independently from the portfolio preference", () => {
     const previousBookWidth = useUiStore.getState().bookWidth;
     useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false, vexOpenLighter: true, bookWidth: 300 });

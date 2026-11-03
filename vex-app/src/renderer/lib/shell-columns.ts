@@ -354,6 +354,36 @@ export function h3GridTemplateColumns(cols: H3ShellColumns): string {
 }
 
 /**
+ * THE FRAME PER MODE. The agent shell and Studio stand in H3's frame: the
+ * header row over the columns and the columns in H3's order, chats | Vex |
+ * chat. The Lighter desk keeps R3's frame until its own restyle
+ * (docs/design/H3-DESKTOP.md section 4.9): one row, its title row its own,
+ * and its chat on the right, rail | desk | chat, where its chat share drag
+ * handle grips the chat's left edge.
+ */
+export type ShellFrameKind = "h3" | "r3";
+
+/** One column of the frame, by what it holds. */
+export type ShellColumnName = "chats" | "vex" | "chat";
+
+/** The frame a mode stands in. */
+export function shellFrameKind(mode: ShellMode): ShellFrameKind {
+  return mode === "lighter" ? "r3" : "h3";
+}
+
+const H3_ORDER: readonly ShellColumnName[] = ["chats", "vex", "chat"];
+const R3_ORDER: readonly ShellColumnName[] = ["chats", "chat", "vex"];
+
+/**
+ * The columns left to right in a mode, which is also their DOM order, so
+ * focus follows the screen. In H3's the Vex column is the second track; on
+ * the Lighter desk it is the last, the desk's chat on the right.
+ */
+export function shellColumnOrder(mode: ShellMode): readonly ShellColumnName[] {
+  return shellFrameKind(mode) === "h3" ? H3_ORDER : R3_ORDER;
+}
+
+/**
  * THE FRAME'S ROWS (docs/design/H3-DESKTOP.md section 1.1): one header row
  * across the window, the columns' body, and one bottom row across the window.
  *
