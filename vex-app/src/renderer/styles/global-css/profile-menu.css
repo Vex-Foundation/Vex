@@ -14,7 +14,8 @@
  * `animationend`. */
 
 .vex-prof {
-  --prof-sel: rgba(163, 171, 255, 0.1);
+  /* The H3 selected step (R3 spelled a periwinkle literal here). */
+  --prof-sel: var(--vex-alias-interactive-active);
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 16px;
   column-gap: 10px;
@@ -134,7 +135,7 @@
   color: var(--vex-alias-label-secondary);
 }
 .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
-  background: rgba(163, 171, 255, 0.1);
+  background: var(--vex-alias-interactive-active);
 }
 .vex-profile-menu--panel .vex-menu-separator {
   margin: 6px 0;

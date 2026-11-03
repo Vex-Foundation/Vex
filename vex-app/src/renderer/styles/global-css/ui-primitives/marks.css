@@ -304,5 +304,5 @@ html[data-still] .vex-loader__segment {
 }
 
 .vex-loader--paper {
-  --vex-loader-ink: var(--color-paper);
+  --vex-loader-ink: var(--vex-alias-label-primary);
 }

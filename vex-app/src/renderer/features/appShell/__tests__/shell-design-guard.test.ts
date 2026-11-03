@@ -67,7 +67,12 @@
  *      the eagle or bird art;
  *   9. no citation of the retired V10 spread document anywhere in the app;
  *  10. the trading colours (`trade-up`, `trade-down`) only in the Lighter,
- *      Portfolio, Board and Agent Scan sources and their sheets.
+ *      Portfolio, Board and Agent Scan sources and their sheets;
+ *  11. no colour literal and no primitive in any sheet but tokens.css: a
+ *      sheet paints through the alias tier, so a palette change reaches
+ *      every surface (the H3 look moved nine sheets' strays onto tokens). The
+ *      one exception is the candle pair on the Lighter chart's canvas host;
+ *      the terminal's wire-contract slots live in tokens.css itself.
  *
  * The radius, shadow and blur bans stay where they are: the patterns above
  * for the call sites, `styles/global-css/__tests__/glass-tokens.test.ts` for
@@ -661,6 +666,29 @@ function isTradeSource(file: string): boolean {
   return TRADE_SOURCE_PREFIXES.some((prefix) => file.startsWith(prefix));
 }
 
+/** 11. Colour literals and primitives in a declaration value. */
+const COLOUR_LITERAL = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/i;
+const PRIMITIVE_REF = /var\(--color-(?:white|black|paper|blue|blue-hi|night-0|night|night-1|night-2|type-2|type-3|peri|peri-hi|candle-up|candle-down|h3-[a-z0-9-]+)\)/;
+/** The sanctioned primitive references outside tokens.css, by file and property. */
+const PRIMITIVE_EXCEPTIONS = new Set([
+  "lighter-tokens.css :: --lit-candle-up",
+  "lighter-tokens.css :: --lit-candle-down",
+]);
+
+/** Each declaration in a sheet that spells a colour or reaches a primitive. */
+function strayColours(file: string, css: string): string[] {
+  const offenders: string[] = [];
+  for (const match of stripCssComments(css).matchAll(/([a-z-]+)\s*:\s*([^;{}]+);/gi)) {
+    const property = match[1] ?? "";
+    const value = (match[2] ?? "").replace(/url\([^)]*\)/g, "");
+    if (COLOUR_LITERAL.test(value)) offenders.push(`${file} :: ${property}: ${value.trim()}`);
+    else if (PRIMITIVE_REF.test(value) && !PRIMITIVE_EXCEPTIONS.has(`${file} :: ${property}`)) {
+      offenders.push(`${file} :: ${property}: ${value.trim()}`);
+    }
+  }
+  return offenders;
+}
+
 describe("shell design guard (R3 bans)", () => {
   it("scans the renderer's code and sheets", () => {
     // Sanity: a broken walk cannot silently pass every ban below.
@@ -737,6 +765,26 @@ describe("shell design guard (R3 bans)", () => {
     expect(scanned.map((c) => c.file)).toContain("docs/design/R3-MINIMAL.md");
     const offenders = scanned.filter((c) => V10_DOC.test(c.text)).map((c) => c.file);
     expect(offenders).toEqual([]);
+  });
+
+  it("spells no colour and reaches no primitive in any sheet but tokens.css", () => {
+    const offenders = RENDERER_SHEETS.filter((c) => c.file !== "tokens.css").flatMap((c) =>
+      strayColours(c.file, c.text),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads a stray colour in every form it takes, and lets the aliases and the candle host pass", () => {
+    expect(strayColours("x.css", ".a { color: #a3abff; }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { --sel: rgba(163, 171, 255, 0.1); }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { background: var(--color-night-0); }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { background: var(--color-h3-ground); }")).toHaveLength(1);
+    expect(strayColours("x.css", ".a { color: var(--vex-alias-label-primary); }")).toEqual([]);
+    expect(strayColours("x.css", ".a { background: url(/art/grain.svg); }")).toEqual([]);
+    expect(strayColours("x.css", "html, body, #root { height: 100%; }")).toEqual([]);
+    expect(
+      strayColours("lighter-tokens.css", ".c { --lit-candle-up: var(--color-candle-up); }"),
+    ).toEqual([]);
   });
 
   it("keeps the trading colours on the Lighter, Portfolio, Board and Agent Scan surfaces", () => {
