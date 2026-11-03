@@ -17,6 +17,8 @@ import {
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
+  shellColumnOrder,
+  shellFrameKind,
   shellGridTemplateRows,
   shellHeadTemplateColumns,
   type H3ShellColumns,
@@ -295,6 +297,20 @@ describe("invariants", () => {
     expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the frame per mode", () => {
+  it("stands the agent shell and Studio in H3's order: chats | Vex | chat", () => {
+    for (const mode of ["agent", "studio"] as const) {
+      expect(shellFrameKind(mode)).toBe("h3");
+      expect(shellColumnOrder(mode)).toEqual(["chats", "vex", "chat"]);
+    }
+  });
+
+  it("keeps the Lighter desk's chat on the right until its own restyle", () => {
+    expect(shellFrameKind("lighter")).toBe("r3");
+    expect(shellColumnOrder("lighter")).toEqual(["chats", "chat", "vex"]);
   });
 });
 

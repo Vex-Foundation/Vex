@@ -58,9 +58,12 @@ import {
   RAIL_WIDTH,
   computeShellColumns,
   lighterChatDragMax,
+  shellColumnOrder,
+  shellFrameKind,
   shellGridTemplateRows,
   shellHeadTemplateColumns,
   shellTier,
+  type ShellColumnName,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
 import { SessionCreator } from "./SessionCreator.js";
@@ -335,7 +338,11 @@ function ShellFrame({
     [viewport, saveLighterDesk],
   );
   // The sidebars have fixed widths; the one drag left is Lighter's chat share.
+  // The desk keeps its chat on the right (`shellColumnOrder`), so the handle
+  // grips the chat's left edge, `viewport - cols.vex` from the frame's left,
+  // and a drag to the left (dx < 0) widens it.
   const chatHandle = lighter && vexEffectiveOpen;
+  const frameKind = shellFrameKind(runtimeMode);
 
   const networkOnline = useNetworkOnline();
 
@@ -373,7 +380,7 @@ function ShellFrame({
   });
 
   // The three columns, each keyed so a change of order moves its node and
-  // never remounts it.
+  // never remounts it, in the order `shellColumnOrder` gives the mode.
   /* TRACK 1 - the left sidebar, the chats column: the sessions sidebar
    * (agent), the projects and explorer (Studio), its rail on the Lighter desk.
    * The column stays overflow-visible so nothing the sidebar opens is
@@ -531,6 +538,12 @@ function ShellFrame({
     </div>
   );
 
+  const columnOf: Readonly<Record<ShellColumnName, JSX.Element>> = {
+    chats: leftColumn,
+    vex: vexColumn,
+    chat: centreColumn,
+  };
+
   return (
     <div
       ref={frameRef}
@@ -539,7 +552,7 @@ function ShellFrame({
       data-vex-area="shell-frame"
       // H3's frame (the header row over the columns) in the agent shell and
       // Studio; the Lighter desk keeps R3's until its own restyle.
-      data-vex-frame={lighter ? "r3" : "h3"}
+      data-vex-frame={frameKind}
       data-vex-tier={tier}
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
@@ -575,7 +588,7 @@ function ShellFrame({
         * chats | Vex | chat in the agent shell and Studio, so Vex's column
         * comes before the chat in focus order too; the Lighter desk keeps
         * R3's rail | desk | chat until its own restyle. */}
-      {lighter ? [leftColumn, centreColumn, vexColumn] : [leftColumn, vexColumn, centreColumn]}
+      {shellColumnOrder(runtimeMode).map((name) => columnOf[name])}
 
       {chatHandle ? (
         <ShellDragHandle
