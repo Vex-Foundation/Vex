@@ -1,5 +1,8 @@
 /**
- * THE RESOLVED THEME, per theme attribute, against the REAL stylesheet.
+ * THE RESOLVED THEME against the REAL stylesheet, in the one room. The app is
+ * dark only (H3), so there is no attribute flip left to follow: the suite
+ * proves the one palette resolves whole, answers OSC 11 as dark, and that a
+ * stray theme attribute moves nothing.
  *
  * `terminal-palette-tokens.test.ts` pins the token contract as CSS text. This
  * suite is the other half, in the shape VS Code's `xtermTerminal.test.ts`
@@ -51,7 +54,7 @@ function terminalThemeFixture(): string {
   const rootAt = source.indexOf(":root {");
   const inherited = declarations(source.slice(0, rootAt));
   const rules: string[] = [];
-  for (const match of source.matchAll(/(^:root|^\[data-vex-theme="celeris"\]) \{([\s\S]*?)^\}/gm)) {
+  for (const match of source.matchAll(/(^:root) \{([\s\S]*?)^\}/gm)) {
     const selector = match[1] ?? "";
     const own = declarations(match[2] ?? "");
     const values = new Map([...inherited, ...own]);
@@ -160,12 +163,8 @@ function classifyOsc11Reply(reply: string): { rgb: [number, number, number]; the
   return { rgb, theme: weighted > 0.5 ? "light" : "dark" };
 }
 
-function setTheme(theme: "chronos" | "celeris"): void {
-  if (theme === "chronos") {
-    document.documentElement.removeAttribute("data-vex-theme");
-  } else {
-    document.documentElement.setAttribute("data-vex-theme", theme);
-  }
+function setTheme(theme: string): void {
+  document.documentElement.setAttribute("data-vex-theme", theme);
 }
 
 beforeAll(() => {
@@ -185,10 +184,7 @@ afterEach(() => {
 });
 
 describe("readTerminalTheme against the real stylesheet", () => {
-  it.each([
-    ["chronos", "dark"],
-    ["celeris", "light"],
-  ] as const)("resolves the whole theme in %s and answers OSC 11 as %s", (theme, expected) => {
+  it.each([["chronos", "dark"]] as const)("resolves the whole theme in %s and answers OSC 11 as %s", (theme, expected) => {
     setTheme(theme);
     const typed = readTerminalTheme(document.documentElement);
     const resolved: Record<string, unknown> = { ...typed };
@@ -213,28 +209,27 @@ describe("readTerminalTheme against the real stylesheet", () => {
     expect(claudeCodeClassifies(background)).toBe(expected);
     // The glyph colour under a block cursor reuses the background token.
     expect(resolved["cursorAccent"]).toBe(background);
-    expect(typed.foreground).toBe(theme === "celeris" ? "#0a0d18" : "#f3f4f7");
-    expect(typed.cursor).toBe(theme === "celeris" ? "#0000c0" : "#a3abff");
-    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe(theme === "celeris" ? "rgba(0,0,192,0.14)" : "rgba(163,171,255,0.3)");
+    expect(typed.foreground).toBe("#f3f4f7");
+    expect(typed.cursor).toBe("#a3abff");
+    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe("rgba(163,171,255,0.3)");
     expect(typed.selectionForeground).toBeUndefined();
   });
 
-  it("re-resolves to the other theme's surface when the root attribute flips", () => {
+  it("resolves the same dark surface whatever the root attribute says", () => {
+    // The light room retired: a stale `celeris` attribute (an old dev
+    // harness, a hand edit) and no attribute at all resolve the one palette.
     setTheme("chronos");
-    const dark = readTerminalTheme(document.documentElement);
-    setTheme("celeris");
-    const light = readTerminalTheme(document.documentElement);
-
-    expect(dark.background).not.toBe(light.background);
-    expect(dark.foreground).not.toBe(light.foreground);
-    expect(claudeCodeClassifies(dark.background ?? "")).toBe("dark");
-    expect(claudeCodeClassifies(light.background ?? "")).toBe("light");
+    const room = readTerminalTheme(document.documentElement);
+    for (const stray of ["celeris", ""]) {
+      setTheme(stray);
+      expect(readTerminalTheme(document.documentElement)).toEqual(room);
+    }
+    document.documentElement.removeAttribute("data-vex-theme");
+    expect(readTerminalTheme(document.documentElement)).toEqual(room);
+    expect(claudeCodeClassifies(room.background ?? "")).toBe("dark");
   });
 
-  it.each([
-    ["chronos", "dark"],
-    ["celeris", "light"],
-  ] as const)("the OSC 11 reply bytes for %s classify as %s without a pty", (theme, expected) => {
+  it.each([["chronos", "dark"]] as const)("the OSC 11 reply bytes for %s classify as %s without a pty", (theme, expected) => {
     setTheme(theme);
     const background = readTerminalTheme(document.documentElement).background ?? "";
     const reply = osc11ReplyBytes(background);
@@ -258,7 +253,7 @@ describe("readTerminalTheme against the real stylesheet", () => {
     expect(classifyOsc11Reply(reply).theme).toBe("dark");
   });
 
-  it.each(["chronos", "celeris"] as const)("creates in %s and updates a running xterm's OSC 10/11 replies while retaining its buffer", async (initialTheme) => {
+  it.each(["chronos"] as const)("creates in %s and keeps a running xterm's OSC 10/11 replies while retaining its buffer", async (initialTheme) => {
     setTheme(initialTheme);
     const registry = new TerminalRegistry({
       webglLoader: () => Promise.reject(new Error("no WebGL in jsdom")),
@@ -270,10 +265,11 @@ describe("readTerminalTheme against the real stylesheet", () => {
       expect(entry.terminal.options.minimumContrastRatio).toBe(4.5);
       expect(entry.terminal.options.allowTransparency).toBe(false);
       await new Promise<void>((resolve) => entry.terminal.write("client remains running", resolve));
+      // A stray attribute write still publishes, and still answers the one
+      // dark surface.
       for (const [theme, background, foreground] of [
-        ["celeris", "#ffffffff", "#0a0d18ff"],
+        ["celeris", "#221a17ff", "#f3f4f7ff"],
         ["chronos", "#221a17ff", "#f3f4f7ff"],
-        ["celeris", "#ffffffff", "#0a0d18ff"],
       ] as const) {
         setTheme(theme);
         // MutationObserver publication happens at the microtask checkpoint.
@@ -295,7 +291,7 @@ describe("readTerminalTheme against the real stylesheet", () => {
     }
   });
 
-  it.each(["chronos", "celeris"] as const)("retains SGR 90, dim and reverse-video cell semantics in %s", async (theme) => {
+  it.each(["chronos"] as const)("retains SGR 90, dim and reverse-video cell semantics in %s", async (theme) => {
     setTheme(theme);
     const registry = new TerminalRegistry({
       webglLoader: () => Promise.reject(new Error("no WebGL in jsdom")),

@@ -30,10 +30,6 @@
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
 }
-[data-vex-theme="celeris"] .vex-ls {
-  --ls-sel: rgba(0, 0, 192, 0.075);
-  --ls-mark: rgba(0, 0, 192, 0.14);
-}
 /* Keyboard focus: the focus ring, inside the control so the column's edge
  * never clips it. The search field keeps its own blue border. */
 .vex-ls :focus-visible:not(input) {

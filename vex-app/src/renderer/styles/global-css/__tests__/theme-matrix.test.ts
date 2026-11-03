@@ -1,24 +1,28 @@
 /**
- * Theme-matrix contract for the token sheet (R3 Minimal on the V10 colours),
- * both rooms.
+ * Theme-matrix contract for the token sheet: ONE room. H3 is dark only (the
+ * H3 revamp plan, decision 6), so the matrix this file used to hold, every
+ * alias in a dark and a light block, collapsed to a single column, and the
+ * contract is that it stays single.
  *
  * This is a CSS-TEXT contract test, not a render test: jsdom resolves no
  * cascade for Tailwind-emitted utilities, and the invariant we care about
  * lives in the stylesheet sources, not in any one component. It asserts:
  *
- *   1. the static tier holds exactly the primitives, at their values
- *      (paper, ink and the one blue; Night Ledger; the candle pair; the
- *      trading pair, two per room), and the trading aliases and the night
- *      edge on blue fills point at the right room's values;
- *   2. every `--vex-alias-*` is declared in BOTH theme blocks, so no alias
- *      can ship one-room-only, and an alias names a primitive or another
- *      alias, never a raw hex (the terminal's wire-contract slots excepted);
- *   3. the pre-shell plate paints an ALIAS, never a colour literal, and the
- *      chronos plate equals the main-window `backgroundColor`, so first paint
- *      and the plate are one surface; on the night print every stage type is
- *      paper (the counter's contrast fix);
+ *   1. the static tier holds exactly the primitives, at their values (the
+ *      website paper and the one blue; Night Ledger; the candle pair; the
+ *      night trading pair; the H3 set, each held to the design sheet's
+ *      oklch), and the trading aliases and the edge on blue fills point at
+ *      their values;
+ *   2. the alias tier is the :root block alone: no sheet re-points it under a
+ *      theme attribute or the OS colour scheme, and an alias names a
+ *      primitive or another alias, never a raw hex (the terminal's
+ *      wire-contract slots excepted);
+ *   3. the pre-shell plate paints an ALIAS, never a colour literal, and it
+ *      equals the main-window `backgroundColor`, so first paint and the plate
+ *      are one surface; on the night print every stage type is paper (the
+ *      counter's contrast fix);
  *   4. the `[data-vex-gate]` scope re-pins its projections from aliases;
- *   5. the Studio file viewer's code tokens are declared in both themes.
+ *   5. the Studio file viewer's code tokens are all declared.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -54,9 +58,27 @@ function ruleBody(css: string, selector: string): string {
 const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const staticTier = stripComments(ruleBody(tokensCss, "@theme"));
+/** The one room: the alias tier on :root. */
 const chronosBlock = ruleBody(tokensCss, ":root");
-const celerisBlock = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 const gateScopeBlock = ruleBody(gateCss, '[data-vex-gate="true"]');
+
+/** Every stylesheet under styles/global-css, by posix path, comments kept. */
+function allSheets(): ReadonlyArray<readonly [string, string]> {
+  const base = path.join(here, "..");
+  const found: Array<readonly [string, string]> = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") walk(full);
+      } else if (entry.name.endsWith(".css")) {
+        found.push([path.relative(base, full).split(path.sep).join("/"), readFileSync(full, "utf8")]);
+      }
+    }
+  };
+  walk(base);
+  return found;
+}
 
 /** `name -> value` for every custom property a block declares. */
 function declarations(body: string): Map<string, string> {
@@ -142,17 +164,14 @@ function oklchToHex(lightness: number, chroma: number, hue: number): string {
 }
 
 /**
- * The primitives, and nothing else: the V10 colours (docs/design/R3-MINIMAL.md
- * section 1) plus the trading pair, two per room, and the H3 set.
+ * The primitives, and nothing else: the V10 colours the night room still
+ * reads (docs/design/R3-MINIMAL.md section 1), the night trading pair and the
+ * H3 set. The day room's paper 2, ink ramp and trading pair retired with it.
  */
 const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-white": "#ffffff",
   "--color-black": "#000000",
   "--color-paper": "#f3f4f7",
-  "--color-paper-2": "#e8eaf2",
-  "--color-ink": "#0a0d18",
-  "--color-ink-2": "#3a3e52",
-  "--color-ink-3": "#565c78",
   "--color-blue": "#0000c0",
   "--color-blue-hi": "#0000ff",
   "--color-night-0": "#150f0d",
@@ -165,8 +184,6 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-peri-hi": "#6470ff",
   "--color-candle-up": "#22c55e",
   "--color-candle-down": "#ef4444",
-  "--color-up": "#10763a",
-  "--color-down": "#c2272e",
   "--color-up-night": "#4cd685",
   "--color-down-night": "#ff7b7b",
   "--color-h3-ground": "#010203",
@@ -187,13 +204,13 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 38 primitives, at their values", () => {
+  it("holds exactly the 32 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(38);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(32);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 
@@ -247,25 +264,37 @@ describe("the static tier", () => {
 });
 
 describe("the alias tier", () => {
-  const chronos = declarations(chronosBlock);
-  const celeris = declarations(celerisBlock);
-  const aliasNames = (map: Map<string, string>): string[] =>
-    [...map.keys()].filter((name) => name.startsWith("--vex-alias-")).sort();
+  const room = declarations(chronosBlock);
+  const aliasNames = [...room.keys()].filter((name) => name.startsWith("--vex-alias-"));
 
-  it("declares every alias in BOTH rooms", () => {
-    expect(aliasNames(chronos).length).toBeGreaterThan(100);
-    expect(aliasNames(celeris)).toEqual(aliasNames(chronos));
+  it("declares the whole alias tier in the one room", () => {
+    expect(aliasNames.length).toBeGreaterThan(100);
   });
 
-  it.each([
-    ["chronos", chronosBlock],
-    ["celeris", celerisBlock],
-  ])("names a primitive or an alias, never a raw hex, outside the terminal (%s)", (_theme, body) => {
+  it("re-points no alias under a theme attribute or the OS scheme, in any sheet", () => {
+    // Dark only: a `[data-vex-theme="celeris"]` block, a
+    // `prefers-color-scheme: light` query or a light `color-scheme` would be
+    // a second room the app no longer has, painted by nothing that can
+    // reach it. Readers keyed on `data-vex-theme="chronos"` stay legal.
+    const offenders = allSheets().flatMap(([file, css]) => {
+      const text = stripComments(css);
+      const hits: string[] = [];
+      if (/\[data-(?:vex|lighter)-theme="?celeris"?\]/.test(text)) hits.push(`${file}: a celeris rule`);
+      if (/:not\(\[data-vex-theme/.test(text)) hits.push(`${file}: a theme negation`);
+      if (/prefers-color-scheme/.test(text)) hits.push(`${file}: a colour-scheme query`);
+      if (/color-scheme:\s*light/.test(text)) hits.push(`${file}: a light colour scheme`);
+      return hits;
+    });
+    expect(allSheets().map(([file]) => file)).toContain("tokens.css");
+    expect(offenders).toEqual([]);
+  });
+
+  it("names a primitive or an alias, never a raw hex, outside the terminal", () => {
     // A hex in an alias is a colour no primitive owns: invisible to a palette
     // change and to every measurement keyed on the static tier. The terminal
     // slots are the one wire contract allowed raw values
     // (terminal-palette-tokens.test.ts).
-    const offenders = [...declarations(body)]
+    const offenders = [...room]
       .filter(([name]) => name.startsWith("--vex-alias-") && !name.startsWith("--vex-alias-term-"))
       .filter(([, value]) => /#[0-9a-f]{3,8}\b/i.test(value))
       .map(([name, value]) => `${name}: ${value}`);
@@ -274,11 +303,9 @@ describe("the alias tier", () => {
 
   it("reaches only the primitives through its var() hops", () => {
     const primitives = new Set(Object.keys(PRIMITIVES));
-    for (const body of [chronosBlock, celerisBlock]) {
-      for (const [, value] of declarations(body)) {
-        for (const hop of value.matchAll(/var\((--color-[a-z0-9-]+)\)/g)) {
-          expect(primitives.has(hop[1] as string), `${hop[1]} is not a primitive`).toBe(true);
-        }
+    for (const [, value] of room) {
+      for (const hop of value.matchAll(/var\((--color-[a-z0-9-]+)\)/g)) {
+        expect(primitives.has(hop[1] as string), `${hop[1]} is not a primitive`).toBe(true);
       }
     }
   });
@@ -286,17 +313,12 @@ describe("the alias tier", () => {
 
 describe("the trading pair and the night edge", () => {
   const chronos = declarations(chronosBlock);
-  const celeris = declarations(celerisBlock);
   const themeInline = declarations(ruleBody(tokensCss, "@theme inline"));
 
-  it("paints the paper pair by day and the night pair at night", () => {
-    expect(celeris.get("--vex-alias-trade-up")).toBe("var(--color-up)");
-    expect(celeris.get("--vex-alias-trade-down")).toBe("var(--color-down)");
+  it("paints the night pair", () => {
     expect(chronos.get("--vex-alias-trade-up")).toBe("var(--color-up-night)");
     expect(chronos.get("--vex-alias-trade-down")).toBe("var(--color-down-night)");
-    // Type on a solid Long or Short key: white on paper, the night paper at
-    // night.
-    expect(celeris.get("--vex-alias-trade-ink")).toBe("var(--color-white)");
+    // Type on a solid Long or Short key: the night paper.
     expect(chronos.get("--vex-alias-trade-ink")).toBe("var(--color-night)");
   });
 
@@ -309,19 +331,16 @@ describe("the trading pair and the night edge", () => {
   it("keeps the trading primitives off every alias but the trading ones", () => {
     // Status is a fill and a word, never a hue: no state, label, accent or
     // rule alias may reach the trading pair.
-    for (const body of [chronos, celeris]) {
-      const offenders = [...body]
-        .filter(([name]) => name.startsWith("--vex-alias-") && !name.startsWith("--vex-alias-trade-"))
-        .filter(([, value]) => /var\(--color-(?:up|down)(?:-night)?\)/.test(value))
-        .map(([name]) => name);
-      expect(offenders).toEqual([]);
-    }
+    const offenders = [...chronos]
+      .filter(([name]) => name.startsWith("--vex-alias-") && !name.startsWith("--vex-alias-trade-"))
+      .filter(([, value]) => /var\(--color-(?:up|down)(?:-night)?\)/.test(value))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
   });
 
-  it("edges a blue fill in periwinkle at night and leaves it bare by day", () => {
+  it("edges a blue fill in periwinkle on the night paper", () => {
     expect(chronos.get("--vex-alias-button-accent-fill")).toBe("var(--color-blue)");
     expect(chronos.get("--vex-alias-button-accent-edge")).toBe("var(--color-peri)");
-    expect(celeris.get("--vex-alias-button-accent-edge")).toBe("transparent");
     expect(themeInline.get("--color-button-accent-edge")).toBe(
       "var(--vex-alias-button-accent-edge)",
     );
@@ -337,32 +356,27 @@ describe("pre-shell plate", () => {
     expect(plate).not.toMatch(/\brgba?\(/i);
   });
 
-  it("keeps the chronos plate equal to the main-window backgroundColor", () => {
+  it("keeps the plate equal to the main-window backgroundColor", () => {
     // main/main-window.ts paints the window before the bundle loads; the
-    // chronos plate and the chronos page ground must be that same night
-    // paper, so first paint and the plate are one surface.
+    // plate and the page ground must be that same night paper, so first
+    // paint and the plate are one surface.
     expect(chronosBlock).toContain("--vex-alias-gate-plate: var(--color-night)");
     expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-night)");
     expect(tokensCss).toContain("--color-night: #1b1412");
     expect(mainWindowTs).toContain('backgroundColor: "#1b1412"');
-    expect(celerisBlock).toContain("--vex-alias-gate-plate: var(--color-paper)");
   });
 
-  it("sets the stage type on the print per room: paper at night, the blues by day", () => {
+  it("sets the stage type on the night print in paper", () => {
     // docs/design/R3-MINIMAL.md section 1.1: on the night print every type is
     // paper and blue never sits on dark ground. The giant counter was the
     // one exception the design measured at 1.34:1 (peri-hi on the night
-    // sky); it is paper there now. By day the counter is the numeral blue
-    // and the title the logo blue, on the pale sky.
+    // sky); it is paper there now.
     expect(chronosBlock).toContain("--vex-alias-gate-counter: var(--color-paper)");
     expect(chronosBlock).toContain("--vex-alias-title: var(--color-paper)");
     expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-paper)");
-    expect(celerisBlock).toContain("--vex-alias-gate-counter: var(--color-blue-hi)");
-    expect(celerisBlock).toContain("--vex-alias-title: var(--color-blue)");
-    // The unlock field and its box are night fields at night and the paper
-    // label box by day: never the white field on the print.
+    // The unlock field and its box are night fields: never the white field
+    // on the print.
     expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-night-1)");
-    expect(celerisBlock).toContain("--vex-alias-gate-field: var(--color-paper)");
     // Every rule that sets type on the stage reads these aliases, never a
     // literal colour. The wake and unlock title is the room's one blue
     // (`accent-primary`: the blue by day, the periwinkle at night, spec
@@ -377,14 +391,14 @@ describe("pre-shell plate", () => {
       expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
     }
     expect(chronosBlock).toContain("--vex-alias-accent-primary: var(--color-peri)");
-    expect(celerisBlock).toContain("--vex-alias-accent-primary: var(--color-blue)");
   });
 
   it("keeps the native title bar overlay on the page paper and its ink", () => {
     // main/windows/chrome-options.ts cannot read tokens.css (main process), so
     // it carries the overlay colours as constants; they must stay the room's
     // own paper and ink, or the window controls sit on a strip of another
-    // colour.
+    // colour. (The main process still keeps a light pair for the schema's
+    // second value; the renderer never asks for it.)
     const overlay = (theme: string): { color: string; symbolColor: string } => {
       const match = new RegExp(
         `${theme}:\\s*\\{\\s*color:\\s*"(#[0-9a-f]{6})",\\s*symbolColor:\\s*"(#[0-9a-f]{6})"`,
@@ -394,10 +408,8 @@ describe("pre-shell plate", () => {
       return { color: (match?.[1] ?? "").toLowerCase(), symbolColor: (match?.[2] ?? "").toLowerCase() };
     };
     expect(overlay("chronos")).toEqual({ color: "#1b1412", symbolColor: "#f3f4f7" });
-    expect(overlay("celeris")).toEqual({ color: "#f3f4f7", symbolColor: "#0a0d18" });
+    expect(chronosBlock).toContain("--vex-alias-bg-base: var(--color-night)");
     expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-paper)");
-    expect(celerisBlock).toContain("--vex-alias-bg-base: var(--color-paper)");
-    expect(celerisBlock).toContain("--vex-alias-label-primary: var(--color-ink)");
   });
 });
 
@@ -425,33 +437,22 @@ const CODE_THEME_SLOTS = [
 ] as const;
 
 describe("file-viewer code tokens", () => {
-  it.each(CODE_THEME_SLOTS)(
-    "--vex-alias-code-%s is declared in BOTH themes",
-    (slot) => {
-      const alias = `--vex-alias-code-${slot}:`;
-      expect(chronosBlock, "chronos (:root)").toContain(alias);
-      expect(celerisBlock, "celeris").toContain(alias);
-    },
-  );
+  it.each(CODE_THEME_SLOTS)("--vex-alias-code-%s is declared", (slot) => {
+    expect(chronosBlock, ":root").toContain(`--vex-alias-code-${slot}:`);
+  });
 
   it("resolves every code token through an alias, never a raw colour", () => {
-    for (const block of [chronosBlock, celerisBlock]) {
-      for (const match of block.matchAll(/--vex-alias-code-[a-z-]+:\s*([^;]+);/g)) {
-        const value = (match[1] ?? "").trim();
-        expect(value === "transparent" || value.startsWith("var(--vex-alias-")).toBe(
-          true,
-        );
-      }
+    for (const match of chronosBlock.matchAll(/--vex-alias-code-[a-z-]+:\s*([^;]+);/g)) {
+      const value = (match[1] ?? "").trim();
+      expect(value === "transparent" || value.startsWith("var(--vex-alias-")).toBe(true);
     }
   });
 
   it("speaks one blue and the ink ramp: no status hue reaches the code", () => {
     // V10: no rainbow. A code slot pointed at a state alias would re-import a
     // status meaning (and, before the collapse, a status hue) into syntax.
-    for (const block of [chronosBlock, celerisBlock]) {
-      for (const match of block.matchAll(/--vex-alias-code-[a-z-]+:\s*([^;]+);/g)) {
-        expect(match[1]).not.toMatch(/state-/);
-      }
+    for (const match of chronosBlock.matchAll(/--vex-alias-code-[a-z-]+:\s*([^;]+);/g)) {
+      expect(match[1]).not.toMatch(/state-/);
     }
   });
 
@@ -473,9 +474,8 @@ describe("pre-shell alias group", () => {
     expect(gateAliases).toContain("--vex-alias-gate-plate");
   });
 
-  it.each(gateAliases)("%s is defined in BOTH themes", (alias) => {
-    expect(chronosBlock, "chronos (:root)").toContain(`${alias}:`);
-    expect(celerisBlock, "celeris").toContain(`${alias}:`);
+  it.each(gateAliases)("%s is defined in the room", (alias) => {
+    expect(chronosBlock, ":root").toContain(`${alias}:`);
   });
 
   it("every gate utility used in the renderer has a @theme projection", () => {
@@ -518,15 +518,13 @@ describe("pre-shell alias group", () => {
 
   it("never mixes pre-shell ink toward white or black", () => {
     // Status ink is a fill pattern now; the gate's alert inks are the status
-    // inks themselves, so no mix may lighten or darken them per room.
-    for (const block of [chronosBlock, celerisBlock]) {
-      const gateInk = block
-        .split("\n")
-        .filter((line) => line.includes("--vex-alias-gate-"))
-        .join("\n");
-      expect(gateInk).not.toMatch(/,\s*(?:white|black)\s*\)/);
-      expect(gateInk).not.toMatch(/#fff(?:fff)?\b/i);
-    }
+    // inks themselves, so no mix may lighten or darken them.
+    const gateInk = chronosBlock
+      .split("\n")
+      .filter((line) => line.includes("--vex-alias-gate-"))
+      .join("\n");
+    expect(gateInk).not.toMatch(/,\s*(?:white|black)\s*\)/);
+    expect(gateInk).not.toMatch(/#fff(?:fff)?\b/i);
   });
 });
 

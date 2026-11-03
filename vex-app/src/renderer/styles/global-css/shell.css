@@ -1,7 +1,7 @@
 /* THE SIGNAL DESK: main-app shell scope. Sibling of [data-vex-onboarding]:
- * applied via `data-vex-shell="true"` on the AppShell root. V10: the room is
- * one paper (celeris) or the Night Ledger (chronos); columns are told apart by
- * 1px rules, never by glass, a lighter step, a shadow or a glow. One accent
+ * applied via `data-vex-shell="true"` on the AppShell root. One room (the
+ * app is dark only); columns are told apart by 1px rules, never by glass, a
+ * lighter step, a shadow or a glow. One accent
  * family, the one blue (tokens.css). Pinned by
  * features/appShell/__tests__/shell-design-guard.test.ts. */
 [data-vex-shell="true"] {

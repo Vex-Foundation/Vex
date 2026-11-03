@@ -112,11 +112,6 @@
   letter-spacing: normal;
 }
 
-.lit-desk[data-lighter-theme="celeris"],
-.lit-chat-frame[data-lighter-theme="celeris"] {
-  color-scheme: light;
-}
-
 /* The candlesticks: the one sanctioned hue pair, scoped to the chart canvas
  * host (the element MarketChart reads its colours from), so no label, legend,
  * price line or order handle around the chart can reach it. */

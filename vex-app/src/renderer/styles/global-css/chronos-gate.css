@@ -60,7 +60,7 @@
 
 /* The plate (spec section 10.1): the print at the left at the full window
  * height. Its ground shows while the photograph decodes: the night print's
- * darkest tone, and the day print's mid tone in celeris (spec section 1.1). */
+ * darkest tone (spec section 1.1). */
 .vex-stage-plate {
   overflow: hidden;
 }
@@ -74,10 +74,6 @@
   isolation: isolate;
   background: var(--color-night-0);
 }
-[data-vex-theme="celeris"] .vex-stage-plate__plate,
-[data-vex-theme="celeris"] .vex-stage-plate__full {
-  background: #c7b6a6;
-}
 .vex-stage-plate__img {
   position: absolute;
   top: 0;
@@ -90,15 +86,9 @@
   object-position: 50% 78%;
   user-select: none;
 }
-/* One print per room, swapped on data-vex-theme (stamped on documentElement),
- * never by a JS theme read. */
+/* The night print only: the app is dark only, so the day print never
+ * shows. */
 .vex-stage-plate__img--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-stage-plate__img--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-stage-plate__img--night {
   display: none;
 }
 /* The print's grain: fractal noise, multiplied at 10%, over the photograph
@@ -572,7 +562,7 @@
   animation-delay: 300ms;
 }
 /* Night Ledger paper carries the faint print grain. */
-:root:not([data-vex-theme="celeris"]) .vex-stage-leaf::after {
+:root .vex-stage-leaf::after {
   content: "";
   position: absolute;
   inset: 0;

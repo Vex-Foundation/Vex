@@ -4,8 +4,8 @@
  *   static  -> @theme primitives (paper, ink, the one blue, Night Ledger).
  *              NEVER consumed by components; the design guard bans raw hexes
  *              in TSX.
- *   alias   -> semantic CSS vars on :root (chronos = default) with a
- *              [data-vex-theme="celeris"] override block. Named --vex-alias-*.
+ *   alias   -> semantic CSS vars on :root: ONE room, no theme override
+ *              block (H3 is dark only). Named --vex-alias-*.
  *              The NAMES are the components' contract and outlive every
  *              repaint; only the values below change between design rounds.
  *   utility -> `@theme inline` projects aliases into Tailwind utilities.
@@ -20,12 +20,15 @@
  *   --vex-alias-rule*, -counter, -title, -focus, -field, -label-box,
  *   -on-photo, -sky-rule      -> the V10 names of the same projections
  *
- * THE TWO ROOMS. Celeris (light) is the website's cool paper #f3f4f7 with
- * ink #0a0d18 and the one blue #0000c0; white #ffffff is only ever a field
- * (inputs, the composer). Chronos (dark) is Night Ledger: the darkest tones of
- * the sepia prints as paper (#1b1412), the website paper as ink, and the blue
- * lifted to a periwinkle of the same hue (#a3abff) wherever it must be read;
- * the true #0000c0 stays a FILL behind white type.
+ * ONE ROOM. H3 is dark only (the H3 revamp plan, decision 6, 2026-11-03):
+ * Celeris, the light room, retired with the "system" choice, so the alias tier
+ * is the :root block alone and nothing re-points it. `data-vex-theme` still
+ * reads "chronos" on documentElement (uiStore/theme.ts), so every reader
+ * keyed on the attribute keeps working. Until each role moves onto the H3
+ * primitives below it is the Night Ledger: the darkest tones of the sepia
+ * prints as paper (#1b1412), the website paper as ink, and the blue lifted to
+ * a periwinkle of the same hue (#a3abff) wherever it must be read; the true
+ * #0000c0 stays a FILL behind white type.
  *
  * STATUS IS SHOWN BY FILL, NEVER BY COLOUR. Success and error are ink,
  * attention is the one blue; a swatch's pattern (solid, dot screen, hatch,
@@ -44,18 +47,13 @@
   --color-white: #ffffff;
   --color-black: #000000;
 
-  /* Static tier - paper, ink and the one blue (celeris). Ink ramp measured on
-   * paper: ink 17.62:1, ink-2 9.59:1, ink-3 5.97:1. */
+  /* Static tier - the website paper, now the night room's ink, and the one
+   * blue as a fill. The day room's paper 2, its ink ramp and its trading pair
+   * retired with Celeris. */
   --color-paper: #f3f4f7;
-  --color-paper-2: #e8eaf2;
-  --color-ink: #0a0d18;
-  --color-ink-2: #3a3e52;
-  /* The website's "muted": tertiary text and group counts. */
-  --color-ink-3: #565c78;
-  /* Logo blue: every blue word, line, button and chip text (10.84:1 on
-   * paper). */
+  /* Logo blue: the fill behind white type (the primary key, the send key). */
   --color-blue: #0000c0;
-  /* Tweet blue: counters, figures and the primary hover. Never body text. */
+  /* Tweet blue: the blue fill's hover. */
   --color-blue-hi: #0000ff;
 
   /* Static tier - Night Ledger (chronos). Measured on night: paper 16.53:1,
@@ -76,11 +74,9 @@
 
   /* Static tier - the second sanctioned exception: the trading pair, on
    * trading values only, never a status (docs/design/R3-MINIMAL.md section
-   * 1). Tuned from the candle pair: up 5.20:1 and down 5.27:1 on paper; the
-   * night pair 9.75:1 and 7.25:1 on night. Components read the
+   * 1). Tuned from the candle pair for the night ground: 9.75:1 and 7.25:1
+   * on night (the paper pair retired with the day room). Components read the
    * --vex-alias-trade-* aliases below, never these. */
-  --color-up: #10763a;
-  --color-down: #c2272e;
   --color-up-night: #4cd685;
   --color-down-night: #ff7b7b;
 
@@ -208,10 +204,11 @@
   --tracking-tape: 0.24em;
 }
 
-/* Alias tier - CHRONOS (dark, Night Ledger) is the default on :root. The
- * theme attribute rides on documentElement (`data-vex-theme`, written
- * pre-paint by public/theme-boot.js and kept current by the uiStore theme
- * runtime). */
+/* Alias tier - the one room, on :root. The theme attribute still rides on
+ * documentElement (`data-vex-theme="chronos"`, written pre-paint by
+ * public/theme-boot.js and by the uiStore theme runtime), but no block keys
+ * on it any more: `theme-matrix.test.ts` refuses a theme override anywhere
+ * in the sheets. */
 :root {
   /* Surfaces: ONE paper. Cards, rails and popovers sit on the same ground and
    * are told apart by rules, never by a lighter step or a shadow. */
@@ -293,8 +290,8 @@
 
   /* Status, collapsed to fill. Success and error are the ink (paper at
    * night), attention is the peri; every wash is a paper step, so ink on
-   * wash sits between ink and ground in both rooms.
-   * `status-contrast.test.ts` measures every family in both themes. */
+   * wash sits between ink and ground.
+   * `status-contrast.test.ts` measures every family. */
   --vex-alias-state-success: var(--color-paper);
   --vex-alias-state-success-wash: var(--color-night-1);
   --vex-alias-state-warn: var(--color-peri);
@@ -304,9 +301,8 @@
   --vex-alias-state-error-wash: var(--color-night-1);
 
   /* Trading values only (P&L, Long and Short, bids and asks), never a
-   * status: a state keeps its fill and word. The night pair here, the paper
-   * pair under celeris. `status-contrast.test.ts` measures both on every
-   * text ground. */
+   * status: a state keeps its fill and word. `status-contrast.test.ts`
+   * measures the pair on every text ground. */
   --vex-alias-trade-up: var(--color-up-night);
   --vex-alias-trade-down: var(--color-down-night);
   /* Type on a solid Long or Short key: the night paper on the night pair. */
@@ -316,14 +312,14 @@
   --vex-alias-bg-mask-1: rgba(8, 5, 4, 0.6);
   --vex-alias-bg-mask-drop: rgba(27, 20, 18, 0.7);
 
-  /* The reversed chrome plate: tooltip, hover card and toast. Paper at
-   * night, ink by day, with --vex-alias-label-on-chrome on top. */
+  /* The reversed chrome plate: tooltip, hover card and toast: the paper
+   * plate, with --vex-alias-label-on-chrome on top. */
   --vex-alias-tooltip-bg: var(--color-paper);
   --vex-alias-toast-bg: var(--color-paper);
-  /* The standalone vx mark: paper at night, the logo blue by day. */
+  /* The standalone vx mark: the paper. */
   --vex-alias-brand-mark: var(--color-paper);
 
-  /* On a photograph (the ground zone of a sepia print), in both rooms:
+  /* On a photograph (the ground zone of a sepia print):
    * white captions and animals, paper label boxes under chips and buttons,
    * the 42% white hairline above a spread caption, and the rule drawn on the
    * pale sky zone. */
@@ -332,14 +328,13 @@
   --vex-alias-label-box: var(--color-paper);
   --vex-alias-sky-rule: rgba(243, 244, 247, 0.32);
 
-  /* PRE-SHELL (the stage) - the theme-aware group behind chronos-gate.css:
+  /* PRE-SHELL (the stage) - the group behind chronos-gate.css:
    * the plate under the stage print, the type the stage sets ON the print,
    * and what the `[data-vex-gate="true"]` scope re-projects onto the
    * shadcn/utility names for the paper leaf.
    *
-   * `gate-plate` must equal the main-window `backgroundColor` in CHRONOS
-   * (#1b1412, main/main-window.ts) so first paint and the plate are one
-   * surface. */
+   * `gate-plate` must equal the main-window `backgroundColor` (#1b1412,
+   * main/main-window.ts) so first paint and the plate are one surface. */
   --vex-alias-gate-plate: var(--color-night);
   /* On the night print every type is paper (docs/design/R3-MINIMAL.md
    * section 1.1): the giant counter and the step numerals too, where the
@@ -381,9 +376,8 @@
    * surface, foreground, cursor and selection are literals rather than paper
    * aliases: a running program reads the background through OSC 11, so this
    * surface is a wire contract and moves only with a retune of the terminal
-   * itself. Chronos reads on the night field #221a17 (night-1) in paper ink
-   * with the periwinkle cursor; celeris on the white field in ink with the
-   * paper blue cursor.
+   * itself. It reads on the night field #221a17 (night-1) in paper ink with
+   * the periwinkle cursor.
    *
    * RGB IS A WIRE CONTRACT. xterm answers OSC 11 with background alpha
    * dropped, so the background is an explicit opaque eight-digit hex. The
@@ -391,8 +385,8 @@
    *
    * The ANSI slots are a WIRE CONTRACT with programs that emit SGR 30-37 and
    * 90-97, not brand decisions, and bending them to the brand ramp would
-   * misrender every diff, prompt and ls. They are tuned per theme to clear
-   * the contrast floor against the surface the canvas sits on;
+   * misrender every diff, prompt and ls. They are tuned to clear the
+   * contrast floor against the surface the canvas sits on;
    * `__tests__/terminal-palette-tokens.test.ts` measures every one of them
    * and names the single documented exception. */
   --vex-alias-term-background: #221a17ff;
@@ -424,8 +418,7 @@
    * @shikijs/core rather than remembered. Shiki writes
    * `var(--vex-alias-code-token-keyword)` straight into a token's colour, so
    * a name missing from this sheet renders as NO COLOUR - no error, no
-   * warning, just grey code. `theme-matrix.test.ts` pins every slot in both
-   * themes.
+   * warning, just grey code. `theme-matrix.test.ts` pins every slot.
    *
    * V10: one blue and the ink ramp, no rainbow. Keywords, constants,
    * functions and links carry the blue; strings the second ink; comments and
@@ -459,9 +452,8 @@
 
   /* MOTION VOCABULARY - the one CSS home for every duration and curve.
    *
-   * Theme-independent, so it is declared here and NOT repeated in the celeris
-   * block: a theme changes what a surface looks like, never how long it takes
-   * to get there. `lib/motion/index.ts` mirrors every value below as a JS
+   * Theme-independent: a room changes what a surface looks like, never how
+   * long it takes to get there. `lib/motion/index.ts` mirrors every value below as a JS
    * constant for the call sites that need the number (a timer paired with a
    * CSS duration, or a Motion transition); the pairing is asserted by
    * `__tests__/motion-tokens.test.ts`, which fails if either side moves alone.
@@ -490,155 +482,6 @@
   --vex-vex-w-md: 240px;
   --vex-vex-w-sm: 224px;
   --vex-transcript-max: 760px;
-}
-
-/* Alias tier - CELERIS (light): the website's paper. */
-[data-vex-theme="celeris"] {
-  --vex-alias-bg-base: var(--color-paper);
-  --vex-alias-bg-deep: var(--color-paper);
-  --vex-alias-bg-layer-1: var(--color-paper);
-  --vex-alias-bg-layer-2: var(--color-paper);
-  --vex-alias-bg-layer-3: var(--color-paper-2);
-  --vex-alias-bg-overlay: var(--color-paper-2);
-  --vex-alias-bg-skeleton: rgba(0, 0, 192, 0.06);
-  --vex-alias-sidebar-fill: var(--color-paper);
-  --vex-alias-field: var(--color-white);
-  --vex-alias-bubble: var(--color-paper-2);
-  --vex-alias-composer: var(--vex-alias-field);
-
-  --vex-alias-rule: rgba(0, 0, 192, 0.22);
-  --vex-alias-rule-quiet: rgba(0, 0, 192, 0.12);
-  --vex-alias-rule-ink: var(--color-ink);
-  --vex-alias-border-l1: var(--vex-alias-rule-quiet);
-  --vex-alias-border-l2: var(--vex-alias-rule);
-  --vex-alias-border-l3: rgba(0, 0, 192, 0.32);
-  --vex-alias-border-l4: rgba(0, 0, 192, 0.44);
-  --vex-alias-border-input: var(--vex-alias-rule);
-
-  --vex-alias-label-primary: var(--color-ink);
-  --vex-alias-label-secondary: var(--color-ink-2);
-  --vex-alias-label-tertiary: var(--color-ink-3);
-  --vex-alias-label-caption: var(--color-ink-3);
-  --vex-alias-label-dimmed: rgba(10, 13, 24, 0.18);
-  --vex-alias-label-on-primary: var(--color-paper);
-  --vex-alias-label-on-accent: var(--color-paper);
-  --vex-alias-label-on-chrome: var(--color-paper);
-
-  --vex-alias-button-primary-fill: var(--color-ink);
-  --vex-alias-button-primary-hover: var(--color-ink-2);
-  --vex-alias-button-accent-fill: var(--color-blue);
-  --vex-alias-button-accent-hover: var(--color-blue-hi);
-  --vex-alias-button-accent-ink: var(--color-paper);
-  /* By day the blue fill holds its own silhouette on paper: the edge is
-   * transparent, so a border shows the fill under it. */
-  --vex-alias-button-accent-edge: transparent;
-
-  --vex-alias-accent-primary: var(--color-blue);
-  --vex-alias-accent-hover: var(--color-blue-hi);
-  --vex-alias-accent-brand: var(--color-blue-hi);
-  --vex-alias-accent-wash: var(--color-paper-2);
-  --vex-alias-counter: var(--color-blue-hi);
-  --vex-alias-title: var(--color-blue);
-  --vex-alias-focus: var(--color-blue-hi);
-
-  --vex-alias-interactive-hover: rgba(0, 0, 192, 0.05);
-  --vex-alias-interactive-active: rgba(0, 0, 192, 0.09);
-  --vex-alias-interactive-solid: var(--color-paper-2);
-  --vex-alias-interactive-danger: rgba(10, 13, 24, 0.06);
-
-  /* Status by fill: ink for done and errors, the blue for attention, every
-   * wash the paper-2 step. */
-  --vex-alias-state-success: var(--color-ink);
-  --vex-alias-state-success-wash: var(--color-paper-2);
-  --vex-alias-state-warn: var(--color-blue);
-  --vex-alias-state-warn-label: var(--color-blue);
-  --vex-alias-state-warn-wash: var(--color-paper-2);
-  --vex-alias-state-error: var(--color-ink);
-  --vex-alias-state-error-wash: var(--color-paper-2);
-
-  --vex-alias-trade-up: var(--color-up);
-  --vex-alias-trade-down: var(--color-down);
-  --vex-alias-trade-ink: var(--color-white);
-
-  --vex-alias-bg-mask-1: rgba(10, 13, 24, 0.24);
-  --vex-alias-bg-mask-drop: rgba(243, 244, 247, 0.7);
-
-  --vex-alias-tooltip-bg: var(--color-ink);
-  --vex-alias-toast-bg: var(--color-ink);
-  --vex-alias-brand-mark: var(--color-blue);
-
-  --vex-alias-on-photo: var(--color-white);
-  --vex-alias-rule-photo: rgba(255, 255, 255, 0.42);
-  --vex-alias-label-box: var(--color-paper);
-  --vex-alias-sky-rule: rgba(10, 13, 24, 0.18);
-
-  /* PRE-SHELL under celeris: the day print's pale sky carries the blue
-   * counter and the paper label boxes; the leaf is paper with white fields. */
-  --vex-alias-gate-plate: var(--color-paper);
-  --vex-alias-gate-counter: var(--color-blue-hi);
-  --vex-alias-gate-field: var(--color-paper);
-  --vex-alias-gate-go-rule: transparent;
-  --vex-alias-gate-border: rgba(0, 0, 192, 0.22);
-  --vex-alias-gate-input: rgba(0, 0, 192, 0.32);
-  --vex-alias-gate-muted: rgba(0, 0, 192, 0.06);
-  --vex-alias-gate-well: var(--vex-alias-field);
-  --vex-alias-gate-rail: rgba(0, 0, 192, 0.12);
-  --vex-alias-gate-code: var(--color-paper-2);
-  --vex-alias-gate-danger-text: var(--vex-alias-state-error);
-  --vex-alias-gate-warn-text: var(--vex-alias-state-warn-label);
-
-  --vex-alias-board-surface: var(--color-paper);
-  --vex-alias-board-card: var(--color-paper);
-  --vex-alias-board-card-hover: var(--color-paper-2);
-
-  /* TERMINAL under celeris: the white field (see the chronos block). On a WHITE card the whole ANSI ramp moves down
-   * rather than up, and the normal/bright pair moves TOGETHER: the six
-   * chromatic normals are the darker step and their bright partners the
-   * lighter one, so `git diff`'s bright red still reads as the lighter red
-   * while clearing 4.5:1. */
-  --vex-alias-term-background: #ffffffff;
-  --vex-alias-term-foreground: #0a0d18;
-  --vex-alias-term-cursor: #0000c0;
-  --vex-alias-term-selection: rgba(0, 0, 192, 0.14);
-
-  --vex-alias-term-black: #2b3040;
-  --vex-alias-term-red: #9b2b30;
-  --vex-alias-term-green: #1f5c31;
-  --vex-alias-term-yellow: #6b4d0c;
-  --vex-alias-term-blue: #0000c0;
-  --vex-alias-term-magenta: #5c2f86;
-  --vex-alias-term-cyan: #16535a;
-  --vex-alias-term-white: #6b7180;
-  --vex-alias-term-bright-black: #4a5064;
-  --vex-alias-term-bright-red: #c0393f;
-  --vex-alias-term-bright-green: #2f7d43;
-  --vex-alias-term-bright-yellow: #8a6410;
-  --vex-alias-term-bright-blue: #2b52c4;
-  --vex-alias-term-bright-magenta: #7a3fb0;
-  --vex-alias-term-bright-cyan: #1f6f78;
-  --vex-alias-term-bright-white: #1c2030;
-
-  /* CODE TOKENS - the same slot list as the chronos block (both themes must
-   * declare every slot; see there). */
-  --vex-alias-code-background: transparent;
-  --vex-alias-code-foreground: var(--vex-alias-label-primary);
-  --vex-alias-code-token-keyword: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-string: var(--vex-alias-label-secondary);
-  --vex-alias-code-token-string-expression: var(--vex-alias-label-secondary);
-  --vex-alias-code-token-comment: var(--vex-alias-label-tertiary);
-  --vex-alias-code-token-constant: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-function: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-parameter: var(--vex-alias-label-primary);
-  --vex-alias-code-token-punctuation: var(--vex-alias-label-tertiary);
-  --vex-alias-code-token-link: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-inserted: var(--vex-alias-accent-primary);
-  --vex-alias-code-token-deleted: var(--vex-alias-label-tertiary);
-  --vex-alias-code-token-changed: var(--vex-alias-label-secondary);
-
-  --vex-alias-scrollbar-l1: rgba(0, 0, 192, 0.16);
-  --vex-alias-scrollbar-l1-hover: rgba(0, 0, 192, 0.32);
-  --vex-alias-scrollbar-l2: rgba(0, 0, 192, 0.22);
-  --vex-alias-scrollbar-l2-hover: rgba(0, 0, 192, 0.4);
 }
 
 /* Utility tier - alias projections. `@theme inline` is REQUIRED here: the

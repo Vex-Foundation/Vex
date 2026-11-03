@@ -42,25 +42,19 @@
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
-[data-vex-theme="celeris"] .vex-wz,
-[data-vex-theme="celeris"] .vex-wzs {
-  --wz-sel: rgba(0, 0, 192, 0.075);
-}
 .vex-wzs {
   --wz-sel: rgba(163, 171, 255, 0.1);
 }
 
-/* The plate: the plateau print by day or night (wizard position 50% 80%), its
- * grain and Vex rising from the token; no state word under her (owner). The
- * ground shows while the photograph decodes. */
+/* The plate: the night plateau print (wizard position 50% 80%), its grain
+ * and Vex rising from the token; no state word under her (owner). The ground
+ * shows while the photograph decodes. The day print stays hidden: the app is
+ * dark only. */
 .vex-wz__plate {
   position: relative;
   overflow: hidden;
   isolation: isolate;
   background: var(--color-night-0);
-}
-[data-vex-theme="celeris"] .vex-wz__plate {
-  background: #c7b6a6;
 }
 .vex-wz__print {
   position: absolute;
@@ -74,12 +68,6 @@
   user-select: none;
 }
 .vex-wz__print--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-wz__print--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-wz__print--night {
   display: none;
 }
 .vex-wz__grain {

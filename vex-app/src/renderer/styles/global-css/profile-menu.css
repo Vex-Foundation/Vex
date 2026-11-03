@@ -27,9 +27,6 @@
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
-[data-vex-theme="celeris"] .vex-prof {
-  --prof-sel: rgba(0, 0, 192, 0.075);
-}
 .vex-prof:hover,
 .vex-prof[aria-expanded="true"] {
   background: var(--prof-sel);
@@ -138,9 +135,6 @@
 }
 .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
   background: rgba(163, 171, 255, 0.1);
-}
-[data-vex-theme="celeris"] .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
-  background: rgba(0, 0, 192, 0.075);
 }
 .vex-profile-menu--panel .vex-menu-separator {
   margin: 6px 0;

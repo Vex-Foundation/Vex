@@ -9,8 +9,7 @@
  *  1. the plate paints ALIASES, never literals - the same defect the pre-shell
  *     plate shipped once already, where a fixed dark hex sat under
  *     theme-variable ink;
- *  2. every board alias exists in BOTH theme blocks, so a new one cannot ship
- *     one-room-only;
+ *  2. every board alias is declared in the one room (the app is dark only);
  *  3. every board alias has a `@theme inline` projection - an alias WITHOUT
  *     one compiles to nothing at the call site, silently, which is how
  *     `bg-board-card` would become a transparent card;
@@ -45,7 +44,6 @@ function ruleBody(css: string, selector: string): string {
 const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 const chronos = ruleBody(tokensCss, ":root");
-const celeris = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 const themeInline = ruleBody(tokensCss, "@theme inline");
 
 const boardAliases = [
@@ -65,16 +63,13 @@ describe("board surface tokens", () => {
     ]);
   });
 
-  it.each(boardAliases)("defines %s in BOTH theme blocks", (alias) => {
+  it.each(boardAliases)("defines %s in the room", (alias) => {
     expect(chronos).toContain(`${alias}:`);
-    expect(celeris).toContain(`${alias}:`);
   });
 
-  it.each(boardAliases)("resolves %s to a V10 paper step in both rooms", (alias) => {
-    for (const body of [chronos, celeris]) {
-      const value = new RegExp(`${alias}:\\s*([^;]+);`).exec(body)?.[1]?.trim();
-      expect(value).toMatch(/^var\(--color-(paper|paper-2|night|night-0|night-1|night-2)\)$/);
-    }
+  it.each(boardAliases)("resolves %s to a paper step", (alias) => {
+    const value = new RegExp(`${alias}:\\s*([^;]+);`).exec(chronos)?.[1]?.trim();
+    expect(value).toMatch(/^var\(--color-(night|night-0|night-1|night-2)\)$/);
   });
 
   it.each([

@@ -1,6 +1,6 @@
 /**
  * STATUS IS SHOWN BY FILL, AND EVERY INK IS READABLE - a measured contrast
- * contract over the V10 alias tier, in both themes.
+ * contract over the alias tier, in the one room (the app is dark only).
  *
  * V10 collapses status to fill: success and error are the ink (paper at
  * night), attention is the one blue (the periwinkle at night), and the state
@@ -9,14 +9,14 @@
  * under an old alias name.
  *
  * The rest of the file MEASURES rather than pins. It reads tokens.css,
- * resolves each alias through the static tier in EACH theme, and computes the
+ * resolves each alias through the static tier, and computes the
  * WCAG 2.x contrast ratio. The floors are V10's: 4.5:1 for anything that
  * carries a sentence or a label, 3:1 for large display (counters). Status inks
  * are measured on the page ground AND inside their own wash, because the wash
  * is the binding surface: it moves the backdrop toward the ink.
  *
  * The reversed chrome plate (tooltip, hover card, toast, connection banner)
- * is measured with its own ink in both themes. The REAL FUNDS block measures
+ * is measured with its own ink. The REAL FUNDS block measures
  * the approval card's keys, its ink frame and its reversed stamp: the one
  * card that moves money must read in every state a hand can put it in. The
  * last block measures the trading pair (docs/design/R3-MINIMAL.md section 1),
@@ -45,13 +45,12 @@ function ruleBody(css: string, selector: string): string {
 /** The static tier: `--color-ink: #0a0d18;` and friends. */
 const staticTier = ruleBody(tokensCss, "@theme");
 const chronos = ruleBody(tokensCss, ":root");
-const celeris = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 
-/** Themes in cascade order: celeris overrides :root, and inherits what it omits. */
-const THEMES = [
-  { name: "chronos", blocks: [chronos] },
-  { name: "celeris", blocks: [chronos, celeris] },
-] as const;
+/**
+ * The one room. Kept as a list of blocks in cascade order so the measuring
+ * helpers below read the same way they did for two rooms.
+ */
+const THEMES = [{ name: "the room", blocks: [chronos] }] as const;
 
 function declaredValue(body: string, token: string): string | undefined {
   const match = new RegExp(`(?:^|[\\s;])${token}:\\s*([^;]+);`).exec(body);
@@ -145,15 +144,9 @@ describe("the resolver (load-bearing)", () => {
     expect(resolveHex([chronos], "--vex-alias-state-warn")).toBe("#a3abff");
     expect(resolveHex([chronos], "--vex-alias-state-success")).toBe("#f3f4f7");
     expect(resolveHex([chronos], "--vex-alias-state-error")).toBe("#f3f4f7");
-    expect(resolveHex([chronos, celeris], "--vex-alias-bg-base")).toBe("#f3f4f7");
-    expect(resolveHex([chronos, celeris], "--vex-alias-state-warn")).toBe("#0000c0");
-    expect(resolveHex([chronos, celeris], "--vex-alias-state-success")).toBe("#0a0d18");
-    expect(resolveHex([chronos, celeris], "--vex-alias-state-error")).toBe("#0a0d18");
-    expect(resolveHex([chronos, celeris], "--vex-alias-composer")).toBe("#ffffff");
+    expect(resolveHex([chronos], "--vex-alias-composer")).toBe("#221a17");
     expect(resolveHex([chronos], "--vex-alias-trade-up")).toBe("#4cd685");
     expect(resolveHex([chronos], "--vex-alias-trade-down")).toBe("#ff7b7b");
-    expect(resolveHex([chronos, celeris], "--vex-alias-trade-up")).toBe("#10763a");
-    expect(resolveHex([chronos, celeris], "--vex-alias-trade-down")).toBe("#c2272e");
   });
 });
 
@@ -190,19 +183,14 @@ describe("status by fill, never by colour", () => {
 
       it(`${theme.name}: the ${family.name} wash sits between its ink and the ground`, () => {
         // Direction, not just magnitude: a wash on the far side of the ground
-        // would satisfy the ratio while inverting the theme's whole logic. At
-        // night ink is lighter than wash which is lighter than ground; on
-        // paper every comparison flips.
+        // would satisfy the ratio while inverting the room's whole logic. On
+        // the dark ground ink is lighter than wash which is lighter than
+        // ground.
         const ink = luminance(resolveHex(theme.blocks, family.ink[0]));
         const wash = luminance(resolveHex(theme.blocks, family.wash));
         const ground = luminance(resolveHex(theme.blocks, "--vex-alias-bg-base"));
-        if (theme.name === "celeris") {
-          expect(ink).toBeLessThan(wash);
-          expect(wash).toBeLessThan(ground);
-        } else {
-          expect(ink).toBeGreaterThan(wash);
-          expect(wash).toBeGreaterThan(ground);
-        }
+        expect(ink).toBeGreaterThan(wash);
+        expect(wash).toBeGreaterThan(ground);
       });
     }
   }
@@ -268,9 +256,8 @@ describe("every text tier reads on every surface it sits on", () => {
 
     it(`${theme.name}: the reversed chrome plate carries its own ink at ${AA_BODY}:1`, () => {
       // Tooltip, hover card and toast, and the connection banner, which paints
-      // the same ink on the solid error plate. All four read in BOTH rooms now:
-      // the banner's old chronos gap (white on a light red, 2.92:1) closed
-      // when error became the ink.
+      // the same ink on the solid error plate. The banner's old gap (white on
+      // a light red, 2.92:1) closed when error became the ink.
       for (const plate of [
         "--vex-alias-tooltip-bg",
         "--vex-alias-toast-bg",
@@ -290,7 +277,7 @@ describe("every text tier reads on every surface it sits on", () => {
  * docs/design/R3-MINIMAL.md section 8.2). Approve is the one blue fill with its
  * own ink; Reject is the ink key, an ink outline on the card's paper that
  * fills with ink on hover. Every state a hand can put either key in must carry
- * its label at AA body contrast, in both rooms.
+ * its label at AA body contrast.
  */
 describe("REAL FUNDS key contrast", () => {
   for (const theme of THEMES) {

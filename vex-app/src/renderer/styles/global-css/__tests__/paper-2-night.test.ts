@@ -2,8 +2,9 @@
  * Paper 2 at night (docs/design/R3-MINIMAL.md section 1.1): #221A17, the
  * same step as the field. The surfaces that paint paper 2 through the layer 3
  * and overlay aliases (the code and signed-fields wells, the connection
- * banner) must read it, as the transcript's wells and the token chip do, by
- * day paper 2 (#E8EAF2). Tested as CSS text.
+ * banner) must read it, as the transcript's wells and the token chip do. The
+ * day room's paper 2 (#E8EAF2) retired with Celeris: no well keeps a day
+ * override. Tested as CSS text.
  */
 
 import { readFileSync } from "node:fs";
@@ -39,10 +40,8 @@ describe("paper 2", () => {
     expect(value(chronos, "--vex-alias-field")).toBe("var(--color-night-1)");
   });
 
-  it("the day room keeps paper 2 (#E8EAF2) for the same surfaces", () => {
-    const day = block('[data-vex-theme="celeris"]');
-    expect(value(tokensCss, "--color-paper-2")).toBe("#e8eaf2");
-    expect(value(day, "--vex-alias-bg-layer-3")).toBe("var(--color-paper-2)");
-    expect(value(day, "--vex-alias-bg-overlay")).toBe("var(--color-paper-2)");
+  it("keeps no day paper 2: the primitive and its day block are gone", () => {
+    expect(tokensCss).not.toContain("--color-paper-2:");
+    expect(tokensCss).not.toContain('[data-vex-theme="celeris"] {');
   });
 });

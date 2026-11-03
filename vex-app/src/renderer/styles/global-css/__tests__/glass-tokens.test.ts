@@ -217,22 +217,11 @@ describe("the Vex sidebar's print window (vex-sidebar.css)", () => {
     );
   });
 
-  it("swaps the day and night prints on the theme attribute", () => {
+  it("shows the night print only: the day print never displays in a dark-only app", () => {
     expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--day"), "display")).toBe(
       "none",
     );
-    expect(
-      declarationValue(
-        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--day'),
-        "display",
-      ),
-    ).toBe("block");
-    expect(
-      declarationValue(
-        ruleBody(vexSidebarCss, '[data-vex-theme="celeris"] .vex-vs-plate__img--night'),
-        "display",
-      ),
-    ).toBe("none");
+    expect(vexSidebarCss).not.toContain('[data-vex-theme="celeris"]');
   });
 });
 

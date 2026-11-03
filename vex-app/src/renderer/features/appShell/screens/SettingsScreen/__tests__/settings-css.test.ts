@@ -56,9 +56,8 @@ describe("settings.css", () => {
 
   it("selects a row with the blue 500 wash the left sidebar uses", () => {
     expect(rule(settings, ".vex-set")).toContain("--set-sel: rgba(163, 171, 255, 0.1)");
-    expect(rule(settings, '[data-vex-theme="celeris"] .vex-set')).toContain(
-      "--set-sel: rgba(0, 0, 192, 0.075)",
-    );
+    // One room: the day wash retired with Celeris.
+    expect(settings).not.toContain('[data-vex-theme="celeris"]');
     const selected = rule(settings, '.vex-set__item[aria-current="page"]');
     expect(selected).toContain("background: var(--set-sel)");
     expect(selected).toContain("font-weight: 500");

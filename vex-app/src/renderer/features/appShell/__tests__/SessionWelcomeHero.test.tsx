@@ -498,7 +498,7 @@ describe("SessionWelcomeHero - the seat glides as the stage changes", () => {
 });
 
 describe("SessionWelcomeHero - the greeting", () => {
-  it("is set in the blue as type: #0000C0 by day, the periwinkle at night, never the night title's paper", () => {
+  it("is set in the accent as type, the periwinkle on the night paper, never the night title's paper", () => {
     const css = readFileSync(
       join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
       "utf8",
@@ -509,9 +509,8 @@ describe("SessionWelcomeHero - the greeting", () => {
       join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
       "utf8",
     );
-    // The token it reads: the periwinkle in the night block, the blue by day.
+    // The token it reads: the periwinkle, in the one room.
     expect(tokens).toContain("--vex-alias-accent-primary: var(--color-peri);");
-    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-blue);");
     expect(tokens).toContain("--color-peri: #a3abff;");
   });
 

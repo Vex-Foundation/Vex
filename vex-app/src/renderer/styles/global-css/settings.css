@@ -30,9 +30,6 @@
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
-[data-vex-theme="celeris"] .vex-set {
-  --set-sel: rgba(0, 0, 192, 0.075);
-}
 
 /* THE NAV: group heads 12 / 500 muted, rows 34 high with a 16 line icon, the
  * name and the status word at the right (12 muted). Selected = the selection
