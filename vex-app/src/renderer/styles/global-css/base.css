@@ -33,13 +33,13 @@ body {
   line-height: 1.45;
 }
 
-/* NEVER A FAKE BOLD. Instrument Serif has no weight axis, so a
- * `font-semibold` reaching it would be synthesised by the browser. Weight
- * synthesis is off for the whole page: a face renders the weights it has
- * (Instrument Sans 400-700 and JetBrains Mono 100-800 are variable, so they
- * lose nothing). Italic synthesis stays on, because Instrument Sans ships
- * upright only and an italic request should still lean. Set on html so every
- * element inherits it. */
+/* NEVER A FAKE BOLD. Be Vietnam Pro ships two static weights (400, 600)
+ * and Roboto Mono one (400), so a weight between or above them would be
+ * synthesised by the browser. Weight synthesis is off for the whole page: a
+ * face renders the weights it has, by the CSS matching rules (500 renders
+ * 400, 700 renders 600, every figure 400). Italic synthesis stays on,
+ * because both faces ship upright only and an italic request should still
+ * lean. Set on html so every element inherits it. */
 html {
   font-synthesis-weight: none;
 }

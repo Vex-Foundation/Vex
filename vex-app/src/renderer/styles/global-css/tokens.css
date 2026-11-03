@@ -158,27 +158,31 @@
   --blur-*: initial;
 
   /* Typography - self-hosted WOFF2 (CSP-clean), faces in fonts.css
-   * (docs/design/R3-MINIMAL.md section 1).
-   *   --font-sans / --font-display = Instrument Sans (variable 400-700):
-   *     every UI word, labels and status words included, in sentence case.
-   *     Inter Tight follows it as glyph coverage only.
-   *   --font-mono  = JetBrains Mono (variable 100-800): every figure,
-   *     address, time and duration, with `.vex-num` (type.css) for
-   *     tabular figures. No pixel face.
+   * (docs/design/H3-DESKTOP.md section 2.3).
+   *   --font-sans / --font-display = Be Vietnam Pro (static 400 and 600,
+   *     latin and latin-ext): every word. A 500 request renders the 400 file
+   *     and a 700 the 600 file; weight synthesis is off (base.css), so
+   *     nothing is faked.
+   *   --font-mono  = Roboto Mono (static 400, latin and latin-ext): every
+   *     figure, balance, address, time and duration, with `.vex-num`
+   *     (type.css) for tabular figures, and the money card's field labels.
+   *     Every figure is 400.
    *   --font-code  = JetBrains Mono: code - xterm, code blocks, the file
-   *     viewer, raw JSON. The same face as the figures, kept as its own
-   *     token so code and figures can part again without a sweep.
+   *     viewer, raw JSON - until Studio's own plate says otherwise
+   *     (section 4.9). Code and figures parted here, as the token was kept
+   *     for.
    *   --font-serif = Instrument Serif: display only (the greeting 52, wake
    *     and unlock 56). Static 400 + italic, NO weight axis.
    * The sans stack names its metric-matched `Fallback` twin right after the
-   * web faces, so the block period lays out at the final metrics. */
+   * web face, so the block period lays out at the final metrics. Be Vietnam
+   * Pro carries latin-ext itself, so no coverage face follows it. */
   --font-sans:
-    "Instrument Sans", "Inter Tight", "Instrument Sans Fallback",
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+    "Be Vietnam Pro", "Be Vietnam Pro Fallback", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
   --font-display: var(--font-sans);
   --font-mono:
-    "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    "Roboto Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   --font-code:
     "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
   /* Falls back to the platform serifs so a font-load miss still reads as a

@@ -153,14 +153,15 @@ describe("figures", () => {
 });
 
 describe("the tokens the register stands on", () => {
-  it("leads the sans stack with Instrument Sans, then its coverage and its metric twin", () => {
-    expect(token("--font-sans")).toMatch(
-      /^"Instrument Sans", "Inter Tight", "Instrument Sans Fallback",/,
-    );
+  it("leads the sans stack with Be Vietnam Pro, then its metric twin", () => {
+    // docs/design/H3-DESKTOP.md section 2.3. Be Vietnam Pro carries latin-ext
+    // itself, so no coverage face sits between it and its twin.
+    expect(token("--font-sans")).toMatch(/^"Be Vietnam Pro", "Be Vietnam Pro Fallback",/);
+    expect(token("--font-sans")).not.toMatch(/Instrument|Inter Tight/);
   });
 
-  it("leads the mono stack with JetBrains Mono and no pixel face", () => {
-    expect(token("--font-mono")).toMatch(/^"JetBrains Mono",/);
+  it("leads the mono stack with Roboto Mono and no pixel face", () => {
+    expect(token("--font-mono")).toMatch(/^"Roboto Mono",/);
     expect(TOKENS).not.toContain("Departure Mono");
   });
 
@@ -182,16 +183,20 @@ describe("the tokens the register stands on", () => {
     ).toBe(false);
   });
 
-  it("ships JetBrains Mono as a variable face for the figures", () => {
-    const face = /@font-face\s*\{[^}]*font-family:\s*"JetBrains Mono";[^}]*\}/.exec(FONTS)?.[0] ?? "";
-    expect(face).toContain('url("/fonts/jetbrains-mono-latin-wght.woff2")');
-    expect(face).toMatch(/font-weight:\s*100 800;/);
+  it("ships Roboto Mono at 400 for the figures, and JetBrains Mono, variable, for code", () => {
+    const figures = /@font-face\s*\{[^}]*font-family:\s*"Roboto Mono";[^}]*\}/.exec(FONTS)?.[0] ?? "";
+    expect(figures).toContain('url("/fonts/roboto-mono-latin-400-normal.woff2")');
+    expect(figures).toMatch(/font-weight:\s*400;/);
+    const code = /@font-face\s*\{[^}]*font-family:\s*"JetBrains Mono";[^}]*\}/.exec(FONTS)?.[0] ?? "";
+    expect(code).toContain('url("/fonts/jetbrains-mono-latin-wght.woff2")');
+    expect(code).toMatch(/font-weight:\s*100 800;/);
   });
 
-  it("preloads the Instrument Sans file, the above-the-fold face", () => {
+  it("preloads the Be Vietnam Pro 400 file, the above-the-fold face, and nothing R3 set", () => {
     expect(INDEX_HTML).toMatch(
-      /<link\s+rel="preload"\s+href="\/fonts\/instrument-sans-latin-var\.woff2"\s+as="font"\s+type="font\/woff2"\s+crossorigin\s*\/>/,
+      /<link\s+rel="preload"\s+href="\/fonts\/be-vietnam-pro-latin-400-normal\.woff2"\s+as="font"\s+type="font\/woff2"\s+crossorigin\s*\/>/,
     );
+    expect(INDEX_HTML).not.toContain("instrument-sans-latin-var.woff2");
     expect(INDEX_HTML).not.toContain("inter-tight-latin-wght.woff2");
   });
 

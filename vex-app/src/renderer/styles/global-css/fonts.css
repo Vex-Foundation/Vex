@@ -2,21 +2,19 @@
  * public/fonts/ so publicDir copies them verbatim into dist/renderer/fonts/
  * (license text ships alongside under fonts/licenses/, OFL 1.1).
  *
- * THE REGISTER (R3, docs/design/R3-MINIMAL.md section 1; tokens.css
+ * THE REGISTER (H3, docs/design/H3-DESKTOP.md section 2.3; tokens.css
  * --font-*):
- *   - Instrument Sans  = every UI word: reading, rows, labels and status
- *     words, in sentence case (variable wght 400-700, wdth 75-100). Token
- *     --font-sans (and --font-display, the same stack).
- *   - JetBrains Mono   = every figure, address, time and duration (token
- *     --font-mono, with `.vex-num` for tabular figures), and code: xterm,
- *     code blocks, the file viewer, raw JSON (token --font-code). Variable
- *     wght 100-800.
- *   - Instrument Serif = display only (static 400 + italic, NO weight axis -
- *     see the note above its faces). Token --font-serif.
- *   - Inter Tight      = no longer a voice. It stays in the --font-sans stack
- *     right after Instrument Sans as per-glyph coverage (Instrument Sans ships
- *     latin only; Inter Tight carries latin-ext, so Polish still renders in a
- *     sans).
+ *   - Be Vietnam Pro   = every word (static 400 and 600, latin and
+ *     latin-ext). Token --font-sans (and --font-display, the same stack).
+ *   - Roboto Mono      = every figure, balance, address, time and duration,
+ *     and the money card's field labels (static 400 only, so every figure is
+ *     400). Token --font-mono, with `.vex-num` for tabular figures.
+ *   - JetBrains Mono   = code: xterm, code blocks, the file viewer, raw JSON
+ *     (token --font-code), until Studio's own plate. Variable wght 100-800.
+ *   - Instrument Sans, Instrument Serif and Inter Tight = R3's faces, no
+ *     longer in any stack. Their faces stay declared until their files
+ *     retire (the revamp's last wave); a face nothing names is never
+ *     downloaded.
  * There is no pixel face.
  * `font-display: block` - fonts are local files with zero-latency loads, so
  * blocking eliminates the fallback-swap flash.

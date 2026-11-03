@@ -868,7 +868,7 @@ test.describe("board spotlight region seams", () => {
 });
 
 test.describe("board paint", () => {
-  test("draws square tiles with a fill status chip and figures in JetBrains Mono", async ({
+  test("draws square tiles with a fill status chip and figures in Roboto Mono", async ({
     page,
   }) => {
     await open(page, { width: 1440 });
@@ -888,10 +888,11 @@ test.describe("board paint", () => {
     expect(paint?.radius).toBe("0px");
     expect(paint?.shadow).toBe("none");
     expect(paint?.swatch).not.toBeNull();
-    expect(paint?.priceFont).toContain("JetBrains Mono");
+    // H3 figures (docs/design/H3-DESKTOP.md section 2.3).
+    expect(paint?.priceFont).toContain("Roboto Mono");
   });
 
-  test("sets the page's head row title in Instrument Sans over a quiet rule", async ({
+  test("sets the page's head row title in Be Vietnam Pro over a quiet rule", async ({
     page,
   }) => {
     await open(page, { width: 1440 });
@@ -904,7 +905,8 @@ test.describe("board paint", () => {
         rule: getComputedStyle(head).borderBottomWidth,
       };
     });
-    expect(header?.font).toContain("Instrument Sans");
+    // H3 words (docs/design/H3-DESKTOP.md section 2.3).
+    expect(header?.font).toContain("Be Vietnam Pro");
     expect(header?.rule).toBe("1px");
   });
 });
