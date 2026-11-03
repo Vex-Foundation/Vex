@@ -551,6 +551,32 @@
   --vex-vex-w-md: 240px;
   --vex-vex-w-sm: 224px;
   --vex-transcript-max: 760px;
+
+  /* H3 SHELL GEOMETRY (docs/design/H3-DESKTOP.md sections 1.1, 1.2, 1.5 and
+   * 1.10), declared ahead of the grid that reads it: the R3 names above stay
+   * the frame's until the shell grid moves (S2), and nothing reads these yet.
+   *
+   * The column rule: the chats column is a fixed 248; the Vex column is 30%
+   * of the window width rounded to a whole pixel (432 at 1440, 410 at 1366,
+   * 384 at 1280, 307 at 1024); the chat column takes the rest, with no floor.
+   * The tracks are a function of the window width alone, never of Kimm's
+   * section, which is the first leg of the money rule (section 3.6); the
+   * column solver mirrors the rule in JS (`lib/shell-columns.ts`).
+   *
+   * One header row of cells, 76 high, across the window; one bottom row, 72
+   * high, under the three columns in a chat. Kimm's section folds to a 56
+   * strip, which is also her corner key's height. Under 1024 the band layout
+   * takes over: the chats fold to a 76 rail and the Vex column becomes a band
+   * over the chat. A media query cannot read a custom property, so the band's
+   * edge is stated here for the record and spelled by the rules that use it. */
+  --vex-h3-chats-w: 248px;
+  --vex-h3-vex-share: 30vw;
+  --vex-h3-vex-w: round(nearest, var(--vex-h3-vex-share), 1px);
+  --vex-h3-header-h: 76px;
+  --vex-h3-bottom-h: 72px;
+  --vex-h3-strip-h: 56px;
+  --vex-h3-band-under: 1024px;
+  --vex-h3-rail-w: 76px;
 }
 
 /* Utility tier - alias projections. `@theme inline` is REQUIRED here: the
