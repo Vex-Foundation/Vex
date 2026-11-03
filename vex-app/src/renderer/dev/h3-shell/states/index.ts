@@ -9,6 +9,7 @@
  */
 
 import { baseAnswers } from "../fixtures/base.js";
+import { filled } from "./filled.js";
 import { newChat } from "./new-chat.js";
 import { swapWaiting } from "./swap-waiting.js";
 import { thinking } from "./thinking.js";
@@ -22,7 +23,7 @@ const shell: HarnessState = {
   ready: '[data-vex-screen="appShell"]',
 };
 
-export const HARNESS_STATES: readonly HarnessState[] = [shell, newChat, thinking, swapWaiting];
+export const HARNESS_STATES: readonly HarnessState[] = [shell, newChat, thinking, swapWaiting, filled];
 
 export const DEFAULT_STATE = shell;
 
