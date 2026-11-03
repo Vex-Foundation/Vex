@@ -12,7 +12,7 @@ The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 
 - One saturated blue fills primary keys and nothing else. It is never type on the ground.
 - A status is a small coloured square beside a light word. Green, red and grey are the only status colours; gains and losses in trading values take green and red type.
 - Be Vietnam Pro for words, Roboto Mono for figures and for the money card's field labels.
-- Opening or closing Kimm's section never moves, resizes or covers a waiting money card (section 3).
+- Opening or closing Kimm's section never moves, resizes or covers a waiting money card (section 3.6).
 - Desktop shows only what it can back with real data (`AGENTS.md`). An H3 element with no desktop source is left out or replaced by a true one, never drawn with sample values.
 - Dark only.
 
@@ -85,7 +85,7 @@ Open: Cloud's own breakpoints and widths, and whether Cloud's chat has a floor. 
 | 2560 | 248 | 768 | 1544 | printed |
 
 What follows from the rule:
-- The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first half of the money rule (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
+- The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first of the money rule's three legs (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
 - There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is 469, narrower than any plate. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3), and whether Cloud moves the band seam above 1024. Settled in the harness at 1024 and 1280 and with Cloud.
 - In a chat, the Vex column's width never depends on whether her section is open. On pages, closing her folds the column to a line (section 1.9).
 - Open: what the sidebar key does at 1024 and up; it is drawn but never pressed. Presumed: it folds the chats column to the 76px rail and the chat takes the freed 172px. A fold the person asks for may move a card; her section never does.
@@ -428,6 +428,120 @@ Any JS timer paired with these durations follows the policy's cross-file pair ru
 
 ---
 
+## 4. Where desktop differs
+
+Desktop follows H3 except where this section says otherwise. Every difference here is on purpose, and the parity captures (section 4.10) are expected to show each of them.
+
+### 4.1 Elements with no data on desktop
+Desktop is mainnet only ("Nothing here is a sandbox or testnet", `src/vex-agent/studio/instructions/shared-usage.ts`) and has no Hyperliquid. From the code audit behind the revamp plan:
+
+**Left out** until a real feature backs them. Building those features (F04 spend caps, F11 strategies, a global pause, a daily budget, paper mode) is tracker work, not part of the revamp.
+1. Strategies, everywhere: the console's strategies row and strategy rows, Strategies in the nav, the page strip's strategies cell, allocation by strategy, and the word "strategy" in any line. F11 has not started, and even F11 is paper only.
+2. The network menu, and Paper against Live. There is no testnet and no paper mode; a static MAINNET and REAL FUNDS is true.
+3. PAUSE ALL. Desktop has per-run pause and stop, and Lock Vex, which stops signing, not workers.
+4. DAILY BUDGET. There is no daily budget; the status strip's CONTEXT meter takes its cell.
+5. The card's limits line ("up to 10,000 USD per order, 50,000 USD a day"). F04 has not started.
+6. "Change in Settings" under AI PERMISSION. A chat's permission is set when it is created and locked.
+7. The composer's image key. Attachments are not supported.
+8. The card's FROM row with the wallet's available balance.
+9. The card's QUOTED PRICE.
+10. The card's editable amount. The card shows the signed arguments; a new amount is a new proposal.
+11. A network fee figure and a total debit with an unknown part. Network fee reads "Not available", and the total stays hidden until every part is known.
+
+**Filled from what is real:**
+
+12. Portfolio: the wallet total, the change since the last snapshot, and Lighter's equity and positions; the equity chart once the balance snapshots reach the renderer (S7-05). Left out: P&L over today, 7 days and all time, drawdown, "of allocated", the 90-day range and allocation by venue.
+13. The open-positions table: Lighter perps only.
+14. The thinking row: "Thought for N s" only after a live turn, since persisted turns store no duration; tool rows keep their measured times.
+15. Activity's status words: desktop's outcome words (Appendix A.3).
+16. The nav: section 4.6.
+
+What this does to the layout: the console's top block is 40 shorter and her box starts at y 224 (section 1.5); the status strip holds the model and effort, the permission's promise and the context meter (section 1.8); the field runs on to the send key; the card's foot is section 4.3.
+
+### 4.2 Mainnet only
+- The header's network cell is a statement: MAINNET and the REAL FUNDS mark, no chevron, no menu.
+- Every card keeps MAINNET and the REAL FUNDS stamp in its eyebrow row, as every R3 card wears REAL FUNDS.
+- Portfolio has no PAPER key.
+- "Mainnet" in the Needs you meta line and the missions row is true and stays.
+
+### 4.3 The approval gate
+H3 swaps desktop's two-step confirm for a tick ("I understand real funds can be lost") and adds Ctrl+Enter to approve and Esc to reject. `AGENTS.md` forbids weakening an approval gate without a reviewed product decision, so desktop keeps its gate and takes H3's look:
+
+- Reject and the approve key sit in the bottom row's chat cells (section 1.8). Reject keeps the first focus.
+- A high-risk card (risk level high or critical, or an action kind of `destructive` or `user_wallet_broadcast`, `ApprovalCard/risk.ts`) still takes two presses, for Approve and for Reject alike. The first press arms the key for 4 seconds (`CONFIRM_RESET_MS`, `ApprovalCard.tsx`) and its label reads "Click again to confirm approve" or "Click again to confirm reject"; the second decides. Any other card decides on one press.
+- No tick box, no Ctrl+Enter, and Esc never decides a card.
+- The middle cell holds the line for the card's gate (Appendix A.7) and no control.
+- The approve key is the blue primary while it can be pressed. H3 never draws the enabled key; blue is presumed from SEND.
+- R3's safety flow stays: REAL FUNDS on every card, Reject first, Lock Vex refused while signing, nothing signs until the person confirms.
+- While a card waits in a chat, the composer gives way to the card, as H3 draws it: the reason field, "Tell Vex what to do instead", is the way to tell Vex something else, and it rejects with the reason, which reaches Vex. Open: whether desktop's composer stays usable under a waiting card, as it is today with its "Waiting for approval" tag. Default: H3's.
+
+Adopting the tick and the card keys later needs the owner's decision and a safety review. The card work (S6b) is kept in one builder's files so that review reads one diff.
+
+### 4.4 Keys
+- **Ctrl+Shift+B** on Windows and Linux, **Cmd+Shift+B** on macOS, opens and closes her section from anywhere: a listener at the shell, not one that lives only while a chip is mounted, as `VexTokenChip.tsx`'s does today. It matches `KeyboardEvent.code` `KeyB` with exact modifiers: Shift and the platform's key, no Alt, not the other platform's key.
+- **Desktop binds it on Linux too.** Cloud leaves it unbound there ("unbound on Linux, as the app leaves it", `h3-merged__plate-controls`; the plate gives no reason). The desktop app owns its keys, and the chord collides with nothing in it: Studio's `KeyB` binding is Ctrl or Cmd+B without Shift, and Studio's matcher requires exact modifiers; xterm does not encode it; the menu's one accelerator is Lock Vex, Cmd or Ctrl+Shift+L (`src/main/menu-template.ts`). The Studio terminal refuses the chord explicitly (`XtermHost.tsx`), so the shell gets it first. Open: a Linux desktop that takes the chord globally; checked in the Linux pass (S9-03).
+- **The old chord,** Cmd or Ctrl+Shift+Period (`features/vex/vex-toggle-shortcut.ts`), still opens and closes her for one release, then goes. Keycaps and tooltips show only the new chord.
+- The shortcut's proof test compares modifiers as well as codes (`vex-toggle-shortcut.test.ts`).
+- **Esc** never closes her and never decides a card. In Lighter Zen, Esc keeps closing Zen's own panels and then Zen, but no longer closes the Vex overlay (S2-13).
+
+### 4.5 Dark only
+Every H3 plate is dark. Desktop retires its light theme (Celeris) and the "system" choice, and saved choices move to dark (S1-04). The window background, the Windows caption overlay and the theme-matrix test follow the one ground (section 2.1).
+
+### 4.6 The nav
+Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board, Settings.
+- Markets is today's Watchlist. Activity is today's Agent Scan, which joins the nav.
+- No Strategies until F11.
+- Lighter, Studio and Board are desktop's; H3 does not draw them.
+- Icons follow H3's nav icons (S5-04); desktop's three extra entries are drawn in the same grid and stroke.
+
+Nine rows on the 40px pitch take 360 where H3's seven take 280, so the chats list's rule moves from 472 to about 552. The CHATS heading, the first group head and the first row need about 114 under that rule, so at a 720-high window (bottom row at 648) not one chat row fits; H3's own seven rows leave about one. Open: whether the nav condenses or the column scrolls at short heights. Settled in the harness at 1000 x 720 and 1280 x 800.
+
+### 4.7 Window chrome
+- `titleBarStyle: 'hidden'` stays on every OS. The header row is the drag region; every control in it opts out.
+- **macOS.** The traffic lights are 12px circles 8 apart from x 20, so they span 20 to 72 (`TRAFFIC_LIGHT_POSITION`, `src/main/windows/chrome-options.ts`). In the 76-high header they move from y 16 to y 32, so they centre on the row ((76 - 12) / 2, derived; S2-04). The logo cell's mark starts after them, at 92, as R3's left head does. H3's "CLOUD" would not fit beside the mark there either.
+- **Windows and Linux.** The window controls are an overlay at the top right: today 138 wide including its gap and 43 high (the 44 head less its rule). Desktop leaves PAUSE ALL out, so the header cell where H3 draws it becomes the reserve: as wide as `--overlay-w`, a drag region with nothing in it. Proposed: the overlay grows to 75 high (the header less its rule), so the buttons fill the row. Its colour is the ground. Open: the 75-high buttons and Windows 11's snap menu, checked on Windows in S9-02.
+- **Linux with the native frame** (`nativeFrame`): no overlay and no reserve; the OS frame stands above the header.
+
+### 4.8 Desktop's title bar items H3 has no cell for
+Today's title bar (`RunningHead.tsx`) holds more than H3's header draws:
+
+| Today | In H3 |
+|---|---|
+| the token chip | the Vex key (S3-03) |
+| Needs you | the console's NEEDS YOU; no header control. The Lighter desk has no console until its restyle, so its title row keeps today's Needs you control until then (S2-06) |
+| Notices, while notices exist | Open. Proposed: a cell in the chat header before the network cell, only while notices exist |
+| a page's keys (refresh, export; `pageKeysSlot.tsx`) | the page's tabs row, at the right beside "Updated {time}" |
+| a chat's export (`SessionExportControl`) and the mission rail (`MissionRail`) | Open. Proposed: the export in a menu on the chat title cell; the mission's controls in R3's mission strip above the composer |
+| Studio's host status | Studio's own plate (section 4.9) |
+| the approvals sync, the notification center and the announcer | unchanged: mounted once, inside the header (S2-03) |
+
+### 4.9 Screens H3 does not draw
+H3 covers Cloud's screens. These desktop surfaces have no H3 plate:
+- Studio: projects, the explorer, terminals and their panes;
+- the Lighter desk: the market bar, the chart, the book, the ticket and its Review order card, the account dock, Zen, the desk chat and its drag;
+- the screens before the shell: wake and unlock, the system check and migration, the first-run stages and the wizard;
+- Board, Markets (the Watchlist), Memory, Sessions, How Vex works, Vex Inference funds, Settings' sections and the Needs you page.
+
+They get our own H3 plates, composed in the harness from this document's tokens and cells and approved by the owner before any code for them is written (S8-01 to S8-03). Until then they keep their R3 layout and take only the H3 look (S1). Activity, Markets and Settings are in H3's nav but not drawn; they follow the page frame (section 1.9), with rows built from the console's and the chats list's cells.
+
+Already known for those plates:
+- The Lighter desk keeps its chat on the right until its own restyle (S2-06). The money rule binds its Review order card too: opening or closing her never moves it.
+- Studio's console adds "This project" (S8-06).
+- Kimm replaces K2 everywhere, including the stage screens, and K2 retires at the end of wave 4 (S8-16).
+
+### 4.10 Other desktop rules
+- **A page that can hold a money card keeps the chat layout.** On the Needs you page, closing her folds only her section, never the column, so a card there never moves. Cloud has no such page.
+- Her open or closed choice and the first-close flag live in the persisted layout store, per profile, not per browser (section 3.5).
+- First launch opens her. The sheet's question whether hiding her on the home page also hides her in the app does not apply to desktop.
+- There is no phone layout. The window floor is 1000 x 720, and the band borrows from the phone only between 1000 and 1023 (section 1.10).
+- One release carries the new look, with no flag.
+- **Parity.** The same states are rendered on both apps at 1440 x 900 and 1280 x 800 (the welcome, a swap waiting and Portfolio, each with her open and closed) and compared side by side (`e2e/h3-parity.spec.ts`). The differences in this section are expected in those captures; any other difference is a defect on one side.
+
+### 4.11 What Cloud and desktop must agree on
+The column rule and tiers (section 1.2), the words of every element both apps show (Appendix A, where desktop says "same"), the keys (Appendix A.9, less desktop's old chord and its Linux binding), the timings and the push curve (section 3.1), the mood list (section 1.6) and the open-and-closed memory rule (section 3.5). These go to desu; Cloud's answers are recorded here when they come, and each "Open" line above that Cloud settles is rewritten then.
+
+---
+
 ## Appendix A. Words, keys and taglines
 
 Every word the H3 app screens show, and the word desktop shows in its place. "Same" means desktop uses H3's word. "Left out" means desktop has no real source for it. Where H3's word would be false on desktop, the desktop column gives a true one and the last column says why. Words are written in sentence case in code and shown in caps where the label style applies (section 2.3). Sample values on the captures (chat titles, figures, "Grow ETH") are not words and are not listed. Proposals marked "proposed" are for the row that builds the screen to confirm.
@@ -529,7 +643,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | "Tell Vex what to do instead" | same, for the reason field | the reason reaches Vex |
 | REJECT | same; "Click again to confirm reject" when armed | |
 | the tick box, "I understand real funds can be lost" | left out | desktop keeps its two-step confirm |
-| CTRL+ENTER APPROVES, ESC REJECTS | left out; the middle cell says "Press Approve twice: the first press arms it for 4 s." on a card that needs two presses, and "Nothing signs until you approve." on one that does not (proposed) | no card shortcuts on desktop |
+| CTRL+ENTER APPROVES, ESC REJECTS | left out; the middle cell says "Two presses decide: the first arms the key for 4 s." on a card that needs two presses, and "Nothing signs until you approve." on one that does not (proposed) | no card shortcuts on desktop |
 | APPROVE SWAP | "Approve swap", "Approve bridge", "Approve order", "Approve transfer", else "Approve"; Lighter's own words for a deposit and trading fees; "Click again to confirm approve" when armed | desktop's action words |
 
 ### A.8 The receipt, pages and the page strip
