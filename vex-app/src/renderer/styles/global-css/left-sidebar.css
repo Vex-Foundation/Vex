@@ -10,12 +10,14 @@
  * 40 x 40 keys centred under the Expand key and a short quiet rule, the
  * account box at the foot.
  *
- * The selection wash and the search mark are R3 values with no alias yet:
- * blue at 7.5% and 14% by day, periwinkle at 10% and 22% at night. */
+ * The selection wash is the H3 selected step and the search mark the chosen
+ * rule's white (docs/design/H3-DESKTOP.md section 2.1); R3 spelled both as
+ * periwinkle literals. The left column's own restyle (S5) brings the selected
+ * nav row's gradient, `--vex-alias-row-selected`. */
 
 .vex-ls {
-  --ls-sel: rgba(163, 171, 255, 0.1);
-  --ls-mark: rgba(163, 171, 255, 0.22);
+  --ls-sel: var(--vex-alias-interactive-active);
+  --ls-mark: var(--vex-alias-rule-chosen);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -29,10 +31,6 @@
   font-size: 14px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
-}
-[data-vex-theme="celeris"] .vex-ls {
-  --ls-sel: rgba(0, 0, 192, 0.075);
-  --ls-mark: rgba(0, 0, 192, 0.14);
 }
 /* Keyboard focus: the focus ring, inside the control so the column's edge
  * never clips it. The search field keeps its own blue border. */

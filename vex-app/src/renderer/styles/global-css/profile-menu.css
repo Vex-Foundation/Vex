@@ -14,7 +14,8 @@
  * `animationend`. */
 
 .vex-prof {
-  --prof-sel: rgba(163, 171, 255, 0.1);
+  /* The H3 selected step (R3 spelled a periwinkle literal here). */
+  --prof-sel: var(--vex-alias-interactive-active);
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 16px;
   column-gap: 10px;
@@ -26,9 +27,6 @@
   text-align: left;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
-}
-[data-vex-theme="celeris"] .vex-prof {
-  --prof-sel: rgba(0, 0, 192, 0.075);
 }
 .vex-prof:hover,
 .vex-prof[aria-expanded="true"] {
@@ -137,10 +135,7 @@
   color: var(--vex-alias-label-secondary);
 }
 .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
-  background: rgba(163, 171, 255, 0.1);
-}
-[data-vex-theme="celeris"] .vex-profile-menu--panel .vex-menu-item:hover:not(:disabled) {
-  background: rgba(0, 0, 192, 0.075);
+  background: var(--vex-alias-interactive-active);
 }
 .vex-profile-menu--panel .vex-menu-separator {
   margin: 6px 0;

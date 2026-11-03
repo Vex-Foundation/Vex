@@ -350,9 +350,6 @@
   background: var(--vex-alias-field);
   font-size: 12.5px;
 }
-[data-vex-theme="celeris"] .vex-step-well {
-  background: var(--color-paper-2);
-}
 .vex-step-well__section {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
@@ -644,9 +641,6 @@
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-secondary);
 }
-[data-vex-theme="celeris"] .vex-marker__content {
-  background: var(--color-paper-2);
-}
 
 /* ============================================================ *
  *  HOVER REVEALS                                                *
@@ -700,9 +694,6 @@
   overflow: hidden;
   border: 1px solid var(--vex-alias-rule-quiet);
   background: var(--vex-alias-field);
-}
-[data-vex-theme="celeris"] .vex-code-block {
-  background: var(--color-paper-2);
 }
 .vex-code-block__head {
   display: flex;

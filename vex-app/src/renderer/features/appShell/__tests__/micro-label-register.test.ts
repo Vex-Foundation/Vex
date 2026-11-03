@@ -1,17 +1,19 @@
 /**
- * Micro-label register contract (R3, docs/design/R3-MINIMAL.md section 1).
+ * Label register contract (H3, docs/design/H3-DESKTOP.md section 2.3).
  *
  * `.vex-micro-label` in `styles/global-css/type.css` is the single
  * owner of the app-wide label stamp, with `.vex-micro` (the caption) and
- * `.vex-eyebrow` (the section and field label) beside it. R3 sets all three
- * in Instrument Sans, in sentence case, at 12 or 13px with no caps tracking:
- * caps belong to tags alone. Figures are JetBrains Mono with `.vex-num`.
+ * `.vex-eyebrow` (the section head and field label) beside it. H3 sets all
+ * three in Be Vietnam Pro CAPS, tracked 0.08em, at 12 or 13px: the source
+ * stays sentence case and the class paints the caps, so a screen reader
+ * reads words. The money card's field labels are the one mono caps register
+ * (`.vex-field-label`). Figures are Roboto Mono with `.vex-num`. This
+ * replaces R3's sentence-case, untracked register.
  *
  * This suite pins the register's declarations against the stylesheet TEXT so a
  * future drift is a red build rather than a review comment, and pins the
- * tokens it stands on (the sans and mono stacks, the caps tracking kept for
- * tags) and the one base rule that keeps a bold from being faked on the
- * serif. The companion enforcement lives in `shell-design-guard.test.ts`:
+ * tokens it stands on (the sans and mono stacks, the one caps tracking) and
+ * the one base rule that keeps a weight the faces lack from being faked. The companion enforcement lives in `shell-design-guard.test.ts`:
  * that suite bans the dead class names and the sub-floor ink tiers at the
  * CALL SITES; this one guards the classes the call sites depend on.
  *
@@ -53,6 +55,8 @@ function token(name: string): string {
 }
 
 const REGISTER = [".vex-micro-label", ".vex-micro", ".vex-eyebrow"] as const;
+/** The weights the sans and the mono ship (fonts.css): a register sets one. */
+const SHIPPED_WEIGHTS = new Set([400, 600]);
 
 describe("micro-label register", () => {
   it("sets the label in the sans family so call sites never re-declare it", () => {
@@ -68,8 +72,8 @@ describe("micro-label register", () => {
     expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(/font-weight:\s*400\s*;/);
   });
 
-  it("sets sentence case at the class, so a call site's caps utility converts here", () => {
-    expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(/text-transform:\s*none\s*;/);
+  it("paints the caps at the class, so the source stays sentence case", () => {
+    expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(/text-transform:\s*uppercase\s*;/);
   });
 
   it("pins tabular figures - a label that carries numbers must not jitter", () => {
@@ -78,8 +82,10 @@ describe("micro-label register", () => {
     );
   });
 
-  it("drops the caps tracking: a label is tracked normally", () => {
-    expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(/letter-spacing:\s*normal\s*;/);
+  it("tracks the caps at the one label tracking, and --wide inherits it", () => {
+    expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(
+      /letter-spacing:\s*var\(--tracking-label\)\s*;/,
+    );
     expect(ruleBody(SHEET, ".vex-micro-label--wide")).not.toContain("letter-spacing");
   });
 
@@ -105,13 +111,12 @@ describe("micro-label register", () => {
 });
 
 describe("the caption and the eyebrow speak the same register", () => {
-  it.each(REGISTER)("sets %s in Instrument Sans, sentence case, untracked", (selector) => {
+  it.each(REGISTER)("sets %s in the sans, in caps, tracked 0.08em", (selector) => {
     const body = ruleBody(SHEET, selector);
     expect(body).toContain("font-family: var(--font-sans)");
-    expect(body).toMatch(/text-transform:\s*none\s*;/);
-    expect(body).toMatch(/letter-spacing:\s*normal\s*;/);
+    expect(body).toMatch(/text-transform:\s*uppercase\s*;/);
+    expect(body).toMatch(/letter-spacing:\s*var\(--tracking-label\)\s*;/);
     expect(body).not.toContain("var(--font-mono)");
-    expect(body).not.toContain("uppercase");
   });
 
   it.each(REGISTER)("sets %s at 12 or 13px, never through a size hook", (selector) => {
@@ -126,20 +131,34 @@ describe("the caption and the eyebrow speak the same register", () => {
     expect(ruleBody(SHEET, ".vex-eyebrow")).toMatch(/font-size:\s*13px\s*;/);
   });
 
-  it("gives the eyebrow the field label's 500 on the second ink", () => {
+  it("gives the eyebrow the section head's 600, in ink", () => {
+    // H3 draws NEEDS YOU, CHATS and RECENT ACTIVITY at 600 in ink.
     const body = ruleBody(SHEET, ".vex-eyebrow");
-    expect(body).toMatch(/font-weight:\s*500\s*;/);
-    expect(body).toMatch(/color:\s*var\(--color-ink-secondary\)\s*;/);
+    expect(body).toMatch(/font-weight:\s*600\s*;/);
+    expect(body).toMatch(/color:\s*var\(--color-ink-primary\)\s*;/);
   });
 
-  it("never sets a register below 400 or above 500", () => {
-    for (const selector of [...REGISTER, ".vex-micro-label--wide"]) {
+  it("sets every register at a weight the faces ship, never one the browser would fake", () => {
+    for (const selector of [...REGISTER, ".vex-micro-label--wide", ".vex-field-label"]) {
       const weight = /font-weight:\s*(\d+)/.exec(ruleBody(SHEET, selector))?.[1];
       if (weight !== undefined) {
-        expect(Number(weight), selector).toBeGreaterThanOrEqual(400);
-        expect(Number(weight), selector).toBeLessThanOrEqual(500);
+        expect(SHIPPED_WEIGHTS.has(Number(weight)), `${selector} at ${weight}`).toBe(true);
       }
     }
+  });
+});
+
+describe("the money card's field labels", () => {
+  it("are the one mono caps register: mono 13, 400, caps, tracked, tabular", () => {
+    const body = ruleBody(SHEET, ".vex-field-label");
+    expect(body).toContain("font-family: var(--font-mono)");
+    expect(body).toMatch(/font-size:\s*13px\s*;/);
+    expect(body).toMatch(/font-weight:\s*400\s*;/);
+    expect(body).toMatch(/text-transform:\s*uppercase\s*;/);
+    expect(body).toMatch(/letter-spacing:\s*var\(--tracking-label\)\s*;/);
+    expect(body).toContain("font-variant-numeric: tabular-nums");
+    // The call site owns the ink tier, as for every label.
+    expect(body).not.toMatch(/(?<!-)\bcolor:/);
   });
 });
 
@@ -153,14 +172,15 @@ describe("figures", () => {
 });
 
 describe("the tokens the register stands on", () => {
-  it("leads the sans stack with Instrument Sans, then its coverage and its metric twin", () => {
-    expect(token("--font-sans")).toMatch(
-      /^"Instrument Sans", "Inter Tight", "Instrument Sans Fallback",/,
-    );
+  it("leads the sans stack with Be Vietnam Pro, then its metric twin", () => {
+    // docs/design/H3-DESKTOP.md section 2.3. Be Vietnam Pro carries latin-ext
+    // itself, so no coverage face sits between it and its twin.
+    expect(token("--font-sans")).toMatch(/^"Be Vietnam Pro", "Be Vietnam Pro Fallback",/);
+    expect(token("--font-sans")).not.toMatch(/Instrument|Inter Tight/);
   });
 
-  it("leads the mono stack with JetBrains Mono and no pixel face", () => {
-    expect(token("--font-mono")).toMatch(/^"JetBrains Mono",/);
+  it("leads the mono stack with Roboto Mono and no pixel face", () => {
+    expect(token("--font-mono")).toMatch(/^"Roboto Mono",/);
     expect(TOKENS).not.toContain("Departure Mono");
   });
 
@@ -168,10 +188,16 @@ describe("the tokens the register stands on", () => {
     expect(token("--font-code")).toMatch(/^"JetBrains Mono",/);
   });
 
-  it("keeps the caps tracking scale for the tags and the call sites still converting", () => {
-    expect(token("--tracking-eyebrow")).toBe("0.18em");
-    expect(token("--tracking-status")).toBe("0.14em");
-    expect(token("--tracking-chip")).toBe("0.12em");
+  it("tracks every caps label at the sheet's one 0.08em, R3's steps included", () => {
+    expect(token("--tracking-label")).toBe("0.08em");
+    for (const step of ["eyebrow", "status", "chip", "caption", "tape"]) {
+      expect(token(`--tracking-${step}`), step).toBe("var(--tracking-label)");
+    }
+    // The tags and the stamp take it too, each in its own rule after the
+    // shared `.vex-stamp, .vex-tag` block.
+    const marks = read("ui-primitives/marks.css");
+    expect(marks).toMatch(/\n\.vex-stamp \{\s*letter-spacing:\s*var\(--tracking-label\);/);
+    expect(marks).toMatch(/\n\.vex-tag \{\s*letter-spacing:\s*var\(--tracking-label\);/);
   });
 
   it("ships no Departure Mono face, fallback or file", () => {
@@ -182,16 +208,20 @@ describe("the tokens the register stands on", () => {
     ).toBe(false);
   });
 
-  it("ships JetBrains Mono as a variable face for the figures", () => {
-    const face = /@font-face\s*\{[^}]*font-family:\s*"JetBrains Mono";[^}]*\}/.exec(FONTS)?.[0] ?? "";
-    expect(face).toContain('url("/fonts/jetbrains-mono-latin-wght.woff2")');
-    expect(face).toMatch(/font-weight:\s*100 800;/);
+  it("ships Roboto Mono at 400 for the figures, and JetBrains Mono, variable, for code", () => {
+    const figures = /@font-face\s*\{[^}]*font-family:\s*"Roboto Mono";[^}]*\}/.exec(FONTS)?.[0] ?? "";
+    expect(figures).toContain('url("/fonts/roboto-mono-latin-400-normal.woff2")');
+    expect(figures).toMatch(/font-weight:\s*400;/);
+    const code = /@font-face\s*\{[^}]*font-family:\s*"JetBrains Mono";[^}]*\}/.exec(FONTS)?.[0] ?? "";
+    expect(code).toContain('url("/fonts/jetbrains-mono-latin-wght.woff2")');
+    expect(code).toMatch(/font-weight:\s*100 800;/);
   });
 
-  it("preloads the Instrument Sans file, the above-the-fold face", () => {
+  it("preloads the Be Vietnam Pro 400 file, the above-the-fold face, and nothing R3 set", () => {
     expect(INDEX_HTML).toMatch(
-      /<link\s+rel="preload"\s+href="\/fonts\/instrument-sans-latin-var\.woff2"\s+as="font"\s+type="font\/woff2"\s+crossorigin\s*\/>/,
+      /<link\s+rel="preload"\s+href="\/fonts\/be-vietnam-pro-latin-400-normal\.woff2"\s+as="font"\s+type="font\/woff2"\s+crossorigin\s*\/>/,
     );
+    expect(INDEX_HTML).not.toContain("instrument-sans-latin-var.woff2");
     expect(INDEX_HTML).not.toContain("inter-tight-latin-wght.woff2");
   });
 

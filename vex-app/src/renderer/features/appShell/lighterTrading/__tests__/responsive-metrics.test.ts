@@ -161,10 +161,12 @@ describe("Lighter desk sheets (docs/design/R3-MINIMAL.md sections 1.2 and 9.3)",
     expect(css).toMatch(/\.lit-desk-upper\s*\{[^}]*background: transparent;/s);
   });
 
-  it("paints the desk from the app's aliases: one blue for both deployments, the trading pair from its aliases", () => {
+  it("paints the desk from the app's aliases: one accent for both deployments, the trading pair from its aliases", () => {
     expect(css).toContain("--lit-bg: var(--vex-alias-bg-base);");
-    expect(css).toContain("--lit-positive: var(--vex-alias-accent-primary);");
-    expect(css).toContain("--lit-negative: var(--vex-alias-label-primary);");
+    // H3 (docs/design/H3-DESKTOP.md section 2): direction off the trading
+    // values is the ink and the second ink, never the blue as a line.
+    expect(css).toContain("--lit-positive: var(--vex-alias-label-primary);");
+    expect(css).toContain("--lit-negative: var(--vex-alias-label-secondary);");
     expect(css).toContain("--lit-accent: var(--vex-alias-accent-primary);");
     expect(css).toContain("--lit-pressed: var(--vex-alias-interactive-active);");
     expect(css).toContain("--lit-environment-mark: var(--vex-alias-accent-primary);");

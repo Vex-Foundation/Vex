@@ -39,10 +39,18 @@ here is a defect:
 - The transcript keyframes (180ms / 260ms / 280ms) and the landing motifs -
   authored against the landing's own timing and out of scope for the desktop
   scale.
+- Kimm's section, 720ms to open (`--vex-duration-vex-open`,
+  `DURATION_VEX_OPEN_MS`) and 420ms to close (`--vex-duration-vex-close`,
+  `DURATION_VEX_CLOSE_MS`), both on the push curve - printed on the H3
+  mockup's strips (`docs/design/H3-DESKTOP.md` section 3.1) and shared with
+  VEX Cloud, so they are a cross-app contract rather than a style step. They
+  are hers alone: nothing else may borrow them. Her wipe animates clip-path,
+  transform and opacity only, never a size, so the money card beside her
+  never moves (section 3.6); reduced motion and Save-Data land her at once.
 
 ### The easing family
 
-One family, three curves, no fourth. All three are declared in `tokens.css`
+One family, four curves, no fifth. All four are declared in `tokens.css`
 and mirrored in `lib/motion/index.ts`:
 
 | Token | JS mirror | For |
@@ -50,6 +58,14 @@ and mirrored in `lib/motion/index.ts`:
 | `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
+| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and nothing else |
+
+The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
+chosen: the H3 mockup prints her section's clip inset at 120, 240 and 480ms
+while opening and at 120 and 240ms while closing, and this curve reproduces
+all five to the printed digits (`motion-tokens.test.ts` replays them). The
+review sheet's own `--ease`, `cubic-bezier(0.625, 0.05, 0, 1)`, is the review
+page's curve, not the app's, and misses those frames by up to about 315px.
 
 A hardcoded `cubic-bezier(...)` anywhere else is a defect. It has happened:
 `dialog[open]` carried `cubic-bezier(0.42, 0, 0.58, 1)` under a comment
@@ -116,6 +132,13 @@ and where each part is stated:
 - the K2 hologram paints one settled frame (`use-still-frame.ts`): her dock
   into the sidebar is her simply appearing, and a hide does not wait for her
   close, the column goes at once;
+- Save-Data asks for the same still frame, and since it has no media query
+  it reaches CSS as `data-still` on `<html>`: `public/theme-boot.js` stamps
+  it before first paint and follows the connection's change event
+  (`stampSaveData`, `use-still-frame.ts`), and `base.css` carries a twin of
+  the reduced-motion catch-all under it, with the same one opt-out. A
+  CSS-only motion, Kimm's clip-path wipe included
+  (`docs/design/H3-DESKTOP.md` section 3.7), lands at once under either;
 - the stage and the shell crossfade over a fixed 240ms linear (the opt-out
   above). Nothing slides.
 

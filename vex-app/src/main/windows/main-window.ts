@@ -6,7 +6,7 @@
  * Window state persisted via preferencesStore.
  */
 
-import { BrowserWindow, app, nativeTheme, screen, shell } from "electron";
+import { BrowserWindow, app, screen, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "../logger/index.js";
@@ -196,17 +196,18 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     minWidth,
     minHeight,
     show: false,
-    // CONTRACT: must equal the chronos --vex-alias-bg-base (--color-night) in
-    // renderer tokens.css, so the pre-paint window plate matches first paint.
-    backgroundColor: "#1b1412",
+    // CONTRACT: must equal --vex-alias-bg-base (--color-h3-ground) in renderer
+    // tokens.css, so the pre-paint window plate matches first paint
+    // (docs/design/H3-DESKTOP.md section 2.1). Electron takes a hex.
+    backgroundColor: "#010203",
     // Window title is the fixed product name — the agent's display name is
     // no longer user-configurable (retired persona.md mechanism).
     title: "Vex",
     icon: iconPath,
     // Hidden title bar on every OS (docs/design/R3-MINIMAL.md section 2.2); the renderer's 44px head
-    // rows are the drag region. The theme is the OS scheme until the renderer
-    // reports its resolved theme through vex.system.setTitleBarOverlay.
-    ...chromeOptionsFor(process.platform, nativeTheme.shouldUseDarkColors ? "chronos" : "celeris", {
+    // rows are the drag region. The app is dark only (H3), so the caption
+    // overlay starts on the dark ground whatever the OS scheme says.
+    ...chromeOptionsFor(process.platform, "chronos", {
       nativeFrame: process.env["VEX_NATIVE_FRAME"] === "1",
     }),
     webPreferences: {

@@ -159,7 +159,7 @@ beforeEach(() => {
     activeSessionId: null,
     showAvatar: true,
     welcomeVexShown: true,
-    theme: "celeris",
+    theme: "chronos",
   });
   profileWithName(null);
   sessionsData = { ok: true, data: [] };
@@ -174,12 +174,12 @@ beforeEach(() => {
 });
 
 describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
-  it("stands Vex on her welcome stage, on day paper", () => {
+  it("stands Vex on her welcome stage, on night paper: the app is dark only", () => {
     const { container } = render(<SessionWelcomeHero />);
     const stage = container.querySelector("[data-vex-welcome-stage]");
     const host = stage?.querySelector("[data-vex-k2]");
     expect(host?.getAttribute("data-vex-k2")).toBe("welcome");
-    expect(host?.getAttribute("data-vex-k2-ground")).toBe("paper");
+    expect(host?.getAttribute("data-vex-k2-ground")).toBe("night");
     expect(host?.className).toContain("vex-welcome__vex");
     expect(lastK2?.tokenOnly).toBe(false);
   });
@@ -213,14 +213,6 @@ describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
     } finally {
       composer.remove();
     }
-  });
-
-  it("stands her on night paper in Chronos", () => {
-    useUiStore.setState({ theme: "chronos" });
-    const { container } = render(<SessionWelcomeHero />);
-    expect(
-      container.querySelector("[data-vex-k2]")?.getAttribute("data-vex-k2-ground"),
-    ).toBe("night");
   });
 
   it("leaves the note that docks her into the Vex sidebar on the first message", () => {
@@ -506,7 +498,7 @@ describe("SessionWelcomeHero - the seat glides as the stage changes", () => {
 });
 
 describe("SessionWelcomeHero - the greeting", () => {
-  it("is set in the blue as type: #0000C0 by day, the periwinkle at night, never the night title's paper", () => {
+  it("is set in the accent as type, which H3 sets in ink: the blue is never type on the ground", () => {
     const css = readFileSync(
       join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
       "utf8",
@@ -517,10 +509,9 @@ describe("SessionWelcomeHero - the greeting", () => {
       join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
       "utf8",
     );
-    // The token it reads: the periwinkle in the night block, the blue by day.
-    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-peri);");
-    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-blue);");
-    expect(tokens).toContain("--color-peri: #a3abff;");
+    // The token it reads: the ink (docs/design/H3-DESKTOP.md section 2.1).
+    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-h3-ink);");
+    expect(tokens).toContain("--color-h3-ink: #f3f5f9;");
   });
 
   it("sets the greeting in the serif title and keeps the honest preview disclosure as its tooltip", () => {

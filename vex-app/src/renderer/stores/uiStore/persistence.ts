@@ -7,12 +7,7 @@
  */
 
 import type { BookTab, UiState } from "../uiStore.js";
-import {
-  coerceThemePreference,
-  resolveTheme,
-  systemPrefersDark,
-  type VexTheme,
-} from "./theme.js";
+import { coerceThemePreference, VEX_THEME, type VexTheme } from "./theme.js";
 import {
   coerceRuntimeMode,
   DEFAULT_RUNTIME_MODE,
@@ -290,6 +285,14 @@ export function coerceBookTab(value: unknown): BookTab {
 //       between the PROJECTS list and the EXPLORER pane, which used to be a
 //       fixed 256px box). Seed the default so an upgrading install hydrates
 //       into a defined share rather than `undefined`.
+//   v23: H3 is DARK ONLY (the H3 revamp plan, decision 6, 2026-11-03).
+//       Celeris and the `system` choice retired, so every stored
+//       `themePreference` - `celeris`, `system`, `chronos` or anything else -
+//       is REWRITTEN to `chronos`, and a stale pre-v9 `theme` key goes with
+//       the choice it held. The rewrite, not only the merge's coercion, is
+//       what keeps a downgrade honest: an older release reading this payload
+//       finds dark rather than the light room it no longer ships here. The
+//       second hop that rewrites rather than seeds (after v19).
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -361,6 +364,10 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
     next = { ...next, sessionOrdinals: EMPTY_ORDINAL_LEDGER };
   }
   if (version < 22) next = seedR3FrameSlots(next);
+  if (version < 23) {
+    const { theme: _retired, ...rest } = next;
+    next = { ...rest, themePreference: VEX_THEME };
+  }
   return next;
 }
 
@@ -405,8 +412,10 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
     persisted !== null && typeof persisted === "object"
       ? (persisted as Partial<UiState>)
       : undefined;
+  // Dark only: whatever the slot holds lands on the one room, and the room
+  // is never read from storage at all.
   const themePreference = coerceThemePreference(incoming?.themePreference);
-  const theme: VexTheme = resolveTheme(themePreference, systemPrefersDark());
+  const theme: VexTheme = VEX_THEME;
   // Anything non-boolean degrades to the TRUE default, never a crash or a
   // stray non-boolean reaching the checkbox's `checked` prop.
   const hideDustBalances: boolean =

@@ -21,7 +21,8 @@
 }
 
 .vex-set {
-  --set-sel: rgba(163, 171, 255, 0.1);
+  /* The H3 selected step (R3 spelled a periwinkle literal here). */
+  --set-sel: var(--vex-alias-interactive-active);
   display: grid;
   flex: 1 1 auto;
   grid-template-columns: 236px minmax(0, 1fr);
@@ -29,9 +30,6 @@
   min-height: 0;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
-}
-[data-vex-theme="celeris"] .vex-set {
-  --set-sel: rgba(0, 0, 192, 0.075);
 }
 
 /* THE NAV: group heads 12 / 500 muted, rows 34 high with a 16 line icon, the

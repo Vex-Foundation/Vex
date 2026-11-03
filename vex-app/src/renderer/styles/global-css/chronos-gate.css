@@ -59,8 +59,9 @@
 }
 
 /* The plate (spec section 10.1): the print at the left at the full window
- * height. Its ground shows while the photograph decodes: the night print's
- * darkest tone, and the day print's mid tone in celeris (spec section 1.1). */
+ * height. Its ground shows while the photograph decodes: the plate alias,
+ * the H3 ground first paint already painted (docs/design/H3-DESKTOP.md
+ * section 2.1), so the decode never flashes another colour. */
 .vex-stage-plate {
   overflow: hidden;
 }
@@ -72,11 +73,7 @@
   width: var(--vex-stage-plate-w);
   overflow: hidden;
   isolation: isolate;
-  background: var(--color-night-0);
-}
-[data-vex-theme="celeris"] .vex-stage-plate__plate,
-[data-vex-theme="celeris"] .vex-stage-plate__full {
-  background: #c7b6a6;
+  background: var(--vex-alias-gate-plate);
 }
 .vex-stage-plate__img {
   position: absolute;
@@ -90,15 +87,9 @@
   object-position: 50% 78%;
   user-select: none;
 }
-/* One print per room, swapped on data-vex-theme (stamped on documentElement),
- * never by a JS theme read. */
+/* The night print only: the app is dark only, so the day print never
+ * shows. */
 .vex-stage-plate__img--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-stage-plate__img--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-stage-plate__img--night {
   display: none;
 }
 /* The print's grain: fractal noise, multiplied at 10%, over the photograph
@@ -125,7 +116,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--color-night-0);
+  background: var(--vex-alias-gate-plate);
   animation: vex-stage-plate-in var(--vex-duration-slow) var(--vex-ease-standard) backwards;
 }
 .vex-stage-plate__full .vex-stage-plate__img {
@@ -176,7 +167,7 @@
 }
 .vex-stage-title {
   margin: 0 0 14px;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 400;
   font-size: clamp(44px, 3.889vw, 56px);
   line-height: 1;
@@ -191,15 +182,18 @@
   color: var(--vex-alias-label-secondary);
 }
 
-/* The giant italic parenthetical counter on the sky (section 1: stage 288).
+/* The giant parenthetical counter on the sky (section 1: stage 288), in the
+ * display sans since H3 retired the serif.
  * Every composition sets `--vex-stage-counter` so the counter keeps clear of
  * its neighbour at the 1000 x 720 minimum and is exactly 288 at 1440. */
 .vex-stage-counter {
   display: block;
   margin-top: 20px;
   margin-inline-start: -0.06em;
-  font-family: var(--font-serif);
-  font-style: italic;
+  font-family: var(--font-display);
+  /* Upright: the sans has no italic, and a synthesised slant at 288px would
+   * be the browser's drawing, not the face's. */
+  font-style: normal;
   font-weight: 400;
   font-size: var(--vex-stage-counter, 288px);
   line-height: 0.86;
@@ -572,7 +566,7 @@
   animation-delay: 300ms;
 }
 /* Night Ledger paper carries the faint print grain. */
-:root:not([data-vex-theme="celeris"]) .vex-stage-leaf::after {
+:root .vex-stage-leaf::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -584,12 +578,12 @@
   background-size: 240px 240px;
 }
 
-/* The page head: the 56px serif title, the lead. */
+/* The page head: the 56px display title (the sans since H3), the lead. */
 .vex-stage-leaf__head {
   margin-bottom: 28px;
 }
 .vex-stage-leaf__title {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 400;
   font-size: 56px;
   line-height: 0.94;

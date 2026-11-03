@@ -338,9 +338,6 @@
   font-weight: 400;
   white-space: nowrap;
 }
-[data-vex-theme="celeris"] .vex-tb-chip {
-  background: transparent;
-}
 .vex-tb-chip:hover {
   background: var(--vex-alias-interactive-hover);
 }
