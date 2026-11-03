@@ -4,6 +4,10 @@ import type {
   PortfolioReadInput,
 } from "../../../schemas/portfolio.js";
 import type {
+  PortfolioHistoryDto,
+  PortfolioHistoryInput,
+} from "../../../schemas/portfolio-history.js";
+import type {
   TokenHistoryDto,
   TokenHistoryReadInput,
 } from "../../../schemas/token-history.js";
@@ -41,6 +45,19 @@ import type {
  */
 export interface PortfolioBridge {
   readonly read: (input: PortfolioReadInput) => Promise<Result<PortfolioDto>>;
+  /**
+   * The wallet total over time for one range, for the SAME scope `read` takes
+   * (`input.wallets`), resolved through `read`'s own allow-list. Oldest point
+   * first, at most 500; each point is one complete snapshot cycle on `read`'s
+   * settled + in-transit basis, so the newest equals `snapshotTotalUsd` for
+   * that cycle. `sampled` says when a long range was thinned. No point, no
+   * wallet and no cycle in range are all an empty `points`, never an error.
+   *
+   * Read-only: no keystore, no signing, no write.
+   */
+  readonly readHistory: (
+    input: PortfolioHistoryInput,
+  ) => Promise<Result<PortfolioHistoryDto>>;
   readonly listTokenHistory: (
     input: TokenHistoryReadInput,
   ) => Promise<Result<TokenHistoryDto>>;

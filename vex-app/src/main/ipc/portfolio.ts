@@ -20,6 +20,11 @@ import {
   type PortfolioDto,
 } from "@shared/schemas/portfolio.js";
 import {
+  portfolioHistoryDtoSchema,
+  portfolioHistoryInputSchema,
+  type PortfolioHistoryDto,
+} from "@shared/schemas/portfolio-history.js";
+import {
   tokenHistoryDtoSchema,
   tokenHistoryReadInputSchema,
   type TokenHistoryDto,
@@ -29,7 +34,7 @@ import {
   agentScanReadInputSchema,
   type AgentScanDto,
 } from "@shared/schemas/agent-scan-feed.js";
-import { getPortfolio } from "../database/portfolio-db.js";
+import { getPortfolio, getPortfolioHistory } from "../database/portfolio-db.js";
 import { getTokenHistory } from "../database/token-history-db.js";
 import { getAgentScan } from "../database/agent-scan-db.js";
 import { log } from "../logger/index.js";
@@ -58,6 +63,48 @@ function registerPortfolioReadHandler(): () => void {
       log.info(
         `[ipc:vex:portfolio:read] errCode=${outcome.error.code} ` +
           `scope=${input.scope}${sessionPart} correlationId=${ctx.requestId}`,
+      );
+      return outcome;
+    },
+  });
+}
+
+/**
+ * HISTORY read - the wallet total over time for the Portfolio page's equity
+ * chart. Read-only. Backed by `getPortfolioHistory` (`portfolio-db.ts`), which
+ * resolves `input.wallets` through the SAME allow-list resolver as the read
+ * above, so a history can never cover a wallet the figures beside it do not;
+ * the SQL is `database/portfolio/snapshot-history.ts`.
+ *
+ * Logging mirrors the read: the scope (and `sessionId` for a session scope,
+ * as the read logs it), the range, the resolved wallet COUNT, the cycle and
+ * point COUNTS, and `correlationId`. Never an address, a USD figure or a
+ * timestamp from the series.
+ */
+function registerPortfolioHistoryReadHandler(): () => void {
+  return registerHandler({
+    channel: CH.portfolio.readHistory,
+    domain: "portfolio",
+    inputSchema: portfolioHistoryInputSchema,
+    outputSchema: portfolioHistoryDtoSchema,
+    handle: async (input, ctx): Promise<Result<PortfolioHistoryDto>> => {
+      const wallets = input.wallets;
+      const sessionPart =
+        wallets.scope === "session" ? ` sessionId=${wallets.sessionId}` : "";
+      const outcome = await getPortfolioHistory(input, ctx.requestId);
+      if (outcome.ok) {
+        log.info(
+          `[ipc:vex:portfolio:readHistory] ok scope=${wallets.scope}${sessionPart} ` +
+            `range=${input.range} wallets=${outcome.data.walletCount} ` +
+            `groups=${outcome.data.groupCount} points=${outcome.data.points.length} ` +
+            `correlationId=${ctx.requestId}`,
+        );
+        return outcome;
+      }
+      log.info(
+        `[ipc:vex:portfolio:readHistory] errCode=${outcome.error.code} ` +
+          `scope=${wallets.scope}${sessionPart} range=${input.range} ` +
+          `correlationId=${ctx.requestId}`,
       );
       return outcome;
     },
@@ -178,6 +225,7 @@ function registerPortfolioAgentScanReadHandler(): () => void {
 export function registerPortfolioHandlers(): ReadonlyArray<() => void> {
   return [
     registerPortfolioReadHandler(),
+    registerPortfolioHistoryReadHandler(),
     registerPortfolioTokenHistoryReadHandler(),
     registerPortfolioAgentScanReadHandler(),
     // Wave P — the user-initiated refresh COMMAND. It lives in its own module

@@ -27,6 +27,10 @@ import type {
   PortfolioReadInput,
 } from "@shared/schemas/portfolio.js";
 import type {
+  PortfolioHistoryDto,
+  PortfolioHistoryInput,
+} from "@shared/schemas/portfolio-history.js";
+import type {
   AgentScanCursor,
   AgentScanDto,
   AgentScanFilters,
@@ -93,6 +97,38 @@ export function useWalletPortfolio(
   walletAddress: string | null,
 ): UseQueryResult<Result<PortfolioDto>> {
   return useQuery(walletPortfolioOptions(walletAddress));
+}
+
+/**
+ * The wallet total over time for one range (`vex.portfolio.readHistory`), the
+ * Portfolio page's equity chart data. `input.wallets` is the SAME
+ * `PortfolioReadInput` the page's figures read (`usePageScopePortfolio`), so
+ * the chart and the total beside it cover the same wallets: one wallet is
+ * `{ scope: "global", walletAddress }`, a context chip its `session` or
+ * `project` input.
+ *
+ * Freshness is the read's: the same stale time and fallback poll, and the key
+ * sits under `portfolioKeys.all`, so `useActivityResolvedInvalidation`,
+ * `useActivityProgressInvalidation` and `usePortfolioRefresh` re-read it with
+ * the total. The engine publishes a snapshot cycle every few minutes; the
+ * poll is what picks up a cycle no transaction announced.
+ *
+ * An empty `points` (no wallet, no cycle yet, none in range) is a success the
+ * caller draws as such; a failed `Result` is main's refusal, never thrown.
+ */
+function portfolioHistoryOptions(input: PortfolioHistoryInput) {
+  return queryOptions({
+    queryKey: portfolioKeys.history(input),
+    queryFn: () => window.vex.portfolio.readHistory(input),
+    staleTime: STALE_MS,
+    refetchInterval: REFETCH_MS,
+  });
+}
+
+export function usePortfolioHistory(
+  input: PortfolioHistoryInput,
+): UseQueryResult<Result<PortfolioHistoryDto>> {
+  return useQuery(portfolioHistoryOptions(input));
 }
 
 /**
@@ -171,7 +207,8 @@ export function useAgentScanInfinite(
  * Invalidating `portfolioKeys.all` covers the Agent Scan feed, the position
  * read, and the per-wallet read together — a terminalization moves all three,
  * and a narrower key would leave the balances stale next to a freshly
- * confirmed row.
+ * confirmed row. The history (`usePortfolioHistory`) sits under the same
+ * prefix, so its newest point is re-read with the total it must match.
  */
 /**
  * The user-initiated refresh, as a hook.
