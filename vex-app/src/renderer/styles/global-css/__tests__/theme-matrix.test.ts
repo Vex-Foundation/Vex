@@ -78,15 +78,14 @@ const gateAliases = [
 ].sort();
 
 /**
- * The H3 primitives: the design sheet's oklch values ("v99 frame language",
- * the VEX Cloud round 3 mockup, app variant H3), as [lightness 0-1, chroma,
- * hue]. tokens.css carries each as its sRGB hex; the suite converts these
- * itself and holds the sheet to them, so a hand-typed hex cannot drift from
- * the design.
+ * The H3 primitives taken from the design sheet (docs/design/H3-DESKTOP.md
+ * section 2.1), as the sheet's oklch [lightness 0-1, chroma, hue]. tokens.css
+ * carries each as its sRGB hex; the suite converts these itself and holds the
+ * sheet to them, so a hand-typed hex cannot drift from the design. The ground
+ * is the sheet's --panel (the captures read it, not --page).
  */
 const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
-  "--color-h3-page": [0.09, 0.012, 264],
-  "--color-h3-panel": [0.085, 0.008, 264],
+  "--color-h3-ground": [0.085, 0.008, 264],
   "--color-h3-cell": [0.11, 0.006, 264],
   "--color-h3-raised": [0.13, 0.004, 264],
   "--color-h3-ink": [0.97, 0.005, 264],
@@ -94,8 +93,21 @@ const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
   "--color-h3-muted": [0.62, 0.02, 264],
   "--color-h3-blue": [0.452, 0.313, 264.1],
   "--color-h3-blue-hover": [0.56, 0.28, 264],
-  "--color-h3-live": [0.78, 0.13, 150],
-  "--color-h3-err": [0.74, 0.17, 27],
+  "--color-h3-gain": [0.78, 0.13, 150],
+  "--color-h3-loss": [0.74, 0.17, 27],
+};
+
+/**
+ * The H3 primitives the sheet has no token for, measured from the app
+ * captures (section 2.1's "none" rows). Pinned as values: the contract's
+ * measurement is their only source until the mockup source arrives.
+ */
+const H3_MEASURED: Readonly<Record<string, string>> = {
+  "--color-h3-raised-2": "#101214",
+  "--color-h3-bubble": "#212325",
+  "--color-h3-row": "#181a1c",
+  "--color-h3-status-green": "#1d7e3f",
+  "--color-h3-status-red": "#c22226",
 };
 
 /** Björn Ottosson's OKLab -> linear sRGB, then the sRGB transfer function. */
@@ -118,21 +130,12 @@ function oklchToSrgb(lightness: number, chroma: number, hue: number): [number, n
 const inSrgb = (rgb: readonly number[]): boolean => rgb.every((c) => c >= -1e-6 && c <= 1 + 1e-6);
 
 /**
- * The CSS Color 4 gamut map, in its plain form: hold lightness and hue and
- * bisect the chroma down until the colour fits sRGB. A value already inside
- * sRGB is returned as it is.
+ * The sheet's value as sRGB hex. A value outside sRGB is channel-clipped,
+ * which is the sRGB the contract records for the two that fall outside (the
+ * blue hover #1557FF and the loss red #FF7A6E).
  */
 function oklchToHex(lightness: number, chroma: number, hue: number): string {
-  let rgb = oklchToSrgb(lightness, chroma, hue);
-  if (!inSrgb(rgb)) {
-    let [low, high] = [0, chroma];
-    for (let step = 0; step < 40; step++) {
-      const mid = (low + high) / 2;
-      if (inSrgb(oklchToSrgb(lightness, mid, hue))) low = mid;
-      else high = mid;
-    }
-    rgb = oklchToSrgb(lightness, low, hue);
-  }
+  const rgb = oklchToSrgb(lightness, chroma, hue);
   return `#${rgb
     .map((c) => Math.round(Math.min(1, Math.max(0, c)) * 255).toString(16).padStart(2, "0"))
     .join("")}`;
@@ -166,27 +169,31 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-down": "#c2272e",
   "--color-up-night": "#4cd685",
   "--color-down-night": "#ff7b7b",
-  "--color-h3-page": "#020205",
-  "--color-h3-panel": "#010203",
+  "--color-h3-ground": "#010203",
   "--color-h3-cell": "#040406",
   "--color-h3-raised": "#070709",
+  "--color-h3-raised-2": "#101214",
+  "--color-h3-bubble": "#212325",
+  "--color-h3-row": "#181a1c",
   "--color-h3-ink": "#f3f5f9",
   "--color-h3-ink-2": "#babec6",
   "--color-h3-muted": "#808693",
   "--color-h3-blue": "#0000ff",
-  "--color-h3-blue-hover": "#2561ff",
-  "--color-h3-live": "#76cf8a",
-  "--color-h3-err": "#ff7f73",
+  "--color-h3-blue-hover": "#1557ff",
+  "--color-h3-gain": "#76cf8a",
+  "--color-h3-loss": "#ff7a6e",
+  "--color-h3-status-green": "#1d7e3f",
+  "--color-h3-status-red": "#c22226",
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 34 primitives, at their values", () => {
+  it("holds exactly the 38 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(34);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(38);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 
@@ -214,13 +221,24 @@ describe("the static tier", () => {
     });
   });
 
-  it("names the two values the gamut map moved, and only those", () => {
-    // The blue hover and the red sit outside sRGB as the sheet states them;
-    // every other H3 value is inside and converts unchanged.
+  it("names the two values the clip moved, and only those", () => {
+    // The blue hover and the loss red sit outside sRGB as the sheet states
+    // them; every other sheet value is inside and converts unchanged.
     const moved = Object.entries(H3_SHEET)
       .filter(([, [l, c, h]]) => !inSrgb(oklchToSrgb(l, c, h)))
       .map(([name]) => name);
-    expect(moved).toEqual(["--color-h3-blue-hover", "--color-h3-err"]);
+    expect(moved).toEqual(["--color-h3-blue-hover", "--color-h3-loss"]);
+  });
+
+  it("pins the measured H3 primitives, and gives every H3 primitive one source", () => {
+    // Section 2.1: a primitive comes from the sheet or from the captures,
+    // never from both and never from neither.
+    for (const [name, hex] of Object.entries(H3_MEASURED)) {
+      expect(PRIMITIVES[name], name).toBe(hex);
+      expect(name in H3_SHEET, `${name} is in both tables`).toBe(false);
+    }
+    const h3 = Object.keys(PRIMITIVES).filter((name) => name.startsWith("--color-h3-")).sort();
+    expect(h3).toEqual([...Object.keys(H3_SHEET), ...Object.keys(H3_MEASURED)].sort());
   });
 
   it("kills Tailwind's default palette, so no stray hue can compile", () => {
