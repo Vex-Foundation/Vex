@@ -29,3 +29,21 @@ body,
   overflow: hidden;
   background: var(--vex-alias-bg-base);
 }
+
+/* An unknown `?state=` lists the states. Harness chrome, so it borrows the
+ * alias tokens and none of the shell's own classes. */
+.vex-h3-harness__index {
+  box-sizing: border-box;
+  padding: 32px 40px;
+  overflow: auto;
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.vex-h3-harness__index h1 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+.vex-h3-harness__index a {
+  color: var(--vex-alias-accent-primary);
+}
