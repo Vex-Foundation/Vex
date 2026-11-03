@@ -166,7 +166,7 @@
 }
 .vex-stage-title {
   margin: 0 0 14px;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 400;
   font-size: clamp(44px, 3.889vw, 56px);
   line-height: 1;
@@ -181,15 +181,18 @@
   color: var(--vex-alias-label-secondary);
 }
 
-/* The giant italic parenthetical counter on the sky (section 1: stage 288).
+/* The giant parenthetical counter on the sky (section 1: stage 288), in the
+ * display sans since H3 retired the serif.
  * Every composition sets `--vex-stage-counter` so the counter keeps clear of
  * its neighbour at the 1000 x 720 minimum and is exactly 288 at 1440. */
 .vex-stage-counter {
   display: block;
   margin-top: 20px;
   margin-inline-start: -0.06em;
-  font-family: var(--font-serif);
-  font-style: italic;
+  font-family: var(--font-display);
+  /* Upright: the sans has no italic, and a synthesised slant at 288px would
+   * be the browser's drawing, not the face's. */
+  font-style: normal;
   font-weight: 400;
   font-size: var(--vex-stage-counter, 288px);
   line-height: 0.86;
@@ -574,12 +577,12 @@
   background-size: 240px 240px;
 }
 
-/* The page head: the 56px serif title, the lead. */
+/* The page head: the 56px display title (the sans since H3), the lead. */
 .vex-stage-leaf__head {
   margin-bottom: 28px;
 }
 .vex-stage-leaf__title {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 400;
   font-size: 56px;
   line-height: 0.94;

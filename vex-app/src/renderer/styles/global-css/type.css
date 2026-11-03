@@ -15,7 +15,8 @@
  * Instrument Sans (--font-sans) is every UI word: reading 15, rows 14, meta
  * 13, small 12, labels and status words included, all in sentence case.
  * JetBrains Mono (--font-mono) is every figure, address, time and duration,
- * with `.vex-num` below. Instrument Serif (--font-serif) is display only.
+ * with `.vex-num` below. Display type is the sans too (H3 retired
+ * Instrument Serif; --font-serif names the sans for the call sites left).
  * Caps belong to tags alone (REAL FUNDS, HIGH RISK: 11px, 600), which own
  * their classes in ui-primitives/marks.css. The
  * classes below own family, scale, case and tracking at the CLASS level, so
@@ -128,9 +129,9 @@
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
-/* The serif survivors inside chat prose are display-only (headings), and
- * Instrument Serif still ships static 400 + 400 italic with NO weight axis:
- * a `font-weight: 600` reaching them would be FAKED by the browser. */
+/* Headings inside chat prose, and any `font-serif` survivor (the sans
+ * since H3): the face ships static weights, so a weight it lacks must never
+ * be faked by the browser. */
 .vex-chat-prose :is(h1, h2, h3, h4, .font-serif) {
   font-synthesis-weight: none;
 }

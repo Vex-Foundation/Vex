@@ -664,6 +664,20 @@ describe("shell design guard (R3 bans)", () => {
     expect([...classes, ...rules]).toEqual([]);
   });
 
+  it("sets no display type in the retired serif: no sheet reads it, and its token names the sans", () => {
+    // docs/design/H3-DESKTOP.md section 2.3: Instrument Serif retires and
+    // display type is the sans. The `font-serif` utility's call sites keep
+    // compiling because the token names the display sans; a sheet rule never
+    // spells it.
+    const serifRules = RENDERER_SHEETS.filter(
+      (c) => c.file !== "tokens.css" && stripCssComments(c.text).includes("var(--font-serif)"),
+    ).map((c) => c.file);
+    expect(serifRules).toEqual([]);
+    const tokens = RENDERER_SHEETS.find((c) => c.file === "tokens.css")?.text ?? "";
+    expect(stripCssComments(tokens)).toMatch(/--font-serif:\s*var\(--font-display\);/);
+    expect(stripCssComments(tokens)).toMatch(/--font-display:\s*var\(--font-sans\);/);
+  });
+
   it("imports none of the retired eagle modules and loads none of their art", () => {
     const offenders = RENDERER_CODE.flatMap((c) =>
       retiredImports(c.file, c.text).map((module) => `${c.file} -> ${module}`),
