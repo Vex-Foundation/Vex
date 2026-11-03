@@ -325,3 +325,103 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **The receipt's stamp:** a status green fill with white caps (FILLED), about 60 x 24 on the phone capture.
 
 These replace R3's tokens and its guard contracts: the 23 primitives and both themes in `theme-matrix.test.ts`, the sentence-case register in `micro-label-register.test.ts`, the mono-caps ban in `shell-design-guard.test.ts` and status by fill in `status-contrast.test.ts`. Each is rewritten as an H3 contract in the slice that changes what it guards.
+
+---
+
+## 3. Motion, and opening and closing her
+
+### 3.1 Timings and the curve
+| Motion | Value | Source |
+|---|---|---|
+| open | 720ms | printed: "Show Vex: her section opens, 720 ms on the push curve" |
+| close | 420ms | printed: "Hide Vex: her section closes, 420 ms on the push curve" |
+| the push curve, both ways | cubic-bezier(0.22, 1, 0.36, 1) | derived from the printed insets, below |
+| reduced motion | at once | printed: "reduced motion lands it at once", on both strip plates |
+| Save-Data | at once | desktop's still-frame rule (`lib/motion/use-still-frame.ts`), as for K2 |
+
+The strip plates print the section's clip inset at 120, 240 and 480ms while opening and at 120 and 240ms while closing. The closed inset is 507 (563 less the 56 strip). cubic-bezier(0.22, 1, 0.36, 1) reproduces all five values to the printed digits. The review sheet's own `--ease`, cubic-bezier(0.625, 0.05, 0, 1), does not:
+
+| Frame | Printed inset | cubic-bezier(0.22, 1, 0.36, 1) | cubic-bezier(0.625, 0.05, 0, 1) |
+|---|---|---|---|
+| open, 120ms | 204.053 | 204.053 | 482.7 |
+| open, 240ms | 67.5736 | 67.5736 | 319.5 |
+| open, 480ms | 4.26557 | 4.2656 | 26.0 |
+| close, 120ms | 413.219 | 413.219 | 97.2 |
+| close, 240ms | 496.272 | 496.272 | 456.5 |
+
+So the push curve is cubic-bezier(0.22, 1, 0.36, 1). The sheet's `--ease` is the review page's own curve, not the app's; the revamp plan's note that H3 needs cubic-bezier(0.625, 0.05, 0, 1) is replaced by this section. The close's caption, "arrive slowly, leave fast", is the same curve on the shorter duration. Open: confirm against the mockup source and Cloud's CSS.
+
+### 3.2 The wipe
+Only clip-path, transform and opacity animate. Her section's box never changes (section 1.5).
+
+| Frame (printed, 1440 x 900) | Open: clip | Close: clip |
+|---|---|---|
+| 0ms | inset(0px 0px 507px) | inset(0px) |
+| 120ms | inset(0px 0px 204.053px) | inset(0px 0px 413.219px) |
+| 240ms | inset(0px 0px 67.5736px) | inset(0px 0px 496.272px) |
+| 480ms | inset(0px 0px 4.26557px) | inset(0px 0px 507px) |
+| 720ms | inset(0px) | inset(0px 0px 507px) |
+
+The card's box is 680, 249, 760 x 651 and the section's is 248, 264, 432 x 563 on every one of these frames. Desktop's closed inset is the box height less 56 (547 at 1440 x 900, section 1.5).
+
+**Opening:** the wipe grows from the strip's edge down to the foot line, behind a 1px scan head keyed to the same edge. The glyph field starts to run. Kimm drops 32px into place. The corner key says HIDE VEX from the press.
+
+**Closing:** the wipe rises back to the strip's edge in 420ms. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
+
+Open, each settled by the mockup source:
+- the drop's duration and curve (default: the push curve over the 720ms);
+- whether her figure also fades in (an opacity change is allowed);
+- the scan head's colour, and whether it also draws while closing (the close plate does not mention it).
+
+### 3.3 The controls
+One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the same place. Three controls carry it:
+1. the Vex key in the header (section 1.6);
+2. her corner key, HIDE VEX with a cross while she is open and SHOW VEX with a chevron in the strip while she is closed: the same key in the same corner;
+3. Ctrl+Shift+B, Cmd+Shift+B on macOS, from anywhere (desktop's keys are in section 4.4).
+
+- The words change at the press, not at the end of the motion.
+- The way back is where the person pressed. After HIDE VEX is pressed, what is under the pointer from 0 to 600ms is Show Vex, and a second press there opens her again (printed at 1024, 1280, 1440 and 2560). The strip's key (531 to 680) covers the open key's box (542 to 680).
+- A press acts at once: no confirm, no delay.
+- Focused from the keyboard, each key shows the 2px white ring inside its cell.
+
+### 3.4 While she moves
+- Her section's body is inert while it moves: nothing in it takes a click or focus. The console's rest under her is inert while she is open and until a close has ended. The two keys stay live.
+- **A press during the motion turns it around from where it is, without a jump.** Printed at 1440: Hide Vex, then Show Vex 80ms later, read over 13 frames. The control's name at the first press was Show Vex; the wipe's edge was at 408.1px at the second press and still at 408.1px on the next frame; it went no deeper after the press, ended open, and the card moved 0. Open: the reversed leg's duration. Default: the push curve from the current inset over the part of 720ms that is left.
+- **Focus.** A press on a key keeps focus on that key; both keys stay where they are through the motion. Focus inside a part that becomes covered or folded moves to the Vex key in the header. (Desktop today moves it to the token chip, `VexSidebar.tsx`; the Vex key replaces the chip in S3-03.)
+
+### 3.5 The rules
+- **Vex never opens her section by herself.** Her cue (a card arriving, a turn ending) changes her mood and her words, never her section's state (printed in the proof's note).
+- **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Today Esc in Lighter Zen closes the Vex overlay (`AppShell.tsx`); S2-13 removes that.
+- **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15).
+- **The choice is remembered.** Cloud keeps it per browser; desktop keeps it in the persisted layout store, one choice for chats and pages, replacing "Show avatar" and R3's `vexOpenChat` and `vexOpenPages` slots, which migrate into it (S2-11, S4-14). Open: whether pages keep a choice of their own; the plates draw Portfolio both ways but print no rule.
+- **First launch: open.** The sheet's drawn answer for computers.
+- **The freed room in a chat goes to the console** (drawn): the chat keeps its width, and the console's rest shows under the strip.
+- **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint still shows, without a fade.
+- **Closed costs little.** Closed, only the key's mood sprite loads (the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17).
+
+### 3.6 The money card never moves
+Opening or closing her section never moves, resizes or covers a waiting money card, on any frame. It holds because of three things, and needs all three:
+
+1. **The chat column is a grid track whose width depends only on the window** (section 1.2). Nothing about her section enters the grid.
+2. **Her section is a fixed box laid over Vex's column** (section 1.5). Open and closed differ only in its clip-path, so neither the column's content nor the grid reflows.
+3. **Only clip-path, transform and opacity animate.** None of them changes layout.
+
+Beyond that, Vex's cue never changes her section's state, and under 1024 the band rests for the whole turn, so a card's arrival and Approve change nothing either.
+
+What the proof read (printed, `h3-merged__plate-proof`, in Chromium on the GPU at DPR 2): the seeked open and close, every 30ms from 0 to 720ms at 1440 x 900, 25 frames each; live presses at 1440 and 2560 on every painted frame; the card arriving with her open (50 frames) and closed (241 frames); the press's footprint at 1024, 1280, 1440 and 2560; a press during the motion; the narrow layouts at 390 and 900; and the card's pixels open against closed at 1280, 1366, 1440, 1920 and 2560. The card moved 0 in every row, and 0 of its pixels differed.
+
+Desktop ports the proof as a CI test (S4-16, `e2e/h3-card-proof.spec.ts`): the card's box is read with her section open, closed and on every frame of both motions at 1280, 1366, 1440, 1920 and 2560, and the card's pixels open and closed are compared. Any change fails the build.
+
+What desktop stops doing, because R3 does it and H3 forbids it:
+- R3 animates the shell's `grid-template-columns` when Vex hides (`--vex-duration-reveal`, `AppShell.tsx`). In a chat, H3 never changes a track for her section.
+- R3's hide waits for K2's close episode before the column goes (`features/vex/vex-hide.ts`). H3's close is the wipe itself, and the words change at the press.
+- R3 closes Vex by itself under its medium tier when the left sidebar opens (`lib/shell-columns.ts`). H3 has no derived close.
+
+### 3.7 What the motion policy needs
+`MOTION-POLICY.md` allows a closed scale of durations (0, 100, 150, 240 and 300ms), three curves and no fourth, and bans `cubic-bezier(` outside the token sheets. H3 needs, in S1-12, with JS mirrors and the policy edit in the same commit:
+- 720ms and 420ms, as her section's open and close, named in the policy's exception list;
+- the push curve, cubic-bezier(0.22, 1, 0.36, 1), as a fourth curve, for her section;
+- the glyph field's loop as a named exception beside K2's portrait, bound by the run gate and the still frame (S4-17);
+- Save-Data on `html` as an attribute (S1-13), so the wipe collapses in CSS as well as in JS.
+
+Any JS timer paired with these durations follows the policy's cross-file pair rule.
