@@ -2,7 +2,7 @@
  *  MOTION PRIMITIVES (CSP-safe build-time keyframes)            *
  * ============================================================ */
 
-/* THE EASING FAMILY - one family, three curves, no fourth.
+/* THE EASING FAMILY - one family, four curves, no fifth.
  *
  *   --vex-ease-standard  design-language §7 transition curve. Anything moving
  *                        BETWEEN two resting states (transitions, crossfades,
@@ -10,11 +10,13 @@
  *   --vex-ease-out       the landing "Out" curve. ENTRANCES only - a surface
  *                        arriving from nothing and decelerating into place.
  *   --vex-ease-inout     full-surface reveals (the Chronos Gate curtain).
+ *   --vex-ease-push      Kimm's section opening and closing, and nothing else
+ *                        (docs/design/H3-DESKTOP.md section 3.1).
  *
- * All three are DECLARED in `tokens.css`, alongside the `--vex-duration-*`
+ * All four are DECLARED in `tokens.css`, alongside the `--vex-duration-*`
  * scale, and only CONSUMED here; `lib/motion/index.ts` is their JS mirror
- * (EASE_STANDARD / EASE_OUT / EASE_INOUT) for the Motion call sites. Both
- * halves are asserted by `__tests__/motion-tokens.test.ts`. */
+ * (EASE_STANDARD / EASE_OUT / EASE_INOUT / EASE_PUSH) for the Motion call
+ * sites. Both halves are asserted by `__tests__/motion-tokens.test.ts`. */
 
 /* Desk entry settle: a live-appended transcript row settles onto the page.
  * One-shot, applied ONLY to rows appended after mount (history pagination

@@ -15,13 +15,18 @@
  * `styles/global-css/__tests__/motion-tokens.test.ts`, which fails if either
  * side moves alone.
  *
+ * Two durations sit outside the scale, named in the policy's exception list:
+ * Kimm's section opens in `DURATION_VEX_OPEN_MS` and closes in
+ * `DURATION_VEX_CLOSE_MS` (docs/design/H3-DESKTOP.md section 3.1).
+ *
  * ## The easing family
  *
- * ONE family, three curves, no fourth. CSS mirrors `--vex-ease-standard`,
- * `--vex-ease-out` and `--vex-ease-inout`, all three declared in `tokens.css`
- * (they used to be split across `shell.css` and `motion-primitives.css`, which
- * is how `dialog[open]` came to hardcode a fourth curve while its comment
- * claimed it was on the family one).
+ * ONE family, four curves, no fifth. CSS mirrors `--vex-ease-standard`,
+ * `--vex-ease-out`, `--vex-ease-inout` and `--vex-ease-push`, all declared in
+ * `tokens.css` (they used to be split across `shell.css` and
+ * `motion-primitives.css`, which is how `dialog[open]` came to hardcode a
+ * stray curve while its comment claimed it was on the family one). The
+ * fourth, the push curve, belongs to Kimm's section alone.
  *
  * ## Springs
  *
@@ -62,6 +67,21 @@ export const DURATION_SLOW_MS = 240;
  */
 export const DURATION_REVEAL_MS = 300;
 
+/**
+ * Kimm's section opening: the clip-path wipe from the 56px strip down to her
+ * foot, with her 32px drop, on `EASE_PUSH`. A named exception to the scale
+ * (MOTION-POLICY.md), printed on the mockup's open strip.
+ * CSS: `--vex-duration-vex-open`.
+ */
+export const DURATION_VEX_OPEN_MS = 720;
+
+/**
+ * Kimm's section closing: the wipe back up to the strip, on `EASE_PUSH`
+ * ("arrive slowly, leave fast": the same curve on the shorter duration).
+ * CSS: `--vex-duration-vex-close`.
+ */
+export const DURATION_VEX_CLOSE_MS = 420;
+
 export const SPRING_PANEL = {
   type: "spring",
   stiffness: 260,
@@ -93,3 +113,11 @@ export const EASE_OUT = [0.25, 1, 0.5, 1] as const;
  * `--vex-ease-inout`; also hand-duplicated in workspaceTransition.ts.
  */
 export const EASE_INOUT = [0.76, 0, 0.24, 1] as const;
+
+/**
+ * The push curve, Kimm's section only (docs/design/H3-DESKTOP.md section
+ * 3.1): derived from the clip insets the mockup prints on its open and close
+ * strips, which it reproduces to the printed digits. CSS mirror:
+ * `--vex-ease-push`.
+ */
+export const EASE_PUSH = [0.22, 1, 0.36, 1] as const;
