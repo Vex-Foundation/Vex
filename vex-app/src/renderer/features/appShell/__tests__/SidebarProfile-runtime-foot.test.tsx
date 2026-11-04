@@ -41,11 +41,13 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 });
 
 const {
+  ACCOUNT_CELL_LINE,
   RUNTIME_STATUS_SENTENCES,
   SidebarProfile,
   getRuntimeStatus,
   NIGHT_SHIFT_MESSAGE,
 } = await import("../SidebarProfile.js");
+const lineIcons = await import("../../../components/icons/line/index.js");
 
 function health(overall: HealthReport["overall"]): Result<HealthReport> {
   return {
@@ -148,9 +150,31 @@ describe("SidebarProfile foot", () => {
     expect(screen.queryByRole("menuitem", { name: /Lock Vex/ })).toBeNull();
   });
 
-  it("speaks the hallmark while the runtime is healthy", () => {
+  it("says Account and settings while the runtime is healthy, or still being checked", () => {
+    // docs/design/H3-DESKTOP.md Appendix A.2: H3's line under the name. The
+    // hallmark stays the healthy state's sentence, but the cell says H3's.
+    const healthy = render(<SidebarProfile sidebarOpen />);
+    expect(screen.getByText(ACCOUNT_CELL_LINE)).not.toBeNull();
+    expect(screen.queryByText(NIGHT_SHIFT_MESSAGE)).toBeNull();
+    healthy.unmount();
+
+    healthMock.mockReturnValue({ isLoading: true, data: undefined });
     render(<SidebarProfile sidebarOpen />);
-    expect(screen.getByText(NIGHT_SHIFT_MESSAGE)).not.toBeNull();
+    expect(screen.getByText(ACCOUNT_CELL_LINE)).not.toBeNull();
+    expect(screen.queryByText(RUNTIME_STATUS_SENTENCES.connecting)).toBeNull();
+  });
+
+  it("draws the cell as H3 does: the disc, the name, the line and the up chevron", () => {
+    const { container } = render(<SidebarProfile sidebarOpen />);
+    const trigger = screen.getByRole("button", { name: /Open menu/ });
+    expect(trigger.querySelector("[data-vex-account-disc] circle.vex-prof__disc")).not.toBeNull();
+    expect(trigger.querySelector(".vex-prof__n")?.textContent).toBe("Kuba");
+    expect(trigger.querySelector(".vex-prof__s")?.textContent).toBe(ACCOUNT_CELL_LINE);
+    // The chevron points up, the way the menu opens.
+    const { LineChevronUp } = lineIcons;
+    const up = render(<LineChevronUp />).container.querySelector("svg")?.innerHTML;
+    expect(trigger.querySelector(".vex-prof__chev")?.innerHTML).toBe(up);
+    expect(container.querySelector("[data-vex-home-mark]")).toBeNull();
   });
 
   it("speaks the DEGRADED cause as a sentence, and never the bare word", () => {
@@ -201,34 +225,57 @@ describe("SidebarProfile foot", () => {
     ).not.toBeNull();
   });
 
-  it("falls back to Vex while there is no name: the ask is not a name", () => {
+  it("says You while there is no name, and moves the ask to the menu's Personalize row", () => {
+    // docs/design/H3-DESKTOP.md Appendix A.2: "You" or the person's name.
     profileMock.mockReturnValue({
       isLoading: false,
       isError: false,
       data: { ok: true, data: { displayName: null } },
     });
     const asking = render(<SidebarProfile sidebarOpen />);
-    expect(screen.getByText("What should Vex call you?")).not.toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Vex, Connected. Open menu" }),
-    ).not.toBeNull();
+    expect(screen.queryByText("What should Vex call you?")).toBeNull();
+    const trigger = screen.getByRole("button", { name: "You, Connected. Open menu" });
+    expect(trigger.querySelector(".vex-prof__n")?.textContent).toBe("You");
+    fireEvent.click(trigger);
+    const personalize = screen.getByRole("menuitem", { name: /Personalize/ });
+    expect(personalize.textContent).toContain("You didn't set up your name");
+    expect(personalize.querySelector("[data-vex-attention-dot]")).not.toBeNull();
     asking.unmount();
 
+    // Loading, and a name of only spaces, read "You" too, and loading never asks.
     profileMock.mockReturnValue({ isLoading: true, isError: false, data: undefined });
+    const loading = render(<SidebarProfile sidebarOpen />);
+    expect(
+      screen.getByRole("button", { name: "You, Connected. Open menu" }),
+    ).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Open menu/ }));
+    expect(
+      screen.getByRole("menuitem", { name: /Personalize/ }).querySelector("[data-vex-attention-dot]"),
+    ).toBeNull();
+    loading.unmount();
+
+    profileMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ok: true, data: { displayName: "   " } },
+    });
     render(<SidebarProfile sidebarOpen />);
     expect(
-      screen.getByRole("button", { name: "Vex, Connected. Open menu" }),
+      screen.getByRole("button", { name: "You, Connected. Open menu" }),
     ).not.toBeNull();
   });
 
-  it("sets the vx in its box as the profile picture, on paper", () => {
-    // docs/design/R3-MINIMAL.md section 4: the vx in blue in a 30px box on a
-    // 1px rule; the left page's print and its white ground are gone.
+  it("sets the person's disc as the picture, drawn, never an image or the vx", () => {
+    // docs/design/H3-DESKTOP.md section 1.4: the avatar disc, the transcript's
+    // own drawing; the R3 vx box and the left page's print are gone.
     const { container } = render(<SidebarProfile sidebarOpen />);
     const root = container.querySelector("[data-vex-area='sidebar-profile']");
     expect(root).not.toBeNull();
     expect(root?.hasAttribute("data-ground")).toBe(false);
-    expect(container.querySelector(".vex-prof__av svg path")).not.toBeNull();
+    const disc = container.querySelector(".vex-prof__av svg");
+    expect(disc?.getAttribute("width")).toBe("36");
+    expect(disc?.querySelector("circle.vex-prof__disc")?.getAttribute("r")).toBe("17.5");
+    expect(disc?.querySelector(".vex-prof__glyph path")).not.toBeNull();
     expect(container.querySelector("img")).toBeNull();
   });
 
@@ -256,9 +303,38 @@ describe("SidebarProfile foot", () => {
 
   it("gives the collapsed rail the sentence as its tooltip - no subtitle there", () => {
     healthMock.mockReturnValue({ isLoading: false, data: health("degraded") });
-    render(<SidebarProfile sidebarOpen={false} />);
+    const degraded = render(<SidebarProfile sidebarOpen={false} />);
     const trigger = screen.getByRole("button", { name: /Open menu/ });
     expect(trigger.getAttribute("title")).toBe(RUNTIME_STATUS_SENTENCES.degraded);
     expect(screen.queryByText(RUNTIME_STATUS_SENTENCES.degraded)).toBeNull();
+    // The rail is the disc alone.
+    expect(trigger.querySelector(".vex-prof__n")).toBeNull();
+    expect(trigger.querySelector("[data-vex-account-disc]")).not.toBeNull();
+    degraded.unmount();
+
+    // Healthy, the tooltip is the cell's own line.
+    healthMock.mockReturnValue({ isLoading: false, data: health("ok") });
+    render(<SidebarProfile sidebarOpen={false} />);
+    expect(screen.getByRole("button", { name: /Open menu/ }).getAttribute("title")).toBe(
+      ACCOUNT_CELL_LINE,
+    );
+  });
+
+  it("opens the panel with its foot on the cell's top edge, from the column's left", () => {
+    render(<SidebarProfile sidebarOpen />);
+    const trigger = screen.getByRole("button", { name: /Open menu/ });
+    trigger.getBoundingClientRect = () =>
+      ({ x: 0, y: 828, left: 0, top: 828, right: 248, bottom: 900, width: 248, height: 72, toJSON: () => ({}) }) as DOMRect;
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu");
+    expect(menu.classList.contains("vex-profile-menu--panel")).toBe(true);
+    // jsdom lays nothing out (the list measures 0 high), so the list's top is
+    // where its foot lands: the cell's top edge, at the trigger's left.
+    expect(menu.style.top).toBe("828px");
+    expect(menu.style.left).toBe("0px");
+    // Every item the menu had stays (the shell suite walks each one).
+    for (const entry of ["Personalize", "Memory", "Sessions", "Agent Scan", "How Vex works", "Settings", "Lock Vex"]) {
+      expect(screen.getByRole("menuitem", { name: new RegExp(entry) })).not.toBeNull();
+    }
   });
 });

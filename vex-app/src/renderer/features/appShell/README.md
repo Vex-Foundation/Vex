@@ -74,8 +74,11 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   page reuses the row as `register`.
 - Update slot `vex-upd-slot` (`updates/update-card-slot.ts`): `UpdateCard`
   portals into it above the account row; with no slot it floats at the lower left.
-- Account row (`SidebarProfile.tsx`): the vx box, the name or "What should Vex
-  call you?", a status sentence. Its upward menu: Personalize, Memory (when
+- Account cell (`SidebarProfile.tsx`, the bottom row's first cell): the person's
+  avatar disc (the transcript's drawing, raised 2 on the chosen rule), the name
+  or "You", then "Account and settings" (or the runtime's trouble as a sentence),
+  and the up chevron. Its upward menu, its foot on the cell's top rule:
+  Personalize (which asks for a name while there is none), Memory (when
   enabled), Sessions, Agent Scan, How Vex works, Settings, Lock Vex, a disabled
   Runtime row. Pages open from the trigger's rect (`origin`).
 - Rail: 40 x 40 keys with tooltips (New chat, Search, Chats, the nav, the
