@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import type {
@@ -275,7 +275,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
     expect(container.querySelector("[data-vex-tool-fold]")).not.toBeNull();
   });
 
-  it("never lets a fold hide a failure: the folded row counts it, in ink with the cross", () => {
+  it("never lets a fold hide a failure: the folded row counts it, beside the red square", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -295,9 +295,53 @@ describe("TranscriptMessage tool acts (S5)", () => {
     );
     const failed = container.querySelector("[data-vex-tool-fold-failed]");
     expect(failed?.textContent).toBe("1 failed");
-    expect(failed?.querySelector('.vex-swatch[data-s="error"]')).not.toBeNull();
+    // docs/design/H3-DESKTOP.md section 2.2: a step that did not execute is
+    // the status red square beside an ink word.
+    expect(failed?.querySelector(".vex-swatch.text-danger-mark")).not.toBeNull();
     // No member was measured, so the fold prints no time at all.
     expect(container.querySelector("[data-vex-tool-duration]")).toBeNull();
+  });
+
+  it("squares each outcome in its H3 status colour beside its word", () => {
+    // docs/design/H3-DESKTOP.md section 2.2: ink for a step that ran, red
+    // for one that did not execute, grey for a broadcast still in flight.
+    const cases = [
+      { success: true, displayStatus: null, mark: "text-ink-primary", word: "Done" },
+      { success: false, displayStatus: null, mark: "text-danger-mark", word: "Failed" },
+      { success: false, displayStatus: "pending" as const, mark: "text-running-mark", word: "Pending" },
+    ];
+    for (const c of cases) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: {
+            id: 6,
+            variant: "tool",
+            toolKind: "call",
+            label: "wallet:read",
+            content: "",
+            createdAt: ISO,
+            toolCalls: [],
+            toolActs: [
+              {
+                toolCallId: "a",
+                toolName: "wallet:read",
+                toolArgs: "{}",
+                output: "x",
+                success: c.success,
+                displayStatus: c.displayStatus,
+                durationMs: 812,
+              },
+            ],
+          },
+        }),
+      );
+      const square = container.querySelector("[data-vex-tool-status] .vex-swatch");
+      expect(square?.className).toContain(c.mark);
+      expect(container.querySelector("[data-vex-step-word]")?.textContent).toBe(c.word);
+      // The measured time rides at the row's right.
+      expect(container.querySelector("[data-vex-tool-duration]")?.textContent).toBe("812 ms");
+      cleanup();
+    }
   });
 
   it("keeps a single call as its own step row with its outcome word", () => {
@@ -345,51 +389,51 @@ describe("TranscriptMessage assistant_stopped (9-5b)", () => {
   });
 });
 
-describe("TranscriptMessage agent activity avatar", () => {
-  it("marks the working turn's token, with no state drawn under it: the live row says it", () => {
+describe("TranscriptMessage agent activity seam", () => {
+  it("says which row is the working turn's, with nothing drawn for it: the live row says it", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Preparing the transfer." }),
         agentWorking: true,
       }),
     );
-    const avatar = container.querySelector(
-      '[data-vex-agent-avatar-state="working"]',
-    );
-    expect(avatar).not.toBeNull();
-    // docs/design/R3-MINIMAL.md section 6: the turn in flight is the live
-    // row's fill, word and timer; the token itself carries no swatch and
-    // never spins.
-    expect(avatar?.querySelector(".vex-swatch")).toBeNull();
+    const reply = container.querySelector('[data-vex-agent-state="working"]');
+    expect(reply?.getAttribute("data-vex-message-role")).toBe("assistant");
+    // The turn in flight is the live row's fill, word and timer; the row
+    // itself carries no swatch and nothing spins.
+    expect(reply?.querySelector(".vex-swatch")).toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
-    expect(avatar?.className).not.toMatch(/animate-spin|rounded-full/);
   });
 
-  it("keeps settled agent avatars still", () => {
+  it("keeps settled rows settled", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Transfer prepared." }),
       }),
     );
     expect(
-      container.querySelector('[data-vex-agent-avatar-state="settled"]'),
+      container.querySelector('[data-vex-agent-state="settled"]'),
     ).not.toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
   });
 
-  it("hangs the turn off the token only on the row that heads it", () => {
-    const { container } = render(
-      createElement(TranscriptMessage, {
-        row: row({ variant: "assistant", content: "And the second part." }),
-        turnMark: false,
-      }),
-    );
-    expect(container.querySelector("[data-vex-agent-avatar]")).toBeNull();
-    // The row still sits on the turn's 40px edge, and is still named.
-    expect(
-      container.querySelector('[data-vex-message-role="assistant"]')?.className,
-    ).toContain("vex-reply");
-    expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+  it("marks only the row that heads the turn, and draws no token on either", () => {
+    for (const turnMark of [true, false] as const) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: row({ variant: "assistant", content: "And the second part." }),
+          turnMark,
+        }),
+      );
+      const reply = container.querySelector('[data-vex-message-role="assistant"]');
+      expect(reply?.hasAttribute("data-vex-turn-head")).toBe(turnMark);
+      // docs/design/H3-DESKTOP.md section 1.7: H3 draws no token beside Vex's
+      // rows, so neither the head nor a later row carries one.
+      expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
+      expect(reply?.className).toContain("vex-reply");
+      expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+      cleanup();
+    }
   });
 });
 
@@ -530,6 +574,29 @@ describe("TranscriptMessage caption register (contract C2)", () => {
     expect(caption?.textContent).toContain("You");
   });
 
+  it("draws the person's message as H3's bubble beside the avatar cell", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: the bubble, then the round avatar
+    // cell at its right. "You" is for assistive technology only (the avatar
+    // says it on screen), and the clock is hover-revealed chrome.
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "user", content: "Swap 200 USDC to ETH on Base." }),
+      }),
+    );
+    const message = container.querySelector('[data-vex-message-role="user"]');
+    const bubble = message?.querySelector(".vex-you__body");
+    expect(bubble?.textContent).toBe("Swap 200 USDC to ETH on Base.");
+    const avatar = message?.querySelector("[data-vex-you-avatar]");
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
+    // The disc is SVG geometry, never a CSS radius (base.css's shape law).
+    expect(avatar?.querySelector("svg circle.vex-you__disc")).not.toBeNull();
+    // The avatar is the row's last cell: the bubble sits to its left.
+    expect(message?.lastElementChild).toBe(avatar);
+    expect(message?.querySelector(".sr-only")?.textContent).toBe("You");
+    expect(message?.querySelector(".vex-time-reveal")).not.toBeNull();
+  });
+
   it("puts the assistant clock and actions in a TAIL row, in the same register", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
@@ -556,15 +623,15 @@ describe("TranscriptMessage assistant identity", () => {
    * reader still has to be told whose turn this is, so the sr-only speaker
    * label is the text equivalent that replaces them.
    */
-  it("signs an assistant turn with the VexMark and NO visible wordmark", () => {
+  it("signs an assistant turn for assistive technology alone: no token, NO visible wordmark", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Done." }),
       }),
     );
-    const avatar = container.querySelector("[data-vex-agent-avatar]");
-    expect(avatar).not.toBeNull();
-    expect(avatar?.querySelector("svg path")).not.toBeNull();
+    // docs/design/H3-DESKTOP.md section 1.7: her presence is the Vex key in
+    // the header; the transcript draws no mark beside her rows.
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
     // No raster portrait anywhere, and no wordmark of any casing.
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByText("VEX")).toBeNull();
@@ -576,7 +643,7 @@ describe("TranscriptMessage assistant identity", () => {
     expect(label?.textContent).toBe("Vex");
   });
 
-  it("says which token belongs to the working turn, for the active turn only", () => {
+  it("says which row belongs to the working turn, for the active turn only", () => {
     for (const working of [true, false] as const) {
       const { container } = render(
         createElement(TranscriptMessage, {
@@ -584,13 +651,11 @@ describe("TranscriptMessage assistant identity", () => {
           agentWorking: working,
         }),
       );
-      const avatar = container.querySelector("[data-vex-agent-avatar]");
-      expect(avatar?.getAttribute("data-vex-agent-avatar-state")).toBe(
+      const reply = container.querySelector('[data-vex-message-role="assistant"]');
+      expect(reply?.getAttribute("data-vex-agent-state")).toBe(
         working ? "working" : "settled",
       );
-      // The token is decoration, never the only signal that a turn is live:
-      // the live row, the title bar chip and the Vex sidebar say it in words.
-      expect(avatar?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+      cleanup();
     }
   });
 });

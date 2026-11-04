@@ -38,7 +38,7 @@
  * (initial load + load-older prepends) enter with a hard cut.
  */
 
-import { useMemo, useRef, type JSX } from "react";
+import { useCallback, useMemo, useRef, type JSX } from "react";
 import { LineChevronDown } from "../../components/icons/line/index.js";
 import type { SessionMessageDto } from "@shared/schemas/messages.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
@@ -52,6 +52,10 @@ import {
   useStreamPreview,
 } from "../../stores/streamStore.js";
 import { StreamingBubble } from "./StreamingBubble.js";
+import {
+  settledTurnAnchor,
+  useTurnClockStore,
+} from "./TurnIsland/turnClock.js";
 import { findWorkingAgentEntryKey } from "./agentActivity.js";
 import {
   groupTranscriptRows,
@@ -111,6 +115,23 @@ export function SessionTranscript({
   const liveMark = useMemo(() => liveTurnNeedsMark(rows), [rows]);
   // A14/A18 - branch + edit hover keys on prose rows.
   const forkActions = useMessageForkActions({ sessionId, rows });
+
+  // THE LIVE TURN'S CLOCK, kept past the turn (`TurnIsland/turnClock.ts`):
+  // when the live frame settles it hands up its clock's reading, filed here
+  // under the person's message the turn answered, so the turn's thinking row
+  // can say "Thought for 2.8 s". The rows are read through a ref at that
+  // moment, so the callback stays stable and the turn's answer row, which
+  // may land in the same frame, does not re-create it.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const recordTurnClock = useTurnClockStore((s) => s.record);
+  const onTurnSettled = useCallback(
+    (thoughtMs: number, startedAtMs: number) => {
+      const anchorId = settledTurnAnchor(rowsRef.current, startedAtMs);
+      if (anchorId !== null) recordTurnClock(sessionId, anchorId, thoughtMs);
+    },
+    [recordTurnClock, sessionId],
+  );
 
   // S5 - pending approvals drive two quiet signals: per-step "Waiting for
   // approval" links (matched by toolCallId) and the live row's freeze.
@@ -287,6 +308,7 @@ export function SessionTranscript({
             awaitingApproval={hasPendingApproval}
             leaseHeld={leaseHeld}
             turnMark={liveMark}
+            onTurnSettled={onTurnSettled}
           />
         ) : null}
         </div>
