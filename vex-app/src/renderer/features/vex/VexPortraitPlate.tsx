@@ -117,10 +117,11 @@ const KIMM_SHORTCUT = {
 
 /**
  * The first-close hint's keys (Appendix A.9): title case on Windows and
- * Linux, the glyphs on a Mac, as the hint spells them.
+ * Linux, the glyphs on a Mac in Apple's modifier order (⇧ before ⌘), as the
+ * Vex key's keycaps draw them.
  */
 const KIMM_HINT_KEYS: readonly string[] =
-  studioPlatform === "darwin" ? ["⌘", "⇧", "B"] : ["Ctrl", "Shift", "B"];
+  studioPlatform === "darwin" ? ["⇧", "⌘", "B"] : ["Ctrl", "Shift", "B"];
 
 /**
  * Her section, with the feature's part done: her mood, the chord, the stored
