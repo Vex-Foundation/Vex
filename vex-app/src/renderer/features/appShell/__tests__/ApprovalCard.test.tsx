@@ -1643,6 +1643,18 @@ describe("ApprovalCard, every kind in the same frame", () => {
     expect(sheet).not.toMatch(/(?:padding|margin)(?:-left|-right)?:[^;]*\b24px/);
   });
 
+  it("narrows the Lighter desk's Review order card through the one inset, its rules still edge to edge", () => {
+    const desk = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/lighter-ticket.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(desk).toMatch(/\.lit-order-review \.vex-appr \{[^}]*--vex-appr-inset: 14px;/);
+    // The cells own the inset, so the card's own padding would only add to it.
+    expect(desk).toMatch(/\.lit-order-review \.vex-appr__in \{\s*padding: 0;\s*\}/);
+    // The table's rows keep their inline inset; the desk only tightens the block.
+    const rows = /\.lit-order-review \.vex-appr__dl dt,\s*\.lit-order-review \.vex-appr__dl dd \{([^}]*)\}/.exec(desk)?.[1] ?? "";
+    expect(rows).toContain("padding-block: 5px");
+    expect(rows).not.toMatch(/padding:\s/);
+  });
+
   it("holds MAINNET and the stamp together as one unit of the eyebrow row", () => {
     renderCard(KINDS[0]?.summary ?? makeSummary(), false);
     const network = screen.getByTestId("approval-network");
