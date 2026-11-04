@@ -158,40 +158,29 @@
 }
 
 /* ── Vex's turn ──────────────────────────────────────────────────────────
- * A 28px column and a 12 gap: the flat token (24) hangs at the left, once per
- * turn; every row of the turn (prose, steps, the live row, the stats) starts
- * at the same 40 edge. Paragraphs 15 / 1.6, 10 between them. */
+ * docs/design/H3-DESKTOP.md sections 1.7 and 2.3. H3 runs her turn on the
+ * column's own left edge: the thinking row, the steps, the answer and the
+ * receipt span the column, level with the person's bubble on the right, with
+ * no token beside them (her presence is the Vex key in the header). Her
+ * answer is the sans at 16 / 1.6 in ink, 12 between paragraphs: a step under
+ * the bubble's 17, the reading size H3 gives a message. */
 .vex-reply {
   position: relative;
-  padding-left: 40px;
-}
-.vex-reply__mark {
-  position: absolute;
-  top: 1px;
-  left: 0;
-  display: flex;
-  width: 24px;
-  height: 24px;
-}
-/* The token centres on the first line of what heads the turn: a 36px
- * Reasoned row, a 36px step row under its 4 + 1 top rule, a 30px fold, or the
- * live row under its rule. */
-.vex-reply__mark[data-vex-mark-at="reasoned"] {
-  top: 6px;
-}
-.vex-reply__mark[data-vex-mark-at="step"] {
-  top: 11px;
-}
-.vex-reply__mark[data-vex-mark-at="fold"] {
-  top: 8px;
-}
-.vex-reply__mark[data-vex-mark-at="live"] {
-  top: 7px;
 }
 .vex-reply .vex-chat-prose {
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 400;
   line-height: 1.6;
-  gap: 10px;
+  gap: 12px;
+  color: var(--vex-alias-label-primary);
+}
+/* A table's head cells in an answer are labels: caps 12, tracked, muted, as
+ * H3 sets its table heads. */
+.vex-reply .vex-chat-prose th {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 /* The turn's clock and message keys, under the prose, revealed on hover. */
@@ -204,7 +193,8 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* "Stopped": the outline swatch and the word, 13 muted. */
+/* "Stopped", a status in H3's grammar (section 2.2): the small outline square
+ * and the word in caps 13, tracked, in ink. */
 .vex-reply__stopped {
   display: flex;
   align-items: center;
@@ -212,7 +202,9 @@
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.45;
-  color: var(--vex-alias-label-tertiary);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
 }
 
 /* ============================================================ *
@@ -514,14 +506,12 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* The turn error callout (the kit's `.vex-callout`) after the last turn,
- * hung on the turn's 40px edge, at most 600 wide; a side rail keeps it flush. */
+/* The turn error callout (the kit's `.vex-callout`) after the last turn, on
+ * the turn's edge (the column's own, as H3 draws Vex's turn), at most 600
+ * wide. */
 .vex-turn-error {
   max-width: 600px;
-  margin: 0 0 12px 40px;
-}
-[data-vex-session-surface="embedded"] .vex-turn-error {
-  margin-left: 0;
+  margin: 0 0 12px;
 }
 
 /* ── Reasoned ──────────────────────────────────────────────────────────────

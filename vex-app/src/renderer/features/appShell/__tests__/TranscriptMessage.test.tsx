@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { TranscriptMessage } from "../TranscriptMessage.js";
 import type {
@@ -345,51 +345,51 @@ describe("TranscriptMessage assistant_stopped (9-5b)", () => {
   });
 });
 
-describe("TranscriptMessage agent activity avatar", () => {
-  it("marks the working turn's token, with no state drawn under it: the live row says it", () => {
+describe("TranscriptMessage agent activity seam", () => {
+  it("says which row is the working turn's, with nothing drawn for it: the live row says it", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Preparing the transfer." }),
         agentWorking: true,
       }),
     );
-    const avatar = container.querySelector(
-      '[data-vex-agent-avatar-state="working"]',
-    );
-    expect(avatar).not.toBeNull();
-    // docs/design/R3-MINIMAL.md section 6: the turn in flight is the live
-    // row's fill, word and timer; the token itself carries no swatch and
-    // never spins.
-    expect(avatar?.querySelector(".vex-swatch")).toBeNull();
+    const reply = container.querySelector('[data-vex-agent-state="working"]');
+    expect(reply?.getAttribute("data-vex-message-role")).toBe("assistant");
+    // The turn in flight is the live row's fill, word and timer; the row
+    // itself carries no swatch and nothing spins.
+    expect(reply?.querySelector(".vex-swatch")).toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
-    expect(avatar?.className).not.toMatch(/animate-spin|rounded-full/);
   });
 
-  it("keeps settled agent avatars still", () => {
+  it("keeps settled rows settled", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Transfer prepared." }),
       }),
     );
     expect(
-      container.querySelector('[data-vex-agent-avatar-state="settled"]'),
+      container.querySelector('[data-vex-agent-state="settled"]'),
     ).not.toBeNull();
     expect(container.querySelector("[data-vex-agent-spinner]")).toBeNull();
   });
 
-  it("hangs the turn off the token only on the row that heads it", () => {
-    const { container } = render(
-      createElement(TranscriptMessage, {
-        row: row({ variant: "assistant", content: "And the second part." }),
-        turnMark: false,
-      }),
-    );
-    expect(container.querySelector("[data-vex-agent-avatar]")).toBeNull();
-    // The row still sits on the turn's 40px edge, and is still named.
-    expect(
-      container.querySelector('[data-vex-message-role="assistant"]')?.className,
-    ).toContain("vex-reply");
-    expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+  it("marks only the row that heads the turn, and draws no token on either", () => {
+    for (const turnMark of [true, false] as const) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: row({ variant: "assistant", content: "And the second part." }),
+          turnMark,
+        }),
+      );
+      const reply = container.querySelector('[data-vex-message-role="assistant"]');
+      expect(reply?.hasAttribute("data-vex-turn-head")).toBe(turnMark);
+      // docs/design/H3-DESKTOP.md section 1.7: H3 draws no token beside Vex's
+      // rows, so neither the head nor a later row carries one.
+      expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
+      expect(reply?.className).toContain("vex-reply");
+      expect(container.querySelector(".sr-only")?.textContent).toBe("Vex");
+      cleanup();
+    }
   });
 });
 
@@ -579,15 +579,15 @@ describe("TranscriptMessage assistant identity", () => {
    * reader still has to be told whose turn this is, so the sr-only speaker
    * label is the text equivalent that replaces them.
    */
-  it("signs an assistant turn with the VexMark and NO visible wordmark", () => {
+  it("signs an assistant turn for assistive technology alone: no token, NO visible wordmark", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: row({ variant: "assistant", content: "Done." }),
       }),
     );
-    const avatar = container.querySelector("[data-vex-agent-avatar]");
-    expect(avatar).not.toBeNull();
-    expect(avatar?.querySelector("svg path")).not.toBeNull();
+    // docs/design/H3-DESKTOP.md section 1.7: her presence is the Vex key in
+    // the header; the transcript draws no mark beside her rows.
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
     // No raster portrait anywhere, and no wordmark of any casing.
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByText("VEX")).toBeNull();
@@ -599,7 +599,7 @@ describe("TranscriptMessage assistant identity", () => {
     expect(label?.textContent).toBe("Vex");
   });
 
-  it("says which token belongs to the working turn, for the active turn only", () => {
+  it("says which row belongs to the working turn, for the active turn only", () => {
     for (const working of [true, false] as const) {
       const { container } = render(
         createElement(TranscriptMessage, {
@@ -607,13 +607,11 @@ describe("TranscriptMessage assistant identity", () => {
           agentWorking: working,
         }),
       );
-      const avatar = container.querySelector("[data-vex-agent-avatar]");
-      expect(avatar?.getAttribute("data-vex-agent-avatar-state")).toBe(
+      const reply = container.querySelector('[data-vex-message-role="assistant"]');
+      expect(reply?.getAttribute("data-vex-agent-state")).toBe(
         working ? "working" : "settled",
       );
-      // The token is decoration, never the only signal that a turn is live:
-      // the live row, the title bar chip and the Vex sidebar say it in words.
-      expect(avatar?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+      cleanup();
     }
   });
 });
