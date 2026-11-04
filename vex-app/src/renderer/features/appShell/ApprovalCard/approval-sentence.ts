@@ -1,7 +1,9 @@
 /**
  * THE APPROVAL IN WORDS (docs/design/R3-MINIMAL.md section 8.1): the plain
  * sentence that titles the card, the readable risk tag, and the risk
- * sentences under the money lines.
+ * sentences under the money lines. The H3 frame's own words sit here too
+ * (docs/design/H3-DESKTOP.md Appendix A.7): the eyebrow that names the act
+ * ("Confirm this swap") and the consequence line under the sentence.
  *
  * Built only from what the approval carries. Every part of a sentence comes
  * from a present argument; a sentence with nothing to say falls back to
@@ -232,6 +234,85 @@ export function approvalSentence(summary: ApprovalTarget): string {
     if (own !== null && own.length <= SUMMARY_SENTENCE_MAX) return sentence(own);
   }
   return `${approvalToolTitle(summary)}: review the signed fields`;
+}
+
+// -- The card's frame in words (docs/design/H3-DESKTOP.md Appendix A.7) -------
+
+/**
+ * The eyebrow over the card, by tool family: "Confirm this swap", "Confirm
+ * this bridge", "Confirm this transfer", "Confirm this order", else "Confirm
+ * this action". The family is the action-word table's, so the eyebrow, the
+ * approve key ("Approve swap") and the Needs you row can never name one card
+ * two ways. Written in sentence case; the eyebrow's style sets the caps.
+ */
+export const APPROVAL_EYEBROW_WORDS: Readonly<Record<ApprovalFamily, string>> = {
+  bridge: "Confirm this bridge",
+  order: "Confirm this order",
+  swap: "Confirm this swap",
+  transfer: "Confirm this transfer",
+  other: "Confirm this action",
+};
+
+/** The card's eyebrow for this approval's family. */
+export function approvalEyebrowWord(approval: ApprovalTarget): string {
+  return APPROVAL_EYEBROW_WORDS[approvalFamily(approval)];
+}
+
+/** H3's own consequence line, kept for a swap and an order that places one. */
+export const CONSEQUENCE_PLACES_ORDER = "This places a real order on mainnet. It cannot be undone.";
+/** The desktop's line for a transfer and a bridge (Appendix A.7, proposed). */
+export const CONSEQUENCE_SENDS_FUNDS = "This sends real funds on mainnet. It cannot be undone.";
+
+/**
+ * The Lighter tools whose approval places an order: a create (a single order
+ * or an OCO pair) and a position close, which is a reduce-only order at its
+ * worst price. A cancel, a modify and a cancel-all are orders too in the
+ * family table, but "places a real order" would be false for them.
+ */
+const ORDER_PLACING_TOOLS: ReadonlySet<string> = new Set(["lighter.order.create", "lighter.position.close"]);
+
+/** Every dotted name the approval carries for its tool, lower-cased. */
+function dottedToolNames(approval: ApprovalTarget): readonly string[] {
+  const preview = approval.preview;
+  const names = [
+    argText(preview?.criticalArgs ?? null, "toolId"),
+    preview !== null && preview.namespace !== undefined ? `${preview.namespace}.${preview.toolName}` : null,
+    approval.toolName,
+  ];
+  return names
+    .filter((name): name is string => name !== null && name.length > 0)
+    .map((name) => name.toLowerCase().replace(/:/g, "."));
+}
+
+/**
+ * The consequence line under the sentence: what pressing Approve does to real
+ * funds, and that it cannot be taken back. Only where it is true for the
+ * whole family, read from the same names the family is:
+ *   - a swap, and a Lighter order create or position close: H3's own line,
+ *     "This places a real order on mainnet. It cannot be undone.";
+ *   - a transfer (a wallet send, a Lighter deposit or withdrawal) and a
+ *     bridge: "This sends real funds on mainnet. It cannot be undone.".
+ * `null` for every other card, so it shows no line rather than a false one:
+ * a Lighter cancel or modify places nothing, a trading-fee authorization can
+ * be revoked, and a call to the user's own MCP tool signs nothing. Those
+ * cards still say what they do in their sentence and their risk sentences.
+ * Desktop is mainnet only, so "on mainnet" is true wherever a line shows.
+ */
+export function approvalConsequence(approval: ApprovalTarget): string | null {
+  if (isUserMcpApproval(approval)) return null;
+  switch (approvalFamily(approval)) {
+    case "swap":
+      return CONSEQUENCE_PLACES_ORDER;
+    case "order":
+      return dottedToolNames(approval).some((name) => ORDER_PLACING_TOOLS.has(name))
+        ? CONSEQUENCE_PLACES_ORDER
+        : null;
+    case "transfer":
+    case "bridge":
+      return CONSEQUENCE_SENDS_FUNDS;
+    default:
+      return null;
+  }
 }
 
 /** The Lighter deployment a call names, by its people name ("Lighter Core"); else `null`. */

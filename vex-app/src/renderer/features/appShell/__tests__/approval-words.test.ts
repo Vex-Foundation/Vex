@@ -15,9 +15,14 @@
 import { describe, expect, it } from "vitest";
 import type { ApprovalPreview, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import {
+  APPROVAL_EYEBROW_WORDS,
+  CONSEQUENCE_PLACES_ORDER,
+  CONSEQUENCE_SENDS_FUNDS,
   actionKindWords,
   addressIn,
+  approvalConsequence,
   approvalExpiryWords,
+  approvalEyebrowWord,
   approvalFamily,
   approvalPlace,
   approvalReviewWord,
@@ -212,6 +217,70 @@ describe("approvalFamily and approvalReviewWord", () => {
     const close = previewOf("close", { toolId: "lighter.position.close" }, "lighter");
     expect(approvalFamily(approvalFrom(withdraw))).toBe("transfer");
     expect(approvalFamily(approvalFrom(close))).toBe("order");
+  });
+});
+
+// -- The H3 frame: eyebrow and consequence ---------------------------------------
+
+describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.7)", () => {
+  const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
+  const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
+  const LIGHTER_CANCEL = previewOf("order.cancel", { toolId: "lighter.order.cancel", providerOrderId: "7" }, "lighter");
+  const LIGHTER_CLOSE = previewOf("position.close", { toolId: "lighter.position.close", symbol: "BTC" }, "lighter");
+  const LIGHTER_DEPOSIT = previewOf("deposit", { toolId: "lighter.deposit", summary: "Deposit 5 USDC" }, "lighter");
+  const LIGHTER_WITHDRAW = previewOf("withdraw", { toolId: "lighter.withdraw", summary: "Withdraw 5 USDC" }, "lighter");
+  const MCP = previewOf("deepwiki / read_wiki_structure", { server: "deepwiki", tool: "read_wiki_structure" }, "mcp");
+  const LAUNCH = previewOf("launch_execute", { toolId: "pools.launch_execute", name: "My Token" }, "pools");
+
+  const cases: readonly (readonly [string, ApprovalPreview, string, string | null])[] = [
+    ["bridge", BRIDGE, "Confirm this bridge", FUNDS_LINE],
+    ["namespaced bridge", BRIDGE_NAMESPACED, "Confirm this bridge", FUNDS_LINE],
+    ["kyber swap", KYBER, "Confirm this swap", ORDER_LINE],
+    ["jupiter swap", JUPITER, "Confirm this swap", ORDER_LINE],
+    ["native send", SEND_NATIVE, "Confirm this transfer", FUNDS_LINE],
+    ["token send", SEND_USDC, "Confirm this transfer", FUNDS_LINE],
+    ["lighter market order", LIGHTER_MARKET, "Confirm this order", ORDER_LINE],
+    ["lighter limit order", LIGHTER_LIMIT, "Confirm this order", ORDER_LINE],
+    ["lighter position close", LIGHTER_CLOSE, "Confirm this order", ORDER_LINE],
+    ["lighter order cancel", LIGHTER_CANCEL, "Confirm this order", null],
+    ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", FUNDS_LINE],
+    ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", FUNDS_LINE],
+    ["lighter fee authorization", LIGHTER_FEES, "Confirm this action", null],
+    ["token launch", LAUNCH, "Confirm this action", null],
+    ["generic signed transaction", GENERIC_TX, "Confirm this action", null],
+    ["the user's own MCP tool", MCP, "Confirm this action", null],
+  ];
+
+  it.each(cases)("%s reads %s, with its consequence line", (_name, preview, eyebrow, consequence) => {
+    const approval = approvalFrom(preview);
+    expect(approvalEyebrowWord(approval)).toBe(eyebrow);
+    expect(approvalConsequence(approval)).toBe(consequence);
+  });
+
+  it("names every family once, from the same table as the approve key", () => {
+    for (const family of Object.keys(APPROVAL_ACTION_WORDS) as (keyof typeof APPROVAL_ACTION_WORDS)[]) {
+      const word = APPROVAL_EYEBROW_WORDS[family];
+      expect(word).toMatch(/^Confirm this [a-z]+$/);
+    }
+    for (const [, preview] of cases) {
+      const approval = approvalFrom(preview);
+      const noun = APPROVAL_ACTION_WORDS[approvalFamily(approval)].replace(/^Approve ?/, "") || "action";
+      expect(approvalEyebrowWord(approval)).toBe(`Confirm this ${noun}`);
+    }
+  });
+
+  it("reads the order line from the tool names alone when the arguments carry no toolId", () => {
+    expect(approvalConsequence({ toolName: "lighter:order.create", preview: null })).toBe(ORDER_LINE);
+    expect(approvalConsequence({ toolName: "lighter:order.modify", preview: null })).toBeNull();
+    expect(approvalConsequence({ toolName: null, preview: null })).toBeNull();
+  });
+
+  it("writes each line in sentence case with no dash and no figure", () => {
+    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_SENDS_FUNDS]) {
+      expect(line).not.toMatch(DASHES);
+      expect(line).not.toMatch(/\d/);
+      expect(line.endsWith("It cannot be undone.")).toBe(true);
+    }
   });
 });
 

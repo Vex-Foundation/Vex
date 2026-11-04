@@ -129,11 +129,34 @@ describe("where Vex opens", () => {
     expect(useUiStore.getState().vexOpenChat).toBe(true);
   });
 
-  it("showing Vex clears the narrow override, so the left folds to its rail", () => {
+  it("showing Vex leaves the chats as the person opened them; on the desk it still closes the drawer", () => {
+    // H3 never folds the chats for her (docs/design/H3-DESKTOP.md section
+    // 3.6): a chats column opened between 1024 and 1267 stays open.
     useUiStore.setState({ vexOpenChat: false, sidebarNarrowExpanded: true });
     useUiStore.getState().setVexOpen(true);
     expect(useUiStore.getState().vexOpenChat).toBe(true);
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(true);
+    // The desk's same flag is its top bar drawer, which an open chat closes.
+    useUiStore.setState({ runtimeMode: "lighter", vexOpenLighter: false, sidebarNarrowExpanded: true });
+    useUiStore.getState().setVexOpen(true);
+    expect(useUiStore.getState().vexOpenLighter).toBe(true);
     expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
+  });
+
+  it("migrates no Vex slot: a stored choice keeps its value, now her plate in a chat", () => {
+    // S2-11: in a chat the flag shows or hides her plate, on the table pages
+    // it opens or folds the column; a person who hid her keeps her hidden,
+    // so the persisted values pass through every hop unchanged.
+    // (The desk's `vexOpenLighter` is session-only and never stored.)
+    const stored = { vexOpenChat: false, vexOpenPages: true, showAvatar: false };
+    const migrated = migrateUiState({ ...stored }, 23) as Record<string, unknown>;
+    for (const [key, value] of Object.entries(stored)) {
+      expect(migrated[key], key).toBe(value);
+    }
+    const merged = mergeUiState(migrated, useUiStore.getState());
+    expect(merged.vexOpenChat).toBe(false);
+    expect(merged.vexOpenPages).toBe(true);
+    expect(merged.showAvatar).toBe(false);
   });
 
   it("keeps the legacy writers working through the page class", () => {

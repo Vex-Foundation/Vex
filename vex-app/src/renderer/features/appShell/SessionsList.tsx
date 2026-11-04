@@ -7,8 +7,9 @@
  *
  * Open, top to bottom:
  *
- *   HEAD     44 high: the vx wordmark and the collapse key
- *            (`AgentSidebarHeader`).
+ *   HEAD     the vx wordmark and the collapse key (`AgentSidebarHeader`):
+ *            the frame's header draws them in its cells over this column
+ *            (`headless`), so the column itself starts with ACTIONS.
  *   ACTIONS  New chat (500; "New mission" on the Mission tab) and Search, as
  *            nav rows. Search turns its row into the field with the All,
  *            Agent and Mission tabs under it, New chat staying above it;
@@ -16,7 +17,9 @@
  *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
  *            with a 12px gap above and below (`SidebarNav`).
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
- *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`).
+ *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`); under
+ *            the frame's header it is the bottom row's account cell
+ *            instead (`headless`).
  *
  * The rail keeps the same order as 40 x 40 keys with their names as tooltips,
  * under the Expand key (the panel icon, the collapse key's twin, the one way
@@ -70,6 +73,13 @@ interface SessionsListProps {
   readonly onToggleSidebar: () => void;
   /** Whether the rail opens into the sidebar; false on the Lighter desk. */
   readonly expandable?: boolean;
+  /**
+   * The frame draws this column's head and foot cells: the logo cell and
+   * the sidebar key in its header (`ShellHeader`), the account cell in its
+   * bottom row. The column holds only its body. The Lighter desk's rail
+   * keeps its own head on the rail's cap and its own account row.
+   */
+  readonly headless?: boolean;
 }
 
 /** Proposal copy (section 4): the search mode's closing hint. */
@@ -80,6 +90,7 @@ export function SessionsList({
   collapsed,
   onToggleSidebar,
   expandable = true,
+  headless = false,
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -245,10 +256,13 @@ export function SessionsList({
       {rail ? (
         <>
           {/* The rail's head row is the frame's paper cap; the mark sits on
-            * it where the OS draws no traffic lights. */}
-          <div className="vex-ls-railhead vex-no-drag">
-            <SidebarHomeSigil sidebarOpen={false} />
-          </div>
+            * it where the OS draws no traffic lights. Under the frame's
+            * header the logo cell is the header's. */}
+          {headless ? null : (
+            <div className="vex-ls-railhead vex-no-drag">
+              <SidebarHomeSigil sidebarOpen={false} />
+            </div>
+          )}
           <div className="vex-ls-body">
             {expandable ? (
               <>
@@ -285,7 +299,7 @@ export function SessionsList({
         </>
       ) : (
         <>
-          <AgentSidebarHeader onCollapse={onToggleSidebar} />
+          {headless ? null : <AgentSidebarHeader onCollapse={onToggleSidebar} />}
           <div className="vex-ls-body">
             {searchOpen ? (
               <div className="vex-ls-find">
@@ -346,9 +360,13 @@ export function SessionsList({
         <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
       )}
 
-      <footer className="vex-ls-foot" data-rail-foot>
-        <SidebarProfile sidebarOpen={!rail} />
-      </footer>
+      {/* The account row: the frame's bottom row draws it under this column
+        * (its account cell) when the header draws the head. */}
+      {headless ? null : (
+        <footer className="vex-ls-foot" data-rail-foot>
+          <SidebarProfile sidebarOpen={!rail} />
+        </footer>
+      )}
 
       <SessionDeleteDialog
         session={removeTarget}

@@ -8,13 +8,21 @@
  * `window.vex.approvals.{approve,reject}` to `prepareApprove`/`prepareReject`
  * to the background `runResumeAfterDecision`.
  *
- * REAL FUNDS, ON EVERY CARD (docs/design/R3-MINIMAL.md section 8). Every
- * desktop wallet is a real wallet, so the card always wears the 1.5px ink
- * frame, the 10px hatch band down its leading edge and the reversed `Real
- * funds` stamp in its top row (`.vex-real-funds`, approval.css), with the
- * target swatch beside "Approval needed". Ink, never red and never blue: the
- * stamp is a fact about the money, not a status colour. No veil: the card is
- * the one framed thing on screen.
+ * THE H3 FRAME (docs/design/H3-DESKTOP.md sections 1.7 and 4.2). The card is
+ * a square cell bounded by 1px rules, a stack of cells inside: the head (the
+ * act as the eyebrow, "Confirm this swap"; MAINNET and the REAL FUNDS stamp at
+ * the right; the plain sentence; the consequence line), the money rows, the
+ * risk sentences and "All signed fields". Every desktop wallet is a real
+ * wallet, so every card that can move funds carries MAINNET and the stamp,
+ * the ink fill with its hatch glyph (approval.css). Ink, never red and never
+ * blue: the stamp is a fact about the money, not a status colour. No veil.
+ * The section keeps the `vex-real-funds` class and the `data-vex-real-funds`
+ * hook every full card has carried; R3's 1.5px ink frame and 10px hatch band
+ * that hung on them retired with H3, whose card is a plain ruled cell.
+ *
+ * THIS SLICE CHANGES HOW THE CARD LOOKS, NEVER HOW IT DECIDES. What Approve
+ * and Reject do, the two-step confirm below, the fields shown as signed and
+ * every IPC call are exactly as they were (section 4.3).
  *
  * The action button is named by tool family from the one action-word table
  * (`approvalActionWord`): "Approve bridge", "Approve order", "Approve swap",
@@ -353,8 +361,8 @@ export function ApprovalCard({
       // call focus(); tabIndex={-1} makes the region programmatically
       // focusable without entering the tab order.
       tabIndex={-1}
-      // REAL FUNDS (module note): the ink frame and the hatch band are this
-      // card's whole emphasis, the one framed thing on screen.
+      // REAL FUNDS (module note): the hook every full card carries; the
+      // head's MAINNET and stamp are how the card shows it.
       data-vex-real-funds=""
       // NOT `overflow-hidden`: any `overflow` other than `visible` becomes the
       // containing scrollport for a `position: sticky` descendant (CSS

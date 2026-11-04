@@ -1,12 +1,15 @@
 /**
- * One transcript row - presentational only (S5 act ledger), drawn as the R3
- * conversation (docs/design/R3-MINIMAL.md section 6).
+ * One transcript row - presentational only (S5 act ledger), drawn as the H3
+ * chat (docs/design/H3-DESKTOP.md section 1.7) where H3 has restyled a part,
+ * and as the R3 conversation (docs/design/R3-MINIMAL.md section 6) elsewhere.
  *
- * Switches on the pure `TranscriptEntry.variant`. USER rows are a right
- * anchored block on a 2px blue rule under a "You · 12:28" caption, never a
- * bubble; VEX's turn hangs off the flat vx token in a 28px column with a 12
- * gap, once per turn (`turnMark`), with her clock and message keys in a tail
- * row BELOW the body. Tool calls read as step rows; several finished steps
+ * Switches on the pure `TranscriptEntry.variant`. USER rows are H3's bubble
+ * at the right of the column beside the person's round avatar cell, their
+ * clock and keys hover-revealed at the bubble's left; VEX's turn runs on the
+ * column's own left edge with no token beside it (her presence is the Vex key
+ * in the header), her answer in the sans at 16 / 1.6, her clock and message
+ * keys in a tail row BELOW the body. Tool calls read as step rows; several
+ * finished steps
  * fold into one quiet row. Assistant prose renders through `MarkdownContent`
  * (stage 8-2a) - safe React elements, never an HTML string; user/tool/notice
  * rows + the `compaction`/`recall` markers (stage 8-4) render as plain React
@@ -15,7 +18,6 @@
 
 import { memo, type JSX, type ReactNode } from "react";
 import { Swatch } from "../../components/ui/swatch.js";
-import { VxToken } from "../../components/ui/vx-token.js";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import {
   BranchMessageAction,
@@ -31,6 +33,7 @@ import { ReasonedBlock } from "./ReasonedBlock.js";
 import { BoardRowCard } from "./Board/BoardRowCard.js";
 import type { BoardArrival } from "./Board/board-surface-contracts.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
+import { ActReceipt, receiptTxRef } from "./ToolLedger/ReceiptCard.js";
 import {
   MissionStopResult,
   readMissionStopResult,
@@ -79,44 +82,57 @@ function TapeClock({
 }
 
 /**
- * Vex's flat vx token at the head of her turn (docs/design/R3-MINIMAL.md
- * section 6): the 24px disc in the 28px column, drawn ONCE per turn - only on
- * the row that heads the turn (`turnMark`). Every member of the turn (prose,
- * steps, the live row, the stats) sits on the same 40px edge (`.vex-reply`).
+ * Vex's turn on the column's own edge (docs/design/H3-DESKTOP.md section 1.7).
+ * H3 draws no token beside her rows: her presence is the Vex key in the
+ * header, and the thinking row, the steps, her answer and the receipt run the
+ * full width of the column, level with the person's bubble on the right. So
+ * the R3 token and its 40px gutter are gone, and the two facts the token
+ * carried stay as seams on the row itself:
  *
- * The state of a turn in flight is the live row's word and timer, never a
- * mark under the token; `data-vex-agent-avatar-state` still says which mark
- * belongs to the working turn.
+ *   data-vex-turn-head    this row opens her turn (`turnMarks.ts`): the
+ *                         first row she writes after the person's message;
+ *   data-vex-agent-state  `working` for the newest row of the turn in flight
+ *                         (`findWorkingAgentEntryKey`), else `settled`. What
+ *                         a reader sees of a live turn is the live row's word
+ *                         and timer; this is a seam, never a visible mark.
  *
- * Decorative: the row's sr-only speaker label names the turn, so the token
- * stays aria-hidden (VxToken without a label).
+ * The row's sr-only speaker label still names the turn for assistive
+ * technology.
  */
-type MarkAt = "prose" | "reasoned" | "step" | "fold";
-
-/** A row that opens on its Reasoned row centres the token on that row. */
-function proseMarkAt(reasoning: string | null | undefined): MarkAt {
-  return (reasoning ?? "").length > 0 ? "reasoned" : "prose";
+interface TurnSeams {
+  readonly "data-vex-turn-head"?: "";
+  readonly "data-vex-agent-state": "working" | "settled";
 }
 
-function AssistantMark({
-  working = false,
-  at = "prose",
-}: {
-  readonly working?: boolean;
-  /**
-   * What heads the row, so the token centres on its first line: prose, the
-   * 36px Reasoned row, a 36px step row or a 30px fold.
-   */
-  readonly at?: MarkAt;
-}): JSX.Element {
+function turnSeams(turnHead: boolean, working: boolean): TurnSeams {
+  return {
+    ...(turnHead ? { "data-vex-turn-head": "" as const } : {}),
+    "data-vex-agent-state": working ? "working" : "settled",
+  };
+}
+
+/**
+ * The person's avatar cell beside their bubble (docs/design/H3-DESKTOP.md
+ * section 1.7): a 36px disc on a 1px chosen rule with the person glyph in ink,
+ * as H3 draws it at the right of the message and in the account cell.
+ *
+ * Drawn as ONE SVG, as `VxToken` draws its disc, so the disc is a circle while
+ * every box keeps radius 0 (base.css's shape law). Desktop has no profile
+ * picture, so the glyph is the only honest face: the same person for every
+ * message, never initials or a stand-in portrait. The disc's measured fill
+ * (#151718) has no token of its own; `.vex-you__disc` paints the nearest
+ * raised step. Decorative: the caption's sr-only "You" names the speaker.
+ */
+function YouAvatar(): JSX.Element {
   return (
-    <span
-      data-vex-agent-avatar=""
-      data-vex-agent-avatar-state={working ? "working" : "settled"}
-      data-vex-mark-at={at === "prose" ? undefined : at}
-      className="vex-reply__mark"
-    >
-      <VxToken size={24} />
+    <span aria-hidden data-vex-you-avatar="" className="vex-you__avatar">
+      <svg width={36} height={36} viewBox="0 0 36 36" focusable="false">
+        <circle className="vex-you__disc" cx="18" cy="18" r="17.5" strokeWidth="1" />
+        <g className="vex-you__glyph">
+          <circle cx="18" cy="14.5" r="3.5" />
+          <path d="M11 25c0-3.9 3.1-6.2 7-6.2s7 2.3 7 6.2z" />
+        </g>
+      </svg>
     </span>
   );
 }
@@ -191,12 +207,13 @@ function AssistantActionsTail({
 /**
  * Document-typography wrapper around the safe markdown renderer.
  *
- * TYPOGRAPHY LAW (docs/design/R3-MINIMAL.md sections 1.3 and 6): message BODY
- * copy is the sans reading register, Instrument Sans 15 / 1.6 with 10 between
- * paragraphs. The serif is a display face and never sets a paragraph. The face
- * is declared on `.vex-chat-prose` (type.css) and the turn's metric
- * on `.vex-reply .vex-chat-prose` (chat-transcript.css); this wrapper only owns
- * the tone and wrapping.
+ * TYPOGRAPHY LAW (docs/design/H3-DESKTOP.md section 2.3): every word is Be
+ * Vietnam Pro, 400 with 600 for emphasis and heads, in ink; figures inside
+ * code and tables keep their own faces. Vex's answer is set at 16 / 1.6 with
+ * 12 between paragraphs, a step under the person's 17 in the bubble, the
+ * reading size H3 gives a message. The face is declared on `.vex-chat-prose`
+ * (type.css) and the turn's metric on `.vex-reply .vex-chat-prose`
+ * (chat-transcript.css); this wrapper only owns the tone and wrapping.
  */
 function AssistantBody({ content }: { readonly content: string }): JSX.Element {
   return (
@@ -219,6 +236,9 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   pendingApprovals,
   agentWorking = false,
   turnMark = true,
+  turnSteps,
+  thoughtMs,
+  sessionId,
   boardArrival = "settled",
   feedbackSessionId,
   feedbackMessageKey,
@@ -235,10 +255,28 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   /** True only for the newest assistant row in the currently active turn. */
   readonly agentWorking?: boolean;
   /**
-   * This row heads Vex's turn, so it carries her token (`turnMarks.ts`). A row
-   * rendered on its own heads its own turn, hence the default.
+   * This row heads Vex's turn (`turnMarks.ts`), stamped on it as
+   * `data-vex-turn-head`. A row rendered on its own heads its own turn, hence
+   * the default.
    */
   readonly turnMark?: boolean;
+  /**
+   * Set only on the turn's thinking row (`turnSteps.ts`): the whole turn's
+   * steps, which its first Reasoned row says at its right. Two PRIMITIVES, so
+   * the memo boundary's shallow comparison keeps holding.
+   */
+  readonly turnSteps?: number;
+  /**
+   * The live turn clock's reading for this turn (`TurnIsland/turnClock.ts`),
+   * set only on the thinking row of a turn watched live.
+   */
+  readonly thoughtMs?: number;
+  /**
+   * The owning session, for the reads a row makes of its own: the activity
+   * ledger a filled receipt is drawn from (`ToolLedger/ReceiptCard.tsx`).
+   * Omitted = no receipts (a read-only surface with no session).
+   */
+  readonly sessionId?: string;
   /**
    * How this row reached the screen, for a board card riding on it (A13).
    *
@@ -269,6 +307,10 @@ export const TranscriptMessage = memo(function TranscriptMessage({
     feedbackSessionId !== undefined && feedbackMessageKey !== undefined
       ? { sessionId: feedbackSessionId, messageKey: feedbackMessageKey }
       : undefined;
+  // The turn's thinking row is this row's FIRST Reasoned row; every other
+  // one stays a plain "Reasoned".
+  const headSteps = turnSteps ?? null;
+  const headThoughtMs = turnSteps === undefined ? null : (thoughtMs ?? null);
   switch (row.variant) {
     case "user": {
       // A desk message carries the market scope, the desk's values and the
@@ -281,10 +323,14 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-time-hover-root=""
           className="vex-you"
         >
-          {/* THE USER BLOCK (docs/design/R3-MINIMAL.md section 6): right
-              anchored, the words left aligned on the 2px blue rule, the
-              "You · 12:28" caption above them with the hover-revealed message
-              keys. Plain text, never markdown. */}
+          {/* THE PERSON'S MESSAGE (docs/design/H3-DESKTOP.md section 1.7): a
+              bubble at the right of the column, beside the round avatar
+              cell. The bubble is the one fill H3 measured for it (`bubble`,
+              section 2.1), its words sans 17 in ink, plain text and never
+              markdown. H3 draws no caption: the avatar says whose words these
+              are, so "You" is told to assistive technology alone, and the
+              clock and the message keys wait at the bubble's left until the
+              row is hovered or focused (opacity, so nothing shifts). */}
           <span className="vex-micro vex-you__cap tabular-nums">
             {feedbackContext !== undefined ? (
               <FeedbackMessageAction context={feedbackContext} />
@@ -301,32 +347,31 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               />
             ) : null}
             <CopyMessageAction text={written} />
-            <span>
-              You
-              <TapeClock
-                createdAt={row.createdAt}
-                className="before:mx-[0.3em] before:content-['·']"
-              />
-            </span>
+            <span className="sr-only">You</span>
+            <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
           </span>
-          <p className="vex-you__body">{written}</p>
-          {/* A33 - an operator instruction says WHEN it reaches the model, in
-              words. The words come from the engine's own typed disposition
-              (M6), never from the row kind: the kind means only "this is an
-              operator instruction", and three different things can have
-              happened to one. Hardcoding the steered wording told a user whose
-              message was queued against a parked run that it would be read at
-              the agent's next step, contradicting the acknowledgement written
-              beside it in the very same transaction. */}
-          {row.steering === true ? (
-            <span
-              data-vex-steering-mark=""
-              data-vex-disposition={row.interruptDisposition}
-              className="vex-micro vex-you__note"
-            >
-              {steeringMarkText(row.interruptDisposition)}
-            </span>
-          ) : null}
+          <div className="vex-you__stack">
+            <p className="vex-you__body">{written}</p>
+            {/* A33 - an operator instruction says WHEN it reaches the model,
+                in words. The words come from the engine's own typed
+                disposition (M6), never from the row kind: the kind means only
+                "this is an operator instruction", and three different things
+                can have happened to one. Hardcoding the steered wording told a
+                user whose message was queued against a parked run that it
+                would be read at the agent's next step, contradicting the
+                acknowledgement written beside it in the very same
+                transaction. */}
+            {row.steering === true ? (
+              <span
+                data-vex-steering-mark=""
+                data-vex-disposition={row.interruptDisposition}
+                className="vex-micro vex-you__note"
+              >
+                {steeringMarkText(row.interruptDisposition)}
+              </span>
+            ) : null}
+          </div>
+          <YouAvatar />
         </div>
       );
     }
@@ -336,12 +381,14 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-vex-message-role="assistant"
           data-time-hover-root=""
           className="vex-reply"
+          {...turnSeams(turnMark, agentWorking)}
         >
-          {turnMark ? (
-            <AssistantMark working={agentWorking} at={proseMarkAt(row.reasoning)} />
-          ) : null}
           <AssistantSpeakerLabel />
-          <ReasonedBlock reasoning={row.reasoning} />
+          <ReasonedBlock
+            reasoning={row.reasoning}
+            steps={headSteps}
+            thoughtMs={headThoughtMs}
+          />
           <AssistantBody content={row.content} />
           {row.board != null ? (
             <BoardRowCard
@@ -369,12 +416,14 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-vex-stopped=""
           data-time-hover-root=""
           className="vex-reply"
+          {...turnSeams(turnMark, agentWorking)}
         >
-          {turnMark ? (
-            <AssistantMark working={agentWorking} at={proseMarkAt(row.reasoning)} />
-          ) : null}
           <AssistantSpeakerLabel />
-          <ReasonedBlock reasoning={row.reasoning} />
+          <ReasonedBlock
+            reasoning={row.reasoning}
+            steps={headSteps}
+            thoughtMs={headThoughtMs}
+          />
           <AssistantBody content={row.content} />
           <AssistantActionsTail
             createdAt={row.createdAt}
@@ -386,8 +435,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
                 : undefined
             }
           />
+          {/* A status in H3's grammar (docs/design/H3-DESKTOP.md section
+              2.2): the small square and the caps word. Stopped is neither a
+              fill nor a failure, so the square is the empty outline. */}
           <div className="vex-reply__stopped">
-            <Swatch state="idle" size={10} />
+            <Swatch state="idle" size={8} />
             <span>Stopped</span>
           </div>
         </div>
@@ -399,8 +451,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // call, and two or more finished steps fold into one quiet row.
       if (row.toolKind === "result") {
         return (
-          <div data-vex-message-role="tool" className="vex-reply">
-            {turnMark ? <AssistantMark at="step" /> : null}
+          <div
+            data-vex-message-role="tool"
+            className="vex-reply"
+            {...turnSeams(turnMark, false)}
+          >
             <div className="vex-steps">
               <ToolDisclosure
                 label={row.label ?? "tool_output"}
@@ -416,18 +471,20 @@ export const TranscriptMessage = memo(function TranscriptMessage({
         );
       }
       return (
-        <div data-vex-message-role="tool" className="vex-reply">
-          {turnMark ? (
-            <AssistantMark
-              working={agentWorking}
-              at={toolRowMarkAt(row)}
-            />
-          ) : null}
+        <div
+          data-vex-message-role="tool"
+          className="vex-reply"
+          {...turnSeams(turnMark, agentWorking)}
+        >
           {/* Assistant prose accompanying the tool call (often empty). */}
           {row.content.length > 0 ? (
             <div data-time-hover-root="">
               <AssistantSpeakerLabel />
-              <ReasonedBlock reasoning={row.reasoning} />
+              <ReasonedBlock
+                reasoning={row.reasoning}
+                steps={headSteps}
+                thoughtMs={headThoughtMs}
+              />
               <AssistantBody content={row.content} />
               <AssistantActionsTail createdAt={row.createdAt} />
             </div>
@@ -436,13 +493,21 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               split rows share `dto.id`, and `splitToolCallProse` guarantees
               only ONE of them ever holds it, so this can never double-render. */}
           {row.content.length === 0 ? (
-            <ReasonedBlock reasoning={row.reasoning} />
+            <ReasonedBlock
+              reasoning={row.reasoning}
+              steps={headSteps}
+              thoughtMs={headThoughtMs}
+            />
           ) : null}
-          <ToolSteps row={row} pendingApprovals={pendingApprovals} />
+          <ToolSteps
+            row={row}
+            pendingApprovals={pendingApprovals}
+            sessionId={sessionId}
+          />
         </div>
       );
     case "tool_group":
-      // A run of calls folded into one quiet row, hung on the turn's edge.
+      // A run of calls folded into one quiet row, on the turn's edge.
       // EVERY folded trace (the prose-less call rows' reasoning, which the
       // aggregation would otherwise swallow) gets its OWN collapsible block,
       // stacked in turn order above the fold, so a group never silently drops
@@ -450,16 +515,22 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // the list is a fixed, ordered projection of the group model, never
       // reordered or spliced.
       return (
-        <div className="vex-reply">
-          {turnMark ? (
-            <AssistantMark
-              at={(row.reasonings ?? []).length === 0 ? "fold" : "reasoned"}
-            />
-          ) : null}
-          {(row.reasonings ?? []).map((trace, index) => (
-            <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
-          ))}
+        <div className="vex-reply" {...turnSeams(turnMark, false)}>
+          {(row.reasonings ?? []).map((trace, index, traces) => {
+            // The group's first non-empty trace is the one a thinking row
+            // can open, so it carries the turn's head (`turnSteps.ts`).
+            const head = index === traces.findIndex((t) => (t ?? "").length > 0);
+            return (
+              <ReasonedBlock
+                key={`${row.id}-${index}`}
+                reasoning={trace}
+                steps={head ? headSteps : null}
+                thoughtMs={head ? headThoughtMs : null}
+              />
+            );
+          })}
           <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+          <ActReceipts acts={row.calls ?? []} sessionId={sessionId} />
           {/* A group folds its acts; a mission result must not fold with them. */}
           {(row.calls ?? []).map((call) => {
             const stopResult = readMissionStopResult(call);
@@ -504,9 +575,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
 function ToolSteps({
   row,
   pendingApprovals,
+  sessionId,
 }: {
   readonly row: TranscriptRowModel;
   readonly pendingApprovals?: ReadonlyMap<string, string>;
+  readonly sessionId?: string;
 }): JSX.Element | null {
   const acts = resolveActs(row);
   if (acts.length === 0) return null;
@@ -533,6 +606,7 @@ function ToolSteps({
           ))}
         </div>
       )}
+      <ActReceipts acts={acts} sessionId={sessionId} />
       {stopResults.map(({ key, result }) =>
         result !== null ? <MissionStopResult key={key} result={result} /> : null,
       )}
@@ -544,13 +618,29 @@ function ToolSteps({
 }
 
 /**
- * What heads a call row: its prose or its Reasoned row (both centre like
- * prose), else its steps - one step row, or the fold of several.
+ * The filled receipts under a row's steps (`ToolLedger/ReceiptCard.tsx`): one
+ * per act that executed a proven fund-moving operation with a transaction,
+ * drawn only once the session's activity ledger confirms that transaction as
+ * a swap. A surface that renders a row without its session draws none.
  */
-function toolRowMarkAt(row: TranscriptRowModel): MarkAt {
-  if ((row.reasoning ?? "").length > 0) return "reasoned";
-  if (row.content.length > 0) return "prose";
-  return resolveActs(row).length > 1 ? "fold" : "step";
+function ActReceipts({
+  acts,
+  sessionId,
+}: {
+  readonly acts: readonly ToolCallActView[];
+  readonly sessionId: string | undefined;
+}): JSX.Element | null {
+  if (sessionId === undefined) return null;
+  return (
+    <>
+      {acts.map((act) => {
+        const txRef = receiptTxRef(act);
+        return txRef === null ? null : (
+          <ActReceipt key={`rc-${act.toolCallId}`} txRef={txRef} sessionId={sessionId} />
+        );
+      })}
+    </>
+  );
 }
 
 /** The fold of one call row's acts, in the group shape the fold row reads. */

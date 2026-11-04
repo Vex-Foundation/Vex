@@ -26,25 +26,64 @@
  * live throughput WITHOUT exposing the chain of thought; expanding drops the
  * moving summary entirely so page reading never fights an internal follower.
  *
- * REGISTER (docs/design/R3-MINIMAL.md section 6). "Reasoned" is a closed row,
- * 36 high: the chevron and the word in 14 ink 2 at 400, the summary in 13
- * muted. Opened, the trace is italic 14 ink 2 on a 1px rule with 12 clear
- * (`.vex-reasoned__body`). The live row's trace and the settled in-turn
- * thoughts wear the identical classes, so one trace looks the same streaming,
- * folded, and reopened a week later.
+ * REGISTER (docs/design/H3-DESKTOP.md section 1.7 and Appendix A.7). H3's
+ * thinking row: a framed cell, 40 high, the dot-grid glyph, the label in caps
+ * 13 tracked ink, the one-line summary in 13 muted, then at the right the
+ * turn's step count in 13 muted and the chevron. The whole row is the key.
+ * Opened, the trace is upright 14 ink 2 under the row's rule, inside the
+ * same frame (`.vex-reasoned__body`). The live row's trace and the settled
+ * in-turn thoughts wear the identical body class, so one trace looks the
+ * same streaming, folded, and reopened a week later.
+ *
+ * THE TURN'S HEAD. The first Reasoned row of a turn is the turn's thinking
+ * row (`SessionTranscript/turnSteps.ts`), so it also says the turn's steps
+ * ("3 steps") and, after a turn watched live, how long the turn took ("Thought
+ * for 2.8 s", the live turn clock's own reading, `TurnIsland/turnClock.ts`).
+ * A turn reopened from history has no stored duration, so it says "Reasoned"
+ * and its steps only. Every other Reasoned row of the turn says "Reasoned".
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
 import { MarkdownContent } from "../../lib/markdown/MarkdownContent.js";
 import {
   LineChevronDown,
-  LineChevronRight,
+  LineChevronUp,
 } from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
-import { reasonedStampLabel } from "./reasoning-stamp.js";
+import { reasonedStampLabel, stepsLabel } from "./reasoning-stamp.js";
+import { formatToolDuration } from "./ToolLedger/toolDuration.js";
+
+/**
+ * H3's thinking glyph: the three-by-three dot grid it draws before THINKING
+ * and THOUGHT FOR (the same glyph as the Send key's). Decorative; drawn in the
+ * row's current colour.
+ */
+export function ThinkGlyph(): JSX.Element {
+  const cells: JSX.Element[] = [];
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      cells.push(
+        <rect key={`${row}-${col}`} x={col * 4} y={row * 4} width="2" height="2" />,
+      );
+    }
+  }
+  return (
+    <svg
+      width={10}
+      height={10}
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden="true"
+      focusable="false"
+      data-vex-think-glyph=""
+    >
+      {cells}
+    </svg>
+  );
+}
 
 /** The trace's opening line - the stable summary of a settled block. */
 function firstLine(text: string): string {
@@ -68,6 +107,8 @@ export function ReasonedBlock({
   tokens = null,
   durationMs = null,
   running = false,
+  steps = null,
+  thoughtMs = null,
 }: {
   /** Persisted trace; `null`/empty renders nothing at all. */
   readonly reasoning: string | null | undefined;
@@ -80,6 +121,17 @@ export function ReasonedBlock({
    * blocks (every persisted transcript row) leave it false.
    */
   readonly running?: boolean;
+  /**
+   * The whole turn's steps, set only on the turn's thinking row
+   * (`turnSteps.ts`); `null` draws no count.
+   */
+  readonly steps?: number | null;
+  /**
+   * The live turn clock's reading for this turn (`turnClock.ts`), set only
+   * on the turn's thinking row after a turn watched live; `null` keeps
+   * "Reasoned".
+   */
+  readonly thoughtMs?: number | null;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
@@ -104,10 +156,28 @@ export function ReasonedBlock({
 
   if (text.length === 0) return null;
 
+  // "Thought for 2.8 s" (docs/design/H3-DESKTOP.md Appendix A.7): the live
+  // turn clock's own measurement, spelled as the step rows spell their
+  // measured times ("812 ms", "2.8 s", "1m 05s"). The words are a label
+  // (caps); the figure keeps its own case, as H3 prints "THOUGHT FOR 2.8s".
+  // No measurement keeps "Reasoned": nothing is ever estimated.
+  const thoughtFor = formatToolDuration(thoughtMs);
+  const label =
+    thoughtFor === null ? (
+      reasonedStampLabel(tokens, durationMs)
+    ) : (
+      <>
+        Thought for <span className="vex-reasoned__figure">{thoughtFor}</span>
+      </>
+    );
+  const count = stepsLabel(steps);
+
   return (
     <div
       data-vex-reasoning="persisted"
       data-vex-reasoning-state={running ? "running" : "settled"}
+      data-vex-thinking-head={steps !== null ? "" : undefined}
+      className="vex-think"
     >
       {/* Fill-only signals need a text equivalent: the swatch is decorative
           and the moving summary says nothing about state, so AT is told
@@ -117,11 +187,14 @@ export function ReasonedBlock({
         className="vex-reasoned__row"
         data-vex-sweep={running ? "running" : undefined}
       >
-        {running ? (
-          <span aria-hidden className="vex-step__fill">
-            <Swatch state="thinking" size={10} />
-          </span>
-        ) : null}
+        {/* The glyph: the thinking hatch while the trace streams (status by
+            fill), H3's dot grid once it has settled. */}
+        <span aria-hidden className="vex-step__fill">
+          {running ? <Swatch state="thinking" size={10} /> : <ThinkGlyph />}
+        </span>
+        {/* The key is the label; its hit area stretches over the whole row
+            (`.vex-reasoned__key::after`), so the row opens wherever it is
+            pressed while its accessible name stays the label alone. */}
         <button
           ref={triggerRef}
           type="button"
@@ -130,12 +203,7 @@ export function ReasonedBlock({
           onClick={() => setOpen((v) => !v)}
           className="vex-reasoned__key"
         >
-          {open ? (
-            <LineChevronDown size={14} className="shrink-0" />
-          ) : (
-            <LineChevronRight size={14} className="shrink-0" />
-          )}
-          {reasonedStampLabel(tokens, durationMs)}
+          {label}
         </button>
         {/* Expanding removes the moving summary: the full trace is right below
             in ordinary page flow, and page reading must never fight an
@@ -154,7 +222,17 @@ export function ReasonedBlock({
           >
             {summary}
           </span>
+        ) : (
+          <span aria-hidden className="vex-step__spacer" />
+        )}
+        {count !== null ? (
+          <span data-vex-turn-steps="" className="vex-reasoned__steps">
+            {count}
+          </span>
         ) : null}
+        <span aria-hidden className="vex-reasoned__chev">
+          {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+        </span>
       </div>
       {/* The trace rides the shared expand primitive: it stays mounted once
           opened so closing animates, and carries no entrance keyframe - an
