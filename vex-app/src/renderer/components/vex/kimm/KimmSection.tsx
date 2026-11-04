@@ -56,15 +56,25 @@
  * (section 3.6). The words changed at the press; her figure holds through
  * the wipe and gives way to the strip's frame when it ends.
  *
+ * SHOW VEX OPENS HER IN 720MS (sections 3.1 and 3.2; plan row S4-08): the
+ * wipe grows from the strip's edge down to her foot on the same curve, behind
+ * a 1px scan head keyed to the same edge (a layer the height of her box,
+ * moved with the clip on the same duration and curve, so its foot line IS
+ * the wipe's edge on every frame), and her figure drops 32px into place over
+ * the same 720ms. The scan head draws only while she opens (the close plate
+ * does not draw it); her figure takes its raised place only once a close has
+ * ended, so it never rises in view.
+ *
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
- * (`closing` until the wipe ends, then `closed`). The CSS transition IS the
- * wipe; the phase follows it, ending on the clip's own `transitionend`, or
- * when `DURATION_VEX_CLOSE_MS` has elapsed if no end ever comes (a section
- * not on screen paints no transition). That timer and the sheet's
- * `--vex-duration-vex-close` are one pair (MOTION-POLICY.md, "Cross-file
- * timing invariants"): the JS constant is the CSS token's mirror, asserted
- * by `motion-tokens.test.ts`, and the sheet names this file beside it.
+ * (`opening` or `closing` until the wipe ends, then `open` or `closed`). The
+ * CSS transition IS the wipe; the phase follows it, ending on the clip's own
+ * `transitionend`, or when the leg's duration has elapsed if no end ever
+ * comes (a section not on screen paints no transition). Those timers and the
+ * sheet's `--vex-duration-vex-open` and `--vex-duration-vex-close` are pairs
+ * (MOTION-POLICY.md, "Cross-file timing invariants"): `DURATION_VEX_OPEN_MS`
+ * and `DURATION_VEX_CLOSE_MS` are the CSS tokens' mirrors, asserted by
+ * `motion-tokens.test.ts`, and the sheet names this file beside them.
  *
  * THE MOUNT. This component draws; the feature that mounts it
  * (`features/vex/VexPortraitPlate.tsx`, in the Vex column where K2's print
@@ -77,7 +87,7 @@
 
 import { useLayoutEffect, useRef, useState, type JSX, type TransitionEvent } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
-import { DURATION_VEX_CLOSE_MS } from "../../../lib/motion/index.js";
+import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS } from "../../../lib/motion/index.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 
@@ -86,6 +96,27 @@ import { useKimmArt } from "./kimm-art-context.js";
  * way, `opening` or `closing`, from the press until the wipe ends.
  */
 export type KimmPhase = "open" | "closed" | "opening" | "closing";
+
+/** One leg of her motion: the phase while it runs, where it rests, how long it takes. */
+interface KimmLeg {
+  readonly moving: "opening" | "closing";
+  readonly rest: "open" | "closed";
+  readonly ms: number;
+}
+
+/** Show Vex opens her in 720ms; Hide Vex closes her in 420ms (section 3.1). */
+export function legOf(open: boolean): KimmLeg {
+  return open
+    ? { moving: "opening", rest: "open", ms: DURATION_VEX_OPEN_MS }
+    : { moving: "closing", rest: "closed", ms: DURATION_VEX_CLOSE_MS };
+}
+
+/** The phase a motion rests in when it ends; a resting phase stays. */
+function restOf(phase: KimmPhase): KimmPhase {
+  if (phase === "opening") return "open";
+  if (phase === "closing") return "closed";
+  return phase;
+}
 
 /** The Vex toggle's chord on this platform, as the corner key spells it. */
 export interface KimmShortcut {
@@ -126,19 +157,17 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
   useLayoutEffect(() => {
     if (shown.current === open) return undefined;
     shown.current = open;
-    if (open) {
-      setPhase("open");
-      return undefined;
-    }
-    setPhase("closing");
-    // The pair of `--vex-duration-vex-close` (kimm.css): the wipe's own end
-    // normally lands first, through `transitionend`.
-    const timer = window.setTimeout(() => setPhase("closed"), DURATION_VEX_CLOSE_MS);
+    const leg = legOf(open);
+    setPhase(leg.moving);
+    // The pair of `--vex-duration-vex-open` and `--vex-duration-vex-close`
+    // (kimm.css): the wipe's own end normally lands first, through
+    // `transitionend`.
+    const timer = window.setTimeout(() => setPhase(leg.rest), leg.ms);
     return () => window.clearTimeout(timer);
   }, [open]);
   const onTransitionEnd = (event: TransitionEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget || event.propertyName !== "clip-path") return;
-    setPhase((now) => (now === "closing" ? "closed" : now));
+    setPhase(restOf);
   };
 
   return (
@@ -153,17 +182,22 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
     >
       <div aria-hidden="true" className="vex-kimm__body">
         <div className="vex-kimm__ground" />
-        {asked && isKimmArtReady(figure) ? (
-          <img
-            src={figure.src}
-            alt=""
-            width={figure.width}
-            height={figure.height}
-            draggable={false}
-            decoding="async"
-            className="vex-kimm__figure"
-          />
-        ) : null}
+        {/* Her drop rides this layer, which stands from the first frame,
+          * so her first open drops her too: her figure is only asked for at
+          * that press, and a new element has no closed place to drop from. */}
+        <div className="vex-kimm__drop">
+          {asked && isKimmArtReady(figure) ? (
+            <img
+              src={figure.src}
+              alt=""
+              width={figure.width}
+              height={figure.height}
+              draggable={false}
+              decoding="async"
+              className="vex-kimm__figure"
+            />
+          ) : null}
+        </div>
         {isKimmArtReady(strip) ? (
           <img
             src={strip.src}
@@ -175,6 +209,7 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
             className="vex-kimm__strip"
           />
         ) : null}
+        <div className="vex-kimm__scan" />
       </div>
       <button
         type="button"

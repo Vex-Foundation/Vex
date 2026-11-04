@@ -61,8 +61,15 @@
   left: 0;
   overflow: hidden;
   /* Open, the whole box. An inset, not `none`: the wipe interpolates
-   * between two insets, and `none` to an inset does not interpolate. */
+   * between two insets, and `none` to an inset does not interpolate.
+   * SHOW VEX (section 3.1; S4-08): the wipe grows to her foot in 720ms on
+   * the push curve, a JS/CSS PAIR like the close's (`KimmSection.tsx` ends
+   * her `opening` phase on this transition's end, or after
+   * `DURATION_VEX_OPEN_MS`, the mirror of `--vex-duration-vex-open`). */
   clip-path: inset(0 0 0 0);
+  transition: clip-path var(--vex-duration-vex-open) var(--vex-ease-push);
+  /* Her drop into place as she opens: printed, "Kimm drops 32 px". */
+  --vex-kimm-drop: 32px;
 }
 .vex-kimm__body {
   position: absolute;
@@ -91,6 +98,53 @@
   max-width: none;
   height: auto;
   user-select: none;
+}
+/* Her drop (S4-08): from 32px up into place over the open's 720ms, on the
+ * push curve (the plate's default for its open line), on the layer that
+ * holds her figure. A transform: no layout moves. */
+.vex-kimm__drop {
+  position: absolute;
+  inset: 0;
+  transform: none;
+  transition: transform var(--vex-duration-vex-open) var(--vex-ease-push);
+}
+/* Closed, she waits 32px up for the next open. She takes that place only
+ * when the close has ended (a delayed step, no motion), so she never rises
+ * in view, and a Show Vex pressed during a close finds her where she
+ * stands. */
+.vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
+  transform: translateY(calc(-1 * var(--vex-kimm-drop)));
+  transition: transform 0s linear var(--vex-duration-vex-close);
+}
+
+/* ---- the scan head (section 3.2; S4-08) ----
+ * A 1px line keyed to the wipe's edge: a layer as tall as her box, moved by
+ * a transform on the clip's own duration and curve, whose foot line sits at
+ * the edge on every frame (closed, at the strip's 56; open, at her foot).
+ * Drawn only while she opens. Open: its colour; ink here. */
+.vex-kimm__scan {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: none;
+  transition: transform var(--vex-duration-vex-open) var(--vex-ease-push);
+}
+.vex-kimm__scan::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--vex-alias-label-primary);
+}
+.vex-kimm[data-kimm-open="false"] .vex-kimm__scan {
+  transform: translateY(calc(var(--vex-h3-strip-h) - 100%));
+  transition: transform var(--vex-duration-vex-close) var(--vex-ease-push);
+}
+.vex-kimm[data-kimm-phase="opening"] .vex-kimm__scan {
+  opacity: 1;
 }
 
 /* ---- closed: the strip (sections 1.5 and 3.2) ----

@@ -26,7 +26,11 @@ import { fileURLToPath } from "node:url";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DURATION_VEX_CLOSE_MS, EASE_PUSH } from "../../../../lib/motion/index.js";
+import {
+  DURATION_VEX_CLOSE_MS,
+  DURATION_VEX_OPEN_MS,
+  EASE_PUSH,
+} from "../../../../lib/motion/index.js";
 import { KimmArtProvider } from "../kimm-art-context.js";
 import { KIMM_SHIPPED_ART, type KimmArtSet } from "../kimm-assets.js";
 import { KimmSection } from "../KimmSection.js";
@@ -283,3 +287,77 @@ describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => 
     expect(section().getAttribute("data-kimm-phase")).toBe("open");
   });
 });
+
+describe("KimmSection, Show Vex opens her in 720ms with the scan head and her drop (S4-08)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function openFromClosed(): void {
+    const view = render(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />),
+    );
+    view.rerender(withArt(OFFER_ONLY, <KimmSection mood="offer" open onOpenChange={() => undefined} />));
+  }
+
+  it("wipes down on the clip, 720ms on the push curve, the CSS half of the pair", () => {
+    expect(rule(".vex-kimm")).toMatch(
+      /transition:\s*clip-path var\(--vex-duration-vex-open\) var\(--vex-ease-push\)/,
+    );
+    // Open is an inset too, so the wipe interpolates both ways.
+    expect(rule(".vex-kimm")).toMatch(/clip-path:\s*inset\(0 0 0 0\)/);
+    expect(DURATION_VEX_OPEN_MS).toBe(720);
+  });
+
+  it("opens at the press and stays opening until the wipe's 720ms are up, or its end", () => {
+    vi.useFakeTimers();
+    openFromClosed();
+    expect(screen.getByRole("button", { name: "Hide Vex" })).not.toBeNull();
+    expect(section().getAttribute("data-kimm-phase")).toBe("opening");
+    // Her figure is asked for at the press, so the wipe uncovers her.
+    expect(section().querySelector(".vex-kimm__figure")).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(DURATION_VEX_OPEN_MS - 1);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("opening");
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("open");
+    cleanup();
+    openFromClosed();
+    fireEvent.transitionEnd(section(), { propertyName: "clip-path" });
+    expect(section().getAttribute("data-kimm-phase")).toBe("open");
+  });
+
+  it("keys a 1px scan head to the wipe's edge, drawn only while she opens", () => {
+    const scan = rule(".vex-kimm__scan");
+    const closedScan = rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__scan');
+    // The same duration and curve as the clip, both ways, so its foot is the edge.
+    expect(scan).toMatch(/transition:\s*transform var\(--vex-duration-vex-open\) var\(--vex-ease-push\)/);
+    expect(closedScan).toMatch(
+      /transition:\s*transform var\(--vex-duration-vex-close\) var\(--vex-ease-push\)/,
+    );
+    // Closed, its foot line sits at the strip's edge: moved up by its height less 56.
+    expect(closedScan).toMatch(/transform:\s*translateY\(calc\(var\(--vex-h3-strip-h\) - 100%\)\)/);
+    expect(scan).toMatch(/inset:\s*0/);
+    expect(rule(".vex-kimm__scan::after")).toMatch(/height:\s*1px/);
+    expect(rule(".vex-kimm__scan::after")).toMatch(/bottom:\s*0/);
+    expect(scan).toMatch(/opacity:\s*0/);
+    expect(rule('.vex-kimm[data-kimm-phase="opening"] .vex-kimm__scan')).toMatch(/opacity:\s*1/);
+    openFromClosed();
+    expect(section().querySelector(".vex-kimm__scan")).not.toBeNull();
+  });
+
+  it("drops her 32px into place over the open, and never raises her in view", () => {
+    expect(rule(".vex-kimm")).toMatch(/--vex-kimm-drop:\s*32px/);
+    expect(rule(".vex-kimm__drop")).toMatch(
+      /transition:\s*transform var\(--vex-duration-vex-open\) var\(--vex-ease-push\)/,
+    );
+    const waiting = rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__drop');
+    expect(waiting).toMatch(/transform:\s*translateY\(calc\(-1 \* var\(--vex-kimm-drop\)\)\)/);
+    // A step after the close has ended: no motion upward.
+    expect(waiting).toMatch(/transition:\s*transform 0s linear var\(--vex-duration-vex-close\)/);
+  });
+});
+
