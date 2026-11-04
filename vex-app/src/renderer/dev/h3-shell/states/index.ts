@@ -11,6 +11,7 @@
 import { baseAnswers } from "../fixtures/base.js";
 import { activity } from "./activity.js";
 import { markets } from "./markets.js";
+import { settings } from "./settings.js";
 import { filled } from "./filled.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
@@ -35,6 +36,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   portfolio,
   activity,
   markets,
+  settings,
 ];
 
 export const DEFAULT_STATE = shell;
