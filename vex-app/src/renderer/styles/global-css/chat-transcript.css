@@ -1,5 +1,7 @@
-/* The conversation (docs/design/R3-MINIMAL.md section 6): the transcript's
- * place in the resident shell, the centred 760 column, the user block, Vex's
+/* The conversation (docs/design/R3-MINIMAL.md section 6, and
+ * docs/design/H3-DESKTOP.md section 1.7 for each part H3 has restyled): the
+ * transcript's place in the resident shell, the centred 760 column, the
+ * person's bubble beside their avatar, Vex's
  * turn hung off the flat token, the tool step rows and their fold, the live
  * row, the Reasoned row, the turn stats on hover and the chat code tokens.
  * The composer seat and the welcome live in composer.css, the approval card in
@@ -80,42 +82,79 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* ── The user block ──────────────────────────────────────────────────────
- * Right anchored, text left aligned, max 560, 15 / 1.55, a 2px blue rule on
- * its right edge (periwinkle at night, the accent token) with 14 clear; the
- * "You · 12:28" caption above it, 12 muted, 5 below. */
+/* ── The person's message ────────────────────────────────────────────────
+ * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
+ * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
+ * right. The bubble is the bubble fill (#212325) with the
+ * words in sans 17 / 24 ink, 11 above and below and 16 at the sides (46 high
+ * on one line), at most 560 wide; square, by the shape law (base.css), where
+ * the capture rounds three corners. The avatar is a 36px disc. The clock and
+ * the message keys sit at the bubble's left, hover-revealed, so at rest the
+ * row is the bubble and the disc alone. */
 .vex-you {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px;
 }
 .vex-you__cap {
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
-  margin-bottom: 5px;
-  line-height: 1.45;
+  height: 20px;
+  /* Centred on the bubble's first line: 11 + 24 / 2 - 20 / 2. */
+  margin-top: 13px;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-you__body {
+.vex-you__stack {
+  display: flex;
+  min-width: 0;
   max-width: min(560px, 100%);
+  flex-direction: column;
+  align-items: flex-end;
+}
+.vex-you__body {
+  max-width: 100%;
   margin: 0;
-  padding: 1px 14px 1px 0;
-  border-right: 2px solid var(--vex-alias-accent-primary);
+  padding: 11px 16px;
+  background: var(--vex-alias-bubble);
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 24px;
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-primary);
 }
-/* When an operator instruction reaches the agent, in words, under the block. */
+/* When an operator instruction reaches the agent, in words, under the
+ * bubble. */
 .vex-you__note {
   margin-top: 6px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
+}
+/* The avatar cell: the disc on the chosen rule, the person glyph in ink. The
+ * disc's measured #151718 has no token; raised 2 (#101214) is the nearest
+ * step the alias tier has. */
+.vex-you__avatar {
+  display: flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  /* The disc's top sits 2 above the bubble's, as the capture draws it. */
+  margin-top: -2px;
+}
+.vex-you__avatar > svg {
+  display: block;
+}
+.vex-you__disc {
+  fill: var(--vex-alias-bg-overlay);
+  stroke: var(--vex-alias-rule-chosen);
+}
+.vex-you__glyph {
+  fill: var(--vex-alias-label-primary);
 }
 
 /* ── Vex's turn ──────────────────────────────────────────────────────────

@@ -2,9 +2,10 @@
  * One transcript row - presentational only (S5 act ledger), drawn as the R3
  * conversation (docs/design/R3-MINIMAL.md section 6).
  *
- * Switches on the pure `TranscriptEntry.variant`. USER rows are a right
- * anchored block on a 2px blue rule under a "You · 12:28" caption, never a
- * bubble; VEX's turn hangs off the flat vx token in a 28px column with a 12
+ * Switches on the pure `TranscriptEntry.variant`. USER rows are H3's bubble
+ * at the right of the column beside the person's round avatar cell
+ * (docs/design/H3-DESKTOP.md section 1.7), their clock and keys
+ * hover-revealed at the bubble's left; VEX's turn hangs off the flat vx token in a 28px column with a 12
  * gap, once per turn (`turnMark`), with her clock and message keys in a tail
  * row BELOW the body. Tool calls read as step rows; several finished steps
  * fold into one quiet row. Assistant prose renders through `MarkdownContent`
@@ -117,6 +118,32 @@ function AssistantMark({
       className="vex-reply__mark"
     >
       <VxToken size={24} />
+    </span>
+  );
+}
+
+/**
+ * The person's avatar cell beside their bubble (docs/design/H3-DESKTOP.md
+ * section 1.7): a 36px disc on a 1px chosen rule with the person glyph in ink,
+ * as H3 draws it at the right of the message and in the account cell.
+ *
+ * Drawn as ONE SVG, as `VxToken` draws its disc, so the disc is a circle while
+ * every box keeps radius 0 (base.css's shape law). Desktop has no profile
+ * picture, so the glyph is the only honest face: the same person for every
+ * message, never initials or a stand-in portrait. The disc's measured fill
+ * (#151718) has no token of its own; `.vex-you__disc` paints the nearest
+ * raised step. Decorative: the caption's sr-only "You" names the speaker.
+ */
+function YouAvatar(): JSX.Element {
+  return (
+    <span aria-hidden data-vex-you-avatar="" className="vex-you__avatar">
+      <svg width={36} height={36} viewBox="0 0 36 36" focusable="false">
+        <circle className="vex-you__disc" cx="18" cy="18" r="17.5" strokeWidth="1" />
+        <g className="vex-you__glyph">
+          <circle cx="18" cy="14.5" r="3.5" />
+          <path d="M11 25c0-3.9 3.1-6.2 7-6.2s7 2.3 7 6.2z" />
+        </g>
+      </svg>
     </span>
   );
 }
@@ -281,10 +308,14 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           data-time-hover-root=""
           className="vex-you"
         >
-          {/* THE USER BLOCK (docs/design/R3-MINIMAL.md section 6): right
-              anchored, the words left aligned on the 2px blue rule, the
-              "You · 12:28" caption above them with the hover-revealed message
-              keys. Plain text, never markdown. */}
+          {/* THE PERSON'S MESSAGE (docs/design/H3-DESKTOP.md section 1.7): a
+              bubble at the right of the column, beside the round avatar
+              cell. The bubble is the one fill H3 measured for it (`bubble`,
+              section 2.1), its words sans 17 in ink, plain text and never
+              markdown. H3 draws no caption: the avatar says whose words these
+              are, so "You" is told to assistive technology alone, and the
+              clock and the message keys wait at the bubble's left until the
+              row is hovered or focused (opacity, so nothing shifts). */}
           <span className="vex-micro vex-you__cap tabular-nums">
             {feedbackContext !== undefined ? (
               <FeedbackMessageAction context={feedbackContext} />
@@ -301,32 +332,31 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               />
             ) : null}
             <CopyMessageAction text={written} />
-            <span>
-              You
-              <TapeClock
-                createdAt={row.createdAt}
-                className="before:mx-[0.3em] before:content-['·']"
-              />
-            </span>
+            <span className="sr-only">You</span>
+            <TapeClock createdAt={row.createdAt} className="vex-time-reveal" />
           </span>
-          <p className="vex-you__body">{written}</p>
-          {/* A33 - an operator instruction says WHEN it reaches the model, in
-              words. The words come from the engine's own typed disposition
-              (M6), never from the row kind: the kind means only "this is an
-              operator instruction", and three different things can have
-              happened to one. Hardcoding the steered wording told a user whose
-              message was queued against a parked run that it would be read at
-              the agent's next step, contradicting the acknowledgement written
-              beside it in the very same transaction. */}
-          {row.steering === true ? (
-            <span
-              data-vex-steering-mark=""
-              data-vex-disposition={row.interruptDisposition}
-              className="vex-micro vex-you__note"
-            >
-              {steeringMarkText(row.interruptDisposition)}
-            </span>
-          ) : null}
+          <div className="vex-you__stack">
+            <p className="vex-you__body">{written}</p>
+            {/* A33 - an operator instruction says WHEN it reaches the model,
+                in words. The words come from the engine's own typed
+                disposition (M6), never from the row kind: the kind means only
+                "this is an operator instruction", and three different things
+                can have happened to one. Hardcoding the steered wording told a
+                user whose message was queued against a parked run that it
+                would be read at the agent's next step, contradicting the
+                acknowledgement written beside it in the very same
+                transaction. */}
+            {row.steering === true ? (
+              <span
+                data-vex-steering-mark=""
+                data-vex-disposition={row.interruptDisposition}
+                className="vex-micro vex-you__note"
+              >
+                {steeringMarkText(row.interruptDisposition)}
+              </span>
+            ) : null}
+          </div>
+          <YouAvatar />
         </div>
       );
     }

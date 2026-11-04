@@ -530,6 +530,29 @@ describe("TranscriptMessage caption register (contract C2)", () => {
     expect(caption?.textContent).toContain("You");
   });
 
+  it("draws the person's message as H3's bubble beside the avatar cell", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: the bubble, then the round avatar
+    // cell at its right. "You" is for assistive technology only (the avatar
+    // says it on screen), and the clock is hover-revealed chrome.
+    const { container } = render(
+      createElement(TranscriptMessage, {
+        row: row({ variant: "user", content: "Swap 200 USDC to ETH on Base." }),
+      }),
+    );
+    const message = container.querySelector('[data-vex-message-role="user"]');
+    const bubble = message?.querySelector(".vex-you__body");
+    expect(bubble?.textContent).toBe("Swap 200 USDC to ETH on Base.");
+    const avatar = message?.querySelector("[data-vex-you-avatar]");
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
+    // The disc is SVG geometry, never a CSS radius (base.css's shape law).
+    expect(avatar?.querySelector("svg circle.vex-you__disc")).not.toBeNull();
+    // The avatar is the row's last cell: the bubble sits to its left.
+    expect(message?.lastElementChild).toBe(avatar);
+    expect(message?.querySelector(".sr-only")?.textContent).toBe("You");
+    expect(message?.querySelector(".vex-time-reveal")).not.toBeNull();
+  });
+
   it("puts the assistant clock and actions in a TAIL row, in the same register", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
