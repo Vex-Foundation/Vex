@@ -393,7 +393,7 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 
 ### 3.5 The rules
 - **Vex never opens her section by herself.** Her cue (a card arriving, a turn ending) changes her mood and her words, never her section's state (printed in the proof's note).
-- **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Today Esc in Lighter Zen closes the Vex overlay (`AppShell.tsx`); S2-13 removes that.
+- **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Esc in Lighter Zen closed the Vex overlay until S2-13 removed it (`AppShell.tsx`).
 - **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15).
 - **The choice is remembered.** Cloud keeps it per browser; desktop keeps it in the persisted layout store, one choice for chats and pages, replacing "Show avatar" and R3's `vexOpenChat` and `vexOpenPages` slots, which migrate into it (S2-11, S4-14). Open: whether pages keep a choice of their own; the plates draw Portfolio both ways but print no rule.
 - **First launch: open.** The sheet's drawn answer for computers.
@@ -484,7 +484,7 @@ Adopting the tick and the card keys later needs the owner's decision and a safet
 - **Desktop binds it on Linux too.** Cloud leaves it unbound there ("unbound on Linux, as the app leaves it", `h3-merged__plate-controls`; the plate gives no reason). The desktop app owns its keys, and the chord collides with nothing in it: Studio's `KeyB` binding is Ctrl or Cmd+B without Shift, and Studio's matcher requires exact modifiers; xterm does not encode it; the menu's one accelerator is Lock Vex, Cmd or Ctrl+Shift+L (`src/main/menu-template.ts`). The Studio terminal refuses the chord explicitly (`XtermHost.tsx`), so the shell gets it first. Open: a Linux desktop that takes the chord globally; checked in the Linux pass (S9-03).
 - **The old chord,** Cmd or Ctrl+Shift+Period (`features/vex/vex-toggle-shortcut.ts`), still opens and closes her for one release, then goes. Keycaps and tooltips show only the new chord.
 - The shortcut's proof test compares modifiers as well as codes (`vex-toggle-shortcut.test.ts`).
-- **Esc** never closes her and never decides a card. In Lighter Zen, Esc keeps closing Zen's own panels and then Zen, but no longer closes the Vex overlay (S2-13).
+- **Esc** never closes her and never decides a card. In Lighter Zen, Esc keeps closing Zen's own panels and then Zen, but no longer closes the Vex overlay (S2-13); leaving Zen with her open keeps her open, on the desk's own chat column.
 
 ### 4.5 Dark only
 Every H3 plate is dark. Desktop retires its light theme (Celeris) and the "system" choice, and saved choices move to dark (S1-04). The window background, the Windows caption overlay and the theme-matrix test follow the one ground (section 2.1).

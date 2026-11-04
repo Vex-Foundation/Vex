@@ -797,15 +797,53 @@ describe("AppShell", () => {
     expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open")).toBe("true");
 
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
-    expect(frame?.hasAttribute("data-lighter-zen-assistant")).toBe(false);
+    // Escape closes Zen's own panels, then Zen, and never her
+    // (docs/design/H3-DESKTOP.md section 3.5).
     fireEvent.keyDown(window, { key: "Escape" });
     expect(frame?.getAttribute("data-lighter-zen")).toBe("true");
     expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
+    expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
     expect(frame?.style.gridTemplateColumns).not.toBe("0px minmax(0, 1fr) 0px");
+    // Out of Zen she is still open, on the desk's chat column.
+    expect(view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open")).toBe("true");
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("Escape in Zen never closes the Vex overlay, and leaving Zen keeps her open", () => {
+    useUiStore.setState({
+      runtimeMode: "lighter",
+      activeSessionId: "s-1",
+      sidebarNarrowExpanded: false,
+      vexOpenLighter: false,
+    });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    const vexOpen = (): string | null | undefined =>
+      view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open");
+    fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
+    expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
+    expect(vexOpen()).toBe("true");
+    // The first Escape folds Zen's controls and leaves her open.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
+    expect(frame?.getAttribute("data-lighter-zen-assistant")).toBe("open");
+    expect(vexOpen()).toBe("true");
+    // The next leaves Zen, never closing her on the way: the desk's column
+    // takes her (the stored choice opens).
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
+    expect(vexOpen()).toBe("true");
+    expect(useUiStore.getState().vexOpenLighter).toBe(true);
+    // Without her open, Escape leaves Zen and opens nothing.
+    act(() => useUiStore.getState().setVexOpen(false));
+    fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(frame?.hasAttribute("data-lighter-zen")).toBe(false);
+    expect(useUiStore.getState().vexOpenLighter).toBe(false);
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 

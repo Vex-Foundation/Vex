@@ -271,18 +271,25 @@ function ShellFrame({
     });
   }, [activeSessionId, onCreate, setSidebarNarrowExpanded]);
 
+  // Escape in Zen closes Zen's own panels, then Zen, and never Vex
+  // (docs/design/H3-DESKTOP.md sections 3.5 and 4.4: Esc never closes her).
+  // Her overlay is not Zen's to close: leaving Zen with her open keeps her
+  // open, on the desk's own chat column (the desk's stored choice).
   useEffect(() => {
     if (!lighter || !lighterZen) return undefined;
     const onZenKey = (event: KeyboardEvent): void => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
-      if (zenAssistantOpen) setZenAssistantOpen(false);
-      else if (zenControlsOpen) setZenControlsOpen(false);
-      else setZenMode(false);
+      if (zenControlsOpen) {
+        setZenControlsOpen(false);
+        return;
+      }
+      if (zenAssistantOpen) setVexOpen(true);
+      setZenMode(false);
     };
     window.addEventListener("keydown", onZenKey);
     return () => window.removeEventListener("keydown", onZenKey);
-  }, [lighter, lighterZen, setZenMode, zenAssistantOpen, zenControlsOpen]);
+  }, [lighter, lighterZen, setZenMode, setVexOpen, zenAssistantOpen, zenControlsOpen]);
 
   // THE TIERS. The agent shell and Studio stand on H3's
   // (docs/design/H3-DESKTOP.md sections 1.2 and 4.12): from 1268 up the
