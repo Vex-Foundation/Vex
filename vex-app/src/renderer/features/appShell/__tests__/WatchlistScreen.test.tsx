@@ -219,3 +219,38 @@ describe("WatchlistPage", () => {
     expect((await screen.findByTestId("watchlist-footnote")).textContent).toContain("it never trades");
   });
 });
+
+describe("WatchlistPage - H3 rows (H3-DESKTOP.md sections 2.2 and 4.9)", () => {
+  it("colours the 24 hour change as a trading value, by its sign, and nothing else in the row", async () => {
+    renderPage();
+    await screen.findByText("$3500.25");
+    expect(screen.getByTestId("watchlist-change").getAttribute("data-trade")).toBe("down");
+    expect(screen.getByTestId("watchlist-price").hasAttribute("data-trade")).toBe(false);
+  });
+
+  it("ends an armed alert in an ink WAITING mark and a fired one in a green mark", async () => {
+    renderPage();
+    const active = await screen.findByTestId("watchlist-active-row");
+    expect(active.querySelector(".vex-status-mark")?.getAttribute("data-status")).toBe("waiting");
+    expect(active.querySelector(".vex-status-mark")?.textContent).toBe("Waiting");
+    const fired = screen.getByTestId("watchlist-fired-row");
+    expect(fired.querySelector(".vex-status-mark")?.getAttribute("data-status")).toBe("filled");
+  });
+});
+
+describe("WatchlistScreen - the frame", () => {
+  it("draws no page head and stamps its row with the time the engine priced the list", async () => {
+    const { WatchlistScreen } = await import("../screens/WatchlistScreen.js");
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <WatchlistScreen origin={null} onClose={() => undefined} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("$3500.25");
+    const local = new Date(NOW);
+    const clock = `${String(local.getHours()).padStart(2, "0")}:${String(local.getMinutes()).padStart(2, "0")}`;
+    expect(document.querySelector('[data-vex-area="page-updated"]')?.textContent).toBe(`Updated ${clock}`);
+    expect(document.querySelector("[data-vex-chapter]")).toBeNull();
+  });
+});

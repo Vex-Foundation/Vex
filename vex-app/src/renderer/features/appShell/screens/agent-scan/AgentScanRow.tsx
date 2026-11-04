@@ -33,7 +33,7 @@ import type {
 import { resolveProtocolMark } from "../../../../lib/protocol-marks.js";
 import { ActivityBadge } from "../../ActivityBadge.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
-import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
+import type { SwatchState } from "../../../../components/ui/swatch.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import {
   chainRouteText,
@@ -49,6 +49,7 @@ import {
 import { activityOutcome, pendingSignal } from "./agent-scan-outcome.js";
 import { activityFollowUpMessage } from "./event-follow-up.js";
 import { ScanKind, ScanMeta, ScanState, ScanTxLink } from "./ScanRowParts.js";
+import { StatusMark, outcomeStatus } from "./StatusMark.js";
 
 /** One `IN`/`OUT` leg: quantity (marked `~` when quoted) + main-resolved symbol. */
 function LegText({
@@ -71,7 +72,7 @@ function LegText({
   );
 }
 
-/** A leg's own status, as a fill beside its word. */
+/** A leg's own status as the R3 fill, read into H3's square by `outcomeStatus`. */
 function legSwatch(status: string | null): SwatchState {
   if (status === "confirmed") return "done";
   if (status === "failed" || status === "definitively_failed") return "error";
@@ -133,10 +134,7 @@ function LegRow({ leg }: { readonly leg: AgentScanBridgeLeg }): JSX.Element {
       <span className="vex-scan-code">{leg.role ?? "leg"}</span>
       <span>{leg.chainSlug ?? leg.chainId ?? "-"}</span>
       {status !== null ? (
-        <span className="inline-flex items-center gap-1.5">
-          <Swatch state={legSwatch(leg.status)} className="text-accent-primary" />
-          {status}
-        </span>
+        <StatusMark status={outcomeStatus(legSwatch(leg.status), status)} word={status} />
       ) : null}
       {leg.failureCode !== null ? <span className="vex-num">{leg.failureCode}</span> : null}
       {leg.explorerUrl !== null ? (

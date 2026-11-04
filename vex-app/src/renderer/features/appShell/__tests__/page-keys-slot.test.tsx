@@ -1,9 +1,12 @@
 /**
  * The title bar's page keys (`pageKeysSlot.tsx`, docs/design/R3-MINIMAL.md
- * section 3; the d6 render draws Portfolio's refresh in the title bar's
- * right cluster): a page key lands in the title bar's slot when the title
- * bar stands and stays in place when it does not; only its DOM moves, so
- * its outcome line stays on the page.
+ * section 3): a page key lands in the title bar's slot when the title bar
+ * stands and stays in place when it does not; only its DOM moves.
+ *
+ * Portfolio's refresh key no longer uses the slot: H3 moves a page's keys
+ * into the page's own tabs row beside "Updated {time}"
+ * (docs/design/H3-DESKTOP.md section 4.8), so it stays on the page even
+ * while a title bar slot stands, with its outcome line beside it.
  */
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -49,7 +52,7 @@ describe("PageKey", () => {
 });
 
 describe("Portfolio's refresh key", () => {
-  it("is a title bar key in the bar, and its outcome line stays on the page", async () => {
+  it("stays on the page beside its outcome line, even while a title bar slot stands", async () => {
     const bar = document.createElement("div");
     document.body.append(bar);
     act(() => setPageKeysSlot(bar));
@@ -60,12 +63,13 @@ describe("Portfolio's refresh key", () => {
       </div>,
     );
     const key = screen.getByRole("button", { name: "Refresh portfolio" });
-    expect(bar.contains(key)).toBe(true);
-    expect(key.className).toBe("vex-tb-key");
+    const page = container.querySelector('[data-testid="page"]');
+    expect(page?.contains(key)).toBe(true);
+    expect(bar.contains(key)).toBe(false);
+    expect(key.className).toBe("vex-pg-key");
     await act(async () => {
       fireEvent.click(key);
     });
-    const page = container.querySelector('[data-testid="page"]');
     // a sentence, not a hyphen standing in for a dash
     expect(page?.querySelector(".vex-pf-fb")?.textContent).toBe("Just refreshed. Retry in 30s.");
     expect(bar.querySelector(".vex-pf-fb")).toBeNull();
@@ -83,8 +87,8 @@ describe("Portfolio's refresh key", () => {
     );
   });
 
-  it("keeps the page's own key style where no title bar stands", () => {
+  it("is the tabs row's cell key where no title bar stands too", () => {
     render(<PortfolioRefreshButton />);
-    expect(screen.getByRole("button", { name: "Refresh portfolio" }).className).toBe("vex-pf-key");
+    expect(screen.getByRole("button", { name: "Refresh portfolio" }).className).toBe("vex-pg-key");
   });
 });

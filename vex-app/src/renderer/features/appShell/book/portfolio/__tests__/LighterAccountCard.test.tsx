@@ -466,7 +466,8 @@ describe("LighterAccountCard - the positions", () => {
     mockReady({ positions: [LONG_ETH] });
     const { container } = renderCard();
     const [row] = positionRows(container);
-    expect(cell(row, 0).textContent).toBe("ETH Long · 10x Cross");
+    expect(cell(row, 0).querySelector(".vex-pf-pos__m")?.textContent).toBe("ETH Long");
+    expect(cell(row, 0).querySelector(".vex-pf-pos__sub")?.textContent).toBe("10x Cross");
     expect(cell(row, 1).textContent).toBe("0.5 ETH");
     expect(cell(row, 2).textContent).toBe("2,000");
     // Mark is the position's value over its size: 1100 / 0.5.
@@ -485,7 +486,8 @@ describe("LighterAccountCard - the positions", () => {
     mockReady({ positions: [SHORT_BTC] });
     const { container } = renderCard();
     const [row] = positionRows(container);
-    expect(cell(row, 0).textContent).toBe("BTC Short · 5x Isolated");
+    expect(cell(row, 0).querySelector(".vex-pf-pos__m")?.textContent).toBe("BTC Short");
+    expect(cell(row, 0).querySelector(".vex-pf-pos__sub")?.textContent).toBe("5x Isolated");
     expect(cell(row, 1).textContent).toBe("0.02 BTC");
     expect(cell(row, 2).textContent).toBe("60,000");
     expect(cell(row, 3).textContent).toBe("59,000.00");
@@ -520,11 +522,25 @@ describe("LighterAccountCard - the positions", () => {
     const [row] = positionRows(container);
     // No terms, so nothing after the side word.
     expect(cell(row, 0).textContent).toBe("SOL Long");
+    expect(cell(row, 0).querySelector(".vex-pf-pos__sub")).toBeNull();
     expect(cell(row, 1).textContent).toBe("10 SOL");
     for (const column of [2, 3, 4, 5, 6]) {
       expect(cell(row, column).textContent).toBe("Not available");
     }
     expect(cell(row, 6).hasAttribute("data-trade")).toBe(false);
+  });
+
+  it("heads the table with Open positions and their count, in sentence case for the sheet's caps", () => {
+    mockReady({ positions: [LONG_ETH, SHORT_BTC] });
+    const { container } = renderCard();
+    const head = container.querySelector(".vex-pf-subh");
+    expect(head?.tagName).toBe("H3");
+    expect(head?.textContent).toBe("Open positions 2");
+    const table = container.querySelector('[data-vex-area="portfolio-lighter-positions"]');
+    expect(head?.compareDocumentPosition(table ?? container)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // H3's strategy line and its CLOSE and STOP keys have no desktop source.
+    expect(container.textContent).not.toMatch(/strateg|marked at the live price/i);
+    expect(screen.queryByRole("button", { name: /^(close|stop)$/i })).toBeNull();
   });
 
   it("says No open positions. and draws no table when there are none", () => {

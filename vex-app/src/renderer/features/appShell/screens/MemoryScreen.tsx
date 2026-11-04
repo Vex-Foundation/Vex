@@ -1,9 +1,16 @@
 /**
  * Memory screen - the Memory page (docs/design/R3-MINIMAL.md sections 9.6 and
- * 12): the serif page head from the sheet, a lead line, the advisory-only
- * guarantee in its own card, "How memory works" one click away (static repo
- * markdown, `?raw` + article-variant MarkdownContent), then the read-only
- * MemoryPanel register. Both sidebars stand.
+ * 12): a lead line, the advisory-only guarantee in its own card, "How memory
+ * works" one click away (static repo markdown, `?raw` + article-variant
+ * MarkdownContent), then the read-only MemoryPanel register. Both sidebars
+ * stand.
+ *
+ * In H3 (docs/design/H3-DESKTOP.md sections 1.9 and 4.9; no Memory plate) the
+ * page follows the page frame: the header's title cell names the page, so the
+ * page draws no head of its own (the h1 stays for assistive tech), and its
+ * card, its disclosure and each register list are H3 cells (`memory.css`).
+ * Memory has no single refresh time (each register section reads on its
+ * own), so the frame draws no tabs row rather than a stamp it cannot back.
  */
 
 import type { JSX } from "react";
@@ -29,7 +36,7 @@ export function MemoryScreen({
   readonly onClose: () => void;
 }): JSX.Element {
   return (
-    <ShellScreen title="Memory" origin={origin} onClose={onClose}>
+    <ShellScreen title="Memory" origin={origin} onClose={onClose} chapter={null}>
       <p className="vex-mem-lead">{MEMORY_LEAD}</p>
       <section className="vex-mem-card" aria-label={MEMORY_ADVISORY_TITLE}>
         <h2 className="vex-mem-card__head">

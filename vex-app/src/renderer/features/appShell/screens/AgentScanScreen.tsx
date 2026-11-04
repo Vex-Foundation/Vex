@@ -46,6 +46,7 @@ import { useProject } from "../../../lib/api/projects.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import type { AgentScanRouteScope } from "../../../stores/uiStore/shell-route.js";
 import { ShellScreen } from "./ShellScreen.js";
+import { PageBar } from "./PageBar.js";
 import {
   activeFilterCount,
   AgentScanFilterBar,
@@ -304,6 +305,10 @@ export function AgentScanScreen({
       chapter={null}
       width="wide"
       fill
+      // The H3 frame's row (docs/design/H3-DESKTOP.md section 1.9): no tabs
+      // (the four filter menus narrow the feed, they do not switch pages),
+      // and "Updated" at the fetch time of the feed's newest page.
+      bar={<PageBar updatedAt={query.dataUpdatedAt} />}
     >
       <div className="flex min-h-0 w-full flex-1 flex-col">
         <p className="vex-scan-lead">{screenSubtitle(scope)}</p>

@@ -619,6 +619,26 @@ describe("AgentScanScreen - the word each row ends in", () => {
     expect(screen.getByText("Confirmed")).not.toBeNull();
   });
 
+  /** The H3 status family of the mark whose word is `word` (H3-DESKTOP.md section 2.2). */
+  function markFamily(word: string): string | null {
+    const mark = screen.getByText(word).closest(".vex-status-mark");
+    return mark === null ? null : mark.getAttribute("data-status");
+  }
+
+  it("ends each row in H3's status mark: an ink word beside a green, grey or red square", () => {
+    mockQuery([
+      availablePage([
+        entry({ id: "1" }),
+        entry({ id: "2", status: "pending", pendingReason: "in_mempool" }),
+        entry({ id: "3", status: "superseded_unproven" }),
+      ]),
+    ]);
+    mountScreen();
+    expect(markFamily("Confirmed")).toBe("filled");
+    expect(markFamily("Submitted, awaiting confirmation")).toBe("running");
+    expect(markFamily("Status unknown")).toBe("failed");
+  });
+
   it("a pending row with a hash is Submitted, awaiting confirmation; without one it keeps Pending", () => {
     mockQuery([
       availablePage([
