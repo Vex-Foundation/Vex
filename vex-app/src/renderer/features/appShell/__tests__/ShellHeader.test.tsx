@@ -153,10 +153,12 @@ describe("the header", () => {
     expect(document.querySelector("[data-vex-head-cell='vex-key']")?.childElementCount).toBe(0);
   });
 
-  it("draws no Vex key cell on the Lighter desk, where the chip ends the desk's title row", () => {
+  it("on the Lighter desk draws the Vex key in its cell, no token chip and no Needs you control", () => {
     render(header({ mode: "lighter" }));
-    expect(document.querySelector("[data-vex-head-cell='vex-key']")).toBeNull();
-    expect(document.querySelector("[data-testid='vex-key']")).toBeNull();
+    const head = document.querySelector("[data-vex-area='shell-head']");
+    expect(head?.querySelector("[data-vex-head-cell='vex-key'] [data-testid='vex-key']")).not.toBeNull();
+    expect(head?.querySelector("[data-testid='token-chip']")).toBeNull();
+    expect(head?.querySelector("[data-testid='needs-you']")).toBeNull();
   });
 
   it("states the network and never offers a menu: Mainnet, Real funds", () => {
@@ -186,12 +188,33 @@ describe("the header", () => {
     expect(document.querySelector("[data-vex-head-cell='sidebar-key']")).toBeNull();
   });
 
-  it("has no box and no cell on the Lighter desk, whose title row is its own", () => {
-    render(header({ mode: "lighter" }));
-    const head = document.querySelector("[data-vex-area='shell-head']");
-    expect(head?.className).toBe("contents");
-    expect(head?.querySelector("[data-vex-head-cell]")).toBeNull();
-    expect(head?.getAttribute("style")).toBeNull();
+  it("is the same row of cells on the Lighter desk, the desk's head in its title cell", () => {
+    render(
+      <QueryClientProvider client={client}>
+        <ShellHeader
+          runtimeMode="lighter"
+          activeSessionId="s-1"
+          empty={false}
+          vex={{ open: true, onToggle: () => undefined }}
+          columns={shellHeadTemplateColumns({ chats: 76, vex: 432, vexBetween: false, reserveInVex: true })}
+          chatsRail
+          onToggleSidebar={() => undefined}
+          deskHead={<span data-testid="desk-head">Lighter</span>}
+        />
+      </QueryClientProvider>,
+    );
+    const head = document.querySelector<HTMLElement>("[data-vex-area='shell-head']");
+    expect(head?.className).toBe("vex-shell-head vex-drag");
+    expect(head?.style.gridTemplateColumns).toContain("calc(432px - var(--overlay-w))");
+    const cells = Array.from(head?.children ?? [])
+      .map((el) => el.getAttribute("data-vex-head-cell"))
+      .filter((cell) => cell !== null);
+    expect(cells).toEqual(["chats", "vex-key", "title", "funds", "caption-reserve"]);
+    const title = head?.querySelector("[data-vex-head-cell='title']");
+    expect(title?.hasAttribute("data-vex-desk-head")).toBe(true);
+    expect(title?.querySelector("[data-testid='desk-head']")).not.toBeNull();
+    // Over the rail the logo cell stands alone.
+    expect(head?.querySelector("[data-vex-head-cell='chats']")?.hasAttribute("data-rail")).toBe(true);
   });
 });
 

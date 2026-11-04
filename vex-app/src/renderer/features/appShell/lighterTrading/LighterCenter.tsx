@@ -5,6 +5,7 @@ import { useUiStore, type VexTheme } from "../../../stores/uiStore.js";
 import { TradingBottomPanel } from "./AccountPanel.js";
 import { DeskApprovalDialog } from "./DeskApprovalDialog.js";
 import { DeskLeverage } from "./DeskLeverage.js";
+import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { LighterAccountSetupModal } from "./LighterAccountSetupModal.js";
 import { MarketBar, streamStatusLabel } from "./MarketBar.js";
 import { MarketChart } from "./MarketChart.js";
@@ -37,9 +38,9 @@ import { useSplitter } from "./useSplitter.js";
 const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
 
 /**
- * The Lighter desk under its title row (docs/design/R3-MINIMAL.md section
- * 9.3): the market bar, then the chart, the book and the ticket, with the
- * account dock below. The title bar's cluster rides in the title row
+ * The Lighter desk under the shell's header (docs/design/H3-DESKTOP.md
+ * section 4.9): the market bar, then the chart, the book and the ticket,
+ * with the account dock below. The desk's title cells are the header's
  * (`LighterSidebar`), not here.
  */
 export function LighterCenter({ zenMode, onOpenZenAssistant }: {
@@ -48,6 +49,7 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
 } = {}): JSX.Element {
   const zenActive = zenMode === true;
   const theme = useUiStore((state) => state.theme);
+  const saveDesk = useLighterAnalysisStore((state) => state.saveDesk);
   const desk = useLighterDesk();
   const { environment, market, marketList, marketsQuery, marketPickerOpen, setMarketPickerOpen } = desk;
   const askVex = (): void => {
@@ -90,6 +92,12 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           streamStatus={desk.publicMarketStream.statsStatus}
           onReload={desk.reloadMarketData}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
+        />
+        {/* Core | RHC moved out of the title row (H3-DESKTOP.md section 4.9):
+          * the deployment is the market's, never a network menu. */}
+        <EnvironmentSwitch
+          environment={environment}
+          onSelect={(next) => saveDesk({ environment: next, marketId: null })}
         />
         {marketPickerOpen ? (
           <MarketPicker

@@ -72,6 +72,12 @@ const STATES = [
   "activity",
   "markets",
   "how-vex-works",
+  // The Lighter desk (section 4.9), for review beside its approved plates
+  // (`?plate=lighter-desk` and the rest).
+  "lighter-desk",
+  "lighter-desk-review",
+  "lighter-desk-two-step",
+  "lighter-zen",
 ] as const;
 
 /**

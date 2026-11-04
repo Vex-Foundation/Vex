@@ -392,21 +392,113 @@ export function h3GridTemplateColumns(cols: H3ShellColumns): string {
 }
 
 /**
+ * THE LIGHTER DESK IN H3 (docs/design/H3-DESKTOP.md section 4.9, the
+ * owner-approved `lighter-desk` plate): the header row over three columns and
+ * the bottom row under them, in the desk's own order,
+ *
+ *   chats | desk | Vex
+ *
+ * - The CHATS column is the 76 rail at every width. Its Expand key opens the
+ *   248 for that visit only (an unsaved override the shell keeps), and there
+ *   is no Expand under H3_COLUMNS_MIN.
+ * - VEX'S COLUMN is the desk chat, at the right: H3's 30% of the window by
+ *   default (the desk's stored share, `desk.chatShare`), never under
+ *   LIGHTER_CHAT_MIN (300) and never over LIGHTER_CHAT_MAX (520), the drag's
+ *   own range. Where the share would leave the desk under CENTER_MIN beside
+ *   the rail, the column gives back toward its floor, as R3's first
+ *   concession did.
+ * - The DESK takes the rest.
+ *
+ * THE MONEY RULE ON THE DESK (section 3.6). The desk's own Review order card
+ * stands at the desk's right edge, in the ticket's column, so it moves only
+ * if her column's width moves. That width is a function of the window and
+ * the stored share alone: the rail's Expand eats into the desk's left, never
+ * into her column (the concession reads the 76 rail, whatever the chats
+ * column is), and her section is a box over her column that never reaches
+ * this solve. The share itself only changes under the drag, which the shell
+ * makes inert while a card waits.
+ *
+ * Zen hands the chart the window: no rail and no column (0 and 0).
+ */
+export interface DeskShellInput {
+  /** Available frame width in px; rounded to whole pixels before solving. */
+  readonly viewport: number;
+  /** The desk chat's stored share of the window (`desk.chatShare`). */
+  readonly share: number;
+  /** The rail's Expand is open for this visit (ignored under H3_COLUMNS_MIN). */
+  readonly chatsExpanded: boolean;
+  /** Lighter Zen: the chart in the whole window. */
+  readonly zen?: boolean;
+  /**
+   * Her column stands: the desk's stored Vex choice, which still folds the
+   * whole desk chat column to 0 (R3's meaning) until the desk chat becomes
+   * her column. Defaults to standing.
+   */
+  readonly vexColumn?: boolean;
+}
+
+export interface DeskShellColumns {
+  /** The chats track: the 76 rail, the 248 while Expand is open, 0 in Zen. */
+  readonly chats: number;
+  /** The desk's track: the rest of the frame. Never negative. */
+  readonly desk: number;
+  /** Her column, the desk chat: 300 to 520, 0 in Zen. */
+  readonly vex: number;
+  /** The chats column renders as its rail. */
+  readonly chatsRail: boolean;
+  /** The rail's Expand key is offered at this width. */
+  readonly expandable: boolean;
+}
+
+/** Her column on the desk for a window and a stored share (see DeskShellInput). */
+export function deskVexWidth(viewport: number, share: number): number {
+  const width = h3FrameWidth(viewport);
+  const asked = clampWidth(width * (Number.isFinite(share) ? share : 0), LIGHTER_CHAT_MIN, LIGHTER_CHAT_MAX);
+  const room = width - H3_RAIL_WIDTH - CENTER_MIN;
+  return asked > room ? Math.max(LIGHTER_CHAT_MIN, room) : asked;
+}
+
+/** The widest the desk chat may be dragged at this window: 300 to 520, the desk kept at 640. */
+export function deskChatDragMax(viewport: number): number {
+  const width = h3FrameWidth(viewport);
+  return Math.max(LIGHTER_CHAT_MIN, Math.min(LIGHTER_CHAT_MAX, width - H3_RAIL_WIDTH - CENTER_MIN));
+}
+
+/** Solve the desk's tracks for one frame. Pure, with no hysteresis. */
+export function computeDeskColumns(input: DeskShellInput): DeskShellColumns {
+  const width = h3FrameWidth(input.viewport);
+  const expandable = width >= H3_COLUMNS_MIN;
+  if (input.zen === true) {
+    return { chats: 0, desk: width, vex: 0, chatsRail: true, expandable: false };
+  }
+  const chatsRail = !(expandable && input.chatsExpanded);
+  const chats = Math.min(width, chatsRail ? H3_RAIL_WIDTH : H3_CHATS_WIDTH);
+  const vex = input.vexColumn === false
+    ? 0
+    : Math.min(Math.max(0, width - chats), deskVexWidth(width, input.share));
+  return { chats, desk: Math.max(0, width - chats - vex), vex, chatsRail, expandable };
+}
+
+/** The desk frame's column template: chats | desk | Vex, the desk the flexible track. */
+export function deskGridTemplateColumns(cols: DeskShellColumns): string {
+  return `${String(cols.chats)}px minmax(0, 1fr) ${String(cols.vex)}px`;
+}
+
+/**
  * THE FRAME PER MODE. The agent shell and Studio stand in H3's frame: the
  * header row over the columns and the columns in H3's order, chats | Vex |
- * chat. The Lighter desk keeps R3's frame until its own restyle
- * (docs/design/H3-DESKTOP.md section 4.9): one row, its title row its own,
- * and its chat on the right, rail | desk | chat, where its chat share drag
- * handle grips the chat's left edge.
+ * chat. The Lighter desk stands in H3's frame with its own order ("desk"):
+ * the same header and bottom rows, and its chat on the right, rail | desk |
+ * Vex, where the desk chat's drag handle grips the column's left edge.
  */
-export type ShellFrameKind = "h3" | "r3";
+export type ShellFrameKind = "h3" | "desk";
 
 /** One column of the frame, by what it holds. */
 export type ShellColumnName = "chats" | "vex" | "chat";
 
 /** The frame a mode stands in. */
 export function shellFrameKind(mode: ShellMode): ShellFrameKind {
-  return mode === "lighter" ? "r3" : "h3";
+  return mode === "lighter" ? "desk" : "h3";
 }
 
 const H3_ORDER: readonly ShellColumnName[] = ["chats", "vex", "chat"];
@@ -492,8 +584,12 @@ export function shellGridTemplateRows(rows: ShellRows): string {
  *
  * `vexBetween` puts the Vex key over a Vex column between the chats and the
  * chat (H3's order); without it the key sits at the right end beside the
- * reserve, over R3's right-hand Vex column. `vex` null sizes the key's cell
- * to the key.
+ * reserve, over a right-hand Vex column (the Lighter desk's). `vex` null
+ * sizes the key's cell to the key. `reserveInVex` keeps the key and the
+ * reserve together over that right-hand column: the key's cell is the
+ * column less `--overlay-w`, so on Windows and Linux the caption buttons
+ * stand over the column's top right and the key over the rest of it, and on
+ * macOS (an `--overlay-w` of 0) the key is the column's whole width.
  */
 export interface ShellHeadInput {
   /** The chats track under the logo and sidebar key cells. */
@@ -502,12 +598,18 @@ export interface ShellHeadInput {
   readonly vex: number | null;
   /** The Vex key cell stands between the chats and the chat. */
   readonly vexBetween: boolean;
+  /** The key's cell and the reserve share the right-hand column (the desk's). */
+  readonly reserveInVex?: boolean;
 }
 
 /** The header's own column template, with each cell's named lines. */
 export function shellHeadTemplateColumns(input: ShellHeadInput): string {
   const chats = `[chats-start] ${String(input.chats)}px [chats-end`;
-  const vex = input.vex === null ? "auto" : `${String(input.vex)}px`;
+  const vex = input.vex === null
+    ? "auto"
+    : input.reserveInVex === true && !input.vexBetween
+      ? `calc(${String(input.vex)}px - var(--overlay-w))`
+      : `${String(input.vex)}px`;
   const rest = "minmax(0, 1fr) [title-end funds-start] auto [funds-end";
   const reserve = "reserve-start] var(--overlay-w) [reserve-end]";
   return input.vexBetween

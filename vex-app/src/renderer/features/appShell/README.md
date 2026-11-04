@@ -95,8 +95,10 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
 - The centre's 44px drag row (seam `shell-status-strip`), mounted once because
   `GlobalApprovalsSync` owns the approvals live subscription. It reserves the
-  Windows and Linux caption buttons over a narrow Vex column; on the Lighter desk
-  its right cluster portals into the desk's row (`lighterTrading/shellStripSlot.ts`).
+  Windows and Linux caption buttons over a narrow Vex column. On the Lighter desk
+  it is the desk's title cell, holding the desk's head (`lighterTrading/LighterSidebar.tsx`:
+  "Lighter" over the section and deployment, Markets and sessions, New desk
+  session, Zen) and a cluster of a page's keys and Notices only.
 - Left cell: the page name from `screens/page-crumbs.ts` (`titleBarPageOf`); a
   subpage is a crumb with parent links ("Portfolio / Agent Scan"), each going up
   through `goUpToPage`. Else the Studio project or the session title with "Agent ·

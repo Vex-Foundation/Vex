@@ -7,7 +7,8 @@
  * on grid tracks solved by `lib/shell-columns.ts`, plus the new-session modal.
  * Vex's column sits between the chats and the chat in the agent shell and
  * Studio, in the DOM as on screen, so focus reaches her before the chat; the
- * Lighter desk keeps R3's left sidebar | centre | Vex sidebar.
+ * Lighter desk keeps its own order, rail | desk | Vex (H3-DESKTOP.md section
+ * 4.9, the approved desk plate).
  * The grid also has H3's two window-wide rows (docs/design/H3-DESKTOP.md
  * section 1.1), a header row over the columns and a bottom row under them.
  * The frame owns viewport measurement, the narrow override, the derived Vex
@@ -19,29 +20,29 @@
  *   and the sidebar key over the left column, the chat's title and the
  *   title bar's cluster (`RunningHead`, mounted once) over the centre, the
  *   Vex key over the Vex column, the static Mainnet and Real funds, and
- *   the caption buttons' reserve. The columns stand under it. The bottom row
- *   holds no cell yet, so it is 0.
+ *   the caption buttons' reserve. The columns stand under it. On the desk
+ *   the title cell holds the desk's own head cells (`LighterSidebar`) and
+ *   the Vex key stands at the right end, over her column.
  *
  * - The LEFT column hosts the sessions sidebar in agent mode, the Studio
- *   projects and explorer in Studio, and the vx mark on the rail in Lighter.
- *   Its widths are fixed (H3's 248 and the 76px rail; R3's 56px rail on the
- *   desk); there is no drag handle. From 1024 to 1267 it starts folded
- *   (H3-DESKTOP.md section 4.12) and under 1024 it is the rail.
+ *   projects and explorer in Studio, and the rail on the Lighter desk. Its
+ *   widths are fixed (H3's 248 and the 76px rail); there is no drag handle.
+ *   From 1024 to 1267 it starts folded (H3-DESKTOP.md section 4.12) and
+ *   under 1024 it is the rail. On the desk it is the rail at every width,
+ *   its Expand the visit's own.
  * - The CENTRE is the mode's surface. Pages (Memory, Settings, Portfolio and
  *   the rest) open INSIDE the centre (`ShellScreens`), so both sidebars stay
  *   standing.
  * - The VEX column (`VexSidebar`, docs/design/R3-MINIMAL.md section 5) is
  *   open in chat by default, hidden by default on the table pages and on the
  *   Lighter desk (where it is the right-hand column); the welcome keeps it
- *   (H3-DESKTOP.md section 1.7). Hidden is zero width; the header's Vex key
- *   (the desk's token chip) and Cmd or Ctrl + Shift + B bring her back.
+ *   (H3-DESKTOP.md section 1.7). The header's Vex key and Cmd or Ctrl +
+ *   Shift + B show and hide her, on the desk too.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
- * stays the e2e/test selector. The Lighter desk keeps R3's one-row frame
- * until its own restyle: no header row, the left sidebar always its rail,
- * and the centre opening with the desk's own title row (`LighterSidebar`,
- * docs/design/R3-MINIMAL.md section 9.3), which carries the title bar's
- * cluster.
+ * stays the e2e/test selector. The Lighter desk stands in H3's frame
+ * (`data-vex-frame="desk"`): the header row with the desk's own cells, the
+ * rail, the desk and the desk chat, and the bottom row's account cell.
  */
 
 import {
@@ -56,17 +57,16 @@ import { selectVexOpen, useUiStore, vexPageClass, type RuntimeMode } from "../..
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   LIGHTER_CHAT_MIN,
-  RAIL_WIDTH,
+  computeDeskColumns,
   computeH3ShellColumns,
-  computeShellColumns,
+  deskChatDragMax,
+  deskGridTemplateColumns,
   h3GridTemplateColumns,
   h3ShellTier,
-  lighterChatDragMax,
   shellColumnOrder,
   shellFrameKind,
   shellGridTemplateRows,
   shellHeadTemplateColumns,
-  shellTier,
   type ShellColumnName,
   type ShellColumns,
 } from "../../lib/shell-columns.js";
@@ -246,11 +246,16 @@ function ShellFrame({
 
   const lighter = runtimeMode === "lighter";
   const studio = runtimeMode === "studio";
+  // The desk's rail Expand (docs/design/H3-DESKTOP.md section 4.9, the
+  // approved desk plate): the 248 chats column for this visit only, never
+  // saved, so every visit to the desk starts on the 76 rail.
+  const [deskChatsExpanded, setDeskChatsExpanded] = useState(false);
   useEffect(() => {
     if (lighter) return;
     setLighterZen(false);
     setZenAssistantOpen(false);
     setZenControlsOpen(false);
+    setDeskChatsExpanded(false);
   }, [lighter]);
 
   const setZenMode = useCallback((next: boolean): void => {
@@ -300,29 +305,36 @@ function ShellFrame({
   // key flips the ephemeral override instead of the stored choice; under
   // 1024 (the band) it is the rail, whatever either says. Leaving the medium
   // tier clears the override, so the next entry starts folded again. The
-  // Lighter desk keeps R3's tiers; it has no left sidebar of its own, and
-  // the same ephemeral flag opens its top bar drawer.
-  const tier = lighter ? shellTier(viewport) : h3ShellTier(viewport);
+  // Lighter desk has no tiers of its own: its chats column is the 76 rail at
+  // every width, its Expand the visit's own (`deskChatsExpanded`), offered
+  // from 1024 up; the ephemeral flag opens the desk's drawer (Markets and
+  // sessions) instead.
+  const tier = h3ShellTier(viewport);
   const overrideTier = !lighter && tier === "medium";
   useEffect(() => {
     if (!lighter && !overrideTier) setSidebarNarrowExpanded(false);
   }, [lighter, overrideTier, setSidebarNarrowExpanded]);
+  // Under 1024 the desk's rail has no Expand, so an Expand left open there
+  // is gone, and the next visit to 1024 and up starts on the rail.
+  const deskBand = lighter && tier === "band";
+  useEffect(() => {
+    if (deskBand) setDeskChatsExpanded(false);
+  }, [deskBand]);
   const leftAsked = overrideTier ? sidebarNarrowExpanded : leftOpen;
   const toggleSidebar = useCallback((): void => {
-    if (lighter || overrideTier) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
+    if (lighter) setDeskChatsExpanded((current) => !current);
+    else if (overrideTier) setSidebarNarrowExpanded(!sidebarNarrowExpanded);
     else setLeftOpen(!leftOpen);
   }, [lighter, overrideTier, sidebarNarrowExpanded, setSidebarNarrowExpanded, setLeftOpen, leftOpen]);
+  // The desk's drawer, Markets and sessions, hung from its title cell.
+  const toggleDeskDrawer = useCallback((): void => {
+    setSidebarNarrowExpanded(!sidebarNarrowExpanded);
+  }, [sidebarNarrowExpanded, setSidebarNarrowExpanded]);
 
-  // WELCOME stage, per mode: no session (agent), no project (Studio); Lighter
-  // has none, the desk is always resident. R3 stood Vex in its centre with no
-  // column of hers; H3's welcome keeps her column (docs/design/H3-DESKTOP.md
-  // section 1.7), so the stage no longer enters the H3 solve, and only R3's
-  // solver still reads it. An open page covers the welcome and is not part
-  // of it: the title bar keeps the page's name.
+  // An open page covers the welcome and is not part of it: the title bar
+  // keeps the page's name. H3's welcome keeps her column
+  // (docs/design/H3-DESKTOP.md section 1.7), so it never enters a solve.
   const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
-  const welcomeStage = lighter || pageOpen
-    ? false
-    : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
   // THE TRACKS. The agent shell and Studio: H3's solve, chats | Vex | chat,
   // the Vex column 30% of the frame, the welcome's included. In a chat its
@@ -330,31 +342,34 @@ function ShellFrame({
   // inside the column (docs/design/H3-DESKTOP.md section 3.6, the money
   // rule), so nothing about her reaches the solve. On a table page hiding her
   // folds the column to the page's strip (section 1.9), the page taking the
-  // room. The Lighter desk: R3's solve, its chat share included; a hidden
-  // Vex keeps nothing there: her column closes to zero width.
+  // room. The Lighter desk: its own solve (`computeDeskColumns`), the rail,
+  // the desk and the desk chat at its stored share; a hidden Vex keeps
+  // nothing there yet: her column closes to zero width.
   const h3Cols = lighter
     ? null
     : computeH3ShellColumns({ viewport, chats: leftAsked, vexStrip: tablePage && !vexOpen });
+  const deskCols = lighter
+    ? computeDeskColumns({
+        viewport,
+        share: lighterChatShare,
+        chatsExpanded: deskChatsExpanded,
+        zen,
+        vexColumn: vexOpen,
+      })
+    : null;
   const cols: ShellColumns =
-    h3Cols === null
-      ? computeShellColumns({
-          viewport,
-          mode: runtimeMode,
-          left: leftAsked,
-          vex: vexOpen,
-          welcome: welcomeStage,
-          lighterChat: Math.max(1, viewport * lighterChatShare),
-          zen,
-        })
-      : { left: h3Cols.chats, center: h3Cols.chat, vex: h3Cols.vex };
+    h3Cols !== null
+      ? { left: h3Cols.chats, center: h3Cols.chat, vex: h3Cols.vex }
+      : deskCols !== null
+        ? { left: deskCols.chats, center: deskCols.desk, vex: deskCols.vex }
+        : { left: 0, center: viewport, vex: 0 };
   const colsRef = useRef(cols);
   colsRef.current = cols;
   // Under 1024 Vex is the band under the header, over the chat
   // (docs/design/H3-DESKTOP.md section 1.10): no track of her own, a row.
   const band = h3Cols?.vexSeat === "band";
-  // R3's derived auto-close: the stored choice stays `true`, the column
-  // collapses. H3 has none, so there Vex is shown exactly when asked: her
-  // plate where the column stays, the column itself on a table page.
+  // H3 has no derived close, so Vex is shown exactly when asked: her plate
+  // where the column stays, the column itself on a table page and the desk.
   const vexEffectiveOpen = !zen && vexOpen && (cols.vex > 0 || band);
   // Whether her column (or the band) stands at all, whatever she shows in it.
   const vexColumnStands = h3Cols === null ? vexEffectiveOpen : cols.vex > 0 || band;
@@ -369,10 +384,11 @@ function ShellFrame({
   // (docs/design/H3-DESKTOP.md section 4.4), bound here for as long as the
   // shell stands rather than inside a key that may not be mounted.
   useVexToggleShortcut(vexToggle);
-  const rail = h3Cols === null ? cols.left <= RAIL_WIDTH : h3Cols.chatsRail;
-  // What the left column's content renders: Lighter's drawer state, or the
-  // solved column (open, or its rail).
-  const sidebarCollapsed = lighter ? !sidebarNarrowExpanded : rail;
+  const rail = h3Cols !== null ? h3Cols.chatsRail : deskCols?.chatsRail ?? true;
+  // What the left column's content renders: the solved column (open, or its
+  // rail). The desk's drawer has its own flag (`sidebarNarrowExpanded`).
+  const sidebarCollapsed = rail;
+  const deskDrawerOpen = lighter && sidebarNarrowExpanded;
 
   // The chat share drag base is the rendered width captured at drag start
   // (grabbing a concession-clamped chat must not jump back to the stored
@@ -390,10 +406,10 @@ function ShellFrame({
     },
     [viewport, saveLighterDesk],
   );
-  // The sidebars have fixed widths; the one drag left is Lighter's chat share.
-  // The desk keeps its chat on the right (`shellColumnOrder`), so the handle
-  // grips the chat's left edge, `viewport - cols.vex` from the frame's left,
-  // and a drag to the left (dx < 0) widens it.
+  // The sidebars have fixed widths; the one drag left is the desk chat's
+  // share. The desk keeps its chat on the right (`shellColumnOrder`), so the
+  // handle grips the column's left edge, `viewport - cols.vex` from the
+  // frame's left, and a drag to the left (dx < 0) widens it.
   const chatHandle = lighter && vexEffectiveOpen;
   const frameKind = shellFrameKind(runtimeMode);
 
@@ -405,21 +421,24 @@ function ShellFrame({
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
-    // desk keeps R3's rail | desk | chat.
+    // desk's own order, rail | desk | Vex.
     gridTemplateColumns:
-      h3Cols === null
-        ? `${cols.left}px minmax(0, 1fr) ${cols.vex}px`
-        : h3GridTemplateColumns(h3Cols),
+      h3Cols !== null
+        ? h3GridTemplateColumns(h3Cols)
+        : deskCols !== null
+          ? deskGridTemplateColumns(deskCols)
+          : "0px minmax(0, 1fr) 0px",
     // head | body | foot (docs/design/H3-DESKTOP.md section 1.1): the header
     // row holds the header's cells, the bottom row the account cell, the
-    // tagline cell and the chat's composer seat (section 1.8). The Lighter
-    // desk keeps R3's one-row frame, its title row and account row its own.
-    gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: !lighter, band }),
-    // The Lighter desk's title row reserves the caption buttons wherever the
-    // right column under them is narrower than they are (lighter-desk.css).
+    // tagline cell and the chat's composer seat (section 1.8). On the desk
+    // the bottom row holds the account cell under the rail; the desk and the
+    // desk chat run on to the window's foot. Zen has neither row: its own
+    // controls stand over the chart.
+    gridTemplateRows: shellGridTemplateRows({ head: !zen, foot: !zen, band }),
+    // The solved Vex track, for R3's running-head reserve (title-bar.css).
     "--vex-vex-track": `${cols.vex}px`,
     // Where a page starts in the window: where the chat does, past the
-    // chats and Vex's column (H3), past the left column (R3). The page itself
+    // chats and Vex's column (H3), past the rail (the desk). The page itself
     // sits inside the centre (shell.css resets it there); this value is the
     // frame-level box its entrance morph measures against.
     "--vex-overlay-left": `${h3Cols === null ? cols.left : h3Cols.chatLeft}px`,
@@ -429,13 +448,22 @@ function ShellFrame({
   // 1.3), on its own grid: the chats cells over the chats track, the Vex key
   // over the Vex column, 30% of the frame even where the body folds the
   // column (the frame solved without the fold), and as wide as the key in
-  // the band, which has no Vex column.
+  // the band, which has no Vex column. On the desk the key sits over her
+  // right-hand column, sharing it with the caption reserve, and is as wide
+  // as the key while that column is closed.
   const headVex = computeH3ShellColumns({ viewport, chats: leftAsked }).vex;
-  const headColumns = shellHeadTemplateColumns({
-    chats: cols.left,
-    vex: headVex > 0 ? headVex : null,
-    vexBetween: true,
-  });
+  const headColumns = lighter
+    ? shellHeadTemplateColumns({
+        chats: cols.left,
+        vex: cols.vex > 0 ? cols.vex : null,
+        vexBetween: false,
+        reserveInVex: true,
+      })
+    : shellHeadTemplateColumns({
+        chats: cols.left,
+        vex: headVex > 0 ? headVex : null,
+        vexBetween: true,
+      });
 
   // The three columns, each keyed so a change of order moves its node and
   // never remounts it, in the order `shellColumnOrder` gives the mode.
@@ -450,11 +478,6 @@ function ShellFrame({
       data-vex-area="left-page"
       data-vex-left-page={rail ? "spine" : "page"}
     >
-      {/* The rail's paper cap across R3's head row, on the desk only: under
-        * the header the rail starts below it. */}
-      {rail && lighter ? (
-        <div aria-hidden className="vex-left-page__cap vex-drag" />
-      ) : null}
       {runtimeMode === "agent" ? (
         <div className="vex-left-page__content">
           <SessionsList
@@ -478,22 +501,43 @@ function ShellFrame({
           />
         </div>
       ) : cols.left > 0 ? (
-        // Lighter keeps the left sidebar on its rail: New chat, Search, the
-        // nav and the account. It never opens into the sidebar, so it has
-        // no Expand key; the desk's drawer opens from Markets & sessions.
-        // Keyed, so the agent sidebar's own state never carries across a
-        // mode switch.
+        // The desk's chats column (H3-DESKTOP.md section 4.9): the 76 rail
+        // at every width, New chat, Search, the nav; its Expand opens the
+        // 248 for this visit only, and under 1024 it has none. The header
+        // draws its logo cell and the bottom row its account cell. Keyed, so
+        // the agent sidebar's own state never carries across a mode switch.
         <div key="lighter-rail" className="vex-left-page__content">
           <SessionsList
             onCreate={onCreate}
-            collapsed
-            expandable={false}
+            collapsed={sidebarCollapsed}
+            expandable={deskCols?.expandable ?? false}
             onToggleSidebar={toggleSidebar}
+            headless
           />
         </div>
       ) : null}
     </div>
   );
+
+  /* The desk's head cells (docs/design/H3-DESKTOP.md section 4.9): in the
+   * header's title cell, where you are and the desk's three keys, and the
+   * drawer they open; in Zen, Zen's own controls. */
+  const deskHead = lighter ? (
+    <LighterSidebar
+      collapsed={!deskDrawerOpen}
+      onToggleSidebar={toggleDeskDrawer}
+      band={deskBand}
+      zenMode={lighterZen}
+      zenAssistantOpen={zenAssistantOpen}
+      zenControlsOpen={zenControlsOpen}
+      onToggleZen={() => setZenMode(!lighterZen)}
+      onToggleZenControls={() => setZenControlsOpen((current) => !current)}
+      onToggleZenAssistant={() => {
+        if (zenAssistantOpen) setZenAssistantOpen(false);
+        else openZenAssistant();
+      }}
+    />
+  ) : null;
 
   /* The centre, the chat's column: the mode's surface under the header, and
    * the pages over it inside this column. The last track in the agent shell
@@ -503,26 +547,6 @@ function ShellFrame({
       key="centre"
       className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
     >
-      {/* The Lighter desk's title row: the centre's head row on the desk,
-        * with the title bar's cluster portalled into its right end (the
-        * header draws no cells there). In Zen it folds to a handle over
-        * the chart. */}
-      {lighter ? (
-        <LighterSidebar
-          collapsed={sidebarCollapsed}
-          onToggleSidebar={toggleSidebar}
-          zenMode={lighterZen}
-          zenAssistantOpen={zenAssistantOpen}
-          zenControlsOpen={zenControlsOpen}
-          onToggleZen={() => setZenMode(!lighterZen)}
-          onToggleZenControls={() => setZenControlsOpen((current) => !current)}
-          onToggleZenAssistant={() => {
-            if (zenAssistantOpen) setZenAssistantOpen(false);
-            else openZenAssistant();
-          }}
-        />
-      ) : null}
-
       {/* G10 - the offline row: only an actual outage renders it. A row of
         * the centre column under its head row (R3-MINIMAL.md section 12,
         * the d3x-offline mockup), so the left sidebar's New chat, Vex's
@@ -631,8 +655,11 @@ function ShellFrame({
     </div>
   );
 
+  // On the desk the bottom row holds the account cell under the rail and no
+  // tagline cell: the desk and the desk chat run on to the window's foot
+  // (the approved desk plate). Zen has no bottom row.
   const columnOf: Readonly<Record<ShellColumnName, readonly JSX.Element[]>> = {
-    chats: lighter ? [leftColumn] : [leftColumn, accountCell],
+    chats: zen ? [leftColumn] : [leftColumn, accountCell],
     vex: lighter ? [vexColumn] : [vexColumn, taglineCell],
     chat: [centreColumn],
   };
@@ -674,13 +701,13 @@ function ShellFrame({
         columns={headColumns}
         chatsRail={rail}
         onToggleSidebar={toggleSidebar}
+        deskHead={deskHead}
       />
 
       {/* The columns in their order (docs/design/H3-DESKTOP.md section 1):
         * chats | Vex | chat in the agent shell and Studio, each with its
         * bottom row cell after it, so Vex's column comes before the chat in
-        * focus order too; the Lighter desk keeps R3's rail | desk | chat
-        * until its own restyle. */}
+        * focus order too; the Lighter desk's own rail | desk | Vex. */}
       {shellColumnOrder(runtimeMode).flatMap((name) => columnOf[name])}
 
       {chatHandle ? (
@@ -689,7 +716,7 @@ function ShellFrame({
           label="Resize the Vex panel"
           value={cols.vex}
           min={LIGHTER_CHAT_MIN}
-          max={lighterChatDragMax(cols, viewport)}
+          max={deskChatDragMax(viewport)}
           onStart={onChatStart}
           onDrag={onChatDrag}
           onEnd={onDragEnd}
