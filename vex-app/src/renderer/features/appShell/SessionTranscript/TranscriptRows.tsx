@@ -124,6 +124,7 @@ export function TranscriptRows({
                   boardArrival={liveAppend ? "live-append" : "settled"}
                   agentWorking={workingAgentEntryKey === entryKey(row)}
                   turnMark={markKeys.has(entryKey(row))}
+                  sessionId={sessionId}
                   turnSteps={thinkingHead?.steps}
                   thoughtMs={
                     thinkingHead === undefined

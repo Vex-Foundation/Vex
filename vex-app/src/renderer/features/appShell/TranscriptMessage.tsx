@@ -33,6 +33,7 @@ import { ReasonedBlock } from "./ReasonedBlock.js";
 import { BoardRowCard } from "./Board/BoardRowCard.js";
 import type { BoardArrival } from "./Board/board-surface-contracts.js";
 import { ToolActRow } from "./ToolLedger/ToolActRow.js";
+import { ActReceipt, receiptTxRef } from "./ToolLedger/ReceiptCard.js";
 import {
   MissionStopResult,
   readMissionStopResult,
@@ -237,6 +238,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   turnMark = true,
   turnSteps,
   thoughtMs,
+  sessionId,
   boardArrival = "settled",
   feedbackSessionId,
   feedbackMessageKey,
@@ -269,6 +271,12 @@ export const TranscriptMessage = memo(function TranscriptMessage({
    * set only on the thinking row of a turn watched live.
    */
   readonly thoughtMs?: number;
+  /**
+   * The owning session, for the reads a row makes of its own: the activity
+   * ledger a filled receipt is drawn from (`ToolLedger/ReceiptCard.tsx`).
+   * Omitted = no receipts (a read-only surface with no session).
+   */
+  readonly sessionId?: string;
   /**
    * How this row reached the screen, for a board card riding on it (A13).
    *
@@ -491,7 +499,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               thoughtMs={headThoughtMs}
             />
           ) : null}
-          <ToolSteps row={row} pendingApprovals={pendingApprovals} />
+          <ToolSteps
+            row={row}
+            pendingApprovals={pendingApprovals}
+            sessionId={sessionId}
+          />
         </div>
       );
     case "tool_group":
@@ -518,6 +530,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
             );
           })}
           <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
+          <ActReceipts acts={row.calls ?? []} sessionId={sessionId} />
           {/* A group folds its acts; a mission result must not fold with them. */}
           {(row.calls ?? []).map((call) => {
             const stopResult = readMissionStopResult(call);
@@ -562,9 +575,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
 function ToolSteps({
   row,
   pendingApprovals,
+  sessionId,
 }: {
   readonly row: TranscriptRowModel;
   readonly pendingApprovals?: ReadonlyMap<string, string>;
+  readonly sessionId?: string;
 }): JSX.Element | null {
   const acts = resolveActs(row);
   if (acts.length === 0) return null;
@@ -591,12 +606,39 @@ function ToolSteps({
           ))}
         </div>
       )}
+      <ActReceipts acts={acts} sessionId={sessionId} />
       {stopResults.map(({ key, result }) =>
         result !== null ? <MissionStopResult key={key} result={result} /> : null,
       )}
       {analyses.map(({ key, result }) =>
         result !== null ? <TechnicalAnalysisResult key={`ta-${key}`} result={result} /> : null,
       )}
+    </>
+  );
+}
+
+/**
+ * The filled receipts under a row's steps (`ToolLedger/ReceiptCard.tsx`): one
+ * per act that executed a proven fund-moving operation with a transaction,
+ * drawn only once the session's activity ledger confirms that transaction as
+ * a swap. A surface that renders a row without its session draws none.
+ */
+function ActReceipts({
+  acts,
+  sessionId,
+}: {
+  readonly acts: readonly ToolCallActView[];
+  readonly sessionId: string | undefined;
+}): JSX.Element | null {
+  if (sessionId === undefined) return null;
+  return (
+    <>
+      {acts.map((act) => {
+        const txRef = receiptTxRef(act);
+        return txRef === null ? null : (
+          <ActReceipt key={`rc-${act.toolCallId}`} txRef={txRef} sessionId={sessionId} />
+        );
+      })}
     </>
   );
 }

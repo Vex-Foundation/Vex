@@ -486,6 +486,102 @@
   color: var(--vex-alias-label-primary);
 }
 
+/* ── The filled receipt ──────────────────────────────────────────────────
+ * docs/design/H3-DESKTOP.md sections 1.7, 2.4 and Appendix A.8, measured in
+ * the signed-moment capture at 1440: a framed card the column's full width,
+ * 12 under the steps. Its head, 16 in: the kind and the chain in caps 13
+ * tracked muted, the time in the mono 13 muted and the stamp (the status
+ * green fill, white caps 12, 24 high) at the right; under them the pair in
+ * sans 20 ink and the chain in 16 ink 2. Then the rows on a 34 pitch, each on
+ * the rule: the label in the mono caps of the field-label register, muted,
+ * and the value in the mono 13 ink at the right. */
+/* The card stands a step off the ground: the cell fill, as the capture's
+ * receipt reads #030507 against the ground's #020202. */
+.vex-receipt {
+  margin-top: 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-receipt__head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+.vex-receipt__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 24px;
+}
+.vex-receipt__kind {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-receipt__time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+/* The stamp's fill and ink are the `bg-stamp-filled` and
+ * `text-ink-on-stamp-filled` utilities at the call site. */
+.vex-receipt__stamp {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-receipt__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-receipt__where {
+  font-size: 16px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-receipt__rows {
+  margin: 0;
+}
+.vex-receipt__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 0 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-receipt__label {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-receipt__value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+
 /* ============================================================ *
  *  THE THINKING FRAME                                           *
  *                                                               *
