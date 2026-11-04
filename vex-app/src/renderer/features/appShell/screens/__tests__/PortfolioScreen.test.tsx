@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { PortfolioHistoryInput } from "@shared/schemas/portfolio-history.js";
 import type {
   PortfolioDto,
   PortfolioReadInput,
@@ -51,6 +52,8 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 // The heavy sections, stubbed with light ones that echo what they are handed.
 vi.mock("../../book/portfolio/LighterAccountCard.js", () => ({
   LighterAccountCard: () => <div data-testid="lighter-stub" />,
+  // The tiles read the account through the section; with no account, no tile.
+  lighterTileFigures: () => null,
 }));
 vi.mock("../../book/SessionActivityCard.js", () => ({
   SessionActivityCard: ({
@@ -87,6 +90,19 @@ vi.mock("../../market/VexTokenCardCompact.js", () => ({
 }));
 
 const readMock = vi.fn<(input: PortfolioReadInput) => Promise<Result<PortfolioDto>>>();
+// The chart's history read: an empty answer is a real state it words.
+const readHistoryMock = vi.fn((input: PortfolioHistoryInput) =>
+  Promise.resolve(
+    ok({
+      scope: input.wallets.scope,
+      range: input.range,
+      walletCount: 1,
+      groupCount: 0,
+      sampled: false,
+      points: [],
+    }),
+  ),
+);
 const listAvailableMock =
   vi.fn<(input: Record<string, never>) => Promise<Result<AvailableWalletsDto>>>();
 const listSessionWalletsMock =
@@ -183,7 +199,7 @@ function installVexBridge(): void {
     configurable: true,
     writable: true,
     value: {
-      portfolio: { read: readMock },
+      portfolio: { read: readMock, readHistory: readHistoryMock },
       wallets: {
         listAvailable: listAvailableMock,
         listSessionWallets: listSessionWalletsMock,
@@ -238,6 +254,12 @@ function section(id: string): HTMLElement {
 function stub(testId: string): HTMLElement {
   const found = screen.getByTestId(testId);
   if (!(found instanceof HTMLElement)) throw new Error(`missing stub ${testId}`);
+  return found;
+}
+
+function tabsRow(): HTMLElement {
+  const found = document.querySelector('[data-vex-area="page-tabs-row"]');
+  if (!(found instanceof HTMLElement)) throw new Error("missing the tabs row");
   return found;
 }
 
@@ -323,6 +345,19 @@ describe("PortfolioScreen - the chrome", () => {
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
   });
 
+  it("stamps its tabs row with the total's read's own fetch time", async () => {
+    // Only Date is faked: the fetch time TanStack records is this clock's.
+    vi.useFakeTimers({ now: new Date(2026, 10, 3, 14, 30, 5), toFake: ["Date"] });
+    try {
+      renderPage();
+      await settleGlobal();
+      const stamp = tabsRow().querySelector('[data-vex-area="page-updated"]');
+      expect(stamp?.textContent).toBe("Updated 14:30");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("closes through the host's close on Escape when there is no page to return to", async () => {
     renderPage();
     await settleGlobal();
@@ -333,19 +368,21 @@ describe("PortfolioScreen - the chrome", () => {
 });
 
 describe("PortfolioScreen - composition", () => {
-  it("draws the total, then the sections, then the $VEX line, with the refresh key in the head", async () => {
+  it("draws the tabs row, then the total, the sections and the $VEX line", async () => {
     renderPage();
     await settleGlobal();
 
+    const row = tabsRow();
     const total = header();
     const list = sectionList();
     const vex = document.querySelector('[data-vex-area="vex-token-compact"]');
     if (vex === null) throw new Error("missing the $VEX line");
+    expect(row.compareDocumentPosition(total)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(total.compareDocumentPosition(list)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(list.compareDocumentPosition(vex)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      within(total).getByRole("button", { name: "Refresh portfolio" }),
-    ).not.toBeNull();
+    // The page's key stands in its tabs row (H3 section 4.8), not in the total.
+    expect(within(row).getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(within(total).queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
     // What the total includes, and the headline.
     expect(
       within(total).getByText(
@@ -552,8 +589,9 @@ describe("PortfolioScreen - the scope chips", () => {
 
     const group = chipGroup();
     if (group === null) throw new Error("the scope chips are not offered");
-    // The chips ride at the right of the total.
-    expect(header().contains(group)).toBe(true);
+    // The scope is the page frame's tabs row (H3 section 1.9), not the total.
+    expect(tabsRow().contains(group)).toBe(true);
+    expect(header().contains(group)).toBe(false);
     expect(chipNames()).toEqual([
       "All wallets",
       "Main · Primary",
@@ -580,6 +618,14 @@ describe("PortfolioScreen - the scope chips", () => {
     expect(
       within(header()).getByText("Total value of Main · Lighter is shown separately"),
     ).not.toBeNull();
+    // The chart reads the SAME wallets the figures read: the narrowed global
+    // read, on its default range.
+    await waitFor(() =>
+      expect(readHistoryMock).toHaveBeenCalledWith({
+        range: "30d",
+        wallets: { scope: "global", walletAddress: MAIN.address },
+      }),
+    );
     // Balances is that wallet's read, and offers no register of its own.
     await within(section("balances")).findByText("Wallet Token");
     expect(within(section("balances")).queryByText("Global Token")).toBeNull();

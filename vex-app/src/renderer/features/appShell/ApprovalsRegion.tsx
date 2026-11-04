@@ -27,6 +27,7 @@ import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { ApprovalCard } from "./ApprovalCard.js";
+import { useApprovalDock } from "./ApprovalCard/approval-dock.js";
 import { selectFreshApprovals } from "./approvals/fresh-approvals.js";
 
 /**
@@ -53,6 +54,9 @@ export function ApprovalsRegion({
     refetchInterval: REFETCH_INTERVAL_MS,
   });
   const seenIdsRef = useRef<Set<string>>(new Set());
+  // The chat's decision-row seat, when the panel offers one (the shell's
+  // chat; `ApprovalCard/approval-dock.tsx`).
+  const dock = useApprovalDock();
 
   const view = useMemo<ViewState>(() => {
     if (!query.data) return null;
@@ -71,6 +75,14 @@ export function ApprovalsRegion({
     if (view === null || view.kind !== "rows") return null;
     return selectFreshApprovals(view.rows, seenIdsRef.current)[0]?.id ?? null;
   }, [view]);
+
+  // The card whose decision row the chat's bottom row holds: the oldest by
+  // createdAt, by the same order the fresh-card focus uses (an empty "seen"
+  // set sorts every row), so a fresh batch focuses the card it docks.
+  const dockedId = useMemo<string | null>(() => {
+    if (dock === null || view === null || view.kind !== "rows") return null;
+    return selectFreshApprovals(view.rows, { has: () => false })[0]?.id ?? null;
+  }, [dock, view]);
 
   // Sync the "seen" set AFTER render so subsequent renders treat current ids
   // as known (no re-focus on refetch). REPLACE, not accumulate: an approval
@@ -122,6 +134,12 @@ export function ApprovalsRegion({
           summary={summary}
           sessionId={sessionId}
           focusOnMount={summary.id === focusTargetId}
+          // THE BOTTOM ROW HOLDS ONE DECISION (docs/design/H3-DESKTOP.md
+          // section 1.8): the oldest waiting card, the one the run asked for
+          // first and the one a fresh batch focuses, draws its decision row
+          // there; every other card keeps its own footer, with the same keys
+          // and the same gate.
+          decisionDock={summary.id === dockedId ? dock : null}
         />
       ))}
     </section>

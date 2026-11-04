@@ -18,6 +18,12 @@
  *
  * The footer is sticky at short heights (bottom 0, paper, a quiet rule above),
  * so Reject and the action button stay in view while a long card scrolls.
+ *
+ * In a chat the parent may draw this same footer in the shell's bottom row
+ * instead (`dock`, docs/design/H3-DESKTOP.md sections 1.8 and 4.3): the reason
+ * field across the top, then Reject 168 | the gate line | the approve key 200
+ * at 1440. Only the layout and the middle cell's words change; every key,
+ * label, handler and guard below is the one the card draws inside itself.
  */
 
 import type { JSX, RefObject } from "react";
@@ -72,6 +78,15 @@ export interface ApprovalDecisionActionsProps {
    * parent turns the input off rather than collecting words that go nowhere.
    */
   readonly rejectReasonInput?: boolean;
+  /**
+   * Drawn as the shell's DECISION ROW (docs/design/H3-DESKTOP.md section 1.8)
+   * rather than inside the card: the parent portals this footer into the
+   * chat's bottom row. The row names itself by the card's title, since it no
+   * longer sits inside the card's region, and carries the gate line in its
+   * middle cell. Layout and words only: the keys, their handlers and their
+   * states are the same as inside the card.
+   */
+  readonly dock?: { readonly labelledBy: string; readonly gateLine: string } | null;
 }
 
 // THE KEYS (section 8.2): 40 high, padding 0 18, 14 / 500 sans, square.
@@ -138,6 +153,7 @@ export function ApprovalDecisionActions({
   settledDecision = null,
   wrapReasonOnNarrow = false,
   rejectReasonInput = true,
+  dock = null,
 }: ApprovalDecisionActionsProps): JSX.Element {
   // The Reject key keeps its own ref (the card's first-mount focus) and names
   // itself the initial focus: one ref does both, see `useInitialFocusRef`.
@@ -158,7 +174,14 @@ export function ApprovalDecisionActions({
   return (
     <footer
       data-vex-area="approval-foot"
-      className={`vex-appr__foot${wrapReasonOnNarrow ? " @max-[640px]:flex-wrap" : ""}`}
+      // DOCKED (docs/design/H3-DESKTOP.md section 1.8): the shell's bottom
+      // row under the chat, a grid of cells (approval.css): the reason field
+      // across the top, then Reject | the gate line | the approve key. Out of
+      // the card's region, so the group takes the card's title as its name.
+      data-docked={dock !== null ? "" : undefined}
+      role={dock !== null ? "group" : undefined}
+      aria-labelledby={dock?.labelledBy}
+      className={`vex-appr__foot${wrapReasonOnNarrow && dock === null ? " @max-[640px]:flex-wrap" : ""}`}
     >
       {rejectReasonInput ? (
         <input
@@ -190,12 +213,23 @@ export function ApprovalDecisionActions({
         disabled={inFlight}
         aria-busy={rejectPending}
         aria-label={rejectAria}
+        // Presentation hooks for the docked row's sheet; the classes below
+        // keep drawing the key inside the card.
+        data-vex-key="reject"
+        data-armed={rejectArmed ? "" : undefined}
         className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary${
           rejectArmed ? ` ${ARMED_RING}` : ""
         }`}
       >
         {rejectText}
       </button>
+      {/* THE MIDDLE CELL, docked only: the line for the card's gate, where H3
+          draws its tick box and key hints (section 4.3). Words, no control. */}
+      {dock !== null ? (
+        <p data-vex-area="approval-gate" className="vex-appr__gate">
+          {dock.gateLine}
+        </p>
+      ) : null}
       {/* THE WORKING KEY. A desk order signs, submits and then waits on the
           sequencer: fifteen-odd seconds in an app that is otherwise instant.
           While its own dispatch runs this button is the only live thing on
@@ -217,6 +251,8 @@ export function ApprovalDecisionActions({
             : approveIdleAria
         }
         data-vex-approve-working={approvePending ? "" : undefined}
+        data-vex-key="approve"
+        data-armed={approveArmed ? "" : undefined}
         className={`${KEY_BASE} gap-2 ${
           approveArmed
             ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
