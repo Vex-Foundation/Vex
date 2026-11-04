@@ -70,6 +70,48 @@ describe("ReasonedBlock", () => {
     ).toContain("Reasoned · 1.2K tokens");
   });
 
+  it("heads a turn: its steps at the right, and the live clock's reading only when there is one", () => {
+    // docs/design/H3-DESKTOP.md Appendix A.7: "Thought for N s" after a live
+    // turn; a turn reopened from history says its steps only.
+    const history = render(
+      createElement(ReasonedBlock, { reasoning: "t", steps: 3 }),
+    );
+    expect(screen.getByRole("button", { name: /Reasoned/ }).textContent).toBe("Reasoned");
+    expect(
+      history.container.querySelector("[data-vex-turn-steps]")?.textContent,
+    ).toBe("3 steps");
+    expect(history.container.querySelector("[data-vex-thinking-head]")).not.toBeNull();
+    history.unmount();
+
+    const live = render(
+      createElement(ReasonedBlock, { reasoning: "t", steps: 1, thoughtMs: 2_800 }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Thought for/ }).textContent,
+    ).toBe("Thought for 2.8 s");
+    expect(live.container.querySelector("[data-vex-turn-steps]")?.textContent).toBe("1 step");
+    live.unmount();
+
+    // Any other Reasoned row of the turn: no count, no head.
+    const plain = render(createElement(ReasonedBlock, { reasoning: "t" }));
+    expect(plain.container.querySelector("[data-vex-turn-steps]")).toBeNull();
+    expect(plain.container.querySelector("[data-vex-thinking-head]")).toBeNull();
+  });
+
+  it("draws H3's dot-grid glyph once settled and the thinking hatch while streaming", () => {
+    const settled = render(createElement(ReasonedBlock, { reasoning: "t" }));
+    expect(settled.container.querySelector("[data-vex-think-glyph]")).not.toBeNull();
+    expect(settled.container.querySelector(".vex-swatch")).toBeNull();
+    settled.unmount();
+    const running = render(
+      createElement(ReasonedBlock, { reasoning: "t", running: true }),
+    );
+    expect(running.container.querySelector("[data-vex-think-glyph]")).toBeNull();
+    expect(
+      running.container.querySelector('.vex-swatch[data-s="thinking"]'),
+    ).not.toBeNull();
+  });
+
   it("never renders markup from the trace (safe React elements only)", () => {
     const { container } = render(
       createElement(ReasonedBlock, {
