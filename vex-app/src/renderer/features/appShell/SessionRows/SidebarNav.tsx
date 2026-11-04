@@ -1,12 +1,13 @@
 /**
  * THE CHATS COLUMN'S NAV (docs/design/H3-DESKTOP.md sections 1.4 and 4.6):
- * Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board,
+ * Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board,
  * Settings. H3 draws seven rows (Chat, Strategies, Missions, Markets,
- * Portfolio, Activity, Settings); desktop has no Strategies until F11, its
- * Markets is today's Watchlist page, its Activity is today's Agent Scan page,
- * which joins the nav here (Portfolio's activity card and the profile menu
- * still open it too), and Lighter, Studio and Board are desktop's own, set
- * among H3's in the order the plan's decision 10 gives.
+ * Portfolio, Activity, Settings); desktop has no Strategies until F11, and it
+ * keeps its own page names where H3 has others (the owner's decision of 4
+ * November 2026): H3's Markets is desktop's Watchlist, and H3's Activity is
+ * desktop's Agent Scan, which joins the nav here (Portfolio's activity card
+ * and the profile menu still open it too). Lighter, Studio and Board are
+ * desktop's own, set among H3's in the order the plan's decision 10 gives.
  *
  * The icons are H3's nav glyphs redrawn in the line family (the `h3-` names,
  * `components/icons/line/line-glyphs.tsx`: the bubble, the cube, the rising
@@ -63,11 +64,11 @@ const NAV_ROWS: readonly {
 }[] = [
   { destination: "chat", label: "Chat", Icon: LineH3Chat },
   { destination: "missions", label: "Missions", Icon: LineH3Missions },
-  // Markets opens the Watchlist page (its route keeps its name).
-  { destination: "watchlist", label: "Markets", Icon: LineH3Markets },
+  // H3's Markets row, under desktop's name, with H3's glyph.
+  { destination: "watchlist", label: "Watchlist", Icon: LineH3Markets },
   { destination: "portfolio", label: "Portfolio", Icon: LineH3Portfolio },
-  // Activity opens the Agent Scan page, its full feed.
-  { destination: "activity", label: "Activity", Icon: LineH3Activity },
+  // H3's Activity row, under desktop's name: Agent Scan's full feed.
+  { destination: "agentScan", label: "Agent Scan", Icon: LineH3Activity },
   // Desktop's own three: their line drawings share H3's grid and stroke.
   { destination: "lighter", label: "Lighter", Icon: LineLighter },
   { destination: "studio", label: "Studio", Icon: LineStudio },

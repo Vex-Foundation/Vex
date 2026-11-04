@@ -123,16 +123,18 @@ beforeEach(() => {
 });
 
 describe("the nav", () => {
-  it("lists Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board and Settings, in order", () => {
-    // docs/design/H3-DESKTOP.md section 4.6. The words stay in sentence case
-    // in the source; the row's label style sets the caps.
+  it("lists Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board and Settings, in order", () => {
+    // docs/design/H3-DESKTOP.md section 4.6: H3's order, with desktop's own
+    // page names where H3 says Markets and Activity (the owner's decision).
+    // The words stay in sentence case in the source; the row's label style
+    // sets the caps.
     renderSidebar();
     expect(within(nav()).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Chat",
       "Missions",
-      "Markets",
+      "Watchlist",
       "Portfolio",
-      "Activity",
+      "Agent Scan",
       "Lighter",
       "Studio",
       "Board",
@@ -158,9 +160,9 @@ describe("the nav", () => {
     const expected: readonly (readonly [string, LineIconName])[] = [
       ["Chat", "h3-chat"],
       ["Missions", "h3-missions"],
-      ["Markets", "h3-markets"],
+      ["Watchlist", "h3-markets"],
       ["Portfolio", "h3-portfolio"],
-      ["Activity", "h3-activity"],
+      ["Agent Scan", "h3-activity"],
       ["Lighter", "lighter"],
       ["Studio", "studio"],
       ["Board", "board"],
@@ -172,18 +174,21 @@ describe("the nav", () => {
     ).toBe(glyph("h3-new-chat"));
   });
 
-  it("Markets opens the Watchlist page and Activity the full Agent Scan feed", () => {
+  it("Watchlist opens its page and Agent Scan its full feed", () => {
     renderSidebar();
-    fireEvent.click(navRow("Markets"));
+    fireEvent.click(navRow("Watchlist"));
     expect(useUiStore.getState().shellRoute.kind).toBe("watchlist");
-    expect(navRow("Markets").getAttribute("aria-current")).toBe("page");
+    expect(navRow("Watchlist").getAttribute("aria-current")).toBe("page");
 
-    fireEvent.click(navRow("Activity"));
+    fireEvent.click(navRow("Agent Scan"));
     const route = useUiStore.getState().shellRoute;
     expect(route.kind).toBe("agentScan");
     if (route.kind === "agentScan") expect(route.sessionId).toBeNull();
-    expect(navRow("Activity").getAttribute("aria-current")).toBe("page");
+    expect(navRow("Agent Scan").getAttribute("aria-current")).toBe("page");
     expect(navRow("Portfolio").hasAttribute("aria-current")).toBe(false);
+    // H3's own words for these two rows are not desktop's.
+    expect(within(nav()).queryByRole("button", { name: "Markets" })).toBeNull();
+    expect(within(nav()).queryByRole("button", { name: "Activity" })).toBeNull();
   });
 
   it("opens the page routes in the centre and moves the selected row with them", () => {

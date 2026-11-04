@@ -17,7 +17,7 @@
  *            cell into the field with the All, Agent and Mission tabs under
  *            it, New chat staying above it; Escape or the field's Esc key
  *            brings back the sections.
- *   NAV      Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio,
+ *   NAV      Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio,
  *            Board, Settings: nine H3 rows on the 40 pitch between two rules
  *            (`SidebarNav`; H3-DESKTOP.md section 4.6).
  *   CHATS    the CHATS heading (13, 600, caps, ink), then the chats by name

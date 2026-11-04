@@ -37,13 +37,13 @@ describe("navigate", () => {
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 
-  it("Markets opens the Watchlist page and Activity the full Agent Scan feed, in the current mode", () => {
-    // docs/design/H3-DESKTOP.md section 4.6: Markets is today's Watchlist,
-    // Activity today's Agent Scan.
+  it("Watchlist opens its page and Agent Scan its full feed, in the current mode", () => {
+    // docs/design/H3-DESKTOP.md section 4.6: H3's Markets and Activity rows,
+    // under desktop's page names (the owner's decision).
     useUiStore.getState().navigate("watchlist", ORIGIN);
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "watchlist", origin: ORIGIN });
     useUiStore.setState({ runtimeMode: "lighter" });
-    useUiStore.getState().navigate("activity", ORIGIN);
+    useUiStore.getState().navigate("agentScan", ORIGIN);
     expect(useUiStore.getState().shellRoute).toEqual({
       kind: "agentScan",
       origin: ORIGIN,
@@ -98,9 +98,9 @@ describe("the selected nav row", () => {
       "portfolio",
     );
     expect(select({ shellRoute: { kind: "watchlist", origin: null } })).toBe("watchlist");
-    // Agent Scan is Activity's page in every scope it opens with.
+    // Agent Scan selects its own row in every scope it opens with.
     expect(select({ shellRoute: { kind: "agentScan", origin: null, sessionId: null } })).toBe(
-      "activity",
+      "agentScan",
     );
     expect(
       select({
@@ -110,7 +110,7 @@ describe("the selected nav row", () => {
           sessionId: "00000000-0000-4000-8000-000000000001",
         },
       }),
-    ).toBe("activity");
+    ).toBe("agentScan");
     expect(
       select({
         shellRoute: {
@@ -119,7 +119,7 @@ describe("the selected nav row", () => {
           projectId: "00000000-0000-4000-8000-000000000002",
         },
       }),
-    ).toBe("activity");
+    ).toBe("agentScan");
     expect(select({ shellRoute: { kind: "board", origin: null }, runtimeMode: "lighter" })).toBe(
       "board",
     );
@@ -193,7 +193,7 @@ describe("the selected nav row", () => {
       "missions",
       "watchlist",
       "portfolio",
-      "activity",
+      "agentScan",
       "lighter",
       "studio",
       "board",
