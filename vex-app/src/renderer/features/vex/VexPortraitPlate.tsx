@@ -51,7 +51,8 @@
  * the plate is `aria-hidden` and takes no pointer.
  */
 
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
+import { KIMM_HINT_MS, KimmHint } from "../../components/vex/kimm/KimmHint.js";
 import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import type { K2Emotion } from "../../components/vex/k2/k2-emotion.js";
@@ -114,20 +115,53 @@ const KIMM_SHORTCUT = {
   aria: vexToggleAriaShortcut(studioPlatform),
 } as const;
 
-/** Her section, with the feature's part done: her mood, the chord, the stored choice. */
+/**
+ * The first-close hint's keys (Appendix A.9): title case on Windows and
+ * Linux, the glyphs on a Mac, as the hint spells them.
+ */
+const KIMM_HINT_KEYS: readonly string[] =
+  studioPlatform === "darwin" ? ["⌘", "⇧", "B"] : ["Ctrl", "Shift", "B"];
+
+/**
+ * Her section, with the feature's part done: her mood, the chord, the stored
+ * choice, and THE FIRST CLOSE'S HINT (S4-15): when her section closes (from
+ * any of her controls) and the profile has never seen the hint, the hint
+ * stands under the Vex key for `KIMM_HINT_MS` and the saved flag is set as it
+ * shows. A section that starts closed shows nothing: only a close teaches
+ * the way back.
+ */
 function KimmPlate({ state, open, onHide }: KimmPlateProps): JSX.Element {
   const setVexOpen = useUiStore((s) => s.setVexOpen);
+  const hintShown = useUiStore((s) => s.kimmHintShown);
+  const setKimmHintShown = useUiStore((s) => s.setKimmHintShown);
   const onOpenChange = (next: boolean): void => {
     if (!next && onHide !== undefined) onHide();
     else setVexOpen(next);
   };
+  const [hint, setHint] = useState(false);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    const closed = wasOpen.current && !open;
+    wasOpen.current = open;
+    if (!closed || hintShown) return;
+    setKimmHintShown(true);
+    setHint(true);
+  }, [open, hintShown, setKimmHintShown]);
+  useEffect(() => {
+    if (!hint) return undefined;
+    const timer = window.setTimeout(() => setHint(false), KIMM_HINT_MS);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
   return (
-    <KimmSection
-      mood={kimmMoodOf(state)}
-      open={open}
-      onOpenChange={onOpenChange}
-      shortcut={KIMM_SHORTCUT}
-    />
+    <>
+      <KimmSection
+        mood={kimmMoodOf(state)}
+        open={open}
+        onOpenChange={onOpenChange}
+        shortcut={KIMM_SHORTCUT}
+      />
+      {hint ? <KimmHint keys={KIMM_HINT_KEYS} /> : null}
+    </>
   );
 }
 

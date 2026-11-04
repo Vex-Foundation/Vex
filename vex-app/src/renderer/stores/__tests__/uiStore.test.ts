@@ -26,6 +26,7 @@ function resetStoreToDefaults(): void {
     showAvatar: true,
     welcomeVexShown: true,
     vexInferenceNoticeDismissed: false,
+    kimmHintShown: false,
     bookOpen: true,
     currentView: "splash",
     setupGateActive: true,
@@ -335,6 +336,8 @@ describe("uiStore", () => {
       welcomeVexShown: true,
       // The welcome's Vex Inference notice, not dismissed.
       vexInferenceNoticeDismissed: false,
+      // Her first close's hint (S4-15), not yet shown.
+      kimmHintShown: false,
     });
     expect(parsed.state.createSessionOpen).toBeUndefined();
     expect(parsed.state.createSessionInitialTurn).toBeUndefined();
@@ -694,6 +697,8 @@ describe("uiStore", () => {
       welcomeVexShown: true,
       // The welcome's Vex Inference notice, not dismissed.
       vexInferenceNoticeDismissed: false,
+      // Her first close's hint (S4-15), not yet shown.
+      kimmHintShown: false,
     });
     expect(parsed.state.logBuffer).toBeUndefined();
     expect(parsed.state.currentView).toBeUndefined();

@@ -141,6 +141,7 @@ export const PERSISTED_UI_KEYS = [
   "showAvatar",
   "welcomeVexShown",
   "vexInferenceNoticeDismissed",
+  "kimmHintShown",
 ] as const satisfies readonly (keyof UiState)[];
 
 export type PersistedUiKey = (typeof PERSISTED_UI_KEYS)[number];
@@ -525,5 +526,8 @@ export function mergeUiState(persisted: unknown, current: UiState): UiState {
       incoming?.vexInferenceNoticeDismissed,
       current.vexInferenceNoticeDismissed,
     ),
+    // Her first-close hint's flag, added the same way (no hop): absent or
+    // off-shape degrades to the store's default, not yet shown.
+    kimmHintShown: coerceBooleanPreference(incoming?.kimmHintShown, current.kimmHintShown),
   };
 }

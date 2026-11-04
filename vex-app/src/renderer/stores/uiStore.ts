@@ -247,6 +247,15 @@ export interface UiState {
    */
   readonly vexInferenceNoticeDismissed: boolean;
   /**
+   * Whether her first close has shown the way back (docs/design/H3-DESKTOP.md
+   * section 3.5; plan row S4-15): the "Show Vex" hint and its keycaps under
+   * the Vex key for 2.4 seconds, once per profile (Cloud: once per browser).
+   * False until that first close; set as the hint shows, so no later close
+   * in any window shows it again. Persisted; added without a version hop: a
+   * payload that does not carry it hydrates to the default, not yet shown.
+   */
+  readonly kimmHintShown: boolean;
+  /**
    * @deprecated The previous frame's left page drag width. The R3 sidebars
    * have fixed widths and the frame no longer reads it; it stays persisted
    * and coerced this release (expand-only).
@@ -470,6 +479,8 @@ export interface UiState {
   readonly setWelcomeVexShown: (value: boolean) => void;
   /** Dismiss the welcome's Vex Inference notice (true), or bring it back. */
   readonly setVexInferenceNoticeDismissed: (value: boolean) => void;
+  /** Record that her first close has shown the way back (true), or forget it. */
+  readonly setKimmHintShown: (value: boolean) => void;
   /**
    * The left sidebar's nav: one press, one store change (see
    * `navigationTarget`). `origin` is the pressed row's rect, for the page's
@@ -615,6 +626,7 @@ export const useUiStore = create<UiState>()(
       showAvatar: true,
       welcomeVexShown: true,
       vexInferenceNoticeDismissed: false,
+      kimmHintShown: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,
       sidebarNarrowExpanded: false,
@@ -658,6 +670,7 @@ export const useUiStore = create<UiState>()(
       toggleBook: () =>
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),
       setWelcomeVexShown: (welcomeVexShown) => set({ welcomeVexShown }),
+      setKimmHintShown: (kimmHintShown) => set({ kimmHintShown }),
       setVexInferenceNoticeDismissed: (vexInferenceNoticeDismissed) =>
         set({ vexInferenceNoticeDismissed }),
       navigate: (destination, origin = null) =>

@@ -256,3 +256,59 @@ html[data-still] .vex-kimm__scan,
 html[data-still] .vex-kimm[data-kimm-open="false"] .vex-kimm__scan {
   transition: none;
 }
+
+/* ---- the first close's hint (sections 2.4 and 3.5; S4-15) ----
+ * "Show Vex" and its keycaps, larger than the key's own and in title case,
+ * under the Vex key's state cell, over Vex's column only (the column clips
+ * it), for 2.4 seconds (`KIMM_HINT_MS`, a JS timer with no CSS twin: the hint
+ * leaves with its element). It fades in on the entrance curve; under reduced
+ * motion and Save-Data it simply stands. It takes no pointer. */
+.vex-kimm-hint {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 76px;
+  display: inline-flex;
+  height: 44px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  background: var(--vex-alias-bg-overlay);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  pointer-events: none;
+  animation: vex-kimm-hint-in var(--vex-duration-base) var(--vex-ease-out) both;
+}
+.vex-kimm-hint__caps {
+  display: inline-flex;
+  gap: 4px;
+}
+.vex-kimm-hint__cap {
+  display: inline-flex;
+  min-width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+@keyframes vex-kimm-hint-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-kimm-hint {
+    animation: none;
+  }
+}
+html[data-still] .vex-kimm-hint {
+  animation: none;
+}
