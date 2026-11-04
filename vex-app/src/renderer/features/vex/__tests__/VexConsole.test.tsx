@@ -14,7 +14,7 @@
  *  - the missions row: what runs on Mainnet, the one named, "No mission
  *    running" with none, nothing before the sessions answer; its key opens
  *    the mission or the missions list; it closes the top block;
- *  - recent activity: the feed's newest rows with the Activity page's status
+ *  - recent activity: the feed's newest rows with Agent Scan's status
  *    words on their status squares, the page's own words for a read that is
  *    loading, failed, timed out or empty, and Open activity to the page;
  *  - AI permission: the open chat's own, in desktop's words for its mode, and
@@ -309,7 +309,7 @@ function activity(): HTMLElement {
 }
 
 describe("the console's recent activity", () => {
-  it("lists the newest entries with the Activity page's words on their status squares", () => {
+  it("lists the newest entries with Agent Scan's words on their status squares", () => {
     answers({
       ok: true,
       data: {
@@ -338,7 +338,7 @@ describe("the console's recent activity", () => {
     expect(rows[1]?.querySelector(".vex-swatch")?.className).toContain("text-danger-mark");
   });
 
-  it("opens Activity from Open activity", () => {
+  it("opens Agent Scan from Open activity", () => {
     answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
     render(<VexConsoleActivity />);
     fireEvent.click(within(activity()).getByRole("button", { name: "Open activity" }));

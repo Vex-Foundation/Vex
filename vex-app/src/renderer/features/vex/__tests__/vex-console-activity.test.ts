@@ -1,7 +1,7 @@
 /**
  * The console's recent activity rows (docs/design/H3-DESKTOP.md sections 1.5
  * and 2.2; Appendix A.3). Pins:
- *   - the status word is the Activity page's own (`activityOutcome`), never
+ *   - the status word is Agent Scan's own (`activityOutcome`), never
  *     H3's sample word: Confirmed, "Submitted, awaiting confirmation",
  *     Pending, Failed, Refunded, "Status unknown"; Filled for a Lighter fill;
  *   - the square's colour follows the status: green for Confirmed and Filled,

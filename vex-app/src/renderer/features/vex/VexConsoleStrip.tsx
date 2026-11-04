@@ -11,7 +11,7 @@
  *   the missions cell          "1 mission running on Mainnet", or "No mission
  *                              running", a key to the mission or the list
  *   (H3's strategies cell is left out: desktop has no strategies, 4.1)
- *   OPEN ACTIVITY and an arrow at the right edge, a key to Activity
+ *   OPEN ACTIVITY and an arrow at the right edge, a key to Agent Scan
  *
  * The words, counts and keys are the console's own (`VexConsole.tsx`): the
  * same model, the same lead decision, the same missions words, the same

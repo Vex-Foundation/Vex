@@ -30,7 +30,7 @@
  *     the newest four entries of the activity        about 43 each
  *     feed, each a line, its status square and its
  *     status word (`vex-console-activity.ts`)
- *   OPEN ACTIVITY and an arrow: the Activity page
+ *   OPEN ACTIVITY and an arrow: Agent Scan, the activity page
  *
  * THE PERMISSION is the open chat's own (`sessions.get`), in desktop's
  * words for its two modes (`ComposerPermissionSeat.tsx`'s), never H3's
@@ -40,7 +40,7 @@
  * chat open (the welcome, a page over none, Studio) there is no permission to
  * state, and the part is left out.
  *
- * The feed is the Activity page's own read (`useAgentScanInfinite` with the
+ * The feed is Agent Scan's own read (`useAgentScanInfinite` with the
  * page's unfiltered global filters), one cache entry with it. Its status
  * words are that page's (Confirmed, "Submitted, awaiting confirmation",
  * Failed, Refunded, "Status unknown"; Filled for a Lighter fill), its squares
@@ -261,7 +261,7 @@ export function VexConsoleTop({
 // -- The console's rest: recent activity -----------------------------------
 
 /**
- * The Activity page's unfiltered global read: the same filters object, so the
+ * Agent Scan's unfiltered global read: the same filters object, so the
  * same query key and one cache entry with the page. Module level, so the key
  * is stable across renders.
  */
@@ -274,7 +274,7 @@ const MARK_CLASS: Readonly<Record<ConsoleActivityMark, string>> = {
   running: "text-running-mark",
 };
 
-/** Open Activity: the Activity page, the global feed. */
+/** Open activity: Agent Scan, the global feed (H3's Activity page is desktop's Agent Scan). */
 export function openActivity(): void {
   useUiStore.getState().setShellRoute({ kind: "agentScan", origin: null, sessionId: null });
 }

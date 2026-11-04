@@ -4,14 +4,14 @@
  * Agent Scan read, `vex:portfolio:listAgentScan`), each as one line, its
  * status square and its status word.
  *
- * THE WORDS ARE THE ACTIVITY PAGE'S OWN, never H3's sample words:
+ * THE WORDS ARE AGENT SCAN'S OWN, never H3's sample words:
  *
- *   - an activity row ends in `activityOutcome`'s word, the one the Activity
- *     page shows: Confirmed (H3's FILLED: desktop knows a transaction
+ *   - an activity row ends in `activityOutcome`'s word, the one Agent Scan
+ *     shows: Confirmed (H3's FILLED: desktop knows a transaction
  *     confirmed, not an order filled), "Submitted, awaiting confirmation" or
  *     Pending (H3's RUNNING), Failed, Refunded or "Status unknown" (H3's DID
  *     NOT EXECUTE), else the row's own bounded source word;
- *   - a Lighter fill ends in Filled, the venue's word the Activity page gives
+ *   - a Lighter fill ends in Filled, the venue's word Agent Scan gives
  *     a fill (`AgentScanLighterRow`): the venue matched it and its economics
  *     are final.
  *
@@ -22,10 +22,10 @@
  *
  * THE LINE says what happened from the entry's own fields: the kind in words,
  * then the token it spent and the token it got ("Swap USDC → ETH"), each the
- * main-resolved label the Activity page shows (`legSymbolText`); a leg that
+ * main-resolved label Agent Scan shows (`legSymbolText`); a leg that
  * names no token is left out rather than drawn as a dash. No amount: the line
- * is a pointer to the row, and the Activity page holds the figures with their
- * honesty rules (contract C20). A fill is the Activity page's compact line,
+ * is a pointer to the row, and Agent Scan holds the figures with their
+ * honesty rules (contract C20). A fill is Agent Scan's compact line,
  * "Buy 0.0050 ETH".
  *
  * Pure: the clock arrives as `nowMs`.
@@ -55,13 +55,13 @@ export interface ConsoleActivityRow {
   readonly key: string;
   /** What happened, in one line. */
   readonly title: string;
-  /** The status word, the Activity page's. */
+  /** The status word, Agent Scan's. */
   readonly word: string;
   readonly mark: ConsoleActivityMark;
 }
 
 /**
- * Each kind in words, sentence case: the Activity page's kind badge, read as
+ * Each kind in words, sentence case: Agent Scan's kind badge, read as
  * a word (`ActivityBadge`'s labels). Total over the feed's vocabulary, so a
  * kind the engine adds is a type error here, not a blank line.
  */
