@@ -104,7 +104,7 @@ async function open(page: Page, size: Size, vex: "open" | "closed"): Promise<voi
  * paused and set to the same time, and the card and her section are read
  * after each seek.
  */
-async function seekedPress(page: Page, durationMs: number): Promise<Frame[]> {
+async function seekedPress(page: Page, durationMs: number, cardSelector: string = CARD): Promise<Frame[]> {
   return page.evaluate(
     async ({ card, section, key, duration, step }) => {
       const box = (selector: string): Box => {
@@ -137,7 +137,7 @@ async function seekedPress(page: Page, durationMs: number): Promise<Frame[]> {
       for (const animation of running) animation.finish();
       return frames;
     },
-    { card: CARD, section: SECTION, key: KEY, duration: durationMs, step: SEEK_STEP_MS },
+    { card: cardSelector, section: SECTION, key: KEY, duration: durationMs, step: SEEK_STEP_MS },
   );
 }
 
@@ -146,7 +146,12 @@ async function seekedPress(page: Page, durationMs: number): Promise<Frame[]> {
  * card, her section and her clip on every painted frame until her section
  * rests as `rest`. The second press is marked with `at: -1`.
  */
-async function liveFrames(page: Page, turn: boolean, rest: "open" | "closed"): Promise<Frame[]> {
+async function liveFrames(
+  page: Page,
+  turn: boolean,
+  rest: "open" | "closed",
+  cardSelector: string = CARD,
+): Promise<Frame[]> {
   return page.evaluate(
     async ({ card, section, key, turn, rest }) => {
       const box = (selector: string): Box => {
@@ -191,7 +196,7 @@ async function liveFrames(page: Page, turn: boolean, rest: "open" | "closed"): P
       });
       return frames;
     },
-    { card: CARD, section: SECTION, key: KEY, turn, rest },
+    { card: cardSelector, section: SECTION, key: KEY, turn, rest },
   );
 }
 
@@ -227,6 +232,95 @@ function onScreen(box: Box, size: Size): Box {
     height: Math.min(size.height, box.y + box.height) - y,
   };
 }
+
+/**
+ * THE DESK LEG (docs/design/H3-DESKTOP.md sections 3.6 and 4.9; plan row
+ * S8-11): on the Lighter desk the waiting card is the desk's own Review
+ * order, in the ticket's column at the desk's right edge, beside her column.
+ * Her section opening and closing never moves it, on any frame; the chats
+ * column's Expand (which changes the window's columns) never moves it
+ * either; and while it waits the desk chat's drag handle is not drawn, so
+ * nothing can move it.
+ */
+const DESK_SIZES = [
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+] as const;
+const DESK_CARD = '[data-vex-area="lighter-desk-approval"] [data-vex-area="approval-card"]';
+
+async function openDesk(page: Page, size: (typeof DESK_SIZES)[number], vex: "open" | "closed"): Promise<void> {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.setViewportSize(size);
+  await page.goto(`/?state=lighter-desk-review&vex=${vex}`);
+  await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", vex);
+  expect(await page.evaluate(() => window.__vexH3Harness.unanswered())).toEqual([]);
+  expect(errors).toEqual([]);
+}
+
+async function deskCardBox(page: Page): Promise<Box> {
+  const box = await page.locator(DESK_CARD).boundingBox();
+  expect(box).not.toBeNull();
+  return box as Box;
+}
+
+test.describe("H3 card proof on the Lighter desk: the Review order never moves", () => {
+  for (const size of DESK_SIZES) {
+    test(`her section seeked and live, the rail's Expand, no drag at ${sizeName(size)}`, async ({ page }) => {
+      await openDesk(page, size, "open");
+      const card = await deskCardBox(page);
+      const section = (await page.locator(SECTION).boundingBox()) as Box;
+      expect(section).not.toBeNull();
+      // While the review waits the drag between the desk and her column is
+      // not drawn.
+      await expect(page.locator(".vex-shell-handle")).toHaveCount(0);
+
+      const close = await seekedPress(page, CLOSE_MS, DESK_CARD);
+      await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+      const reopen = await seekedPress(page, OPEN_MS, DESK_CARD);
+      await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "open");
+      for (const frame of [...close, ...reopen]) {
+        expect(frame.card, `seek ${String(frame.at)}ms`).toEqual(card);
+        expect(frame.section, `seek ${String(frame.at)}ms`).toEqual(section);
+      }
+      const closedInset = section.height - STRIP_PX;
+      const insets = (frames: Frame[]): number[] => frames.map((f) => bottomInset(f.clip, section.height));
+      expect(insets(close).at(-1)).toBeCloseTo(closedInset, 0);
+      expect(insets(reopen).at(-1)).toBeCloseTo(0, 0);
+
+      const liveClose = await liveFrames(page, false, "closed", DESK_CARD);
+      const liveOpen = await liveFrames(page, false, "open", DESK_CARD);
+      for (const frame of [...liveClose, ...liveOpen]) {
+        expect(frame.card, `live ${frame.at.toFixed(1)}ms`).toEqual(card);
+      }
+
+      // The chats column's Expand opens the 248 for the visit: the desk
+      // narrows at its left, the card at its right stands.
+      await page.getByRole("button", { name: "Expand sessions sidebar" }).click();
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)))),
+      );
+      await page.waitForTimeout(400);
+      expect(await deskCardBox(page)).toEqual(card);
+    });
+
+    test(`the Review order's pixels open and closed at ${sizeName(size)}`, async ({ page }) => {
+      await openDesk(page, size, "open");
+      const openBox = await deskCardBox(page);
+      const openPixels = await page.screenshot({ clip: onScreen(openBox, size as Size), animations: "disabled", caret: "hide" });
+      await openDesk(page, size, "closed");
+      const closedBox = await deskCardBox(page);
+      expect(closedBox).toEqual(openBox);
+      const closedPixels = await page.screenshot({ clip: onScreen(closedBox, size as Size), animations: "disabled", caret: "hide" });
+      expect(closedPixels.equals(openPixels)).toBe(true);
+    });
+  }
+});
 
 test.describe.configure({ mode: "serial" });
 

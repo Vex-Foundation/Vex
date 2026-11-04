@@ -8,7 +8,8 @@ import type {
   LighterTradingEnvironment,
   LighterTradingLiveResolution,
 } from "@shared/schemas/lighter-trading.js";
-export const LIGHTER_CHAT_DEFAULT_SHARE = 0.32;
+/** The desk chat, her column on the desk: H3's 30% of the window (section 1.2). */
+export const LIGHTER_CHAT_DEFAULT_SHARE = 0.3;
 
 export const LIGHTER_RESOLUTIONS: readonly LighterTradingLiveResolution[] = [
   "1m", "5m", "15m", "30m", "1h", "4h", "12h", "1d",

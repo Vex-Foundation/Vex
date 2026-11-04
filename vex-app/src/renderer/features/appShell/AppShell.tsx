@@ -100,6 +100,8 @@ import {
   useActivityResolvedInvalidation,
 } from "../../lib/api/portfolio.js";
 import { ShellDragHandle } from "./ShellDragHandle.js";
+import { useDeskReviewShowing } from "./lighterTrading/desk-review-slot.js";
+import { usePendingApprovals } from "../../lib/api/approvals.js";
 import { ShellScreens } from "./screens/ShellScreens.js";
 import { LighterCenter } from "./lighterTrading/LighterCenter.js";
 import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
@@ -343,8 +345,8 @@ function ShellFrame({
   // rule), so nothing about her reaches the solve. On a table page hiding her
   // folds the column to the page's strip (section 1.9), the page taking the
   // room. The Lighter desk: its own solve (`computeDeskColumns`), the rail,
-  // the desk and the desk chat at its stored share; a hidden Vex keeps
-  // nothing there yet: her column closes to zero width.
+  // the desk and her column, the desk chat, at its stored share; it stands
+  // whatever she shows, her section a box over it (the approved desk plate).
   const h3Cols = lighter
     ? null
     : computeH3ShellColumns({ viewport, chats: leftAsked, vexStrip: tablePage && !vexOpen });
@@ -354,7 +356,6 @@ function ShellFrame({
         share: lighterChatShare,
         chatsExpanded: deskChatsExpanded,
         zen,
-        vexColumn: vexOpen,
       })
     : null;
   const cols: ShellColumns =
@@ -372,11 +373,12 @@ function ShellFrame({
   // where the column stays, the column itself on a table page and the desk.
   const vexEffectiveOpen = !zen && vexOpen && (cols.vex > 0 || band);
   // Whether her column (or the band) stands at all, whatever she shows in it.
-  const vexColumnStands = h3Cols === null ? vexEffectiveOpen : cols.vex > 0 || band;
-  // THE VEX TOGGLE, as the frame solved it: her section in a chat, the
-  // column on a table page, the desk chat's column on the Lighter desk. The
-  // Vex key, the desk's token chip and the shortcut all press this one, and
-  // it writes the same stored choice as ever. Zen has no column: no toggle.
+  const vexColumnStands = cols.vex > 0 || band;
+  // THE VEX TOGGLE, as the frame solved it: her section in a chat and on the
+  // Lighter desk, the column on a table page. The Vex key, her corner key
+  // and the shortcut all press this one, and it writes the same stored
+  // choice as ever (the desk's own, `vexOpenLighter`). Zen has no column:
+  // no toggle.
   const vexToggle = zen
     ? null
     : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) };
@@ -408,9 +410,24 @@ function ShellFrame({
   );
   // The sidebars have fixed widths; the one drag left is the desk chat's
   // share. The desk keeps its chat on the right (`shellColumnOrder`), so the
-  // handle grips the column's left edge, `viewport - cols.vex` from the
-  // frame's left, and a drag to the left (dx < 0) widens it.
-  const chatHandle = lighter && vexEffectiveOpen;
+  // handle grips the seam between the desk and her column, `viewport -
+  // cols.vex` from the frame's left, and a drag to the left (dx < 0) widens
+  // it, 300 to 520 (the approved desk plate).
+  //
+  // THE MONEY RULE ON THE DESK (docs/design/H3-DESKTOP.md section 3.6): the
+  // drag is the one thing that moves her column's edge, and with it the
+  // desk's own Review order card in the ticket's column. So while a desk
+  // review or a card in the desk chat waits, the handle is not drawn at all,
+  // and nothing can move a waiting card. The read is the chat's own pending
+  // list (the query key the desk and the desk chat already hold, no new IPC).
+  const deskReviewShowing = useDeskReviewShowing();
+  const deskPending = usePendingApprovals(lighter ? activeSessionId : null);
+  const deskChatCardWaiting = lighter
+    && deskPending.data !== undefined
+    && deskPending.data.ok
+    && deskPending.data.data.some((row) => row.origin !== "desk");
+  const deskCardWaiting = deskReviewShowing || deskChatCardWaiting;
+  const chatHandle = lighter && !zen && !deskCardWaiting;
   const frameKind = shellFrameKind(runtimeMode);
 
   const networkOnline = useNetworkOnline();
@@ -615,8 +632,8 @@ function ShellFrame({
         // In H3's frame the stored choice shows or hides her plate; her
         // column stays wherever the solve keeps it (a chat), and hiding
         // there keeps focus where it is.
-        plate={h3Cols === null || vexOpen}
-        stays={h3Cols !== null && !tablePage}
+        plate={vexOpen}
+        stays={lighter || !tablePage}
         onHide={() => {
           if (zen) setZenAssistantOpen(false);
           else setVexOpen(false);
@@ -681,6 +698,9 @@ function ShellFrame({
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
       data-lighter-zen={zen ? "true" : undefined}
       data-lighter-zen-assistant={lighter && zenAssistantOpen ? "open" : undefined}
+      // A desk review waits in the ticket's place: the desk chat's SEND steps
+      // down so its Approve is the window's one blue cell (lighter-chat.css).
+      data-lighter-review={lighter && deskReviewShowing ? "waiting" : undefined}
       data-lighter-zen-controls={zen
         ? zenControlsOpen ? "open" : "closed"
         : undefined}

@@ -160,8 +160,9 @@ describe("coerceLighterLayout", () => {
 
 describe("coerceLighterDesk", () => {
   it("migrates old preferences to an agent share and bounds saved resizes", () => {
-    expect(coerceLighterDesk({}).chatShare).toBe(0.32);
-    expect(coerceLighterDesk({ chatShare: NaN }).chatShare).toBe(0.32);
+    // H3: her column on the desk is 30% of the window by default.
+    expect(coerceLighterDesk({}).chatShare).toBe(0.3);
+    expect(coerceLighterDesk({ chatShare: NaN }).chatShare).toBe(0.3);
     expect(coerceLighterDesk({ chatShare: 0.4 }).chatShare).toBe(0.4);
     expect(coerceLighterDesk({ chatShare: -1 }).chatShare).toBe(0);
     expect(coerceLighterDesk({ chatShare: 9 }).chatShare).toBe(0.5);

@@ -263,3 +263,85 @@
   font-size: 12px;
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+ * THE DESK CHAT AS HER COLUMN (docs/design/H3-DESKTOP.md sections 3.6 and
+ * 4.9, the approved desk plate; plan row S8-11). Top to bottom: the
+ * console's top block, her section as a box over the column (216 open, 132
+ * under a 1024 window, the 56 strip closed), the desk chat under the strip,
+ * and its composer in the bottom row, the column's foot.
+ *
+ * THE MONEY RULE. Her box is laid over the column, never a row in it: the
+ * desk chat starts under the strip whatever she shows, and her open section
+ * covers its top without moving a line of it. Only her clip moves
+ * (kimm.css). A card waiting here docks its decision row at the foot in the
+ * composer's place (approval.css), out of her reach.
+ * ------------------------------------------------------------------------- */
+
+/* Her box on the desk: a fixed height from the console's top block, not the
+ * column's foot. */
+.vex-vs[data-vex-vs-mode="lighter"] .vex-kimm {
+  bottom: auto;
+  height: 216px;
+}
+
+@media (max-width: 1023px) {
+  .vex-vs[data-vex-vs-mode="lighter"] .vex-kimm { height: 132px; }
+}
+
+/* The desk chat under her strip, the rest of the column. */
+.vex-vs[data-vex-vs-mode="lighter"] .vex-vs__desk {
+  padding-top: var(--vex-h3-strip-h);
+  border-top: 0;
+}
+
+/* The conversation rests on the composer: a short one stands low in the
+ * column, where her open section does not reach. */
+.vex-vs[data-vex-vs-mode="lighter"] .lit-chat-shell [data-vex-session-content] {
+  justify-content: flex-end;
+  padding-inline: 0;
+}
+
+.vex-vs[data-vex-vs-mode="lighter"] .lit-chat-shell .lit-desk-scope { padding-inline: 12px; }
+
+/* The composer's cells run the column's whole width, its row on the
+ * window's foot, as the shell's chat composer does (composer.css). */
+.vex-vs[data-vex-vs-mode="lighter"] .lit-chat-shell [data-vex-composer-dock] {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
+}
+
+.vex-vs[data-vex-vs-mode="lighter"] .lit-chat-shell [data-vex-composer-seat] {
+  justify-content: flex-end;
+  min-height: var(--vex-h3-bottom-h);
+}
+
+/* The status strip on the desk: the model and its effort, and FUNDS REQUIRE
+ * APPROVAL; no context meter. Under a 1024 window the promise is its icon. */
+.vex-vs[data-vex-vs-mode="lighter"] .vex-composer-strip__context,
+.vex-vs[data-vex-vs-mode="lighter"] .vex-composer-strip__state:empty {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .vex-vs[data-vex-vs-mode="lighter"] .vex-composer-promise > svg { display: none; }
+  .vex-vs[data-vex-vs-mode="lighter"] .vex-composer-promise [data-vex-permission-label] { display: inline; }
+}
+
+@media (max-width: 1023px) {
+  .vex-vs[data-vex-vs-mode="lighter"] .vex-composer-promise > svg { display: block; }
+  .vex-vs[data-vex-vs-mode="lighter"] .vex-composer-promise [data-vex-permission-label] { display: none; }
+}
+
+/* While a desk review waits in the ticket's place, SEND steps down to the
+ * raised fill, so the review's Approve is the window's one blue cell. */
+.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send {
+  background-color: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send:hover:not(:disabled) {
+  background-color: var(--vex-alias-interactive-hover);
+}

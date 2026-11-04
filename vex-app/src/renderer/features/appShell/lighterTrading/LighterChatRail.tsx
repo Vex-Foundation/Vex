@@ -23,9 +23,11 @@ import { publishDeskSend } from "./desk-send-intent.js";
 import { latestDeskSession } from "./desk-session.js";
 
 /**
- * The desk chat in the Vex sidebar (docs/design/R3-MINIMAL.md section 5.1):
- * the active desk session, or the starter prompts that open one scoped to the
- * market on the desk.
+ * The desk chat, her column on the Lighter desk (docs/design/H3-DESKTOP.md
+ * section 4.9, the approved desk plate): under her section, the active desk
+ * session with its scope and prompts leading the conversation and its
+ * composer in the bottom row, or the starter prompts that open one scoped to
+ * the market on the desk.
  */
 export function LighterChatRail(): JSX.Element {
   const activeSessionId = useUiStore((state) => state.activeSessionId);
@@ -102,10 +104,18 @@ export function LighterChatRail(): JSX.Element {
   }, [tag, setDeskScopeTag]);
 
   if (activeSessionId !== null) {
+    // The desk chat in her column (H3-DESKTOP.md section 4.9): the scope and
+    // its prompts lead the conversation, the whole stack resting on the
+    // composer, so her open section over the column's top covers the room
+    // above it before it covers a word. A card waiting here docks its
+    // decision row at the column's foot, in the composer's place.
     return (
       <div className="lit-chat-shell">
-        {scope === null ? null : <DeskScopeStrip scope={scope} sessionId={activeSessionId} />}
-        <SessionPanel surface="embedded" />
+        <SessionPanel
+          surface="embedded"
+          dockDecisions
+          contentLead={scope === null ? null : <DeskScopeStrip scope={scope} sessionId={activeSessionId} />}
+        />
       </div>
     );
   }

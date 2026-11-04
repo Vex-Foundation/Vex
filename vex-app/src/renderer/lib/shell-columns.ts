@@ -429,12 +429,6 @@ export interface DeskShellInput {
   readonly chatsExpanded: boolean;
   /** Lighter Zen: the chart in the whole window. */
   readonly zen?: boolean;
-  /**
-   * Her column stands: the desk's stored Vex choice, which still folds the
-   * whole desk chat column to 0 (R3's meaning) until the desk chat becomes
-   * her column. Defaults to standing.
-   */
-  readonly vexColumn?: boolean;
 }
 
 export interface DeskShellColumns {
@@ -473,9 +467,9 @@ export function computeDeskColumns(input: DeskShellInput): DeskShellColumns {
   }
   const chatsRail = !(expandable && input.chatsExpanded);
   const chats = Math.min(width, chatsRail ? H3_RAIL_WIDTH : H3_CHATS_WIDTH);
-  const vex = input.vexColumn === false
-    ? 0
-    : Math.min(Math.max(0, width - chats), deskVexWidth(width, input.share));
+  // Her column stands whatever she shows: her section is a box over it, and
+  // her stored choice opens or folds that box alone (section 3.6).
+  const vex = Math.min(Math.max(0, width - chats), deskVexWidth(width, input.share));
   return { chats, desk: Math.max(0, width - chats - vex), vex, chatsRail, expandable };
 }
 

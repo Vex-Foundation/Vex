@@ -5,7 +5,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { LIGHTER_CHAT_DEFAULT_SHARE } from "../../features/appShell/lighterTrading/desk-preferences.js";
 import {
   CENTER_MIN,
   LEFT_WIDTH,
@@ -228,7 +227,11 @@ describe("the small windows, per page class", () => {
       vex: true,
       ...overrides,
     });
-  const lighterChat = (viewport: number) => Math.max(1, viewport * LIGHTER_CHAT_DEFAULT_SHARE);
+  // R3's desk share (0.32), pinned: the H3 desk solves its own columns
+  // (`computeDeskColumns`, at the approved plate's 30 per cent), so this
+  // legacy solver keeps the widths it was specified at.
+  const R3_LIGHTER_CHAT_SHARE = 0.32;
+  const lighterChat = (viewport: number) => Math.max(1, viewport * R3_LIGHTER_CHAT_SHARE);
 
   it("1000 x 720: the rail, the transcript beside Vex at 720, the pages wide", () => {
     expect(solve(1000, {})).toEqual({ left: 56, center: 720, vex: 224 });
