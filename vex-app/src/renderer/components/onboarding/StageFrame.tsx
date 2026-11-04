@@ -180,6 +180,13 @@ export interface StageFrameProps {
   readonly footVersion?: boolean;
   /** Extra attributes for the frame's root (the wizard's mood, a phase). */
   readonly rootProps?: Readonly<Record<`data-${string}`, string | undefined>>;
+  /**
+   * The frame stands OVER her column rather than under it (the wake, laid at
+   * z 50 over the whole window while the launch runs): its middle column is
+   * left transparent and takes no pointer, so she and her keys stay in view
+   * and live beneath it.
+   */
+  readonly over?: boolean;
   /** The work column: `StageBody` and its rows, then the screen's `StageActs`. */
   readonly children: ReactNode;
 }
@@ -202,6 +209,7 @@ export function StageFrame({
   foot,
   footVersion = true,
   rootProps,
+  over = false,
   children,
 }: StageFrameProps): JSX.Element {
   const TitleTag = heading ? "h1" : "p";
@@ -210,7 +218,7 @@ export function StageFrame({
       data-vex-onboarding="true"
       data-vex-gate="true"
       data-vex-screen={screen}
-      className="vex-pre"
+      className={cn("vex-pre", over && "vex-pre--over")}
       {...rootProps}
     >
       <div className="vex-pre__logo vex-drag">

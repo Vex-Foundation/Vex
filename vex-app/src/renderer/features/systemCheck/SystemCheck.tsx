@@ -119,7 +119,6 @@ export function SystemCheck(): JSX.Element {
 
   return (
     <SetupFrame
-      layout="stage"
       screen="systemCheck"
       step="systemCheck"
       mood={mood}

@@ -127,17 +127,8 @@ function renderStep(
  * through the shell's own map); else she rests beside the step, the Vex key
  * reading Ready (`stage-wizard-wallets`: the plate's rest, not the map's hi).
  */
-const READY: StageVexView = {
-  emotion: "idle",
-  swatch: "done",
-  state: "ready",
-  word: "Ready",
-  note: null,
-  mood: "rest",
-};
+const READY: StageVexView = { state: "ready", word: "Ready", note: null, mood: "rest" };
 const LISTENING: StageVexView = {
-  emotion: "listening",
-  swatch: "listening",
   state: "listening",
   word: "Listening",
   note: null,

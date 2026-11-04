@@ -2,7 +2,7 @@
  * The first run's layout of `SetupFrame` on H3's stage (docs/design/H3-DESKTOP.md section 4.9):
  * the frame's own cells (the mark, the title cell, where you are, the work column, the bottom-left
  * cell), the lead as the work column's first row, the screen's keys in its bottom row, the middle
- * column left to her stage; it tells the stage what Vex shows; and the leaf layout is untouched.
+ * column left to her stage; and it tells the stage what Vex shows.
  */
 
 import { cleanup, render } from "@testing-library/react";
@@ -25,7 +25,6 @@ describe("SetupFrame, stage layout", () => {
   it("stands the page in the stage frame: title cell, where you are, the lead row, body, keys and version", () => {
     const { container, getByRole } = render(
       <SetupFrame
-        layout="stage"
         screen="runtimeBootstrap"
         step="runtime"
         mood="concerned"
@@ -72,7 +71,7 @@ describe("SetupFrame, stage layout", () => {
 
   it("tells the stage what Vex shows, and hands her back when the screen leaves", () => {
     const view = render(
-      <SetupFrame layout="stage" screen="migrations" step="database" mood="working" title="Database">
+      <SetupFrame screen="migrations" step="database" mood="working" title="Database">
         x
       </SetupFrame>,
     );
@@ -83,22 +82,10 @@ describe("SetupFrame, stage layout", () => {
 
   it("says nothing to the stage without a mood", () => {
     render(
-      <SetupFrame layout="stage" screen="migrations" step="database" title="Database">
+      <SetupFrame screen="migrations" step="database" title="Database">
         x
       </SetupFrame>,
     );
     expect(getStageVex().face).toBeNull();
-  });
-
-  it("keeps the leaf: the sky counter, the leaf and the ground row", () => {
-    const { container } = render(
-      <SetupFrame screen="wizard" title="Step">
-        x
-      </SetupFrame>,
-    );
-    expect(container.querySelector(".vex-stage-sky")).not.toBeNull();
-    expect(container.querySelector(".vex-stage-leaf")).not.toBeNull();
-    expect(container.querySelector(".vex-stage-ground")).not.toBeNull();
-    expect(container.querySelector(".vex-pre")).toBeNull();
   });
 });

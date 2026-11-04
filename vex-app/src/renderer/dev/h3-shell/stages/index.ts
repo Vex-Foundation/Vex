@@ -8,9 +8,13 @@
 import { runtimeMovePending, runtimeOffline } from "./first-run.js";
 import { systemCheckBlocked, systemCheckReady } from "./system-check.js";
 import type { HarnessStage } from "./types.js";
+import { unlockAfterLaunch, unlockAfterLock, wake } from "./wake-unlock.js";
 import { wizardPassword, wizardWallets } from "./wizard.js";
 
 export const HARNESS_STAGES: readonly HarnessStage[] = [
+  wake,
+  unlockAfterLaunch,
+  unlockAfterLock,
   systemCheckReady,
   systemCheckBlocked,
   runtimeOffline,

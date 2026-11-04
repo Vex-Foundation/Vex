@@ -1,23 +1,18 @@
 /**
- * SetupFrame: the shared pre-shell scaffold, a screen on the stage.
+ * SetupFrame: the first run's screens on H3's stage (docs/design/H3-DESKTOP.md section 4.9;
+ * `StageFrame`): the system check, the local runtime, the move of a previous release's data and
+ * the database. Her column is not here: App mounts it once beside every pre-shell screen
+ * (`StagePlate`), so she holds still while screens change and this frame paints only the screen's
+ * own cells:
  *
- * Her column is not here: App mounts it once over every pre-shell screen
- * (`StagePlate`), so she holds still while screens change and this frame
- * paints only the screen's own cells.
+ *   the title cell    the screen's title over "First run · Step N of 4"
+ *   the left column   the first run's steps, the current one squared by the screen's mood
+ *   the work column   the lead as its first row, the screen's rows, and its keys in the bottom
+ *                     row (`acts`)
+ *   the bottom-left   the logs link beside the version (`foot`)
  *
- *   stage  the first run (system check, local runtime, the move of a previous
- *          release's data, database) on H3's stage frame
- *          (docs/design/H3-DESKTOP.md section 4.9; `StageFrame`): the title
- *          cell, the first run's steps in the left column, the lead as the
- *          work column's first row, the screen's rows, and its keys in the
- *          bottom row (`acts`), the logs link in the bottom-left cell beside
- *          the version (`foot`). The screen names its `step` and its `mood`:
- *          the left column's current square, the Vex key's word and Kimm's
- *          mood follow the mood.
- *   open   (the unlock, until its own H3 row) the body stands on R3's stage
- *          itself, which draws its own side column.
- *   leaf   (default; no caller since the wizard draws its own frame) R3's
- *          paper page laid on the stage from the right.
+ * The screen names its `step` and its `mood`: the left column's current square, the Vex key's
+ * word and Kimm's mood follow the mood.
  *
  * Contracts:
  *   - `data-vex-screen={screen}` is the stable e2e/test selector.
@@ -31,7 +26,6 @@
 
 import { useEffect, type JSX, type ReactNode } from "react";
 
-import { cn } from "../../lib/utils.js";
 import {
   firstRunSub,
   firstRunWhere,
@@ -39,7 +33,6 @@ import {
   type FirstRunMood,
   type FirstRunStep,
 } from "./FirstRunStage.js";
-import { ReleaseCounter, StageGround, StageHead } from "./PreShellStage.js";
 import { StageBody, StageFrame, StageLead } from "./StageFrame.js";
 
 /**
@@ -82,26 +75,23 @@ export function useGateDocumentScope(): void {
 interface SetupFrameProps {
   /** Value for data-vex-screen (stable e2e/test selector). */
   readonly screen: string;
-  /** `stage`: a first run screen on H3's stage; `open`: on R3's stage; `leaf` (default): R3's paper page. */
-  readonly layout?: "stage" | "leaf" | "open";
-  /** Stage: the first run step the left column marks as current. */
-  readonly step?: FirstRunStep;
-  /** Stage: what the screen is doing, which says what Vex shows. */
+  /** The first run step the left column marks as current. */
+  readonly step: FirstRunStep;
+  /** What the screen is doing, which says what Vex shows. */
   readonly mood?: FirstRunMood;
-  /** Stage and leaf: the screen's title (sentence case, one per surface). */
-  readonly title?: string;
-  /** Stage and leaf: the lead under the title (the stage's first row). */
+  /** The screen's title (sentence case, one per surface). */
+  readonly title: string;
+  /** The lead, the work column's first row. */
   readonly subline?: string;
-  /** Stage: the screen's keys, in the bottom row (a `StageActs`). */
+  /** The screen's keys, in the bottom row (a `StageActs`). */
   readonly acts?: ReactNode;
-  /** Stage: the bottom-left cell's link beside the version (the logs folder). */
+  /** The bottom-left cell's link beside the version (the logs folder). */
   readonly foot?: ReactNode;
   readonly children: ReactNode;
 }
 
 export function SetupFrame({
   screen,
-  layout = "leaf",
   step,
   mood,
   title,
@@ -111,61 +101,20 @@ export function SetupFrame({
   children,
 }: SetupFrameProps): JSX.Element {
   useGateDocumentScope();
-  if (layout === "stage") {
-    const at = step ?? "systemCheck";
-    const now = mood ?? "working";
-    return (
-      <StageFrame
-        screen={screen}
-        title={title ?? ""}
-        sub={firstRunSub(at)}
-        where={firstRunWhere(at, now)}
-        foot={foot}
-      >
-        {mood !== undefined ? <StageFace mood={mood} /> : null}
-        <StageBody>
-          {subline !== undefined ? <StageLead>{subline}</StageLead> : null}
-          {children}
-        </StageBody>
-        {acts ?? null}
-      </StageFrame>
-    );
-  }
   return (
-    <main
-      data-vex-onboarding="true"
-      data-vex-gate="true"
-      data-vex-screen={screen}
-      className={cn("vex-stage", layout === "leaf" && "vex-stage--leaf")}
+    <StageFrame
+      screen={screen}
+      title={title}
+      sub={firstRunSub(step)}
+      where={firstRunWhere(step, mood ?? "working")}
+      foot={foot}
     >
-      <StageHead />
-      {layout === "open" ? (
-        children
-      ) : (
-        <>
-          <div className="vex-stage-sky">
-            <ReleaseCounter />
-          </div>
-          {/* THE LEAF: paper laid on the print; its head row is a drag
-           * region that keeps clear of the Windows and Linux caption
-           * buttons. Only the page body scrolls. */}
-          <div className="vex-stage-leaf">
-            <div aria-hidden="true" className="vex-drag vex-overlay-end" />
-            <div className="vex-stage-leaf__body">
-              {title !== undefined ? (
-                <header className="vex-stage-leaf__head vex-rise">
-                  <h1 className="vex-stage-leaf__title">{title}</h1>
-                  {subline !== undefined ? (
-                    <p className="vex-stage-leaf__lead">{subline}</p>
-                  ) : null}
-                </header>
-              ) : null}
-              {children}
-            </div>
-          </div>
-          <StageGround />
-        </>
-      )}
-    </main>
+      {mood !== undefined ? <StageFace mood={mood} /> : null}
+      <StageBody>
+        {subline !== undefined ? <StageLead>{subline}</StageLead> : null}
+        {children}
+      </StageBody>
+      {acts ?? null}
+    </StageFrame>
   );
 }

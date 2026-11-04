@@ -26,8 +26,6 @@ afterEach(() => {
 describe("stageVexView", () => {
   it("wakes on a launch: 'Waking up' and rest until she has woken and the desk is ready, then hi", () => {
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "idle",
-      swatch: "listening",
       state: "waking",
       word: "Waking up",
       note: null,
@@ -38,8 +36,6 @@ describe("stageVexView", () => {
     expect(stageVexView(getStageVex()).word).toBe("Waking up");
     stageVexPipelineReady();
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "idle",
-      swatch: "done",
       state: "ready",
       word: "Ready",
       note: null,
@@ -55,8 +51,6 @@ describe("stageVexView", () => {
   it("sleeps and rests on a locked desk; the lock is the title cell's word, not hers", () => {
     stageVexEnd();
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "sleeping",
-      swatch: "sleeping",
       state: "sleeping",
       word: "Sleeping",
       note: null,
@@ -67,15 +61,13 @@ describe("stageVexView", () => {
   it("wakes the locked desk and looks at you once the vault unlocks", () => {
     stageVexEnd();
     stageVexUnlocked();
-    expect(stageVexView(getStageVex())).toMatchObject({ emotion: "idle", word: "Ready" });
+    expect(stageVexView(getStageVex())).toMatchObject({ state: "ready", word: "Ready", mood: "hi" });
   });
 
   it("is concerned over everything else, with the throttle's seconds beside it", () => {
     stageVexEnd();
     stageVexConcerned(true);
     expect(stageVexView(getStageVex())).toEqual({
-      emotion: "concerned",
-      swatch: "concerned",
       state: "concerned",
       word: "Concerned",
       note: null,
@@ -128,16 +120,12 @@ describe("the stage store", () => {
 
 describe("a first run screen's face", () => {
   const working = {
-    emotion: "working",
-    swatch: "done",
     state: "working",
     word: "Working",
     note: "0:14",
     mood: "think",
   } as const;
   const ready = {
-    emotion: "idle",
-    swatch: "idle",
     state: "ready",
     word: "Ready",
     note: null,

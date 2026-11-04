@@ -931,6 +931,331 @@ html[data-os="mac"] .vex-pre__logo {
   border-top: var(--vex-pre-rule);
 }
 
+/* ---- The wake (the plate `stage-wake`) ----------------------------------
+ * The gate's frame stands over her column (z 50 over her 40): its middle
+ * column is left open and takes no pointer, so she and her keys stay in
+ * view and live; each of its own cells paints the ground. */
+.vex-pre--over {
+  background: transparent;
+  pointer-events: none;
+}
+.vex-pre--over > * {
+  background: var(--vex-alias-bg-base);
+  pointer-events: auto;
+}
+/* The progress in the bottom row: twenty segments lit as far as the real
+ * pipeline has come, and its figure. */
+.vex-pre-meter {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 20px;
+  padding: 0 24px;
+}
+.vex-pre-meter__segments {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+  gap: 3px;
+}
+.vex-pre-meter__segments > i {
+  height: 12px;
+  background: var(--vex-alias-rule);
+}
+.vex-pre-meter__segments > i[data-on] {
+  background: var(--vex-alias-label-primary);
+}
+.vex-pre-meter__figure {
+  flex: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- The unlock (the plates `stage-unlock`, `stage-unlock-locked`) -------
+ * The chat's grammar: the greeting bubble and its two notes at the top, the
+ * forgot link a row with an arrow at the foot of the body, then the status
+ * strip ("Master password") and the bottom row: the password where the
+ * chat's field goes, Show where the attach key goes, Unlock where SEND goes.
+ * The reset panel takes the form's place with its own bottom row. */
+.vex-unl__form,
+.vex-unl__panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.vex-unl__form[hidden] {
+  display: none;
+}
+.vex-unl__fields {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+/* The greeting is the chat's own (`.vex-welcome`, composer.css): it holds the
+ * top of the body, and its foot margin pushes the rest to the bottom. */
+.vex-unl__aside {
+  margin: 0;
+  padding: 14px 24px;
+  border-top: var(--vex-pre-rule);
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+/* A failure, the throttle, a failed reset: a square beside the sentence. */
+.vex-unl__alert {
+  display: flex;
+  box-sizing: border-box;
+  min-height: 48px;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 24px;
+  border-top: var(--vex-pre-rule);
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-unl__alert > [role="alert"] {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.vex-unl__forgot {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 24px;
+  border: 0;
+  border-top: var(--vex-pre-rule);
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+.vex-unl__forgot:enabled:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-unl__forgot:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -4px;
+}
+.vex-unl__forgot:disabled {
+  cursor: not-allowed;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pre-strip > .vex-unl__lab {
+  margin: 0;
+  font-weight: 400;
+  line-height: 20px;
+}
+/* The field cell: the lock glyph, the dots in the figure face, Show as its
+ * own key cell; the signing stroke on the cell's foot while the unlock runs. */
+.vex-unl__field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+.vex-unl__glyph {
+  flex: none;
+  align-self: center;
+  margin-left: 24px;
+  color: var(--vex-alias-label-tertiary);
+}
+/* The field is the cell itself, as the composer's is: no frame of its own. */
+.vex-unl__field .vex-password {
+  display: flex;
+  height: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: stretch;
+  border: 0;
+  background: none;
+}
+.vex-unl__field .vex-password > input {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  padding: 0 16px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+}
+.vex-unl__field .vex-password > input[type="password"] {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 0.18em;
+}
+.vex-unl__field .vex-password > input:disabled {
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+.vex-unl__field .vex-password__show {
+  position: static;
+  display: flex;
+  width: 74px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-left: var(--vex-pre-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-decoration: none;
+  text-transform: uppercase;
+  translate: none;
+}
+.vex-unl__field .vex-password__show:hover {
+  background: var(--vex-alias-interactive-active);
+  text-decoration: none;
+}
+.vex-unl__field .vex-password__show:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -4px;
+}
+.vex-unl__stroke {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  pointer-events: none;
+  background: var(--vex-alias-label-primary);
+}
+/* Unlock, where SEND stands: the key cell while the field is empty, the one
+ * blue once anything is typed and while the unlock is in flight; held (the
+ * cell fill, muted words) while the throttle runs. */
+.vex-unl__go {
+  display: flex;
+  box-sizing: border-box;
+  width: 200px;
+  height: auto;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 16px;
+  border: 0;
+  border-left: var(--vex-pre-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  translate: none;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-unl__go[data-armed="true"]:enabled,
+.vex-unl__go[data-busy] {
+  border-left-color: transparent;
+  background: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+}
+.vex-unl__go[data-armed="true"]:enabled:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+.vex-unl__go:not([data-armed="true"]):enabled:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-unl__go:disabled:not([data-busy]) {
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+.vex-unl__go[data-busy] {
+  cursor: progress;
+}
+.vex-unl__go:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -4px;
+}
+/* "Set up a new vault?": its words in the work column, its keys in its row. */
+.vex-unl__panel-body {
+  max-width: 712px;
+  padding: 28px 24px 24px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 15px;
+  line-height: 22px;
+}
+.vex-unl__panel-title {
+  margin: 0;
+  color: var(--vex-alias-label-primary);
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 40px;
+}
+.vex-unl__panel-body p {
+  margin: 0 0 12px;
+}
+.vex-unl__panel-body .vex-unl__panel-sub {
+  margin: 12px 0 20px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-unl__ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 20px 0 0;
+  color: var(--vex-alias-label-primary);
+}
+/* The tick box (section 2.4): 18 square, a 1px light border, the ink tick. */
+.vex-unl__ack input {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 2px 0 0;
+  appearance: none;
+  border: 1px solid var(--vex-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.vex-unl__ack input:checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 9px;
+  border: solid var(--vex-alias-label-primary);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.vex-unl__ack input:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-unl__go {
+    transition: none;
+  }
+}
+html[data-still] .vex-unl__go {
+  transition: none;
+}
+
 /* ---- Her column: the Vex key, Kimm, the tagline --------------------------
  * Laid over every screen's empty middle column, above the screens and below
  * the wake (z 50): the layer takes no pointer, its cells do. */

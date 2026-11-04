@@ -49,50 +49,15 @@ export const FIRST_RUN_LABEL = "First run";
 export function moodFace(mood: FirstRunMood, timer: string | null): StageVexView {
   switch (mood) {
     case "working":
-      return {
-        emotion: "working",
-        swatch: "done",
-        state: "working",
-        word: "Working",
-        note: timer,
-        mood: kimmMoodOf("working"),
-      };
+      return { state: "working", word: "Working", note: timer, mood: kimmMoodOf("working") };
     case "ready":
-      return {
-        emotion: "idle",
-        swatch: "idle",
-        state: "ready",
-        word: "Ready",
-        note: null,
-        mood: kimmMoodOf("ready"),
-      };
+      return { state: "ready", word: "Ready", note: null, mood: kimmMoodOf("ready") };
     case "concerned":
-      return {
-        emotion: "concerned",
-        swatch: "concerned",
-        state: "concerned",
-        word: "Concerned",
-        note: null,
-        mood: kimmMoodOf("concerned"),
-      };
+      return { state: "concerned", word: "Concerned", note: null, mood: kimmMoodOf("concerned") };
     case "error":
-      return {
-        emotion: "error",
-        swatch: "error",
-        state: "error",
-        word: "Error",
-        note: null,
-        mood: kimmMoodOf("error"),
-      };
+      return { state: "error", word: "Error", note: null, mood: kimmMoodOf("error") };
     case "blocked":
-      return {
-        emotion: "concerned",
-        swatch: "error",
-        state: "error",
-        word: "Error",
-        note: null,
-        mood: "offer",
-      };
+      return { state: "error", word: "Error", note: null, mood: "offer" };
   }
 }
 

@@ -158,7 +158,6 @@ export function Migrations(): JSX.Element {
 
   return (
     <SetupFrame
-      layout="stage"
       screen="migrations"
       step="database"
       mood={mood}

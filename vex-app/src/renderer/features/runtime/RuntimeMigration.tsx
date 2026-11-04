@@ -251,7 +251,6 @@ export function RuntimeMigration(): JSX.Element {
 
   return (
     <SetupFrame
-      layout="stage"
       screen="runtimeMigration"
       step="runtime"
       mood={mood}

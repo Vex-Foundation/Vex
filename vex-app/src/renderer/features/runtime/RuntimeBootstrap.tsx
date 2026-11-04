@@ -52,7 +52,6 @@ export function RuntimeBootstrap(): JSX.Element {
 
   return (
     <SetupFrame
-      layout="stage"
       screen="runtimeBootstrap"
       step="runtime"
       mood={mood}

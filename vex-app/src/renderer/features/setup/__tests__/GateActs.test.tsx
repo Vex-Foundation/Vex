@@ -1,14 +1,14 @@
 /**
- * The Chronos Gate's content (`ChronosGate/GateActs.tsx`, `docs/design/R3-MINIMAL.md section 10.2`):
- * the wake screen's type, bound to the REAL launch pipeline. Regressions this catches: a stage line
- * that is not one of the orchestrator's five, a progress line that is not the stage's, a current
- * line that does not carry the live detail, a missing version stamp, or an eagle and a giant
- * counter coming back.
+ * The Chronos Gate's content (`ChronosGate/GateActs.tsx`, docs/design/H3-DESKTOP.md section 4.9;
+ * the plate `stage-wake`): the wake on H3's stage, bound to the REAL launch pipeline. Regressions
+ * this catches: a step that is not one of the orchestrator's five, a meter that is not the stage's,
+ * a title that does not carry the live detail, a missing version, a frame that covers her column,
+ * or an R3 plate, counter or ground row coming back.
  */
 
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { GateActs } from "../ChronosGate/GateActs.js";
+import { GateActs, WAKE_SEGMENTS } from "../ChronosGate/GateActs.js";
 import { GATE_STEPS, STAGE_PROGRESS } from "../ChronosGate/gate-timeline.js";
 import type { SetupStatusLine } from "../useSetupOrchestrator.js";
 
@@ -17,6 +17,10 @@ afterEach(cleanup);
 function line(key: SetupStatusLine["key"], label?: string): SetupStatusLine {
   const name = GATE_STEPS.find((step) => step.key === key)?.name ?? key;
   return { key, label: label ?? name };
+}
+
+function stepsOf(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>("nav li[data-vex-gate-step]")];
 }
 
 describe("GateActs", () => {
@@ -37,20 +41,27 @@ describe("GateActs", () => {
     ]);
   });
 
-  it("shows the title, the lead, the stage lines and the version stamp, with no counter", () => {
+  it("stands on the stage frame over her column: the title cell, the lead row, the steps and the version", () => {
     const { container, getByRole, getByText } = render(<GateActs status={line("probing")} />);
+    const frame = container.querySelector('main[data-vex-screen="wake"]');
+    expect(frame?.classList.contains("vex-pre")).toBe(true);
+    // Laid over her column: its middle column is left to her.
+    expect(frame?.classList.contains("vex-pre--over")).toBe(true);
     expect(getByRole("heading", { name: "Waking the desk" })).toBeTruthy();
+    expect(container.querySelector(".vex-pre__sub")?.textContent).toBe("Step 1 of 5");
     expect(getByText("Vex is starting the local services on this machine.")).toBeTruthy();
-    const items = [...container.querySelectorAll(".vex-gate-steps li")];
-    expect(items.map((li) => li.textContent)).toEqual(GATE_STEPS.map((step) => step.name));
+    expect(getByRole("navigation", { name: "Waking the desk" })).toBeTruthy();
+    expect(stepsOf(container).map((li) => li.querySelector(".vex-pre__step-name")?.textContent)).toEqual(
+      GATE_STEPS.map((step) => step.name),
+    );
     expect(container.querySelector("[data-vex-version-stamp]")?.textContent).toBe("v0.0.0-test");
     expect(container.querySelector(".vex-stage-counter")).toBeNull();
     expect(container.querySelector(".vex-stage-ground")).toBeNull();
   });
 
-  it("marks the current stage, solid behind it and an outline ahead of it", () => {
+  it("marks the current stage: done behind it, the grey square on it, an outline ahead", () => {
     const { container } = render(<GateActs status={line("schema")} />);
-    const items = [...container.querySelectorAll(".vex-gate-steps li")];
+    const items = stepsOf(container);
     expect(items.map((li) => li.getAttribute("aria-current"))).toEqual([
       null,
       null,
@@ -58,32 +69,48 @@ describe("GateActs", () => {
       null,
       null,
     ]);
-    expect(items.map((li) => li.querySelector(".vex-swatch")?.getAttribute("data-s"))).toEqual([
+    expect(items.map((li) => li.querySelector(".vex-pre-sq")?.getAttribute("data-sq"))).toEqual([
       "done",
       "done",
-      "done",
-      "idle",
-      "idle",
+      "running",
+      "none",
+      "none",
     ]);
+    expect(items.map((li) => li.querySelector(".vex-pre__step-word")?.textContent ?? null)).toEqual([
+      "Done",
+      "Done",
+      null,
+      null,
+      null,
+    ]);
+    expect(container.querySelector(".vex-pre__sub")?.textContent).toBe("Step 3 of 5");
   });
 
-  it("carries the live detail on the current line only", () => {
+  it("carries the live detail in the title cell, the step's own name in the column", () => {
     const { container } = render(
       <GateActs status={line("services", "Starting services · pulling images")} />,
     );
-    const items = [...container.querySelectorAll(".vex-gate-steps li")];
-    expect(items[1]?.textContent).toBe("Starting services · pulling images");
-    expect(items[2]?.textContent).toBe("Preparing the ledger");
+    expect(container.querySelector(".vex-pre__title h1")?.textContent).toBe(
+      "Starting services · pulling images",
+    );
+    expect(stepsOf(container)[1]?.querySelector(".vex-pre__step-name")?.textContent).toBe(
+      "Starting services",
+    );
   });
 
-  it("fills the progress line as far as the stage has come, as a labelled progressbar", () => {
+  it("lights the meter as far as the stage has come, as a labelled progressbar", () => {
     for (const step of GATE_STEPS) {
       const { container, unmount } = render(<GateActs status={line(step.key)} />);
+      const percent = Math.round(STAGE_PROGRESS[step.key] * 100);
       const bar = container.querySelector('[role="progressbar"]');
-      expect(bar?.getAttribute("aria-valuenow")).toBe(String(Math.round(STAGE_PROGRESS[step.key] * 100)));
+      expect(bar?.getAttribute("aria-valuenow")).toBe(String(percent));
       expect(bar?.getAttribute("aria-label")).toBe("Waking the desk");
-      const fill = container.querySelector<HTMLElement>(".vex-gate-progress__fill");
-      expect(fill?.style.getPropertyValue("--chronos-progress")).toBe(String(STAGE_PROGRESS[step.key]));
+      const segments = [...container.querySelectorAll(".vex-pre-meter__segments > i")];
+      expect(segments).toHaveLength(WAKE_SEGMENTS);
+      expect(segments.filter((i) => i.hasAttribute("data-on"))).toHaveLength(
+        Math.round((percent / 100) * WAKE_SEGMENTS),
+      );
+      expect(container.querySelector(".vex-pre-meter__figure")?.textContent).toBe(`${String(percent)}%`);
       unmount();
     }
   });
@@ -95,7 +122,7 @@ describe("GateActs", () => {
     expect(status.getAttribute("aria-live")).toBe("polite");
   });
 
-  it("only ever advances the progress line", () => {
+  it("only ever advances the meter", () => {
     const values = GATE_STEPS.map((step) => STAGE_PROGRESS[step.key]);
     expect([...values].sort((a, b) => a - b)).toEqual(values);
     expect(values[values.length - 1]).toBe(1);
