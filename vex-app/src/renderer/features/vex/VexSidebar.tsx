@@ -298,11 +298,16 @@ function VexSidebarContent({
         </div>
         {lighter ? null : <div className="vex-vs__spacer" />}
         {showAvatar && plate ? (
-          <VexPortraitPlate
-            emotion={vexEmotionOf(presence.state)}
-            dock={dock}
-            closed={closing}
-          />
+          lighter ? (
+            <VexPortraitPlate
+              emotion={vexEmotionOf(presence.state)}
+              dock={dock}
+              closed={closing}
+            />
+          ) : (
+            // H3's frame: Kimm's section, laid over the column (S4-04).
+            <VexPortraitPlate kimm state={presence.state} />
+          )
         ) : null}
         {lighter ? (
           <div data-vex-area="vex-desk-chat" className="vex-vs__desk">

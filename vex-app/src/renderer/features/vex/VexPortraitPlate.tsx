@@ -1,10 +1,26 @@
 /**
- * THE PORTRAIT PLATE: the print window at the foot of the Vex sidebar, with
- * Vex standing in it as the K2 hologram (docs/design/R3-MINIMAL.md sections
- * 5.1 and 10.1). A 280px plate (220 to 280 in low windows), a 1px quiet rule
- * above it, the bust cut at her shoulders over a short beam to a small token
- * near the plate's foot (`VexK2` placement `sidebar`, ground `print`); while
- * the user types, her eyes go to the composer.
+ * THE PORTRAIT PLATE: where Vex stands in her column. Two plates, one per
+ * frame, until K2 retires (plan row S8-16):
+ *
+ *   - IN H3's FRAME (the agent shell and Studio): Kimm's section, the box laid
+ *     over the column (`KimmSection`, docs/design/H3-DESKTOP.md sections 1.5
+ *     and 3; plan rows S4-04 to S4-11). This file is her section's MOUNT
+ *     POINT: the column renders it where the K2 plate stood (`kimm`), and it
+ *     does the feature's part, which the drawing component does not: her
+ *     mood from Vex's presence state (`kimmMoodOf`), the platform's chord for
+ *     the corner key's tooltip, and the corner key's press, which writes the
+ *     same stored choice the Vex key and the chord write (`setVexOpen`, the
+ *     current page class's slot).
+ *   - ON THE LIGHTER DESK and in Settings' preview: K2's print window, as R3
+ *     drew it, until the desk's own restyle and K2's retirement. The rest of
+ *     this note is that plate's.
+ *
+ * K2'S PRINT WINDOW, at the foot of the Vex sidebar, with Vex standing in it
+ * as the K2 hologram (docs/design/R3-MINIMAL.md sections 5.1 and 10.1). A
+ * 280px plate (220 to 280 in low windows), a 1px quiet rule above it, the
+ * bust cut at her shoulders over a short beam to a small token near the
+ * plate's foot (`VexK2` placement `sidebar`, ground `print`); while the user
+ * types, her eyes go to the composer.
  *
  * THE PRINT. The shipped plateau print, day or night, cut at 50% 82%, over
  * the plate ground (`#C7B6A6` by day, `#150F0D` at night) while it decodes,
@@ -36,11 +52,17 @@
  */
 
 import { useEffect, useState, type JSX } from "react";
+import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
 import { VexK2 } from "../../components/vex/k2/VexK2.js";
 import type { K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import { useMorning } from "../../components/vex/k2/k2-morning.js";
 import { currentShellBackdrop, useShellBackdrop } from "../../lib/api/shell-backdrop.js";
 import { cn } from "../../lib/utils.js";
+import { useUiStore } from "../../stores/uiStore.js";
+import { studioPlatform } from "../appShell/studio/keybindings-labels.js";
+import { kimmMoodOf } from "./kimm-mood.js";
+import type { VexState } from "./vex-state.js";
+import { vexToggleAriaShortcut, vexToggleShortcutLabel } from "./vex-toggle-shortcut.js";
 
 /** The shipped prints the plate is a window onto: the plateau, day and night. */
 export const VEX_PRINT = {
@@ -53,7 +75,9 @@ function findComposer(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[data-vex-composer-stage]");
 }
 
-export interface VexPortraitPlateProps {
+/** K2's print window: the Lighter desk's plate and Settings' preview. */
+export interface K2PlateProps {
+  readonly kimm?: false;
   /** What she shows of the agent's state. */
   readonly emotion: K2Emotion;
   /** Play her open episode as the plate mounts (she docks into the sidebar). */
@@ -63,12 +87,39 @@ export interface VexPortraitPlateProps {
   readonly className?: string;
 }
 
-export function VexPortraitPlate({
+/** Kimm's section, H3's plate: the agent shell's and Studio's Vex column. */
+export interface KimmPlateProps {
+  readonly kimm: true;
+  /** Vex's presence state: her mood follows it. */
+  readonly state: VexState;
+}
+
+export type VexPortraitPlateProps = K2PlateProps | KimmPlateProps;
+
+export function VexPortraitPlate(props: VexPortraitPlateProps): JSX.Element {
+  return props.kimm === true ? <KimmPlate {...props} /> : <K2Plate {...props} />;
+}
+
+/** The corner key's chord, spelled for this window's platform. */
+const KIMM_SHORTCUT = {
+  label: vexToggleShortcutLabel(studioPlatform),
+  aria: vexToggleAriaShortcut(studioPlatform),
+} as const;
+
+/** Her section, with the feature's part done: her mood, the chord, the stored choice. */
+function KimmPlate({ state }: KimmPlateProps): JSX.Element {
+  const setVexOpen = useUiStore((s) => s.setVexOpen);
+  return (
+    <KimmSection mood={kimmMoodOf(state)} onOpenChange={setVexOpen} shortcut={KIMM_SHORTCUT} />
+  );
+}
+
+function K2Plate({
   emotion,
   dock = false,
   closed = false,
   className,
-}: VexPortraitPlateProps): JSX.Element {
+}: K2PlateProps): JSX.Element {
   const backdropQuery = useShellBackdrop();
   // the morning (local 06:00 to 10:59): her coffee may play
   const morning = useMorning();

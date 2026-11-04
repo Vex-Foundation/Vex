@@ -27,3 +27,100 @@
   max-width: none;
   user-select: none;
 }
+
+/* ---- her section (sections 1.5 and 3.6) ----
+ * A box laid over Vex's column, never a row in it: absolute in the column
+ * (`.vex-vs` is its containing block), so nothing in the column moves under
+ * her and nothing about her reaches the frame's grid. Its size is a function
+ * of the window alone:
+ *   - top: the foot of the console's top block. Desktop's block is the Needs
+ *     you head (43), its row (64), the missions row (40) and their rule, 148
+ *     under the header, with no strategies row (section 4.1): y 224 at any
+ *     window height. A named length here, not a read of the console's
+ *     height, so the console changing never moves her.
+ *   - foot: one pixel above the bottom row (the column ends at the row).
+ *   - left and width: the column's, her ground under its 1px rule at the
+ *     right, which the column draws (vex-sidebar.css) as the mockup draws it
+ *     over her. At 1440 x 900 she is 248, 224, 431 x 603 with the rule at
+ *     679, the printed 432 with the rule counted (section 1.5).
+ * She paints over the console under her; the console's rest stays where it
+ * is, under her, for the strip to uncover. */
+.vex-kimm {
+  --vex-kimm-top: 148px;
+  /* Kimm's blue ground, one of the two gradients H3 allows (section 2): sky
+   * at her head to the saturated blue at her waist and the ground at her
+   * feet, as the captures read it. Mixed from the palette's own blue, ink
+   * and ground, so no colour is spelled here. Open: its exact stops, settled
+   * by her art and the mockup source. */
+  --vex-kimm-blue: var(--vex-alias-button-accent-fill);
+  position: absolute;
+  z-index: 2;
+  top: var(--vex-kimm-top);
+  right: 0;
+  bottom: 1px;
+  left: 0;
+  overflow: hidden;
+}
+.vex-kimm__body {
+  position: absolute;
+  inset: 0;
+}
+.vex-kimm__ground {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--vex-kimm-blue) 32%, var(--vex-alias-label-primary)) 0%,
+    color-mix(in oklch, var(--vex-kimm-blue) 72%, var(--vex-alias-label-primary)) 32%,
+    color-mix(in oklch, var(--vex-kimm-blue) 62%, var(--vex-alias-bg-base)) 56%,
+    var(--vex-alias-bg-base) 82%
+  );
+}
+/* Her figure for her mood, the width of her box and anchored at its top, so
+ * the corner of her art stays under her corner key at every width. Open: how
+ * her figure fills a box of another size (anchor, scale, crop; section 1.5),
+ * settled by her files from the designer. */
+.vex-kimm__figure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  user-select: none;
+}
+
+/* ---- her corner key (sections 1.5 and 3.3) ----
+ * The same control as the Vex key, in her section's top right whatever her
+ * state: HIDE VEX and a cross while she is open, a solid 56-high cell, 138
+ * wide, on a dark translucent fill over her ground. The words are sentence
+ * case in the source and caps here. Focused from the keyboard, the 2px white
+ * ring inside the cell (section 2.4). */
+.vex-kimm__key {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  width: 138px;
+  height: var(--vex-h3-strip-h);
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 82%, transparent);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-kimm__key:hover {
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 92%, transparent);
+}
+.vex-kimm__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
@@ -22,7 +22,6 @@ import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { SPREAD_TEST_WIDTH, setWindowWidth } from "./_appshell-render.js";
-import { VEX_HIDE_EPISODE_MS } from "../../../vex/vex-hide.js";
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
@@ -653,7 +652,11 @@ describe("AppShell", () => {
     expect(screen.queryByText("Portfolio Check")).toBeNull();
   });
 
-  it("mounts the print in the Vex sidebar's plate, not on the left page", () => {
+  it("stands Kimm's section in the Vex column, where the print stood, and none on the left page", () => {
+    // docs/design/H3-DESKTOP.md section 1.5 (plan row S4-04): in H3's frame
+    // her plate is her section, laid over the column; K2's print window and
+    // the user's own image in it stay the Lighter desk's until its restyle
+    // (`VexPortraitPlate.test.tsx` owns that plate).
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
 
@@ -661,47 +664,15 @@ describe("AppShell", () => {
     const page = view.container.querySelector("[data-vex-area='left-page']");
     expect(page?.querySelector("img")).toBeNull();
     expect(page?.querySelector("[data-vex-area='sessions-sidebar']")).not.toBeNull();
-    // The print window is Vex's: the day and the night print, CSS shows the
-    // one for the room, and her hologram stands in it.
-    const plate = view.container.querySelector(
-      "[data-vex-area='vex-sidebar'] [data-vex-area='vex-portrait-plate']",
+    const section = view.container.querySelector(
+      "[data-vex-area='vex-sidebar'] [data-vex-area='kimm-section']",
     );
-    expect(plate).not.toBeNull();
-    expect(
-      Array.from(plate?.querySelectorAll("img") ?? []).map((img) => img.getAttribute("src")),
-    ).toEqual(["/art/plateau.jpg", "/art/plateau-night.jpg"]);
-    expect(plate?.querySelector("[data-vex-k2='sidebar']")).not.toBeNull();
-    // Nothing veils the print.
-    expect(plate?.hasAttribute("data-vex-backdrop-dimmed")).toBe(false);
-  });
-
-  it("paints the user's own image in the Vex sidebar's plate when one is set, in the print's place", async () => {
-    const url = "app://vex/user-backdrop/bg_0123456789abcdef0123456789abcdef";
-    shellBackdropReadMock.mockResolvedValue({
-      ok: true,
-      data: {
-        backdrop: {
-          imageId: "bg_0123456789abcdef0123456789abcdef",
-          url,
-          mime: "image/png",
-          width: 1920,
-          height: 1080,
-          byteLength: 4096,
-        },
-      },
-    });
-    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
-    const view = renderShell();
-    const plate = view.container.querySelector("[data-vex-area='vex-portrait-plate']");
-    expect(plate).not.toBeNull();
-    await waitFor(() => {
-      expect(plate?.getAttribute("data-vex-backdrop-source")).toBe("custom");
-    });
-    // ONE image, the user's, instead of both prints, in Vex's column.
-    const images = plate?.querySelectorAll("img") ?? [];
-    expect(images.length).toBe(1);
-    expect(images[0]?.getAttribute("src")).toBe(url);
-    expect(plate?.closest("[data-vex-area='vex-sidebar']")).not.toBeNull();
+    expect(section).not.toBeNull();
+    expect(view.container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
+    expect(view.container.querySelector("[data-vex-k2='sidebar']")).toBeNull();
+    // Her art is missing until her files arrive: no figure, never a stand-in.
+    expect(section?.getAttribute("data-kimm-art")).toBe("missing");
+    expect(section?.querySelector("img")).toBeNull();
   });
 
   it("applies the Chronos theme to the shell root as data-vex-theme", () => {
@@ -1034,7 +1005,7 @@ describe("AppShell", () => {
     expect(frame?.querySelector("[tabindex]:not([tabindex='-1']):not([tabindex='0'])")).toBeNull();
 
     // Her hide key comes before the chat's composer in focus order.
-    const hide = within(view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']") as HTMLElement)
+    const hide = within(view.container.querySelector<HTMLElement>(".vex-vs__head") as HTMLElement)
       .getByRole("button", { name: "Hide Vex" });
     const seat = view.container.querySelector("[data-vex-composer-seat]");
     if (seat === null) throw new Error("the composer seat is missing");
@@ -1268,7 +1239,7 @@ describe("AppShell", () => {
           .gridTemplateColumns,
       };
       const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
-      expect(aside()?.querySelector("[data-vex-area='vex-portrait-plate']"), String(width)).not.toBeNull();
+      expect(aside()?.querySelector("[data-vex-area='kimm-section']"), String(width)).not.toBeNull();
       act(() => useUiStore.getState().setVexOpen(false));
       expect(
         {
@@ -1281,7 +1252,7 @@ describe("AppShell", () => {
       ).toEqual(shown);
       // The column stands, open; only her plate went, the flat token in its place.
       expect(aside()?.getAttribute("data-vex-vex-open"), String(width)).toBe("true");
-      expect(aside()?.querySelector("[data-vex-area='vex-portrait-plate']"), String(width)).toBeNull();
+      expect(aside()?.querySelector("[data-vex-area='kimm-section']"), String(width)).toBeNull();
       // The stored flag is the same one the toggle always wrote.
       expect(useUiStore.getState().vexOpenChat).toBe(false);
       act(() => useUiStore.getState().setVexOpen(true));
@@ -1294,28 +1265,22 @@ describe("AppShell", () => {
     const view = renderShell();
     const aside = view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']");
     if (aside === null) throw new Error("no Vex column");
-    // Her hide key: plate gone, column standing, focus kept on the key.
-    const hide = within(aside).getByRole("button", { name: "Hide Vex" });
+    // Her hide key: plate gone, column standing, focus kept on the key. In
+    // H3's frame the write lands at the press: her section's own wipe is the
+    // close (docs/design/H3-DESKTOP.md section 3.6), never K2's episode.
+    const head = aside.querySelector<HTMLElement>(".vex-vs__head") as HTMLElement;
+    const hide = within(head).getByRole("button", { name: "Hide Vex" });
     hide.focus();
-    // Her close plays first in the plate; the write lands when it ends.
-    vi.useFakeTimers();
-    try {
-      fireEvent.click(hide);
-      act(() => {
-        vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS);
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+    fireEvent.click(hide);
     expect(useUiStore.getState().vexOpenChat).toBe(false);
     expect(aside.getAttribute("data-vex-vex-open")).toBe("true");
-    expect(document.activeElement).toBe(within(aside).getByRole("button", { name: "Hide Vex" }));
+    expect(document.activeElement).toBe(within(head).getByRole("button", { name: "Hide Vex" }));
     // The chip shows her again.
     const chip = view.container.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']");
     expect(chip).not.toBeNull();
     fireEvent.click(chip as HTMLElement);
     expect(useUiStore.getState().vexOpenChat).toBe(true);
-    expect(aside.querySelector("[data-vex-area='vex-portrait-plate']")).not.toBeNull();
+    expect(aside.querySelector("[data-vex-area='kimm-section']")).not.toBeNull();
   });
 
   it("mounts no sidebar drag handle: the left and Vex widths are fixed", () => {

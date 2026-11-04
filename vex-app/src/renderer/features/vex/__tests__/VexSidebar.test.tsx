@@ -6,7 +6,10 @@
  *    state and no hologram, so nothing in a 0px track takes focus or paints;
  *  - the R3b ORDER: the state (scope, word, timer), the narration, the
  *    background missions, Needs you, then the portrait plate, then the
- *    avatar switch;
+ *    avatar switch. In H3's frame (the agent shell and Studio) the plate is
+ *    Kimm's section (`VexPortraitPlate` with `kimm`, plan row S4-04); K2's
+ *    print window, her dock and her close stay on the Lighter desk until its
+ *    restyle, so those blocks run there;
  *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token
  *    (no ring round it) beside the state, and everything else stays; the
  *    switch writes the persisted preference;
@@ -124,6 +127,13 @@ function area(name: string): HTMLElement | null {
   return sidebar().querySelector<HTMLElement>(`[data-vex-area='${name}']`);
 }
 
+/** The column head's hide key (her corner key in H3's frame is also named Hide Vex). */
+function headHideKey(): HTMLElement {
+  const head = sidebar().querySelector<HTMLElement>(".vex-vs__head");
+  if (head === null) throw new Error("head missing");
+  return within(head).getByRole("button", { name: "Hide Vex" });
+}
+
 /** True when `a` comes before `b` in document order. */
 function before(a: Element | null, b: Element | null): boolean {
   if (a === null || b === null) return false;
@@ -174,10 +184,10 @@ describe("VexSidebar, open", () => {
     expect(needsYou?.textContent).toContain("Needs you");
     expect(needsYou?.textContent).toContain("Nothing needs you.");
 
-    const plate = area("vex-portrait-plate");
-    const k2 = plate?.querySelector("[data-vex-k2]");
-    expect(k2?.getAttribute("data-vex-k2")).toBe("sidebar");
-    expect(k2?.getAttribute("data-vex-k2-ground")).toBe("print");
+    // H3's frame: her section where K2's print window stood, and no hologram.
+    const plate = area("kimm-section");
+    expect(plate).not.toBeNull();
+    expect(document.querySelector("[data-vex-k2]")).toBeNull();
     const avatarSwitch = screen.getByRole("switch", { name: "Show avatar" });
     expect(avatarSwitch.getAttribute("aria-checked")).toBe("true");
 
@@ -190,8 +200,16 @@ describe("VexSidebar, open", () => {
     still.current = true;
     const onHide = vi.fn();
     render(<VexSidebar open onHide={onHide} />);
-    fireEvent.click(screen.getByRole("button", { name: "Hide Vex" }));
+    fireEvent.click(headHideKey());
     expect(onHide).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits a hide at once in H3's frame: her section's own wipe is the close", () => {
+    const onHide = vi.fn();
+    render(<VexSidebar open onHide={onHide} />);
+    fireEvent.click(headHideKey());
+    expect(onHide).toHaveBeenCalledTimes(1);
+    expect(sidebar().hasAttribute("inert")).toBe(false);
   });
 
   it("shows the live timer beside the word, in m:ss from the turn's start", () => {
@@ -235,7 +253,7 @@ describe("VexSidebar, the page slot", () => {
     const block = screen.getByTestId("page-block");
     expect(area("vex-sidebar-slot")?.contains(block)).toBe(true);
     expect(before(area("vex-needs-you"), block)).toBe(true);
-    expect(before(block, area("vex-portrait-plate"))).toBe(true);
+    expect(before(block, area("kimm-section"))).toBe(true);
 
     view.rerender(
       <>
@@ -269,10 +287,10 @@ describe("VexSidebar, avatar off", () => {
     render(<VexSidebar open onHide={() => {}} />);
     fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
     expect(useUiStore.getState().showAvatar).toBe(false);
-    expect(area("vex-portrait-plate")).toBeNull();
+    expect(area("kimm-section")).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
     expect(useUiStore.getState().showAvatar).toBe(true);
-    expect(area("vex-portrait-plate")).not.toBeNull();
+    expect(area("kimm-section")).not.toBeNull();
   });
 });
 
@@ -283,23 +301,27 @@ describe("VexSidebar, a column that stays (H3, a chat)", () => {
     expect(container.querySelector("[data-vex-k2]")).toBeNull();
     expect(container.querySelector("[data-vex-area='vex-state']")).not.toBeNull();
     expect(container.querySelector("[data-vex-area='vex-needs-you']")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Hide Vex" })).not.toBeNull();
+    expect(headHideKey()).not.toBeNull();
     expect(container.querySelector("[data-vex-status]")).not.toBeNull();
   });
 
-  it("plays her open episode when the plate shows again after a hide", () => {
-    const holo = () => document.querySelector("[data-vex-k2]");
+  it("shows her section again when the plate shows again after a hide", () => {
+    const section = () => document.querySelector("[data-vex-area='kimm-section']");
     const { rerender } = render(<VexSidebar open stays onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    expect(section()).not.toBeNull();
     rerender(<VexSidebar open plate={false} stays onHide={() => {}} />);
-    expect(holo()).toBeNull();
+    expect(section()).toBeNull();
     rerender(<VexSidebar open stays onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+    expect(section()).not.toBeNull();
+    expect(document.querySelector("[data-vex-k2]")).toBeNull();
   });
 });
 
-describe("VexSidebar, the dock", () => {
+describe("VexSidebar, the dock (K2, on the Lighter desk)", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
+  beforeEach(() => {
+    useUiStore.setState({ runtimeMode: "lighter" });
+  });
 
   it("shows her as she is in a column open from the start", () => {
     render(<VexSidebar open onHide={() => {}} />);
@@ -314,16 +336,17 @@ describe("VexSidebar, the dock", () => {
     expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
   });
 
-  it("shows her as she is in the welcome's column: the welcome keeps her column, nothing docks", () => {
-    // docs/design/H3-DESKTOP.md section 1.7: no Vex stands in the welcome's
-    // centre to hand over, so a column the shell opens there, or the first
-    // message keeps standing, never plays the open episode.
-    useUiStore.setState({ activeSessionId: null });
+  it("shows her section, not the hologram, in the welcome's column: nothing docks", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: the welcome keeps her column, in
+    // the agent shell, where her plate is Kimm's section.
+    useUiStore.setState({ runtimeMode: "agent", activeSessionId: null });
     const { rerender } = render(<VexSidebar open onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    expect(holo()).toBeNull();
+    expect(area("kimm-section")).not.toBeNull();
     act(() => useUiStore.setState({ activeSessionId: "s-1" }));
     rerender(<VexSidebar open onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    expect(holo()).toBeNull();
+    expect(area("kimm-section")).not.toBeNull();
   });
 
   it("plays it when the avatar is switched on in an open column", () => {
@@ -331,14 +354,17 @@ describe("VexSidebar, the dock", () => {
     const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
     rerender(<VexSidebar open onHide={() => {}} />);
     expect(holo()).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
+    act(() => useUiStore.setState({ showAvatar: true }));
     expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
   });
 });
 
-describe("VexSidebar, hiding plays her close first", () => {
+describe("VexSidebar, hiding plays her close first (K2, on the Lighter desk)", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
-  const hideKey = () => screen.getByRole("button", { name: "Hide Vex" });
+  const hideKey = headHideKey;
+  beforeEach(() => {
+    useUiStore.setState({ runtimeMode: "lighter" });
+  });
 
   it("collapses her into the token, and the column goes when that ends", () => {
     vi.useFakeTimers();
