@@ -1,9 +1,12 @@
 /**
  * THE ACT LEDGER - one registered act (S5): a tool call plus its merged
- * output, presented as one STEP ROW (docs/design/R3-MINIMAL.md section 6): the
- * outcome fill, the venue mark, the human title in 500, the word ("Done",
- * "Failed", "Pending"), the measured duration in the mono 12 at the right and
- * the chevron. Status by fill plus a word, and only for an outcome the engine
+ * output, presented as one H3 STEP ROW (docs/design/H3-DESKTOP.md section
+ * 1.7, the thinking frame's TOOL rows): the outcome square, the venue mark,
+ * the human title in caps 13 tracked ink ("KYBERSWAP · SWAP"), the word
+ * ("Done", "Failed", "Pending") in caps 12, the measured duration in the mono
+ * 12 muted at the right and the chevron. Status is a coloured square beside a
+ * word (section 2.2: ink for a step that ran, red for one that did not
+ * execute, grey for one in flight), and only for an outcome the engine
  * actually persisted.
  *
  * The row reads as a fact about the world rather than a symbol dump: the
@@ -46,10 +49,10 @@ import {
 } from "react";
 import {
   LineChevronDown,
-  LineChevronRight,
+  LineChevronUp,
 } from "../../../components/icons/line/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
-import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
+import { Swatch } from "../../../components/ui/swatch.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { DeskTicketLoadStamp } from "../lighterTrading/DeskTicketLoadStamp.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
@@ -102,7 +105,11 @@ function isConfirmedWalletTransfer(act: ToolCallActView): boolean {
   }
 }
 
-/** "Confirmed" in ink with the solid fill, after the row, for a proven send. */
+/**
+ * "Confirmed" after the row, for a proven send: desktop's word for H3's
+ * filled status, so the status green square beside the ink word
+ * (docs/design/H3-DESKTOP.md section 2.2 and Appendix A.3).
+ */
 function ConfirmedStamp(): JSX.Element {
   return (
     <span
@@ -111,35 +118,58 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="vex-step-confirmed"
     >
-      <Swatch state="done" size={10} />
+      <Swatch state="done" size={8} className="text-success-mark" />
       Confirmed
     </span>
   );
 }
 
-/** What a step's fill and word say: only an outcome the engine persisted. */
+/** What a step's square and word say: only an outcome the engine persisted. */
 interface StepOutcome {
-  readonly fill: SwatchState;
+  /**
+   * The square's colour (docs/design/H3-DESKTOP.md section 2.2): ink for a
+   * step that ran (H3's step bullet), status red for one that did not
+   * execute, status grey for one still in flight.
+   */
+  readonly mark: StepMark;
   readonly word: string;
   readonly state: "done" | "pending" | "failed";
 }
 
+type StepMark = "ink" | "danger" | "running";
+
+/** The square's class per mark: the H3 status utilities (tokens.css). */
+const MARK_CLASS: Readonly<Record<StepMark, string>> = {
+  ink: "text-ink-primary",
+  danger: "text-danger-mark",
+  running: "text-running-mark",
+};
+
 /**
- * The act's outcome (docs/design/R3-MINIMAL.md section 6) - ONLY for an
- * outcome the engine persisted. A success is the solid square and "Done", an
- * ambiguous broadcast the dot screen and "Pending" (not failed), a failure the
- * ink cross and "Failed". A call with no persisted outcome yet (still running,
- * never run, or a legacy row) draws no fill and no word: `null` is not a
- * status, and a guessed fill would be a claim.
+ * The act's outcome - ONLY for an outcome the engine persisted. A success is
+ * the ink square and "Done", an ambiguous broadcast the grey square and
+ * "Pending" (not failed), a failure the red square and "Failed". A call with
+ * no persisted outcome yet (still running, never run, or a legacy row) draws
+ * no square and no word: `null` is not a status, and a guessed square would
+ * be a claim.
  */
 function actOutcome(act: ToolCallActView): StepOutcome | null {
-  if (act.success === true) return { fill: "done", word: "Done", state: "done" };
+  if (act.success === true) return { mark: "ink", word: "Done", state: "done" };
   if (act.success === false) {
     return act.displayStatus === "pending"
-      ? { fill: "ongoing", word: "Pending", state: "pending" }
-      : { fill: "error", word: "Failed", state: "failed" };
+      ? { mark: "running", word: "Pending", state: "pending" }
+      : { mark: "danger", word: "Failed", state: "failed" };
   }
   return null;
+}
+
+/**
+ * The step's square: a small solid square in its mark's colour, beside the
+ * word that says the same thing (status by a coloured square beside a word,
+ * section 2.2).
+ */
+export function StepSquare({ mark }: { readonly mark: StepMark }): JSX.Element {
+  return <Swatch state="done" size={8} className={MARK_CLASS[mark]} />;
 }
 
 /**
@@ -381,14 +411,14 @@ export function ToolActRow({
   const legOutcome = legs?.outcome ?? singleLeg?.outcome ?? null;
   const legsNameOutcome = legOutcome !== null && legOutcome !== "executed";
   const awaiting = pendingApprovalId !== null;
-  const fill: SwatchState | null = awaiting ? null : (outcome?.fill ?? null);
+  const mark: StepMark | null = awaiting ? null : (outcome?.mark ?? null);
   const word =
     outcome === null || awaiting || confirmed || legsNameOutcome
       ? null
       : outcome.word;
   return (
-    // The step: a 36px row closed by the quiet rule, its links and its well
-    // SIBLING lines below it, each closed by its own rule.
+    // The step: a 40px row in the steps' frame, its links and its well
+    // SIBLING lines below it, each on its own rule.
     <div
       // Semantic contract: every visible tool row keeps the role attr.
       data-vex-message-role="tool"
@@ -409,14 +439,14 @@ export function ToolActRow({
           title={act.toolName}
           className="vex-step__key"
         >
-          {/* The outcome fill: always 10px wide, so every title starts on
-              one edge whether or not an outcome is known. */}
+          {/* The outcome square: its slot always 10px wide, so every title
+              starts on one edge whether or not an outcome is known. */}
           <span
             aria-hidden
-            data-vex-tool-status={outcome?.fill}
+            data-vex-tool-status={outcome?.state}
             className="vex-step__fill"
           >
-            {fill !== null ? <Swatch state={fill} size={10} /> : null}
+            {mark !== null ? <StepSquare mark={mark} /> : null}
           </span>
           <span className="vex-step__mark">
             <ProtocolMark
@@ -429,7 +459,7 @@ export function ToolActRow({
               FILL-truncating summary, then the measurement. `flex-none` on
               every fixed member is what stops a long summary or a wide leg
               line from folding the row into two lines. */}
-          <span className="vex-step__title">{identity.title}</span>
+          <span className="vex-step__title vex-step__name">{identity.title}</span>
           {word !== null ? (
             <span data-vex-step-word="" className="vex-step__word">
               {word}
@@ -439,7 +469,7 @@ export function ToolActRow({
           <span aria-hidden className="vex-step__spacer" />
           {durationText !== null ? <DurationChip text={durationText} /> : null}
           <span aria-hidden className="vex-step__chev">
-            {open ? <LineChevronDown size={14} /> : <LineChevronRight size={14} />}
+            {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
           </span>
         </button>
         <DeskTicketLoadStamp act={act} />

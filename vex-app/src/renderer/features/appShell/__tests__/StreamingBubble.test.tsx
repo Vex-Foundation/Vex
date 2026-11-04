@@ -304,41 +304,40 @@ describe("TurnIsland - turn phase (U-3)", () => {
   });
 });
 
-describe("StreamingBubble - Vex's token on the live row", () => {
-  it("renders no token by default", () => {
+describe("StreamingBubble - the live row as the head of Vex's turn", () => {
+  // docs/design/H3-DESKTOP.md section 1.7: H3 draws no token beside Vex's
+  // rows, so the live row never carries one; `turnMark` only says the live
+  // row opens the turn, as the persisted head row says it.
+  it("is not the turn's head by default, and carries no token", () => {
     const { container } = render(
       createElement(StreamingBubble, { preview: preview({ status: "writing", text: "Hi" }) }),
     );
-    expect(container.querySelector("[data-vex-agent-avatar]")).toBeNull();
+    const live = container.querySelector('[data-vex-area="stream-preview"]');
+    expect(live?.hasAttribute("data-vex-turn-head")).toBe(false);
     expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
   });
 
-  it("renders the vx token once, ahead of the live row, when turnMark is set", () => {
+  it("heads the turn when turnMark is set, still with no token", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ status: "working" }),
         turnMark: true,
       }),
     );
-    const marks = container.querySelectorAll("[data-vex-agent-avatar]");
-    expect(marks).toHaveLength(1);
-    expect(marks[0]?.querySelector("[data-vex-vx-token]")).not.toBeNull();
-    const row = container.querySelector("[data-vex-island-state]");
-    expect(row).not.toBeNull();
-    // The token leads the row in document order (it marks the turn's start).
-    expect(
-      marks[0]?.compareDocumentPosition(row as Node) ?? 0,
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const live = container.querySelector('[data-vex-area="stream-preview"]');
+    expect(live?.hasAttribute("data-vex-turn-head")).toBe(true);
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
+    expect(container.querySelector("[data-vex-island-state]")).not.toBeNull();
   });
 
-  it("shows the token beside the error row and still never the raw text", () => {
+  it("heads the turn on the error row too, and still never shows the raw text", () => {
     const { container } = render(
       createElement(StreamingBubble, {
         preview: preview({ phase: "error", text: "raw-provider-leak" }),
         turnMark: true,
       }),
     );
-    expect(container.querySelector("[data-vex-agent-avatar]")).not.toBeNull();
+    expect(container.querySelector("[data-vex-turn-head]")).not.toBeNull();
     expect(islandState(container)).toBe("error");
     expect(container.textContent).not.toContain("raw-provider-leak");
   });

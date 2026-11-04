@@ -35,3 +35,12 @@ export function reasonedStampLabel(
   }
   return parts.join(" · ");
 }
+
+/**
+ * "1 step", "5 steps": the steps a turn took that the reader can count in it
+ * (`SessionTranscript/turnSteps.ts`). `null` for no count, never "0 steps".
+ */
+export function stepsLabel(steps: number | null): string | null {
+  if (steps === null || !Number.isInteger(steps) || steps <= 0) return null;
+  return steps === 1 ? "1 step" : `${String(steps)} steps`;
+}
