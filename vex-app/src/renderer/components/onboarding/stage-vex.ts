@@ -1,7 +1,9 @@
 /**
- * What Vex shows on the pre-shell plate (`docs/design/R3-MINIMAL.md section 10.2`): one small
- * external store between the stage's plate (mounted once by `App`) and the screens that stand on
- * it (the gate, the unlock), so the picture never restarts while the screens change over it.
+ * What Vex shows on the pre-shell stage (`docs/design/H3-DESKTOP.md section 4.9`): one small
+ * external store between her column on the stage (mounted once by `App`, `StagePlate`) and the
+ * screens that stand beside it (the gate, the unlock, the first run), so she never restarts while
+ * the screens change beside her. The Vex key over her column says the state's word; her section
+ * shows its mood.
  *
  *   waking     the launch wake is playing, or the pipeline is still running: "Waking up"
  *   ready      she has woken and the desk is ready, or the vault just unlocked: "Ready"
@@ -19,7 +21,10 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { kimmMoodOf } from "../../features/vex/kimm-mood.js";
+import type { VexState } from "../../features/vex/vex-state.js";
 import type { K2Emotion } from "../vex/k2/k2-emotion.js";
+import type { KimmMood } from "../vex/kimm/kimm-assets.js";
 import type { SwatchState } from "../ui/swatch.js";
 
 export interface StageVexState {
@@ -42,15 +47,23 @@ export interface StageVexState {
 }
 
 /**
- * What the plate shows from the state: her emotion. The swatch, the word and the figure name that
- * face for the screens and the tests; the plate draws none of them (the owner, 2026-10-18).
+ * What she shows from the state. On H3's stage (docs/design/H3-DESKTOP.md section 4.9) the Vex key
+ * over her column says her `state` and its `word` (the screen's own word; nothing stands under
+ * her), and her section shows her `mood`: `kimmMoodOf(state)`, the shell's own map
+ * (`features/vex/kimm-mood.ts`), unless the approved plate names the moment's own (`moodFace`,
+ * `FirstRunStage.tsx`). `emotion` and `swatch` are K2's, for the R3 plate that the screens not yet
+ * on the H3 stage still stand on.
  */
 export interface StageVexView {
   readonly emotion: K2Emotion;
   readonly swatch: SwatchState;
+  /** Her presence state, as the Vex key reads it. */
+  readonly state: VexState;
   readonly word: string;
-  /** "Locked" or a countdown, set in mono after the word. */
+  /** "Locked", a countdown or a timer, set as a figure after the word. */
   readonly note: string | null;
+  /** Her mood on her stage. */
+  readonly mood: KimmMood;
 }
 
 const INITIAL: StageVexState = {
@@ -83,19 +96,47 @@ export function stageVexView(state: StageVexState): StageVexView {
     return {
       emotion: "concerned",
       swatch: "concerned",
+      state: "concerned",
       word: "Concerned",
       note: state.countdown === null ? null : formatCountdown(state.countdown),
+      mood: kimmMoodOf("concerned"),
     };
   }
   // A first run screen speaks for her, but the wake always finishes first: she never skips it.
   if (state.face !== null && (!state.launching || state.woken)) return state.face;
-  const ready: StageVexView = { emotion: "idle", swatch: "done", word: "Ready", note: null };
+  // Ready: the unlock after a launch says hi (the plate `stage-unlock`).
+  const ready: StageVexView = {
+    emotion: "idle",
+    swatch: "done",
+    state: "ready",
+    word: "Ready",
+    note: null,
+    mood: kimmMoodOf("ready"),
+  };
   if (state.unlocked) return ready;
   if (state.launching) {
     if (state.woken && state.pipelineReady) return ready;
-    return { emotion: "idle", swatch: "listening", word: "Waking up", note: null };
+    // The wake: she rests while the desk starts (the plate `stage-wake`).
+    return {
+      emotion: "idle",
+      swatch: "listening",
+      state: "waking",
+      word: "Waking up",
+      note: null,
+      mood: kimmMoodOf("waking"),
+    };
   }
-  return { emotion: "sleeping", swatch: "sleeping", word: "Sleeping", note: "Locked" };
+  // After Lock Vex she sleeps and rests (the plate `stage-unlock-locked`, approved as drawn), so
+  // the map's held for a locked vault (`kimmMoodOf`'s `locked`) is not asked for on the stage. The
+  // lock is the title cell's word ("Local vault · Locked"), so nothing follows hers.
+  return {
+    emotion: "sleeping",
+    swatch: "sleeping",
+    state: "sleeping",
+    word: "Sleeping",
+    note: null,
+    mood: kimmMoodOf("sleeping"),
+  };
 }
 
 let state: StageVexState = INITIAL;
@@ -149,7 +190,12 @@ export function stageVexConcerned(concerned: boolean, countdown: number | null =
 function sameFace(a: StageVexView | null, b: StageVexView | null): boolean {
   if (a === null || b === null) return a === b;
   return (
-    a.emotion === b.emotion && a.swatch === b.swatch && a.word === b.word && a.note === b.note
+    a.emotion === b.emotion
+    && a.swatch === b.swatch
+    && a.state === b.state
+    && a.word === b.word
+    && a.note === b.note
+    && a.mood === b.mood
   );
 }
 

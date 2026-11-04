@@ -23,6 +23,7 @@
 import type { JSX } from "react";
 import { LineSvg } from "../../components/icons/line/index.js";
 import { KimmPortraitKey } from "../../components/vex/kimm/KimmPortraitKey.js";
+import type { KimmMood } from "../../components/vex/kimm/kimm-assets.js";
 import { kimmMoodOf } from "./kimm-mood.js";
 import type { VexState } from "./vex-state.js";
 
@@ -31,6 +32,8 @@ export interface VexKeyPortraitProps {
   readonly open: boolean;
   /** Her presence state, for the mood her face shows while closed (S4-03). */
   readonly state: VexState;
+  /** The mood where the place names its own (the stage's approved moods); `kimmMoodOf(state)` by default. */
+  readonly mood?: KimmMood;
 }
 
 /** The fold glyph: a bar, and under it an up chevron. */
@@ -43,7 +46,7 @@ function FoldGlyph(): JSX.Element {
   );
 }
 
-export function VexKeyPortrait({ open, state }: VexKeyPortraitProps): JSX.Element | null {
+export function VexKeyPortrait({ open, state, mood }: VexKeyPortraitProps): JSX.Element | null {
   if (open) return <FoldGlyph />;
-  return <KimmPortraitKey mood={kimmMoodOf(state)} open={false} />;
+  return <KimmPortraitKey mood={mood ?? kimmMoodOf(state)} open={false} />;
 }

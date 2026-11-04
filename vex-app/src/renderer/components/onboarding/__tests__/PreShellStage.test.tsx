@@ -46,15 +46,11 @@ afterEach(() => {
 });
 
 describe("stageLayoutFor", () => {
-  it("puts the wake, the unlock and the first run on the plate, the wizard on the print, the shell on nothing", () => {
-    for (const view of [
-      "splash",
-      "unlock",
-      "systemCheck",
-      "runtimeMigration",
-      "runtimeBootstrap",
-      "migrations",
-    ] as const) {
+  it("puts the first run on H3's stage, the wake and the unlock on the plate, the wizard on the print, the shell on nothing", () => {
+    for (const view of ["systemCheck", "runtimeMigration", "runtimeBootstrap", "migrations"] as const) {
+      expect(stageLayoutFor(view, false)).toBe("stage");
+    }
+    for (const view of ["splash", "unlock"] as const) {
       expect(stageLayoutFor(view, false)).toBe("plate");
     }
     expect(stageLayoutFor("wizard", false)).toBe("print");
@@ -131,24 +127,86 @@ describe("StagePlate", () => {
     expect(container.querySelector(".vex-stage-plate__word")).toBeNull();
   });
 
-  it("stands a first run screen on the plate with no word for what she shows", () => {
+  it("stands a first run screen beside her H3 column: the Vex key, her section and the tagline", () => {
     stageVexEnd();
     stand("runtimeBootstrap");
-    const { container, queryByText } = render(<StagePlate />);
-    expect(container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-plate")).toBe(
-      "plate",
+    const { container } = render(<StagePlate />);
+    const root = container.querySelector("[data-vex-stage-plate]");
+    expect(root?.getAttribute("data-vex-stage-plate")).toBe("stage");
+    expect(root?.hasAttribute("data-vex-motion-opacity")).toBe(true);
+    // No K2, no print.
+    expect(container.querySelector("[data-vex-k2]")).toBeNull();
+    expect(container.querySelectorAll(".vex-stage-plate__img")).toHaveLength(0);
+    // The Vex key says her state's word; her section stands open, the shell's own.
+    const key = container.querySelector<HTMLElement>("[data-vex-area='vex-key']");
+    expect(key?.textContent).toContain("Sleeping");
+    expect(key?.getAttribute("aria-label")).toBe("Hide Vex");
+    const section = container.querySelector("[data-vex-area='kimm-section']");
+    expect(section?.getAttribute("data-kimm-open")).toBe("true");
+    expect(section?.getAttribute("data-kimm-mood")).toBe("rest");
+    // Her art is the app's shipped art: missing until it arrives, so her ground alone.
+    expect(section?.getAttribute("data-kimm-art")).toBe("missing");
+    expect(section?.querySelector("img")).toBeNull();
+    // The tagline, on every stage screen.
+    expect(container.querySelector("[data-vex-tagline]")?.textContent).toBe(
+      "An AI trading agent, on your computer.",
     );
-    expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-vex-k2")).toBe("stage");
-    expect(container.querySelector(".vex-stage-plate__full")).toBeNull();
-    expect(queryByText("Sleeping")).toBeNull();
+    // A face set by the screen reaches the key (the word, the timer) and her mood.
     act(() =>
-      stageVexFace({ emotion: "working", swatch: "done", word: "Working", note: "0:14" }),
+      stageVexFace({
+        emotion: "working",
+        swatch: "done",
+        state: "working",
+        word: "Working",
+        note: "0:14",
+        mood: "think",
+      }),
     );
-    // Her face works; no word or timer stands under her on the print.
-    expect(queryByText("Working")).toBeNull();
-    expect(queryByText("0:14")).toBeNull();
-    expect(container.querySelector("[data-s]")).toBeNull();
-    expect(container.textContent).toBe("");
+    expect(key?.textContent).toContain("Working");
+    expect(key?.textContent).toContain("0:14");
+    expect(key?.getAttribute("data-vex-state")).toBe("working");
+    expect(section?.getAttribute("data-kimm-mood")).toBe("think");
+  });
+
+  it("hides and shows her through the shell's own stored choice, from the key and from her corner", () => {
+    stageVexEnd();
+    useUiStore.setState({ vexOpenChat: true, vexOpenPages: false, kimmHintShown: true });
+    stand("systemCheck");
+    const { container } = render(<StagePlate />);
+    const key = container.querySelector<HTMLElement>("[data-vex-area='vex-key']");
+    act(() => key?.click());
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
+    // The table pages' choice is not hers on the stage.
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+    expect(container.querySelector("[data-vex-area='kimm-section']")?.getAttribute("data-kimm-open")).toBe(
+      "false",
+    );
+    act(() => container.querySelector<HTMLElement>("[data-vex-area='kimm-key']")?.click());
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+  });
+
+  it("binds the chord once while her stage stands, and leaves it to the shell under the crossfade", () => {
+    stageVexEnd();
+    useUiStore.setState({ vexOpenChat: true, kimmHintShown: true });
+    stand("systemCheck");
+    render(<StagePlate />);
+    // One of the platform's two spellings: Ctrl on Windows and Linux, Cmd on a Mac.
+    const press = (mods: { readonly ctrlKey: boolean; readonly metaKey: boolean }): void => {
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { code: "KeyB", key: "B", shiftKey: true, ...mods, bubbles: true }),
+        );
+      });
+    };
+    press({ ctrlKey: true, metaKey: false });
+    press({ ctrlKey: false, metaKey: true });
+    // Exactly one of the two spellings is this platform's: she closed once.
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
+    // The shell takes over under the crossfade: the stage binds nothing then.
+    act(() => useUiStore.setState({ currentView: "appShell", unlockCurtainActive: true }));
+    press({ ctrlKey: true, metaKey: false });
+    press({ ctrlKey: false, metaKey: true });
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
   });
 
   it("renders nothing while the shell stands, and ends the launch's wake when it leaves the plate", () => {

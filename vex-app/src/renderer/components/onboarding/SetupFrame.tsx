@@ -1,26 +1,23 @@
 /**
- * SetupFrame: the shared pre-shell scaffold, a screen on the stage
- * (docs/design/R3-MINIMAL.md section 10).
+ * SetupFrame: the shared pre-shell scaffold, a screen on the stage.
  *
- * The picture itself is not here: App mounts one `StagePlate` behind every
- * pre-shell screen, so the picture holds still while screens change and
- * this frame paints only what stands on it.
+ * Her column is not here: App mounts it once over every pre-shell screen
+ * (`StagePlate`), so she holds still while screens change and this frame
+ * paints only the screen's own cells.
  *
- *   plate  the first run (system check, local runtime, database): paper at
- *          the right of the 720 plate with the crumb, the serif title, the
- *          lead and the screen's body, and the small version stamp. The
- *          screen names its `step` and its `mood`: the crumb's current step
- *          and Vex's face on the plate follow the mood (no word under her).
- *   open   the body stands on the stage itself (the unlock draws its own
- *          side column).
- *   leaf   (default; no caller since the wizard draws its own R3 frame) a
- *          paper page laid on the stage from the right, 600 wide at 1440:
- *          the serif title, the lead and the screen's body, which scrolls
- *          inside the page. The sky to its left shows the release as the
- *          giant counter.
- *
- * The 44px head row carries nothing but the hidden title bar's drag region
- * (section 8); the ground row runs along the bottom edge outside the plate.
+ *   stage  the first run (system check, local runtime, the move of a previous
+ *          release's data, database) on H3's stage frame
+ *          (docs/design/H3-DESKTOP.md section 4.9; `StageFrame`): the title
+ *          cell, the first run's steps in the left column, the lead as the
+ *          work column's first row, the screen's rows, and its keys in the
+ *          bottom row (`acts`), the logs link in the bottom-left cell beside
+ *          the version (`foot`). The screen names its `step` and its `mood`:
+ *          the left column's current square, the Vex key's word and Kimm's
+ *          mood follow the mood.
+ *   open   (the unlock, until its own H3 row) the body stands on R3's stage
+ *          itself, which draws its own side column.
+ *   leaf   (default; no caller since the wizard draws its own frame) R3's
+ *          paper page laid on the stage from the right.
  *
  * Contracts:
  *   - `data-vex-screen={screen}` is the stable e2e/test selector.
@@ -36,12 +33,14 @@ import { useEffect, type JSX, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils.js";
 import {
-  FirstRunCrumb,
+  firstRunSub,
+  firstRunWhere,
   StageFace,
   type FirstRunMood,
   type FirstRunStep,
 } from "./FirstRunStage.js";
-import { ReleaseCounter, StageGround, StageHead, VersionStamp } from "./PreShellStage.js";
+import { ReleaseCounter, StageGround, StageHead } from "./PreShellStage.js";
+import { StageBody, StageFrame, StageLead } from "./StageFrame.js";
 
 /**
  * Live SetupFrame count. The pre-shell stage crossfades screens through
@@ -66,7 +65,7 @@ let mountedFrames = 0;
  * Cleanup is idempotent and count-guarded; the attribute is removed only
  * once the last frame unmounts.
  */
-function useGateDocumentScope(): void {
+export function useGateDocumentScope(): void {
   useEffect(() => {
     mountedFrames += 1;
     document.documentElement.dataset["vexGate"] = "true";
@@ -83,16 +82,20 @@ function useGateDocumentScope(): void {
 interface SetupFrameProps {
   /** Value for data-vex-screen (stable e2e/test selector). */
   readonly screen: string;
-  /** `plate`: a first run screen at the right of the plate; `open`: on the stage; `leaf` (default): a paper page. */
-  readonly layout?: "plate" | "leaf" | "open";
-  /** Plate: the first run stage the crumb marks as current. */
+  /** `stage`: a first run screen on H3's stage; `open`: on R3's stage; `leaf` (default): R3's paper page. */
+  readonly layout?: "stage" | "leaf" | "open";
+  /** Stage: the first run step the left column marks as current. */
   readonly step?: FirstRunStep;
-  /** Plate: what the screen is doing, which says what Vex shows on the plate. */
+  /** Stage: what the screen is doing, which says what Vex shows. */
   readonly mood?: FirstRunMood;
-  /** Plate and leaf: the serif page title (sentence case, one per surface). */
+  /** Stage and leaf: the screen's title (sentence case, one per surface). */
   readonly title?: string;
-  /** Plate and leaf: the lead under the title. */
+  /** Stage and leaf: the lead under the title (the stage's first row). */
   readonly subline?: string;
+  /** Stage: the screen's keys, in the bottom row (a `StageActs`). */
+  readonly acts?: ReactNode;
+  /** Stage: the bottom-left cell's link beside the version (the logs folder). */
+  readonly foot?: ReactNode;
   readonly children: ReactNode;
 }
 
@@ -103,9 +106,31 @@ export function SetupFrame({
   mood,
   title,
   subline,
+  acts,
+  foot,
   children,
 }: SetupFrameProps): JSX.Element {
   useGateDocumentScope();
+  if (layout === "stage") {
+    const at = step ?? "systemCheck";
+    const now = mood ?? "working";
+    return (
+      <StageFrame
+        screen={screen}
+        title={title ?? ""}
+        sub={firstRunSub(at)}
+        where={firstRunWhere(at, now)}
+        foot={foot}
+      >
+        {mood !== undefined ? <StageFace mood={mood} /> : null}
+        <StageBody>
+          {subline !== undefined ? <StageLead>{subline}</StageLead> : null}
+          {children}
+        </StageBody>
+        {acts ?? null}
+      </StageFrame>
+    );
+  }
   return (
     <main
       data-vex-onboarding="true"
@@ -116,19 +141,6 @@ export function SetupFrame({
       <StageHead />
       {layout === "open" ? (
         children
-      ) : layout === "plate" ? (
-        <>
-          {mood !== undefined ? <StageFace mood={mood} /> : null}
-          <div className="vex-stage-side vex-fr-side">
-            {step !== undefined ? (
-              <FirstRunCrumb step={step} mood={mood ?? "working"} />
-            ) : null}
-            {title !== undefined ? <h1 className="vex-stage-title">{title}</h1> : null}
-            {subline !== undefined ? <p className="vex-stage-lead">{subline}</p> : null}
-            {children}
-          </div>
-          <VersionStamp />
-        </>
       ) : (
         <>
           <div className="vex-stage-sky">
@@ -151,9 +163,9 @@ export function SetupFrame({
               {children}
             </div>
           </div>
+          <StageGround />
         </>
       )}
-      {layout === "plate" ? null : <StageGround />}
     </main>
   );
 }

@@ -1,10 +1,13 @@
 /**
  * Database migrations orchestrator: the "Database" page on the pre-shell
  * stage (intro is gone; the Chronos Gate fast-path skips this screen for
- * healthy returning users). Visual system (`docs/design/R3-MINIMAL.md
- * section 10.3`): `SetupFrame` stands the page at the right of the plate with
- * the crumb, a serif title and the active phase below it; Vex is "Working"
- * with the real time on the plate while the schema is brought up to date.
+ * healthy returning users). Visual system (`docs/design/H3-DESKTOP.md
+ * section 4.9`): `SetupFrame` stands the page on H3's stage frame with
+ * "Database" current in the left column, the lead as the first row and the
+ * active phase below it in the system check's row grammar; the Vex key says
+ * "Working" with the real time while the schema is brought up to date.
+ * Continue (once applied) and Retry (after a failure) are the bottom row's
+ * blue key; the logs folder is the bottom-left cell's link after a failure.
  *
  * Flow (unchanged):
  *   1. Subscribe to the progress bus BEFORE invoking `migrate()`. The
@@ -36,6 +39,8 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { onboardingKeys } from "../../lib/api/queryKeys.js";
 import type { FirstRunMood } from "../../components/onboarding/FirstRunStage.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
+import { StageActs, StageGap } from "../../components/onboarding/StageFrame.js";
+import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
 import { Button } from "../../components/ui/button.js";
 import {
   APPLIED_HISTORY_MAX,
@@ -153,14 +158,35 @@ export function Migrations(): JSX.Element {
 
   return (
     <SetupFrame
-      layout="plate"
+      layout="stage"
       screen="migrations"
       step="database"
       mood={mood}
       title="Database"
       subline="Bringing your local schema up to date."
+      foot={phase.kind === "error" ? <OpenLogsLink className="vex-fr-link" /> : undefined}
+      acts={
+        <StageActs>
+          <StageGap />
+          {/* The Continue appears only when the schema is up to date; an error
+           * offers Retry; noop auto-advances, and a run in flight has no key. */}
+          {phase.kind === "ready" ? (
+            <Button
+              onClick={handleContinue}
+              aria-label="Continue to setup wizard"
+              className="vex-pre-primary"
+            >
+              Continue
+            </Button>
+          ) : phase.kind === "error" ? (
+            <Button onClick={handleRetry} className="vex-pre-primary">
+              Retry
+            </Button>
+          ) : null}
+        </StageActs>
+      }
     >
-      {/* THE BODY: the active phase, directly on the paper. */}
+      {/* THE BODY: the active phase, in rows. */}
       <div className="vex-fr-stack">
         {phase.kind === "running" ? (
           <RunningBody current={phase.current} />
@@ -173,20 +199,7 @@ export function Migrations(): JSX.Element {
             message={phase.message}
             failedAt={phase.failedAt}
             appliedBeforeFailure={phase.appliedBeforeFailure}
-            onRetry={handleRetry}
           />
-        ) : null}
-
-        {/* The Continue appears only when the schema is up to date (error
-         * offers Retry in the body; noop auto-advances). */}
-        {phase.kind === "ready" ? (
-          <Button
-            onClick={handleContinue}
-            aria-label="Continue to setup wizard"
-            className="w-[420px] max-w-full"
-          >
-            Continue
-          </Button>
         ) : null}
       </div>
     </SetupFrame>

@@ -50,6 +50,11 @@
  *   ?plate=<id>              one of our own H3 plates (`plates/index.ts`)
  *                            instead of a state: a design proposal for a
  *                            surface H3 does not draw, never the product
+ *   ?stage=<id>              one of the real screens before the shell
+ *                            (`stages/index.ts`): the product's own stage
+ *                            (`StagePlate`) and screen, as `App` mounts them,
+ *                            on the stand-in bridge, to be set beside the
+ *                            approved plate it was built from
  * There is no theme switch: the app is dark only (chronos), the room every
  * H3 plate is drawn in.
  * The frame carries `data-vex-h3-ready` once the state's own element is on
@@ -66,6 +71,7 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { createQueryClient } from "../../app/queryClient.js";
 import { PxSprite } from "../../components/icons/px/PxSprite.js";
+import { StagePlate } from "../../components/onboarding/PreShellStage.js";
 import { ErrorBoundary } from "../../components/ui/error-boundary.js";
 import { KIMM_SHIPPED_ART } from "../../components/vex/kimm/kimm-assets.js";
 import { KimmArtProvider } from "../../components/vex/kimm/kimm-art-context.js";
@@ -89,6 +95,8 @@ import { KIMM_STANDIN_ART } from "./kimm-standin-art.js";
 import { H3_HARNESS_MARK } from "./mark.js";
 import { HARNESS_PLATES, plateById } from "./plates/index.js";
 import type { HarnessPlate } from "./plates/types.js";
+import { HARNESS_STAGES, stageById } from "./stages/index.js";
+import type { HarnessStage } from "./stages/types.js";
 import { HARNESS_STATES, stateById } from "./states/index.js";
 import type { HarnessState, HarnessUi } from "./states/types.js";
 import "./harness.css";
@@ -107,6 +115,7 @@ const STATE = stateById(params.get("state"));
 const KIMM_ART =
   pick("kimm", ["standins", "shipped"], "standins") === "shipped" ? KIMM_SHIPPED_ART : KIMM_STANDIN_ART;
 const PLATE = plateById(params.get("plate"));
+const STAGE = stageById(params.get("stage"));
 
 /* Stamped before the first render, outside any effect: the shell's sheets
  * read both attributes from the root, and a first frame painted without them
@@ -290,6 +299,55 @@ function PlateFrame({ plate }: { readonly plate: HarnessPlate }): JSX.Element {
   );
 }
 
+/**
+ * A real screen before the shell: the product's own stage (her column,
+ * `StagePlate`) and the screen beside it, mounted as `App` mounts them, with
+ * the selected art set handed to her section. Ready once the stage's own
+ * element is on screen, no query is in flight and the fonts have loaded.
+ */
+function StageRunner({
+  stage,
+  client,
+}: {
+  readonly stage: HarnessStage;
+  readonly client: QueryClient;
+}): JSX.Element {
+  const ready = useReady(stage.ready, client, true);
+  const [fonts, setFonts] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void document.fonts.ready.then(() => {
+      if (live) setFonts(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const { Screen } = stage;
+  return (
+    <div
+      className="vex-h3-harness"
+      data-vex-area="h3-harness"
+      data-vex-harness={H3_HARNESS_MARK}
+      data-vex-h3-stage={stage.id}
+      data-vex-h3-ready={ready && fonts ? "true" : undefined}
+    >
+      <MotionConfig reducedMotion="user">
+        <ErrorBoundary surface="app" extent="screen" title="The harness could not render this stage">
+          <KimmArtProvider art={KIMM_ART}>
+            <StagePlate className="fixed inset-0" />
+            <div className="fixed inset-0">
+              <Screen />
+            </div>
+          </KimmArtProvider>
+        </ErrorBoundary>
+        <ToastHost />
+      </MotionConfig>
+      <WindowChromeStandin />
+    </div>
+  );
+}
+
 /** An unknown `?state=`: the list of states and plates, as links. */
 function StateIndex(): JSX.Element {
   return (
@@ -318,13 +376,47 @@ function StateIndex(): JSX.Element {
           </ul>
         </>
       ) : null}
+      {HARNESS_STAGES.length > 0 ? (
+        <>
+          <h2>The real screens before the shell</h2>
+          <ul>
+            {HARNESS_STAGES.map((stage) => (
+              <li key={stage.id}>
+                <a href={`?stage=${stage.id}`}>{stage.id}</a> {stage.title}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </main>
   );
 }
 
+/**
+ * Point the store at a stage, before the first render: the view `App` would
+ * stand on, no gate and no handoff over it, and `?vex=` for her one stored
+ * choice on the stage (the chat's).
+ */
+function pointStage(stage: HarnessStage): void {
+  const vex = VEX === "open" ? true : VEX === "closed" ? false : null;
+  useUiStore.setState({
+    theme: THEME,
+    themePreference: THEME,
+    currentView: stage.view,
+    setupGateActive: false,
+    unlockCurtainActive: false,
+    ...stage.ui,
+    ...(vex === null ? {} : { vexOpenChat: vex }),
+  });
+  stage.setup?.();
+}
+
 let bridge: HarnessBridge | null = null;
 let afterMount: Promise<void> | null = null;
-if (PLATE !== null) {
+if (STAGE !== null) {
+  bridge = installHarnessBridge(STAGE.answers());
+  pointStage(STAGE);
+} else if (PLATE !== null) {
   // A plate installs a bridge only when it mounts real parts that read one.
   if (PLATE.answers !== undefined) bridge = installHarnessBridge(PLATE.answers());
   pointStore(PLATE);
@@ -339,6 +431,7 @@ Object.defineProperty(window, "__vexH3Harness", {
     state: STATE?.id ?? null,
     states: HARNESS_STATES.map((state) => state.id),
     plates: HARNESS_PLATES.map((plate) => plate.id),
+    stages: HARNESS_STAGES.map((stage) => stage.id),
     calls: () => bridge?.calls() ?? [],
     unanswered: () => bridge?.unanswered() ?? [],
     emit: (path: `${string}.on${string}`, event: unknown) => bridge?.emit(path, event) ?? 0,
@@ -351,7 +444,11 @@ if (host !== null) {
   createRoot(host).render(
     <StrictMode>
       <PxSprite />
-      {PLATE !== null ? (
+      {STAGE !== null ? (
+        <QueryClientProvider client={client}>
+          <StageRunner stage={STAGE} client={client} />
+        </QueryClientProvider>
+      ) : PLATE !== null ? (
         <QueryClientProvider client={client}>
           <PlateFrame plate={PLATE} />
         </QueryClientProvider>

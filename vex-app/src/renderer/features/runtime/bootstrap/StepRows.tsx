@@ -1,27 +1,27 @@
 /**
- * The three steps of the native runtime's start in the first run's probe-row
- * grammar (`docs/design/R3-MINIMAL.md` section 10.3, `.vex-fr-probe`): the
- * label, the detail in the figure face, and at the right the state as a fill
- * and a word, never a hue. A step in flight is blue with the ongoing fill; the
- * model row carries the download as bytes, speed and percent over the 2px
- * progress line. The migration screen and Settings > Local runtime draw their
- * steps with the same rows.
+ * The three steps of the native runtime's start in the system check's row
+ * grammar (docs/design/H3-DESKTOP.md section 4.9, `.vex-fr-probe`): the
+ * label, the detail in the figure face, and at the right the state as H3's
+ * status (section 2.2), a square and an ink word: an outline while it waits,
+ * grey while it runs, green once ready, red when it failed. The model row
+ * carries the download as bytes, speed and percent over the progress line.
+ * The migration screen and Settings > Local runtime draw their steps with the
+ * same rows.
  *
  * `data-step` / `data-status` on each row are the test and e2e contract.
  */
 
 import type { JSX } from "react";
 
-import type { SwatchState } from "../../../components/ui/swatch.js";
-import { StateWord } from "../../../components/ui/state-word.js";
+import { StageStatus, type StageSquareKind } from "../../../components/onboarding/StageFrame.js";
 import type { StepRow, StepStatus } from "./steps.js";
 
-/** The fill each status paints beside its word. */
-const STATUS_FILL: Record<StepStatus, SwatchState> = {
-  waiting: "idle",
-  active: "ongoing",
+/** The square each status sets beside its word. */
+const STATUS_SQUARE: Record<StepStatus, StageSquareKind> = {
+  waiting: "none",
+  active: "running",
   ready: "done",
-  failed: "error",
+  failed: "failed",
 };
 
 /** Words arrive as main's lowercase vocabulary; the rows say them in sentence case. */
@@ -50,7 +50,7 @@ export function StepRows({ rows }: { readonly rows: readonly StepRowView[] }): J
         >
           <span className="vex-fr-probe__l">{row.label}</span>
           <span className="vex-fr-probe__d vex-num">{row.detail}</span>
-          <StateWord state={STATUS_FILL[row.status]} word={sentenceCase(row.word)} />
+          <StageStatus kind={STATUS_SQUARE[row.status]} word={sentenceCase(row.word)} />
           {row.download !== null ? (
             <span
               className="vex-fr-progress__bar vex-fr-probe__bar"

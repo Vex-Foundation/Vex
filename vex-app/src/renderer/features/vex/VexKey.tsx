@@ -37,8 +37,9 @@
  * button, never inside it, so the key's name stays its action.
  */
 
-import { useId, type JSX } from "react";
+import { useId, type JSX, type ReactNode } from "react";
 import { LineChevronDown, LineChevronUp } from "../../components/icons/line/index.js";
+import type { KimmMood } from "../../components/vex/kimm/kimm-assets.js";
 import { Keycaps } from "../../components/ui/keycaps.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
@@ -48,6 +49,7 @@ import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VexKeyPortrait } from "./VexKeyPortrait.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
+import type { VexState } from "./vex-state.js";
 import {
   VEX_TOGGLE_CHORD,
   vexToggleAriaShortcut,
@@ -66,6 +68,52 @@ export interface VexKeyProps {
 
 export function VexKey({ open, onToggle, platform = studioPlatform }: VexKeyProps): JSX.Element {
   const presence = useVexPresence();
+  return (
+    <>
+      <VexKeyView
+        open={open}
+        onToggle={onToggle}
+        platform={platform}
+        state={presence.state}
+        word={presence.word}
+        timer={
+          presence.timerStartedAt === null ? null : (
+            <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" />
+          )
+        }
+      />
+      <VexStateAnnouncer state={presence.state} word={presence.word} live={presence.live} />
+    </>
+  );
+}
+
+export interface VexKeyViewProps extends VexKeyProps {
+  /** Her presence state: the square, and her mood's face while she is closed. */
+  readonly state: VexState;
+  /** The state's word, written in sentence case. */
+  readonly word: string;
+  /** What follows the word as a figure: the live timer, or none. */
+  readonly timer?: ReactNode;
+  /** Her face's mood while she is closed, where the place names its own (the stage). */
+  readonly mood?: KimmMood;
+}
+
+/**
+ * The key itself, drawn from what the caller reads: the shell reads
+ * `useVexPresence` (`VexKey`), and the screens before the shell, where there
+ * is no session to read, hand it the stage's own state and word
+ * (`components/onboarding/PreShellStage.tsx`). One drawing, so the key never
+ * looks or presses differently on the way into the shell.
+ */
+export function VexKeyView({
+  open,
+  onToggle,
+  platform = studioPlatform,
+  state,
+  word,
+  timer = null,
+  mood,
+}: VexKeyViewProps): JSX.Element {
   const closing = useVexClosing();
   // While her close plays her section still stands, but the person has
   // already asked her gone: the key reads Show Vex from the press.
@@ -74,50 +122,45 @@ export function VexKey({ open, onToggle, platform = studioPlatform }: VexKeyProp
   const stateId = useId();
 
   return (
-    <>
-      <Tooltip label={vexToggleTooltipLabel(shown, platform)} side="bottom">
-        <button
-          type="button"
-          className="vex-key"
-          data-vex-area="vex-key"
-          data-vex-state={presence.state}
-          data-vex-key-open={shown ? "true" : "false"}
-          aria-label={name}
-          aria-expanded={shown}
-          aria-describedby={stateId}
-          aria-keyshortcuts={vexToggleAriaShortcut(platform)}
-          onClick={() => {
-            pressVexToggle(open, onToggle);
-          }}
-        >
-          <span className="vex-key__portrait" data-open={shown ? "" : undefined}>
-            <VexKeyPortrait open={shown} state={presence.state} />
+    <Tooltip label={vexToggleTooltipLabel(shown, platform)} side="bottom">
+      <button
+        type="button"
+        className="vex-key"
+        data-vex-area="vex-key"
+        data-vex-state={state}
+        data-vex-key-open={shown ? "true" : "false"}
+        aria-label={name}
+        aria-expanded={shown}
+        aria-describedby={stateId}
+        aria-keyshortcuts={vexToggleAriaShortcut(platform)}
+        onClick={() => {
+          pressVexToggle(open, onToggle);
+        }}
+      >
+        <span className="vex-key__portrait" data-open={shown ? "" : undefined}>
+          <VexKeyPortrait open={shown} state={state} {...(mood === undefined ? {} : { mood })} />
+        </span>
+        <span className="vex-key__state">
+          <span id={stateId} className="vex-key__line vex-key__status">
+            {/* H3's state square (section 2.2): ink, an outline at Ready
+              * and solid in every other state; the word says which. */}
+            <Swatch
+              state={state === "ready" ? "idle" : "done"}
+              size={6}
+              className="vex-key__square"
+            />
+            <span className="vex-key__word">{word}</span>
+            {timer}
           </span>
-          <span className="vex-key__state">
-            <span id={stateId} className="vex-key__line vex-key__status">
-              {/* H3's state square (section 2.2): ink, an outline at Ready
-                * and solid in every other state; the word says which. */}
-              <Swatch
-                state={presence.state === "ready" ? "idle" : "done"}
-                size={6}
-                className="vex-key__square"
-              />
-              <span className="vex-key__word">{presence.word}</span>
-              {presence.timerStartedAt === null ? null : (
-                <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" />
-              )}
-            </span>
-            <span className="vex-key__line vex-key__action">
-              <span className="vex-key__name">{name}</span>
-              <Keycaps chord={VEX_TOGGLE_CHORD} platform={platform} decorative />
-            </span>
+          <span className="vex-key__line vex-key__action">
+            <span className="vex-key__name">{name}</span>
+            <Keycaps chord={VEX_TOGGLE_CHORD} platform={platform} decorative />
           </span>
-          <span className="vex-key__chevron">
-            {shown ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
-          </span>
-        </button>
-      </Tooltip>
-      <VexStateAnnouncer state={presence.state} word={presence.word} live={presence.live} />
-    </>
+        </span>
+        <span className="vex-key__chevron">
+          {shown ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
+        </span>
+      </button>
+    </Tooltip>
   );
 }
