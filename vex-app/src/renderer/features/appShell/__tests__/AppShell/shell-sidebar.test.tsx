@@ -945,15 +945,19 @@ describe("AppShell", () => {
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame).not.toBeNull();
     // jsdom: no ResizeObserver, viewport = window.innerWidth. The welcome
-    // stage has no Vex column yet: Vex sits in the centre there.
-    expect(frame?.style.gridTemplateColumns).toBe("248px 0px minmax(0, 1fr)");
+    // keeps Vex's column (docs/design/H3-DESKTOP.md section 1.7): 248 | 432.
+    expect(frame?.style.gridTemplateColumns).toBe("248px 432px minmax(0, 1fr)");
     // H3's head | body | foot rows: the header row holds the header's cells,
     // the bottom row its cells (section 1.8).
     expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)");
     expect(frame?.getAttribute("data-vex-frame")).toBe("h3");
     expect(frame?.getAttribute("data-vex-tier")).toBe("wide");
-    expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("0px");
-    expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBeNull();
+    expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("432px");
+    expect(
+      view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open"),
+    ).toBe("true");
+    // She stands in her column, not in the welcome's centre.
+    expect(view.container.querySelector("[data-vex-welcome-stage]")).toBeNull();
     expect(view.container.querySelector("[data-vex-area='welcome-portfolio']")).toBeNull();
 
     // A session: Vex's column is 30% of the frame, between the chats and
@@ -1140,9 +1144,10 @@ describe("AppShell", () => {
     const view = renderShell();
     const head = (): Element | null =>
       view.container.querySelector("[data-vex-area='shell-status-strip']");
-    // The bare welcome: nothing to say, no chip (Vex stands in the centre).
+    // The bare welcome: no title to say, and the chip in its cell, her column
+    // standing beside the welcome (H3-DESKTOP.md section 1.7).
     expect(head()?.hasAttribute("data-empty")).toBe(true);
-    expect(view.container.querySelector("[data-vex-area='vex-token-chip']")).toBeNull();
+    expect(view.container.querySelector("[data-vex-area='vex-token-chip']")).not.toBeNull();
 
     // A page covers the welcome and is not part of it.
     act(() => useUiStore.getState().navigate("portfolio"));
@@ -1192,8 +1197,8 @@ describe("AppShell", () => {
     const lastTrack = (): string =>
       (frame?.style.gridTemplateColumns ?? "").split(" ").at(1) ?? "";
 
-    // Welcome: exactly zero, still a length.
-    expect(lastTrack()).toBe("0px");
+    // Welcome: her column stands there too, the same length as in a chat.
+    expect(lastTrack()).toBe("432px");
     // Session stage: Vex open, then hidden to zero width.
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
     expect(lastTrack()).toBe("432px");
@@ -1223,7 +1228,7 @@ describe("AppShell", () => {
     const view = renderShell();
     act(() => useUiStore.getState().setSidebarWidth(342));
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateColumns).toBe("248px 0px minmax(0, 1fr)");
+    expect(frame?.style.gridTemplateColumns).toBe("248px 432px minmax(0, 1fr)");
   });
 
   it("hides Vex by default on the table pages and opens the page inside the centre", () => {
@@ -1243,6 +1248,21 @@ describe("AppShell", () => {
     // Back in the chat, Vex is open again: hiding her on a page never closed her there.
     act(() => useUiStore.getState().navigate("chat"));
     expect(frame?.style.gridTemplateColumns).toBe("248px 432px minmax(0, 1fr)");
+  });
+
+  it("keeps Vex's column across the welcome<->session edge: the same node, the same track", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: the welcome has her column, so
+    // the first message moves nothing beside the chat and remounts nothing.
+    useUiStore.setState({ vexOpenChat: true });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
+    const before = frame?.style.gridTemplateColumns;
+    act(() => useUiStore.getState().setActiveSessionId("s-1"));
+    expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBe(aside);
+    expect(frame?.style.gridTemplateColumns).toBe(before);
+    act(() => useUiStore.getState().setActiveSessionId(null));
+    expect(view.container.querySelector("[data-vex-area='vex-sidebar']")).toBe(aside);
   });
 
   it("keeps the way into Studio on screen across the welcome<->session edge", () => {

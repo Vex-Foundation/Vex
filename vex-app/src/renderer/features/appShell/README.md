@@ -125,7 +125,8 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   `pages` (`vexOpenPages`, hidden: Portfolio and subpages, Board, Settings),
   `lighter` (`vexOpenLighter`, not persisted). `setVexOpen` writes only the
   current class's slot; the frame hands her `vexEffectiveOpen`, the solved width.
-- She docks when the column shows after the shell came up (`vex-dock.ts`).
+- She docks when her column shows again after a hide; the welcome keeps her
+  column (docs/design/H3-DESKTOP.md section 1.7), so nothing hands her over.
   Hiding plays her close first (`vex-hide.ts`): hide key, chip and shortcut call
   `requestVexHide(commit)`; the sidebar plays the K2 close, then commits (at once
   under reduced motion, Save-Data, avatar off). A second press keeps her. Derived

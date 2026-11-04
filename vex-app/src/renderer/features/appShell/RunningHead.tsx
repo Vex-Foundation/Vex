@@ -20,8 +20,8 @@
  * The header (`ShellHeader.tsx`) lays the cells out and reserves the window
  * chrome; both cells are window drag regions (`.vex-drag`) and every control
  * inside them opts out on its own (window-chrome.css). On the welcome the
- * title cell has no title and the Vex key cell no chip (Vex is in the centre
- * there; `empty`).
+ * title cell has no title (`empty`); the chip stands there as anywhere, her
+ * column being on the welcome too.
  *
  * Mounted ONCE by the header for an invariant, not for tidiness:
  * `GlobalApprovalsSync` owns `useGlobalApprovalsLiveSync`, which subscribes to
@@ -92,8 +92,8 @@ export interface RunningHeadProps {
   readonly empty?: boolean;
   /**
    * The Vex toggle. The frame passes the open state it solved (a column the
-   * narrow tier closed is not open); `null` means there is no Vex column to
-   * toggle (the welcome, Zen). Omitted, the chip reads the stored choice.
+   * desk's solve closed is not open); `null` means there is no Vex column to
+   * toggle (Zen). Omitted, the chip reads the stored choice.
    */
   readonly vex?: VexToggle | null;
 }
@@ -289,11 +289,10 @@ export function RunningHead({
   const lighterSlot = useShellStripSlot();
   const stored = useStoredVexToggle();
   const toggle = vex === undefined ? stored : vex;
-  // The welcome has Vex in the centre: no column, so no toggle.
+  // The welcome keeps her column (H3), so the chip stands there too; only a
+  // frame with no Vex to toggle (Zen) hands in null.
   const chip =
-    toggle === null || (empty && !lighter) ? null : (
-      <VexTokenChip open={toggle.open} onToggle={toggle.onToggle} />
-    );
+    toggle === null ? null : <VexTokenChip open={toggle.open} onToggle={toggle.onToggle} />;
 
   const flank = (
     <div className="vex-running-head__flank">

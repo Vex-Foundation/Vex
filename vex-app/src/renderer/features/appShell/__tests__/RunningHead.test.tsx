@@ -495,10 +495,12 @@ describe("the token chip", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("is absent where there is no Vex column: the welcome, Zen", () => {
-    renderHead("agent", null, { empty: true });
-    expect(screen.queryByTestId("token-chip")).toBeNull();
-    cleanup();
+  it("stands on the welcome, whose Vex column stays (H3-DESKTOP.md section 1.7)", () => {
+    renderHead("agent", null, { empty: true, vex: { open: true, onToggle: () => undefined } });
+    expect(screen.getByTestId("token-chip")).not.toBeNull();
+  });
+
+  it("is absent where there is no Vex column to toggle: Zen", () => {
     renderHead("lighter", SESSION, { vex: null });
     expect(screen.queryByTestId("token-chip")).toBeNull();
   });

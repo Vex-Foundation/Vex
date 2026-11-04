@@ -20,10 +20,10 @@
  * plate and no hologram: the 44px flat token (`VexStatus`, no ring round it)
  * stands beside the state instead, and everything else stays.
  *
- * SHE DOCKS: a column that shows after the shell came up (the first message
- * off the welcome, where she stood in the centre, or the column shown again)
- * plays her open episode in the plate; a column open from the start shows her
- * as she is. Under reduced motion she simply appears.
+ * SHE DOCKS: a column shown again after a hide plays her open episode in the
+ * plate; a column open from the start shows her as she is. The welcome keeps
+ * her column (docs/design/H3-DESKTOP.md section 1.7), so she never stands in
+ * its centre to dock from. Under reduced motion she simply appears.
  *
  * HIDDEN is zero width: the frame gives the column a 0px track and the aside
  * renders its head and body only while open, so nothing in a closed column
@@ -72,7 +72,6 @@ import { useVexPresence, type VexPresence } from "./useVexPresence.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
-import { takeVexDock, vexDockPending } from "./vex-dock.js";
 import {
   VEX_HIDE_EPISODE_MS,
   registerVexCloser,
@@ -117,12 +116,9 @@ export function VexSidebar({ open, onHide, seat = "column" }: VexSidebarProps): 
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
   const lighter = runtimeMode === "lighter";
   const asideRef = useRef<HTMLElement | null>(null);
-  // She docks when the column shows after the shell came up: from the
-  // welcome, or open again after a hide.
-  const [dock, setDock] = useState(() => !open || vexDockPending());
-  useEffect(() => {
-    takeVexDock();
-  }, []);
+  // She docks when the column shows again after a hide; a column open from
+  // the start (the welcome's included) shows her as she is.
+  const [dock, setDock] = useState(() => !open);
   useEffect(() => {
     if (!open) setDock(true);
   }, [open]);
