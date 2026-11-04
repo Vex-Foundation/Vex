@@ -531,6 +531,10 @@ Already known for those plates:
 - Studio's console adds "This project" (S8-06).
 - Kimm replaces K2 everywhere, including the stage screens, and K2 retires at the end of wave 4 (S8-16).
 
+**Approved (owner, 2026-11-04), as drawn:** the harness plates `?plate=studio-project`, `studio-split` and `studio-band-files` (S8-01); `lighter-desk`, `lighter-desk-review`, `lighter-desk-two-step` and `lighter-zen` (S8-02); `stage-wake`, `stage-unlock`, `stage-unlock-locked`, `stage-system-check`, `stage-system-check-blocked`, `stage-wizard-password` and `stage-wizard-wallets` (S8-03). Where a plate's builder left a question open, the plate's own proposal is the answer unless the owner says otherwise. Two things are not part of that approval and stay as they are until the owner decides them separately, with a safety review:
+- the desk's gate: an order create, close, cancel or modify is medium risk and decides on one press, as today; two presses stay for high-risk cards only (a deposit, a fee authorization, key registration, a withdrawal claim);
+- a settle time before a freshly drawn approval key accepts a press (proposed after the desk plate showed Approve order drawn just above SHORT).
+
 ### 4.10 Other desktop rules
 - **A page that can hold a money card keeps the chat layout.** On the Needs you page, closing her folds only her section, never the column, so a card there never moves. Cloud has no such page.
 - Her open or closed choice and the first-close flag live in the persisted layout store, per profile, not per browser (section 3.5).
