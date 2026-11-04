@@ -92,10 +92,11 @@
 }
 
 /* Roboto Mono - the H3 figures face (OFL 1.1, RobotoMono-OFL.txt in
- * fonts/licenses/; the Fontsource build of googlefonts/robotomono). ONE
- * static weight, 400, in a latin and a latin-ext subset: H3 sets its figures
- * at 400 only, so every figure is 400 and a heavier request renders the same
- * file (weight synthesis is off, base.css), never a faked bold. No fallback
+ * fonts/licenses/; the Fontsource build of googlefonts/robotomono). Two
+ * static weights in a latin and a latin-ext subset: 400, at which H3 sets
+ * every figure, and 700 for the terminal's bold text (Studio, approved
+ * 2026-11-04). Any other weight request picks the nearer of the two files
+ * (weight synthesis is off, base.css), never a faked bold. No fallback
  * twin: a monospace stack falls back to another monospace, whose advance is
  * the same 0.6em. Code stays on JetBrains Mono (--font-code). Bundled ahead
  * of its use; --font-mono moves onto it in its own change (tokens.css). */
@@ -113,6 +114,26 @@
   font-family: "Roboto Mono";
   src: url("/fonts/roboto-mono-latin-ext-400-normal.woff2") format("woff2");
   font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("/fonts/roboto-mono-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("/fonts/roboto-mono-latin-ext-700-normal.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: block;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,

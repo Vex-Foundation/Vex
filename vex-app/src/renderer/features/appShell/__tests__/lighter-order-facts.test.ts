@@ -31,8 +31,17 @@ describe("lighterOrderFacts", () => {
     expect(rows.Order).toBe("Stop-loss GTC · Reduce-only");
     expect(rows.Trigger).toBe("2950");
     expect(rows.Price).toBe("2900");
-    expect(rows.Expires).toBe("2026-09-18T17:00:00.000Z");
+    expect(rows.Expires).toBe("Sep 18, 17:00 UTC");
     expect(rows.Market).toBe("ETH · Lighter Core");
+  });
+
+  it("keeps an expiry it cannot read as written, never dropping a signed fact", () => {
+    const rows = labels(lighterOrderFacts({
+      toolId: "lighter.order.create", side: "buy", orderType: "limit", timeInForce: "good-till-time",
+      marketSymbol: "BTC", environment: "core", baseAmountDisplay: "0.02", priceDisplay: "64000",
+      orderExpiryIso: "next week",
+    }));
+    expect(rows.Expires).toBe("next week");
   });
 
   it("reads an OCO card by its legs", () => {
