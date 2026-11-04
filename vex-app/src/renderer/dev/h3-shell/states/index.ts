@@ -12,6 +12,7 @@ import { baseAnswers } from "../fixtures/base.js";
 import { activity } from "./activity.js";
 import { approvalKindsState } from "./approval-kinds.js";
 import { filled } from "./filled.js";
+import { howVexWorks } from "./how-vex-works.js";
 import { markets } from "./markets.js";
 import { memory } from "./memory.js";
 import { newChat } from "./new-chat.js";
@@ -43,6 +44,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   markets,
   settings,
   memory,
+  howVexWorks,
 ];
 
 export const DEFAULT_STATE = shell;

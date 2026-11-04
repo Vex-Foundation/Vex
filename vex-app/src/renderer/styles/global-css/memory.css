@@ -348,36 +348,45 @@
   top: 8px;
   min-width: 0;
 }
+/* The contents in H3: a caps group head, then one framed cell of rows on the
+ * rule; the section in view in ink with a 2px ink rule at its left (H3 marks
+ * a selection by fill or rule, never by the blue), the others in ink 2. */
 .vex-article__eyebrow {
   margin: 0 0 10px;
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-article__list {
   margin: 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--vex-alias-rule);
+  border: 1px solid var(--vex-alias-rule);
 }
-.vex-article__list li {
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+.vex-article__list li + li {
+  border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-article__list button {
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 36px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-left: 2px solid transparent;
   text-align: left;
   font-size: 14px;
   line-height: 1.3;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
 }
 .vex-article__list button:hover {
-  color: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
 }
 .vex-article__list button[aria-current="true"] {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  border-left-color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
 }
 .vex-article__list button:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
