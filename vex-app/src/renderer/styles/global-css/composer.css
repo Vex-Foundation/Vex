@@ -91,13 +91,14 @@
   outline-offset: 2px;
 }
 
-/* The greeting: Instrument Serif 52 / 1.02 in the blue, never bold. The blue
- * as type: #0000C0 by day, the periwinkle at night (the mockup's type blue),
- * not the night title's paper white. */
+/* The greeting: display type in the sans (docs/design/H3-DESKTOP.md section
+ * 2.3; Instrument Serif retired), 52 / 1.02, regular, in the accent as type,
+ * which is the ink. Its size and place stay R3's until the chat's own
+ * restyle draws H3's greeting bubble. */
 .vex-welcome__greeting {
   margin: 16px 0 24px;
   max-width: 720px;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-size: 52px;
   font-weight: 400;
   line-height: 1.02;

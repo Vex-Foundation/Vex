@@ -1,13 +1,19 @@
 /**
  * THE NEEDS YOU LIST: what waits for the user's decision, one row per item
- * (docs/design/R3-MINIMAL.md sections 3 and 5). The title bar panel and the
- * Vex sidebar render this same list from the same model, so they cannot count
- * or word it differently; the Needs you page groups the same items.
+ * (docs/design/R3-MINIMAL.md sections 3 and 5; the H3 row in
+ * docs/design/H3-DESKTOP.md section 1.5 and Appendix A.3). The title bar panel
+ * and the Vex sidebar render this same list from the same model, so they
+ * cannot count or word it differently; the Needs you page groups the same
+ * items.
  *
- * Every row says three things: the action in words ("Approve bridge"), where it
- * was raised and when it expires (or since when it waits), and a key. The key
- * only opens the thing: a decision is never taken from this list, the REAL
- * FUNDS approval stays in its own card with its own two-step confirm.
+ * Every row says three things: the decision as a sentence (an approval's is
+ * the card's own, "Swap 200 USDC for ETH on Base."; a mission's is its action,
+ * "Recover the mission"), a meta line with where it acts and since when it
+ * waits or when it expires ("Base, real funds · since 12:40 UTC"), and a key,
+ * Review for an approval. The words are the model's (`needs-you.ts`); this list
+ * only sets them, the time as a figure. The key only opens the thing: a
+ * decision is never taken from this list, the REAL FUNDS approval stays in its
+ * own card with its own two-step confirm.
  *
  * Status is a fill plus a word: the target swatch for a decision, the ink cross
  * for a mission that needs Recover. An unreadable inbox or withdrawal check

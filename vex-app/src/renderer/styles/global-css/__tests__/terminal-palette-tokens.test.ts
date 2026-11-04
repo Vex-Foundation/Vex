@@ -8,17 +8,19 @@
  * lightweight-charts. That makes the STYLESHEET the contract, and these are the
  * three ways it can break silently:
  *
- *  1. a slot defined in one theme block and not the other, so the terminal
- *     renders a missing colour as the bridge's neutral fallback in one theme
- *     only - which looks like a rendering bug, not a missing token;
+ *  1. a slot missing from the room, so the terminal renders a missing
+ *     colour as the bridge's neutral fallback - which looks like a rendering
+ *     bug, not a missing token;
  *  2. an incomplete ANSI set, so a program emitting SGR 35 gets whatever the
  *     fallback is while SGR 31 is themed;
- *  3. a background that misreports the surface through OSC 11. Both modes
- *     own opaque reading surfaces in xterm's supported eight-digit hex
- *     syntax, and each surface is a V10 primitive: the night field at night,
- *     the white field by day.
- *  4. a palette that parses and is still unreadable. Light mode measures
- *     every text slot against its actual opaque background, including SGR 90.
+ *  3. a background that misreports the surface through OSC 11. The room
+ *     owns an opaque reading surface in xterm's supported eight-digit hex
+ *     syntax, and the surface is a V10 primitive: the night field.
+ *  4. a palette that parses and is still unreadable: every text slot is
+ *     measured against its actual opaque background, including SGR 90.
+ *
+ * One room since H3 went dark only: the light palette (the white field and
+ * its darkened ramp) retired with Celeris.
  *
  * Unlike every other alias family here, the sixteen ANSI slots are RAW HEX on
  * purpose. They are a wire contract with programs that emit SGR 30-37 and
@@ -43,7 +45,6 @@ function ruleBody(css: string, selector: string): string {
 }
 
 const chronos = ruleBody(tokensCss, ":root");
-const celeris = ruleBody(tokensCss, '[data-vex-theme="celeris"]');
 
 /** The 16 ANSI slots, in the order SGR numbers them. */
 const ANSI_SLOTS = [
@@ -85,8 +86,6 @@ const WCAG_AA_NORMAL_TEXT = 4.5;
  * (VS Code's Dark+ puts `terminal.ansiBlack` at #000000 over a #1e1e1e panel,
  * 1.16:1) renders it at roughly this ratio. Lifting it to 4.5:1 would make a
  * black-on-yellow warning banner unreadable in the direction that matters.
- * The celeris block has no exception: on a white card, black IS the readable
- * end.
  */
 const CONTRAST_EXCEPTIONS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
   chronos: { black: 1 },
@@ -150,47 +149,41 @@ describe("terminal palette tokens", () => {
     expect(declaredIn(chronos)).toHaveLength(REQUIRED.length);
   });
 
-  it("defines EVERY terminal alias in BOTH theme blocks", () => {
-    // A dark-only token renders as the bridge's neutral fallback in celeris,
-    // which reads as a rendering bug rather than a missing token.
-    expect(declaredIn(celeris)).toEqual(declaredIn(chronos));
+  it("keeps no terminal slot under a theme override", () => {
+    // The light palette retired with Celeris; a second block would be a
+    // palette nothing can reach.
+    expect(tokensCss).not.toContain('[data-vex-theme="celeris"]');
   });
 
-  it.each([
-    ["chronos", chronos, "--color-night-1"],
-    ["celeris", celeris, "--color-white"],
-  ])("pins surface opacity and OSC 11 RGB to a V10 primitive (%s)", (name, body, primitive) => {
-    // Both themes have a stable reading ground. OSC 11 reports its RGB, so
-    // the surface is a wire contract and is held to a named primitive: the
-    // night field (night-1) at night, the white field by day. It does NOT follow the room's
-    // paper (--vex-alias-bg-base): a program that asked once must keep
-    // getting the same answer until the terminal itself is retuned.
+  it.each([["chronos", chronos, "#221a17"]])(
+    "pins surface opacity and OSC 11 RGB to the terminal's own surface (%s)",
+    (name, body, surface) => {
+    // The room has a stable reading ground. OSC 11 reports its RGB, so the
+    // surface is a wire contract and is pinned here: R3's night field,
+    // #221a17, kept as the terminal's own literal after the primitive
+    // retired, until Studio's H3 plate retunes the terminal. It does NOT
+    // follow the room's ground (--vex-alias-bg-base): a program that asked
+    // once must keep getting the same answer.
     const value = declarationValue(body, "--vex-alias-term-background");
     expect(value, `${name} must not use the keyword xterm rejects`).not.toBe("transparent");
     const match = /^#([0-9a-f]{6})([0-9a-f]{2})$/.exec(value ?? "");
     expect(match, `${name} background "${String(value)}" is not an 8-digit hex`).not.toBeNull();
     if (match === null) return;
     expect(match[2], `${name} background alpha`).toBe("ff");
-    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(resolveHex(tokensCss, primitive));
-  });
+    expect(`#${match[1] ?? ""}`, `${name} background RGB`).toBe(surface);
+    },
+  );
 
   it("gives every ANSI slot a concrete colour rather than a brand alias", () => {
     // The wire contract, stated as a test: these sixteen are the colours
     // programs MEAN, so they may not be re-pointed at the accent ramp.
-    for (const body of [chronos, celeris]) {
-      for (const slot of ANSI_SLOTS) {
-        const match = new RegExp(
-          `--vex-alias-term-${slot}:\\s*(#[0-9a-f]{6})\\s*;`,
-        ).exec(body);
-        expect(match, `--vex-alias-term-${slot} is not a plain hex`).not.toBeNull();
-      }
+    for (const slot of ANSI_SLOTS) {
+      const match = new RegExp(`--vex-alias-term-${slot}:\\s*(#[0-9a-f]{6})\\s*;`).exec(chronos);
+      expect(match, `--vex-alias-term-${slot} is not a plain hex`).not.toBeNull();
     }
   });
 
-  it.each([
-    ["chronos", chronos],
-    ["celeris", celeris],
-  ])("clears the normal-text contrast floor on the actual opaque reading surface (%s)", (theme, body) => {
+  it.each([["chronos", chronos]])("clears the normal-text contrast floor on the actual opaque reading surface (%s)", (theme, body) => {
     // This exact opaque background is painted by both the wrapper and xterm.
     const background = declarationValue(body, "--vex-alias-term-background");
     if (background === undefined) throw new Error("Terminal background token is missing");
@@ -212,10 +205,7 @@ describe("terminal palette tokens", () => {
     expect(failures, `${theme}: slots below WCAG AA`).toEqual([]);
   });
 
-  it.each([
-    ["chronos", chronos],
-    ["celeris", celeris],
-  ])("keeps default SGR 2 dim text above its separate 3:1 target (%s)", (_theme, body) => {
+  it.each([["chronos", chronos]])("keeps default SGR 2 dim text above its separate 3:1 target (%s)", (_theme, body) => {
     // xterm's opaque atlas composites SGR 2 at 50% before rasterization.
     // This tests a fully covered glyph pixel, not an antialiased edge. Dim
     // deliberately has a 3:1 target: even black at 50% cannot reach 4.5 on white.
@@ -234,27 +224,10 @@ describe("terminal palette tokens", () => {
     // The foreground and cursor ride OSC 10 and the block cursor, so they are
     // wire values like the background: literal, and pinned here so a repaint
     // of the room cannot move them by accident. Docs/design/R3-MINIMAL.md
-    // section 1.1: ink on the white field by day; paper type on the night field
-    // with the periwinkle (blue's night form) cursor.
-    expect(resolveHex(celeris, "--vex-alias-term-foreground")).toBe("#0a0d18");
+    // section 1.1: paper type on the night field with the periwinkle (blue's
+    // night form) cursor.
     expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#f3f4f7");
     expect(resolveHex(chronos, "--vex-alias-term-cursor")).toBe("#a3abff");
-    expect(resolveHex(celeris, "--vex-alias-term-cursor")).toBe("#0000c0");
     expect(resolveHex(chronos, "--vex-alias-term-blue")).toBe("#a3abff");
-    expect(resolveHex(celeris, "--vex-alias-term-blue")).toBe("#0000c0");
-    expect(resolveHex(celeris, "--vex-alias-term-black")).toBe("#2b3040");
-  });
-
-  it("gives the two themes DIFFERENT ANSI values, so the flip is real", () => {
-    // Identical palettes would mean one theme was copied and never tuned:
-    // chronos hues are lifted for a dark ground, celeris darkened for a white
-    // one, and a terminal that ignored that would be unreadable in light mode.
-    const hexOf = (body: string, slot: string): string | undefined =>
-      new RegExp(`--vex-alias-term-${slot}:\\s*(#[0-9a-f]{6})\\s*;`).exec(body)?.[1];
-
-    const differing = ANSI_SLOTS.filter(
-      (slot) => hexOf(chronos, slot) !== hexOf(celeris, slot),
-    );
-    expect(differing).toHaveLength(ANSI_SLOTS.length);
   });
 });

@@ -42,9 +42,9 @@
  *                            install, an unknown id lists the states
  *   ?vex=open|closed         the Vex column's stored choice for the state's
  *                            page class (each state's own default otherwise)
- *   ?theme=chronos|celeris   the room (chronos, the dark one every H3 plate
- *                            is drawn in)
  *   ?os=mac|win|linux        the window chrome (mac)
+ * There is no theme switch: the app is dark only (chronos), the room every
+ * H3 plate is drawn in.
  * The frame carries `data-vex-h3-ready` once the state's own element is on
  * screen and no query is still fetching; a spec waits for it rather than for
  * a timer. `window.__vexH3Harness` exposes the bridge's record (`calls()`,
@@ -88,7 +88,7 @@ function pick<T extends string>(name: string, options: readonly T[], fallback: T
   return options.find((option) => option === raw) ?? fallback;
 }
 
-const THEME: VexTheme = pick<VexTheme>("theme", ["chronos", "celeris"], "chronos");
+const THEME: VexTheme = "chronos";
 const OS: WindowOs = pick<WindowOs>("os", ["mac", "win", "linux"], "mac");
 const VEX = params.get("vex");
 const STATE = stateById(params.get("state"));

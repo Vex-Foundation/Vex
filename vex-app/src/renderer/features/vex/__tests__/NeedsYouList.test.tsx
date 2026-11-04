@@ -1,7 +1,8 @@
 /**
- * The Needs you list: every row says the action, where and when, and offers a
- * key that only opens it; an empty inbox and an unreadable one are drawn
- * differently, and neither is ever drawn as the other.
+ * The Needs you list: every row says the decision as a sentence (an
+ * approval's is its card's own), where it acts and since when it waits or when
+ * it expires, and offers a key that only opens it; an empty inbox and an
+ * unreadable one are drawn differently, and neither is ever drawn as the other.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -34,15 +35,33 @@ const BRIDGE = approvalNeedsYouItem(
   approval({
     id: "a1",
     toolName: "BridgeExecute",
+    preview: {
+      toolName: "BridgeExecute",
+      criticalArgs: { fromChain: "8453", toChain: "42161", bridgeAmount: "1 USDC | 1000000 raw units | 6 decimals" },
+    },
     sessionTitle: "Treasury chat",
     expiresAt: "2026-10-17T15:30:00.000Z",
+  }),
+  NOW,
+);
+const BRIDGE_SENTENCE = "Bridge 1 USDC from Base to Arbitrum.";
+const SWAP = approvalNeedsYouItem(
+  approval({
+    id: "a2",
+    toolName: "kyberswap:swap.execute",
+    preview: {
+      toolName: "swap.execute",
+      namespace: "kyberswap",
+      criticalArgs: { chain: "base", tokenIn: "USDC", tokenOut: "ETH", amountIn: "200" },
+    },
+    createdAt: "2026-10-17T12:05:00.000Z",
   }),
   NOW,
 );
 const RECOVER = missionNeedsYouItem(session({ title: "Weekly rebalance", missionStatus: "paused_error" }));
 
 describe("NeedsYouList rows", () => {
-  it.each(["panel", "sidebar"] as const)("%s: the action, where and when, and a key", (variant) => {
+  it.each(["panel", "sidebar"] as const)("%s: the decision as a sentence, where and when, and a key", (variant) => {
     const onReview = vi.fn();
     render(<NeedsYouList model={model({ items: itemsOf(BRIDGE, RECOVER) })} variant={variant} onReview={onReview} />);
 
@@ -52,13 +71,22 @@ describe("NeedsYouList rows", () => {
     const second = rows[1];
     if (first === undefined || second === undefined) throw new Error("rows missing");
 
-    expect(within(first).getByText("Approve bridge")).toBeTruthy();
-    expect(first.textContent).toContain("Treasury chat · expires 15:30 UTC");
-    expect(within(first).getByRole("button", { name: "Review: Approve bridge" })).toBeTruthy();
+    expect(within(first).getByText(BRIDGE_SENTENCE)).toBeTruthy();
+    expect(first.textContent).toContain("Base to Arbitrum, real funds · expires 15:30 UTC");
+    expect(within(first).getByRole("button", { name: `Review: ${BRIDGE_SENTENCE}` })).toBeTruthy();
 
     expect(within(second).getByText("Recover the mission")).toBeTruthy();
     expect(second.textContent).toContain("Weekly rebalance · paused on an error");
     expect(within(second).getByRole("button", { name: "Recover: Recover the mission" })).toBeTruthy();
+  });
+
+  it("gives the swap as the card's sentence, where, since, and Review", () => {
+    render(<NeedsYouList model={model({ items: itemsOf(SWAP) })} variant="sidebar" onReview={vi.fn()} />);
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByText("Swap 200 USDC for ETH on Base.")).toBeTruthy();
+    expect(row.textContent).toContain("Base, real funds · since 12:05 UTC");
+    const review = within(row).getByRole("button", { name: "Review: Swap 200 USDC for ETH on Base." });
+    expect(review.textContent).toBe("Review");
   });
 
   it("sets the time as a figure", () => {
@@ -70,7 +98,7 @@ describe("NeedsYouList rows", () => {
   it("only opens: the key hands the item back and nothing else", () => {
     const onReview = vi.fn();
     render(<NeedsYouList model={model({ items: itemsOf(BRIDGE) })} variant="panel" onReview={onReview} />);
-    fireEvent.click(screen.getByRole("button", { name: "Review: Approve bridge" }));
+    fireEvent.click(screen.getByRole("button", { name: `Review: ${BRIDGE_SENTENCE}` }));
     expect(onReview).toHaveBeenCalledTimes(1);
     expect(onReview).toHaveBeenCalledWith(BRIDGE);
     // No decision key lives in this list.
@@ -87,7 +115,7 @@ describe("NeedsYouList rows", () => {
         goLabel={(item) => (item.kind === "approval" ? "Review ↓" : item.go)}
       />,
     );
-    expect(screen.getByRole("button", { name: "Review ↓: Approve bridge" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Review ↓: ${BRIDGE_SENTENCE}` })).toBeTruthy();
   });
 
   it("marks a decision with the target fill and a mission to recover with the ink cross", () => {

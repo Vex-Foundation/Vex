@@ -235,18 +235,15 @@
 
 /* ---- the portrait plate (VexPortraitPlate): the print window ----
  * 280 high, 220 to 280 in low windows (236 at 720 high); a quiet rule above.
- * The plate ground fills in while the photograph decodes: the night print's
- * darkest tone, and the day print's mid tone in celeris. */
+ * The plate ground fills in while the photograph decodes: the ground, so the
+ * decode never flashes a colour of its own. */
 .vex-vs-plate {
   position: relative;
   height: clamp(220px, calc(24.4vh + 60px), 280px);
   flex: none;
   overflow: hidden;
   border-top: 1px solid var(--vex-alias-rule-quiet);
-  background: var(--color-night-0);
-}
-[data-vex-theme="celeris"] .vex-vs-plate {
-  background: #c7b6a6;
+  background: var(--vex-alias-bg-deep);
 }
 /* On the desk the chat needs the room: the plate stays at 220 to 246. */
 .vex-vs[data-vex-vs-mode="lighter"] .vex-vs-plate {
@@ -267,14 +264,9 @@
 .vex-vs-plate__img--custom {
   object-position: 50% 50%;
 }
-/* One print per room, swapped on data-vex-theme, never by a JS theme read. */
+/* The night print only: the app is dark only, so the day print never
+ * shows. */
 .vex-vs-plate__img--day {
-  display: none;
-}
-[data-vex-theme="celeris"] .vex-vs-plate__img--day {
-  display: block;
-}
-[data-vex-theme="celeris"] .vex-vs-plate__img--night {
   display: none;
 }
 /* The print's grain: fractal noise, multiplied at 10%, over the photograph. */
@@ -423,16 +415,13 @@
   padding: 10px 12px;
   overflow-x: auto;
   border: 1px solid var(--vex-alias-rule-quiet);
-  background: var(--color-night-1);
+  background: var(--vex-alias-bg-layer-3);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-code);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-}
-[data-vex-theme="celeris"] .vex-vs-inspect__pre {
-  background: var(--color-paper-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

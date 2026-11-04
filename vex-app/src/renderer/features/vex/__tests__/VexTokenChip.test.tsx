@@ -3,8 +3,9 @@
  * 3): the open chat's state as a fill and a word, and the Vex toggle. The
  * presence is mocked here (its wiring is `useVexPresence.test.tsx`); this suite
  * pins what the chip draws from it, what a press does, the Cmd or Ctrl +
- * Shift + Period shortcut that presses it, and where the one announcer of
- * the state word sits.
+ * Shift + B shortcut that presses it (and, for one release, R3's retiring
+ * Cmd or Ctrl + Shift + Period), and where the one announcer of the state
+ * word sits.
  */
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -146,13 +147,13 @@ describe("VexTokenChip: the toggle", () => {
   it("is pressed while Vex is open, and its tooltip says what a press does and its shortcut", () => {
     expect(vexToggleLabel(true)).toBe("Hide Vex");
     expect(vexToggleLabel(false)).toBe("Show Vex");
-    expect(vexToggleTooltip(true, "win32")).toBe("Hide Vex · Ctrl+Shift+.");
-    expect(vexToggleTooltip(false, "darwin")).toBe("Show Vex · ⇧⌘.");
+    expect(vexToggleTooltip(true, "win32")).toBe("Hide Vex · Ctrl+Shift+B");
+    expect(vexToggleTooltip(false, "darwin")).toBe("Show Vex · ⇧⌘B");
     const { rerender } = render(<VexTokenChip open onToggle={() => undefined} platform="linux" />);
     expect(chip().getAttribute("aria-pressed")).toBe("true");
-    expect(chip().getAttribute("aria-keyshortcuts")).toBe("Control+Shift+.");
+    expect(chip().getAttribute("aria-keyshortcuts")).toBe("Control+Shift+B");
     fireEvent.focus(chip());
-    expect(screen.getByText("Hide Vex · Ctrl+Shift+.")).not.toBeNull();
+    expect(screen.getByText("Hide Vex · Ctrl+Shift+B")).not.toBeNull();
     rerender(<VexTokenChip open={false} onToggle={() => undefined} platform="linux" />);
     expect(chip().getAttribute("aria-pressed")).toBe("false");
   });
@@ -202,7 +203,7 @@ describe("VexTokenChip: the toggle", () => {
         "1 mission running",
       );
       fireEvent.focus(chip());
-      expect(screen.getByText("Show Vex · Ctrl+Shift+.")).not.toBeNull();
+      expect(screen.getByText("Show Vex · Ctrl+Shift+B")).not.toBeNull();
       fireEvent.click(chip());
       expect(keep).toHaveBeenCalledTimes(1);
       expect(onToggle).not.toHaveBeenCalled();
@@ -219,15 +220,31 @@ describe("VexTokenChip: the shortcut", () => {
     return event;
   }
 
-  it("presses the chip on Ctrl+Shift+Period off macOS, and takes the key", () => {
+  it("presses the chip on Ctrl+Shift+B off macOS, and takes the key", () => {
     const onToggle = vi.fn();
     render(<VexTokenChip open={false} onToggle={onToggle} platform="win32" />);
+    const event = press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves Ctrl+B alone: that is Studio's sidebar key, not hers", () => {
+    const onToggle = vi.fn();
+    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
+    const event = press({ code: "KeyB", key: "b", ctrlKey: true });
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("still presses it on the retiring Ctrl+Shift+Period, for one release", () => {
+    const onToggle = vi.fn();
+    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
     const event = press({ code: "Period", key: ">", ctrlKey: true, shiftKey: true });
     expect(onToggle).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it("presses it on Cmd+Shift+Period on macOS, from inside a text field too", () => {
+  it("presses it on Cmd+Shift+B on macOS, from inside a text field too", () => {
     const onToggle = vi.fn();
     render(
       <>
@@ -236,24 +253,24 @@ describe("VexTokenChip: the shortcut", () => {
       </>,
     );
     const field = screen.getByRole("textbox", { name: "Session draft" });
-    press({ code: "Period", key: ">", metaKey: true, shiftKey: true }, field);
+    press({ code: "KeyB", key: "B", metaKey: true, shiftKey: true }, field);
     expect(onToggle).toHaveBeenCalledTimes(1);
     // Ctrl is not the macOS chord.
-    press({ code: "Period", key: ">", ctrlKey: true, shiftKey: true }, field);
+    press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true }, field);
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
   it("ignores a held key's repeats, other chords and a key someone nearer already took", () => {
     const onToggle = vi.fn();
     render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
-    press({ code: "Period", ctrlKey: true, shiftKey: true, repeat: true });
-    press({ code: "Period", ctrlKey: true, shiftKey: true, altKey: true });
+    press({ code: "KeyB", ctrlKey: true, shiftKey: true, repeat: true });
+    press({ code: "KeyB", ctrlKey: true, shiftKey: true, altKey: true });
     press({ code: "KeyL", ctrlKey: true, shiftKey: true });
     press({ code: "KeyV", ctrlKey: true, shiftKey: true });
     const nearer = document.createElement("div");
     document.body.append(nearer);
     nearer.addEventListener("keydown", (event) => event.preventDefault());
-    press({ code: "Period", ctrlKey: true, shiftKey: true }, nearer);
+    press({ code: "KeyB", ctrlKey: true, shiftKey: true }, nearer);
     nearer.remove();
     expect(onToggle).not.toHaveBeenCalled();
   });
@@ -264,7 +281,7 @@ describe("VexTokenChip: the shortcut", () => {
     const dialog = document.createElement("dialog");
     dialog.setAttribute("open", "");
     document.body.append(dialog);
-    const event = press({ code: "Period", ctrlKey: true, shiftKey: true });
+    const event = press({ code: "KeyB", ctrlKey: true, shiftKey: true });
     expect(onToggle).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
   });
@@ -275,10 +292,10 @@ describe("VexTokenChip: the shortcut", () => {
     const dispose = registerVexCloser({ close, keep: () => undefined });
     try {
       const view = render(<VexTokenChip open onToggle={onToggle} platform="linux" />);
-      press({ code: "Period", ctrlKey: true, shiftKey: true });
+      press({ code: "KeyB", ctrlKey: true, shiftKey: true });
       expect(close).toHaveBeenCalledTimes(1);
       view.unmount();
-      press({ code: "Period", ctrlKey: true, shiftKey: true });
+      press({ code: "KeyB", ctrlKey: true, shiftKey: true });
       expect(close).toHaveBeenCalledTimes(1);
     } finally {
       dispose();

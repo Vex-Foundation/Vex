@@ -3,6 +3,9 @@
  * "/" menu offers, plus the pure filter the menu renders from. A command's
  * `run` receives the capability surface the composer injects and returns
  * the toast text to show, or null when the command opened its own surface.
+ *
+ * `/theme` retired with the light room: H3 is dark only (the H3 revamp plan,
+ * decision 6), so there is nothing left for it to switch.
  */
 
 export interface ComposerCommandContext {
@@ -14,8 +17,6 @@ export interface ComposerCommandContext {
   readonly openPlan: () => void;
   /** Opens the session export dialog; only called with an active session. */
   readonly openExport: () => void;
-  /** Flips the theme preference; returns the resolved theme's display name. */
-  readonly toggleTheme: () => string;
 }
 
 export interface ComposerCommand {
@@ -59,12 +60,6 @@ export const COMPOSER_COMMANDS: readonly ComposerCommand[] = [
       context.clearDraft();
       return "Draft cleared.";
     },
-  },
-  {
-    id: "theme",
-    label: "/theme",
-    description: "Switch between the dark and light theme",
-    run: (context) => `Theme: ${context.toggleTheme()}.`,
   },
   {
     id: "help",

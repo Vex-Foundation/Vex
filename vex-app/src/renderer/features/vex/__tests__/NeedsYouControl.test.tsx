@@ -344,8 +344,10 @@ describe("NeedsYouControl: the panel", () => {
     expect(panel.textContent).toContain("Needs you · 2");
     const rows = panel.querySelectorAll("[data-vex-needs-you-item]");
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.textContent).toContain("Newer chat");
-    expect(rows[1]?.textContent).toContain("Older chat");
+    // An approval's line names where it acts, not the chat it came from, so
+    // the order reads from the times.
+    expect(rows[0]?.textContent).toContain("11:00 UTC");
+    expect(rows[1]?.textContent).toContain("10:00 UTC");
   });
 
   it("stays open saying 'Nothing needs you.' when the last item clears, then goes on close", () => {

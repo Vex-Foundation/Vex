@@ -1,7 +1,7 @@
 /* GLOBAL PAGE FOUNDATION: unscoped rules with no single feature owner:
  * the ::selection accent, the html/body/#root base surface, the weight
- * synthesis switch, the placeholder ink, the V10 shape law and the WCAG
- * reduced-motion catch-all.
+ * synthesis switch, the placeholder ink, the V10 shape law, the WCAG
+ * reduced-motion catch-all and its Save-Data twin.
  * The catch-all is a HARD dependency for every effect without a dedicated
  * reduced-motion override (including the looping badge shimmer and backdrop
  * drift); never drop this import and never add layer(...) to it. */
@@ -33,13 +33,13 @@ body {
   line-height: 1.45;
 }
 
-/* NEVER A FAKE BOLD. Instrument Serif has no weight axis, so a
- * `font-semibold` reaching it would be synthesised by the browser. Weight
- * synthesis is off for the whole page: a face renders the weights it has
- * (Instrument Sans 400-700 and JetBrains Mono 100-800 are variable, so they
- * lose nothing). Italic synthesis stays on, because Instrument Sans ships
- * upright only and an italic request should still lean. Set on html so every
- * element inherits it. */
+/* NEVER A FAKE BOLD. Be Vietnam Pro ships two static weights (400, 600)
+ * and Roboto Mono one (400), so a weight between or above them would be
+ * synthesised by the browser. Weight synthesis is off for the whole page: a
+ * face renders the weights it has, by the CSS matching rules (500 renders
+ * 400, 700 renders 600, every figure 400). Italic synthesis stays on,
+ * because both faces ship upright only and an italic request should still
+ * lean. Set on html so every element inherits it. */
 html {
   font-synthesis-weight: none;
 }
@@ -121,5 +121,24 @@ html {
     transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* SAVE-DATA lands motion at once too (docs/design/H3-DESKTOP.md section 3.7;
+ * MOTION-POLICY.md "Reduced motion"). Save-Data has no media query, so
+ * `data-still` on <html> carries it: public/theme-boot.js stamps it before
+ * first paint and keeps it current (`stampSaveData`,
+ * lib/motion/use-still-frame.ts). The rule is the reduced-motion catch-all
+ * above, word for word, with the same one opt-out: the JS still frame
+ * (`useStillFrame`) and this rule then agree, so a CSS-only motion such as
+ * Kimm's clip-path wipe lands at once in both. */
+html[data-still] *:not([data-vex-motion-opacity]),
+html[data-still] *:not([data-vex-motion-opacity])::before,
+html[data-still] *:not([data-vex-motion-opacity])::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
 }
 

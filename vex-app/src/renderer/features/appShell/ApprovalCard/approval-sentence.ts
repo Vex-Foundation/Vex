@@ -9,13 +9,18 @@
  * filled from a sample: an absent amount is left out, never a zero.
  *
  * Pure: no React, no IO. The tool family comes from the one action-word table
- * (`approvalActionWord`, features/vex/needs-you.ts), so the card's button, the
- * Needs you rows and this sentence can never disagree about what a tool is.
+ * (`approvalActionWord`, features/vex/needs-you-words.ts), so the card's
+ * button, the Needs you rows and this sentence can never disagree about what
+ * a tool is. The Needs you rows title themselves with this sentence and name
+ * the place with `approvalPlace` (docs/design/H3-DESKTOP.md Appendix A.3), so
+ * this module reads the table from its leaf, never from `needs-you.ts`, which
+ * imports this one.
  */
 
 import type { ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { chainDisplay, chainDisplayBySlug } from "@shared/chains/display.js";
-import { APPROVAL_ACTION_WORDS, approvalActionWord, formatNeedsYouTime } from "../../vex/needs-you.js";
+import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
+import { APPROVAL_ACTION_WORDS, approvalActionWord, formatNeedsYouTime } from "../../vex/needs-you-words.js";
 import { resolveToolIdentity } from "../ToolLedger/toolIdentity.js";
 import { lighterOrderFacts } from "./lighter-order-facts.js";
 import { isHighRisk } from "./risk.js";
@@ -227,6 +232,39 @@ export function approvalSentence(summary: ApprovalTarget): string {
     if (own !== null && own.length <= SUMMARY_SENTENCE_MAX) return sentence(own);
   }
   return `${approvalToolTitle(summary)}: review the signed fields`;
+}
+
+/** The Lighter deployment a call names, by its people name ("Lighter Core"); else `null`. */
+function lighterEnvironmentName(value: string | null): string | null {
+  if (value === null) return null;
+  const named = Object.entries(LIGHTER_ENVIRONMENT_NAMES).find(([key]) => key === value);
+  return named === undefined ? null : named[1];
+}
+
+/**
+ * Where the approval acts, as the Needs you row's meta line says it
+ * (docs/design/H3-DESKTOP.md Appendix A.3): both ends of a bridge ("Base to
+ * Arbitrum"), the Lighter deployment a Lighter call names ("Lighter Core",
+ * plain "Lighter" when it names none), else the chain its arguments name
+ * ("Base"). `null` when the arguments name no place, so the row says nothing
+ * rather than guess one. Read only from the bound arguments, as the sentence
+ * is.
+ */
+export function approvalPlace(summary: ApprovalTarget): string | null {
+  const args = summary.preview?.criticalArgs ?? null;
+  if (args === null) return null;
+  if (typeof args.toolId === "string" && args.toolId.startsWith("lighter.")) {
+    return lighterEnvironmentName(argText(args, "environment")) ?? "Lighter";
+  }
+  if (approvalFamily(summary) === "bridge") {
+    const from = chainName(argText(args, "fromChain"));
+    const to = chainName(argText(args, "toChain"));
+    if (from !== null && to !== null) return `${from} to ${to}`;
+    // A bridge acts first on the chain it leaves; with only its far end
+    // named, the sentence already says "to {chain}".
+    return from;
+  }
+  return chainName(argText(args, "chain"));
 }
 
 /**

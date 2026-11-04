@@ -26,8 +26,10 @@ describe("uiStore v17 - the last Studio location", () => {
 
     expect(after["runtimeMode"]).toBe("agent");
     expect(after["activeProjectId"]).toBeNull();
-    // EXPAND-ONLY: every key the old payload carried is still there, unchanged.
-    expect(after["themePreference"]).toBe("system");
+    // EXPAND-ONLY at v17: every key the old payload carried is still there.
+    // The theme slot is the one a LATER hop rewrites: v23 lands every stored
+    // choice on the dark room.
+    expect(after["themePreference"]).toBe("chronos");
     expect(after["bookOpen"]).toBe(true);
   });
 

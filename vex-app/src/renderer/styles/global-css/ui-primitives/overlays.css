@@ -14,17 +14,13 @@
 
 /* ── Flat paper scrim ──────────────────────────────────────────────────────
  * Where a dialog must block (destructive confirms, token launch) the page
- * behind it sits under its own paper at 62% (night paper at 66%): one flat
- * layer, no dither, no blur, no dim. `data-vex-backdrop="none"` on a dialog
- * drops the scrim for a panel or a sheet that leaves the window standing.
- * The strength is a runtime cascade value per room, not a design token: the
- * colour is always the room's own paper alias. */
+ * behind it sits under its own paper at 66%: one flat layer, no dither, no
+ * blur, no dim. `data-vex-backdrop="none"` on a dialog drops the scrim for a
+ * panel or a sheet that leaves the window standing. The strength is a
+ * runtime cascade value, not a design token: the colour is always the
+ * room's own paper alias. */
 :root {
   --vex-scrim-strength: 66%;
-}
-
-[data-vex-theme="celeris"] {
-  --vex-scrim-strength: 62%;
 }
 
 .vex-scrim,

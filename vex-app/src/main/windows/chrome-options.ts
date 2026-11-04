@@ -24,7 +24,7 @@ export const HEAD_RULE_WIDTH = 1;
 
 /**
  * Height of the native overlay: the head row less its rule. The overlay is an
- * opaque plate in the paper colour, so at the full 44px it painted over the
+ * opaque plate in the ground colour, so at the head row's full height it painted over the
  * rule and every head's rule stopped where the window controls begin, with
  * blank paper under the buttons. One pixel short, the rule runs on under the
  * controls to the window edge.
@@ -41,14 +41,19 @@ export const TRAFFIC_LIGHT_POSITION = { x: 20, y: 32 } as const;
 
 /**
  * Overlay colours. Constants here because tokens.css is renderer-only.
- * color = the page paper (`--paper` light, `--night` dark), symbolColor = the
- * ink on it (`--ink` light, `--type` dark). Keep in step with docs/design/R3-MINIMAL.md section 1.1.
+ * color = the ground (`--color-h3-ground`), symbolColor = the ink on it
+ * (`--color-h3-ink`), docs/design/H3-DESKTOP.md section 2.1. The app is dark
+ * only: the schema still names a second theme for the IPC boundary, and it
+ * takes the same dark pair, so nothing can paint a light caption over the
+ * dark header. `theme-matrix.test.ts` ties these to the renderer's tokens.
  */
+const DARK_OVERLAY = { color: "#010203", symbolColor: "#F3F5F9" } as const;
+
 export const TITLE_BAR_OVERLAY_COLORS: Readonly<
   Record<TitleBarTheme, { readonly color: string; readonly symbolColor: string }>
 > = {
-  celeris: { color: "#F3F4F7", symbolColor: "#0A0D18" },
-  chronos: { color: "#1B1412", symbolColor: "#F3F4F7" },
+  celeris: DARK_OVERLAY,
+  chronos: DARK_OVERLAY,
 };
 
 export interface TitleBarOverlay {

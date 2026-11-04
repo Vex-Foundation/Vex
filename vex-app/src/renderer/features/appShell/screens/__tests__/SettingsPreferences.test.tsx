@@ -1,14 +1,13 @@
 /**
  * SettingsPreferences - the Preferences section of the Settings page
- * (docs/design/R3-MINIMAL.md section 9.6): the Appearance choice, Show avatar,
- * Open Vex's sidebar in chats, the Session permission explainer, the
- * Background row, the composer Enter-key row and the two switches.
+ * (docs/design/R3-MINIMAL.md section 9.6): Show avatar, Open Vex's sidebar in
+ * chats, the Session permission explainer, the Background row, the composer
+ * Enter-key row and the two switches.
  *
  * Pins:
- *   - clicking a theme choice writes the persisted preference AND stamps the
- *     resolved theme onto `documentElement[data-vex-theme]`,
- *   - choice selection follows the PREFERENCE, never the resolved theme
- *     ("system" stays pressed while the OS resolves the paint),
+ *   - there is no theme choice: H3 is dark only, so the Appearance row and
+ *     its three cubes (Chronos, Celeris, System) are gone and nothing on the
+ *     page can move the room off dark,
  *   - Show avatar round-trips through `showAvatar`, Open Vex's sidebar in
  *     chats through `vexOpenChat` alone (never the table pages' slot),
  *   - the Session permission row explains Restricted and Full access in plain
@@ -62,7 +61,6 @@ function renderGroup(ui: ReactElement): ReturnType<typeof render> {
 beforeEach(async () => {
   window.localStorage.clear();
   await resetSubmitKeyBehaviorForTest();
-  useUiStore.getState().setThemePreference("chronos");
   useUiStore.setState({ showAvatar: true, vexOpenChat: true, vexOpenPages: false });
   shellBackdropReadMock.mockReset();
   shellBackdropReadMock.mockResolvedValue({ ok: true, data: { backdrop: null } });
@@ -75,33 +73,17 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
-  useUiStore.getState().setThemePreference("chronos");
 });
 
-function cube(id: string): HTMLButtonElement {
-  const el = document.querySelector(`[data-vex-theme-cube="${id}"]`);
-  if (!(el instanceof HTMLButtonElement)) throw new Error(`cube ${id} missing`);
-  return el;
-}
-
 describe("SettingsPreferences", () => {
-  it("a theme cube click persists the preference and stamps the resolved theme on the document root", () => {
+  it("offers no theme choice: no Appearance row, no theme cube, the room stays dark", () => {
     renderGroup(<SettingsPreferences />);
-    fireEvent.click(cube("celeris"));
-    expect(useUiStore.getState().themePreference).toBe("celeris");
-    expect(document.documentElement.dataset["vexTheme"]).toBe("celeris");
-    fireEvent.click(cube("chronos"));
-    expect(document.documentElement.dataset["vexTheme"]).toBe("chronos");
-  });
-
-  it("cube selection follows the persisted preference, never the resolved theme", () => {
-    renderGroup(<SettingsPreferences />);
-    fireEvent.click(cube("system"));
-    // jsdom matchMedia is absent -> system resolves to chronos, yet the
-    // SYSTEM cube must stay the pressed one.
+    expect(document.querySelector("[data-vex-settings-appearance]")).toBeNull();
+    expect(document.querySelector("[data-vex-theme-cube]")).toBeNull();
+    for (const word of ["Appearance", /Chronos/, /Celeris/, /Match OS/]) {
+      expect(screen.queryByText(word)).toBeNull();
+    }
     expect(useUiStore.getState().theme).toBe("chronos");
-    expect(cube("system").getAttribute("aria-pressed")).toBe("true");
-    expect(cube("chronos").getAttribute("aria-pressed")).toBe("false");
   });
 
   it("the Enter-key choice round-trips through the submission policy's public API", () => {
@@ -115,15 +97,15 @@ describe("SettingsPreferences", () => {
     expect(getSubmitKeyBehavior()).toBe("enter");
   });
 
-  it("mounts the Background row between Appearance and the Enter key, reading the backdrop once", async () => {
+  it("mounts the Background row between the permission row and the Enter key, reading the backdrop once", async () => {
     renderGroup(<SettingsPreferences />);
     const rows = Array.from(
       document.querySelectorAll(
-        "[data-vex-settings-appearance], [data-vex-settings-backdrop], [data-vex-settings-enter]",
+        "[data-vex-settings-permission], [data-vex-settings-backdrop], [data-vex-settings-enter]",
       ),
     ).map((row) => row.getAttributeNames().find((name) => name.startsWith("data-vex-settings-")));
     expect(rows).toEqual([
-      "data-vex-settings-appearance",
+      "data-vex-settings-permission",
       "data-vex-settings-backdrop",
       "data-vex-settings-enter",
     ]);
@@ -166,7 +148,6 @@ describe("SettingsPreferences", () => {
       (title) => title.textContent,
     );
     expect(titles).toEqual([
-      "Appearance",
       "Show avatar",
       "Open Vex's sidebar in chats",
       "Session permission",
@@ -176,13 +157,6 @@ describe("SettingsPreferences", () => {
       "Price alert notifications",
       "Multi-line paste warning",
     ]);
-  });
-
-  it("names the three themes with their words", () => {
-    renderGroup(<SettingsPreferences />);
-    expect(cube("chronos").textContent).toBe("Chronos \u00b7 Dark");
-    expect(cube("celeris").textContent).toBe("Celeris \u00b7 Light");
-    expect(cube("system").textContent).toBe("System \u00b7 Match OS");
   });
 
   it("Show avatar reads showAvatar and a click round-trips through its setter", () => {

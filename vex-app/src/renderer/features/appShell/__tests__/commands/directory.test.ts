@@ -19,7 +19,6 @@ function contextOf(
     clearDraft: vi.fn(),
     openPlan: vi.fn(),
     openExport: vi.fn(),
-    toggleTheme: vi.fn(() => "Celeris (light)"),
     ...over,
   };
 }
@@ -36,7 +35,6 @@ describe("composer command directory", () => {
       "plan",
       "export",
       "clear-draft",
-      "theme",
       "help",
     ]);
     for (const command of COMPOSER_COMMANDS) {
@@ -86,10 +84,9 @@ describe("composer command directory", () => {
     expect(context.clearDraft).toHaveBeenCalledTimes(1);
   });
 
-  it("/theme flips the preference and names the resolved theme in the toast", () => {
-    const context = contextOf();
-    expect(commandOf("theme").run(context)).toBe("Theme: Celeris (light).");
-    expect(context.toggleTheme).toHaveBeenCalledTimes(1);
+  it("offers no /theme: the app is dark only, so there is nothing to switch", () => {
+    expect(COMPOSER_COMMANDS.some((command) => command.id === "theme")).toBe(false);
+    expect(filterComposerCommands("th")).toEqual([]);
   });
 
   it("/help lists every registered command", () => {
