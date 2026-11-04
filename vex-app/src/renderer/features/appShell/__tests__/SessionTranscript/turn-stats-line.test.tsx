@@ -2,7 +2,7 @@
  * TurnStatsLine REGISTER (docs/design/R3-MINIMAL.md section 6: "Turn stats
  * (11.5 muted) show on hover only").
  *
- * The line is VALUES ("88.1K in"), tabular, on the turn's 40px edge with the
+ * The line is VALUES ("88.1K in"), tabular, on the turn's edge with the
  * rest of Vex's turn, revealed only when the turn or the line is hovered or
  * focused. Its metric and the reveal live in one class (`.vex-turn-stats`,
  * chat-transcript.css), never re-declared at the call site.
@@ -79,12 +79,14 @@ describe("TurnStatsLine", () => {
     }
   });
 
-  it("is 11.5 muted and tabular, on the 40px edge of Vex's turn", () => {
+  it("is 11.5 muted and tabular, on the edge of Vex's turn", () => {
     const stats = ruleBody(".vex-turn-stats");
     expect(stats).toContain("font-size: 11.5px;");
     expect(stats).toContain("color: var(--vex-alias-label-tertiary);");
     expect(stats).toContain("font-variant-numeric: tabular-nums;");
-    expect(ruleBody(".vex-reply")).toContain("padding-left: 40px;");
+    // docs/design/H3-DESKTOP.md section 1.7: Vex's turn runs on the column's
+    // own edge, with no token gutter, so the line does too.
+    expect(ruleBody(".vex-reply")).not.toContain("padding-left");
   });
 
   it("shows on hover or focus only, and always on touch", () => {

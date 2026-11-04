@@ -182,12 +182,11 @@ describe("SessionTranscript", () => {
     expect(screen.getByText("context compacted")).not.toBeNull();
     expect(screen.getByText(/onerror="alert\(1\)"/)).not.toBeNull();
     expect(container.querySelector("img[onerror]")).toBeNull();
-    // Assistant turns are signed by the inline VexMark on the tape spine, not
-    // by a raster portrait: no <img> reaches the transcript at all, and the
-    // mark is aria-hidden because the row's sr-only label names the speaker.
-    const avatar = container.querySelector("[data-vex-agent-avatar] svg");
-    expect(avatar).not.toBeNull();
-    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
+    // Assistant turns are named by the row's sr-only label, never by a
+    // raster portrait or a token (docs/design/H3-DESKTOP.md section 1.7: H3
+    // draws no mark beside Vex's rows): no <img> reaches the transcript.
+    expect(container.querySelector("[data-vex-turn-head]")).not.toBeNull();
+    expect(container.querySelector("[data-vex-vx-token]")).toBeNull();
     expect(container.querySelector("img")).toBeNull();
     expect(listMock).toHaveBeenCalledWith({
       sessionId: SESSION,
