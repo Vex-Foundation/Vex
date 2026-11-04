@@ -617,6 +617,111 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   text-align: left;
 }
 
+/* ── The Vex key (docs/design/H3-DESKTOP.md sections 1.3 and 1.6; VexKey.tsx)
+ * One button across the Vex key's cell, in three cells divided by the rule:
+ * her portrait (76 square; the fold glyph on the raised fill while she is
+ * open), the state cell (its text 20 in: the square and the word at 14 in
+ * caps with the timer as a figure, over the action at 13 in caps and the
+ * keycaps) and the chevron (61). The state cell narrows with the column, so
+ * its word ends in an ellipsis before it pushes the chevron. The focus ring
+ * is the 2px ink ring inside the cell (section 2.4). ───────────────────── */
+.vex-key {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  text-align: left;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-key__portrait {
+  display: flex;
+  flex: none;
+  width: 76px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+}
+.vex-key__portrait[data-open] {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-key__state {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px 0 20px;
+}
+.vex-key__line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  white-space: nowrap;
+}
+.vex-key__status {
+  gap: 10px;
+  font-size: 14px;
+  line-height: 18px;
+}
+.vex-key__square {
+  flex: none;
+}
+.vex-key__word {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-key__timer {
+  flex: none;
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.vex-key__action {
+  gap: 14px;
+  font-size: 13px;
+  line-height: 19px;
+}
+.vex-key__name {
+  flex: none;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-key__chevron {
+  display: flex;
+  flex: none;
+  width: 61px;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-secondary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key {
+    transition: none;
+  }
+}
+
 /* ── Keycaps (docs/design/H3-DESKTOP.md section 2.4; `components/ui/keycaps.tsx`)
  * A chord as its keys: each cap 19 high, a 1px chosen-rule border, its
  * letters in caps at 11, 3 apart; CTRL about 40 wide, SHIFT about 42, B about

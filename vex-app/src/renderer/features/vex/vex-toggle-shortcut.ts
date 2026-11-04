@@ -82,3 +82,19 @@ export function vexToggleShortcutLabel(platform: StudioPlatform): string {
 export function vexToggleAriaShortcut(platform: StudioPlatform): string {
   return platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B";
 }
+
+/**
+ * The toggle's name: what a press does now (docs/design/H3-DESKTOP.md section 1.6). Open, it
+ * hides her; closed, it shows her. Every control that carries the press is named this.
+ */
+export function vexToggleName(open: boolean): string {
+  return open ? "Hide Vex" : "Show Vex";
+}
+
+/**
+ * The tooltip: the name and the chord that does the same (Appendix A.9), "Show Vex
+ * (Ctrl+Shift+B)", "Hide Vex (⇧⌘B)".
+ */
+export function vexToggleTooltipLabel(open: boolean, platform: StudioPlatform): string {
+  return `${vexToggleName(open)} (${vexToggleShortcutLabel(platform)})`;
+}
