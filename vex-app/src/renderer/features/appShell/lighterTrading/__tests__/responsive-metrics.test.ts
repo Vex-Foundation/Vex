@@ -268,6 +268,11 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(animated).toEqual(["transform", "opacity", "clip-path", "visibility"]);
   });
 
+  it("keeps a short message of yours on one line in her narrow column: its clock and keys give way first", () => {
+    expect(css).toMatch(/\.lit-chat-shell \.vex-you__cap \{[^}]*flex: 0 1 auto;[^}]*min-width: 0;[^}]*overflow: hidden;/s);
+    expect(css).toMatch(/\.lit-chat-shell \.vex-you__stack \{[^}]*flex: 0 0 auto;[^}]*max-width: calc\(100% - 60px\);/s);
+  });
+
   it("lets the desk chat in the Vex sidebar speak the room without a re-projection", () => {
     // The chat's transcript and composer are the shell's own components; with
     // the desk on the room's aliases they need no copy of the palette, and a
