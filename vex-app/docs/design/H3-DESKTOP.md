@@ -289,7 +289,7 @@ Contrast on the ground (#010203), computed from the values above:
 | blue on the ground | 2.4: blue is never type on the ground |
 
 ### 2.3 Type
-- **Families.** Be Vietnam Pro, 400 and 600, for every word. Roboto Mono 400 with tabular figures for figures, balances, addresses, the money card's field labels and the receipt's labels. Both are bundled as local woff2 files with their licences (S1-01, S1-02). Instrument Sans and Instrument Serif retire. Terminals and code keep `--font-code` (JetBrains Mono) until Studio's own plate says otherwise (section 4.9).
+- **Families.** Be Vietnam Pro, 400 and 600, for every word. Roboto Mono 400 with tabular figures for figures, balances, addresses, the money card's field labels and the receipt's labels. Both are bundled as local woff2 files with their licences (S1-01, S1-02). Instrument Sans and Instrument Serif retire. Studio's approved plate (section 4.9) moves the terminal onto Roboto Mono 13/20, with a bundled 700 for its bold text (2026-11-04); code elsewhere keeps `--font-code` (JetBrains Mono) until its own change.
 - **Labels.** Caps with 0.08em tracking (the sheet's value; the measured widths were not checked against the font files). Labels are sans, except the money card's and the receipt's field labels, which are mono caps. Mono with caps, banned by R3's `shell-design-guard.test.ts`, is H3's style for those labels.
 - **Weights,** read by eye: 600 for section heads (NEEDS YOU, CHATS, AI PERMISSION, RECENT ACTIVITY, Portfolio's EQUITY, ALLOCATION and OPEN POSITIONS), the tagline and Portfolio's equity figure; 400 for everything else.
 - **Links** are ink with an underline ("Change in Settings"), never blue.
@@ -311,7 +311,12 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 | a tag inside a row (MAINNET on a strategy row) | sans 10, caps | welcome |
 | figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
 
-Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source.
+**As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
+- the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
+- the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
+- "Account and settings": sans 13, not 14, so it fits its cell (S5-07).
+
+Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source. The left column's labels draw about 8% wider than H3's at `--tracking-label` 0.08em, which suggests H3 tracks tighter; the token is unchanged until the mockup source settles it.
 
 ### 2.4 Cells, rules and keys
 - Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
@@ -567,7 +572,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | CLOUD, beside the mark | the mark alone | desktop is not Cloud. Open: a word beside the mark, if the owner wants one |
 | READY, THINKING 0:03, WAITING FOR APPROVAL, DONE | Ready, Listening, Thinking, Working, Waiting for approval, Done, Concerned, Error, Sleeping, Waking up (`features/vex/vex-state.ts`), with the timer while Thinking or Working | desktop's state machine has ten states |
 | HIDE VEX, SHOW VEX | same | |
-| keycaps CTRL, SHIFT, B | same on Windows and Linux; ⌘, ⇧, B on macOS | each platform's keys (section A.9) |
+| keycaps CTRL, SHIFT, B | same on Windows and Linux; ⇧, ⌘, B on macOS, in Apple's modifier order | each platform's keys (section A.9) |
 | "SAMPLE DATA" under the chat title | the chat's kind and access: "Agent · Restricted", "Mission · Full access"; a page's own line, or none | "SAMPLE DATA" marks the mockup |
 | MAINNET, REAL FUNDS, a chevron | MAINNET and REAL FUNDS, no chevron | desktop is mainnet only; there is nothing to choose |
 | PAUSE ALL | left out | desktop has per-run pause and stop and Lock Vex, which stops signing, not workers |
@@ -688,4 +693,4 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | Esc | never closes her; on a card, the first clears a typed instruction and the next rejects | never closes her; never decides a card |
 | Ctrl+Enter | approves the card | not bound |
 
-Keycap spellings: CTRL, SHIFT, B on Windows and Linux; ⌘, ⇧, B on macOS. The first-close hint spells them in title case on Windows and Linux (Ctrl, Shift, B). Tooltips and accessible names use the key's name and the chord: "Show Vex (Ctrl+Shift+B)", "Hide Vex (⇧⌘B)".
+Keycap spellings: CTRL, SHIFT, B on Windows and Linux; ⇧, ⌘, B on macOS (Apple's modifier order, as the tooltip's "⇧⌘B"). The first-close hint spells them in title case on Windows and Linux (Ctrl, Shift, B). Tooltips and accessible names use the key's name and the chord: "Show Vex (Ctrl+Shift+B)", "Hide Vex (⇧⌘B)".
