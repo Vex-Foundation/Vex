@@ -11,6 +11,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { findApprovalCard, revealApprovalCard } from "../ApprovalCard/reveal-approval-card.js";
+// Loaded with the file, not inside a case: the console's module graph is
+// large, and loading it in a test body spends that test's timeout on imports.
+import { openNeedsYouItem } from "../../vex/VexSidebar.js";
+import { useUiStore } from "../../../stores/uiStore.js";
 
 /** A frame clock stepped by hand. */
 function manualFrames(): {
@@ -131,9 +135,7 @@ describe("revealApprovalCard", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  it("is what the console's Review calls: it opens the chat, then focuses the card", async () => {
-    const { openNeedsYouItem } = await import("../../vex/VexSidebar.js");
-    const { useUiStore } = await import("../../../stores/uiStore.js");
+  it("is what the console's Review calls: it opens the chat, then focuses the card", () => {
     const session = "00000000-0000-4000-8000-00000000ab01";
     const target = card("appr-review");
     document.body.append(inChat(target));
