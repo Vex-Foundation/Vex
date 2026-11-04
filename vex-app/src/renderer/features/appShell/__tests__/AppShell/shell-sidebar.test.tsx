@@ -571,8 +571,8 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Portfolio Check");
 
-    fireEvent.click(screen.getByRole("button", { name: /Search sessions/i }));
-    const input = screen.getByRole("searchbox", { name: /Search sessions/i });
+    fireEvent.click(screen.getByRole("button", { name: /Search chats/i }));
+    const input = screen.getByRole("searchbox", { name: /Search chats/i });
     fireEvent.change(input, { target: { value: "arbitrum" } });
     // The match is marked, so the title is the mark plus the rest: the row's
     // select button still carries the whole name.
@@ -582,7 +582,7 @@ describe("AppShell", () => {
     // Escape closes the field AND clears the filter.
     fireEvent.keyDown(input, { key: "Escape" });
     expect(
-      screen.queryByRole("searchbox", { name: /Search sessions/i }),
+      screen.queryByRole("searchbox", { name: /Search chats/i }),
     ).toBeNull();
     expect(screen.getByText("Portfolio Check")).not.toBeNull();
   });

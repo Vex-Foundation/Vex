@@ -88,7 +88,7 @@ describe("AgentSidebarHeader (the head row)", () => {
 
   it("leaves search to the body: the head row holds the mark and one key", () => {
     render(<AgentSidebarHeader onCollapse={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: /Search sessions/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Search chats/i })).toBeNull();
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });

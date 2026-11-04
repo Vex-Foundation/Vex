@@ -45,16 +45,18 @@ A fresh agent should be able to rebuild these surfaces from this file.
 
 Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
-- Head, 44 high (`AgentSidebarHeader.tsx`): the vx mark (`SidebarHomeSigil`,
-  "Back to welcome" in a session) and the collapse key; content starts at 92 on
-  macOS, 16 elsewhere.
-- New chat and Search rows, then the nav (`SessionRows/SidebarNav.tsx`): Chat,
+- Head: the header's logo cell and sidebar key (`AgentSidebarHeader.tsx`,
+  H3-DESKTOP.md section 1.3): the vx mark alone, 28 high (`SidebarHomeSigil`,
+  "Back to welcome" in a session), set 92 in on macOS after the traffic lights
+  and 24 elsewhere, then the 77-wide key cell; over the rail the logo cell alone.
+- New chat (55 high on the cell fill) and Search chats (48) as H3 cells, edge to
+  edge, then the nav (`SessionRows/SidebarNav.tsx`): Chat,
   Missions, Portfolio, Board, Lighter, Studio, Settings. One action backs every
   row, `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
   Chat and Missions are agent mode (Missions on its Mission tab), Portfolio, Board
   and Settings open pages, Lighter and Studio switch mode. The selected row is
   `selectNavDestination`: the open page first, then the mode.
-- Search turns its row into the field with All, Agent and Mission tabs and
+- Search chats turns its cell into the field with All, Agent and Mission tabs and
   counts (local text, title filter). Escape closes it and drops the Agent tab.
 - Sessions by name in Pinned, Today, Yesterday, Older (`sessionListModel.ts`),
   the one scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`

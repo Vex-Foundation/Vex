@@ -184,7 +184,7 @@ describe("the nav", () => {
     renderSidebar();
     fireEvent.click(navRow("Missions"));
     expect(useUiStore.getState().sessionModeFilter).toBe("mission");
-    expect(screen.getByRole("searchbox", { name: "Search sessions" })).not.toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).not.toBeNull();
     expect(screen.getByRole("tab", { name: "Mission" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Arbitrum LP Rebalance")).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
@@ -243,6 +243,19 @@ describe("the selected nav row follows the real destination", () => {
 });
 
 describe("New chat and the search mode", () => {
+  it("draws New chat and Search chats as the column's first two H3 cells", () => {
+    // docs/design/H3-DESKTOP.md section 1.4: NEW CHAT on the cell fill, then
+    // "Search chats"; the word on screen is the name a screen reader hears.
+    renderSidebar();
+    const body = document.querySelector(".vex-ls-body");
+    const [first, second] = Array.from(body?.children ?? []);
+    expect(first?.classList.contains("vex-ls-nrow--new")).toBe(true);
+    expect(first?.textContent).toBe("New chat");
+    expect(second?.classList.contains("vex-ls-nrow--search")).toBe(true);
+    expect(second?.textContent).toBe("Search chats");
+    expect(second?.hasAttribute("aria-label")).toBe(false);
+  });
+
   it("New chat opens the creator", () => {
     const { onCreate } = renderSidebar();
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
@@ -251,8 +264,8 @@ describe("New chat and the search mode", () => {
 
   it("Search turns into the field with the All, Agent and Mission tabs, counted", () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
-    const field = screen.getByRole("searchbox", { name: "Search sessions" });
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    const field = screen.getByRole("searchbox", { name: "Search chats" });
     expect(document.activeElement).toBe(field);
     // The nav makes way for the field; New chat stays above it.
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
@@ -274,7 +287,7 @@ describe("New chat and the search mode", () => {
 
   it("starts a session and closes the search from the mouse, not only the keyboard", () => {
     const { onCreate } = renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(onCreate).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Close search" }));
@@ -302,7 +315,7 @@ describe("New chat and the search mode", () => {
 
   it("the Agent tab leaves with the search, so the list is never filtered out of sight", () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
     expect(useUiStore.getState().sessionModeFilter).toBe("agent");
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
@@ -364,10 +377,10 @@ describe("the rail", () => {
     fireEvent.click(expand);
     expect(onToggle).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     expect(onToggle).toHaveBeenCalledTimes(2);
     rerender(false);
-    expect(screen.getByRole("searchbox", { name: "Search sessions" })).not.toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).not.toBeNull();
   });
 
   it("opens the sidebar on the list when Chat or Missions is pressed on the rail", () => {

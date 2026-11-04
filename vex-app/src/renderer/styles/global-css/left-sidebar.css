@@ -120,23 +120,30 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   outline-offset: -2px;
 }
 
-/* BODY: padding 10 10 0; only the sessions scroll. */
+/* BODY: the column's cells stand edge to edge (docs/design/H3-DESKTOP.md
+ * section 1.4), so the body has no inset of its own; only the sessions
+ * scroll. Studio's own panes keep R3's 10 inset (the Studio section below)
+ * until Studio's plate restyles them. */
 .vex-ls-body {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 10px 10px 0;
+  padding: 0;
 }
 .vex-ls-gap {
   flex: none;
   height: 12px;
 }
 
-/* NAV ROWS (New chat, Search and the nav): 34 high, padding 0 10, gap 11, a
- * 16px icon in ink 2. Selected: the selection wash, blue type, weight 500,
- * a blue icon. */
+/* ROWS: New chat, Search chats and the nav are one row shape (`NavKey`), the
+ * H3 cell row (docs/design/H3-DESKTOP.md section 1.4), measured at 1440 in
+ * `h3-merged__welcome-closed-1440`: edge to edge across the column, the icon
+ * in a 20 box set 24 in (as every cell's content is, section 2.4), the word
+ * at 58 (24 + 20 + 14). The icon draws in muted at rest; its box is sized
+ * here, so a caller's line icon at any size lands on the same 20 (the stroke
+ * scales with it, 1.88 at 20, as the line family draws). */
 .vex-ls-nav__list {
   margin: 0;
   padding: 0;
@@ -147,14 +154,15 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 11px;
+  gap: 14px;
   width: 100%;
   min-width: 0;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.2;
   text-align: left;
   white-space: nowrap;
@@ -165,7 +173,9 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 }
 .vex-ls-nrow__i {
   flex: none;
-  color: var(--vex-alias-label-secondary);
+  width: 20px;
+  height: 20px;
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-ls-nrow__label {
   min-width: 0;
@@ -174,51 +184,86 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 }
 .vex-ls-nrow[data-selected] {
   background: var(--ls-sel);
-  font-weight: 500;
   color: var(--vex-alias-accent-primary);
 }
 .vex-ls-nrow[data-selected] .vex-ls-nrow__i {
   color: var(--vex-alias-accent-primary);
 }
+/* NEW CHAT (section 1.4): the column's first cell, 55 high on the cell fill
+ * (a control at rest, section 2.4; #050407 measured against the ground's
+ * #010203), behind the rule under it. The word is a key's: 14, caps, tracked,
+ * in ink, and so is its icon. The source stays "New chat" (or "New mission"
+ * on the Mission tab); the caps are the class's. */
 .vex-ls-nrow--new {
-  font-weight: 500;
+  height: 55px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-layer-3);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
-/* New chat's signing stroke (chronos-motion.css runs it) and its glint. */
+.vex-ls-nrow--new .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
+}
+/* SEARCH CHATS (section 1.4): 48 high on the ground behind its rule, the
+ * search icon and "Search chats" in sentence case at 15, both muted: it reads
+ * as the field it opens (the measured peaks, #9EA0A0, sit at the muted step). */
+.vex-ls-nrow--search {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 15px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-nrow--search:hover {
+  color: var(--vex-alias-label-secondary);
+}
+/* New chat's signing stroke (chronos-motion.css runs it) and its glint,
+ * under the word and at the cell's right edge. */
 .vex-ls-new__stroke {
   position: absolute;
-  right: 10px;
-  bottom: 5px;
-  left: 37px;
+  right: 20px;
+  bottom: 12px;
+  left: 58px;
   height: 1.5px;
   background: currentColor;
 }
 .vex-ls-new__glint {
   position: absolute;
   top: 50%;
-  right: 10px;
+  right: 20px;
   width: 6px;
   height: 6px;
   margin-top: -3px;
   background: currentColor;
 }
 
-/* SEARCH MODE: the 38px field with a blue border, then the tabs. */
+/* SEARCH MODE: Search chats becomes the field in its own cell, 48 high, the
+ * icon and the text where the row had them, the rule under it; the All,
+ * Agent and Mission tabs follow. A field in H3 sits on the ground inside its
+ * rules (section 2.1); while it holds the focus the chosen rule draws inside
+ * the cell. */
 .vex-ls-find {
   flex: none;
 }
 .vex-ls-search {
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--vex-alias-accent-primary);
+  gap: 14px;
+  height: 48px;
+  padding: 0 20px 0 24px;
+  border: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
   background: var(--vex-alias-field);
-  font-size: 14px;
+  font-size: 15px;
+}
+.vex-ls-search:focus-within {
+  outline: 1px solid var(--vex-alias-rule-chosen);
+  outline-offset: -1px;
 }
 .vex-ls-search__i {
   flex: none;
-  color: var(--vex-alias-accent-primary);
+  width: 20px;
+  height: 20px;
+  color: var(--vex-alias-label-primary);
 }
 .vex-ls-search__input {
   flex: 1;
@@ -254,16 +299,13 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
-/* New chat stands above the field in the search mode too. */
-.vex-ls-find .vex-ls-nrow--new {
-  margin-bottom: 8px;
-}
-/* All, Agent, Mission: gap 16, 13, the active one blue 500 with a 1.5px
- * underline; counts in mono 11 muted. */
+/* All, Agent, Mission: gap 16, 13, the active one in ink with a 1.5px
+ * underline; counts in mono 11 muted. The row's words start 24 in, under the
+ * field's icon. */
 .vex-ls-tabs {
   display: flex;
   gap: 16px;
-  padding: 10px 2px 0;
+  padding: 10px 24px 0;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
 .vex-ls-tabs__tab {
@@ -404,7 +446,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   outline: none;
 }
 .vex-ls-hint {
-  margin: 14px 10px 12px;
+  margin: 14px 20px 12px 24px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
@@ -503,6 +545,24 @@ html[data-os="mac"] .vex-ls-railhead {
 }
 .vex-st-body {
   width: 100%;
+}
+/* The shared cells (New chat, Search, the nav) stand edge to edge in Studio
+ * as in the agent column; Studio's own panes, its projects and explorer and
+ * its search results, keep R3's 10 inset until Studio's own plate (H3-DESKTOP
+ * section 4.9). The rail centres its keys and needs none. */
+.vex-st:not([data-rail]) .vex-st-body,
+.vex-st:not([data-rail]) .vex-ls-body > .vex-scroll {
+  padding-inline: 10px;
+}
+/* Studio's Welcome row is a NavKey inside its projects pane: R3's row there,
+ * so it lines up with the project rows round it. */
+.vex-st:not([data-rail]) .vex-st-body .vex-ls-nrow {
+  gap: 11px;
+  padding: 0 10px;
+}
+.vex-st:not([data-rail]) .vex-st-body .vex-ls-nrow__i {
+  width: 16px;
+  height: 16px;
 }
 .vex-st-body [role="separator"] {
   background: var(--vex-alias-rule-quiet);

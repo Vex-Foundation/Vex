@@ -1,19 +1,22 @@
 /**
- * THE LEFT SIDEBAR, in agent mode (docs/design/R3-MINIMAL.md section 4): it
- * says where you are. Paper, a quiet rule on its right, and a width that is
- * the shell track's (264, 224 at the medium tier, the 56px rail closed;
- * `lib/shell-columns.ts`). Nothing in it is wider than the track: every row
- * truncates, so the column reads the same at each seam of the solver.
+ * THE CHATS COLUMN, in agent mode (docs/design/H3-DESKTOP.md section 1.4;
+ * R3-MINIMAL.md section 4 for what H3 does not redraw): it says where you
+ * are. The ground, a rule on its right, and a width that is the shell
+ * track's (248 open, the 76px rail folded; `lib/shell-columns.ts`). Nothing
+ * in it is wider than the track: every row truncates, so the column reads
+ * the same at each seam of the solver.
  *
  * Open, top to bottom:
  *
- *   HEAD     the vx wordmark and the collapse key (`AgentSidebarHeader`):
- *            the frame's header draws them in its cells over this column
+ *   HEAD     the logo cell and the sidebar key (`AgentSidebarHeader`): the
+ *            frame's header draws them in its cells over this column
  *            (`headless`), so the column itself starts with ACTIONS.
- *   ACTIONS  New chat (500; "New mission" on the Mission tab) and Search, as
- *            nav rows. Search turns its row into the field with the All,
- *            Agent and Mission tabs under it, New chat staying above it;
- *            Escape or the field's Esc key brings back the sections.
+ *   ACTIONS  two H3 cells, edge to edge: NEW CHAT, 55 high on the cell fill
+ *            ("New mission" on the Mission tab), and Search chats, 48 high
+ *            on the ground, each behind its rule. Search chats turns its
+ *            cell into the field with the All, Agent and Mission tabs under
+ *            it, New chat staying above it; Escape or the field's Esc key
+ *            brings back the sections.
  *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
  *            with a 12px gap above and below (`SidebarNav`).
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
@@ -57,7 +60,11 @@ import {
   SessionsLoadingPlaceholder,
   SidebarSessionGroups,
 } from "./SessionRows.js";
-import { SessionModeTabs, SessionSearchField } from "./SessionRows/SessionSearch.js";
+import {
+  SEARCH_FIELD_LABEL,
+  SessionModeTabs,
+  SessionSearchField,
+} from "./SessionRows/SessionSearch.js";
 import { NavKey, SidebarNav } from "./SessionRows/SidebarNav.js";
 import {
   filterSessionsByMode,
@@ -84,6 +91,13 @@ interface SessionsListProps {
 
 /** Proposal copy (section 4): the search mode's closing hint. */
 const SEARCH_HINT = "Esc closes search and brings back the sections.";
+
+/**
+ * The search cell's word, H3's own (Appendix A.2): the row, its rail key's
+ * name and the field it opens all say it, so the name a screen reader hears
+ * is the word on screen (`SEARCH_FIELD_LABEL` in SessionSearch.tsx).
+ */
+const SEARCH_LABEL = SEARCH_FIELD_LABEL;
 
 export function SessionsList({
   onCreate,
@@ -283,10 +297,10 @@ export function SessionsList({
             <NewChatKey rail onCreate={onCreate} />
             <NavKey
               icon={<LineSearch className="vex-ls-nrow__i" />}
-              label="Search"
-              ariaLabel="Search sessions"
+              label={SEARCH_LABEL}
               rail
               onClick={openSearch}
+              className="vex-ls-nrow--search"
             />
             <div aria-hidden className="vex-ls-gap" />
             <SidebarNav
@@ -325,10 +339,10 @@ export function SessionsList({
                 <NewChatKey rail={false} onCreate={onCreate} />
                 <NavKey
                   icon={<LineSearch className="vex-ls-nrow__i" />}
-                  label="Search"
-                  ariaLabel="Search sessions"
+                  label={SEARCH_LABEL}
                   rail={false}
                   onClick={openSearch}
+                  className="vex-ls-nrow--search"
                 />
                 <div aria-hidden className="vex-ls-gap" />
                 <SidebarNav
