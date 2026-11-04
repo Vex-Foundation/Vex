@@ -92,6 +92,23 @@
 .vex-pg-tab__d {
   color: var(--vex-alias-label-tertiary);
 }
+/* A narrow page (her section open on a 1440 window leaves the chat column
+ * 760): the cells tighten and drop their muted second word ("· Primary"),
+ * which the Wallets table on the same page still prints beside each wallet,
+ * so three wallet tabs, the stamp and the key share one row instead of the
+ * last tab scrolling under the stamp. The bar is its own size container, so
+ * this follows the page's width, not the window's. */
+.vex-pg-bar {
+  container: vex-pg-bar / inline-size;
+}
+@container vex-pg-bar (width < 900px) {
+  .vex-pg-tabs[data-size="row"] .vex-pg-tab {
+    padding: 0 18px;
+  }
+  .vex-pg-tabs[data-size="row"] .vex-pg-tab__d {
+    display: none;
+  }
+}
 /* A card head's tabs (the equity chart's range): the same cells at the
  * head's own height and the 13 label step. */
 .vex-pg-tabs[data-size="head"] .vex-pg-tab {
