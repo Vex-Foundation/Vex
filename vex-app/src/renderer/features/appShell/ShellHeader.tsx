@@ -8,10 +8,10 @@
  *                                      (the vx mark) and the sidebar key, or
  *                                      the logo cell alone over the rail
  *                                      (`AgentSidebarHeader`)
+ *     [data-vex-head-cell="vex-key"]   over the Vex column: the Vex key
+ *                                      (`VexKey`, section 1.6), which opens
+ *                                      and closes her section
  *     RunningHead, mounted ONCE:
- *       [data-vex-head-cell="vex-key"] over the Vex column: the token chip,
- *                                      the Vex key's forerunner (S3 replaces
- *                                      it with the Vex key itself)
  *       [data-vex-head-cell="title"]   over the chat: the title, the mission
  *                                      badge and the title bar's cluster
  *     [data-vex-head-cell="funds"]     the static network statement: Mainnet
@@ -40,6 +40,7 @@
 
 import type { CSSProperties, JSX } from "react";
 import type { RuntimeMode } from "../../stores/uiStore.js";
+import { VexKey } from "../vex/VexKey.js";
 import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
 import { RunningHead, type VexToggle } from "./RunningHead.js";
 import { STUDIO_SIDEBAR_COLLAPSE_LABEL } from "./studio/studio-copy.js";
@@ -87,6 +88,14 @@ export function ShellHeader({
           label={collapseLabel(runtimeMode)}
           onCollapse={onToggleSidebar}
         />
+      )}
+      {/* The Vex key's cell, over the Vex column (section 1.6): the key, or
+        * nothing where the frame has no Vex to toggle. Always this slot, so
+        * the running head after it keeps its place in the tree. */}
+      {lighter ? null : (
+        <div data-vex-head-cell="vex-key" className="vex-shell-head__vex vex-drag">
+          {vex === null ? null : <VexKey open={vex.open} onToggle={vex.onToggle} />}
+        </div>
       )}
       <RunningHead
         runtimeMode={runtimeMode}

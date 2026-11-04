@@ -157,6 +157,17 @@ export function useNeedsYou(): NeedsYouResult {
   return useNeedsYouResult(approvals, sessions, notices);
 }
 
+/**
+ * The missions of EVERY session, the open one included: the console's
+ * missions row says what runs app-wide (`missionsRowOf`). `null` until the
+ * sessions list answers, so the row never says "No mission running" before
+ * anyone looked. The sessions query is the one the chats list reads.
+ */
+export function useAllMissions(): BackgroundWork | null {
+  const sessions = useSessionRows();
+  return useMemo(() => (sessions === null ? null : backgroundWorkOf(sessions, null)), [sessions]);
+}
+
 // -- Signals -----------------------------------------------------------------
 
 /** The composer's root seam (`SessionComposer`): focus anywhere inside it counts. */

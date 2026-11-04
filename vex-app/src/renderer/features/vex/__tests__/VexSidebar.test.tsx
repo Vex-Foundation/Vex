@@ -1,28 +1,29 @@
 /**
- * The Vex sidebar (docs/design/R3-MINIMAL.md section 5): information first,
- * then her face. What is pinned:
+ * The Vex sidebar (docs/design/H3-DESKTOP.md sections 1.5 and 1.9): her
+ * console, her plate over its rest, and the page strip. What is pinned:
  *
- *  - HIDDEN is zero content: a closed column renders no head, no key, no
- *    state and no hologram, so nothing in a 0px track takes focus or paints;
- *  - the R3b ORDER: the state (scope, word, timer), the narration, the
- *    background missions, Needs you, then the portrait plate, then the
- *    avatar switch;
- *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token
- *    (no ring round it) beside the state, and everything else stays; the
- *    switch writes the persisted preference;
+ *  - HIDDEN is zero content: a closed column renders nothing, so nothing in a
+ *    0px track takes focus or paints; on a table page it is the page strip;
+ *  - the ORDER: the console's top block (Needs you, the missions row), then
+ *    the portrait plate (Kimm's section's forerunner), then the console's
+ *    rest (This project, a page's block, AI permission, recent activity);
+ *  - no head row, no state block, no avatar switch of its own (S3-11): the
+ *    header's Vex key says her state and hides her, Settings keeps the
+ *    avatar preference, which still drops the plate;
  *  - SHE DOCKS: a column that shows after the shell came up (off the
  *    welcome, or open again after a hide) plays her open episode; one open
  *    from the start shows her as she is;
- *  - HIDING PLAYS HER CLOSE FIRST: the hide key collapses her into the token
- *    and the column goes when that ends (the unmount waits), inert meanwhile,
- *    with focus handed to the token chip; a second press keeps her; the
- *    still frame, the avatar off or a column the shell closes go at once;
- *  - Needs you never decides: its key for an approval in the open chat says
- *    "Review ↓" and only closes a page over the chat;
+ *  - HIDING PLAYS HER CLOSE FIRST: a hide (the Vex key, the shortcut)
+ *    collapses her into the token and the column goes when that ends (the
+ *    unmount waits), inert meanwhile, with focus handed to the header's Vex
+ *    key; a second press keeps her; the still frame, the avatar off or a
+ *    column the shell closes go at once;
+ *  - Needs you never decides: its key opens the card, and only closes a
+ *    page over the chat;
  *  - STUDIO: the "This project" block opens the project's own Project assets
  *    and Agent Scan, never a session's or the global register;
- *  - LIGHTER: the desk chat sits under the plate in the Lighter role scope,
- *    and there is no foot.
+ *  - LIGHTER: R3's Needs you list, then the desk chat under the plate in the
+ *    Lighter role scope.
  *
  * The presence is mocked (`useVexPresence.test.tsx` owns how it is derived);
  * this suite owns the column.
@@ -45,6 +46,8 @@ vi.mock("../useVexPresence.js", () => ({
     if (presenceRef.current === null) throw new Error("presence fixture missing");
     return presenceRef.current;
   },
+  // Every session's missions, the open one's included: the console's row.
+  useAllMissions: () => presenceRef.current?.background ?? null,
 }));
 vi.mock("../../../lib/api/shell-backdrop.js", () => ({
   useShellBackdrop: () => ({ data: undefined }),
@@ -70,6 +73,17 @@ vi.mock("../../../lib/motion/use-still-frame.js", () => ({
   prefersStillFrame: () => still.current,
   useStillFrame: () => still.current,
 }));
+// The console's recent activity reads the activity feed; its rows are
+// `VexConsole.test.tsx`'s. Here the read has not answered.
+vi.mock("../../../lib/api/portfolio.js", () => ({
+  useAgentScanInfinite: () => ({ isLoading: true, isError: false, data: undefined }),
+}));
+// The console's AI permission reads the open chat; its words are
+// `VexConsole.test.tsx`'s. Here the chat's read has not answered.
+vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useSession: () => ({ data: undefined }),
+}));
 vi.mock("../../appShell/lighterTrading/LighterChatRail.js", () => ({
   LighterChatRail: () => <div data-testid="desk-chat" />,
 }));
@@ -84,7 +98,7 @@ function PageBlock(): JSX.Element | null {
   return slot === null ? null : createPortal(<p data-testid="page-block">Ask Vex</p>, slot);
 }
 const { useUiStore } = await import("../../../stores/uiStore.js");
-const { VEX_HIDE_EPISODE_MS, keepVex, vexClosing } = await import("../vex-hide.js");
+const { VEX_HIDE_EPISODE_MS, keepVex, requestVexHide, vexClosing } = await import("../vex-hide.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
 const PROJECT = "00000000-0000-4000-8000-0000000000b2";
@@ -158,74 +172,116 @@ describe("VexSidebar, hidden", () => {
   });
 });
 
+describe("VexSidebar, the page strip (H3-DESKTOP.md section 1.9)", () => {
+  const strip = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-vex-area='vex-console-strip']");
+
+  it("folds the console to one line on a table page with her closed", () => {
+    const item = approvalNeedsYouItem(
+      approval({ id: "a9", sessionId: "00000000-0000-4000-8000-0000000000c3" }),
+      NOW,
+    );
+    presenceRef.current = presence({ needsYou: needs([item]) });
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    render(<VexSidebar open={false} onHide={() => {}} />);
+    expect(sidebar().getAttribute("data-vex-seat")).toBe("strip");
+    expect(sidebar().getAttribute("data-vex-vex-open")).toBe("false");
+    // NEEDS YOU and its count, the one decision, the missions cell, Open activity.
+    const line = strip();
+    expect(line?.querySelector(".vex-console__label")?.textContent).toBe("Needs you");
+    expect(line?.querySelector(".vex-console__count")?.textContent).toBe("1");
+    const review = within(line ?? sidebar()).getByRole("button", { name: `Review: ${item.title}` });
+    expect(line?.querySelector("[data-vex-area='vex-strip-missions']")?.textContent).toBe(
+      "1 mission running on Mainnet",
+    );
+    expect(within(line ?? sidebar()).getByRole("button", { name: "Open activity" })).not.toBeNull();
+    // Nothing of her column stands: no Needs you section, no plate.
+    expect(area("vex-needs-you")).toBeNull();
+    expect(document.querySelector("[data-vex-k2]")).toBeNull();
+    fireEvent.click(review);
+    expect(useUiStore.getState().activeSessionId).toBe("00000000-0000-4000-8000-0000000000c3");
+  });
+
+  it("says Nothing needs you. in the strip at zero, and draws no strategies cell", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    render(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()?.textContent).toContain("Nothing needs you.");
+    expect(strip()?.textContent).not.toMatch(/strateg/i);
+  });
+
+  it("is never drawn in a chat, on a page that is not a table page, or on the Lighter desk", () => {
+    const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()).toBeNull();
+    act(() => useUiStore.setState({ shellRoute: { kind: "memory", origin: null } }));
+    rerender(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()).toBeNull();
+    act(() => useUiStore.setState({ runtimeMode: "lighter", shellRoute: { kind: "portfolio", origin: null } }));
+    rerender(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()).toBeNull();
+  });
+
+  it("gives way to her column when she opens on the page", () => {
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    render(<VexSidebar open onHide={() => {}} />);
+    expect(strip()).toBeNull();
+    expect(sidebar().getAttribute("data-vex-seat")).toBe("column");
+    expect(area("vex-needs-you")).not.toBeNull();
+  });
+});
+
 describe("VexSidebar, open", () => {
-  it("puts information first: state, narration, background work, Needs you, then the plate and the switch", () => {
+  it("is her console: the top block, then her plate, then the console's rest", () => {
     render(<VexSidebar open onHide={() => {}} />);
     expect(sidebar().getAttribute("data-vex-vex-open")).toBe("true");
-    expect(within(sidebar()).getByText("Vex")).toBeTruthy();
 
-    const state = area("vex-state");
-    expect(state?.getAttribute("data-vex-state")).toBe("working");
-    expect(state?.textContent).toContain("This chat: Working");
-    expect(state?.textContent).toContain("Calling Wallet balances to answer “And ETH?”");
-    expect(area("vex-background")?.textContent).toBe("1 mission running · Weekly rebalance");
-
-    const needsYou = area("vex-needs-you");
-    expect(needsYou?.textContent).toContain("Needs you");
-    expect(needsYou?.textContent).toContain("Nothing needs you.");
+    const top = area("vex-console-top");
+    expect(top?.querySelector("[data-vex-area='vex-needs-you']")?.textContent).toContain(
+      "Nothing needs you.",
+    );
+    expect(top?.querySelector("[data-vex-area='vex-missions']")?.textContent).toBe(
+      "1 mission running on Mainnet",
+    );
 
     const plate = area("vex-portrait-plate");
     const k2 = plate?.querySelector("[data-vex-k2]");
     expect(k2?.getAttribute("data-vex-k2")).toBe("sidebar");
     expect(k2?.getAttribute("data-vex-k2-ground")).toBe("print");
-    const avatarSwitch = screen.getByRole("switch", { name: "Show avatar" });
-    expect(avatarSwitch.getAttribute("aria-checked")).toBe("true");
 
-    expect(before(state, needsYou)).toBe(true);
-    expect(before(needsYou, plate)).toBe(true);
-    expect(before(plate ?? null, avatarSwitch)).toBe(true);
+    const rest = area("vex-console-rest");
+    expect(rest?.querySelector("[data-vex-area='vex-recent-activity']")).not.toBeNull();
+
+    expect(before(top, plate)).toBe(true);
+    expect(before(plate, rest)).toBe(true);
   });
 
-  it("hides through its key, named for what it does", () => {
+  it("draws no head row, no state block and no avatar switch of its own (S3-11)", () => {
+    render(<VexSidebar open onHide={() => {}} />);
+    // The header's Vex key says her state and hides her; Settings keeps the
+    // avatar preference.
+    expect(sidebar().querySelector("header")).toBeNull();
+    expect(within(sidebar()).queryByText("Vex")).toBeNull();
+    expect(area("vex-state")).toBeNull();
+    expect(area("vex-background")).toBeNull();
+    expect(within(sidebar()).queryByRole("button", { name: "Hide Vex" })).toBeNull();
+    expect(within(sidebar()).queryByRole("switch")).toBeNull();
+    expect(sidebar().textContent).not.toContain("Show avatar");
+    // Nor the narration the state block carried.
+    expect(sidebar().textContent).not.toContain("Calling Wallet balances");
+  });
+
+  it("hides through the toggle's close, the Vex key's and the shortcut's", () => {
     still.current = true;
     const onHide = vi.fn();
     render(<VexSidebar open onHide={onHide} />);
-    fireEvent.click(screen.getByRole("button", { name: "Hide Vex" }));
-    expect(onHide).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows the live timer beside the word, in m:ss from the turn's start", () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(NOW);
-      presenceRef.current = presence({ timerStartedAt: NOW - 62_000 });
-      render(<VexSidebar open onHide={() => {}} />);
-      expect(area("vex-state")?.textContent).toContain("1:02");
-      act(() => {
-        vi.advanceTimersByTime(1_000);
-      });
-      expect(area("vex-state")?.textContent).toContain("1:03");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("says no narration and no background line when there is nothing true to say", () => {
-    presenceRef.current = presence({
-      state: "ready",
-      word: "Ready",
-      fill: "idle",
-      narration: null,
-      background: { count: 0, items: [], label: null, summary: null },
+    act(() => {
+      requestVexHide(onHide);
     });
-    render(<VexSidebar open onHide={() => {}} />);
-    expect(area("vex-state")?.textContent).toBe("This chat: Ready");
-    expect(area("vex-background")).toBeNull();
+    expect(onHide).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("VexSidebar, the page slot", () => {
-  it("takes a page's block under Needs you while open, and drops it when hidden", () => {
+  it("takes a page's block in the console's rest while open, and drops it when hidden", () => {
     const view = render(
       <>
         <VexSidebar open onHide={() => {}} />
@@ -234,8 +290,8 @@ describe("VexSidebar, the page slot", () => {
     );
     const block = screen.getByTestId("page-block");
     expect(area("vex-sidebar-slot")?.contains(block)).toBe(true);
+    expect(area("vex-console-rest")?.contains(block)).toBe(true);
     expect(before(area("vex-needs-you"), block)).toBe(true);
-    expect(before(block, area("vex-portrait-plate"))).toBe(true);
 
     view.rerender(
       <>
@@ -247,44 +303,26 @@ describe("VexSidebar, the page slot", () => {
   });
 });
 
-describe("VexSidebar, avatar off", () => {
-  it("drops the plate and the hologram, keeps the token, the word, the narration and Needs you", () => {
+describe("VexSidebar, avatar off (the Settings preference)", () => {
+  it("drops the plate and the hologram; the console stands", () => {
     useUiStore.setState({ showAvatar: false });
     render(<VexSidebar open onHide={() => {}} />);
     expect(area("vex-portrait-plate")).toBeNull();
     expect(document.querySelector("[data-vex-k2]")).toBeNull();
-    const state = area("vex-state");
-    expect(state?.querySelector("[data-vex-vx-token] svg")?.getAttribute("width")).toBe("44");
-    // The kit's avatar off is the bare disc: no ring, the word carries the state.
-    expect(state?.querySelector("[data-vex-status-ring]")).toBeNull();
-    expect(state?.querySelector("[data-vex-status]")?.getAttribute("data-vex-status")).toBe(
-      "working",
-    );
-    expect(state?.textContent).toContain("This chat: Working");
-    expect(state?.textContent).toContain("Calling Wallet balances");
-    expect(area("vex-needs-you")).not.toBeNull();
-  });
-
-  it("writes the preference from the switch, both ways", () => {
-    render(<VexSidebar open onHide={() => {}} />);
-    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
-    expect(useUiStore.getState().showAvatar).toBe(false);
-    expect(area("vex-portrait-plate")).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
-    expect(useUiStore.getState().showAvatar).toBe(true);
-    expect(area("vex-portrait-plate")).not.toBeNull();
+    expect(area("vex-console-top")).not.toBeNull();
+    expect(area("vex-console-rest")).not.toBeNull();
   });
 });
 
 describe("VexSidebar, a column that stays (H3, a chat)", () => {
-  it("hides only her plate: the state, Needs you and the hide key stand, the flat token in her place", () => {
+  it("hides only her plate: the console stands, its rest under the top block", () => {
     const { container } = render(<VexSidebar open plate={false} stays onHide={() => {}} />);
     expect(container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
     expect(container.querySelector("[data-vex-k2]")).toBeNull();
-    expect(container.querySelector("[data-vex-area='vex-state']")).not.toBeNull();
-    expect(container.querySelector("[data-vex-area='vex-needs-you']")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Hide Vex" })).not.toBeNull();
-    expect(container.querySelector("[data-vex-status]")).not.toBeNull();
+    const top = container.querySelector("[data-vex-area='vex-console-top']");
+    const rest = container.querySelector("[data-vex-area='vex-console-rest']");
+    expect(top).not.toBeNull();
+    expect(top?.nextElementSibling).toBe(rest);
   });
 
   it("plays her open episode when the plate shows again after a hide", () => {
@@ -331,20 +369,28 @@ describe("VexSidebar, the dock", () => {
     const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
     rerender(<VexSidebar open onHide={() => {}} />);
     expect(holo()).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
+    act(() => useUiStore.setState({ showAvatar: true }));
     expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
   });
 });
 
 describe("VexSidebar, hiding plays her close first", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
-  const hideKey = () => screen.getByRole("button", { name: "Hide Vex" });
+  /** A press of the header's Vex key or the shortcut: both hide her through her close. */
+  const hide = (onHide: () => void): void => {
+    act(() => {
+      requestVexHide(onHide);
+    });
+  };
+  /** A control inside the column that can hold focus: the missions row's key. */
+  const insideKey = (): HTMLElement =>
+    within(sidebar()).getByRole("button", { name: /mission running/ });
 
   it("collapses her into the token, and the column goes when that ends", () => {
     vi.useFakeTimers();
     const onHide = vi.fn();
     render(<VexSidebar open onHide={onHide} />);
-    fireEvent.click(hideKey());
+    hide(onHide);
     expect(onHide).not.toHaveBeenCalled();
     expect(holo()?.hasAttribute("data-vex-k2-closed")).toBe(true);
     expect(sidebar().hasAttribute("data-vex-vs-closing")).toBe(true);
@@ -360,27 +406,27 @@ describe("VexSidebar, hiding plays her close first", () => {
     expect(vexClosing()).toBe(false);
   });
 
-  it("is inert while she closes, and hands focus to the token chip", () => {
+  it("is inert while she closes, and hands focus to the Vex key", () => {
     vi.useFakeTimers();
     render(
       <>
-        <button type="button" data-vex-area="vex-token-chip">
-          Vex, Working
+        <button type="button" data-vex-area="vex-key">
+          Show Vex
         </button>
         <VexSidebar open onHide={() => {}} />
       </>,
     );
-    hideKey().focus();
-    fireEvent.click(hideKey());
+    insideKey().focus();
+    hide(() => {});
     expect(sidebar().hasAttribute("inert")).toBe(true);
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
   });
 
   it("keeps her on a second press: she opens again and nothing is written", () => {
     vi.useFakeTimers();
     const onHide = vi.fn();
     render(<VexSidebar open onHide={onHide} />);
-    fireEvent.click(hideKey());
+    hide(onHide);
     act(() => {
       keepVex();
     });
@@ -397,7 +443,7 @@ describe("VexSidebar, hiding plays her close first", () => {
     still.current = true;
     const onHide = vi.fn();
     render(<VexSidebar open onHide={onHide} />);
-    fireEvent.click(hideKey());
+    hide(onHide);
     expect(onHide).toHaveBeenCalledTimes(1);
     expect(sidebar().hasAttribute("inert")).toBe(false);
   });
@@ -407,24 +453,24 @@ describe("VexSidebar, hiding plays her close first", () => {
     const onHide = vi.fn();
     render(
       <>
-        <button type="button" data-vex-area="vex-token-chip">
-          Vex, Working
+        <button type="button" data-vex-area="vex-key">
+          Show Vex
         </button>
         <VexSidebar open onHide={onHide} />
       </>,
     );
-    hideKey().focus();
-    fireEvent.click(hideKey());
+    insideKey().focus();
+    hide(onHide);
     expect(onHide).toHaveBeenCalledTimes(1);
     // The column is about to go: focus moves out of it first.
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
   });
 
   it("drops the close when the shell closes the column on its own", () => {
     vi.useFakeTimers();
     const onHide = vi.fn();
     const { rerender } = render(<VexSidebar open onHide={onHide} />);
-    fireEvent.click(hideKey());
+    hide(onHide);
     rerender(<VexSidebar open={false} onHide={onHide} />);
     expect(vexClosing()).toBe(false);
     act(() => {
@@ -445,10 +491,13 @@ describe("VexSidebar, Needs you", () => {
     useUiStore.setState({ shellRoute: { kind: "memory", origin: null } });
     render(<VexSidebar open onHide={() => {}} />);
 
+    // The console's Needs you (H3-DESKTOP.md section 1.5): the head and its
+    // count, then the one decision row.
     const section = area("vex-needs-you");
-    expect(section?.querySelector("h3")?.textContent).toBe("Needs you · 1");
+    expect(section?.querySelector("h3")?.textContent).toBe("Needs you: 1");
+    expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).not.toBeNull();
     const review = within(section ?? sidebar()).getByRole("button", {
-      name: `Review ↓: ${item.title}`,
+      name: `Review: ${item.title}`,
     });
     fireEvent.click(review);
     // The chat stays the open one; the page over it closes so the card shows.
@@ -474,8 +523,22 @@ describe("VexSidebar, Needs you", () => {
       needsYou: { status: "unknown", unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.", count: null, items: [], retry: vi.fn(), retrying: false },
     });
     render(<VexSidebar open onHide={() => {}} />);
-    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you · ?");
+    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you: ?");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("keeps R3's list on the Lighter desk, which has no console until its restyle", () => {
+    const item = approvalNeedsYouItem(
+      approval({ id: "a4", sessionId: SESSION, toolName: "BridgeExecute", sessionTitle: "Treasury chat" }),
+      NOW,
+    );
+    presenceRef.current = presence({ needsYou: needs([item]) });
+    useUiStore.setState({ runtimeMode: "lighter" });
+    render(<VexSidebar open onHide={() => {}} />);
+    const section = area("vex-needs-you");
+    expect(section?.querySelector("h3")?.textContent).toBe("Needs you · 1");
+    expect(section?.querySelector("[data-vex-area='needs-you-list']")).not.toBeNull();
+    expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).toBeNull();
   });
 });
 
@@ -492,7 +555,6 @@ describe("VexSidebar in Studio: This project", () => {
     expect(block?.textContent).toContain("Studio");
     expect(block?.textContent).toContain("Full");
     expect(block?.textContent).toContain("~/Vex/projects/core-tools");
-    expect(area("vex-state")?.textContent).toContain("This project: Ready");
     expect(before(area("vex-needs-you"), block)).toBe(true);
   });
 

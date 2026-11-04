@@ -236,11 +236,11 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const stopBtn = await screen.findByRole("button", { name: "Stop agent" });
-    // The title bar's token chip names the live turn (Thinking or Working).
+    // The header's Vex key names the live turn (Thinking or Working).
     await waitFor(() =>
       expect(
         container
-          .querySelector('[data-vex-area="vex-token-chip"]')
+          .querySelector('[data-vex-area="vex-key"]')
           ?.getAttribute("data-vex-state"),
       ).toMatch(/^(thinking|working)$/),
     );

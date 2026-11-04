@@ -13,8 +13,9 @@
  * These are the reads the shell makes on every mount, found by mounting it
  * on an empty bridge and reading `window.__vexH3Harness.unanswered()`:
  * the profile, capabilities, health, environment, models, wallets, the
- * watchlist, the app-wide pending approvals and the Vex Cloud withdrawal
- * notices. A state overrides any of them through its own answers.
+ * watchlist, the app-wide pending approvals, the Vex Cloud withdrawal
+ * notices and the activity feed Vex's console lists (`fixtures/activity.ts`).
+ * A state overrides any of them through its own answers.
  */
 
 import type { ApprovalPendingGlobalDto } from "@shared/schemas/approvals.js";
@@ -30,6 +31,7 @@ import type { WatchlistSnapshotDto } from "@shared/schemas/alerts.js";
 import { ok, type BridgeAnswers } from "../bridge.js";
 import { isoAt, MINUTE } from "../clock.js";
 import { fixture } from "../mark.js";
+import { ACTIVITY_FEED } from "./activity.js";
 
 export const EVM_WALLET = fixture("wallet.evm", {
   id: "h3-fixture-evm-1",
@@ -157,6 +159,8 @@ export function baseAnswers({ sessions, pendingAll }: BaseInputs): BridgeAnswers
     // Vex's plate reads the user's own image: none set. Every state's shell
     // has her column now, the welcome's included (S2-10).
     shellBackdrop: { read: () => ok({ backdrop: null }) },
+    // Her console's recent activity reads the activity feed (S3-07).
+    portfolio: { listAgentScan: () => ok(ACTIVITY_FEED) },
     vexCloud: {
       withdrawalNotices: () => ({ promise: ok(SIGNED_OUT), cancel: () => undefined }),
     },
