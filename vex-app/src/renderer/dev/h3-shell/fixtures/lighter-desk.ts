@@ -83,7 +83,7 @@ function perp(
     symbol,
     marketType: "perp",
     status: "active",
-    baseAssetId: marketId + 1,
+    baseAssetId: 0,
     quoteAssetId: 0,
     minBaseAmount: decimals.size === 4 ? "0.0002" : "0.005",
     minQuoteAmount: "10",

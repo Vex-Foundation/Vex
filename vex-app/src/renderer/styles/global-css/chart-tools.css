@@ -1,24 +1,27 @@
 /* Chart analysis toolbar, studies, the drawing rail and the drag-to-order
- * handle (docs/design/R3-MINIMAL.md section 9.3). A 36px row with a quiet
- * rule below: words in Instrument Sans 12.5 in sentence case, figures in
- * JetBrains Mono; the calm line icons at their 16px; one blue for whatever
- * is selected and the blue fill for whatever is on. */
+ * handle, in H3 cells (docs/design/H3-DESKTOP.md section 4.9, the approved
+ * desk plate; plan row S8-08). A 40 row of square cells with the rule
+ * below: the interval cells (mono 12, the chosen one on raised 2), CANDLES
+ * with its chevron, INDICATORS (Volume, Fills and Log fold into it), and the
+ * snapshot key at the row's right end; under it the 40 wide drawing-tools
+ * strip. Labels in caps, tracked; figures in Roboto Mono; the line icons at
+ * their 16px. */
 
 .lit-analysis-toolbar {
   position: absolute;
   z-index: 8;
   inset: 0 0 auto;
   display: flex;
-  height: var(--lit-chart-toolbar, 36px);
-  align-items: center;
-  gap: 2px;
-  border-bottom: 1px solid var(--lit-line-quiet);
-  background: var(--lit-panel);
-  padding: 0 10px;
+  height: var(--lit-chart-toolbar, 40px);
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  background: var(--lit-bg);
+  padding: 0;
   color: var(--lit-ink-secondary);
   font-family: var(--font-sans);
-  font-size: 12.5px;
-  letter-spacing: normal;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
   white-space: nowrap;
 }
 
@@ -34,95 +37,65 @@
   cursor: pointer;
 }
 
-/* The intervals are figures: mono 11.5 on their own 24 high keys. The shared
- * reset above would zero their padding, so it is set again here. */
+/* The intervals are figures: mono 12 cells, the toolbar's height, one rule
+ * between each. The shared reset above would zero their padding, so it is
+ * set again here. */
 .lit-analysis-toolbar > .lit-resolution-tabs button {
-  padding: 0 6px;
+  padding: 0 10px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--lit-tr-data);
 }
 
-/* Chart type: a quiet chip with a 1px rule frame and a small drawn caret. */
-.lit-analysis-toolbar select {
-  height: 28px;
-  max-width: 104px;
+/* Chart type: CANDLES, a cell with its chevron after the word; the select
+ * fills the cell and the chevron stands over its right inset. */
+.lit-chart-type {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  border-right: 1px solid var(--vex-alias-rule);
+}
+
+.lit-analysis-toolbar .lit-chart-type select {
+  height: 100%;
   appearance: none;
-  outline: 1px solid var(--lit-line);
-  outline-offset: -1px;
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
-  background-repeat: no-repeat;
-  background-size: 4px 4px;
-  padding: 0 24px 0 8px;
+  padding: 0 36px 0 14px;
+  color: var(--lit-ink-secondary);
   font-family: var(--font-sans);
-  font-size: 12.5px;
-  letter-spacing: normal;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-chart-type__chevron {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--lit-ink-secondary);
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .lit-analysis-toolbar select option {
   background: var(--lit-panel);
   color: var(--lit-ink);
   font-family: var(--font-sans);
+  text-transform: none;
 }
 
 .lit-analysis-toolbar button:hover:not(:disabled):not([aria-pressed="true"]),
 .lit-study-menu summary:hover,
 .lit-analysis-toolbar select:hover { color: var(--lit-ink); }
 
-/* Keys wash on hover; the select keeps its drawn caret, so it takes the
- * colour only. */
-.lit-analysis-toolbar select:hover { background-color: var(--lit-hover); }
-
-.lit-analysis-toolbar > button[aria-pressed]:hover,
+.lit-analysis-toolbar select:hover,
 .lit-study-menu summary:hover { background: var(--lit-hover); }
-
-/* Volume, Fills, Log: a 12 x 12 square before the word with a 1px ink frame,
- * empty when off and filled with the blue when on. The word stays ink 2:
- * status is the fill, never the colour. */
-.lit-analysis-toolbar > button[aria-pressed] {
-  display: inline-flex;
-  height: 24px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 6px;
-}
-
-.lit-analysis-toolbar > button[aria-pressed]:hover { color: var(--lit-ink); }
-
-.lit-analysis-toolbar > button[aria-pressed]::before {
-  content: "";
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  border: 1px solid var(--lit-rule-ink);
-}
-
-.lit-analysis-toolbar > button[aria-pressed="true"]::before { background: var(--lit-action); }
-
-/* The 1 x 16 rule between the chart type and studies and the toggles. */
-.lit-analysis-toolbar > .lit-study-menu + button[aria-pressed] {
-  position: relative;
-  margin-left: 19px;
-}
-
-.lit-analysis-toolbar > .lit-study-menu + button[aria-pressed]::after {
-  position: absolute;
-  top: 4px;
-  left: -11px;
-  width: 1px;
-  height: 16px;
-  background: var(--lit-line-quiet);
-  content: "";
-}
 
 .lit-study-active {
   overflow: hidden;
-  margin-left: 8px;
+  align-self: center;
+  margin-left: 12px;
   color: var(--lit-ink-secondary);
   font-family: var(--font-sans);
   font-size: 12px;
@@ -131,41 +104,74 @@
   white-space: nowrap;
 }
 
-.lit-study-menu { position: relative; }
+.lit-study-menu {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--vex-alias-rule);
+}
 
+/* INDICATORS: a cell, caps 12. */
 .lit-study-menu summary {
   display: inline-flex;
-  height: 24px;
+  height: 100%;
   align-items: center;
-  padding: 0 6px;
+  padding: 0 14px;
   list-style: none;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
   white-space: nowrap;
 }
 
 .lit-study-menu summary::-webkit-details-marker { display: none; }
-.lit-study-menu[open] summary { color: var(--lit-accent); }
+.lit-study-menu[open] summary { background: var(--lit-pressed); color: var(--lit-ink); }
 
-/* The study popover: paper, a 1px ink frame, no shadow. */
+/* The study popover: the ground, a 1px chosen rule, no shadow. */
 .lit-study-popover {
   position: absolute;
   z-index: 9;
-  top: 30px;
+  top: 100%;
   left: 0;
   width: min(300px, calc(100vw - 140px));
-  max-height: min(420px, calc(100vh - 160px));
+  max-height: min(460px, calc(100vh - 160px));
   overflow-y: auto;
-  border: 1px solid var(--lit-rule-ink);
-  background: var(--lit-panel);
-  padding: 4px 0;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--lit-bg);
+  padding: 0;
   color: var(--lit-ink);
   font-family: var(--font-sans);
   font-size: 13px;
   letter-spacing: normal;
+  text-transform: none;
   white-space: normal;
 }
 
+/* Volume, Fills and Log, folded in: three cells across the popover's head,
+ * the one that shows on raised 2 in ink. Status is the fill. */
+.lit-study-show {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+
+.lit-analysis-toolbar .lit-study-show > button {
+  height: 36px;
+  padding: 0 12px;
+  border-left: 1px solid var(--vex-alias-rule);
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-analysis-toolbar .lit-study-show > button:first-child { border-left: 0; }
+.lit-analysis-toolbar .lit-study-show > button[aria-pressed="true"] {
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+}
+
 .lit-study-row { display: flex; align-items: flex-start; }
-.lit-study-row + .lit-study-row { border-top: 1px solid var(--lit-line-quiet); }
+.lit-study-row + .lit-study-row { border-top: 1px solid var(--vex-alias-rule); }
 .lit-study-row:hover { background: var(--lit-hover); }
 
 .lit-study-popover label {
@@ -185,13 +191,13 @@
   width: 52px;
   height: 24px;
   margin: 6px 12px 0 0;
-  border: 1px solid var(--lit-line);
+  border: 1px solid var(--vex-alias-rule-chosen);
   background: var(--lit-field);
   padding: 0 6px;
   color: var(--lit-ink);
   font: inherit;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--lit-tr-data);
 }
@@ -209,9 +215,9 @@
 }
 
 .lit-study-popover p {
-  margin: 4px 0 0;
-  border-top: 1px solid var(--lit-line-quiet);
-  padding: 8px 12px 6px;
+  margin: 0;
+  border-top: 1px solid var(--vex-alias-rule);
+  padding: 8px 12px 10px;
   color: var(--lit-ink-muted);
   font-family: var(--font-sans);
   font-size: 12px;
@@ -219,29 +225,30 @@
   line-height: 1.5;
 }
 
-/* Drawing tools: a 34px rail on the canvas's left edge, 26px keys. */
+/* Drawing tools: a 40 wide strip on the canvas's left edge, behind its rule,
+ * 28 keys; the chosen tool on raised 2 in ink. */
 .lit-drawing-rail {
   position: absolute;
   z-index: 4;
-  top: var(--lit-chart-toolbar, 36px);
+  top: var(--lit-chart-toolbar, 40px);
   bottom: 0;
   left: 0;
   display: flex;
-  width: var(--lit-chart-rail, 34px);
+  width: var(--lit-chart-rail, 40px);
   flex-direction: column;
   align-items: center;
   gap: 4px;
   overflow-y: auto;
-  border-right: 1px solid var(--lit-line-quiet);
-  background: var(--lit-panel);
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--lit-bg);
   padding-top: 8px;
   scrollbar-width: none;
 }
 
 .lit-drawing-rail button {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
   place-items: center;
   border: 0;
@@ -252,7 +259,7 @@
 .lit-drawing-rail button svg { width: 16px; height: 16px; }
 .lit-drawing-rail button:hover:not(:disabled) { background: var(--lit-hover); }
 .lit-drawing-rail button:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--lit-ink); }
-.lit-drawing-rail button[aria-pressed="true"] { color: var(--lit-accent); }
+.lit-drawing-rail button[aria-pressed="true"] { background: var(--lit-pressed); color: var(--lit-ink); }
 .lit-drawing-rail button:disabled { color: var(--lit-ink-muted); cursor: default; opacity: 0.5; }
 
 .lit-drawing-divider {
@@ -260,16 +267,16 @@
   height: 1px;
   flex-shrink: 0;
   margin: 4px 0;
-  background: var(--lit-line-quiet);
+  background: var(--vex-alias-rule);
 }
 
 .lit-drawing-layer {
   position: absolute;
   z-index: 3;
-  top: var(--lit-chart-toolbar, 36px);
-  left: var(--lit-chart-rail, 34px);
-  width: calc(100% - var(--lit-chart-rail, 34px));
-  height: calc(100% - var(--lit-chart-toolbar, 36px));
+  top: var(--lit-chart-toolbar, 40px);
+  left: var(--lit-chart-rail, 40px);
+  width: calc(100% - var(--lit-chart-rail, 40px));
+  height: calc(100% - var(--lit-chart-toolbar, 40px));
   overflow: hidden;
   cursor: crosshair;
 }
@@ -303,10 +310,10 @@
 .lit-order-layer {
   position: absolute;
   z-index: 4;
-  top: var(--lit-chart-toolbar, 36px);
-  left: var(--lit-chart-rail, 34px);
-  width: calc(100% - var(--lit-chart-rail, 34px));
-  height: calc(100% - var(--lit-chart-toolbar, 36px));
+  top: var(--lit-chart-toolbar, 40px);
+  left: var(--lit-chart-rail, 40px);
+  width: calc(100% - var(--lit-chart-rail, 40px));
+  height: calc(100% - var(--lit-chart-toolbar, 40px));
   overflow: hidden;
   pointer-events: none;
 }
@@ -375,7 +382,7 @@
   position: absolute;
   z-index: 6;
   bottom: 68px;
-  left: calc(var(--lit-chart-rail, 34px) + 10px);
+  left: calc(var(--lit-chart-rail, 40px) + 10px);
   display: flex;
   max-width: calc(100% - 130px);
   flex-wrap: wrap;
@@ -437,7 +444,7 @@
   position: absolute;
   z-index: 6;
   bottom: 98px;
-  left: calc(var(--lit-chart-rail, 34px) + 10px);
+  left: calc(var(--lit-chart-rail, 40px) + 10px);
   background: var(--lit-panel);
   color: var(--lit-ink);
   font-family: var(--font-sans);
@@ -453,11 +460,13 @@
 
 .lit-drawing-rail :focus-visible { outline: 2px solid var(--lit-focus); outline-offset: 1px; }
 
+/* The snapshot key: a 40 square cell at the row's right end. */
 .lit-analysis-toolbar .lit-chart-export {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 100%;
   margin-left: auto;
+  border-left: 1px solid var(--vex-alias-rule);
   place-items: center;
 }
 
@@ -472,7 +481,7 @@
 .lit-chart-tool-notice {
   position: absolute;
   z-index: 9;
-  top: calc(var(--lit-chart-toolbar, 36px) + 6px);
+  top: calc(var(--lit-chart-toolbar, 40px) + 6px);
   right: 8px;
   max-width: calc(100% - 60px);
   border: 1px solid var(--lit-rule-ink);
@@ -505,9 +514,7 @@
 }
 
 /* Below that the strip stopped shrinking at nothing: it keeps room for three
- * intervals and scrolls (the selected one is kept in view), and the Volume
- * and Log toggles go instead of the chart type and the studies. */
+ * intervals and scrolls (the selected one is kept in view). */
 @container (max-width: 480px) {
   .lit-analysis-toolbar > .lit-resolution-tabs { flex: 0 1 auto; min-width: 104px; }
-  .lit-analysis-toolbar > button[aria-pressed] { display: none; }
 }

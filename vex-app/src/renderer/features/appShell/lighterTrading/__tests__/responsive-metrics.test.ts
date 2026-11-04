@@ -112,35 +112,30 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.lit-desk \*/s);
   });
 
-  it("uses explicit product and metric identities instead of DOM positions", () => {
-    expect(css).toContain(
-      '.lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="funding"]',
-    );
-    expect(css).toContain(
-      '.lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="mid"]',
-    );
-    expect(css).toContain(
-      '.lit-market-bar[data-market-type="perp"] .lit-market-metric[data-metric="open-interest"]',
-    );
-    expect(css).toContain(
-      '.lit-market-bar[data-market-type="spot"] .lit-market-metric[data-metric="high"]',
-    );
+  it("names what the market bar sheds by its metric, never by its position", () => {
+    const bar = sheetRules("lighter-market-bar.css");
+    expect(bar).toMatch(/@container \(max-width: 1100px\)\s*\{[^}]*data-metric="index"[^}]*data-metric="volume"/s);
+    expect(bar).toMatch(/@container \(max-width: 760px\)\s*\{[^}]*data-metric="mark"[^}]*data-metric="open-interest"/s);
     expect(css).not.toMatch(/\.lit-market-metric:nth-of-type/);
-  });
-
-  it("sizes the market bar to its own column, 58 high, not the viewport", () => {
-    expect(css).toMatch(/\.lit-desk-top\s*\{[^}]*container-type: inline-size;[^}]*min-height: 58px;[^}]*padding: 0 18px;/s);
-    // With the Vex column open at 1440 the desk is 1128: a perp keeps Mark,
-    // Open interest and Funding.
-    expect(css).toMatch(/@container \(max-width: 1130px\)\s*\{[^}]*data-metric="change"/s);
-    expect(css).toMatch(/@container \(max-width: 960px\)\s*\{[^}]*data-metric="funding"/s);
     expect(css).not.toMatch(/@media \(max-width: 1440px\)/);
   });
 
-  it("draws the market picker's symbol at 15 / 600 in a 36 high key with a 1px rule", () => {
+  it("draws the market bar as one 56 row of cells across the desk", () => {
+    expect(css).toMatch(/\.lit-desk-top\s*\{[^}]*container-type: inline-size;[^}]*height: 56px;[^}]*padding: 0;/s);
     const bar = sheetRules("lighter-market-bar.css");
-    expect(bar).toMatch(/button\.lit-market-select\s*\{[^}]*height: 36px;[^}]*border: 1px solid var\(--lit-line\);/s);
-    expect(bar).toMatch(/button\.lit-market-select b\s*\{[^}]*font-size: 15px;[^}]*font-weight: 600;/s);
+    // Every cell behind a 1px rule; the market key on the cell fill.
+    expect(bar).toMatch(/\.lit-market-bar > :is\(\.lit-market-select, \.lit-market-deploy, \.lit-market-price, \.lit-market-metric\)\s*\{[^}]*border-right: 1px solid var\(--vex-alias-rule\);/s);
+    expect(bar).toMatch(/button\.lit-market-select\s*\{[^}]*background: var\(--vex-alias-bg-layer-3\);/s);
+    expect(bar).toMatch(/button\.lit-market-select b\s*\{[^}]*font-size: 17px;/s);
+    // The last price over its day change, a trading value.
+    expect(bar).toMatch(/\.lit-market-price b\s*\{[^}]*font-size: 18px;/s);
+    expect(bar).toContain('.lit-market-price[data-tone="positive"] small { color: var(--lit-trade-up); }');
+    expect(bar).toContain('.lit-market-price[data-tone="negative"] small { color: var(--lit-trade-down); }');
+    // A figure: its caps label over the mono value.
+    expect(bar).toMatch(/\.lit-market-metric small\s*\{[^}]*font-size: 11px;[^}]*letter-spacing: var\(--tracking-label\);[^}]*text-transform: uppercase;/s);
+    // LIVE at the right end, a status square in the status green.
+    expect(bar).toMatch(/\.lit-live-status\s*\{[^}]*margin-left: auto;/s);
+    expect(bar).toContain('.lit-live-status[data-status="live"] i { background: var(--vex-alias-state-success-mark); }');
   });
 
   it("keeps the chart, order book, ticket and account dock mounted together", () => {
@@ -226,11 +221,22 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(rules).not.toMatch(/\brgba?\(/);
   });
 
-  it("keeps the candlesticks the one hue pair, inside the chart canvas only", () => {
-    expect(css).toMatch(/\.lit-desk \.lit-chart-canvas\s*\{[^}]*--lit-candle-up: var\(--color-candle-up\);[^}]*--lit-candle-down: var\(--color-candle-down\);/s);
+  it("paints the candles and their volume in the gain and loss pair, inside the chart canvas only", () => {
+    expect(css).toMatch(/\.lit-desk \.lit-chart-canvas\s*\{[^}]*--lit-candle-up: var\(--vex-alias-trade-up\);[^}]*--lit-candle-down: var\(--vex-alias-trade-down\);/s);
     // Declared once, on the canvas host, and never painted with by a sheet.
-    expect(rules.match(/--color-candle-/g)).toHaveLength(2);
+    expect(rules.match(/--lit-candle-(?:up|down):/g)).toHaveLength(2);
     expect(rules).not.toContain("var(--lit-candle-");
+  });
+
+  it("frames the chart in a 40 row of cells over a 40 wide drawing strip", () => {
+    expect(css).toMatch(/\.lit-chart-body\s*\{[^}]*--lit-chart-toolbar: 40px;[^}]*--lit-chart-rail: 40px;/s);
+    const tools = sheetRules("chart-tools.css");
+    expect(tools).toMatch(/\.lit-analysis-toolbar\s*\{[^}]*height: var\(--lit-chart-toolbar, 40px\);[^}]*border-bottom: 1px solid var\(--vex-alias-rule\);/s);
+    expect(tools).toMatch(/\.lit-drawing-rail\s*\{[^}]*width: var\(--lit-chart-rail, 40px\);/s);
+    // The snapshot key ends the row.
+    expect(tools).toMatch(/\.lit-analysis-toolbar \.lit-chart-export\s*\{[^}]*width: 40px;[^}]*margin-left: auto;/s);
+    // The chosen interval on raised 2, never the blue.
+    expect(sheetRules("lighter-chart.css")).toMatch(/\.lit-resolution-tabs button\[aria-pressed="true"\]\s*\{[^}]*background: var\(--lit-pressed\);/s);
   });
 
   it("closes the drag region while the Zen bar is folded away", () => {

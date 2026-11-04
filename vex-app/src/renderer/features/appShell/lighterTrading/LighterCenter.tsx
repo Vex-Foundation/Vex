@@ -5,7 +5,6 @@ import { useUiStore, type VexTheme } from "../../../stores/uiStore.js";
 import { TradingBottomPanel } from "./AccountPanel.js";
 import { DeskApprovalDialog } from "./DeskApprovalDialog.js";
 import { DeskLeverage } from "./DeskLeverage.js";
-import { EnvironmentSwitch } from "./EnvironmentSwitch.js";
 import { LighterAccountSetupModal } from "./LighterAccountSetupModal.js";
 import { MarketBar, streamStatusLabel } from "./MarketBar.js";
 import { MarketChart } from "./MarketChart.js";
@@ -86,18 +85,14 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           market={market}
           marketPickerOpen={marketPickerOpen}
           onOpenMarketPicker={() => setMarketPickerOpen((current) => !current)}
-          onSelectSection={desk.selectSection}
+          // Core | RHC (H3-DESKTOP.md section 4.9): switching drops the
+          // market, and the desk opens that deployment's default.
+          onSelectEnvironment={(next) => saveDesk({ environment: next, marketId: null })}
           snapshot={desk.snapshot}
           liveStats={desk.publicMarketStream.stats}
           streamStatus={desk.publicMarketStream.statsStatus}
           onReload={desk.reloadMarketData}
           streamReceivedAt={desk.publicMarketStream.statsReceivedAt}
-        />
-        {/* Core | RHC moved out of the title row (H3-DESKTOP.md section 4.9):
-          * the deployment is the market's, never a network menu. */}
-        <EnvironmentSwitch
-          environment={environment}
-          onSelect={(next) => saveDesk({ environment: next, marketId: null })}
         />
         {marketPickerOpen ? (
           <MarketPicker

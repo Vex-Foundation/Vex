@@ -116,12 +116,14 @@
   letter-spacing: normal;
 }
 
-/* The candlesticks: the one sanctioned hue pair, scoped to the chart canvas
- * host (the element MarketChart reads its colours from), so no label, legend,
- * price line or order handle around the chart can reach it. */
+/* The candlesticks and their volume: trading values, so the gain and loss
+ * pair (the approved desk plate, H3-DESKTOP.md sections 2.2 and 4.9), read
+ * on the chart canvas host alone (the element MarketChart reads its colours
+ * from), so no label, legend, price line or order handle around the chart
+ * can reach it. */
 .lit-desk .lit-chart-canvas {
-  --lit-candle-up: var(--color-candle-up);
-  --lit-candle-down: var(--color-candle-down);
+  --lit-candle-up: var(--vex-alias-trade-up);
+  --lit-candle-down: var(--vex-alias-trade-down);
 }
 
 .lit-desk ::selection,

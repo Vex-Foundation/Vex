@@ -53,14 +53,14 @@ describe("the Lighter desk's roles", () => {
     expect(literal).toEqual([]);
   });
 
-  it("reaches no primitive directly; the candle pair lives on the chart host alone", () => {
+  it("reaches no primitive directly; the candles take the gain and loss pair on the chart host alone", () => {
     const primitive = [...roles]
       .filter(([, value]) => /var\(--color-/.test(value))
       .map(([name]) => name);
     expect(primitive).toEqual([]);
     const chart = block(".lit-desk .lit-chart-canvas");
-    expect(chart).toContain("--lit-candle-up: var(--color-candle-up);");
-    expect(chart).toContain("--lit-candle-down: var(--color-candle-down);");
+    expect(chart).toContain("--lit-candle-up: var(--vex-alias-trade-up);");
+    expect(chart).toContain("--lit-candle-down: var(--vex-alias-trade-down);");
   });
 
   it("fills Long and the setup action with the H3 blue, and nothing else with it", () => {

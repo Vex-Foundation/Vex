@@ -18,28 +18,68 @@ const market = {
   activity24h: { tradesCount: null, quoteVolume: null },
 } satisfies LighterTradingMarket;
 
-describe("MarketBar", () => {
-  it("names the desk's section in the Perps | Stocks | Spot control and switches on tap", () => {
-    const onSelectSection = vi.fn();
+describe("MarketBar (H3-DESKTOP.md section 4.9)", () => {
+  it("is one row of cells in the plate's order, and leaves Perps | Stocks | Spot to the picker", () => {
     render(
       <MarketBar
-        environment="rhc"
+        environment="core"
         market={market}
         marketPickerOpen={false}
         onOpenMarketPicker={vi.fn()}
-        onSelectSection={onSelectSection}
+        onSelectEnvironment={vi.fn()}
         snapshot={null}
         liveStats={null}
         streamStatus="live"
         streamReceivedAt={null}
       />,
     );
-    const tabs = screen.getByRole("navigation", { name: "Lighter market category" });
-    expect(tabs.textContent).toBe("PerpsStocksSpot");
-    expect(screen.getByRole("button", { name: "Perps" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Spot" }).getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(screen.getByRole("button", { name: "Spot" }));
-    expect(onSelectSection).toHaveBeenCalledWith("spot");
+    const bar = screen.getByRole("region", { name: "Selected market summary" });
+    const cells = Array.from(bar.children).map((cell) =>
+      cell.getAttribute("data-metric") ?? cell.className,
+    );
+    expect(cells).toEqual([
+      "lit-market-select",
+      "lit-market-deploy",
+      "last",
+      "mark",
+      "index",
+      "volume",
+      "open-interest",
+      "funding",
+      "lit-live-status",
+    ]);
+    // The figures' labels, words in sentence case (the sheet sets the caps).
+    expect(Array.from(bar.querySelectorAll(".lit-market-metric small")).map((label) => label.textContent)).toEqual([
+      "Mark",
+      "Index",
+      "24h volume",
+      "Open interest",
+      "Funding / countdown",
+    ]);
+    expect(screen.queryByRole("navigation", { name: "Lighter market category" })).toBeNull();
+  });
+
+  it("switches Core and RHC in two key cells, never a network menu", () => {
+    const onSelectEnvironment = vi.fn();
+    render(
+      <MarketBar
+        environment="core"
+        market={market}
+        marketPickerOpen={false}
+        onOpenMarketPicker={vi.fn()}
+        onSelectEnvironment={onSelectEnvironment}
+        snapshot={null}
+        liveStats={null}
+        streamStatus="live"
+        streamReceivedAt={null}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "Lighter environment" });
+    expect(group.closest(".lit-market-deploy")).not.toBeNull();
+    expect(screen.getByRole("radio", { name: "Lighter Core" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Robinhood Chain" }));
+    expect(onSelectEnvironment).toHaveBeenCalledWith("rhc");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("offers a reload next to the time once the market is not live", () => {
@@ -52,7 +92,6 @@ describe("MarketBar", () => {
         market={market}
         marketPickerOpen={false}
         onOpenMarketPicker={vi.fn()}
-        onSelectSection={vi.fn()}
         snapshot={null}
         liveStats={null}
         streamStatus={streamStatus}
@@ -73,7 +112,7 @@ describe("MarketBar", () => {
     expect(screen.queryByRole("button", { name: "Reload market data from Lighter" })).toBeNull();
   });
 
-  it("keeps environment switching in the picker and shows only the selected context", () => {
+  it("opens the market picker from the market key, which names the market and its product", () => {
     const onOpenMarketPicker = vi.fn();
     render(
       <MarketBar
@@ -81,7 +120,6 @@ describe("MarketBar", () => {
         market={market}
         marketPickerOpen={false}
         onOpenMarketPicker={onOpenMarketPicker}
-        onSelectSection={vi.fn()}
         snapshot={null}
         liveStats={null}
         streamStatus="live"
@@ -89,9 +127,10 @@ describe("MarketBar", () => {
       />,
     );
     const bar = screen.getByRole("region", { name: "Selected market summary" });
+    // Without the deployment's handler the bar draws no Core | RHC cells.
     expect(screen.queryByRole("radiogroup", { name: "Lighter environment" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
-    const picker = screen.getByRole("button", { name: /BTC.*Core/ });
+    const picker = screen.getByRole("button", { name: /BTC.*Perp/ });
     expect(bar.firstElementChild).toBe(picker);
     fireEvent.click(picker);
     expect(onOpenMarketPicker).toHaveBeenCalledOnce();

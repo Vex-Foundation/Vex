@@ -717,15 +717,17 @@ export function MarketChart({
     if (!host || !series) return undefined;
     const colors = getChartColors(host);
     // Blue and ink only: the entry and the risk levels (liquidation, stop)
-    // are the ink, a take profit the blue, a resting order its side's.
+    // are the ink, a take profit the blue, a resting order its side's. The
+    // entry is a dashed line with its ENTRY tag (H3-DESKTOP.md section 4.9);
+    // every tag is a caps label, which the canvas draws as written.
     const lines: IPriceLine[] = levels.map((level) => series.createPriceLine({
       price: level.price,
-      title: level.title,
+      title: level.title.toUpperCase(),
       color: level.kind === "entry" || level.kind === "liquidation" || level.kind === "stopLoss" ? colors.label
         : level.kind === "takeProfit" ? colors.positive
           : level.side === "buy" ? colors.positive : colors.label,
       lineWidth: 1,
-      lineStyle: level.kind === "entry" ? LineStyle.Solid : level.kind === "liquidation" ? LineStyle.Dotted : LineStyle.Dashed,
+      lineStyle: level.kind === "liquidation" ? LineStyle.Dotted : LineStyle.Dashed,
       axisLabelVisible: true,
     }));
     return () => {
