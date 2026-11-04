@@ -6,10 +6,12 @@ import type {
   LighterTradingEnvironment,
   LighterTradingFill,
 } from "@shared/schemas/lighter-trading.js";
-import { LineChevronDown, LineChevronUp, LineRefresh } from "../../../components/icons/line/index.js";
+import { VexMark } from "../../../components/common/VexMark.js";
+import { LineChevronDown, LineChevronUp, LineRefresh, LineShield } from "../../../components/icons/line/index.js";
 import { useLighterTradingAccount, useLighterTradingFills } from "../../../lib/api/lighter-trading.js";
 import { accountRisk, marginUsage, positionMetrics, positionProtection, type ClosePortion, type LighterOpenOrderRow, type LighterPositionRow, type OrderCancelStage, type PositionCloseStage } from "./account-model.js";
 import { ClosePositionPopover } from "./ClosePositionPopover.js";
+import { MarketSymbol } from "./MarketSymbol.js";
 import { NO_VALUE, formatDecimalString, formatNumber, formatPrice, formatRetrievedAt } from "./format.js";
 import { wholeLeverageDisplay } from "./leverage-display.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -222,10 +224,13 @@ export function TradingBottomPanel({
         </div>
         {account !== null && account.status !== "unavailable" ? <RiskStrip account={account} /> : null}
         <div className="lit-bottom-status">
+          {/* The account and the time of its read: said to assistive tech and
+            * in Refresh's tooltip; the plate draws the row without them. */}
           {status === null ? null : <span role="status" aria-live="polite">{status}</span>}
           <button
             type="button"
             className="lit-account-refresh-button"
+            title={status ?? undefined}
             onClick={() => { void accountQuery.refetch(); }}
             disabled={accountQuery.isFetching}
             aria-busy={accountQuery.isFetching}
@@ -315,6 +320,15 @@ function RiskStrip({ account }: { readonly account: LighterTradingAccount }): JS
  * 80% the on cells turn ink, never red. The reading is also carried as a
  * percentage in the meter's own aria values, because the cells are paint.
  */
+/** A position's resting protection on one line: its take profit and its stop, or None. */
+function protectionText(protection: ReturnType<typeof positionProtection>): string {
+  const legs = [
+    protection.takeProfit === null ? null : `TP ${num(protection.takeProfit.triggerPrice)}`,
+    protection.stopLoss === null ? null : `SL ${num(protection.stopLoss.triggerPrice)}`,
+  ].filter((leg): leg is string => leg !== null);
+  return legs.length === 0 ? "None" : legs.join(" · ");
+}
+
 function MarginMeter({ usage, label }: {
   readonly usage: number | null;
   readonly label: string;
@@ -453,19 +467,26 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                   : "Confirming close";
           return (
             <div className="lit-account-row" role="row" key={rowKey} data-close-pending={closeStage === null ? undefined : ""} aria-busy={closeStage !== null && closeStage !== "resting"}>
-              <span className="lit-order-cell" role="cell">
-                <button
-                  type="button"
-                  className="lit-market-link"
-                  onClick={() => actions.onOpenMarket(position)}
-                  aria-current={position.marketId === activeMarketId ? "true" : undefined}
-                  aria-label={`Open ${position.symbol} on the desk`}
-                >
-                  {position.symbol}
-                </button>
-                <small>
-                  <span data-trade={position.side === "long" ? "up" : "down"}>{position.side === "long" ? "Long" : "Short"}</span> · {leverageText(metrics.leverage, position.marginMode)}
-                </small>
+              <span className="lit-order-cell lit-position-market" role="cell">
+                {/* The market's mark (a perp's base asset is 0 on Lighter). */}
+                <MarketSymbol
+                  environment={account.environment}
+                  market={{ marketId: position.marketId, baseAssetId: 0, symbol: position.symbol, marketType: "perp" }}
+                />
+                <span className="lit-position-market__words">
+                  <button
+                    type="button"
+                    className="lit-market-link"
+                    onClick={() => actions.onOpenMarket(position)}
+                    aria-current={position.marketId === activeMarketId ? "true" : undefined}
+                    aria-label={`Open ${position.symbol} on the desk`}
+                  >
+                    {position.symbol}
+                  </button>
+                  <small>
+                    <span data-trade={position.side === "long" ? "up" : "down"}>{position.side === "long" ? "Long" : "Short"}</span> · {leverageText(metrics.leverage, position.marginMode)}
+                  </small>
+                </span>
               </span>
               <span role="cell">{num(position.size)}</span>
               <span role="cell">{num(position.entryPrice)}</span>
@@ -481,19 +502,29 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                 <small>of {num(position.value)}</small>
               </span>
               <span className="lit-order-cell" role="cell" data-tone={signedTone(position.unrealizedPnl)}>
-                <b>{num(position.unrealizedPnl)}</b>
+                <b>{signedTone(position.unrealizedPnl) === "positive" ? `+${num(position.unrealizedPnl)}` : num(position.unrealizedPnl)}</b>
                 <small>{signedPercent(metrics.roe)}</small>
               </span>
               <span className="lit-order-cell" role="cell">
-                <b data-empty={protection.takeProfit === null ? "" : undefined}>{protection.takeProfit === null ? NO_VALUE : num(protection.takeProfit.triggerPrice)}</b>
-                <small data-empty={protection.stopLoss === null ? "" : undefined}>{protection.stopLoss === null ? NO_VALUE : num(protection.stopLoss.triggerPrice)}</small>
+                {/* One line, as the plate draws it: "SL 62,800.0", both legs
+                  * when both rest, or None. */}
+                <b data-empty={protection.takeProfit === null && protection.stopLoss === null ? "" : undefined}>
+                  {protectionText(protection)}
+                </b>
               </span>
               <span role="cell" className="lit-row-actions">
-                <button type="button" onClick={() => actions.onReviewPosition(position)} aria-label={`Review ${position.symbol} position with Vex`}>
-                  Ask Vex
+                <button
+                  type="button"
+                  className="lit-row-key--icon"
+                  title="Ask Vex"
+                  onClick={() => actions.onReviewPosition(position)}
+                  aria-label={`Review ${position.symbol} position with Vex`}
+                >
+                  <VexMark size={14} />
                 </button>
                 <button type="button" onClick={() => actions.onProtectPosition(position)} aria-label={`Set stop loss and take profit for ${position.symbol}`}>
-                  Protect
+                  <LineShield size={14} />
+                  <span className="lit-row-key__word">Protect</span>
                 </button>
                 <ClosePositionPopover
                   position={position}

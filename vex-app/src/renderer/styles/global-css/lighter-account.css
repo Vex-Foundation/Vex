@@ -1,11 +1,12 @@
 /* ---------------------------------------------------------------------------
- * Account dock (docs/design/R3-MINIMAL.md sections 1.2 and 9.3): the tabs row,
- * the summary line under it, then the tables.
+ * Account dock (docs/design/H3-DESKTOP.md section 4.9; its H3 cells are the
+ * block at the end of this sheet, plan row S8-10): the tabs row, the summary
+ * strip under it, then the tables.
  *
- * TYPE. Every word is Instrument Sans in sentence case with normal tracking;
- * every figure is JetBrains Mono, tabular, at -0.01em. There are no caps in
- * this sheet. The panel starts from the sans so the desk's mono base never
- * reaches a word, and each figure puts the mono back on its own rule.
+ * TYPE. Every word is Be Vietnam Pro, labels in caps at the label tracking;
+ * every figure is Roboto Mono, tabular, at -0.01em. The panel starts from
+ * the sans so the desk's mono base never reaches a word, and each figure
+ * puts the mono back on its own rule.
  *
  * COLOUR. Paper, ink, ink 2, muted and the rules come from the desk tokens.
  * The trading pair (`--vex-alias-trade-up` and `-down`) paints trading values
@@ -122,13 +123,11 @@
 }
 
 /* Narrow dock: the status text yields first, then the strip's outer items. */
-@container (max-width: 1060px) {
-  .lit-bottom-status > span { display: none; }
-}
-@container (max-width: 900px) {
+/* Narrow dock: the strip's outer items yield, Margin first, then Equity. */
+@container (max-width: 640px) {
   .lit-risk-strip > div:last-child { display: none; }
 }
-@container (max-width: 640px) {
+@container (max-width: 480px) {
   .lit-risk-strip > div:first-child { display: none; }
 }
 
@@ -417,8 +416,6 @@
 .lit-account-row .lit-order-cell[data-tone="positive"] { color: var(--vex-alias-trade-up); }
 .lit-account-row .lit-order-cell[data-tone="negative"] { color: var(--vex-alias-trade-down); }
 .lit-account-row .lit-order-cell[data-tone] > :is(b, small) { color: inherit; }
-.lit-account-row .lit-order-cell[data-tone="positive"] > b::before { content: "\2191\00a0"; }
-.lit-account-row .lit-order-cell[data-tone="negative"] > b::before { content: "\2193\00a0"; }
 
 /* The side line under the market: the Long or Short word in the pair, the
  * leverage after it muted. */
@@ -784,3 +781,231 @@
 .lit-bottom-panel[data-collapsed] .lit-bottom-header { min-height: 32px; flex-wrap: nowrap; border-bottom: 0; }
 .lit-bottom-panel[data-collapsed] .lit-bottom-tabs { min-height: 0; }
 .lit-bottom-panel[data-collapsed] .lit-bottom-tabs button { border-bottom-color: transparent; }
+
+/* ---------------------------------------------------------------------------
+ * THE H3 DOCK (docs/design/H3-DESKTOP.md section 4.9, the approved desk
+ * plate; plan row S8-10): the account dock across the desk's full width, in
+ * square cells on the 1px rule.
+ *
+ *   - the TABS as cells (POSITIONS 2, OPEN ORDERS, TRADE HISTORY, ASSETS),
+ *     the chosen one on raised 2, and REFRESH and the fold key as cells at
+ *     the row's right end; the account and the time of its read are said to
+ *     assistive tech and in Refresh's tooltip;
+ *   - the SUMMARY STRIP under them: EQUITY, AVAILABLE, UNREALIZED PNL in gain
+ *     or loss type, MARGIN with its ten-cell meter, each a cell with a caps
+ *     label over nothing but its mono figure;
+ *   - the TABLE: caps heads over 40 high rows; a position's market with its
+ *     mark, side and leverage, its figures in mono, uPnL and ROE in gain or
+ *     loss, TP / SL on one line, and the actions as cells: Ask Vex, PROTECT
+ *     and the close key. Under a 760 dock it sheds Margin and TP / SL.
+ * ------------------------------------------------------------------------- */
+
+.lit-bottom-panel {
+  --lit-dock-inset: 16px;
+  background: var(--lit-bg);
+}
+
+.lit-bottom-header {
+  min-height: 40px;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+
+.lit-bottom-header > .lit-bottom-tabs {
+  min-height: 40px;
+  gap: 0;
+  margin-left: calc(var(--lit-dock-inset) * -1);
+  border-right: 1px solid var(--vex-alias-rule);
+}
+
+.lit-bottom-panel .lit-bottom-tabs button {
+  height: 40px;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-bottom-panel .lit-bottom-tabs button:first-child { border-left: 0; }
+
+.lit-bottom-panel .lit-bottom-tabs button[aria-selected="true"] {
+  border-bottom-color: transparent;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
+}
+
+.lit-bottom-panel .lit-bottom-tabs button i {
+  font-size: 12px;
+  letter-spacing: var(--lit-tr-data);
+}
+
+.lit-bottom-status {
+  align-self: stretch;
+  gap: 0;
+  margin-right: calc(var(--lit-dock-inset) * -1);
+}
+
+.lit-bottom-status > [role="status"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* REFRESH and the fold key: cells at the row's end, behind their rules. */
+.lit-bottom-status > .lit-account-refresh-button {
+  height: auto;
+  gap: 8px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-bottom-status > .lit-bottom-collapse {
+  width: 40px;
+  height: auto;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+}
+
+/* The summary strip: a row of cells under the tabs, each a caps label and
+ * its mono figure. */
+.lit-risk-strip {
+  min-height: 34px;
+  align-items: stretch;
+  gap: 0;
+  border-top: 1px solid var(--vex-alias-rule);
+  padding: 0;
+  font-size: 12px;
+}
+
+.lit-risk-strip > div {
+  gap: 8px;
+  border-right: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+}
+
+.lit-risk-strip dt {
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-risk-strip dd { gap: 8px; }
+
+/* The ten-cell meter: off cells on the chosen rule, on cells the ink. */
+.lit-margin-usage-bar > i {
+  width: 5px;
+  border: 0;
+  background: var(--vex-alias-rule-chosen);
+}
+
+.lit-margin-usage-bar > i[data-on],
+.lit-margin-usage-bar[data-level="high"] > i[data-on] {
+  border: 0;
+  background: var(--lit-ink);
+}
+
+/* The table: caps heads over 40 high rows. */
+.lit-account-columns {
+  min-height: 30px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  background: var(--lit-bg);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-account-row {
+  min-height: 40px;
+  font-size: 12px;
+}
+
+.lit-account-row + .lit-account-row { border-top: 1px solid var(--vex-alias-rule); }
+
+/* A position's market: its mark beside the symbol over its side and
+ * leverage. */
+.lit-positions .lit-position-market {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.lit-position-market__words {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The actions as cells: Ask Vex (the vx mark), PROTECT and the close key,
+ * each the row's height behind its rule. The table no longer scrolls
+ * sideways, so the column is not pinned (the rule above for a scrolling
+ * table). */
+.lit-positions .lit-row-actions,
+.lit-positions .lit-account-columns > :last-child {
+  position: static;
+  align-self: stretch;
+  gap: 0;
+  margin-right: 0;
+  border-left: 0;
+  background: transparent;
+  padding: 0;
+}
+.lit-positions .lit-account-columns > :last-child { align-self: center; }
+
+.lit-positions .lit-row-actions > button {
+  height: auto;
+  min-height: 40px;
+  gap: 6px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  padding: 0 12px;
+  color: var(--lit-ink-secondary);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-positions .lit-row-actions > .lit-row-key--icon { width: 40px; justify-content: center; padding: 0; }
+
+.lit-positions .lit-row-actions > button:hover:not(:disabled) {
+  background: var(--lit-hover);
+  color: var(--lit-ink);
+}
+
+/* The positions table fits the dock at every width (the plate's nine
+ * columns); the other tables keep their scroll. */
+.lit-account-table.lit-positions { min-width: 0; }
+.lit-positions .lit-account-columns,
+.lit-positions .lit-account-row {
+  grid-template-columns: minmax(120px, 1.3fr) repeat(7, minmax(0, 1fr)) auto;
+  gap: 8px;
+}
+
+/* Under a 760 dock: Margin and TP / SL go, and PROTECT keeps its shield. */
+@container (max-width: 760px) {
+  .lit-account-table.lit-positions { min-width: 0; }
+  .lit-positions .lit-account-columns,
+  .lit-positions .lit-account-row {
+    grid-template-columns: minmax(120px, 1.4fr) repeat(4, minmax(0, 1fr)) minmax(84px, 1fr) auto;
+  }
+  .lit-positions :is(.lit-account-columns, .lit-account-row) > :is(:nth-child(6), :nth-child(8)) { display: none; }
+  .lit-positions .lit-row-key__word { display: none; }
+}

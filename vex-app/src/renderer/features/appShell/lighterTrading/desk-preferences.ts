@@ -56,7 +56,8 @@ export const LIGHTER_TRADES_DEFAULT_SHARE = 0.32;
 /** S4 - the bottom dock, as a share of the desk height. */
 export const LIGHTER_BOTTOM_MIN = 120;
 export const LIGHTER_BOTTOM_MAX_SHARE = 0.6;
-export const LIGHTER_BOTTOM_DEFAULT_SHARE = 0.2;
+/** The approved desk plate's dock: its tabs, summary strip, heads and two rows. */
+export const LIGHTER_BOTTOM_DEFAULT_SHARE = 0.24;
 export const LIGHTER_BOTTOM_COLLAPSED = 32;
 /** The panels above the dock never give up more than this: the book and trades minimums plus their seam. */
 export const LIGHTER_MAIN_MIN_HEIGHT = LIGHTER_BOOK_MIN + LIGHTER_TRADES_MIN + 1;
