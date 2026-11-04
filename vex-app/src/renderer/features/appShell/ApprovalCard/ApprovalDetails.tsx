@@ -233,6 +233,13 @@ function criticalArgLabel(
   return "Signed order expiry";
 }
 
+/**
+ * The money card's field-label register (type.css): mono caps 13, tracked.
+ * The label is written in sentence case ("You send") and the class sets the
+ * caps, so a screen reader reads words. Colour stays the table's.
+ */
+const FIELD_LABEL = "vex-field-label";
+
 /** The tool label the signed fields show: `namespace:tool`, exactly as bound. */
 function toolLabel(namespace: string | null, toolName: string): string {
   return namespace !== null ? `${namespace}:${toolName}` : toolName;
@@ -330,8 +337,8 @@ export function ApprovalDetails({
 
   // THE ARGUMENTS as bound: one ruled row per signed field, the key as named
   // and the value in mono. A curated tool's list is its readable facts, so it
-  // stands in plain view; every other list is the raw record behind "All
-  // signed fields".
+  // stands in plain view as the card's table, its labels in the field-label
+  // register; every other list is the raw record behind "All signed fields".
   const argsList = hasArgs ? (
     <dl
       data-testid="critical-args"
@@ -340,7 +347,7 @@ export function ApprovalDetails({
       {visibleCriticalArgs(criticalArgs).map(([k, v]) => (
         // `display: contents` keeps the grid while giving each pair a key.
         <div key={k} className="contents">
-          <dt>{criticalArgLabel(k, criticalArgs)}</dt>
+          <dt className={curated ? FIELD_LABEL : undefined}>{criticalArgLabel(k, criticalArgs)}</dt>
           <dd
             className={
               curated
@@ -355,12 +362,20 @@ export function ApprovalDetails({
     </dl>
   ) : null;
 
+  // THE CARD'S TABLE (H3-DESKTOP.md sections 1.7 and 2.3): the money lines,
+  // or a Lighter order's fact rows, or a curated tool's readable rows. Each
+  // row is one ruled cell on H3's 34px pitch: the label in the field-label
+  // register (mono caps 13, tracked, muted) and the value at the right, its
+  // figures in mono. The rows and their words are the ones the approval
+  // binds, as before: no FROM wallet, no quoted price and no limits line
+  // (section 4.1), "Not available" where the tool quoted nothing, and no
+  // total debit while any part of it is unknown.
   const facts =
     moneyLines !== null ? (
       <dl data-vex-area="approval-money" className="vex-appr__dl">
         {moneyLines.map((line) => (
           <div key={line.label} className="contents">
-            <dt>{line.label}</dt>
+            <dt className={FIELD_LABEL}>{line.label}</dt>
             <dd>
               <MoneyValue line={line} />
             </dd>
@@ -371,7 +386,7 @@ export function ApprovalDetails({
       <dl data-testid="order-facts" className="vex-appr__dl">
         {orderFacts.map((fact) => (
           <div key={fact.label} className="contents">
-            <dt>{fact.label}</dt>
+            <dt className={FIELD_LABEL}>{fact.label}</dt>
             <dd className="vex-appr__wrap">{fact.value}</dd>
           </div>
         ))}

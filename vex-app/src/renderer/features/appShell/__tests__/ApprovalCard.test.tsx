@@ -1138,3 +1138,145 @@ describe("ApprovalCard, the H3 head", () => {
     expect(head).not.toMatch(new RegExp(`${String.fromCharCode(0x2014)}|${String.fromCharCode(0x2013)}`));
   });
 });
+
+describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () => {
+  const APPROVAL_CSS = readFileSync(
+    join(process.cwd(), "src/renderer/styles/global-css/approval.css"),
+    "utf8",
+  );
+  /** The body of the rule whose WHOLE selector list is `selector`, never one it shares. */
+  const ruleBody = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(APPROVAL_CSS.replace(/\/\*[\s\S]*?\*\//g, ""));
+    expect(match, `rule missing: ${selector}`).not.toBeNull();
+    return match?.[1] ?? "";
+  };
+  const SWAP = makeSummary({
+    toolName: "execute_tool",
+    preview: {
+      toolName: "swap.execute",
+      namespace: "kyberswap",
+      criticalArgs: {
+        toolId: "kyberswap.swap.execute",
+        chain: "base",
+        tokenIn: "USDC",
+        tokenOut: "ETH",
+        amountIn: "200",
+        slippageBps: 50,
+        vexFee: "Vex fee 0.25% (25 bps): 0.5 USDC | 500000 raw units | 6 decimals, taken on the input token.",
+        quoteBinding: "kyber-quote-v1 | quoted 0.05714 ETH | will not fill below 0.05686 ETH (50 bps of the quote)",
+      },
+    },
+  });
+
+  function moneyRows(): { label: string; value: string; dt: HTMLElement; dd: HTMLElement }[] {
+    const money = document.querySelector<HTMLElement>("[data-vex-area='approval-money']");
+    expect(money).not.toBeNull();
+    const terms = Array.from(money?.querySelectorAll<HTMLElement>("dt") ?? []);
+    return terms.map((dt) => {
+      const dd = dt.nextElementSibling as HTMLElement;
+      return { label: dt.textContent ?? "", value: dd.textContent ?? "", dt, dd };
+    });
+  }
+
+  it("keeps the same rows and the same data: send, receive, minimum, costs", () => {
+    renderCard(SWAP, false);
+    const rows = moneyRows();
+    expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(rows[0]?.value).toBe("200 USDC · on Base");
+    expect(rows[1]?.value).toBe("0.05714 ETH · quoted");
+    expect(rows[2]?.value).toBe("0.05686 ETH · slippage limit 0.5%");
+    expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%) · network fee Not available");
+    // The network fee is never quoted, so the total stays hidden.
+    expect(document.body.textContent).not.toMatch(/total debit/i);
+    // H3 rows desktop has no data for are not drawn (section 4.1).
+    expect(document.body.textContent).not.toMatch(/quoted price|available 1|your trading wallet|per order/i);
+  });
+
+  it("labels every row in the field-label register, in sentence case", () => {
+    renderCard(SWAP, false);
+    for (const row of moneyRows()) {
+      expect(row.dt.classList.contains("vex-field-label")).toBe(true);
+      // The register sets the caps; the source stays words.
+      expect(row.label).not.toBe(row.label.toUpperCase());
+    }
+  });
+
+  it("sets every figure in mono and keeps 'Not available' a word, never a figure", () => {
+    renderCard(SWAP, false);
+    const rows = moneyRows();
+    const figures = rows.flatMap((row) => Array.from(row.dd.querySelectorAll(".vex-num")).map((n) => n.textContent));
+    expect(figures).toEqual(["200 USDC", "0.05714 ETH", "0.05686 ETH", "0.5 USDC"]);
+    const missing = rows.flatMap((row) => Array.from(row.dd.querySelectorAll("[data-vex-money-missing]")));
+    expect(missing).toHaveLength(1);
+    expect(missing[0]?.classList.contains("vex-num")).toBe(false);
+    expect(missing[0]?.textContent).toBe("Not available");
+  });
+
+  it("puts a Lighter order's fact rows and a curated tool's rows in the same table", () => {
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalCard
+          summary={makeSummary({
+            toolName: "lighter:order.create",
+            preview: {
+              toolName: "order.create",
+              namespace: "lighter",
+              criticalArgs: {
+                toolId: "lighter.order.create",
+                side: "buy",
+                baseAmountDisplay: "0.0002",
+                marketSymbol: "BTC",
+                orderType: "market",
+                timeInForce: "immediate-or-cancel",
+                priceDisplay: "77199.7",
+              },
+            },
+          })}
+          sessionId={SESSION}
+          focusOnMount={false}
+        />
+      </QueryClientProvider>,
+    );
+    const order = screen.getByTestId("order-facts");
+    expect(order.className).toBe("vex-appr__dl");
+    for (const dt of Array.from(order.querySelectorAll("dt"))) {
+      expect(dt.classList.contains("vex-field-label")).toBe(true);
+    }
+    unmount();
+    renderCard(
+      makeSummary({
+        toolName: "lighter:fees.approve",
+        preview: {
+          toolName: "fees.approve",
+          namespace: "lighter",
+          criticalArgs: { toolId: "lighter.fees.approve", summary: "Authorize VEX trading fees", perpetualFee: "0.02%" },
+        },
+      }),
+      false,
+    );
+    const curated = screen.getByTestId("critical-args");
+    expect(curated.className).toBe("vex-appr__dl");
+    const labels = Array.from(curated.querySelectorAll("dt"));
+    expect(labels.map((dt) => dt.textContent)).toEqual(["Action", "Perpetual fee"]);
+    for (const dt of labels) expect(dt.classList.contains("vex-field-label")).toBe(true);
+  });
+
+  it("draws each row as a ruled cell edge to edge, the label 24 in at the left and the value 24 in at the right", () => {
+    expect(ruleBody(".vex-appr__dl")).toContain("grid-template-columns: fit-content(50%) minmax(0, 1fr)");
+    expect(ruleBody(".vex-appr__dl")).toContain("margin: 0;");
+    const cell = ruleBody(".vex-appr__dl dt,\n.vex-appr__dl dd");
+    expect(cell).toContain("border-top: 1px solid var(--vex-alias-rule)");
+    expect(cell).toContain("padding: 8px 0");
+    expect(cell).toContain("line-height: 17px");
+    const label = ruleBody(".vex-appr__dl dt");
+    expect(label).toContain("padding-left: 24px");
+    expect(label).toContain("color: var(--vex-alias-label-tertiary)");
+    // The register owns the label's face, size and caps; the table never overrides them.
+    expect(label).not.toMatch(/font-family|font-size|text-transform|letter-spacing/);
+    const value = ruleBody(".vex-appr__dl dd");
+    expect(value).toContain("text-align: right");
+    expect(value).toContain("padding-right: 24px");
+    expect(value).toContain("font-size: 14px");
+  });
+});
