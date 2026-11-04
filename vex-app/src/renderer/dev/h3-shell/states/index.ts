@@ -42,9 +42,11 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   portfolio,
   activity,
   markets,
+  howVexWorks,
+  // Harness-only below: their reads are not stood in, so the parity spec
+  // does not capture them (`HARNESS_ONLY` in e2e/h3-parity.spec.ts).
   settings,
   memory,
-  howVexWorks,
 ];
 
 export const DEFAULT_STATE = shell;
