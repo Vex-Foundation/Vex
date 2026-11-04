@@ -28,6 +28,7 @@ const read = (name: string): string =>
 
 const tokensCss = read("tokens.css");
 const boardCss = read("board.css");
+const bookCss = read("book.css");
 const globalsCss = readFileSync(
   path.join(here, "..", "..", "globals.css"),
   "utf8",
@@ -122,11 +123,15 @@ describe("board surface tokens", () => {
     expect(stripComments(boardCss)).not.toMatch(/border-radius/);
   });
 
-  it("asks the sheet for the whole centre and the page padding, 20 28", () => {
-    const page = ruleBody(boardCss, ".vex-ov:has(.vex-bd)");
-    expect(page).toContain("--vex-ov-max: none");
-    expect(page).toContain("--vex-ov-pad: 28px");
-    expect(page).toContain("--vex-ov-top: 20px");
+  it("takes the H3 page frame's body: the whole column, 24 in from each edge", () => {
+    // docs/design/H3-DESKTOP.md section 1.9. The board asks for nothing of its
+    // own any more: R3's 20 28 override is gone, and the frame (book.css)
+    // gives every page the whole column with 24 at each edge.
+    expect(boardCss).not.toContain(".vex-ov:has(.vex-bd)");
+    const frame = ruleBody(bookCss, '.vex-ov[data-frame="h3"][data-width]');
+    expect(frame).toContain("--vex-ov-max: none");
+    expect(frame).toContain("--vex-ov-pad: 24px");
+    expect(frame).toContain("--vex-ov-top: 24px");
   });
 
   it("draws the shared chip pressed in the one blue, never a hue of its own", () => {
