@@ -79,6 +79,14 @@
  * leg's (the old one is cleared), so the reversed leg ends on its own
  * `transitionend`, well inside that bound.
  *
+ * THE STILL FRAME (sections 3.1 and 3.5; plan row S4-10): under reduced
+ * motion and under Save-Data she opens and closes at once, in both halves of
+ * the pair. The sheet states its own collapse (kimm.css, beside the
+ * catch-alls in base.css, `prefers-reduced-motion` and `html[data-still]`),
+ * and here a press read under `prefersStillFrame()` rests the phase at once,
+ * so no one who asked for less motion waits out a wipe that is not playing:
+ * no `opening` or `closing`, no scan head, no drop, no timer.
+ *
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
  * (`opening` or `closing` until the wipe ends, then `open` or `closed`). The
@@ -102,6 +110,7 @@
 import { useLayoutEffect, useRef, useState, type JSX, type TransitionEvent } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
 import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS } from "../../../lib/motion/index.js";
+import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 
@@ -178,6 +187,11 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
     // or more later, while the old leg would have gone on deeper.
     if (box.current !== null) void getComputedStyle(box.current).clipPath;
     const leg = legOf(open);
+    // REDUCED MOTION AND SAVE-DATA land her at once (see "THE STILL FRAME").
+    if (prefersStillFrame()) {
+      setPhase(leg.rest);
+      return undefined;
+    }
     setPhase(leg.moving);
     // The pair of `--vex-duration-vex-open` and `--vex-duration-vex-close`
     // (kimm.css): the wipe's own end normally lands first, through

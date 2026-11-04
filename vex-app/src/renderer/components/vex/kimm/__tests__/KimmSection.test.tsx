@@ -26,6 +26,9 @@
  *    the edge where it stands), clears the old leg's timer, and the phase
  *    follows the last press. The no-jump, no-deeper reversal itself is the
  *    browser's, read on real frames by `e2e/h3-card-proof.spec.ts`.
+ *  - THE STILL FRAME (S4-10): under reduced motion or Save-Data a press rests
+ *    her at once, with no moving phase and no timer, and the sheet states its
+ *    own collapse for every rule that moves her, at its own specificity.
  */
 
 import { readFileSync } from "node:fs";
@@ -39,9 +42,18 @@ import {
   DURATION_VEX_OPEN_MS,
   EASE_PUSH,
 } from "../../../../lib/motion/index.js";
+
 import { KimmArtProvider } from "../kimm-art-context.js";
 import { KIMM_SHIPPED_ART, type KimmArtSet } from "../kimm-assets.js";
 import { KimmSection } from "../KimmSection.js";
+
+/** Reduced motion or Save-Data, as the still-frame read answers it. */
+const still = vi.hoisted(() => ({ current: false }));
+vi.mock("../../../../lib/motion/use-still-frame.js", () => ({
+  prefersSaveData: () => false,
+  prefersStillFrame: () => still.current,
+  useStillFrame: () => still.current,
+}));
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const KIMM_CSS = readFileSync(
@@ -431,6 +443,77 @@ describe("KimmSection, a press during the motion turns it around (S4-09)", () =>
     const read = vi.spyOn(window, "getComputedStyle");
     view.rerender(at(false));
     expect(read.mock.calls.some(([element]) => element === section())).toBe(true);
+  });
+});
+
+describe("KimmSection, reduced motion and Save-Data open and close her at once (S4-10)", () => {
+  afterEach(() => {
+    still.current = false;
+    vi.useRealTimers();
+  });
+
+  /** Every rule body for `selector`, in or out of a media block. */
+  function rulesFor(css: string, selector: string): string[] {
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const out: string[] = [];
+    for (const match of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selectors = (match[1] ?? "").split(",").map((s) => s.trim());
+      if (selectors.includes(selector)) out.push(match[2] ?? "");
+    }
+    return out;
+  }
+
+  /** The body of the first `@media (prefers-reduced-motion: reduce)` block. */
+  function reducedBlock(css: string): string {
+    const at = css.indexOf("@media (prefers-reduced-motion: reduce)");
+    if (at === -1) return "";
+    const open = css.indexOf("{", at);
+    let depth = 0;
+    for (let end = open; end < css.length; end += 1) {
+      if (css[end] === "{") depth += 1;
+      if (css[end] === "}") {
+        depth -= 1;
+        if (depth === 0) return css.slice(open + 1, end);
+      }
+    }
+    return "";
+  }
+
+  const MOVERS = [
+    ".vex-kimm",
+    '.vex-kimm[data-kimm-open="false"]',
+    ".vex-kimm__drop",
+    '.vex-kimm[data-kimm-open="false"] .vex-kimm__drop',
+    ".vex-kimm__scan",
+    '.vex-kimm[data-kimm-open="false"] .vex-kimm__scan',
+  ];
+
+  it("rests her at once on a close and an open: no moving phase, nothing pending", () => {
+    vi.useFakeTimers();
+    still.current = true;
+    const view = render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    view.rerender(<KimmSection mood="hi" open={false} onOpenChange={() => undefined} />);
+    expect(section().getAttribute("data-kimm-phase")).toBe("closed");
+    view.rerender(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    expect(section().getAttribute("data-kimm-phase")).toBe("open");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("states its own collapse for every rule that moves her, under reduced motion and Save-Data", () => {
+    const css = KIMM_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const reduced = reducedBlock(css);
+    for (const selector of MOVERS) {
+      // Each mover has a transition outside the collapse...
+      expect(rulesFor(css, selector).some((body) => /transition:\s*(?!none)/.test(body)), selector).toBe(
+        true,
+      );
+      // ...and is named in both collapses with none.
+      expect(rulesFor(reduced, selector).some((body) => /transition:\s*none/.test(body)), selector).toBe(true);
+      expect(
+        rulesFor(css, `html[data-still] ${selector}`).some((body) => /transition:\s*none/.test(body)),
+        selector,
+      ).toBe(true);
+    }
   });
 });
 
