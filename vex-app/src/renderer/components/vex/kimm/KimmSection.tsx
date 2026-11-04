@@ -87,6 +87,17 @@
  * so no one who asked for less motion waits out a wipe that is not playing:
  * no `opening` or `closing`, no scan head, no drop, no timer.
  *
+ * WHILE SHE MOVES (section 3.4; plan row S4-11): her section's body is inert
+ * from the press until the wipe ends, so nothing in it takes a click or
+ * focus; her corner key, outside the body, stays live, and so does the Vex
+ * key. Focus that her press is about to hide moves to the Vex key in the
+ * header (`kimm-focus.ts`): opening, focus on the console's rest that her box
+ * will cover; closing, focus in the body that folds away. A press on a key
+ * keeps focus on that key, since both keys stand where they are through the
+ * motion. The console's rest under her is inert while she is open and until
+ * a close has ended: the console reads that from her phase
+ * (`kimm-section-state.ts`, `useKimmCovers`).
+ *
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
  * (`opening` or `closing` until the wipe ends, then `open` or `closed`). The
@@ -113,12 +124,10 @@ import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS } from "../../../lib/motion
 import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
+import { handFocusToVexKey } from "./kimm-focus.js";
+import { setKimmPhase, type KimmPhase } from "./kimm-section-state.js";
 
-/**
- * Where her section is in its motion: resting `open` or `closed`, or on its
- * way, `opening` or `closing`, from the press until the wipe ends.
- */
-export type KimmPhase = "open" | "closed" | "opening" | "closing";
+export type { KimmPhase };
 
 /** One leg of her motion: the phase while it runs, where it rests, how long it takes. */
 interface KimmLeg {
@@ -178,14 +187,20 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
   const [phase, setPhase] = useState<KimmPhase>(open ? "open" : "closed");
   const shown = useRef(open);
   const box = useRef<HTMLDivElement | null>(null);
+  const key = useRef<HTMLButtonElement | null>(null);
   useLayoutEffect(() => {
     if (shown.current === open) return undefined;
     shown.current = open;
-    // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): read
-    // her clip now, so the new leg's transition starts at the press, from the
-    // wipe's edge as it stands, rather than at the next style pass, a frame
-    // or more later, while the old leg would have gone on deeper.
-    if (box.current !== null) void getComputedStyle(box.current).clipPath;
+    if (box.current !== null) {
+      // FOCUS (see "WHILE SHE MOVES"): what her press is about to hide hands
+      // its focus to the Vex key; her corner key keeps its own.
+      handFocusToVexKey(box.current, key.current, open);
+      // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): read
+      // her clip now, so the new leg's transition starts at the press, from
+      // the wipe's edge as it stands, rather than at the next style pass, a
+      // frame or more later, while the old leg would have gone on deeper.
+      void getComputedStyle(box.current).clipPath;
+    }
     const leg = legOf(open);
     // REDUCED MOTION AND SAVE-DATA land her at once (see "THE STILL FRAME").
     if (prefersStillFrame()) {
@@ -203,6 +218,12 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
     if (event.target !== event.currentTarget || event.propertyName !== "clip-path") return;
     setPhase(restOf);
   };
+  // Her phase, for the console's rest under her (`kimm-section-state.ts`).
+  useLayoutEffect(() => {
+    setKimmPhase(phase);
+  }, [phase]);
+  useLayoutEffect(() => () => setKimmPhase(null), []);
+  const moving = phase === "opening" || phase === "closing";
 
   return (
     <div
@@ -215,7 +236,10 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       className="vex-kimm"
     >
-      <div aria-hidden="true" className="vex-kimm__body">
+      {/* Inert while she moves: nothing in her body takes a click or focus
+        * (see "WHILE SHE MOVES"). Her corner key is outside it and stays
+        * live. */}
+      <div aria-hidden="true" inert={moving} className="vex-kimm__body">
         <div className="vex-kimm__ground" />
         {/* Her drop rides this layer, which stands from the first frame,
           * so her first open drops her too: her figure is only asked for at
@@ -247,6 +271,7 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
         <div className="vex-kimm__scan" />
       </div>
       <button
+        ref={key}
         type="button"
         data-vex-area="kimm-key"
         title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
