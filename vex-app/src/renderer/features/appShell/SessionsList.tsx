@@ -41,7 +41,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { LineNewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
+import { LineH3NewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
 import { isDialogOnScreen } from "../../components/ui/dialog.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
@@ -419,7 +419,7 @@ function NewChatKey({
   const mission = useUiStore((s) => s.runtimeMode === "agent" && s.sessionModeFilter === "mission");
   return (
     <NavKey
-      icon={<LineNewChat className="vex-ls-nrow__i" />}
+      icon={<LineH3NewChat className="vex-ls-nrow__i" />}
       label={mission ? "New mission" : "New chat"}
       rail={rail}
       onClick={onCreate}

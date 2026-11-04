@@ -8,6 +8,11 @@
  * still open it too), and Lighter, Studio and Board are desktop's own, set
  * among H3's in the order the plan's decision 10 gives.
  *
+ * The icons are H3's nav glyphs redrawn in the line family (the `h3-` names,
+ * `components/icons/line/line-glyphs.tsx`: the bubble, the cube, the rising
+ * bars, the case, the ticked list, the cog); Lighter, Studio and Board keep
+ * their own line drawings, in the same grid and stroke (section 4.6).
+ *
  * Each row is an H3 cell on the 40 pitch, edge to edge: the icon in muted, its
  * word in caps (14, tracked, ink) at 58. The selected row takes H3's one row
  * gradient, `--vex-alias-row-selected` (#181A1C at the column's left edge,
@@ -31,14 +36,14 @@
 
 import type { JSX, ReactNode } from "react";
 import {
-  LineActivity,
   LineBoard,
-  LineChat,
+  LineH3Activity,
+  LineH3Chat,
+  LineH3Markets,
+  LineH3Missions,
+  LineH3Portfolio,
+  LineH3Settings,
   LineLighter,
-  LineMarkets,
-  LineMissions,
-  LinePortfolio,
-  LineSettings,
   LineStudio,
   type LineIconComponent,
 } from "../../../components/icons/line/index.js";
@@ -56,17 +61,18 @@ const NAV_ROWS: readonly {
   readonly label: string;
   readonly Icon: LineIconComponent;
 }[] = [
-  { destination: "chat", label: "Chat", Icon: LineChat },
-  { destination: "missions", label: "Missions", Icon: LineMissions },
+  { destination: "chat", label: "Chat", Icon: LineH3Chat },
+  { destination: "missions", label: "Missions", Icon: LineH3Missions },
   // Markets opens the Watchlist page (its route keeps its name).
-  { destination: "watchlist", label: "Markets", Icon: LineMarkets },
-  { destination: "portfolio", label: "Portfolio", Icon: LinePortfolio },
+  { destination: "watchlist", label: "Markets", Icon: LineH3Markets },
+  { destination: "portfolio", label: "Portfolio", Icon: LineH3Portfolio },
   // Activity opens the Agent Scan page, its full feed.
-  { destination: "activity", label: "Activity", Icon: LineActivity },
+  { destination: "activity", label: "Activity", Icon: LineH3Activity },
+  // Desktop's own three: their line drawings share H3's grid and stroke.
   { destination: "lighter", label: "Lighter", Icon: LineLighter },
   { destination: "studio", label: "Studio", Icon: LineStudio },
   { destination: "board", label: "Board", Icon: LineBoard },
-  { destination: "settings", label: "Settings", Icon: LineSettings },
+  { destination: "settings", label: "Settings", Icon: LineH3Settings },
 ];
 
 /** One nav row (open sidebar) or key (rail). */

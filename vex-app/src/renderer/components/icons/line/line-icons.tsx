@@ -127,6 +127,13 @@ export const LineScan = make("scan");
 export const LineBook = make("book");
 export const LineSun = make("sun");
 export const LineMoon = make("moon");
+export const LineH3NewChat = make("h3-new-chat");
+export const LineH3Chat = make("h3-chat");
+export const LineH3Missions = make("h3-missions");
+export const LineH3Markets = make("h3-markets");
+export const LineH3Portfolio = make("h3-portfolio");
+export const LineH3Activity = make("h3-activity");
+export const LineH3Settings = make("h3-settings");
 
 /** Every icon by name; the type makes a missing entry a compile error. */
 export const LINE_ICONS: { readonly [K in LineIconName]: LineIconComponent } = {
@@ -226,6 +233,13 @@ export const LINE_ICONS: { readonly [K in LineIconName]: LineIconComponent } = {
   book: LineBook,
   sun: LineSun,
   moon: LineMoon,
+  "h3-new-chat": LineH3NewChat,
+  "h3-chat": LineH3Chat,
+  "h3-missions": LineH3Missions,
+  "h3-markets": LineH3Markets,
+  "h3-portfolio": LineH3Portfolio,
+  "h3-activity": LineH3Activity,
+  "h3-settings": LineH3Settings,
 };
 
 export interface LineIconByNameProps extends LineIconProps {

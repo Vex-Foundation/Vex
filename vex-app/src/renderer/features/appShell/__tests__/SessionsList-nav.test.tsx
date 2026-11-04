@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { LineIcon, type LineIconName } from "../../../components/icons/line/index.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
 const harness = vi.hoisted(() => ({
@@ -141,6 +142,34 @@ describe("the nav", () => {
     for (const button of within(nav()).getAllByRole("button")) {
       expect(button.classList.contains("vex-ls-nrow--nav")).toBe(true);
     }
+  });
+
+  it("draws H3's nav glyphs, and desktop's own three in their line drawings", () => {
+    // docs/design/H3-DESKTOP.md section 4.6 (S5-04).
+    renderSidebar();
+    const drawn = (name: string): string =>
+      navRow(name).querySelector("svg")?.innerHTML ?? "missing";
+    const glyph = (name: LineIconName): string => {
+      const view = render(<LineIcon name={name} />);
+      const markup = view.container.querySelector("svg")?.innerHTML ?? "";
+      view.unmount();
+      return markup;
+    };
+    const expected: readonly (readonly [string, LineIconName])[] = [
+      ["Chat", "h3-chat"],
+      ["Missions", "h3-missions"],
+      ["Markets", "h3-markets"],
+      ["Portfolio", "h3-portfolio"],
+      ["Activity", "h3-activity"],
+      ["Lighter", "lighter"],
+      ["Studio", "studio"],
+      ["Board", "board"],
+      ["Settings", "h3-settings"],
+    ];
+    for (const [row, name] of expected) expect(drawn(row), row).toBe(glyph(name));
+    expect(
+      screen.getByRole("button", { name: "New chat" }).querySelector("svg")?.innerHTML,
+    ).toBe(glyph("h3-new-chat"));
   });
 
   it("Markets opens the Watchlist page and Activity the full Agent Scan feed", () => {
