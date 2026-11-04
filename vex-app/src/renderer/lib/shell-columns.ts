@@ -460,16 +460,18 @@ export interface ShellRows {
 export const H3_BAND_HEIGHT = 132;
 
 /**
- * The bottom row's height: measured, its top rule at y 827 to 828 of the
- * 900-high plates. Fixed: the composer in its chat cell grows upward over the
- * transcript and never changes the row.
+ * The bottom row's height, the H3 size token (tokens.css, 72: measured, its
+ * top rule at y 827 to 828 of the 900-high plates; pinned by
+ * shell-geometry-tokens.test.ts). Fixed: the composer in its chat cell grows
+ * upward over the transcript and never changes the row. The composer seat
+ * reads the same token, so the row and the seat keep one source.
  */
-export const H3_FOOT_HEIGHT = 72;
+export const H3_FOOT_ROW = "var(--vex-h3-bottom-h)";
 
 /** The grid's row template: head | body | foot, or head | band | body | foot. */
 export function shellGridTemplateRows(rows: ShellRows): string {
   const head = rows.head ? "var(--head-h)" : "0px";
-  const foot = rows.foot ? `${String(H3_FOOT_HEIGHT)}px` : "0px";
+  const foot = rows.foot ? H3_FOOT_ROW : "0px";
   const band = rows.band === true ? ` ${String(H3_BAND_HEIGHT)}px` : "";
   return `${head}${band} minmax(0, 1fr) ${foot}`;
 }

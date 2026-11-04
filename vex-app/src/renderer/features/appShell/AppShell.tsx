@@ -57,7 +57,6 @@ import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   LIGHTER_CHAT_MIN,
   RAIL_WIDTH,
-  H3_FOOT_HEIGHT,
   computeH3ShellColumns,
   computeShellColumns,
   h3GridTemplateColumns,
@@ -376,7 +375,7 @@ function ShellFrame({
   // interpolates length-to-length (`auto` <-> length is not interpolable and
   // once swept the right column through the centre on the welcome edge).
   const frameStyle: CSSProperties &
-    Record<"--vex-vex-track" | "--vex-overlay-left" | "--vex-foot-h", string> = {
+    Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
     // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
     // desk keeps R3's rail | desk | chat.
     gridTemplateColumns:
@@ -388,9 +387,6 @@ function ShellFrame({
     // tagline cell and the chat's composer seat (section 1.8). The Lighter
     // desk keeps R3's one-row frame, its title row and account row its own.
     gridTemplateRows: shellGridTemplateRows({ head: !lighter, foot: !lighter, band }),
-    // The bottom row's height, for the chat's composer seat inside the
-    // centre, which runs on into the row.
-    "--vex-foot-h": `${String(H3_FOOT_HEIGHT)}px`,
     // The Lighter desk's title row reserves the caption buttons wherever the
     // right column under them is narrower than they are (lighter-desk.css).
     "--vex-vex-track": `${cols.vex}px`,

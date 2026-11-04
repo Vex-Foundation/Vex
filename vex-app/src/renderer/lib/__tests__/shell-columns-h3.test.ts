@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   H3_CHATS_WIDTH,
   H3_COLUMNS_MIN,
-  H3_FOOT_HEIGHT,
+  H3_FOOT_ROW,
   H3_RAIL_WIDTH,
   H3_VEX_PERCENT,
   computeH3ShellColumns,
@@ -370,7 +370,9 @@ describe("the frame's rows", () => {
   it("is head | body | foot, a row the frame does not draw being 0", () => {
     expect(shellGridTemplateRows({ head: false, foot: false })).toBe("0px minmax(0, 1fr) 0px");
     expect(shellGridTemplateRows({ head: true, foot: false })).toBe("var(--head-h) minmax(0, 1fr) 0px");
-    expect(shellGridTemplateRows({ head: true, foot: true })).toBe("var(--head-h) minmax(0, 1fr) 72px");
+    expect(shellGridTemplateRows({ head: true, foot: true })).toBe(
+      "var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)",
+    );
   });
 
   it("under 1024 puts Vex's band between the header and the body, a fixed 132", () => {
@@ -379,12 +381,13 @@ describe("the frame's rows", () => {
       "var(--head-h) 132px minmax(0, 1fr) 0px",
     );
     expect(shellGridTemplateRows({ head: true, foot: true, band: false })).toBe(
-      "var(--head-h) minmax(0, 1fr) 72px",
+      "var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)",
     );
   });
 
-  it("keeps the bottom row at the plates' 72, and no row is auto", () => {
-    expect(H3_FOOT_HEIGHT).toBe(72);
+  it("reads the bottom row from its H3 size token (72), and no row is auto", () => {
+    // The token's 72 is pinned by shell-geometry-tokens.test.ts.
+    expect(H3_FOOT_ROW).toBe("var(--vex-h3-bottom-h)");
     for (const head of [false, true]) {
       for (const foot of [false, true]) {
         expect(shellGridTemplateRows({ head, foot })).not.toContain("auto");
