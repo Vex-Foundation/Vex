@@ -71,7 +71,7 @@ import { useProject } from "../../lib/api/projects.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
-import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useUiStore, vexPageClass, type RuntimeMode } from "../../stores/uiStore.js";
 import { assetsRouteFor, type ShellScreenOrigin } from "../../stores/uiStore/shell-route.js";
 import { BookInspectPanel } from "../appShell/book/inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "../appShell/book/inspect/inspect-store.js";
@@ -84,6 +84,7 @@ import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
 import { useAllMissions, useVexPresence, type VexPresence } from "./useVexPresence.js";
 import { VexConsoleActivity, VexConsolePermission, VexConsoleTop } from "./VexConsole.js";
 import { vexEmotionOf } from "./vex-emotion.js";
+import { VexConsoleStrip } from "./VexConsoleStrip.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
 import {
@@ -152,6 +153,13 @@ export function VexSidebar({
   const theme = useUiStore((s) => s.theme);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
   const lighter = runtimeMode === "lighter";
+  // THE PAGE STRIP (docs/design/H3-DESKTOP.md section 1.9): on a table page
+  // her column closed is the frame's strip (`computeH3ShellColumns` seats her
+  // there exactly when a table page has her hidden, and the frame then gives
+  // her no track), so the closed aside draws the console's one line instead
+  // of nothing. The frame stands it over the page (vex-sidebar.css).
+  const tablePage = useUiStore((s) => vexPageClass(s) === "pages");
+  const strip = !open && !lighter && tablePage;
   const asideRef = useRef<HTMLElement | null>(null);
   // She docks when she shows again after a hide (her column, or her plate in
   // a column that stayed); shown from the start (the welcome's included) she
@@ -206,7 +214,7 @@ export function VexSidebar({
       data-vex-area="vex-sidebar"
       data-vex-vex-open={open ? "true" : "false"}
       data-vex-vs-mode={runtimeMode}
-      data-vex-seat={seat}
+      data-vex-seat={strip ? "strip" : seat}
       data-vex-vs-closing={open && closing ? "" : undefined}
       inert={open && closing}
       // On the desk the column carries the Lighter role scope, as the desk
@@ -215,6 +223,7 @@ export function VexSidebar({
       data-lighter-environment={lighter ? environment : undefined}
       className={cn("vex-vs", lighter && "lit-chat-frame")}
     >
+      {strip ? <VexConsoleStrip /> : null}
       {open ? (
         <VexSidebarContent onHide={onHide} dock={dock} closing={closing} plate={plate} />
       ) : null}

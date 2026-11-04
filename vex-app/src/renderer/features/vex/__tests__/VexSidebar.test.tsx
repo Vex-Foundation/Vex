@@ -171,6 +171,63 @@ describe("VexSidebar, hidden", () => {
   });
 });
 
+describe("VexSidebar, the page strip (H3-DESKTOP.md section 1.9)", () => {
+  const strip = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-vex-area='vex-console-strip']");
+
+  it("folds the console to one line on a table page with her closed", () => {
+    const item = approvalNeedsYouItem(
+      approval({ id: "a9", sessionId: "00000000-0000-4000-8000-0000000000c3" }),
+      NOW,
+    );
+    presenceRef.current = presence({ needsYou: needs([item]) });
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    render(<VexSidebar open={false} onHide={() => {}} />);
+    expect(sidebar().getAttribute("data-vex-seat")).toBe("strip");
+    expect(sidebar().getAttribute("data-vex-vex-open")).toBe("false");
+    // NEEDS YOU and its count, the one decision, the missions cell, Open activity.
+    const line = strip();
+    expect(line?.querySelector(".vex-console__label")?.textContent).toBe("Needs you");
+    expect(line?.querySelector(".vex-console__count")?.textContent).toBe("1");
+    const review = within(line ?? sidebar()).getByRole("button", { name: `Review: ${item.title}` });
+    expect(line?.querySelector("[data-vex-area='vex-strip-missions']")?.textContent).toBe(
+      "1 mission running on Mainnet",
+    );
+    expect(within(line ?? sidebar()).getByRole("button", { name: "Open activity" })).not.toBeNull();
+    // Nothing of her column stands: no Needs you section, no plate.
+    expect(area("vex-needs-you")).toBeNull();
+    expect(document.querySelector("[data-vex-k2]")).toBeNull();
+    fireEvent.click(review);
+    expect(useUiStore.getState().activeSessionId).toBe("00000000-0000-4000-8000-0000000000c3");
+  });
+
+  it("says Nothing needs you. in the strip at zero, and draws no strategies cell", () => {
+    useUiStore.setState({ shellRoute: { kind: "settings", origin: null, section: null } });
+    render(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()?.textContent).toContain("Nothing needs you.");
+    expect(strip()?.textContent).not.toMatch(/strateg/i);
+  });
+
+  it("is never drawn in a chat, on a page that is not a table page, or on the Lighter desk", () => {
+    const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()).toBeNull();
+    act(() => useUiStore.setState({ shellRoute: { kind: "memory", origin: null } }));
+    rerender(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()).toBeNull();
+    act(() => useUiStore.setState({ runtimeMode: "lighter", shellRoute: { kind: "portfolio", origin: null } }));
+    rerender(<VexSidebar open={false} onHide={() => {}} />);
+    expect(strip()).toBeNull();
+  });
+
+  it("gives way to her column when she opens on the page", () => {
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    render(<VexSidebar open onHide={() => {}} />);
+    expect(strip()).toBeNull();
+    expect(sidebar().getAttribute("data-vex-seat")).toBe("column");
+    expect(area("vex-needs-you")).not.toBeNull();
+  });
+});
+
 describe("VexSidebar, open", () => {
   it("puts information first: state, narration, background work, Needs you, then the plate and the switch", () => {
     render(<VexSidebar open onHide={() => {}} />);

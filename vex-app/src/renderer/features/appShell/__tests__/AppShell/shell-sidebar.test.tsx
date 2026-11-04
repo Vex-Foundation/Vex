@@ -1170,6 +1170,29 @@ describe("AppShell", () => {
     act(() => useUiStore.getState().navigate("portfolio"));
     expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
     expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)");
+    // Her element draws the console's one line there (section 1.9).
+    expect(aside?.getAttribute("data-vex-seat")).toBe("strip");
+    expect(aside?.querySelector("[data-vex-area='vex-console-strip']")).not.toBeNull();
+  });
+
+  it("folds the console to the page strip on a table page with her closed, and back to her column", () => {
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenPages: false });
+    const view = renderShell();
+    const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
+    const strip = (): Element | null => view.container.querySelector("[data-vex-area='vex-console-strip']");
+    // In a chat her column stands: no strip.
+    expect(strip()).toBeNull();
+    act(() => useUiStore.getState().navigate("portfolio"));
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
+    expect(aside()?.getAttribute("data-vex-seat")).toBe("strip");
+    expect(strip()?.textContent).toContain("Needs you");
+    expect(strip()?.textContent).toContain("Open activity");
+    // Shown on the page, her column stands and the strip goes.
+    act(() => useUiStore.getState().setVexOpen(true));
+    expect(frame?.getAttribute("data-vex-seat")).toBe("column");
+    expect(strip()).toBeNull();
+    expect(aside()?.querySelector("[data-vex-area='vex-console-top']")).not.toBeNull();
   });
 
   it("under 1024 the band keeps the rail, with no Expand key to open it", () => {
