@@ -1,0 +1,962 @@
+/* OUR H3 PLATES FOR THE LIGHTER DESK (row S8-02), a design proposal drawn in
+ * the harness. Every rule is scoped under `.lp`, the plate's frame, and reads
+ * only the app's alias tokens (tokens.css) and the shell's own type tokens,
+ * so the plate is H3's grammar and nothing else: square cells on 1px rules,
+ * caps labels tracked 0.08em, Be Vietnam Pro for words, Roboto Mono for
+ * figures, gain and loss type for trading values only, status squares, and
+ * the one blue for the primary key. The shell's own cells (the header, the
+ * rail, the account cell, the composer) wear the shell's own classes and are
+ * not restyled here. */
+
+.lp {
+  --lp-ground: var(--vex-alias-bg-base);
+  --lp-cell: var(--vex-alias-bg-layer-3);
+  --lp-raised: var(--vex-alias-interactive-solid);
+  --lp-raised-2: var(--vex-alias-interactive-active);
+  --lp-bubble: var(--vex-alias-bubble);
+  --lp-rule: var(--vex-alias-rule);
+  --lp-rule-chosen: var(--vex-alias-rule-chosen);
+  --lp-ink: var(--vex-alias-label-primary);
+  --lp-ink-2: var(--vex-alias-label-secondary);
+  --lp-muted: var(--vex-alias-label-tertiary);
+  --lp-gain: var(--vex-alias-trade-up);
+  --lp-loss: var(--vex-alias-trade-down);
+  --lp-blue: var(--vex-alias-button-accent-fill);
+  --lp-blue-ink: var(--vex-alias-button-accent-ink);
+  --lp-on-ink: var(--vex-alias-label-on-primary);
+  --lp-status-green: var(--vex-alias-state-success-mark);
+  /* The desk roles its own parts mounted here read (`MarketSymbol`, the
+   * review's `.lit-order-review`), as lighter-tokens.css points them. */
+  --lit-line: var(--vex-alias-border-l2);
+  --lit-ink: var(--vex-alias-label-primary);
+  --lit-ink-muted: var(--vex-alias-label-tertiary);
+  --lit-focus: var(--vex-alias-focus);
+  /* Sizes that change under 1024 (the band) and under an 800-high window. */
+  --lp-bar-h: 56px;
+  --lp-row-h: 40px;
+  --lp-book-row: 22px;
+  --lp-dock-row: 40px;
+  --lp-kimm-h: 216px;
+  color: var(--lp-ink);
+  font-family: var(--font-sans);
+}
+.lp[data-lp-band] {
+  --lp-bar-h: 52px;
+  --lp-row-h: 36px;
+  --lp-book-row: 20px;
+  --lp-dock-row: 34px;
+  /* Under 1024 her section is the band's 132 (H3_BAND_HEIGHT), not the box. */
+  --lp-kimm-h: 132px;
+}
+
+/* ── The frame's own placement: the desk under the header in the middle
+ * track down to the window's foot (a page has no bottom row under it, H3
+ * section 1.9); Vex's column at the right, the desk chat in it, its foot the
+ * bottom row's composer cells. */
+.lp > .lp-desk {
+  grid-column: 2;
+  grid-row: 2 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+.lp > .lp-vex {
+  grid-column: 3;
+  grid-row: 2 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+/* The Vex key over the right-hand column: the column's left rule is the
+ * key's, the window's edge needs none. */
+.lp .vex-shell-head > [data-vex-head-cell="vex-key"] {
+  border-right: 0;
+  border-left: 1px solid var(--lp-rule);
+}
+/* The desk's head cells, in the header's title area. */
+.lp .vex-shell-head > .lp-head {
+  align-items: stretch;
+  padding: 0;
+}
+.lp-head__title {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding-inline: 24px 16px;
+  white-space: nowrap;
+}
+.lp-head__name {
+  font-size: 15px;
+  line-height: 20px;
+}
+.lp-head__sub {
+  overflow: hidden;
+  color: var(--lp-muted);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+.lp-head__key {
+  display: flex;
+  flex: none;
+  width: 76px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-left: 1px solid var(--lp-rule);
+  background: transparent;
+  color: var(--lp-ink-2);
+}
+.lp-head__key[aria-pressed="true"] {
+  background: var(--lp-raised-2);
+  color: var(--lp-ink);
+}
+
+/* Her face in the Vex key while her section is closed (the stand-in still). */
+.lp .vex-key__portrait > .lp-key-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Type helpers ─────────────────────────────────────────────────────── */
+.lp-cap {
+  font-size: 13px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.lp-cap--small {
+  font-size: 11px;
+  line-height: 14px;
+}
+.lp-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.lp-muted { color: var(--lp-muted); }
+.lp-ink-2 { color: var(--lp-ink-2); }
+.lp-gain { color: var(--lp-gain); }
+.lp-loss { color: var(--lp-loss); }
+
+/* A key cell: the raised fill, ink caps (H3 section 2.4). */
+.lp-key {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 0;
+  background: var(--lp-raised);
+  color: var(--lp-ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* A segmented control: cells side by side, the chosen one on raised 2. */
+.lp-seg {
+  display: flex;
+  align-items: stretch;
+}
+.lp-seg > button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid var(--lp-rule);
+  background: transparent;
+  color: var(--lp-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lp-seg > button:first-child { border-left: 0; }
+.lp-seg > button[aria-pressed="true"] {
+  background: var(--lp-raised-2);
+  color: var(--lp-ink);
+}
+
+/* ── THE DESK ─────────────────────────────────────────────────────────── */
+.lp-desk {
+  display: grid;
+  grid-template-rows: var(--lp-bar-h) minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: var(--lp-ground);
+}
+
+/* The market bar: one row of cells. Figures in mono, their labels in caps
+ * above them; the day change in gain or loss type. */
+.lp-bar {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  border-bottom: 1px solid var(--lp-rule);
+  container: lp-bar / inline-size;
+}
+.lp-bar__cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  border-right: 1px solid var(--lp-rule);
+  white-space: nowrap;
+}
+.lp-bar__cell > .lp-cap { color: var(--lp-muted); font-size: 11px; line-height: 12px; }
+.lp-bar__cell > .lp-num { font-size: 13px; line-height: 16px; }
+.lp-bar__market {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding-inline: 16px 14px;
+  background: var(--lp-cell);
+}
+.lp-bar__ticker { font-size: 17px; line-height: 20px; }
+.lp-bar__product { color: var(--lp-muted); }
+.lp-bar__deploy { padding: 0; }
+.lp-bar__deploy > .lp-seg { height: 100%; }
+.lp-bar__last { gap: 2px; }
+.lp-bar__last > .lp-num:first-child { font-size: 18px; line-height: 22px; }
+.lp-bar__live {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  border-right: 0;
+  border-left: 1px solid var(--lp-rule);
+}
+.lp-square {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--lp-ink);
+}
+.lp-square--green { background: var(--lp-status-green); }
+.lp-square--open { background: transparent; outline: 1px solid var(--lp-ink); outline-offset: -1px; }
+@container lp-bar (max-width: 1100px) {
+  .lp-bar [data-lp-shed="index"],
+  .lp-bar [data-lp-shed="volume"] { display: none; }
+}
+@container lp-bar (max-width: 760px) {
+  .lp-bar [data-lp-shed="oi"],
+  .lp-bar [data-lp-shed="mark"] { display: none; }
+}
+
+/* The upper desk: chart over book at the left, the ticket at the right. */
+.lp-upper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--lp-ticket-w, 340px);
+  min-height: 0;
+  border-bottom: 1px solid var(--lp-rule);
+}
+.lp[data-lp-band] .lp-upper { --lp-ticket-w: 280px; }
+.lp-main {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--lp-rule);
+}
+
+/* The chart cell: its toolbar row, the drawing tools' strip and the canvas. */
+.lp-chart {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-rows: var(--lp-row-h) minmax(0, 1fr);
+  min-height: 0;
+  border-bottom: 1px solid var(--lp-rule);
+}
+.lp-chart__bar {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  align-items: stretch;
+  border-bottom: 1px solid var(--lp-rule);
+  overflow: hidden;
+}
+.lp-chart__bar > .lp-seg > button { padding: 0 10px; font-family: var(--font-mono); letter-spacing: 0; text-transform: none; font-size: 12px; }
+.lp-chart__bar > .lp-seg { border-right: 1px solid var(--lp-rule); }
+.lp-chart__menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid var(--lp-rule);
+  background: transparent;
+  color: var(--lp-ink-2);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lp-chart__menu--end { margin-left: auto; border-right: 0; border-left: 1px solid var(--lp-rule); }
+.lp-chart__tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 8px;
+  border-right: 1px solid var(--lp-rule);
+  color: var(--lp-ink-2);
+}
+.lp-chart__tools > span {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+}
+.lp-chart__tools > span[data-on] { background: var(--lp-raised-2); color: var(--lp-ink); }
+.lp-chart__canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.lp-chart__canvas > svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.lp-chart__legend {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  display: flex;
+  gap: 12px;
+  color: var(--lp-ink-2);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lp-chart__legend b { color: var(--lp-ink); font-weight: 400; }
+
+/* The book: the heading row, the spread row, the two sides side by side,
+ * the bids in gain type and the asks in loss type with their depth bars, and
+ * the B and S ratio under them. */
+.lp-book {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lp-book__head {
+  display: flex;
+  height: var(--lp-row-h);
+  flex: none;
+  align-items: stretch;
+  border-bottom: 1px solid var(--lp-rule);
+}
+.lp-book__head > .lp-seg { border-right: 1px solid var(--lp-rule); }
+.lp-book__head > .lp-seg--end { margin-left: auto; border-right: 0; border-left: 1px solid var(--lp-rule); }
+.lp-book__head > .lp-seg > button { padding: 0 14px; }
+.lp-book__spread {
+  display: flex;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--lp-rule);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.lp-book__spread > .lp-num:first-child { font-size: 14px; }
+.lp-book__table {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  flex: 1 1 auto;
+  align-content: start;
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px 0;
+}
+.lp-book__table > span {
+  position: relative;
+  display: flex;
+  height: var(--lp-book-row);
+  align-items: center;
+  padding: 0 16px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.lp-book__table > .lp-book__th {
+  height: 22px;
+  color: var(--lp-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.lp-book__table > [data-col="bid-size"] { justify-content: flex-start; }
+.lp-book__table > [data-col="bid"] { justify-content: flex-end; }
+.lp-book__table > [data-col="ask"] { justify-content: flex-start; }
+.lp-book__table > [data-col="ask-size"] { justify-content: flex-end; }
+/* A depth bar: the side's own colour at a low alpha, square, drawn from the
+ * centre line out, under the figure. */
+.lp-book__bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  z-index: 0;
+}
+.lp-book__bar--bid { right: 0; background: color-mix(in oklab, var(--lp-gain) 14%, transparent); }
+.lp-book__bar--ask { left: 0; background: color-mix(in oklab, var(--lp-loss) 14%, transparent); }
+.lp-book__table > span > .lp-num { position: relative; z-index: 1; }
+.lp-book__ratio {
+  display: flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-top: 1px solid var(--lp-rule);
+  font-size: 12px;
+}
+.lp-book__ratio > i {
+  display: flex;
+  height: 4px;
+  flex: 1 1 auto;
+}
+.lp-book__ratio > i > b { display: block; height: 100%; background: var(--lp-gain); }
+.lp-book__ratio > i > s { display: block; height: 100%; flex: 1 1 auto; background: var(--lp-loss); }
+
+/* The ticket: a column of cells, the side keys at its foot. */
+.lp-ticket {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lp-ticket__row {
+  display: flex;
+  min-height: var(--lp-row-h);
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--lp-rule);
+  font-size: 13px;
+}
+.lp-ticket__row--cells { padding: 0; align-items: stretch; }
+.lp-ticket__row--cells > .lp-seg { flex: 1 1 auto; }
+.lp-ticket__row--cells > .lp-seg > button { flex: 1 1 0; font-size: 13px; }
+.lp-ticket__row > .lp-num { white-space: nowrap; }
+.lp-ticket__chip {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 6px;
+  margin-left: -16px;
+  padding: 0 14px 0 16px;
+  border-right: 1px solid var(--lp-rule);
+  background: var(--lp-cell);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.lp-ticket__spacer { flex: 1 1 auto; }
+.lp-ticket__hint {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--lp-rule);
+  color: var(--lp-muted);
+  font-size: 12px;
+}
+.lp-ticket__field {
+  display: flex;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  margin: 0 16px;
+  padding: 0 14px;
+  border: 1px solid var(--lp-rule-chosen);
+  font-size: 15px;
+}
+.lp-ticket__field > .lp-muted { margin-left: auto; font-size: 12px; }
+.lp-ticket__presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 8px 16px 12px;
+  border: 1px solid var(--lp-rule);
+}
+.lp-ticket__presets > span {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--lp-rule);
+  color: var(--lp-ink-2);
+  font-size: 12px;
+}
+.lp-ticket__presets--inline {
+  width: 150px;
+  margin: 0;
+  grid-template-columns: repeat(3, 1fr);
+}
+.lp-ticket__presets > span:first-child { border-left: 0; }
+.lp-ticket__presets > span[data-on] { background: var(--lp-raised-2); color: var(--lp-ink); }
+.lp-ticket__block { flex: none; border-bottom: 1px solid var(--lp-rule); }
+.lp-ticket__label {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  color: var(--lp-muted);
+}
+.lp-ticket__label > .lp-seg { height: 24px; border: 1px solid var(--lp-rule); }
+.lp-ticket__label > .lp-seg > button { padding: 0 10px; font-size: 11px; }
+.lp-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lp-ink-2);
+}
+.lp-tick > i {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--lp-ink-2);
+}
+.lp-ticket__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  flex: none;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--lp-rule);
+  row-gap: 4px;
+  font-size: 12px;
+}
+.lp-ticket__facts > dt { color: var(--lp-muted); font-family: var(--font-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; font-size: 11px; line-height: 18px; }
+.lp-ticket__facts > dd { margin: 0; text-align: right; line-height: 18px; }
+.lp-ticket__body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.lp-ticket__foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+.lp-ticket__ask {
+  height: 44px;
+  border-top: 1px solid var(--lp-rule);
+  font-size: 13px;
+}
+.lp-ticket__note {
+  padding: 8px 16px;
+  border-top: 1px solid var(--lp-rule);
+  color: var(--lp-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.lp-ticket__sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 56px;
+  border-top: 1px solid var(--lp-rule);
+}
+.lp-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  background: var(--lp-raised);
+  font-family: var(--font-sans);
+}
+.lp-side + .lp-side { border-left: 1px solid var(--lp-rule); }
+.lp-side > b {
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.lp-side > small { color: var(--lp-muted); font-family: var(--font-mono); font-size: 11px; }
+
+/* The review in the ticket's place: today's "Review order" (the desk's own
+ * `.lit-order-review` and the product's `ApprovalCard`), in a cell of the
+ * ticket column. */
+.lp-review {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.lp-review .lit-order-review { padding: 0 16px 16px; }
+
+/* The account dock: the tabs, the account's summary strip, the positions. */
+.lp-dock {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  container: lp-dock / inline-size;
+}
+.lp-dock__tabs {
+  display: flex;
+  height: var(--lp-row-h);
+  align-items: stretch;
+  border-bottom: 1px solid var(--lp-rule);
+}
+.lp-dock__tabs > .lp-seg { border-right: 1px solid var(--lp-rule); }
+.lp-dock__tabs > .lp-seg > button { gap: 8px; padding: 0 16px; }
+.lp-dock__tabs > .lp-seg > button > .lp-num { color: var(--lp-muted); letter-spacing: 0; }
+.lp-dock__refresh { margin-left: auto; border-left: 1px solid var(--lp-rule); background: transparent; color: var(--lp-ink-2); }
+.lp-dock__summary {
+  display: flex;
+  height: 34px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--lp-rule);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.lp-dock__summary > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-right: 1px solid var(--lp-rule);
+}
+.lp-dock__summary > span > .lp-cap { color: var(--lp-muted); font-size: 11px; }
+.lp-meter {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+}
+.lp-meter > i {
+  display: block;
+  width: 5px;
+  height: 10px;
+  background: var(--lp-rule-chosen);
+}
+.lp-meter > i[data-on] { background: var(--lp-ink); }
+.lp-dock__table {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 1.5fr) repeat(5, minmax(0, 1fr)) minmax(84px, 1fr) minmax(0, 1fr) auto;
+  font-size: 12px;
+}
+.lp-dock__table > span {
+  display: flex;
+  min-width: 0;
+  height: var(--lp-dock-row);
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--lp-rule);
+  white-space: nowrap;
+}
+.lp-dock__table > span:nth-child(9n + 1) { align-items: flex-start; padding-left: 16px; }
+.lp-dock__table > .lp-dock__th {
+  height: 30px;
+  color: var(--lp-muted);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.lp-dock__market {
+  display: flex;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px;
+}
+.lp-dock__market > span { display: flex; flex-direction: column; gap: 2px; }
+.lp-dock__actions {
+  flex-direction: row !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  padding: 0 !important;
+}
+.lp-dock__actions > button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid var(--lp-rule);
+  background: transparent;
+  color: var(--lp-ink-2);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@container lp-dock (max-width: 760px) {
+  .lp-dock__table {
+    grid-template-columns: minmax(120px, 1.4fr) repeat(4, minmax(0, 1fr)) minmax(96px, 1fr) auto;
+  }
+  .lp-dock__table > [data-lp-shed] { display: none; }
+  .lp-dock__table > span:nth-child(9n + 1) { padding-left: 12px; }
+  .lp-dock__actions > button[data-lp-shed-word] > span { display: none; }
+  .lp-dock__summary > [data-lp-shed] { display: none; }
+}
+
+/* ── VEX'S COLUMN ON THE DESK: her console's top block, her section as a box
+ * over the column, the desk chat under it, the composer at the foot. */
+.lp-vex {
+  /* The console's own measures (vex-sidebar.css, `.vex-vs`). */
+  --vex-console-head-h: 43px;
+  --vex-console-row-h: 64px;
+  --vex-console-missions-h: 41px;
+  --vex-console-top-h: calc(
+    var(--vex-console-head-h) + var(--vex-console-row-h) + var(--vex-console-missions-h)
+  );
+  --vex-console-inset: 24px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--lp-ground);
+}
+.lp-vex > .vex-console__top { flex: none; }
+.lp-vex__body {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+/* Her box: laid over the column, never a row in it, so opening or closing
+ * her never moves what is under it (H3 section 3.6). Open it is
+ * --lp-kimm-h high; closed it is the 56 strip. */
+.lp-kimm {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--lp-kimm-h);
+  overflow: hidden;
+  border-bottom: 1px solid var(--lp-rule);
+  background: var(--lp-ground);
+}
+.lp-kimm[data-closed] { height: 56px; }
+.lp-kimm > img {
+  position: absolute;
+  top: var(--lp-kimm-crop, -34px);
+  left: 0;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+.lp[data-lp-band] .lp-kimm > img { --lp-kimm-crop: -40px; }
+.lp-kimm[data-closed] > img { top: 0; width: calc(100% - 149px); height: 56px; object-fit: cover; object-position: left top; }
+/* Her corner key: HIDE VEX and a cross while open (138 x 56), SHOW VEX and
+ * a chevron in the strip (149 x 56); a dark translucent fill over her ground. */
+.lp-kimm__key {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  width: 138px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border: 0;
+  background: var(--vex-alias-bg-mask-drop);
+  color: var(--lp-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.lp-kimm[data-closed] > .lp-kimm__key {
+  width: 149px;
+  border-left: 1px solid var(--lp-rule);
+  background: var(--lp-ground);
+}
+.lp-chat {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 72px 24px 16px;
+  overflow: hidden;
+}
+/* A card waiting in the desk chat reads from its head down: its eyebrow,
+ * sentence and consequence line first, the rest scrolling under them. */
+.lp-chat--card {
+  justify-content: flex-start;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.lp-chat__scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--lp-rule);
+  color: var(--lp-ink-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.lp-chat__scope > .lp-cap { color: var(--lp-muted); font-size: 11px; }
+.lp-chat__prompts {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--lp-rule);
+}
+.lp-chat__prompts > span {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  color: var(--lp-ink-2);
+  font-size: 14px;
+}
+.lp-chat__prompts > span + span { border-top: 1px solid var(--lp-rule); }
+.lp-chat__me {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.lp-chat__bubble {
+  padding: 10px 16px;
+  background: var(--lp-bubble);
+  font-size: 15px;
+  line-height: 20px;
+}
+.lp-chat__disc {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--vex-alias-bg-overlay);
+  color: var(--lp-ink-2);
+}
+.lp-chat__vex {
+  margin: 0;
+  color: var(--lp-ink);
+  font-size: 15px;
+  line-height: 22px;
+}
+/* The composer at the column's foot is the shell's own (`.vex-composer-*`):
+ * its row stands in the bottom row, 72 under its top rule. */
+.lp-vex > .vex-composer-card { flex: none; }
+.lp-vex .vex-composer-field__text {
+  overflow: hidden;
+  color: var(--lp-muted);
+  font-size: 16px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* While a review waits on the desk the composer stays usable, but the one
+ * blue cell on the window is the review's approve key: SEND steps down to a
+ * key cell (proposed). */
+.lp[data-lp-reviewing] .vex-composer-send {
+  background-color: var(--lp-raised-2);
+  color: var(--lp-ink);
+}
+
+/* The drag between the desk and her column: the shell's own handle, its grip
+ * drawn as it shows under the pointer so the plate shows where it is. */
+.lp > .vex-shell-handle::after { opacity: 1; border-color: var(--vex-alias-border-l3); }
+
+/* The composer's promise: its words while the column holds them, its icon
+ * under 1024 (proposed for the desk chat; the chat's own strip folds the
+ * words under 600). */
+.lp-promise-icon { display: none; flex: none; }
+
+/* ── UNDER 1024, THE BAND: what each cell sheds to keep its figures whole. */
+.lp[data-lp-band] .lp-shed-band,
+.lp[data-lp-band] .lp-chart__bar > [data-lp-shed],
+.lp[data-lp-band] .lp-book__spread > [data-lp-shed],
+.lp[data-lp-band] .lp-ticket__row > [data-lp-shed],
+.lp[data-lp-band] .lp-ticket__hint,
+.lp[data-lp-band] .lp-ticket__note,
+.lp[data-lp-band] .lp-dock__summary [data-lp-shed],
+.lp[data-lp-band] .lp-chart__legend > span:first-child,
+.lp[data-lp-band] .lp-promise-words { display: none; }
+.lp[data-lp-band] .lp-promise-icon { display: block; }
+.lp[data-lp-band] .lp-book__table > span { padding: 0 8px; font-size: 11px; }
+.lp[data-lp-band] .lp-book__spread { gap: 12px; padding: 0 12px; }
+.lp[data-lp-band] .lp-ticket__chip { flex: none; }
+.lp[data-lp-band] .lp-ticket__label { height: 30px; }
+.lp[data-lp-band] .lp-ticket__field { height: 38px; }
+.lp[data-lp-band] .lp-ticket__presets:not(.lp-ticket__presets--inline) { margin: 6px 16px 8px; }
+.lp[data-lp-band] .lp-ticket__ask { height: 38px; }
+.lp[data-lp-band] .lp-ticket__sides { height: 50px; }
+.lp[data-lp-band] .lp-dock__summary { height: 30px; }
+.lp[data-lp-band] .lp-dock__table > .lp-dock__th { height: 26px; }
+
+/* ── ZEN: the chart in the whole window under one row of cells. */
+.lp-zen {
+  position: relative;
+  display: grid;
+  grid-template-rows: 76px minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--lp-ground);
+  color: var(--lp-ink);
+  font-family: var(--font-sans);
+}
+.lp-zen__head {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  padding-left: 92px;
+  border-bottom: 1px solid var(--lp-rule);
+}
+.lp-zen__head > * { border-left: 1px solid var(--lp-rule); }
+.lp-zen__head > .lp-bar__cell { border-right: 0; }
+.lp-zen__head > .lp-seg { align-self: stretch; }
+.lp-zen__head > .lp-seg > button { padding: 0 14px; font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; text-transform: none; }
+.lp-zen__end { margin-left: auto; }
+.lp-zen__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border: 0;
+  border-left: 1px solid var(--lp-rule);
+  background: transparent;
+  color: var(--lp-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lp-zen__key--icon { width: 76px; justify-content: center; padding: 0; color: var(--lp-ink-2); }
+.lp-zen__body {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  min-height: 0;
+}
