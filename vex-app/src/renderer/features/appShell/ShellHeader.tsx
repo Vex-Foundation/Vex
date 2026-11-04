@@ -14,12 +14,14 @@
  *     RunningHead, mounted ONCE:
  *       [data-vex-head-cell="title"]   over the chat: the title, the mission
  *                                      badge and the title bar's cluster
- *     [data-vex-head-cell="funds"]     the static network statement: Mainnet
- *                                      and Real funds, never a menu (desktop
- *                                      is mainnet only, section 4.2)
- *     [data-vex-head-cell="caption-reserve"]
+ *     ChatHeaderCells, the chat's cells after its title:
+ *       [data-vex-head-cell="funds"]   the static network statement: Mainnet
+ *                                      and the Real funds mark, never a menu
+ *                                      (desktop is mainnet only, section 4.2)
+ *       [data-vex-head-cell="caption-reserve"]
  *                                      the Windows and Linux caption buttons'
- *                                      reserve, `--overlay-w` wide
+ *                                      reserve, `--overlay-w` wide, where H3
+ *                                      draws PAUSE ALL
  *
  * Every cell that is not a control is a window drag region (`.vex-drag`);
  * each control inside opts out on its own (window-chrome.css).
@@ -42,6 +44,7 @@ import type { CSSProperties, JSX } from "react";
 import type { RuntimeMode } from "../../stores/uiStore.js";
 import { VexKey } from "../vex/VexKey.js";
 import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
+import { ChatHeaderCells } from "./ChatHeaderCells.js";
 import { RunningHead, type VexToggle } from "./RunningHead.js";
 import { STUDIO_SIDEBAR_COLLAPSE_LABEL } from "./studio/studio-copy.js";
 
@@ -103,19 +106,7 @@ export function ShellHeader({
         empty={empty}
         vex={vex}
       />
-      {lighter ? null : (
-        <div data-vex-head-cell="funds" className="vex-shell-head__funds vex-drag">
-          <span className="vex-tb-title__sub">Mainnet</span>
-          <span className="vex-tb-title__sub">Real funds</span>
-        </div>
-      )}
-      {lighter ? null : (
-        <div
-          aria-hidden
-          data-vex-head-cell="caption-reserve"
-          className="vex-shell-head__reserve vex-drag"
-        />
-      )}
+      {lighter ? null : <ChatHeaderCells />}
     </header>
   );
 }

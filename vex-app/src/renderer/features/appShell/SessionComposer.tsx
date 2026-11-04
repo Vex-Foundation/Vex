@@ -1,15 +1,28 @@
 /**
- * Session composer (docs/design/R3-MINIMAL.md section 7, references d2, d3
- * and d5): a square white field on a 1px rule, and one bar under the text -
- * the options control ("{model} · Reasoning: {effort}") leading, the
- * permission as its promise, "Context N%" and the send or named stop key
- * trailing; no focus ring. One component serves the welcome and the docked
- * session stage (`variant` names the stage; the textarea DOM survives a
- * hero->docked move because the parent keeps the mount position stable). Owns
- * wiring only: drafts (per-session store), submit + queue (composer-submit),
- * slash commands (commands/), seats (SessionComposer/), and the welcome's
- * task rows. Chrome lives in console.css, the seat and the welcome in
- * composer.css.
+ * Session composer (docs/design/H3-DESKTOP.md section 1.8 and Appendix A.5):
+ * the chat's cells of the bottom row, and over them the status strip.
+ *
+ *   form.vex-composer-card[data-vex-area="chat-composer"]
+ *     .vex-composer-strip  the status strip, 31 high: "{model} HIGH", the
+ *                          permission as its promise, the composer's state
+ *                          while it lasts, and CONTEXT with its meter
+ *     .vex-composer-row    the composer row, 72 high at the window's foot:
+ *       model cell         the model's glyph: the model choice
+ *       field cell         "Ask Vex...", running on to the send key (no
+ *                          image key: attachments are not supported)
+ *       send cell          the blue SEND, or STOP while a turn runs
+ *
+ * A draft past one line grows the field's cell upward over the transcript;
+ * the model and send cells keep the row's 72 at the foot, so the frame's
+ * bottom row never changes height. No focus ring on the field: the caret
+ * carries it. One component serves the welcome and the docked session stage
+ * (`variant` names the stage; the textarea DOM survives a hero->docked move
+ * because the parent keeps the mount position stable), and the whole seat is
+ * one component, so the bottom row's chat cell can give it way to a waiting
+ * card's decision row. Owns wiring only: drafts (per-session store), submit
+ * + queue (composer-submit), slash commands (commands/), seats
+ * (SessionComposer/), and the welcome's suggestions. Chrome lives in
+ * console.css, the seat and the welcome in composer.css.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,7 +57,6 @@ import { ComposerSendControl } from "./ComposerSendControl.js";
 import {
   APPROVAL_WAIT_PLACEHOLDER,
   LIGHTER_DESK_PLACEHOLDER,
-  usePlaceholderRotator,
 } from "./composer-placeholders.js";
 import {
   ReasoningEffortPlaceholder,
@@ -61,6 +73,7 @@ import {
 import type { ComposerCommandContext } from "./commands/directory.js";
 import { useRuntimeState } from "../../lib/api/runtime.js";
 import {
+  ComposerModelCell,
   ComposerOptions,
   ComposerPlanChip,
 } from "./SessionComposer/ComposerSeats.js";
@@ -79,6 +92,13 @@ import { DURATION_BASE_MS, EASE_STANDARD } from "../../lib/motion/index.js";
  */
 export const STEER_QUEUE_PLACEHOLDER =
   "Steer the running turn, or queue this for next.";
+
+/**
+ * The field's resting words, H3's (docs/design/H3-DESKTOP.md Appendix A.5:
+ * "Ask Vex..."). Desktop keeps its own for a mission, a running turn, a
+ * waiting approval and the Lighter desk; R3's rotating example orders retire.
+ */
+export const COMPOSER_REST_PLACEHOLDER = "Ask Vex…";
 
 /** jsdom-safe reduced-motion probe (the SidebarProfile pattern). */
 function prefersReducedMotion(): boolean {
@@ -165,7 +185,6 @@ export function SessionComposer({
   // or a decision waiting in this session's pending approvals.
   const awaitingApproval = runAwaitingApproval || (sessionId !== null && pendingApproval);
 
-  const [focused, setFocused] = useState<boolean>(false);
   // Sampled once per mount - the chips' enter/exit declaration must not flip
   // mid-animation.
   const [reducedMotion] = useState(prefersReducedMotion);
@@ -284,22 +303,12 @@ export function SessionComposer({
     textareaRef.current?.focus({ preventScroll: true });
   }, [textareaRef]);
 
-  const rotatorPaused =
-    focused ||
-    draft.length > 0 ||
-    activeSession?.mode === "mission" ||
-    submitPending ||
-    awaitingApproval ||
-    onLighterDesk;
-  const welcomePlaceholder = usePlaceholderRotator(rotatorPaused);
   // PLACEHOLDER PRECEDENCE, highest first: mission copy (the run owns the
-  // field) -> the resting phrase while an approval waits (no example order
-  // beside a pending decision) -> the steer/queue hint while a turn is
-  // running -> the rotating default. The steer hint outranks the default
-  // because during a turn the Send key does something DIFFERENT from what the
-  // default advertises, and a rotating suggestion at that moment is actively
-  // misleading. On the Lighter desk the rail is a trading copilot, so the
-  // resting phrase is the desk's.
+  // field) -> the resting phrase while an approval waits -> the steer/queue
+  // hint while a turn is running -> "Ask Vex...". The steer hint outranks the
+  // resting words because during a turn the Send key does something
+  // DIFFERENT (it steers or queues). On the Lighter desk the rail is a
+  // trading copilot, so the resting phrase is the desk's.
   const placeholder =
     activeSession?.mode === "mission"
       ? placeholderFor(activeSession)
@@ -309,7 +318,7 @@ export function SessionComposer({
           ? STEER_QUEUE_PLACEHOLDER
           : onLighterDesk
             ? LIGHTER_DESK_PLACEHOLDER
-            : welcomePlaceholder;
+            : COMPOSER_REST_PLACEHOLDER;
 
   // File-drag visual only: attachments are not supported yet, so the drop
   // ring signals the surface and the drop itself answers honestly.
@@ -318,6 +327,38 @@ export function SessionComposer({
 
   return (
     <>
+      {/* The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7):
+       * the two-by-two grid low in the column, OVER the composer, so they
+       * come before the field in reading and focus order too. Gone WHILE
+       * THE USER IS TYPING, by opacity only (MOTION-POLICY); nothing
+       * slides, and the field never moves: the dock stands on the column's
+       * foot, so the grid leaving only frees room above it. Always this
+       * child (or its empty slot), so the composer's own node after it
+       * keeps its place across the welcome edge. */}
+      {showQuickActions ? (
+        <div data-vex-composer-starters="" className="vex-starters">
+          <AnimatePresence initial={false}>
+            {draft.length === 0 ? (
+              <motion.div
+                key="starter-rows"
+                initial={reducedMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={
+                  reducedMotion
+                    ? { opacity: 0, transition: { duration: 0 } }
+                    : { opacity: 0 }
+                }
+                transition={{ duration: DURATION_BASE_MS / 1000, ease: EASE_STANDARD }}
+              >
+                <ComposerQuickActions
+                  onPick={applyQuickAction}
+                  onCreateMission={createMission}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : null}
       <div
         data-vex-composer-stage={stage}
         className="relative"
@@ -359,7 +400,7 @@ export function SessionComposer({
           <div
             role={notice.tone === "error" ? "alert" : "status"}
             className={cn(
-              "mb-2 flex w-full items-center gap-2 py-1 text-[13px] leading-5",
+              "mb-2 flex w-full items-center gap-2 px-6 py-1 text-[13px] leading-5",
               notice.tone === "error" ? "text-ink-primary" : "text-ink-secondary",
             )}
           >
@@ -399,83 +440,49 @@ export function SessionComposer({
             showToast("Attachments aren't supported yet.");
           }}
         >
-          {/* The field's tag on its top edge (section 7): the target swatch and
-              "Waiting for approval" while an approval waits (status by fill and
-              word), the rule outline while a stop is being acknowledged. */}
-          {awaitingApproval ? (
-            <span
-              data-vex-console-status="approval"
-              className="vex-composer-tag"
-            >
-              <Swatch state="awaiting" size={10} className="text-accent-primary" />
-              Waiting for approval
-            </span>
-          ) : stopping ? (
-            // Exact "Stopping…" text - the stop-acknowledgment contract pinned
-            // by the composer stop test.
-            <span
-              data-vex-console-status="stopping"
-              className="vex-composer-tag"
-            >
-              Stopping…
-            </span>
-          ) : null}
           <ComposerCommandMenu
             open={slashMenu.open}
             items={slashMenu.items}
             highlight={slashMenu.highlight}
             onPickAt={slashMenu.pickAt}
           />
-          <ComposerField
-            fieldSlotRef={fieldSlotRef}
-            textareaRef={textareaRef}
-            draft={draft}
-            placeholder={placeholder}
-            reducedMotion={reducedMotion}
-            onDraftChange={(value) => {
-              setDraft(value);
-              clearNotice();
-            }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onSubmitRequest={() => formRef.current?.requestSubmit()}
-            onCaretChange={slashMenu.onCaretChange}
-            onMenuKeyDown={slashMenu.handleKeyDown}
-            activeDescendant={activeDescendant}
-          />
 
-          {/* The bar (section 7): the options control leading; the permission
-           * as its promise, "Context N%" and the send or named stop key
-           * trailing; 8 apart, 6 under the field.
+          {/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section
+           * 1.8): 31 high across the chat column, four cells divided by the
+           * rule, at 1440:
            *
-           * `@container` (container-type: inline-size) makes THIS row the
-           * query container for the permission seat's label collapse, so the
-           * seat answers to the composer's own width rather than the viewport
-           * - the composer follows the page column, and a viewport media
-           * query would fire at the wrong moment.
+           *   model   680, 248    the model and its effort, "{model} HIGH"
+           *   promise 928, 211    FUNDS REQUIRE APPROVAL in Restricted, FULL
+           *                       ACCESS in Full access
+           *   state   1139, 47+   H3's empty cell; desktop's composer states
+           *                       stand here while they last ("Waiting for
+           *                       approval", "Stopping...")
+           *   context 1186, 254   CONTEXT, its meter and the real share, where
+           *                       H3 draws DAILY BUDGET, which desktop has not
            *
-           * SHRINK CHAIN (codex Bug 3, cross-check section 2). Leading cluster:
-           * `min-w-0` and shrinkable, the model name truncates first.
-           * Trailing cluster: `flex-none` - the permission seat, the context
-           * label and the send/stop key are the row's protected seats, and
-           * their icons never shrink. The permission LABEL collapses second,
-           * at the 460px container threshold. Nothing is blanket-clipped:
-           * every focusable control stays visible and focus-ringed. */}
-          <div className="vex-composer-bar @container flex items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
+           * `@container` (container-type: inline-size) makes the strip the
+           * query container for the promise's collapse, so the seat answers to
+           * the composer's own width rather than the viewport - the composer
+           * follows the chat column, and a viewport media query would fire at
+           * the wrong moment.
+           *
+           * SHRINK CHAIN (codex Bug 3, cross-check section 2). The model cell is
+           * `min-w-0` and shrinkable, the model name truncates first; the
+           * promise and the context are the strip's protected seats and never
+           * shrink. The promise's WORDS collapse second, at the 600px
+           * container threshold, to the grant's icon. Nothing is
+           * blanket-clipped: every focusable control stays visible and
+           * focus-ringed. */}
+          <div
+            data-vex-area="composer-strip"
+            // While the state cell holds words, the promise gives them its
+            // room sooner (console.css): the strip says which state it holds.
+            data-vex-strip-state={awaitingApproval ? "approval" : stopping ? "stopping" : undefined}
+            className="vex-composer-strip @container"
+          >
+            <div className="vex-composer-strip__cell vex-composer-strip__model min-w-0">
               <ComposerOptions
                 modelId={composerModel.modelId}
-                effortResolved={modelsResolved}
-                {...(composerModel.canPick && {
-                  menu: {
-                    options: composerModel.options,
-                    onPick: composerModel.pick,
-                    // Never changes under a running turn.
-                    disabled: submitPending,
-                    conversationTokens,
-                    onOpenSettings: () => setShellRoute(inferenceSettingsRoute(null)),
-                  },
-                })}
                 effort={
                   reasoningCapability !== null &&
                   reasoningStageIsAgent &&
@@ -497,10 +504,7 @@ export function SessionComposer({
                 onOpenChange={setPlanOpen}
               />
             </div>
-            {/* Trailing cluster order: the promise, the context label, the
-             * send/stop key (owner: "ustawiony mode obok licznika
-             * contextu"). */}
-            <div className="flex flex-none items-center gap-2">
+            <div className="vex-composer-strip__cell vex-composer-strip__promise flex-none">
               <ComposerPermissionSeat
                 permission={
                   activeSession?.permission ??
@@ -510,21 +514,86 @@ export function SessionComposer({
                   (sessionId === null ? "restricted" : null)
                 }
               />
+            </div>
+            {/* The state cell: the target swatch and "Waiting for approval"
+                while an approval waits (status by fill and word), the rule
+                outline while a stop is being acknowledged; else H3's empty
+                cell. The words truncate before they push a neighbour out. */}
+            <div className="vex-composer-strip__cell vex-composer-strip__state">
+              {awaitingApproval ? (
+                <span
+                  data-vex-console-status="approval"
+                  className="vex-composer-tag"
+                >
+                  <Swatch state="awaiting" size={10} className="text-accent-primary" />
+                  <span className="min-w-0 truncate">Waiting for approval</span>
+                </span>
+              ) : stopping ? (
+                // Exact "Stopping…" text - the stop-acknowledgment contract
+                // pinned by the composer stop test.
+                <span
+                  data-vex-console-status="stopping"
+                  className="vex-composer-tag"
+                >
+                  <span className="min-w-0 truncate">Stopping…</span>
+                </span>
+              ) : null}
+            </div>
+            {/* The context cell. The welcome has no session yet, so no
+                context to measure: the cell stands empty rather than show a
+                share it does not have. */}
+            <div className="vex-composer-strip__cell vex-composer-strip__context flex-none">
               {sessionId !== null ? (
                 <ComposerContextMeter
                   sessionId={sessionId}
                   permission={activeSession?.permission ?? null}
                 />
               ) : null}
-              <ComposerSendControl
-                stopAvailable={stopAvailable}
-                stopLabel={stopLabel}
-                stopRequested={stopRequested}
-                onStop={onStop}
-                submitDisabled={submitDisabled}
-                onKeepFocus={keepFocus}
+            </div>
+          </div>
+
+          {/* THE COMPOSER ROW (docs/design/H3-DESKTOP.md section 1.8): the
+           * model cell, the field and the send cell, the bottom row's chat
+           * cells. */}
+          <div data-vex-area="composer-row" className="vex-composer-row">
+            <ComposerModelCell
+              modelId={composerModel.modelId}
+              {...(composerModel.canPick && {
+                menu: {
+                  options: composerModel.options,
+                  onPick: composerModel.pick,
+                  // Never changes under a running turn.
+                  disabled: submitPending,
+                  conversationTokens,
+                  onOpenSettings: () => setShellRoute(inferenceSettingsRoute(null)),
+                },
+              })}
+            />
+            <div className="vex-composer-field">
+              <ComposerField
+                fieldSlotRef={fieldSlotRef}
+                textareaRef={textareaRef}
+                draft={draft}
+                placeholder={placeholder}
+                reducedMotion={reducedMotion}
+                onDraftChange={(value) => {
+                  setDraft(value);
+                  clearNotice();
+                }}
+                onSubmitRequest={() => formRef.current?.requestSubmit()}
+                onCaretChange={slashMenu.onCaretChange}
+                onMenuKeyDown={slashMenu.handleKeyDown}
+                activeDescendant={activeDescendant}
               />
             </div>
+            <ComposerSendControl
+              stopAvailable={stopAvailable}
+              stopLabel={stopLabel}
+              stopRequested={stopRequested}
+              onStop={onStop}
+              submitDisabled={submitDisabled}
+              onKeepFocus={keepFocus}
+            />
           </div>
         </form>
       </div>
@@ -555,34 +624,6 @@ export function SessionComposer({
           );
         }}
       />
-
-      {/* The welcome's task rows - gone WHILE THE USER IS TYPING, inside a
-       * fixed-height slot (`.vex-starters`: 18 above four 42 high rows) so the
-       * field never reflows. Opacity only (MOTION-POLICY); nothing slides. */}
-      {showQuickActions ? (
-        <div data-vex-composer-starters="" className="vex-starters">
-          <AnimatePresence initial={false}>
-            {draft.length === 0 ? (
-              <motion.div
-                key="starter-rows"
-                initial={reducedMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={
-                  reducedMotion
-                    ? { opacity: 0, transition: { duration: 0 } }
-                    : { opacity: 0 }
-                }
-                transition={{ duration: DURATION_BASE_MS / 1000, ease: EASE_STANDARD }}
-              >
-                <ComposerQuickActions
-                  onPick={applyQuickAction}
-                  onCreateMission={createMission}
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
-      ) : null}
     </>
   );
 }

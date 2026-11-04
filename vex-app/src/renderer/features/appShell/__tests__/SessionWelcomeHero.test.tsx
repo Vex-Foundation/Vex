@@ -1,20 +1,20 @@
 /**
- * SessionWelcomeHero - the welcome (docs/design/R3-MINIMAL.md sections 7 and
- * 10.1 for its words; docs/design/H3-DESKTOP.md section 1.7 for its place,
- * references d3x-first-welcome and d3x-database-down): the greeting with the
- * honest preview disclosure as its tooltip, the database-down callout and
- * the Vex Inference notice. Vex is not drawn here: H3's welcome keeps her
- * column beside it (S2-10), so the welcome has no stage, no token toggle and
- * no note handing her to the column, and no state word (the owner,
- * 2026-10-17). The retired V10 opening (the date eyebrow, the runtime-mode
- * capsule, the Arena notice) stays gone.
+ * SessionWelcomeHero - the welcome (docs/design/H3-DESKTOP.md section 1.7
+ * and Appendix A.4; references d3x-first-welcome and d3x-database-down): the
+ * greeting bubble, "Ready when you are.", with the honest preview disclosure
+ * as its tooltip, its two notes worded to what desktop does, the
+ * database-down callout and the Vex Inference notice. Vex is not drawn here:
+ * H3's welcome keeps her column beside it (S2-10), so the welcome has no
+ * stage, no token toggle and no note handing her to the column, and no state
+ * word (the owner, 2026-10-17). The retired V10 opening (the date eyebrow,
+ * the runtime-mode capsule, the Arena notice) stays gone, and so do R3's
+ * time-of-day greeting pools.
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import {
   NO_BACKGROUND_WORK,
@@ -24,9 +24,9 @@ import { NEEDS_YOU_UNKNOWN_COPY, NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY } from "../.
 import type { VexPresence } from "../../vex/useVexPresence.js";
 import { session } from "../../vex/__tests__/fixtures.js";
 
-// The hero reads the Vex-setup displayName through the SAME profile hook the
-// account row uses; stubbed per case so both headline forms are provable
-// without a query provider.
+// R3's headline read the Vex-setup displayName through the account row's
+// profile hook; H3's greeting is one fixed line, so the hook is stubbed only
+// to prove the welcome no longer reads it.
 const useUserProfileMock = vi.fn();
 vi.mock("../../../lib/api/user-profile.js", () => ({
   useUserProfile: () => useUserProfileMock(),
@@ -65,7 +65,9 @@ vi.mock("../../../components/vex/k2/VexK2.js", () => ({
   },
 }));
 
-const { SessionWelcomeHero } = await import("../SessionWelcomeHero.js");
+const { SessionWelcomeHero, WELCOME_GREETING, WELCOME_NOTES } = await import(
+  "../SessionWelcomeHero.js"
+);
 
 function profileWithName(displayName: string | null): void {
   useUserProfileMock.mockReturnValue({
@@ -159,24 +161,33 @@ describe("SessionWelcomeHero - Vex stands in her column, not on the welcome", ()
   });
 });
 
-describe("SessionWelcomeHero - the greeting", () => {
-  it("is set in the accent as type, which H3 sets in ink: the blue is never type on the ground", () => {
-    const css = readFileSync(
-      join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
-      "utf8",
-    ).replace(/\/\*[\s\S]*?\*\//g, "");
-    const rule = /\.vex-welcome__greeting\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(rule).toMatch(/color:\s*var\(--vex-alias-accent-primary\);/);
-    const tokens = readFileSync(
-      join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
-      "utf8",
-    );
-    // The token it reads: the ink (docs/design/H3-DESKTOP.md section 2.1).
-    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-h3-ink);");
-    expect(tokens).toContain("--color-h3-ink: #f3f5f9;");
+/** The welcome's sheet as text, comments stripped (jsdom has no cascade). */
+const COMPOSER_CSS = readFileSync(
+  join(process.cwd(), "src/renderer/styles/global-css/composer.css"),
+  "utf8",
+).replace(/\/\*[\s\S]*?\*\//g, "");
+
+function cssRule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(COMPOSER_CSS)?.[1] ?? "";
+}
+
+describe("SessionWelcomeHero - the greeting bubble", () => {
+  it("says H3's one line, \"Ready when you are.\", whatever the hour or the name", () => {
+    profileWithName("desu");
+    const randSpy = vi.spyOn(Math, "random");
+    const view = render(<SessionWelcomeHero />);
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toBe("Ready when you are.");
+    expect(heading.textContent).toBe(WELCOME_GREETING);
+    view.rerender(<SessionWelcomeHero />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Ready when you are.");
+    // No draw from the retired time-of-day pools, and no name read.
+    expect(randSpy).not.toHaveBeenCalled();
+    expect(useUserProfileMock).not.toHaveBeenCalled();
   });
 
-  it("sets the greeting in the serif title and keeps the honest preview disclosure as its tooltip", () => {
+  it("keeps the honest preview disclosure as its tooltip", () => {
     render(<SessionWelcomeHero />);
     const heading = screen.getByRole("heading", { level: 1 });
     expect(heading.className).toContain("vex-welcome__greeting");
@@ -184,45 +195,69 @@ describe("SessionWelcomeHero - the greeting", () => {
     expect(heading.getAttribute("title")).toContain("Self-custodial");
   });
 
-  it("draws the headline from the current bucket's NAMELESS pool while no displayName is set", () => {
-    render(<SessionWelcomeHero />);
-    const heading = screen.getByRole("heading", { level: 1 });
-    const nameless = greetingPoolForHour(new Date().getHours())
-      .filter((variant) => !variant.withName)
-      .map((variant) => variant.text);
-    expect(nameless).toContain(heading.textContent);
-  });
-
-  it("with a set displayName the whole bucket is eligible and {name} is substituted", () => {
-    profileWithName("desu");
-    render(<SessionWelcomeHero />);
-    const heading = screen.getByRole("heading", { level: 1 });
-    const eligible = greetingPoolForHour(new Date().getHours()).map((variant) =>
-      variant.text.replace("{name}", "desu"),
+  it("is a bubble: sans 18 in ink on the raised 2 fill, square, set from the left", () => {
+    const rule = cssRule(".vex-welcome__greeting");
+    expect(rule).toMatch(/font-size:\s*18px;/);
+    expect(rule).toMatch(/font-weight:\s*400;/);
+    expect(rule).toMatch(/font-family:\s*var\(--font-sans\);/);
+    expect(rule).toMatch(/background:\s*var\(--vex-alias-bg-overlay\);/);
+    expect(rule).toMatch(/padding:\s*12px 16px;/);
+    expect(rule).not.toMatch(/text-align:\s*center/);
+    expect(rule).not.toMatch(/border-radius/);
+    // The ink as type (docs/design/H3-DESKTOP.md section 2.1): the blue is
+    // never type on the ground.
+    expect(rule).toMatch(/color:\s*var\(--vex-alias-accent-primary\);/);
+    const tokens = readFileSync(
+      join(process.cwd(), "src/renderer/styles/global-css/tokens.css"),
+      "utf8",
     );
-    expect(eligible).toContain(heading.textContent);
-    expect(heading.textContent).not.toContain("{name}");
+    expect(tokens).toContain("--vex-alias-accent-primary: var(--color-h3-ink);");
+    expect(tokens).toContain("--vex-alias-bg-overlay: var(--color-h3-raised-2);");
   });
 
-  it("fails closed to the nameless draw while the profile read is unresolved or failed", () => {
-    useUserProfileMock.mockReturnValue({ data: undefined });
-    render(<SessionWelcomeHero />);
-    const heading = screen.getByRole("heading", { level: 1 });
-    const nameless = greetingPoolForHour(new Date().getHours())
-      .filter((variant) => !variant.withName)
-      .map((variant) => variant.text);
-    expect(nameless).toContain(heading.textContent);
+  it("stands at the column's top, 24 in and 28 under the header, the composer at the foot", () => {
+    const opening = cssRule(".vex-welcome");
+    expect(opening).toMatch(/align-items:\s*flex-start;/);
+    expect(opening).toMatch(/margin-bottom:\s*auto;/);
+    expect(opening).toMatch(/padding:\s*28px 24px/);
+    const seat = cssRule(
+      '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat]',
+    );
+    expect(seat).toMatch(/flex:\s*1 0 auto;/);
+    expect(seat).not.toMatch(/margin-block:\s*auto/);
+  });
+});
+
+describe("SessionWelcomeHero - the notes", () => {
+  it("are the two notes, worded to what desktop does, right under the greeting", () => {
+    const { container } = render(<SessionWelcomeHero />);
+    const notes = container.querySelector("[data-vex-welcome-notes]");
+    expect(container.querySelector("h1")?.nextElementSibling).toBe(notes);
+    expect(notes?.tagName).toBe("UL");
+    expect(Array.from(notes?.querySelectorAll("li") ?? []).map((li) => li.textContent)).toEqual([
+      "Vex can trade for you",
+      "Your keys stay on this computer",
+    ]);
+    expect(WELCOME_NOTES).toEqual(["Vex can trade for you", "Your keys stay on this computer"]);
   });
 
-  it("freezes the draw per mount - re-rendering never changes the headline", () => {
-    const randSpy = vi.spyOn(Math, "random");
-    const view = render(<SessionWelcomeHero />);
-    const first = screen.getByRole("heading", { level: 1 }).textContent;
-    view.rerender(<SessionWelcomeHero />);
-    view.rerender(<SessionWelcomeHero />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(first);
-    // One draw for the whole mount, not one per render.
-    expect(randSpy.mock.calls.length).toBeLessThanOrEqual(1);
+  it("promise nothing desktop lacks: no limits, no pauses, no policy check", () => {
+    for (const note of WELCOME_NOTES) {
+      expect(note).not.toMatch(/limit|pause|policy|budget|strateg/i);
+    }
+  });
+
+  it("are written in sentence case and set in tracked caps, each behind a small ink square", () => {
+    for (const note of WELCOME_NOTES) expect(note).not.toBe(note.toUpperCase());
+    const line = cssRule(".vex-welcome__note");
+    expect(line).toMatch(/text-transform:\s*uppercase;/);
+    expect(line).toMatch(/letter-spacing:\s*var\(--tracking-label\);/);
+    expect(line).toMatch(/font-size:\s*12px;/);
+    expect(line).toMatch(/color:\s*var\(--vex-alias-label-tertiary\);/);
+    const square = cssRule(".vex-welcome__note::before");
+    expect(square).toMatch(/width:\s*6px;/);
+    expect(square).toMatch(/height:\s*6px;/);
+    expect(square).toMatch(/background:\s*var\(--vex-alias-label-primary\);/);
   });
 });
 
@@ -260,8 +295,8 @@ describe("SessionWelcomeHero - the database down", () => {
     );
     expect(alert.textContent).toContain(NEEDS_YOU_UNKNOWN_COPY);
     expect(alert.querySelector("[data-vex-open-logs]")).not.toBeNull();
-    // Under the greeting, above the composer the panel seats next.
-    expect(container.querySelector("h1")?.nextElementSibling).toBe(alert);
+    // Under the greeting's notes, above the composer the panel seats next.
+    expect(container.querySelector("[data-vex-welcome-notes]")?.nextElementSibling).toBe(alert);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetchSessions).toHaveBeenCalledTimes(1);
     expect(retryNeedsYou).toHaveBeenCalledTimes(1);
@@ -306,11 +341,11 @@ describe("SessionWelcomeHero - the Vex Inference notice", () => {
     };
   }
 
-  it("seats the notice under the greeting, last in the opening, while OpenRouter is active", () => {
+  it("seats the notice under the greeting's notes, last in the opening, while OpenRouter is active", () => {
     envData = openRouterEnv();
     const { container } = render(<SessionWelcomeHero />);
     const notice = screen.getByRole("region", { name: "AI is now paid in VEX" });
-    expect(container.querySelector("h1")?.nextElementSibling).toBe(notice);
+    expect(container.querySelector("[data-vex-welcome-notes]")?.nextElementSibling).toBe(notice);
     expect(container.querySelector('[data-vex-area="welcome-opening"]')?.lastElementChild).toBe(notice);
   });
 

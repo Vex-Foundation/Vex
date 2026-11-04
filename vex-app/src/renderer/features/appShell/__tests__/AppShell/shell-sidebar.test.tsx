@@ -1,7 +1,6 @@
 import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { greetingPoolForHour } from "../../../../lib/greeting.js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEngineBridgeStub } from "../../../../test/engine-bridge-stub.js";
 import type { Result } from "@shared/ipc/result.js";
@@ -340,17 +339,9 @@ describe("AppShell", () => {
   it("renders the Vex shell hero and the account cell with H3's words", async () => {
     renderShell();
 
-    // The rebrand hero headline is back (accepted mockup, 2026-08-20,
-    // greeting form), pinned close-range in SessionWelcomeHero.test.tsx.
-    expect(
-      screen.getByRole("heading", {
-        name: (accessibleName: string) =>
-          greetingPoolForHour(new Date().getHours()).some(
-            (variant) =>
-              !variant.withName && variant.text === accessibleName,
-          ),
-      }),
-    ).not.toBeNull();
+    // The welcome's greeting, H3's one line (docs/design/H3-DESKTOP.md
+    // Appendix A.4), pinned close-range in SessionWelcomeHero.test.tsx.
+    expect(screen.getByRole("heading", { name: "Ready when you are." })).not.toBeNull();
     expect(screen.getAllByRole("button", { name: /New chat/i }).length).toBeGreaterThan(0);
     // Healthy runtime → the account cell says H3's "Account and settings"
     // (docs/design/H3-DESKTOP.md Appendix A.2), its trigger naming the

@@ -1,9 +1,28 @@
 /**
- * The welcome (docs/design/R3-MINIMAL.md sections 7 and 10.1 for its words
- * and order; docs/design/H3-DESKTOP.md section 1.7 for where it stands): the
- * greeting, a read that failed, and the Vex Inference notice. The parent
- * (`SessionPanel`) seats this directly above the composer and its task rows,
- * inside the composer seat, so the whole opening moves as one unit.
+ * The welcome (docs/design/H3-DESKTOP.md section 1.7 and Appendix A.4): the
+ * greeting bubble, its two notes, a read that failed, and the Vex Inference
+ * notice. The parent (`SessionPanel`) seats this inside the composer seat, at
+ * the top of the chat column, over the suggestions and the composer at its
+ * foot, so the whole opening moves as one unit.
+ *
+ * H3 draws, at 1440: the greeting, "Ready when you are.", in a bubble on the
+ * raised 2 fill at 704, 104 (24 in from the column, 28 under the header),
+ * sans 18; then two notes under it, each a small square and a caps line:
+ *
+ *   VEX CAN TRADE FOR YOU                    same on desktop: Vex swaps,
+ *                                            bridges and trades Lighter perps
+ *   EVERY ORDER IS CHECKED AGAINST YOUR      "Your keys stay on this computer"
+ *   PAUSES, LIMITS, AND THE POLICY           (the contract's proposal):
+ *                                            desktop has no spend limits and
+ *                                            no global pause, so H3's line
+ *                                            would be false; its keys are
+ *                                            local (`AGENTS.md`), so this is
+ *                                            true
+ *
+ * The notes are written in sentence case and set in caps by the sheet, so a
+ * screen reader reads words, and they end without a full stop, as H3's caps
+ * lines do. The greeting is one fixed line, H3's: the time-of-day pools the
+ * R3 headline drew from retire with the serif display line they headed.
  *
  * Vex is not drawn here. H3's welcome keeps her column beside the chat
  * (S2-10): her portrait, her state and Needs you stand there from the first
@@ -13,7 +32,8 @@
  * Vex key and her column carry it.
  *
  *   div[data-vex-area="welcome-opening"]
- *     h1.vex-welcome__greeting    the time-of-day greeting
+ *     h1.vex-welcome__greeting    "Ready when you are.", the bubble
+ *     ul.vex-welcome__notes       the two notes
  *     ErrorCallout?               a read that failed (the database down)
  *     VexInferenceNotice?         "AI is now paid in VEX", until dismissed or
  *                                 while another provider (or none) is active
@@ -22,15 +42,25 @@
  * polls.
  */
 
-import { useState, type JSX } from "react";
-import { pickGreeting } from "../../lib/greeting.js";
+import type { JSX } from "react";
 import { useSessionsList } from "../../lib/api/sessions.js";
-import { useUserProfile } from "../../lib/api/user-profile.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
 import { ErrorCallout } from "../../components/ui/error-callout.js";
 import { NEEDS_YOU_ALL_UNKNOWN_COPY } from "../vex/needs-you.js";
 import { useVexPresence } from "../vex/useVexPresence.js";
 import { VexInferenceNotice } from "./VexInferenceNotice.js";
+
+/** H3's greeting (Appendix A.4: same on desktop). */
+export const WELCOME_GREETING = "Ready when you are.";
+
+/**
+ * The notes under the greeting, in sentence case (the sheet sets the caps),
+ * worded to what desktop does (Appendix A.4).
+ */
+export const WELCOME_NOTES: readonly string[] = [
+  "Vex can trade for you",
+  "Your keys stay on this computer",
+];
 
 /** Honest build-stage disclosure, the greeting's tooltip. */
 const PREVIEW_TITLE =
@@ -39,21 +69,6 @@ const PREVIEW_TITLE =
   "Verify before moving funds. Not financial advice.";
 
 export function SessionWelcomeHero(): JSX.Element {
-  // Headline greeting (owner decision 2026-08-20, rotating pools): the
-  // Vex-setup displayName through the SAME profile read the account row uses,
-  // failing closed to the nameless draw for every non-success state. The hour
-  // and the random draw are frozen ONCE PER MOUNT (useState initializers) so
-  // the headline never flickers across re-renders, and no ticking timer
-  // drives it. Only the profile read resolving can upgrade the line (nameless
-  // to the name variant), and at most once.
-  const profileQuery = useUserProfile();
-  const displayName = profileQuery.data?.ok
-    ? profileQuery.data.data.displayName
-    : null;
-  const [rand01] = useState(() => Math.random());
-  const [hour] = useState(() => new Date().getHours());
-  const headline = pickGreeting(hour, displayName, rand01);
-
   const presence = useVexPresence();
 
   // The database down (reference d3x-database-down): the sessions read is the
@@ -69,8 +84,15 @@ export function SessionWelcomeHero(): JSX.Element {
   return (
     <div data-vex-area="welcome-opening" className="vex-welcome">
       <h1 className="vex-welcome__greeting" title={PREVIEW_TITLE}>
-        {headline}
+        {WELCOME_GREETING}
       </h1>
+      <ul className="vex-welcome__notes" data-vex-welcome-notes="">
+        {WELCOME_NOTES.map((note) => (
+          <li key={note} className="vex-welcome__note">
+            {note}
+          </li>
+        ))}
+      </ul>
       {readFailure === null ? null : (
         <ErrorCallout
           role="alert"
