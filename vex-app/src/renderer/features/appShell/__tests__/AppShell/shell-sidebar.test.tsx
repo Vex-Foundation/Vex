@@ -1132,9 +1132,10 @@ describe("AppShell", () => {
       view.container.querySelector("[data-vex-area='sessions-sidebar'] [data-vex-area='sidebar-profile']"),
     ).toBeNull();
     expect(view.container.querySelectorAll("[data-vex-area='sidebar-profile']")).toHaveLength(1);
-    // The tagline cell is an empty slot for now.
+    // The tagline cell says the moment (H3-DESKTOP.md Appendix A.6): at rest,
+    // desktop's line.
     const tagline = view.container.querySelector<HTMLElement>("[data-vex-area='tagline-cell']");
-    expect(tagline?.childElementCount).toBe(0);
+    expect(tagline?.textContent).toBe("An AI trading agent, on your computer.");
     expect(tagline?.classList.contains("vex-drag")).toBe(true);
     // Each cell follows its column in the DOM: chats, account, Vex, tagline, chat.
     const order = Array.from(frame?.children ?? [])

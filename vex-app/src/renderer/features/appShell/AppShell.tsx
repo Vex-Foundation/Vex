@@ -105,6 +105,7 @@ import { LighterCenter } from "./lighterTrading/LighterCenter.js";
 import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
 import { VexSidebar } from "../vex/VexSidebar.js";
+import { TaglineCell } from "../vex/TaglineCell.js";
 import { useVexToggleShortcut } from "../vex/useVexToggleShortcut.js";
 
 import { LockVexControl } from "./LockVexControl.js";
@@ -605,8 +606,8 @@ function ShellFrame({
    *   - the ACCOUNT cell under the chats column: the account row
    *     (`SidebarProfile`), moved out of the sidebars, which are headless
    *     here; on the rail, its box alone;
-   *   - the TAGLINE cell under the Vex column: an empty slot until the
-   *     tagline says the moment (S3-10); 0 wide where her column is;
+   *   - the TAGLINE cell under the Vex column: the moment's tagline
+   *     (`TaglineCell`); 0 wide where her column is;
    *   - the chat's composer seat: the centre runs on into the row, so the
    *     composer ends at the window's foot under the chat (composer.css).
    * Each follows its column in the DOM, so focus reaches a column's foot
@@ -624,7 +625,10 @@ function ShellFrame({
     </div>
   );
   const taglineCell = (
-    <div key="tagline" className="vex-shell-tagline vex-drag" data-vex-area="tagline-cell" />
+    <div key="tagline" className="vex-shell-tagline vex-drag" data-vex-area="tagline-cell">
+      {/* The moment's tagline (H3-DESKTOP.md Appendix A.6), from her state. */}
+      <TaglineCell />
+    </div>
   );
 
   const columnOf: Readonly<Record<ShellColumnName, readonly JSX.Element[]>> = {

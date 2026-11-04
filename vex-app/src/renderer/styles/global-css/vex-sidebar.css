@@ -863,3 +863,34 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- THE TAGLINE (docs/design/H3-DESKTOP.md section 1.8 and Appendix A.6;
+ * TaglineCell.tsx) ----
+ * The bottom row's cell under the Vex column says the moment: caps at 600,
+ * its first clause in ink and its second muted, 24 in, centred in the row.
+ * 14: the plates' lines measure about 9 a character at 1440 ("Check the
+ * card, then decide.", 268 for 28; the rest line 356 for 40), which the sans
+ * at 600 in tracked caps gives at 14, under the type table's 20 read from its
+ * cap height. Two lines where the column is narrow; never under the row's
+ * rule. */
+.vex-tagline {
+  display: flex;
+  box-sizing: border-box;
+  height: 100%;
+  align-items: center;
+  margin: 0;
+  padding: 0 24px;
+  overflow: hidden;
+}
+.vex-tagline__text {
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-tagline__rest {
+  color: var(--vex-alias-label-tertiary);
+}
