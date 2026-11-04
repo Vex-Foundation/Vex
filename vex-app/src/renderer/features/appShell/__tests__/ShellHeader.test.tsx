@@ -126,6 +126,8 @@ describe("the header", () => {
     const funds = document.querySelector("[data-vex-head-cell='funds']");
     expect(funds?.textContent).toBe("MainnetReal funds");
     expect(funds?.querySelector("button")).toBeNull();
+    // The chat's own cells (ChatHeaderCells) after its title.
+    expect(funds?.querySelector("[data-vex-real-funds-mark]")?.textContent).toBe("Real funds");
   });
 
   it("reserves the caption buttons in an empty cell with nothing to read", () => {
