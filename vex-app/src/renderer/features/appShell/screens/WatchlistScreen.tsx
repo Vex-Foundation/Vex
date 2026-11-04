@@ -1,12 +1,24 @@
 /**
- * The Watchlist page (F01): a centre table page between Board and Lighter.
+ * The Watchlist page (F01), Markets in the H3 nav (docs/design/H3-DESKTOP.md
+ * section 4.6): a centre table page between Board and Lighter.
  *
  * The followed tokens as rows (name, chain, price and 24 hour change in mono,
  * the pool's DEX), each with "Set alert" and "Remove"; a form to follow
  * another token; the active alerts with Cancel; the fired ones with the time
- * and the price they fired at, and Clear. Status is a fill plus a word. The
- * footnote says what an alert is and is not: a heads-up about a minute late
- * at worst, only while Vex runs, and never a trade.
+ * and the price they fired at, and Clear. The footnote says what an alert is
+ * and is not: a heads-up about a minute late at worst, only while Vex runs,
+ * and never a trade.
+ *
+ * H3 DRAWS NO MARKETS PLATE; the page follows the page frame with rows built
+ * from H3's cells (section 4.9): the tabs row carries "Updated {time}", the
+ * time the engine priced the list (`pricedAt`, the quotes ride in that
+ * answer); the
+ * followed tokens are one framed cell with caps heads and 56-high rows, the
+ * name over a muted line of chain and pool, the price and the 24 hour change
+ * in mono (the change in the gain or loss colour: it is a trading value,
+ * section 2.2), and the row's keys as cells at its end; an alert row ends in
+ * H3's status mark (an armed alert is WAITING, its square ink; a fired one
+ * is green). The page's name stays in the title bar, so the page draws no head.
  *
  * Every read and write goes through `window.vex.alerts` to the one engine
  * service the chat tools also use, so a refusal here reads exactly as it
@@ -18,9 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { PriceAlertDto, WatchlistItemDto, WatchlistSnapshotDto } from "@shared/schemas/alerts.js";
 import { firedAlertSentence } from "@shared/alerts-copy.js";
 import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
-import { Button } from "../../../components/ui/button.js";
 import { EmptyBlock } from "../../../components/ui/empty-block.js";
-import { StateWord } from "../../../components/ui/state-word.js";
 import { invalidateWatchlist, useWatchlist } from "../../../lib/api/alerts.js";
 import { SetAlertForm } from "../watchlist/SetAlertForm.js";
 import { WatchlistAddRow } from "../watchlist/WatchlistAddRow.js";
@@ -32,6 +42,8 @@ import {
   itemChangeText,
   itemPriceText,
 } from "../watchlist/watchlist-format.js";
+import { StatusMark } from "./agent-scan/StatusMark.js";
+import { PageBar } from "./PageBar.js";
 import { ShellScreen } from "./ShellScreen.js";
 
 export const WATCHLIST_FOOTNOTE =
@@ -44,8 +56,19 @@ export function WatchlistScreen({
   readonly origin: ShellScreenOrigin | null;
   readonly onClose: () => void;
 }): JSX.Element {
+  // The same query the page draws (one key, one cache entry). The stamp is
+  // the answer's own `pricedAt`, when the engine priced the list, and the
+  // read's fetch time only if that is unreadable.
+  const query = useWatchlist();
+  const pricedAt = query.data?.ok === true ? Date.parse(query.data.data.pricedAt) : Number.NaN;
   return (
-    <ShellScreen title="Watchlist" origin={origin} onClose={onClose}>
+    <ShellScreen
+      title="Watchlist"
+      origin={origin}
+      onClose={onClose}
+      chapter={null}
+      bar={<PageBar updatedAt={Number.isFinite(pricedAt) ? pricedAt : query.dataUpdatedAt} />}
+    >
       <WatchlistPage />
     </ShellScreen>
   );
@@ -73,45 +96,61 @@ function WatchlistBody({ snapshot }: { readonly snapshot: WatchlistSnapshotDto }
   const [alertFor, setAlertFor] = useState<string | null>(null);
   const { items, activeAlerts, firedAlerts, limits } = snapshot;
   return (
-    <div className="flex flex-col gap-6" data-testid="watchlist-page">
-      <p className="m-0 text-[13px] text-ink-tertiary" data-testid="watchlist-counts">
+    <div className="vex-mk" data-testid="watchlist-page">
+      <p className="vex-mk__lead" data-testid="watchlist-counts">
         Following{" "}
-        <span className="vex-num font-mono text-ink-primary">
+        <span className="vex-num vex-mk__ink">
           {items.length} of {limits.watchlist}
         </span>
         {" · "}active alerts{" "}
-        <span className="vex-num font-mono text-ink-primary">
+        <span className="vex-num vex-mk__ink">
           {activeAlerts.length} of {limits.activeAlerts}
         </span>
       </p>
 
       <WatchlistAddRow full={items.length >= limits.watchlist} />
 
-      <section aria-label="Followed tokens" className="flex flex-col">
+      <section aria-label="Followed tokens" className="vex-mk__sec">
+        <h2 className="vex-mk__h">Following</h2>
         {items.length === 0 ? (
-          <p className="m-0 text-[13px] text-ink-secondary" data-testid="watchlist-empty">
+          <p className="vex-mk__note" data-testid="watchlist-empty">
             No tokens yet. Follow one above, or ask Vex in chat: "add BRETT on Base to my watchlist".
           </p>
         ) : (
-          items.map((item) => (
-            <TokenRow
-              key={item.assetKey}
-              item={item}
-              alertOpen={alertFor === item.assetKey}
-              onToggleAlert={() => setAlertFor(alertFor === item.assetKey ? null : item.assetKey)}
-            />
-          ))
+          <div className="vex-mk__table">
+            <div className="vex-mk__row vex-mk__row--head" aria-hidden="true">
+              <span>Token</span>
+              <span className="vex-mk__r">Price</span>
+              <span className="vex-mk__r">24h</span>
+              <span />
+            </div>
+            {items.map((item) => (
+              <TokenRow
+                key={item.assetKey}
+                item={item}
+                alertOpen={alertFor === item.assetKey}
+                onToggleAlert={() => setAlertFor(alertFor === item.assetKey ? null : item.assetKey)}
+              />
+            ))}
+          </div>
         )}
       </section>
 
       <ActiveAlerts alerts={activeAlerts} />
       <FiredAlerts alerts={firedAlerts} />
 
-      <p className="m-0 text-[12px] text-ink-tertiary" data-testid="watchlist-footnote">
+      <p className="vex-mk__foot" data-testid="watchlist-footnote">
         {WATCHLIST_FOOTNOTE}
       </p>
     </div>
   );
+}
+
+/** A 24 hour change's trading direction; none for zero or unknown. */
+function changeDirection(item: WatchlistItemDto): "up" | "down" | undefined {
+  const change = item.quote?.change24hPct ?? null;
+  if (change === null || change === 0 || !Number.isFinite(change)) return undefined;
+  return change > 0 ? "up" : "down";
 }
 
 function TokenRow({
@@ -133,35 +172,48 @@ function TokenRow({
     });
   };
   return (
-    <div className="flex flex-col gap-3 border-b border-rule-quiet py-3" data-testid="watchlist-row" data-asset-key={item.assetKey}>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div className="flex min-w-[10rem] flex-1 flex-col">
-          <span className="text-[14px] font-medium text-ink-primary">{item.label}</span>
-          <span className="text-[12px] text-ink-tertiary">
+    <div className="vex-mk__item" data-testid="watchlist-row" data-asset-key={item.assetKey}>
+      <div className="vex-mk__row">
+        <span className="vex-mk__name">
+          <span className="vex-mk__label">{item.label}</span>
+          <span className="vex-mk__sub">
             {alertChainName(item.chain)}
             {item.quote === null ? "" : ` · ${item.quote.dexId}`}
           </span>
-        </div>
+        </span>
         {item.quote === null ? (
-          <StateWord state={item.priceStatus === "unavailable" ? "warning" : "idle"} word={itemPriceText(item)} size={10} />
+          <span className="vex-mk__r">
+            <StatusMark
+              status={item.priceStatus === "unavailable" ? "unknown" : "running"}
+              word={itemPriceText(item)}
+            />
+          </span>
         ) : (
-          <span className="vex-num w-36 text-right font-mono text-[14px] text-ink-primary" data-testid="watchlist-price">
+          <span className="vex-num vex-mk__r vex-mk__price" data-testid="watchlist-price">
             {itemPriceText(item)}
           </span>
         )}
-        <span className="vex-num w-20 text-right font-mono text-[13px] text-ink-secondary" data-testid="watchlist-change">
+        <span
+          className="vex-num vex-mk__r vex-mk__change"
+          data-testid="watchlist-change"
+          data-trade={changeDirection(item)}
+        >
           {itemChangeText(item)}
         </span>
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant={alertOpen ? "ink" : "quiet"} onClick={onToggleAlert} aria-expanded={alertOpen}>
+        <span className="vex-mk__keys">
+          <button type="button" className="vex-mk__key" onClick={onToggleAlert} aria-expanded={alertOpen}>
             Set alert
-          </Button>
-          <Button type="button" size="sm" variant="bare" onClick={remove} disabled={removing}>
+          </button>
+          <button type="button" className="vex-mk__key" onClick={remove} disabled={removing}>
             Remove
-          </Button>
-        </div>
+          </button>
+        </span>
       </div>
-      {alertOpen ? <SetAlertForm item={item} onDone={onToggleAlert} /> : null}
+      {alertOpen ? (
+        <div className="vex-mk__form">
+          <SetAlertForm item={item} onDone={onToggleAlert} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -172,24 +224,26 @@ function ActiveAlerts({ alerts }: { readonly alerts: ReadonlyArray<PriceAlertDto
     void window.vex.alerts.cancelPriceAlert({ alertId: id }).then(() => void invalidateWatchlist(queryClient));
   };
   return (
-    <section aria-label="Active alerts" className="flex flex-col gap-2" data-testid="watchlist-active">
-      <h3 className="m-0 text-[15px] font-medium text-ink-primary">Active alerts</h3>
+    <section aria-label="Active alerts" className="vex-mk__sec" data-testid="watchlist-active">
+      <h3 className="vex-mk__h">Active alerts</h3>
       {alerts.length === 0 ? (
-        <p className="m-0 text-[13px] text-ink-secondary">No alerts set.</p>
+        <p className="vex-mk__note">No alerts set.</p>
       ) : (
-        alerts.map((alert) => (
-          <div key={alert.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-rule-quiet py-2" data-testid="watchlist-active-row">
-            <StateWord state="awaiting" word="Waiting" size={10} />
-            <span className="min-w-0 flex-1 text-[13px] text-ink-primary">
-              {alertRowWords(alert)}
-              {alert.note === null ? null : <span className="text-ink-tertiary">{` · ${alert.note}`}</span>}
-            </span>
-            <span className="text-[12px] text-ink-tertiary">{alert.origin === "chat" ? "Set from chat" : "Set here"}</span>
-            <Button type="button" size="sm" variant="quiet" onClick={() => cancel(alert.id)}>
-              Cancel
-            </Button>
-          </div>
-        ))
+        <div className="vex-mk__table">
+          {alerts.map((alert) => (
+            <div key={alert.id} className="vex-mk__alert" data-testid="watchlist-active-row">
+              <StatusMark status="waiting" word="Waiting" />
+              <span className="vex-mk__words">
+                {alertRowWords(alert)}
+                {alert.note === null ? null : <span className="vex-mk__muted">{` · ${alert.note}`}</span>}
+              </span>
+              <span className="vex-mk__muted">{alert.origin === "chat" ? "Set from chat" : "Set here"}</span>
+              <button type="button" className="vex-mk__key" onClick={() => cancel(alert.id)}>
+                Cancel
+              </button>
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );
@@ -202,30 +256,32 @@ function FiredAlerts({ alerts }: { readonly alerts: ReadonlyArray<PriceAlertDto>
     void window.vex.alerts.acknowledgeFired({ alertIds: ids, clear: true }).then(() => void invalidateWatchlist(queryClient));
   };
   return (
-    <section aria-label="Fired alerts" className="flex flex-col gap-2" data-testid="watchlist-fired">
-      <div className="flex items-center justify-between">
-        <h3 className="m-0 text-[15px] font-medium text-ink-primary">Fired</h3>
-        <Button type="button" size="sm" variant="bare" onClick={() => clear(alerts.map((alert) => alert.id))}>
+    <section aria-label="Fired alerts" className="vex-mk__sec" data-testid="watchlist-fired">
+      <div className="vex-mk__hrow">
+        <h3 className="vex-mk__h">Fired</h3>
+        <button type="button" className="vex-mk__link" onClick={() => clear(alerts.map((alert) => alert.id))}>
           Clear all
-        </Button>
+        </button>
       </div>
-      {alerts.map((alert) => (
-        <div key={alert.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-rule-quiet py-2" data-testid="watchlist-fired-row">
-          <StateWord state="done" word="Fired" size={10} />
-          <span className="min-w-0 flex-1 text-[13px] text-ink-primary">
-            {alert.triggeredPrice === null
-              ? alertRowWords(alert)
-              : firedAlertSentence({ ...alert, triggeredPrice: alert.triggeredPrice })}
-          </span>
-          <span className="vex-num font-mono text-[12px] text-ink-tertiary">
-            {alert.triggeredAt === null ? "" : firedTimeText(alert.triggeredAt)}
-            {alert.triggeredPrice === null ? "" : ` · $${formatAlertPrice(alert.triggeredPrice)}`}
-          </span>
-          <Button type="button" size="sm" variant="bare" onClick={() => clear([alert.id])}>
-            Clear
-          </Button>
-        </div>
-      ))}
+      <div className="vex-mk__table">
+        {alerts.map((alert) => (
+          <div key={alert.id} className="vex-mk__alert" data-testid="watchlist-fired-row">
+            <StatusMark status="filled" word="Fired" />
+            <span className="vex-mk__words">
+              {alert.triggeredPrice === null
+                ? alertRowWords(alert)
+                : firedAlertSentence({ ...alert, triggeredPrice: alert.triggeredPrice })}
+            </span>
+            <span className="vex-num vex-mk__muted">
+              {alert.triggeredAt === null ? "" : firedTimeText(alert.triggeredAt)}
+              {alert.triggeredPrice === null ? "" : ` · $${formatAlertPrice(alert.triggeredPrice)}`}
+            </span>
+            <button type="button" className="vex-mk__key" onClick={() => clear([alert.id])}>
+              Clear
+            </button>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

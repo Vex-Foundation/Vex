@@ -21,7 +21,8 @@ import { useId, useRef, useState, type JSX } from "react";
 import type { BridgeLeg, BridgeLegRole } from "@shared/schemas/bridge-legs.js";
 import { explorerTxUrl } from "@shared/explorer-links.js";
 import { ExpandRegion } from "../../../../components/ui/expand-region.js";
-import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
+import type { SwatchState } from "../../../../components/ui/swatch.js";
+import { StatusMark, outcomeStatus } from "../agent-scan/StatusMark.js";
 import { ScanTxLink } from "../agent-scan/ScanRowParts.js";
 
 /** Short leg-role label for the expandable per-leg audit list. */
@@ -54,7 +55,7 @@ export function bridgeLegUrl(leg: BridgeLeg): string | null {
   return explorerTxUrl(chain, leg.txHash);
 }
 
-/** A leg's own status, as a fill beside its word. */
+/** A leg's own status as the R3 fill, read into H3's square by `outcomeStatus`. */
 function legSwatch(status: string | null): SwatchState {
   if (status === "confirmed") return "done";
   if (status === "failed") return "error";
@@ -103,10 +104,7 @@ export function BridgeLegs({
                   {leg.chainFamily === "solana" ? "solana" : leg.chainId}
                 </span>
                 {legStatus !== null ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Swatch state={legSwatch(legStatus)} className="text-accent-primary" />
-                    {legStatus}
-                  </span>
+                  <StatusMark status={outcomeStatus(legSwatch(legStatus), legStatus)} word={legStatus} />
                 ) : null}
                 {url !== null ? (
                   <ScanTxLink

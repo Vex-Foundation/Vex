@@ -7,6 +7,39 @@ wide floor, the 358px compact floor, the two modes, the sparkline slots and
 the 16px gap ladder) are SUPERSEDED**; they are kept in short form in section
 8 so a reader of an old commit can follow the history.
 
+## H3's faces (4 November 2026): what moved, and what did not
+
+H3 (`docs/design/H3-DESKTOP.md` section 2.3) sets words in Be Vietnam Pro and
+figures in Roboto Mono, where this matrix measured Instrument Sans and
+JetBrains Mono. The tile was re-measured in Chromium (macOS, fractional
+advances) from the bundled woff2 files at the tile's own sizes. The sections
+below keep R3's derivation; where a number moved, this table wins.
+
+| Region | Type | R3 (Instrument / JetBrains) | H3 (Be Vietnam Pro / Roboto Mono) |
+| --- | --- | --- | --- |
+| Price `$0.000001230` | mono 26 / 500, -.03em | 177.84 | 177.88 (Roboto Mono also advances 0.6em) |
+| Delta `+661.00%` | mono 13, -.01em | 61.36 | 61.38 |
+| Delta window `24h` | sans 12 | 20.51 | 23.22 (24 at whole-pixel advances) |
+| Stat label `24h Volume` | sans 11.5 | 62.85 | 66.48 |
+| Ticker line `BITCOIN · Robinhood` | sans 12.5 | 119.04 | 125.95 |
+| Checks word (widest) | sans 12.5 | 202 | 214.91 |
+| Ticker slot (widest allowlisted glyph) | sans 12.5 | 9.10 (`A`, `V`) | 9.20 (`A`), slot 9.25 |
+
+What follows from it:
+
+- **The price row's two gaps are 8, not 10.** At whole-pixel advances the
+  widest row is 182.64 + 62.96 + 24 = 269.6 of glyphs; with two 10px gaps it
+  is 289.6, past the 288 floor; with two 8px gaps it is 285.6. The floor and
+  every column threshold stay where they were (`TokenCardV3.tsx`).
+- **The ticker slot is 9.25px** (`boardCardValueBudget.ts`): ten slots are
+  92.5px, inside the 126px identity column. `N`, `D`, `U` and `H` now measure
+  inside the slot and stay charged two (the safe direction).
+- **The stat labels still fit** their 67.5px columns at the floor (66.48),
+  and the ticker line fills the identity column (125.95 of 126); its chain
+  name is what ellipsizes when a longer one meets it, as before.
+- The e2e matrix (`e2e/board-layout.spec.ts`) passes unchanged over these
+  numbers: 92 of 92 on 4 November 2026.
+
 ## 0. How these numbers were obtained, and what to trust
 
 The advances below are COMPUTED from the shipped font files, not read off a

@@ -39,6 +39,7 @@ import {
   useNeedsYouNavigation,
 } from "../GlobalApprovals/GlobalApprovalItem.js";
 import { ShellScreen } from "./ShellScreen.js";
+import { PageBar } from "./PageBar.js";
 
 export const NEEDS_YOU_LEAD =
   "Review the details before approving an action. Nothing signs until you confirm.";
@@ -154,7 +155,16 @@ export function NeedsYouScreen({
   const groups = useMemo(() => groupItems(model.items), [model.items]);
 
   return (
-    <ShellScreen title="Needs you" chapter={null} origin={origin} onClose={onClose}>
+    <ShellScreen
+      title="Needs you"
+      chapter={null}
+      origin={origin}
+      onClose={onClose}
+      // The H3 frame's row (docs/design/H3-DESKTOP.md section 1.9): no tabs,
+      // "Updated" at the fetch time of the pending-approvals read the cards
+      // are drawn from (the push from `approval_enqueued` re-reads it).
+      bar={<PageBar updatedAt={query.dataUpdatedAt} />}
+    >
       <div className="vex-needs-page" data-vex-area="needs-you-page" data-state={model.status}>
         <p className="vex-needs-page__lead">{NEEDS_YOU_LEAD}</p>
 

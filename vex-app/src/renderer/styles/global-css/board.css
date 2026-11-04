@@ -26,13 +26,11 @@
 /* The page frame                                                      */
 /* ------------------------------------------------------------------ */
 
-/* The page asks the sheet for the whole centre (the grid is three tiles
- * across at 1440 with Vex hidden) and the design's page padding, 20 28. */
-.vex-ov:has(.vex-bd) {
-  --vex-ov-max: none;
-  --vex-ov-pad: 28px;
-  --vex-ov-top: 20px;
-}
+/* The page takes the H3 page frame's body (docs/design/H3-DESKTOP.md section
+ * 1.9, `book.css`): the whole column, 24 in from each edge, which is the
+ * whole centre R3 asked for here with its 20 28 padding. The grid's column
+ * ladder answers to the plate's own width (`board-layout.css`), so the four
+ * pixels each side gives back change no threshold. */
 
 .vex-bd {
   min-width: 0;
@@ -94,8 +92,10 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* The link (DexScreener, Ask Vex, the source session, Data notes): blue
- * 13 / 500 type with its glyph, no frame. */
+/* The link (DexScreener, Ask Vex, the source session, Data notes): H3's link,
+ * ink with an underline (docs/design/H3-DESKTOP.md section 2.3), 13 with its
+ * glyph, no frame. The underline is drawn in the chosen rule at rest and in
+ * ink on hover; it takes no width, so the tile's measured link row holds. */
 .vex-bd-link {
   display: inline-flex;
   flex: none;
@@ -110,12 +110,13 @@
   font-weight: 500;
   line-height: 1.4;
   white-space: nowrap;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 4px;
   cursor: pointer;
 }
 .vex-bd-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  text-decoration-color: currentColor;
 }
 .vex-bd-link:disabled {
   cursor: default;
@@ -155,16 +156,17 @@
 
 /* The board's own title (the model's words) with the runtime's subtitle,
  * and the controls at the right: Snapshot, the switch, Live data, the live
- * word, the pin. A quiet rule under it, as under every head. */
+ * word, the pin. The rule under it, as under every H3 head. The title is
+ * H3's card sentence (20 / 400): the model's words, in its own case. */
 .vex-bd-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px 24px;
-  margin: 0 0 14px;
-  padding: 0 0 12px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  margin: 0 0 16px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--vex-alias-rule);
 }
 .vex-bd-head__title {
   display: flex;
@@ -179,15 +181,15 @@
 .vex-bd-head__name {
   max-width: 60ch;
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 400;
   line-height: 1.3;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-primary);
 }
 .vex-bd-head__sub {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--vex-alias-label-tertiary);
 }
@@ -258,10 +260,13 @@
   gap: 14px;
   padding: 14px 0;
 }
+/* A notes head: H3's group head, 12 caps tracked, muted. */
 .vex-bd-notes__h {
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-bd-notes__text {
