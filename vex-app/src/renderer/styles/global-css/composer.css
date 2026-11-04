@@ -56,40 +56,9 @@
   width: 100%;
 }
 
-.vex-welcome__stage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* Vex's stage: 268 to 284 high on a full window (240 to 300 allowed), so the
- * greeting, the field and the rows stay above the fold at the 720 minimum.
- * With only her token showing (the token toggle) the clip around her host
- * collapses to the coin's box, set inline from the box her host reports; the
- * host itself keeps this size (a smaller host would refit her smaller). */
-.vex-welcome__vex {
-  width: 320px;
-  height: clamp(240px, calc(100vh - 620px), 284px);
-}
-.vex-welcome__clip {
-  overflow: hidden;
-}
-
-/* The token's toggle ("Hide Vex", aria-pressed): transparent over the coin,
- * flat or upright (its box is set inline), the square focus ring. */
-.vex-welcome__token {
-  position: absolute;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.vex-welcome__token:focus-visible {
-  outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
-}
+/* Vex has no stage on the welcome: H3 keeps her column beside it
+ * (docs/design/H3-DESKTOP.md section 1.7), so the opening is the greeting,
+ * a read that failed and the notice, over the composer. */
 
 /* The greeting: display type in the sans (docs/design/H3-DESKTOP.md section
  * 2.3; Instrument Serif retired), 52 / 1.02, regular, in the accent as type,
@@ -200,34 +169,25 @@
   color: var(--vex-alias-accent-primary);
 }
 
-/* Under 1180 (1024 x 720): Vex sits beside the greeting, the composer column is
- * 540 wide, the greeting 46 and left aligned (section 1.3); dock padding
- * 0 28 20. The opening dissolves into the seat's grid so the stage spans the
- * greeting, the callout and the composer band. */
+/* Under 1180 (1024 x 720): the composer column is 540 wide, the greeting 46
+ * and left aligned (section 1.3); dock padding 0 28 20. The opening dissolves
+ * into the seat's grid (greeting, callout, notice, composer band); Vex is in
+ * her column, not beside the greeting. */
 @media (max-width: 1179px) {
   [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat] {
     display: grid;
-    grid-template-columns: auto minmax(0, 540px);
+    grid-template-columns: minmax(0, 540px);
     grid-template-areas:
-      "stage greeting"
-      "stage alert"
-      "stage notice"
-      "stage dock";
+      "greeting"
+      "alert"
+      "notice"
+      "dock";
     align-content: center;
     justify-content: center;
-    column-gap: 36px;
     padding: 0 28px 20px;
   }
   [data-vex-area="session-panel"][data-phase="hero"] .vex-welcome {
     display: contents;
-  }
-  .vex-welcome__stage {
-    grid-area: stage;
-    align-self: center;
-  }
-  .vex-welcome__vex {
-    width: 280px;
-    height: 268px;
   }
   .vex-welcome__greeting {
     grid-area: greeting;
@@ -267,6 +227,18 @@
 [data-vex-area="session-panel"][data-vex-session-surface="shell"][data-phase="active"]
   [data-vex-composer-dock] {
   padding-bottom: 22px;
+}
+/* In H3's frame (docs/design/H3-DESKTOP.md section 1.8) the chat's column runs
+ * on into the bottom row, so this floor ends at the window's foot, in the
+ * row's chat cell: never shorter than the row (`--vex-h3-bottom-h`, the
+ * token the frame's row reads),
+ * its composer sitting on the row's foot. A taller composer, a draft grown
+ * past one line, rises over the transcript; the frame's row keeps its 72. */
+.vex-shell-frame[data-vex-frame="h3"]
+  [data-vex-area="session-panel"][data-vex-session-surface="shell"][data-phase="active"]
+  [data-vex-composer-seat] {
+  justify-content: flex-end;
+  min-height: var(--vex-h3-bottom-h);
 }
 
 /* SETTLING - a session is opening and its transcript is still unknown, so

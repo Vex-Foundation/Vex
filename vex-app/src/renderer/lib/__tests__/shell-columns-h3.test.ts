@@ -11,11 +11,20 @@ import { describe, expect, it } from "vitest";
 import {
   H3_CHATS_WIDTH,
   H3_COLUMNS_MIN,
+  H3_FOOT_ROW,
   H3_RAIL_WIDTH,
   H3_VEX_PERCENT,
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
+  H3_BAND_HEIGHT,
+  H3_CHAT_MIN,
+  H3_CHATS_OPEN_MIN,
+  h3ShellTier,
+  shellColumnOrder,
+  shellFrameKind,
+  shellGridTemplateRows,
+  shellHeadTemplateColumns,
   type H3ShellColumns,
 } from "../shell-columns.js";
 
@@ -292,5 +301,97 @@ describe("invariants", () => {
     expect(tracks(h3(0, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(-20, true))).toEqual([0, 0, 0]);
     expect(tracks(h3(Number.NaN, true))).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the desktop's tiers (H3-DESKTOP.md section 4.12)", () => {
+  it("names the band, the medium tier and the wide tier, each seam to the wider side", () => {
+    expect(H3_CHATS_OPEN_MIN).toBe(1268);
+    expect(H3_CHAT_MIN).toBe(640);
+    expect([1000, 1023, 1023.4].map(h3ShellTier)).toEqual(["band", "band", "band"]);
+    expect([1023.5, 1024, 1267].map(h3ShellTier)).toEqual(["medium", "medium", "medium"]);
+    expect([1268, 1280, 1440, 2560].map(h3ShellTier)).toEqual(["wide", "wide", "wide", "wide"]);
+  });
+
+  it("puts the seam where the open chats would first take the chat under 640", () => {
+    expect(h3(1267, true).chat).toBe(639);
+    expect(h3(1268, true).chat).toBe(640);
+  });
+
+  it("keeps the chat at 640 or more wherever the shell asks the chats as the tier says", () => {
+    for (let width = 1000; width <= 2560; width += 1) {
+      const tier = h3ShellTier(width);
+      const cols = h3(width, tier === "wide");
+      expect(cols.chat, String(width)).toBeGreaterThanOrEqual(H3_CHAT_MIN);
+    }
+  });
+});
+
+describe("the frame per mode", () => {
+  it("stands the agent shell and Studio in H3's order: chats | Vex | chat", () => {
+    for (const mode of ["agent", "studio"] as const) {
+      expect(shellFrameKind(mode)).toBe("h3");
+      expect(shellColumnOrder(mode)).toEqual(["chats", "vex", "chat"]);
+    }
+  });
+
+  it("keeps the Lighter desk's chat on the right until its own restyle", () => {
+    expect(shellFrameKind("lighter")).toBe("r3");
+    expect(shellColumnOrder("lighter")).toEqual(["chats", "chat", "vex"]);
+  });
+});
+
+describe("the header's cells", () => {
+  it("names each cell's lines, the Vex key between the chats and the chat in H3's order", () => {
+    expect(shellHeadTemplateColumns({ chats: 248, vex: 432, vexBetween: true })).toBe(
+      "[chats-start] 248px [chats-end vex-start] 432px [vex-end title-start] minmax(0, 1fr) " +
+        "[title-end funds-start] auto [funds-end reserve-start] var(--overlay-w) [reserve-end]",
+    );
+  });
+
+  it("puts the Vex key at the right end, as wide as the key, over R3's right-hand column", () => {
+    expect(shellHeadTemplateColumns({ chats: 264, vex: null, vexBetween: false })).toBe(
+      "[chats-start] 264px [chats-end title-start] minmax(0, 1fr) [title-end funds-start] auto " +
+        "[funds-end vex-start] auto [vex-end reserve-start] var(--overlay-w) [reserve-end]",
+    );
+  });
+
+  it("always ends in the caption reserve, the window's top-right corner", () => {
+    for (const vexBetween of [false, true]) {
+      for (const vex of [null, 0, 307]) {
+        const template = shellHeadTemplateColumns({ chats: 76, vex, vexBetween });
+        expect(template.endsWith(" reserve-start] var(--overlay-w) [reserve-end]")).toBe(true);
+      }
+    }
+  });
+});
+
+describe("the frame's rows", () => {
+  it("is head | body | foot, a row the frame does not draw being 0", () => {
+    expect(shellGridTemplateRows({ head: false, foot: false })).toBe("0px minmax(0, 1fr) 0px");
+    expect(shellGridTemplateRows({ head: true, foot: false })).toBe("var(--head-h) minmax(0, 1fr) 0px");
+    expect(shellGridTemplateRows({ head: true, foot: true })).toBe(
+      "var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)",
+    );
+  });
+
+  it("under 1024 puts Vex's band between the header and the body, a fixed 132", () => {
+    expect(H3_BAND_HEIGHT).toBe(132);
+    expect(shellGridTemplateRows({ head: true, foot: false, band: true })).toBe(
+      "var(--head-h) 132px minmax(0, 1fr) 0px",
+    );
+    expect(shellGridTemplateRows({ head: true, foot: true, band: false })).toBe(
+      "var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)",
+    );
+  });
+
+  it("reads the bottom row from its H3 size token (72), and no row is auto", () => {
+    // The token's 72 is pinned by shell-geometry-tokens.test.ts.
+    expect(H3_FOOT_ROW).toBe("var(--vex-h3-bottom-h)");
+    for (const head of [false, true]) {
+      for (const foot of [false, true]) {
+        expect(shellGridTemplateRows({ head, foot })).not.toContain("auto");
+      }
+    }
   });
 });

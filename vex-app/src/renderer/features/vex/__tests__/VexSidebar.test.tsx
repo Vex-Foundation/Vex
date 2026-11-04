@@ -84,7 +84,6 @@ function PageBlock(): JSX.Element | null {
   return slot === null ? null : createPortal(<p data-testid="page-block">Ask Vex</p>, slot);
 }
 const { useUiStore } = await import("../../../stores/uiStore.js");
-const { noteVexOnWelcome, takeVexDock, vexDockPending } = await import("../vex-dock.js");
 const { VEX_HIDE_EPISODE_MS, keepVex, vexClosing } = await import("../vex-hide.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
@@ -134,7 +133,6 @@ function before(a: Element | null, b: Element | null): boolean {
 beforeEach(() => {
   window.localStorage.clear();
   still.current = false;
-  takeVexDock();
   presenceRef.current = presence();
   useUiStore.setState({
     runtimeMode: "agent",
@@ -278,6 +276,28 @@ describe("VexSidebar, avatar off", () => {
   });
 });
 
+describe("VexSidebar, a column that stays (H3, a chat)", () => {
+  it("hides only her plate: the state, Needs you and the hide key stand, the flat token in her place", () => {
+    const { container } = render(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    expect(container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
+    expect(container.querySelector("[data-vex-k2]")).toBeNull();
+    expect(container.querySelector("[data-vex-area='vex-state']")).not.toBeNull();
+    expect(container.querySelector("[data-vex-area='vex-needs-you']")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Hide Vex" })).not.toBeNull();
+    expect(container.querySelector("[data-vex-status]")).not.toBeNull();
+  });
+
+  it("plays her open episode when the plate shows again after a hide", () => {
+    const holo = () => document.querySelector("[data-vex-k2]");
+    const { rerender } = render(<VexSidebar open stays onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    rerender(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    expect(holo()).toBeNull();
+    rerender(<VexSidebar open stays onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+  });
+});
+
 describe("VexSidebar, the dock", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
 
@@ -294,11 +314,16 @@ describe("VexSidebar, the dock", () => {
     expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
   });
 
-  it("docks her from the welcome on the first message, once", () => {
-    noteVexOnWelcome();
-    render(<VexSidebar open onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
-    expect(vexDockPending()).toBe(false);
+  it("shows her as she is in the welcome's column: the welcome keeps her column, nothing docks", () => {
+    // docs/design/H3-DESKTOP.md section 1.7: no Vex stands in the welcome's
+    // centre to hand over, so a column the shell opens there, or the first
+    // message keeps standing, never plays the open episode.
+    useUiStore.setState({ activeSessionId: null });
+    const { rerender } = render(<VexSidebar open onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    act(() => useUiStore.setState({ activeSessionId: "s-1" }));
+    rerender(<VexSidebar open onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
   });
 
   it("plays it when the avatar is switched on in an open column", () => {

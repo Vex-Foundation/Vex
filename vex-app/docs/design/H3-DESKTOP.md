@@ -74,9 +74,9 @@ Open: Cloud's own breakpoints and widths, and whether Cloud's chat has a floor. 
 | Window width | Chats | Vex | Chat | Note |
 |---|---|---|---|---|
 | 1000 to 1023 | 76 rail | a band | 924 to 947 | the band layout; desktop's minimum window is 1000 x 720 (`src/main/windows/bounds.ts`) |
-| 1024 | 248 | 307 | 469 | no plate; the rule extended |
-| 1180 | 248 | 354 | 578 | |
-| 1224 | 248 | 367 | 609 | the first run's window on a 1440px display (85% of the work area) |
+| 1024 | 248 | 307 | 469 | no plate; the rule extended. Desktop starts the chats folded here: 76, 307, 641 (section 4.12) |
+| 1180 | 248 | 354 | 578 | desktop folded: 76, 354, 750 |
+| 1224 | 248 | 367 | 609 | the first run's window on a 1440px display (85% of the work area); desktop folded: 76, 367, 781 |
 | 1280 | 248 | 384 | 648 | the stored default window, 1280 x 800 |
 | 1366 | 248 | 410 | 708 | |
 | 1440 | 248 | 432 | 760 | the 1440 captures |
@@ -88,7 +88,7 @@ What follows from the rule:
 - The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first of the money rule's three legs (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
 - There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is 469, narrower than any plate. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3), and whether Cloud moves the band seam above 1024. Settled in the harness at 1024 and 1280 and with Cloud.
 - In a chat, the Vex column's width never depends on whether her section is open. On pages, closing her folds the column to a line (section 1.9).
-- Open: what the sidebar key does at 1024 and up; it is drawn but never pressed. Presumed: it folds the chats column to the 76px rail and the chat takes the freed 172px. A fold the person asks for may move a card; her section never does.
+- Open: what the sidebar key does at 1024 and up; it is drawn but never pressed. Presumed: it folds the chats column to the 76px rail and the chat takes the freed 172px. A fold the person asks for may move a card; her section never does. Desktop builds the presumption, and from 1024 to 1267 starts the chats folded (section 4.12).
 
 ### 1.3 The header row
 76 high, one row of cells across the window. It is mounted once, because it hosts the app-wide approvals sync (`RunningHead.tsx`: preload allows one subscriber per event), and every cell that is not a control is a window drag region (`.vex-drag`).
@@ -219,6 +219,8 @@ H3 draws the band only on the phone and prints one box at 900. What is known:
 - Measured on the phone (`h3-merged__phone-band-*-390`): the header is 59 high; the console line under it is 40, and its first cell carries her state and SHOW VEX or HIDE VEX; open, the band is her figure (230 high) and a 56-high foot row holding Vex's line and the HIDE VEX cell, and "the whole 56 tall row closes the band"; closed, there is no band, and the header's second cell shows her face with a chevron badge.
 
 Desktop's default, derived for S2-08: the 76 header with the rail's cell (the mark), the Vex key, the chat title, the network cell and the caption reserve; the console line across the window right of the rail; her band under the console line while open; the chat under that.
+
+Built in S2-08: the band is a row of the frame under the header, over the chat's track, 132 high at every desktop width (`H3_BAND_HEIGHT`): the Vex column's own parts laid in one row, its head (44) over her state and Needs you beside her portrait (88). Its height is a function of nothing, so a card under it never moves when a turn starts, waits or ends. The chats rail runs from the header to the foot beside it. A page shows no band (the strip, section 1.9).
 
 Open: the band's heights at a desktop width; whether the band may stand open over a waiting card (the proof's narrow rows were read with "states closed"); the header cells at this width. Settled in the harness at 1000 x 720 and with Cloud.
 
@@ -391,7 +393,7 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 
 ### 3.5 The rules
 - **Vex never opens her section by herself.** Her cue (a card arriving, a turn ending) changes her mood and her words, never her section's state (printed in the proof's note).
-- **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Today Esc in Lighter Zen closes the Vex overlay (`AppShell.tsx`); S2-13 removes that.
+- **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Esc in Lighter Zen closed the Vex overlay until S2-13 removed it (`AppShell.tsx`).
 - **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15).
 - **The choice is remembered.** Cloud keeps it per browser; desktop keeps it in the persisted layout store, one choice for chats and pages, replacing "Show avatar" and R3's `vexOpenChat` and `vexOpenPages` slots, which migrate into it (S2-11, S4-14). Open: whether pages keep a choice of their own; the plates draw Portfolio both ways but print no rule.
 - **First launch: open.** The sheet's drawn answer for computers.
@@ -482,7 +484,7 @@ Adopting the tick and the card keys later needs the owner's decision and a safet
 - **Desktop binds it on Linux too.** Cloud leaves it unbound there ("unbound on Linux, as the app leaves it", `h3-merged__plate-controls`; the plate gives no reason). The desktop app owns its keys, and the chord collides with nothing in it: Studio's `KeyB` binding is Ctrl or Cmd+B without Shift, and Studio's matcher requires exact modifiers; xterm does not encode it; the menu's one accelerator is Lock Vex, Cmd or Ctrl+Shift+L (`src/main/menu-template.ts`). The Studio terminal refuses the chord explicitly (`XtermHost.tsx`), so the shell gets it first. Open: a Linux desktop that takes the chord globally; checked in the Linux pass (S9-03).
 - **The old chord,** Cmd or Ctrl+Shift+Period (`features/vex/vex-toggle-shortcut.ts`), still opens and closes her for one release, then goes. Keycaps and tooltips show only the new chord.
 - The shortcut's proof test compares modifiers as well as codes (`vex-toggle-shortcut.test.ts`).
-- **Esc** never closes her and never decides a card. In Lighter Zen, Esc keeps closing Zen's own panels and then Zen, but no longer closes the Vex overlay (S2-13).
+- **Esc** never closes her and never decides a card. In Lighter Zen, Esc keeps closing Zen's own panels and then Zen, but no longer closes the Vex overlay (S2-13); leaving Zen with her open keeps her open, on the desk's own chat column.
 
 ### 4.5 Dark only
 Every H3 plate is dark. Desktop retires its light theme (Celeris) and the "system" choice, and saved choices move to dark (S1-04). The window background, the Windows caption overlay and the theme-matrix test follow the one ground (section 2.1).
@@ -539,6 +541,15 @@ Already known for those plates:
 
 ### 4.11 What Cloud and desktop must agree on
 The column rule and tiers (section 1.2), the words of every element both apps show (Appendix A, where desktop says "same"), the keys (Appendix A.9, less desktop's old chord and its Linux binding), the timings and the push curve (section 3.1), the mood list (section 1.6) and the open-and-closed memory rule (section 3.5). These go to desu; Cloud's answers are recorded here when they come, and each "Open" line above that Cloud settles is rewritten then.
+
+### 4.12 The chats column from 1024 to 1267
+Decided on 3 November 2026, for S2-07: desktop keeps the chat at 640 or more wherever the window allows, by folding the chats column rather than bending the column rule (section 1.2), which stays as printed.
+
+- From 1268 up the chats column is the person's stored choice: 248 open, the 76px rail folded. 1268 is the first width at which 248 + 30% + 640 fits (248 + 380 + 640); at 1267 the chat would be 639.
+- From 1024 to 1267 the chats column starts folded to the 76px rail, so the chat keeps at least 640 (641 at 1024: 76 + 307 + 641; 811 at 1267). The sidebar key and the rail's Expand key still open it there. That opening is an unsaved override, as R3's narrow tier had (the store's `sidebarNarrowExpanded`): the chat then takes what the rule leaves (469 at 1024), and leaving the tier, past 1267 or under 1024, clears it, so the next entry starts folded again. The stored choice is never rewritten.
+- Under 1024 the band (section 1.10) folds the chats whatever either says, and the rail has no Expand key there.
+- Nothing about her section enters this: the Vex column is 30% of the window at every width, and the fold is only what the shell asks the solver (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`). A fold the person asks for may move a card (section 1.2); her section never does.
+- Open: whether Cloud folds its chats under 1268 too. Settled with Cloud.
 
 ---
 

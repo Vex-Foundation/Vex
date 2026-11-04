@@ -1,6 +1,8 @@
 /**
- * THE VEX SIDEBAR: the right column of the shell, Vex's own
- * (docs/design/R3-MINIMAL.md section 5). Information first, then her face:
+ * THE VEX SIDEBAR: Vex's own column, between the chats and the chat
+ * (docs/design/H3-DESKTOP.md section 1; the right-hand column on the Lighter
+ * desk), as R3 drew it (docs/design/R3-MINIMAL.md section 5). Information
+ * first, then her face:
  *
  *   aside[data-vex-area="vex-sidebar"][data-vex-vex-open]
  *     head            "Vex" and the hide key (44, a window drag row)
@@ -18,25 +20,35 @@
  * plate and no hologram: the 44px flat token (`VexStatus`, no ring round it)
  * stands beside the state instead, and everything else stays.
  *
- * SHE DOCKS: a column that shows after the shell came up (the first message
- * off the welcome, where she stood in the centre, or the column shown again)
- * plays her open episode in the plate; a column open from the start shows her
- * as she is. Under reduced motion she simply appears.
+ * SHE DOCKS: a column shown again after a hide plays her open episode in the
+ * plate; a column open from the start shows her as she is. The welcome keeps
+ * her column (docs/design/H3-DESKTOP.md section 1.7), so she never stands in
+ * its centre to dock from. Under reduced motion she simply appears.
  *
- * HIDDEN is zero width: the frame gives the column a 0px track and the aside
- * renders its head and body only while open, so nothing in a closed column
- * takes focus, runs a query or paints her. The title bar's token chip keeps
- * the fill, the word and the timer meanwhile.
+ * WHAT HIDING HIDES (docs/design/H3-DESKTOP.md sections 1.2 and 3.6). In a
+ * chat, in the agent shell and Studio, her column stays: hiding Vex hides
+ * only her plate inside it (`plate` false), the forerunner of Kimm's section,
+ * and her state, Needs you and the rest stand where they were, the flat token
+ * beside the state in the plate's place. Nothing about the plate reaches the
+ * frame's tracks, so a waiting card never moves. On the table pages hiding
+ * folds the whole column to the page's strip, and on the Lighter desk it
+ * closes the desk chat's column, as R3's hide did.
  *
- * HIDING PLAYS HER CLOSE FIRST (`vex-hide.ts`): when the user hides the
- * column (its hide key, the token chip, the shortcut), she collapses into the
- * token in the plate and only then does the column go, so the unmount waits
- * for the episode. Under reduced motion or Save-Data, with the avatar off or
- * with her plate hidden under the inspect view there is nothing to watch and
- * the column goes at once. While she closes the column is inert (nothing in
- * it takes a click or focus), and focus that was inside it moves to the token
- * chip, the control that brings her back; a hide that skips the episode hands
- * focus over the same way. A column the shell closes on its own goes at once.
+ * A CLOSED COLUMN is zero width: the frame gives it a 0px track and the
+ * aside renders its head and body only while open, so nothing in a closed
+ * column takes focus, runs a query or paints her. The header's token chip
+ * keeps the fill, the word and the timer meanwhile.
+ *
+ * HIDING PLAYS HER CLOSE FIRST (`vex-hide.ts`): when the user hides her (the
+ * column's hide key, the token chip, the shortcut), she collapses into the
+ * token in the plate and only then does the write land, so the plate (or the
+ * column) waits for the episode. Under reduced motion or Save-Data, with the
+ * avatar off or with her plate hidden under the inspect view there is
+ * nothing to watch and the write lands at once. While she closes the column
+ * is inert (nothing in it takes a click or focus). Where the column goes with
+ * her, focus that was inside it moves to the token chip, the control that
+ * brings her back; where it stays (`stays`), focus stays on the key that was
+ * pressed. A column the shell closes on its own goes at once.
  *
  * THE INSPECT VIEW takes over the body for one tool call (a Back key returns):
  * the body is hidden, never unmounted, so her canvas and the page slot keep
@@ -50,7 +62,7 @@
  */
 
 import { useEffect, useRef, useState, type JSX } from "react";
-import { LineBack, LinePanelRight } from "../../components/icons/line/index.js";
+import { LineBack, LinePanelLeft, LinePanelRight } from "../../components/icons/line/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { useProject } from "../../lib/api/projects.js";
 import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
@@ -70,7 +82,6 @@ import { useVexPresence, type VexPresence } from "./useVexPresence.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
-import { takeVexDock, vexDockPending } from "./vex-dock.js";
 import {
   VEX_HIDE_EPISODE_MS,
   registerVexCloser,
@@ -82,8 +93,25 @@ import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 export interface VexSidebarProps {
   /** Whether the column is open; the frame solved it (0px track when closed). */
   readonly open: boolean;
+  /**
+   * Where the frame seats her: her own column, or under 1024 the band under
+   * the header, over the chat (docs/design/H3-DESKTOP.md section 1.10), where
+   * the same parts lie in one row (vex-sidebar.css).
+   */
+  readonly seat?: "column" | "band";
   /** The hide key: the frame writes the page class's stored choice. */
   readonly onHide: () => void;
+  /**
+   * Her portrait plate shows: the page class's stored choice where the column
+   * stands whatever it says (a chat, in the agent shell and Studio). Hidden,
+   * the column keeps everything else. Defaults to shown.
+   */
+  readonly plate?: boolean;
+  /**
+   * The column stays when she hides (a chat): her close keeps focus where it
+   * is rather than handing it to the token chip.
+   */
+  readonly stays?: boolean;
 }
 
 /** The title bar's token chip: where focus goes when the column it was in goes. */
@@ -103,21 +131,26 @@ function plateOnScreen(aside: HTMLElement): boolean {
   return plate !== null && plate.closest("[hidden]") === null;
 }
 
-export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
+export function VexSidebar({
+  open,
+  onHide,
+  seat = "column",
+  plate = true,
+  stays = false,
+}: VexSidebarProps): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const theme = useUiStore((s) => s.theme);
   const environment = useLighterAnalysisStore((s) => s.desk.environment);
   const lighter = runtimeMode === "lighter";
   const asideRef = useRef<HTMLElement | null>(null);
-  // She docks when the column shows after the shell came up: from the
-  // welcome, or open again after a hide.
-  const [dock, setDock] = useState(() => !open || vexDockPending());
+  // She docks when she shows again after a hide (her column, or her plate in
+  // a column that stayed); shown from the start (the welcome's included) she
+  // stands as she is.
+  const shown = open && plate;
+  const [dock, setDock] = useState(() => !shown);
   useEffect(() => {
-    takeVexDock();
-  }, []);
-  useEffect(() => {
-    if (!open) setDock(true);
-  }, [open]);
+    if (!shown) setDock(true);
+  }, [shown]);
 
   // Her close, played before a hide the user asked for commits.
   const [closing, setClosing] = useState(false);
@@ -133,7 +166,7 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
     const unregister = registerVexCloser({
       close: (commit) => {
         const aside = asideRef.current;
-        handFocusOut(aside);
+        if (!stays) handFocusOut(aside);
         if (timer !== null) return true;
         if (aside === null || prefersStillFrame() || !plateOnScreen(aside)) return false;
         setClosing(true);
@@ -154,7 +187,7 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
       stop();
       unregister();
     };
-  }, [open]);
+  }, [open, stays]);
 
   return (
     <aside
@@ -163,6 +196,7 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
       data-vex-area="vex-sidebar"
       data-vex-vex-open={open ? "true" : "false"}
       data-vex-vs-mode={runtimeMode}
+      data-vex-seat={seat}
       data-vex-vs-closing={open && closing ? "" : undefined}
       inert={open && closing}
       // On the desk the column carries the Lighter role scope, as the desk
@@ -172,7 +206,7 @@ export function VexSidebar({ open, onHide }: VexSidebarProps): JSX.Element {
       className={cn("vex-vs", lighter && "lit-chat-frame")}
     >
       {open ? (
-        <VexSidebarContent onHide={onHide} dock={dock} closing={closing} />
+        <VexSidebarContent onHide={onHide} dock={dock} closing={closing} plate={plate} />
       ) : null}
     </aside>
   );
@@ -182,11 +216,14 @@ function VexSidebarContent({
   onHide,
   dock,
   closing,
+  plate,
 }: {
   readonly onHide: () => void;
   readonly dock: boolean;
   /** Her close is playing: the plate collapses her into the token. */
   readonly closing: boolean;
+  /** Her plate shows (the stored choice where the column stays). */
+  readonly plate: boolean;
 }): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
@@ -224,7 +261,9 @@ function VexSidebarContent({
           onClick={() => requestVexHide(onHide)}
           className="vex-vs__key"
         >
-          <LinePanelRight size={16} />
+          {/* The panel the key folds, on the side it stands: the right on
+            * the Lighter desk, the left of the chat everywhere else. */}
+          {lighter ? <LinePanelRight size={16} /> : <LinePanelLeft size={16} />}
         </button>
       </header>
 
@@ -248,7 +287,7 @@ function VexSidebarContent({
         className="vex-vs__body"
       >
         <div className="vex-vs__info">
-          <VexStateBlock presence={presence} avatar={showAvatar} />
+          <VexStateBlock presence={presence} avatar={showAvatar && plate} />
           <NeedsYouSection
             presence={presence}
             runtimeMode={runtimeMode}
@@ -258,7 +297,7 @@ function VexSidebarContent({
           <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
         </div>
         {lighter ? null : <div className="vex-vs__spacer" />}
-        {showAvatar ? (
+        {showAvatar && plate ? (
           <VexPortraitPlate
             emotion={vexEmotionOf(presence.state)}
             dock={dock}

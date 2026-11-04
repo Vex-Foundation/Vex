@@ -5,8 +5,10 @@
  * figures JetBrains Mono. The desk chat lives in the Vex sidebar under the
  * plate (LighterChatRail), hidden by default.
  *
- * The title row is the centre's 44px head row on the desk and a window drag
- * region (window-chrome.css): the left rail leaves the macOS traffic lights
+ * The title row is the centre's head row on the desk (`--head-h`, the
+ * window's 76 since the traffic lights and the caption overlay moved onto
+ * H3's header) and a window drag region (window-chrome.css): the left rail
+ * leaves the macOS traffic lights
  * their row, so the title steps right there; the right end reserves the
  * Windows and Linux caption buttons wherever the Vex column under them is
  * narrower than they are, as the title bar does (title-bar.css). */
@@ -525,7 +527,7 @@ html[data-os="mac"] .lit-desk-topbar[data-lighter-zen] .lit-desk-topbar-header {
 .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant {
   position: absolute;
   z-index: 35;
-  top: 44px;
+  top: var(--head-h);
   right: 0;
   bottom: 0;
   width: min(430px, calc(100vw - 24px));
