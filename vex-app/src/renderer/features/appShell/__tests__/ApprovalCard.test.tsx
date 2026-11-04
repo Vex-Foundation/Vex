@@ -1663,3 +1663,169 @@ describe("ApprovalCard, every kind in the same frame", () => {
     expect(network.parentElement?.className).toBe("vex-appr__funds");
   });
 });
+
+/**
+ * THE DECISION ROW IN THE SHELL'S BOTTOM ROW (row S6b-05, H3-DESKTOP.md
+ * sections 1.8 and 4.3). Given the chat's dock, the card draws its footer
+ * there: the reason field, Reject, the gate line, the approve key. It is the
+ * same footer with the same state, so every gate the card keeps inside itself
+ * holds docked too, and these cases press the docked keys to prove it.
+ */
+describe("ApprovalCard, its decision row docked in the shell's bottom row", () => {
+  let dock: HTMLElement;
+  beforeEach(() => {
+    document.querySelectorAll("[data-test-dock]").forEach((node) => node.remove());
+    dock = document.createElement("div");
+    dock.setAttribute("data-test-dock", "");
+    document.body.appendChild(dock);
+  });
+
+  function renderDocked(summary: ApprovalSummaryDto, focusOnMount = false): void {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalCard summary={summary} sessionId={SESSION} focusOnMount={focusOnMount} decisionDock={dock} />
+      </QueryClientProvider>,
+    );
+  }
+  const card = (): HTMLElement => document.querySelector<HTMLElement>('[data-vex-area="approval-card"]') as HTMLElement;
+  const foot = (): HTMLElement => dock.querySelector<HTMLElement>('[data-vex-area="approval-foot"]') as HTMLElement;
+
+  it("moves the footer out of the card into the dock, named by the card's title", () => {
+    renderDocked(makeSummary());
+    expect(card().hasAttribute("data-vex-decision-docked")).toBe(true);
+    expect(card().querySelector('[data-vex-area="approval-foot"]')).toBeNull();
+    expect(foot()).not.toBeNull();
+    expect(foot().hasAttribute("data-docked")).toBe(true);
+    expect(foot().getAttribute("role")).toBe("group");
+    const title = screen.getByRole("heading", { level: 3 });
+    expect(foot().getAttribute("aria-labelledby")).toBe(title.id);
+  });
+
+  it("orders the cells as H3 does: the reason field, Reject, the gate line, the approve key", () => {
+    renderDocked(makeSummary());
+    const cells = Array.from(foot().children).map((child) =>
+      child.getAttribute("data-vex-key") ?? child.getAttribute("data-vex-area") ?? child.tagName.toLowerCase(),
+    );
+    expect(cells).toEqual(["input", "reject", "approval-gate", "approve"]);
+    expect(screen.getByLabelText(REJECT_REASON_LABEL).getAttribute("placeholder")).toBe(REJECT_REASON_PLACEHOLDER);
+  });
+
+  it("says the gate in the middle cell: two presses on a high-risk card, one elsewhere", () => {
+    renderDocked(makeSummary());
+    expect(dock.querySelector('[data-vex-area="approval-gate"]')?.textContent).toBe(
+      "Two presses decide: the first arms the key for 4 s.",
+    );
+  });
+
+  it("says nothing signs until you approve on a card that decides on one press", () => {
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    expect(dock.querySelector('[data-vex-area="approval-gate"]')?.textContent).toBe("Nothing signs until you approve.");
+  });
+
+  it("keeps the two-step confirm on a high-risk card: the first press arms, the second sends", () => {
+    renderDocked(makeSummary());
+    fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+    const armed = screen.getByRole("button", { name: /confirm approve/i });
+    expect(dock.contains(armed)).toBe(true);
+    expect(armed.hasAttribute("data-armed")).toBe(true);
+    expect(armed.textContent).toContain("Click again to confirm approve");
+    fireEvent.click(armed);
+    expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+    expect(mockApproveMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the two-press Reject, and the reason travels with Reject", () => {
+    renderDocked(makeSummary());
+    fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "Use 100 USDC instead" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+    const armed = screen.getByRole("button", { name: /confirm reject/i });
+    expect(armed.textContent).toBe("Click again to confirm reject");
+    fireEvent.click(armed);
+    expect(mockRejectMutate).toHaveBeenCalledWith(
+      { id: "appr-1", reason: "Use 100 USDC instead" },
+      expect.any(Object),
+    );
+    expect(mockApproveMutate).not.toHaveBeenCalled();
+  });
+
+  it("never lets the reason ride along with an approve", () => {
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    fireEvent.change(screen.getByLabelText(REJECT_REASON_LABEL), { target: { value: "ignored" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve transfer" }));
+    expect(mockApproveMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+  });
+
+  it("decides a low-risk card on one press, as before", () => {
+    renderDocked(makeSummary({ riskLevel: "info", actionKind: "read" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(mockRejectMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+  });
+
+  it("gives the docked Reject the first focus", () => {
+    renderDocked(makeSummary(), true);
+    const reject = screen.getByRole("button", { name: "Reject" });
+    expect(dock.contains(reject)).toBe(true);
+    expect(document.activeElement).toBe(reject);
+  });
+
+  it("locks both docked keys while a decision is in flight", () => {
+    approvePending = true;
+    renderDocked(makeSummary());
+    for (const key of Array.from(foot().querySelectorAll("button"))) expect(key.disabled).toBe(true);
+    expect(foot().querySelector('[data-vex-key="approve"]')?.hasAttribute("data-vex-approve-working")).toBe(true);
+  });
+
+  it("keeps the footer in the card when no dock is given, as on every other surface", () => {
+    renderCard(makeSummary(), false);
+    expect(card().hasAttribute("data-vex-decision-docked")).toBe(false);
+    const inCard = card().querySelector('[data-vex-area="approval-foot"]');
+    expect(inCard).not.toBeNull();
+    expect(inCard?.hasAttribute("data-docked")).toBe(false);
+    expect(inCard?.querySelector('[data-vex-area="approval-gate"]')).toBeNull();
+    expect(dock.childElementCount).toBe(0);
+  });
+
+  describe("the docked row's sheet", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = (selector: string): string => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet);
+      expect(match, `rule missing: ${selector}`).not.toBeNull();
+      return match?.[1] ?? "";
+    };
+
+    it("hides the composer while the dock holds a decision, and only then", () => {
+      expect(rule("[data-vex-composer-dock]:has(+ .vex-appr-dock:not(:empty))")).toContain("display: none");
+      expect(rule(".vex-appr-dock:empty")).toContain("display: none");
+    });
+
+    it("lays the row out as H3's cells: the reason across, then Reject 168 | the gate | approve 200, 72 high", () => {
+      const row = rule(".vex-appr__foot[data-docked]");
+      expect(row).toContain("grid-template-columns: minmax(96px, 168px) minmax(0, 1fr) minmax(120px, 200px)");
+      expect(row).toContain('"reason reason reason"');
+      expect(row).toContain('"reject gate approve"');
+      expect(row).toContain("position: static");
+      expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
+      expect(rule(".vex-appr__foot[data-docked] > input")).toContain("font-size: 18px");
+    });
+
+    it("fills Reject raised and the approve key blue, an armed key in reversed ink and never a second blue", () => {
+      expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="reject"]')).toContain(
+        "background: var(--vex-alias-interactive-solid)",
+      );
+      expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]')).toContain(
+        "background: var(--vex-alias-button-accent-fill)",
+      );
+      const armed = rule(
+        ".vex-appr__foot[data-docked] > button[data-armed],\n.vex-appr__foot[data-docked] > button[data-armed]:enabled:hover",
+      );
+      expect(armed).toContain("background: var(--vex-alias-rule-ink)");
+      expect(armed).not.toContain("accent");
+      expect(rule(".vex-appr__foot[data-docked] > button:focus-visible")).toContain("outline-offset: -2px");
+    });
+  });
+});

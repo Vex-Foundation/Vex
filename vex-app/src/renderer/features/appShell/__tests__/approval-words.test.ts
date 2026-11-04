@@ -25,6 +25,7 @@ import {
   approvalExpiryWords,
   approvalEyebrowWord,
   approvalFamily,
+  approvalGateLine,
   approvalPlace,
   approvalReviewWord,
   approvalSentence,
@@ -319,6 +320,24 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
     expect(CONSEQUENCE_SENDS_FUNDS.endsWith("It cannot be undone.")).toBe(true);
     expect(CONSEQUENCE_PLACES_RESTING_ORDER).not.toMatch(/undone/);
     expect(CONSEQUENCE_PLACES_ORDER.startsWith(CONSEQUENCE_PLACES_RESTING_ORDER)).toBe(true);
+  });
+});
+
+describe("approvalGateLine (the decision row's middle cell, H3-DESKTOP.md Appendix A.7)", () => {
+  it("says the two presses and their window, read from the card's own reset", () => {
+    expect(approvalGateLine(true, 4_000)).toBe("Two presses decide: the first arms the key for 4 s.");
+    expect(approvalGateLine(true, 2_500)).toBe("Two presses decide: the first arms the key for 2.5 s.");
+  });
+
+  it("says nothing signs until you approve on a one-press card", () => {
+    expect(approvalGateLine(false, 4_000)).toBe("Nothing signs until you approve.");
+  });
+
+  it("names no key shortcut: desktop binds none to a card", () => {
+    for (const line of [approvalGateLine(true, 4_000), approvalGateLine(false, 4_000)]) {
+      expect(line).not.toMatch(/ctrl|enter|esc|tick/i);
+      expect(line).not.toMatch(DASHES);
+    }
   });
 });
 

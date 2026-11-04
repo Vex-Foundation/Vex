@@ -358,6 +358,21 @@ export function approvalConsequence(approval: ApprovalTarget): string | null {
   }
 }
 
+/**
+ * The decision row's middle cell (docs/design/H3-DESKTOP.md section 4.3,
+ * Appendix A.7, proposed): the line for the card's gate, where H3 draws its
+ * tick box and its key hints, which desktop leaves out. On a card whose keys
+ * take two presses, "Two presses decide: the first arms the key for 4 s.",
+ * the window read from the card's own reset (`CONFIRM_RESET_MS`) so the line
+ * and the timer can never disagree; on any other, "Nothing signs until you
+ * approve.". Words only: the gate itself is the card's.
+ */
+export function approvalGateLine(twoPresses: boolean, armedWindowMs: number): string {
+  if (!twoPresses) return "Nothing signs until you approve.";
+  const seconds = Number((armedWindowMs / 1000).toFixed(1));
+  return `Two presses decide: the first arms the key for ${String(seconds)} s.`;
+}
+
 /** The Lighter deployment a call names, by its people name ("Lighter Core"); else `null`. */
 function lighterEnvironmentName(value: string | null): string | null {
   if (value === null) return null;
