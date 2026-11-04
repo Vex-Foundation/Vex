@@ -276,6 +276,28 @@ describe("VexSidebar, avatar off", () => {
   });
 });
 
+describe("VexSidebar, a column that stays (H3, a chat)", () => {
+  it("hides only her plate: the state, Needs you and the hide key stand, the flat token in her place", () => {
+    const { container } = render(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    expect(container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
+    expect(container.querySelector("[data-vex-k2]")).toBeNull();
+    expect(container.querySelector("[data-vex-area='vex-state']")).not.toBeNull();
+    expect(container.querySelector("[data-vex-area='vex-needs-you']")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Hide Vex" })).not.toBeNull();
+    expect(container.querySelector("[data-vex-status]")).not.toBeNull();
+  });
+
+  it("plays her open episode when the plate shows again after a hide", () => {
+    const holo = () => document.querySelector("[data-vex-k2]");
+    const { rerender } = render(<VexSidebar open stays onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
+    rerender(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    expect(holo()).toBeNull();
+    rerender(<VexSidebar open stays onHide={() => {}} />);
+    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+  });
+});
+
 describe("VexSidebar, the dock", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
 

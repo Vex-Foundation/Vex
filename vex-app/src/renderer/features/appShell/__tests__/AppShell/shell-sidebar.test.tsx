@@ -22,6 +22,7 @@ import { createQueryClient } from "../../../../app/queryClient.js";
 import { useUiStore } from "../../../../stores/uiStore.js";
 import { useLighterAnalysisStore } from "../../../../stores/lighterAnalysisStore.js";
 import { SPREAD_TEST_WIDTH, setWindowWidth } from "./_appshell-render.js";
+import { VEX_HIDE_EPISODE_MS } from "../../../vex/vex-hide.js";
 
 // Phase 2b: the Settings ShellScreen hosts the wizard step forms, whose
 // module graph (icons, RHF, brand marks) is far beyond this suite's
@@ -1199,14 +1200,84 @@ describe("AppShell", () => {
 
     // Welcome: her column stands there too, the same length as in a chat.
     expect(lastTrack()).toBe("432px");
-    // Session stage: Vex open, then hidden to zero width.
+    // Session stage: shown, then hidden (her plate only), the same track.
     act(() => useUiStore.getState().setActiveSessionId("s-1"));
     expect(lastTrack()).toBe("432px");
     act(() => useUiStore.getState().setVexOpen(false));
+    expect(lastTrack()).toBe("432px");
+    // A table page with her hidden folds the column to its strip: zero, a length.
+    act(() => useUiStore.getState().navigate("portfolio"));
     expect(lastTrack()).toBe("0px");
     act(() => useUiStore.getState().setVexOpen(true));
+    expect(lastTrack()).toBe("432px");
     // Every track of the frame is a length around the centre.
     expect(frame?.style.gridTemplateColumns).toMatch(/^\d+px \d+px minmax\(0, 1fr\)$/);
+  });
+
+  it("in a chat never moves a track for her: hiding Vex folds only her plate, at every size", () => {
+    // docs/design/H3-DESKTOP.md section 3.6, the money rule's first leg: the
+    // chat's track is a function of the window alone. The stored choice
+    // reaches her plate, never the grid, in the columns and in the band.
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    for (const width of [1000, 1023, 1024, 1280, 1366, 1440, 1920, 2560]) {
+      setWindowWidth(width);
+      const view = renderShell();
+      const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+      const shown = {
+        columns: frame?.style.gridTemplateColumns,
+        rows: frame?.style.gridTemplateRows,
+        head: view.container.querySelector<HTMLElement>("[data-vex-area='shell-head']")?.style
+          .gridTemplateColumns,
+      };
+      const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
+      expect(aside()?.querySelector("[data-vex-area='vex-portrait-plate']"), String(width)).not.toBeNull();
+      act(() => useUiStore.getState().setVexOpen(false));
+      expect(
+        {
+          columns: frame?.style.gridTemplateColumns,
+          rows: frame?.style.gridTemplateRows,
+          head: view.container.querySelector<HTMLElement>("[data-vex-area='shell-head']")?.style
+            .gridTemplateColumns,
+        },
+        String(width),
+      ).toEqual(shown);
+      // The column stands, open; only her plate went, the flat token in its place.
+      expect(aside()?.getAttribute("data-vex-vex-open"), String(width)).toBe("true");
+      expect(aside()?.querySelector("[data-vex-area='vex-portrait-plate']"), String(width)).toBeNull();
+      // The stored flag is the same one the toggle always wrote.
+      expect(useUiStore.getState().vexOpenChat).toBe(false);
+      act(() => useUiStore.getState().setVexOpen(true));
+      view.unmount();
+    }
+  });
+
+  it("the header's chip and her hide key still flip the same flag, the column standing", () => {
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    const view = renderShell();
+    const aside = view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']");
+    if (aside === null) throw new Error("no Vex column");
+    // Her hide key: plate gone, column standing, focus kept on the key.
+    const hide = within(aside).getByRole("button", { name: "Hide Vex" });
+    hide.focus();
+    // Her close plays first in the plate; the write lands when it ends.
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(hide);
+      act(() => {
+        vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
+    expect(aside.getAttribute("data-vex-vex-open")).toBe("true");
+    expect(document.activeElement).toBe(within(aside).getByRole("button", { name: "Hide Vex" }));
+    // The chip shows her again.
+    const chip = view.container.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']");
+    expect(chip).not.toBeNull();
+    fireEvent.click(chip as HTMLElement);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+    expect(aside.querySelector("[data-vex-area='vex-portrait-plate']")).not.toBeNull();
   });
 
   it("mounts no sidebar drag handle: the left and Vex widths are fixed", () => {

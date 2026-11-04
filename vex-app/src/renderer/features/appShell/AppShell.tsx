@@ -52,7 +52,7 @@ import {
   type CSSProperties,
   type JSX,
 } from "react";
-import { selectVexOpen, useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { selectVexOpen, useUiStore, vexPageClass, type RuntimeMode } from "../../stores/uiStore.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import {
   LIGHTER_CHAT_MIN,
@@ -205,6 +205,9 @@ function ShellFrame({
   const sidebarNarrowExpanded = useUiStore((s) => s.sidebarNarrowExpanded);
   const setSidebarNarrowExpanded = useUiStore((s) => s.setSidebarNarrowExpanded);
   const vexOpen = useUiStore(selectVexOpen);
+  // The table pages (Portfolio, Board, Settings and the rest): the one place
+  // her column itself folds (docs/design/H3-DESKTOP.md section 1.9).
+  const tablePage = useUiStore((s) => vexPageClass(s) === "pages");
   const setVexOpen = useUiStore((s) => s.setVexOpen);
   const lighterChatShare = useLighterAnalysisStore((s) => s.desk.chatShare);
   const saveLighterDesk = useLighterAnalysisStore((s) => s.saveDesk);
@@ -313,14 +316,16 @@ function ShellFrame({
     : studio ? activeProjectId === null : activeSessionId === null;
   const zen = lighter && lighterZen;
   // THE TRACKS. The agent shell and Studio: H3's solve, chats | Vex | chat,
-  // the Vex column 30% of the frame, the welcome's included. Its width is a
-  // function of the window alone; a Vex the person hid folds it to 0 for now
-  // (the solver's strip), the chat taking the room. The Lighter desk: R3's
-  // solve, its chat share included. A hidden Vex keeps nothing there either:
-  // her column closes to zero width.
+  // the Vex column 30% of the frame, the welcome's included. In a chat its
+  // width is a function of the window alone: hiding Vex hides only her plate
+  // inside the column (docs/design/H3-DESKTOP.md section 3.6, the money
+  // rule), so nothing about her reaches the solve. On a table page hiding her
+  // folds the column to the page's strip (section 1.9), the page taking the
+  // room. The Lighter desk: R3's solve, its chat share included; a hidden
+  // Vex keeps nothing there: her column closes to zero width.
   const h3Cols = lighter
     ? null
-    : computeH3ShellColumns({ viewport, chats: leftAsked, vexStrip: !vexOpen });
+    : computeH3ShellColumns({ viewport, chats: leftAsked, vexStrip: tablePage && !vexOpen });
   const cols: ShellColumns =
     h3Cols === null
       ? computeShellColumns({
@@ -339,9 +344,11 @@ function ShellFrame({
   // (docs/design/H3-DESKTOP.md section 1.10): no track of her own, a row.
   const band = h3Cols?.vexSeat === "band";
   // R3's derived auto-close: the stored choice stays `true`, the column
-  // collapses. H3 has none, so there the column (or the band) is open
-  // exactly when asked.
+  // collapses. H3 has none, so there Vex is shown exactly when asked: her
+  // plate where the column stays, the column itself on a table page.
   const vexEffectiveOpen = !zen && vexOpen && (cols.vex > 0 || band);
+  // Whether her column (or the band) stands at all, whatever she shows in it.
+  const vexColumnStands = h3Cols === null ? vexEffectiveOpen : cols.vex > 0 || band;
   const rail = h3Cols === null ? cols.left <= RAIL_WIDTH : h3Cols.chatsRail;
   // What the left column's content renders: Lighter's drawer state, or the
   // solved column (open, or its rail).
@@ -555,12 +562,17 @@ function ShellFrame({
       className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible"
     >
       {/* Mounted in every session - the sidebar owns its hidden rendering,
-       * so a derived auto-close never remounts the column. `vexEffectiveOpen`
-       * folds the solve into the open flag WITHOUT touching the stored
-       * choice. */}
+       * so a fold never remounts the column. `vexColumnStands` folds the
+       * solve into the open flag WITHOUT touching the stored choice, which
+       * reaches the plate instead. */}
       <VexSidebar
-        open={zen ? zenAssistantOpen : vexEffectiveOpen}
+        open={zen ? zenAssistantOpen : vexColumnStands}
         seat={band ? "band" : "column"}
+        // In H3's frame the stored choice shows or hides her plate; her
+        // column stays wherever the solve keeps it (a chat), and hiding
+        // there keeps focus where it is.
+        plate={h3Cols === null || vexOpen}
+        stays={h3Cols !== null && !tablePage}
         onHide={() => {
           if (zen) setZenAssistantOpen(false);
           else setVexOpen(false);
@@ -631,10 +643,12 @@ function ShellFrame({
         runtimeMode={runtimeMode}
         activeSessionId={activeSessionId}
         empty={runtimeMode === "agent" && activeSessionId === null && !pageOpen}
-        // The token chip toggles the column the frame SOLVED, not the stored
-        // choice: a column the desk's R3 solve closed reads closed, and its
-        // press opens it. The welcome has her column too, so the chip stands
-        // there as well; Zen has no column, so no toggle there.
+        // The token chip shows and hides Vex as the frame SOLVED her: her
+        // plate in a chat (the column stays), the column on a table page, the
+        // desk chat's column on the Lighter desk, where a column its R3
+        // solve closed reads closed. It writes the same stored choice as
+        // ever. The welcome has her column too, so the chip stands there as
+        // well; Zen has no column, so no toggle there.
         vex={zen ? null : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) }}
         columns={headColumns}
         chatsRail={rail}
