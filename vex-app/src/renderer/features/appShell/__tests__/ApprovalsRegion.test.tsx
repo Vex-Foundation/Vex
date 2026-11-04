@@ -117,7 +117,7 @@ describe("ApprovalsRegion", () => {
       data: { ok: true, data: [makeSummary({ id: "appr-only" })] },
     };
     renderRegion();
-    expect(screen.getByText("Approval needed")).toBeTruthy();
+    expect(screen.getByText("Confirm this transfer")).toBeTruthy();
     expect(screen.getByText("wallet:send")).toBeTruthy();
     // data-approval-id reflects the DTO id (used by integration / debug).
     const card = document.querySelector("[data-approval-id='appr-only']");

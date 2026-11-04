@@ -142,7 +142,8 @@ describe("ApprovalCard", () => {
 
   it("renders the plain sentence, the tool, the readable risk tag, the action kind and criticalArgs", () => {
     renderCard(makeSummary(), false);
-    expect(screen.getByText("Approval needed")).toBeTruthy();
+    // The eyebrow names the act by family (H3-DESKTOP.md Appendix A.7).
+    expect(screen.getByText("Confirm this transfer")).toBeTruthy();
     // The title is the plain sentence, built from the present arguments.
     expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("Send 0.5 ETH on Ethereum to 0xabc.");
     expect(screen.getByText("wallet:send")).toBeTruthy();
@@ -819,12 +820,13 @@ describe("ApprovalCard", () => {
 });
 
 /**
- * REAL FUNDS, ON EVERY CARD (docs/design/R3-MINIMAL.md section 8). Every
- * desktop wallet is a real wallet, so no approval card may render without the
- * reversed stamp, the 1.5px ink frame and the hatch band - whatever its risk,
- * its action kind or its origin. The frame lives on `.vex-real-funds`
- * (approval.css, the approval card's own sheet); its values are pinned against
- * the stylesheet.
+ * REAL FUNDS, ON EVERY CARD (docs/design/H3-DESKTOP.md section 4.2). Every
+ * desktop wallet is a real wallet, so no approval card that can move funds
+ * may render without MAINNET and the REAL FUNDS stamp in its eyebrow row -
+ * whatever its risk, its action kind or its origin. H3's card is a square
+ * cell bounded by 1px rules (section 2.4), and its stamp carries the hatch
+ * glyph R3 drew as a band down the card's edge; both are pinned against the
+ * card's own sheet (approval.css).
  */
 const BRIDGE_PREVIEW = {
   toolName: "BridgeExecute",
@@ -999,11 +1001,13 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
       false,
     );
     expect(screen.queryByTestId("real-funds-stamp")).toBeNull();
+    // Nothing is signed, so nothing names a network either.
+    expect(screen.queryByTestId("approval-network")).toBeNull();
     expect(screen.getByText("Call read_wiki_structure on your MCP server deepwiki.")).toBeTruthy();
   });
 
   for (const [label, over] of CASES) {
-    it(`stamps ${label} REAL FUNDS inside the ink frame`, () => {
+    it(`stamps ${label} REAL FUNDS on MAINNET in the card's head`, () => {
       renderCard(makeSummary(over), false);
       const card = document.querySelector('[data-vex-area="approval-card"]');
       expect(card).not.toBeNull();
@@ -1013,29 +1017,124 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
       expect(stamp.textContent).toBe("Real funds");
       expect(stamp.className).toContain("vex-stamp");
       // The stamp sits in the card's own head, beside the title it qualifies.
-      expect(card?.querySelector("header")?.contains(stamp)).toBe(true);
+      const header = card?.querySelector("header");
+      expect(header?.contains(stamp)).toBe(true);
+      // MAINNET stands right before it, a statement in the same row.
+      const network = screen.getByTestId("approval-network");
+      expect(network.textContent).toBe("Mainnet");
+      expect(header?.contains(network)).toBe(true);
+      expect(network.nextElementSibling).toBe(stamp);
     });
   }
 
-  it("draws the target swatch (waiting for approval) beside the eyebrow", () => {
+  it("names the act in the eyebrow, as H3 draws it, with no status swatch beside it", () => {
     renderCard(makeSummary(), false);
     const header = document.querySelector('[data-vex-area="approval-card"] header');
-    expect(header?.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
-    expect(header?.textContent).toContain("Approval needed");
+    const eyebrow = header?.querySelector(".vex-appr__eyebrow");
+    // Sentence case in the source; the eyebrow's style sets the caps.
+    expect(eyebrow?.textContent).toBe("Confirm this transfer");
+    expect(header?.firstElementChild).toBe(eyebrow);
+    expect(header?.textContent).not.toContain("Approval needed");
+    expect(header?.querySelector('.vex-swatch[data-s="awaiting"]')).toBeNull();
     expect(header?.innerHTML).not.toContain("--vex-pin");
   });
 
-  it("frames the card in the 1.5px ink with a 10px hatch band and its inner ink rule, never a hue", () => {
-    const frame = ruleBody(".vex-real-funds");
-    expect(frame).toContain("border: 1.5px solid var(--vex-alias-rule-ink)");
-    expect(frame).toContain("padding-left: 10px");
-    const band = ruleBody(".vex-real-funds::before");
-    expect(band).toContain("width: 10px");
-    expect(band).toContain("border-right: 1px solid var(--vex-alias-rule-ink)");
-    expect(band).toMatch(
-      /repeating-linear-gradient\(\s*45deg,\s*var\(--vex-alias-rule-ink\) 0 1px,\s*transparent 1px 4px\s*\)/,
-    );
+  it("frames the card as an H3 cell: a 1px rule, square, no shadow and no hatch band, never a hue", () => {
+    const frame = ruleBody(".vex-appr");
+    expect(frame).toContain("border: 1px solid var(--vex-alias-rule)");
+    expect(frame).toContain("background: var(--vex-alias-bg-base)");
+    // R3's ink frame and its band are gone; nothing rounds, shadows or blurs.
+    const sheet = APPROVAL_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(sheet).not.toMatch(/\.vex-real-funds|border-radius|box-shadow|backdrop-filter|1\.5px solid/);
     // Ink only: no status hue and no blue anywhere in the treatment.
-    expect(frame + band).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
+    expect(frame).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
+  });
+
+  it("draws the stamp as H3's ink fill, 23 high, caps 12, led by its hatch glyph", () => {
+    const stamp = ruleBody(".vex-appr__top .vex-stamp,\n.vex-appr__top .vex-tag");
+    expect(stamp).toContain("height: 23px");
+    expect(stamp).toContain("font-size: 12px");
+    const glyph = ruleBody(".vex-appr__top .vex-stamp::before");
+    expect(glyph).toContain("width: 12px");
+    expect(glyph).toMatch(
+      /repeating-linear-gradient\(\s*135deg,\s*var\(--vex-alias-label-on-primary\) 0 1\.5px,\s*transparent 1\.5px 4px\s*\)/,
+    );
+    expect(glyph).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
+  });
+
+  it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at 20", () => {
+    for (const selector of [".vex-appr__eyebrow", ".vex-appr__net"]) {
+      const body = ruleBody(selector);
+      expect(body).toContain("font-size: 13px");
+      expect(body).toContain("text-transform: uppercase");
+      expect(body).toContain("letter-spacing: var(--tracking-label)");
+      expect(body).not.toContain("--font-mono");
+    }
+    expect(ruleBody(".vex-appr__title")).toContain("font-size: 20px");
+    expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 15px");
+  });
+});
+
+describe("ApprovalCard, the H3 head", () => {
+  it("reads the eyebrow, the sentence and the consequence line in that order", () => {
+    renderCard(makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }), false);
+    const head = document.querySelector<HTMLElement>(".vex-appr__head");
+    expect(head).not.toBeNull();
+    const eyebrow = head?.querySelector(".vex-appr__eyebrow");
+    const title = screen.getByRole("heading", { level: 3 });
+    const consequence = screen.getByTestId("approval-consequence");
+    expect(eyebrow?.textContent).toBe("Confirm this bridge");
+    expect(title.textContent).toBe("Bridge 1 USDC from Base to Arbitrum.");
+    expect(consequence.textContent).toBe("This sends real funds on mainnet. It cannot be undone.");
+    expect(head?.contains(title)).toBe(true);
+    expect(head?.contains(consequence)).toBe(true);
+    // Document order: eyebrow row, then the sentence, then the consequence.
+    expect(eyebrow?.compareDocumentPosition(title)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(title.compareDocumentPosition(consequence)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("says a swap places a real order that cannot be undone", () => {
+    renderCard(
+      makeSummary({
+        toolName: "execute_tool",
+        preview: {
+          toolName: "swap.execute",
+          namespace: "kyberswap",
+          criticalArgs: { toolId: "kyberswap.swap.execute", chain: "base", tokenIn: "USDC", tokenOut: "ETH", amountIn: "200" },
+        },
+      }),
+      false,
+    );
+    expect(screen.getByText("Confirm this swap")).toBeTruthy();
+    expect(screen.getByTestId("approval-consequence").textContent).toBe(
+      "This places a real order on mainnet. It cannot be undone.",
+    );
+  });
+
+  it("shows no consequence line where the family's line would not be true", () => {
+    renderCard(
+      makeSummary({
+        toolName: "WalletEvmTransactionConfirm",
+        preview: { toolName: "WalletEvmTransactionConfirm", criticalArgs: { chain: "base", recipient: "0xabc" } },
+      }),
+      false,
+    );
+    expect(screen.getByText("Confirm this action")).toBeTruthy();
+    expect(screen.queryByTestId("approval-consequence")).toBeNull();
+    // The card still says what it does: the risk sentence stays.
+    expect(screen.getByText("High risk:")).toBeTruthy();
+  });
+
+  it("keeps the expiry and the risk tag in the eyebrow row, read from the approval", () => {
+    renderCard(makeSummary({ expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }), false);
+    const header = document.querySelector('[data-vex-area="approval-card"] header');
+    expect(header?.querySelector(".vex-appr__expiry")?.textContent).toMatch(/^Expires (at )?.+ UTC$/);
+    expect(header?.contains(screen.getByTestId("risk-chip"))).toBe(true);
+  });
+
+  it("puts no em or en dash in the head", () => {
+    renderCard(makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }), false);
+    const head = document.querySelector(".vex-appr__head")?.textContent ?? "";
+    expect(head).not.toMatch(new RegExp(`${String.fromCharCode(0x2014)}|${String.fromCharCode(0x2013)}`));
   });
 });

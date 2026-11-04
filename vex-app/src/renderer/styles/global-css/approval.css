@@ -1,105 +1,159 @@
-/* The approval card's sheet (docs/design/R3-MINIMAL.md section 8): the card
- * inline in the session and on the Needs you page, its folded row, and the
- * Needs you page itself.
+/* The approval card's sheet: the card inline in the session and on the Needs
+ * you page (docs/design/H3-DESKTOP.md sections 1.7 and 4.3), its folded row,
+ * and the Needs you page itself (R3-MINIMAL.md section 8.5 until its own
+ * restyle).
  *
- * Every desktop wallet is a real wallet, so EVERY approval card wears the
- * REAL FUNDS treatment: the 1.5px ink frame, the 10px hatch band down the
- * leading edge with a 1px ink rule on its inner edge, and the reversed stamp
- * in its top row. Ink, never red and never blue. No veil and no scrim: the
- * card is the one framed thing on screen (section 12). Radius 0, no shadow,
- * tokens only. */
-
-.vex-real-funds {
-  position: relative;
-  padding-left: 10px;
-  background: var(--vex-alias-bg-base);
-  border: 1.5px solid var(--vex-alias-rule-ink);
-}
-.vex-real-funds::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 10px;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--vex-alias-rule-ink) 0 1px,
-    transparent 1px 4px
-  );
-  border-right: 1px solid var(--vex-alias-rule-ink);
-  pointer-events: none;
-}
+ * THE H3 CARD IS A SQUARE CELL OF CELLS. Its box is bounded by 1px rules, and
+ * inside it every cell under the head draws its own 1px top rule edge to edge
+ * while its text sits 24 in from the card's edges (section 2.4), as H3 draws
+ * the swap card. Radius 0, no shadow, no blur, tokens only.
+ *
+ * REAL FUNDS. Every desktop wallet is a real wallet, so every card that can
+ * move funds carries MAINNET and the REAL FUNDS stamp in its eyebrow row
+ * (section 4.2): the stamp is an ink fill with ground-coloured caps and a
+ * hatch glyph, about 105 x 23 (section 2.2). Ink, never red and never blue.
+ * R3's 1.5px ink frame and 10px hatch band are gone: in H3 the stamp carries
+ * the emphasis and the card is a plain ruled cell like every other. No veil
+ * and no scrim.
+ *
+ * The same classes dress the Vex Inference funding card
+ * (`vexCloud/funding/FundingApprovalCard.tsx`) and are narrowed by the
+ * Lighter desk's Review order slot (lighter-ticket.css), so every rule here is
+ * written to read whole without the H3 card's own wrappers. */
 
 /* ── The card ──────────────────────────────────────────────────────────── */
 
 .vex-appr {
+  position: relative;
   margin: 12px 0 0;
   font-family: var(--font-sans);
   font-size: 14px;
   color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-bg-base);
+  border: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__in {
-  padding: 16px 20px 18px;
+  padding: 0;
 }
 
-/* 1. Top row: the target swatch, "Approval needed", the expiry at the right,
- * then the REAL FUNDS stamp and the risk tag. */
+/* 1. THE HEAD: one cell, the eyebrow row, the sentence, the consequence line
+ * and who asked. Measured at 1440 (section 1.7): the eyebrow row's 23px line
+ * (the stamp's height) starts 10 under the card's top rule, the sentence 9
+ * under it, the consequence 4 under that, and the first rule 14 under the
+ * last line. */
+.vex-appr__head {
+  padding: 10px 0 14px;
+}
 .vex-appr__top {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px 12px;
+  min-height: 23px;
+  padding: 0 24px;
+}
+/* A card drawn without the head wrapper (the funding card) still starts its
+ * eyebrow row 10 under the top rule and ends its head 14 over the first. */
+.vex-appr__in > .vex-appr__top {
+  padding-top: 10px;
+}
+.vex-appr__in > .vex-appr__meta {
+  padding-bottom: 14px;
 }
 .vex-appr__pin {
   display: inline-flex;
   flex: none;
   color: var(--vex-alias-label-primary);
 }
+/* The act, "Confirm this swap": sans 13 caps, muted, tracked (section 2.3). */
 .vex-appr__eyebrow {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__sp {
   flex: 1;
 }
 .vex-appr__expiry {
-  margin-right: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__expiry .vex-num {
+  font-size: 12.5px;
+}
+/* MAINNET: a statement in ink caps beside the stamp, never a menu. */
+.vex-appr__net {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+/* The stamp and the risk tag in the card's row: 23 high, caps 12 (section
+ * 2.2). The stamp leads with its hatch glyph, three ground strokes on the ink
+ * fill, drawn rather than shipped as art. */
+.vex-appr__top .vex-stamp,
+.vex-appr__top .vex-tag {
+  height: 23px;
   font-size: 12px;
+  font-weight: 400;
+}
+.vex-appr__top .vex-stamp {
+  gap: 6px;
+  padding: 0 8px 0 6px;
+}
+.vex-appr__top .vex-stamp::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--vex-alias-label-on-primary) 0 1.5px,
+    transparent 1.5px 4px
+  );
 }
 
-/* 2. The plain sentence. */
+/* The plain sentence: sans 20, 400 (section 2.3). */
 .vex-appr__title {
-  margin: 0 0 8px;
-  font-size: 21px;
-  font-weight: 500;
-  line-height: 1.3;
-  letter-spacing: -0.005em;
+  margin: 9px 0 0;
+  padding: 0 24px;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 26px;
   color: var(--vex-alias-label-primary);
 }
 
-/* Who asked, under the sentence. */
+/* The consequence line: sans 15, ink 2. */
+.vex-appr__consequence {
+  margin: 4px 0 0;
+  padding: 0 24px;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* Who asked, last in the head. */
 .vex-appr__meta {
-  margin: -2px 0 12px;
-  font-size: 12.5px;
+  margin: 6px 0 0;
+  padding: 0 24px;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__meta > span {
   color: var(--vex-alias-label-secondary);
 }
 
-/* 4. The money lines and the fact rows: a definition list in two columns,
+/* 2. The money lines and the fact rows: a definition list in two columns,
  * each row ruled quiet. */
 .vex-appr__dl {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
-  margin: 0;
+  margin: 0 24px;
   border-top: 1px solid var(--vex-alias-rule-quiet);
 }
 .vex-appr__dl dt,
@@ -138,40 +192,42 @@
   word-break: break-all;
 }
 
-/* 5. The risk sentences: each with a 2px ink rule at its left and a 600 lead. */
+/* 3. The risk sentences, then the agent's reason: each a ruled cell, the
+ * text 24 in. A risk sentence leads with its 600 ink lead ("High risk:"); the
+ * reason is plain ink 2. H3 draws neither, and both stay: they explain facts
+ * the approval carries. The bundled sans ships no italic, so the reason is
+ * set upright rather than slanted by the browser. */
 .vex-appr__why {
   display: grid;
   gap: 6px;
-  margin: 12px 0 0;
+  margin: 0;
+  padding: 12px 24px;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__why p {
   margin: 0;
-  padding-left: 12px;
   font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-secondary);
-  border-left: 2px solid var(--vex-alias-rule-ink);
 }
 .vex-appr__why b {
   font-weight: 600;
   color: var(--vex-alias-label-primary);
 }
 
-/* The agent's reason, in the reasoned register: italic, a rule at its left. */
 .vex-appr__reason {
-  margin: 12px 0 0;
-  padding-left: 12px;
+  margin: 0;
+  padding: 12px 24px;
   font-size: 14px;
-  font-style: italic;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
-  border-left: 1px solid var(--vex-alias-rule);
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
-/* 6. "All signed fields": 38 high, blue 13.5 / 500, a chevron that turns
+/* 4. "All signed fields": 38 high, blue 13.5 / 500, a chevron that turns
  * when the well is open. */
 .vex-appr__more {
-  margin-top: 8px;
+  margin: 8px 24px 0;
 }
 .vex-appr__more-key {
   display: flex;
@@ -248,9 +304,15 @@
   color: var(--vex-alias-label-primary);
   border: 1px solid var(--vex-alias-rule-ink);
 }
+/* In the card the alert sits in the cells' 24 inset. */
+.vex-appr__in > .vex-appr__error {
+  margin: 12px 24px;
+}
 
-/* 7. The footer: the optional Reason, Reject, the action button. Sticky at
- * short heights against the card's scrolling ancestor. */
+/* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
+ * like the rest. Sticky at short heights against the card's scrolling
+ * ancestor. H3 moves Reject and the approve key into the bottom row's chat
+ * cells (section 1.8); until that grid exists the footer stays in the card. */
 .vex-appr__foot {
   position: sticky;
   bottom: 0;
@@ -259,10 +321,10 @@
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 10px;
-  padding: 12px 0 2px;
+  margin: 0;
+  padding: 12px 24px;
   background: var(--vex-alias-bg-base);
-  border-top: 1px solid var(--vex-alias-rule-quiet);
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
 /* ── The folded row (Needs you page, section 8.5) ──────────────────────── */
