@@ -1,0 +1,29 @@
+/* KIMM (docs/design/H3-DESKTOP.md sections 1.5, 1.6, 3 and 3.6): her
+ * portrait in the Vex key and her section over Vex's column. Radius 0, no
+ * shadow, no blur, tokens only (no colour is spelled here: the guard in
+ * `shell-design-guard.test.ts` reads every sheet but tokens.css).
+ *
+ *   .vex-kimm-key                 her portrait cell (KimmPortraitKey) */
+
+/* ---- her portrait in the Vex key (section 1.6) ----
+ * The box is the key's portrait cell; the sheet inside is scaled and moved
+ * so her mood's cell fills it (sizes from the component, as CSSOM). Open,
+ * the fold glyph stands on the raised fill: she has stepped down into her
+ * section. */
+.vex-kimm-key {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--vex-alias-label-primary);
+}
+.vex-kimm-key[data-kimm-key="open"] {
+  background: var(--vex-alias-bg-overlay);
+}
+.vex-kimm-key__sheet {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+}

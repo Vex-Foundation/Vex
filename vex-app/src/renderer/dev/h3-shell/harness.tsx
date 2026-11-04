@@ -43,6 +43,10 @@
  *   ?vex=open|closed         the Vex column's stored choice for the state's
  *                            page class (each state's own default otherwise)
  *   ?os=mac|win|linux        the window chrome (mac)
+ *   ?kimm=standins|shipped   Kimm's art: the dev stand-ins cropped from the
+ *                            mockup (`kimm-standin-art.ts`, the default), or
+ *                            the art as the app ships it, every piece missing
+ *                            until her files arrive
  * There is no theme switch: the app is dark only (chronos), the room every
  * H3 plate is drawn in.
  * The frame carries `data-vex-h3-ready` once the state's own element is on
@@ -60,6 +64,8 @@ import { MotionConfig } from "motion/react";
 import { createQueryClient } from "../../app/queryClient.js";
 import { PxSprite } from "../../components/icons/px/PxSprite.js";
 import { ErrorBoundary } from "../../components/ui/error-boundary.js";
+import { KIMM_SHIPPED_ART } from "../../components/vex/kimm/kimm-assets.js";
+import { KimmArtProvider } from "../../components/vex/kimm/kimm-art-context.js";
 import { ToastHost } from "../../components/ui/toast-host.js";
 import { AppShell } from "../../features/appShell/AppShell.js";
 import {
@@ -76,6 +82,7 @@ import {
   STANDIN_LIGHT_SIZE,
   STANDIN_TRAFFIC_LIGHTS,
 } from "./chrome-standin.js";
+import { KIMM_STANDIN_ART } from "./kimm-standin-art.js";
 import { H3_HARNESS_MARK } from "./mark.js";
 import { HARNESS_STATES, stateById } from "./states/index.js";
 import type { HarnessState } from "./states/types.js";
@@ -92,6 +99,8 @@ const THEME: VexTheme = "chronos";
 const OS: WindowOs = pick<WindowOs>("os", ["mac", "win", "linux"], "mac");
 const VEX = params.get("vex");
 const STATE = stateById(params.get("state"));
+const KIMM_ART =
+  pick("kimm", ["standins", "shipped"], "standins") === "shipped" ? KIMM_SHIPPED_ART : KIMM_STANDIN_ART;
 
 /* Stamped before the first render, outside any effect: the shell's sheets
  * read both attributes from the root, and a first frame painted without them
@@ -227,7 +236,11 @@ function Harness({
     >
       <MotionConfig reducedMotion="user">
         <ErrorBoundary surface="app" extent="screen" title="The harness could not render this state">
-          <AppShell />
+          {/* Her art: the stand-ins by default, handed to every Kimm surface
+            * the real shell mounts (`kimm-art-context.tsx`). */}
+          <KimmArtProvider art={KIMM_ART}>
+            <AppShell />
+          </KimmArtProvider>
         </ErrorBoundary>
         <ToastHost />
       </MotionConfig>

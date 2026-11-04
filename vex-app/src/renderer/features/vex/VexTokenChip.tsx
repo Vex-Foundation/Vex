@@ -33,6 +33,12 @@
  * the new chord. H3 moves the listener to the shell, so it holds from
  * anywhere (docs/design/H3-DESKTOP.md section 4.4).
  *
+ * HER PORTRAIT stands where the token stood (docs/design/H3-DESKTOP.md
+ * section 1.6; `KimmPortraitKey`, plan row S4-03): her mood's still while her
+ * section is closed, the fold glyph while it is open, as the press left it.
+ * Until her art arrives the still is missing and the cell shows the token, as
+ * before. The Vex key that replaces this chip (S3-03) mounts the same cell.
+ *
  * THE ANNOUNCER of the state word (`VexStateAnnouncer`) sits beside the
  * button, never inside it, so the button's name stays "Vex, {word}".
  */
@@ -43,8 +49,10 @@ import { StateWord } from "../../components/ui/state-word.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { VxToken } from "../../components/ui/vx-token.js";
+import { KimmPortraitKey } from "../../components/vex/kimm/KimmPortraitKey.js";
 import { studioPlatform, type StudioPlatform } from "../appShell/studio/keybindings-labels.js";
 import { formatElapsed } from "../appShell/TurnIsland/ElapsedCounter.js";
+import { kimmMoodOf } from "./kimm-mood.js";
 import { useVexPresence } from "./useVexPresence.js";
 import { keepVex, requestVexHide, useVexClosing } from "./vex-hide.js";
 import { VEX_STATE_FILL } from "./vex-state.js";
@@ -141,7 +149,12 @@ export function VexTokenChip({
           aria-keyshortcuts={vexToggleAriaShortcut(platform)}
           onClick={press}
         >
-          <VxToken size={22} />
+          <KimmPortraitKey
+            mood={kimmMoodOf(presence.state)}
+            open={shown}
+            size={22}
+            fallback={<VxToken size={22} />}
+          />
           {/* The toggle's subject, seen and spoken: the control is the Vex
            * chat, the words after the rule are its state. */}
           <span className="vex-tb-chip__subject">Vex chat</span>
