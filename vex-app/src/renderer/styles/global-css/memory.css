@@ -16,28 +16,38 @@
  *   .vex-mem-list / -row       hairline rows: title, tags and summary, date
  *   .vex-mem-tag               20 high, 12, a quiet rule frame
  *   .vex-article               the How Vex works column (680) and its table
- *                              of contents */
+ *                              of contents
+ *
+ * IN H3 (docs/design/H3-DESKTOP.md sections 1.9, 2.3, 2.4 and 4.9). H3 draws
+ * no plate for these pages; they follow the page frame with H3's cells: the
+ * title bar names the page, so the page draws no head; the reading column
+ * starts 24 in from the frame's left edge (the frame's body, not centred);
+ * section heads are the 13 caps label (600); the advisory card and each
+ * register list are framed cells with a rule between rows; filter keys and
+ * tags are caps cells; "How memory works" and the contents are keys in ink,
+ * the section in view marked by a 2px ink rule at its left, never the blue. */
 
 .vex-mem {
   width: 100%;
   max-width: 760px;
-  margin-inline: auto;
+  margin-inline: 0;
   font-family: var(--font-sans);
   color: var(--vex-alias-label-primary);
 }
 
 .vex-mem-lead {
   max-width: 640px;
-  margin: 0 0 22px;
-  font-size: 14.5px;
+  margin: 0 0 24px;
+  font-size: 15px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
 
 .vex-mem-card {
   box-sizing: border-box;
-  margin: 0 0 22px;
-  padding: 14px 16px;
+  max-width: 760px;
+  margin: 0 0 24px;
+  padding: 18px 20px;
   border: 1px solid var(--vex-alias-rule);
   background: var(--vex-alias-field);
 }
@@ -46,14 +56,16 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.4;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
 .vex-mem-card__text {
-  margin: 6px 0 0;
-  font-size: 13.5px;
+  margin: 8px 0 0;
+  font-size: 15px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
@@ -61,18 +73,21 @@
 /* "How memory works": the longer explainer, one click away so the register
  * starts under the card. */
 .vex-mem-more {
-  margin: 0 0 24px;
+  max-width: 760px;
+  margin: 0 0 28px;
   border-top: 1px solid var(--vex-alias-rule);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  border-bottom: 1px solid var(--vex-alias-rule);
 }
 .vex-mem-more > summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  height: 44px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
   cursor: pointer;
   list-style: none;
 }
@@ -99,34 +114,36 @@
 }
 
 .vex-mem-sec {
-  margin: 0 0 24px;
+  margin: 0 0 28px;
 }
 .vex-mem-sec__head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin: 0 0 6px;
+  margin: 0 0 8px;
 }
 .vex-mem-sec__title {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
 .vex-mem-sec__count {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-mem-sec__lead {
-  margin: 0 0 10px;
-  font-size: 13.5px;
+  margin: 0 0 12px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
 .vex-mem-sec__facts {
-  margin: 0 0 10px;
-  font-size: 13.5px;
+  margin: 0 0 12px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
 }
@@ -188,19 +205,24 @@
 .vex-mem-seg > button {
   display: inline-flex;
   align-items: center;
-  height: 34px;
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 14px;
   font-family: var(--font-sans);
   font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
   color: var(--vex-alias-label-secondary);
+}
+.vex-mem-seg > button + button {
+  border-left: 1px solid var(--vex-alias-rule);
 }
 .vex-mem-seg > button:hover {
   color: var(--vex-alias-label-primary);
 }
 .vex-mem-seg > button[aria-pressed="true"] {
   background: var(--vex-alias-interactive-active);
-  font-weight: 500;
+  font-weight: 400;
   color: var(--vex-alias-accent-primary);
 }
 .vex-mem-seg > button:focus-visible {
@@ -208,23 +230,26 @@
   outline-offset: 2px;
 }
 
-/* Hairline rows: no card boxes, no gaps. */
+/* A register list: one framed cell, a rule between rows. */
 .vex-mem-list {
   margin: 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--vex-alias-rule);
+  border: 1px solid var(--vex-alias-rule);
 }
 .vex-mem-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3px 16px;
-  padding: 10px 0 11px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  gap: 4px 16px;
+  padding: 12px 18px 13px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-mem-row:last-child {
+  border-bottom: 0;
 }
 .vex-mem-row__t {
   min-width: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
 }
@@ -235,7 +260,7 @@
   align-items: center;
   gap: 6px 12px;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-mem-row__m > span:not(.vex-mem-tag) {
@@ -261,19 +286,25 @@
   display: inline-flex;
   align-items: center;
 }
+/* A tag inside a row: H3's row tag, 11 caps tracked on a rule frame; a
+ * figure tag keeps the mono face and its own case. */
 .vex-mem-tag {
   display: inline-flex;
   align-items: center;
   height: 20px;
   padding: 0 7px;
-  border: 1px solid var(--vex-alias-rule-quiet);
-  font-size: 12px;
+  border: 1px solid var(--vex-alias-rule);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
   color: var(--vex-alias-label-secondary);
 }
 .vex-mem-tag[data-figure] {
   font-family: var(--font-mono);
+  font-size: 12px;
   letter-spacing: -0.01em;
+  text-transform: none;
   font-variant-numeric: tabular-nums;
 }
 

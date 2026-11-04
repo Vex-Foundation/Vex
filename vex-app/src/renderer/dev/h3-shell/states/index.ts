@@ -13,9 +13,10 @@ import { activity } from "./activity.js";
 import { approvalKindsState } from "./approval-kinds.js";
 import { filled } from "./filled.js";
 import { markets } from "./markets.js";
-import { settings } from "./settings.js";
+import { memory } from "./memory.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
+import { settings } from "./settings.js";
 import { swapWaiting } from "./swap-waiting.js";
 import { thinking } from "./thinking.js";
 import { thought } from "./thought.js";
@@ -41,6 +42,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   activity,
   markets,
   settings,
+  memory,
 ];
 
 export const DEFAULT_STATE = shell;
