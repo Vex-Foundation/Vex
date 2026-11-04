@@ -447,23 +447,35 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   background: var(--ls-mark);
   color: inherit;
 }
+/* The row's right end (section 1.4): its time, or H3's tag while a mission
+ * has a state. The time is the caption's size, 12, muted (#8F9192 measured),
+ * in the sans with tabular figures, as H3 sets the times in rows (section
+ * 2.3), never in caps ("Oct 28"). */
 .vex-ls-row__time {
   flex: none;
-  font-size: 11.5px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
+/* The tag: the status square, about 6px, 7 before the word; the word in
+ * caps, tracked, in ink (section 2.2). Its size is 12, from its cap height
+ * (9.6 image px in `h3-merged__welcome-open-1440`, 8.6 CSS px), where the
+ * type table says 13; RUNNING spans 55px there, narrower than 12 draws with
+ * the 0.08em label tracking (61), so H3's tracking reads tighter than the
+ * sheet's value (section 2.3 leaves it open). The square's colour is the
+ * status mark's class on the swatch (`session-row-state.ts`), so no rule
+ * here colours it. */
 .vex-ls-row__state {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
-}
-.vex-ls-row__state .vex-swatch {
-  color: var(--vex-alias-accent-primary);
+  color: var(--vex-alias-label-primary);
 }
 /* Pin and Remove (24 x 24) take the time's place on hover and focus. */
 .vex-ls-row__actions {

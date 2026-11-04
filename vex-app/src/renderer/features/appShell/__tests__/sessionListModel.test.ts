@@ -3,6 +3,7 @@ import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
   filterSessionsByTitle,
   filterSessionsByWorkspace,
+  formatChatRowTime,
   formatSessionTime,
   groupSessions,
 } from "../sessionListModel.js";
@@ -31,6 +32,34 @@ describe("groupSessions", () => {
 
   it("says Earlier, never R3's Older", () => {
     expect(groupSessions([]).map((g) => g.title)).not.toContain("Older");
+  });
+});
+
+describe("formatChatRowTime", () => {
+  // docs/design/H3-DESKTOP.md section 1.4: "12:41", "09:12", "Oct 28".
+  const localAt = (daysAgo: number, hour: number, minute: number): string => {
+    const now = new Date();
+    return new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - daysAgo,
+      hour,
+      minute,
+    ).toISOString();
+  };
+
+  it("writes today's and yesterday's start on the 24-hour clock, zero-padded", () => {
+    expect(formatChatRowTime(localAt(0, 9, 5))).toBe("09:05");
+    expect(formatChatRowTime(localAt(0, 14, 30))).toBe("14:30");
+    expect(formatChatRowTime(localAt(1, 18, 5))).toBe("18:05");
+  });
+
+  it("writes an earlier start as the English short date", () => {
+    expect(formatChatRowTime("2020-06-15T12:00:00Z")).toMatch(/^Jun \d{1,2}$/);
+  });
+
+  it("returns an empty string for an invalid date", () => {
+    expect(formatChatRowTime("not-a-date")).toBe("");
   });
 });
 

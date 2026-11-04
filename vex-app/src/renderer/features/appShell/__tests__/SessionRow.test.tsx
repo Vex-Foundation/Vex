@@ -202,25 +202,37 @@ describe("inline rename (double-click)", () => {
   });
 });
 
-describe("a SIDEBAR row (section 4)", () => {
-  it("is the name, then the start time in mono at the right", () => {
+describe("a SIDEBAR row (H3-DESKTOP.md section 1.4)", () => {
+  it("is the name, then the start time at the right, as H3 writes it", () => {
     renderRow(session(), false, "sidebar");
     const row = document.querySelector("[data-vex-ls-item='row']");
     expect(row?.querySelector(".vex-ls-row__t")?.textContent).toBe("Research TAO");
     const time = row?.querySelector(".vex-ls-row__time");
-    expect(time?.textContent).not.toBe("");
-    expect(time?.classList.contains("vex-num")).toBe(true);
+    // The 24-hour clock today and yesterday, "Oct 28" earlier; the sans with
+    // tabular figures, not the mono.
+    expect(time?.textContent).toMatch(/^(?:\d{2}:\d{2}|[A-Z][a-z]{2} \d{1,2})$/);
+    expect(time?.classList.contains("vex-num")).toBe(false);
     expect(row?.querySelector(".vex-ls-row__state")).toBeNull();
     // No ordinal, no counter: sessions go by name.
     expect(row?.textContent).not.toMatch(/\(\d{2}\)/);
   });
 
-  it("trades the time for a fill and its word while a mission has a state", () => {
+  it("trades the time for H3's tag while a mission runs: the grey square and the word", () => {
     renderRow(session({ mode: "mission", missionStatus: "running" }), false, "sidebar");
     const state = document.querySelector(".vex-ls-row__state");
     expect(state?.textContent).toBe("Running");
-    expect(state?.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
+    const square = state?.querySelector(".vex-swatch");
+    expect(square?.getAttribute("data-s")).toBe("done");
+    expect(square?.classList.contains("text-running-mark")).toBe(true);
+    expect((square as HTMLElement | null)?.style.width).toBe("6px");
     expect(document.querySelector(".vex-ls-row__time")).toBeNull();
+  });
+
+  it("gives Waiting the ink square", () => {
+    renderRow(session({ mode: "mission", missionStatus: "paused_approval" }), false, "sidebar");
+    const state = document.querySelector(".vex-ls-row__state");
+    expect(state?.textContent).toBe("Waiting");
+    expect(state?.querySelector(".vex-swatch")?.classList.contains("text-ink-primary")).toBe(true);
   });
 
   it("marks the open session with the selection and aria-current, without a swatch", () => {
@@ -262,8 +274,10 @@ describe("a SIDEBAR row (section 4)", () => {
 
 describe("the row's state words", () => {
   it("speaks Running, Waiting, Sleeping, Paused and Error, each with its fill", () => {
-    const of = (missionStatus: SessionListItem["missionStatus"]) =>
-      sessionRowState(session({ mode: "mission", missionStatus }));
+    const of = (missionStatus: SessionListItem["missionStatus"]) => {
+      const state = sessionRowState(session({ mode: "mission", missionStatus }));
+      return state === null ? null : { word: state.word, fill: state.fill };
+    };
     expect(of("running")).toEqual({ word: "Running", fill: "done" });
     expect(of("paused_approval")).toEqual({ word: "Waiting", fill: "awaiting" });
     expect(of("paused_plan_acceptance")).toEqual({ word: "Waiting", fill: "awaiting" });
@@ -271,6 +285,20 @@ describe("the row's state words", () => {
     expect(of("paused_wake")).toEqual({ word: "Sleeping", fill: "sleeping" });
     expect(of("paused_user")).toEqual({ word: "Paused", fill: "sleeping" });
     expect(of("paused_error")).toEqual({ word: "Error", fill: "error" });
+  });
+
+  it("gives each word H3's square: grey for Running, ink for Waiting, red for Error", () => {
+    // docs/design/H3-DESKTOP.md section 2.2 and Appendix A.2; Paused and
+    // Sleeping, which H3 does not draw, take the grey outline and dotted line.
+    const square = (missionStatus: SessionListItem["missionStatus"]) =>
+      sessionRowState(session({ mode: "mission", missionStatus }))?.square;
+    expect(square("running")).toEqual({ fill: "done", className: "text-running-mark" });
+    for (const waiting of ["paused_approval", "paused_plan_acceptance", "paused_user_form"] as const) {
+      expect(square(waiting)).toEqual({ fill: "done", className: "text-ink-primary" });
+    }
+    expect(square("paused_user")).toEqual({ fill: "idle", className: "text-running-mark" });
+    expect(square("paused_wake")).toEqual({ fill: "sleeping", className: "text-running-mark" });
+    expect(square("paused_error")).toEqual({ fill: "done", className: "text-danger-mark" });
   });
 
   it("says nothing for agent sessions and finished missions (the time shows)", () => {

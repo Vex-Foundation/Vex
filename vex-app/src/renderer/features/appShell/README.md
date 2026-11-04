@@ -65,8 +65,10 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 - The CHATS heading, then the chats by name in Pinned, Today, Yesterday, Earlier
   (`sessionListModel.ts`; H3's "Earlier" where R3 said "Older"), the one
   scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
-  (`sidebar` variant): 36 high, ellipsis name at 15, then the time or a swatch and word
-  from the mission run (`session-row-state.ts`). Hover or focus swaps the time
+  (`sidebar` variant): 36 high, ellipsis name at 15, then the time (24-hour today
+  and yesterday, `formatChatRowTime`) or H3's tag, a status square and the word in
+  caps, from the mission run (`session-row-state.ts`: Running grey, Waiting ink,
+  Paused and Sleeping grey outlines, Error red). Hover or focus swaps the time
   for Pin and Remove; double-click renames via `vex.sessions.rename`
   (`sessionTitleSchema`-bounded; an unknown id answers ok(null)). The Sessions
   page reuses the row as `register`.

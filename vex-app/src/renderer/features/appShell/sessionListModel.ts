@@ -214,6 +214,25 @@ export function formatSessionTime(iso: string): string {
   }
 }
 
+/**
+ * The time a chat row in the chats column shows at its right (docs/design/
+ * H3-DESKTOP.md section 1.4): the start time on the 24-hour clock, as H3
+ * draws it ("12:41", "09:12"), for a chat from today or yesterday, and the
+ * English short date ("Oct 28") for anything earlier, whatever the OS locale.
+ * The hours and minutes come from the local clock, so the row and its group
+ * (local days, `groupSessions`) agree. An unreadable stamp shows nothing.
+ * The Sessions page and the Vex column keep `formatSessionTime`.
+ */
+export function formatChatRowTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  if (getSessionBucket(iso) === "earlier") {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function getSessionBucket(iso: string): "today" | "yesterday" | "earlier" {
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return "earlier";
