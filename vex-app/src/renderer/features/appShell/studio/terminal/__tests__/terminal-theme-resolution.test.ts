@@ -209,9 +209,9 @@ describe("readTerminalTheme against the real stylesheet", () => {
     expect(claudeCodeClassifies(background)).toBe(expected);
     // The glyph colour under a block cursor reuses the background token.
     expect(resolved["cursorAccent"]).toBe(background);
-    expect(typed.foreground).toBe("#f3f4f7");
-    expect(typed.cursor).toBe("#a3abff");
-    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe("rgba(163,171,255,0.3)");
+    expect(typed.foreground).toBe("#f3f5f9");
+    expect(typed.cursor).toBe("#f3f5f9");
+    expect(typed.selectionBackground?.replace(/\s/g, "")).toBe("rgba(243,245,249,0.24)");
     expect(typed.selectionForeground).toBeUndefined();
   });
 
@@ -268,8 +268,8 @@ describe("readTerminalTheme against the real stylesheet", () => {
       // A stray attribute write still publishes, and still answers the one
       // dark surface.
       for (const [theme, background, foreground] of [
-        ["celeris", "#221a17ff", "#f3f4f7ff"],
-        ["chronos", "#221a17ff", "#f3f4f7ff"],
+        ["celeris", "#010203ff", "#f3f5f9ff"],
+        ["chronos", "#010203ff", "#f3f5f9ff"],
       ] as const) {
         setTheme(theme);
         // MutationObserver publication happens at the microtask checkpoint.

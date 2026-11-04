@@ -44,6 +44,9 @@ import type { WorkspaceRefusalReason } from "../workspace/types.js";
  */
 export const SHELL_PICKER_LABEL = "Shell for the next terminal";
 
+/** The picker cell's visible word before the shell's name: SHELL zsh. */
+export const SHELL_PICKER_WORD = "Shell";
+
 /* ------------------------------------------------------------------ *
  * Tab identity and state
  * ------------------------------------------------------------------ */

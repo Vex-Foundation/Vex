@@ -1,9 +1,10 @@
 /**
- * The PROJECTS list inside the Studio body of the left sidebar
- * (docs/design/R3-MINIMAL.md section 4): the "Projects" group head (12 / 500
- * muted), the rows, their action menu, and the four states the list itself
- * can be in, each said in the sidebar's sentence register (13 / 1.5 muted, a
- * failure in ink with a blue Retry).
+ * The PROJECTS list inside the Studio sidebar, in H3 cells (our approved
+ * Studio plate, docs/design/H3-DESKTOP.md section 4.9): PROJECTS as a 44 head
+ * (13, 600, caps, ink, set 24 in, the chats column's CHATS register), the
+ * rows on the 36 pitch, "Show all N" under the first three, their action
+ * menu, and the four states the list itself can be in, each said in the
+ * sidebar's sentence register (a failure in ink with Retry underlined).
  *
  * Split out of `StudioSidebar.tsx` because it owns a different thing: the rail
  * owns the column (collapse choreography, the sections, the footer), this owns
@@ -25,7 +26,7 @@
 
 import { useCallback, useState, type JSX } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
-import { LineMore, LineWarning } from "../../../../components/icons/line/index.js";
+import { LineMore } from "../../../../components/icons/line/index.js";
 import { Menu, type MenuEntry } from "../../../../components/ui/menu.js";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { ListPlaceholder } from "../../SessionRows/ListPlaceholder.js";
@@ -70,20 +71,21 @@ export function runProjectRowAction(projectId: string, itemId: string): void {
 /**
  * Rows shown before the list offers the rest.
  *
- * The rail's height is shared with the explorer pane below, and an unbounded
- * project list would push the tree out of the column entirely (rule 05: every
- * growing list has an explicit bound). Five rows plus a control that says how
- * many exist - nothing is hidden, and one click shows everything.
+ * The column's height is shared with the explorer pane below, and an
+ * unbounded project list would push the tree out of the column entirely
+ * (rule 05: every growing list has an explicit bound). Three rows, as the
+ * plate draws them, plus a control that says how many exist - nothing is
+ * hidden, and one click shows everything.
  */
-export const STUDIO_PROJECTS_COLLAPSED_ROWS = 5;
+export const STUDIO_PROJECTS_COLLAPSED_ROWS = 3;
 
 /** The group head's id, for the section's `aria-labelledby`. */
 const PROJECTS_HEADING_ID = "studio-sidebar-projects";
 
+
 export interface StudioProjectsSectionProps {
   readonly projects: readonly ProjectDto[];
   readonly activeProjectId: string | null;
-  readonly collapsed: boolean;
   readonly isLoading: boolean;
   /** A settled read that failed, or a transport failure. */
   readonly hasError: boolean;
@@ -97,7 +99,6 @@ export interface StudioProjectsSectionProps {
 export function StudioProjectsSection({
   projects,
   activeProjectId,
-  collapsed,
   isLoading,
   hasError,
   onRetry,
@@ -124,10 +125,10 @@ export function StudioProjectsSection({
     [closeMenu],
   );
 
-  // The group head is words, so the rail has none; the open sidebar names the
-  // list with it in every state, the way the session groups are named.
-  const head = collapsed ? null : (
-    <h2 id={PROJECTS_HEADING_ID} className="vex-ls-group">
+  // PROJECTS, the 44 head, names the list in every state, the way CHATS
+  // names the chats. The words stay in sentence case; the class sets caps.
+  const head = (
+    <h2 id={PROJECTS_HEADING_ID} className="vex-st-head">
       {STUDIO_PROJECTS_SECTION}
     </h2>
   );
@@ -137,7 +138,7 @@ export function StudioProjectsSection({
       <>
         {head}
         <ListPlaceholder
-          sidebarOpen={!collapsed}
+          sidebarOpen
           register="sentence"
           text={STUDIO_PROJECTS_LOADING}
           icon={<Swatch state="listening" size={10} />}
@@ -147,25 +148,9 @@ export function StudioProjectsSection({
   }
 
   if (hasError) {
-    // NEVER a blank rail. The line states what failed and offers the one action
-    // that can fix it; `role="status"` announces it without stealing focus.
-    //
-    // COLLAPSED it is the glyph alone, named by `aria-label`: the 56px spine
-    // renders no text, and a Retry whose word cannot fit would be a control the
-    // user can press without being able to read what it does. Expanding the
-    // rail is one click away and brings the sentence and the action with it.
-    if (collapsed) {
-      return (
-        <div
-          role="status"
-          aria-label={STUDIO_PROJECTS_ERROR}
-          title={STUDIO_PROJECTS_ERROR}
-          className="vex-st-fail vex-st-fail--rail"
-        >
-          <LineWarning size={16} />
-        </div>
-      );
-    }
+    // NEVER a blank list. The line states what failed and offers the one
+    // action that can fix it; `role="status"` announces it without stealing
+    // focus.
     return (
       <>
         {head}
@@ -186,11 +171,7 @@ export function StudioProjectsSection({
     return (
       <>
         {head}
-        <ListPlaceholder
-          sidebarOpen={!collapsed}
-          register="sentence"
-          text={STUDIO_PROJECTS_EMPTY}
-        />
+        <ListPlaceholder sidebarOpen register="sentence" text={STUDIO_PROJECTS_EMPTY} />
       </>
     );
   }
@@ -201,10 +182,7 @@ export function StudioProjectsSection({
       : projects.slice(0, STUDIO_PROJECTS_COLLAPSED_ROWS);
 
   return (
-    <section
-      aria-labelledby={collapsed ? undefined : PROJECTS_HEADING_ID}
-      aria-label={collapsed ? STUDIO_PROJECTS_SECTION : undefined}
-    >
+    <section aria-labelledby={PROJECTS_HEADING_ID} className="vex-st-projects">
       {head}
       <ol className="vex-st-rows">
         {bounded.map((project) => (
@@ -212,7 +190,6 @@ export function StudioProjectsSection({
             <ProjectRailRow
               project={project}
               selected={project.id === activeProjectId}
-              collapsed={collapsed}
               onSelect={() => onSelect(project.id)}
               actionsPinned={openMenuProjectId === project.id}
               actions={
@@ -243,10 +220,9 @@ export function StudioProjectsSection({
             />
           </li>
         ))}
-        {/* The bound, said out loud, with the whole count in it. Collapsed the
-          * rail carries no words at all, so the rows are simply all shown there
-          * (the spine scrolls). */}
-        {collapsed || projects.length <= STUDIO_PROJECTS_COLLAPSED_ROWS ? null : (
+        {/* The bound, said out loud, with the whole count in it ("Show all
+          * 4"), on its own 32 row. */}
+        {projects.length <= STUDIO_PROJECTS_COLLAPSED_ROWS ? null : (
           <li>
             <button
               type="button"

@@ -140,14 +140,14 @@
    *     latin and latin-ext): every word. A 500 request renders the 400 file
    *     and a 700 the 600 file; weight synthesis is off (base.css), so
    *     nothing is faked.
-   *   --font-mono  = Roboto Mono (static 400, latin and latin-ext): every
+   *   --font-mono  = Roboto Mono (static 400 and 700, latin and latin-ext): every
    *     figure, balance, address, time and duration, with `.vex-num`
    *     (type.css) for tabular figures, and the money card's field labels.
    *     Every figure is 400.
-   *   --font-code  = JetBrains Mono: code - xterm, code blocks, the file
-   *     viewer, raw JSON - until Studio's own plate says otherwise
-   *     (section 4.9). Code and figures parted here, as the token was kept
-   *     for.
+   *     Studio's terminal is set in it too, 13/20, with the bundled 700 for
+   *     its bold text (section 4.9).
+   *   --font-code  = JetBrains Mono: code - code blocks, the file viewer,
+   *     raw JSON. Code and figures parted here, as the token was kept for.
    *   --font-serif = the sans now: H3 sets display type in Be Vietnam Pro
    *     (docs/design/H3-DESKTOP.md section 2.3), and Instrument Serif
    *     retires. The name stays only so the `font-serif` utility's call
@@ -403,14 +403,15 @@
    * component would be invisible to the theme flip and banned by the design
    * guard.
    *
-   * THE RETUNED PALETTE (docs/design/R3-MINIMAL.md section 1.1). The reading
-   * surface, foreground, cursor and selection are literals rather than paper
-   * aliases: a running program reads the background through OSC 11, so this
-   * surface is a wire contract and moves only with a retune of the terminal
-   * itself. It reads on R3's night field #221a17 in R3's paper ink with the
-   * periwinkle cursor, as literals now that those primitives retired: the
-   * terminal keeps its surface until Studio's own H3 plate retunes it
-   * (docs/design/H3-DESKTOP.md section 4.9).
+   * THE H3 PALETTE (our approved Studio plate, docs/design/H3-DESKTOP.md
+   * section 4.9). The reading surface, foreground, cursor and selection are
+   * literals rather than aliases: a running program reads the background
+   * through OSC 11, so this surface is a wire contract and moves only with a
+   * retune of the terminal itself, which the plate is. It reads on the
+   * ground, #010203, in the ink, with an ink cursor and an ink selection: no
+   * blue in Studio's chrome. The ANSI green and red take H3's gain and loss
+   * type colours (section 2.1), so a test runner's pass and fail read as the
+   * app's own; every other slot keeps its retuned value.
    *
    * RGB IS A WIRE CONTRACT. xterm answers OSC 11 with background alpha
    * dropped, so the background is an explicit opaque eight-digit hex. The
@@ -422,14 +423,14 @@
    * contrast floor against the surface the canvas sits on;
    * `__tests__/terminal-palette-tokens.test.ts` measures every one of them
    * and names the single documented exception. */
-  --vex-alias-term-background: #221a17ff;
-  --vex-alias-term-foreground: #f3f4f7;
-  --vex-alias-term-cursor: #a3abff;
-  --vex-alias-term-selection: rgba(163, 171, 255, 0.3);
+  --vex-alias-term-background: #010203ff;
+  --vex-alias-term-foreground: #f3f5f9;
+  --vex-alias-term-cursor: #f3f5f9;
+  --vex-alias-term-selection: rgba(243, 245, 249, 0.24);
 
   --vex-alias-term-black: #1c2030;
-  --vex-alias-term-red: #f2777a;
-  --vex-alias-term-green: #6cc57c;
+  --vex-alias-term-red: #ff7a6e;
+  --vex-alias-term-green: #76cf8a;
   --vex-alias-term-yellow: #e0b155;
   --vex-alias-term-blue: #a3abff;
   --vex-alias-term-magenta: #c69af3;

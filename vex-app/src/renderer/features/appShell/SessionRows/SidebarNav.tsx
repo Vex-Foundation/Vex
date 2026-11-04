@@ -33,6 +33,14 @@
  * its own command, so the desk entry is the same from every door.
  *
  * `NavKey` is the one row or key shape, shared with New chat and Search.
+ *
+ * STUDIO FOLDS IT (our approved Studio plate, docs/design/H3-DESKTOP.md
+ * section 4.9): its column folds the nav to the one row of its own mode,
+ * with a chevron key that unfolds the nine rows in place (`fold`), so the
+ * projects and the explorer keep the column's height. The fold is the
+ * caller's state; the nav only draws it. A press on the row that is already
+ * the current one goes to its owner (`onCurrent`), which is how Studio's row
+ * returns to Studio's start.
  */
 
 import type { JSX, ReactNode } from "react";
@@ -128,11 +136,23 @@ function originOf(target: HTMLButtonElement): {
   return { x: r.x, y: r.y, width: r.width, height: r.height };
 }
 
+/** The nav folded to one row, with the key that unfolds it (Studio's column). */
+export interface SidebarNavFold {
+  /** Only `destination`'s row stands. */
+  readonly folded: boolean;
+  /** The row the fold keeps, and the row the key stands beside when unfolded. */
+  readonly destination: NavDestination;
+  /** The chevron key, beside that row's key (never inside it: no nested buttons). */
+  readonly toggle: ReactNode;
+}
+
 export function SidebarNav({
   rail,
   onMissions,
   onSessionList,
   activeSessionMode = null,
+  fold,
+  onCurrent,
 }: {
   readonly rail: boolean;
   /** Missions opens the sidebar's search on its Mission tab. */
@@ -145,23 +165,37 @@ export function SidebarNav({
    * the Mission tab to decide.
    */
   readonly activeSessionMode?: "agent" | "mission" | null;
+  /** Fold the nav to one row with a key to unfold it; the open column only. */
+  readonly fold?: SidebarNavFold;
+  /** A press on the row that is already current, instead of navigating to it. */
+  readonly onCurrent?: (destination: NavDestination) => void;
 }): JSX.Element {
   const selected = useUiStore((s) => selectNavDestination(s, activeSessionMode));
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const navigate = useUiStore((s) => s.navigate);
 
   const go = (destination: NavDestination, target: HTMLButtonElement): void => {
+    if (onCurrent !== undefined && destination === selected) {
+      onCurrent(destination);
+      return;
+    }
     if (destination === "lighter" && runtimeMode !== "lighter") enterLighterMode();
     navigate(destination, originOf(target));
     if (destination === "missions") onMissions();
     if (destination === "chat" || destination === "missions") onSessionList?.();
   };
 
+  // The fold is the open column's: the rail keeps every key.
+  const shown = rail ? undefined : fold;
+  const folded = shown?.folded === true;
+  const keyed = shown?.destination ?? null;
+  const rows = folded ? NAV_ROWS.filter((row) => row.destination === keyed) : NAV_ROWS;
+
   return (
-    <nav aria-label="Main" className="vex-ls-nav">
+    <nav aria-label="Main" className="vex-ls-nav" data-folded={folded || undefined}>
       <ul className="vex-ls-nav__list">
-        {NAV_ROWS.map(({ destination, label, Icon }) => (
-          <li key={destination}>
+        {rows.map(({ destination, label, Icon }) => (
+          <li key={destination} className={keyed === destination ? "vex-ls-nav__keyed" : undefined}>
             <NavKey
               icon={<Icon className="vex-ls-nrow__i" />}
               label={label}
@@ -170,6 +204,7 @@ export function SidebarNav({
               onClick={(target) => go(destination, target)}
               className="vex-ls-nrow--nav"
             />
+            {keyed === destination ? shown?.toggle : null}
           </li>
         ))}
       </ul>

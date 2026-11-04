@@ -324,12 +324,15 @@ describe("the page close key", () => {
   });
 });
 
-describe("the Studio host pill", () => {
+describe("the Studio host cell", () => {
   it("sits in the cluster in Studio, and nowhere else", () => {
     renderHead("studio");
-    expect(screen.getByLabelText(/Vex Studio host status$/).textContent).toContain(
-      "Running · 2 connected",
-    );
+    const cell = screen.getByLabelText(/Vex Studio host status$/);
+    // Our approved Studio plate: the state over its figure, in two lines;
+    // the whole word stays the control's name.
+    expect(cell.getAttribute("aria-label")).toContain("Running · 2 connected");
+    expect(cell.querySelector(".vex-tb-hostcell__state")?.textContent).toBe("Running");
+    expect(cell.querySelector(".vex-tb-hostcell__figure")?.textContent).toBe("2 connected");
     cleanup();
     renderHead("agent", SESSION);
     expect(screen.queryByLabelText(/Vex Studio host status$/)).toBeNull();
@@ -382,7 +385,7 @@ describe("the Studio host pill", () => {
     useStudioHostStatusMock.mockReturnValue({ data: { ok: true, data: status } });
     renderHead("studio");
     const pill = screen.getByLabelText(/Vex Studio host status$/);
-    expect(pill.textContent).toContain(word);
+    expect(pill.getAttribute("aria-label")).toContain(word);
     if (cause !== null) {
       // The cause reaches BOTH audiences: assistive tech hears it from the
       // live region, a pointer or keyboard user reads it in the card. The head

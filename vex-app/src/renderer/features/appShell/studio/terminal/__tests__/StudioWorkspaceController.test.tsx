@@ -1076,13 +1076,19 @@ describe("StudioWorkspaceController terminal disposal", () => {
 });
 
 describe("StudioWorkspaceController surface", () => {
-  it("places the flat vx disc in the header outside terminal glyphs", async () => {
+  it("draws the panel header in H3 cells: no vx disc, the state in words", async () => {
     const { container } = await renderOpened();
 
-    const token = container.querySelector("[data-vex-terminal-header] [data-vex-vx-token]");
-    expect(token).not.toBeNull();
-    expect(token?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    // Our approved Studio plate retired R3's disc: the header is the name,
+    // the process and directory, the state cell and the four key cells.
+    const header = container.querySelector("[data-vex-terminal-header]");
+    expect(header).not.toBeNull();
+    expect(header?.querySelector("[data-vex-vx-token]")).toBeNull();
+    expect(header?.querySelector("[data-vex-terminal-state]")?.textContent).toBe("Running");
     expect(container.querySelector("svg.text-brand-mark")).toBeNull();
+    // The shell picker is the tabs row's, once per workspace.
+    expect(container.querySelectorAll(".vex-ws-strip .vex-ws-picker")).toHaveLength(1);
+    expect(header?.querySelector(".vex-ws-picker")).toBeNull();
   });
 });
 

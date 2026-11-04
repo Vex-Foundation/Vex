@@ -1,9 +1,12 @@
 /**
- * The Studio shell's one live status surface: a 32 high pill in the title
- * bar's right cluster while `runtimeMode === "studio"`, before "Needs you"
- * (docs/design/R3-MINIMAL.md section 3, "Running · {n} connected" as the host
- * word). The card behind it is a flat popover: paper, a 1.5px ink frame, no
- * shadow.
+ * The Studio shell's one live status surface: a header cell at the end of the
+ * title cell while `runtimeMode === "studio"` (our approved Studio plate,
+ * docs/design/H3-DESKTOP.md sections 4.8 and 4.9): a state square and the
+ * state in caps, RUNNING, over its figure, "2 connected". The squares are the
+ * status colours (section 2.2): running and starting grey, locked ink,
+ * unavailable red. It stays in view while her section is open, which is why
+ * it is the header's and not the console's. The card behind it is a flat
+ * popover: the ground, a 1.5px ink frame, no shadow.
  *
  * It reads `EV.studio.hostStatus` through `useStudioHostStatus`, which is
  * event-driven: main pushes every transition, so this is a LEVEL and never a
@@ -71,11 +74,20 @@ import {
   STUDIO_HOST_UNKNOWN_HEADLINE,
   STUDIO_HOST_UNLOCK_LABEL,
   studioHostConnectionsLine,
+  studioHostFigureLine,
   studioHostHeadline,
   studioHostPillLabel,
+  studioHostStateLine,
   studioHostStatusWord,
   type StudioHostCardButton,
 } from "./studio/studio-copy.js";
+
+/** The square's colour class per mark: the status squares of section 2.2. */
+const HOST_MARK_CLASS: Readonly<Record<StudioHostStatusView["mark"], string>> = {
+  running: "text-running-mark",
+  ink: "text-ink-primary",
+  danger: "text-danger-mark",
+};
 
 /** Hover dwell before the card opens, matching the house `HoverCard`'s intent. */
 const OPEN_DELAY_MS = 300;
@@ -85,7 +97,14 @@ const OPEN_DELAY_MS = 300;
  * states the wire does not describe: a read in flight and a read that failed).
  */
 export interface StudioHostStatusView {
+  /** The whole word, "Running · 2 connected": the accessible name and the live line. */
   readonly word: string;
+  /** The cell's first line, the state ("Running"). */
+  readonly stateLine: string;
+  /** The cell's second line, the figure ("2 connected"), or none. */
+  readonly figureLine: string | null;
+  /** The square's colour (section 2.2): grey, ink or red. */
+  readonly mark: "running" | "ink" | "danger";
   readonly tone: "lit" | "warning" | "quiet";
   readonly dot: SwatchState;
   readonly headline: string;
@@ -102,6 +121,9 @@ export interface StudioHostStatusView {
 /** The first read has not answered. Not a failure and not a state of the host. */
 export const STUDIO_HOST_VIEW_LOADING: StudioHostStatusView = {
   word: STUDIO_HOST_STATUS_LOADING,
+  stateLine: STUDIO_HOST_STATUS_LOADING,
+  figureLine: null,
+  mark: "running",
   tone: "quiet",
   dot: "ongoing",
   headline: STUDIO_HOST_LOADING_HEADLINE,
@@ -116,6 +138,9 @@ export const STUDIO_HOST_VIEW_LOADING: StudioHostStatusView = {
 /** The read itself failed: Vex knows nothing about the host, which is its own fact. */
 export const STUDIO_HOST_VIEW_UNKNOWN: StudioHostStatusView = {
   word: STUDIO_HOST_STATUS_UNKNOWN,
+  stateLine: STUDIO_HOST_STATUS_UNKNOWN,
+  figureLine: null,
+  mark: "ink",
   tone: "quiet",
   dot: "warning",
   headline: STUDIO_HOST_UNKNOWN_HEADLINE,
@@ -137,12 +162,18 @@ export function studioHostStatusView(
     status.atCapacity,
   );
   const headline = studioHostHeadline(status.state, status.atCapacity);
+  const lines = {
+    stateLine: studioHostStateLine(status.state),
+    figureLine: studioHostFigureLine(status.state, status.connectionCount, status.atCapacity),
+  };
   const nextStep =
     status.cause === null ? null : STUDIO_HOST_CAUSE_NEXT_STEPS[status.cause];
 
   if (status.state === "running") {
     return {
       word,
+      ...lines,
+      mark: "running",
       tone: status.atCapacity ? "warning" : "lit",
       dot: status.atCapacity ? "warning" : "done",
       headline,
@@ -160,6 +191,8 @@ export function studioHostStatusView(
   if (status.state === "starting") {
     return {
       word,
+      ...lines,
+      mark: "running",
       tone: "lit",
       dot: "ongoing",
       headline,
@@ -174,6 +207,8 @@ export function studioHostStatusView(
   if (status.state === "locked") {
     return {
       word,
+      ...lines,
+      mark: "ink",
       tone: "warning",
       dot: "warning",
       headline,
@@ -188,6 +223,8 @@ export function studioHostStatusView(
   }
   return {
     word,
+    ...lines,
+    mark: "danger",
     tone: "warning",
     dot: "error",
     headline,
@@ -291,7 +328,7 @@ export function StudioHostStatusPill({
   return (
     <span
       ref={rootRef}
-      className="relative inline-flex"
+      className="vex-tb-host relative inline-flex"
       onPointerEnter={() => {
         cancelClose();
         if (open) return;
@@ -333,10 +370,10 @@ export function StudioHostStatusPill({
         data-vex-studio-host-state={view.state ?? undefined}
         data-vex-studio-host-cause={view.cause ?? undefined}
         data-vex-studio-host-at-capacity={view.atCapacity ? "true" : undefined}
-        // The word is ink in every tone: the swatch carries the state, never
-        // a colour on the word (docs/design/R3-MINIMAL.md rules).
+        // The words are ink in every tone: the square carries the state's
+        // colour, never the word (docs/design/H3-DESKTOP.md section 2.2).
         data-tone={view.tone}
-        className="vex-tb-pill vex-tb-pill--quiet"
+        className="vex-tb-hostcell vex-no-drag"
         onClick={() => {
           clearDwell();
           cancelClose();
@@ -362,11 +399,13 @@ export function StudioHostStatusPill({
           setOpen(true);
         }}
       >
-        <Swatch
-          state={view.dot}
-          className={view.tone === "quiet" ? "text-ink-tertiary" : "text-accent-primary"}
-        />
-        {view.word}
+        <span className="vex-tb-hostcell__state">
+          <Swatch state="done" size={6} className={HOST_MARK_CLASS[view.mark]} />
+          <span>{view.stateLine}</span>
+        </span>
+        {view.figureLine === null ? null : (
+          <span className="vex-tb-hostcell__figure">{view.figureLine}</span>
+        )}
       </button>
 
       {/* The live announcement: a screen reader hears the state, its reason AND

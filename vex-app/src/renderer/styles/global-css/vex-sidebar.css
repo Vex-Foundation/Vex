@@ -43,8 +43,7 @@
   border-right: 0;
 }
 
-.vex-vs__back:focus-visible,
-.vex-vs__link:focus-visible {
+.vex-vs__back:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: 2px;
 }
@@ -67,7 +66,7 @@
   padding-bottom: 2px;
 }
 
-/* ---- sections: Needs you, This project ---- */
+/* ---- sections: the desk's Needs you ---- */
 .vex-vs__sec {
   margin: 14px 18px 0;
   padding-top: 12px;
@@ -84,52 +83,6 @@
   margin: 0;
   color: var(--vex-alias-label-tertiary);
   font-size: 13.5px;
-}
-.vex-vs__kv {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  margin: 0;
-}
-.vex-vs__kv > dt,
-.vex-vs__kv > dd {
-  margin: 0;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-}
-.vex-vs__kv > dt {
-  color: var(--vex-alias-label-tertiary);
-  font-size: 12.5px;
-}
-.vex-vs__kv > dd {
-  min-width: 0;
-  font-size: 13px;
-}
-.vex-vs__path {
-  overflow: hidden;
-  margin: 6px 0 0;
-  color: var(--vex-alias-label-tertiary);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vex-vs__links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 8px;
-}
-.vex-vs__link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--vex-alias-accent-primary);
-  font-size: 13px;
-  font-weight: 500;
-}
-.vex-vs__link:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
 /* A page's own block (the Board's Ask Vex); nothing while no page uses it. */
 .vex-vs__slot:empty {
@@ -374,6 +327,59 @@
   color: var(--vex-alias-label-tertiary);
   font-size: 14px;
   line-height: 20px;
+}
+/* THIS PROJECT (our approved Studio plate, docs/design/H3-DESKTOP.md section
+ * 4.9; VexConsoleThisProject): the access sentence and "Change in project
+ * settings", a link in ink with an underline (section 2.3: never blue); then
+ * the facts on 40 rows, each label 12 in caps, muted, its value 15 at the
+ * right (a folder and an address in mono 13); PROJECT ASSETS is the Open
+ * activity key's shape. */
+.vex-console__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-console__link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: 2px;
+}
+.vex-console__facts {
+  margin: 0;
+}
+.vex-console__fact {
+  display: flex;
+  box-sizing: border-box;
+  height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-console__fact > dt {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-console__fact > dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-console__fact > dd.vex-console__fact-mono,
+.vex-console__fact > dd .vex-num {
+  font-family: var(--font-mono);
+  font-size: 13px;
 }
 /* One activity: its line (15, ink), then its status at the right: the 6px
  * square in the status colour beside the word (13, caps, ink). */

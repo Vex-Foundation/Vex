@@ -140,6 +140,28 @@ describe("the states that are not causes", () => {
     expect(document.activeElement).toBe(pill);
   });
 
+  it.each([
+    [makeHostStatus({ connectionCount: 2 }), "Running", "2 connected", "text-running-mark"],
+    [makeHostStatus({ connectionCount: 16, atCapacity: true }), "Running", "At capacity", "text-running-mark"],
+    [makeHostStatus({ state: "starting" }), "Starting", null, "text-running-mark"],
+    [makeHostStatus({ state: "locked" }), "Locked", null, "text-ink-primary"],
+    [makeHostStatus({ state: "unavailable", cause: "starting" }), "Unavailable", null, "text-danger-mark"],
+  ] as const)(
+    "draws %o as the header cell: its square, the state over the figure",
+    (status, stateLine, figureLine, mark) => {
+      const { pill } = mount(studioHostStatusView(status));
+      // Our approved Studio plate: a header cell, not a pill.
+      expect(pill.className).toContain("vex-tb-hostcell");
+      expect(pill.querySelector(".vex-tb-hostcell__state")?.textContent).toBe(stateLine);
+      expect(pill.querySelector(".vex-tb-hostcell__figure")?.textContent ?? null).toBe(figureLine);
+      // Grey running and starting, ink locked, red unavailable (section 2.2);
+      // the words stay ink.
+      const square = pill.querySelector(".vex-swatch");
+      expect(square?.getAttribute("data-s")).toBe("done");
+      expect(square?.className).toContain(mark);
+    },
+  );
+
   it("running reports its connection figure and offers nothing to fix", () => {
     const { pill } = mount(
       studioHostStatusView(makeHostStatus({ connectionCount: 2 })),

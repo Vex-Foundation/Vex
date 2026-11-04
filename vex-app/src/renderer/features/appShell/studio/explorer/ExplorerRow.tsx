@@ -29,17 +29,17 @@ import { Swatch } from "../../../../components/ui/swatch.js";
 import { cn } from "../../../../lib/utils.js";
 
 /**
- * Row height in pixels: 28, denser than the 34px project row
- * (docs/design/R3-MINIMAL.md section 4, "Studio": explorer rows 28 high, 13.5,
- * line icons 14 in ink 2).
+ * Row height in pixels: 30, the explorer's pitch on our approved Studio plate
+ * (docs/design/H3-DESKTOP.md section 4.9): the name at 14 in ink, line icons
+ * 14 in ink 2, 8 apart.
  */
-export const EXPLORER_ROW_HEIGHT = 28;
+export const EXPLORER_ROW_HEIGHT = 30;
 
 /** Indent per depth level, in pixels. */
-const INDENT_PER_LEVEL = 12;
+export const EXPLORER_INDENT_PER_LEVEL = 16;
 
-/** The left gutter every row starts from, so level 0 is not flush to the edge. */
-const BASE_INDENT = 4;
+/** The left gutter every row starts from: H3 sets a cell's content 24 in. */
+export const EXPLORER_BASE_INDENT = 24;
 
 export interface ExplorerRowProps {
   readonly rowId: string;
@@ -154,7 +154,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
   const isDirectory = props.rowKind === "node" && props.nodeKind === "directory";
   const style: CSSProperties = {
     height: `${String(EXPLORER_ROW_HEIGHT)}px`,
-    paddingInlineStart: `${String(BASE_INDENT + props.level * INDENT_PER_LEVEL)}px`,
+    paddingInlineStart: `${String(EXPLORER_BASE_INDENT + props.level * EXPLORER_INDENT_PER_LEVEL)}px`,
   };
 
   return (
@@ -195,7 +195,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
             }
       }
       className={cn(
-        "flex w-full cursor-pointer select-none items-center gap-[7px] pr-2 text-[13.5px] leading-[28px]",
+        "flex w-full cursor-pointer select-none items-center gap-2 pr-5 text-[14px] leading-[30px]",
         // Hover fill and selected fill are the same tint, as the rail rows are.
         // `vex-tint` settles that fill over the fast step instead of snapping
         // it. COLOUR ONLY, and that is a constraint rather than a preference:
@@ -256,7 +256,7 @@ export const ExplorerRow = memo(function ExplorerRow(props: ExplorerRowProps): J
       </span>
       <span
         aria-hidden="true"
-        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-secondary"
+        className="flex h-4 w-3.5 shrink-0 items-center justify-center text-ink-secondary"
       >
         <LeadingGlyph
           rowKind={props.rowKind}

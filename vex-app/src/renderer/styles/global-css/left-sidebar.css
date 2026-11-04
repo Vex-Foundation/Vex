@@ -581,15 +581,51 @@ html[data-os="mac"] .vex-ls-railhead {
   padding: 0;
 }
 
-/* STUDIO (docs/design/R3-MINIMAL.md section 4, "Studio"): the same column
- * in Studio mode. The body under the nav holds New project, the "Projects"
- * group (rows 34 high, the selected one in blue on the selection wash, the
- * outlined "Full access" tag at the right), the Welcome row, then the
- * explorer pane ("Explorer · {project}" head; rows 28 high, 13.5, line icons
- * 14 in ink 2), with a quiet 1px seam between the two panes. */
+
+/* STUDIO IN H3 CELLS (our approved Studio plate, docs/design/H3-DESKTOP.md
+ * section 4.9; `StudioSidebar.tsx`): the same column in Studio mode, its
+ * cells in the chats column's grammar (section 1.4). Top to bottom: NEW
+ * PROJECT in the 55 New chat cell and "Search files" in the 48 search cell
+ * (the shared `.vex-ls-nrow--new` and `--search` above); the nav folded to
+ * its Studio row with a chevron key; PROJECTS, a 44 head, rows on the 36
+ * pitch, a RUNNING tag, "Show all N" on a 32 row; the draggable rule; the
+ * EXPLORER, a 44 head with its keys, the tree on the 30 pitch. Every word is
+ * set 24 in, a row's right end 20 in. No blue anywhere: the selected project
+ * takes the nav's one row gradient, a hover the cell hover. */
+
+/* THE NAV'S FOLD: folded, the block is the Studio row alone between its
+ * rules; the chevron key stands at the row's right end (48 wide, its 16
+ * icon muted, centred 24 in from the column's edge), beside the row's own
+ * key, never inside it. Unfolded it stays beside the Studio row. */
+.vex-ls-nav__keyed {
+  position: relative;
+}
+.vex-ls-nav__keyed > .vex-ls-nrow {
+  padding-right: 48px;
+}
+.vex-ls-nav__fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ls-nav__fold:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+
+/* SEARCH MODE in Studio: the field takes the search cell, New project stays
+ * above it, edge to edge. The results keep R3's inset until their own pass. */
 .vex-st-find {
   flex: none;
-  margin-bottom: 8px;
 }
 .vex-st-search__clear {
   display: inline-flex;
@@ -616,45 +652,55 @@ html[data-os="mac"] .vex-ls-railhead {
 .vex-st-body {
   width: 100%;
 }
-/* The shared cells (New chat, Search, the nav) stand edge to edge in Studio
- * as in the agent column; Studio's own panes, its projects and explorer and
- * its search results, keep R3's 10 inset until Studio's own plate (H3-DESKTOP
- * section 4.9). The rail centres its keys and needs none. */
-.vex-st:not([data-rail]) .vex-st-body,
 .vex-st:not([data-rail]) .vex-ls-body > .vex-scroll {
   padding-inline: 10px;
 }
-/* Studio's Welcome row is a NavKey inside its projects pane: R3's row there,
- * so it lines up with the project rows round it. */
-.vex-st:not([data-rail]) .vex-st-body .vex-ls-nrow {
-  gap: 11px;
-  padding: 0 10px;
-}
-.vex-st:not([data-rail]) .vex-st-body .vex-ls-nrow__i {
-  width: 16px;
-  height: 16px;
-}
+/* The draggable rule between the projects and the explorer: the quiet rule
+ * at rest, the chosen rule while it is hovered or dragged. */
 .vex-st-body [role="separator"] {
   background: var(--vex-alias-rule-quiet);
 }
 .vex-st-body [role="separator"]:hover,
 .vex-st-body [role="separator"][data-dragging] {
-  background: var(--vex-alias-accent-primary);
+  background: var(--vex-alias-rule-chosen);
 }
-.vex-st-pane,
 .vex-st-xpane {
   padding-bottom: 8px;
+}
+
+/* A 44 head: PROJECTS and EXPLORER, the CHATS register (13, 600, caps,
+ * tracked, ink), set 24 in. */
+.vex-st-head,
+.vex-st-xhead__t {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-st-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 20px 0 24px;
 }
 .vex-st-rows {
   margin: 0;
   padding: 0;
   list-style: none;
 }
+/* A project row: 36 high, the name at 15 in ink; the open project on the
+ * selected row's fade (the nav's gradient, from #181A1C at the column's left
+ * edge to the ground); a hover the cell hover. */
 .vex-st-proj {
   position: relative;
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 36px;
   min-width: 0;
 }
 .vex-st-proj:hover,
@@ -663,19 +709,19 @@ html[data-os="mac"] .vex-ls-railhead {
   background: var(--vex-alias-interactive-hover);
 }
 .vex-st-proj[data-selected] {
-  background: var(--ls-sel);
+  background: var(--vex-alias-row-selected);
 }
 .vex-st-proj__select {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   height: 100%;
-  padding: 0 10px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.2;
   text-align: left;
   color: var(--vex-alias-label-primary);
@@ -687,15 +733,24 @@ html[data-os="mac"] .vex-ls-railhead {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.vex-st-proj[data-selected] .vex-st-proj__t {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
 .vex-st-proj__state {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+/* RUNNING: the status square (muted, `text-running-mark`) 8 before the word;
+ * the word 12, caps, tracked, ink, as the chats list's tags (section 1.4). */
+.vex-st-proj__run {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
 }
 .vex-st-proj__drift,
 .vex-st-perm-mark {
@@ -708,7 +763,7 @@ html[data-os="mac"] .vex-ls-railhead {
   height: 20px;
   font-size: 10px;
 }
-/* The ellipsis takes no room at rest, so the tag keeps the row's right edge;
+/* The ellipsis takes no room at rest, so the row's tags keep its right edge;
  * it opens on hover, on keyboard focus and while its menu is open. */
 .vex-st-proj__acts {
   display: flex;
@@ -721,7 +776,7 @@ html[data-os="mac"] .vex-ls-railhead {
 .vex-st-proj:focus-within .vex-st-proj__acts,
 .vex-st-proj__acts--pinned {
   max-width: 40px;
-  padding-right: 6px;
+  padding-right: 12px;
   opacity: 1;
 }
 .vex-st-dots {
@@ -739,30 +794,36 @@ html[data-os="mac"] .vex-ls-railhead {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
+/* SHOW ALL N: a 32 row, the caption's register (12, caps, tracked, muted). */
 .vex-st-more {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 28px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 12.5px;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
   text-align: left;
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-st-more:hover {
   color: var(--vex-alias-label-primary);
 }
-.vex-st-welcome {
-  margin-top: 6px;
+/* The list's own states (loading, empty) and the cleanup notices, set 24 in
+ * like a row's name. */
+.vex-st-pane > div:not(.vex-st-fail),
+.vex-st-pane > section:not(.vex-st-projects) {
+  padding-inline: 24px 20px;
 }
 .vex-st-fail {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 8px 20px 8px 24px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--vex-alias-label-primary);
@@ -776,82 +837,75 @@ html[data-os="mac"] .vex-ls-railhead {
   align-items: center;
   padding: 10px 0;
 }
+/* A link is ink with an underline, never blue (section 2.3). */
 .vex-st-link {
   padding: 0;
   border: 0;
   background: transparent;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-st-link:hover {
+  color: var(--vex-alias-label-primary);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-/* The explorer head: the group head register with the keys at the right. */
+/* THE EXPLORER's 44 head: EXPLORER, then its four keys at the right, 28
+ * square, their 16 icons muted. */
 .vex-st-xhead {
   display: flex;
   flex: none;
   align-items: center;
   gap: 2px;
+  box-sizing: border-box;
+  height: 44px;
   min-width: 0;
-  padding: 14px 4px 4px 10px;
+  padding: 0 12px 0 24px;
 }
 .vex-st-xhead__t {
   flex: 1;
   min-width: 0;
-  margin: 0;
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--vex-alias-label-tertiary);
 }
 .vex-st-xkey {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-st-xkey:hover {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
-/* The Studio rail: a 40 x 40 folder key per project, centred like the nav. */
-.vex-st[data-rail] .vex-st-pane {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+
+/* THE RAIL'S PROJECTS AND FILES KEY, under 1024: a 48 cell under the nav
+ * block's rule, its folder icon in ink; while its drawer stands open, the
+ * key takes the raised fill. */
+.vex-ls-nrow--files {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
-.vex-st-proj[data-rail] {
-  justify-content: center;
-  width: 40px;
-  height: 40px;
+.vex-ls-nrow--files .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
 }
-.vex-st-proj[data-rail] .vex-st-proj__select {
-  justify-content: center;
-  padding: 0;
+.vex-ls-nrow--files[data-open] {
+  background: var(--vex-alias-interactive-active);
 }
-.vex-st-proj__key {
-  position: relative;
-  display: inline-flex;
-}
-.vex-st-proj__overlay {
+
+/* THE DRAWER: the projects and the explorer, 248 wide over the centre's
+ * left edge, from under the band (its top is set inline to the band's
+ * height) to the window's foot, the bottom row's height under the rail's
+ * own foot. On the ground behind a rule, as the column is. */
+.vex-ls.vex-st-drawer {
   position: absolute;
-  right: -7px;
-  bottom: -5px;
-  display: inline-flex;
-  gap: 1px;
-  background: var(--vex-alias-bg-base);
-}
-.vex-st-proj__overlay:empty {
-  display: none;
+  z-index: 30;
+  bottom: calc(-1 * var(--vex-h3-bottom-h));
+  left: 100%;
+  width: var(--vex-h3-chats-w);
+  height: auto;
 }

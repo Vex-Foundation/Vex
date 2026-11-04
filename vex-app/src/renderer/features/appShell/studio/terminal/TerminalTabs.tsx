@@ -29,9 +29,9 @@
  * called `bash`. Nothing in that strip told one terminal from another, which is
  * the one job a tab strip has. It now follows the two surfaces the owner named:
  *
- *  - deepseek's `Swatch`: a 10px state slot per row, a fill and not a colour,
- *    `aria-hidden`, paired with the state IN WORDS for assistive technology
- *    (the repo's own `components/ui/swatch.tsx` is that primitive);
+ *  - a state square per tab, `aria-hidden`, paired with the state IN WORDS for
+ *    assistive technology (`TerminalStateSquare`, on the repo's own
+ *    `components/ui/swatch.tsx`);
  *  - VS Code's tabs: the close affordance appears on HOVER and on the active
  *    tab (`multiEditorTabsControl.ts`), the strip scrolls horizontally with an
  *    overflow affordance rather than squeezing tabs to nothing, and the split
@@ -51,6 +51,18 @@
  * click on the tab, and an explicit "Keep" action beside it - and both call the
  * same `onPinTab`, which is optional: with no owner for it the strip draws no
  * promotion affordance rather than a control that does nothing.
+ *
+ * ## The row in H3 cells (our approved Studio plate)
+ *
+ * The strip is the plate's 56 tabs row (docs/design/H3-DESKTOP.md section
+ * 4.9, terminal.css): a cell per tab, a terminal's state square and its name
+ * in caps, a file tab's name in mono (italic while it is the preview), the
+ * active tab on the raised fill with its close key; then the + key cell for a
+ * new terminal and, pinned at the right, the shell the NEXT terminal runs
+ * (SHELL zsh, the picker `ShellPicker`), which moved here from the panel
+ * header because it decides the strip's next tab, not the panel's terminal.
+ * The squares are the status colours (section 2.2): running grey, exited an
+ * ink outline, an error red, restoring an outline. No blue.
  *
  * ## Trigger and close share ONE tab shell
  *
@@ -91,15 +103,14 @@ import {
   LineClose,
   LineFile,
   LinePlus,
-  LineTerminal,
 } from "../../../../components/icons/line/index.js";
-import { Button } from "../../../../components/ui/button.js";
-import { Swatch, type SwatchState } from "../../../../components/ui/swatch.js";
 import { Tabs, TabsList, TabsTrigger } from "../../../../components/ui/tabs.js";
 import { cn } from "../../../../lib/utils.js";
 import type { WorkspaceFileTab, WorkspaceState, WorkspaceTab } from "../workspace/types.js";
 import { isPreviewFileTab } from "../workspace/workspace-model.js";
 import { TerminalPaneGroup } from "./TerminalPaneGroup.js";
+import { ShellPicker } from "./TerminalPanelHeader.js";
+import { TerminalStateSquare } from "./TerminalStateSquare.js";
 import {
   EMPTY_WORKSPACE_ACTION_COPY,
   EMPTY_WORKSPACE_COPY,
@@ -136,22 +147,6 @@ const IDLE_FACTS: TerminalRunFacts = {
   lostTerminalIds: EMPTY_LOST,
   exits: EMPTY_EXITS,
   restoring: false,
-};
-
-/**
- * Which dot each run state paints.
- *
- * `restoring` shares the `ongoing` chase with `running` on purpose: both are
- * work in flight, and the two are told apart by the word beside the dot rather
- * than by a fifth colour nobody could name on sight. `exited` is `done` (it
- * finished, nothing went wrong) and only a failure is `error`, which keeps the
- * red dot meaning "look at this" instead of "a shell closed".
- */
-const DOT_BY_STATE: Readonly<Record<TerminalTabRunState, SwatchState>> = {
-  running: "ongoing",
-  restoring: "ongoing",
-  exited: "done",
-  error: "error",
 };
 
 export interface TerminalTabsProps {
@@ -288,17 +283,17 @@ export function TerminalTabs({
         idScope={TERMINAL_TABS_ID_SCOPE}
         className="min-h-0 shrink-0"
       >
-        {/* The caps are painted by this wrapper, not by the scroller: an
-            element that scrolls cannot hold a block that stays put. */}
+        {/* THE TABS ROW, 56 high: the tabs (they scroll sideways when they
+            outgrow the row), the + key cell, and the shell picker pinned at
+            the right (geometry in terminal.css). */}
         <div className="vex-ws-strip">
+          {/* The caps are painted by this wrapper, not by the scroller: an
+              element that scrolls cannot hold a block that stays put. */}
+          <div className="vex-ws-tabs">
           <TabsList
             ref={listRef}
             aria-label="Studio terminals and files"
-            // THE STRIP is 40 high on the paper, padding 0 14, tabs 2 apart,
-            // over a quiet rule that the wrapper draws underneath; the active
-            // tab's blue underline covers it (docs/design/R3-MINIMAL.md
-            // section 9.5, geometry in terminal.css).
-            className="vex-terminal-tab-strip w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="vex-terminal-tab-strip justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {state.tabs.map((tab) => (
               <TabRow
@@ -312,17 +307,6 @@ export function TerminalTabs({
                 {...(onPinTab === undefined ? {} : { onPinTab })}
               />
             ))}
-            {/* The plus key: a 32 x 32 icon key at the end of the strip. Its
-                focus outline is drawn inside, because the scroller clips. */}
-            <Button
-              variant="bare"
-              size="icon"
-              aria-label="New terminal"
-              onClick={onNewTerminal}
-              className="shrink-0 self-center focus-visible:outline-offset-[-2px]"
-            >
-              <LinePlus />
-            </Button>
           </TabsList>
           {/* THE OVERFLOW AFFORDANCE. Twenty file tabs used to run off the edge
               with nothing to say they had: the strip scrolled, but only a user
@@ -348,6 +332,25 @@ export function TerminalTabs({
               "vex-ws-cap pointer-events-none",
               overflow.atEnd ? "opacity-0" : "opacity-100",
             )}
+          />
+          </div>
+          {/* The + key cell, right after the tabs: a new terminal tab. */}
+          <button
+            type="button"
+            aria-label="New terminal"
+            title="New terminal"
+            onClick={onNewTerminal}
+            className="vex-ws-plus"
+          >
+            <LinePlus size={16} />
+          </button>
+          <span aria-hidden="true" className="vex-ws-fill" />
+          {/* SHELL and the shell the NEXT terminal runs, pinned at the right,
+              where H3's page tabs put "Updated 12:41". */}
+          <ShellPicker
+            shells={shells}
+            shellId={shellId}
+            onSelectShell={onSelectShell}
           />
         </div>
       </Tabs>
@@ -383,16 +386,8 @@ export function TerminalTabs({
                   group={tab}
                   visible={isActive}
                   lostTerminalIds={runFacts.lostTerminalIds}
-                  shellLabel={
-                    shellLabelById.get(
-                      tab.panes.find((pane) => pane.paneId === tab.activePaneId)?.terminalId
-                        ?? tab.panes[0]?.terminalId
-                        ?? "",
-                    ) ?? null
-                  }
-                  shellId={shellId}
-                  shells={shells}
-                  onSelectShell={onSelectShell}
+                  runFacts={runFacts}
+                  shellLabelById={shellLabelById}
                   {...(registry === undefined ? {} : { registry })}
                   onResizePanes={(sizes) => {
                     onResizePanes(tab.tabId, sizes);
@@ -669,8 +664,9 @@ function TabRow({
         // (docs/design/R3-MINIMAL.md section 9.5); the focus outline is drawn
         // inside because the strip clips.
         className={cn(
-          "mb-0 h-full shrink-0 gap-2 border-0 bg-transparent pr-1 pl-0 hover:bg-transparent focus-visible:outline-offset-[-2px]",
-          active ? "text-ink-primary" : null,
+          "vex-tab-trigger mb-0 h-full shrink-0 gap-3 border-0 bg-transparent p-0 font-normal hover:bg-transparent focus-visible:outline-offset-[-2px]",
+          active ? "text-ink-primary" : "text-ink-secondary",
+          isGroup ? "vex-tab-trigger--terminal" : "vex-tab-trigger--file",
         )}
         title={
           runState === null
@@ -719,17 +715,17 @@ function TabRow({
           onCloseTab(tab.tabId);
         }}
       >
-        {isGroup ? <LineTerminal /> : <LineFile />}
-        {/* The swatch is a fill and `aria-hidden`; the word after the title
-            is what a screen reader gets, and it comes AFTER so the tab's
-            accessible name reads "Terminal 1 Running" rather than opening with
-            a status nobody asked about yet. */}
-        {runState === null ? null : <Swatch state={DOT_BY_STATE[runState]} size={10} />}
+        {/* A terminal leads with its state square, a file with its glyph.
+            The square is `aria-hidden`; the word after the title is what a
+            screen reader gets, and it comes AFTER so the tab's accessible
+            name reads "Terminal 1 Running" rather than opening with a status
+            nobody asked about yet. */}
+        {runState === null ? <LineFile size={14} /> : <TerminalStateSquare state={runState} />}
         {/* ITALIC IS THE PREVIEW SIGNAL, and it is only half of it: italics say
             nothing to a screen reader, so the state word below carries the same
             fact in the accessible name. VS Code paints the identical
             distinction (`multiEditorTabsControl.ts:1730`). */}
-        <span className={cn("max-w-40 truncate", preview ? "italic" : null)}>
+        <span className={cn("vex-tab-title max-w-40 truncate", preview ? "italic" : null)}>
           {tab.title}
         </span>
         {runState === null ? null : (
@@ -769,7 +765,7 @@ function TabRow({
         // edge and the next tab starts after the strip's gap.
         data-terminal-tab-close=""
         className={cn(
-          "flex shrink-0 items-center px-2 text-ink-secondary",
+          "flex shrink-0 items-center pl-3 text-ink-tertiary",
           // HOVER-REVEALED, NEVER KEYBOARD-HIDDEN. `opacity-0` on the ICON keeps
           // the button in the layout, in the tab order and in the accessibility
           // tree, and keeps the tab's width identical whether the icon is

@@ -1,8 +1,15 @@
 /**
  * TerminalPanelHeader - what a terminal panel SAYS about itself.
  *
- * Three facts and one action: the panel's name, the directory the active shell
- * is in, and the picker that decides which shell the NEXT terminal runs.
+ * The panel's name, what the active pane runs and where, its state, and the
+ * actions that name THIS terminal. In H3 cells (our approved Studio plate,
+ * docs/design/H3-DESKTOP.md section 4.9; terminal.css): a 56 row, the name
+ * at 15 over the process and the directory in mono 12, muted ("zsh ·
+ * ~/Vex/projects/vex-core"), then the state cell (its square and word in
+ * caps) and four 56 key cells, split right, split down, rename and kill. The
+ * picker that decides which shell the NEXT terminal runs is the tabs row's
+ * (`ShellPicker`, exported from here and mounted by `TerminalTabs`): it
+ * decides the strip's next tab, not this panel's terminal.
  *
  * ## The action cluster, and the one button of it that is still missing
  *
@@ -80,13 +87,13 @@ import {
   LineSplitVertical,
   LineTrash,
 } from "../../../../components/icons/line/index.js";
-import { Button } from "../../../../components/ui/button.js";
-import { VxToken } from "../../../../components/ui/vx-token.js";
 import { cn } from "../../../../lib/utils.js";
 import {
   RENAME_FIELD_LABEL,
   RENAME_HINT_COPY,
   SHELL_PICKER_LABEL,
+  SHELL_PICKER_WORD,
+  TERMINAL_STATE_COPY,
   SHELL_UNAVAILABLE_SUFFIX,
   killTerminalLabel,
   renameTabLabel,
@@ -95,6 +102,8 @@ import {
   terminalLocationLabel,
   terminalShellLabel,
 } from "./terminal-copy.js";
+import type { TerminalTabRunState } from "./terminal-tab-model.js";
+import { TerminalStateSquare } from "./TerminalStateSquare.js";
 
 export interface TerminalPanelHeaderProps {
   /** The panel's name: `Terminal n`, or whatever the user renamed it to. */
@@ -106,11 +115,8 @@ export interface TerminalPanelHeaderProps {
   readonly displayCwd: string | null;
   /** What the host says is running here, or `null` before it has said. */
   readonly shellLabel: string | null;
-  /** Which shell the NEXT terminal opens with. */
-  readonly shellId: TerminalShellId;
-  /** The catalogue rows, in main's order. Empty while the read is in flight. */
-  readonly shells: readonly TerminalShellOption[];
-  readonly onSelectShell: (shellId: TerminalShellId) => void;
+  /** The panel's state: its square and its word. */
+  readonly state: TerminalTabRunState;
   readonly onSplit: (orientation: "horizontal" | "vertical") => void;
   readonly onKill: () => void;
   readonly onRename: (title: string) => void;
@@ -120,14 +126,11 @@ export function TerminalPanelHeader({
   title,
   displayCwd,
   shellLabel,
-  shellId,
-  shells,
-  onSelectShell,
+  state,
   onSplit,
   onKill,
   onRename,
 }: TerminalPanelHeaderProps): JSX.Element {
-  const selected = shells.find((shell) => shell.id === shellId);
   const [renaming, setRenaming] = useState(false);
   const renameButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -145,12 +148,10 @@ export function TerminalPanelHeader({
   );
 
   return (
-    // THE PANE HEAD (docs/design/R3-MINIMAL.md section 9.5): a 50px row on the
-    // paper, a quiet rule under it (geometry in terminal.css), the flat vx disc
-    // at the left, the name over the shell / directory line, then the keys.
+    // THE PANEL HEADER (our approved Studio plate): a 56 row of cells, the
+    // name over the process and directory, then the state cell and the keys.
     <div data-vex-terminal-header="" className="vex-ws-head">
-      <VxToken size={24} />
-      <div className="min-w-0 flex-1">
+      <div className="vex-ws-head__id">
         {/*
           SENTENCE CASE, in the display face. The heading used to be
           `text-transform: uppercase` over the shell's own path, so a terminal
@@ -160,9 +161,7 @@ export function TerminalPanelHeader({
         {renaming ? (
           <HeaderRenameField initial={title} onEnd={endRename} />
         ) : (
-          <h2 className="truncate font-sans text-[14px] leading-[1.2] font-medium text-ink-primary">
-            {title}
-          </h2>
+          <h2 className="vex-ws-head__name">{title}</h2>
         )}
         {/*
           The shell and the directory are a SEPARATE line with their own
@@ -170,12 +169,12 @@ export function TerminalPanelHeader({
           user moving by heading should hear the panel's name, not the panel's
           name plus whatever the shell is and wherever it has wandered.
         */}
-        <p className="vex-num flex min-w-0 items-center gap-1.5 font-mono text-[12px] leading-4 text-ink-tertiary">
+        <p className="vex-ws-head__where vex-num">
           <span data-vex-terminal-shell="" className="shrink-0">
             {terminalShellLabel(shellLabel)}
           </span>
           <span aria-hidden="true" className="shrink-0">
-            /
+            ·
           </span>
           <span
             className="truncate"
@@ -186,42 +185,37 @@ export function TerminalPanelHeader({
         </p>
       </div>
 
-      <div className="vex-ws-head__keys">
-        <ClusterButton label={splitTerminalLabel(title)} onClick={() => { onSplit("horizontal"); }}>
-          <LineSplitVertical />
-        </ClusterButton>
-        <ClusterButton
-          label={splitTerminalVerticalLabel(title)}
-          onClick={() => { onSplit("vertical"); }}
-        >
-          <LineSplitHorizontal />
-        </ClusterButton>
-        <ClusterButton
-          ref={renameButtonRef}
-          label={renameTabLabel(title)}
-          onClick={() => { setRenaming(true); }}
-        >
-          <LineEdit />
-        </ClusterButton>
-        <ClusterButton label={killTerminalLabel(title)} onClick={onKill}>
-          <LineTrash />
-        </ClusterButton>
-      </div>
-      <ShellPicker
-        shells={shells}
-        shellId={shellId}
-        selectedLabel={selected?.label ?? shellId}
-        available={selected?.available ?? false}
-        onSelectShell={onSelectShell}
-      />
+      <span className="vex-ws-head__state" data-vex-terminal-state={state}>
+        <TerminalStateSquare state={state} />
+        <span>{TERMINAL_STATE_COPY[state]}</span>
+      </span>
+      <ClusterButton label={splitTerminalLabel(title)} onClick={() => { onSplit("horizontal"); }}>
+        <LineSplitVertical size={16} />
+      </ClusterButton>
+      <ClusterButton
+        label={splitTerminalVerticalLabel(title)}
+        onClick={() => { onSplit("vertical"); }}
+      >
+        <LineSplitHorizontal size={16} />
+      </ClusterButton>
+      <ClusterButton
+        ref={renameButtonRef}
+        label={renameTabLabel(title)}
+        onClick={() => { setRenaming(true); }}
+      >
+        <LineEdit size={16} />
+      </ClusterButton>
+      <ClusterButton label={killTerminalLabel(title)} onClick={onKill}>
+        <LineTrash size={16} />
+      </ClusterButton>
     </div>
   );
 }
 
 /**
- * One icon key in the header cluster: the kit's 32 x 32 bare key in ink 2.
- * Named, never a bare glyph. Kill hovers like the rest: a failure or an end is
- * ink, never red (docs/design/R3-MINIMAL.md section 1).
+ * One key cell in the header: 56 square behind a rule, its 16 icon in ink.
+ * Named, never a bare glyph. Kill hovers like the rest: an end is never red
+ * on its key; red is the error square's alone.
  */
 const ClusterButton = forwardRef<
   HTMLButtonElement,
@@ -231,16 +225,16 @@ const ClusterButton = forwardRef<
     readonly children: ReactNode;
   }
 >(({ label, onClick, children }, ref) => (
-  <Button
+  <button
     ref={ref}
-    variant="bare"
-    size="icon"
+    type="button"
     aria-label={label}
     title={label}
     onClick={onClick}
+    className="vex-ws-head__key"
   >
     {children}
-  </Button>
+  </button>
 ));
 ClusterButton.displayName = "ClusterButton";
 
@@ -300,24 +294,27 @@ function optionLabel(shell: TerminalShellOption): string {
   return shell.available ? shell.label : `${shell.label}${SHELL_UNAVAILABLE_SUFFIX}`;
 }
 
-function ShellPicker({
+/**
+ * THE SHELL PICKER, the tabs row's last cell (our approved Studio plate):
+ * SHELL in caps, muted, then the shell the next terminal runs in mono and a
+ * chevron. When the selected shell is not on this machine the key says so IN
+ * WORDS after the label (the same suffix the option names carry), because a
+ * fill alone is never a state.
+ */
+export function ShellPicker({
   shells,
   shellId,
-  selectedLabel,
-  available,
   onSelectShell,
 }: {
+  /** The catalogue rows, in main's order. Empty while the read is in flight. */
   readonly shells: readonly TerminalShellOption[];
+  /** Which shell the NEXT terminal opens with. */
   readonly shellId: TerminalShellId;
-  readonly selectedLabel: string;
-  /**
-   * Whether the selected shell exists on this machine. When it does not, the
-   * key says so IN WORDS after the label (the same suffix the option names
-   * carry), because a fill alone is never a state.
-   */
-  readonly available: boolean;
   readonly onSelectShell: (shellId: TerminalShellId) => void;
 }): JSX.Element {
+  const selected = shells.find((shell) => shell.id === shellId);
+  const selectedLabel = selected?.label ?? shellId;
+  const available = selected?.available ?? false;
   const listboxId = useId();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -408,7 +405,7 @@ function ShellPicker({
   );
 
   return (
-    <div className="relative">
+    <div className="vex-ws-shell">
       <button
         ref={buttonRef}
         type="button"
@@ -420,12 +417,15 @@ function ShellPicker({
           if (open) close(true);
           else openList();
         }}
-        // THE PICKER KEY (docs/design/R3-MINIMAL.md section 9.5, geometry in
-        // terminal.css): 32 high, a rule frame on the field, the shell in mono
-        // 13 ink, the chevron muted at the right.
+        // THE PICKER CELL (geometry in terminal.css): the row's height
+        // behind a rule, SHELL muted in caps, the shell in mono 13 ink, the
+        // chevron muted.
         className="vex-ws-picker"
       >
-        <span className="vex-num min-w-0 truncate font-mono">
+        <span aria-hidden="true" className="vex-ws-picker__word">
+          {SHELL_PICKER_WORD}
+        </span>
+        <span className="vex-ws-picker__value vex-num">
           {available ? selectedLabel : `${selectedLabel}${SHELL_UNAVAILABLE_SUFFIX}`}
         </span>
         <LineChevronDown size={14} className="shrink-0 text-ink-tertiary" />

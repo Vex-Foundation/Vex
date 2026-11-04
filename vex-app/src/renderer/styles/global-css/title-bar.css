@@ -603,6 +603,72 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   right: 0;
 }
 
+/* THE STUDIO HOST CELL (our approved Studio plate, docs/design/H3-DESKTOP.md
+ * sections 4.8 and 4.9): a cell at the end of the title cell, the whole
+ * header's height behind a rule, its text 24 in: the status square (grey
+ * running and starting, ink locked, red unavailable; StudioHostStatusWord)
+ * and the state at 14 in caps, over the figure at 12 in caps, muted. It sits
+ * flush against the network cell's rule unless another cell (Needs you,
+ * Notices) follows it in the cluster. */
+.vex-shell-head .vex-tb-host {
+  align-self: stretch;
+}
+.vex-shell-head .vex-running-head__flank:not(:has(.vex-tb-needs, .vex-tb-notices)) > .vex-tb-host {
+  margin-right: -16px;
+}
+.vex-tb-hostcell {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 24px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-tb-hostcell:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-tb-hostcell[aria-expanded="true"] {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-tb-hostcell:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-tb-hostcell__state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-tb-hostcell__figure {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-tb-hostcell {
+    transition: none;
+  }
+}
+/* The card hangs from the header's rule, its right edge on the cell's. */
+.vex-shell-head .vex-tb-host > .vex-tb-hostcard {
+  top: calc(100% + 1px);
+}
+
 /* The Studio host status card: 320 wide, padding 14 16. */
 .vex-tb-hostcard {
   position: absolute;

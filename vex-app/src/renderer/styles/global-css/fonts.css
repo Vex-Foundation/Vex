@@ -7,10 +7,11 @@
  *   - Be Vietnam Pro   = every word (static 400 and 600, latin and
  *     latin-ext). Token --font-sans (and --font-display, the same stack).
  *   - Roboto Mono      = every figure, balance, address, time and duration,
- *     and the money card's field labels (static 400 only, so every figure is
- *     400). Token --font-mono, with `.vex-num` for tabular figures.
- *   - JetBrains Mono   = code: xterm, code blocks, the file viewer, raw JSON
- *     (token --font-code), until Studio's own plate. Variable wght 100-800.
+ *     and the money card's field labels (static 400; every figure is 400),
+ *     and Studio's terminal, 13/20, whose bold text takes the static 700
+ *     (section 4.9). Token --font-mono, with `.vex-num` for tabular figures.
+ *   - JetBrains Mono   = code: code blocks, the file viewer, raw JSON (token
+ *     --font-code). Variable wght 100-800.
  *   - Instrument Sans, Instrument Serif and Inter Tight = R3's faces, no
  *     longer in any stack. Their faces stay declared until their files
  *     retire (the revamp's last wave); a face nothing names is never
@@ -98,8 +99,8 @@
  * 2026-11-04). Any other weight request picks the nearer of the two files
  * (weight synthesis is off, base.css), never a faked bold. No fallback
  * twin: a monospace stack falls back to another monospace, whose advance is
- * the same 0.6em. Code stays on JetBrains Mono (--font-code). Bundled ahead
- * of its use; --font-mono moves onto it in its own change (tokens.css). */
+ * the same 0.6em. The terminal reads --font-mono (terminal-registry.ts);
+ * other code stays on JetBrains Mono (--font-code). */
 @font-face {
   font-family: "Roboto Mono";
   src: url("/fonts/roboto-mono-latin-400-normal.woff2") format("woff2");

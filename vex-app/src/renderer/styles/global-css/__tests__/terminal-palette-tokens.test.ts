@@ -155,15 +155,15 @@ describe("terminal palette tokens", () => {
     expect(tokensCss).not.toContain('[data-vex-theme="celeris"]');
   });
 
-  it.each([["chronos", chronos, "#221a17"]])(
+  it.each([["chronos", chronos, "#010203"]])(
     "pins surface opacity and OSC 11 RGB to the terminal's own surface (%s)",
     (name, body, surface) => {
     // The room has a stable reading ground. OSC 11 reports its RGB, so the
-    // surface is a wire contract and is pinned here: R3's night field,
-    // #221a17, kept as the terminal's own literal after the primitive
-    // retired, until Studio's H3 plate retunes the terminal. It does NOT
-    // follow the room's ground (--vex-alias-bg-base): a program that asked
-    // once must keep getting the same answer.
+    // surface is a wire contract and is pinned here: the H3 ground, #010203,
+    // as our approved Studio plate retunes the terminal (H3-DESKTOP.md
+    // section 4.9). It is a literal, never an alias of the room's ground
+    // (--vex-alias-bg-base): a program that asked once must keep getting the
+    // same answer even if the room is repainted.
     const value = declarationValue(body, "--vex-alias-term-background");
     expect(value, `${name} must not use the keyword xterm rejects`).not.toBe("transparent");
     const match = /^#([0-9a-f]{6})([0-9a-f]{2})$/.exec(value ?? "");
@@ -220,14 +220,21 @@ describe("terminal palette tokens", () => {
     expect(contrastRatio(resolveHex(body, "--vex-alias-term-bright-black"), surface)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("pins the retuned chrome slots to the V10 paper, ink and blue", () => {
+  it("pins the chrome slots to the H3 ink, with no blue cursor", () => {
     // The foreground and cursor ride OSC 10 and the block cursor, so they are
     // wire values like the background: literal, and pinned here so a repaint
-    // of the room cannot move them by accident. Docs/design/R3-MINIMAL.md
-    // section 1.1: paper type on the night field with the periwinkle (blue's
-    // night form) cursor.
-    expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#f3f4f7");
-    expect(resolveHex(chronos, "--vex-alias-term-cursor")).toBe("#a3abff");
+    // of the room cannot move them by accident. Our approved Studio plate:
+    // ink type on the ground with an ink cursor (no blue in Studio's chrome).
+    expect(resolveHex(chronos, "--vex-alias-term-foreground")).toBe("#f3f5f9");
+    expect(resolveHex(chronos, "--vex-alias-term-cursor")).toBe("#f3f5f9");
+    // SGR 34 is a program's colour, a wire contract: it keeps its value.
     expect(resolveHex(chronos, "--vex-alias-term-blue")).toBe("#a3abff");
+  });
+
+  it("gives the ANSI green and red the H3 gain and loss type colours", () => {
+    // A test runner's pass and fail read as the app's gains and losses
+    // (H3-DESKTOP.md section 2.1: --live #76cf8a, --err #ff7a6e).
+    expect(resolveHex(chronos, "--vex-alias-term-green")).toBe(resolveHex(tokensCss, "--color-h3-gain"));
+    expect(resolveHex(chronos, "--vex-alias-term-red")).toBe(resolveHex(tokensCss, "--color-h3-loss"));
   });
 });

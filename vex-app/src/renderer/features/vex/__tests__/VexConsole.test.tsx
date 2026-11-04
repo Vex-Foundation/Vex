@@ -30,9 +30,35 @@ import { approval, session } from "./fixtures.js";
 import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 
 /** What the activity feed's read answers, per test. */
-const feed = vi.hoisted(() => ({ current: { isLoading: true, isError: false, data: undefined } as unknown }));
+const feed = vi.hoisted(() => ({
+  current: { isLoading: true, isError: false, data: undefined } as unknown,
+  /** The filters the last read asked with: the scope the console chose. */
+  filters: null as unknown,
+}));
 vi.mock("../../../lib/api/portfolio.js", () => ({
-  useAgentScanInfinite: () => feed.current,
+  useAgentScanInfinite: (filters: unknown) => {
+    feed.filters = filters;
+    return feed.current;
+  },
+}));
+/** What `projects.get` answers for the open project, per test. */
+const project = vi.hoisted(() => ({ current: null as unknown, loading: false }));
+vi.mock("../../../lib/api/projects.js", () => ({
+  useProject: () => ({
+    isLoading: project.loading,
+    data: project.current === null ? undefined : { ok: true, data: project.current },
+  }),
+}));
+vi.mock("../../../lib/api/wallet-inventory.js", () => ({
+  useAvailableWallets: () => ({
+    data: {
+      ok: true,
+      data: {
+        evm: [],
+        solana: [{ id: "sol-1", address: "H3FixtureWa11etSo1anaxxxxxxxxxxxxxxxxxxxxxx", label: "Trading wallet" }],
+      },
+    },
+  }),
 }));
 /** What `sessions.get` answers for the open chat, per test. */
 const chat = vi.hoisted(() => ({ current: null as unknown }));
@@ -50,7 +76,9 @@ const {
   VexConsoleMissions,
   VexConsoleNeedsYou,
   VexConsolePermission,
+  VexConsoleThisProject,
   VexConsoleTop,
+  PROJECT_ACCESS_SENTENCE,
   needsYouCountText,
 } = await import("../VexConsole.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
@@ -405,5 +433,100 @@ describe("the console's AI permission", () => {
     chat.current = null;
     render(<VexConsolePermission sessionId={SESSION} />);
     expect(document.querySelector("[data-vex-area='vex-permission']")).toBeNull();
+  });
+});
+
+describe("the console's This project (Studio)", () => {
+  const PROJECT_ID = "00000000-0000-4000-8000-0000000000d4";
+  const part = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>("[data-vex-area='vex-this-project']");
+  const facts = (): (string | undefined)[][] =>
+    [...(part()?.querySelectorAll(".vex-console__fact") ?? [])].map((row) => [
+      row.querySelector("dt")?.textContent,
+      row.querySelector("dd")?.textContent,
+    ]);
+
+  afterEach(() => {
+    project.current = null;
+    project.loading = false;
+  });
+
+  it("states a restricted project's access, and says None where nothing is chosen", () => {
+    project.current = {
+      id: PROJECT_ID,
+      permission: "restricted",
+      agents: [],
+      wallets: { evm: null, solana: null },
+      displayPath: "~/Vex/projects/notes",
+    };
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(within(part() ?? document.body).getByRole("heading", { level: 3 }).textContent).toBe(
+      "This project",
+    );
+    expect(part()?.textContent).toContain(PROJECT_ACCESS_SENTENCE.restricted);
+    expect(facts()).toEqual([
+      ["Agents", "None"],
+      ["Wallet", "None"],
+      ["Folder", "~/Vex/projects/notes"],
+    ]);
+  });
+
+  it("names a Solana wallet by the inventory's label, with its short address in mono", () => {
+    project.current = {
+      id: PROJECT_ID,
+      permission: "full",
+      agents: ["gemini-cli"],
+      wallets: {
+        evm: null,
+        solana: { id: "sol-1", address: "H3FixtureWa11etSo1anaxxxxxxxxxxxxxxxxxxxxxx" },
+      },
+      displayPath: "~/Vex/projects/notes",
+    };
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(part()?.textContent).toContain(PROJECT_ACCESS_SENTENCE.full);
+    expect(facts()[1]).toEqual(["Wallet", "Trading wallet H3Fixt…xxxx"]);
+    expect(part()?.querySelector(".vex-console__fact dd .vex-num")).not.toBeNull();
+  });
+
+  it("says it is loading, or that the read failed, never an empty block", () => {
+    project.loading = true;
+    const view = render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(part()?.textContent).toContain("Loading");
+    view.unmount();
+    project.loading = false;
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    expect(part()?.textContent).toContain("Vex could not read this project.");
+    // Its assets stay one press away either way.
+    expect(screen.getByRole("button", { name: "Project assets" })).not.toBeNull();
+  });
+
+  it("opens the project's own assets register", () => {
+    project.current = {
+      id: PROJECT_ID,
+      permission: "full",
+      agents: [],
+      wallets: { evm: null, solana: null },
+      displayPath: "~/Vex/projects/notes",
+    };
+    render(<VexConsoleThisProject projectId={PROJECT_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Project assets" }));
+    const route = useUiStore.getState().shellRoute;
+    expect(route.kind).toBe("assets");
+    if (route.kind !== "assets") throw new Error("unreachable");
+    expect(route.projectId).toBe(PROJECT_ID);
+  });
+
+  it("scopes recent activity to the project through Agent Scan's own project scope", () => {
+    render(<VexConsoleActivity projectId={PROJECT_ID} />);
+    // The page's own seed for the scope, so the two share one cache entry.
+    expect(feed.filters).toEqual({ projectId: PROJECT_ID });
+    fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
+    const route = useUiStore.getState().shellRoute;
+    expect(route.kind).toBe("agentScan");
+    if (route.kind !== "agentScan") throw new Error("unreachable");
+    expect(route.projectId).toBe(PROJECT_ID);
+    cleanup();
+    render(<VexConsoleActivity />);
+    expect(feed.filters).toEqual({});
   });
 });
