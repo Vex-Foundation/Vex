@@ -1,11 +1,9 @@
 /**
  * THE HARNESS CLOCK - one instant and one random sequence for every load.
  *
- * The shell reads the wall clock in places a capture can see: the welcome's
- * greeting picks its bucket from the local hour and its line from
- * `Math.random()` (`lib/greeting.ts`), the chat list groups by day and stamps
- * times, a live turn's timer and a waiting card's "since" are differences
- * from now. A harness state that read the real clock would be a different
+ * The shell reads the wall clock in places a capture can see: the chat list
+ * groups by day and stamps times, a live turn's timer and a waiting card's
+ * "since" are differences from now, and a few draws use `Math.random()`. A harness state that read the real clock would be a different
  * picture every minute, so before any product module evaluates this module
  * pins both:
  *

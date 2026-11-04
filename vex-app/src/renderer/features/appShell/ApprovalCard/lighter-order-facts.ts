@@ -14,6 +14,7 @@
 
 import type { ApprovalPreview } from "@shared/schemas/approvals.js";
 import { LIGHTER_ENVIRONMENT_NAMES } from "@shared/lighter-environment-labels.js";
+import { formatUtcDayTime } from "../../vex/needs-you-words.js";
 
 export interface LighterOrderFact {
   readonly label: string;
@@ -41,6 +42,18 @@ function text(value: unknown): string | null {
   if (typeof value === "string") return value.trim().length > 0 ? value : null;
   if (typeof value === "number") return String(value);
   return null;
+}
+
+/**
+ * The order's own expiry in UTC with its date ("Dec 1, 14:30 UTC"), as the
+ * card's other times read; the raw value when it is not a readable instant,
+ * since a signed fact is shown rather than dropped. The full ISO instant
+ * stays in the signed fields.
+ */
+function expiryText(value: unknown): string | null {
+  const raw = text(value);
+  if (raw === null) return null;
+  return formatUtcDayTime(raw) ?? raw;
 }
 
 function capitalize(value: string): string {
@@ -94,7 +107,7 @@ function createRows(args: Args): LighterOrderFact[] {
   push(rows, "Notional", roundedQuote(text(args.notionalDisplay)));
   // An IOC order's timestamp is a stored reference, not a signed expiry; the
   // folded field list keeps its full label.
-  if (args.timeInForce === "good-till-time") push(rows, "Expires", text(args.orderExpiryIso));
+  if (args.timeInForce === "good-till-time") push(rows, "Expires", expiryText(args.orderExpiryIso));
   return rows;
 }
 
@@ -113,7 +126,7 @@ function ocoRows(args: Args): LighterOrderFact[] {
   push(rows, "Stop-loss", legRow(args.stopLossTriggerDisplay, args.stopLossBoundDisplay));
   push(rows, "Take-profit", legRow(args.takeProfitTriggerDisplay, args.takeProfitBoundDisplay));
   push(rows, "Order", "Reduce-only · one cancels the other");
-  push(rows, "Expires", text(args.orderExpiryIso));
+  push(rows, "Expires", expiryText(args.orderExpiryIso));
   return rows;
 }
 

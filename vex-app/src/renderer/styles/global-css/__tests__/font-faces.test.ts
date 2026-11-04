@@ -66,12 +66,14 @@ const H3_FACES: readonly BundledFace[] = [
     },
   },
   {
-    // Static 400 only: H3 sets every figure at 400.
+    // Static 400 for every H3 figure, and 700 for the terminal's bold text.
     family: "Roboto Mono",
     licence: "RobotoMono-OFL.txt",
     files: {
       "roboto-mono-latin-400-normal.woff2": "400",
       "roboto-mono-latin-ext-400-normal.woff2": "400",
+      "roboto-mono-latin-700-normal.woff2": "700",
+      "roboto-mono-latin-ext-700-normal.woff2": "700",
     },
   },
 ];

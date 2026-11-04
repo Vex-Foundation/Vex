@@ -395,47 +395,6 @@
   border-left: 1px solid var(--vex-alias-rule);
 }
 
-/* The "Looking at you" preview under Show avatar (sections 5.2 and 10.1): a
- * framed block, the 200 x 220 print window at the left (VexPortraitPlate, the
- * Vex sidebar's own plate cut down: its 280 height and its top rule are the
- * sidebar's) and the title 15 / 500 over the text 14 / 1.45 at the right. */
-.vex-set-avatar {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  column-gap: 22px;
-  align-items: start;
-  margin: 4px 0 14px;
-  border: 1px solid var(--vex-alias-rule-quiet);
-}
-/* Inside the framed Preferences list the preview is one of its rows: the
- * list's rule above and below, no frame of its own. */
-.vex-prefs__list > .vex-set-avatar {
-  margin: 0;
-  border: 0;
-  border-bottom: 1px solid var(--vex-alias-rule);
-}
-.vex-set-avatar__plate.vex-vs-plate {
-  width: 200px;
-  height: 220px;
-  border-top: 0;
-}
-.vex-set-avatar__text {
-  min-width: 0;
-  padding: 22px 22px 22px 0;
-}
-.vex-set-avatar__title {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22px;
-  color: var(--vex-alias-label-primary);
-}
-.vex-set-avatar__body {
-  margin: 6px 0 0;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--vex-alias-label-secondary);
-}
-
 /* The switch, H3's (docs/design/H3-DESKTOP.md section 2.4): 36 x 20, a 1px
  * light border, a 12 x 12 thumb at a 3px inset. Off, the thumb is a muted
  * square at the left; on, it is a light (ink) square at the right and the

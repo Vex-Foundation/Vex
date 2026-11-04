@@ -1,8 +1,8 @@
 /**
  * THE FIRST CLOSE TEACHES THE WAY BACK, ONCE (docs/design/H3-DESKTOP.md
  * section 3.5 and Appendix A.3; plan row S4-15): the first time her section
- * closes, the key's name and its keycaps, "Show Vex" and Ctrl, Shift, B (⌘,
- * ⇧, B on a Mac), stand under the Vex key for 2.4 seconds, over Vex's column
+ * closes, the key's name and its keycaps, "Show Vex" and Ctrl, Shift, B (⇧,
+ * ⌘, B on a Mac), stand under the Vex key for 2.4 seconds, over Vex's column
  * only. Cloud shows it once per browser; desktop once per profile, behind a
  * saved flag (`kimmHintShown` in the persisted layout store). Under reduced
  * motion and Save-Data it still shows, without its fade.
