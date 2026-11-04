@@ -216,6 +216,30 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 .vex-ls-nrow--search:hover {
   color: var(--vex-alias-label-secondary);
 }
+/* THE NAV (sections 1.4 and 4.6): nine rows on the 40 pitch, the block 6 in
+ * from the rule above it and from its own rule under it (at 1440 H3's seven
+ * rows fill 179 to 472; desktop's nine run on to about 552). Each word is a
+ * label: 14, caps, tracked, in ink (the measured peaks, #D6D8D7, read as
+ * ink, as the status words' do), its icon muted. The selected row takes the
+ * one row gradient, from #181A1C at the column's left edge to the ground at
+ * its right, and its icon turns ink. */
+.vex-ls-nav {
+  flex: none;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-ls-nrow--nav {
+  height: 40px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ls-nrow--nav[data-selected] {
+  background: var(--vex-alias-row-selected);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-nrow--nav[data-selected] .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
+}
 /* New chat's signing stroke (chronos-motion.css runs it) and its glint,
  * under the word and at the cell's right edge. */
 .vex-ls-new__stroke {

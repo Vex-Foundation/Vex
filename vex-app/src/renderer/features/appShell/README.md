@@ -50,12 +50,16 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   "Back to welcome" in a session), set 92 in on macOS after the traffic lights
   and 24 elsewhere, then the 77-wide key cell; over the rail the logo cell alone.
 - New chat (55 high on the cell fill) and Search chats (48) as H3 cells, edge to
-  edge, then the nav (`SessionRows/SidebarNav.tsx`): Chat,
-  Missions, Portfolio, Board, Lighter, Studio, Settings. One action backs every
-  row, `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
-  Chat and Missions are agent mode (Missions on its Mission tab), Portfolio, Board
-  and Settings open pages, Lighter and Studio switch mode. The selected row is
-  `selectNavDestination`: the open page first, then the mode.
+  edge, then the nav (`SessionRows/SidebarNav.tsx`, H3-DESKTOP.md section 4.6):
+  Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board, Settings,
+  nine caps rows on the 40 pitch between two rules, the selected one on
+  `--vex-alias-row-selected`. One action backs every row,
+  `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
+  Chat and Missions are agent mode (Missions on its Mission tab); Markets (the
+  Watchlist page), Portfolio, Activity (the Agent Scan page, its full feed),
+  Board and Settings open pages; Lighter and Studio switch mode. The selected
+  row is `selectNavDestination`: the open page first (Agent Scan selects
+  Activity), then the mode.
 - Search chats turns its cell into the field with All, Agent and Mission tabs and
   counts (local text, title filter). Escape closes it and drops the Agent tab.
 - Sessions by name in Pinned, Today, Yesterday, Older (`sessionListModel.ts`),

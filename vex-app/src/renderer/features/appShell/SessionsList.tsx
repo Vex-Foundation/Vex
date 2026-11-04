@@ -17,8 +17,9 @@
  *            cell into the field with the All, Agent and Mission tabs under
  *            it, New chat staying above it; Escape or the field's Esc key
  *            brings back the sections.
- *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
- *            with a 12px gap above and below (`SidebarNav`).
+ *   NAV      Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio,
+ *            Board, Settings: nine H3 rows on the 40 pitch between two rules
+ *            (`SidebarNav`; H3-DESKTOP.md section 4.6).
  *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
  *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`); under
  *            the frame's header it is the bottom row's account cell
@@ -344,13 +345,13 @@ export function SessionsList({
                   onClick={openSearch}
                   className="vex-ls-nrow--search"
                 />
-                <div aria-hidden className="vex-ls-gap" />
+                {/* The nav block stands between two rules, Search chats'
+                  * and its own, so no gap sets it apart. */}
                 <SidebarNav
                   rail={false}
                   onMissions={openMissions}
                   activeSessionMode={activeSessionMode}
                 />
-                <div aria-hidden className="vex-ls-gap" />
               </>
             )}
             <div

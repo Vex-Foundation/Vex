@@ -122,19 +122,39 @@ beforeEach(() => {
 });
 
 describe("the nav", () => {
-  it("lists Chat, Missions, Portfolio, Board, Watchlist, Lighter, Studio and Settings, in order", () => {
+  it("lists Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board and Settings, in order", () => {
+    // docs/design/H3-DESKTOP.md section 4.6. The words stay in sentence case
+    // in the source; the row's label style sets the caps.
     renderSidebar();
     expect(within(nav()).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Chat",
       "Missions",
+      "Markets",
       "Portfolio",
-      "Board",
-      "Watchlist",
+      "Activity",
       "Lighter",
       "Studio",
+      "Board",
       "Settings",
     ]);
     expect(navRow("Chat").getAttribute("aria-current")).toBe("page");
+    for (const button of within(nav()).getAllByRole("button")) {
+      expect(button.classList.contains("vex-ls-nrow--nav")).toBe(true);
+    }
+  });
+
+  it("Markets opens the Watchlist page and Activity the full Agent Scan feed", () => {
+    renderSidebar();
+    fireEvent.click(navRow("Markets"));
+    expect(useUiStore.getState().shellRoute.kind).toBe("watchlist");
+    expect(navRow("Markets").getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(navRow("Activity"));
+    const route = useUiStore.getState().shellRoute;
+    expect(route.kind).toBe("agentScan");
+    if (route.kind === "agentScan") expect(route.sessionId).toBeNull();
+    expect(navRow("Activity").getAttribute("aria-current")).toBe("page");
+    expect(navRow("Portfolio").hasAttribute("aria-current")).toBe(false);
   });
 
   it("opens the page routes in the centre and moves the selected row with them", () => {
@@ -364,7 +384,7 @@ describe("the rail", () => {
     expect(screen.queryByRole("button", { name: "Chats" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" }).textContent).toBe("");
     expect(navRow("Portfolio").textContent).toBe("");
-    expect(within(nav()).getAllByRole("button")).toHaveLength(8);
+    expect(within(nav()).getAllByRole("button")).toHaveLength(9);
     // No session rows on the rail; the account is the box alone.
     expect(document.querySelector("[data-vex-ls-item]")).toBeNull();
     expect(screen.getByTestId("account").getAttribute("data-open")).toBe("false");

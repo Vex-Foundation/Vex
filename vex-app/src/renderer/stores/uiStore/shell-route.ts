@@ -385,23 +385,30 @@ export function assetsScopeKey(scope: AssetsRouteScope): string {
 /* ------------------------------ the nav ------------------------------------ */
 
 /**
- * THE LEFT SIDEBAR'S NAV, as destinations (docs/design/R3-MINIMAL.md section
- * 4). One `navigate(destination)` store action maps each onto the store's
- * existing mechanisms, so the nav adds no state of its own:
+ * THE CHATS COLUMN'S NAV, as destinations (docs/design/H3-DESKTOP.md section
+ * 4.6), in the nav's order: Chat, Missions, Markets, Portfolio, Activity,
+ * Lighter, Studio, Board, Settings. One `navigate(destination)` store action
+ * maps each onto the store's existing mechanisms, so the nav adds no state of
+ * its own:
  *
  *  - Chat: agent mode, no page.
  *  - Missions: agent mode, no page, the sessions filter on its Mission tab.
- *  - Portfolio, Board, Watchlist, Settings: their page routes, in the current mode.
+ *  - Markets (`watchlist`, the route it opens: H3's Markets is today's
+ *    Watchlist page), Portfolio, Board, Settings: their page routes, in the
+ *    current mode.
+ *  - Activity: the Agent Scan page, its full global feed (the profile menu's
+ *    own way in opens the same; Portfolio's activity card opens it narrowed).
  *  - Lighter, Studio: their runtime modes, no page.
  */
 export type NavDestination =
   | "chat"
   | "missions"
-  | "portfolio"
-  | "board"
   | "watchlist"
+  | "portfolio"
+  | "activity"
   | "lighter"
   | "studio"
+  | "board"
   | "settings";
 
 /** What a destination asks of the store: a mode (null keeps it), a route, a filter. */
@@ -438,6 +445,12 @@ export function navigationTarget(
       return { mode: null, route: { kind: "board", origin }, sessionModeFilter: current };
     case "watchlist":
       return { mode: null, route: { kind: "watchlist", origin }, sessionModeFilter: current };
+    case "activity":
+      return {
+        mode: null,
+        route: { kind: "agentScan", origin, sessionId: null },
+        sessionModeFilter: current,
+      };
     case "settings":
       return {
         mode: null,
@@ -455,8 +468,10 @@ export function navigationTarget(
  * The nav row that reads as selected, or `null` when the screen is none of the
  * nav's destinations. It follows the REAL destination, page first, then mode:
  *
- *  - an open page with a row of its own selects that row (Portfolio's subpages,
- *    Agent Scan, All assets and Token history, select Portfolio);
+ *  - an open page with a row of its own selects that row: Agent Scan selects
+ *    Activity in every scope it opens with (the global feed, one chat's, one
+ *    project's), and Portfolio's subpages, All assets and Token history,
+ *    select Portfolio;
  *  - a page with no row of its own (Memory, Sessions, How Vex works, Needs
  *    you) selects NOTHING: the chat or desk behind it is not where the user is;
  *  - with no page, the mode's row: Lighter, Studio, and in the agent workspace
@@ -480,8 +495,9 @@ export function selectNavDestination(
       break;
     case "settings":
       return "settings";
-    case "portfolio":
     case "agentScan":
+      return "activity";
+    case "portfolio":
     case "assets":
     case "tokenHistory":
       return "portfolio";

@@ -1,9 +1,19 @@
 /**
- * THE LEFT SIDEBAR'S NAV (docs/design/R3-MINIMAL.md section 4): Chat,
- * Missions, Portfolio, Board, Watchlist, Lighter, Studio, Settings. Each row is 34 high
- * with a 16px line icon in ink 2, gap 11, 14 type; the selected row takes the
- * selection wash, blue type, weight 500 and a blue icon. On the 56px rail the
- * rows are 40 x 40 keys, icon only, with the name as the tooltip and the
+ * THE CHATS COLUMN'S NAV (docs/design/H3-DESKTOP.md sections 1.4 and 4.6):
+ * Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board,
+ * Settings. H3 draws seven rows (Chat, Strategies, Missions, Markets,
+ * Portfolio, Activity, Settings); desktop has no Strategies until F11, its
+ * Markets is today's Watchlist page, its Activity is today's Agent Scan page,
+ * which joins the nav here (Portfolio's activity card and the profile menu
+ * still open it too), and Lighter, Studio and Board are desktop's own, set
+ * among H3's in the order the plan's decision 10 gives.
+ *
+ * Each row is an H3 cell on the 40 pitch, edge to edge: the icon in muted, its
+ * word in caps (14, tracked, ink) at 58. The selected row takes H3's one row
+ * gradient, `--vex-alias-row-selected` (#181A1C at the column's left edge,
+ * fading to the ground at its right), and its icon turns ink. The block
+ * stands between two rules, the one under Search chats and its own. On the
+ * rail the rows are keys, icon only, with the name as the tooltip and the
  * accessible name.
  *
  * One `navigate(destination)` store action backs every row, so the nav adds no
@@ -21,14 +31,15 @@
 
 import type { JSX, ReactNode } from "react";
 import {
+  LineActivity,
   LineBoard,
   LineChat,
   LineLighter,
+  LineMarkets,
   LineMissions,
   LinePortfolio,
   LineSettings,
   LineStudio,
-  LineWatchlist,
   type LineIconComponent,
 } from "../../../components/icons/line/index.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
@@ -47,11 +58,14 @@ const NAV_ROWS: readonly {
 }[] = [
   { destination: "chat", label: "Chat", Icon: LineChat },
   { destination: "missions", label: "Missions", Icon: LineMissions },
+  // Markets opens the Watchlist page (its route keeps its name).
+  { destination: "watchlist", label: "Markets", Icon: LineMarkets },
   { destination: "portfolio", label: "Portfolio", Icon: LinePortfolio },
-  { destination: "board", label: "Board", Icon: LineBoard },
-  { destination: "watchlist", label: "Watchlist", Icon: LineWatchlist },
+  // Activity opens the Agent Scan page, its full feed.
+  { destination: "activity", label: "Activity", Icon: LineActivity },
   { destination: "lighter", label: "Lighter", Icon: LineLighter },
   { destination: "studio", label: "Studio", Icon: LineStudio },
+  { destination: "board", label: "Board", Icon: LineBoard },
   { destination: "settings", label: "Settings", Icon: LineSettings },
 ];
 
@@ -147,6 +161,7 @@ export function SidebarNav({
               rail={rail}
               current={selected === destination}
               onClick={(target) => go(destination, target)}
+              className="vex-ls-nrow--nav"
             />
           </li>
         ))}
