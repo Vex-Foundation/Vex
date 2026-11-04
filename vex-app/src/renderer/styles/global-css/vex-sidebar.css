@@ -1,19 +1,19 @@
-/* THE VEX SIDEBAR (docs/design/R3-MINIMAL.md section 5): Vex's own column,
- * between the chats and the chat (docs/design/H3-DESKTOP.md section 1; the
- * right-hand column on the Lighter desk). Paper with a 1px quiet rule on the
- * side that meets the chat, the same ground as the centre; information first
- * (state, narration, background work, Needs you),
- * then the 280px print window with her hologram, then the avatar switch.
- * Width is the frame's (256, 240, 224; 0 hidden); the column only fills its
- * track. Radius 0, no shadow, no blur, tokens only.
+/* THE VEX SIDEBAR (docs/design/H3-DESKTOP.md sections 1.5 and 1.9): Vex's
+ * own column, between the chats and the chat (the right-hand column on the
+ * Lighter desk), with a 1px quiet rule on the side that meets the chat, the
+ * same ground as the centre. Her console in square cells, her plate laid
+ * under its top block (Kimm's section takes its place, S4), the console's
+ * rest under that. Width is the frame's (30% of the window; 0 hidden); the
+ * column only fills its track. Radius 0, no shadow, no blur, tokens only.
  *
- *   aside.vex-vs[data-vex-vex-open]
- *     .vex-vs__head            44, "Vex" and the hide key
+ *   aside.vex-vs[data-vex-vex-open][data-vex-seat]
  *     .vex-vs__body
- *       .vex-vs__info          state, Needs you, This project, the page slot
- *       .vex-vs__spacer
- *       .vex-vs-plate          the print window (VexPortraitPlate)
- *       .vex-vs__foot | .vex-vs__desk   the switch, or the Lighter desk chat */
+ *       .vex-console__top     Needs you and the missions row (VexConsole.tsx)
+ *       .vex-vs-plate         the print window (VexPortraitPlate)
+ *       .vex-vs__rest         This project, the page slot, AI permission,
+ *                             recent activity
+ *     (on the desk: .vex-vs__info with R3's Needs you, the plate, .vex-vs__desk)
+ *     (on a table page with her closed: .vex-strip, the page strip) */
 
 .vex-vs {
   position: relative;
@@ -43,47 +43,8 @@
   border-right: 0;
 }
 
-/* The head row: a window drag region whose content keeps clear of the
- * Windows and Linux caption buttons (138 + 10 = the 148 of section 2.2; 10
- * on macOS, where `--overlay-w` is 0). */
-.vex-vs__head {
-  display: flex;
-  height: var(--head-h);
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 calc(var(--overlay-w) + 10px) 0 18px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-}
-/* Under H3's header (docs/design/H3-DESKTOP.md section 1.3) the column's
- * head no longer meets the caption buttons: the header reserves them. */
-.vex-shell-frame[data-vex-frame="h3"] .vex-vs__head {
-  padding-right: 10px;
-}
-.vex-vs__title {
-  font-size: 14px;
-  font-weight: 500;
-}
-.vex-vs__key {
-  display: inline-flex;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid transparent;
-  background: none;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-vs__key:hover {
-  background: var(--vex-alias-interactive-hover);
-}
-.vex-vs__key:focus-visible,
 .vex-vs__back:focus-visible,
-.vex-vs__link:focus-visible,
-.vex-vs__switch:focus-visible {
+.vex-vs__link:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: 2px;
 }
@@ -105,65 +66,7 @@
   overflow-y: auto;
   padding-bottom: 2px;
 }
-.vex-vs__spacer {
-  min-height: 16px;
-  flex: 1 1 auto;
-}
 
-/* ---- state: fill, scope and word, timer; narration; background work ---- */
-.vex-vs__state {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 18px 0;
-}
-.vex-vs__state-main {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.vex-vs__row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.vex-vs__sw {
-  flex: none;
-}
-.vex-vs__word {
-  min-width: 0;
-  margin: 0;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-.vex-vs__scope {
-  color: var(--vex-alias-label-tertiary);
-  font-weight: 400;
-}
-.vex-vs__timer {
-  flex: none;
-  margin-left: auto;
-  color: var(--vex-alias-label-tertiary);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-.vex-vs__narr {
-  margin: 6px 0 0;
-  color: var(--vex-alias-label-secondary);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-.vex-vs__bg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0 0;
-  color: var(--vex-alias-label-secondary);
-  font-size: 13px;
-  line-height: 1.45;
-}
 /* ---- sections: Needs you, This project ---- */
 .vex-vs__sec {
   margin: 14px 18px 0;
@@ -591,51 +494,6 @@
   inset: 0;
 }
 
-/* ---- the foot: "Show avatar" and its switch ---- */
-.vex-vs__foot {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 18px 12px;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-  color: var(--vex-alias-label-secondary);
-  font-size: 13px;
-}
-.vex-vs__foot > span {
-  flex: 1 1 auto;
-}
-/* The switch: 32 x 18, a 10px square thumb 3px in; off the thumb is muted
- * on the field, on the track is the blue fill (a periwinkle edge at night)
- * and the thumb its on-fill ink. */
-.vex-vs__switch {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  flex: none;
-  padding: 0;
-  border: 1px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-field);
-}
-.vex-vs__switch::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 10px;
-  height: 10px;
-  background: var(--vex-alias-label-tertiary);
-  transition: transform var(--vex-duration-base) var(--vex-ease-standard);
-}
-.vex-vs__switch[aria-checked="true"] {
-  border-color: var(--vex-alias-button-accent-edge);
-  background: var(--vex-alias-button-accent-fill);
-}
-.vex-vs__switch[aria-checked="true"]::after {
-  background: var(--vex-alias-button-accent-ink);
-  transform: translateX(14px);
-}
-
 /* ---- the Lighter desk chat, under the plate ---- */
 .vex-vs__desk {
   display: flex;
@@ -729,17 +587,11 @@
   word-break: break-word;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .vex-vs__switch::after {
-    transition: none;
-  }
-}
-
 /* THE BAND (docs/design/H3-DESKTOP.md section 1.10): under 1024 the same
  * parts lie in one row under the header, over the chat, at the band's fixed
- * height (H3_BAND_HEIGHT, the frame's row): the head row on top, then her
- * state and Needs you, which scroll, beside her portrait, which crops to the
- * row. The avatar switch stays in Settings. Her rule is under her. */
+ * height (H3_BAND_HEIGHT, the frame's row): the console's top block, which
+ * scrolls there, beside her portrait, which crops to the row. The console's
+ * rest is the column's alone. Her rule is under her. */
 .vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="band"] {
   border-right: 0;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
@@ -751,8 +603,13 @@
   flex: 1 1 auto;
   padding-bottom: 12px;
 }
-.vex-vs[data-vex-seat="band"] .vex-vs__spacer,
-.vex-vs[data-vex-seat="band"] .vex-vs__foot {
+.vex-vs[data-vex-seat="band"] .vex-console__top {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+.vex-vs[data-vex-seat="band"] .vex-vs__rest {
   display: none;
 }
 .vex-vs[data-vex-seat="band"] .vex-vs-plate {

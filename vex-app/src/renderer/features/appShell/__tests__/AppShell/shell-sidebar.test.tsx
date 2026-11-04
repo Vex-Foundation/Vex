@@ -1037,12 +1037,13 @@ describe("AppShell", () => {
     expect(order).toEqual(["header", "chats", "vex", "chat"]);
     expect(frame?.querySelector("[tabindex]:not([tabindex='-1']):not([tabindex='0'])")).toBeNull();
 
-    // Her hide key comes before the chat's composer in focus order.
-    const hide = within(view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']") as HTMLElement)
-      .getByRole("button", { name: "Hide Vex" });
+    // Her console's keys come before the chat's composer in focus order.
+    const aside = view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']");
+    if (aside === null) throw new Error("no Vex column");
+    const consoleKey = within(aside).getByRole("button", { name: "Open activity" });
     const seat = view.container.querySelector("[data-vex-composer-seat]");
     if (seat === null) throw new Error("the composer seat is missing");
-    expect(hide.compareDocumentPosition(seat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(consoleKey.compareDocumentPosition(seat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("follows H3's tiers at 1280, 1024 and 1000 x 720", () => {
@@ -1317,18 +1318,22 @@ describe("AppShell", () => {
     }
   });
 
-  it("the header's chip and her hide key still flip the same flag, the column standing", () => {
+  it("the header's Vex key flips the same flag both ways, the column standing", () => {
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
     const aside = view.container.querySelector<HTMLElement>("[data-vex-area='vex-sidebar']");
     if (aside === null) throw new Error("no Vex column");
-    // Her hide key: plate gone, column standing, focus kept on the key.
-    const hide = within(aside).getByRole("button", { name: "Hide Vex" });
-    hide.focus();
+    // The column has no hide key of its own any more (S3-11): the Vex key
+    // hides her, her plate goes, the column stands, focus stays on the key.
+    expect(within(aside).queryByRole("button", { name: "Hide Vex" })).toBeNull();
+    const key = view.container.querySelector<HTMLElement>("[data-vex-area='vex-key']");
+    if (key === null) throw new Error("no Vex key");
+    expect(key.getAttribute("aria-label")).toBe("Hide Vex");
+    key.focus();
     // Her close plays first in the plate; the write lands when it ends.
     vi.useFakeTimers();
     try {
-      fireEvent.click(hide);
+      fireEvent.click(key);
       act(() => {
         vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS);
       });
@@ -1337,11 +1342,11 @@ describe("AppShell", () => {
     }
     expect(useUiStore.getState().vexOpenChat).toBe(false);
     expect(aside.getAttribute("data-vex-vex-open")).toBe("true");
-    expect(document.activeElement).toBe(within(aside).getByRole("button", { name: "Hide Vex" }));
-    // The Vex key shows her again.
-    const key = view.container.querySelector<HTMLElement>("[data-vex-area='vex-key']");
-    expect(key).not.toBeNull();
-    fireEvent.click(key as HTMLElement);
+    expect(aside.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
+    expect(document.activeElement).toBe(key);
+    expect(key.getAttribute("aria-label")).toBe("Show Vex");
+    // The same key shows her again.
+    fireEvent.click(key);
     expect(useUiStore.getState().vexOpenChat).toBe(true);
     expect(aside.querySelector("[data-vex-area='vex-portrait-plate']")).not.toBeNull();
   });
