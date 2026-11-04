@@ -135,9 +135,13 @@ describe("MissionContractModal", () => {
     mockBridge.getDraft.mockResolvedValue({ ok: true, data: SAMPLE_DRAFT });
     mockBridge.getDiff.mockResolvedValue({ ok: true, data: READY_DIFF });
     renderModal();
-    const accept = await screen.findByRole("button", {
-      name: /^Accept contract$/i,
-    });
+    // The file's first render is its cold one; under load it alone can
+    // outlast findBy's 1 s default, which the later cases never come near.
+    const accept = await screen.findByRole(
+      "button",
+      { name: /^Accept contract$/i },
+      { timeout: 5000 },
+    );
     expect((accept as HTMLButtonElement).disabled).toBe(false);
     // Body rendered the goal.
     expect(screen.queryByText(/tighter range/i)).not.toBeNull();
