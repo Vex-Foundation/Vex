@@ -580,6 +580,26 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   color: var(--vex-alias-label-tertiary);
 }
 
+/* ── Popovers in the header (docs/design/H3-DESKTOP.md sections 1.3 and 4.8)
+ * Needs you and Notices open from their cells: each control's box stands the
+ * cell's full height in the title cell's cluster, so its popover hangs from
+ * the header's rule, one pixel under the row, its right edge on the
+ * control's. R3's anchors (Needs you 2 under its 32 high key; Notices 50
+ * under the 44 row's top and 12 from the column's edge) would open inside the
+ * 76 header now. The Lighter desk's title row keeps them as they were. */
+.vex-shell-head .vex-running-head__flank {
+  align-self: stretch;
+}
+.vex-shell-head :is(.vex-tb-needs, .vex-tb-notices) {
+  position: relative;
+  align-self: stretch;
+  align-items: center;
+}
+.vex-shell-head :is(.vex-tb-pop--needs, .vex-tb-pop--notices) {
+  top: calc(100% + 1px);
+  right: 0;
+}
+
 /* The Studio host status card: 320 wide, padding 14 16. */
 .vex-tb-hostcard {
   position: absolute;
