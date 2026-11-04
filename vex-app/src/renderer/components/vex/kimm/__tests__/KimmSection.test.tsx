@@ -133,7 +133,7 @@ describe("KimmSection, open and still (S4-04)", () => {
     const box = rule(".vex-kimm");
     expect(box).toMatch(/position:\s*absolute/);
     expect(box).toMatch(/top:\s*var\(--vex-kimm-top\)/);
-    expect(box).toMatch(/--vex-kimm-top:\s*148px/);
+    expect(box).toMatch(/--vex-kimm-top:\s*var\(--vex-console-top-h, 148px\)/);
     expect(box).toMatch(/bottom:\s*1px/);
     expect(box).toMatch(/left:\s*0/);
     expect(box).toMatch(/right:\s*0/);

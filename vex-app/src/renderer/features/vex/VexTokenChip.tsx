@@ -1,8 +1,13 @@
 /**
  * THE TOKEN CHIP: the flat vx token with the open chat's state, at the right
- * end of the title bar (docs/design/R3-MINIMAL.md sections 2.4 and 3). It is
- * also the Vex toggle: pressing it shows or hides the Vex sidebar
- * (`aria-pressed`, tooltip "Hide Vex" or "Show Vex").
+ * end of the Lighter desk's title row (docs/design/R3-MINIMAL.md sections
+ * 2.4 and 3). It is also the Vex toggle: pressing it shows or hides the
+ * desk's Vex column (`aria-pressed`, tooltip "Hide Vex (Ctrl+Shift+B)" or
+ * "Show Vex (Ctrl+Shift+B)", docs/design/H3-DESKTOP.md Appendix A.9).
+ *
+ * THE DESK'S ALONE. In H3's header the Vex key (`VexKey.tsx`) replaced the
+ * chip (H3-DESKTOP.md section 4.8, S3-03); the desk keeps R3's title row
+ * until its own restyle, and the chip with it.
  *
  * Contents, in order: the disc (22), "Vex chat" (the chip's subject, so a
  * bare "Ready" never reads as the desk's or the app's state), then after a
@@ -25,13 +30,11 @@
  * chip already reads as hidden ("Show Vex", not pressed), and a press keeps
  * her instead.
  *
- * THE SHORTCUT, Cmd or Ctrl + Shift + B (`vex-toggle-shortcut.ts`; for one
- * release R3's Cmd or Ctrl + Shift + Period still works, unspelled), is the
- * same press from the keyboard, bound while the chip is mounted (so nowhere
- * without a Vex column: not on the welcome, not in Zen) and suspended while
- * a modal dialog is open, as the Studio table is. The tooltip spells only
- * the new chord. H3 moves the listener to the shell, so it holds from
- * anywhere (docs/design/H3-DESKTOP.md section 4.4).
+ * THE SHORTCUT, Cmd or Ctrl + Shift + B (`vex-toggle-shortcut.ts`), is the
+ * same press from the keyboard (`pressVexToggle`), bound at the shell
+ * (`useVexToggleShortcut`, H3-DESKTOP.md section 4.4), never here: it holds
+ * from anywhere, whether or not a chip is mounted. The tooltip spells only
+ * the new chord.
  *
  * HER PORTRAIT stands where the token stood (docs/design/H3-DESKTOP.md
  * section 1.6; `KimmPortraitKey`, plan row S4-03): her mood's still while her
@@ -43,8 +46,7 @@
  * button, never inside it, so the button's name stays "Vex, {word}".
  */
 
-import { useEffect, useRef, useState, type JSX } from "react";
-import { isDialogOnScreen } from "../../components/ui/dialog.js";
+import { useEffect, useState, type JSX } from "react";
 import { StateWord } from "../../components/ui/state-word.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
@@ -54,14 +56,10 @@ import { studioPlatform, type StudioPlatform } from "../appShell/studio/keybindi
 import { formatElapsed } from "../appShell/TurnIsland/ElapsedCounter.js";
 import { kimmMoodOf } from "./kimm-mood.js";
 import { useVexPresence } from "./useVexPresence.js";
-import { keepVex, requestVexHide, useVexClosing } from "./vex-hide.js";
+import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VEX_STATE_FILL } from "./vex-state.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
-import {
-  isVexToggleChord,
-  vexToggleAriaShortcut,
-  vexToggleShortcutLabel,
-} from "./vex-toggle-shortcut.js";
+import { vexToggleAriaShortcut, vexToggleTooltipLabel } from "./vex-toggle-shortcut.js";
 
 export interface VexTokenChipProps {
   /** Whether the Vex sidebar is open, as the frame solved it. */
@@ -70,16 +68,6 @@ export interface VexTokenChipProps {
   readonly onToggle: () => void;
   /** The platform whose modifier and spelling apply; this window's by default. */
   readonly platform?: StudioPlatform;
-}
-
-/** The tooltip word for the press, by the sidebar's current state. */
-export function vexToggleLabel(open: boolean): string {
-  return open ? "Hide Vex" : "Show Vex";
-}
-
-/** The tooltip: the press's word and the shortcut that does the same. */
-export function vexToggleTooltip(open: boolean, platform: StudioPlatform): string {
-  return `${vexToggleLabel(open)} · ${vexToggleShortcutLabel(platform)}`;
 }
 
 /** m:ss since the live turn started, recomputed each second from the start. */
@@ -115,31 +103,12 @@ export function VexTokenChip({
     );
 
   const press = (): void => {
-    if (open && closing) keepVex();
-    else if (open) requestVexHide(onToggle);
-    else onToggle();
+    pressVexToggle(open, onToggle);
   };
-  // The listener reads the latest press without rebinding on every render.
-  const pressRef = useRef(press);
-  pressRef.current = press;
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.repeat) return;
-      if (!isVexToggleChord(event, platform)) return;
-      // A modal decision is pending: no shortcut moves the shell under it.
-      if (isDialogOnScreen(document)) return;
-      event.preventDefault();
-      pressRef.current();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [platform]);
 
   return (
     <>
-      <Tooltip label={vexToggleTooltip(shown, platform)} side="bottom">
+      <Tooltip label={vexToggleTooltipLabel(shown, platform)} side="bottom">
         <button
           type="button"
           className="vex-tb-chip"

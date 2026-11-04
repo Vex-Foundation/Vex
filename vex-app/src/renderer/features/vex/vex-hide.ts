@@ -100,3 +100,15 @@ export function requestVexHide(commit: () => void): void {
 export function keepVex(): void {
   closer?.keep();
 }
+
+/**
+ * One press of a Vex toggle (the Vex key, the desk's token chip, the shortcut), whatever pressed
+ * it: `open` is what the frame solved, `onToggle` the store write that flips it. Open and
+ * closing, the press keeps her; open, it hides her through her close; closed, it shows her at
+ * once. The three controls share this so a click and a chord can never mean different things.
+ */
+export function pressVexToggle(open: boolean, onToggle: () => void): void {
+  if (open && closing) keepVex();
+  else if (open) requestVexHide(onToggle);
+  else onToggle();
+}

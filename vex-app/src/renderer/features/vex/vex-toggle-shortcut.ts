@@ -1,8 +1,10 @@
 /**
  * THE VEX TOGGLE SHORTCUT: Cmd + Shift + B on macOS, Ctrl + Shift + B on Windows and Linux
  * (docs/design/H3-DESKTOP.md section 4.4 and Appendix A.9). It opens and closes her exactly as the
- * title bar's token chip does, and the chip's tooltip spells it. Desktop binds it on Linux too,
- * where Cloud leaves it unbound: the app owns its keys, and the chord collides with nothing in it.
+ * header's Vex key does, from anywhere in the shell: the frame binds it once
+ * (`useVexToggleShortcut.ts`), and the key's tooltip and keycaps spell it. Desktop binds it on
+ * Linux too, where Cloud leaves it unbound: the app owns its keys, and the chord collides with
+ * nothing in it.
  *
  * THE RETIRING ALIAS. R3's chord, Cmd or Ctrl + Shift + Period, still matches for ONE release, so
  * a hand that learned it is not stranded the day H3 ships. It goes in the release after the one
@@ -81,4 +83,20 @@ export function vexToggleShortcutLabel(platform: StudioPlatform): string {
 /** The chord for `aria-keyshortcuts` (WAI-ARIA names the modifiers, the key is its own value). */
 export function vexToggleAriaShortcut(platform: StudioPlatform): string {
   return platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B";
+}
+
+/**
+ * The toggle's name: what a press does now (docs/design/H3-DESKTOP.md section 1.6). Open, it
+ * hides her; closed, it shows her. Every control that carries the press is named this.
+ */
+export function vexToggleName(open: boolean): string {
+  return open ? "Hide Vex" : "Show Vex";
+}
+
+/**
+ * The tooltip: the name and the chord that does the same (Appendix A.9), "Show Vex
+ * (Ctrl+Shift+B)", "Hide Vex (⇧⌘B)".
+ */
+export function vexToggleTooltipLabel(open: boolean, platform: StudioPlatform): string {
+  return `${vexToggleName(open)} (${vexToggleShortcutLabel(platform)})`;
 }

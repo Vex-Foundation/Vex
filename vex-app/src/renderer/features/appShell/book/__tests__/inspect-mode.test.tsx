@@ -1,7 +1,7 @@
 /**
  * The inspect view (docs/design/R3-MINIMAL.md section 5.1): behaviour pins
  * for the additive tool-call view, which takes over the Vex sidebar's body.
- * Opening hides the body (her state, Needs you, the plate) WITHOUT
+ * Opening hides the body (her console and the plate) WITHOUT
  * unmounting it, Back restores it, a session switch or a foreign-session
  * payload never renders, and hostile payloads (BigInt, circular) degrade
  * instead of crashing. The transcript's tool row drives `openToolInspect`
@@ -27,6 +27,17 @@ const PRESENCE: VexPresence = {
 
 vi.mock("../../../vex/useVexPresence.js", () => ({
   useVexPresence: () => PRESENCE,
+  // The console's missions row reads every session's missions.
+  useAllMissions: () => PRESENCE.background,
+}));
+// The console's rest reads the activity feed and the open chat's permission;
+// here neither read has answered (their words are `VexConsole.test.tsx`'s).
+vi.mock("../../../../lib/api/portfolio.js", () => ({
+  useAgentScanInfinite: () => ({ isLoading: true, isError: false, data: undefined }),
+}));
+vi.mock("../../../../lib/api/sessions.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useSession: () => ({ data: undefined }),
 }));
 vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
   useShellBackdrop: () => ({ data: undefined }),
@@ -81,7 +92,7 @@ describe("the inspect view in the Vex sidebar", () => {
     // Additive: the body hides but nothing in it unmounts, her plate included
     // (in H3's frame her plate is Kimm's section, plan row S4-04).
     expect(body()?.hidden).toBe(true);
-    expect(body()?.querySelector('[data-vex-area="vex-state"]')).not.toBeNull();
+    expect(body()?.querySelector('[data-vex-area="vex-console-top"]')).not.toBeNull();
     expect(body()?.querySelector('[data-vex-area="vex-needs-you"]')).not.toBeNull();
     expect(body()?.querySelector('[data-vex-area="kimm-section"]')).not.toBeNull();
   });
@@ -92,7 +103,7 @@ describe("the inspect view in the Vex sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByLabelText(/Tool call:/)).toBeNull();
     expect(body()?.hidden).toBe(false);
-    expect(body()?.querySelector('[data-vex-area="vex-state"]')).not.toBeNull();
+    expect(body()?.querySelector('[data-vex-area="vex-console-top"]')).not.toBeNull();
   });
 
   it("a payload from another session never renders, and a session switch closes the view", () => {

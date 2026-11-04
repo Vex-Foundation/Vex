@@ -33,11 +33,12 @@
  * (`.vex-vs` is its containing block), so nothing in the column moves under
  * her and nothing about her reaches the frame's grid. Its size is a function
  * of the window alone:
- *   - top: the foot of the console's top block. Desktop's block is the Needs
- *     you head (43), its row (64), the missions row (40) and their rule, 148
- *     under the header, with no strategies row (section 4.1): y 224 at any
- *     window height. A named length here, not a read of the console's
- *     height, so the console changing never moves her.
+ *   - top: the foot of the console's top block, the console's own fixed
+ *     `--vex-console-top-h` on `.vex-vs` (vex-sidebar.css): the Needs you
+ *     head (43), its row (64), the missions row and its rule (41), 148 under
+ *     the header, with no strategies row (section 4.1): y 224 at any window
+ *     height. A declared length, never a measure of the console's content,
+ *     so a decision arriving or a mission starting never moves her.
  *   - foot: one pixel above the bottom row (the column ends at the row).
  *   - left and width: the column's, her ground under its 1px rule at the
  *     right, which the column draws (vex-sidebar.css) as the mockup draws it
@@ -46,7 +47,7 @@
  * She paints over the console under her; the console's rest stays where it
  * is, under her, for the strip to uncover. */
 .vex-kimm {
-  --vex-kimm-top: 148px;
+  --vex-kimm-top: var(--vex-console-top-h, 148px);
   /* Kimm's blue ground, one of the two gradients H3 allows (section 2): sky
    * at her head to the saturated blue at her waist and the ground at her
    * feet, as the captures read it. Mixed from the palette's own blue, ink

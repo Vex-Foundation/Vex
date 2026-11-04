@@ -94,6 +94,12 @@ export interface KimmPlateProps {
   readonly state: VexState;
   /** Her section is open: the stored choice as the frame solved it. */
   readonly open: boolean;
+  /**
+   * Hide her: the frame's own write, as the column hands it on. Showing her
+   * writes the page class's stored choice (`setVexOpen`); without `onHide`,
+   * hiding does too.
+   */
+  readonly onHide?: () => void;
 }
 
 export type VexPortraitPlateProps = K2PlateProps | KimmPlateProps;
@@ -109,13 +115,17 @@ const KIMM_SHORTCUT = {
 } as const;
 
 /** Her section, with the feature's part done: her mood, the chord, the stored choice. */
-function KimmPlate({ state, open }: KimmPlateProps): JSX.Element {
+function KimmPlate({ state, open, onHide }: KimmPlateProps): JSX.Element {
   const setVexOpen = useUiStore((s) => s.setVexOpen);
+  const onOpenChange = (next: boolean): void => {
+    if (!next && onHide !== undefined) onHide();
+    else setVexOpen(next);
+  };
   return (
     <KimmSection
       mood={kimmMoodOf(state)}
       open={open}
-      onOpenChange={setVexOpen}
+      onOpenChange={onOpenChange}
       shortcut={KIMM_SHORTCUT}
     />
   );

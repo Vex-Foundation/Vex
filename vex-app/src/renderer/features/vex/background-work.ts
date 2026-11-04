@@ -1,6 +1,7 @@
 /**
  * BACKGROUND WORK: the missions that keep working while the user looks at
- * something else (docs/design/R3-MINIMAL.md section 5). Read from the sessions
+ * something else (docs/design/R3-MINIMAL.md section 5), and the console's
+ * missions row (docs/design/H3-DESKTOP.md section 1.5). Read from the sessions
  * list, which already carries every session's `missionStatus`; the open
  * session is excluded because its own state is the state word.
  *
@@ -91,5 +92,44 @@ export function backgroundWorkOf(
     items,
     label,
     summary: label === null ? null : only === undefined ? label : `${label} · ${only.title}`,
+  };
+}
+
+// -- The console's missions row ---------------------------------------------
+
+/**
+ * The network every desktop mission runs on: desktop is mainnet only
+ * (docs/design/H3-DESKTOP.md section 4.2: "Mainnet" in the missions row is
+ * true and stays).
+ */
+export const MISSIONS_NETWORK_WORD = "Mainnet";
+
+/** The row with no mission running (Appendix A.3, proposed): it stays, so her box never moves. */
+export const NO_MISSION_RUNNING = "No mission running";
+
+export interface MissionsRow {
+  /** "1 mission running on Mainnet", "2 missions running on Mainnet", "No mission running". */
+  readonly lead: string;
+  /** The running mission's title when exactly one runs, set off muted after the lead; else null. */
+  readonly name: string | null;
+  /** The one running mission's session, which the row opens; null opens the missions list. */
+  readonly sessionId: string | null;
+}
+
+/**
+ * The console's missions row (docs/design/H3-DESKTOP.md section 1.5 and
+ * Appendix A.3), from the work of EVERY session, the open one included
+ * (`backgroundWorkOf(sessions, null)`): the row says what runs app-wide, so a
+ * mission does not drop out of it because its chat is the one on screen. Only
+ * a running mission counts, as everywhere this module counts.
+ */
+export function missionsRowOf(work: BackgroundWork): MissionsRow {
+  if (work.label === null) return { lead: NO_MISSION_RUNNING, name: null, sessionId: null };
+  const running = work.items.filter((item) => item.status === "running");
+  const only = running.length === 1 ? running[0] : undefined;
+  return {
+    lead: `${work.label} on ${MISSIONS_NETWORK_WORD}`,
+    name: only?.title ?? null,
+    sessionId: only?.sessionId ?? null,
   };
 }
