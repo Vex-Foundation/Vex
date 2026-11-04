@@ -48,12 +48,30 @@ describe("AgentSidebarHeader (the head row)", () => {
     expect(screen.queryByRole("radio", { name: "Studio" })).toBeNull();
   });
 
-  it("is the sidebar's head row: a drag region clear of the traffic lights", () => {
+  it("is the header's cells over the chats column: a drag region clear of the traffic lights", () => {
     const { container } = render(<AgentSidebarHeader onCollapse={vi.fn()} />);
-    const head = container.querySelector("header");
+    const head = container.querySelector("[data-vex-head-cell='chats']");
+    expect(head?.tagName).toBe("DIV");
     expect(head?.classList.contains("vex-drag")).toBe(true);
     expect(head?.classList.contains("vex-lights-start")).toBe(true);
     expect(head?.classList.contains("vex-ls-head")).toBe(true);
+    // The logo cell, then the sidebar key's.
+    const cells = Array.from(head?.children ?? []).map((el) => el.getAttribute("data-vex-head-cell"));
+    expect(cells).toEqual(["logo", "sidebar-key"]);
+  });
+
+  it("over the rail is the logo cell alone, the rail's Expand key the way back", () => {
+    const { container } = render(<AgentSidebarHeader rail onCollapse={vi.fn()} />);
+    const head = container.querySelector("[data-vex-head-cell='chats']");
+    expect(head?.hasAttribute("data-rail")).toBe(true);
+    expect(head?.classList.contains("vex-drag")).toBe(true);
+    expect(head?.querySelector("[data-vex-home-mark]")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Collapse/i })).toBeNull();
+  });
+
+  it("names Studio's sidebar on its key in Studio", () => {
+    render(<AgentSidebarHeader label="Collapse Studio sidebar" onCollapse={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Collapse Studio sidebar" })).not.toBeNull();
   });
 
   it("leaves search to the body: the head row holds the mark and one key", () => {

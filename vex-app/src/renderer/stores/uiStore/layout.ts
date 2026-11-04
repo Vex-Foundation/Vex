@@ -70,12 +70,22 @@ export function selectVexOpen(
  * current class's slot only (the Lighter desk writes `vexOpenLighter`, never
  * the table pages' slot).
  *
- * Opening also clears the narrow override, because under the medium tier an
- * open Vex folds the left sidebar to its rail (docs/design/R3-MINIMAL.md
- * section 2); in Lighter the same flag is the top bar's drawer, which an open
- * chat closes as it always has. `bookOpen` mirrors the last write: it is the
- * legacy slot that `vexOpenChat` was seeded from, and the Lighter desk still
- * watches it to focus the composer once the chat has mounted.
+ * WHAT THE SLOTS MEAN (docs/design/H3-DESKTOP.md sections 1.9 and 3.5). In
+ * the agent shell and Studio `vexOpenChat` now shows or hides her plate
+ * inside a column that always stands in a chat, and `vexOpenPages` folds the
+ * table pages' column to its strip or opens it. Both keep their stored
+ * values: a person who hid her keeps her hidden, now as the plate folded
+ * rather than the column gone, so no saved value is migrated. The desk's
+ * `vexOpenLighter` keeps R3's meaning.
+ *
+ * On the desk opening also closes the top bar's drawer (the same ephemeral
+ * flag), as an open chat always has. In the agent shell and Studio it no
+ * longer touches that flag, R3's narrow-tier override: H3 never folds the
+ * chats column for her (section 3.6, "H3 has no derived close"), so a
+ * column the person opened between 1024 and 1267 stays open. `bookOpen`
+ * mirrors the last write: it is the legacy slot that `vexOpenChat` was seeded
+ * from, and the Lighter desk still watches it to focus the composer once the
+ * chat has mounted.
  */
 export function vexOpenPatch(
   state: Pick<UiState, "runtimeMode" | "shellRoute">,
@@ -86,10 +96,12 @@ export function vexOpenPatch(
     "vexOpenChat" | "vexOpenPages" | "vexOpenLighter" | "bookOpen" | "sidebarNarrowExpanded"
   >
 > {
-  const slot = { [VEX_OPEN_SLOT[vexPageClass(state)]]: open };
-  return open
+  const pageClass = vexPageClass(state);
+  const slot = { [VEX_OPEN_SLOT[pageClass]]: open };
+  if (!open) return { ...slot, bookOpen: false };
+  return pageClass === "lighter"
     ? { ...slot, bookOpen: true, sidebarNarrowExpanded: false }
-    : { ...slot, bookOpen: false };
+    : { ...slot, bookOpen: true };
 }
 
 /** A persisted boolean preference: anything that is not a boolean degrades. */

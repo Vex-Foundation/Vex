@@ -1,32 +1,19 @@
 /**
- * SessionWelcomeHero - the R3 welcome (docs/design/R3-MINIMAL.md sections 7
- * and 10.1, references d2, d3x-first-welcome and d3x-database-down): Vex on
- * her welcome stage with no state word under her (the owner, 2026-10-17),
- * her token as a toggle ("Hide Vex" / "Show Vex", pressed while she shows,
- * stored as the welcome's own `welcomeVexShown`, never as Show avatar:
- * a press closes her into the upright coin, the stage collapses to the coin
- * once she has settled, the next press gives the stage its size back and
- * then opens her; the seat glides, never under reduced motion), the note
- * that docks her into the Vex sidebar, the serif greeting with the honest
- * preview disclosure as its tooltip, and the database-down callout. The
- * retired V10 opening (the date eyebrow, the runtime-mode capsule, the Arena
- * notice) stays gone.
+ * SessionWelcomeHero - the welcome (docs/design/R3-MINIMAL.md sections 7 and
+ * 10.1 for its words; docs/design/H3-DESKTOP.md section 1.7 for its place,
+ * references d3x-first-welcome and d3x-database-down): the greeting with the
+ * honest preview disclosure as its tooltip, the database-down callout and
+ * the Vex Inference notice. Vex is not drawn here: H3's welcome keeps her
+ * column beside it (S2-10), so the welcome has no stage, no token toggle and
+ * no note handing her to the column, and no state word (the owner,
+ * 2026-10-17). The retired V10 opening (the date eyebrow, the runtime-mode
+ * capsule, the Arena notice) stays gone.
  */
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, useRef } from "react";
-import type { K2TokenState } from "../../../components/vex/k2/k2-engine.js";
-import {
-  fitFor,
-  tokenBox,
-  tokenStand,
-  tokenStandInk,
-  type Box,
-} from "../../../components/vex/k2/k2-rig.js";
-import type { VexK2Props } from "../../../components/vex/k2/VexK2.js";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { greetingPoolForHour } from "../../../lib/greeting.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import {
@@ -34,7 +21,6 @@ import {
   backgroundWorkOf,
 } from "../../vex/background-work.js";
 import { NEEDS_YOU_UNKNOWN_COPY, NEEDS_YOU_WITHDRAWALS_UNKNOWN_COPY } from "../../vex/needs-you.js";
-import { takeVexDock, vexDockPending } from "../../vex/vex-dock.js";
 import type { VexPresence } from "../../vex/useVexPresence.js";
 import { session } from "../../vex/__tests__/fixtures.js";
 
@@ -70,57 +56,14 @@ vi.mock("../../vex/useVexPresence.js", () => ({
   useVexPresence: () => presence,
 }));
 
-// The still frame and the seat's glide read the reduced-motion preference.
-let reduced = false;
-vi.mock("../../../lib/motion/reduced-motion.js", () => ({
-  prefersReducedMotion: () => reduced,
-  useReducedMotion: () => reduced,
-  subscribeReducedMotion: () => () => undefined,
+// Her canvas would be K2's; the welcome must not mount it at all.
+const k2Mounts = vi.hoisted(() => ({ count: 0 }));
+vi.mock("../../../components/vex/k2/VexK2.js", () => ({
+  VexK2: () => {
+    k2Mounts.count += 1;
+    return <div data-vex-k2="" />;
+  },
 }));
-
-// Her canvas is pinned by VexK2's own suite; here the host records what the
-// welcome hands her (placement, ground, emotion, the composer she looks at,
-// the token toggle, the morning) and stands in for the engine: after mount it reports the
-// coin's box and the state she starts in, as the engine does after her first
-// frame. Each render also notes the stage as the previous commit left it, so
-// a case can prove the stage got its size back before she was told to open.
-let lastK2: VexK2Props | null = null;
-let hostBox: Box | null = null;
-const k2Renders: { tokenOnly: boolean; stageBefore: string | null }[] = [];
-function MockVexK2(props: VexK2Props) {
-  lastK2 = props;
-  k2Renders.push({
-    tokenOnly: props.tokenOnly === true,
-    stageBefore:
-      document.querySelector("[data-vex-welcome-vex]")?.getAttribute("data-vex-welcome-vex") ??
-      null,
-  });
-  // the engine reports once, on her first frame; later states come from the case
-  const first = useRef(props);
-  useEffect(() => {
-    const p = first.current;
-    if (hostBox !== null) p.onTokenBox?.(hostBox);
-    p.onToken?.(p.tokenOnly === true ? "token" : "shown");
-  }, []);
-  return (
-    <div
-      aria-hidden="true"
-      data-vex-k2={props.placement}
-      data-vex-k2-ground={props.ground}
-      data-emotion={props.emotion}
-      data-token-only={props.tokenOnly === true ? "" : undefined}
-      className={props.className}
-    />
-  );
-}
-vi.mock("../../../components/vex/k2/VexK2.js", () => ({ VexK2: MockVexK2 }));
-
-/** The engine reports a toggle state (closing, token, opening, shown). */
-function report(state: K2TokenState): void {
-  act(() => {
-    lastK2?.onToken?.(state);
-  });
-}
 
 const { SessionWelcomeHero } = await import("../SessionWelcomeHero.js");
 
@@ -166,61 +109,32 @@ beforeEach(() => {
   envData = undefined;
   useUiStore.setState({ vexInferenceNoticeDismissed: false });
   presence = readyPresence();
-  lastK2 = null;
-  hostBox = null;
-  k2Renders.length = 0;
-  reduced = false;
-  takeVexDock();
+  k2Mounts.count = 0;
 });
 
-describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
-  it("stands Vex on her welcome stage, on night paper: the app is dark only", () => {
+describe("SessionWelcomeHero - Vex stands in her column, not on the welcome", () => {
+  it("draws no Vex of its own: no stage, no hologram, no token key", () => {
     const { container } = render(<SessionWelcomeHero />);
-    const stage = container.querySelector("[data-vex-welcome-stage]");
-    const host = stage?.querySelector("[data-vex-k2]");
-    expect(host?.getAttribute("data-vex-k2")).toBe("welcome");
-    expect(host?.getAttribute("data-vex-k2-ground")).toBe("night");
-    expect(host?.className).toContain("vex-welcome__vex");
-    expect(lastK2?.tokenOnly).toBe(false);
+    expect(container.querySelector("[data-vex-welcome-stage]")).toBeNull();
+    expect(container.querySelector("[data-vex-k2]")).toBeNull();
+    expect(k2Mounts.count).toBe(0);
+    expect(screen.queryByRole("button", { name: /Hide Vex|Show Vex/ })).toBeNull();
   });
 
-  it("her face echoes the presence state: idle when Ready, the raised palm while an approval waits", () => {
-    const { container, unmount } = render(<SessionWelcomeHero />);
-    expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-emotion")).toBe("idle");
-    unmount();
-    presence = readyPresence({
-      state: "awaiting",
-      word: "Waiting for approval",
-      fill: "awaiting",
-    });
-    const second = render(<SessionWelcomeHero />);
-    expect(
-      second.container.querySelector("[data-vex-k2]")?.getAttribute("data-emotion"),
-    ).toBe("approval");
+  it("opens on the greeting: the opening's first child is the headline", () => {
+    const { container } = render(<SessionWelcomeHero />);
+    const opening = container.querySelector("[data-vex-area='welcome-opening']");
+    expect(opening?.firstElementChild?.tagName).toBe("H1");
   });
 
-  it("listens while the user types, her eyes on the composer under her", () => {
-    presence = readyPresence({ state: "listening", word: "Listening", fill: "listening" });
-    const composer = document.createElement("div");
-    composer.setAttribute("data-vex-composer-stage", "hero");
-    document.body.append(composer);
-    try {
-      const { container } = render(<SessionWelcomeHero />);
-      expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-emotion")).toBe(
-        "listening",
-      );
-      expect(lastK2?.composer?.()).toBe(composer);
-    } finally {
-      composer.remove();
-    }
-  });
-
-  it("leaves the note that docks her into the Vex sidebar on the first message", () => {
+  it("writes no Vex choice: neither the welcome key nor Show avatar", () => {
+    useUiStore.setState({ welcomeVexShown: false, showAvatar: false });
     render(<SessionWelcomeHero />);
-    expect(vexDockPending()).toBe(true);
+    expect(useUiStore.getState().welcomeVexShown).toBe(false);
+    expect(useUiStore.getState().showAvatar).toBe(false);
   });
 
-  it("shows no state word under Vex: no state line, no swatch, no word (the title bar chip and the Vex sidebar carry it)", () => {
+  it("shows no state word: no state line, no swatch, no word (the header's Vex key and her column carry it)", () => {
     const { container } = render(<SessionWelcomeHero />);
     expect(container.querySelector("[data-vex-welcome-state]")).toBeNull();
     expect(container.querySelector(".vex-state-word")).toBeNull();
@@ -228,7 +142,7 @@ describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
     expect(screen.queryByText("Ready")).toBeNull();
   });
 
-  it("no background missions line either, and no ring: a running mission and Concerned show only on her face", () => {
+  it("no background missions line either, and no ring: a running mission and Concerned stay in her column", () => {
     presence = readyPresence({
       state: "concerned",
       word: "Concerned",
@@ -242,258 +156,6 @@ describe("SessionWelcomeHero - Vex on her stage, no state word", () => {
     expect(screen.queryByText(/mission running/)).toBeNull();
     expect(screen.queryByText("Concerned")).toBeNull();
     expect(container.querySelector("[data-vex-status]")).toBeNull();
-    expect(container.querySelector("[data-vex-k2]")?.getAttribute("data-emotion")).toBe(
-      "concerned",
-    );
-  });
-});
-
-describe("SessionWelcomeHero - her morning coffee", () => {
-  it("hands her the morning by the local clock: 06:00 to 10:59 on, otherwise off", () => {
-    const hours = vi.spyOn(Date.prototype, "getHours");
-    try {
-      hours.mockReturnValue(8);
-      const first = render(<SessionWelcomeHero />);
-      expect(lastK2?.morning).toBe(true);
-      first.unmount();
-      hours.mockReturnValue(11);
-      render(<SessionWelcomeHero />);
-      expect(lastK2?.morning).toBe(false);
-    } finally {
-      hours.mockRestore();
-    }
-  });
-
-  it("reads the clock again every minute: the morning ends while she stands there", () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    const hours = vi.spyOn(Date.prototype, "getHours").mockReturnValue(10);
-    try {
-      render(<SessionWelcomeHero />);
-      expect(lastK2?.morning).toBe(true);
-      hours.mockReturnValue(11);
-      act(() => {
-        vi.advanceTimersByTime(60_000);
-      });
-      expect(lastK2?.morning).toBe(false);
-    } finally {
-      hours.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("SessionWelcomeHero - the token toggle", () => {
-  const stageOf = (container: HTMLElement) =>
-    container.querySelector("[data-vex-welcome-stage]")?.getAttribute("data-vex-welcome-vex");
-  const clipOf = (container: HTMLElement) =>
-    container.querySelector<HTMLElement>("[data-vex-welcome-clip]");
-  const token = () => screen.getByRole("button", { name: /^(Hide|Show) Vex$/ });
-
-  it("the token under her is a real button named Hide Vex, pressed while she shows, keyboard reachable", () => {
-    render(<SessionWelcomeHero />);
-    const button = token();
-    expect(button.tagName).toBe("BUTTON");
-    expect(button.getAttribute("type")).toBe("button");
-    expect(button.getAttribute("aria-label")).toBe("Hide Vex");
-    expect(button.getAttribute("aria-pressed")).toBe("true");
-    expect(button.className).toContain("vex-welcome__token");
-    act(() => {
-      button.focus();
-    });
-    expect(document.activeElement).toBe(button);
-  });
-
-  it("stands over the coin's box her host reports, grown to at least 44 px each way", () => {
-    hostBox = { left: 130, top: 226, right: 190, bottom: 284 };
-    const first = render(<SessionWelcomeHero />);
-    expect(token().style.left).toBe("130px");
-    expect(token().style.top).toBe("226px");
-    expect(token().style.width).toBe("60px");
-    expect(token().style.height).toBe("58px");
-    first.unmount();
-    hostBox = { left: 145, top: 250, right: 175, bottom: 270 };
-    render(<SessionWelcomeHero />);
-    expect(token().style.left).toBe("138px");
-    expect(token().style.top).toBe("238px");
-    expect(token().style.width).toBe("44px");
-    expect(token().style.height).toBe("44px");
-  });
-
-  it("before her host reports, it stands over the coin's box on the full 320 x 284 stage", () => {
-    render(<SessionWelcomeHero />);
-    const fit = fitFor("welcome", 320, 284);
-    if (fit === null) throw new Error("the full stage has no fit");
-    const box = tokenBox(fit);
-    expect(Number.parseFloat(token().style.left)).toBeCloseTo(box.left, 5);
-    expect(Number.parseFloat(token().style.top)).toBeCloseTo(box.top, 5);
-  });
-
-  it("a press hides Vex on the welcome only: the welcome key off, Show avatar untouched, the button not pressed", () => {
-    render(<SessionWelcomeHero />);
-    fireEvent.click(token());
-    expect(useUiStore.getState().welcomeVexShown).toBe(false);
-    // the global avatar switch (Settings, the Vex sidebar) is not written
-    expect(useUiStore.getState().showAvatar).toBe(true);
-    expect(token().getAttribute("aria-pressed")).toBe("false");
-    expect(token().getAttribute("aria-label")).toBe("Show Vex");
-    expect(lastK2?.tokenOnly).toBe(true);
-  });
-
-  it("Show avatar off elsewhere (Settings) never hides her on the welcome, and the welcome key never follows it", () => {
-    const { container } = render(<SessionWelcomeHero />);
-    act(() => {
-      useUiStore.getState().setShowAvatar(false);
-    });
-    expect(useUiStore.getState().welcomeVexShown).toBe(true);
-    expect(stageOf(container)).toBe("portrait");
-    expect(lastK2?.tokenOnly).toBe(false);
-  });
-
-  it("the stage keeps its size while she closes and collapses to the coin's box once she has settled", () => {
-    hostBox = { left: 130.5, top: 225.6, right: 189.5, bottom: 284 };
-    const { container } = render(<SessionWelcomeHero />);
-    expect(stageOf(container)).toBe("portrait");
-    fireEvent.click(token());
-    // the close is playing: nothing moves yet
-    expect(stageOf(container)).toBe("portrait");
-    report("closing");
-    expect(stageOf(container)).toBe("portrait");
-    expect(clipOf(container)?.style.height).toBe("");
-    report("token");
-    expect(stageOf(container)).toBe("token");
-    // the clip is as tall as the coin; her host keeps its size, shifted up by the coin's top
-    expect(clipOf(container)?.style.height).toBe("59px");
-    expect((clipOf(container)?.firstElementChild as HTMLElement | null)?.style.marginTop).toBe(
-      "-225px",
-    );
-    expect(clipOf(container)?.querySelector("[data-vex-k2]")?.className).toContain(
-      "vex-welcome__vex",
-    );
-    // the button follows the coin up
-    expect(Number.parseFloat(token().style.top)).toBeCloseTo(225.6 - 225, 5);
-  });
-
-  it("collapsed on the full stage, the stage holds the whole larger upright coin: rim, lift and bob, never clipped at its foot", () => {
-    useUiStore.setState({ welcomeVexShown: false });
-    const { container } = render(<SessionWelcomeHero />);
-    expect(stageOf(container)).toBe("token");
-    const fit = fitFor("welcome", 320, 284);
-    if (fit === null) throw new Error("the full stage has no fit");
-    const box = tokenBox(fit);
-    const ink = tokenStandInk(fit);
-    const clip = clipOf(container);
-    const height = Number.parseFloat(clip?.style.height ?? "");
-    const top = -Number.parseFloat(
-      (clip?.firstElementChild as HTMLElement | null)?.style.marginTop ?? "",
-    );
-    // the cut starts at or above the coin's highest ink and ends at or under its foot
-    expect(top).toBeLessThanOrEqual(ink.top);
-    expect(top + height).toBeGreaterThanOrEqual(ink.bottom);
-    expect(top + height).toBeGreaterThanOrEqual(box.bottom);
-    // inside her host (284 high), so the host's own edge never cuts it either
-    expect(ink.bottom).toBeLessThanOrEqual(284);
-    // clearly larger than before (the flat token's box was 59 high): one and a half coins
-    expect(height).toBeGreaterThan(90);
-    expect(tokenStand(fit).right - tokenStand(fit).left).toBeGreaterThan(85);
-  });
-
-  it("a second press gives the stage its size back first, then she opens (the wake from the token)", () => {
-    useUiStore.setState({ welcomeVexShown: false, showAvatar: false });
-    const { container } = render(<SessionWelcomeHero />);
-    expect(stageOf(container)).toBe("token");
-    expect(token().getAttribute("aria-pressed")).toBe("false");
-    k2Renders.length = 0;
-    fireEvent.click(token());
-    expect(useUiStore.getState().welcomeVexShown).toBe(true);
-    // the welcome press never turns the global avatar switch back on
-    expect(useUiStore.getState().showAvatar).toBe(false);
-    expect(stageOf(container)).toBe("portrait");
-    expect(lastK2?.tokenOnly).toBe(false);
-    expect(token().getAttribute("aria-pressed")).toBe("true");
-    // the first render that tells her to open sees a stage that already has its size back
-    const opened = k2Renders.find((r) => !r.tokenOnly);
-    expect(opened?.stageBefore).toBe("portrait");
-    report("opening");
-    expect(stageOf(container)).toBe("portrait");
-  });
-
-  it("with the welcome key off at mount only the coin stands, the stage collapsed, no ring and no word", () => {
-    useUiStore.setState({ welcomeVexShown: false });
-    const { container } = render(<SessionWelcomeHero />);
-    expect(lastK2?.tokenOnly).toBe(true);
-    expect(container.querySelector("[data-vex-k2]")?.hasAttribute("data-token-only")).toBe(true);
-    expect(stageOf(container)).toBe("token");
-    expect(container.querySelector("[data-vex-status]")).toBeNull();
-    expect(container.querySelector("[data-vex-welcome-state]")).toBeNull();
-    // no hologram here, so nothing to dock into the sidebar
-    expect(vexDockPending()).toBe(false);
-  });
-
-  it("the welcome key switched back on (another welcome mount) gives the stage its size back", () => {
-    useUiStore.setState({ welcomeVexShown: false });
-    const { container } = render(<SessionWelcomeHero />);
-    expect(stageOf(container)).toBe("token");
-    act(() => {
-      useUiStore.setState({ welcomeVexShown: true });
-    });
-    expect(stageOf(container)).toBe("portrait");
-    expect(lastK2?.tokenOnly).toBe(false);
-  });
-
-  it("a press while she still closes, before she settled, never collapses the stage", () => {
-    const { container } = render(<SessionWelcomeHero />);
-    fireEvent.click(token());
-    report("closing");
-    fireEvent.click(token());
-    expect(useUiStore.getState().welcomeVexShown).toBe(true);
-    // the engine lets the close settle, then opens her
-    report("token");
-    expect(stageOf(container)).toBe("portrait");
-  });
-});
-
-describe("SessionWelcomeHero - the seat glides as the stage changes", () => {
-  /** The welcome inside the composer seat, its band reporting `tops` in turn. */
-  function renderSeated(tops: number[]) {
-    const view = render(
-      <div data-vex-composer-seat="">
-        <SessionWelcomeHero />
-        <div data-vex-composer-dock="" />
-      </div>,
-    );
-    const seat = view.container.querySelector<HTMLElement>("[data-vex-composer-seat]");
-    const dock = view.container.querySelector<HTMLElement>("[data-vex-composer-dock]");
-    if (seat === null || dock === null) throw new Error("no seat");
-    const animate = vi.fn();
-    Object.defineProperty(seat, "animate", { value: animate, configurable: true });
-    let n = 0;
-    vi.spyOn(dock, "getBoundingClientRect").mockImplementation(() => {
-      const top = tops[Math.min(n, tops.length - 1)] ?? 0;
-      n++;
-      return new DOMRect(0, top, 720, 302);
-    });
-    return { ...view, animate };
-  }
-
-  it("when she settles as the coin the seat glides up from where its band was: a transform, 240 ms, the standard curve", () => {
-    const { animate } = renderSeated([520, 410]);
-    fireEvent.click(screen.getByRole("button", { name: "Hide Vex" }));
-    report("token");
-    expect(animate).toHaveBeenCalledTimes(1);
-    const [frames, options] = animate.mock.calls[0] ?? [];
-    expect(frames).toEqual([{ transform: "translateY(110px)" }, { transform: "none" }]);
-    expect(options).toEqual({ duration: 240, easing: "cubic-bezier(0.4, 0, 0.2, 1)" });
-  });
-
-  it("under reduced motion the stage swaps at once and the seat does not glide", () => {
-    reduced = true;
-    const { animate, container } = renderSeated([520, 410]);
-    fireEvent.click(screen.getByRole("button", { name: "Hide Vex" }));
-    report("token");
-    expect(
-      container.querySelector("[data-vex-welcome-stage]")?.getAttribute("data-vex-welcome-vex"),
-    ).toBe("token");
-    expect(animate).not.toHaveBeenCalled();
   });
 });
 

@@ -27,6 +27,11 @@
  * images. H3's money rule is that showing or hiding Vex never moves a waiting
  * card; these numbers are where that starts being measured.
  *
+ * THE WINDOW'S PLATFORM. The harness draws a macOS window unless asked
+ * (`?os=`); VEX_H3_OS=win or linux takes the whole set on that platform's
+ * chrome instead (the Windows caption overlay and its reserve), into the same
+ * layout of files, so a second VEX_H3_DIR holds the second platform.
+ *
  * OUTPUT, under VEX_H3_DIR:
  *   <width>x<height>/<state>.png                 every state
  *   <width>x<height>/swap-waiting--vex-closed.png the card with Vex hidden
@@ -40,6 +45,9 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const OUT_DIR = process.env.VEX_H3_DIR ?? "";
+
+/** The window's platform for the whole set; the harness's own (mac) unless set. */
+const OS = ["mac", "win", "linux"].find((os) => os === process.env.VEX_H3_OS) ?? null;
 
 /** The sizes the H3 contract is checked at: the proof plates and the window floor. */
 const SIZES = [
@@ -77,7 +85,7 @@ async function open(page: Page, size: Size, query: string): Promise<void> {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize(size);
-  await page.goto(`/?${query}`);
+  await page.goto(`/?${query}${OS === null ? "" : `&os=${OS}`}`);
   await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 20_000 });
   await page.evaluate(async () => {
     await document.fonts.ready;
@@ -145,6 +153,7 @@ test.describe("H3 parity captures", () => {
         {
           state: "swap-waiting",
           selector: CARD,
+          os: OS ?? "mac",
           note: "CSS px from the viewport's top-left. vexAsOpened is the state's own Vex column choice; vexClosed is ?vex=closed.",
           boxes: cardBoxes,
         },

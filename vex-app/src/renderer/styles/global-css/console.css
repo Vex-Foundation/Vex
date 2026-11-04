@@ -65,6 +65,21 @@
 .vex-composer-bar {
   margin-top: 6px;
 }
+/* H3's chat is narrower than R3's centre (docs/design/H3-DESKTOP.md section
+ * 1.2: 648 at 1280, 641 at 1024), too narrow for the options and the
+ * trailing cluster on one line: the options keep the room their keys need
+ * (the model key collapsed to nothing under the squeeze) and the trailing
+ * cluster wraps under them, the composer growing upward. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-composer-bar {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-composer-bar > :first-child {
+  min-width: min(100%, 17.5rem);
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-composer-bar > :last-child {
+  margin-left: auto;
+}
 
 /* The options control: "{model} · Reasoning: {effort}" in one 30 high frame
  * on the quiet rule, 13, the dot and "Reasoning:" muted, a chevron last. The

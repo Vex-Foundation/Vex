@@ -91,16 +91,107 @@
  * sidebar | centre | Vex sidebar, solved by lib/shell-columns.ts. Opening and
  * closing animates the tracks on the standard curve; Lighter's chat share drag
  * writes widths at pointer cadence, so easing them would detach the column
- * edge from the handle. */
+ * edge from the handle.
+ *
+ * The rows are H3's (docs/design/H3-DESKTOP.md section 1.1): head | body |
+ * foot, written inline by the frame (`shellGridTemplateRows`). A row the
+ * frame does not draw is 0, and each column spans all three rows, so with
+ * neither drawn the body is the whole window. */
 .vex-shell-frame {
   position: relative; /* anchors the chat share handle, which straddles a column border */
   display: grid;
-  grid-template-rows: 100%;
+  grid-template-rows: 0px minmax(0, 1fr) 0px;
   overflow: hidden;
   transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-frame[data-dragging] {
   transition: none;
+}
+/* Each column's place: its own track, every row, in R3's order (left |
+ * centre | Vex), which the Lighter desk keeps. In H3's frame (the agent
+ * shell and Studio) the header (ShellHeader, title-bar.css) takes the first
+ * row across every track and the columns stand under it in H3's order; the
+ * Lighter desk keeps R3's one row, its header box-less. */
+.vex-shell-frame > .vex-left-page {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+.vex-shell-frame > .vex-shell-centre {
+  grid-column: 2;
+  grid-row: 1 / -1;
+}
+.vex-shell-frame > .vex-shell-vex {
+  grid-column: 3;
+  grid-row: 1 / -1;
+}
+.vex-shell-frame > .vex-shell-head {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+/* H3's order (docs/design/H3-DESKTOP.md section 1): chats | Vex | chat, the
+ * Vex column between the chats and the chat; the DOM follows it (AppShell). */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-vex {
+  grid-column: 2;
+}
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-centre {
+  grid-column: 3;
+}
+/* In H3's frame the columns stand from under the header to over the bottom
+ * row; the rules after this one move the chat and the band. */
+.vex-shell-frame[data-vex-frame="h3"] > :is(.vex-left-page, .vex-shell-centre, .vex-shell-vex) {
+  grid-row: 2 / -2;
+  /* Under the header no column meets the window's top any more, so a head
+   * row a column still draws of its own (R3's, until its slice retires it:
+   * the Vex sidebar's "Vex" row) keeps R3's 44 rather than the window's
+   * head row (window-chrome.css). */
+  --head-h: 44px;
+}
+/* THE BOTTOM ROW (docs/design/H3-DESKTOP.md section 1.8): the frame's last
+ * row, 72 high. The chats and Vex columns stop over it; their cells take it:
+ * the account cell under the chats (the column's own foot rule and paper,
+ * `.vex-ls`), the tagline cell under Vex. The chat runs on into it: its
+ * composer seat ends at the window's foot, and a page sheet covers the
+ * whole column, so a page has no bottom row (section 1.9). The account cell
+ * stacks over the chats column, so the account menu it opens rises over it. */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-centre {
+  grid-row: 2 / -1;
+}
+.vex-shell-frame > .vex-shell-account {
+  position: relative;
+  z-index: 21;
+  grid-column: 1;
+  grid-row: -2;
+  min-width: 0;
+}
+.vex-shell-account > .vex-ls-foot {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+}
+.vex-shell-account > .vex-ls-foot > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.vex-shell-frame > .vex-shell-tagline {
+  grid-column: 2;
+  grid-row: -2;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+
+/* Under 1024, Vex's band (docs/design/H3-DESKTOP.md section 1.10): the frame
+ * has a fourth row under the header (`shellGridTemplateRows`), her element
+ * stands in it over the chat's track, and the chat starts under it; the
+ * chats rail still runs from the header to the foot. */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="band"] > .vex-shell-vex {
+  grid-column: 3;
+  grid-row: 2;
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="band"] > .vex-shell-centre {
+  grid-row: 3 / -1;
 }
 
 /* The one drag handle left, Lighter's chat share, is a frame child (columns
@@ -181,9 +272,10 @@
   }
 }
 
-/* The rail's paper cap: the head row runs across it, rule included, and the
- * rail's content starts under it, clear of the macOS traffic lights. A window
- * drag region like every head row. */
+/* The rail's paper cap, on the Lighter desk's R3 frame only (under H3's
+ * header the rail starts below it): the head row runs across it, rule
+ * included, and the rail's content starts under it, clear of the macOS
+ * traffic lights. A window drag region like every head row. */
 .vex-left-page__cap {
   position: absolute;
   z-index: 3;
@@ -202,11 +294,11 @@
   height: 100%;
   min-height: 0;
 }
-[data-vex-left-page="spine"] > .vex-left-page__content {
+.vex-shell-frame[data-vex-frame="r3"] [data-vex-left-page="spine"] > .vex-left-page__content {
   padding-top: var(--head-h);
 }
 
-/* The title bar's own rules live in title-bar.css. */
+/* The title bar's own rules live in title-bar.css, the header's with them. */
 /* The welcome stage's clear head row runs across the rail's cap too. */
 .vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {
   border-bottom-color: transparent;

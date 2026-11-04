@@ -3,8 +3,10 @@
  * "studio"` (docs/design/R3-MINIMAL.md sections 2.1 and 4, "Studio").
  *
  * Studio is a place in the app, not a second application, so its column IS
- * the left sidebar: the same 44px head (the vx wordmark and the collapse key),
- * the same New chat and Search rows, the same nav with Studio selected, the
+ * the left sidebar: the same head (the vx wordmark and the collapse key, drawn
+ * in the frame's header over this column, `headless`; a standalone mount
+ * draws its own 44px head row), the same New chat and Search rows, the same
+ * nav with Studio selected, the
  * same account row at the foot. Only the BODY under the nav is Studio's: New
  * project, the "Projects" group with its rows (34 high, the selected one in
  * blue on the selection wash), the Welcome row, and the explorer of the open
@@ -204,6 +206,12 @@ export interface StudioSidebarProps {
   readonly onSelectWelcome: () => void;
   /** Test seam; production uses the window's registry. */
   readonly explorerRegistry?: ExplorerRegistry;
+  /**
+   * The frame draws this column's head and foot cells: the logo cell and
+   * the sidebar key in its header (`ShellHeader`), the account cell in its
+   * bottom row. The column holds only its body.
+   */
+  readonly headless?: boolean;
 }
 
 export function StudioSidebar({
@@ -215,6 +223,7 @@ export function StudioSidebar({
   onSelectProject,
   onSelectWelcome,
   explorerRegistry,
+  headless = false,
 }: StudioSidebarProps): JSX.Element {
   const query = useProjects();
   const queryClient = useQueryClient();
@@ -572,7 +581,7 @@ export function StudioSidebar({
       data-vex-sidebar-open={collapsed ? "false" : "true"}
       data-rail={collapsed || undefined}
     >
-      {wide ? (
+      {headless ? null : wide ? (
         <header className="vex-ls-head vex-drag vex-lights-start">
           <SidebarHomeSigil sidebarOpen />
           <Tooltip label="Collapse sidebar" side="bottom">
@@ -676,9 +685,13 @@ export function StudioSidebar({
         <div ref={setUpdateCardSlot} className="vex-upd-slot" data-vex-area="update-slot" />
       ) : null}
 
-      <footer className="vex-ls-foot" data-rail-foot>
-        <SidebarProfile sidebarOpen={wide} />
-      </footer>
+      {/* The account row: the frame's bottom row draws it under this column
+        * (its account cell) when the header draws the head. */}
+      {headless ? null : (
+        <footer className="vex-ls-foot" data-rail-foot>
+          <SidebarProfile sidebarOpen={wide} />
+        </footer>
+      )}
     </aside>
   );
 }
