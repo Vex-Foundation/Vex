@@ -16,7 +16,9 @@
  *    the mission or the missions list; it closes the top block;
  *  - recent activity: the feed's newest rows with the Activity page's status
  *    words on their status squares, the page's own words for a read that is
- *    loading, failed, timed out or empty, and Open activity to the page.
+ *    loading, failed, timed out or empty, and Open activity to the page;
+ *  - AI permission: the open chat's own, in desktop's words for its mode, and
+ *    where it comes from; never "Change in Settings"; nothing with no chat.
  */
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -32,11 +34,22 @@ const feed = vi.hoisted(() => ({ current: { isLoading: true, isError: false, dat
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: () => feed.current,
 }));
+/** What `sessions.get` answers for the open chat, per test. */
+const chat = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useSession: (id: string | null) => ({
+    data: id === null || chat.current === null ? undefined : { ok: true, data: chat.current },
+  }),
+}));
 
 const {
+  PERMISSION_ORIGIN,
+  PERMISSION_SENTENCE,
   VexConsoleActivity,
   VexConsoleMissions,
   VexConsoleNeedsYou,
+  VexConsolePermission,
   VexConsoleTop,
   needsYouCountText,
 } = await import("../VexConsole.js");
@@ -356,5 +369,41 @@ describe("the console's recent activity", () => {
       "No activity recorded yet - everything Vex executes appears here.",
     );
     expect(activity().querySelector("li")).toBeNull();
+  });
+});
+
+describe("the console's AI permission", () => {
+  it("states the open chat's own permission, in desktop's words, and where it comes from", () => {
+    chat.current = session({ id: SESSION, permission: "restricted" });
+    const view = render(<VexConsolePermission sessionId={SESSION} />);
+    const part = (): HTMLElement | null =>
+      document.querySelector<HTMLElement>("[data-vex-area='vex-permission']");
+    expect(part()?.getAttribute("data-permission")).toBe("restricted");
+    expect(within(part() ?? document.body).getByRole("heading", { level: 3 }).textContent).toBe(
+      "AI permission",
+    );
+    expect(part()?.textContent).toContain(
+      "Restricted: every mutating transaction requires your approval.",
+    );
+    expect(part()?.textContent).toContain("Set when this chat was created.");
+    // Settings cannot change a chat's permission: no such link, no key.
+    expect(part()?.textContent).not.toContain("Change in Settings");
+    expect(within(part() ?? document.body).queryByRole("button")).toBeNull();
+    view.unmount();
+
+    chat.current = session({ id: SESSION, permission: "full" });
+    render(<VexConsolePermission sessionId={SESSION} />);
+    expect(part()?.textContent).toContain(PERMISSION_SENTENCE.full);
+    expect(part()?.textContent).toContain(PERMISSION_ORIGIN);
+  });
+
+  it("is left out with no chat open, and before the chat's read answers", () => {
+    chat.current = session({ id: SESSION });
+    const view = render(<VexConsolePermission sessionId={null} />);
+    expect(document.querySelector("[data-vex-area='vex-permission']")).toBeNull();
+    view.unmount();
+    chat.current = null;
+    render(<VexConsolePermission sessionId={SESSION} />);
+    expect(document.querySelector("[data-vex-area='vex-permission']")).toBeNull();
   });
 });

@@ -23,11 +23,22 @@
  *
  * THE CONSOLE'S REST lies under her section and shows while she is closed:
  *
+ *   AI PERMISSION                                    a 44 head, in a chat
+ *     the chat's permission as its sentence, then
+ *     "Set when this chat was created."
  *   RECENT ACTIVITY                                  a 44 head
  *     the newest four entries of the activity        about 43 each
  *     feed, each a line, its status square and its
  *     status word (`vex-console-activity.ts`)
  *   OPEN ACTIVITY and an arrow: the Activity page
+ *
+ * THE PERMISSION is the open chat's own (`sessions.get`), in desktop's
+ * words for its two modes (`ComposerPermissionSeat.tsx`'s), never H3's
+ * "always asks before acting", which Restricted does not do for a read. H3's
+ * "Change in Settings" would be false: a chat's permission is set when it is
+ * created and locked (section 4.1), so the line says that instead. With no
+ * chat open (the welcome, a page over none, Studio) there is no permission to
+ * state, and the part is left out.
  *
  * The feed is the Activity page's own read (`useAgentScanInfinite` with the
  * page's unfiltered global filters), one cache entry with it. Its status
@@ -64,7 +75,9 @@
 import { useId, useMemo, type JSX } from "react";
 import { LineChevronDown, LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
+import type { SessionPermission } from "@shared/schemas/sessions.js";
 import { useAgentScanInfinite } from "../../lib/api/portfolio.js";
+import { useSession } from "../../lib/api/sessions.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import {
   EMPTY_FILTER_STATE,
@@ -339,6 +352,50 @@ export function VexConsoleActivity(): JSX.Element {
       </h3>
       <ActivityRows />
       <OpenActivityKey />
+    </section>
+  );
+}
+
+// -- The console's rest: AI permission -------------------------------------
+
+/**
+ * Each permission as the console states it: desktop's own sentences for its
+ * two modes, the composer's permission seat's (Appendix A.3).
+ */
+export const PERMISSION_SENTENCE: Readonly<Record<SessionPermission, string>> = {
+  restricted: "Restricted: every mutating transaction requires your approval.",
+  full: "Full access: auto-executes approved tools without prompting per call.",
+};
+
+/** Where the permission comes from: set at creation and locked (section 4.1). */
+export const PERMISSION_ORIGIN = "Set when this chat was created.";
+
+/** AI PERMISSION: the open chat's own permission, or nothing with no chat open. */
+export function VexConsolePermission({
+  sessionId,
+}: {
+  /** The chat open in the agent shell; `null` on the welcome, over none, and in Studio. */
+  readonly sessionId: string | null;
+}): JSX.Element | null {
+  const headId = useId();
+  const query = useSession(sessionId);
+  const data = query.data;
+  const session = sessionId !== null && data !== undefined && data.ok ? data.data : null;
+  if (session === null) return null;
+  return (
+    <section
+      aria-labelledby={headId}
+      data-vex-area="vex-permission"
+      data-permission={session.permission}
+      className="vex-console__section"
+    >
+      <h3 id={headId} className="vex-console__head vex-console__head--section">
+        <span className="vex-console__label">AI permission</span>
+      </h3>
+      <div className="vex-console__permission">
+        <p className="vex-console__permission-sentence">{PERMISSION_SENTENCE[session.permission]}</p>
+        <p className="vex-console__permission-origin">{PERMISSION_ORIGIN}</p>
+      </div>
     </section>
   );
 }

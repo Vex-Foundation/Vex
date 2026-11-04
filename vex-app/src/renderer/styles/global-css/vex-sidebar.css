@@ -454,6 +454,23 @@
   padding: 0;
   list-style: none;
 }
+/* AI PERMISSION: the chat's permission as its sentence (16, ink), then where
+ * it comes from (14, muted). */
+.vex-console__permission {
+  padding: 14px var(--vex-console-inset) 16px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-console__permission-sentence {
+  margin: 0;
+  font-size: 16px;
+  line-height: 23px;
+}
+.vex-console__permission-origin {
+  margin: 8px 0 0;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 20px;
+}
 /* One activity: its line (15, ink), then its status at the right: the 6px
  * square in the status colour beside the word (13, caps, ink). */
 .vex-console__activity {

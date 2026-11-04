@@ -77,6 +77,12 @@ vi.mock("../../../lib/motion/use-still-frame.js", () => ({
 vi.mock("../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: () => ({ isLoading: true, isError: false, data: undefined }),
 }));
+// The console's AI permission reads the open chat; its words are
+// `VexConsole.test.tsx`'s. Here the chat's read has not answered.
+vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useSession: () => ({ data: undefined }),
+}));
 vi.mock("../../appShell/lighterTrading/LighterChatRail.js", () => ({
   LighterChatRail: () => <div data-testid="desk-chat" />,
 }));

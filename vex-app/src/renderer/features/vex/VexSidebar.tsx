@@ -82,7 +82,7 @@ import type { NeedsYouItem } from "./needs-you.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
 import { useAllMissions, useVexPresence, type VexPresence } from "./useVexPresence.js";
-import { VexConsoleActivity, VexConsoleTop } from "./VexConsole.js";
+import { VexConsoleActivity, VexConsolePermission, VexConsoleTop } from "./VexConsole.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
@@ -325,6 +325,7 @@ function VexSidebarContent({
           * whose chat takes the rest of its column. */}
         {lighter ? null : (
           <div className="vex-vs__rest" data-vex-area="vex-console-rest">
+            <VexConsolePermission sessionId={studio ? null : activeSessionId} />
             <VexConsoleActivity />
           </div>
         )}
