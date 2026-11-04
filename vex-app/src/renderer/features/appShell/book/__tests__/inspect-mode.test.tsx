@@ -78,11 +78,12 @@ describe("the inspect view in the Vex sidebar", () => {
     expect(panel.textContent).toContain("Done");
     expect(panel.textContent).toContain('"scope": "global"');
     expect(panel.textContent).toContain('"totalUsd": 12.5');
-    // Additive: the body hides but nothing in it unmounts, her plate included.
+    // Additive: the body hides but nothing in it unmounts, her plate included
+    // (in H3's frame her plate is Kimm's section, plan row S4-04).
     expect(body()?.hidden).toBe(true);
     expect(body()?.querySelector('[data-vex-area="vex-state"]')).not.toBeNull();
     expect(body()?.querySelector('[data-vex-area="vex-needs-you"]')).not.toBeNull();
-    expect(body()?.querySelector("[data-vex-k2]")).not.toBeNull();
+    expect(body()?.querySelector('[data-vex-area="kimm-section"]')).not.toBeNull();
   });
 
   it("Back returns to the body with nothing missing", () => {
