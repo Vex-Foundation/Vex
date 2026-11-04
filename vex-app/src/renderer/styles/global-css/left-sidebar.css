@@ -74,6 +74,52 @@ html:not([data-os="mac"]) .vex-ls-head.vex-lights-start {
   color: var(--vex-alias-label-primary);
 }
 
+/* THE LOGO CELL AND THE SIDEBAR KEY (docs/design/H3-DESKTOP.md section 1.3):
+ * the header's cells over the chats column (AgentSidebarHeader). The header
+ * (title-bar.css) draws the row's 76 height and the rule under it; these
+ * rules draw the two cells. At 1440, measured: LOGO 0 to 171, the mark set
+ * 24 in (92 on macOS, after the traffic lights at 20 to 72); SIDEBAR KEY
+ * 171 to 248, a 76 x 76 key behind a rule, the panel icon in ink centred.
+ * The chats cell ends in the column's own rule, so the column's right edge
+ * runs up through the header; over the rail the logo cell stands alone and
+ * ends in the same rule. Qualified by the cell attribute so the header's own
+ * cell rules (`.vex-shell-head > [data-vex-head-cell]`) never outrank these
+ * on import order. */
+.vex-shell-head > .vex-ls-head[data-vex-head-cell] {
+  align-items: stretch;
+  gap: 0;
+  padding-inline-end: 0;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
+  padding-inline-start: 24px;
+}
+.vex-shell-head > .vex-shell-head__rail[data-vex-head-cell] {
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-ls-head > .vex-shell-head__logo {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.vex-ls-head > .vex-shell-head__key {
+  flex: none;
+  justify-content: center;
+  width: 77px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+/* The key is the whole cell: a hover fills it, and the focus ring is the
+ * 2px white ring drawn inside the cell (section 2.4). */
+.vex-ls-hkey {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls-hkey:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
 /* BODY: padding 10 10 0; only the sessions scroll. */
 .vex-ls-body {
   display: flex;

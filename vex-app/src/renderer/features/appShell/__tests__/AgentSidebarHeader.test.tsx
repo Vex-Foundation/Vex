@@ -1,7 +1,8 @@
 /**
- * THE LEFT SIDEBAR'S HEAD ROW (docs/design/R3-MINIMAL.md sections 2.2 and 4):
- * the vx wordmark at the left, the collapse key at the right, a window drag
- * region clear of the macOS traffic lights.
+ * THE LOGO CELL AND THE SIDEBAR KEY (docs/design/H3-DESKTOP.md section 1.3):
+ * the header's cells over the chats column, the vx mark alone in the logo
+ * cell and the sidebar key as its own cell, a window drag region clear of the
+ * macOS traffic lights.
  *
  * What moved out, pinned so it does not creep back: the `Agent | Studio`
  * capsule. The way into Studio is the sidebar nav's Studio row now, open and
@@ -60,12 +61,23 @@ describe("AgentSidebarHeader (the head row)", () => {
     expect(cells).toEqual(["logo", "sidebar-key"]);
   });
 
+  it("sets the mark alone at the logo cell's 28, and the key as the whole cell", () => {
+    // docs/design/H3-DESKTOP.md section 1.3 and Appendix A.1: the mark alone,
+    // where H3 writes "CLOUD" beside it.
+    const { container } = render(<AgentSidebarHeader onCollapse={vi.fn()} />);
+    const logo = container.querySelector("[data-vex-head-cell='logo']");
+    expect(logo?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("28");
+    expect(logo?.textContent).toBe("");
+    const key = container.querySelector("[data-vex-head-cell='sidebar-key'] button");
+    expect(key?.classList.contains("vex-ls-hkey")).toBe(true);
+  });
+
   it("over the rail is the logo cell alone, the rail's Expand key the way back", () => {
     const { container } = render(<AgentSidebarHeader rail onCollapse={vi.fn()} />);
     const head = container.querySelector("[data-vex-head-cell='chats']");
     expect(head?.hasAttribute("data-rail")).toBe(true);
     expect(head?.classList.contains("vex-drag")).toBe(true);
-    expect(head?.querySelector("[data-vex-home-mark]")).not.toBeNull();
+    expect(head?.querySelector("[data-vex-home-mark] svg")?.getAttribute("height")).toBe("28");
     expect(screen.queryByRole("button", { name: /Collapse/i })).toBeNull();
   });
 
