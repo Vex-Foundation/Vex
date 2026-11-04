@@ -19,11 +19,17 @@
  * The same classes dress the Vex Inference funding card
  * (`vexCloud/funding/FundingApprovalCard.tsx`) and are narrowed by the
  * Lighter desk's Review order slot (lighter-ticket.css), so every rule here is
- * written to read whole without the H3 card's own wrappers. */
+ * written to read whole without the H3 card's own wrappers.
+ *
+ * ONE INSET. Every cell's text inset is `--vex-appr-inset` (H3's 24), set on
+ * the card, so a narrow host sets one length and keeps the rules edge to
+ * edge: the desk's 338px Review order slot wants about 14, with its own
+ * padding on `.vex-appr__in` taken back to 0. */
 
 /* ── The card ──────────────────────────────────────────────────────────── */
 
 .vex-appr {
+  --vex-appr-inset: 24px;
   position: relative;
   margin: 12px 0 0;
   font-family: var(--font-sans);
@@ -50,7 +56,7 @@
   align-items: center;
   gap: 6px 12px;
   min-height: 23px;
-  padding: 0 24px;
+  padding: 0 var(--vex-appr-inset);
 }
 /* A card drawn without the head wrapper (the funding card) still starts its
  * eyebrow row 10 under the top rule and ends its head 14 over the first. */
@@ -82,6 +88,13 @@
 }
 .vex-appr__expiry .vex-num {
   font-size: 12.5px;
+}
+/* MAINNET and the stamp, held together as one unit of the row. */
+.vex-appr__funds {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
 }
 /* MAINNET: a statement in ink caps beside the stamp, never a menu. */
 .vex-appr__net {
@@ -120,7 +133,7 @@
 /* The plain sentence: sans 20, 400 (section 2.3). */
 .vex-appr__title {
   margin: 9px 0 0;
-  padding: 0 24px;
+  padding: 0 var(--vex-appr-inset);
   font-size: 20px;
   font-weight: 400;
   line-height: 26px;
@@ -130,7 +143,7 @@
 /* The consequence line: sans 15, ink 2. */
 .vex-appr__consequence {
   margin: 4px 0 0;
-  padding: 0 24px;
+  padding: 0 var(--vex-appr-inset);
   font-size: 15px;
   line-height: 22px;
   color: var(--vex-alias-label-secondary);
@@ -139,7 +152,7 @@
 /* Who asked, last in the head. */
 .vex-appr__meta {
   margin: 6px 0 0;
-  padding: 0 24px;
+  padding: 0 var(--vex-appr-inset);
   font-size: 13px;
   line-height: 18px;
   color: var(--vex-alias-label-tertiary);
@@ -171,11 +184,11 @@
 }
 .vex-appr__dl dt {
   padding-right: 16px;
-  padding-left: 24px;
+  padding-left: var(--vex-appr-inset);
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__dl dd {
-  padding-right: 24px;
+  padding-right: var(--vex-appr-inset);
   font-size: 14px;
   text-align: right;
   color: var(--vex-alias-label-primary);
@@ -211,7 +224,7 @@
   display: grid;
   gap: 6px;
   margin: 0;
-  padding: 12px 24px;
+  padding: 12px var(--vex-appr-inset);
   border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-appr__why p {
@@ -227,7 +240,7 @@
 
 .vex-appr__reason {
   margin: 0;
-  padding: 12px 24px;
+  padding: 12px var(--vex-appr-inset);
   font-size: 14px;
   line-height: 1.5;
   color: var(--vex-alias-label-secondary);
@@ -248,11 +261,12 @@
   align-items: center;
   gap: 8px;
   min-height: 34px;
-  padding: 0 24px;
+  padding: 0 var(--vex-appr-inset);
   font-size: 13px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+  white-space: nowrap;
   color: var(--vex-alias-label-primary);
   border-top: 1px solid var(--vex-alias-rule);
   cursor: pointer;
@@ -311,14 +325,14 @@
 }
 .vex-appr__well dt {
   padding-right: 12px;
-  padding-left: 24px;
+  padding-left: var(--vex-appr-inset);
   font-family: var(--font-mono);
   font-size: 12px;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__well dd {
-  padding-right: 24px;
+  padding-right: var(--vex-appr-inset);
   color: var(--vex-alias-label-primary);
 }
 .vex-appr__well .vex-appr__num {
@@ -338,7 +352,7 @@
 }
 /* In the card the alert sits in the cells' 24 inset. */
 .vex-appr__in > .vex-appr__error {
-  margin: 12px 24px;
+  margin: 12px var(--vex-appr-inset);
 }
 
 /* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
@@ -354,7 +368,7 @@
   justify-content: flex-end;
   gap: 10px;
   margin: 0;
-  padding: 12px 24px;
+  padding: 12px var(--vex-appr-inset);
   background: var(--vex-alias-bg-base);
   border-top: 1px solid var(--vex-alias-rule);
 }

@@ -427,12 +427,14 @@ export function ApprovalDetails({
               call to the user's own MCP tool signs nothing and carries
               neither. */}
           {realFunds ? (
-            <>
+            // One unit, so a narrow card wraps the row before it ever parts
+            // MAINNET from the stamp it qualifies.
+            <span className="vex-appr__funds">
               <span data-testid="approval-network" className="vex-appr__net">
                 Mainnet
               </span>
               <Stamp data-testid="real-funds-stamp" className="shrink-0" />
-            </>
+            </span>
           ) : null}
           {/* The signed mark: the done swatch once an approve lands (status by
               fill); unmounting early is fine (grace note, not contract). */}

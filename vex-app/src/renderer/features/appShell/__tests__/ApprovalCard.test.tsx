@@ -1270,13 +1270,13 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     expect(cell).toContain("padding: 8px 0");
     expect(cell).toContain("line-height: 17px");
     const label = ruleBody(".vex-appr__dl dt");
-    expect(label).toContain("padding-left: 24px");
+    expect(label).toContain("padding-left: var(--vex-appr-inset)");
     expect(label).toContain("color: var(--vex-alias-label-tertiary)");
     // The register owns the label's face, size and caps; the table never overrides them.
     expect(label).not.toMatch(/font-family|font-size|text-transform|letter-spacing/);
     const value = ruleBody(".vex-appr__dl dd");
     expect(value).toContain("text-align: right");
-    expect(value).toContain("padding-right: 24px");
+    expect(value).toContain("padding-right: var(--vex-appr-inset)");
     expect(value).toContain("font-size: 14px");
   });
 
@@ -1330,7 +1330,7 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       expect(key).toContain("text-transform: uppercase");
       expect(key).toContain("letter-spacing: var(--tracking-label)");
       expect(key).toContain("border-top: 1px solid var(--vex-alias-rule)");
-      expect(key).toContain("padding: 0 24px");
+      expect(key).toContain("padding: 0 var(--vex-appr-inset)");
       expect(key).toContain("min-height: 34px");
       // Ink, not the old blue link: blue is for the primary key only.
       expect(key).toContain("color: var(--vex-alias-label-primary)");
@@ -1347,9 +1347,283 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
       expect(cell).toContain("border-top: 1px solid var(--vex-alias-rule)");
       const key = ruleBody(".vex-appr__well dt");
       expect(key).toContain("font-family: var(--font-mono)");
-      expect(key).toContain("padding-left: 24px");
+      expect(key).toContain("padding-left: var(--vex-appr-inset)");
       expect(key).not.toContain("text-transform");
-      expect(ruleBody(".vex-appr__well dd")).toContain("padding-right: 24px");
+      expect(ruleBody(".vex-appr__well dd")).toContain("padding-right: var(--vex-appr-inset)");
     });
+  });
+});
+
+/**
+ * EVERY KIND IN THE SAME FRAME (row S6b-06). The card serves every tool
+ * family, and each wears the one H3 frame: the head with its family's eyebrow,
+ * MAINNET and the stamp wherever funds can move, the consequence line only
+ * where it is true, the table in the field-label register, the folded signed
+ * fields, and its own action-named key. The decision stays the card's own: the
+ * second press arms exactly where `isHighRisk` says, kind by kind, and the
+ * second press is what sends the approval.
+ */
+describe("ApprovalCard, every kind in the same frame", () => {
+  const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
+  const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
+  const ADDRESS = "0x9a3c5f1e2d4b6a8c0e1f3a5b7c9d0e2f4a6b8c0d";
+
+  interface Kind {
+    readonly name: string;
+    readonly summary: ApprovalSummaryDto;
+    readonly eyebrow: string;
+    readonly approve: string;
+    readonly consequence: string | null;
+    readonly realFunds: boolean;
+    readonly twoPress: boolean;
+  }
+
+  const lighter = (toolName: string, criticalArgs: Record<string, string | number | boolean | null>) => ({
+    toolName,
+    namespace: "lighter",
+    criticalArgs,
+  });
+
+  const KINDS: readonly Kind[] = [
+    {
+      name: "a wallet send",
+      summary: makeSummary({
+        toolName: "WalletSendConfirm",
+        preview: { toolName: "WalletSendConfirm", criticalArgs: { chain: "base", to: ADDRESS, amount: "25", token: "USDC" } },
+      }),
+      eyebrow: "Confirm this transfer",
+      approve: "Approve transfer",
+      consequence: FUNDS_LINE,
+      realFunds: true,
+      twoPress: true,
+    },
+    {
+      name: "a bridge",
+      summary: makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }),
+      eyebrow: "Confirm this bridge",
+      approve: "Approve bridge",
+      consequence: FUNDS_LINE,
+      realFunds: true,
+      twoPress: true,
+    },
+    {
+      name: "a Lighter limit order",
+      summary: makeSummary({
+        toolName: "lighter:order.create",
+        actionKind: "external_post",
+        riskLevel: "medium",
+        preview: lighter("order.create", {
+          toolId: "lighter.order.create",
+          side: "buy",
+          baseAmountDisplay: "0.0002",
+          marketSymbol: "BTC",
+          orderType: "limit",
+          timeInForce: "good-till-time",
+          priceDisplay: "68000.0",
+        }),
+      }),
+      eyebrow: "Confirm this order",
+      approve: "Approve order",
+      consequence: ORDER_LINE,
+      realFunds: true,
+      twoPress: false,
+    },
+    {
+      name: "a Lighter order cancel",
+      summary: makeSummary({
+        toolName: "lighter:order.cancel",
+        actionKind: "external_post",
+        riskLevel: "low",
+        preview: lighter("order.cancel", { toolId: "lighter.order.cancel", providerOrderId: "7", marketIndex: 1 }),
+      }),
+      eyebrow: "Confirm this order",
+      approve: "Approve order",
+      consequence: null,
+      realFunds: true,
+      twoPress: false,
+    },
+    {
+      name: "a Lighter deposit",
+      summary: makeSummary({
+        toolName: "lighter:deposit",
+        preview: lighter("deposit", {
+          toolId: "lighter.deposit",
+          summary: "Deposit 100 USDC into your Lighter account",
+          amountDisplay: "100 USDC",
+          settlementNetworkName: "Arbitrum",
+        }),
+      }),
+      eyebrow: "Confirm this transfer",
+      approve: "Approve and deposit",
+      consequence: FUNDS_LINE,
+      realFunds: true,
+      twoPress: true,
+    },
+    {
+      name: "a Lighter withdrawal",
+      summary: makeSummary({
+        toolName: "lighter:withdraw",
+        actionKind: "external_post",
+        riskLevel: "high",
+        preview: lighter("withdraw", {
+          toolId: "lighter.withdraw",
+          summary: "Withdraw 40 USDC to your wallet",
+          amountDisplay: "40 USDC",
+          destinationAddress: ADDRESS,
+        }),
+      }),
+      eyebrow: "Confirm this transfer",
+      approve: "Approve transfer",
+      consequence: FUNDS_LINE,
+      realFunds: true,
+      twoPress: true,
+    },
+    {
+      name: "the Lighter trading-fee authorization",
+      summary: makeSummary({
+        toolName: "lighter:fees.approve",
+        riskLevel: "medium",
+        preview: lighter("fees.approve", {
+          toolId: "lighter.fees.approve",
+          summary: "Authorize VEX trading fees",
+          revoke: false,
+          perpetualFee: "0.02%",
+        }),
+      }),
+      eyebrow: "Confirm this action",
+      approve: "Approve trading fees",
+      consequence: null,
+      realFunds: true,
+      twoPress: true,
+    },
+    {
+      name: "a token launch asked for over MCP",
+      summary: makeSummary({
+        toolName: "pools:launch_execute",
+        origin: "studio_mcp",
+        preview: {
+          toolName: "launch_execute",
+          namespace: "pools",
+          criticalArgs: { toolId: "pools.launch_execute", name: "Harbor Token", symbol: "HRBR", pairedAsset: "weth" },
+        },
+      }),
+      eyebrow: "Confirm this action",
+      approve: "Approve",
+      consequence: null,
+      realFunds: true,
+      twoPress: true,
+    },
+    {
+      name: "a call to the user's own MCP tool",
+      summary: makeSummary({
+        toolName: "mcp:deepwiki / read_wiki_structure",
+        actionKind: "read",
+        riskLevel: "info",
+        preview: {
+          toolName: "deepwiki / read_wiki_structure",
+          namespace: "mcp",
+          criticalArgs: { server: "deepwiki", tool: "read_wiki_structure", arguments: "{}" },
+        },
+      }),
+      eyebrow: "Confirm this action",
+      approve: "Approve",
+      consequence: null,
+      realFunds: false,
+      twoPress: false,
+    },
+    {
+      name: "a generic signed transaction",
+      summary: makeSummary({
+        toolName: "WalletEvmTransactionConfirm",
+        preview: { toolName: "WalletEvmTransactionConfirm", criticalArgs: { chain: "base", recipient: ADDRESS } },
+      }),
+      eyebrow: "Confirm this action",
+      approve: "Approve",
+      consequence: null,
+      realFunds: true,
+      twoPress: true,
+    },
+  ];
+
+  const card = (): HTMLElement => {
+    const found = document.querySelector<HTMLElement>('[data-vex-area="approval-card"]');
+    expect(found).not.toBeNull();
+    return found as HTMLElement;
+  };
+
+  it.each(KINDS)("draws $name in the H3 frame with its own eyebrow and key", (kind) => {
+    renderCard(kind.summary, false);
+    const frame = card();
+    expect(frame.classList.contains("vex-appr")).toBe(true);
+    expect(frame.getAttribute("data-vex-approval-layout")).toBe("card");
+    const head = frame.querySelector(".vex-appr__head");
+    expect(head?.querySelector("header .vex-appr__eyebrow")?.textContent).toBe(kind.eyebrow);
+    expect(head?.contains(screen.getByRole("heading", { level: 3 }))).toBe(true);
+    expect(screen.getByRole("button", { name: kind.approve })).toBeTruthy();
+    // Reject is the same key on every kind.
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
+    expect(screen.getByText("All signed fields").closest("details")).not.toBeNull();
+  });
+
+  it.each(KINDS)("states the consequence for $name only where it is true", (kind) => {
+    renderCard(kind.summary, false);
+    const line = screen.queryByTestId("approval-consequence");
+    if (kind.consequence === null) expect(line).toBeNull();
+    else expect(line?.textContent).toBe(kind.consequence);
+  });
+
+  it.each(KINDS)("carries MAINNET and REAL FUNDS on $name exactly when funds can move", (kind) => {
+    renderCard(kind.summary, false);
+    const header = card().querySelector("header");
+    const stamp = screen.queryByTestId("real-funds-stamp");
+    const network = screen.queryByTestId("approval-network");
+    if (kind.realFunds) {
+      expect(header?.contains(stamp)).toBe(true);
+      expect(network?.textContent).toBe("Mainnet");
+    } else {
+      expect(stamp).toBeNull();
+      expect(network).toBeNull();
+    }
+  });
+
+  it.each(KINDS)("sets $name's readable rows in the field-label register", (kind) => {
+    renderCard(kind.summary, false);
+    const table = card().querySelector<HTMLElement>(".vex-appr__head ~ .vex-appr__dl");
+    if (table === null) {
+      // No readable rows: the signed fields stand open instead, never folded away.
+      expect(screen.getByText("All signed fields").closest("details")?.open).toBe(true);
+      return;
+    }
+    const labels = Array.from(table.querySelectorAll("dt"));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const dt of labels) expect(dt.classList.contains("vex-field-label")).toBe(true);
+  });
+
+  it.each(KINDS)("keeps $name's decision as it was: the second press arms only where it always has", (kind) => {
+    renderCard(kind.summary, false);
+    fireEvent.click(screen.getByRole("button", { name: kind.approve }));
+    if (kind.twoPress) {
+      expect(mockApproveMutate).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: /confirm approve/i }));
+    }
+    expect(mockApproveMutate).toHaveBeenCalledTimes(1);
+    expect(mockApproveMutate).toHaveBeenCalledWith({ id: "appr-1" }, expect.any(Object));
+    expect(mockRejectMutate).not.toHaveBeenCalled();
+  });
+
+  it("gives every cell one inset, H3's 24, set once on the card", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(sheet).toMatch(/\.vex-appr \{[^}]*--vex-appr-inset: 24px;/);
+    // No cell spells the inset itself, so a narrow host changes one length.
+    expect(sheet).not.toMatch(/(?:padding|margin)(?:-left|-right)?:[^;]*\b24px/);
+  });
+
+  it("holds MAINNET and the stamp together as one unit of the eyebrow row", () => {
+    renderCard(KINDS[0]?.summary ?? makeSummary(), false);
+    const network = screen.getByTestId("approval-network");
+    const stamp = screen.getByTestId("real-funds-stamp");
+    expect(network.parentElement).toBe(stamp.parentElement);
+    expect(network.parentElement?.className).toBe("vex-appr__funds");
   });
 });
