@@ -12,6 +12,8 @@
  *                           NOT EXECUTE, as A.3 maps it)
  *   unknown   a muted outline  a status word this build has never heard of:
  *                           never an alarm and never "fine"
+ *   waiting   ink           something set and waiting on the world (H3's
+ *                           WAITING: an armed price alert on Markets)
  *
  * The rows' outcome rules stay where they were (`agent-scan-outcome.ts`,
  * `SessionActivityCard`'s `activityOutcome`): they decide the WORD and their
@@ -28,7 +30,7 @@ import type { JSX } from "react";
 import type { SwatchState } from "../../../../components/ui/swatch.js";
 
 /** H3's status families: the square's colour. */
-export type StatusFamily = "filled" | "running" | "failed" | "unknown";
+export type StatusFamily = "filled" | "running" | "failed" | "unknown" | "waiting";
 
 /**
  * The family of an outcome the row rules already decided. `error` is the

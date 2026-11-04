@@ -10,6 +10,7 @@
 
 import { baseAnswers } from "../fixtures/base.js";
 import { activity } from "./activity.js";
+import { markets } from "./markets.js";
 import { filled } from "./filled.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
@@ -33,6 +34,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   filled,
   portfolio,
   activity,
+  markets,
 ];
 
 export const DEFAULT_STATE = shell;

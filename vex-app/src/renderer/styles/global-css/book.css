@@ -217,8 +217,8 @@
   }
 }
 @container vex-pf (width < 480px) {
-  .vex-pf-tiles {
-    --vex-pf-tiles: 1 !important;
+  .vex-pf-tiles[data-count] {
+    --vex-pf-tiles: 1;
   }
 }
 .vex-pf-tile {
@@ -1123,6 +1123,193 @@
     white-space: normal;
     text-align: right;
   }
+}
+
+/* ---- Markets (the Watchlist page) in H3 rows --------------------------
+ * docs/design/H3-DESKTOP.md sections 2.2 to 2.4 and 4.9 (`WatchlistScreen`):
+ * the lead line, the follow form, then each list as one framed cell. The
+ * followed tokens: a caps head row (13, muted) and rows 56 high, a grid of
+ * the name over its muted chain and pool, the price and the 24 hour change
+ * in mono at the right (the change in the gain or loss colour), and the
+ * row's keys as cells, the rule on their left, 13 caps. An alert row is the
+ * status mark, its words, where it came from and its key. Section heads are
+ * the 13 caps label, 600. */
+.vex-mk {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  font-family: var(--font-sans);
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__lead {
+  margin: 0;
+  font-size: 15px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk__ink {
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__muted {
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vex-mk__hrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.vex-mk__h {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk__table {
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-mk__item + .vex-mk__item,
+.vex-mk__row--head + .vex-mk__item,
+.vex-mk__alert + .vex-mk__alert {
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mk__row {
+  display: grid;
+  /* The keys column is fixed so the head row's columns line up over it. */
+  grid-template-columns: minmax(0, 1fr) 160px 100px 236px;
+  align-items: stretch;
+  column-gap: 18px;
+  min-height: 56px;
+  padding-left: 18px;
+}
+.vex-mk__row > * {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.vex-mk__row--head {
+  min-height: 40px;
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__r {
+  justify-content: flex-end;
+  text-align: right;
+}
+.vex-mk__row > .vex-mk__name {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.vex-mk__label {
+  font-size: 15px;
+}
+.vex-mk__sub {
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-mk__price {
+  font-size: 14px;
+}
+.vex-mk__change {
+  font-size: 13px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk [data-trade="up"] {
+  color: var(--vex-alias-trade-up);
+}
+.vex-mk [data-trade="down"] {
+  color: var(--vex-alias-trade-down);
+}
+.vex-mk__keys {
+  align-self: stretch;
+  justify-content: flex-end;
+}
+/* A key cell: the row's height, the rule on its left, 13 caps, ink 2. */
+.vex-mk__key {
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 18px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-mk__key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__key[aria-expanded="true"] {
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__key:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
+.vex-mk__key:focus-visible,
+.vex-mk__link:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-mk__form {
+  padding: 16px 18px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-mk__alert {
+  display: flex;
+  min-height: 52px;
+  align-items: stretch;
+  gap: 18px;
+  padding-left: 18px;
+}
+.vex-mk__alert > :not(.vex-mk__key) {
+  display: flex;
+  align-items: center;
+}
+.vex-mk__words {
+  min-width: 0;
+  flex: 1;
+  font-size: 15px;
+}
+.vex-mk__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 3px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-mk__foot {
+  margin: 0;
+  max-width: 760px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-status-mark[data-status="waiting"] .vex-status-mark__sq {
+  background: var(--vex-alias-label-primary);
 }
 
 /* The Launchpad: square tiles on a 1px rule, then Add image and the launch. */
