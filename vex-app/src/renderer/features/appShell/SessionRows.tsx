@@ -31,7 +31,7 @@ interface SessionGroupsProps {
    * Namespace for `<section aria-labelledby>` / `<h2 id>` pairs so the
    * sidebar and the library view can coexist on the same page without
    * duplicate IDs. Required because both screens render `SessionGroups`
-   * with the same group keys (pinned/today/yesterday/older).
+   * with the same group keys (pinned/today/yesterday/earlier).
    */
   readonly idPrefix: string;
 }
@@ -49,8 +49,11 @@ interface SidebarSessionGroupsProps {
 }
 
 /**
- * The left sidebar's sessions: "Pinned", "Today", "Yesterday", "Older", each
- * a 12 / 500 muted head over its 34px rows. Empty groups are not drawn.
+ * The chats column's chats (docs/design/H3-DESKTOP.md section 1.4), under
+ * the column's CHATS heading: "Pinned", "Today", "Yesterday", "Earlier", each
+ * a group head (12, caps, tracked, muted) over its rows on the 36 pitch.
+ * Empty groups are not drawn. The heads are level 3, under the CHATS heading
+ * (`SessionsList`), which is level 2.
  */
 export function SidebarSessionGroups({
   groups,
@@ -69,9 +72,9 @@ export function SidebarSessionGroups({
         const headingId = `ls-${group.key}`;
         return (
           <section key={group.key} aria-labelledby={headingId}>
-            <h2 id={headingId} className="vex-ls-group">
+            <h3 id={headingId} className="vex-ls-group">
               {group.title}
-            </h2>
+            </h3>
             <ul className="vex-ls-group__rows">
               {group.rows.map((row) => (
                 <li key={row.id}>

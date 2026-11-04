@@ -4,7 +4,12 @@ import type {
 } from "@shared/schemas/sessions.js";
 import type { SessionModeFilter } from "../../stores/uiStore.js";
 
-export type SessionGroupKey = "pinned" | "today" | "yesterday" | "older";
+/**
+ * The groups a chat list falls into (docs/design/H3-DESKTOP.md section 1.4
+ * and Appendix A.2): H3's TODAY, YESTERDAY and EARLIER, with desktop's own
+ * Pinned ahead of them. "Earlier" is H3's word where R3 said "Older".
+ */
+export type SessionGroupKey = "pinned" | "today" | "yesterday" | "earlier";
 
 export interface SessionGroup {
   readonly key: SessionGroupKey;
@@ -84,7 +89,7 @@ export function groupSessions(rows: readonly SessionListItem[]): readonly Sessio
   const pinned: SessionListItem[] = [];
   const today: SessionListItem[] = [];
   const yesterday: SessionListItem[] = [];
-  const older: SessionListItem[] = [];
+  const earlier: SessionListItem[] = [];
 
   for (const row of rows) {
     if (row.pinnedAt !== null) {
@@ -94,16 +99,17 @@ export function groupSessions(rows: readonly SessionListItem[]): readonly Sessio
     const bucket = getSessionBucket(row.startedAt);
     if (bucket === "today") today.push(row);
     else if (bucket === "yesterday") yesterday.push(row);
-    else older.push(row);
+    else earlier.push(row);
   }
 
   pinned.sort((a, b) => comparePinnedDesc(a.pinnedAt, b.pinnedAt));
 
+  // Titles in sentence case: the group head's label style sets the caps.
   return [
     { key: "pinned", title: "Pinned", rows: pinned },
     { key: "today", title: "Today", rows: today },
     { key: "yesterday", title: "Yesterday", rows: yesterday },
-    { key: "older", title: "Older", rows: older },
+    { key: "earlier", title: "Earlier", rows: earlier },
   ];
 }
 
@@ -193,7 +199,7 @@ export function formatSessionTime(iso: string): string {
     // of the OS locale; `undefined` previously deferred to the system locale
     // (a Polish system rendered "31 maj"). Display-only — does not affect
     // bucket math, parsing, or storage.
-    if (bucket === "older") {
+    if (bucket === "earlier") {
       return d.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -208,9 +214,28 @@ export function formatSessionTime(iso: string): string {
   }
 }
 
-function getSessionBucket(iso: string): "today" | "yesterday" | "older" {
+/**
+ * The time a chat row in the chats column shows at its right (docs/design/
+ * H3-DESKTOP.md section 1.4): the start time on the 24-hour clock, as H3
+ * draws it ("12:41", "09:12"), for a chat from today or yesterday, and the
+ * English short date ("Oct 28") for anything earlier, whatever the OS locale.
+ * The hours and minutes come from the local clock, so the row and its group
+ * (local days, `groupSessions`) agree. An unreadable stamp shows nothing.
+ * The Sessions page and the Vex column keep `formatSessionTime`.
+ */
+export function formatChatRowTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  if (getSessionBucket(iso) === "earlier") {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getSessionBucket(iso: string): "today" | "yesterday" | "earlier" {
   const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return "older";
+  if (Number.isNaN(value.getTime())) return "earlier";
 
   const today = startOfLocalDay(new Date());
   const sessionDay = startOfLocalDay(value);
@@ -218,7 +243,7 @@ function getSessionBucket(iso: string): "today" | "yesterday" | "older" {
   const diffDays = Math.round(diffMs / 86_400_000);
   if (diffDays === 0) return "today";
   if (diffDays === 1) return "yesterday";
-  return "older";
+  return "earlier";
 }
 
 function startOfLocalDay(value: Date): Date {

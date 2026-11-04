@@ -1,9 +1,10 @@
 /**
- * The left sidebar's search mode (docs/design/R3-MINIMAL.md section 4): the
- * Search row turns into a 38px field (1px blue border, the field ground, the
- * line search icon in blue, an Esc keycap at the right), with the All, Agent
- * and Mission tabs under it. Each tab carries its count in mono 11; the count
- * is decoration (`aria-hidden`), so a tab's name stays its word.
+ * The chats column's search mode (docs/design/H3-DESKTOP.md section 1.4): the
+ * Search chats cell turns into the field in the same 48 cell (the ground
+ * inside its rules, the search icon and the text where the row had them, an
+ * Esc keycap at the right), with the All, Agent and Mission tabs under it.
+ * Each tab carries its count in mono 11; the count is decoration
+ * (`aria-hidden`), so a tab's name stays its word.
  *
  * Escape in the field closes the mode, and so does a press on the Esc keycap
  * (a button, "Close search", so the way out is not keyboard-only); the owner
@@ -14,6 +15,9 @@ import type { JSX, KeyboardEvent, Ref } from "react";
 import { LineSearch } from "../../../components/icons/line/index.js";
 import type { SessionModeFilter } from "../../../stores/uiStore.js";
 import { SESSION_MODE_FILTERS } from "../sessionListModel.js";
+
+/** H3's word for the search (Appendix A.2): the cell, its key and the field. */
+export const SEARCH_FIELD_LABEL = "Search chats";
 
 export function SessionSearchField({
   value,
@@ -41,8 +45,8 @@ export function SessionSearchField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
-        aria-label="Search sessions"
-        placeholder="Search sessions"
+        aria-label={SEARCH_FIELD_LABEL}
+        placeholder={SEARCH_FIELD_LABEL}
         autoComplete="off"
         spellCheck={false}
         className="vex-ls-search__input"

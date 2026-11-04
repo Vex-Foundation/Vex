@@ -1,8 +1,8 @@
 /**
  * The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7 and
- * Appendix A.4; R3's task rows under the composer, docs/design/R3-MINIMAL.md
- * section 7, until S6a-03 draws them as H3's two-by-two grid of cells). Pure
- * data: each suggestion has a title, a muted line under it, and a line icon.
+ * Appendix A.4), drawn as H3's two-by-two grid of cells over the composer
+ * (`ComposerQuickActions`). Pure data: each suggestion has a title, the muted
+ * line its cell sets under the title, and a line icon.
  *
  * A `prompt` suggestion seeds the composer draft, and its line IS the prompt
  * (Appendix A.4: "the line becomes the prompt Send seeds"), so what the cell
@@ -40,9 +40,12 @@ export type QuickActionKind = "prompt" | "mission";
 export interface QuickAction {
   /** The suggestion's title. */
   readonly label: string;
-  /** The muted line under the title: the prompt itself for a `prompt` suggestion. */
+  /**
+   * The muted line the cell sets under the title, and the key's description
+   * for assistive tech: the prompt itself for a `prompt` suggestion.
+   */
   readonly line: string;
-  /** The line icon drawn before the label. */
+  /** The line icon drawn before the title. */
   readonly icon: LineIconName;
   readonly kind: QuickActionKind;
   /** The draft a `prompt` suggestion seeds (its line); empty for the `mission` one. */

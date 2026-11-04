@@ -47,6 +47,9 @@
  *                            mockup (`kimm-standin-art.ts`, the default), or
  *                            the art as the app ships it, every piece missing
  *                            until her files arrive
+ *   ?plate=<id>              one of our own H3 plates (`plates/index.ts`)
+ *                            instead of a state: a design proposal for a
+ *                            surface H3 does not draw, never the product
  * There is no theme switch: the app is dark only (chronos), the room every
  * H3 plate is drawn in.
  * The frame carries `data-vex-h3-ready` once the state's own element is on
@@ -84,8 +87,10 @@ import {
 } from "./chrome-standin.js";
 import { KIMM_STANDIN_ART } from "./kimm-standin-art.js";
 import { H3_HARNESS_MARK } from "./mark.js";
+import { HARNESS_PLATES, plateById } from "./plates/index.js";
+import type { HarnessPlate } from "./plates/types.js";
 import { HARNESS_STATES, stateById } from "./states/index.js";
-import type { HarnessState } from "./states/types.js";
+import type { HarnessState, HarnessUi } from "./states/types.js";
 import "./harness.css";
 
 const params = new URLSearchParams(window.location.search);
@@ -101,6 +106,7 @@ const VEX = params.get("vex");
 const STATE = stateById(params.get("state"));
 const KIMM_ART =
   pick("kimm", ["standins", "shipped"], "standins") === "shipped" ? KIMM_SHIPPED_ART : KIMM_STANDIN_ART;
+const PLATE = plateById(params.get("plate"));
 
 /* Stamped before the first render, outside any effect: the shell's sheets
  * read both attributes from the root, and a first frame painted without them
@@ -166,7 +172,7 @@ function WindowChromeStandin(): JSX.Element | null {
  * the agent shell unless the state says otherwise, and `?vex=` writes the
  * stored choice for BOTH page classes so it holds whichever the state opens.
  */
-function pointStore(state: HarnessState): void {
+function pointStore(state: { readonly ui?: HarnessUi }): void {
   const vex = VEX === "open" ? true : VEX === "closed" ? false : null;
   useUiStore.setState({
     theme: THEME,
@@ -249,7 +255,42 @@ function Harness({
   );
 }
 
-/** An unknown `?state=`: the list of states, as links. */
+/**
+ * A plate in the window frame. Ready once the fonts it draws in have loaded
+ * and a frame has painted: a plate fetches nothing, so the fonts are the only
+ * thing a capture could catch half-done.
+ */
+function PlateFrame({ plate }: { readonly plate: HarnessPlate }): JSX.Element {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void document.fonts.ready.then(() => {
+      requestAnimationFrame(() => {
+        if (live) setReady(true);
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const { Plate } = plate;
+  return (
+    <div
+      className="vex-h3-harness"
+      data-vex-area="h3-harness"
+      data-vex-harness={H3_HARNESS_MARK}
+      data-vex-h3-plate={plate.id}
+      data-vex-h3-ready={ready ? "true" : undefined}
+    >
+      <MotionConfig reducedMotion="user">
+        <Plate />
+      </MotionConfig>
+      <WindowChromeStandin />
+    </div>
+  );
+}
+
+/** An unknown `?state=`: the list of states and plates, as links. */
 function StateIndex(): JSX.Element {
   return (
     <main
@@ -265,13 +306,29 @@ function StateIndex(): JSX.Element {
           </li>
         ))}
       </ul>
+      {HARNESS_PLATES.length > 0 ? (
+        <>
+          <h2>Our H3 plates (proposals, not the product)</h2>
+          <ul>
+            {HARNESS_PLATES.map((plate) => (
+              <li key={plate.id}>
+                <a href={`?plate=${plate.id}`}>{plate.id}</a> {plate.title}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </main>
   );
 }
 
 let bridge: HarnessBridge | null = null;
 let afterMount: Promise<void> | null = null;
-if (STATE !== null) {
+if (PLATE !== null) {
+  // A plate installs a bridge only when it mounts real parts that read one.
+  if (PLATE.answers !== undefined) bridge = installHarnessBridge(PLATE.answers());
+  pointStore(PLATE);
+} else if (STATE !== null) {
   bridge = installHarnessBridge(STATE.answers());
   pointStore(STATE);
 }
@@ -281,6 +338,7 @@ Object.defineProperty(window, "__vexH3Harness", {
   value: {
     state: STATE?.id ?? null,
     states: HARNESS_STATES.map((state) => state.id),
+    plates: HARNESS_PLATES.map((plate) => plate.id),
     calls: () => bridge?.calls() ?? [],
     unanswered: () => bridge?.unanswered() ?? [],
     emit: (path: `${string}.on${string}`, event: unknown) => bridge?.emit(path, event) ?? 0,
@@ -293,7 +351,11 @@ if (host !== null) {
   createRoot(host).render(
     <StrictMode>
       <PxSprite />
-      {STATE === null ? (
+      {PLATE !== null ? (
+        <QueryClientProvider client={client}>
+          <PlateFrame plate={PLATE} />
+        </QueryClientProvider>
+      ) : STATE === null ? (
         <StateIndex />
       ) : (
         <QueryClientProvider client={client}>

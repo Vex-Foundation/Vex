@@ -2,8 +2,9 @@
  * Catalogue contract of the line icons (docs/design/R3-MINIMAL.md section 1.7):
  * the exact set of names, the 16 x 16 frame, the paint rules (currentColor
  * stroke, no fill literal, no colour, no inline style), the drawing of every
- * icon equal to its row in appendix A, and the exports that tie the components,
- * the registry and the by-name component together.
+ * icon equal to its row in appendix A (H3's nav glyphs, which have none, are
+ * listed as derived), and the exports that tie the components, the registry
+ * and the by-name component together.
  */
 
 import { describe, expect, it } from "vitest";
@@ -25,6 +26,9 @@ const EXPECTED_NAMES = [
   "settings", "shield", "spark", "split-horizontal", "split-vertical", "stop", "strategies",
   "studio", "sun", "swap", "terminal", "thumbs-down", "trash", "trend-line", "tuning", "undo", "update", "user",
   "users", "vault", "wallet", "warning", "watchlist", "wifi", "wifi-off", "zen",
+  // H3's nav glyphs (docs/design/H3-DESKTOP.md section 4.6).
+  "h3-new-chat", "h3-chat", "h3-missions", "h3-markets", "h3-portfolio", "h3-activity",
+  "h3-settings",
 ];
 
 /** The names the navigation, title bar, composer, transcript, Vex sidebar and pages draw with. */
@@ -32,14 +36,20 @@ const CHROME_NAMES = [
   "branch", "thumbs-down", "chat", "missions", "portfolio", "board", "lighter", "studio", "settings", "new-chat", "search",
   "panel-left", "panel-right", "close", "chevron-up", "chevron-down", "chevron-left",
   "chevron-right", "send", "stop", "attach", "lock", "bell", "more",
+  "h3-new-chat", "h3-chat", "h3-missions", "h3-markets", "h3-portfolio", "h3-activity",
+  "h3-settings",
 ];
 
 /**
- * Drawings without an appendix A row. None today: the derived ones (archive,
- * branch, chevron-left, chevron-up, question, thumbs-down, user, warning) all
- * have rows.
+ * Drawings without an appendix A row: H3's nav glyphs, redrawn in this grid
+ * and stroke from H3's captures, which print no paths (H3-DESKTOP.md section
+ * 4.6). The R3-derived ones (archive, branch, chevron-left, chevron-up,
+ * question, thumbs-down, user, warning) all have rows.
  */
-const DERIVED: string[] = [];
+const DERIVED: string[] = [
+  "h3-new-chat", "h3-chat", "h3-missions", "h3-markets", "h3-portfolio", "h3-activity",
+  "h3-settings",
+];
 
 type Glyph = ((props: { size?: 14 | 16 | 20; className?: string }) => JSX.Element) & {
   displayName?: string;

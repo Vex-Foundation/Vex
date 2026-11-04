@@ -1,13 +1,15 @@
 /**
- * Context meter (A29, R3) - the composer's trailing-cluster instrument for
+ * Context meter (A29) - the status strip's last cell, the instrument for
  * session context occupancy, fed by `useContextWindow`, the SAME channel the
  * retired BOOK "Runtime & Cost" card read.
  *
- * Geometry (docs/design/R3-MINIMAL.md section 7): a labelled meter, "Context
- * 21%" in 12.5 muted and the shared `CellMeter` at five 4 x 10 cells, the used
- * share filled in the blue (`.vex-composer-context`, console.css). It is a
- * key: a click opens a 264px panel seated above and right-aligned whose total
- * bar is the same meter at twenty cells.
+ * Geometry (docs/design/H3-DESKTOP.md sections 1.8 and 4.1, Appendix A.5): it
+ * takes the cell where H3 draws DAILY BUDGET, which desktop does not have,
+ * in the same form: CONTEXT in muted caps 13, the shared `CellMeter` at ten
+ * cells, and the real share as a figure ("21%"), the used share filled
+ * (`.vex-composer-context`, console.css). It is a key: a click opens a 264px
+ * panel seated above and right-aligned whose total bar is the same meter at
+ * twenty cells.
  *
  * HONESTY RULES (both inherited from the retired card, both load-bearing):
  *  - nothing renders until the engine reports BOTH a token count and a valid
@@ -34,8 +36,8 @@ import { CellMeter } from "../../../components/ui/cell-meter.js";
 import { Tooltip } from "../../../components/ui/tooltip.js";
 import { ComposerCompactionBlock } from "./ComposerCompactionBlock.js";
 
-/** The trigger's five cells (section 7) and the panel's longer total bar. */
-const TRIGGER_CELLS = 5;
+/** The trigger's ten cells (H3's meter) and the panel's longer total bar. */
+const TRIGGER_CELLS = 10;
 const PANEL_CELLS = 20;
 
 function formatTokens(n: number): string {
@@ -137,12 +139,13 @@ export function ComposerContextMeter({
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           onClick={() => (open ? close(true) : setOpen(true))}
-          className="vex-composer-context shrink-0 transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="vex-composer-context shrink-0 transition-colors duration-100 hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
         >
-          {/* The trigger's name is the percentage; the words and the drawing
-              repeat it for the eye, so both stay out of the button's name. */}
-          <span aria-hidden="true">
-            Context <span className="vex-num">{percent}%</span>
+          {/* The trigger's name is the percentage; the words, the drawing
+              and the figure repeat it for the eye, so all three stay out of
+              the button's name. */}
+          <span aria-hidden="true" className="vex-composer-context__label">
+            Context
           </span>
           <CellMeter
             className="vex-context-meter"
@@ -152,6 +155,9 @@ export function ComposerContextMeter({
             label={`Context ${percent}% used`}
             aria-hidden
           />
+          <span aria-hidden="true" className="vex-composer-context__share vex-num">
+            {percent}%
+          </span>
         </button>
       </Tooltip>
 

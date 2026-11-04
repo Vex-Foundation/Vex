@@ -1,5 +1,7 @@
 /**
- * F06: the composer's model menu. Rows from the active backend's catalogue,
+ * F06: the composer's model menu, the composer row's model cell
+ * (docs/design/H3-DESKTOP.md section 1.8). The key is the model's glyph,
+ * named in words. Rows from the active backend's catalogue,
  * the default first with its tag, vendors grouped, a search for long lists,
  * the session's model selected, a shrink warning for a model smaller than
  * the conversation, keyboard picking, and closed while a turn runs.
@@ -58,9 +60,20 @@ function openMenu(container: HTMLElement): void {
 }
 
 describe("ComposerModelMenu", () => {
-  it("the key shows the current model's name and opens upward with every row", () => {
+  it("the key is the model cell, named by the current model, and opens upward with every row", () => {
     const { container } = mount();
-    expect(container.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
+    const key = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    expect(key.className).toContain("vex-composer-model");
+    // The glyph alone in the cell: the name rides the accessible name and
+    // the pointer's tooltip; the status strip over the row reads it.
+    expect(key.children).toHaveLength(1);
+    expect(key.querySelector("[data-vex-provider-mark='openrouter']")).not.toBeNull();
+    expect(key.querySelector("[data-vex-model-label]")).toBeNull();
+    expect(key.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna on OpenRouter. Opens the model menu.");
+    expect(key.getAttribute("title")).toBe("gpt-6-luna");
+    expect(key.getAttribute("aria-haspopup")).toBe("listbox");
+    // The 2px ink ring inside the cell (section 2.4).
+    expect(key.className).toContain("focus-visible:ring-inset");
     openMenu(container);
     expect(screen.getAllByRole("option")).toHaveLength(4);
     expect(container.querySelector('[data-vex-area="composer-model-menu"]')?.className).toContain("bottom-full");

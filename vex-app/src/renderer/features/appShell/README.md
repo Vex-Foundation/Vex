@@ -45,33 +45,48 @@ A fresh agent should be able to rebuild these surfaces from this file.
 
 Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 
-- Head, 44 high (`AgentSidebarHeader.tsx`): the vx mark (`SidebarHomeSigil`,
-  "Back to welcome" in a session) and the collapse key; content starts at 92 on
-  macOS, 16 elsewhere.
-- New chat and Search rows, then the nav (`SessionRows/SidebarNav.tsx`): Chat,
-  Missions, Portfolio, Board, Lighter, Studio, Settings. One action backs every
-  row, `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
-  Chat and Missions are agent mode (Missions on its Mission tab), Portfolio, Board
-  and Settings open pages, Lighter and Studio switch mode. The selected row is
-  `selectNavDestination`: the open page first, then the mode.
-- Search turns its row into the field with All, Agent and Mission tabs and
+- Head: the header's logo cell and sidebar key (`AgentSidebarHeader.tsx`,
+  H3-DESKTOP.md section 1.3): the vx mark alone, 28 high (`SidebarHomeSigil`,
+  "Back to welcome" in a session), set 92 in on macOS after the traffic lights
+  and 24 elsewhere, then the 77-wide key cell; over the rail the logo cell alone.
+- New chat (55 high on the cell fill) and Search chats (48) as H3 cells, edge to
+  edge, then the nav (`SessionRows/SidebarNav.tsx`, H3-DESKTOP.md section 4.6):
+  Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board,
+  Settings (desktop's names where H3 says Markets and Activity), nine caps rows
+  on the 40 pitch between two rules, the selected one on
+  `--vex-alias-row-selected`. One action backs every row,
+  `navigate(destination, origin)` (`navigationTarget`, `uiStore/shell-route.ts`):
+  Chat and Missions are agent mode (Missions on its Mission tab); Watchlist,
+  Portfolio, Agent Scan (its full feed), Board and Settings open pages; Lighter
+  and Studio switch mode. The selected row is `selectNavDestination`: the open
+  page first (Agent Scan in any scope selects its row), then the mode.
+- Search chats turns its cell into the field with All, Agent and Mission tabs and
   counts (local text, title filter). Escape closes it and drops the Agent tab.
-- Sessions by name in Pinned, Today, Yesterday, Older (`sessionListModel.ts`),
-  the one scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
-  (`sidebar` variant): 34 high, ellipsis name, then the time or a swatch and word
-  from the mission run (`session-row-state.ts`). Hover or focus swaps the time
+- The CHATS heading, then the chats by name in Pinned, Today, Yesterday, Earlier
+  (`sessionListModel.ts`; H3's "Earlier" where R3 said "Older"), the one
+  scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
+  (`sidebar` variant): 36 high, ellipsis name at 15, then the time (24-hour today
+  and yesterday, `formatChatRowTime`) or H3's tag, a status square and the word in
+  caps, from the mission run (`session-row-state.ts`: Running grey, Waiting ink,
+  Paused and Sleeping grey outlines, Error red). Hover or focus swaps the time
   for Pin and Remove; double-click renames via `vex.sessions.rename`
   (`sessionTitleSchema`-bounded; an unknown id answers ok(null)). The Sessions
   page reuses the row as `register`.
 - Update slot `vex-upd-slot` (`updates/update-card-slot.ts`): `UpdateCard`
   portals into it above the account row; with no slot it floats at the lower left.
-- Account row (`SidebarProfile.tsx`): the vx box, the name or "What should Vex
-  call you?", a status sentence. Its upward menu: Personalize, Memory (when
+- Account cell (`SidebarProfile.tsx`, the bottom row's first cell): the person's
+  avatar disc (the transcript's drawing, raised 2 on the chosen rule), the name
+  or "You", then "Account and settings" (or the runtime's trouble as a sentence),
+  and the up chevron. Its upward menu, its foot on the cell's top rule:
+  Personalize (which asks for a name while there is none), Memory (when
   enabled), Sessions, Agent Scan, How Vex works, Settings, Lock Vex, a disabled
   Runtime row. Pages open from the trigger's rect (`origin`).
-- Rail: 40 x 40 keys with tooltips (New chat, Search, Chats, the nav, the
-  account box); Chats opens the sidebar, in Lighter the desk's Markets & sessions
-  drawer. No update slot.
+- Rail (76 wide): the open column's H3 cells at the rail's whole width, icon only
+  with tooltips: the Expand key (48, behind its rule; none on the band or the
+  Lighter desk), New chat (55, the cell fill), Search chats (48), the nav keys on
+  the 40 pitch, and the account cell's disc. Chat and Missions open the column on
+  their list; on the Lighter desk the drawer opens from Markets & sessions. No
+  update slot.
 - Studio (`studio/sidebar/StudioSidebar.tsx`): same head, rows, nav and account;
   under the nav New project, Projects with a Welcome row, and the open project's
   explorer in a `SplitPane` sized by `studioRailExplorerShare` (0.2 to 0.8).

@@ -37,6 +37,21 @@ describe("navigate", () => {
     expect(useUiStore.getState().runtimeMode).toBe("agent");
   });
 
+  it("Watchlist opens its page and Agent Scan its full feed, in the current mode", () => {
+    // docs/design/H3-DESKTOP.md section 4.6: H3's Markets and Activity rows,
+    // under desktop's page names (the owner's decision).
+    useUiStore.getState().navigate("watchlist", ORIGIN);
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "watchlist", origin: ORIGIN });
+    useUiStore.setState({ runtimeMode: "lighter" });
+    useUiStore.getState().navigate("agentScan", ORIGIN);
+    expect(useUiStore.getState().shellRoute).toEqual({
+      kind: "agentScan",
+      origin: ORIGIN,
+      sessionId: null,
+    });
+    expect(useUiStore.getState().runtimeMode).toBe("lighter");
+  });
+
   it("Missions opens the agent sessions on the Mission tab, and Chat leaves it", () => {
     useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
     useUiStore.getState().navigate("missions");
@@ -82,6 +97,29 @@ describe("the selected nav row", () => {
     expect(select({ shellRoute: { kind: "assets", origin: null, sessionId: null } })).toBe(
       "portfolio",
     );
+    expect(select({ shellRoute: { kind: "watchlist", origin: null } })).toBe("watchlist");
+    // Agent Scan selects its own row in every scope it opens with.
+    expect(select({ shellRoute: { kind: "agentScan", origin: null, sessionId: null } })).toBe(
+      "agentScan",
+    );
+    expect(
+      select({
+        shellRoute: {
+          kind: "agentScan",
+          origin: null,
+          sessionId: "00000000-0000-4000-8000-000000000001",
+        },
+      }),
+    ).toBe("agentScan");
+    expect(
+      select({
+        shellRoute: {
+          kind: "agentScan",
+          origin: null,
+          projectId: "00000000-0000-4000-8000-000000000002",
+        },
+      }),
+    ).toBe("agentScan");
     expect(select({ shellRoute: { kind: "board", origin: null }, runtimeMode: "lighter" })).toBe(
       "board",
     );
@@ -153,10 +191,12 @@ describe("the selected nav row", () => {
     for (const destination of [
       "chat",
       "missions",
+      "watchlist",
       "portfolio",
-      "board",
+      "agentScan",
       "lighter",
       "studio",
+      "board",
       "settings",
     ] as const) {
       useUiStore.getState().navigate(destination);

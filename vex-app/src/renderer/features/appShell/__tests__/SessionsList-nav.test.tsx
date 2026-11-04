@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
+import { LineIcon, type LineIconName } from "../../../components/icons/line/index.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 
 const harness = vi.hoisted(() => ({
@@ -122,19 +123,72 @@ beforeEach(() => {
 });
 
 describe("the nav", () => {
-  it("lists Chat, Missions, Portfolio, Board, Watchlist, Lighter, Studio and Settings, in order", () => {
+  it("lists Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board and Settings, in order", () => {
+    // docs/design/H3-DESKTOP.md section 4.6: H3's order, with desktop's own
+    // page names where H3 says Markets and Activity (the owner's decision).
+    // The words stay in sentence case in the source; the row's label style
+    // sets the caps.
     renderSidebar();
     expect(within(nav()).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Chat",
       "Missions",
-      "Portfolio",
-      "Board",
       "Watchlist",
+      "Portfolio",
+      "Agent Scan",
       "Lighter",
       "Studio",
+      "Board",
       "Settings",
     ]);
     expect(navRow("Chat").getAttribute("aria-current")).toBe("page");
+    for (const button of within(nav()).getAllByRole("button")) {
+      expect(button.classList.contains("vex-ls-nrow--nav")).toBe(true);
+    }
+  });
+
+  it("draws H3's nav glyphs, and desktop's own three in their line drawings", () => {
+    // docs/design/H3-DESKTOP.md section 4.6 (S5-04).
+    renderSidebar();
+    const drawn = (name: string): string =>
+      navRow(name).querySelector("svg")?.innerHTML ?? "missing";
+    const glyph = (name: LineIconName): string => {
+      const view = render(<LineIcon name={name} />);
+      const markup = view.container.querySelector("svg")?.innerHTML ?? "";
+      view.unmount();
+      return markup;
+    };
+    const expected: readonly (readonly [string, LineIconName])[] = [
+      ["Chat", "h3-chat"],
+      ["Missions", "h3-missions"],
+      ["Watchlist", "h3-markets"],
+      ["Portfolio", "h3-portfolio"],
+      ["Agent Scan", "h3-activity"],
+      ["Lighter", "lighter"],
+      ["Studio", "studio"],
+      ["Board", "board"],
+      ["Settings", "h3-settings"],
+    ];
+    for (const [row, name] of expected) expect(drawn(row), row).toBe(glyph(name));
+    expect(
+      screen.getByRole("button", { name: "New chat" }).querySelector("svg")?.innerHTML,
+    ).toBe(glyph("h3-new-chat"));
+  });
+
+  it("Watchlist opens its page and Agent Scan its full feed", () => {
+    renderSidebar();
+    fireEvent.click(navRow("Watchlist"));
+    expect(useUiStore.getState().shellRoute.kind).toBe("watchlist");
+    expect(navRow("Watchlist").getAttribute("aria-current")).toBe("page");
+
+    fireEvent.click(navRow("Agent Scan"));
+    const route = useUiStore.getState().shellRoute;
+    expect(route.kind).toBe("agentScan");
+    if (route.kind === "agentScan") expect(route.sessionId).toBeNull();
+    expect(navRow("Agent Scan").getAttribute("aria-current")).toBe("page");
+    expect(navRow("Portfolio").hasAttribute("aria-current")).toBe(false);
+    // H3's own words for these two rows are not desktop's.
+    expect(within(nav()).queryByRole("button", { name: "Markets" })).toBeNull();
+    expect(within(nav()).queryByRole("button", { name: "Activity" })).toBeNull();
   });
 
   it("opens the page routes in the centre and moves the selected row with them", () => {
@@ -184,7 +238,7 @@ describe("the nav", () => {
     renderSidebar();
     fireEvent.click(navRow("Missions"));
     expect(useUiStore.getState().sessionModeFilter).toBe("mission");
-    expect(screen.getByRole("searchbox", { name: "Search sessions" })).not.toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).not.toBeNull();
     expect(screen.getByRole("tab", { name: "Mission" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Arbitrum LP Rebalance")).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
@@ -243,6 +297,19 @@ describe("the selected nav row follows the real destination", () => {
 });
 
 describe("New chat and the search mode", () => {
+  it("draws New chat and Search chats as the column's first two H3 cells", () => {
+    // docs/design/H3-DESKTOP.md section 1.4: NEW CHAT on the cell fill, then
+    // "Search chats"; the word on screen is the name a screen reader hears.
+    renderSidebar();
+    const body = document.querySelector(".vex-ls-body");
+    const [first, second] = Array.from(body?.children ?? []);
+    expect(first?.classList.contains("vex-ls-nrow--new")).toBe(true);
+    expect(first?.textContent).toBe("New chat");
+    expect(second?.classList.contains("vex-ls-nrow--search")).toBe(true);
+    expect(second?.textContent).toBe("Search chats");
+    expect(second?.hasAttribute("aria-label")).toBe(false);
+  });
+
   it("New chat opens the creator", () => {
     const { onCreate } = renderSidebar();
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
@@ -251,8 +318,8 @@ describe("New chat and the search mode", () => {
 
   it("Search turns into the field with the All, Agent and Mission tabs, counted", () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
-    const field = screen.getByRole("searchbox", { name: "Search sessions" });
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    const field = screen.getByRole("searchbox", { name: "Search chats" });
     expect(document.activeElement).toBe(field);
     // The nav makes way for the field; New chat stays above it.
     expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
@@ -274,7 +341,7 @@ describe("New chat and the search mode", () => {
 
   it("starts a session and closes the search from the mouse, not only the keyboard", () => {
     const { onCreate } = renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(onCreate).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Close search" }));
@@ -302,7 +369,7 @@ describe("New chat and the search mode", () => {
 
   it("the Agent tab leaves with the search, so the list is never filtered out of sight", () => {
     renderSidebar();
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     fireEvent.click(screen.getByRole("tab", { name: "Agent" }));
     expect(useUiStore.getState().sessionModeFilter).toBe("agent");
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
@@ -312,6 +379,21 @@ describe("New chat and the search mode", () => {
 });
 
 describe("the sessions by name", () => {
+  it("heads the list with CHATS, its groups one level under it", () => {
+    // docs/design/H3-DESKTOP.md section 1.4: the CHATS heading, then the
+    // groups; the words in sentence case, the caps from the class.
+    renderSidebar();
+    const chats = screen.getByRole("heading", { level: 2, name: "Chats" });
+    expect(chats.classList.contains("vex-ls-chats")).toBe(true);
+    // It stands above the scroller, so it stays while the list scrolls.
+    expect(chats.nextElementSibling?.classList.contains("vex-ls-sessions")).toBe(true);
+    expect(screen.getByRole("heading", { level: 3, name: "Pinned" })).not.toBeNull();
+    expect(screen.getByRole("heading", { level: 3, name: "Today" })).not.toBeNull();
+    // The search mode heads its matches with the tabs instead.
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    expect(screen.queryByRole("heading", { name: "Chats" })).toBeNull();
+  });
+
   it("groups them under Pinned and Today and speaks the mission states in words", () => {
     renderSidebar();
     expect(screen.getByRole("heading", { name: "Pinned" })).not.toBeNull();
@@ -351,10 +433,25 @@ describe("the rail", () => {
     expect(screen.queryByRole("button", { name: "Chats" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" }).textContent).toBe("");
     expect(navRow("Portfolio").textContent).toBe("");
-    expect(within(nav()).getAllByRole("button")).toHaveLength(8);
+    expect(within(nav()).getAllByRole("button")).toHaveLength(9);
     // No session rows on the rail; the account is the box alone.
     expect(document.querySelector("[data-vex-ls-item]")).toBeNull();
     expect(screen.getByTestId("account").getAttribute("data-open")).toBe("false");
+  });
+
+  it("stacks the rail's H3 cells in the open column's order, with no stray rule or gap", () => {
+    // docs/design/H3-DESKTOP.md sections 1.10 and 4.12 (S5-08): the Expand
+    // key, NEW CHAT, Search chats, then the nav block, each a full-width cell.
+    renderSidebar(true);
+    const body = document.querySelector("[data-vex-area='sessions-sidebar'] .vex-ls-body");
+    const cells = Array.from(body?.children ?? []).map((el) =>
+      el.classList.contains("vex-ls-nav")
+        ? "nav"
+        : (Array.from(el.classList).find((c) => c.startsWith("vex-ls-nrow--")) ?? el.className),
+    );
+    expect(cells).toEqual(["vex-ls-nrow--expand", "vex-ls-nrow--new", "vex-ls-nrow--search", "nav"]);
+    expect(document.querySelector(".vex-ls-rule, .vex-ls-gap")).toBeNull();
+    expect(screen.getByRole("button", { name: "Search chats" }).textContent).toBe("");
   });
 
   it("opens the sidebar from the Expand key, and from Search straight into the field", () => {
@@ -364,10 +461,10 @@ describe("the rail", () => {
     fireEvent.click(expand);
     expect(onToggle).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Search sessions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
     expect(onToggle).toHaveBeenCalledTimes(2);
     rerender(false);
-    expect(screen.getByRole("searchbox", { name: "Search sessions" })).not.toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search chats" })).not.toBeNull();
   });
 
   it("opens the sidebar on the list when Chat or Missions is pressed on the rail", () => {
