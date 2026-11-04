@@ -13,7 +13,10 @@
  *    not answered: those say so, the failed one with Retry;
  *  - the missions row: what runs on Mainnet, the one named, "No mission
  *    running" with none, nothing before the sessions answer; its key opens
- *    the mission or the missions list; it closes the top block.
+ *    the mission or the missions list; it closes the top block;
+ *  - recent activity: the feed's newest rows with the Activity page's status
+ *    words on their status squares, the page's own words for a read that is
+ *    loading, failed, timed out or empty, and Open activity to the page.
  */
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -22,10 +25,21 @@ import { approvalNeedsYouItem, needsYouLeadOf, type NeedsYouItem } from "../need
 import type { NeedsYouResult } from "../useVexPresence.js";
 import { NO_BACKGROUND_WORK, backgroundWorkOf } from "../background-work.js";
 import { approval, session } from "./fixtures.js";
+import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 
-const { VexConsoleMissions, VexConsoleNeedsYou, VexConsoleTop, needsYouCountText } = await import(
-  "../VexConsole.js"
-);
+/** What the activity feed's read answers, per test. */
+const feed = vi.hoisted(() => ({ current: { isLoading: true, isError: false, data: undefined } as unknown }));
+vi.mock("../../../lib/api/portfolio.js", () => ({
+  useAgentScanInfinite: () => feed.current,
+}));
+
+const {
+  VexConsoleActivity,
+  VexConsoleMissions,
+  VexConsoleNeedsYou,
+  VexConsoleTop,
+  needsYouCountText,
+} = await import("../VexConsole.js");
 const { useUiStore } = await import("../../../stores/uiStore.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
@@ -223,5 +237,124 @@ describe("the console's missions row", () => {
       "vex-needs-you",
       "vex-missions",
     ]);
+  });
+});
+
+function feedEntry(id: string, over: Partial<AgentScanActivityEntry>): AgentScanActivityEntry {
+  const leg = (symbol: string | null): AgentScanActivityEntry["input"] => ({
+    address: null,
+    symbol,
+    displaySymbol: symbol,
+    decimals: null,
+    amountHuman: null,
+    amountRaw: null,
+    executedAmountHuman: null,
+    executedAmountRaw: null,
+    displayAmount: null,
+    usdEst: null,
+  });
+  return {
+    source: "agent_activity",
+    id,
+    createdAt: "2026-11-04T12:20:00.000Z",
+    activityKind: "swap",
+    eventRole: "swap",
+    status: "confirmed",
+    protocol: null,
+    chainId: 8453,
+    chainFamily: "evm",
+    chainSlug: "base",
+    fromChain: null,
+    toChain: null,
+    input: leg("USDC"),
+    output: leg("ETH"),
+    amountBasis: null,
+    vexFee: null,
+    usdFeeEst: null,
+    failureCode: null,
+    failureReason: null,
+    txHash: null,
+    explorerUrl: null,
+    providerOrderId: null,
+    legs: [],
+    lastCheckedAt: null,
+    stalledVerification: false,
+    stalledReason: null,
+    pendingReason: null,
+    ...over,
+  };
+}
+
+function answers(page: unknown): void {
+  feed.current = { isLoading: false, isError: false, data: { pages: [page] } };
+}
+
+function activity(): HTMLElement {
+  const el = document.querySelector<HTMLElement>("[data-vex-area='vex-recent-activity']");
+  if (el === null) throw new Error("recent activity is missing");
+  return el;
+}
+
+describe("the console's recent activity", () => {
+  it("lists the newest entries with the Activity page's words on their status squares", () => {
+    answers({
+      ok: true,
+      data: {
+        status: "available",
+        entries: [
+          feedEntry("1", {}),
+          feedEntry("2", { activityKind: "transfer", status: "failed", output: feedEntry("x", {}).input }),
+        ],
+        nextCursor: null,
+        hasMore: false,
+      },
+    });
+    render(<VexConsoleActivity />);
+    expect(within(activity()).getByRole("heading", { level: 3 }).textContent).toBe("Recent activity");
+    const rows = Array.from(activity().querySelectorAll("li"));
+    expect(rows.map((row) => row.querySelector(".vex-console__activity-title")?.textContent)).toEqual([
+      "Swap USDC → ETH",
+      "Transfer USDC → USDC",
+    ]);
+    expect(rows.map((row) => row.querySelector(".vex-console__status-word")?.textContent)).toEqual([
+      "Confirmed",
+      "Failed",
+    ]);
+    // The square takes the status colour; the word stays ink.
+    expect(rows[0]?.querySelector(".vex-swatch")?.className).toContain("text-success-mark");
+    expect(rows[1]?.querySelector(".vex-swatch")?.className).toContain("text-danger-mark");
+  });
+
+  it("opens Activity from Open activity", () => {
+    answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
+    render(<VexConsoleActivity />);
+    fireEvent.click(within(activity()).getByRole("button", { name: "Open activity" }));
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "agentScan", origin: null, sessionId: null });
+  });
+
+  it("says the page's own words for a read that is loading, failed, timed out or empty", () => {
+    feed.current = { isLoading: true, isError: false, data: undefined };
+    const view = render(<VexConsoleActivity />);
+    expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Loading…");
+    view.unmount();
+
+    answers({ ok: false, error: { code: "internal", message: "no", correlationId: "c" } });
+    const failed = render(<VexConsoleActivity />);
+    expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Couldn't load activity.");
+    failed.unmount();
+
+    answers({ ok: true, data: { status: "unavailable", reason: "query_timeout" } });
+    const timedOut = render(<VexConsoleActivity />);
+    expect(activity().querySelector(".vex-console__note")?.textContent).toBe(
+      "Activity is unavailable right now - try again shortly.",
+    );
+    timedOut.unmount();
+
+    answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
+    render(<VexConsoleActivity />);
+    expect(activity().querySelector(".vex-console__note")?.textContent).toBe(
+      "No activity recorded yet - everything Vex executes appears here.",
+    );
+    expect(activity().querySelector("li")).toBeNull();
   });
 });

@@ -82,7 +82,7 @@ import type { NeedsYouItem } from "./needs-you.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
 import { useAllMissions, useVexPresence, type VexPresence } from "./useVexPresence.js";
-import { VexConsoleTop } from "./VexConsole.js";
+import { VexConsoleActivity, VexConsoleTop } from "./VexConsole.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
@@ -313,7 +313,6 @@ function VexSidebarContent({
           {studio && activeProjectId !== null ? <ThisProjectBlock projectId={activeProjectId} /> : null}
           <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
         </div>
-        {lighter ? null : <div className="vex-vs__spacer" />}
         {showAvatar && plate ? (
           <VexPortraitPlate
             emotion={vexEmotionOf(presence.state)}
@@ -321,6 +320,14 @@ function VexSidebarContent({
             closed={closing}
           />
         ) : null}
+        {/* The console's rest (H3-DESKTOP.md section 1.5): under her plate,
+          * the part her section covers while open. Not on the Lighter desk,
+          * whose chat takes the rest of its column. */}
+        {lighter ? null : (
+          <div className="vex-vs__rest" data-vex-area="vex-console-rest">
+            <VexConsoleActivity />
+          </div>
+        )}
         {lighter ? (
           <div data-vex-area="vex-desk-chat" className="vex-vs__desk">
             <LighterChatRail />

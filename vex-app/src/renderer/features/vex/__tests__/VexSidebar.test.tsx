@@ -72,6 +72,11 @@ vi.mock("../../../lib/motion/use-still-frame.js", () => ({
   prefersStillFrame: () => still.current,
   useStillFrame: () => still.current,
 }));
+// The console's recent activity reads the activity feed; its rows are
+// `VexConsole.test.tsx`'s. Here the read has not answered.
+vi.mock("../../../lib/api/portfolio.js", () => ({
+  useAgentScanInfinite: () => ({ isLoading: true, isError: false, data: undefined }),
+}));
 vi.mock("../../appShell/lighterTrading/LighterChatRail.js", () => ({
   LighterChatRail: () => <div data-testid="desk-chat" />,
 }));

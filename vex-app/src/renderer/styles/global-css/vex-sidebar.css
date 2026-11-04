@@ -428,6 +428,99 @@
   color: var(--vex-alias-label-tertiary);
 }
 
+/* ---- the console's rest (VexConsole.tsx): under her section ----
+ * What her section covers while she is open and shows while she is closed,
+ * scrolling within the column when it outgrows it. Each part opens with a 44
+ * head (13, 600, caps) over the rule. */
+.vex-vs__rest {
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-y: auto;
+}
+.vex-console__head--section {
+  height: 44px;
+  font-size: 13px;
+}
+.vex-console__note {
+  margin: 0;
+  padding: 12px var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-console__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* One activity: its line (15, ink), then its status at the right: the 6px
+ * square in the status colour beside the word (13, caps, ink). */
+.vex-console__activity {
+  display: flex;
+  box-sizing: border-box;
+  height: 43px;
+  align-items: center;
+  gap: 16px;
+  padding: 0 var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-console__activity-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-console__status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  max-width: 55%;
+  font-size: 13px;
+}
+.vex-console__status-word {
+  overflow: hidden;
+  letter-spacing: var(--tracking-label);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* OPEN ACTIVITY: 12 in caps, the arrow at the right edge. */
+.vex-console__open {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 45px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 var(--vex-console-inset);
+  border: 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-console__open:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-console__open:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-console__arrow {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
 /* ---- the portrait plate (VexPortraitPlate): the print window ----
  * 280 high, 220 to 280 in low windows (236 at 720 high); a quiet rule above.
  * The plate ground fills in while the photograph decodes: the ground, so the

@@ -21,6 +21,21 @@
  * stays, so her box never moves when a mission starts or ends. Its key opens
  * the one mission, or the missions list (the nav's Missions).
  *
+ * THE CONSOLE'S REST lies under her section and shows while she is closed:
+ *
+ *   RECENT ACTIVITY                                  a 44 head
+ *     the newest four entries of the activity        about 43 each
+ *     feed, each a line, its status square and its
+ *     status word (`vex-console-activity.ts`)
+ *   OPEN ACTIVITY and an arrow: the Activity page
+ *
+ * The feed is the Activity page's own read (`useAgentScanInfinite` with the
+ * page's unfiltered global filters), one cache entry with it. Its status
+ * words are that page's (Confirmed, "Submitted, awaiting confirmation",
+ * Failed, Refunded, "Status unknown"; Filled for a Lighter fill), its squares
+ * the status colours (section 2.2). A read that failed or timed out says so in
+ * the page's words, never as an empty history.
+ *
  * THE COUNT is the shared Needs you model's (`needs-you.ts`), the same the
  * Needs you page and the desk's title row count, so no two can disagree. A
  * read that failed is "?", never 0: a count nobody verified is not a zero.
@@ -46,9 +61,15 @@
  * heads in caps.
  */
 
-import { useId, type JSX } from "react";
+import { useId, useMemo, type JSX } from "react";
 import { LineChevronDown, LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
+import { Swatch } from "../../components/ui/swatch.js";
+import { useAgentScanInfinite } from "../../lib/api/portfolio.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import {
+  EMPTY_FILTER_STATE,
+  toAgentScanFilters,
+} from "../appShell/screens/agent-scan/AgentScanFilterBar.js";
 import { missionsRowOf, type BackgroundWork, type MissionsRow } from "./background-work.js";
 import type { NeedsYouResult } from "./useVexPresence.js";
 import {
@@ -58,6 +79,10 @@ import {
   type NeedsYouItem,
 } from "./needs-you.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
+import {
+  consoleActivityRowsOf,
+  type ConsoleActivityMark,
+} from "./vex-console-activity.js";
 
 /** The head's count: the number, "?" for a read that failed, nothing before the first read. */
 export function needsYouCountText(model: Pick<NeedsYouResult, "status" | "count">): string | null {
@@ -217,5 +242,103 @@ export function VexConsoleTop({
       <VexConsoleNeedsYou needsYou={needsYou} />
       <VexConsoleMissions missions={missions} />
     </div>
+  );
+}
+
+// -- The console's rest: recent activity -----------------------------------
+
+/**
+ * The Activity page's unfiltered global read: the same filters object, so the
+ * same query key and one cache entry with the page. Module level, so the key
+ * is stable across renders.
+ */
+const CONSOLE_FEED_FILTERS = toAgentScanFilters(EMPTY_FILTER_STATE);
+
+/** The status colour each square takes (section 2.2); the word stays ink. */
+const MARK_CLASS: Readonly<Record<ConsoleActivityMark, string>> = {
+  success: "text-success-mark",
+  danger: "text-danger-mark",
+  running: "text-running-mark",
+};
+
+/** Open Activity: the Activity page, the global feed. */
+export function openActivity(): void {
+  useUiStore.getState().setShellRoute({ kind: "agentScan", origin: null, sessionId: null });
+}
+
+/** OPEN ACTIVITY and its arrow: the key the console and the page strip end in. */
+export function OpenActivityKey(): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="vex-console__open"
+      data-vex-area="vex-open-activity"
+      onClick={openActivity}
+    >
+      <span className="vex-console__open-word">Open activity</span>
+      <span aria-hidden className="vex-console__arrow">
+        →
+      </span>
+    </button>
+  );
+}
+
+/** The feed's first page as the console's rows, or the page's own words for why there are none. */
+function ActivityRows(): JSX.Element {
+  const query = useAgentScanInfinite(CONSOLE_FEED_FILTERS);
+  const first = query.data?.pages[0];
+  const entries = first !== undefined && first.ok && first.data.status === "available"
+    ? first.data.entries
+    : null;
+  const rows = useMemo(
+    () => (entries === null ? [] : consoleActivityRowsOf(entries, Date.now())),
+    [entries],
+  );
+  if (query.isLoading) return <p className="vex-console__note">Loading…</p>;
+  if ((first !== undefined && !first.ok) || (first === undefined && query.isError)) {
+    return <p className="vex-console__note">Couldn&apos;t load activity.</p>;
+  }
+  if (first !== undefined && first.ok && first.data.status === "unavailable") {
+    return <p className="vex-console__note">Activity is unavailable right now - try again shortly.</p>;
+  }
+  if (rows.length === 0) {
+    return (
+      <p className="vex-console__note">
+        No activity recorded yet - everything Vex executes appears here.
+      </p>
+    );
+  }
+  return (
+    <ul className="vex-console__rows" aria-label="Recent activity">
+      {rows.map((row) => (
+        <li key={row.key} className="vex-console__activity" data-vex-activity-mark={row.mark}>
+          <span className="vex-console__activity-title" title={row.title}>
+            {row.title}
+          </span>
+          <span className="vex-console__status">
+            <Swatch state="done" size={6} className={MARK_CLASS[row.mark]} />
+            <span className="vex-console__status-word">{row.word}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** RECENT ACTIVITY: the newest entries with their status, then Open activity. */
+export function VexConsoleActivity(): JSX.Element {
+  const headId = useId();
+  return (
+    <section
+      aria-labelledby={headId}
+      data-vex-area="vex-recent-activity"
+      className="vex-console__section"
+    >
+      <h3 id={headId} className="vex-console__head vex-console__head--section">
+        <span className="vex-console__label">Recent activity</span>
+      </h3>
+      <ActivityRows />
+      <OpenActivityKey />
+    </section>
   );
 }
