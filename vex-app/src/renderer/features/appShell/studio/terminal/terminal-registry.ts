@@ -215,21 +215,38 @@ export class TerminalRegistry {
     const record = this.#create(terminalId);
     this.#records.set(terminalId, record);
     record.consumers = 1;
-    // The face's two files load on first use. A glyph drawn before its file
-    // arrived was rasterized in a fallback and cached in the atlas, so once
-    // both weights are in, the atlas is redrawn from the real faces.
-    void terminalFacesReady().then(() => {
-      if (this.#records.get(terminalId) !== record) return;
-      const terminal: { clearTextureAtlas?: () => void } = record.entry.terminal;
-      if (typeof terminal.clearTextureAtlas !== "function") return;
-      try {
-        terminal.clearTextureAtlas();
-      } catch {
-        // A terminal with no renderer yet has no atlas to redraw; its first
-        // paint uses the loaded faces anyway.
-      }
-    });
     return record.entry;
+  }
+
+  /**
+   * Measure the terminal's cell again from its real face, once the face has
+   * loaded (`terminalFacesReady`). Returns whether the cell may have changed,
+   * so the caller refits and tells the host the size.
+   *
+   * WHY. The face's files load on first use, and a terminal created before
+   * they arrived measured its cell in a fallback face: a 13px fallback cell
+   * is shorter than Roboto Mono's, so its rows sat off the 20 pitch, and its
+   * glyphs were rasterized into the atlas in the fallback. xterm measures its
+   * cell when `fontFamily` or `fontSize` changes and drops an unchanged
+   * write, so the same stack is written in its other spelling (no space after
+   * a comma, or back), which names the same faces: xterm measures again,
+   * clears its atlas and redraws.
+   */
+  remeasureFace(terminalId: string): boolean {
+    const record = this.#records.get(terminalId);
+    if (record === undefined || record.disposed) return false;
+    const options = record.entry.terminal.options;
+    const family = readTerminalFontFamily();
+    const current = options.fontFamily ?? family;
+    const respelled = current === family ? family.replace(/,\s+/g, ",") : family;
+    if (respelled === current) return false;
+    try {
+      options.fontFamily = respelled;
+    } catch {
+      // A terminal with no renderer yet measures its cell when it opens.
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -537,7 +554,7 @@ let facesReady: Promise<void> | null = null;
  * once where the document has no font loading API (jsdom), and never
  * rejects: a face that cannot load leaves the fallback xterm already drew.
  */
-function terminalFacesReady(): Promise<void> {
+export function terminalFacesReady(): Promise<void> {
   if (facesReady !== null) return facesReady;
   const fonts = typeof document === "undefined" ? undefined : document.fonts;
   if (fonts === undefined || typeof fonts.load !== "function") {

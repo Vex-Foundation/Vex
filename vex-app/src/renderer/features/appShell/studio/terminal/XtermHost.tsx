@@ -113,7 +113,11 @@ import { useTerminalInput } from "./useTerminalInput.js";
 import { useTerminalFileDrop } from "./useTerminalFileDrop.js";
 import { useTerminalLinkConsent } from "./useTerminalLinkConsent.js";
 import { TerminalContextMenu } from "./TerminalContextMenu.js";
-import { terminalRegistry, type TerminalRegistry } from "./terminal-registry.js";
+import {
+  terminalFacesReady,
+  terminalRegistry,
+  type TerminalRegistry,
+} from "./terminal-registry.js";
 
 /**
  * The intents an owner answers, resolved ONCE and LAZILY.
@@ -393,6 +397,19 @@ export function XtermHost({
     pushSize(registry.setVisible(terminalId, visible));
     if (!visible) setMenuAt(null);
   }, [pushSize, registry, terminalId, visible]);
+
+  // THE FACE, once its files are in (terminal-registry.ts): a terminal that
+  // measured its cell in a fallback measures it again, refits, and tells the
+  // host its size, so its rows land on the 20 pitch in Roboto Mono.
+  useEffect(() => {
+    let live = true;
+    void terminalFacesReady().then(() => {
+      if (live && registry.remeasureFace(terminalId)) pushSize(registry.refit(terminalId));
+    });
+    return () => {
+      live = false;
+    };
+  }, [pushSize, registry, terminalId]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -242,4 +242,34 @@ describe("TerminalRegistry lifecycle", () => {
       registry.attach("nope", mount());
     }).not.toThrow();
   });
+
+  it("sets the terminal in the figures face at 13, its bold the real 700", () => {
+    const registry = new TerminalRegistry(noWebgl);
+    const { terminal } = registry.acquire("face");
+    expect(terminal.options.fontSize).toBe(13);
+    expect(terminal.options.fontWeight).toBe(400);
+    expect(terminal.options.fontWeightBold).toBe(700);
+    registry.disposeAll();
+  });
+
+  it("measures the cell again on demand, in the same faces, and never on an unknown id", () => {
+    // The root's token, as the stylesheet sets it in the app.
+    document.documentElement.style.setProperty("--font-mono", '"Roboto Mono", "SF Mono", monospace');
+    const registry = new TerminalRegistry(noWebgl);
+    const { terminal } = registry.acquire("remeasure");
+    expect(terminal.options.fontFamily).toBe('"Roboto Mono", "SF Mono", monospace');
+    const before = terminal.options.fontFamily ?? "";
+    // A different spelling of the same stack, so xterm measures again ...
+    expect(registry.remeasureFace("remeasure")).toBe(true);
+    const after = terminal.options.fontFamily ?? "";
+    expect(after).not.toBe(before);
+    expect(after.replace(/,\s+/g, ",")).toBe(before.replace(/,\s+/g, ","));
+    // ... and back the next time.
+    expect(registry.remeasureFace("remeasure")).toBe(true);
+    expect(terminal.options.fontFamily).toBe(before);
+    expect(registry.remeasureFace("nope")).toBe(false);
+    registry.dispose("remeasure");
+    expect(registry.remeasureFace("remeasure")).toBe(false);
+    document.documentElement.style.removeProperty("--font-mono");
+  });
 });
