@@ -426,16 +426,23 @@
   gap: 12px;
   margin: 0 0 4px;
 }
+/* The section head, H3's label (section 2.3: EQUITY, ALLOCATION, OPEN
+ * POSITIONS): the name in 13 caps tracked 0.08em, 600, ink; the note after it
+ * stays a sentence, 13 muted. */
 .vex-pf-sec__t {
   display: inline-flex;
   min-width: 0;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 0 6px;
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.6;
+}
+.vex-pf-sec__name {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 .vex-pf-sec__note {
   font-size: 13px;
@@ -446,20 +453,39 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
-/* A section link: 13 / 500, blue. */
+/* A section link: 13, ink, underlined (section 2.3: links are ink with an
+ * underline, never blue); a hover steps to ink 2. */
 .vex-pf-link {
   padding: 0;
   border: 0;
   background: none;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 3px;
+  color: var(--vex-alias-label-primary);
 }
 .vex-pf-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-color: currentColor;
+  color: var(--vex-alias-label-secondary);
+}
+/* A head inside a section (the Lighter account's OPEN POSITIONS and its
+ * count): the section head's label, with the count a muted figure. */
+.vex-pf-subh {
+  margin: 20px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-subh__n {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--vex-alias-label-tertiary);
 }
 /* A quiet state line: muted by default, ink for a failure (never a colour). */
 .vex-pf-note {
@@ -484,19 +510,22 @@
   margin-top: 8px;
 }
 
-/* Tables: header 12 muted with a 1px rule under it, rows 36 high on quiet
- * rules, figures mono 13 right aligned, columns 18 apart. */
+/* Tables: H3's table heads (section 2.3: 13 caps tracked, muted) with a 1px
+ * rule under them, rows 36 high on quiet rules, figures mono 13 right
+ * aligned, columns 18 apart. */
 .vex-pf-t {
   width: 100%;
   border-collapse: collapse;
   font-size: 13.5px;
 }
 .vex-pf-t th {
-  padding: 8px 0;
+  padding: 10px 0;
   border-bottom: 1px solid var(--vex-alias-rule);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
   text-align: left;
+  text-transform: uppercase;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
@@ -626,26 +655,33 @@
   font-size: 12px;
 }
 
-/* The Lighter account's four figures, between a rule and a quiet rule. */
+/* The Lighter account's four figures: a row of ruled cells, the tiles'
+ * grammar one step down (the label 13 caps muted, the figure 16). */
 .vex-pf-kv4 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 6px 0 0;
-  border-top: 1px solid var(--vex-alias-rule);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  gap: 1px;
+  margin: 8px 0 0;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-rule);
 }
 .vex-pf-kv4 > div {
   min-width: 0;
-  padding: 8px 12px 8px 0;
+  padding: 14px 18px;
+  background: var(--vex-alias-bg-base);
 }
 .vex-pf-kv4 dt {
-  margin-bottom: 2px;
-  font-size: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-kv4 dd {
   margin: 0;
-  font-size: 14px;
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 @container vex-pf (width < 720px) {
@@ -653,8 +689,42 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* H3's positions table (A.8, section 4.1 item 13): a framed cell; heads 40
+ * high; rows 54 high, the market's name (15, ink) over a muted line of its
+ * terms (13), the figures mono at the right; the row's key a cell of its own
+ * at the end, the rule on its left, the row's height. */
 .vex-pf-t--positions {
-  margin-top: 6px;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-t--positions th {
+  height: 40px;
+  padding: 0 18px;
+  vertical-align: middle;
+}
+.vex-pf-t--positions td {
+  height: 54px;
+  padding: 0 18px;
+}
+.vex-pf-t--positions tbody tr:last-child > td {
+  border-bottom: 0;
+}
+.vex-pf-pos__m {
+  display: block;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.vex-pf-pos__sub {
+  display: block;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-t--positions .vex-pf-act {
+  width: 56px;
+  padding: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  text-align: center;
 }
 
 /* Activity: the caps kind tag (11 / 600, .08em, ink 2), the legs, the figure,
