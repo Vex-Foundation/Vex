@@ -244,6 +244,10 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
     // The strip's key covers the open key's box: 149 against 138, same corner.
     expect(rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__key')).toMatch(/width:\s*149px/);
   });
+
+  it("leaves the strip its room: the console's rest starts under it", () => {
+    expect(rule(".vex-kimm ~ .vex-vs__rest")).toMatch(/padding-top:\s*var\(--vex-h3-strip-h\)/);
+  });
 });
 
 describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => {

@@ -175,6 +175,13 @@
   height: var(--vex-h3-strip-h);
   user-select: none;
 }
+/* The strip's room (section 1.5): "the console's rest starts under the
+ * strip". Her strip stands over the first 56 of the console's rest in every
+ * state, so the rest that follows her section in the column begins below
+ * it; open, she covers all of it anyway. A fixed length, never a measure. */
+.vex-kimm ~ .vex-vs__rest {
+  padding-top: var(--vex-h3-strip-h);
+}
 .vex-kimm[data-kimm-phase="closed"] .vex-kimm__strip {
   display: block;
 }
