@@ -1,8 +1,10 @@
 /**
  * THE VEX TOGGLE SHORTCUT: Cmd + Shift + B on macOS, Ctrl + Shift + B on Windows and Linux
  * (docs/design/H3-DESKTOP.md section 4.4 and Appendix A.9). It opens and closes her exactly as the
- * title bar's token chip does, and the chip's tooltip spells it. Desktop binds it on Linux too,
- * where Cloud leaves it unbound: the app owns its keys, and the chord collides with nothing in it.
+ * header's Vex key does, from anywhere in the shell: the frame binds it once
+ * (`useVexToggleShortcut.ts`), and the key's tooltip and keycaps spell it. Desktop binds it on
+ * Linux too, where Cloud leaves it unbound: the app owns its keys, and the chord collides with
+ * nothing in it.
  *
  * THE RETIRING ALIAS. R3's chord, Cmd or Ctrl + Shift + Period, still matches for ONE release, so
  * a hand that learned it is not stranded the day H3 ships. It goes in the release after the one

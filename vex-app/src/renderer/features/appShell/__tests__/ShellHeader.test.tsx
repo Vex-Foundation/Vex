@@ -50,6 +50,11 @@ vi.mock("../../vex/NeedsYouControl.js", () => ({
 vi.mock("../../vex/VexTokenChip.js", () => ({
   VexTokenChip: () => <button type="button" data-testid="token-chip" />,
 }));
+vi.mock("../../vex/VexKey.js", () => ({
+  VexKey: ({ open, onToggle }: { open: boolean; onToggle: () => void }) => (
+    <button type="button" data-testid="vex-key" aria-expanded={open} onClick={onToggle} />
+  ),
+}));
 
 const { ShellHeader } = await import("../ShellHeader.js");
 const { shellHeadTemplateColumns } = await import("../../../lib/shell-columns.js");
@@ -112,13 +117,46 @@ describe("the header", () => {
     ).toEqual(["logo", "sidebar-key"]);
   });
 
-  it("puts the running head's content in its cells: the chip over Vex, the title over the chat", () => {
+  it("puts the Vex key over Vex and the running head's title over the chat; no token chip", () => {
     render(header({ mode: "agent" }));
     const head = document.querySelector("[data-vex-area='shell-head']");
-    expect(head?.querySelector("[data-vex-head-cell='vex-key'] [data-testid='token-chip']")).not.toBeNull();
+    const cell = head?.querySelector("[data-vex-head-cell='vex-key']");
+    expect(cell?.classList.contains("vex-drag")).toBe(true);
+    expect(cell?.querySelector("[data-testid='vex-key']")).not.toBeNull();
+    expect(head?.querySelector("[data-testid='token-chip']")).toBeNull();
     const title = head?.querySelector("[data-vex-head-cell='title']");
     expect(title?.getAttribute("data-vex-area")).toBe("shell-status-strip");
     expect(title?.querySelector("[data-testid='needs-you']")).not.toBeNull();
+  });
+
+  it("hands the Vex key the toggle the frame solved, and keeps the cell where there is none", () => {
+    const onToggle = vi.fn();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <ShellHeader
+          runtimeMode="agent"
+          activeSessionId="s-1"
+          empty={false}
+          vex={{ open: false, onToggle }}
+          columns={shellHeadTemplateColumns({ chats: 248, vex: 432, vexBetween: true })}
+          chatsRail={false}
+          onToggleSidebar={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+    const key = document.querySelector<HTMLElement>("[data-testid='vex-key']");
+    expect(key?.getAttribute("aria-expanded")).toBe("false");
+    key?.click();
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    view.unmount();
+    render(header({ mode: "agent", empty: true }));
+    expect(document.querySelector("[data-vex-head-cell='vex-key']")?.childElementCount).toBe(0);
+  });
+
+  it("draws no Vex key cell on the Lighter desk, where the chip ends the desk's title row", () => {
+    render(header({ mode: "lighter" }));
+    expect(document.querySelector("[data-vex-head-cell='vex-key']")).toBeNull();
+    expect(document.querySelector("[data-testid='vex-key']")).toBeNull();
   });
 
   it("states the network and never offers a menu: Mainnet, Real funds", () => {

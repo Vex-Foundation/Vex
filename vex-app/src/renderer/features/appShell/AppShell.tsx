@@ -18,7 +18,7 @@
  *   one row of cells across the window and its drag region: the logo cell
  *   and the sidebar key over the left column, the chat's title and the
  *   title bar's cluster (`RunningHead`, mounted once) over the centre, the
- *   token chip over the Vex column, the static Mainnet and Real funds, and
+ *   Vex key over the Vex column, the static Mainnet and Real funds, and
  *   the caption buttons' reserve. The columns stand under it. The bottom row
  *   holds no cell yet, so it is 0.
  *
@@ -33,8 +33,8 @@
  * - The VEX column (`VexSidebar`, docs/design/R3-MINIMAL.md section 5) is
  *   open in chat by default, hidden by default on the table pages and on the
  *   Lighter desk (where it is the right-hand column); the welcome keeps it
- *   (H3-DESKTOP.md section 1.7). Hidden is zero width; the header's token
- *   chip brings her back.
+ *   (H3-DESKTOP.md section 1.7). Hidden is zero width; the header's Vex key
+ *   (the desk's token chip) and Cmd or Ctrl + Shift + B bring her back.
  *
  * `data-vex-shell="true"` scopes the shell tokens; `data-vex-screen="appShell"`
  * stays the e2e/test selector. The Lighter desk keeps R3's one-row frame
@@ -105,6 +105,7 @@ import { LighterCenter } from "./lighterTrading/LighterCenter.js";
 import { LighterSidebar } from "./lighterTrading/LighterSidebar.js";
 import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js";
 import { VexSidebar } from "../vex/VexSidebar.js";
+import { useVexToggleShortcut } from "../vex/useVexToggleShortcut.js";
 
 import { LockVexControl } from "./LockVexControl.js";
 
@@ -356,6 +357,17 @@ function ShellFrame({
   const vexEffectiveOpen = !zen && vexOpen && (cols.vex > 0 || band);
   // Whether her column (or the band) stands at all, whatever she shows in it.
   const vexColumnStands = h3Cols === null ? vexEffectiveOpen : cols.vex > 0 || band;
+  // THE VEX TOGGLE, as the frame solved it: her section in a chat, the
+  // column on a table page, the desk chat's column on the Lighter desk. The
+  // Vex key, the desk's token chip and the shortcut all press this one, and
+  // it writes the same stored choice as ever. Zen has no column: no toggle.
+  const vexToggle = zen
+    ? null
+    : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) };
+  // Cmd or Ctrl + Shift + B from anywhere in the shell
+  // (docs/design/H3-DESKTOP.md section 4.4), bound here for as long as the
+  // shell stands rather than inside a key that may not be mounted.
+  useVexToggleShortcut(vexToggle);
   const rail = h3Cols === null ? cols.left <= RAIL_WIDTH : h3Cols.chatsRail;
   // What the left column's content renders: Lighter's drawer state, or the
   // solved column (open, or its rail).
@@ -650,13 +662,11 @@ function ShellFrame({
         runtimeMode={runtimeMode}
         activeSessionId={activeSessionId}
         empty={runtimeMode === "agent" && activeSessionId === null && !pageOpen}
-        // The token chip shows and hides Vex as the frame SOLVED her: her
-        // plate in a chat (the column stays), the column on a table page, the
-        // desk chat's column on the Lighter desk, where a column its R3
-        // solve closed reads closed. It writes the same stored choice as
-        // ever. The welcome has her column too, so the chip stands there as
-        // well; Zen has no column, so no toggle there.
-        vex={zen ? null : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) }}
+        // The Vex key (the token chip on the Lighter desk) shows and hides
+        // Vex as the frame SOLVED her (`vexToggle`); on the desk a column
+        // its R3 solve closed reads closed. The welcome has her column too,
+        // so the key stands there as well; Zen has no column, no toggle.
+        vex={vexToggle}
         columns={headColumns}
         chatsRail={rail}
         onToggleSidebar={toggleSidebar}

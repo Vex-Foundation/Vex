@@ -36,19 +36,20 @@
  *
  * A CLOSED COLUMN is zero width: the frame gives it a 0px track and the
  * aside renders its head and body only while open, so nothing in a closed
- * column takes focus, runs a query or paints her. The header's token chip
- * keeps the fill, the word and the timer meanwhile.
+ * column takes focus, runs a query or paints her. The header's Vex key keeps
+ * the fill, the word and the timer meanwhile.
  *
  * HIDING PLAYS HER CLOSE FIRST (`vex-hide.ts`): when the user hides her (the
- * column's hide key, the token chip, the shortcut), she collapses into the
+ * column's hide key, the Vex key, the shortcut), she collapses into the
  * token in the plate and only then does the write land, so the plate (or the
  * column) waits for the episode. Under reduced motion or Save-Data, with the
  * avatar off or with her plate hidden under the inspect view there is
  * nothing to watch and the write lands at once. While she closes the column
  * is inert (nothing in it takes a click or focus). Where the column goes with
- * her, focus that was inside it moves to the token chip, the control that
- * brings her back; where it stays (`stays`), focus stays on the key that was
- * pressed. A column the shell closes on its own goes at once.
+ * her, focus that was inside it moves to the header's Vex key (the desk's
+ * token chip), the control that brings her back (section 3.4); where it stays
+ * (`stays`), focus stays on the key that was pressed. A column the shell
+ * closes on its own goes at once.
  *
  * THE INSPECT VIEW takes over the body for one tool call (a Back key returns):
  * the body is hidden, never unmounted, so her canvas and the page slot keep
@@ -114,15 +115,21 @@ export interface VexSidebarProps {
   readonly stays?: boolean;
 }
 
-/** The title bar's token chip: where focus goes when the column it was in goes. */
-function tokenChip(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']");
+/**
+ * Where focus goes when the column it was in goes: the control that brings
+ * her back. The header's Vex key (docs/design/H3-DESKTOP.md section 3.4), or
+ * on the Lighter desk the title row's token chip.
+ */
+function vexToggleControl(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    "[data-vex-area='vex-key'], [data-vex-area='vex-token-chip']",
+  );
 }
 
-/** Move focus out of the column to the token chip, when focus is in the column. */
+/** Move focus out of the column to the Vex key, when focus is in the column. */
 function handFocusOut(aside: HTMLElement | null): void {
   if (aside === null || !aside.contains(document.activeElement)) return;
-  tokenChip()?.focus({ preventScroll: true });
+  vexToggleControl()?.focus({ preventScroll: true });
 }
 
 /** Her plate is in the column and not hidden under the inspect view. */

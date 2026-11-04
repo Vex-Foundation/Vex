@@ -1179,14 +1179,14 @@ describe("AppShell", () => {
     expect(useUiStore.getState().leftOpen).toBe(true);
   });
 
-  it("a page opened from the welcome keeps its name and the token chip in the title bar", () => {
+  it("a page opened from the welcome keeps its name, and the Vex key its cell", () => {
     const view = renderShell();
     const head = (): Element | null =>
       view.container.querySelector("[data-vex-area='shell-status-strip']");
-    // The bare welcome: no title to say, and the chip in its cell, her column
+    // The bare welcome: no title to say, and the Vex key in its cell, her column
     // standing beside the welcome (H3-DESKTOP.md section 1.7).
     expect(head()?.hasAttribute("data-empty")).toBe(true);
-    expect(view.container.querySelector("[data-vex-area='vex-token-chip']")).not.toBeNull();
+    expect(view.container.querySelector("[data-vex-area='vex-key']")).not.toBeNull();
 
     // A page covers the welcome and is not part of it.
     act(() => useUiStore.getState().navigate("portfolio"));
@@ -1194,7 +1194,7 @@ describe("AppShell", () => {
     expect(
       view.container.querySelector("[data-vex-area='title-bar-title']")?.textContent,
     ).toBe("Portfolio");
-    expect(view.container.querySelector("[data-vex-area='vex-token-chip']")).not.toBeNull();
+    expect(view.container.querySelector("[data-vex-area='vex-key']")).not.toBeNull();
 
     // Back on the welcome, the stage is as it was.
     act(() => useUiStore.getState().navigate("chat"));
@@ -1310,12 +1310,46 @@ describe("AppShell", () => {
     expect(useUiStore.getState().vexOpenChat).toBe(false);
     expect(aside.getAttribute("data-vex-vex-open")).toBe("true");
     expect(document.activeElement).toBe(within(aside).getByRole("button", { name: "Hide Vex" }));
-    // The chip shows her again.
-    const chip = view.container.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']");
-    expect(chip).not.toBeNull();
-    fireEvent.click(chip as HTMLElement);
+    // The Vex key shows her again.
+    const key = view.container.querySelector<HTMLElement>("[data-vex-area='vex-key']");
+    expect(key).not.toBeNull();
+    fireEvent.click(key as HTMLElement);
     expect(useUiStore.getState().vexOpenChat).toBe(true);
     expect(aside.querySelector("[data-vex-area='vex-portrait-plate']")).not.toBeNull();
+  });
+
+  it("binds Ctrl+Shift+B at the shell: it opens and closes her from anywhere, a page included", () => {
+    // docs/design/H3-DESKTOP.md section 4.4: one listener at the shell, not one
+    // that lives only while a key is mounted. Reduced motion: no close episode.
+    reducedMotion = true;
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    renderShell();
+    const chord = (target: EventTarget): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", {
+        code: "KeyB",
+        key: "B",
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        target.dispatchEvent(event);
+      });
+      return event;
+    };
+    // She closes, once, and the shell takes the key.
+    expect(chord(document.body).defaultPrevented).toBe(true);
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
+    chord(document.body);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+
+    // On a table page the chord writes the pages' own choice.
+    act(() => useUiStore.getState().navigate("portfolio"));
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+    chord(document.body);
+    expect(useUiStore.getState().vexOpenPages).toBe(true);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
   });
 
   it("mounts no sidebar drag handle: the left and Vex widths are fixed", () => {

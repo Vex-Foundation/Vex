@@ -15,7 +15,7 @@
  *    from the start shows her as she is;
  *  - HIDING PLAYS HER CLOSE FIRST: the hide key collapses her into the token
  *    and the column goes when that ends (the unmount waits), inert meanwhile,
- *    with focus handed to the token chip; a second press keeps her; the
+ *    with focus handed to the header's Vex key; a second press keeps her; the
  *    still frame, the avatar off or a column the shell closes go at once;
  *  - Needs you never decides: its key for an approval in the open chat says
  *    "Review ↓" and only closes a page over the chat;
@@ -360,12 +360,12 @@ describe("VexSidebar, hiding plays her close first", () => {
     expect(vexClosing()).toBe(false);
   });
 
-  it("is inert while she closes, and hands focus to the token chip", () => {
+  it("is inert while she closes, and hands focus to the Vex key", () => {
     vi.useFakeTimers();
     render(
       <>
-        <button type="button" data-vex-area="vex-token-chip">
-          Vex, Working
+        <button type="button" data-vex-area="vex-key">
+          Show Vex
         </button>
         <VexSidebar open onHide={() => {}} />
       </>,
@@ -373,7 +373,7 @@ describe("VexSidebar, hiding plays her close first", () => {
     hideKey().focus();
     fireEvent.click(hideKey());
     expect(sidebar().hasAttribute("inert")).toBe(true);
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
   });
 
   it("keeps her on a second press: she opens again and nothing is written", () => {
@@ -407,8 +407,8 @@ describe("VexSidebar, hiding plays her close first", () => {
     const onHide = vi.fn();
     render(
       <>
-        <button type="button" data-vex-area="vex-token-chip">
-          Vex, Working
+        <button type="button" data-vex-area="vex-key">
+          Show Vex
         </button>
         <VexSidebar open onHide={onHide} />
       </>,
@@ -417,7 +417,7 @@ describe("VexSidebar, hiding plays her close first", () => {
     fireEvent.click(hideKey());
     expect(onHide).toHaveBeenCalledTimes(1);
     // The column is about to go: focus moves out of it first.
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-token-chip");
+    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
   });
 
   it("drops the close when the shell closes the column on its own", () => {
