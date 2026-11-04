@@ -30,12 +30,24 @@
  * never asks twice, and a change of mood while open asks for that mood's
  * file then.
  *
+ * CLOSED, SHE IS THE STRIP (section 1.5; plan row S4-06): her section folds
+ * to its top 56, the glyph field's frame at the left and the same corner key
+ * at the right. The fold is her clip-path alone (inset from the foot by the
+ * box less the strip, section 3.2): her box never changes, so neither the
+ * column nor the card beside it reflows, and what the clip leaves out takes
+ * no pointer, so the console's rest under her is the person's again. In the
+ * strip her figure gives way to the field's frame (`KimmArtSet.strip`, a
+ * small file that loads with the strip; missing today, the ground's own top
+ * then).
+ *
  * THE CORNER KEY is the same control as the Vex key in the header, in the
  * same corner whatever her state (section 3.3): HIDE VEX and a cross while
- * she is open, a solid 56-high cell on a dark translucent fill over her
- * ground (138 wide, measured). Its name is the action, and its tooltip adds
- * the chord ("Hide Vex (Ctrl+Shift+B)", Appendix A.9). It writes the same
- * stored choice the Vex key writes (`onOpenChange`).
+ * she is open, SHOW VEX and a down chevron in the strip, a solid 56-high
+ * cell on a dark translucent fill over her ground (138 wide open, 149 in the
+ * strip, measured: the strip's key covers the open key's box, so the way
+ * back is where the person pressed). Its name is the action, and its
+ * tooltip adds the chord ("Hide Vex (Ctrl+Shift+B)", Appendix A.9). It
+ * writes the same stored choice the Vex key writes (`onOpenChange`).
  *
  * THE MOUNT. This component draws; the feature that mounts it
  * (`features/vex/VexPortraitPlate.tsx`, in the Vex column where K2's print
@@ -47,7 +59,7 @@
  */
 
 import { useState, type JSX } from "react";
-import { LineClose } from "../../icons/line/index.js";
+import { LineChevronDown, LineClose } from "../../icons/line/index.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 
@@ -78,15 +90,16 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
   // for state derived from a prop, so the opening frame already carries it.
   const [asked, setAsked] = useState(open);
   if (open && !asked) setAsked(true);
+  const strip = art.strip;
+  // The words change at the press (section 3.3): the key says what a press
+  // does now.
+  const action = open ? "Hide Vex" : "Show Vex";
   return (
     <div
       data-vex-area="kimm-section"
       data-kimm-open={open ? "true" : "false"}
       data-kimm-mood={mood}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
-      // Until the strip is drawn (plan row S4-06) a closed section shows
-      // nothing.
-      hidden={!open}
       className="vex-kimm"
     >
       <div aria-hidden="true" className="vex-kimm__body">
@@ -102,17 +115,28 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
             className="vex-kimm__figure"
           />
         ) : null}
+        {isKimmArtReady(strip) ? (
+          <img
+            src={strip.src}
+            alt=""
+            width={strip.width}
+            height={strip.height}
+            draggable={false}
+            decoding="async"
+            className="vex-kimm__strip"
+          />
+        ) : null}
       </div>
       <button
         type="button"
         data-vex-area="kimm-key"
-        title={shortcut === undefined ? undefined : `Hide Vex (${shortcut.label})`}
+        title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
         aria-keyshortcuts={shortcut?.aria}
-        onClick={() => onOpenChange(false)}
+        onClick={() => onOpenChange(!open)}
         className="vex-kimm__key"
       >
-        <span>Hide Vex</span>
-        <LineClose size={14} />
+        <span>{action}</span>
+        {open ? <LineClose size={14} /> : <LineChevronDown size={14} />}
       </button>
     </div>
   );

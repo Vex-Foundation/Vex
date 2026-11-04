@@ -90,6 +90,33 @@
   user-select: none;
 }
 
+/* ---- closed: the strip (sections 1.5 and 3.2) ----
+ * Her section folds to its top 56 by its clip alone: inset from the foot by
+ * her box less the strip (547 at 1440 x 900), so her box, the column and the
+ * card beside it never change. What the clip leaves out takes no pointer:
+ * the console's rest under her is live again. In the strip the field's frame
+ * stands at the left (her strip art, the strip's height) and her figure
+ * gives way to it. */
+.vex-kimm[data-kimm-open="false"] {
+  clip-path: inset(0 0 calc(100% - var(--vex-h3-strip-h)) 0);
+}
+.vex-kimm__strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: auto;
+  max-width: none;
+  height: var(--vex-h3-strip-h);
+  user-select: none;
+}
+.vex-kimm[data-kimm-open="false"] .vex-kimm__strip {
+  display: block;
+}
+.vex-kimm[data-kimm-open="false"] .vex-kimm__figure {
+  visibility: hidden;
+}
+
 /* ---- her corner key (sections 1.5 and 3.3) ----
  * The same control as the Vex key, in her section's top right whatever her
  * state: HIDE VEX and a cross while she is open, a solid 56-high cell, 138
@@ -116,6 +143,12 @@
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+}
+/* In the strip, SHOW VEX and a down chevron, 149 wide: the strip's key
+ * covers the open key's box, so the way back is under the pointer that
+ * pressed Hide Vex (section 3.3). */
+.vex-kimm[data-kimm-open="false"] .vex-kimm__key {
+  width: 149px;
 }
 .vex-kimm__key:hover {
   background: color-mix(in oklch, var(--vex-alias-bg-base) 92%, transparent);

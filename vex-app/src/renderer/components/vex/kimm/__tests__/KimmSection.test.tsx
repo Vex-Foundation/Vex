@@ -165,3 +165,52 @@ describe("KimmSection, her large art loads only when she opens (S4-05)", () => {
     expect(requests()).toHaveLength(1);
   });
 });
+
+describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
+  const STRIP = { src: "/art/kimm/strip.webp", width: 628, height: 112 };
+  const WITH_STRIP: KimmArtSet = { ...OFFER_ONLY, strip: { state: "ready", ...STRIP } };
+
+  it("keeps the same key in the same corner, now Show Vex with a down chevron, and it opens her", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <KimmSection
+        mood="hi"
+        open={false}
+        onOpenChange={onOpenChange}
+        shortcut={{ label: "⇧⌘B", aria: "Meta+Shift+B" }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Hide Vex" })).toBeNull();
+    const key = screen.getByRole("button", { name: "Show Vex" });
+    expect(key.getAttribute("data-vex-area")).toBe("kimm-key");
+    expect(key.getAttribute("title")).toBe("Show Vex (⇧⌘B)");
+    expect(key.querySelector("svg path")?.getAttribute("d")).toBe("M4 6l4 4 4-4");
+    fireEvent.click(key);
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it("is the same element open and closed: a press changes its words, never the node", () => {
+    const view = render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    const before = screen.getByRole("button", { name: "Hide Vex" });
+    view.rerender(<KimmSection mood="hi" open={false} onOpenChange={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Show Vex" })).toBe(before);
+    expect(section().getAttribute("data-kimm-open")).toBe("false");
+    expect(section().hasAttribute("hidden")).toBe(false);
+  });
+
+  it("shows the field's frame in the strip, and no figure she never opened for", () => {
+    render(withArt(WITH_STRIP, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />));
+    expect(section().querySelector(".vex-kimm__strip")?.getAttribute("src")).toBe(STRIP.src);
+    expect(section().querySelector(".vex-kimm__figure")).toBeNull();
+  });
+
+  it("folds by its clip alone: her box is the same rule open and closed", () => {
+    const closed = rule('.vex-kimm[data-kimm-open="false"]');
+    expect(closed).toMatch(
+      /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-h3-strip-h\)\) 0\)/,
+    );
+    expect(closed).not.toMatch(/(?:^|[\s;])(?:top|bottom|left|right|width|height|margin|inset|display)\s*:/);
+    // The strip's key covers the open key's box: 149 against 138, same corner.
+    expect(rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__key')).toMatch(/width:\s*149px/);
+  });
+});
