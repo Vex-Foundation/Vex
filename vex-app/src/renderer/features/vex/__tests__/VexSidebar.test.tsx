@@ -45,6 +45,8 @@ vi.mock("../useVexPresence.js", () => ({
     if (presenceRef.current === null) throw new Error("presence fixture missing");
     return presenceRef.current;
   },
+  // Every session's missions, the open one's included: the console's row.
+  useAllMissions: () => presenceRef.current?.background ?? null,
 }));
 vi.mock("../../../lib/api/shell-backdrop.js", () => ({
   useShellBackdrop: () => ({ data: undefined }),

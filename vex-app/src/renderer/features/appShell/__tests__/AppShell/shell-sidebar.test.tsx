@@ -576,7 +576,11 @@ describe("AppShell", () => {
     fireEvent.change(input, { target: { value: "arbitrum" } });
     // The match is marked, so the title is the mark plus the rest: the row's
     // select button still carries the whole name.
-    expect(screen.getByRole("button", { name: /Arbitrum LP Rebalance/ })).not.toBeNull();
+    // Scoped to the chats list: Vex's console names a running mission in its
+    // missions row too (docs/design/H3-DESKTOP.md section 1.5).
+    const list = document.querySelector<HTMLElement>("[data-vex-area='sessions-sidebar']");
+    if (list === null) throw new Error("the sessions sidebar is missing");
+    expect(within(list).getByRole("button", { name: /Arbitrum LP Rebalance/ })).not.toBeNull();
     expect(screen.queryByText("Portfolio Check")).toBeNull();
 
     // Escape closes the field AND clears the filter.

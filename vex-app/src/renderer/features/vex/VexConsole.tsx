@@ -6,6 +6,20 @@
  *   the decision row: the sentence, its meta line    64
  *     and a Review key cell; "Nothing needs you."
  *     at zero
+ *   the missions row: "1 mission running on          40, and the rule her
+ *     Mainnet · Weekly ETH buys", a chevron              section starts under
+ *
+ * Those three are the console's top block, a fixed height: her section is a
+ * box laid over the column whose top is the block's foot (section 1.5), so
+ * nothing in the block may change its height. H3's strategies row is left
+ * out (desktop has no strategies, section 4.1), which is why her box starts
+ * 40 higher than the plate's.
+ *
+ * THE MISSIONS ROW counts every running mission, the open chat's included,
+ * on Mainnet (desktop is mainnet only, section 4.2), and names the one when
+ * one runs (`missionsRowOf`). With none it says "No mission running" and
+ * stays, so her box never moves when a mission starts or ends. Its key opens
+ * the one mission, or the missions list (the nav's Missions).
  *
  * THE COUNT is the shared Needs you model's (`needs-you.ts`), the same the
  * Needs you page and the desk's title row count, so no two can disagree. A
@@ -33,8 +47,9 @@
  */
 
 import { useId, type JSX } from "react";
-import { LineChevronDown, LineChevronRight } from "../../components/icons/line/index.js";
+import { LineChevronDown, LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
 import { useUiStore } from "../../stores/uiStore.js";
+import { missionsRowOf, type BackgroundWork, type MissionsRow } from "./background-work.js";
 import type { NeedsYouResult } from "./useVexPresence.js";
 import {
   NEEDS_YOU_ALL_UNKNOWN_COPY,
@@ -141,5 +156,66 @@ export function VexConsoleNeedsYou({ needsYou }: { readonly needsYou: NeedsYouRe
         <DecisionRow needsYou={needsYou} />
       </div>
     </section>
+  );
+}
+
+/** One running mission opens its session; otherwise the missions list (the nav's Missions). */
+export function openMissions(row: Pick<MissionsRow, "sessionId">): void {
+  const ui = useUiStore.getState();
+  if (row.sessionId === null) {
+    ui.navigate("missions");
+    return;
+  }
+  ui.setRuntimeMode("agent");
+  ui.setActiveSessionId(row.sessionId);
+  ui.setShellRoute({ kind: "none" });
+}
+
+/** The missions row: what runs, on Mainnet, and a chevron to it. Empty until the sessions answer. */
+export function VexConsoleMissions({
+  missions,
+}: {
+  /** Every session's missions (`useAllMissions`); `null` before the sessions list answers. */
+  readonly missions: BackgroundWork | null;
+}): JSX.Element {
+  const row = missions === null ? null : missionsRowOf(missions);
+  return (
+    <div className="vex-console__missions" data-vex-area="vex-missions">
+      {row === null ? null : (
+        <button
+          type="button"
+          className="vex-console__row-key"
+          onClick={() => {
+            openMissions(row);
+          }}
+        >
+          <LineMissions size={16} className="vex-console__icon" />
+          <span className="vex-console__row-text">
+            {row.lead}
+            {row.name === null ? null : <span className="vex-console__muted">{` · ${row.name}`}</span>}
+          </span>
+          <LineChevronRight size={14} className="vex-console__chevron" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The console's top block: Needs you and the missions row, at the fixed
+ * height her section's box starts under (`--vex-console-top-h`).
+ */
+export function VexConsoleTop({
+  needsYou,
+  missions,
+}: {
+  readonly needsYou: NeedsYouResult;
+  readonly missions: BackgroundWork | null;
+}): JSX.Element {
+  return (
+    <div className="vex-console__top" data-vex-area="vex-console-top">
+      <VexConsoleNeedsYou needsYou={needsYou} />
+      <VexConsoleMissions missions={missions} />
+    </div>
   );
 }

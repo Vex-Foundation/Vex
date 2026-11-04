@@ -241,14 +241,26 @@
  *
  *   Needs you head   43   NEEDS YOU (14, 600, caps) and the count at the right
  *   decision row     64   the sentence (17) over its meta line (14, muted),
- *                          and the key cell at the right on the raised fill */
+ *                          and the key cell at the right on the raised fill
+ *   missions row     41   the missions icon, the words (15), a chevron: 40
+ *                          and the rule her section starts under
+ *
+ * `--vex-console-top-h` (148) is the whole top block, the line her section's
+ * box starts at: 224 in a 1440 x 900 window (section 1.5, desktop's box). */
 .vex-vs {
   --vex-console-head-h: 43px;
   --vex-console-row-h: 64px;
+  --vex-console-missions-h: 41px;
+  --vex-console-top-h: calc(
+    var(--vex-console-head-h) + var(--vex-console-row-h) + var(--vex-console-missions-h)
+  );
   --vex-console-inset: 24px;
 }
-.vex-console__needs {
+.vex-console__top {
+  display: flex;
   flex: none;
+  height: var(--vex-console-top-h);
+  flex-direction: column;
 }
 .vex-console__head {
   display: flex;
@@ -364,6 +376,56 @@
 .vex-console__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
+}
+
+/* The missions row, 40 and the rule over her section: the missions icon at
+ * 24, the words (15, the one mission's name muted), a chevron at the right.
+ * It stays with no mission running, in its own words, so her box never
+ * moves. */
+.vex-console__missions {
+  display: flex;
+  box-sizing: border-box;
+  height: var(--vex-console-missions-h);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-console__row-key {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 var(--vex-console-inset);
+  border: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  text-align: left;
+}
+.vex-console__row-key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-console__row-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-console__icon,
+.vex-console__chevron {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-console__chevron {
+  margin-left: auto;
+}
+.vex-console__row-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-console__muted {
+  color: var(--vex-alias-label-tertiary);
 }
 
 /* ---- the portrait plate (VexPortraitPlate): the print window ----

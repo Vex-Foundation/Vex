@@ -9,7 +9,8 @@
  *     body
  *       state         a 12px fill, the scope and the word, the live timer;
  *                     the narration; the background missions
- *       Needs you     the console's head and decision row (`VexConsole`);
+ *       console top   Needs you, its decision row and the missions row
+ *                     (`VexConsoleTop`);
  *                     on the Lighter desk R3's list, as its title bar's
  *       This project  Studio: the project's facts, Project assets, Agent Scan
  *       slot          a page's own block (the Board's Ask Vex)
@@ -80,8 +81,8 @@ import { formatElapsed } from "../appShell/TurnIsland/ElapsedCounter.js";
 import type { NeedsYouItem } from "./needs-you.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
-import { useVexPresence, type VexPresence } from "./useVexPresence.js";
-import { VexConsoleNeedsYou } from "./VexConsole.js";
+import { useAllMissions, useVexPresence, type VexPresence } from "./useVexPresence.js";
+import { VexConsoleTop } from "./VexConsole.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
@@ -240,6 +241,7 @@ function VexSidebarContent({
   const showAvatar = useUiStore((s) => s.showAvatar);
   const setShowAvatar = useUiStore((s) => s.setShowAvatar);
   const presence = useVexPresence();
+  const missions = useAllMissions();
   const lighter = runtimeMode === "lighter";
   const studio = runtimeMode === "studio";
 
@@ -306,7 +308,7 @@ function VexSidebarContent({
               activeSessionId={activeSessionId}
             />
           ) : (
-            <VexConsoleNeedsYou needsYou={presence.needsYou} />
+            <VexConsoleTop needsYou={presence.needsYou} missions={missions} />
           )}
           {studio && activeProjectId !== null ? <ThisProjectBlock projectId={activeProjectId} /> : null}
           <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />

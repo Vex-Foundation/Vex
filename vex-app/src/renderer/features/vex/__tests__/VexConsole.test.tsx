@@ -10,16 +10,22 @@
  *    line with the time as a figure, and a key with the item's word that only
  *    opens the item; with several waiting, the one that expires first;
  *  - "Nothing needs you." at zero, and never for a read that failed or has
- *    not answered: those say so, the failed one with Retry.
+ *    not answered: those say so, the failed one with Retry;
+ *  - the missions row: what runs on Mainnet, the one named, "No mission
+ *    running" with none, nothing before the sessions answer; its key opens
+ *    the mission or the missions list; it closes the top block.
  */
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalNeedsYouItem, needsYouLeadOf, type NeedsYouItem } from "../needs-you.js";
 import type { NeedsYouResult } from "../useVexPresence.js";
-import { approval } from "./fixtures.js";
+import { NO_BACKGROUND_WORK, backgroundWorkOf } from "../background-work.js";
+import { approval, session } from "./fixtures.js";
 
-const { VexConsoleNeedsYou, needsYouCountText } = await import("../VexConsole.js");
+const { VexConsoleMissions, VexConsoleNeedsYou, VexConsoleTop, needsYouCountText } = await import(
+  "../VexConsole.js"
+);
 const { useUiStore } = await import("../../../stores/uiStore.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
@@ -179,5 +185,43 @@ describe("needsYouLeadOf", () => {
     expect(needsYouLeadOf([none])).toBe(none);
     expect(needsYouLeadOf([none, late, soon])).toBe(soon);
     expect(needsYouLeadOf([late, none])).toBe(late);
+  });
+});
+
+describe("the console's missions row", () => {
+  it("says what runs on Mainnet, names the one, and opens its session", () => {
+    const running = session({ title: "Weekly ETH buys", missionStatus: "running" });
+    render(<VexConsoleMissions missions={backgroundWorkOf([running], null)} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row?.textContent).toBe("1 mission running on Mainnet · Weekly ETH buys");
+    fireEvent.click(within(row ?? document.body).getByRole("button"));
+    expect(useUiStore.getState().activeSessionId).toBe(running.id);
+    expect(useUiStore.getState().runtimeMode).toBe("agent");
+  });
+
+  it("stays with no mission running, in its own words, and opens the missions list", () => {
+    useUiStore.setState({ sessionModeFilter: "all", shellRoute: { kind: "portfolio", origin: null } });
+    render(<VexConsoleMissions missions={NO_BACKGROUND_WORK} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row?.textContent).toBe("No mission running");
+    fireEvent.click(within(row ?? document.body).getByRole("button"));
+    expect(useUiStore.getState().sessionModeFilter).toBe("mission");
+    expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
+  });
+
+  it("stands empty, never saying none, until the sessions list answers", () => {
+    render(<VexConsoleMissions missions={null} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toBe("");
+  });
+
+  it("closes the top block at a fixed foot: Needs you, then the missions row", () => {
+    render(<VexConsoleTop needsYou={model({ count: 0 })} missions={NO_BACKGROUND_WORK} />);
+    const top = document.querySelector<HTMLElement>("[data-vex-area='vex-console-top']");
+    expect(Array.from(top?.children ?? []).map((el) => el.getAttribute("data-vex-area"))).toEqual([
+      "vex-needs-you",
+      "vex-missions",
+    ]);
   });
 });
