@@ -5,9 +5,12 @@
  *   - OPEN, the fold glyph (a bar over an up chevron) on the raised fill: she
  *     has stepped down into her section, and the key folds her back up.
  *   - CLOSED, her face: one cell of Kimm's mood sprite, the mood
- *     `kimmMoodOf(state)` names. Until her portrait key lands (S4-03) the
- *     closed cell is drawn empty: no stand-in face and no blue token, since
- *     H3's one blue fills primary keys only.
+ *     `kimmMoodOf(state)` names, drawn by her portrait key
+ *     (`components/vex/kimm/KimmPortraitKey.tsx`, plan row S4-03) from the
+ *     nearest art set (the stand-ins in the H3 harness). While her sprite is
+ *     missing, as it is until her art arrives (S4-18), the closed cell is
+ *     drawn empty: no stand-in face and no blue token, since H3's one blue
+ *     fills primary keys only.
  *
  * THE SEAM FOR S4-03. This file is the whole of the portrait: `VexKey` hands
  * it whether her section is open and her presence state, and draws its cell
@@ -19,6 +22,8 @@
 
 import type { JSX } from "react";
 import { LineSvg } from "../../components/icons/line/index.js";
+import { KimmPortraitKey } from "../../components/vex/kimm/KimmPortraitKey.js";
+import { kimmMoodOf } from "./kimm-mood.js";
 import type { VexState } from "./vex-state.js";
 
 export interface VexKeyPortraitProps {
@@ -38,7 +43,7 @@ function FoldGlyph(): JSX.Element {
   );
 }
 
-export function VexKeyPortrait({ open }: VexKeyPortraitProps): JSX.Element | null {
+export function VexKeyPortrait({ open, state }: VexKeyPortraitProps): JSX.Element | null {
   if (open) return <FoldGlyph />;
-  return null;
+  return <KimmPortraitKey mood={kimmMoodOf(state)} open={false} />;
 }

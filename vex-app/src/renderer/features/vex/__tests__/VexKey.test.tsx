@@ -11,8 +11,9 @@
  *    platform's spelling, hidden from assistive technology;
  *  - one control named for what it does, expanded while she is open, its
  *    tooltip and `aria-keyshortcuts` carrying the chord (Appendix A.9);
- *  - the portrait: the fold glyph on the raised fill while open, the empty
- *    seam S4-03 fills while closed; the chevron up while open, down closed;
+ *  - the portrait: the fold glyph on the raised fill while open, her portrait
+ *    key (S4-03) while closed, faceless until her art; the chevron up while
+ *    open, down closed;
  *  - the words change at the press: while her close plays the key reads Show
  *    Vex and a press keeps her; a hide goes through her close;
  *  - the one announcer of the state word sits beside the key, not in it.
@@ -139,8 +140,12 @@ describe("VexKey: what it draws", () => {
     expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 10l4-4 4 4");
     rerender(<VexKey open={false} onToggle={() => undefined} platform="linux" />);
     expect(part("portrait")?.hasAttribute("data-open")).toBe(false);
-    // Her face is S4-03's: until it lands the closed cell draws nothing.
-    expect(part("portrait")?.childElementCount).toBe(0);
+    // Her face is her portrait key's (S4-03): her mood's cell of the sprite,
+    // and while her art is missing it draws no face at all.
+    const face = part("portrait")?.querySelector("[data-vex-area='kimm-portrait-key']");
+    expect(face?.getAttribute("data-kimm-key")).toBe("closed");
+    expect(face?.getAttribute("data-kimm-art")).toBe("missing");
+    expect(face?.childElementCount).toBe(0);
     expect(part("chevron")?.querySelector("path")?.getAttribute("d")).toBe("M4 6l4 4 4-4");
   });
 });

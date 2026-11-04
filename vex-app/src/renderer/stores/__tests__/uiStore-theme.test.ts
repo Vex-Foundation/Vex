@@ -73,7 +73,7 @@ describe("uiStore theme runtime", () => {
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
     expect(parsed.state.themePreference).toBe("chronos");
     expect("theme" in parsed.state).toBe(false);
-    expect(parsed.version).toBe(23);
+    expect(parsed.version).toBe(24);
   });
 
   it.each(["celeris", "system", "chronos"])(

@@ -20,25 +20,30 @@ import { defineConfig } from "@playwright/test";
 const isCI = process.env.CI === "true";
 
 /**
- * The H3 shell harness server, started only when the H3 parity captures are
- * asked for. The captures are opt-in evidence (`e2e/h3-parity.spec.ts`), and
- * Playwright starts every listed web server for every run, so an
- * unconditional entry would add a second Vite boot to each electron smoke run
- * for a spec that then skips itself.
+ * The H3 shell harness server. It serves two specs: the H3 parity captures
+ * (`e2e/h3-parity.spec.ts`, opt-in evidence that skips itself unless
+ * VEX_H3_SHOTS=1) and the card proof (`e2e/h3-card-proof.spec.ts`, plan row
+ * S4-16), which is a CI gate: a waiting money card must never move while
+ * Kimm's section opens or closes. So the server starts on every run, like
+ * the board layout harness, and Playwright reuses an already-running one
+ * locally.
+ *
+ * VEX_H3_PORT moves it off 5274 for a local run beside another checkout's
+ * harness (each worktree serves its own tree, and a reused server on the
+ * default port could be someone else's); CI keeps the default.
  */
-const h3ShellServer =
-  process.env.VEX_H3_SHOTS === "1"
-    ? [
-        {
-          command: "pnpm exec vite --config vite.h3-shell.config.ts",
-          url: "http://127.0.0.1:5274/",
-          reuseExistingServer: !isCI,
-          timeout: 120_000,
-          stdout: "ignore" as const,
-          stderr: "pipe" as const,
-        },
-      ]
-    : [];
+const H3_PORT = Number(process.env.VEX_H3_PORT ?? "5274");
+const H3_URL = `http://127.0.0.1:${String(H3_PORT)}/`;
+const h3ShellServer = [
+  {
+    command: `pnpm exec vite --config vite.h3-shell.config.ts --port ${String(H3_PORT)} --strictPort`,
+    url: H3_URL,
+    reuseExistingServer: !isCI,
+    timeout: 120_000,
+    stdout: "ignore" as const,
+    stderr: "pipe" as const,
+  },
+];
 
 export default defineConfig({
   testDir: "./e2e",
@@ -77,7 +82,7 @@ export default defineConfig({
     {
       name: "electron-smoke",
       testMatch: /.*\.spec\.ts$/,
-      testIgnore: /(board-layout|h3-parity)\.spec\.ts$/,
+      testIgnore: /(board-layout|h3-parity|h3-card-proof)\.spec\.ts$/,
     },
     /**
      * BOARD GEOMETRY, in a real engine at real widths.
@@ -112,7 +117,23 @@ export default defineConfig({
       timeout: 60_000,
       use: {
         browserName: "chromium",
-        baseURL: "http://127.0.0.1:5274/",
+        baseURL: H3_URL,
+      },
+    },
+    /**
+     * THE CARD PROOF (docs/design/H3-DESKTOP.md section 3.6): the swap card's
+     * box with Kimm's section open, closed and on every frame of both wipes,
+     * at five widths, and its pixels open against closed. On the same harness
+     * and for the same reason as the parity captures, but with motion on and
+     * on every run: a card that moves fails the build.
+     */
+    {
+      name: "h3-card-proof",
+      testMatch: /h3-card-proof\.spec\.ts$/,
+      timeout: 120_000,
+      use: {
+        browserName: "chromium",
+        baseURL: H3_URL,
       },
     },
   ],

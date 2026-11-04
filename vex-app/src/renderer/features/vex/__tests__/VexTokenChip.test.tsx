@@ -74,14 +74,27 @@ afterEach(() => {
 describe("VexTokenChip: the state", () => {
   it("draws the flat token, the fill and the word, without the scope (as the core renders)", () => {
     arrange({ state: "working", word: "Working", fill: "done" });
-    render(<VexTokenChip open onToggle={() => undefined} />);
+    render(<VexTokenChip open={false} onToggle={() => undefined} />);
     const el = chip();
-    expect(el.querySelector("[data-vex-vx-token]")).not.toBeNull();
+    // Her portrait cell holds the token while her art is missing.
+    expect(el.querySelector("[data-vex-area='kimm-portrait-key'] [data-vex-vx-token]")).not.toBeNull();
     expect(el.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("done");
     expect(el.querySelector(".vex-state-word__scope")).toBeNull();
     expect(el.textContent).not.toContain("This chat:");
     expect(el.textContent).toContain("Working");
     expect(el.getAttribute("data-vex-state")).toBe("working");
+  });
+
+  it("draws her portrait cell where the token stood: her mood closed, the fold glyph open", () => {
+    arrange({ state: "awaiting", word: "Waiting for approval", fill: "awaiting" });
+    const view = render(<VexTokenChip open={false} onToggle={() => undefined} />);
+    const cell = (): HTMLElement | null =>
+      chip().querySelector<HTMLElement>("[data-vex-area='kimm-portrait-key']");
+    expect(cell()?.getAttribute("data-kimm-mood")).toBe("offer");
+    expect(cell()?.getAttribute("data-kimm-key")).toBe("closed");
+    view.rerender(<VexTokenChip open onToggle={() => undefined} />);
+    expect(cell()?.getAttribute("data-kimm-key")).toBe("open");
+    expect(cell()?.querySelector("[data-vex-vx-token]")).toBeNull();
   });
 
   it("draws the word alone where the presence has no scope either (the welcome)", () => {

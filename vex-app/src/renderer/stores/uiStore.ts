@@ -198,9 +198,16 @@ export interface UiState {
    */
   readonly leftOpen: boolean;
   /**
-   * Whether Vex's sidebar is open in chat, on approvals and in Studio. Open
-   * by default. Persisted (v22, seeded from `bookOpen`). Read it through
-   * `selectVexOpen`, which picks this or `vexOpenPages` by page class.
+   * KIMM'S OPEN OR CLOSED CHOICE in chat, on approvals and in Studio
+   * (docs/design/H3-DESKTOP.md sections 3.5 and 4.10; plan row S4-14): her
+   * section open, or folded to its strip, in the column that stands there.
+   * One remembered choice per profile, written by every control of hers (the
+   * Vex key, her corner key, Cmd or Ctrl+Shift+B, the Settings switch) and by
+   * nothing she does herself. Open by default: first launch opens her. It
+   * REPLACES "Show avatar": v24 folded a stored `showAvatar: false` into it,
+   * so someone who had hidden her avatar finds her section closed. Persisted
+   * (v22, seeded from `bookOpen`). Read it through `selectVexOpen`, which
+   * picks this or `vexOpenPages` by page class.
    */
   readonly vexOpenChat: boolean;
   /**
@@ -216,16 +223,20 @@ export interface UiState {
    */
   readonly vexOpenLighter: boolean;
   /**
-   * Whether Vex's sidebar shows her hologram. On by default; off, the sidebar
-   * keeps the state word and the rest. Persisted (v22).
+   * @deprecated R3's "Show avatar", retired by her section's open or closed
+   * choice (`vexOpenChat`, plan row S4-14). v24 folded a stored `false` into
+   * that choice and pinned this slot true, and nothing reads or writes it
+   * now. It stays persisted and coerced this release (expand-only), so an
+   * older build reading the payload finds her shown and her choice where it
+   * was.
    */
   readonly showAvatar: boolean;
   /**
    * Whether the welcome shows Vex's hologram on her stage (true) or only her
    * coin (false): the welcome token's own choice, a "make room on this
-   * screen" press. It never writes `showAvatar` (the global avatar switch in
-   * Settings and the Vex sidebar) and `showAvatar` never writes it. On by
-   * default. Persisted; a payload without it hydrates to the default.
+   * screen" press. It never writes her section's choice (`vexOpenChat`) and
+   * her choice never writes it. On by default. Persisted; a payload without
+   * it hydrates to the default.
    */
   readonly welcomeVexShown: boolean;
   /**
@@ -235,6 +246,15 @@ export interface UiState {
    * payload without it hydrates to the default.
    */
   readonly vexInferenceNoticeDismissed: boolean;
+  /**
+   * Whether her first close has shown the way back (docs/design/H3-DESKTOP.md
+   * section 3.5; plan row S4-15): the "Show Vex" hint and its keycaps under
+   * the Vex key for 2.4 seconds, once per profile (Cloud: once per browser).
+   * False until that first close; set as the hint shows, so no later close
+   * in any window shows it again. Persisted; added without a version hop: a
+   * payload that does not carry it hydrates to the default, not yet shown.
+   */
+  readonly kimmHintShown: boolean;
   /**
    * @deprecated The previous frame's left page drag width. The R3 sidebars
    * have fixed widths and the frame no longer reads it; it stays persisted
@@ -455,11 +475,12 @@ export interface UiState {
   readonly setBookOpen: (value: boolean) => void;
   /** Flip the current page class's stored choice. */
   readonly toggleBook: () => void;
-  readonly setShowAvatar: (value: boolean) => void;
   /** Show (true) or hide (false) Vex's hologram on the welcome only. */
   readonly setWelcomeVexShown: (value: boolean) => void;
   /** Dismiss the welcome's Vex Inference notice (true), or bring it back. */
   readonly setVexInferenceNoticeDismissed: (value: boolean) => void;
+  /** Record that her first close has shown the way back (true), or forget it. */
+  readonly setKimmHintShown: (value: boolean) => void;
   /**
    * The left sidebar's nav: one press, one store change (see
    * `navigationTarget`). `origin` is the pressed row's rect, for the page's
@@ -605,6 +626,7 @@ export const useUiStore = create<UiState>()(
       showAvatar: true,
       welcomeVexShown: true,
       vexInferenceNoticeDismissed: false,
+      kimmHintShown: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       bookWidth: DEFAULT_BOOK_WIDTH,
       sidebarNarrowExpanded: false,
@@ -647,8 +669,8 @@ export const useUiStore = create<UiState>()(
       setBookOpen: (value) => set((state) => vexOpenPatch(state, value)),
       toggleBook: () =>
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),
-      setShowAvatar: (showAvatar) => set({ showAvatar }),
       setWelcomeVexShown: (welcomeVexShown) => set({ welcomeVexShown }),
+      setKimmHintShown: (kimmHintShown) => set({ kimmHintShown }),
       setVexInferenceNoticeDismissed: (vexInferenceNoticeDismissed) =>
         set({ vexInferenceNoticeDismissed }),
       navigate: (destination, origin = null) =>
@@ -751,7 +773,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "vex-ui",
-      version: 23,
+      version: 24,
       // Re-stamp the document root once the store has rehydrated. There is
       // one room, so this only repeats what theme-boot.js stamped pre-paint;
       // it stays so nothing a payload carries can leave another value on

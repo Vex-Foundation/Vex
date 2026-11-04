@@ -8,24 +8,28 @@
  *     body
  *       console top   Needs you, its decision row and the missions row, a
  *                     fixed height (`VexConsoleTop`)
- *       plate         her section's forerunner, the print window with the K2
- *                     hologram (`VexPortraitPlate`); Kimm's section takes its
- *                     place (S4)
+ *       plate         Kimm's section, laid over the console's rest
+ *                     (`VexPortraitPlate` with `kimm`, plan rows S4-04 on);
+ *                     on the Lighter desk the print window with the K2
+ *                     hologram
  *       console rest  Studio's This project, a page's own block (the Board's
  *                     Ask Vex), AI permission, recent activity and Open
- *                     activity: what her section covers while she is open
+ *                     activity: what her section covers while she is open,
+ *                     inert until her close has ended (`useKimmCovers`)
  *
  * The header's Vex key opens and closes her (`VexKey`), with the shortcut;
  * the column has no head row, no state block and no avatar switch of its own
- * (S3-11): her state is the key's line, and the avatar preference stays in
- * Settings until her remembered open or closed choice replaces it (S4-14).
+ * (S3-11): her state is the key's line, and her one remembered open or closed
+ * choice (`vexOpenChat`) replaced R3's "Show avatar" (S4-14). Her corner key
+ * opens her (`setVexOpen`) and hides her through the frame's `onHide`.
  *
  * On the Lighter desk, which keeps R3's frame until its own restyle, the
  * column is R3's Needs you list, the plate and the desk chat, which takes the
- * rest of the column; the desk's title row carries the token chip. On a table
- * page with her closed the column is the page strip, the console's one line
- * (`VexConsoleStrip`, section 1.9). Under 1024 the same parts lie in the
- * band, one row under the header (section 1.10).
+ * rest of the column; the desk's title row carries the token chip. Her choice
+ * hides the K2 plate there too. On a table page with her closed the column is
+ * the page strip, the console's one line (`VexConsoleStrip`, section 1.9).
+ * Under 1024 the same parts lie in the band, one row under the header
+ * (section 1.10).
  *
  * SHE DOCKS: a column shown again after a hide plays her open episode in the
  * plate; a column open from the start shows her as she is. The welcome keeps
@@ -46,12 +50,13 @@
  * column takes focus, runs a query or paints her. The header's Vex key keeps
  * the fill, the word and the timer meanwhile.
  *
- * HIDING PLAYS HER CLOSE FIRST (`vex-hide.ts`): when the user hides her (the
- * Vex key, the shortcut), she collapses into the
- * token in the plate and only then does the write land, so the plate (or the
- * column) waits for the episode. Under reduced motion or Save-Data, with the
- * avatar off or with her plate hidden under the inspect view there is
- * nothing to watch and the write lands at once. While she closes the column
+ * HIDING PLAYS HER CLOSE FIRST on the Lighter desk (`vex-hide.ts`): when the
+ * user hides her (the token chip, the shortcut), she collapses into the token
+ * in the plate and only then does the write land, so the column waits for
+ * the episode. Under reduced motion or Save-Data, with her figure hidden by
+ * her choice or under the inspect view there is nothing to watch and the
+ * write lands at once; so it does in H3's frame, where her section's own
+ * wipe is the close. While she closes the column
  * is inert (nothing in it takes a click or focus). Where the column goes with
  * her, focus that was inside it moves to the header's Vex key (the desk's
  * token chip), the control that brings her back (section 3.4); where it stays
@@ -71,6 +76,7 @@
 
 import { useEffect, useRef, useState, type JSX } from "react";
 import { LineBack } from "../../components/icons/line/index.js";
+import { useKimmCovers } from "../../components/vex/kimm/kimm-section-state.js";
 import { useProject } from "../../lib/api/projects.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
@@ -152,6 +158,7 @@ function plateOnScreen(aside: HTMLElement): boolean {
 
 export function VexSidebar({
   open,
+  onHide,
   seat = "column",
   plate = true,
   stays = false,
@@ -232,7 +239,7 @@ export function VexSidebar({
     >
       {strip ? <VexConsoleStrip /> : null}
       {open ? (
-        <VexSidebarContent dock={dock} closing={closing} plate={plate} />
+        <VexSidebarContent dock={dock} closing={closing} plate={plate} onHide={onHide} />
       ) : null}
     </aside>
   );
@@ -242,21 +249,31 @@ function VexSidebarContent({
   dock,
   closing,
   plate,
+  onHide,
 }: {
   readonly dock: boolean;
   /** Her close is playing: the plate collapses her into the token. */
   readonly closing: boolean;
   /** Her plate shows (the stored choice where the column stays). */
   readonly plate: boolean;
+  /** Hide her: her corner key's press (the frame's write). */
+  readonly onHide: () => void;
 }): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
-  const showAvatar = useUiStore((s) => s.showAvatar);
+  // Her one remembered choice (S4-14), which replaced "Show avatar": in H3's
+  // frame it reaches here as `plate`; the desk, which keeps K2's print window
+  // until its restyle, reads it to show or hide her figure there too.
+  const kimmChoice = useUiStore((s) => s.vexOpenChat);
   const presence = useVexPresence();
   const missions = useAllMissions();
   const lighter = runtimeMode === "lighter";
   const studio = runtimeMode === "studio";
+  const figure = lighter ? kimmChoice && plate : plate;
+  // Her section covers the console's rest while open and until a close has
+  // ended (`kimm-section-state.ts`, S4-11).
+  const covered = useKimmCovers();
 
   // The inspect view: only this session's call, and a session switch closes it.
   const inspect = useToolInspectStore((s) => s.inspect);
@@ -309,21 +326,28 @@ function VexSidebarContent({
           // height, the line her section's box starts under.
           <VexConsoleTop needsYou={presence.needsYou} missions={missions} />
         )}
-        {showAvatar && plate ? (
-          <VexPortraitPlate
-            emotion={vexEmotionOf(presence.state)}
-            dock={dock}
-            closed={closing}
-          />
-        ) : null}
+        {lighter ? (
+          figure ? (
+            <VexPortraitPlate
+              emotion={vexEmotionOf(presence.state)}
+              dock={dock}
+              closed={closing}
+            />
+          ) : null
+        ) : (
+          // H3's frame: Kimm's section, laid over the console's rest, mounted
+          // open or closed so her large art loads only when she opens (S4-05).
+          <VexPortraitPlate kimm state={presence.state} open={plate} onHide={onHide} />
+        )}
         {lighter ? (
           <div data-vex-area="vex-desk-chat" className="vex-vs__desk">
             <LighterChatRail />
           </div>
         ) : (
           // The console's rest: under her plate, the part her section covers
-          // while open and shows while she is closed.
-          <div className="vex-vs__rest" data-vex-area="vex-console-rest">
+          // while open and shows while she is closed; inert while she covers
+          // it, until a close has ended (S4-11).
+          <div className="vex-vs__rest" data-vex-area="vex-console-rest" inert={covered}>
             {studio && activeProjectId !== null ? <ThisProjectBlock projectId={activeProjectId} /> : null}
             <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
             <VexConsolePermission sessionId={studio ? null : activeSessionId} />

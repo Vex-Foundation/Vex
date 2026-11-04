@@ -120,7 +120,7 @@ describe("HowVexWorksScreen", () => {
       "This chat: Ready",
       "Click **Studio**".replace(/\*\*/g, ""),
       "Portfolio page",
-      "Show avatar",
+      "Hide Vex in its corner",
       "Check wallet balances",
       "Runtime row",
     ]) {

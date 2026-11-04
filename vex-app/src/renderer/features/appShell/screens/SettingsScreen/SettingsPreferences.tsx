@@ -1,18 +1,20 @@
 /**
  * The Preferences section of the Settings page (docs/design/R3-MINIMAL.md
  * section 9.6): the head, then one row per setting under a hairline rule:
- * Show avatar (with its "Looking at you" preview under it while it is on),
- * Open Vex's sidebar in chats, the Session permission explainer, the
- * Background image (`SettingsBackdropRow`), the composer Enter key and the
- * two switches.
+ * Show Vex, the Session permission explainer, the Background image
+ * (`SettingsBackdropRow`), the composer Enter key and the two switches.
  *
  * There is no Appearance row: H3 is dark only (the H3 revamp plan, decision
  * 6), so Celeris and the "System" choice left with the theme picker, and a
  * saved choice migrates to dark (`uiStore/persistence.ts`, v23).
- * Show avatar and Open Vex's sidebar in chats are the two persisted layout
- * preferences `showAvatar` and `vexOpenChat`; the chat slot is written
- * directly because the frame's own setter writes the CURRENT page's slot, and
- * this page is a table page (`vexOpenPages`).
+ *
+ * Show Vex is Kimm's open or closed choice (`vexOpenChat`,
+ * docs/design/H3-DESKTOP.md section 3.5; plan row S4-14), the same choice her
+ * corner key, the Vex key and the chord write. It replaced R3's two rows,
+ * Show avatar (with its "Looking at you" preview) and Open Vex's sidebar in
+ * chats: v24 folded a stored "avatar off" into it. The chat slot is written
+ * directly because the frame's own setter writes the CURRENT page's slot,
+ * and this page is a table page (`vexOpenPages`).
  */
 
 import { type JSX, type ReactNode } from "react";
@@ -26,7 +28,6 @@ import {
 import { usePriceAlertsOsSetting } from "../../../../lib/api/notification-preferences.js";
 import { studioPlatform } from "../../studio/keybindings-labels.js";
 import { vexToggleShortcutLabel } from "../../../vex/vex-toggle-shortcut.js";
-import { SettingsAvatarPreview } from "./SettingsAvatarPreview.js";
 import { SettingsBackdropRow } from "./SettingsBackdropRow.js";
 import { SettingsHead } from "./SettingsHead.js";
 
@@ -116,26 +117,12 @@ function SwitchRow({
   );
 }
 
-function ShowAvatarRow(): JSX.Element {
-  const enabled = useUiStore((state) => state.showAvatar);
-  const setShowAvatar = useUiStore((state) => state.setShowAvatar);
-  return (
-    <SwitchRow
-      title="Show avatar"
-      help={`Vex's hologram in the right sidebar. The vx token at the right of the top bar, or ${vexToggleShortcutLabel(studioPlatform)}, shows or hides the sidebar. Off, the token and the state word still show what she is doing.`}
-      enabled={enabled}
-      onToggle={() => setShowAvatar(!enabled)}
-      seam="data-vex-settings-avatar"
-    />
-  );
-}
-
-function OpenInChatsRow(): JSX.Element {
+function ShowVexRow(): JSX.Element {
   const enabled = useUiStore((state) => state.vexOpenChat);
   return (
     <SwitchRow
-      title="Open Vex's sidebar in chats"
-      help="Vex's sidebar is open by default in chats, on approvals and in Studio. Off, it stays closed until you show it with the vx token in the top bar."
+      title="Show Vex"
+      help={`Kimm's section in Vex's column, in chats, on approvals and in Studio. Off, she folds to her strip; Show Vex in its corner, the Vex key at the top, or ${vexToggleShortcutLabel(studioPlatform)}, opens her again. Her state word still shows what she is doing.`}
       enabled={enabled}
       onToggle={() => useUiStore.setState({ vexOpenChat: !enabled })}
       seam="data-vex-settings-vex-open-chat"
@@ -239,9 +226,7 @@ export function SettingsPreferences(): JSX.Element {
         lead="How Vex looks and behaves on this machine."
       />
       <div className="vex-prefs__list">
-        <ShowAvatarRow />
-        <SettingsAvatarPreview />
-        <OpenInChatsRow />
+        <ShowVexRow />
         <SessionPermissionRow />
         <SettingsBackdropRow />
         <SubmitKeyRow />

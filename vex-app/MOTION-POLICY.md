@@ -88,10 +88,10 @@ lasts, the signing stroke only while a key is being made. Attention is ONCE
 (`docs/design/R3-MINIMAL.md` section 11): the "awaiting your action" badge
 (`vex-badge--shimmer`, a mission contract or a compaction ready to accept)
 dips its opacity once on arrival, on the reveal step each way, and then rests
-on its swatch and word; it no longer pulses for as long as it waits. The one
-named exception is Vex's portrait, bound by its own section below ("The K2
-portrait"). Motion never delays a committed result, an approval, a final
-error or a security decision.
+on its swatch and word; it no longer pulses for as long as it waits. The two
+named exceptions are Vex's K2 portrait and Kimm's glyph field, each bound by
+its own section below ("The K2 portrait", "Kimm's glyph field"). Motion never
+delays a committed result, an approval, a final error or a security decision.
 
 Prefer `transform` and `opacity`. Animating a size is reserved for the owner
 of that layout (`.vex-expand`, the shell's column tracks); nothing inside a
@@ -175,6 +175,36 @@ working turn or a pending approval.
 Her open and close episodes, the re-wake and the look at you chain run on her
 clock; the still frame skips them (she appears, or the token stands alone).
 
+### Kimm's glyph field
+
+The falling V, X and E behind Kimm's figure on her blue ground
+(`src/renderer/components/vex/kimm/KimmField.tsx` over the pure model
+`kimm-field.ts`; `docs/design/H3-DESKTOP.md` sections 1.5, 3.2 and 3.5) is
+the second named loop. It is part of how she is drawn, not an idle
+decoration, and it is bound four ways:
+
+- **Only while her section is open.** Closed, the field holds its frame in
+  the strip ("the field holds its frame", section 3.2) and paints nothing;
+  opening starts it again from that frame. Her section's open choice is the
+  switch, never her agent's state.
+- **The run gate.** `lib/motion/run-gate.ts` runs it only while its canvas is
+  on screen and the window is shown; a hidden window, a column folded or
+  scrolled away, or the inspect view over her paints no frame.
+- **A fixed step and a clock cap.** The model steps 10 times a second
+  (`KIMM_FIELD_STEP_MS`, K2's idle step), so a frame whose step has not come
+  repaints nothing, and one animation frame never advances it more than
+  250ms (`KIMM_FIELD_CLOCK_CAP_MS`), so a stalled window resumes where it
+  stopped. Its draws come from one seeded sequence: the same step is the
+  same field.
+- **The still frame.** Reduced motion and Save-Data
+  (`lib/motion/use-still-frame.ts`) paint one composed frame
+  (`KIMM_FIELD_STILL_STEP`) and repaint only when its box changes; no loop
+  starts.
+
+It draws on a canvas, so it moves nothing in the layout and no transition or
+keyframe of it exists to collapse; the bounds above are the whole of its
+motion.
+
 ### The shell and the Vex sidebar
 
 - **The column tracks.** The frame's `grid-template-columns` rides
@@ -218,6 +248,8 @@ Live pairs:
 |---|---|---|
 | `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding a stack slot |
 | `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
+| `DURATION_VEX_CLOSE_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `closing` phase when no `transitionend` comes) | `.vex-kimm[data-kimm-open="false"]`'s clip-path transition, kimm.css (`--vex-duration-vex-close`) | her figure gives way to the strip mid-wipe, or she reads as closing after the wipe has ended |
+| `DURATION_VEX_OPEN_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `opening` phase when no `transitionend` comes) | `.vex-kimm`'s clip-path transition, kimm.css (`--vex-duration-vex-open`) | the scan head goes before the wipe reaches her foot, or stays after it |
 
 One pair has no CSS side and cannot drift: the Vex sidebar's hide waits
 `VEX_HIDE_EPISODE_MS` (`features/vex/vex-hide.ts`), which IS her close
