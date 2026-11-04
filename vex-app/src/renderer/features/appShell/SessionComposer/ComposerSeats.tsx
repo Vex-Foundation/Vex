@@ -1,7 +1,8 @@
 /**
  * Composer seats (B18/B20/B21): the MODEL CELL that leads the composer row
- * (docs/design/H3-DESKTOP.md section 1.8), and over the row the options
- * control, "{model name} · Reasoning: {effort}", and the legacy-plan chip.
+ * (docs/design/H3-DESKTOP.md section 1.8), and the status strip's first
+ * cell over the row, the options control ("{model} HIGH") with the
+ * legacy-plan chip.
  *
  * THE MODEL CELL is the model choice: the model's glyph in the row's first
  * cell (`ComposerModelGlyph`). In a resolved agent session it is the model
@@ -10,11 +11,12 @@
  * Settings, where the default model and the key live. Its accessible name
  * says the model and its provider in words either way.
  *
- * THE OPTIONS CONTROL names the model the next turn runs on, as words, and
- * holds the reasoning effort key (`ReasoningEffortSelect`, its chevron at the
- * end of the frame). The name comes from the model catalogue
+ * THE OPTIONS CONTROL is H3's "DeepSeek V4.1 Flash 1017 HIGH": the model the
+ * next turn runs on, as words in sentence case, then the reasoning effort as
+ * its caps word, the effort key (`ReasoningEffortSelect`, named "Reasoning
+ * effort", its menu opening upward). The name comes from the model catalogue
  * (`useAvailableModels`, the shared cache key), else the id; the label owns
- * the ellipsis.
+ * the ellipsis. A model with no reasoning selector shows its name alone.
  *
  * SHRINK CONTRACT (codex Bug 3). The frame and the name may shrink
  * (`min-w-0`, no `shrink-0`), and the model label owns the ellipsis. Labels
@@ -136,20 +138,17 @@ function ModelName({ modelId }: { readonly modelId: string }): JSX.Element {
 }
 
 /**
- * The options control: the model's name, the muted dot and "Reasoning:",
- * then the effort key (the menu, or its quiet placeholder while the
- * catalogue loads). Renders nothing when neither half has anything to show.
+ * The options control: the model's name, then the effort key (the menu, or
+ * its quiet placeholder while the catalogue loads), H3's "{model} HIGH".
+ * Renders nothing when neither half has anything to show.
  */
 export function ComposerOptions({
   modelId,
   effort,
-  effortResolved,
 }: {
   readonly modelId: string | null;
   /** The effort key, or `null` when the model has no reasoning selector. */
   readonly effort: ReactNode | null;
-  /** False while the catalogue is unresolved: no "Reasoning:" before a placeholder. */
-  readonly effortResolved: boolean;
 }): JSX.Element | null {
   if (modelId === null && effort === null) return null;
   return (
@@ -158,18 +157,6 @@ export function ComposerOptions({
       className="vex-composer-options min-w-0"
     >
       {modelId === null ? null : <ModelName modelId={modelId} />}
-      {effort !== null && effortResolved ? (
-        <>
-          {modelId !== null ? (
-            <span aria-hidden="true" className="vex-composer-options__key">
-              ·
-            </span>
-          ) : null}
-          <span aria-hidden="true" className="vex-composer-options__key">
-            Reasoning:
-          </span>
-        </>
-      ) : null}
       {effort}
     </div>
   );

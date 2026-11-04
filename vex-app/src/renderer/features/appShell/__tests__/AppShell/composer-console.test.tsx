@@ -287,11 +287,17 @@ describe("composer capsule - chrome", () => {
     );
     const form = container.querySelector('[data-vex-area="chat-composer"]');
     expect(form?.getAttribute("data-vex-composer-state")).toBe("approval");
-    const tag = screen.getByText("Waiting for approval");
-    expect(tag).toBeTruthy();
-    // The tag sits on the FIELD's top edge, so it rides inside the card.
+    const words = screen.getByText("Waiting for approval");
+    const tag = words.closest('[data-vex-console-status="approval"]') as HTMLElement;
+    expect(tag.className).toBe("vex-composer-tag");
+    // The tag stands in the status strip's state cell, H3's empty cell over
+    // the row, so it rides inside the card; the strip says it holds a state.
     expect(form?.contains(tag)).toBe(true);
+    expect(tag.parentElement?.className).toContain("vex-composer-strip__state");
+    expect(tag.closest('[data-vex-strip-state="approval"]')).not.toBeNull();
     expect(tag.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
+    // Its words truncate before they push a neighbour out.
+    expect(words.className).toContain("truncate");
     // The ink frame is drawn inside the composer's box, so nothing moves.
     expect(CONSOLE_CSS).toMatch(
       /\[data-vex-composer-state="approval"\]\s*\{[^}]*outline:\s*1\.5px solid var\(--vex-alias-rule-ink\);[^}]*outline-offset:\s*-1\.5px;/,
@@ -644,7 +650,7 @@ describe("composer capsule - seats", () => {
       '[data-vex-area="composer-context-ring"]',
     );
     expect(ring?.getAttribute("aria-label")).toBe("Context 45% used");
-    expect(ring?.textContent).toBe("Context 45%");
+    expect(ring?.textContent).toBe("Context45%");
   });
 
   it("no limit reported → no ring; no fabricated denominator", () => {

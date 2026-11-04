@@ -1,13 +1,13 @@
 /* The chat's chrome: its header cells (ChatHeaderCells, below) and the
  * composer (SessionComposer, after them).
  *
- * Composer chrome, R3 (docs/design/R3-MINIMAL.md section 7):
- * a square field on a 1px rule (`--vex-alias-composer`, radius 0, no shadow,
- * no blur) with NO focus treatment of any kind - the blue caret and the send
- * key carry focus. Under the text sits one bar: the options control, the
- * permission as its promise, the context label and meter, and the send or
- * named stop key. Border chrome lives here (not in a className) because the
- * design guard scans .tsx sources for border chrome. */
+ * Composer chrome, H3 (docs/design/H3-DESKTOP.md section 1.8): the status
+ * strip, "{model} HIGH", the permission as its promise, the composer's state
+ * and CONTEXT with its meter, over the composer row, the model cell, the
+ * field and the blue send or stop cell. Square cells on 1px rules (radius 0,
+ * no shadow, no blur), NO focus treatment on the field - the caret carries
+ * it. Border chrome lives here (not in a className) because the design guard
+ * scans .tsx sources for border chrome. */
 
 /* ── THE CHAT'S HEADER CELLS (docs/design/H3-DESKTOP.md section 1.3) ───────
  * The header row's cells over the chat column. The row, its grid and the
@@ -265,84 +265,167 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   }
 }
 
-/* THE OPTIONS BAR over the row: the options control leading; the
- * permission as its promise and the context label trailing, 8 apart, on a
- * 1px top rule, text 24 in. The chat is narrow (docs/design/H3-DESKTOP.md
- * section 1.2: 648 at 1280, 641 at 1024), so the trailing cluster wraps
- * under the options when they need the room. */
-.vex-composer-bar {
-  padding: 6px 24px;
+/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section 1.8): 31
+ * high (797 to 827 at 1440), its top rule across the chat column, four cells
+ * divided by the rule, each one's words 24 in, sans 13:
+ *
+ *   model    the model's name in ink, then the effort word in muted caps
+ *   promise  FUNDS REQUIRE APPROVAL or FULL ACCESS, caps, ink 2
+ *   state    H3's empty cell, holding desktop's composer state while it
+ *            lasts
+ *   context  CONTEXT in muted caps, ten cells and the share, the cell's
+ *            own key
+ *
+ * A narrow strip (the chat at 1280 and under) tightens the cells to 16 in;
+ * under 600 the promise's words give way to its icon (the seat's classes),
+ * and under 760 too while the state cell holds words, which need its room.
+ * The model cell keeps 120 at the least, its name truncating first; then the
+ * state's words truncate. The context never concedes. */
+.vex-composer-strip {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  height: 31px;
   border-top: 1px solid var(--vex-alias-rule);
-  flex-wrap: wrap;
-  row-gap: 6px;
+  font-size: 13px;
+  white-space: nowrap;
 }
-.vex-composer-bar > :first-child {
-  min-width: min(100%, 17.5rem);
+.vex-composer-strip__cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 24px;
 }
-.vex-composer-bar > :last-child {
-  margin-left: auto;
+.vex-composer-strip__cell + .vex-composer-strip__cell {
+  border-left: 1px solid var(--vex-alias-rule);
+}
+/* The model cell takes the room left (248 at 1440, its words from the
+ * left), so the promise stands next to the context with only the state cell
+ * between, H3's 47 wide empty cell, which widens to its words while it
+ * holds them. */
+.vex-composer-strip__model {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+.vex-composer-strip__state {
+  flex: 0 1 auto;
+  min-width: 47px;
+  padding: 0 12px;
+}
+.vex-composer-strip__state:empty {
+  padding: 0;
+}
+/* Its words: the tag, 22 high on its 1px ink border, standing in the cell,
+ * its words truncating before they push a neighbour out. */
+.vex-composer-strip__state > .vex-composer-tag {
+  position: static;
+  min-width: 0;
+  max-width: 100%;
+}
+@container (max-width: 760px) {
+  .vex-composer-strip[data-vex-strip-state] [data-vex-permission-label] {
+    display: none;
+  }
+  .vex-composer-strip[data-vex-strip-state] .vex-composer-promise > svg {
+    display: block;
+  }
+}
+/* The context key fills its cell, so its hover and its ring are the cell's;
+ * its panel's sentences wrap as sentences do. */
+.vex-composer-strip__context {
+  align-items: stretch;
+  padding: 0;
+}
+.vex-composer-strip [role="dialog"] {
+  white-space: normal;
+}
+/* No session, no context to measure (the welcome): the cell leaves rather
+ * than stand empty beside H3's empty state cell. */
+.vex-composer-strip__context:empty {
+  display: none;
+}
+@container (max-width: 700px) {
+  .vex-composer-strip__cell:not(.vex-composer-strip__context):not(.vex-composer-strip__state) {
+    padding: 0 16px;
+  }
 }
 
-/* The options control: "{model} · Reasoning: {effort}" in one 30 high frame
- * on the quiet rule, 13, the dot and "Reasoning:" muted, a chevron last. The
- * model name and the effort are two keys inside the one frame (the model opens
- * its settings, the effort opens its menu). */
+/* The options control: the model's name, sans 13 in ink, then the effort
+ * key's word in muted caps ("HIGH"), its menu opening upward and keeping the
+ * width of its longest word ("Minimal"), whatever the trigger's own width. */
 .vex-composer-options {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--vex-alias-rule-quiet);
-  background: transparent;
+  gap: 10px;
+  min-width: 0;
   color: var(--vex-alias-label-primary);
   font-size: 13px;
   white-space: nowrap;
 }
-.vex-composer-options__key {
-  flex: none;
+.vex-composer-options .vex-composer-options__effort {
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
-/* The effort's menu opens upward from the frame and keeps the width of its
- * longest word ("Minimal"), whatever the trigger's own width. */
+.vex-composer-options .vex-composer-options__effort:hover {
+  color: var(--vex-alias-label-primary);
+}
 .vex-composer-options [role="listbox"] {
   right: auto;
   min-width: 8rem;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
-/* The legacy plan seat keeps the quiet frame of the options control. */
+/* The legacy plan seat keeps a quiet frame beside the options. */
 .vex-composer-chip {
   border: 1px solid var(--vex-alias-rule-quiet);
 }
 
-/* The permission as its promise: 13 / 500 blue with its icon, 30 high. */
+/* The permission as its promise: caps 13 in ink 2, its icon only when the
+ * words have given way. */
 .vex-composer-promise {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 4px;
-  color: var(--vex-alias-accent-primary);
+  min-width: 0;
+  color: var(--vex-alias-label-secondary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-/* "Context 21%" in 12.5 muted and the five cell meter: cells 4 x 10, two
- * apart, the rule border, filled cells blue (section 7). */
+/* CONTEXT, the meter and the share: the label in muted caps 13, ten cells 4
+ * x 12 two apart (the rule outline, the used share filled), the share a
+ * figure in ink 2; the key is the whole cell, its text 24 in. */
 .vex-composer-context {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 4px;
+  gap: 10px;
+  height: 100%;
+  padding: 0 24px;
   color: var(--vex-alias-label-tertiary);
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
+}
+.vex-composer-context__label {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-composer-context__share {
+  color: var(--vex-alias-label-secondary);
 }
 .vex-context-meter > i {
   width: 4px;
-  height: 10px;
+  height: 12px;
+}
+@container (max-width: 700px) {
+  .vex-composer-context {
+    padding: 0 16px;
+  }
 }
 
 /* Dashed drop ring: a masked SVG rect with square corners. The 4px stroke is
