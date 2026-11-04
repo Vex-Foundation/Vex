@@ -22,6 +22,16 @@
  * Lighter cards keep their own fact rows (`lighter-order-facts.ts` and the
  * curated rows in `ApprovalDetails`); they carry no money lines here.
  *
+ * IN H3'S TABLE (docs/design/H3-DESKTOP.md Appendix A.7) these lines are the
+ * card's field rows, their labels set in mono caps by the field-label
+ * register; the labels stay sentence case here. Where H3's rows differ:
+ * "You send" is H3's AMOUNT TO SWAP as signed, never an editable field;
+ * "Minimum receipt" carries the slippage limit in its note in place of
+ * H3's SLIPPAGE LIMIT; "Costs" holds the Vex fee and the network fee on one
+ * row; and H3's FROM wallet, QUOTED PRICE and limits line have no line here
+ * at all, because the approval binds none of them (section 4.1). The look
+ * changed in the H3 slice; what a line reads did not.
+ *
  * Pure: no React, no IO.
  */
 

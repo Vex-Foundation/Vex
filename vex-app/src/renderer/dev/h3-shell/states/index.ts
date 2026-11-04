@@ -9,6 +9,7 @@
  */
 
 import { baseAnswers } from "../fixtures/base.js";
+import { approvalKindsState } from "./approval-kinds.js";
 import { filled } from "./filled.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
@@ -29,6 +30,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   newChat,
   thinking,
   swapWaiting,
+  approvalKindsState,
   filled,
   portfolio,
 ];
