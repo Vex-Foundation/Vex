@@ -61,6 +61,7 @@ import {
   computeH3ShellColumns,
   deskChatDragMax,
   deskGridTemplateColumns,
+  deskVexWidth,
   h3GridTemplateColumns,
   h3ShellTier,
   shellColumnOrder,
@@ -436,7 +437,8 @@ function ShellFrame({
   // interpolates length-to-length (`auto` <-> length is not interpolable and
   // once swept the right column through the centre on the welcome edge).
   const frameStyle: CSSProperties &
-    Record<"--vex-vex-track" | "--vex-overlay-left", string> = {
+    Record<"--vex-vex-track" | "--vex-overlay-left", string> &
+    Partial<Record<"--lit-zen-seat", string>> = {
     // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
     // desk's own order, rail | desk | Vex.
     gridTemplateColumns:
@@ -449,8 +451,8 @@ function ShellFrame({
     // row holds the header's cells, the bottom row the account cell, the
     // tagline cell and the chat's composer seat (section 1.8). On the desk
     // the bottom row holds the account cell under the rail; the desk and the
-    // desk chat run on to the window's foot. Zen has neither row: its own
-    // controls stand over the chart.
+    // desk chat run on to the window's foot. Zen has neither row: its one
+    // row is the chart's own toolbar (`ZenRow.tsx`).
     gridTemplateRows: shellGridTemplateRows({ head: !zen, foot: !zen, band }),
     // The solved Vex track, for R3's running-head reserve (title-bar.css).
     "--vex-vex-track": `${cols.vex}px`,
@@ -459,6 +461,9 @@ function ShellFrame({
     // sits inside the centre (shell.css resets it there); this value is the
     // frame-level box its entrance morph measures against.
     "--vex-overlay-left": `${h3Cols === null ? cols.left : h3Cols.chatLeft}px`,
+    // Zen's desk chat stands in her column's seat, over the chart: as wide
+    // as her column on the desk, so leaving Zen with her open keeps her box.
+    ...(zen ? { "--lit-zen-seat": `${deskVexWidth(viewport, lighterChatShare)}px` } : {}),
   };
 
   // The header's cells over the columns (docs/design/H3-DESKTOP.md section
@@ -538,23 +543,28 @@ function ShellFrame({
 
   /* The desk's head cells (docs/design/H3-DESKTOP.md section 4.9): in the
    * header's title cell, where you are and the desk's three keys, and the
-   * drawer they open; in Zen, Zen's own controls. */
+   * drawer they open. Zen has no header: its row is the chart's own
+   * (`ZenRow.tsx`). */
   const deskHead = lighter ? (
     <LighterSidebar
       collapsed={!deskDrawerOpen}
       onToggleSidebar={toggleDeskDrawer}
       band={deskBand}
-      zenMode={lighterZen}
-      zenAssistantOpen={zenAssistantOpen}
-      zenControlsOpen={zenControlsOpen}
-      onToggleZen={() => setZenMode(!lighterZen)}
-      onToggleZenControls={() => setZenControlsOpen((current) => !current)}
-      onToggleZenAssistant={() => {
-        if (zenAssistantOpen) setZenAssistantOpen(false);
-        else openZenAssistant();
-      }}
+      onEnterZen={() => setZenMode(true)}
     />
   ) : null;
+  // Zen's row (the approved `lighter-zen` plate): its fold key, Ask Vex and
+  // Exit Zen, pressed in the chart's own toolbar.
+  const zenControls = {
+    controlsOpen: zenControlsOpen,
+    assistantOpen: zenAssistantOpen,
+    onToggleControls: () => setZenControlsOpen((current) => !current),
+    onToggleAssistant: () => {
+      if (zenAssistantOpen) setZenAssistantOpen(false);
+      else openZenAssistant();
+    },
+    onExit: () => setZenMode(false),
+  };
 
   /* The centre, the chat's column: the mode's surface under the header, and
    * the pages over it inside this column. The last track in the agent shell
@@ -602,6 +612,7 @@ function ShellFrame({
             <LighterCenter
               zenMode={lighterZen}
               onOpenZenAssistant={openZenAssistant}
+              zenControls={zenControls}
             />
           ) : studio ? <StudioCenter /> : <SessionPanel />}
         </div>
@@ -616,7 +627,8 @@ function ShellFrame({
 
   /* Vex's column: between the chats and the chat (track 2) in the agent
    * shell and Studio, the welcome's included, at the right (track 3) on the
-   * Lighter desk; in Lighter's Zen it is the assistant overlay. */
+   * Lighter desk; in Lighter's Zen it is the desk chat over the chart, in
+   * her column's seat (`--lit-zen-seat`, lighter-desk.css). */
   const vexColumn = (
     <div
       key="vex"

@@ -43,9 +43,32 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
   AgentScanScreen: () => null,
 }));
 
+// Zen's row is the chart's toolbar (`ZenRow.tsx`): the desk draws its keys
+// from the shell's Zen controls. Folded, it is the fold key and Exit Zen.
 vi.mock("../../lighterTrading/LighterCenter.js", () => ({
-  LighterCenter: ({ zenMode }: { readonly zenMode: boolean }) => (
-    <div data-testid="lighter-center" data-zen-mode={zenMode ? "true" : undefined} />
+  LighterCenter: ({ zenMode, zenControls }: {
+    readonly zenMode: boolean;
+    readonly zenControls?: import("../../lighterTrading/ZenRow.js").ZenControls;
+  }) => (
+    <div data-testid="lighter-center" data-zen-mode={zenMode ? "true" : undefined}>
+      {zenMode && zenControls !== undefined ? (
+        <>
+          {zenControls.controlsOpen ? (
+            <button
+              type="button"
+              aria-label={zenControls.assistantOpen ? "Close Vex" : "Ask Vex"}
+              onClick={zenControls.onToggleAssistant}
+            />
+          ) : null}
+          <button
+            type="button"
+            aria-label={zenControls.controlsOpen ? "Hide Zen controls" : "Show Zen controls"}
+            onClick={zenControls.onToggleControls}
+          />
+          <button type="button" aria-label="Exit Zen Mode" onClick={zenControls.onExit} />
+        </>
+      ) : null}
+    </div>
   ),
 }));
 
@@ -53,21 +76,11 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
   LighterSidebar: ({
     collapsed,
     onToggleSidebar,
-    zenMode,
-    zenAssistantOpen,
-    zenControlsOpen,
-    onToggleZen,
-    onToggleZenControls,
-    onToggleZenAssistant,
+    onEnterZen,
   }: {
     readonly collapsed: boolean;
     readonly onToggleSidebar: () => void;
-    readonly zenMode: boolean;
-    readonly zenAssistantOpen: boolean;
-    readonly zenControlsOpen: boolean;
-    readonly onToggleZen: () => void;
-    readonly onToggleZenControls: () => void;
-    readonly onToggleZenAssistant: () => void;
+    readonly onEnterZen: () => void;
   }) => (
     <aside
       data-vex-area="lighter-sidebar"
@@ -78,25 +91,7 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
         aria-label={collapsed ? "Open markets and sessions" : "Close markets and sessions"}
         onClick={onToggleSidebar}
       />
-      {!zenMode ? (
-        <button
-          type="button"
-          aria-label="Enter Zen Mode"
-          onClick={onToggleZen}
-        />
-      ) : !zenControlsOpen ? (
-        <button type="button" aria-label="Show Zen controls" onClick={onToggleZenControls} />
-      ) : (
-        <>
-          <button type="button" aria-label="Exit Zen Mode" onClick={onToggleZen} />
-          <button type="button" aria-label="Hide Zen controls" onClick={onToggleZenControls} />
-          <button
-            type="button"
-            aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-            onClick={onToggleZenAssistant}
-          />
-        </>
-      )}
+      <button type="button" aria-label="Enter Zen Mode" onClick={onEnterZen} />
     </aside>
   ),
 }));
@@ -776,6 +771,9 @@ describe("AppShell", () => {
     expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
     expect(frame?.style.paddingTop).toBe("");
     expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 0px");
+    // Her desk chat stands over the chart in her column's seat, as wide as
+    // her column on the desk (lighter-desk.css).
+    expect(frame?.style.getPropertyValue("--lit-zen-seat")).toMatch(/^\d+(\.\d+)?px$/);
     expect(screen.getByTestId("lighter-center").getAttribute("data-zen-mode")).toBe("true");
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open")).toBe("false");
 

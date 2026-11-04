@@ -25,6 +25,7 @@ import { useDeskReviewShowing } from "./desk-review-slot.js";
 import { formatRetrievedAt, marketSymbols } from "./format.js";
 import { useLighterDesk, type LighterDesk } from "./useLighterDesk.js";
 import { useSplitter } from "./useSplitter.js";
+import { ZenRowEnd, ZenRowStart, type ZenControls } from "./ZenRow.js";
 
 const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
 
@@ -33,12 +34,19 @@ const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
  * section 4.9): the market bar, then the chart, the book and the ticket,
  * with the account dock below. The desk's title cells are the header's
  * (`LighterSidebar`), not here.
+ *
+ * In Zen the chart takes the whole window and its toolbar is Zen's row
+ * (`ZenRow.tsx`); the rest of the desk stays mounted, unseen, so its
+ * streams and its Review order keep running.
  */
-export function LighterCenter({ zenMode, onOpenZenAssistant }: {
+export function LighterCenter({ zenMode, onOpenZenAssistant, zenControls }: {
   readonly zenMode?: boolean;
   readonly onOpenZenAssistant?: () => void;
+  /** Zen's row: its fold, the desk chat over the chart, the way out. */
+  readonly zenControls?: ZenControls;
 } = {}): JSX.Element {
   const zenActive = zenMode === true;
+  const zen = zenActive ? zenControls ?? null : null;
   const theme = useUiStore((state) => state.theme);
   const saveDesk = useLighterAnalysisStore((state) => state.saveDesk);
   const desk = useLighterDesk();
@@ -62,14 +70,29 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); };
   }, []);
+  // In Zen the market picker hangs from Zen's row and is one of Zen's own
+  // panels: Escape closes it first, wherever focus is, before the shell's
+  // Zen key reads the press (it skips a handled one). Off Zen the picker
+  // keeps its own Escape.
+  useEffect(() => {
+    if (!zenActive || !marketPickerOpen) return undefined;
+    const onEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setMarketPickerOpen(false);
+    };
+    window.addEventListener("keydown", onEscape, true);
+    return () => { window.removeEventListener("keydown", onEscape, true); };
+  }, [zenActive, marketPickerOpen, setMarketPickerOpen]);
   return (
     <div
       className="lit-desk"
       data-vex-area="lighter-desk"
       data-lighter-theme={theme}
       data-lighter-environment={environment}
-      data-chart-expanded={zenActive || undefined}
       data-zen-mode={zenActive || undefined}
+      // Zen opens folded: the row is its fold key and Exit Zen alone.
+      data-zen-controls={zenActive ? zen?.controlsOpen === true ? "open" : "closed" : undefined}
     >
       <div className="lit-desk-top">
         <MarketBar
@@ -116,7 +139,7 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
       ) : market === null ? (
         <WorkspaceLoading label="Choosing a market…" />
       ) : (
-        <DeskBody desk={desk} theme={theme} />
+        <DeskBody desk={desk} theme={theme} zen={zen} />
       )}
       {/* Keep the native modal outside the chart-expansion visibility layer.
        * Zen deliberately hides the desk chrome, but a newly selected
@@ -133,9 +156,11 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
   );
 }
 
-function DeskBody({ desk, theme }: {
+function DeskBody({ desk, theme, zen }: {
   readonly desk: LighterDesk;
   readonly theme: VexTheme;
+  /** Zen's controls while Zen stands, its row's two ends. */
+  readonly zen: ZenControls | null;
 }): JSX.Element {
   const market = desk.market!;
   const { environment, resolution, activeSessionId, approvals } = desk;
@@ -249,38 +274,56 @@ function DeskBody({ desk, theme }: {
                 onLoadOlder={desk.candleStream.loadOlder}
                 historyStatus={desk.candleStream.history}
                 toolbarStart={(
-                  <div className="lit-resolution-tabs" role="group" aria-label="Chart interval" ref={resolutionTabsRef}>
-                    {LIGHTER_RESOLUTIONS.map((item) => (
-                      <button
-                        type="button"
-                        key={item}
-                        aria-pressed={resolution === item}
-                        onClick={() => desk.setResolution(item)}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    {/* Zen's row leads with the market and its price
+                      * (`ZenRow.tsx`); the desk has them in its market bar. */}
+                    {zen === null ? null : (
+                      <ZenRowStart
+                        environment={environment}
+                        market={market}
+                        snapshot={desk.snapshot}
+                        liveStats={desk.publicMarketStream.stats}
+                        pickerOpen={desk.marketPickerOpen}
+                        onOpenPicker={() => desk.setMarketPickerOpen((current) => !current)}
+                      />
+                    )}
+                    <div className="lit-resolution-tabs" role="group" aria-label="Chart interval" ref={resolutionTabsRef}>
+                      {LIGHTER_RESOLUTIONS.map((item) => (
+                        <button
+                          type="button"
+                          key={item}
+                          aria-pressed={resolution === item}
+                          onClick={() => desk.setResolution(item)}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
                 toolbarEnd={(
-                  <span className="lit-chart-heading-end">
-                    {/* Live is the market bar's word; the chart only speaks up when its candles lag. */}
-                    {desk.candleStream.status === "live" ? null : (
-                    <span
-                      className="lit-chart-connection"
-                      data-status={desk.candleStream.status}
-                      title={`Trade-price candles · Updated ${formatRetrievedAt(
-                        desk.candleStream.receivedAt
-                        ?? desk.snapshot?.retrievedAt
-                        ?? desk.marketList?.retrievedAt
-                        ?? 0,
-                      )}`}
-                    >
-                      <i aria-hidden="true" />
-                      {streamStatusLabel(desk.candleStream.status)}
+                  <>
+                    <span className="lit-chart-heading-end">
+                      {/* Live is the market bar's word; the chart only speaks up when its candles lag. */}
+                      {desk.candleStream.status === "live" ? null : (
+                        <span
+                          className="lit-chart-connection"
+                          data-status={desk.candleStream.status}
+                          title={`Trade-price candles · Updated ${formatRetrievedAt(
+                            desk.candleStream.receivedAt
+                            ?? desk.snapshot?.retrievedAt
+                            ?? desk.marketList?.retrievedAt
+                            ?? 0,
+                          )}`}
+                        >
+                          <i aria-hidden="true" />
+                          {streamStatusLabel(desk.candleStream.status)}
+                        </span>
+                      )}
                     </span>
-                    )}
-                  </span>
+                    {/* Zen's row ends in Ask Vex, its fold key and Exit Zen. */}
+                    {zen === null ? null : <ZenRowEnd zen={zen} />}
+                  </>
                 )}
               />
             </div>

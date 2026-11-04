@@ -107,87 +107,11 @@
   background: var(--vex-alias-interactive-active);
   color: var(--vex-alias-label-primary);
 }
-.lit-desk-head__key:focus-visible,
-.lit-desk-head__word:focus-visible {
+.lit-desk-head__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
 }
 .lit-desk-head svg { width: 16px; height: 16px; flex: 0 0 auto; }
-
-/* A key with its word: Zen's Ask Vex and Exit Zen. */
-.lit-desk-head__word {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 0 24px;
-  border: 0;
-  border-left: 1px solid var(--vex-alias-rule);
-  background: transparent;
-  color: var(--vex-alias-label-primary);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.lit-desk-head__word:hover { background: var(--vex-alias-interactive-hover); }
-.lit-zen-exit { order: 3; }
-
-/* Zen (until its own row, plan row S8-12): the chart owns the window, the
- * header stands over it as an overlay without changing the chart's bounds,
- * and folded it is only the reveal handle and Exit Zen, no drag region, so
- * it never swallows a click on the chart. */
-.vex-shell-frame[data-lighter-zen] > .vex-shell-head {
-  position: absolute;
-  z-index: 31;
-  inset: 0 0 auto;
-  background: var(--vex-alias-bg-base);
-}
-.vex-shell-frame[data-lighter-zen] > .vex-shell-head > :is([data-vex-head-cell="chats"], [data-vex-head-cell="funds"]) {
-  display: none;
-}
-.vex-shell-frame[data-lighter-zen-controls="closed"] > .vex-shell-head {
-  border-bottom-color: transparent;
-  background: transparent;
-  pointer-events: none;
-  -webkit-app-region: no-drag;
-}
-.vex-shell-frame[data-lighter-zen-controls="closed"] > .vex-shell-head * {
-  -webkit-app-region: no-drag;
-}
-.vex-shell-frame[data-lighter-zen-controls="closed"] .lit-zen-exit {
-  align-self: flex-start;
-  height: 32px;
-  margin: 8px 8px 0 auto;
-  padding-inline: 12px;
-  border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-bg-base);
-  font-size: 12px;
-  pointer-events: auto;
-}
-.lit-zen-controls-reveal {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  display: inline-flex;
-  width: 34px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-bg-base);
-  color: var(--vex-alias-label-secondary);
-  pointer-events: auto;
-  transform: translateX(-50%);
-}
-.lit-zen-controls-reveal:hover,
-.lit-zen-controls-reveal:focus-visible {
-  border-color: var(--vex-alias-rule-chosen);
-  color: var(--vex-alias-label-primary);
-}
-.lit-topbar-ask[aria-pressed="true"] { background: var(--vex-alias-interactive-active); }
 
 /* Markets and sessions: a flat panel hung from the header's rule under the
  * title cell, a 1px chosen rule, never a shadow. Its session rows are the
@@ -509,16 +433,39 @@ html[data-chrome="overlay"] .vex-shell-frame[data-vex-frame="desk"] .vex-key__ch
 
 .lit-splitter:focus-visible { outline: 0; }
 
-/* Expanded chart: the chart panel takes the whole desk; the rest stays mounted. */
-.lit-desk[data-chart-expanded] { position: relative; }
+/* ---------------------------------------------------------------------------
+ * ZEN in H3 (docs/design/H3-DESKTOP.md section 4.9; the owner-approved
+ * `lighter-zen` plate, plan row S8-12; `ZenRow.tsx`)
+ * ------------------------------------------------------------------------- */
 
-.lit-desk[data-chart-expanded] .lit-desk-top,
-.lit-desk[data-chart-expanded] .lit-desk-body > :not(.lit-desk-upper),
-.lit-desk[data-chart-expanded] .lit-desk-upper > :not(.lit-chart-panel) {
+/* The chart in the whole window. The shell's header does not stand (it stays
+ * mounted, with the approvals live sync it holds); the rail and her column
+ * are 0 wide (`computeDeskColumns`); the market bar, the book, the ticket and
+ * the dock stay mounted and unseen, so their streams and a Review order keep
+ * running. The market bar's box keeps the header's height at the window's
+ * top, so the market picker still hangs from Zen's row. */
+.vex-shell-frame[data-lighter-zen] > .vex-shell-head { display: none; }
+
+.lit-desk[data-zen-mode] { position: relative; }
+
+.lit-desk[data-zen-mode] .lit-desk-top {
+  position: absolute;
+  z-index: 30;
+  inset: 0 0 auto;
+  height: var(--head-h);
+  border-bottom: 0;
   visibility: hidden;
 }
 
-.lit-desk[data-chart-expanded] .lit-chart-panel {
+.lit-desk[data-zen-mode] .lit-market-picker-layer { visibility: visible; }
+
+.lit-desk[data-zen-mode] .lit-desk-body > :not(.lit-desk-upper),
+.lit-desk[data-zen-mode] .lit-desk-upper > :not(.lit-desk-main),
+.lit-desk[data-zen-mode] .lit-desk-main > :not(.lit-chart-panel) {
+  visibility: hidden;
+}
+
+.lit-desk[data-zen-mode] .lit-chart-panel {
   position: absolute;
   inset: 0;
   z-index: 25;
@@ -527,18 +474,175 @@ html[data-chrome="overlay"] .vex-shell-frame[data-vex-frame="desk"] .vex-key__ch
   background: var(--lit-panel);
 }
 
-/* Zen keeps the chart mounted while the shell gives it the Vex rail's track.
- * The assistant returns as an overlay, so asking a question never changes the
- * chart's measured width or visible range. */
+/* ZEN'S ROW: the chart's toolbar grown to the header's 76, its cells behind
+ * 1px rules, the drag region of a window that has no header. The traffic
+ * lights keep its first 92 on macOS; elsewhere the caption buttons keep its
+ * right end (`--overlay-w`). */
+.lit-desk[data-zen-mode] .lit-chart-body { --lit-chart-toolbar: var(--head-h); }
+
+.lit-desk[data-zen-mode] .lit-analysis-toolbar {
+  padding-inline-end: var(--overlay-w);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+html[data-os="mac"] .lit-desk[data-zen-mode] .lit-analysis-toolbar { padding-inline-start: 92px; }
+
+.lit-desk[data-zen-mode] .lit-analysis-toolbar :is(button, select, summary, input, a, .lit-study-popover) {
+  -webkit-app-region: no-drag;
+}
+
+/* The market key and the price: the market bar's own cells (MarketBar),
+ * each behind its rule; the key's rule on its left meets the lights' 92. */
+.lit-zen-start {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+}
+
+.lit-zen-start > :is(.lit-market-select, .lit-market-price) {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--vex-alias-rule);
+  white-space: nowrap;
+}
+
+.lit-zen-start > button.lit-market-select {
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  padding-inline: 16px 14px;
+}
+
+html:not([data-os="mac"]) .lit-zen-start > button.lit-market-select { border-left: 0; }
+
+/* The toolbar sets words; the price is figures, the desk's mono. */
+.lit-zen-start > .lit-market-price {
+  font-family: var(--font-mono);
+  letter-spacing: normal;
+}
+
+.lit-zen-start > button.lit-market-select:hover { background: var(--lit-hover); }
+.lit-zen-start > button.lit-market-select[aria-expanded="true"] { background: var(--lit-pressed); }
+
+/* The intervals are 14 apart at the row's height, mono 13. */
+.lit-desk[data-zen-mode] .lit-analysis-toolbar > .lit-resolution-tabs button {
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* The row draws no snapshot key and no study readout: Indicators holds
+ * them, and the far end is Zen's. */
+.lit-desk[data-zen-mode] .lit-analysis-toolbar > :is(.lit-chart-export, .lit-study-active) { display: none; }
+
+/* The end: ASK VEX with its chord, the fold key, EXIT ZEN with its Esc cap,
+ * each a cell behind a 1px rule, caps 14, tracked. */
+.lit-zen-keys {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  margin-left: auto;
+}
+
+.lit-analysis-toolbar .lit-zen-key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: var(--lit-bg);
+  color: var(--lit-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lit-analysis-toolbar .lit-zen-key--icon {
+  width: 76px;
+  justify-content: center;
+  padding: 0;
+  color: var(--lit-ink-secondary);
+}
+
+.lit-analysis-toolbar .lit-zen-key svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.lit-analysis-toolbar .lit-zen-key:hover { background: var(--lit-hover); color: var(--lit-ink); }
+.lit-analysis-toolbar .lit-zen-ask[aria-pressed="true"] { background: var(--lit-pressed); }
+
+.lit-analysis-toolbar .lit-zen-key:focus-visible {
+  outline: 2px solid var(--lit-focus);
+  outline-offset: -2px;
+}
+
+/* A narrower window keeps every key of the row and gives way at their
+ * dressing (the chart panel is the window wide in Zen, and the container):
+ * under 1440 the chords' caps go (the keys still name them); under 1300 ASK
+ * VEX and EXIT ZEN are 76-wide icon cells like the fold key, their words in
+ * their names; under 1180 the market key drops its product word and the
+ * intervals close up, and below that the intervals scroll, never under three
+ * cells. */
+.lit-desk[data-zen-mode] .lit-analysis-toolbar > .lit-resolution-tabs { min-width: 120px; }
+
+@container (max-width: 1439px) {
+  .lit-desk[data-zen-mode] .lit-zen-key > .vex-keycaps { display: none; }
+}
+
+@container (max-width: 1299px) {
+  .lit-desk[data-zen-mode] .lit-analysis-toolbar :is(.lit-zen-ask, .lit-zen-exit) {
+    width: 76px;
+    justify-content: center;
+    padding: 0;
+  }
+  .lit-desk[data-zen-mode] .lit-analysis-toolbar :is(.lit-zen-ask, .lit-zen-exit) > span { display: none; }
+}
+
+@container (max-width: 1179px) {
+  .lit-zen-start > button.lit-market-select > small { display: none; }
+  .lit-desk[data-zen-mode] .lit-analysis-toolbar > .lit-resolution-tabs button { padding: 0 10px; }
+}
+
+/* FOLDED (Zen opens folded): the row is only its fold key and EXIT ZEN, 40
+ * high where the row had them, over the chart's top right; the chart takes
+ * the whole window. No drag region, so it never swallows a click on the
+ * chart. On macOS the drawing tools start under the lights. */
+.lit-desk[data-zen-controls="closed"] .lit-chart-body { --lit-chart-toolbar: 0px; }
+
+.lit-desk[data-zen-controls="closed"] .lit-analysis-toolbar {
+  height: 40px;
+  border-bottom: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.lit-desk[data-zen-controls="closed"] .lit-analysis-toolbar > :not(.lit-zen-keys) { visibility: hidden; }
+.lit-desk[data-zen-controls="closed"] .lit-zen-ask { display: none; }
+
+.lit-desk[data-zen-controls="closed"] .lit-zen-keys {
+  border-bottom: 1px solid var(--vex-alias-rule);
+  pointer-events: auto;
+}
+
+html[data-os="mac"] .lit-desk[data-zen-controls="closed"] .lit-drawing-rail { top: var(--head-h); }
+
+.lit-desk[data-zen-controls="closed"] .lit-chart-tool-notice { top: 46px; }
+
+/* ASK VEX: the desk chat over the chart in her column's seat, as wide as
+ * her column on the desk (`--lit-zen-seat`, AppShell), from under Zen's row
+ * to the window's foot. The chart keeps its bounds; only transform, opacity
+ * and the clip move. */
 .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant {
   position: absolute;
   z-index: 35;
   top: var(--head-h);
   right: 0;
   bottom: 0;
-  width: min(430px, calc(100vw - 24px));
+  width: min(var(--lit-zen-seat, 430px), 100vw);
   height: auto;
   overflow: hidden;
+  border-left: 1px solid var(--vex-alias-rule);
   clip-path: inset(0 0 0 10%);
   opacity: 0;
   pointer-events: none;
@@ -561,7 +665,6 @@ html[data-chrome="overlay"] .vex-shell-frame[data-vex-frame="desk"] .vex-key__ch
 }
 
 .vex-shell-frame[data-lighter-zen] > .lit-zen-assistant .lit-chat-frame {
-  border-left: 1px solid var(--lit-rule-ink);
   background: var(--lit-bg);
 }
 

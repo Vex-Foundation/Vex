@@ -243,9 +243,29 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(sheetRules("lighter-chart.css")).toMatch(/\.lit-resolution-tabs button\[aria-pressed="true"\]\s*\{[^}]*background: var\(--lit-pressed\);/s);
   });
 
-  it("closes the drag region while the Zen bar is folded away", () => {
-    expect(css).toMatch(/\.vex-shell-frame\[data-lighter-zen-controls="closed"\] > \.vex-shell-head\s*\{[^}]*pointer-events: none;[^}]*-webkit-app-region: no-drag;/s);
-    expect(css).toMatch(/\.vex-shell-frame\[data-lighter-zen\] > \.vex-shell-head\s*\{[^}]*position: absolute;/s);
+  it("draws Zen as the chart under one 76 row, the lights' 92 kept, and folded no drag region", () => {
+    // The approved `lighter-zen` plate (plan row S8-12): the header does not
+    // stand; the chart's toolbar is Zen's row, the header's height.
+    expect(css).toMatch(/\.vex-shell-frame\[data-lighter-zen\] > \.vex-shell-head \{ display: none; \}/);
+    expect(css).toMatch(/\.lit-desk\[data-zen-mode\] \.lit-chart-body \{ --lit-chart-toolbar: var\(--head-h\); \}/);
+    expect(css).toMatch(/html\[data-os="mac"\] \.lit-desk\[data-zen-mode\] \.lit-analysis-toolbar \{ padding-inline-start: 92px; \}/);
+    expect(css).toMatch(/\.lit-desk\[data-zen-mode\] \.lit-analysis-toolbar\s*\{[^}]*padding-inline-end: var\(--overlay-w\);[^}]*-webkit-app-region: drag;/s);
+    // Folded, the chart takes the window and the row is no drag region.
+    expect(css).toMatch(/\.lit-desk\[data-zen-controls="closed"\] \.lit-chart-body \{ --lit-chart-toolbar: 0px; \}/);
+    expect(css).toMatch(/\.lit-desk\[data-zen-controls="closed"\] \.lit-analysis-toolbar\s*\{[^}]*pointer-events: none;[^}]*-webkit-app-region: no-drag;/s);
+    // Nothing of the desk is drawn under it, and all of it stays mounted.
+    expect(css).toMatch(/\.lit-desk\[data-zen-mode\] \.lit-desk-main > :not\(\.lit-chart-panel\)\s*\{[^}]*visibility: hidden;/s);
+  });
+
+  it("stands Zen's desk chat in her column's seat over the chart, moving it only by transform, opacity and clip", () => {
+    const seat = /\.vex-shell-frame\[data-lighter-zen\] > \.lit-zen-assistant \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(seat).toMatch(/position: absolute;/);
+    expect(seat).toMatch(/top: var\(--head-h\);/);
+    expect(seat).toMatch(/right: 0;/);
+    expect(seat).toMatch(/width: min\(var\(--lit-zen-seat, 430px\), 100vw\);/);
+    const transition = /transition:([^;]*);/s.exec(seat)?.[1] ?? "";
+    const animated = transition.split(",").map((part) => part.trim().split(/\s+/)[0]);
+    expect(animated).toEqual(["transform", "opacity", "clip-path", "visibility"]);
   });
 
   it("lets the desk chat in the Vex sidebar speak the room without a re-projection", () => {

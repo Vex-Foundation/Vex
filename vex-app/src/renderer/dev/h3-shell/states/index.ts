@@ -13,7 +13,14 @@ import { activity } from "./activity.js";
 import { approvalKindsState } from "./approval-kinds.js";
 import { filled } from "./filled.js";
 import { howVexWorks } from "./how-vex-works.js";
-import { lighterDesk, lighterDeskReview, lighterDeskTwoStep, lighterZen } from "./lighter-desk.js";
+import {
+  lighterDesk,
+  lighterDeskReview,
+  lighterDeskTwoStep,
+  lighterZen,
+  lighterZenAsk,
+  lighterZenFolded,
+} from "./lighter-desk.js";
 import { markets } from "./markets.js";
 import { memory } from "./memory.js";
 import { newChat } from "./new-chat.js";
@@ -49,6 +56,8 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   lighterDeskReview,
   lighterDeskTwoStep,
   lighterZen,
+  lighterZenFolded,
+  lighterZenAsk,
   // Harness-only below: their reads are not stood in, so the parity spec
   // does not capture them (`HARNESS_ONLY` in e2e/h3-parity.spec.ts).
   settings,

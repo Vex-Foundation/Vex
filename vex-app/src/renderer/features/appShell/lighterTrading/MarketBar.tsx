@@ -71,13 +71,9 @@ export function MarketBar({
   /** Rebuilds the market streams and re-reads the desk's Lighter data; offered whenever it is not live. */
   readonly onReload?: () => void;
 }): JSX.Element {
-  const change = liveStats?.daily.priceChange ?? snapshot?.detail.daily.priceChange ?? null;
   const symbols = market === null ? null : marketSymbols(market.symbol, market.marketType);
   const classification = market === null ? null : classifyLighterMarket(environment, market);
-  // Exchange register: "Perp" beside the ticker, "Perpetual" in the picker.
-  const productLabel = classification === null ? null : marketProductLabel(classification).replace(/Perpetual$/, "Perp");
   const precision = market?.decimals.price;
-  const last = liveStats?.lastTradePrice ?? snapshot?.detail.lastTradePrice ?? null;
   const quoteVolume = liveStats?.daily.quoteTokenVolume
     ?? snapshot?.detail.daily.quoteTokenVolume
     ?? null;
@@ -87,17 +83,7 @@ export function MarketBar({
     && (streamStatus === "connecting" || streamStatus === "reconnecting");
   const liveOnlyPending = liveStats === null
     && (streamStatus === "connecting" || streamStatus === "reconnecting");
-  const tone = change === null ? undefined : change >= 0 ? "positive" : "negative";
-  const lastFlash = useTickFlash(last);
-  const changeText = change === null ? NO_VALUE : `${change >= 0 ? "+" : ""}${formatNumber(change, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}%`;
   const countdown = useFundingCountdown(market?.marketType === "perp");
-  const product = market === null
-    ? "Lighter"
-    : [
-      market.symbol === classification?.ticker ? null : market.symbol,
-      productLabel,
-      market.status === "active" ? null : "Inactive",
-    ].filter((part): part is string => part !== null).join(" · ");
   return (
     <section
       className="lit-market-bar"
@@ -107,29 +93,18 @@ export function MarketBar({
       aria-label="Selected market summary"
       aria-busy={marketDataLoading}
     >
-      <button
-        type="button"
-        className="lit-market-select"
-        data-lit-market-picker-trigger="true"
-        aria-haspopup="dialog"
-        aria-expanded={marketPickerOpen}
-        aria-controls={marketPickerOpen ? "lit-market-picker" : undefined}
-        onClick={onOpenMarketPicker}
-      >
-        {market === null ? null : <MarketSymbol environment={environment} market={market} />}
-        <b>{classification?.ticker ?? "Select market"}</b>
-        <small>{product}</small>
-        <LineChevronDown size={14} className="lit-chevron" />
-      </button>
+      <MarketSelectKey
+        environment={environment}
+        market={market}
+        open={marketPickerOpen}
+        onOpen={onOpenMarketPicker}
+      />
       {onSelectEnvironment === undefined ? null : (
         <div className="lit-market-deploy">
           <EnvironmentSwitch environment={environment} onSelect={onSelectEnvironment} />
         </div>
       )}
-      <span className="lit-market-price" data-tone={tone} data-metric="last">
-        <b key={lastFlash.tick} data-flash={lastFlash.direction ?? undefined}>{formatPrice(last, precision)}</b>
-        <small>{changeText}</small>
-      </span>
+      <MarketLastPrice market={market} snapshot={snapshot} liveStats={liveStats} />
       {market?.marketType === "spot" ? (
         <>
           <MarketMetric metric="mid" label="Mid" value={formatPrice(liveStats?.midPrice ?? null, precision)} pending={liveOnlyPending} />
@@ -180,6 +155,68 @@ export function MarketBar({
         )}
       </span>
     </section>
+  );
+}
+
+/**
+ * The market key: the market's mark, the ticker, the product in muted caps
+ * and a chevron. It opens the market picker. The market bar's first cell,
+ * and Zen's (`ZenRow.tsx`).
+ */
+export function MarketSelectKey({ environment, market, open, onOpen }: {
+  readonly environment: LighterTradingEnvironment;
+  readonly market: LighterTradingMarket | null;
+  readonly open: boolean;
+  readonly onOpen: () => void;
+}): JSX.Element {
+  const classification = market === null ? null : classifyLighterMarket(environment, market);
+  // Exchange register: "Perp" beside the ticker, "Perpetual" in the picker.
+  const productLabel = classification === null ? null : marketProductLabel(classification).replace(/Perpetual$/, "Perp");
+  const product = market === null
+    ? "Lighter"
+    : [
+      market.symbol === classification?.ticker ? null : market.symbol,
+      productLabel,
+      market.status === "active" ? null : "Inactive",
+    ].filter((part): part is string => part !== null).join(" · ");
+  return (
+    <button
+      type="button"
+      className="lit-market-select"
+      data-lit-market-picker-trigger="true"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-controls={open ? "lit-market-picker" : undefined}
+      onClick={onOpen}
+    >
+      {market === null ? null : <MarketSymbol environment={environment} market={market} />}
+      <b>{classification?.ticker ?? "Select market"}</b>
+      <small>{product}</small>
+      <LineChevronDown size={14} className="lit-chevron" />
+    </button>
+  );
+}
+
+/**
+ * The last price (mono 18) over its day change in gain or loss type, from
+ * the live stats first and the snapshot second. The market bar's price
+ * cell, and Zen's.
+ */
+export function MarketLastPrice({ market, snapshot, liveStats }: {
+  readonly market: LighterTradingMarket | null;
+  readonly snapshot: LighterTradingSnapshot | null;
+  readonly liveStats: LighterTradingPublicStatsEvent["stats"] | null;
+}): JSX.Element {
+  const change = liveStats?.daily.priceChange ?? snapshot?.detail.daily.priceChange ?? null;
+  const last = liveStats?.lastTradePrice ?? snapshot?.detail.lastTradePrice ?? null;
+  const tone = change === null ? undefined : change >= 0 ? "positive" : "negative";
+  const lastFlash = useTickFlash(last);
+  const changeText = change === null ? NO_VALUE : `${change >= 0 ? "+" : ""}${formatNumber(change, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}%`;
+  return (
+    <span className="lit-market-price" data-tone={tone} data-metric="last">
+      <b key={lastFlash.tick} data-flash={lastFlash.direction ?? undefined}>{formatPrice(last, market?.decimals.price)}</b>
+      <small>{changeText}</small>
+    </span>
   );
 }
 

@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({ useLighterDesk: vi.fn() }));
 vi.mock("../useLighterDesk.js", () => ({ useLighterDesk: mocks.useLighterDesk }));
 vi.mock("../MarketBar.js", () => ({
   MarketBar: () => <div data-testid="market-bar" />,
+  MarketSelectKey: ({ onOpen }: { onOpen: () => void }) => (
+    <button type="button" data-testid="zen-market-key" onClick={onOpen} />
+  ),
+  MarketLastPrice: () => <span data-testid="zen-last-price" />,
   streamStatusLabel: (status: string) => status,
 }));
 vi.mock("../MarketChart.js", () => ({
@@ -299,11 +303,79 @@ describe("LighterCenter", () => {
     );
 
     const root = container.querySelector('[data-vex-area="lighter-desk"]');
-    expect(root?.getAttribute("data-chart-expanded")).toBe("true");
     expect(root?.getAttribute("data-zen-mode")).toBe("true");
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(openZenAssistant).toHaveBeenCalledTimes(1);
     expect(current.askVex).toHaveBeenCalledWith(false);
+  });
+
+  it("makes the chart's toolbar Zen's row: the market and its price, the intervals, Ask Vex, the fold key, Exit Zen", () => {
+    // docs/design/H3-DESKTOP.md section 4.9, the approved `lighter-zen` plate.
+    mocks.useLighterDesk.mockReturnValue(desk());
+    const zen = {
+      controlsOpen: false,
+      assistantOpen: false,
+      onToggleControls: vi.fn(),
+      onToggleAssistant: vi.fn(),
+      onExit: vi.fn(),
+    };
+    const { container, rerender } = renderCenter(<LighterCenter zenMode zenControls={zen} />);
+    const root = container.querySelector('[data-vex-area="lighter-desk"]');
+    // Zen opens folded, as before H3.
+    expect(root?.getAttribute("data-zen-controls")).toBe("closed");
+    const chart = screen.getByTestId("market-chart");
+    const order = Array.from(chart.querySelectorAll("[data-testid], [aria-label]")).map(
+      (node) => node.getAttribute("data-testid") ?? node.getAttribute("aria-label"),
+    );
+    expect(order.slice(0, 3)).toEqual(["zen-market-key", "zen-last-price", "Chart interval"]);
+    expect(order.slice(-3)).toEqual(["Ask Vex", "Show Zen controls", "Exit Zen Mode"]);
+    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
+    expect(zen.onToggleControls).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Exit Zen Mode" }));
+    expect(zen.onExit).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <LighterCenter zenMode zenControls={{ ...zen, controlsOpen: true, assistantOpen: true }} />
+      </QueryClientProvider>,
+    );
+    const shown = container.querySelector('[data-vex-area="lighter-desk"]');
+    expect(shown?.getAttribute("data-zen-controls")).toBe("open");
+    expect(screen.getByRole("button", { name: "Hide Zen controls" }).getAttribute("aria-expanded")).toBe("true");
+    const ask = screen.getByRole("button", { name: "Close Vex" });
+    expect(ask.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(ask);
+    expect(zen.onToggleAssistant).toHaveBeenCalledTimes(1);
+    // The market key opens the picker, which hangs from Zen's row.
+    fireEvent.click(screen.getByTestId("zen-market-key"));
+    expect(mocks.useLighterDesk.mock.results.at(-1)?.value.setMarketPickerOpen).toHaveBeenCalled();
+  });
+
+  it("off Zen draws none of Zen's row", () => {
+    mocks.useLighterDesk.mockReturnValue(desk());
+    const { container } = renderCenter(<LighterCenter />);
+    expect(container.querySelector('[data-vex-area="lighter-desk"]')?.hasAttribute("data-zen-controls")).toBe(false);
+    expect(screen.queryByTestId("zen-market-key")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Exit Zen Mode" })).toBeNull();
+  });
+
+  it("closes the market picker first on Escape in Zen, so Zen's own key skips the press", () => {
+    const current = desk({ marketPickerOpen: true });
+    mocks.useLighterDesk.mockReturnValue(current);
+    renderCenter(<LighterCenter zenMode />);
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(current.setMarketPickerOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves Escape alone on the desk while the picker is open: the picker keeps its own", () => {
+    const current = desk({ marketPickerOpen: true });
+    mocks.useLighterDesk.mockReturnValue(current);
+    renderCenter(<LighterCenter />);
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it("keeps environment setup visible above the Zen chart", () => {

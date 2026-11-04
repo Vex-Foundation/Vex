@@ -78,6 +78,8 @@ const STATES = [
   "lighter-desk-review",
   "lighter-desk-two-step",
   "lighter-zen",
+  "lighter-zen-folded",
+  "lighter-zen-ask",
 ] as const;
 
 /**

@@ -52,12 +52,7 @@ function props(over: Partial<Props> = {}): Props {
   return {
     collapsed: true,
     onToggleSidebar: vi.fn(),
-    zenMode: false,
-    zenAssistantOpen: false,
-    zenControlsOpen: false,
-    onToggleZen: vi.fn(),
-    onToggleZenControls: vi.fn(),
-    onToggleZenAssistant: vi.fn(),
+    onEnterZen: vi.fn(),
     ...over,
   };
 }
@@ -125,28 +120,13 @@ describe("LighterSidebar: the desk's cells in the header (H3-DESKTOP.md section 
     act(() => useUiStore.getState().closeCreateSession());
   });
 
-  it("folds to the reveal handle and Exit Zen in Zen, and opens to Ask Vex and the hide key", () => {
-    const onToggleZen = vi.fn();
-    const onToggleZenControls = vi.fn();
-    const onToggleZenAssistant = vi.fn();
-    const base = { onToggleZen, onToggleZenControls, onToggleZenAssistant };
-    const { rerender } = render(<LighterSidebar {...props(base)} />);
+  it("enters Zen from its key and draws none of Zen's own controls: Zen's row is the chart's", () => {
+    const onEnterZen = vi.fn();
+    render(<LighterSidebar {...props({ onEnterZen })} />);
     fireEvent.click(screen.getByRole("button", { name: "Enter Zen Mode" }));
-    expect(onToggleZen).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
-
-    rerender(<LighterSidebar {...props({ ...base, zenMode: true })} />);
-    expect(screen.getByRole("button", { name: "Show Zen controls" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Ask Vex" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Exit Zen Mode" }));
-    expect(onToggleZen).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole("button", { name: "Show Zen controls" }));
-    expect(onToggleZenControls).toHaveBeenCalledTimes(1);
-
-    rerender(<LighterSidebar {...props({ ...base, zenMode: true, zenControlsOpen: true })} />);
-    expect(screen.queryByRole("button", { name: "Enter Zen Mode" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Hide Zen controls" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Ask Vex" }));
-    expect(onToggleZenAssistant).toHaveBeenCalledTimes(1);
+    expect(onEnterZen).toHaveBeenCalledTimes(1);
+    for (const name of ["Ask Vex", "Show Zen controls", "Hide Zen controls", "Exit Zen Mode"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
   });
 });

@@ -14,7 +14,12 @@
  *   lighter-desk-two-step  Vex's deposit waiting in the desk chat (risk
  *                          high: two presses), its decision row at the
  *                          column's foot, her section closed
- *   lighter-zen            Zen, entered with the desk's own Zen key
+ *   lighter-zen            Zen, entered with the desk's own Zen key, its
+ *                          row shown (the plate's drawing)
+ *   lighter-zen-folded     Zen as it opens: folded to its fold key and
+ *                          Exit Zen
+ *   lighter-zen-ask        Zen's row with Ask Vex pressed: the desk chat
+ *                          over the chart in her column's seat
  *
  * The reads are `fixtures/lighter-desk.ts`; the streams are delivered after
  * mount as the product receives them. The desk's market is pointed before
@@ -72,21 +77,57 @@ export const lighterDeskTwoStep: HarnessState = {
   afterMount: deliverDeskStreams,
 };
 
-/** Zen is the desk's own key, not a stored choice: the state presses it. */
-async function enterZen(bridge: HarnessBridge): Promise<void> {
-  await deliverDeskStreams(bridge);
-  document.querySelector<HTMLElement>('[aria-label="Enter Zen Mode"]')?.click();
-  await new Promise<void>((resolve) => {
+/** Two frames: React commits a press before the next one is read. */
+function settle(): Promise<void> {
+  return new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
 }
 
+/** A key by its name, pressed as a person would. */
+async function press(name: string): Promise<void> {
+  document.querySelector<HTMLElement>(`[aria-label="${name}"]`)?.click();
+  await settle();
+}
+
+/**
+ * Zen is the desk's own key, not a stored choice: the state presses it, and
+ * then the keys that take Zen to the state's drawing.
+ */
+function enterZen(...then: readonly string[]): (bridge: HarnessBridge) => Promise<void> {
+  return async (bridge) => {
+    await deliverDeskStreams(bridge);
+    await press("Enter Zen Mode");
+    for (const name of then) await press(name);
+  };
+}
+
 export const lighterZen: HarnessState = {
   id: "lighter-zen",
-  title: "Lighter Zen: the chart in the whole window",
+  title: "Lighter Zen: the chart in the whole window under Zen's row",
   answers: () => lighterDeskAnswers("desk"),
   ui: deskUi(false),
   prepare: pointDesk,
-  ready: '[data-vex-area="lighter-desk"][data-zen-mode]',
-  afterMount: enterZen,
+  ready: '[data-vex-area="lighter-desk"][data-zen-controls="open"]',
+  afterMount: enterZen("Show Zen controls"),
+};
+
+export const lighterZenFolded: HarnessState = {
+  id: "lighter-zen-folded",
+  title: "Lighter Zen as it opens: folded to its fold key and Exit Zen",
+  answers: () => lighterDeskAnswers("desk"),
+  ui: deskUi(false),
+  prepare: pointDesk,
+  ready: '[data-vex-area="lighter-desk"][data-zen-controls="closed"]',
+  afterMount: enterZen(),
+};
+
+export const lighterZenAsk: HarnessState = {
+  id: "lighter-zen-ask",
+  title: "Lighter Zen with Ask Vex: the desk chat over the chart in her column's seat",
+  answers: () => lighterDeskAnswers("desk"),
+  ui: deskUi(false),
+  prepare: pointDesk,
+  ready: '[data-vex-area="shell-frame"][data-lighter-zen-assistant="open"]',
+  afterMount: enterZen("Show Zen controls", "Ask Vex"),
 };
