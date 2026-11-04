@@ -5,9 +5,10 @@
  * the screens before the shell (S8-03).
  */
 
+import { STAGE_PLATES } from "./stages/index.js";
 import type { HarnessPlate } from "./types.js";
 
-export const HARNESS_PLATES: readonly HarnessPlate[] = [];
+export const HARNESS_PLATES: readonly HarnessPlate[] = [...STAGE_PLATES];
 
 export function plateById(id: string | null): HarnessPlate | null {
   if (id === null) return null;

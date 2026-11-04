@@ -1,0 +1,798 @@
+/* OUR H3 PLATES FOR THE SCREENS BEFORE THE SHELL (plan row S8-03;
+ * docs/design/H3-DESKTOP.md section 4.9). A design proposal drawn in the
+ * harness, never the product: the product's pre-shell sheets
+ * (chronos-gate.css, onboarding.css, wizard.css) keep R3 until the owner
+ * approves these plates and rows S8-13 to S8-15 build them.
+ *
+ * THE STAGE FRAME is the shell's own frame, so a stage screen hands over to
+ * the shell on the same seams: one header row (76), one bottom row (72), and
+ * three columns by the column rule (section 1.2): the left column at 248
+ * (the 76 rail under 1024), the Vex column at 30% of the window, the work
+ * column with the rest. What each column holds:
+ *   - left: where you are on the way to the shell (the wake's steps, the
+ *     first run's stages, the wizard's seven steps), in the nav's grammar;
+ *   - Vex: Kimm on her stage, the column's whole height, with her corner key;
+ *   - work: the screen's own words and form, and in the bottom row its keys,
+ *     the one blue key at the right edge, where SEND stands in a chat.
+ *
+ * Colours come from the alias tier only, as every product sheet's do
+ * (`shell-design-guard.test.ts`). Radius 0, no shadow, no blur, no glass. */
+
+.vex-stg {
+  --vex-stg-where: var(--vex-h3-chats-w);
+  --vex-stg-rule: 1px solid var(--vex-alias-rule);
+  /* The stand-in's baked-in Hide Vex cell ends 62 image px down its file;
+   * the art is lifted this far so her own corner key covers it (README in
+   * `standins/`). Her real art carries no key, and the lift goes with it. */
+  --vex-stg-art-lift: 22px;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: var(--vex-stg-where) var(--vex-h3-vex-w) minmax(0, 1fr);
+  grid-template-rows: var(--vex-h3-header-h) minmax(0, 1fr) var(--vex-h3-bottom-h);
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+@media (max-width: 1023px) {
+  .vex-stg {
+    --vex-stg-where: var(--vex-h3-rail-w);
+  }
+}
+
+/* ---- The header row ---------------------------------------------------- */
+
+.vex-stg__cell {
+  box-sizing: border-box;
+  min-width: 0;
+}
+.vex-stg__head {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  border-bottom: var(--vex-stg-rule);
+}
+.vex-stg__head--logo {
+  grid-column: 1;
+  padding-left: 24px;
+  border-right: var(--vex-stg-rule);
+  color: var(--vex-alias-label-primary);
+}
+/* The mark starts after the traffic lights on a mac (section 4.7). */
+html[data-os="mac"] .vex-stg__head--logo {
+  padding-left: 92px;
+}
+@media (max-width: 1023px) {
+  /* The rail's cell: the lights fill it on a mac, the mark stands alone
+   * centred elsewhere. */
+  .vex-stg__head--logo {
+    justify-content: center;
+    padding-left: 0;
+  }
+  html[data-os="mac"] .vex-stg__head--logo > * {
+    display: none;
+  }
+}
+.vex-stg__head--vex {
+  grid-column: 2;
+  align-items: stretch;
+  border-right: var(--vex-stg-rule);
+}
+.vex-stg__head--title {
+  grid-column: 3;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 24px;
+}
+.vex-stg__title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-stg__sub {
+  margin: 0;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Under 1024 the Vex key's state cell is too narrow for the keycaps; the
+ * key's name stays. */
+@media (max-width: 1023px) {
+  .vex-stg__head--vex .vex-keycaps {
+    display: none;
+  }
+}
+
+/* ---- The left column: where you are ------------------------------------ */
+
+.vex-stg__where {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-right: var(--vex-stg-rule);
+}
+.vex-stg__where-head {
+  display: flex;
+  box-sizing: border-box;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 0 24px;
+  border-bottom: var(--vex-stg-rule);
+}
+.vex-stg__count {
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.vex-stg__steps {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-stg__step {
+  display: flex;
+  box-sizing: border-box;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 24px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.vex-stg__step[data-at="done"] {
+  color: var(--vex-alias-label-secondary);
+}
+.vex-stg__step[data-at="now"] {
+  background: var(--vex-alias-row-selected);
+  color: var(--vex-alias-label-primary);
+}
+.vex-stg__step-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vex-stg__step-word {
+  margin-left: auto;
+  color: var(--vex-alias-label-primary);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@media (max-width: 1023px) {
+  .vex-stg__where-head {
+    justify-content: center;
+    padding: 0;
+  }
+  .vex-stg__where-head > .vex-eyebrow,
+  .vex-stg__step-name,
+  .vex-stg__step-word {
+    display: none;
+  }
+  .vex-stg__step {
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+/* The status square, about 6px (section 2.2): green done, red failed, the
+ * muted grey running, ink waiting on the person or here now, an outline
+ * where nothing has happened yet. */
+.vex-stg__sq {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  background: var(--vex-alias-label-primary);
+}
+.vex-stg__sq[data-sq="done"] {
+  background: var(--vex-alias-state-success-mark);
+}
+.vex-stg__sq[data-sq="failed"] {
+  background: var(--vex-alias-state-error-mark);
+}
+.vex-stg__sq[data-sq="running"] {
+  background: var(--vex-alias-state-running-mark);
+}
+.vex-stg__sq[data-sq="none"] {
+  border: 1px solid var(--vex-alias-label-tertiary);
+  background: transparent;
+}
+.vex-stg__sq[data-sq="outline"] {
+  border: 1px solid var(--vex-alias-label-primary);
+  background: transparent;
+}
+.vex-stg__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---- The Vex column: Kimm on her stage ---------------------------------- */
+
+.vex-stg__kimm {
+  position: relative;
+  grid-column: 2;
+  grid-row: 2;
+  overflow: hidden;
+  border-right: var(--vex-stg-rule);
+  background: var(--vex-alias-bg-base);
+}
+.vex-stg__art {
+  position: absolute;
+  top: calc(-1 * var(--vex-stg-art-lift));
+  left: 50%;
+  display: block;
+  width: auto;
+  max-width: none;
+  height: calc(100% + var(--vex-stg-art-lift));
+  transform: translateX(-50%);
+  user-select: none;
+  pointer-events: none;
+}
+/* Her corner key (section 1.5): 138 x 56, flush top and right, on a dark
+ * fill over her ground. Drawn opaque here because the stand-in already
+ * carries a key in this corner, whose words would show through; over her
+ * real art it is the translucent fill H3 draws. */
+.vex-stg__corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  box-sizing: border-box;
+  width: 138px;
+  height: var(--vex-h3-strip-h);
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* ---- The work column ---------------------------------------------------- */
+
+.vex-stg__work {
+  display: flex;
+  grid-column: 3;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.vex-stg__body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* A page's body: 24 in from both edges, as the transcript and the welcome. */
+.vex-stg__page {
+  box-sizing: border-box;
+  padding: 28px 24px 24px;
+}
+.vex-stg__eyebrow {
+  margin: 0 0 12px;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* A step's title: sans 33 at 600, H3's largest step (Portfolio's equity
+ * figure); the lead under it in ink 2. */
+.vex-stg__h1 {
+  margin: 0;
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 40px;
+}
+.vex-stg__lead {
+  max-width: 660px;
+  margin: 12px 0 0;
+  color: var(--vex-alias-label-secondary);
+  font-size: 16px;
+  line-height: 24px;
+}
+.vex-stg__spacer {
+  flex: 1 1 auto;
+}
+
+/* A row cell across the work column, the console's grammar: words at 24, a
+ * key or a status at the right, a rule under it. */
+.vex-stg__row {
+  display: flex;
+  box-sizing: border-box;
+  min-height: 48px;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  border-top: var(--vex-stg-rule);
+  color: var(--vex-alias-label-secondary);
+  font-size: 15px;
+  line-height: 20px;
+}
+/* The lead as the work column's first row, ruled off under it. */
+.vex-stg__row--first {
+  border-top: 0;
+  border-bottom: var(--vex-stg-rule);
+}
+.vex-stg__row--link {
+  width: 100%;
+  justify-content: space-between;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+}
+.vex-stg__row-arrow {
+  flex: none;
+  transform: rotate(90deg);
+}
+.vex-stg__aside {
+  margin: 0;
+  padding: 14px 24px;
+  border-top: var(--vex-stg-rule);
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* The status strip over the bottom row (section 1.8): 31 high, cells of
+ * caps. */
+.vex-stg__strip {
+  display: flex;
+  box-sizing: border-box;
+  height: 31px;
+  flex: none;
+  align-items: stretch;
+  border-top: var(--vex-stg-rule);
+}
+.vex-stg__strip-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border-right: var(--vex-stg-rule);
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-stg__strip-cell--muted {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ---- The probe table (the system check) --------------------------------- */
+
+.vex-stg__probes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-stg__probe {
+  display: grid;
+  box-sizing: border-box;
+  min-height: 64px;
+  align-content: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+  row-gap: 4px;
+  padding: 0 24px;
+  border-bottom: var(--vex-stg-rule);
+}
+.vex-stg__probe-label {
+  font-size: 15px;
+  line-height: 20px;
+}
+.vex-stg__probe-detail {
+  grid-column: 1;
+  overflow: hidden;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-stg__probe > .vex-stg__status {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+/* ---- Fields (the wizard) ------------------------------------------------ */
+
+.vex-stg__form {
+  display: flex;
+  max-width: 712px;
+  flex-direction: column;
+  gap: 28px;
+  margin-top: 36px;
+}
+.vex-stg__group {
+  display: flex;
+  flex-direction: column;
+}
+.vex-stg__label {
+  display: block;
+  margin: 0 0 10px;
+}
+.vex-stg__field {
+  display: flex;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  border: var(--vex-stg-rule);
+  background: var(--vex-alias-field);
+}
+.vex-stg__field[data-focus] {
+  border-color: var(--vex-alias-rule-chosen);
+}
+.vex-stg__value {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 0 20px;
+  color: var(--vex-alias-label-primary);
+  font-size: 16px;
+}
+.vex-stg__value--placeholder {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-stg__dots {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 0.18em;
+}
+.vex-stg__caret {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background: var(--vex-alias-label-primary);
+}
+.vex-stg__show {
+  display: flex;
+  box-sizing: border-box;
+  width: 74px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-left: var(--vex-stg-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* The strength meter: four cells on the rule, the reached ones in ink. */
+.vex-stg__meter {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 10px;
+}
+.vex-stg__meter > i {
+  height: 4px;
+  background: var(--vex-alias-rule);
+}
+.vex-stg__meter > i[data-on] {
+  background: var(--vex-alias-label-primary);
+}
+.vex-stg__hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 10px 0 0;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* The two chain cells of the wallets step, side by side on the rule, as the
+ * welcome's suggestion grid. */
+.vex-stg__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  max-width: 712px;
+  margin: 20px 0 0;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-stg__note > .vex-stg__sq {
+  margin-top: 7px;
+}
+.vex-stg__chains {
+  display: grid;
+  max-width: 712px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 28px;
+  border: var(--vex-stg-rule);
+}
+.vex-stg__chain {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.vex-stg__chain + .vex-stg__chain {
+  border-left: var(--vex-stg-rule);
+}
+.vex-stg__chain-head {
+  display: flex;
+  box-sizing: border-box;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 0 24px;
+  border-bottom: var(--vex-stg-rule);
+}
+.vex-stg__chain-text {
+  margin: 0;
+  padding: 16px 24px 18px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-stg__choice {
+  display: flex;
+  box-sizing: border-box;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 0 24px;
+  border-top: var(--vex-stg-rule);
+  color: var(--vex-alias-label-primary);
+  font-size: 15px;
+}
+.vex-stg__choice-arrow {
+  color: var(--vex-alias-label-primary);
+  transform: rotate(90deg);
+}
+.vex-stg__restore {
+  display: flex;
+  box-sizing: border-box;
+  max-width: 712px;
+  height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 0 24px;
+  border: var(--vex-stg-rule);
+  border-top: 0;
+  font-size: 15px;
+}
+
+/* ---- The bottom row ----------------------------------------------------- */
+
+.vex-stg__foot {
+  grid-column: 1;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 0 24px;
+  border-top: var(--vex-stg-rule);
+  border-right: var(--vex-stg-rule);
+}
+.vex-stg__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  white-space: nowrap;
+}
+.vex-stg__version {
+  margin-left: auto;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1023px) {
+  .vex-stg__foot {
+    justify-content: center;
+    padding: 0;
+  }
+  .vex-stg__foot > .vex-stg__link {
+    display: none;
+  }
+  .vex-stg__version {
+    margin: 0;
+    font-size: 11px;
+  }
+}
+.vex-stg__tagline {
+  grid-column: 2;
+  grid-row: 3;
+  min-width: 0;
+  overflow: hidden;
+  border-top: var(--vex-stg-rule);
+  border-right: var(--vex-stg-rule);
+}
+
+/* The work column's cells in the bottom row: the decision row's geometry
+ * (section 1.8): a key cell of 168 at the left, the primary of 200 at the
+ * right edge, the middle between. */
+.vex-stg__acts {
+  grid-column: 3;
+  grid-row: 3;
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  border-top: var(--vex-stg-rule);
+}
+.vex-stg__key {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 168px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 24px;
+  border: 0;
+  border-right: var(--vex-stg-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-stg__key--wide {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.vex-stg__gap {
+  min-width: 0;
+  flex: 1 1 auto;
+  border-right: var(--vex-stg-rule);
+}
+.vex-stg__primary {
+  display: flex;
+  box-sizing: border-box;
+  width: 200px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 16px;
+  border: 0;
+  background: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-stg__primary:disabled {
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-stg__primary-arrow {
+  transform: rotate(90deg);
+}
+/* The password in the bottom row, where the composer's field stands. */
+.vex-stg__entry {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  border-right: var(--vex-stg-rule);
+}
+.vex-stg__entry-glyph {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-stg__entry > .vex-stg__value {
+  padding: 0;
+}
+.vex-stg__acts > .vex-stg__show {
+  border-left: 0;
+  border-right: var(--vex-stg-rule);
+}
+
+/* The wake's progress in the bottom row, where the unlock's field follows:
+ * a segmented cell, the meter H3 draws at the Vex column's foot on a page. */
+.vex-stg__meter-row {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 20px;
+  padding: 0 24px;
+}
+.vex-stg__segments {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(20, 1fr);
+  gap: 3px;
+}
+.vex-stg__segments > i {
+  height: 12px;
+  background: var(--vex-alias-rule);
+}
+.vex-stg__segments > i[data-on] {
+  background: var(--vex-alias-label-primary);
+}
+.vex-stg__figure {
+  flex: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keys drawn as buttons: the cell is the key, so the user agent's own box
+ * goes. */
+.vex-stg__choice,
+.vex-stg__restore,
+.vex-stg__link--button {
+  width: 100%;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: none;
+  font-family: var(--font-sans);
+  text-align: left;
+}
+.vex-stg__restore {
+  border-right: var(--vex-stg-rule);
+  border-bottom: var(--vex-stg-rule);
+  border-left: var(--vex-stg-rule);
+  color: var(--vex-alias-label-primary);
+}
+.vex-stg__link--button {
+  width: auto;
+  padding: 0;
+  border-top: 0;
+}
