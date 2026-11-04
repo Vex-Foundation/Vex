@@ -1,7 +1,8 @@
 /**
- * The Settings page sheet (docs/design/R3-MINIMAL.md section 9.6), read as
- * text: jsdom does not lay out CSS, so the values the design fixes are pinned
- * where they are written. `settings.css` is the page's own sheet, imported by
+ * The Settings page sheet in H3 cells (docs/design/H3-DESKTOP.md sections 1.4,
+ * 2.3 and 2.4; R3-MINIMAL.md section 9.6 before it), read as text: jsdom does
+ * not lay out CSS, so the values the design fixes are pinned where they are
+ * written. `settings.css` is the page's own sheet, imported by
  * the manifest; the sheets it replaced no longer carry its rules.
  */
 
@@ -34,42 +35,64 @@ describe("settings.css", () => {
     expect(imports[overlayAt + 1]).toBe('@import "./global-css/settings.css";');
   });
 
-  it("is a nav of 236 (210 under 1180) beside the section", () => {
-    expect(rule(settings, ".vex-set")).toContain("grid-template-columns: 236px minmax(0, 1fr)");
+  it("is a nav of 264 (210 under 1180) beside the section", () => {
+    expect(rule(settings, ".vex-set")).toContain("grid-template-columns: 264px minmax(0, 1fr)");
     const narrow = /@media \(max-width: 1179px\) \{([\s\S]*?)\n\}/.exec(settings)?.[1] ?? "";
     expect(narrow).toContain("grid-template-columns: 210px minmax(0, 1fr)");
     expect(narrow).toContain("padding: 22px 28px 56px");
-    expect(rule(settings, ".vex-set__nav")).toContain("padding: 22px 12px 24px 14px");
+    expect(rule(settings, ".vex-set__nav")).toContain("padding: 22px 0 24px");
     expect(rule(settings, ".vex-set__body")).toContain("padding: 28px 44px 56px");
     expect(rule(settings, ".vex-set__col")).toContain("max-width: 680px");
   });
 
-  it("sizes the rows and heads as the design fixes them", () => {
-    expect(rule(settings, ".vex-set__item")).toContain("height: 34px");
-    expect(rule(settings, ".vex-set__group")).toMatch(/font-size: 12px;[\s\S]*font-weight: 500/);
-    expect(rule(settings, ".vex-set__title")).toMatch(/font-size: 22px;[\s\S]*font-weight: 500/);
-    expect(rule(settings, ".vex-set__lead")).toMatch(/max-width: 620px;[\s\S]*font-size: 14px/);
-    expect(rule(settings, ".vex-pref__title")).toMatch(/font-size: 14\.5px;[\s\S]*font-weight: 500/);
+  it("sizes the rows and heads as H3 fixes them", () => {
+    // The nav on H3's 40 pitch, its labels and group heads in caps.
+    const item = rule(settings, ".vex-set__item");
+    expect(item).toContain("height: 40px");
+    expect(item).toMatch(/font-size: 13px;[\s\S]*text-transform: uppercase/);
+    expect(rule(settings, ".vex-set__group")).toMatch(/font-size: 12px;[\s\S]*text-transform: uppercase/);
+    // A section's name is H3's card sentence; its blocks the 13 caps head.
+    expect(rule(settings, ".vex-set__title")).toMatch(/font-size: 20px;[\s\S]*font-weight: 400/);
+    expect(rule(settings, ".vex-set__sh-title")).toMatch(
+      /font-size: 13px;[\s\S]*font-weight: 600;[\s\S]*text-transform: uppercase/,
+    );
+    expect(rule(settings, ".vex-set__lead")).toMatch(/max-width: 620px;[\s\S]*font-size: 15px/);
+    expect(rule(settings, ".vex-pref__title")).toMatch(/font-size: 15px;[\s\S]*font-weight: 400/);
     expect(rule(settings, ".vex-pref__help")).toContain("font-size: 13px");
-    expect(rule(settings, ".vex-pref")).toContain("padding: 14px 0");
+    expect(rule(settings, ".vex-pref")).toContain("padding: 16px 20px");
+    // The rows sit in one framed cell.
+    expect(rule(settings, ".vex-prefs__list")).toContain("border: 1px solid var(--vex-alias-rule)");
+    expect(rule(settings, ".vex-set__kvl")).toContain("border: 1px solid var(--vex-alias-rule)");
   });
 
-  it("selects a row with the blue 500 wash the left sidebar uses", () => {
-    // The H3 selected step (docs/design/H3-DESKTOP.md section 2.1).
-    expect(rule(settings, ".vex-set")).toContain("--set-sel: var(--vex-alias-interactive-active)");
+  it("keeps the nav flush under the H3 frame, whose padding rule it outranks by loading later", () => {
+    const frame = rule(settings, '.vex-ov[data-frame="h3"]:has([data-vex-settings-page])');
+    expect(frame).toContain("--vex-ov-pad: 0px");
+    expect(frame).toContain("--vex-ov-top: 0px");
+  });
+
+  it("selects a row with H3's selected-row fill and ink", () => {
+    // H3's selected nav row (docs/design/H3-DESKTOP.md section 2.1): the one
+    // fill that fades, from its alias, never spelled here.
+    expect(rule(settings, ".vex-set")).toContain("--set-sel: var(--vex-alias-row-selected)");
     // One room: the day wash retired with Celeris.
     expect(settings).not.toContain('[data-vex-theme="celeris"]');
     const selected = rule(settings, '.vex-set__item[aria-current="page"]');
     expect(selected).toContain("background: var(--set-sel)");
-    expect(selected).toContain("font-weight: 500");
+    expect(selected).toContain("font-weight: 400");
     expect(selected).toContain("color: var(--vex-alias-accent-primary)");
   });
 
-  it("draws the switch 32 x 18 with a 10 x 10 thumb at a 3px inset", () => {
-    expect(rule(settings, ".vex-switch")).toMatch(/width: 32px;\s*height: 18px/);
+  it("draws H3's switch: 36 x 20, a light border, a 12 x 12 thumb, never the blue", () => {
+    expect(rule(settings, ".vex-switch")).toMatch(/width: 36px;\s*height: 20px/);
     expect(rule(settings, ".vex-switch::after")).toMatch(
-      /top: 3px;\s*left: 3px;\s*width: 10px;\s*height: 10px/,
+      /top: 3px;\s*left: 3px;\s*width: 12px;\s*height: 12px/,
     );
+    const on = rule(settings, '.vex-switch[aria-checked="true"]::after');
+    expect(on).toContain("translateX(16px)");
+    expect(on).toContain("background: var(--vex-alias-label-primary)");
+    // The blue is for primary keys only (section 2.4).
+    expect(settings).not.toContain("button-accent");
   });
 
   it("draws the Looking at you preview as a 200 and 1fr grid with a 200 x 220 plate", () => {
@@ -94,11 +117,16 @@ describe("settings.css", () => {
     );
   });
 
-  it("keeps to the language: tokens only, radius 0, no shadow, blur, gradient or caps", () => {
+  it("keeps to the language: tokens only, radius 0, no shadow, blur or gradient, caps tracked", () => {
     expect(settings).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(settings).not.toMatch(/border-radius|box-shadow|backdrop-filter|filter:|gradient/);
-    expect(settings).not.toMatch(/text-transform:\s*uppercase/);
     expect(settings).not.toMatch(/Departure|px-font/i);
+    // H3 sets labels in caps (section 2.3), every one at the one tracking.
+    const caps = [...settings.matchAll(/\{([^}]*text-transform:\s*uppercase[^}]*)\}/g)];
+    expect(caps.length).toBeGreaterThan(0);
+    for (const [, body] of caps) {
+      expect(body).toContain("letter-spacing: var(--tracking-label)");
+    }
   });
 
   it("no longer shares its rules with the page sheet", () => {

@@ -455,7 +455,7 @@ Desktop is mainnet only ("Nothing here is a sandbox or testnet", `src/vex-agent/
 12. Portfolio: the wallet total, the change since the last snapshot, and Lighter's equity and positions; the equity chart once the balance snapshots reach the renderer (S7-05). Left out: P&L over today, 7 days and all time, drawdown, "of allocated", the 90-day range and allocation by venue.
 13. The open-positions table: Lighter perps only.
 14. The thinking row: "Thought for N s" only after a live turn, since persisted turns store no duration; tool rows keep their measured times.
-15. Activity's status words: desktop's outcome words (Appendix A.3).
+15. Agent Scan's status words (H3's Activity): desktop's outcome words (Appendix A.3).
 16. The nav: section 4.6.
 
 What this does to the layout: the console's top block is 40 shorter and her box starts at y 224 (section 1.5); the status strip holds the model and effort, the permission's promise and the context meter (section 1.8); the field runs on to the send key; the card's foot is section 4.3.
@@ -490,8 +490,8 @@ Adopting the tick and the card keys later needs the owner's decision and a safet
 Every H3 plate is dark. Desktop retires its light theme (Celeris) and the "system" choice, and saved choices move to dark (S1-04). The window background, the Windows caption overlay and the theme-matrix test follow the one ground (section 2.1).
 
 ### 4.6 The nav
-Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board, Settings.
-- Markets is today's Watchlist. Activity is today's Agent Scan, which joins the nav.
+Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board, Settings.
+- Desktop keeps its page names (owner decision, 2026-11-04): H3's MARKETS is desktop's Watchlist and H3's ACTIVITY is desktop's Agent Scan, which joins the nav. Their titles, nav rows and links keep those names.
 - No Strategies until F11.
 - Lighter, Studio and Board are desktop's; H3 does not draw them.
 - Icons follow H3's nav icons (S5-04); desktop's three extra entries are drawn in the same grid and stroke.
@@ -522,9 +522,9 @@ H3 covers Cloud's screens. These desktop surfaces have no H3 plate:
 - Studio: projects, the explorer, terminals and their panes;
 - the Lighter desk: the market bar, the chart, the book, the ticket and its Review order card, the account dock, Zen, the desk chat and its drag;
 - the screens before the shell: wake and unlock, the system check and migration, the first-run stages and the wizard;
-- Board, Markets (the Watchlist), Memory, Sessions, How Vex works, Vex Inference funds, Settings' sections and the Needs you page.
+- Board, the Watchlist (H3's Markets), Memory, Sessions, How Vex works, Vex Inference funds, Settings' sections and the Needs you page.
 
-They get our own H3 plates, composed in the harness from this document's tokens and cells and approved by the owner before any code for them is written (S8-01 to S8-03). Until then they keep their R3 layout and take only the H3 look (S1). Activity, Markets and Settings are in H3's nav but not drawn; they follow the page frame (section 1.9), with rows built from the console's and the chats list's cells.
+They get our own H3 plates, composed in the harness from this document's tokens and cells and approved by the owner before any code for them is written (S8-01 to S8-03). Until then they keep their R3 layout and take only the H3 look (S1). Agent Scan, the Watchlist and Settings (H3's Activity, Markets and Settings) are in H3's nav but not drawn; they follow the page frame (section 1.9), with rows built from the console's and the chats list's cells.
 
 Already known for those plates:
 - The Lighter desk keeps its chat on the right until its own restyle (S2-06). The money rule binds its Review order card too: opening or closing her never moves it.
@@ -573,7 +573,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 |---|---|---|
 | NEW CHAT | same | |
 | Search chats | same | |
-| CHAT, STRATEGIES, MISSIONS, MARKETS, PORTFOLIO, ACTIVITY, SETTINGS | Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio, Board, Settings | no strategies; Markets is today's Watchlist and Activity today's Agent Scan; Lighter, Studio and Board are desktop's |
+| CHAT, STRATEGIES, MISSIONS, MARKETS, PORTFOLIO, ACTIVITY, SETTINGS | Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio, Board, Settings | no strategies; desktop keeps its names for H3's Markets (Watchlist) and Activity (Agent Scan), owner decision; Lighter, Studio and Board are desktop's |
 | CHATS | same | |
 | TODAY, YESTERDAY, EARLIER | Pinned, Today, Yesterday, Earlier | "Earlier" replaces desktop's "Older"; pinned chats are desktop's |
 | a time, or RUNNING or WAITING | a time, or Running, Paused, Waiting or Sleeping | desktop's chat rows have four states |
@@ -597,7 +597,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | FILLED | Confirmed | desktop knows a transaction confirmed, not an order filled (`agent-scan-outcome.ts`) |
 | RUNNING | Submitted, awaiting confirmation | desktop's pending word |
 | DID NOT EXECUTE | Failed, Refunded or Status unknown, as the entry says | "did not execute" for a rejected approval needs the approval history, which activity does not join yet |
-| OPEN ACTIVITY | same; it opens Activity | |
+| OPEN ACTIVITY | same; it opens Agent Scan | |
 | the first-close hint: "Show Vex" and keycaps | same | |
 
 ### A.4 The welcome

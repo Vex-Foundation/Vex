@@ -58,8 +58,31 @@ const SIZES = [
   { width: 1000, height: 720 },
 ] as const;
 
-/** The mockup moments, in the harness's own order (`states/index.ts`). */
-const STATES = ["new-chat", "thinking", "swap-waiting", "filled", "portfolio"] as const;
+/** Every state but the bare shell, in the harness's own order (`states/index.ts`). */
+const STATES = [
+  "new-chat",
+  "thinking",
+  "thought",
+  "swap-waiting",
+  "approval-kinds",
+  "filled",
+  "portfolio",
+  // The pages H3 draws no plate for, in the page frame (H3-DESKTOP.md
+  // section 4.9): captured so the owner's plates can be judged against them.
+  "activity",
+  "markets",
+  "how-vex-works",
+] as const;
+
+/**
+ * Harness states this spec does NOT capture, after the captured ones in the
+ * harness's order. Settings and Memory render over reads the stand-in bridge
+ * does not answer (the runtime, the preferences, the Superboard key, the
+ * user's MCP servers, the wizard state; the memory register and inspector),
+ * so a capture would fail the wholeness rule below, rightly. They stay in the
+ * harness for a look in the browser until their fixtures exist.
+ */
+const HARNESS_ONLY = ["settings", "memory"] as const;
 
 const CARD = '[data-vex-area="approvals-region"] [data-vex-area="approval-card"]';
 
@@ -127,7 +150,7 @@ test.describe("H3 parity captures", () => {
   test("the harness lists exactly the states this spec captures", async ({ page }) => {
     await page.goto("/?state=__index");
     const states = await page.evaluate(() => window.__vexH3Harness.states);
-    expect(states.filter((id) => id !== "shell")).toEqual([...STATES]);
+    expect(states.filter((id) => id !== "shell")).toEqual([...STATES, ...HARNESS_ONLY]);
   });
 
   for (const size of SIZES) {

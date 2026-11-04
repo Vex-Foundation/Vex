@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui
 import { useVexCloudAccount, useVexCloudAlert } from "../../../lib/api/vex-cloud.js";
 import { StateWord } from "../../../components/ui/state-word.js";
 import { ShellScreen } from "../../appShell/screens/ShellScreen.js";
+import { PageBar } from "../../appShell/screens/PageBar.js";
 import { formatMicroUsdEstimate } from "@shared/vex-cloud-money.js";
 import { formatVexAmount, NOT_AVAILABLE } from "../vex-cloud-format.js";
 import { CashbackTab } from "./CashbackTab.js";
@@ -49,8 +50,21 @@ export function VexCloudFundingScreen({
   readonly origin: ShellScreenOrigin | null;
   readonly onClose: () => void;
 }): JSX.Element {
+  // The H3 frame (docs/design/H3-DESKTOP.md sections 1.9 and 4.9; no plate for
+  // this page): the header's title cell names the page, so it draws no head,
+  // and the tabs row carries "Updated" at the fetch time of the account read
+  // the balance line is drawn from (the same query, one cache entry). The
+  // five funding tabs stay ARIA tabs inside the page: each owns a panel, which
+  // the frame's toggle cells do not.
+  const accountQuery = useVexCloudAccount();
   return (
-    <ShellScreen title={FUNDING_PAGE_TITLE} origin={origin} onClose={onClose}>
+    <ShellScreen
+      title={FUNDING_PAGE_TITLE}
+      origin={origin}
+      onClose={onClose}
+      chapter={null}
+      bar={<PageBar updatedAt={accountQuery.dataUpdatedAt} />}
+    >
       <VexCloudFundingPage />
     </ShellScreen>
   );

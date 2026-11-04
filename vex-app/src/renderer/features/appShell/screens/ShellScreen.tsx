@@ -20,6 +20,16 @@
  * is `absolute` inside the centre column (the host mounts it there), so it
  * never reflows a track.
  *
+ * THE H3 PAGE FRAME (docs/design/H3-DESKTOP.md section 1.9). Every page
+ * takes H3's frame (`data-frame="h3"`): an optional tabs row of cells at the
+ * top (`bar`, built from `PageBar.tsx`: the page's tabs, "Updated {time}"
+ * and the page's keys), standing above the scroller so it never scrolls
+ * away, then the page body 24 in from each edge across the whole column
+ * rather than R3's centred reading column. The frame's rules live in
+ * `book.css` beside the pages that use them; R3's sheet rules in
+ * `overlay.css` stay for the parts H3 keeps (the sheet's box, its layer, the
+ * scroller).
+ *
  * Motion: a FLIP of the sheet from the trigger row's rect (plumbed via the
  * route's per-kind `origin`), MOTION-POLICY compliant (no `layout` or
  * `layoutId`, which inject a runtime stylesheet the CSP bans; plain `animate`
@@ -111,6 +121,7 @@ export function ShellScreen({
   chapter,
   width = "reading",
   fill,
+  bar,
   children,
 }: {
   readonly title: string;
@@ -143,6 +154,12 @@ export function ShellScreen({
    * that owns an inner scroller (the agent scan's virtual list).
    */
   readonly fill?: boolean;
+  /**
+   * The page's tabs row (`PageBar`): its tabs, "Updated {time}" and its keys.
+   * Drawn above the scroller, so it stays while the body scrolls. Absent, or
+   * a `PageBar` with nothing in it, draws no row.
+   */
+  readonly bar?: ReactNode;
   readonly children: ReactNode;
 }): JSX.Element {
   const rootRef = useRef<HTMLElement | null>(null);
@@ -246,6 +263,7 @@ export function ShellScreen({
       tabIndex={-1}
       data-vex-area="shell-screen"
       data-width={width}
+      data-frame="h3"
       // Morph contract pinned by ShellScreen.test.tsx: which start/end frame
       // the FLIP uses ("trigger" | "center" | "reduced" for the instant path).
       data-vex-morph={reduced ? "reduced" : origin !== null ? "trigger" : "center"}
@@ -287,6 +305,7 @@ export function ShellScreen({
         opacity: { duration: 0.25, ease: EASE_STANDARD },
       }}
     >
+      {bar ?? null}
       {/* The body resolves in after the sheet lands (ExpandableScreen
        * grammar: delayed fade, never animating with the container scale). */}
       <motion.div

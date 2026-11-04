@@ -54,13 +54,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ApprovalActionResult, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import { useApprove, useReject } from "../../lib/api/approvals.js";
 import { approvalActionWord } from "../vex/needs-you.js";
 import { invalidateOnApprovalResolve } from "./approvals/invalidate-on-resolve.js";
 import { isHighRisk as classifyHighRisk } from "./ApprovalCard/risk.js";
-import { approvalReviewWord } from "./ApprovalCard/approval-sentence.js";
+import { approvalGateLine, approvalReviewWord } from "./ApprovalCard/approval-sentence.js";
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
 import { ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
 import { ApprovalRow } from "./ApprovalCard/ApprovalRow.js";
@@ -159,6 +160,15 @@ export interface ApprovalCardProps {
   readonly layout?: "card" | "row";
   /** The row's Review key: open this decision as the full card. */
   readonly onReview?: () => void;
+  /**
+   * The chat's bottom-row seat (docs/design/H3-DESKTOP.md section 1.8,
+   * `ApprovalCard/approval-dock.tsx`). Given one, the full card draws its
+   * decision footer there as the decision row: the reason field, Reject, the
+   * gate line and the approve key. It is the same footer with the same
+   * handlers and the same state, only drawn elsewhere; `null` or absent keeps
+   * it inside the card, as on every other surface.
+   */
+  readonly decisionDock?: HTMLElement | null;
 }
 
 /**
@@ -177,6 +187,7 @@ export function ApprovalCard({
   onResolved,
   layout = "card",
   onReview,
+  decisionDock = null,
 }: ApprovalCardProps): JSX.Element {
   const queryClient = useQueryClient();
   const approve = useApprove();
@@ -349,6 +360,36 @@ export function ApprovalCard({
     );
   }
 
+  // THE DECISION FOOTER, built once. Inside the card on every surface, or,
+  // given the chat's dock, drawn into the shell's bottom row as H3's
+  // decision row (section 1.8). Both are this one element: the same props,
+  // the same handlers, the same state, so the two-step confirm, the
+  // two-press Reject, the click lock and the reason that travels with Reject
+  // are exactly the card's either way. Docked, it names itself by the card's
+  // title and adds the gate line in its middle cell (Appendix A.7).
+  const docked = decisionDock !== null;
+  const decisionActions = (
+    <ApprovalDecisionActions
+      isHighRisk={isHighRisk}
+      armedAction={armedAction}
+      inFlight={inFlight}
+      rejectRef={rejectRef}
+      onReject={onRejectClick}
+      onApprove={onApproveClick}
+      rejectReason={rejectReason}
+      onRejectReasonChange={setRejectReason}
+      approveLabel={approveLabel}
+      confirmApproveLabel={confirmApproveLabel}
+      pendingApproveLabel={pendingApproveLabel}
+      approvePending={approve.isPending || decision === "approving"}
+      rejectPending={rejectPending}
+      settledDecision={settledDecision}
+      wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
+      rejectReasonInput={summary.origin !== "desk"}
+      dock={docked ? { labelledBy: titleId, gateLine: approvalGateLine(isHighRisk, CONFIRM_RESET_MS) } : null}
+    />
+  );
+
   return (
     <section
       role="region"
@@ -356,6 +397,9 @@ export function ApprovalCard({
       aria-live="polite"
       data-vex-area="approval-card"
       data-vex-approval-layout="card"
+      // Where this card's decision row is drawn: in the shell's bottom row,
+      // or (absent) in its own footer.
+      data-vex-decision-docked={docked ? "" : undefined}
       data-approval-id={summary.id}
       // S5: the act ledger's "Awaiting signature" stamp-links jump here and
       // call focus(); tabIndex={-1} makes the region programmatically
@@ -383,24 +427,7 @@ export function ApprovalCard({
           projectName={projectName}
           signedGlint={signedGlint}
         />
-        <ApprovalDecisionActions
-          isHighRisk={isHighRisk}
-          armedAction={armedAction}
-          inFlight={inFlight}
-          rejectRef={rejectRef}
-          onReject={onRejectClick}
-          onApprove={onApproveClick}
-          rejectReason={rejectReason}
-          onRejectReasonChange={setRejectReason}
-          approveLabel={approveLabel}
-          confirmApproveLabel={confirmApproveLabel}
-          pendingApproveLabel={pendingApproveLabel}
-          approvePending={approve.isPending || decision === "approving"}
-          rejectPending={rejectPending}
-          settledDecision={settledDecision}
-          wrapReasonOnNarrow={criticalArgs?.toolId === "lighter.fees.approve"}
-          rejectReasonInput={summary.origin !== "desk"}
-        />
+        {decisionDock === null ? decisionActions : createPortal(decisionActions, decisionDock)}
       </div>
     </section>
   );
