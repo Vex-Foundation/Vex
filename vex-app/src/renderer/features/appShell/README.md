@@ -62,9 +62,10 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   Activity), then the mode.
 - Search chats turns its cell into the field with All, Agent and Mission tabs and
   counts (local text, title filter). Escape closes it and drops the Agent tab.
-- Sessions by name in Pinned, Today, Yesterday, Older (`sessionListModel.ts`),
-  the one scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
-  (`sidebar` variant): 34 high, ellipsis name, then the time or a swatch and word
+- The CHATS heading, then the chats by name in Pinned, Today, Yesterday, Earlier
+  (`sessionListModel.ts`; H3's "Earlier" where R3 said "Older"), the one
+  scroller, over the 100-row session read. `SessionRows/SessionRow.tsx`
+  (`sidebar` variant): 36 high, ellipsis name at 15, then the time or a swatch and word
   from the mission run (`session-row-state.ts`). Hover or focus swaps the time
   for Pin and Remove; double-click renames via `vex.sessions.rename`
   (`sessionTitleSchema`-bounded; an unknown id answers ok(null)). The Sessions

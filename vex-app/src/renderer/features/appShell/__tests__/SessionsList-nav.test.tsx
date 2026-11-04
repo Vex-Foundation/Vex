@@ -374,6 +374,21 @@ describe("New chat and the search mode", () => {
 });
 
 describe("the sessions by name", () => {
+  it("heads the list with CHATS, its groups one level under it", () => {
+    // docs/design/H3-DESKTOP.md section 1.4: the CHATS heading, then the
+    // groups; the words in sentence case, the caps from the class.
+    renderSidebar();
+    const chats = screen.getByRole("heading", { level: 2, name: "Chats" });
+    expect(chats.classList.contains("vex-ls-chats")).toBe(true);
+    // It stands above the scroller, so it stays while the list scrolls.
+    expect(chats.nextElementSibling?.classList.contains("vex-ls-sessions")).toBe(true);
+    expect(screen.getByRole("heading", { level: 3, name: "Pinned" })).not.toBeNull();
+    expect(screen.getByRole("heading", { level: 3, name: "Today" })).not.toBeNull();
+    // The search mode heads its matches with the tabs instead.
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    expect(screen.queryByRole("heading", { name: "Chats" })).toBeNull();
+  });
+
   it("groups them under Pinned and Today and speaks the mission states in words", () => {
     renderSidebar();
     expect(screen.getByRole("heading", { name: "Pinned" })).not.toBeNull();

@@ -587,7 +587,7 @@ describe("AppShell", () => {
     expect(screen.getByText("Portfolio Check")).not.toBeNull();
   });
 
-  it("groups recent sessions into Today, Yesterday, and Older", async () => {
+  it("groups recent sessions into Today, Yesterday, and Earlier (H3-DESKTOP.md Appendix A.2)", async () => {
     sessionsListMock.mockResolvedValueOnce({
       ok: true,
       data: makeSessionRows(),
@@ -597,7 +597,7 @@ describe("AppShell", () => {
 
     await screen.findByText("Today");
     expect(screen.getByText("Yesterday")).not.toBeNull();
-    expect(screen.getByText("Older")).not.toBeNull();
+    expect(screen.getByText("Earlier")).not.toBeNull();
     expect(screen.getAllByText("Arbitrum LP Rebalance").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Open BTC Perp Position").length).toBeGreaterThan(0);
   });

@@ -20,7 +20,10 @@
  *   NAV      Chat, Missions, Markets, Portfolio, Activity, Lighter, Studio,
  *            Board, Settings: nine H3 rows on the 40 pitch between two rules
  *            (`SidebarNav`; H3-DESKTOP.md section 4.6).
- *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
+ *   CHATS    the CHATS heading (13, 600, caps, ink), then the chats by name
+ *            in Pinned, Today, Yesterday and Earlier on the 36 pitch; the one
+ *            scroller, under the heading, which stays put. In the search mode
+ *            the tabs head the list instead.
  *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`); under
  *            the frame's header it is the bottom row's account cell
  *            instead (`headless`).
@@ -353,6 +356,14 @@ export function SessionsList({
                   activeSessionMode={activeSessionMode}
                 />
               </>
+            )}
+            {/* CHATS (section 1.4): the list's section head, under the nav's
+              * rule. The words stay in sentence case; the class sets caps.
+              * The search mode heads its matches with the tabs instead. */}
+            {searchOpen ? null : (
+              <h2 id="ls-chats" className="vex-ls-chats">
+                Chats
+              </h2>
             )}
             <div
               ref={listScrollRef}

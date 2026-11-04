@@ -358,13 +358,38 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   color: var(--vex-alias-label-tertiary);
 }
 
-/* SESSIONS: group heads 12 / 500 muted at padding 14 10 4, rows 34 high. */
+/* THE CHATS (docs/design/H3-DESKTOP.md section 1.4), measured at 1440 in
+ * `h3-merged__welcome-closed-1440` from the nav's rule: CHATS centred 25
+ * under it, the first group head 40 under CHATS, its first row 31 under the
+ * head, then rows on the 36 pitch, and each later head 34 under the row
+ * above it. Every word is set 24 in, the row's right end 20 in.
+ *
+ * CHATS is a section head, the eyebrow's register: 13, 600, caps, tracked,
+ * in ink. It stands above the scroller, so it stays while the list scrolls. */
+.vex-ls-chats {
+  flex: none;
+  margin: 0;
+  padding: 18px 20px 16px 24px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+/* A group head (TODAY, YESTERDAY, EARLIER, and desktop's PINNED): the
+ * caption's register, 12, 400, caps, tracked, muted (#8B8D91 measured, the
+ * sheet's muted). The muted ink on a caps caption is H3's own: these are
+ * sheet rules, not `.vex-micro-label` call sites, so the micro label's ink
+ * floor (shell-design-guard) does not reach them. */
 .vex-ls-group {
   margin: 0;
-  padding: 14px 10px 4px;
+  padding: 10px 20px 5px 24px;
   font-size: 12px;
-  font-weight: 500;
-  line-height: 1.3;
+  font-weight: 400;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-ls-group__rows {
@@ -372,11 +397,14 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   padding: 0;
   list-style: none;
 }
+/* A chat row: 36 high, the title at 15 in ink with an ellipsis. The open chat
+ * takes the selected step (raised 2): the gradient is the nav's alone, H3's
+ * one row gradient. */
 .vex-ls-row {
   position: relative;
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 36px;
   min-width: 0;
 }
 .vex-ls-row:hover,
@@ -393,10 +421,10 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   gap: 10px;
   min-width: 0;
   height: 100%;
-  padding: 0 10px;
+  padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.2;
   text-align: left;
   color: var(--vex-alias-label-primary);
@@ -409,8 +437,11 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   white-space: nowrap;
 }
 .vex-ls-row[data-selected] .vex-ls-row__t {
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  color: var(--vex-alias-label-primary);
+}
+/* The loading, error and empty lines sit where a row's title would. */
+.vex-ls-sessions > :not(.vex-ls-groups, .vex-ls-hint) {
+  padding-inline: 24px 20px;
 }
 .vex-ls-row__t mark {
   background: var(--ls-mark);

@@ -4,7 +4,35 @@ import {
   filterSessionsByTitle,
   filterSessionsByWorkspace,
   formatSessionTime,
+  groupSessions,
 } from "../sessionListModel.js";
+
+describe("groupSessions", () => {
+  // docs/design/H3-DESKTOP.md Appendix A.2: Pinned, Today, Yesterday, Earlier.
+  const at = (daysAgo: number): string => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, 12).toISOString();
+  };
+
+  it("files chats under Pinned, Today, Yesterday and Earlier, in that order", () => {
+    const pinned = makeRow({ title: "Pinned one", startedAt: at(9), pinnedAt: at(0) });
+    const today = makeRow({ title: "Today's", startedAt: at(0) });
+    const yesterday = makeRow({ title: "Yesterday's", startedAt: at(1) });
+    const earlier = makeRow({ title: "Last week's", startedAt: at(7) });
+    const groups = groupSessions([earlier, yesterday, today, pinned]);
+    expect(groups.map((g) => [g.key, g.title])).toEqual([
+      ["pinned", "Pinned"],
+      ["today", "Today"],
+      ["yesterday", "Yesterday"],
+      ["earlier", "Earlier"],
+    ]);
+    expect(groups.map((g) => g.rows)).toEqual([[pinned], [today], [yesterday], [earlier]]);
+  });
+
+  it("says Earlier, never R3's Older", () => {
+    expect(groupSessions([]).map((g) => g.title)).not.toContain("Older");
+  });
+});
 
 describe("formatSessionTime", () => {
   it("formats older dates with an English (en-US) month, not the OS locale", () => {
