@@ -9,6 +9,7 @@
  */
 
 import { baseAnswers } from "../fixtures/base.js";
+import { activity } from "./activity.js";
 import { filled } from "./filled.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
@@ -31,6 +32,7 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   swapWaiting,
   filled,
   portfolio,
+  activity,
 ];
 
 export const DEFAULT_STATE = shell;

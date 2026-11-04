@@ -985,6 +985,146 @@
   }
 }
 
+/* ---- the ledger pages in H3 rows (Activity, token history, All assets) --
+ * docs/design/H3-DESKTOP.md sections 1.9, 2.2, 2.3 and 4.9: Activity "follows
+ * the page frame, with rows built from the console's and the chats list's
+ * cells". The ledger's R3 grammar (`.vex-scan-*`) lives in `overlay.css`,
+ * which keeps the page sheet; H3's rows are laid over it here, under the
+ * frame (`.vex-ov[data-frame="h3"]`, so each rule outranks its R3 twin):
+ *   - the filter menus are 40-high cells on the rule, their names in caps;
+ *   - a day head is a group head (TODAY): 12 caps tracked, muted;
+ *   - a row is 60 high on the rule: the kind in caps (13, muted), the legs in
+ *     ink (15, figures mono), the meta line 13 muted with its links ink and
+ *     underlined, the value in mono, and the row's end H3's status mark
+ *     (`StatusMark`) with its consequence under it;
+ *   - the state column is wide enough for "Submitted, awaiting
+ *     confirmation" in caps;
+ *   - Load more is a key cell. */
+.vex-ov[data-frame="h3"] .vex-scan-lead {
+  max-width: none;
+  font-size: 15px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filters {
+  gap: 0;
+  padding: 20px 0;
+  border-bottom: 0;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter + .vex-scan-filter {
+  margin-left: -1px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__key {
+  height: 40px;
+  gap: 10px;
+  padding: 0 14px 0 16px;
+  background: transparent;
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__key[aria-expanded="true"],
+.vex-ov[data-frame="h3"] .vex-scan-filter__key:hover {
+  position: relative;
+  z-index: 1;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__name {
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ov[data-frame="h3"] .vex-scan-filter__key[data-active] .vex-scan-filter__value {
+  font-weight: 400;
+}
+.vex-ov[data-frame="h3"] .vex-scan-scope {
+  height: 40px;
+  margin-left: 12px;
+  padding: 0 14px;
+  font-weight: 400;
+}
+.vex-ov[data-frame="h3"] .vex-scan-active {
+  font-size: 13px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-day {
+  padding: 22px 0 8px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ov[data-frame="h3"] .vex-scan-row {
+  grid-template-columns: 150px minmax(0, 1fr) 140px 300px;
+  column-gap: 18px;
+  min-height: 60px;
+  padding: 10px 0;
+  border-bottom-color: var(--vex-alias-rule);
+}
+.vex-ov[data-frame="h3"] .vex-scan-kind > span {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-ov[data-frame="h3"] .vex-scan-what {
+  font-size: 15px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-legs {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-meta {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-meta .vex-num {
+  font-size: 12px;
+}
+/* Every H3 link is ink with an underline, never blue. */
+.vex-ov[data-frame="h3"] .vex-scan-link {
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  color: var(--vex-alias-label-primary);
+}
+.vex-ov[data-frame="h3"] .vex-scan-link:hover {
+  text-decoration-color: currentColor;
+}
+.vex-ov[data-frame="h3"] .vex-scan-value {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-state {
+  gap: 4px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-sub {
+  font-size: 13px;
+  line-height: 18px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-detail > dt {
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-ov[data-frame="h3"] .vex-scan-leg .vex-status-mark {
+  font-size: 12px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-note {
+  font-size: 14px;
+}
+.vex-ov[data-frame="h3"] .vex-scan-more {
+  height: 44px;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+@container (max-width: 760px) {
+  .vex-ov[data-frame="h3"] .vex-scan-row {
+    grid-template-columns: 110px minmax(0, 1fr) 100px 200px;
+    column-gap: 12px;
+  }
+  .vex-ov[data-frame="h3"] .vex-scan-state .vex-status-mark {
+    white-space: normal;
+    text-align: right;
+  }
+}
+
 /* The Launchpad: square tiles on a 1px rule, then Add image and the launch. */
 .vex-pf-thumbs {
   display: grid;
