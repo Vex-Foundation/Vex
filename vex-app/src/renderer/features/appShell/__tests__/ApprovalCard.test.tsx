@@ -1365,6 +1365,7 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
  */
 describe("ApprovalCard, every kind in the same frame", () => {
   const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
+  const RESTING_LINE = "This places a real order on mainnet.";
   const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
   const ADDRESS = "0x9a3c5f1e2d4b6a8c0e1f3a5b7c9d0e2f4a6b8c0d";
 
@@ -1424,9 +1425,32 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this order",
       approve: "Approve order",
-      consequence: ORDER_LINE,
+      // It rests on the book and can be cancelled before it fills.
+      consequence: RESTING_LINE,
       realFunds: true,
       twoPress: false,
+    },
+    {
+      name: "a Lighter market order",
+      summary: makeSummary({
+        toolName: "lighter:order.create",
+        actionKind: "external_post",
+        riskLevel: "high",
+        preview: lighter("order.create", {
+          toolId: "lighter.order.create",
+          side: "sell",
+          baseAmountDisplay: "0.0002",
+          marketSymbol: "BTC",
+          orderType: "market",
+          timeInForce: "immediate-or-cancel",
+          priceDisplay: "67000.0",
+        }),
+      }),
+      eyebrow: "Confirm this order",
+      approve: "Approve order",
+      consequence: ORDER_LINE,
+      realFunds: true,
+      twoPress: true,
     },
     {
       name: "a Lighter order cancel",
