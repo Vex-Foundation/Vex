@@ -1,10 +1,10 @@
 /**
- * THE TITLE BAR: two of the header's cells (docs/design/H3-DESKTOP.md
- * section 1.3; the cells' contents are still R3-MINIMAL.md section 3's):
+ * THE TITLE BAR: the header's title cell (docs/design/H3-DESKTOP.md section
+ * 1.3; its contents are still R3-MINIMAL.md section 3's). The Vex key's cell
+ * beside it is the header's own (`ShellHeader`, `VexKey`); on the Lighter
+ * desk the token chip ("Vex chat" and its state) still ends the cluster and
+ * shows and hides the desk's Vex column.
  *
- *   - the VEX KEY cell, over the Vex column: the token chip ("Vex chat" and
- *     its state), which also shows and hides the Vex sidebar; the forerunner
- *     of the Vex key;
  *   - the TITLE cell, over the chat, says where you are: the session title
  *     with its mode ("Agent · Restricted", and the mission badge for a
  *     mission), the page name when a page is open ("Portfolio", "Needs you"
@@ -18,10 +18,9 @@
  *     waits or the read failed).
  *
  * The header (`ShellHeader.tsx`) lays the cells out and reserves the window
- * chrome; both cells are window drag regions (`.vex-drag`) and every control
- * inside them opts out on its own (window-chrome.css). On the welcome the
- * title cell has no title (`empty`); the chip stands there as anywhere, her
- * column being on the welcome too.
+ * chrome; the title cell is a window drag region (`.vex-drag`) and every
+ * control inside it opts out on its own (window-chrome.css). On the welcome
+ * the title cell has no title (`empty`).
  *
  * Mounted ONCE by the header for an invariant, not for tidiness:
  * `GlobalApprovalsSync` owns `useGlobalApprovalsLiveSync`, which subscribes to
@@ -289,10 +288,13 @@ export function RunningHead({
   const lighterSlot = useShellStripSlot();
   const stored = useStoredVexToggle();
   const toggle = vex === undefined ? stored : vex;
-  // The welcome keeps her column (H3), so the chip stands there too; only a
-  // frame with no Vex to toggle (Zen) hands in null.
+  // The chip is the desk's alone: in H3's header the Vex key has the Vex
+  // key's cell (`ShellHeader`). A frame with no Vex to toggle (Zen) hands in
+  // null.
   const chip =
-    toggle === null ? null : <VexTokenChip open={toggle.open} onToggle={toggle.onToggle} />;
+    !lighter || toggle === null ? null : (
+      <VexTokenChip open={toggle.open} onToggle={toggle.onToggle} />
+    );
 
   const flank = (
     <div className="vex-running-head__flank">
@@ -308,8 +310,8 @@ export function RunningHead({
       <NotificationCenter />
       <NeedsYouControl />
       {/* On the desk the chip ends the cluster, in the desk's title row; in
-       * the header it has a cell of its own, over the Vex column. */}
-      {lighter ? chip : null}
+       * the header the Vex key has a cell of its own, over the Vex column. */}
+      {chip}
       <NotificationAnnouncer />
     </div>
   );
@@ -326,9 +328,6 @@ export function RunningHead({
         </div>
       ) : (
         <>
-          <div data-vex-head-cell="vex-key" className="vex-shell-head__vex vex-drag">
-            {chip}
-          </div>
           <div
             data-vex-head-cell="title"
             className="vex-running-head vex-drag"

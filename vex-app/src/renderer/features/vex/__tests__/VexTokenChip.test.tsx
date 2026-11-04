@@ -1,10 +1,10 @@
 /**
- * The token chip in the title bar (docs/design/R3-MINIMAL.md sections 2.4 and
- * 3): the open chat's state as a fill and a word, and the Vex toggle. The
- * presence is mocked here (its wiring is `useVexPresence.test.tsx`); this suite
- * pins what the chip draws from it, what a press does, the Cmd or Ctrl +
- * Shift + B shortcut that presses it (and, for one release, R3's retiring
- * Cmd or Ctrl + Shift + Period), and where the one announcer of the state
+ * The token chip in the Lighter desk's title row (docs/design/R3-MINIMAL.md
+ * sections 2.4 and 3): the open chat's state as a fill and a word, and the
+ * Vex toggle. The presence is mocked here (its wiring is
+ * `useVexPresence.test.tsx`); this suite pins what the chip draws from it,
+ * what a press does, that it binds no shortcut of its own (the shell does,
+ * `useVexToggleShortcut.test.tsx`), and where the one announcer of the state
  * word sits.
  */
 
@@ -23,7 +23,8 @@ vi.mock("../useVexPresence.js", () => ({
   },
 }));
 
-const { VexTokenChip, vexToggleLabel, vexToggleTooltip } = await import("../VexTokenChip.js");
+const { VexTokenChip } = await import("../VexTokenChip.js");
+const { vexToggleName, vexToggleTooltipLabel } = await import("../vex-toggle-shortcut.js");
 const { registerVexCloser, setVexClosing } = await import("../vex-hide.js");
 
 function arrange(overrides: Partial<VexPresence> = {}): void {
@@ -145,15 +146,15 @@ describe("VexTokenChip: background work", () => {
 
 describe("VexTokenChip: the toggle", () => {
   it("is pressed while Vex is open, and its tooltip says what a press does and its shortcut", () => {
-    expect(vexToggleLabel(true)).toBe("Hide Vex");
-    expect(vexToggleLabel(false)).toBe("Show Vex");
-    expect(vexToggleTooltip(true, "win32")).toBe("Hide Vex · Ctrl+Shift+B");
-    expect(vexToggleTooltip(false, "darwin")).toBe("Show Vex · ⇧⌘B");
+    expect(vexToggleName(true)).toBe("Hide Vex");
+    expect(vexToggleName(false)).toBe("Show Vex");
+    expect(vexToggleTooltipLabel(true, "win32")).toBe("Hide Vex (Ctrl+Shift+B)");
+    expect(vexToggleTooltipLabel(false, "darwin")).toBe("Show Vex (⇧⌘B)");
     const { rerender } = render(<VexTokenChip open onToggle={() => undefined} platform="linux" />);
     expect(chip().getAttribute("aria-pressed")).toBe("true");
     expect(chip().getAttribute("aria-keyshortcuts")).toBe("Control+Shift+B");
     fireEvent.focus(chip());
-    expect(screen.getByText("Hide Vex · Ctrl+Shift+B")).not.toBeNull();
+    expect(screen.getByText("Hide Vex (Ctrl+Shift+B)")).not.toBeNull();
     rerender(<VexTokenChip open={false} onToggle={() => undefined} platform="linux" />);
     expect(chip().getAttribute("aria-pressed")).toBe("false");
   });
@@ -203,7 +204,7 @@ describe("VexTokenChip: the toggle", () => {
         "1 mission running",
       );
       fireEvent.focus(chip());
-      expect(screen.getByText("Show Vex · Ctrl+Shift+B")).not.toBeNull();
+      expect(screen.getByText("Show Vex (Ctrl+Shift+B)")).not.toBeNull();
       fireEvent.click(chip());
       expect(keep).toHaveBeenCalledTimes(1);
       expect(onToggle).not.toHaveBeenCalled();
@@ -213,93 +214,20 @@ describe("VexTokenChip: the toggle", () => {
   });
 });
 
-describe("VexTokenChip: the shortcut", () => {
-  function press(init: KeyboardEventInit, target: EventTarget = document.body): KeyboardEvent {
-    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
-    target.dispatchEvent(event);
-    return event;
-  }
-
-  it("presses the chip on Ctrl+Shift+B off macOS, and takes the key", () => {
-    const onToggle = vi.fn();
-    render(<VexTokenChip open={false} onToggle={onToggle} platform="win32" />);
-    const event = press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
-    expect(onToggle).toHaveBeenCalledTimes(1);
-    expect(event.defaultPrevented).toBe(true);
-  });
-
-  it("leaves Ctrl+B alone: that is Studio's sidebar key, not hers", () => {
+describe("VexTokenChip: no shortcut of its own", () => {
+  it("leaves Ctrl+Shift+B to the shell's listener, so a chord never toggles twice", () => {
     const onToggle = vi.fn();
     render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
-    const event = press({ code: "KeyB", key: "b", ctrlKey: true });
+    const event = new KeyboardEvent("keydown", {
+      code: "KeyB",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(event);
     expect(onToggle).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
-  });
-
-  it("still presses it on the retiring Ctrl+Shift+Period, for one release", () => {
-    const onToggle = vi.fn();
-    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
-    const event = press({ code: "Period", key: ">", ctrlKey: true, shiftKey: true });
-    expect(onToggle).toHaveBeenCalledTimes(1);
-    expect(event.defaultPrevented).toBe(true);
-  });
-
-  it("presses it on Cmd+Shift+B on macOS, from inside a text field too", () => {
-    const onToggle = vi.fn();
-    render(
-      <>
-        <textarea aria-label="Session draft" />
-        <VexTokenChip open={false} onToggle={onToggle} platform="darwin" />
-      </>,
-    );
-    const field = screen.getByRole("textbox", { name: "Session draft" });
-    press({ code: "KeyB", key: "B", metaKey: true, shiftKey: true }, field);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-    // Ctrl is not the macOS chord.
-    press({ code: "KeyB", key: "B", ctrlKey: true, shiftKey: true }, field);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores a held key's repeats, other chords and a key someone nearer already took", () => {
-    const onToggle = vi.fn();
-    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
-    press({ code: "KeyB", ctrlKey: true, shiftKey: true, repeat: true });
-    press({ code: "KeyB", ctrlKey: true, shiftKey: true, altKey: true });
-    press({ code: "KeyL", ctrlKey: true, shiftKey: true });
-    press({ code: "KeyV", ctrlKey: true, shiftKey: true });
-    const nearer = document.createElement("div");
-    document.body.append(nearer);
-    nearer.addEventListener("keydown", (event) => event.preventDefault());
-    press({ code: "KeyB", ctrlKey: true, shiftKey: true }, nearer);
-    nearer.remove();
-    expect(onToggle).not.toHaveBeenCalled();
-  });
-
-  it("is suspended while a modal dialog is open, and leaves the key alone", () => {
-    const onToggle = vi.fn();
-    render(<VexTokenChip open={false} onToggle={onToggle} platform="linux" />);
-    const dialog = document.createElement("dialog");
-    dialog.setAttribute("open", "");
-    document.body.append(dialog);
-    const event = press({ code: "KeyB", ctrlKey: true, shiftKey: true });
-    expect(onToggle).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(false);
-  });
-
-  it("hides through her close like the press, and is gone with the chip", () => {
-    const onToggle = vi.fn();
-    const close = vi.fn(() => true);
-    const dispose = registerVexCloser({ close, keep: () => undefined });
-    try {
-      const view = render(<VexTokenChip open onToggle={onToggle} platform="linux" />);
-      press({ code: "KeyB", ctrlKey: true, shiftKey: true });
-      expect(close).toHaveBeenCalledTimes(1);
-      view.unmount();
-      press({ code: "KeyB", ctrlKey: true, shiftKey: true });
-      expect(close).toHaveBeenCalledTimes(1);
-    } finally {
-      dispose();
-    }
   });
 });
 

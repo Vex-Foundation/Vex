@@ -1,12 +1,19 @@
 /**
  * Background work: missions that run or sleep while another session is open,
  * listed; only the running ones are counted and named; everything that needs
- * the user, or nothing, stays out.
+ * the user, or nothing, stays out. And the console's missions row: every
+ * running mission on Mainnet, the one named, "No mission running" with none.
  */
 
 import { describe, expect, it } from "vitest";
 import type { MissionRunStatus } from "@shared/schemas/sessions.js";
-import { NO_BACKGROUND_WORK, backgroundLabelOf, backgroundWorkOf } from "../background-work.js";
+import {
+  NO_BACKGROUND_WORK,
+  NO_MISSION_RUNNING,
+  backgroundLabelOf,
+  backgroundWorkOf,
+  missionsRowOf,
+} from "../background-work.js";
 import { session } from "./fixtures.js";
 
 describe("backgroundLabelOf", () => {
@@ -109,5 +116,43 @@ describe("backgroundWorkOf", () => {
     expect(backgroundWorkOf([], null)).toEqual(NO_BACKGROUND_WORK);
     expect(NO_BACKGROUND_WORK.label).toBeNull();
     expect(NO_BACKGROUND_WORK.summary).toBeNull();
+  });
+});
+
+describe("missionsRowOf", () => {
+  it("counts every running mission on Mainnet and names the one", () => {
+    const running = session({ title: "Weekly ETH buys", missionStatus: "running" });
+    // The open chat's own mission counts too: the row says what runs app-wide.
+    const row = missionsRowOf(backgroundWorkOf([session(), running], null));
+    expect(row).toEqual({
+      lead: "1 mission running on Mainnet",
+      name: "Weekly ETH buys",
+      sessionId: running.id,
+    });
+  });
+
+  it("names none when several run, and opens the list", () => {
+    const row = missionsRowOf(
+      backgroundWorkOf(
+        [
+          session({ title: "A", missionStatus: "running" }),
+          session({ title: "B", missionStatus: "running" }),
+          session({ title: "C", missionStatus: "paused_wake" }),
+        ],
+        null,
+      ),
+    );
+    expect(row).toEqual({ lead: "2 missions running on Mainnet", name: null, sessionId: null });
+  });
+
+  it("says No mission running with none running, a sleeping one included", () => {
+    expect(missionsRowOf(NO_BACKGROUND_WORK)).toEqual({
+      lead: NO_MISSION_RUNNING,
+      name: null,
+      sessionId: null,
+    });
+    expect(NO_MISSION_RUNNING).toBe("No mission running");
+    const sleeping = backgroundWorkOf([session({ missionStatus: "paused_wake" })], null);
+    expect(missionsRowOf(sleeping).lead).toBe("No mission running");
   });
 });
