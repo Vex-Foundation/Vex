@@ -85,3 +85,13 @@ body,
 .vex-h3-harness__index a {
   color: var(--vex-alias-accent-primary);
 }
+
+/* A stage's stand-in figure (`?stage=`, `?kimm=standins`): each open-section
+ * crop carries the mockup's own Hide Vex cell in its top 62 image pixels
+ * (`standins/README.md`), so the figure is lifted under her real corner key,
+ * as the approved stage plates lift it. Her real art carries no key and needs
+ * no lift; the product's sheets never do this. */
+[data-vex-h3-stage] .vex-pre-vex__kimm .vex-kimm__figure {
+  top: -22px;
+  height: calc(100% + 22px);
+}

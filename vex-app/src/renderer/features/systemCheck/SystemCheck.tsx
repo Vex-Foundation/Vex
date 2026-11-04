@@ -3,13 +3,17 @@
  * the Chronos Gate cold open (first-run / remediation path; returning
  * users skip it entirely via the gate's orchestrator).
  *
- * Visual system (docs/design/R3-MINIMAL.md section 10.3): the screen stands at
- * the right of the stage plate (`SetupFrame`, layout `plate`): the crumb, a
- * serif sentence-case title above the six probe rows, separated by hairlines.
- * Status is shown by fill: a swatch beside a sentence-case word. Vex's face on
- * the plate follows the screen's mood: working while a probe is in flight,
- * concerned when the network or the local runtime's machine is not ready, an
- * error when a probe failed, else ready.
+ * Visual system (docs/design/H3-DESKTOP.md section 4.9; the plates
+ * `stage-system-check` and `stage-system-check-blocked`, approved as drawn):
+ * the screen stands on H3's stage frame (`SetupFrame`, layout `stage`): the
+ * title cell, the first run's steps in the left column, the lead as the work
+ * column's first row and the six probe rows in the console's grammar, each
+ * with its state at the right as a square and an ink word. Continue is the
+ * blue key at the bottom row's right edge; the logs folder is the
+ * bottom-left cell's link. What Vex shows follows the screen's mood: working
+ * while a probe is in flight, blocked when a failure holds Continue (a disk
+ * with no room for setup), an error when a probe failed, concerned when the
+ * network or the local runtime's machine is not ready, else ready.
  *
  * Data flow: TanStack Query hooks feed the probe rows, each row computing
  * its `StepStatus` from the Result envelope. The bundled local runtime's
@@ -38,6 +42,7 @@ import {
 import { useUiStore } from "../../stores/uiStore.js";
 import type { FirstRunMood } from "../../components/onboarding/FirstRunStage.js";
 import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
+import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
 import { ErrorCallout } from "../../components/ui/error-callout.js";
 import { type StepStatus } from "./StepRow.js";
 import { ProbeRows } from "./SystemCheck/ProbeRows.js";
@@ -93,30 +98,39 @@ export function SystemCheck(): JSX.Element {
     || localRuntime.isPending
     || (!doorRun && migration.isPending);
 
-  // What Vex shows on the plate: working while a probe is in flight, an error
-  // when one failed, concerned when the network or the local runtime's machine
-  // is not ready, else ready. A door run starts no runtime, so its rows do not
-  // count there.
+  // What Vex shows: working while a probe is in flight, blocked when a failure
+  // holds Continue (the disk), an error when a probe failed, concerned when the
+  // network or the local runtime's machine is not ready, else ready. A door
+  // run starts no runtime, so its rows do not count there.
   const runtimeStatuses: StepStatus[] = doorRun
     ? []
     : [localRuntimeRows.bundle.status, localRuntimeRows.disk.status, localRuntimeRows.memory.status];
   const statuses = [osStatus, networkStatus, ...runtimeStatuses, envStatus];
+  const held = !doorRun && localRuntimeRows.blocksContinue;
   const mood: FirstRunMood = anyLoading
     ? "working"
-    : statuses.includes("fail")
-      ? "error"
-      : networkStatus === "warn" || runtimeStatuses.includes("warn")
-        ? "concerned"
-        : "ready";
+    : held
+      ? "blocked"
+      : statuses.includes("fail")
+        ? "error"
+        : networkStatus === "warn" || runtimeStatuses.includes("warn")
+          ? "concerned"
+          : "ready";
 
   return (
     <SetupFrame
-      layout="plate"
       screen="systemCheck"
       step="systemCheck"
       mood={mood}
       title="System check"
       subline="Six quick checks before setup begins."
+      foot={<OpenLogsLink className="vex-fr-link" />}
+      acts={
+        <Footer
+          disabled={anyLoading || held}
+          onContinue={() => setCurrentView(nextView)}
+        />
+      }
     >
       <ProbeRows
         osStatus={osStatus}
@@ -130,17 +144,14 @@ export function SystemCheck(): JSX.Element {
       {health.data?.ok && health.data.data.translocated ? (
         // The ink callout - still deliberately loud (invariant: the translocation
         // warning stays loud here), and one more thing to read before Continue.
-        <ErrorCallout
-          role="alert"
-          title="Vex is running from a quarantined location (App Translocation)."
-          hint="Move Vex.app to /Applications in Finder and relaunch."
-        />
+        <div className="vex-pre-callout">
+          <ErrorCallout
+            role="alert"
+            title="Vex is running from a quarantined location (App Translocation)."
+            hint="Move Vex.app to /Applications in Finder and relaunch."
+          />
+        </div>
       ) : null}
-
-      <Footer
-        disabled={anyLoading || (!doorRun && localRuntimeRows.blocksContinue)}
-        onContinue={() => setCurrentView(nextView)}
-      />
     </SetupFrame>
   );
 }

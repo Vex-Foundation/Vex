@@ -36,6 +36,8 @@ const read = (name: string): string =>
 
 const tokensCss = read("tokens.css");
 const gateCss = read("chronos-gate.css");
+const stageCss = read("stage.css");
+const wizardCss = read("wizard.css");
 const mainWindowTs = readFileSync(
   path.join(here, "..", "..", "..", "..", "main", "windows", "main-window.ts"),
   "utf8",
@@ -359,13 +361,18 @@ describe("the trading pair and the night edge", () => {
   });
 });
 
-describe("pre-shell plate", () => {
-  it("paints a theme alias, never a colour literal", () => {
-    const plate = ruleBody(gateCss, ".vex-gate-plate");
-    expect(plate).toContain("var(--vex-alias-gate-plate)");
-    // Re-hardcoding a literal here is what re-breaks the light setup stack.
-    expect(plate).not.toMatch(/#[0-9a-f]{3,8}\b/i);
-    expect(plate).not.toMatch(/\brgba?\(/i);
+describe("pre-shell stage", () => {
+  it("paints the stage frame and her column on the ground alias, never a colour literal", () => {
+    // docs/design/H3-DESKTOP.md section 4.9: every screen before the shell
+    // stands on H3's stage frame (`.vex-pre`), and the wake's frame laid over
+    // her column paints each of its own cells (`.vex-pre--over > *`), as her
+    // column's cells do (`.vex-pre-vex > *`).
+    for (const selector of [".vex-pre", ".vex-pre--over > *", ".vex-pre-vex > *"]) {
+      const body = ruleBody(stageCss, selector);
+      expect(body, selector).toContain("background: var(--vex-alias-bg-base);");
+      expect(body, selector).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+      expect(body, selector).not.toMatch(/\brgba?\(/i);
+    }
   });
 
   it("keeps the window, the plate and the ground one surface: the H3 ground", () => {
@@ -382,22 +389,15 @@ describe("pre-shell plate", () => {
     expect(mainWindowTs).not.toContain("nativeTheme");
   });
 
-  it("sets the stage type on the print in ink", () => {
-    // docs/design/H3-DESKTOP.md section 2.1: every type on the print is the
-    // ink and the blue never sits on dark ground as type. The giant counter
-    // was the one exception R3 measured at 1.34:1 (peri-hi on the night
-    // sky); it is the ink now.
+  it("sets the stage type in ink", () => {
+    // docs/design/H3-DESKTOP.md section 2.1: every type on the stage is the
+    // ink and the blue never sits on dark ground as type.
     expect(chronosBlock).toContain("--vex-alias-gate-counter: var(--color-h3-ink)");
     expect(chronosBlock).toContain("--vex-alias-title: var(--color-h3-ink)");
     expect(chronosBlock).toContain("--vex-alias-label-primary: var(--color-h3-ink)");
-    // The unlock field and its box are cells, a control at rest: never a
-    // white field on the print.
+    // The pre-shell field alias is a cell, a control at rest: never a white
+    // field on the stage.
     expect(chronosBlock).toContain("--vex-alias-gate-field: var(--color-h3-cell)");
-    // The print's decode ground is the plate alias in every host, so it is
-    // the ground first paint already painted.
-    for (const plate of [".vex-stage-plate__plate", ".vex-stage-plate__full"]) {
-      expect(ruleBody(gateCss, plate), plate).toContain("background: var(--vex-alias-gate-plate);");
-    }
     // Every pre-shell alias reaches the H3 tier or white at an alpha, never
     // an R3 primitive.
     const r3 = [...declarations(chronosBlock)]
@@ -405,19 +405,20 @@ describe("pre-shell plate", () => {
       .filter(([, value]) => /var\(--color-(?:night|night-0|night-1|night-2|paper|peri|peri-hi|type-2|type-3|blue|blue-hi)\)|rgba\(243, 244, 247|rgba\(163, 171, 255/.test(value))
       .map(([name]) => name);
     expect(r3).toEqual([]);
-    // Every rule that sets type on the stage reads these aliases, never a
-    // literal colour. The wake and unlock title is the room's one blue
-    // (`accent-primary`: the blue by day, the periwinkle at night, spec
-    // section 10.2); the leaf's release counter keeps the gate counter alias.
-    // The wizard's step numerals left with its V10 leaf (R3 wave 5, W5-2).
-    const stage = stripComments(gateCss);
-    for (const selector of [".vex-stage-counter {", ".vex-stage-title {"]) {
-      const at = stage.indexOf(selector);
-      expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
-      const body = stage.slice(at, stage.indexOf("}", at));
-      expect(body).toMatch(/color: var\(--vex-alias-(?:gate-counter|title|accent-primary)\)/);
-      expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+    // Every rule that sets the stage's titles reads the ink alias, never a
+    // literal colour: the frame's title cell, the wizard's step title and the
+    // unlock's reset panel.
+    for (const [sheet, selector] of [
+      [stageCss, ".vex-pre"],
+      [wizardCss, ".vex-wzp__title"],
+      [stageCss, ".vex-unl__panel-title"],
+    ] as const) {
+      const body = ruleBody(sheet, selector);
+      expect(body, selector).toContain("color: var(--vex-alias-label-primary);");
+      expect(body, selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
     }
+    // The R3 plate, its print and its giant counter are gone from the stage.
+    expect(stripComments(gateCss)).not.toMatch(/\.vex-stage-(?:plate__|counter|title|leaf|side)/);
     expect(chronosBlock).toContain("--vex-alias-accent-primary: var(--color-h3-ink)");
   });
 

@@ -30,7 +30,10 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
   ): JSX.Element {
     const [visible, setVisible] = useState(visibleByDefault);
     return (
-      <div className={cn("relative", className)}>
+      // `vex-password` and `vex-password__show` are styling hooks only: H3's
+      // stage draws the field as a framed cell with Show inside it
+      // (`stage.css`); everywhere else the utilities below stand.
+      <div className={cn("vex-password relative", className)}>
         <Input
           ref={ref}
           type={visible ? "text" : "password"}
@@ -46,7 +49,7 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
           aria-label={visible ? "Hide password" : "Show password"}
           // The R3 wizard render's "Show": a word in the blue at 13 / 500,
           // sentence case, square (radius 0), the kit's 2px focus outline.
-          className="absolute right-3 top-1/2 -translate-y-1/2 px-1 py-0.5 text-[13px] font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
+          className="vex-password__show absolute right-3 top-1/2 -translate-y-1/2 px-1 py-0.5 text-[13px] font-medium text-accent-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vex-alias-focus)]"
         >
           {visible ? "Hide" : "Show"}
         </button>

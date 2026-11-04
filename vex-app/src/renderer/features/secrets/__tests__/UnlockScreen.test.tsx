@@ -199,30 +199,43 @@ describe("UnlockScreen", () => {
     expect(getByRole("button", { name: /Unlock/i })).toBeTruthy();
   });
 
-  it("stands on the stage (the wake and unlock composition + data-vex-onboarding)", () => {
+  it("stands on H3's stage: the title cell, the wake's steps done, the greeting, the field in the bottom row", () => {
     // Regression guard: the lock screen must stay one piece with the rest of
-    // the pre-shell. It stands on the stage's plate in the open composition:
-    // the type in the paper column at the right, a small version stamp at the
-    // bottom right, the forgot link under the form. There is no giant counter
-    // any more. Without this assertion, a future edit that strips the
+    // the pre-shell (docs/design/H3-DESKTOP.md section 4.9; the plate
+    // `stage-unlock`). Without this assertion, a future edit that strips the
     // composition would slip past the suite because the form-level tests
     // don't care about the wrapper.
     const view = renderUnlockScreen();
     const root = view.container.querySelector('[data-vex-screen="unlock"]');
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
-    expect(root?.classList.contains("vex-stage")).toBe(true);
-    expect(root?.classList.contains("vex-stage--leaf")).toBe(false);
-    expect(view.container.querySelector(".vex-stage-counter")).toBeNull();
-    // The version stamp is the running build (the test build is 0.0.0-test).
-    const stamp = view.container.querySelector("[data-vex-version-stamp]");
+    expect(root?.classList.contains("vex-pre")).toBe(true);
+    // The title cell: the screen over where it is.
+    expect(root?.querySelector(".vex-pre__title")?.textContent).toContain("Unlock");
+    expect(root?.querySelector(".vex-pre__sub")?.textContent).toBe("Local vault · Locked");
+    // The left column: the wake's five steps, every one done.
+    const steps = [...view.getByRole("navigation", { name: "Waking the desk" }).querySelectorAll("li")];
+    expect(steps).toHaveLength(5);
+    expect(steps.every((li) => li.getAttribute("data-state") === "done")).toBe(true);
+    // The version is the running build (the test build is 0.0.0-test), in the bottom-left cell.
+    const stamp = view.container.querySelector(".vex-pre__foot [data-vex-version-stamp]");
     expect(stamp?.textContent).toBe("v0.0.0-test");
-    expect(view.getByText("v0.0.0-test")).toBeTruthy();
+    // The greeting bubble and its two notes.
     expect(view.getByRole("heading", { name: "Welcome back." })).toBeTruthy();
-    // The forgot link sits under the form, in the same section, not in a ground row.
+    expect(view.getByText("Your master password decrypts the local vault on this machine.")).toBeTruthy();
+    expect(view.getByText("Your keys stay on this computer.")).toBeTruthy();
+    // The forgot link is a row of the body, outside the form.
     const forgot = view.getByRole("button", { name: /I forgot my password/i });
     expect(forgot.closest(".vex-unl__form")).not.toBeNull();
-    expect(forgot.closest(".vex-stage-ground")).toBeNull();
     expect(forgot.closest("form")).toBeNull();
+    // The field sits in the bottom row with Unlock at its right, "Master password" in the strip above.
+    const input = view.getByLabelText(/Master password/i);
+    const row = input.closest(".vex-pre-acts");
+    expect(row).not.toBeNull();
+    expect(row?.contains(view.getByRole("button", { name: /Unlock/i }))).toBe(true);
+    expect(view.container.querySelector(".vex-pre-strip label")?.textContent).toBe("Master password");
+    // No R3 stage composition.
+    expect(view.container.querySelector(".vex-stage-side")).toBeNull();
+    expect(view.container.querySelector(".vex-stage-counter")).toBeNull();
   });
 
   it("says the password stays in memory only on a locked desk, not on a launch", () => {
@@ -234,7 +247,7 @@ describe("UnlockScreen", () => {
     expect(locked.getByText(/lives only in the app's memory/i)).toBeTruthy();
   });
 
-  it("shows a wrong password as the ink callout and Vex concerned", async () => {
+  it("shows a wrong password as a row with the red square, and Vex concerned", async () => {
     const view = renderUnlockScreen();
     const input = view.getByLabelText(/Master password/i) as HTMLInputElement;
     expect(getStageVex().concerned).toBe(false);
@@ -243,9 +256,9 @@ describe("UnlockScreen", () => {
 
     const alert = await view.findByRole("alert");
     expect(alert.textContent).toBe("Master password is incorrect.");
-    const callout = alert.closest(".vex-callout");
-    expect(callout?.getAttribute("data-vex-callout")).toBe("error");
-    expect(callout?.hasAttribute("data-compact")).toBe(true);
+    const row = alert.closest("[data-vex-unlock-alert]");
+    expect(row?.getAttribute("data-vex-unlock-alert")).toBe("error");
+    expect(row?.querySelector(".vex-pre-sq")?.getAttribute("data-sq")).toBe("failed");
     expect(input.getAttribute("aria-invalid")).toBe("true");
     // Vex's concern is a passive effect of the render that shows the alert,
     // so it can land just after the alert does.
@@ -275,10 +288,11 @@ describe("UnlockScreen", () => {
     await waitFor(() => expect(getStageVex().concerned).toBe(true));
     expect(getStageVex().countdown).toBe(28);
     expect(stageVexView(getStageVex()).note).toBe("0:28");
-    const callout = view.container
+    const row = view.container
       .querySelector('[data-vex-unlock-throttle="active"]')
-      ?.closest(".vex-callout");
-    expect(callout?.getAttribute("data-vex-callout")).toBe("concerned");
+      ?.closest("[data-vex-unlock-alert]");
+    expect(row?.getAttribute("data-vex-unlock-alert")).toBe("throttle");
+    expect(row?.querySelector(".vex-pre-sq")?.getAttribute("data-sq")).toBe("ink");
   });
 
   it("is concerned while the reset panel is open and calm again after Cancel", () => {
@@ -472,35 +486,54 @@ describe("UnlockScreen", () => {
 });
 
 /**
- * THE THROTTLED UNLOCK KEY DRAWS THE DISABLED OUTLINE.
+ * THE UNLOCK KEY, WHERE SEND STANDS (docs/design/H3-DESKTOP.md section 4.9;
+ * the plate `stage-unlock`).
  *
- * While the throttle window runs the form is off but the typed password still
- * sits in the field, so the key keeps `data-armed="true"` AND is `disabled`.
- * The armed recipe (a blue fill from the Button's `data-[armed=true]` utility)
- * used to win, drawing a blue fill with a faded label; the R3 mockup
- * (`d3x-unlock-throttled`) draws the dotted blue outline on a transparent fill.
+ * The key cell while the field is empty, the one blue once anything is typed
+ * and while the unlock is in flight, and held (the cell fill, muted words)
+ * while the throttle window runs. That last state is the one that regressed
+ * once: the form is off but the typed password still sits in the field, so
+ * the key keeps `data-armed="true"` AND is `disabled`, and the armed fill
+ * must not win then.
  *
- * The seam that selects the outline is "disabled and not `data-busy`", a rule
- * in `chronos-gate.css`. jsdom does not load the app's stylesheet, so the real
- * `.vex-unl__go` rules are read from that file and put on the document, and the
- * cascade jsdom does implement (order of the rules; the selectors are written
- * so the order cannot flip the answer) is read back from the rendered key.
+ * jsdom does not load the app's stylesheet, so the real `.vex-unl__go` rules
+ * are read from `stage.css` and put on the document (their tokens swapped for
+ * concrete colours, which jsdom's cascade can compare), and the cascade jsdom
+ * does implement is read back from the rendered key.
  */
-describe("UnlockScreen key while throttled", () => {
+describe("UnlockScreen key on the stage", () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const gateCss = readFileSync(
-    path.join(here, "..", "..", "..", "styles", "global-css", "chronos-gate.css"),
+  const stageCss = readFileSync(
+    path.join(here, "..", "..", "..", "styles", "global-css", "stage.css"),
     "utf8",
   ).replace(/\/\*[\s\S]*?\*\//g, "");
-  const unlockKeyRules = (gateCss.match(/\.vex-unl__go[^{}]*\{[^}]*\}/g) ?? []).join("\n");
-  // jsdom's CSS parser drops a `border` shorthand that holds a `var()`, so the
-  // two tokens the key uses are swapped for concrete colours before the rules
-  // go on the page; the token NAMES are asserted on the file text below.
-  const ACCENT = "rgb(0, 0, 192)";
-  const EDGE = "rgb(163, 171, 255)";
-  const judged = unlockKeyRules
-    .replaceAll("var(--vex-alias-accent-primary)", ACCENT)
-    .replaceAll("var(--vex-alias-button-accent-edge)", EDGE);
+  const unlockKeyRules = (stageCss.match(/\.vex-unl__go[^{}]*\{[^}]*\}/g) ?? []).join("\n");
+  const BLUE = "rgb(0, 0, 255)";
+  const KEY = "rgb(7, 7, 9)";
+  const HELD = "rgb(4, 4, 6)";
+  const INK = "rgb(243, 245, 249)";
+  const WHITE = "rgb(255, 255, 255)";
+  const MUTED = "rgb(128, 134, 147)";
+  const TOKENS: Readonly<Record<string, string>> = {
+    "var(--vex-alias-button-accent-fill)": BLUE,
+    "var(--vex-alias-button-accent-hover)": BLUE,
+    "var(--vex-alias-button-accent-ink)": WHITE,
+    "var(--vex-alias-interactive-solid)": KEY,
+    "var(--vex-alias-interactive-active)": KEY,
+    "var(--vex-alias-bg-layer-3)": HELD,
+    "var(--vex-alias-label-primary)": INK,
+    "var(--vex-alias-label-tertiary)": MUTED,
+    "var(--vex-alias-focus)": INK,
+    "var(--vex-pre-rule)": "1px solid rgb(20, 20, 21)",
+    "var(--font-sans)": "sans-serif",
+    "var(--tracking-label)": "0.08em",
+    "var(--vex-duration-fast)": "100ms",
+    "var(--vex-ease-standard)": "ease",
+  };
+  const judged = Object.entries(TOKENS).reduce(
+    (css, [token, value]) => css.replaceAll(token, value),
+    unlockKeyRules,
+  );
 
   let style: HTMLStyleElement;
   beforeEach(() => {
@@ -534,14 +567,14 @@ describe("UnlockScreen key while throttled", () => {
 
   it("found the unlock key's rules, built from existing tokens only", () => {
     expect(unlockKeyRules).toContain(".vex-unl__go:disabled:not([data-busy])");
-    expect(unlockKeyRules).toContain("dotted var(--vex-alias-accent-primary)");
-    expect(unlockKeyRules).toContain("color: var(--vex-alias-accent-primary)");
-    expect(unlockKeyRules).toContain("background: transparent");
+    expect(unlockKeyRules).toContain('.vex-unl__go[data-armed="true"]:enabled');
+    expect(unlockKeyRules).toContain("background: var(--vex-alias-button-accent-fill)");
+    expect(unlockKeyRules).toContain("background: var(--vex-alias-bg-layer-3)");
     // Every token the rules name is swapped above: none is left unresolved.
     expect(judged).not.toContain("var(");
   });
 
-  it("is the dotted accent outline on a transparent fill, still carrying data-armed", async () => {
+  it("is held while throttled, the cell fill and muted words, still carrying data-armed", async () => {
     mockUnlock.mockResolvedValue(throttledError());
     const view = renderUnlockScreen();
     fireEvent.input(view.getByLabelText(/Master password/i), {
@@ -558,24 +591,20 @@ describe("UnlockScreen key while throttled", () => {
     expect(key.hasAttribute("data-busy")).toBe(false);
 
     const drawn = window.getComputedStyle(key);
-    expect(drawn.getPropertyValue("border-top-style")).toBe("dotted");
-    expect(drawn.getPropertyValue("border-top-color")).toBe(ACCENT);
-    expect(drawn.getPropertyValue("background-color")).toBe("rgba(0, 0, 0, 0)");
-    expect(drawn.getPropertyValue("color")).toBe(ACCENT);
+    expect(drawn.getPropertyValue("background-color")).toBe(HELD);
+    expect(drawn.getPropertyValue("color")).toBe(MUTED);
   });
 
-  it("keeps the solid edge on an enabled armed key and on one in flight", async () => {
-    // Enabled and armed: the one blue fill, edge solid.
+  it("is the one blue once armed, and while the unlock is in flight", async () => {
     const armed = renderUnlockScreen();
     fireEvent.input(armed.getByLabelText(/Master password/i), {
       target: { value: "valid-password-12" },
     });
-    const armedStyle = window.getComputedStyle(unlockKey(armed));
     expect(unlockKey(armed).disabled).toBe(false);
-    expect(armedStyle.getPropertyValue("border-top-style")).toBe("solid");
+    expect(window.getComputedStyle(unlockKey(armed)).getPropertyValue("background-color")).toBe(BLUE);
     cleanup();
 
-    // In flight: disabled but busy, so it keeps the fill's solid edge.
+    // In flight: disabled but busy, so it keeps the blue.
     mockUnlock.mockReturnValue(new Promise(() => undefined));
     const busy = renderUnlockScreen();
     fireEvent.input(busy.getByLabelText(/Master password/i), {
@@ -584,16 +613,13 @@ describe("UnlockScreen key while throttled", () => {
     fireEvent.click(unlockKey(busy));
     await waitFor(() => expect(unlockKey(busy).hasAttribute("data-busy")).toBe(true));
     expect(unlockKey(busy).disabled).toBe(true);
-    expect(window.getComputedStyle(unlockKey(busy)).getPropertyValue("border-top-style")).toBe("solid");
+    expect(window.getComputedStyle(unlockKey(busy)).getPropertyValue("background-color")).toBe(BLUE);
   });
 
-  it("is the same outline as the empty key: one recipe, not two", () => {
+  it("is a key cell, not the blue, while the field is empty", () => {
     const empty = renderUnlockScreen();
     const key = unlockKey(empty);
-    expect(key.hasAttribute("data-armed") && key.getAttribute("data-armed") === "true").toBe(false);
-    const drawn = window.getComputedStyle(key);
-    expect(drawn.getPropertyValue("border-top-style")).toBe("dotted");
-    expect(drawn.getPropertyValue("border-top-color")).toBe(ACCENT);
-    expect(drawn.getPropertyValue("background-color")).toBe("rgba(0, 0, 0, 0)");
+    expect(key.getAttribute("data-armed") === "true").toBe(false);
+    expect(window.getComputedStyle(key).getPropertyValue("background-color")).toBe(KEY);
   });
 });

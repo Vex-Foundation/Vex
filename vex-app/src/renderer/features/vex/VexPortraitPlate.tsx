@@ -110,7 +110,7 @@ export function VexPortraitPlate(props: VexPortraitPlateProps): JSX.Element {
 }
 
 /** The corner key's chord, spelled for this window's platform. */
-const KIMM_SHORTCUT = {
+export const KIMM_SHORTCUT = {
   label: vexToggleShortcutLabel(studioPlatform),
   aria: vexToggleAriaShortcut(studioPlatform),
 } as const;
@@ -120,25 +120,21 @@ const KIMM_SHORTCUT = {
  * Linux, the glyphs on a Mac in Apple's modifier order (⇧ before ⌘), as the
  * Vex key's keycaps draw them.
  */
-const KIMM_HINT_KEYS: readonly string[] =
+export const KIMM_HINT_KEYS: readonly string[] =
   studioPlatform === "darwin" ? ["⇧", "⌘", "B"] : ["Ctrl", "Shift", "B"];
 
 /**
- * Her section, with the feature's part done: her mood, the chord, the stored
- * choice, and THE FIRST CLOSE'S HINT (S4-15): when her section closes (from
- * any of her controls) and the profile has never seen the hint, the hint
- * stands under the Vex key for `KIMM_HINT_MS` and the saved flag is set as it
- * shows. A section that starts closed shows nothing: only a close teaches
- * the way back.
+ * THE FIRST CLOSE'S HINT (S4-15): true while the hint stands. When her
+ * section closes (from any of her controls) and the profile has never seen
+ * the hint, the hint stands under the Vex key for `KIMM_HINT_MS` and the
+ * saved flag is set as it shows. A section that starts closed shows nothing:
+ * only a close teaches the way back. Her section's every mount reads it, the
+ * shell's and the stage's before it (`PreShellStage.tsx`), so the hint is
+ * taught once wherever she is first closed.
  */
-function KimmPlate({ state, open, onHide }: KimmPlateProps): JSX.Element {
-  const setVexOpen = useUiStore((s) => s.setVexOpen);
+export function useKimmFirstCloseHint(open: boolean): boolean {
   const hintShown = useUiStore((s) => s.kimmHintShown);
   const setKimmHintShown = useUiStore((s) => s.setKimmHintShown);
-  const onOpenChange = (next: boolean): void => {
-    if (!next && onHide !== undefined) onHide();
-    else setVexOpen(next);
-  };
   const [hint, setHint] = useState(false);
   const wasOpen = useRef(open);
   useEffect(() => {
@@ -153,6 +149,20 @@ function KimmPlate({ state, open, onHide }: KimmPlateProps): JSX.Element {
     const timer = window.setTimeout(() => setHint(false), KIMM_HINT_MS);
     return () => window.clearTimeout(timer);
   }, [hint]);
+  return hint;
+}
+
+/**
+ * Her section, with the feature's part done: her mood, the chord, the stored
+ * choice, and the first close's hint (`useKimmFirstCloseHint`).
+ */
+function KimmPlate({ state, open, onHide }: KimmPlateProps): JSX.Element {
+  const setVexOpen = useUiStore((s) => s.setVexOpen);
+  const onOpenChange = (next: boolean): void => {
+    if (!next && onHide !== undefined) onHide();
+    else setVexOpen(next);
+  };
+  const hint = useKimmFirstCloseHint(open);
   return (
     <>
       <KimmSection

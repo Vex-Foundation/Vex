@@ -169,9 +169,22 @@ export interface KimmSectionProps {
   readonly onOpenChange: (open: boolean) => void;
   /** The chord that does the same from anywhere, for the key's tooltip. */
   readonly shortcut?: KimmShortcut;
+  /**
+   * Report her phase to the console under her (`kimm-section-state.ts`). The
+   * shell's section does; her stage before the shell has no console under her
+   * and stands over the shell's section while the stage lifts away, so it
+   * passes false and never writes, or clears, the shell's phase.
+   */
+  readonly reportsPhase?: boolean;
 }
 
-export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionProps): JSX.Element {
+export function KimmSection({
+  mood,
+  open,
+  onOpenChange,
+  shortcut,
+  reportsPhase = true,
+}: KimmSectionProps): JSX.Element {
   const art = useKimmArt();
   const figure = art.sections[mood];
   // Her large art is asked for when her section first opens, and from then
@@ -222,9 +235,14 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
   };
   // Her phase, for the console's rest under her (`kimm-section-state.ts`).
   useLayoutEffect(() => {
-    setKimmPhase(phase);
-  }, [phase]);
-  useLayoutEffect(() => () => setKimmPhase(null), []);
+    if (reportsPhase) setKimmPhase(phase);
+  }, [phase, reportsPhase]);
+  useLayoutEffect(
+    () => () => {
+      if (reportsPhase) setKimmPhase(null);
+    },
+    [reportsPhase],
+  );
   const moving = phase === "opening" || phase === "closing";
 
   return (

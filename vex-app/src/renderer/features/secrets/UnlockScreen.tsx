@@ -3,17 +3,24 @@
  * is configured but locked (typical cause: app restart after onboarding,
  * or Lock Vex).
  *
- * Visual system (`docs/design/R3-MINIMAL.md section 10.2`): the screen stands
- * on the stage's plate (`SetupFrame`, `layout="open"`; the plate with Vex at
- * the left belongs to `App`). The right side is paper: "Welcome back.", the
- * master password field, "Unlock →" and the forgot link. Vex is asleep after
- * Lock Vex ("Sleeping · Locked"), still waking when the launch brought you
- * here, concerned on an error, and awake and looking at you once the vault
- * opens (`components/onboarding/stage-vex.ts`). A failure is the ink callout;
- * "Set up a new vault?" is an inline panel in place of the form, with dialog
- * semantics and the acknowledgement kept. The in-flight signing stroke travels
- * the field's rule ONLY while the unlock IPC is in flight (the sanctioned
- * in-flight loop).
+ * Visual system (docs/design/H3-DESKTOP.md section 4.9; the plates
+ * `stage-unlock` and `stage-unlock-locked`, approved as drawn): the screen
+ * stands on H3's stage frame, with Kimm in her own column (`App` mounts it,
+ * `StagePlate`). The title cell reads "Unlock" over "Local vault · Locked";
+ * the left column shows the wake's steps, every one done (after Lock Vex
+ * too). The work column is the chat's own grammar: "Welcome back." is a
+ * greeting bubble with two notes under it, the forgot link a row with an
+ * arrow, and the master password sits in the bottom row where the chat's
+ * field goes, Show where the attach key goes and the blue Unlock where SEND
+ * goes, with "Master password" in the status strip over it. Vex sleeps after
+ * Lock Vex, says hi after a launch, is concerned on an error and awake once
+ * the vault opens (`components/onboarding/stage-vex.ts`); the Vex key over
+ * her says it. A failure and the throttle's countdown are rows in the same
+ * grammar, a square beside the sentence; "Set up a new vault?" takes the
+ * form's place with dialog semantics and the acknowledgement kept, and its
+ * Cancel and Set up new vault take the bottom row. The in-flight signing
+ * stroke travels the field's rule ONLY while the unlock IPC is in flight
+ * (the sanctioned in-flight loop).
  *
  * Functional logic:
  *   - password ref is uncontrolled (skill §14: the secret never lands in
@@ -26,12 +33,11 @@
  *     main-owned, the UI never implies attempts for non-password errors),
  *   - on success the password input is cleared and the handoff is armed
  *     (`beginUnlockCurtain`): App's `CurtainExit` flips the view to
- *     `unlockReturnView` ("wizard" | "appShell") beneath the plate and the
- *     plate lifts away in a 240ms crossfade.
+ *     `unlockReturnView` ("wizard" | "appShell") beneath the stage and her
+ *     stage lifts away in a 240ms crossfade.
  *
  * Test selectors preserved verbatim:
- *   - `data-vex-screen="unlock"` + `data-vex-onboarding="true"` (root,
- *     via SetupFrame),
+ *   - `data-vex-screen="unlock"` + `data-vex-onboarding="true"` (root),
  *   - `data-vex-unlock-throttle="active"` (throttle alert),
  *   - `<label htmlFor="vex-unlock-password">Master password</label>`,
  *   - button text "Unlock" / "Unlocking…",
@@ -40,11 +46,19 @@
 
 import { useEffect, useRef, useState, type FormEvent, type JSX } from "react";
 import { Button } from "../../components/ui/button.js";
-import { ErrorCallout } from "../../components/ui/error-callout.js";
 import { Label } from "../../components/ui/label.js";
+import { LineLock } from "../../components/icons/line/index.js";
 import { PasswordField } from "../../components/common/PasswordField.js";
-import { SetupFrame } from "../../components/onboarding/SetupFrame.js";
-import { VersionStamp } from "../../components/onboarding/PreShellStage.js";
+import {
+  StageActs,
+  StageBody,
+  StageFrame,
+  StageGap,
+  StageSquare,
+  StageStrip,
+} from "../../components/onboarding/StageFrame.js";
+import { useGateDocumentScope } from "../../components/onboarding/SetupFrame.js";
+import { wakeWhere } from "../../components/onboarding/wake-steps.js";
 import {
   stageVexConcerned,
   stageVexUnlocked,
@@ -62,6 +76,7 @@ interface ThrottleState {
 }
 
 export function UnlockScreen(): JSX.Element {
+  useGateDocumentScope();
   const passwordRef = useRef<HTMLInputElement | null>(null);
   const forgotRef = useRef<HTMLButtonElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
@@ -225,32 +240,85 @@ export function UnlockScreen(): JSX.Element {
   }
 
   return (
-    <SetupFrame screen="unlock" layout="open">
-      <div className="vex-stage-side vex-unl">
-        {/* The form keeps its place in the tree while the reset panel stands
-          in for it, so a half-typed password survives a Cancel. */}
-        <section
-          aria-labelledby="vex-unlock-title"
-          hidden={resetOpen}
-          className="vex-unl__form"
-        >
-          <h1 id="vex-unlock-title" className="vex-stage-title">
-            Welcome back.
-          </h1>
-          <p className="vex-stage-lead">
-            Your master password decrypts the local vault on this machine.
-          </p>
-
-          <form
-            onSubmit={(event) => {
-              void onSubmit(event);
-            }}
-            className="vex-unl__fields"
+    <StageFrame
+      screen="unlock"
+      title="Unlock"
+      sub="Local vault · Locked"
+      // The greeting is the page's heading; the title cell names the screen.
+      heading={false}
+      where={wakeWhere(null)}
+    >
+      {/* The form keeps its place in the tree while the reset panel stands
+        in for it, so a half-typed password survives a Cancel. */}
+      <section
+        aria-labelledby="vex-unlock-title"
+        hidden={resetOpen}
+        className="vex-unl__form"
+      >
+        <StageBody>
+          {/* The chat's own greeting (`SessionWelcomeHero`'s classes): the
+            bubble and its two notes, the rest of the body pushed to the foot. */}
+          <div className="vex-welcome">
+            <h1 id="vex-unlock-title" className="vex-welcome__greeting">
+              Welcome back.
+            </h1>
+            <ul className="vex-welcome__notes">
+              <li className="vex-welcome__note">
+                Your master password decrypts the local vault on this machine.
+              </li>
+              <li className="vex-welcome__note">Your keys stay on this computer.</li>
+            </ul>
+          </div>
+          {lockedDesk ? (
+            <p className="vex-unl__aside">
+              That password lives only in the app's memory while Vex is unlocked - never
+              written to disk, never sent anywhere.
+            </p>
+          ) : null}
+          {/* A failure and the throttle's countdown, in the rows' grammar:
+            a square beside the sentence, the logs at the right. */}
+          {throttleActive ? (
+            <div className="vex-unl__alert" data-vex-unlock-alert="throttle">
+              <StageSquare kind="ink" />
+              <span role="alert" data-vex-unlock-throttle="active">
+                {throttle.message}{" "}
+                <span className="vex-num">({throttleRemainingSeconds}s)</span>
+              </span>
+              <OpenLogsLink className="vex-fr-link" />
+            </div>
+          ) : error ? (
+            <div className="vex-unl__alert" data-vex-unlock-alert="error">
+              <StageSquare kind="failed" />
+              <span role="alert">{error}</span>
+              {errorFromBridge ? <OpenLogsLink className="vex-fr-link" /> : null}
+            </div>
+          ) : null}
+          <button
+            ref={forgotRef}
+            type="button"
+            disabled={inputsDisabled}
+            onClick={() => setResetDialogOpen(true)}
+            className="vex-unl__forgot"
           >
-            <Label htmlFor="vex-unlock-password" className="vex-unl__lab">
+            I forgot my password - set up a new vault
+            <span aria-hidden>→</span>
+          </button>
+        </StageBody>
+
+        <form
+          onSubmit={(event) => {
+            void onSubmit(event);
+          }}
+          className="vex-unl__fields"
+        >
+          <StageStrip>
+            <Label htmlFor="vex-unlock-password" className="vex-pre-strip__cell vex-unl__lab">
               Master password
             </Label>
+          </StageStrip>
+          <StageActs>
             <div className="vex-unl__field" data-throttled={throttleActive ? "" : undefined}>
+              <LineLock size={16} className="vex-unl__glyph" />
               <PasswordField
                 id="vex-unlock-password"
                 ref={passwordRef}
@@ -273,38 +341,12 @@ export function UnlockScreen(): JSX.Element {
                 )}
               />
             </div>
-
-            {throttleActive ? (
-              <ErrorCallout
-                compact
-                state="concerned"
-                className="vex-unl__alert"
-                title={
-                  <span role="alert" data-vex-unlock-throttle="active">
-                    {throttle.message}{" "}
-                    <span className="vex-num">({throttleRemainingSeconds}s)</span>
-                  </span>
-                }
-                hint={<OpenLogsLink className="text-[13px]" />}
-              />
-            ) : error ? (
-              <ErrorCallout
-                compact
-                state="error"
-                className="vex-unl__alert"
-                title={<span role="alert">{error}</span>}
-                hint={
-                  errorFromBridge ? <OpenLogsLink className="text-[13px]" /> : undefined
-                }
-              />
-            ) : null}
-
-            {/* ARMED CTA - the dotted blue outline while the field is empty,
-              the one blue fill the moment anything is typed and while the
-              unlock is in flight. `data-armed` carries only the boolean.
-              While the throttle window runs the key is disabled and draws
-              the dotted outline again, though `data-armed` stays true
-              (`.vex-unl__go:disabled:not([data-busy])` in chronos-gate.css). */}
+            {/* THE ARMED CTA, where SEND stands in a chat: the key cell while
+              the field is empty, the one blue fill the moment anything is
+              typed and while the unlock is in flight. `data-armed` carries
+              only the boolean. While the throttle window runs the key is
+              disabled and held (the cell fill, muted words), though
+              `data-armed` stays true. */}
             <Button
               type="submit"
               variant="armed"
@@ -322,100 +364,94 @@ export function UnlockScreen(): JSX.Element {
                 </>
               )}
             </Button>
-          </form>
+          </StageActs>
+        </form>
+      </section>
 
-          <button
-            ref={forgotRef}
-            type="button"
-            disabled={inputsDisabled}
-            onClick={() => setResetDialogOpen(true)}
-            className="vex-unl__forgot"
-          >
-            I forgot my password - set up a new vault
-            <span aria-hidden>→</span>
-          </button>
-
-          {lockedDesk ? (
-            <p className="vex-unl__note">
-              That password lives only in the app's memory while Vex is unlocked - never
-              written to disk, never sent anywhere.
-            </p>
-          ) : null}
-        </section>
-
-        {resetOpen ? (
-          <section
-            role="dialog"
-            aria-modal="false"
-            aria-labelledby="vex-unlock-reset-title"
-            aria-describedby="vex-unlock-reset-desc"
-            data-vex-unlock-reset=""
-            className="vex-unl__panel"
-          >
-            <h2 id="vex-unlock-reset-title" className="vex-unl__panel-title">
-              Set up a new vault?
-            </h2>
-            <p id="vex-unlock-reset-desc" className="vex-unl__panel-sub">
-              This does not recover or decrypt the current vault.
-            </p>
-            {resetRestarting ? (
-              <p role="status">Restarting Vex…</p>
-            ) : (
-              <>
-                <p>
-                  Your wallets stay encrypted with the forgotten password in the
-                  backup folder and are kept until you deliberately delete them.
-                  They remain unusable without that password.
-                </p>
-                <p>
-                  On-chain funds can be recovered only from an existing backup or
-                  seed phrase. Local history remains on this machine. Any
-                  in-progress or persisted mission work will be abandoned, and
-                  pending approvals will remain unanswered.
-                </p>
-                <label className="vex-unl__ack">
-                  <input
-                    type="checkbox"
-                    checked={resetAcknowledged}
-                    onChange={(event) => setResetAcknowledged(event.currentTarget.checked)}
-                  />
-                  <span>I understand that the forgotten password cannot be recovered.</span>
-                </label>
-                {resetError ? (
-                  <ErrorCallout
-                    compact
-                    state="error"
-                    title={<span role="alert">{resetError}</span>}
-                    hint={<OpenLogsLink className="text-[13px]" />}
-                  />
-                ) : null}
-              </>
-            )}
+      {resetOpen ? (
+        <section
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="vex-unlock-reset-title"
+          aria-describedby="vex-unlock-reset-desc"
+          data-vex-unlock-reset=""
+          className="vex-unl__panel"
+        >
+          <StageBody>
+            <div className="vex-unl__panel-body">
+              <h2 id="vex-unlock-reset-title" className="vex-unl__panel-title">
+                Set up a new vault?
+              </h2>
+              <p id="vex-unlock-reset-desc" className="vex-unl__panel-sub">
+                This does not recover or decrypt the current vault.
+              </p>
+              {resetRestarting ? (
+                <p role="status">Restarting Vex…</p>
+              ) : (
+                <>
+                  <p>
+                    Your wallets stay encrypted with the forgotten password in the
+                    backup folder and are kept until you deliberately delete them.
+                    They remain unusable without that password.
+                  </p>
+                  <p>
+                    On-chain funds can be recovered only from an existing backup or
+                    seed phrase. Local history remains on this machine. Any
+                    in-progress or persisted mission work will be abandoned, and
+                    pending approvals will remain unanswered.
+                  </p>
+                  <label className="vex-unl__ack">
+                    <input
+                      type="checkbox"
+                      checked={resetAcknowledged}
+                      onChange={(event) => setResetAcknowledged(event.currentTarget.checked)}
+                    />
+                    <span>I understand that the forgotten password cannot be recovered.</span>
+                  </label>
+                </>
+              )}
+            </div>
+            {!resetRestarting && resetError ? (
+              <div className="vex-unl__alert" data-vex-unlock-alert="reset">
+                <StageSquare kind="failed" />
+                <span role="alert">{resetError}</span>
+                <OpenLogsLink className="vex-fr-link" />
+              </div>
+            ) : null}
+          </StageBody>
+          {/* The reset's own bottom row: Cancel, the safer choice, at the
+            left; the vault's reset at the right edge, never the blue (it is
+            not the way in). */}
+          <StageActs>
             {!resetRestarting ? (
-              <div className="vex-unl__panel-foot">
+              <>
                 <Button
                   ref={cancelRef}
                   type="button"
                   variant="ink"
                   disabled={resetPending}
                   onClick={() => setResetDialogOpen(false)}
+                  className="vex-pre-key"
                 >
                   Cancel
                 </Button>
+                <StageGap />
                 <Button
                   type="button"
                   variant="stop"
                   disabled={!resetAcknowledged || resetPending}
                   onClick={() => void requestFreshVault()}
+                  className="vex-pre-danger"
                 >
                   {resetPending ? "Requesting…" : "Set up new vault"}
                 </Button>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
-      </div>
-      <VersionStamp />
-    </SetupFrame>
+              </>
+            ) : (
+              <StageGap />
+            )}
+          </StageActs>
+        </section>
+      ) : null}
+    </StageFrame>
   );
 }

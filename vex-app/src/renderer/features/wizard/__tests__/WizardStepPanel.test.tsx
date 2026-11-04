@@ -1,10 +1,10 @@
 /**
- * WizardStepPanel draws one step in two hosts (docs/design/R3-MINIMAL.md
- * sections 9.6 and 10.3): the wizard (serif title, the shell's lead-in above
- * it, a footer with the privacy link and the actions inside the form) and a
- * Settings section (the section head with its status word, no icon, no
- * serif). The Settings word comes from the same derivation the Settings nav
- * reads.
+ * WizardStepPanel draws one step in two hosts: the wizard on H3's stage
+ * (docs/design/H3-DESKTOP.md section 4.9: the title, the host's lead-in above
+ * it, the step's bottom row inside the form, with Back at its left; the
+ * privacy link is the stage frame's, `WizardShell`) and a Settings section
+ * (the section head with its status word, no icon, no serif). The Settings
+ * word comes from the same derivation the Settings nav reads.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -50,7 +50,7 @@ function makeEnv(overrides: Partial<EnvState> = {}): EnvState {
 const noop = (): void => undefined;
 
 describe("WizardStepPanel in the wizard", () => {
-  it("draws the serif title, the lead, and the actions in the footer inside the form", () => {
+  it("draws the title, the lead, and the actions in the bottom row inside the form", () => {
     const { container } = render(
       <WizardStepPanel
         panelDataAttr={{ kind: "keystore", value: "form" }}
@@ -69,11 +69,15 @@ describe("WizardStepPanel in the wizard", () => {
     const form = container.querySelector("form");
     const foot = container.querySelector(".vex-wzp__foot");
     expect(foot).not.toBeNull();
+    expect(foot?.classList.contains("vex-pre-acts")).toBe(true);
     expect(form?.contains(foot)).toBe(true);
-    expect(form?.contains(screen.getByRole("button", { name: "Save and continue" }))).toBe(true);
-    const link = within(foot as HTMLElement).getByRole("link", { name: /Your data stays yours/ });
-    expect(link.getAttribute("target")).toBe("_blank");
-    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    const save = screen.getByRole("button", { name: "Save and continue" });
+    expect(form?.contains(save)).toBe(true);
+    expect(foot?.contains(save)).toBe(true);
+    // The body scrolls above the row: the page holds the title and the form.
+    expect(container.querySelector(".vex-wzp__body .vex-wzp__title")).not.toBeNull();
+    // The privacy link is the stage frame's bottom-left cell, not the step's.
+    expect(within(foot as HTMLElement).queryByRole("link")).toBeNull();
     // No section head and no icon badge in the wizard.
     expect(container.querySelector("[data-vex-settings-head]")).toBeNull();
     expect(container.querySelector("svg")).toBeNull();
@@ -121,7 +125,7 @@ describe("WizardStepPanel in the wizard", () => {
 });
 
 describe("WizardStepPanel Back (the wizard's steps 2 to 7)", () => {
-  it("draws Back at the foot's left, before the privacy link, as a key that never submits the form", () => {
+  it("draws Back at the bottom row's left as a key that never submits the form", () => {
     const onBack = vi.fn();
     const onSubmit = vi.fn();
     const { container } = render(
@@ -143,7 +147,7 @@ describe("WizardStepPanel Back (the wizard's steps 2 to 7)", () => {
     expect(back.getAttribute("type")).toBe("button");
     expect(back.hasAttribute("data-vex-wizard-back")).toBe(true);
     expect(foot?.firstElementChild).toBe(back);
-    expect(back.nextElementSibling?.textContent).toContain("Your data stays yours");
+    expect(back.classList.contains("vex-pre-key")).toBe(true);
     fireEvent.click(back);
     expect(onBack).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();

@@ -1,36 +1,34 @@
 /**
- * The first run's furniture on the stage plate (`docs/design/R3-MINIMAL.md section 10.3`): the
- * crumb that says where you are (System check, Local runtime, Database, Setup) and what Vex
- * shows for what the screen is doing.
+ * The first run on the H3 stage (docs/design/H3-DESKTOP.md section 4.9; the plates
+ * `stage-system-check` and `stage-system-check-blocked`, approved as drawn): where you are in the
+ * left column (System check, Local runtime, Database, Setup) and what Vex shows for what the
+ * screen is doing.
  *
- * A screen names its step and its mood to `SetupFrame`; the mood is Vex's face on the plate and
- * the fill of the crumb's current step. The plate draws no word under her (the owner, 2026-10-18);
- * the view keeps its word and timer ("Working 0:14", "Ready", "Concerned", "Error") as the name of
- * the face, the timer the real time since the screen began its work, never a loop.
+ * A screen names its step and its mood to `SetupFrame`. The mood says three things: the square of
+ * the left column's current step, the Vex key's word over her column ("Working" with a timer,
+ * "Ready", "Concerned", "Error"), and her mood on her stage. The timer is the real time since the
+ * screen began its work, never a loop.
  *
- *   working    the screen is doing something now (probing, starting, applying)
- *   ready      nothing is in flight and nothing is wrong
- *   concerned  the screen needs the user to do something (no space for the runtime, a data
- *              move waiting on its source)
- *   error      something failed
+ *   working    the screen is doing something now (probing, starting, applying): the grey square
+ *   ready      nothing is in flight and nothing is wrong: the ink square
+ *   concerned  the screen needs the person to look (the network offline, a data move waiting on
+ *              its source): the ink square
+ *   error      something failed: the red square
+ *   blocked    a failure holds Continue until the person acts (a disk with no room for setup):
+ *              the red square, and Kimm offers the next move (the plate's "held", her open palm)
  */
 
-import { useEffect, useRef, useState, type JSX } from "react";
-import { cn } from "../../lib/utils.js";
-import { Swatch, type SwatchState } from "../ui/swatch.js";
-import {
-  formatCountdown,
-  stageVexFace,
-  stageVexFaceClear,
-  type StageVexView,
-} from "./stage-vex.js";
+import { useEffect, useState } from "react";
+import { kimmMoodOf } from "../../features/vex/kimm-mood.js";
+import type { StageSquareKind, StageStep, StageWhere } from "./StageFrame.js";
+import { formatCountdown, useStageFace, type StageVexView } from "./stage-vex.js";
 
 /**
  * The first run's steps. `runtime` covers the bundled local runtime's start
  * and, before it on an upgrade, the move of the previous release's data.
  */
 export type FirstRunStep = "systemCheck" | "runtime" | "database";
-export type FirstRunMood = "working" | "ready" | "concerned" | "error";
+export type FirstRunMood = "working" | "ready" | "concerned" | "error" | "blocked";
 
 /** The four stages of the first run, in order. The wizard is the last. */
 export const FIRST_RUN_STAGES: readonly { readonly id: FirstRunStep | "setup"; readonly label: string }[] = [
@@ -40,39 +38,59 @@ export const FIRST_RUN_STAGES: readonly { readonly id: FirstRunStep | "setup"; r
   { id: "setup", label: "Setup" },
 ];
 
-/** What Vex shows on the plate for a mood: her emotion (the fill and the word name it, undrawn). */
+/** The left column's name for the first run. */
+export const FIRST_RUN_LABEL = "First run";
+
+/**
+ * What Vex shows for a mood: the Vex key's state and word, and her mood, through the shell's own
+ * map (`kimmMoodOf`) but for the blocked check, where the approved plate draws her offering the
+ * way on (`offer`) beside the word Error.
+ */
 export function moodFace(mood: FirstRunMood, timer: string | null): StageVexView {
   switch (mood) {
     case "working":
-      return { emotion: "working", swatch: "done", word: "Working", note: timer };
+      return { state: "working", word: "Working", note: timer, mood: kimmMoodOf("working") };
     case "ready":
-      return { emotion: "idle", swatch: "idle", word: "Ready", note: null };
+      return { state: "ready", word: "Ready", note: null, mood: kimmMoodOf("ready") };
     case "concerned":
-      return { emotion: "concerned", swatch: "concerned", word: "Concerned", note: null };
+      return { state: "concerned", word: "Concerned", note: null, mood: kimmMoodOf("concerned") };
     case "error":
-      return { emotion: "error", swatch: "error", word: "Error", note: null };
+      return { state: "error", word: "Error", note: null, mood: kimmMoodOf("error") };
+    case "blocked":
+      return { state: "error", word: "Error", note: null, mood: "offer" };
   }
 }
 
-/** The fill of the crumb's current step: solid while it works or is done, a target when it waits on you. */
-export function moodCrumbFill(mood: FirstRunMood): SwatchState {
+/** The square of the left column's current step for a mood. */
+export function moodSquare(mood: FirstRunMood): StageSquareKind {
   switch (mood) {
     case "working":
+      return "running";
     case "ready":
-      return "done";
     case "concerned":
-      return "awaiting";
+      return "ink";
     case "error":
-      return "error";
+    case "blocked":
+      return "failed";
   }
 }
 
-const MOOD_WORD: Record<FirstRunMood, string> = {
-  working: "Working",
-  ready: "Ready",
-  concerned: "Concerned",
-  error: "Error",
-};
+/** The first run's left column: the steps behind you done, the one you are on, the ones ahead. */
+export function firstRunWhere(step: FirstRunStep, mood: FirstRunMood): StageWhere {
+  const at = FIRST_RUN_STAGES.findIndex((stage) => stage.id === step);
+  const steps: StageStep[] = FIRST_RUN_STAGES.map((stage, index) => {
+    if (index < at) return { id: stage.id, label: stage.label, at: "done" };
+    if (index === at) return { id: stage.id, label: stage.label, at: "now", square: moodSquare(mood) };
+    return { id: stage.id, label: stage.label, at: "next" };
+  });
+  return { label: FIRST_RUN_LABEL, steps };
+}
+
+/** The title cell's second line: "First run · Step 1 of 4". */
+export function firstRunSub(step: FirstRunStep): string {
+  const at = FIRST_RUN_STAGES.findIndex((stage) => stage.id === step);
+  return `${FIRST_RUN_LABEL} · Step ${String(at + 1)} of ${String(FIRST_RUN_STAGES.length)}`;
+}
 
 /**
  * The real time since `active` became true, as m:ss, or null while idle. One tick a second, in
@@ -96,66 +114,12 @@ function useElapsedNote(active: boolean): string | null {
 }
 
 /**
- * Says what Vex shows while this screen stands on the plate (renders nothing). The face is set when
- * it changes and cleared once, when the screen leaves, so a crossfade between two screens never
- * flickers through the launch's own words.
+ * Says what Vex shows while this screen stands on the stage (renders nothing). The face is set
+ * when it changes and cleared once, when the screen leaves, so a crossfade between two screens
+ * never flickers through the launch's own words.
  */
 export function StageFace({ mood }: { readonly mood: FirstRunMood }): null {
   const timer = useElapsedNote(mood === "working");
-  const { emotion, swatch, word, note } = moodFace(mood, timer);
-  const mine = useRef<StageVexView | null>(null);
-  useEffect(() => {
-    const face: StageVexView = { emotion, swatch, word, note };
-    mine.current = face;
-    stageVexFace(face);
-  }, [emotion, swatch, word, note]);
-  useEffect(
-    () => () => {
-      if (mine.current !== null) stageVexFaceClear(mine.current);
-    },
-    [],
-  );
+  useStageFace(moodFace(mood, timer));
   return null;
-}
-
-/** Where you are: System check, Local runtime, Database, Setup. The current step is blue. */
-export function FirstRunCrumb({
-  step,
-  mood,
-  className,
-}: {
-  readonly step: FirstRunStep;
-  readonly mood: FirstRunMood;
-  readonly className?: string;
-}): JSX.Element {
-  const at = FIRST_RUN_STAGES.findIndex((stage) => stage.id === step);
-  return (
-    <nav aria-label="First run" className={cn("vex-fr-crumb", className)}>
-      <ol>
-        {FIRST_RUN_STAGES.map((stage, index) => {
-          const position = index < at ? "done" : index === at ? "now" : "next";
-          const fill: SwatchState =
-            position === "done" ? "done" : position === "now" ? moodCrumbFill(mood) : "idle";
-          return (
-            <li
-              key={stage.id}
-              data-state={position}
-              aria-current={position === "now" ? "step" : undefined}
-            >
-              <Swatch
-                state={fill}
-                size={10}
-                {...(position === "done"
-                  ? { label: "Done" }
-                  : position === "now"
-                    ? { label: MOOD_WORD[mood] }
-                    : {})}
-              />
-              <span>{stage.label}</span>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
 }

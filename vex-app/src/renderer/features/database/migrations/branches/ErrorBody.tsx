@@ -1,33 +1,30 @@
 /**
  * Branch: error - `database.migrate()` resolved to
  * `err({ code: "data.migration_failed", details: { failedAt? } })`.
- * The ink callout carries the message; the failed migration's version/file
- * (if the details payload contained the metadata, via the `extractFailedAt`
- * type guard) stands under it. The "Show N applied before failure"
- * disclosure exposes the migrations that DID complete before the failure
- * (from progress event history captured by the orchestrator - bounded
- * buffer) in the log block.
+ * The failed status row carries the message; the failed migration's
+ * version/file (if the details payload contained the metadata, via the
+ * `extractFailedAt` type guard) stands under it. The "Show N applied before
+ * failure" disclosure exposes the migrations that DID complete before the
+ * failure (from progress event history captured by the orchestrator - bounded
+ * buffer) in the log block. Retry is the bottom row's blue key and the logs
+ * folder the bottom-left cell's link (`Migrations`).
  */
 
 import { useState, type JSX } from "react";
 
-import { Button } from "../../../../components/ui/button.js";
 import { SetupStatusCard } from "../../../../components/onboarding/SetupStatusCard.js";
-import { OpenLogsLink } from "../../../../components/common/OpenLogsLink.js";
 import type { FailedAt } from "../types.js";
 
 interface ErrorBodyProps {
   readonly message: string;
   readonly failedAt: FailedAt | null;
   readonly appliedBeforeFailure: readonly string[];
-  readonly onRetry: () => void;
 }
 
 export function ErrorBody({
   message,
   failedAt,
   appliedBeforeFailure,
-  onRetry,
 }: ErrorBodyProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -62,13 +59,6 @@ export function ErrorBody({
           </button>
         )
       ) : null}
-
-      <div className="vex-fr-acts">
-        <Button onClick={onRetry} className="w-[420px] max-w-full">
-          Retry
-        </Button>
-        <OpenLogsLink className="vex-fr-link" />
-      </div>
     </>
   );
 }

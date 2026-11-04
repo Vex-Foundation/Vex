@@ -275,14 +275,16 @@ describe("Migrations component", () => {
     expect(root?.getAttribute("data-vex-onboarding")).toBe("true");
   });
 
-  it("stands on the plate with the Database step current and Vex working while it applies", async () => {
+  it("stands on H3's stage with the Database step current and Vex working while it applies", async () => {
     mockMigrate.mockImplementation(() => new Promise(() => {}));
     const { container, getByRole } = renderWithQuery(<Migrations />);
-    expect(container.querySelector('[data-vex-screen="migrations"] .vex-fr-side')).not.toBeNull();
+    expect(container.querySelector('[data-vex-screen="migrations"].vex-pre')).not.toBeNull();
     expect(
       getByRole("navigation", { name: "First run" }).querySelector('[aria-current="step"]')?.textContent,
     ).toContain("Database");
-    expect(stageVexView(getStageVex())).toMatchObject({ emotion: "working", word: "Working" });
+    expect(stageVexView(getStageVex())).toMatchObject({ state: "working", word: "Working", mood: "think" });
+    // A run in flight has no key in the bottom row: SQL is never cancelled.
+    expect(container.querySelector(".vex-pre-acts button")).toBeNull();
   });
 
   it("draws the real count as a progress line and names the migration being applied", async () => {
@@ -303,8 +305,8 @@ describe("Migrations component", () => {
     expect(getByText("019_bug_reports.sql")).toBeTruthy();
     expect(getByText("Applying")).toBeTruthy();
     const row = container.querySelector('[data-migration-version="19"]');
-    expect(row?.querySelector('.vex-swatch[data-s="ongoing"]')).not.toBeNull();
-    // The next file lands as applied: a word and a solid fill.
+    expect(row?.querySelector('.vex-pre-sq[data-sq="running"]')).not.toBeNull();
+    // The next file lands as applied: a word and the green square.
     progressCb?.({ phase: "applied", index: 15, total: 169, version: 19, file: "019_bug_reports.sql", ts: 2 });
     await findByText("Migration v19 applied");
     expect(getByText("Applied")).toBeTruthy();
@@ -340,7 +342,10 @@ describe("Migrations component", () => {
     await waitFor(() => {
       expect(stageVexView(getStageVex()).word).toBe("Error");
     });
-    // A failure is the ink callout, an alert.
-    expect(failed.getByRole("alert").getAttribute("data-vex-callout")).toBe("error");
+    // A failure is a status row with the red square, an alert; Retry is the bottom row's blue key.
+    const alert = failed.getByRole("alert");
+    expect(alert.getAttribute("data-tone")).toBe("error");
+    expect(alert.querySelector('.vex-pre-sq[data-sq="failed"]')).not.toBeNull();
+    expect(failed.container.querySelector(".vex-pre-acts .vex-pre-primary")?.textContent).toBe("Retry");
   });
 });

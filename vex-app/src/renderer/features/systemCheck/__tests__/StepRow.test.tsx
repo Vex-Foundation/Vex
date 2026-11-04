@@ -5,7 +5,8 @@
  * `badgeLabel` decouples the visible word from `StepStatus` so screens
  * can surface contextual wording (Ready, Setup, etc.) without changing the
  * semantic state value; the default mapping is asserted here for the four
- * canonical states, each with its fill (a state is a fill and a word).
+ * canonical states, each with H3's square (docs/design/H3-DESKTOP.md section
+ * 2.2): grey while checking, green ok, ink a warning, red a failure.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,16 +17,17 @@ describe("StepRow", () => {
   afterEach(cleanup);
 
   it.each<[StepStatus, string, string]>([
-    ["loading", "Checking", "ongoing"],
+    ["loading", "Checking", "running"],
     ["ok", "OK", "done"],
-    ["warn", "Warning", "warning"],
-    ["fail", "Failed", "error"],
-  ])("renders the default word and fill for %s", (status, expectedText, fill) => {
+    ["warn", "Warning", "ink"],
+    ["fail", "Failed", "failed"],
+  ])("renders the default word and square for %s", (status, expectedText, square) => {
     const { getByText, container } = render(
       <StepRow label="Probe" status={status} detail={null} />,
     );
     expect(getByText(expectedText)).toBeDefined();
-    expect(container.querySelector(`.vex-swatch[data-s="${fill}"]`)).not.toBeNull();
+    expect(container.querySelector(`.vex-pre-sq[data-sq="${square}"]`)).not.toBeNull();
+    expect(container.querySelector(".vex-swatch")).toBeNull();
   });
 
   it("renders explicit badgeLabel overriding the default for the status", () => {
@@ -57,7 +59,7 @@ describe("StepRow", () => {
     expect(container.querySelector('[data-step-status="warn"]')).not.toBeNull();
   });
 
-  it("reads blue only while the probe is in flight", () => {
+  it("marks only a probe in flight as live", () => {
     const loading = render(<StepRow label="x" status="loading" detail={null} />);
     expect(loading.container.querySelector("[data-live]")).not.toBeNull();
     cleanup();

@@ -2,9 +2,10 @@
  * Branch: running - `database.migrate()` is in flight. The progress readout
  * ("Applying X of Y" - index is zero-based in the IPC schema, displayed
  * 1-based) sits beside a 2px progress line filled by the real count, and below
- * it a probe row names the file/version currently being applied
- * (`docs/design/R3-MINIMAL.md section 10.3`). Before the count is known (checking,
- * planning) the quiet loading line stands in for the bar.
+ * it a probe row in the system check's grammar names the file/version
+ * currently being applied, its state at the right as H3's square and word
+ * (`docs/design/H3-DESKTOP.md section 4.9`). Before the count is known
+ * (checking, planning) the quiet loading line stands in for the bar.
  *
  * No cancel button - the IPC surface intentionally does NOT expose a
  * cancel handle (mid-SQL aborts aren't safe).
@@ -13,7 +14,7 @@
 import type { JSX } from "react";
 
 import type { MigrateProgress } from "@shared/schemas/database.js";
-import { StateWord } from "../../../../components/ui/state-word.js";
+import { StageStatus } from "../../../../components/onboarding/StageFrame.js";
 import { VexLoader } from "../../../../components/ui/vex-loader.js";
 
 interface RunningBodyProps {
@@ -73,8 +74,8 @@ export function RunningBody({ current }: RunningBodyProps): JSX.Element {
                 : `Migration v${current.version} in progress`}
             </span>
             <span className="vex-fr-probe__d vex-num">{current.file}</span>
-            <StateWord
-              state={current.phase === "applied" ? "done" : "ongoing"}
+            <StageStatus
+              kind={current.phase === "applied" ? "done" : "running"}
               word={current.phase === "applied" ? "Applied" : "Applying"}
             />
           </li>
