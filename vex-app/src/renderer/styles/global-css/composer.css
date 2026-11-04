@@ -34,16 +34,14 @@
   padding: 0 0 30px;
 }
 
-/* HERO GROWTH BAND. The band's LAYOUT height is pinned to the composer's
- * resting stack, so an auto-growing field overflows DOWNWARD and never moves
- * the greeting or Vex above it. `overflow: visible` is what lets the overflow
- * paint. 302px = the resting field (116: 14 + 48 + 6 + 36 + 10 and its two
- * rule pixels) + the task rows' slot (186: 18 above four 42 high rows). The
- * band is the 720 column itself, so the page column's own sides drop. */
+/* HERO GROWTH BAND. The band, the suggestions over the composer, stands on
+ * the seat's foot across the whole column (the page column's own width and
+ * sides drop), under the opening's auto margin. A growing field therefore
+ * rises into the free room between the opening and the suggestions and
+ * never moves the greeting above it; only a window too short to hold both
+ * scrolls. Its height is its content's. */
 [data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock] {
-  height: 302px;
-  overflow: visible;
-  width: min(720px, 100%);
+  width: 100%;
   max-width: none;
   padding-inline: 0;
 }
@@ -59,7 +57,9 @@
   align-items: flex-start;
   width: 100%;
   margin-bottom: auto;
-  padding: 28px 24px 24px;
+  /* No foot padding: the auto margin under it is the room, and a short
+   * window (1000 x 720 under the band) needs every pixel of it. */
+  padding: 28px 24px 0;
 }
 
 /* The greeting bubble: "Ready when you are." in sans 18, 400, ink, on the
@@ -162,43 +162,81 @@
   margin-top: 12px;
 }
 
-/* The task rows under the composer: 42 high, 15 ink 2, a blue icon, the quiet
- * rule between rows. The slot keeps its height while the rows hide for typing,
- * so nothing below the field reflows. */
+/* THE SUGGESTIONS (docs/design/H3-DESKTOP.md section 1.7): a two-by-two grid
+ * of cells low in the chat column, over the composer, 24 in from both edges
+ * (704 to 1416 at 1440) and 34 above what stands under it (the grid's foot
+ * at 762, the status strip's top rule at 797). The slot is the grid's own
+ * height: while the draft holds text the grid fades and leaves, and since
+ * the dock stands on the column's foot only the room above the field grows. */
 .vex-starters {
-  height: 186px;
-  padding-top: 18px;
-}
-.vex-starter {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   width: 100%;
-  height: 42px;
-  padding: 0 6px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-  background: transparent;
-  color: var(--vex-alias-label-secondary);
-  font-size: 15px;
-  text-align: left;
-  transition:
-    background-color var(--vex-duration-fast) var(--vex-ease-standard),
-    color var(--vex-duration-fast) var(--vex-ease-standard);
+  padding: 0 24px 34px;
 }
-.vex-starter:last-child {
-  border-bottom: 0;
+/* The cells: two equal columns, rows at least 113 (the plate's 226 tall
+ * grid), each cell bounded by the 1px rule. Every cell draws its right and
+ * bottom rule and the grid its top and left, so the inner lines are one
+ * pixel and the frame is whole. */
+.vex-starter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(113px, auto);
+  border-top: 1px solid var(--vex-alias-rule);
+  border-left: 1px solid var(--vex-alias-rule);
+}
+/* One cell, one key: the icon 24 in, the title and its line after it 16
+ * apart, the arrow 24 from the right, everything from the cell's top (the
+ * title's line 18 down). Title sans 16 ink; the line sans 14 muted, wrapping
+ * as long as it needs. A hover lifts the cell by the hover wash; the focus
+ * ring is the 2px ink ring inside the cell (section 2.4). */
+.vex-starter {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  column-gap: 16px;
+  align-items: start;
+  min-width: 0;
+  padding: 18px 24px 20px;
+  border-right: 1px solid var(--vex-alias-rule);
+  border-bottom: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
 }
 .vex-starter:hover {
   background: var(--vex-alias-interactive-hover);
-  color: var(--vex-alias-label-primary);
 }
 .vex-starter:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
 }
-.vex-starter__icon {
-  flex: none;
-  color: var(--vex-alias-accent-primary);
+/* The icon and the arrow sit on the title's line (24 high). */
+.vex-starter__icon,
+.vex-starter__arrow {
+  margin-top: 4px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-starter__arrow {
+  color: var(--vex-alias-label-primary);
+  transform: rotate(90deg);
+}
+.vex-starter__words {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.vex-starter__title {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-starter__line {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 21px;
+  color: var(--vex-alias-label-tertiary);
 }
 
 /* ============================================================ *

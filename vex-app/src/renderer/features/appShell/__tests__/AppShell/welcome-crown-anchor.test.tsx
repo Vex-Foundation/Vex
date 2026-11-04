@@ -11,11 +11,12 @@
  * resident composer seat, which stands centred in the centre column in the
  * hero phase (the R3 welcome, reference d2) - so the whole opening moves as
  * one unit and the composer's DOM node survives the move to the docked phase.
- * The anchoring invariant is unchanged and its mechanism is unchanged in kind:
- * the crown is never inside the box that grows, and the growing box has a
- * FIXED layout height so growth overflows DOWNWARD instead of re-centring the
- * stack above it. The owner of that fixed height is a phase-scoped rule on
- * `[data-vex-composer-dock]` in composer.css.
+ * The anchoring invariant is unchanged: the crown is never inside the box
+ * that grows. H3 changed its mechanism (docs/design/H3-DESKTOP.md section
+ * 1.7): the crown holds the column's top and the growing box stands on the
+ * column's foot, so growth RISES into the room between them instead of
+ * re-centring the stack. The owners are the opening's auto bottom margin and
+ * the phase-scoped rule on `[data-vex-composer-dock]` in composer.css.
  *
  * WHY STRUCTURE, NOT PIXELS: jsdom has no layout engine — every element
  * reports offsetTop 0 and the textarea's scrollHeight is 0, so a numeric
@@ -169,12 +170,13 @@ function expectAnchoredStructure(container: HTMLElement): void {
   expect(crown.parentElement).toBe(band.parentElement);
   expect(seat.contains(crown)).toBe(true);
   expect(seat.contains(band)).toBe(true);
-  // Crown DIRECTLY above the band in document order (growth expands
-  // downward, away from the crown - nothing re-centrable sits between).
+  // Crown DIRECTLY above the band in document order (the band stands on the
+  // column's foot and grows up into the room between them - nothing
+  // re-centrable sits between).
   expect(crown.nextElementSibling).toBe(band);
-  // The band is inside the scrollport the shell flex-centres in hero phase;
-  // the fixed height that keeps growth downward is asserted against the
-  // stylesheet below (it is a phase-scoped rule, not a class).
+  // The band is inside the scrollport the seat fills in hero phase; the
+  // margin and the foot that keep the crown still are asserted against the
+  // stylesheet below (phase-scoped rules, not classes).
   expect(
     container
       .querySelector("[data-vex-conversation-scroll]")
@@ -189,8 +191,8 @@ function expectAnchoredStructure(container: HTMLElement): void {
   expect(slot?.contains(field)).toBe(true);
 }
 
-describe("SessionPanel welcome - crown anchored above a downward growth band", () => {
-  it("seats the crown zone as a sibling ABOVE the fixed-height composer band", () => {
+describe("SessionPanel welcome - crown anchored above a rising growth band", () => {
+  it("seats the crown zone as a sibling ABOVE the composer band", () => {
     const { container } = renderWelcome();
     expectAnchoredStructure(container);
   });
@@ -266,18 +268,21 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     return GLOBALS_CSS.slice(start, end);
   }
 
-  it("pins the hero growth band's fixed height, so field growth overflows downward", () => {
-    // The invariant the structural cases above cannot express in jsdom: with
-    // a FIXED band height nothing below the band can reflow as the field
-    // grows, and the greeting above it never moves. 302px = the resting field
-    // (116) + the task rows' slot (186: 18 above four 42 high rows).
+  it("stands the growth band on the column's foot under the opening's auto margin, so growth rises", () => {
+    // The invariant the structural cases above cannot express in jsdom
+    // (docs/design/H3-DESKTOP.md section 1.7): the opening holds the column's
+    // top with an auto bottom margin and the band, the suggestions over the
+    // composer, stands on the seat's foot. A growing field takes room from
+    // the margin between them, so the greeting never moves and the field's
+    // foot never moves either. No fixed band height is left to drift from
+    // the content it would have to add up.
+    expect(blockFor(".vex-welcome")).toContain("margin-bottom: auto");
     const dock = blockFor(
       '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-dock]',
     );
-    expect(dock).toContain("height: 302px");
-    expect(dock).toContain("overflow: visible");
-    // The slot under the field holds the same 186 whether or not the rows show.
-    expect(blockFor(".vex-starters")).toContain("height: 186px");
+    expect(dock).toContain("width: 100%");
+    expect(dock).not.toMatch(/(?:^|[\s;{])height:/);
+    expect(blockFor(".vex-starters")).not.toMatch(/(?:^|[\s;{])height:/);
   });
 
   it("places the hero opening with FLEX, never a transform", () => {

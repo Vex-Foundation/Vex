@@ -318,6 +318,38 @@ export function SessionComposer({
 
   return (
     <>
+      {/* The welcome's suggestions (docs/design/H3-DESKTOP.md section 1.7):
+       * the two-by-two grid low in the column, OVER the composer, so they
+       * come before the field in reading and focus order too. Gone WHILE
+       * THE USER IS TYPING, by opacity only (MOTION-POLICY); nothing
+       * slides, and the field never moves: the dock stands on the column's
+       * foot, so the grid leaving only frees room above it. Always this
+       * child (or its empty slot), so the composer's own node after it
+       * keeps its place across the welcome edge. */}
+      {showQuickActions ? (
+        <div data-vex-composer-starters="" className="vex-starters">
+          <AnimatePresence initial={false}>
+            {draft.length === 0 ? (
+              <motion.div
+                key="starter-rows"
+                initial={reducedMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={
+                  reducedMotion
+                    ? { opacity: 0, transition: { duration: 0 } }
+                    : { opacity: 0 }
+                }
+                transition={{ duration: DURATION_BASE_MS / 1000, ease: EASE_STANDARD }}
+              >
+                <ComposerQuickActions
+                  onPick={applyQuickAction}
+                  onCreateMission={createMission}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : null}
       <div
         data-vex-composer-stage={stage}
         className="relative"
@@ -555,34 +587,6 @@ export function SessionComposer({
           );
         }}
       />
-
-      {/* The welcome's task rows - gone WHILE THE USER IS TYPING, inside a
-       * fixed-height slot (`.vex-starters`: 18 above four 42 high rows) so the
-       * field never reflows. Opacity only (MOTION-POLICY); nothing slides. */}
-      {showQuickActions ? (
-        <div data-vex-composer-starters="" className="vex-starters">
-          <AnimatePresence initial={false}>
-            {draft.length === 0 ? (
-              <motion.div
-                key="starter-rows"
-                initial={reducedMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={
-                  reducedMotion
-                    ? { opacity: 0, transition: { duration: 0 } }
-                    : { opacity: 0 }
-                }
-                transition={{ duration: DURATION_BASE_MS / 1000, ease: EASE_STANDARD }}
-              >
-                <ComposerQuickActions
-                  onPick={applyQuickAction}
-                  onCreateMission={createMission}
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
-      ) : null}
     </>
   );
 }

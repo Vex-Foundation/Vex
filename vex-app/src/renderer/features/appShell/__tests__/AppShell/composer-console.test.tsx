@@ -378,7 +378,7 @@ describe("composer capsule - placeholder + starter chips", () => {
     ).toBeNull();
   });
 
-  it("task rows greet the welcome stage inside a fixed-height slot that survives typing", () => {
+  it("the suggestions greet the welcome stage over the field, in a slot that survives typing", () => {
     const { container } = render(
       <SessionComposer activeSession={null} activeSessionId={null} />,
     );
@@ -386,6 +386,12 @@ describe("composer capsule - placeholder + starter chips", () => {
     expect(slot).not.toBeNull();
     expect(slot?.className).toContain("vex-starters");
     expect(screen.getByRole("button", { name: "Check wallet balances" })).toBeTruthy();
+    // Over the composer (docs/design/H3-DESKTOP.md section 1.7), so they come
+    // before the field in reading and focus order too.
+    const field = screen.getByLabelText("Session draft");
+    expect(
+      slot !== null && slot.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     typeDraft("typing now");
     expect(container.querySelector("[data-vex-composer-starters]")).not.toBeNull();
   });
