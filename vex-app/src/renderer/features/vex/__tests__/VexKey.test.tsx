@@ -5,8 +5,8 @@
  * what the key draws from it and what a press does:
  *
  *  - three cells in order: her portrait, the state, the chevron;
- *  - the state line: the square with the state's fill, the state machine's
- *    own word, and the live timer only while a turn runs;
+ *  - the state line: H3's ink square (an outline at Ready, solid otherwise),
+ *    the state machine's own word, and the live timer only while a turn runs;
  *  - the action line: Hide Vex or Show Vex, then the chord's keycaps in the
  *    platform's spelling, hidden from assistive technology;
  *  - one control named for what it does, expanded while she is open, its
@@ -97,9 +97,16 @@ describe("VexKey: what it draws", () => {
     const status = part("status");
     expect(status?.textContent).toBe("Waiting for approval");
     const square = status?.querySelector(".vex-swatch");
-    expect(square?.getAttribute("data-s")).toBe("awaiting");
+    // H3's state square: solid in every state but Ready (section 2.2).
+    expect(square?.getAttribute("data-s")).toBe("done");
     expect(square?.getAttribute("aria-hidden")).toBe("true");
     expect(part("timer")).toBeNull();
+  });
+
+  it("draws the state square as an outline at Ready", () => {
+    render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
+    expect(part("status")?.textContent).toBe("Ready");
+    expect(part("status")?.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("idle");
   });
 
   it("counts the live turn beside the word, in m:ss from its start", () => {

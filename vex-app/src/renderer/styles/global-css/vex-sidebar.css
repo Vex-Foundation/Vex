@@ -143,7 +143,7 @@
  * never moves when a decision arrives, is taken, or a mission starts:
  *
  *   Needs you head   43   NEEDS YOU (14, 600, caps) and the count at the right
- *   decision row     64   the sentence (17) over its meta line (14, muted),
+ *   decision row     64   the sentence (16) over its meta line (14, muted),
  *                          and the key cell at the right on the raised fill
  *   missions row     41   the missions icon, the words (15), a chevron: 40
  *                          and the rule her section starts under
@@ -229,11 +229,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 17: the plate's decision measures 238 wide for 28 characters at 1440
- * ("Approve swap: 200 USDC → ETH", 265 image px), which is 17 in the sans,
- * under the type table's 20 read from its cap height. */
+/* 16: the plate's decision measures 238 wide for 28 characters at 1440
+ * ("Approve swap: 200 USDC → ETH", 265 image px), about 8.5 a character,
+ * which the sans gives at 15 to 16; under the type table's 20 read from its
+ * cap height. */
 .vex-console__sentence {
-  font-size: 17px;
+  font-size: 16px;
   line-height: 22px;
 }
 .vex-console__meta {

@@ -29,7 +29,8 @@
  * Everything shown comes from `useVexPresence`, the same read her column
  * draws, so the two can never disagree: the word is the state machine's
  * (`vex-state.ts`: Ready, Thinking, Waiting for approval and the rest), the
- * square its fill, the timer only while a turn is live. Words are written in
+ * square H3's (an outline at Ready, solid otherwise), the timer only while a
+ * turn is live. Words are written in
  * sentence case and the key's label register sets them in caps.
  *
  * THE ANNOUNCER of the state word (`VexStateAnnouncer`) sits beside the
@@ -94,7 +95,13 @@ export function VexKey({ open, onToggle, platform = studioPlatform }: VexKeyProp
           </span>
           <span className="vex-key__state">
             <span id={stateId} className="vex-key__line vex-key__status">
-              <Swatch state={presence.fill} size={6} className="vex-key__square" />
+              {/* H3's state square (section 2.2): ink, an outline at Ready
+                * and solid in every other state; the word says which. */}
+              <Swatch
+                state={presence.state === "ready" ? "idle" : "done"}
+                size={6}
+                className="vex-key__square"
+              />
               <span className="vex-key__word">{presence.word}</span>
               {presence.timerStartedAt === null ? null : (
                 <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-key__timer" />
