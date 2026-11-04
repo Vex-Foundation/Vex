@@ -727,19 +727,68 @@
   text-align: center;
 }
 
-/* Activity: the caps kind tag (11 / 600, .08em, ink 2), the legs, the figure,
- * the chain and time, and the row's closing word with its fill. */
+/* ---- H3's status mark (every activity row: Portfolio's and Activity's) --
+ * docs/design/H3-DESKTOP.md section 2.2: a square of about 6px beside the
+ * state word in caps 13, ink. The square carries the colour: the status
+ * green (filled: Confirmed), the muted grey (running: submitted, pending),
+ * the status red (did not execute: Failed, Refunded, Status unknown), or a
+ * muted outline for a word this build does not know (`StatusMark`). */
+.vex-status-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  line-height: 1.3;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-primary);
+}
+.vex-status-mark__sq {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  background: var(--vex-alias-state-running-mark);
+}
+.vex-status-mark[data-status="filled"] .vex-status-mark__sq {
+  background: var(--vex-alias-state-success-mark);
+}
+.vex-status-mark[data-status="failed"] .vex-status-mark__sq {
+  background: var(--vex-alias-state-error-mark);
+}
+.vex-status-mark[data-status="unknown"] .vex-status-mark__sq {
+  box-sizing: border-box;
+  border: 1px solid var(--vex-alias-label-tertiary);
+  background: transparent;
+}
+
+/* Activity, in H3's rows (the console's RECENT ACTIVITY grammar): one framed
+ * cell, rows 52 high on the rule, the kind in caps (13, muted), the legs (15,
+ * ink), the figure and the chain and time muted, and the row's closing word
+ * with its square at the right. */
+.vex-pf-t--activity {
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-t--activity td {
+  height: 52px;
+  padding: 0 18px;
+}
+.vex-pf-t--activity tbody tr:last-child > td {
+  border-bottom: 0;
+}
 .vex-pf-t--activity td.vex-pf-kind {
-  width: 120px;
+  width: 150px;
 }
 .vex-pf-t--activity td.vex-pf-when {
-  width: 120px;
+  width: 150px;
 }
 .vex-pf-t--activity td.vex-pf-outcome {
-  width: 230px;
+  width: 280px;
 }
 /* The kind's words are ActivityBadge's; on the page they read as a plain caps
- * tag, not a filled chip. */
+ * label, not a filled chip. */
 .vex-pf-kind > span {
   display: inline;
   height: auto;
@@ -749,35 +798,38 @@
   border-radius: 0;
   background: none;
   font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-desc {
+  font-size: 15px;
   color: var(--vex-alias-label-primary);
 }
 .vex-pf-arrow {
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf .vex-pf-t .vex-pf-when {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
+/* The explorer link: ink and underlined, like every H3 link. */
 .vex-pf-tx {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   margin-left: 8px;
   font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: var(--vex-alias-rule-chosen);
+  text-underline-offset: 3px;
+  color: var(--vex-alias-label-primary);
 }
-.vex-pf-outcome .vex-state-word {
+.vex-pf-outcome .vex-status-mark {
   justify-content: flex-end;
-  font-size: 12.5px;
 }
 @container vex-pf (width < 720px) {
   .vex-pf-t--activity td.vex-pf-kind,

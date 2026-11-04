@@ -134,9 +134,47 @@ const SWAP_ENTRY: AgentScanActivityEntry = {
   pendingReason: null,
 };
 
+/**
+ * Two older rows so the activity rows show H3's other status squares: a
+ * bridge of 250 USDC to Arbitrum an hour ago, submitted and seen in a mempool
+ * (grey, "Submitted, awaiting confirmation"), and yesterday's swap that
+ * failed on chain (red, "Failed"). The bridge's 250 USDC is the Arbitrum
+ * balance above, sent before this cycle's snapshot.
+ */
+const BRIDGE_ENTRY: AgentScanActivityEntry = {
+  ...SWAP_ENTRY,
+  id: "h3-fixture-activity-2",
+  createdAt: isoAt(-58 * MINUTE),
+  activityKind: "bridge",
+  status: "pending",
+  protocol: "across",
+  fromChain: { chainId: BASE, slug: "base" },
+  toChain: { chainId: ARBITRUM, slug: "arbitrum" },
+  input: leg("USDC", "250", "250.00"),
+  output: leg("USDC", "249.62", "249.62"),
+  vexFee: null,
+  usdFeeEst: "0.38",
+  txHash: `0x9a1c${"0".repeat(56)}07e2`,
+  lastCheckedAt: isoAt(-MINUTE),
+  pendingReason: "in_mempool",
+};
+
+const FAILED_ENTRY: AgentScanActivityEntry = {
+  ...SWAP_ENTRY,
+  id: "h3-fixture-activity-3",
+  createdAt: isoAt(-26 * 60 * MINUTE),
+  status: "failed",
+  input: leg("USDC", "50", "50.00"),
+  output: leg("ETH", "0.01431", "50.08"),
+  vexFee: null,
+  failureCode: "slippage_exceeded",
+  failureReason: "The price moved past the slippage limit.",
+  txHash: `0x51b0${"0".repeat(56)}aa04`,
+};
+
 const AGENT_SCAN: AgentScanDto = fixture("agent-scan", {
   status: "available",
-  entries: [SWAP_ENTRY],
+  entries: [SWAP_ENTRY, BRIDGE_ENTRY, FAILED_ENTRY],
   nextCursor: null,
   hasMore: false,
 });
