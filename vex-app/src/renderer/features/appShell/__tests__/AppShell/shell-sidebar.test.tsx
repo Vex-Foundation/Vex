@@ -1239,7 +1239,9 @@ describe("AppShell", () => {
           .gridTemplateColumns,
       };
       const aside = (): Element | null => view.container.querySelector("[data-vex-area='vex-sidebar']");
-      expect(aside()?.querySelector("[data-vex-area='kimm-section']"), String(width)).not.toBeNull();
+      const section = (): Element | null | undefined =>
+        aside()?.querySelector("[data-vex-area='kimm-section']");
+      expect(section()?.getAttribute("data-kimm-open"), String(width)).toBe("true");
       act(() => useUiStore.getState().setVexOpen(false));
       expect(
         {
@@ -1252,7 +1254,7 @@ describe("AppShell", () => {
       ).toEqual(shown);
       // The column stands, open; only her plate went, the flat token in its place.
       expect(aside()?.getAttribute("data-vex-vex-open"), String(width)).toBe("true");
-      expect(aside()?.querySelector("[data-vex-area='kimm-section']"), String(width)).toBeNull();
+      expect(section()?.getAttribute("data-kimm-open"), String(width)).toBe("false");
       // The stored flag is the same one the toggle always wrote.
       expect(useUiStore.getState().vexOpenChat).toBe(false);
       act(() => useUiStore.getState().setVexOpen(true));
@@ -1280,7 +1282,9 @@ describe("AppShell", () => {
     expect(chip).not.toBeNull();
     fireEvent.click(chip as HTMLElement);
     expect(useUiStore.getState().vexOpenChat).toBe(true);
-    expect(aside.querySelector("[data-vex-area='kimm-section']")).not.toBeNull();
+    expect(aside.querySelector("[data-vex-area='kimm-section']")?.getAttribute("data-kimm-open")).toBe(
+      "true",
+    );
   });
 
   it("mounts no sidebar drag handle: the left and Vex widths are fixed", () => {

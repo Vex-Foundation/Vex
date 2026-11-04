@@ -287,10 +287,10 @@ describe("VexSidebar, avatar off", () => {
     render(<VexSidebar open onHide={() => {}} />);
     fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
     expect(useUiStore.getState().showAvatar).toBe(false);
-    expect(area("kimm-section")).toBeNull();
+    expect(area("kimm-section")?.getAttribute("data-kimm-open")).toBe("false");
     fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
     expect(useUiStore.getState().showAvatar).toBe(true);
-    expect(area("kimm-section")).not.toBeNull();
+    expect(area("kimm-section")?.getAttribute("data-kimm-open")).toBe("true");
   });
 });
 
@@ -305,14 +305,17 @@ describe("VexSidebar, a column that stays (H3, a chat)", () => {
     expect(container.querySelector("[data-vex-status]")).not.toBeNull();
   });
 
-  it("shows her section again when the plate shows again after a hide", () => {
+  it("closes and opens her section with the plate, never unmounting it", () => {
     const section = () => document.querySelector("[data-vex-area='kimm-section']");
     const { rerender } = render(<VexSidebar open stays onHide={() => {}} />);
-    expect(section()).not.toBeNull();
+    const mounted = section();
+    expect(mounted?.getAttribute("data-kimm-open")).toBe("true");
     rerender(<VexSidebar open plate={false} stays onHide={() => {}} />);
-    expect(section()).toBeNull();
+    expect(section()).toBe(mounted);
+    expect(section()?.getAttribute("data-kimm-open")).toBe("false");
     rerender(<VexSidebar open stays onHide={() => {}} />);
-    expect(section()).not.toBeNull();
+    expect(section()).toBe(mounted);
+    expect(section()?.getAttribute("data-kimm-open")).toBe("true");
     expect(document.querySelector("[data-vex-k2]")).toBeNull();
   });
 });

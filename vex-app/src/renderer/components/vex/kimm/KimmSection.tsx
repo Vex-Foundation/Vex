@@ -22,6 +22,14 @@
  * `KimmArtProvider` (the shipped art in the app, the stand-ins in the H3
  * harness).
  *
+ * CLOSED COSTS LITTLE (section 3.5; plan row S4-05). Her figure is her large
+ * art (the sheet: 415 KB closed against 15 MB open), so its element is not
+ * rendered, and nothing is requested, until her section first opens: a
+ * section that starts closed asks for nothing of her figure, and the first
+ * open asks for it. Once asked for it stays, so closing and opening again
+ * never asks twice, and a change of mood while open asks for that mood's
+ * file then.
+ *
  * THE CORNER KEY is the same control as the Vex key in the header, in the
  * same corner whatever her state (section 3.3): HIDE VEX and a cross while
  * she is open, a solid 56-high cell on a dark translucent fill over her
@@ -38,7 +46,7 @@
  * Vex key and the console, so nothing depends on the picture.
  */
 
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import { LineClose } from "../../icons/line/index.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
@@ -54,25 +62,36 @@ export interface KimmShortcut {
 export interface KimmSectionProps {
   /** Her mood: `kimmMoodOf` of Vex's presence state. */
   readonly mood: KimmMood;
+  /** Her section is open: the stored choice, as the last press left it. */
+  readonly open: boolean;
   /** The corner key's press: show (true) or hide (false) her section. */
   readonly onOpenChange: (open: boolean) => void;
   /** The chord that does the same from anywhere, for the key's tooltip. */
   readonly shortcut?: KimmShortcut;
 }
 
-export function KimmSection({ mood, onOpenChange, shortcut }: KimmSectionProps): JSX.Element {
+export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionProps): JSX.Element {
   const art = useKimmArt();
   const figure = art.sections[mood];
+  // Her large art is asked for when her section first opens, and from then
+  // on (see "CLOSED COSTS LITTLE"). Set during render, React's own pattern
+  // for state derived from a prop, so the opening frame already carries it.
+  const [asked, setAsked] = useState(open);
+  if (open && !asked) setAsked(true);
   return (
     <div
       data-vex-area="kimm-section"
+      data-kimm-open={open ? "true" : "false"}
       data-kimm-mood={mood}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
+      // Until the strip is drawn (plan row S4-06) a closed section shows
+      // nothing.
+      hidden={!open}
       className="vex-kimm"
     >
       <div aria-hidden="true" className="vex-kimm__body">
         <div className="vex-kimm__ground" />
-        {isKimmArtReady(figure) ? (
+        {asked && isKimmArtReady(figure) ? (
           <img
             src={figure.src}
             alt=""

@@ -297,18 +297,19 @@ function VexSidebarContent({
           <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
         </div>
         {lighter ? null : <div className="vex-vs__spacer" />}
-        {showAvatar && plate ? (
-          lighter ? (
+        {lighter ? (
+          showAvatar && plate ? (
             <VexPortraitPlate
               emotion={vexEmotionOf(presence.state)}
               dock={dock}
               closed={closing}
             />
-          ) : (
-            // H3's frame: Kimm's section, laid over the column (S4-04).
-            <VexPortraitPlate kimm state={presence.state} />
-          )
-        ) : null}
+          ) : null
+        ) : (
+          // H3's frame: Kimm's section, laid over the column, mounted open
+          // or closed so her large art loads only when she opens (S4-05).
+          <VexPortraitPlate kimm state={presence.state} open={showAvatar && plate} />
+        )}
         {lighter ? (
           <div data-vex-area="vex-desk-chat" className="vex-vs__desk">
             <LighterChatRail />

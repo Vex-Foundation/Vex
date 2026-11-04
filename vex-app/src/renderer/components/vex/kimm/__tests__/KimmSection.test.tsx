@@ -9,6 +9,9 @@
  *    the action and its press writes the choice; its tooltip spells the
  *    chord; the box's geometry is the sheet's (`kimm.css`), never the
  *    column's flow.
+ *  - CLOSED COSTS LITTLE (S4-05): no element asks for her figure's file
+ *    until she first opens; the first open asks once, and a close and a
+ *    second open never ask again.
  */
 
 import { readFileSync } from "node:fs";
@@ -57,7 +60,7 @@ afterEach(cleanup);
 
 describe("KimmSection, open and still (S4-04)", () => {
   it("draws her figure for her mood, decorative, from the art she is handed", () => {
-    render(withArt(OFFER_ONLY, <KimmSection mood="offer" onOpenChange={() => undefined} />));
+    render(withArt(OFFER_ONLY, <KimmSection mood="offer" open onOpenChange={() => undefined} />));
     const figure = section().querySelector<HTMLImageElement>(".vex-kimm__figure");
     expect(figure?.getAttribute("src")).toBe(FIGURE.src);
     expect(figure?.getAttribute("alt")).toBe("");
@@ -67,14 +70,14 @@ describe("KimmSection, open and still (S4-04)", () => {
   });
 
   it("shows her ground alone for a mood whose art is missing: never another mood's figure", () => {
-    render(withArt(OFFER_ONLY, <KimmSection mood="think" onOpenChange={() => undefined} />));
+    render(withArt(OFFER_ONLY, <KimmSection mood="think" open onOpenChange={() => undefined} />));
     expect(section().querySelector(".vex-kimm__ground")).not.toBeNull();
     expect(section().querySelector("img")).toBeNull();
     expect(section().getAttribute("data-kimm-art")).toBe("missing");
   });
 
   it("draws no figure at all from the art as the app ships it today", () => {
-    render(<KimmSection mood="hi" onOpenChange={() => undefined} />);
+    render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
     expect(section().querySelector("img")).toBeNull();
   });
 
@@ -83,6 +86,7 @@ describe("KimmSection, open and still (S4-04)", () => {
     render(
       <KimmSection
         mood="hi"
+        open
         onOpenChange={onOpenChange}
         shortcut={{ label: "Ctrl+Shift+B", aria: "Control+Shift+B" }}
       />,
@@ -112,5 +116,52 @@ describe("KimmSection, open and still (S4-04)", () => {
     expect(key).toMatch(/right:\s*0/);
     expect(key).toMatch(/height:\s*var\(--vex-h3-strip-h\)/);
     expect(key).toMatch(/width:\s*138px/);
+  });
+});
+
+describe("KimmSection, her large art loads only when she opens (S4-05)", () => {
+  /** Every element in the document that would request her figure's file. */
+  function requests(): Element[] {
+    return Array.from(document.querySelectorAll("[src], [href], [srcset]")).filter((el) =>
+      [el.getAttribute("src"), el.getAttribute("href"), el.getAttribute("srcset")].some(
+        (value) => value?.includes(FIGURE.src) === true,
+      ),
+    );
+  }
+
+  it("asks for nothing of her figure while she has never opened", () => {
+    const view = render(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />),
+    );
+    expect(requests()).toEqual([]);
+    // A change of mood while closed asks for nothing either.
+    view.rerender(
+      withArt(OFFER_ONLY, <KimmSection mood="hi" open={false} onOpenChange={() => undefined} />),
+    );
+    expect(requests()).toEqual([]);
+  });
+
+  it("asks for it on the first open, and keeps it through a close and a second open", () => {
+    const view = render(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />),
+    );
+    view.rerender(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open onOpenChange={() => undefined} />),
+    );
+    const first = requests();
+    expect(first).toHaveLength(1);
+    view.rerender(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />),
+    );
+    view.rerender(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open onOpenChange={() => undefined} />),
+    );
+    // The same element: the file is never asked for twice.
+    expect(requests()).toEqual(first);
+  });
+
+  it("asks for it at once when she starts open (first launch opens her)", () => {
+    render(withArt(OFFER_ONLY, <KimmSection mood="offer" open onOpenChange={() => undefined} />));
+    expect(requests()).toHaveLength(1);
   });
 });
