@@ -22,9 +22,15 @@ import type { AgentScanActivityEntry, AgentScanDto } from "@shared/schemas/agent
 import type { LighterTradingAccount } from "@shared/schemas/lighter-trading.js";
 import type { VexMarketSnapshot } from "@shared/schemas/market.js";
 import type { PortfolioDto, PortfolioReadInput, PositionChainDto } from "@shared/schemas/portfolio.js";
+import type {
+  PortfolioHistoryDto,
+  PortfolioHistoryInput,
+  PortfolioHistoryPointDto,
+  PortfolioHistoryRange,
+} from "@shared/schemas/portfolio-history.js";
 import { SOLANA_CHAIN_ID } from "@shared/chains/display.js";
 import { ok, type BridgeAnswers } from "../bridge.js";
-import { H3_NOW, isoAt, MINUTE } from "../clock.js";
+import { DAY, H3_NOW, HOUR, isoAt, MINUTE } from "../clock.js";
 import { fixture } from "../mark.js";
 import { SOLANA_WALLET } from "./base.js";
 
@@ -89,6 +95,68 @@ const PORTFOLIO = fixture("portfolio", {
 function read(input: PortfolioReadInput): PortfolioDto {
   if (input.scope !== "global" || input.walletAddress === undefined) return PORTFOLIO.all;
   return input.walletAddress === SOLANA_WALLET.address ? PORTFOLIO.solana : PORTFOLIO.evm;
+}
+
+/**
+ * THE HISTORY (`portfolio.readHistory`), for the page's wallet total chart:
+ * for each range, the cycles main would return for the same wallets the
+ * figures read (`input.wallets` answered by `read`), oldest first, ending on
+ * the snapshot four minutes ago at exactly that scope's `snapshotTotalUsd`, so
+ * the chart's last point and the tile agree.
+ *
+ * The values are one fixed function of time (a gentle climb over the last
+ * six weeks with two slow swells), so the four ranges are four windows on the
+ * same curve. Cadence and thinning follow main's rules: the engine publishes
+ * every five minutes, and a range holding more than 500 cycles is thinned to
+ * the last cycle of equal intervals (`sampled`, with the full `groupCount`).
+ * Two cycles, 3.5 and 11.2 days back, missed the Arbitrum read: they are
+ * `partial` and 250 USDC low, as a real failed chain read would be.
+ */
+const HISTORY_CADENCE = 5 * MINUTE;
+const HISTORY_SHAPE: Readonly<Record<PortfolioHistoryRange, { readonly span: number; readonly step: number }>> = {
+  "24h": { span: DAY, step: 5 * MINUTE },
+  "7d": { span: 7 * DAY, step: 30 * MINUTE },
+  "30d": { span: 30 * DAY, step: 2 * HOUR },
+  all: { span: 45 * DAY, step: 3 * HOUR },
+};
+const PARTIAL_DAYS_AGO = [3.5, 11.2] as const;
+
+function historyValue(end: number, ms: number): number {
+  const daysAgo = (H3_NOW - 4 * MINUTE - ms) / DAY;
+  const climb = 1 - 0.0045 * daysAgo;
+  const swell = 0.006 * Math.sin(daysAgo * 0.9) + 0.003 * Math.sin(daysAgo * 4.3);
+  return Math.round(end * (climb + swell) * 100) / 100;
+}
+
+function history(input: PortfolioHistoryInput): PortfolioHistoryDto {
+  const scoped = read(input.wallets);
+  const end = scoped.snapshotTotalUsd ?? scoped.liveTotalUsd;
+  const { span, step } = HISTORY_SHAPE[input.range];
+  const newest = H3_NOW - 4 * MINUTE;
+  const count = Math.floor(span / step) + 1;
+  const partialAt = PARTIAL_DAYS_AGO.map((days) => newest - Math.round((days * DAY) / step) * step);
+  const points: PortfolioHistoryPointDto[] = [];
+  for (let index = count - 1; index >= 0; index -= 1) {
+    const at = newest - index * step;
+    const partial = partialAt.includes(at);
+    const total = historyValue(end, at) - (partial ? 250 : 0);
+    points.push({
+      at: new Date(at).toISOString(),
+      totalUsd: total,
+      settledUsd: total,
+      inTransitUsd: 0,
+      partial,
+    });
+  }
+  const groupCount = Math.floor(span / HISTORY_CADENCE) + 1;
+  return {
+    scope: input.wallets.scope,
+    range: input.range,
+    walletCount: scoped.walletCount,
+    groupCount,
+    sampled: groupCount > points.length,
+    points,
+  };
 }
 
 const leg = (symbol: string, amount: string, usd: string): AgentScanActivityEntry["input"] => ({
@@ -251,6 +319,7 @@ export function portfolioAnswers(): BridgeAnswers {
   return {
     portfolio: {
       read: (input) => ok(read(input)),
+      readHistory: (input) => ok(history(input)),
       listAgentScan: () => ok(AGENT_SCAN),
     },
     lighterTrading: {

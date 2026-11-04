@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { PortfolioHistoryInput } from "@shared/schemas/portfolio-history.js";
 import type {
   PortfolioDto,
   PortfolioReadInput,
@@ -89,6 +90,19 @@ vi.mock("../../market/VexTokenCardCompact.js", () => ({
 }));
 
 const readMock = vi.fn<(input: PortfolioReadInput) => Promise<Result<PortfolioDto>>>();
+// The chart's history read: an empty answer is a real state it words.
+const readHistoryMock = vi.fn((input: PortfolioHistoryInput) =>
+  Promise.resolve(
+    ok({
+      scope: input.wallets.scope,
+      range: input.range,
+      walletCount: 1,
+      groupCount: 0,
+      sampled: false,
+      points: [],
+    }),
+  ),
+);
 const listAvailableMock =
   vi.fn<(input: Record<string, never>) => Promise<Result<AvailableWalletsDto>>>();
 const listSessionWalletsMock =
@@ -185,7 +199,7 @@ function installVexBridge(): void {
     configurable: true,
     writable: true,
     value: {
-      portfolio: { read: readMock },
+      portfolio: { read: readMock, readHistory: readHistoryMock },
       wallets: {
         listAvailable: listAvailableMock,
         listSessionWallets: listSessionWalletsMock,
@@ -604,6 +618,14 @@ describe("PortfolioScreen - the scope chips", () => {
     expect(
       within(header()).getByText("Total value of Main · Lighter is shown separately"),
     ).not.toBeNull();
+    // The chart reads the SAME wallets the figures read: the narrowed global
+    // read, on its default range.
+    await waitFor(() =>
+      expect(readHistoryMock).toHaveBeenCalledWith({
+        range: "30d",
+        wallets: { scope: "global", walletAddress: MAIN.address },
+      }),
+    );
     // Balances is that wallet's read, and offers no register of its own.
     await within(section("balances")).findByText("Wallet Token");
     expect(within(section("balances")).queryByText("Global Token")).toBeNull();

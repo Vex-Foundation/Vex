@@ -11,8 +11,10 @@
  * the refresh key (section 4.8 moves the page's keys out of the title bar).
  *
  * The page, top to bottom:
- *  - the total (`PositionBlock`): what it includes, the money headline and
- *    the snapshot it compares with;
+ *  - the tiles (`PositionBlock`): the REAL FUNDS lead and one tile per real
+ *    figure;
+ *  - the wallet total over time (`EquityChart`): 24 h, 7 d, 30 d or all from
+ *    the balance snapshots, over the same wallets as the tiles;
  *  - the reorderable sections, in the user's order (`bookSectionOrder`):
  *    Wallets and Balances (side by side as one band wherever the order puts
  *    them next to each other), the Lighter account, Activity, the Launchpad;
@@ -49,6 +51,7 @@ import {
   type BookSectionId,
 } from "../book/section-order.js";
 import { BalancesCard } from "../book/portfolio/BalancesCard.js";
+import { EquityChart } from "../book/portfolio/EquityChart.js";
 import { LighterAccountCard } from "../book/portfolio/LighterAccountCard.js";
 import { WalletsCard } from "../book/portfolio/WalletsCard.js";
 import {
@@ -159,6 +162,9 @@ export function PortfolioPage({
   return (
     <div className="vex-pf">
       <PositionBlock scope={scope} />
+      {/* H3's EQUITY card under the tiles, the whole width: desktop has no
+          allocation to set beside it (section 4.1 item 12). */}
+      <EquityChart scope={scope} />
       <PortfolioSections scope={scope} chatOpen={chatOpen} />
       <VexTokenCardCompact />
     </div>

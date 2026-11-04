@@ -272,6 +272,152 @@
   font-size: 13px;
 }
 
+/* ---- the wallet total chart (`EquityChart`) ---------------------------
+ * H3's EQUITY card (sections 1.9 and 4.1 item 12): one framed cell; a head
+ * 48 high with the label at the left (13 caps, 600) and the range keys as
+ * cells at the right, the selected one underlined in ink as H3 draws 30
+ * DAYS; then the plot on a dotted ground, the values at the left (mono 12,
+ * muted) and the dates under it. The line is ink 1.5; the area under it a
+ * flat white wash (H3 allows no gradient here); a cycle a chain read missed
+ * is a hollow mark off the line. */
+.vex-pf-chart {
+  margin: 0 0 28px;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-chart__h {
+  display: flex;
+  min-height: 48px;
+  align-items: stretch;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-pf-chart__t {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-pf-chart__h .vex-pg-tab {
+  margin-left: 0;
+  border-right: 0;
+  border-bottom: 2px solid transparent;
+}
+.vex-pf-chart__h .vex-pg-tab[aria-pressed="true"] {
+  background: transparent;
+  border-bottom-color: var(--vex-alias-label-primary);
+}
+.vex-pf-chart__b {
+  padding: 20px 20px 16px;
+}
+.vex-pf-chart__b > .vex-pf-note {
+  margin: 0;
+  padding: 40px 0;
+  text-align: center;
+}
+.vex-pf-chart__plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 240px auto;
+  column-gap: 12px;
+}
+.vex-pf-chart__y {
+  position: relative;
+  min-width: 52px;
+}
+.vex-pf-chart__yl {
+  position: absolute;
+  right: 0;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+  transform: translateY(-50%);
+}
+.vex-pf-chart__area {
+  position: relative;
+  background-image: radial-gradient(var(--vex-alias-rule) 1px, transparent 1.2px);
+  background-size: 16px 16px;
+}
+.vex-pf-chart__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.vex-pf-chart__grid {
+  stroke: var(--vex-alias-rule);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.vex-pf-chart__fill {
+  fill: var(--vex-alias-interactive-hover);
+  stroke: none;
+}
+.vex-pf-chart__line {
+  fill: none;
+  stroke: var(--vex-alias-label-primary);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+/* A lone complete cycle (no line yet) is a filled square; a partial cycle is
+ * a hollow one, off the line. */
+.vex-pf-chart__mark {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  background: var(--vex-alias-label-primary);
+  transform: translate(-50%, -50%);
+}
+.vex-pf-chart__mark[data-vex-mark="partial"] {
+  border: 1.5px solid var(--vex-alias-label-secondary);
+  background: var(--vex-alias-bg-base);
+}
+.vex-pf-chart__x {
+  position: relative;
+  grid-column: 2;
+  height: 26px;
+}
+.vex-pf-chart__xl {
+  position: absolute;
+  top: 10px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+  transform: translateX(-50%);
+}
+.vex-pf-chart__xl:first-child {
+  transform: none;
+}
+.vex-pf-chart__xl:last-child {
+  transform: translateX(-100%);
+}
+.vex-pf-chart__notes {
+  margin-top: 10px;
+}
+.vex-pf-chart__note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pf-chart__key {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--vex-alias-label-secondary);
+}
+
 .vex-pf-top__empty {
   display: flex;
   flex-direction: column;
