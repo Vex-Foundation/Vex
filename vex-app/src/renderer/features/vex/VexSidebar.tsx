@@ -9,7 +9,8 @@
  *     body
  *       state         a 12px fill, the scope and the word, the live timer;
  *                     the narration; the background missions
- *       Needs you     the same list as the title bar's panel
+ *       Needs you     the console's head and decision row (`VexConsole`);
+ *                     on the Lighter desk R3's list, as its title bar's
  *       This project  Studio: the project's facts, Project assets, Agent Scan
  *       slot          a page's own block (the Board's Ask Vex)
  *       plate         the 280px print window with the K2 hologram
@@ -66,7 +67,6 @@ import { useEffect, useRef, useState, type JSX } from "react";
 import { LineBack, LinePanelLeft, LinePanelRight } from "../../components/icons/line/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { useProject } from "../../lib/api/projects.js";
-import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
@@ -79,7 +79,9 @@ import { formatSessionTime } from "../appShell/sessionListModel.js";
 import { formatElapsed } from "../appShell/TurnIsland/ElapsedCounter.js";
 import type { NeedsYouItem } from "./needs-you.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
+import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
 import { useVexPresence, type VexPresence } from "./useVexPresence.js";
+import { VexConsoleNeedsYou } from "./VexConsole.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VexStatus } from "./VexStatus.js";
@@ -295,11 +297,17 @@ function VexSidebarContent({
       >
         <div className="vex-vs__info">
           <VexStateBlock presence={presence} avatar={showAvatar && plate} />
-          <NeedsYouSection
-            presence={presence}
-            runtimeMode={runtimeMode}
-            activeSessionId={activeSessionId}
-          />
+          {/* The console's Needs you (H3-DESKTOP.md section 1.5); the Lighter
+            * desk keeps R3's list until its own restyle. */}
+          {lighter ? (
+            <NeedsYouSection
+              presence={presence}
+              runtimeMode={runtimeMode}
+              activeSessionId={activeSessionId}
+            />
+          ) : (
+            <VexConsoleNeedsYou needsYou={presence.needsYou} />
+          )}
           {studio && activeProjectId !== null ? <ThisProjectBlock projectId={activeProjectId} /> : null}
           <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
         </div>
@@ -401,7 +409,7 @@ function NeedsYouSection({
         : "";
   // The card is in the transcript beside this column: "Review ↓" points at it.
   const here = (item: NeedsYouItem): boolean =>
-    item.kind === "approval" && runtimeMode !== "studio" && item.sessionId === activeSessionId;
+    needsYouItemIsHere(item, { runtimeMode, activeSessionId });
   return (
     <section aria-label="Needs you" data-vex-area="vex-needs-you" className="vex-vs__sec">
       <h3 className="vex-vs__h">{`Needs you${count}`}</h3>
@@ -413,44 +421,6 @@ function NeedsYouSection({
       />
     </section>
   );
-}
-
-/**
- * Open what a Needs you row names, never decide it. An approval in the chat
- * already open scrolls its card into view; one raised elsewhere opens its
- * session (mode first, then the selection, then the page closed, as the
- * approvals inbox always has); an approval with no session (a Studio project's)
- * opens the Needs you page, where its card is; a mission opens its session; a
- * withdrawal this app did not start opens the funding page.
- */
-export function openNeedsYouItem(item: NeedsYouItem): void {
-  const ui = useUiStore.getState();
-  if (item.kind === "withdrawal") {
-    ui.setShellRoute({ kind: "vexCloudFunding", origin: null });
-    return;
-  }
-  if (item.sessionId === null) {
-    ui.setShellRoute({ kind: "needsYou", origin: null });
-    return;
-  }
-  const alreadyOpen = ui.runtimeMode !== "studio" && ui.activeSessionId === item.sessionId;
-  if (!alreadyOpen) {
-    ui.setRuntimeMode("agent");
-    ui.setActiveSessionId(item.sessionId);
-  }
-  ui.setShellRoute({ kind: "none" });
-  if (item.approvalId !== null) revealApprovalCard(item.approvalId);
-}
-
-/** Scroll the approval card into view once the session has painted it. */
-function revealApprovalCard(approvalId: string): void {
-  requestAnimationFrame(() => {
-    const card = Array.from(document.querySelectorAll<HTMLElement>("[data-approval-id]")).find(
-      (node) => node.dataset["approvalId"] === approvalId,
-    );
-    if (card === undefined || typeof card.scrollIntoView !== "function") return;
-    card.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
-  });
 }
 
 /* ------------------------------ This project ----------------------------- */

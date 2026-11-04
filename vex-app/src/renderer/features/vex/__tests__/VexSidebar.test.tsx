@@ -445,10 +445,13 @@ describe("VexSidebar, Needs you", () => {
     useUiStore.setState({ shellRoute: { kind: "memory", origin: null } });
     render(<VexSidebar open onHide={() => {}} />);
 
+    // The console's Needs you (H3-DESKTOP.md section 1.5): the head and its
+    // count, then the one decision row.
     const section = area("vex-needs-you");
-    expect(section?.querySelector("h3")?.textContent).toBe("Needs you · 1");
+    expect(section?.querySelector("h3")?.textContent).toBe("Needs you: 1");
+    expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).not.toBeNull();
     const review = within(section ?? sidebar()).getByRole("button", {
-      name: `Review ↓: ${item.title}`,
+      name: `Review: ${item.title}`,
     });
     fireEvent.click(review);
     // The chat stays the open one; the page over it closes so the card shows.
@@ -474,8 +477,22 @@ describe("VexSidebar, Needs you", () => {
       needsYou: { status: "unknown", unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.", count: null, items: [], retry: vi.fn(), retrying: false },
     });
     render(<VexSidebar open onHide={() => {}} />);
-    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you · ?");
+    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you: ?");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("keeps R3's list on the Lighter desk, which has no console until its restyle", () => {
+    const item = approvalNeedsYouItem(
+      approval({ id: "a4", sessionId: SESSION, toolName: "BridgeExecute", sessionTitle: "Treasury chat" }),
+      NOW,
+    );
+    presenceRef.current = presence({ needsYou: needs([item]) });
+    useUiStore.setState({ runtimeMode: "lighter" });
+    render(<VexSidebar open onHide={() => {}} />);
+    const section = area("vex-needs-you");
+    expect(section?.querySelector("h3")?.textContent).toBe("Needs you · 1");
+    expect(section?.querySelector("[data-vex-area='needs-you-list']")).not.toBeNull();
+    expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).toBeNull();
   });
 });
 

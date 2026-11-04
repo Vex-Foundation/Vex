@@ -120,6 +120,25 @@ export const NEEDS_YOU_ALL_UNKNOWN_COPY =
 
 export const NEEDS_YOU_EMPTY_COPY = "Nothing needs you.";
 
+/**
+ * The one decision the console's row shows when several wait
+ * (docs/design/H3-DESKTOP.md section 1.5, its default): the one that expires
+ * first; with no expiry among them, the first in reading order (the newest
+ * approval). The head counts them all and the Needs you page lists them.
+ */
+export function needsYouLeadOf(items: readonly NeedsYouItem[]): NeedsYouItem | null {
+  let lead: NeedsYouItem | null = null;
+  let leadExpiry = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    if (item.expiresAt === null) continue;
+    const expiry = Date.parse(item.expiresAt);
+    if (!Number.isFinite(expiry) || expiry >= leadExpiry) continue;
+    lead = item;
+    leadExpiry = expiry;
+  }
+  return lead ?? items[0] ?? null;
+}
+
 // -- The shared words ----------------------------------------------------
 
 // The action-word table and the time words live in a leaf module the card's

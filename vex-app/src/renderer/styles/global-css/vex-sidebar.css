@@ -233,6 +233,139 @@
   display: none;
 }
 
+/* ---- THE CONSOLE (docs/design/H3-DESKTOP.md section 1.5; VexConsole.tsx) ----
+ * Square cells across the column, each divided from the next by the rule,
+ * text 24 in from the column's edges. Its top block is a fixed height, so the
+ * box of her section laid over the column (its top is the top block's foot)
+ * never moves when a decision arrives, is taken, or a mission starts:
+ *
+ *   Needs you head   43   NEEDS YOU (14, 600, caps) and the count at the right
+ *   decision row     64   the sentence (17) over its meta line (14, muted),
+ *                          and the key cell at the right on the raised fill */
+.vex-vs {
+  --vex-console-head-h: 43px;
+  --vex-console-row-h: 64px;
+  --vex-console-inset: 24px;
+}
+.vex-console__needs {
+  flex: none;
+}
+.vex-console__head {
+  display: flex;
+  box-sizing: border-box;
+  height: var(--vex-console-head-h);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 0 var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+.vex-console__label {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-console__count {
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  font-weight: 400;
+}
+.vex-console__decision {
+  display: flex;
+  box-sizing: border-box;
+  height: var(--vex-console-row-h);
+  align-items: stretch;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-console__line {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  margin: 0;
+  padding: 0 var(--vex-console-inset);
+}
+.vex-console__empty {
+  color: var(--vex-alias-label-secondary);
+  font-size: 15px;
+}
+.vex-console__quiet {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+}
+.vex-console__what {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0 16px 0 var(--vex-console-inset);
+}
+.vex-console__sentence,
+.vex-console__meta {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 17: the plate's decision measures 238 wide for 28 characters at 1440
+ * ("Approve swap: 200 USDC → ETH", 265 image px), which is 17 in the sans,
+ * under the type table's 20 read from its cap height. */
+.vex-console__sentence {
+  font-size: 17px;
+  line-height: 22px;
+}
+.vex-console__meta {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 18px;
+}
+/* An unreadable inbox: its sentence in two lines at most, in ink. */
+.vex-console__alert {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 13px;
+  line-height: 18px;
+  padding-top: 13px;
+}
+/* The key cell: the raised fill, its word in caps, a chevron after it. */
+.vex-console__key {
+  display: inline-flex;
+  flex: none;
+  min-width: 121px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 18px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-console__key:enabled:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-console__key:disabled {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-console__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
 /* ---- the portrait plate (VexPortraitPlate): the print window ----
  * 280 high, 220 to 280 in low windows (236 at 720 high); a quiet rule above.
  * The plate ground fills in while the photograph decodes: the ground, so the
