@@ -1,16 +1,20 @@
 /**
- * THE TURN'S LIVE ROW - every move Vex makes in the current turn, as one step
- * row at the tail of the transcript (docs/design/R3-MINIMAL.md section 6).
+ * THE TURN'S LIVE FRAME - every move Vex makes in the current turn, as H3's
+ * thinking frame at the tail of the transcript (docs/design/H3-DESKTOP.md
+ * section 1.7: "Vex's thinking is a framed row").
  *
  * DESIGN INTENT. The waiting moment is not dressed up with a louder loader -
  * it is filled with the only thing that is actually true, and filled
- * IMMEDIATELY: the row mounts on the SEND, not on the first provider delta, so
- * the send can never read as a no-op. A live row always carries a fill, a
+ * IMMEDIATELY: the frame mounts on the SEND, not on the first provider delta,
+ * so the send can never read as a no-op. Its head always carries a fill, a
  * word and a timer: the fill (working solid, thinking hatch, waiting the
- * target), the word in blue 500, its scope in 13 muted, the real elapsed time
- * in the mono 12 blue at the right. The thoughts the turn has finished fold
- * into quiet rows above it; the live one streams in full beneath a Thinking
- * row, so waiting is spent reading rather than watching a spinner.
+ * target), the state word in caps 13 tracked ink ("THINKING"), its scope in
+ * 13 muted, the real elapsed time in the mono 12 muted at the right. Under the
+ * head, in the order they happened, the thoughts the turn has finished as
+ * step rows, then the live one streaming in full, so waiting is spent reading
+ * rather than watching a spinner. When the turn settles, the frame hands its
+ * clock's reading up once (`useSettledTurnClock`), and the turn's persisted
+ * thinking row reads it as "Thought for 2.8 s" (`turnClock.ts`).
  *
  * States (derived purely in `islandTurnState.ts` from the `streamStore`
  * preview, never from timers):
@@ -34,14 +38,14 @@
  * status change a few times per turn; the growing text is never announced),
  * and the error branch, which shows a safe generic line and NEVER the trace.
  *
- * Surface law: no box, no glass, no glow - the quiet rules above and below
- * are the row's frame (`.vex-island` and `.vex-live-row`, chat-transcript.css,
+ * Surface law: a square cell on the ground framed by the 1px rule, no fill,
+ * no glass, no glow (`.vex-island` and `.vex-live-row`, chat-transcript.css,
  * on the `dynamic-island` primitive, whose shape stays one live-row size so it
  * never morphs). `prefers-reduced-motion` is honored by the primitive.
  * `data-vex-island-state` is the test seam.
  */
 
-import type { JSX } from "react";
+import { useEffect, useRef, type JSX } from "react";
 import {
   DynamicContainer,
   DynamicIsland,
@@ -79,14 +83,14 @@ function islandSwatch(view: TurnIslandView): SwatchState {
 function StatusFill({ view }: { readonly view: TurnIslandView }): JSX.Element {
   return (
     <span aria-hidden className="vex-step__fill">
-      <Swatch state={islandSwatch(view)} size={10} />
+      <Swatch state={islandSwatch(view)} size={8} />
     </span>
   );
 }
 
 /**
- * THE WORD behind its fill: the title of the live row in blue 500 (ink for a
- * failure).
+ * THE WORD behind its fill: the frame head's label, caps 13 tracked in ink
+ * (`.vex-live-row .vex-step__title`).
  */
 function StatusWord({ label }: { readonly label: string }): JSX.Element {
   return (
@@ -96,7 +100,7 @@ function StatusWord({ label }: { readonly label: string }): JSX.Element {
   );
 }
 
-/** The elapsed clock: the mono 12, tabular, in the blue at the row's right. */
+/** The elapsed clock: the mono 12, tabular, muted, at the head's right. */
 function IslandClock({ startedAtMs }: { readonly startedAtMs: number }): JSX.Element {
   return (
     <span data-vex-island-clock="" className="flex flex-none items-center">
@@ -146,6 +150,7 @@ function IslandBody({
 
   const row = (
     <span
+      data-vex-island-head=""
       className={cn(
         "vex-step vex-live-row",
         view.state === "settled" && "vex-live-row--settled",
@@ -158,35 +163,73 @@ function IslandBody({
           <CallingMark toolName={preview.toolName} />
         </span>
       ) : null}
-      {/* A Thinking row reads "Thinking:" - a speaker label introducing the
-          words below it. The colon lives here and not in the view descriptor
-          because the same label is announced to screen readers, where
-          trailing punctuation is noise. */}
-      <StatusWord
-        label={view.state === "thinking" ? `${view.label}:` : view.label}
-      />
+      {/* The frame's head reads the state word in caps, "THINKING" as H3
+          draws it, with the words it introduces streaming below the rule. */}
+      <StatusWord label={view.label} />
       <IslandScope detail={view.detail} />
       <span aria-hidden className="vex-step__spacer" />
       {view.showElapsed ? <IslandClock startedAtMs={preview.startedAtMs} /> : null}
     </span>
   );
 
-  if (view.state === "thinking") {
-    return (
-      <DynamicContainer className="flex flex-col">
-        {row}
-        <LiveReasoning text={preview.reasoningText} />
-      </DynamicContainer>
-    );
-  }
+  // ONE container for every state, its children in fixed positions (the
+  // head, the settled thoughts, the live trace), so React keeps the thought
+  // rows mounted, and an opened one stays open, as the turn moves from
+  // thinking to calling a tool and back.
+  return (
+    <DynamicContainer className="flex w-full flex-col">
+      {row}
+      <ReasoningSegments segments={preview.reasoningSegments} />
+      {view.state === "thinking" ? <LiveReasoning text={preview.reasoningText} /> : null}
+    </DynamicContainer>
+  );
+}
 
-  return <DynamicContainer className="flex w-full flex-col">{row}</DynamicContainer>;
+/**
+ * The live turn clock's reading at the frame the turn settled, handed up once
+ * per turn (`turnClock.ts`): the elapsed time of the same clock the head row
+ * showed, from the turn's start (the send) to Vex's finished answer.
+ *
+ * It reports NOTHING for a turn that waited on the person: the clock keeps
+ * running under "Waiting for approval", so its reading would count the
+ * reader's decision as Vex's thinking. Nor for a turn that errored or was
+ * stopped (neither ever settles here: both are cleared on their own delta).
+ *
+ * The start is the EARLIEST the row saw for this turn: `useTurnPreview` pins
+ * it to the send while `chat.submit` is pending, and once the mutation
+ * settles the store's own start (the first delta, later) shows through; the
+ * earlier one is the turn the reader watched.
+ */
+function useSettledTurnClock(
+  view: TurnIslandView,
+  startedAtMs: number,
+  onSettled: ((thoughtMs: number, startedAtMs: number) => void) | undefined,
+): void {
+  const turn = useRef<{ start: number; awaited: boolean; reported: boolean } | null>(null);
+  const live = view.state !== "settled" && view.state !== "error";
+  // Render-time bookkeeping, the transcript's own idiom (`turnPreview.ts`):
+  // the start must be right on the very render the turn settles in.
+  if (turn.current === null || (live && turn.current.reported)) {
+    turn.current = { start: startedAtMs, awaited: false, reported: false };
+  } else if (startedAtMs < turn.current.start) {
+    turn.current.start = startedAtMs;
+  }
+  if (view.state === "awaiting") turn.current.awaited = true;
+  const settled = view.state === "settled";
+  useEffect(() => {
+    const current = turn.current;
+    if (!settled || current === null || current.reported) return;
+    current.reported = true;
+    if (current.awaited || onSettled === undefined) return;
+    onSettled(Date.now() - current.start, current.start);
+  }, [settled, onSettled]);
 }
 
 export function TurnIsland({
   preview,
   awaitingApproval = false,
   leaseHeld = false,
+  onSettled,
 }: {
   readonly preview: StreamPreview;
   /**
@@ -203,8 +246,14 @@ export function TurnIsland({
    * "Waiting for the model"; nothing else reads it.
    */
   readonly leaseHeld?: boolean;
+  /**
+   * The turn settled: its live clock's reading, once, and the start it was
+   * measured from (`useSettledTurnClock`). Omitted = nobody keeps it.
+   */
+  readonly onSettled?: (thoughtMs: number, startedAtMs: number) => void;
 }): JSX.Element {
   const view = resolveTurnIslandView(preview, awaitingApproval, leaseHeld);
+  useSettledTurnClock(view, preview.startedAtMs, onSettled);
   // A running tool is live work even though its provider stream is `done`.
   const live = preview.phase === "streaming" || view.state === "running";
 
@@ -232,11 +281,6 @@ export function TurnIsland({
           </span>
         ) : null}
       </span>
-      {/* The thoughts this turn has already finished, folded. They sit ABOVE
-          the live row because they are behind it in time - the turn reads top
-          to bottom as it happened. They persist across tool calls and across
-          provider rounds; only the end of the TURN retires them. */}
-      <ReasoningSegments segments={preview.reasoningSegments} />
       {/* THE FREEZE reaches the SHELL, not just the word: while a decision is
           pending every content cross-fade becomes a hard cut, so the row goes
           genuinely still instead of springing into the awaiting state. */}

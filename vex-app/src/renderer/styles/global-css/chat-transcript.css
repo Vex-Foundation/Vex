@@ -1,5 +1,7 @@
-/* The conversation (docs/design/R3-MINIMAL.md section 6): the transcript's
- * place in the resident shell, the centred 760 column, the user block, Vex's
+/* The conversation (docs/design/R3-MINIMAL.md section 6, and
+ * docs/design/H3-DESKTOP.md section 1.7 for each part H3 has restyled): the
+ * transcript's place in the resident shell, the centred 760 column, the
+ * person's bubble beside their avatar, Vex's
  * turn hung off the flat token, the tool step rows and their fold, the live
  * row, the Reasoned row, the turn stats on hover and the chat code tokens.
  * The composer seat and the welcome live in composer.css, the approval card in
@@ -80,79 +82,105 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* ── The user block ──────────────────────────────────────────────────────
- * Right anchored, text left aligned, max 560, 15 / 1.55, a 2px blue rule on
- * its right edge (periwinkle at night, the accent token) with 14 clear; the
- * "You · 12:28" caption above it, 12 muted, 5 below. */
+/* ── The person's message ────────────────────────────────────────────────
+ * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
+ * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
+ * right. The bubble is the bubble fill (#212325) with the
+ * words in sans 17 / 24 ink, 11 above and below and 16 at the sides (46 high
+ * on one line), at most 560 wide; square, by the shape law (base.css), where
+ * the capture rounds three corners. The avatar is a 36px disc. The clock and
+ * the message keys sit at the bubble's left, hover-revealed, so at rest the
+ * row is the bubble and the disc alone. */
 .vex-you {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 12px;
 }
 .vex-you__cap {
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
-  margin-bottom: 5px;
-  line-height: 1.45;
+  height: 20px;
+  /* Centred on the bubble's first line: 11 + 24 / 2 - 20 / 2. */
+  margin-top: 13px;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-you__body {
+.vex-you__stack {
+  display: flex;
+  min-width: 0;
   max-width: min(560px, 100%);
+  flex-direction: column;
+  align-items: flex-end;
+}
+.vex-you__body {
+  max-width: 100%;
   margin: 0;
-  padding: 1px 14px 1px 0;
-  border-right: 2px solid var(--vex-alias-accent-primary);
+  padding: 11px 16px;
+  background: var(--vex-alias-bubble);
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 24px;
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--vex-alias-label-primary);
 }
-/* When an operator instruction reaches the agent, in words, under the block. */
+/* When an operator instruction reaches the agent, in words, under the
+ * bubble. */
 .vex-you__note {
   margin-top: 6px;
   line-height: 1.45;
   color: var(--vex-alias-label-tertiary);
 }
+/* The avatar cell: the disc on the chosen rule, the person glyph in ink. The
+ * disc's measured #151718 has no token; raised 2 (#101214) is the nearest
+ * step the alias tier has. */
+.vex-you__avatar {
+  display: flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  /* The disc's top sits 2 above the bubble's, as the capture draws it. */
+  margin-top: -2px;
+}
+.vex-you__avatar > svg {
+  display: block;
+}
+.vex-you__disc {
+  fill: var(--vex-alias-bg-overlay);
+  stroke: var(--vex-alias-rule-chosen);
+}
+.vex-you__glyph {
+  fill: var(--vex-alias-label-primary);
+}
 
 /* ── Vex's turn ──────────────────────────────────────────────────────────
- * A 28px column and a 12 gap: the flat token (24) hangs at the left, once per
- * turn; every row of the turn (prose, steps, the live row, the stats) starts
- * at the same 40 edge. Paragraphs 15 / 1.6, 10 between them. */
+ * docs/design/H3-DESKTOP.md sections 1.7 and 2.3. H3 runs her turn on the
+ * column's own left edge: the thinking row, the steps, the answer and the
+ * receipt span the column, level with the person's bubble on the right, with
+ * no token beside them (her presence is the Vex key in the header). Her
+ * answer is the sans at 16 / 1.6 in ink, 12 between paragraphs: a step under
+ * the bubble's 17, the reading size H3 gives a message. */
 .vex-reply {
   position: relative;
-  padding-left: 40px;
-}
-.vex-reply__mark {
-  position: absolute;
-  top: 1px;
-  left: 0;
-  display: flex;
-  width: 24px;
-  height: 24px;
-}
-/* The token centres on the first line of what heads the turn: a 36px
- * Reasoned row, a 36px step row under its 4 + 1 top rule, a 30px fold, or the
- * live row under its rule. */
-.vex-reply__mark[data-vex-mark-at="reasoned"] {
-  top: 6px;
-}
-.vex-reply__mark[data-vex-mark-at="step"] {
-  top: 11px;
-}
-.vex-reply__mark[data-vex-mark-at="fold"] {
-  top: 8px;
-}
-.vex-reply__mark[data-vex-mark-at="live"] {
-  top: 7px;
 }
 .vex-reply .vex-chat-prose {
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 400;
   line-height: 1.6;
-  gap: 10px;
+  gap: 12px;
+  color: var(--vex-alias-label-primary);
+}
+/* A table's head cells in an answer are labels: caps 12, tracked, muted, as
+ * H3 sets its table heads. */
+.vex-reply .vex-chat-prose th {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 /* The turn's clock and message keys, under the prose, revealed on hover. */
@@ -165,7 +193,8 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* "Stopped": the outline swatch and the word, 13 muted. */
+/* "Stopped", a status in H3's grammar (section 2.2): the small outline square
+ * and the word in caps 13, tracked, in ink. */
 .vex-reply__stopped {
   display: flex;
   align-items: center;
@@ -173,20 +202,33 @@
   margin-top: 6px;
   font-size: 13px;
   line-height: 1.45;
-  color: var(--vex-alias-label-tertiary);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
 }
 
 /* ============================================================ *
  *  TOOL STEPS                                                   *
  * ============================================================ */
 
-/* The steps sit under a quiet top rule, 4 below the prose above them; the row
- * stack's gap is the space after them. A row that only continues the run
- * above it takes back that gap and its own top rule, so the steps of one run
- * read as one ruled list. */
+/* docs/design/H3-DESKTOP.md section 1.7, the thinking frame's TOOL rows. A
+ * turn's steps are one framed cell in the 1px rule, the column's full width,
+ * 12 under the prose above them; the row stack's gap is the space after
+ * them. Right under the turn's thinking row the steps close its frame: one
+ * cell, the head and then the steps, as H3 draws THINKING over its rows. A
+ * row that only continues the run above it takes back the gap and its own
+ * top rule, so the steps of one run read as one framed list. */
 .vex-steps {
-  margin-top: 4px;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
+  margin-top: 12px;
+  border: 1px solid var(--vex-alias-rule);
+}
+.vex-reply > .vex-steps:first-child {
+  margin-top: 0;
+}
+.vex-think + .vex-steps {
+  /* Collapses with the thinking row's 12 below it, to nothing. */
+  margin-top: -12px;
+  border-top: 0;
 }
 [data-vex-run-continues] {
   margin-top: -18px;
@@ -195,16 +237,22 @@
   margin-top: 0;
   border-top: 0;
 }
+/* Every row of the frame after its first stands on the rule. */
+.vex-steps > [data-vex-message-role="tool"] + [data-vex-message-role="tool"],
+.vex-steps__members > [data-vex-message-role="tool"] + [data-vex-message-role="tool"] {
+  border-top: 1px solid var(--vex-alias-rule);
+}
 
-/* One step: 36 high, the quiet rule below; the fill, the title in 500, the
- * word 13 muted, the duration in the mono 12 at the right, then the chevron. */
+/* One step: 40 high, 16 in; the square (its slot 10), the venue mark, the
+ * title in caps 13 tracked ink, the word in caps 12, the money legs, the
+ * measured duration in the mono 12 muted at the right, then the chevron. */
 .vex-step {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-  font-size: 14px;
+  gap: 14px;
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
 }
@@ -212,7 +260,7 @@
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
   min-height: inherit;
   padding: 0;
@@ -223,6 +271,7 @@
   text-align: left;
   cursor: pointer;
 }
+/* H3's focus: the 2px white ring drawn inside the cell (section 2.4). */
 .vex-step__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
@@ -230,29 +279,38 @@
 .vex-step__fill {
   display: inline-flex;
   flex: none;
+  justify-content: center;
   width: 10px;
-  color: var(--vex-alias-accent-primary);
 }
 .vex-step__mark {
   display: inline-flex;
   flex: none;
-  color: var(--vex-alias-accent-primary);
+  color: var(--vex-alias-label-primary);
 }
 .vex-step__title {
   flex: none;
   max-width: 60%;
   overflow: hidden;
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A tool's title is a label: caps 13, tracked ("KYBERSWAP · SWAP"). */
+.vex-step__name {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+/* The step's word: caps 12 tracked, muted for a step that ran, ink for a
+ * status the reader must see (failed, pending). */
 .vex-step__word {
   flex: none;
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-step[data-vex-step-state="failed"] .vex-step__word {
-  font-weight: 500;
+.vex-step[data-vex-step-state="failed"] .vex-step__word,
+.vex-step[data-vex-step-state="pending"] .vex-step__word {
   color: var(--vex-alias-label-primary);
 }
 .vex-step__spacer {
@@ -272,8 +330,8 @@
   flex: none;
   color: var(--vex-alias-label-tertiary);
 }
-/* A failure's first line beside its title, 13 in the error ink (never red),
- * truncated. */
+/* A failure's first line beside its title, 13 in the error ink (never red:
+ * red is the square's, never type), truncated. */
 .vex-step__summary {
   min-width: 0;
   flex: 0 1 auto;
@@ -283,37 +341,36 @@
   text-overflow: ellipsis;
 }
 
-/* The fold: finished steps in one quiet row, 30 high, 13 muted. */
+/* The fold: finished steps in one quiet row of the frame, 13 muted. */
 .vex-step--quiet {
-  min-height: 30px;
-  font-size: 13px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-step--quiet .vex-step__title {
   max-width: none;
   flex: 0 1 auto;
-  font-weight: 400;
 }
-/* A failure inside a fold is never hidden by it: the count in ink 500. */
+/* A failure inside a fold is never hidden by it: the red square and the
+ * count in ink. */
 .vex-step__failed {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 8px;
-  font-weight: 500;
   color: var(--vex-alias-label-primary);
 }
 
-/* The members of an opened fold, under it. */
+/* The members of an opened fold, under it, on the fold's rule. */
 .vex-steps__members {
   display: flex;
   flex-direction: column;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
-/* A step's links under its row (explorer `tx` keys): 13 / 500 blue. */
+/* A step's links under its row (explorer `tx` keys), on its rule, on the
+ * venue mark's edge: 13 ink, underlined on hover. */
 .vex-step__links {
-  padding: 4px 0 6px 20px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  padding: 6px 16px 8px 40px;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 .vex-step-link {
   display: inline-flex;
@@ -325,7 +382,7 @@
   background: transparent;
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--vex-alias-accent-primary);
   cursor: pointer;
 }
@@ -338,16 +395,16 @@
   outline-offset: 2px;
 }
 
-/* The well a step opens to: paper 2, padding 10 14, 20 in from the row, a 64
- * and 1fr grid at 12.5; the key 12 muted. */
+/* The well a step opens to: the cell fill (H3's well step) on the row's
+ * rule, on the venue mark's edge, a 64 and 1fr grid at 12.5; the key 12
+ * muted. */
 .vex-step-well {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-left: 20px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
-  background: var(--vex-alias-field);
+  padding: 10px 16px 12px 40px;
+  border-top: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
   font-size: 12.5px;
 }
 .vex-step-well__section {
@@ -367,34 +424,38 @@
   overflow-y: auto;
 }
 
-/* The money legs after the step's word, 12.5 ink 2, figures in the mono. */
+/* The money legs after the step's word, 13 ink 2, figures in the mono. */
 .vex-step__legs {
   display: flex;
   min-width: 0;
   flex: 0 1 auto;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--vex-alias-label-secondary);
 }
-/* What a leg line was, when it is not a proven execution: 12 / 500 in a rule
- * frame, 18 high; the pending broadcast in the blue. */
+/* What a leg line was, when it is not a proven execution: a tag inside a row
+ * (section 2.3: sans 10 to 11, caps, tracked) in a rule frame, 18 high; the
+ * pending broadcast in the chosen rule. */
 .vex-leg-outcome {
   flex: none;
   padding: 0 6px;
   border: 1px solid var(--vex-alias-rule);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 400;
   line-height: 18px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-secondary);
 }
 .vex-leg-outcome[data-vex-tool-leg-outcome="pending"] {
-  border-color: var(--vex-alias-accent-primary);
-  color: var(--vex-alias-accent-primary);
+  border-color: var(--vex-alias-rule-chosen);
+  color: var(--vex-alias-label-primary);
 }
 
 /* A step waiting on the reader's decision links to its card: the target fill
- * and the word in the blue, 13 / 500. A confirmed transfer says so in ink. */
+ * and the word in ink, 13. A confirmed transfer says so: the green square
+ * and the word in ink. */
 .vex-step-await,
 .vex-step-confirmed {
   display: inline-flex;
@@ -407,7 +468,7 @@
   background: transparent;
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
 }
 .vex-step-await {
   color: var(--vex-alias-accent-primary);
@@ -425,39 +486,152 @@
   color: var(--vex-alias-label-primary);
 }
 
-/* ── The live row ─────────────────────────────────────────────────────────
- * The turn in flight is one step row: the fill (working solid, thinking hatch,
- * waiting the target), the title in blue 500, its scope 13 muted, the timer in
- * the mono 12 blue at the right. A failure's title is ink. No box: the quiet
- * rules above and below are its whole frame. */
+/* ── The filled receipt ──────────────────────────────────────────────────
+ * docs/design/H3-DESKTOP.md sections 1.7, 2.4 and Appendix A.8, measured in
+ * the signed-moment capture at 1440: a framed card the column's full width,
+ * 12 under the steps. Its head, 16 in: the kind and the chain in caps 13
+ * tracked muted, the time in the mono 13 muted and the stamp (the status
+ * green fill, white caps 12, 24 high) at the right; under them the pair in
+ * sans 20 ink and the chain in 16 ink 2. Then the rows on a 34 pitch, each on
+ * the rule: the label in the mono caps of the field-label register, muted,
+ * and the value in the mono 13 ink at the right. */
+/* The card stands a step off the ground: the cell fill, as the capture's
+ * receipt reads #030507 against the ground's #020202. */
+.vex-receipt {
+  margin-top: 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-receipt__head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+.vex-receipt__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 24px;
+}
+.vex-receipt__kind {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-receipt__time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+/* The stamp's fill and ink are the `bg-stamp-filled` and
+ * `text-ink-on-stamp-filled` utilities at the call site. */
+.vex-receipt__stamp {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-receipt__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+.vex-receipt__where {
+  font-size: 16px;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-receipt__rows {
+  margin: 0;
+}
+.vex-receipt__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  padding: 0 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-receipt__label {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-receipt__value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-primary);
+}
+
+/* ============================================================ *
+ *  THE THINKING FRAME                                           *
+ *                                                               *
+ *  docs/design/H3-DESKTOP.md section 1.7, measured in the chat  *
+ *  captures at 1440: "Vex's thinking is a framed row". A square *
+ *  cell on the ground in the 1px rule, the column's full width; *
+ *  its head 40 high, 16 in, the glyph (10) then the label 14    *
+ *  after it in caps 13 tracked ink, the figures at the right in *
+ *  the mono 12 muted. Under the head's rule, the step rows, the *
+ *  live trace or the opened trace, on the label's 40 edge. The  *
+ *  live turn's frame (`TurnIsland`) and a persisted thinking    *
+ *  row (`ReasonedBlock`) are the same cell.                     *
+ * ============================================================ */
+
+/* The live turn's frame (the island primitive's shell). */
 .vex-island {
-  border: 0;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  border: 1px solid var(--vex-alias-rule);
   background: transparent;
 }
 .vex-live-row {
-  min-height: 36px;
+  gap: 14px;
+  min-height: 40px;
+  padding: 0 16px;
   border-bottom: 0;
 }
 .vex-live-row .vex-step__title {
   max-width: none;
   flex: 0 1 auto;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-live-row .vex-step__num {
-  color: var(--vex-alias-accent-primary);
-}
-.vex-island[data-vex-island-tone="error"] .vex-step__title {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
+.vex-live-row .vex-step__word {
+  font-size: 13px;
+}
+.vex-live-row .vex-step__num {
+  color: var(--vex-alias-label-tertiary);
+}
 .vex-live-row--settled .vex-step__title {
-  font-weight: 400;
   color: var(--vex-alias-label-secondary);
 }
-/* The live trace under a Thinking row, set as an opened Reasoned row. */
+/* The live trace under the head, the frame's last row: upright 14 ink 2, on
+ * the label's edge, under the head's rule. */
 .vex-live-trace {
-  margin-bottom: 10px;
+  margin: 0;
+  padding: 10px 16px 14px 40px;
+  border-top: 1px solid var(--vex-alias-rule);
+  border-left: 0;
 }
 /* What went wrong, under a failed live row. */
 .vex-live-error {
@@ -475,46 +649,76 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* The turn error callout (the kit's `.vex-callout`) after the last turn,
- * hung on the turn's 40px edge, at most 600 wide; a side rail keeps it flush. */
+/* The turn error callout (the kit's `.vex-callout`) after the last turn, on
+ * the turn's edge (the column's own, as H3 draws Vex's turn), at most 600
+ * wide. */
 .vex-turn-error {
   max-width: 600px;
-  margin: 0 0 12px 40px;
-}
-[data-vex-session-surface="embedded"] .vex-turn-error {
-  margin-left: 0;
+  margin: 0 0 12px;
 }
 
-/* ── Reasoned ──────────────────────────────────────────────────────────────
- * A closed row, 36 high: the chevron and the word in 14 ink 2 at 400, then a
- * one-line summary in 13 muted. Opened, the trace is italic 14 ink 2 on a 1px
- * rule with 12 clear. */
+/* ── The thinking row (a persisted Reasoned row) ─────────────────────────
+ * The frame closed to its head: the dot-grid glyph, "Reasoned" or "Thought
+ * for 2.8 s" in caps 13 tracked ink, the trace's first line in 13 muted, then
+ * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
+ * whole row is the key: the label is the button, and its hit area stretches
+ * over the row. Opened, the trace sits under the head's rule in the frame. */
+.vex-think {
+  margin-bottom: 12px;
+  border: 1px solid var(--vex-alias-rule);
+}
+/* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label. */
+.vex-reasoned__figure {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  text-transform: none;
+}
 .vex-reasoned__row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
+  gap: 14px;
   min-width: 0;
+  min-height: 40px;
+  padding: 0 16px;
+}
+.vex-reasoned__row .vex-step__fill {
+  color: var(--vex-alias-label-primary);
 }
 .vex-reasoned__key {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 10px;
+  /* A flex box drops the space at the end of "Thought for "; the gap is it. */
+  gap: 0.3em;
   padding: 0;
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 14px;
-  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
   cursor: pointer;
 }
-.vex-reasoned__key:hover {
-  color: var(--vex-alias-label-primary);
+/* The key's hit area is the whole row, so the summary, the count and the
+ * chevron open it too, while the button's name stays the label. */
+.vex-reasoned__key::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
+.vex-reasoned__row:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+/* H3's focus: the 2px white ring drawn inside the cell (section 2.4). */
 .vex-reasoned__key:focus-visible {
+  outline: 0;
+}
+.vex-reasoned__key:focus-visible::after {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .vex-reasoned__summary {
   min-width: 0;
@@ -524,30 +728,50 @@
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
+.vex-reasoned__steps {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-reasoned__chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A trace: upright 14 / 1.6 in ink 2 (H3 sets no italic), under the head's
+ * rule, on the label's 40 edge. */
 .vex-reasoned__body {
-  margin: 2px 0 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--vex-alias-rule);
+  margin: 0;
+  padding: 10px 16px 14px 40px;
+  border-top: 1px solid var(--vex-alias-rule);
   font-size: 14px;
-  font-style: italic;
+  font-style: normal;
   line-height: 1.6;
   color: var(--vex-alias-label-secondary);
   overflow-wrap: anywhere;
 }
 /* The trace renders through the chat markdown, whose prose class would set
- * the reading size; inside a trace it takes the trace's 14 / 1.6 instead. */
+ * the answer's size and ink; inside a trace it takes the trace's own. */
 .vex-reasoned__body .vex-chat-prose {
   font-size: inherit;
   line-height: inherit;
   gap: 8px;
+  color: inherit;
 }
-/* The folded thoughts of a turn in flight: quiet rows, 30 high, 13 muted. */
+/* The settled thoughts of a turn in flight: the frame's step rows under its
+ * head, 36 high on the rule, the small ink square and "Thought 1" in 14 ink
+ * (sentence case: a step, not a label). */
+.vex-reasoned--quiet {
+  border-top: 1px solid var(--vex-alias-rule);
+}
 .vex-reasoned--quiet .vex-reasoned__row {
-  min-height: 30px;
+  min-height: 36px;
 }
 .vex-reasoned--quiet .vex-reasoned__key {
-  font-size: 13px;
-  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 /* ── Turn stats, on hover only (11.5 muted) ──────────────────────────────── */

@@ -6,9 +6,9 @@
  *     presentation: Working, Thinking, Calling, Writing, the elapsed counter,
  *     the awaiting-approval freeze, the sr-only announcements, the error
  *     branch);
- *  2. stream the answer markdown BELOW it, on the same 40px edge as a
- *     persisted Vex row (`.vex-reply`, docs/design/R3-MINIMAL.md section 6),
- *     with Vex's token when this is the first thing she writes in the turn.
+ *  2. stream the answer markdown BELOW it, on the same edge as a persisted
+ *     Vex row (`.vex-reply`: the column's own left edge, as H3 draws her
+ *     turn, docs/design/H3-DESKTOP.md section 1.7).
  *
  * The `useMemo` on `preview.text` is load-bearing and must not be inlined: a
  * reasoning flush re-renders this component, and without the memo the ANSWER
@@ -26,7 +26,6 @@ import { useMemo, type JSX } from "react";
 import type { StreamPreview } from "../../stores/streamStore.js";
 import { StreamingMarkdownContent } from "../../lib/markdown/StreamingMarkdownContent.js";
 import { useFrameThrottledValue } from "../../lib/use-throttled-visual-update.js";
-import { VxToken } from "../../components/ui/vx-token.js";
 import { TurnIsland } from "./TurnIsland/index.js";
 
 export function StreamingBubble({
@@ -34,6 +33,7 @@ export function StreamingBubble({
   awaitingApproval = false,
   leaseHeld = false,
   turnMark = false,
+  onTurnSettled,
 }: {
   readonly preview: StreamPreview;
   /** Pending approval in the active session - freezes the live row (S5). */
@@ -41,10 +41,12 @@ export function StreamingBubble({
   /** The engine reported the session's runner lease as held (U-3 caption). */
   readonly leaseHeld?: boolean;
   /**
-   * Nothing in this turn has carried Vex's token yet, so the live row does
-   * (`turnMarks.ts`).
+   * Nothing in this turn has been written yet, so the live row heads it
+   * (`turnMarks.ts`), stamped as `data-vex-turn-head`.
    */
   readonly turnMark?: boolean;
+  /** The turn settled live: its clock's reading (`TurnIsland`'s `onSettled`). */
+  readonly onTurnSettled?: (thoughtMs: number, startedAtMs: number) => void;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
@@ -74,18 +76,18 @@ export function StreamingBubble({
       data-vex-area="stream-preview"
       data-vex-message-role="assistant"
       data-vex-stream-phase={preview.phase}
+      // The live row opens the turn when nothing else in it has yet: the
+      // same seam a persisted row carries (`TranscriptMessage`'s
+      // `turnSeams`). H3 draws no token beside Vex's rows.
+      data-vex-turn-head={turnMark ? "" : undefined}
       aria-busy={streaming}
       className="vex-reply flex flex-col gap-2"
     >
-      {turnMark ? (
-        <span data-vex-agent-avatar="" data-vex-mark-at="live" className="vex-reply__mark">
-          <VxToken size={24} />
-        </span>
-      ) : null}
       <TurnIsland
         preview={preview}
         awaitingApproval={awaitingApproval}
         leaseHeld={leaseHeld}
+        onSettled={onTurnSettled}
       />
       {/* The raw provider text never renders on the error path. */}
       {preview.phase === "error" ? null : answerBody}
