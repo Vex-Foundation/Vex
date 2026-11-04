@@ -65,12 +65,12 @@ import { useEffect, useRef, useState, type JSX } from "react";
 import { LineBack, LinePanelLeft, LinePanelRight } from "../../components/icons/line/index.js";
 import { Swatch } from "../../components/ui/swatch.js";
 import { useProject } from "../../lib/api/projects.js";
-import { prefersReducedMotion } from "../../lib/motion/reduced-motion.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import { assetsRouteFor, type ShellScreenOrigin } from "../../stores/uiStore/shell-route.js";
+import { revealApprovalCard } from "../appShell/ApprovalCard/reveal-approval-card.js";
 import { BookInspectPanel } from "../appShell/book/inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "../appShell/book/inspect/inspect-store.js";
 import { LighterChatRail } from "../appShell/lighterTrading/LighterChatRail.js";
@@ -410,7 +410,7 @@ function NeedsYouSection({
 
 /**
  * Open what a Needs you row names, never decide it. An approval in the chat
- * already open scrolls its card into view; one raised elsewhere opens its
+ * already open scrolls its card into view and focuses it; one raised elsewhere opens its
  * session (mode first, then the selection, then the page closed, as the
  * approvals inbox always has); an approval with no session (a Studio project's)
  * opens the Needs you page, where its card is; a mission opens its session; a
@@ -432,18 +432,9 @@ export function openNeedsYouItem(item: NeedsYouItem): void {
     ui.setActiveSessionId(item.sessionId);
   }
   ui.setShellRoute({ kind: "none" });
+  // Review takes you to the card: scrolled into view and focused, once the
+  // chat has painted it (`ApprovalCard/reveal-approval-card.ts`, row S6b-07).
   if (item.approvalId !== null) revealApprovalCard(item.approvalId);
-}
-
-/** Scroll the approval card into view once the session has painted it. */
-function revealApprovalCard(approvalId: string): void {
-  requestAnimationFrame(() => {
-    const card = Array.from(document.querySelectorAll<HTMLElement>("[data-approval-id]")).find(
-      (node) => node.dataset["approvalId"] === approvalId,
-    );
-    if (card === undefined || typeof card.scrollIntoView !== "function") return;
-    card.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
-  });
 }
 
 /* ------------------------------ This project ----------------------------- */

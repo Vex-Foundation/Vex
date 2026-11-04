@@ -17,6 +17,7 @@ import type { ApprovalPreview, ApprovalSummaryDto } from "@shared/schemas/approv
 import {
   APPROVAL_EYEBROW_WORDS,
   CONSEQUENCE_PLACES_ORDER,
+  CONSEQUENCE_PLACES_RESTING_ORDER,
   CONSEQUENCE_SENDS_FUNDS,
   actionKindWords,
   addressIn,
@@ -24,6 +25,7 @@ import {
   approvalExpiryWords,
   approvalEyebrowWord,
   approvalFamily,
+  approvalGateLine,
   approvalPlace,
   approvalReviewWord,
   approvalSentence,
@@ -224,6 +226,7 @@ describe("approvalFamily and approvalReviewWord", () => {
 
 describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.7)", () => {
   const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
+  const RESTING_LINE = "This places a real order on mainnet.";
   const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
   const LIGHTER_CANCEL = previewOf("order.cancel", { toolId: "lighter.order.cancel", providerOrderId: "7" }, "lighter");
   const LIGHTER_CLOSE = previewOf("position.close", { toolId: "lighter.position.close", symbol: "BTC" }, "lighter");
@@ -240,7 +243,7 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
     ["native send", SEND_NATIVE, "Confirm this transfer", FUNDS_LINE],
     ["token send", SEND_USDC, "Confirm this transfer", FUNDS_LINE],
     ["lighter market order", LIGHTER_MARKET, "Confirm this order", ORDER_LINE],
-    ["lighter limit order", LIGHTER_LIMIT, "Confirm this order", ORDER_LINE],
+    ["lighter limit order", LIGHTER_LIMIT, "Confirm this order", RESTING_LINE],
     ["lighter position close", LIGHTER_CLOSE, "Confirm this order", ORDER_LINE],
     ["lighter order cancel", LIGHTER_CANCEL, "Confirm this order", null],
     ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", FUNDS_LINE],
@@ -270,16 +273,70 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   });
 
   it("reads the order line from the tool names alone when the arguments carry no toolId", () => {
-    expect(approvalConsequence({ toolName: "lighter:order.create", preview: null })).toBe(ORDER_LINE);
+    // With no terms to prove the order fills at once, only the shorter line is sure to be true.
+    expect(approvalConsequence({ toolName: "lighter:order.create", preview: null })).toBe(RESTING_LINE);
+    expect(approvalConsequence({ toolName: "lighter:position.close", preview: null })).toBe(ORDER_LINE);
     expect(approvalConsequence({ toolName: "lighter:order.modify", preview: null })).toBeNull();
     expect(approvalConsequence({ toolName: null, preview: null })).toBeNull();
   });
 
+  describe("an order that can still be cancelled never says it cannot be undone", () => {
+    const create = (terms: Args): ApprovalSummaryDto =>
+      approvalFrom(previewOf("order.create", { ...LIGHTER_MARKET_ARGS, ...terms }, "lighter"));
+    const orders: readonly (readonly [string, Args, string])[] = [
+      ["a market order", { orderType: "market", timeInForce: "immediate-or-cancel" }, ORDER_LINE],
+      ["an immediate-or-cancel limit", { orderType: "limit", timeInForce: "immediate-or-cancel" }, ORDER_LINE],
+      ["a limit good till its time", { orderType: "limit", timeInForce: "good-till-time" }, RESTING_LINE],
+      ["a post-only limit", { orderType: "limit", timeInForce: "post-only" }, RESTING_LINE],
+      ["a stop-loss", { orderType: "stop-loss", timeInForce: "immediate-or-cancel" }, RESTING_LINE],
+      ["a stop-loss limit", { orderType: "stop-loss-limit", timeInForce: "good-till-time" }, RESTING_LINE],
+      ["a take-profit", { orderType: "take-profit", timeInForce: "immediate-or-cancel" }, RESTING_LINE],
+      ["a take-profit limit", { orderType: "take-profit-limit", timeInForce: "good-till-time" }, RESTING_LINE],
+      [
+        "an OCO pair",
+        { orderType: "market", timeInForce: "immediate-or-cancel", groupingType: "one-cancels-the-other" },
+        RESTING_LINE,
+      ],
+      ["an order whose type is not bound", { orderType: null, timeInForce: null }, RESTING_LINE],
+    ];
+
+    it.each(orders)("%s", (_name, terms, line) => {
+      expect(approvalConsequence(create(terms))).toBe(line);
+    });
+
+    it("keeps the full line for swaps and position closes", () => {
+      expect(approvalConsequence(approvalFrom(KYBER))).toBe(ORDER_LINE);
+      expect(approvalConsequence(approvalFrom(LIGHTER_CLOSE))).toBe(ORDER_LINE);
+    });
+  });
+
   it("writes each line in sentence case with no dash and no figure", () => {
-    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_SENDS_FUNDS]) {
+    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_PLACES_RESTING_ORDER, CONSEQUENCE_SENDS_FUNDS]) {
       expect(line).not.toMatch(DASHES);
       expect(line).not.toMatch(/\d/);
-      expect(line.endsWith("It cannot be undone.")).toBe(true);
+      expect(line.startsWith("This ")).toBe(true);
+    }
+    expect(CONSEQUENCE_PLACES_ORDER.endsWith("It cannot be undone.")).toBe(true);
+    expect(CONSEQUENCE_SENDS_FUNDS.endsWith("It cannot be undone.")).toBe(true);
+    expect(CONSEQUENCE_PLACES_RESTING_ORDER).not.toMatch(/undone/);
+    expect(CONSEQUENCE_PLACES_ORDER.startsWith(CONSEQUENCE_PLACES_RESTING_ORDER)).toBe(true);
+  });
+});
+
+describe("approvalGateLine (the decision row's middle cell, H3-DESKTOP.md Appendix A.7)", () => {
+  it("says the two presses and their window, read from the card's own reset", () => {
+    expect(approvalGateLine(true, 4_000)).toBe("Two presses decide: the first arms the key for 4 s.");
+    expect(approvalGateLine(true, 2_500)).toBe("Two presses decide: the first arms the key for 2.5 s.");
+  });
+
+  it("says nothing signs until you approve on a one-press card", () => {
+    expect(approvalGateLine(false, 4_000)).toBe("Nothing signs until you approve.");
+  });
+
+  it("names no key shortcut: desktop binds none to a card", () => {
+    for (const line of [approvalGateLine(true, 4_000), approvalGateLine(false, 4_000)]) {
+      expect(line).not.toMatch(/ctrl|enter|esc|tick/i);
+      expect(line).not.toMatch(DASHES);
     }
   });
 });
