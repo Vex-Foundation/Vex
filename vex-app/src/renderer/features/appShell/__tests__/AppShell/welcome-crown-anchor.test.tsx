@@ -284,8 +284,9 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     // A transform on the scroll body would make it the containing block for
     // every `position: fixed` descendant (menus, dialogs), silently shrinking
     // them to this column. Flex placement has no such side effect: the body
-    // stacks from the top and the seat's auto block margins centre it while
-    // there is room (and let a short window scroll to its head).
+    // stacks from the top and the seat grows to its whole height, the opening
+    // at its top and the composer at its foot (docs/design/H3-DESKTOP.md
+    // section 1.7), and a short window scrolls to its head.
     // Whitespace-tolerant: the selector spans two lines after formatting, so
     // this scans for the rule rather than an exact `selector {` prefix.
     const heroBody =
@@ -298,7 +299,7 @@ describe("composer growth glide - globals.css contract (raw scan)", () => {
     const seat = blockFor(
       '[data-vex-area="session-panel"][data-phase="hero"] [data-vex-composer-seat]',
     );
-    expect(seat).toContain("margin-block: auto");
+    expect(seat).toContain("flex: 1 0 auto");
     expect(seat).not.toContain("transform");
   });
 
