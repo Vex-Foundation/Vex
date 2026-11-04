@@ -1262,6 +1262,36 @@ describe("AppShell", () => {
     }
   });
 
+  it("never closes or opens her section on Escape, wherever it is pressed", () => {
+    // docs/design/H3-DESKTOP.md sections 3.5 and 4.4 (plan row S4-13): Esc
+    // belongs to the money card and to what it is pressed in; her section
+    // moves only on her three controls. The walk of every Escape handler is
+    // `components/vex/kimm/__tests__/kimm-escape.test.ts`.
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    const view = renderShell();
+    const section = (): Element | null => view.container.querySelector("[data-vex-area='kimm-section']");
+    const places = (): (HTMLElement | null)[] => [
+      document.body,
+      view.container.querySelector<HTMLElement>("[data-vex-area='kimm-key']"),
+      view.container.querySelector<HTMLElement>("[data-vex-area='vex-token-chip']"),
+      view.container.querySelector<HTMLElement>(".vex-vs__head button"),
+      view.container.querySelector<HTMLElement>("[data-vex-composer-stage] textarea"),
+    ];
+    for (const open of [true, false]) {
+      act(() => useUiStore.setState({ vexOpenChat: open }));
+      for (const place of places()) {
+        if (place === null) continue;
+        place.focus();
+        fireEvent.keyDown(place, { key: "Escape", code: "Escape" });
+        fireEvent.keyUp(place, { key: "Escape", code: "Escape" });
+        fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+        expect(useUiStore.getState().vexOpenChat, place.tagName).toBe(open);
+        expect(section()?.getAttribute("data-kimm-open"), place.tagName).toBe(String(open));
+      }
+    }
+    expect(places().filter((place) => place !== null).length).toBeGreaterThanOrEqual(4);
+  });
+
   it("the header's chip and her hide key still flip the same flag, the column standing", () => {
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
