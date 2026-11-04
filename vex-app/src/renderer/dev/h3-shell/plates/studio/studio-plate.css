@@ -1,0 +1,627 @@
+/* OUR H3 PLATE FOR STUDIO (S8-01) - the plate's own sheet, harness only.
+ *
+ * The frame (the header row, the columns, the bottom row) is the shell's own:
+ * the plate puts the shell's classes on the same boxes, so shell.css,
+ * title-bar.css, console.css and vex-sidebar.css lay it out and the rules
+ * land where the product draws them. This sheet draws only what Studio adds
+ * and what H3 draws but the merged shell does not have yet:
+ *
+ *   .vex-plate-studio-side   the Studio sidebar in the 248 column: New
+ *                            project, Search, the nav folded to its Studio
+ *                            row, Projects, the Explorer (S5's numbers: a 55
+ *                            cell, a 48 field, 40 rows, caps 0.08em)
+ *   .vex-plate-studio-rail   the same column as its 76 rail
+ *   .vex-plate-studio        the centre: the tabs row, the panel header and
+ *                            the panes, the terminal's text on the ground
+ *   .vex-plate-kimm          her section and her 56 strip, in S4's geometry
+ *                            (a box from the console's top block to one
+ *                            pixel above the bottom row), on stand-in art
+ *   .vex-plate-tp            the console's This project block (S8-06)
+ *   .vex-plate-host          the header's Studio host cell
+ *
+ * Colours are the alias tier's only; radius 0, no shadow (base.css). */
+
+/* ------------------------------ the sidebar ------------------------------ */
+
+.vex-plate-studio-side {
+  overflow: hidden;
+}
+.vex-plate-studio-side__new,
+.vex-plate-studio-side__search,
+.vex-plate-studio-side__nav-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 20px 0 24px;
+  border: 0;
+  background: transparent;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+  white-space: nowrap;
+}
+.vex-plate-studio-side__new {
+  height: 55px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-layer-3);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-studio-side__search {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+  font-size: 15px;
+}
+.vex-plate-studio-side__search > svg {
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio-side__nav {
+  flex: none;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-plate-studio-side__nav-row {
+  height: 40px;
+  background: var(--vex-alias-row-selected);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-studio-side__nav-row > .vex-plate-studio-side__more {
+  margin-left: auto;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-plate-studio-side__head {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 0 20px 0 24px;
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+.vex-plate-studio-side__label {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-studio-side__keys {
+  display: flex;
+  gap: 2px;
+  margin-right: -8px;
+}
+.vex-plate-studio-side__ikey {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-plate-studio-side__rows {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vex-plate-studio-side__project {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 0 24px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.vex-plate-studio-side__project[data-selected] {
+  background: var(--vex-alias-row-selected);
+}
+.vex-plate-studio-side__name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vex-plate-studio-side__tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-studio-side__all {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-studio-side__tree {
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0 0 8px;
+  overflow: hidden;
+  list-style: none;
+}
+.vex-plate-studio-side__node {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding-right: 20px;
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.vex-plate-studio-side__twist {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  justify-content: center;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-plate-studio-side__glyph {
+  flex: none;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* -------------------------------- the rail -------------------------------- */
+
+.vex-plate-studio-rail {
+  overflow: hidden;
+}
+.vex-plate-studio-rail__key {
+  display: flex;
+  flex: none;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-plate-studio-rail__key--new {
+  height: 55px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio-rail__key--search {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio-rail__nav {
+  flex: none;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-plate-studio-rail__key--nav {
+  height: 40px;
+}
+.vex-plate-studio-rail__key--nav[data-selected] {
+  background: var(--vex-alias-row-selected);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio-rail__key--files {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio-rail__key--files[data-open] {
+  background: var(--vex-alias-bg-overlay);
+}
+
+/* The rail's drawer: over the centre's left edge, under the band. Two
+ * classes, since this sheet is injected before globals.css and `.vex-ls`
+ * sets the position and the height. */
+.vex-ls.vex-plate-studio-drawer {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--vex-h3-chats-w);
+  height: auto;
+}
+
+/* ------------------------------- the centre ------------------------------- */
+
+.vex-plate-studio {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+}
+.vex-plate-studio__tabs {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-plate-studio__strip {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: stretch;
+  overflow: hidden;
+}
+.vex-plate-studio__tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 0 24px;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-plate-studio__tab[data-selected] {
+  background: var(--vex-alias-bg-overlay);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio__tab--file {
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.vex-plate-studio__tab--file[data-preview] > .vex-plate-studio__file {
+  font-style: italic;
+}
+.vex-plate-studio__tab-close {
+  display: inline-flex;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-plate-studio__plus {
+  display: flex;
+  flex: none;
+  width: 56px;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio__fill {
+  flex: 1 1 auto;
+}
+.vex-plate-studio__shell {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  white-space: nowrap;
+}
+.vex-plate-studio__shell-label {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-studio__shell-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.vex-plate-studio__shell > svg {
+  color: var(--vex-alias-label-tertiary);
+}
+
+.vex-plate-studio__panel {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-plate-studio__id {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 16px 0 24px;
+}
+.vex-plate-studio__name {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-plate-studio__where {
+  overflow: hidden;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-plate-studio__state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-plate-studio__key {
+  display: flex;
+  flex: none;
+  width: 56px;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-plate-studio__panes {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.vex-plate-studio__pane {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+}
+.vex-plate-studio__pane + .vex-plate-studio__pane {
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-plate-studio__pane-head {
+  display: flex;
+  flex: none;
+  box-sizing: border-box;
+  height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.vex-plate-studio__pane[data-active] > .vex-plate-studio__pane-head {
+  background: var(--vex-alias-bg-overlay);
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio__pane-close {
+  display: flex;
+  width: 36px;
+  height: 100%;
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The terminal's text: on the ground, in the mono face (the plate proposes
+ * Roboto Mono for code as for figures). */
+.vex-plate-studio__term {
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 16px 24px;
+  overflow: hidden;
+  background: var(--vex-alias-bg-base);
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+}
+.vex-plate-studio__term [data-t="path"] {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-plate-studio__term [data-t="mark"],
+.vex-plate-studio__term [data-t="cmd"] {
+  color: var(--vex-alias-label-primary);
+}
+.vex-plate-studio__term [data-t="dim"] {
+  color: var(--vex-alias-label-tertiary);
+}
+/* The ANSI green and red a program prints: the plate proposes H3's gain and
+ * loss type colours for them (the terminal palette's own aliases today). */
+.vex-plate-studio__term [data-t="ok"] {
+  color: var(--vex-alias-trade-up);
+}
+.vex-plate-studio__term [data-t="bad"] {
+  color: var(--vex-alias-trade-down);
+}
+.vex-plate-studio__cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  vertical-align: -3px;
+  background: var(--vex-alias-label-primary);
+}
+
+/* ------------------------- her section and her strip ------------------------- */
+
+.vex-plate-kimm {
+  position: absolute;
+  z-index: 2;
+  top: var(--vex-console-top-h);
+  right: 0;
+  bottom: 1px;
+  left: 0;
+  overflow: hidden;
+}
+.vex-plate-kimm[data-open="false"] {
+  clip-path: inset(0 0 calc(100% - var(--vex-h3-strip-h)) 0);
+}
+.vex-plate-kimm__ground {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--vex-alias-button-accent-fill) 32%, var(--vex-alias-label-primary)) 0%,
+    color-mix(in oklch, var(--vex-alias-button-accent-fill) 72%, var(--vex-alias-label-primary)) 32%,
+    color-mix(in oklch, var(--vex-alias-button-accent-fill) 62%, var(--vex-alias-bg-base)) 56%,
+    var(--vex-alias-bg-base) 82%
+  );
+}
+.vex-plate-kimm__figure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  height: auto;
+}
+.vex-plate-kimm__strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  height: var(--vex-h3-strip-h);
+}
+.vex-plate-kimm__key {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  width: 138px;
+  height: var(--vex-h3-strip-h);
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 82%, transparent);
+  color: var(--vex-alias-label-primary);
+  font-size: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-kimm[data-open="false"] .vex-plate-kimm__key {
+  width: 149px;
+}
+.vex-plate-kimm ~ .vex-vs__rest {
+  padding-top: var(--vex-h3-strip-h);
+}
+.vex-vs[data-vex-seat="band"] .vex-plate-kimm-well {
+  position: relative;
+  width: 176px;
+  flex: none;
+  overflow: hidden;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+}
+/* Her face in the band's 176 x 131 well: the open crop at 260 wide, raised so
+ * the crop's baked Hide Vex corner sits above the well. */
+.vex-plate-kimm-well > img {
+  position: absolute;
+  top: -36px;
+  left: 50%;
+  width: 260px;
+  max-width: none;
+  height: auto;
+  transform: translateX(-50%);
+}
+
+/* ---------------------------- This project ---------------------------- */
+
+.vex-plate-tp__link {
+  color: var(--vex-alias-label-primary);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.vex-plate-tp__facts {
+  margin: 0;
+}
+.vex-plate-tp__fact {
+  display: flex;
+  box-sizing: border-box;
+  height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-plate-tp__fact > dt {
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-tp__fact > dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-plate-tp__fact > dd.vex-num {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.vex-plate-tp__muted {
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* ------------------------------ the host cell ------------------------------ */
+
+.vex-plate-host {
+  display: flex;
+  height: 100%;
+  margin-right: -16px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 24px;
+  border-left: 1px solid var(--vex-alias-rule);
+  white-space: nowrap;
+}
+.vex-plate-host__state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-plate-host__figure {
+  color: var(--vex-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
