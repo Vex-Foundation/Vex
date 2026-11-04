@@ -81,25 +81,28 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(css).toContain('.lit-desk-scope-chip i[data-side="short"] { color: var(--lit-trade-down); }');
   });
 
-  it("keeps the ticket compact while preserving its primary controls", () => {
-    expect(css).toMatch(/\.lit-ticket-body\s*\{[^}]*gap: 10px;[^}]*overflow-y: auto;[^}]*padding: 0 16px 10px;/s);
-    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*gap: 8px;[^}]*padding: 4px 16px 14px;/s);
-    expect(css).toMatch(/\.lit-side-actions \.lit-review-button\s*\{[^}]*min-height: 48px;/s);
-    expect(css).toMatch(/@container \(max-width: 300px\)[\s\S]*\.lit-ticket-meta \{ padding-inline: 10px; \}/s);
-    expect(css).toMatch(/@container \(max-width: 300px\)[\s\S]*\.lit-slippage-field \{ grid-template-columns: 68px minmax\(0, 1fr\);/s);
+  it("lays the ticket out in cells: the account row, Market | Limit, the fields, the foot", () => {
+    expect(css).toMatch(/\.lit-ticket-meta\s*\{[^}]*min-height: 40px;[^}]*border-bottom: 1px solid var\(--vex-alias-rule\);/s);
+    expect(css).toMatch(/\.lit-order-type-controls\s*\{[^}]*height: 40px;[^}]*border-bottom: 1px solid var\(--vex-alias-rule\);/s);
+    expect(css).toMatch(/\.lit-order-type-controls > button\[aria-pressed="true"\]\s*\{[^}]*background: var\(--lit-pressed\);/s);
+    // Only the order fields scroll.
+    expect(css).toMatch(/\.lit-ticket-body\s*\{[^}]*overflow-y: auto;/s);
+    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*flex: 0 0 auto;[^}]*margin-top: auto;/s);
+    // Review with Vex is a key cell on the raised fill, never the blue.
+    expect(css).toMatch(/\.lit-ask-draft\s*\{[^}]*background: var\(--vex-alias-interactive-solid\);[^}]*text-transform: uppercase;/s);
+    expect(css).toMatch(/\.lit-review-note\s*\{[^}]*border-top: 1px solid var\(--vex-alias-rule\);/s);
   });
 
-  it("draws Long and Short in the trading pair with its type, direction by arrow", () => {
-    // The base key is the setup action's blue fill; the two sides take the pair.
-    expect(css).toMatch(/\.lit-review-button\s*\{[^}]*background: var\(--lit-action\);[^}]*color: var\(--lit-action-ink\);/s);
-    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="buy"] { background: var(--vex-alias-trade-up); }');
-    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="sell"] { background: var(--vex-alias-trade-down); }');
-    expect(css).toMatch(/\.lit-side-actions \.lit-review-button\s*\{[^}]*color: var\(--vex-alias-trade-ink\);/s);
-    expect(css).not.toMatch(/\.lit-review-button\[data-side="sell"\]\s*\{[^}]*background: var\(--lit-ink-fill\);/s);
-    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="buy"] b::before { content: "\\2191\\00a0"; }');
-    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="sell"] b::before { content: "\\2193\\00a0"; }');
-    // A disabled key is a dotted outline, never a faded fill.
-    expect(css).toMatch(/\.lit-review-button:disabled\s*\{[^}]*outline: 1px dotted var\(--lit-positive\);/s);
+  it("draws Long and Short as raised cells, the side word in gain or loss, never a fill of the pair or the blue", () => {
+    expect(css).toMatch(/\.lit-side-actions \.lit-review-button\s*\{[^}]*min-height: 56px;[^}]*background: var\(--vex-alias-interactive-solid\);/s);
+    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="buy"] b { color: var(--lit-trade-up); }');
+    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="sell"] b { color: var(--lit-trade-down); }');
+    expect(css).not.toMatch(/\.lit-review-button\[data-side="(?:buy|sell)"\]\s*\{[^}]*background: var\(--vex-alias-trade-/s);
+    expect(css).not.toMatch(/\.lit-side-actions[^{]*\{[^}]*background: var\(--lit-action\)/s);
+    // No arrows: the word carries the side.
+    expect(rules).not.toMatch(/\.lit-side-actions[^{]*b::before/);
+    // A disabled key is the cell fill with muted words (H3 section 2.4).
+    expect(css).toMatch(/\.lit-side-actions \.lit-review-button:disabled\s*\{[^}]*background: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--lit-ink-muted\);/s);
   });
 
   it("keeps order-behaviour choices legible at desk density", () => {
@@ -138,14 +141,15 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(bar).toContain('.lit-live-status[data-status="live"] i { background: var(--vex-alias-state-success-mark); }');
   });
 
-  it("keeps the chart, order book, ticket and account dock mounted together", () => {
-    expect(css).toMatch(/\.lit-desk-upper\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) 260px 300px;/s);
-    expect(css).toMatch(/\.lit-book-column > \.lit-book-panel\s*\{[^}]*min-height: 140px;/s);
-    expect(css).toMatch(/\.lit-book-column > \.lit-trades-slot\s*\{[^}]*min-height: 120px;/s);
+  it("keeps the chart over the book beside a fixed ticket, and the dock across the desk", () => {
+    expect(css).toMatch(/\.lit-desk-upper\s*\{[^}]*--lit-ticket-w: 340px;[^}]*grid-template-columns: minmax\(0, 1fr\) var\(--lit-ticket-w\);/s);
+    expect(css).toMatch(/@media \(max-width: 1023px\)\s*\{\s*\.lit-desk-upper \{ --lit-ticket-w: 280px; \}/s);
+    expect(css).toMatch(/\.lit-desk-main\s*\{[^}]*display: grid;/s);
+    // Five levels a side, four under an 800-high window.
+    expect(css).toContain('.lit-book-column[data-book-rows="5"] .lit-book-rows > .lit-book-row:nth-child(n + 6)');
+    expect(css).toContain('.lit-book-column[data-book-rows="4"] .lit-book-rows > .lit-book-row:nth-child(n + 5)');
     expect(css).toMatch(/\.lit-ticket-content,\s*\.lit-ticket\s*\{[^}]*min-height: 0;[^}]*height: 100%;[^}]*flex: 1 1 auto;/s);
     expect(css).toMatch(/\.lit-ticket-column > \.lit-ticket-panel\s*\{[^}]*overflow: hidden;/s);
-    expect(css).toMatch(/\.lit-ticket-footer\s*\{[^}]*flex: 0 0 auto;/s);
-    expect(css).toMatch(/\.lit-splitter\[data-axis="x"\]\s*\{[^}]*cursor: ew-resize;/s);
     expect(css).not.toMatch(/\.lit-bottom-panel\s*\{[^}]*display: none/s);
     expect(css).not.toContain(".lit-dialog");
     // The seams are the quiet rule, seen once through the clear nested grids.
@@ -181,7 +185,7 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
 
   it("paints bids, asks and the B and S ratio in the trading pair, and keeps it off the chart chrome", () => {
     expect(css).toContain("--lit-depth-bid: color-mix(in srgb, var(--lit-trade-up) 14%, transparent);");
-    expect(css).toContain("--lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 12%, transparent);");
+    expect(css).toContain("--lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 14%, transparent);");
     expect(css).toContain('.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-trade-up); }');
     expect(css).toContain('.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-trade-down); }');
     expect(css).toContain('.lit-book-ratio > [data-side="bid"] { color: var(--lit-trade-up); }');

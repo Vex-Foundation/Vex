@@ -73,9 +73,9 @@
   --lit-ink-fill-ink: var(--vex-alias-label-on-primary);
   --lit-ink-fill-hover: var(--vex-alias-button-primary-hover);
 
-  /* Book depth: each side a wash of its trading colour, 14% and 12%. */
+  /* Book depth: each side a wash of its trading colour at 14%. */
   --lit-depth-bid: color-mix(in srgb, var(--lit-trade-up) 14%, transparent);
-  --lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 12%, transparent);
+  --lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 14%, transparent);
 
   --lit-focus: var(--vex-alias-focus);
   --lit-hover: var(--vex-alias-interactive-hover);

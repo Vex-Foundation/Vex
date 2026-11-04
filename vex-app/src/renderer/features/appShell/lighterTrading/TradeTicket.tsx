@@ -305,23 +305,26 @@ export function TradeTicket({
         </span>
       </div>
 
-      <div className="lit-ticket-body">
+      {/* Market | Limit: a row of cells over the order's fields, fixed with
+          the account context (H3-DESKTOP.md section 4.9: only the order
+          fields scroll). */}
+      <div className="lit-order-type-controls" role="group" aria-label="Order type">
+        {(["market", "limit"] as const).map((item) => (
+          <button type="button" key={item} aria-pressed={mode === item} onClick={() => form.selectMode(item)}>
+            {MODE_LABELS[item]}
+          </button>
+        ))}
+        {/* Protection modes are not picked here: entries attach TP/SL below, and
+            a position's stop and take profit load from the Positions tab or the
+            agent. The loaded mode shows as a third, already-pressed tab. */}
+        {protective ? (
+          <button type="button" aria-pressed="true" title="Loaded from a position or the agent">
+            {MODE_LABELS[mode]}
+          </button>
+        ) : null}
+      </div>
 
-        <div className="lit-order-type-controls" role="group" aria-label="Order type">
-          {(["market", "limit"] as const).map((item) => (
-            <button type="button" key={item} aria-pressed={mode === item} onClick={() => form.selectMode(item)}>
-              {MODE_LABELS[item]}
-            </button>
-          ))}
-          {/* Protection modes are not picked here: entries attach TP/SL below, and
-              a position's stop and take profit load from the Positions tab or the
-              agent. The loaded mode shows as a third, already-pressed tab. */}
-          {protective ? (
-            <button type="button" aria-pressed="true" title="Loaded from a position or the agent">
-              {MODE_LABELS[mode]}
-            </button>
-          ) : null}
-        </div>
+      <div className="lit-ticket-body">
         <p
           className="lit-ticket-book-hint"
           title="Click a book or trade price for Limit. Shift-click for Trigger."
@@ -544,21 +547,21 @@ export function TradeTicket({
             pinned, so a short panel never hides the price and size fields. */}
         <dl className="lit-ticket-facts">
           <div>
-            <dt>Order value</dt>
+            <dt className="vex-field-label">Order value</dt>
             <dd>{quote(form.orderValue)}</dd>
           </div>
           {perp ? (
             <>
               <div>
-                <dt>Cost</dt>
+                <dt className="vex-field-label">Cost</dt>
                 <dd>{quote(form.cost)}</dd>
               </div>
               <div>
-                <dt>Max size</dt>
+                <dt className="vex-field-label">Max size</dt>
                 <dd>{form.maxSize === null ? NO_VALUE : `${formatDecimalString(form.maxSize)} ${symbols.base}`}</dd>
               </div>
               <div>
-                <dt>Liq. price</dt>
+                <dt className="vex-field-label">Liq. price</dt>
                 <dd title="Isolated-style estimate for this order alone; cross accounts liquidate on the whole portfolio.">
                   {form.liquidationEstimate === null ? NO_VALUE : `≈ ${formatNumber(form.liquidationEstimate, priceDigits)}`}
                 </dd>
@@ -566,23 +569,26 @@ export function TradeTicket({
             </>
           ) : null}
           <div>
-            <dt title={feeBreakdownTitle(form.feeRate)}>Fee ({form.feeRate.label.toLowerCase()})</dt>
+            <dt className="vex-field-label" title={feeBreakdownTitle(form.feeRate)}>Fee ({form.feeRate.label.toLowerCase()})</dt>
             <dd>{form.estimatedFee === null ? NO_VALUE : `≈ ${quote(form.estimatedFee, 4)}`}</dd>
           </div>
           {mode === "market" ? (
             <div>
-              <dt title={hardBoundLabel(side)}>{sentenceCase(hardBoundShortLabel(side))}</dt>
+              <dt className="vex-field-label" title={hardBoundLabel(side)}>{sentenceCase(hardBoundShortLabel(side))}</dt>
               <dd>{form.worstPrice === null ? NO_VALUE : formatDecimalString(form.worstPrice)}</dd>
             </div>
           ) : (
             <div>
-              <dt>Execution</dt>
+              <dt className="vex-field-label">Execution</dt>
               <dd>{executionLabel(form)}</dd>
             </div>
           )}
         </dl>
       </div>
 
+      {/* The foot, in the approved plate's order: REVIEW WITH VEX, the
+          promise, LONG | SHORT; a passing notice and the way back to a
+          waiting review stand under the keys while they last. */}
       <div className="lit-ticket-footer">
         {onAsk === undefined ? null : (
           <button
@@ -599,6 +605,13 @@ export function TradeTicket({
             <VexMark size={16} /> Review with Vex
           </button>
         )}
+        <p className="lit-review-note" role="note">
+          <span>
+            {activeSession
+              ? "Nothing signs until you confirm."
+              : "Opens Vex first. Nothing signs until you confirm."}
+          </span>
+        </p>
         <div className="lit-side-actions" role="group" aria-label={protective ? "Position close side" : "Order side"}>
           {(["buy", "sell"] as const).map((item) => {
             const active = item === side;
@@ -626,13 +639,6 @@ export function TradeTicket({
             );
           })}
         </div>
-        <p className="lit-review-note" role="note">
-          <span>
-            {activeSession
-              ? "Nothing signs until you confirm."
-              : "Opens Vex first. Nothing signs until you confirm."}
-          </span>
-        </p>
         {visibleNotice !== null ? (
           <div className="lit-review-outcome" data-tone={visibleNotice.value.tone} role={visibleNotice.value.tone === "error" ? "alert" : "status"} key={visibleNotice.sequence}>
             <span className="lit-review-outcome-text">{visibleNotice.value.text}</span>

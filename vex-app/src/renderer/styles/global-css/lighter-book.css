@@ -443,3 +443,146 @@
   letter-spacing: normal;
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+ * THE H3 DESK'S BOOK (docs/design/H3-DESKTOP.md section 4.9, the approved
+ * desk plate; plan row S8-09): under the chart, in square cells on the 1px
+ * rule. A 40 head row of cells (ORDER BOOK | TRADES, the price grouping,
+ * BTC | USD at the right end), the 30 spread row, the column labels in caps,
+ * bids beside asks, five levels a side (four under an 800-high window,
+ * lighter-desk.css), their depth bars at 14% of their colour from the
+ * centre out, and the B and S row under them.
+ * ------------------------------------------------------------------------- */
+
+.lit-book-column .lit-book-panel,
+.lit-book-column .lit-trades-panel {
+  padding: 0;
+  background: var(--lit-bg);
+}
+
+.lit-book-column .lit-panel-header {
+  min-height: 40px;
+  height: 40px;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  padding: 0;
+}
+
+.lit-book-column .lit-panel-tabs {
+  gap: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+}
+
+.lit-book-column .lit-panel-tabs button {
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  padding: 0 14px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-panel-tabs button:first-child { border-left: 0; }
+
+.lit-book-column .lit-panel-tabs button[aria-selected="true"] {
+  border-bottom-color: transparent;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
+  font-weight: 400;
+}
+
+.lit-book-column .lit-book-controls {
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0;
+}
+
+.lit-book-column .lit-book-controls > select {
+  width: 76px;
+  height: 100%;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  background-color: transparent;
+  padding-left: 14px;
+}
+
+.lit-book-column .lit-unit-switch {
+  margin-left: auto;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+}
+
+.lit-book-column .lit-unit-switch button {
+  height: 100%;
+  border-right: 1px solid var(--vex-alias-rule);
+  padding: 0 14px;
+  color: var(--lit-ink-muted);
+  font-size: 12px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-unit-switch button:last-child { border-right: 0; }
+
+.lit-book-column .lit-unit-switch button[aria-pressed="true"] {
+  color: var(--lit-ink);
+  font-weight: 400;
+}
+
+/* The book's stream state is the market bar's LIVE; its word stays for
+ * assistive tech only. */
+.lit-book-column .lit-live-dot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.lit-book-column .lit-book-mid {
+  min-height: 30px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+  font-size: 12px;
+}
+
+.lit-book-column .lit-book-mid b {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.lit-book-column .lit-book-labels { padding: 4px 16px 0; }
+
+.lit-book-column .lit-book-columns {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-book-body { padding: 0 16px 4px; }
+.lit-book-column .lit-book-row { font-size: 12px; }
+
+.lit-book-column .lit-book-ratio {
+  border-top: 1px solid var(--vex-alias-rule);
+  padding: 0 16px;
+  font-size: 12px;
+}
+
+.lit-book-column .lit-book-ratio i { height: 4px; }
+
+.lit-book-column .lit-trades-columns {
+  padding: 4px 16px 0;
+  color: var(--lit-ink-muted);
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lit-book-column .lit-trades-list { padding: 0 16px 4px; }

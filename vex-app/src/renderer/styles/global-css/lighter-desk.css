@@ -403,16 +403,37 @@ html[data-chrome="overlay"] .vex-shell-frame[data-vex-frame="desk"] .vex-key__ch
 .lit-desk-body[data-resizing] { user-select: none; }
 .lit-desk-body[data-resizing] iframe { pointer-events: none; }
 
+/* The upper desk (H3-DESKTOP.md section 4.9; plan row S8-09): the chart over
+ * the book at the left, the ticket at the right, a 340 column (280 under a
+ * 1024 window). "Review order" takes the same column. */
 .lit-desk-upper {
+  --lit-ticket-w: 340px;
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) 260px 300px;
+  grid-template-columns: minmax(0, 1fr) var(--lit-ticket-w);
   background: transparent;
   gap: 1px;
 }
 
-/* The middle column: the book takes what the trades panel (S3) leaves. */
+@media (max-width: 1023px) {
+  .lit-desk-upper { --lit-ticket-w: 280px; }
+}
+
+/* The chart over the book: the book's height is its rows' (inline, from
+ * `deskBookHeight`), the chart the rest. */
+.lit-desk-main {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 1px;
+}
+
+.lit-desk-main > .lit-chart-panel { min-height: 0; }
+.lit-desk-main .lit-chart-body { min-height: 0; }
+
+/* The depth panel under the chart: the book or the trades, by its tab. */
 .lit-book-column,
 .lit-ticket-column {
   position: relative;
@@ -421,25 +442,19 @@ html[data-chrome="overlay"] .vex-shell-frame[data-vex-frame="desk"] .vex-key__ch
   min-height: 0;
   flex-direction: column;
   background: transparent;
-  gap: 1px;
 }
 
-/* Fixed grid track, so the book can query its own width for its floor rules. */
 .lit-book-column { container-type: inline-size; }
-
-.lit-book-column > .lit-book-panel { position: relative; min-height: 140px; flex: 1 1 140px; }
-.lit-book-column > .lit-trades-slot { position: relative; display: flex; min-height: 120px; flex: 0 0 auto; }
+.lit-book-column > .lit-book-panel,
+.lit-book-column > .lit-trades-slot { flex: 1 1 auto; min-height: 0; }
+.lit-book-column > .lit-trades-slot { display: flex; }
 .lit-trades-slot > .lit-trades-panel { flex: 1; min-height: 0; }
+.lit-book-column[data-tab="trades"] > .lit-book-panel,
+.lit-book-column[data-tab="book"] > .lit-trades-slot { display: none; }
 
-/* Compact desk: keep market observation together on the left and order entry
- * at full height on the right. The shallow depth panel defaults to split bids/asks. */
-.lit-desk-upper[data-stacked] > .lit-chart-panel { grid-column: 1; grid-row: 1; }
-.lit-desk-upper[data-stacked] .lit-chart-body { min-height: 0; }
-.lit-desk-upper[data-stacked] > .lit-ticket-column { grid-column: 2; grid-row: 1 / span 2; }
-.lit-desk-upper[data-stacked] > .lit-book-column { grid-column: 1; grid-row: 2; }
-.lit-desk-upper[data-stacked] > .lit-book-column > .lit-trades-slot { flex: 1 1 120px; }
-.lit-desk-upper[data-stacked] > .lit-book-column[data-tab="trades"] > .lit-book-panel,
-.lit-desk-upper[data-stacked] > .lit-book-column[data-tab="book"] > .lit-trades-slot { display: none; }
+/* Five levels a side, four under an 800-high window. */
+.lit-book-column[data-book-rows="5"] .lit-book-rows > .lit-book-row:nth-child(n + 6),
+.lit-book-column[data-book-rows="4"] .lit-book-rows > .lit-book-row:nth-child(n + 5) { display: none; }
 
 /* The ticket's field body owns scrolling, while account context and order
  * actions stay fixed inside this clipped panel. */

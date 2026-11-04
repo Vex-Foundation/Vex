@@ -589,7 +589,7 @@ describe("Light it up order book", () => {
     // Side by side: both sides read best → far from the center, without the Sum column.
     fireEvent.click(screen.getByRole("button", { name: "Side by side" }));
     expect(totals("ask")).toEqual(["2", "5", "9"]);
-    expect(container.querySelector(".lit-book-columns")?.textContent).toBe("SizeBidAskSize");
+    expect(container.querySelector(".lit-book-columns")?.textContent).toBe("Size (BTC)BidAskSize (BTC)");
     expect(container.querySelectorAll('[data-side="bid"] .lit-book-row span')).toHaveLength(2);
     expect(container.querySelector(".lit-book-stack")).toBeNull();
   });
