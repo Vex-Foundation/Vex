@@ -58,8 +58,16 @@ const SIZES = [
   { width: 1000, height: 720 },
 ] as const;
 
-/** The mockup moments, in the harness's own order (`states/index.ts`). */
-const STATES = ["new-chat", "thinking", "swap-waiting", "filled", "portfolio"] as const;
+/** Every state but the bare shell, in the harness's own order (`states/index.ts`). */
+const STATES = [
+  "new-chat",
+  "thinking",
+  "thought",
+  "swap-waiting",
+  "approval-kinds",
+  "filled",
+  "portfolio",
+] as const;
 
 const CARD = '[data-vex-area="approvals-region"] [data-vex-area="approval-card"]';
 

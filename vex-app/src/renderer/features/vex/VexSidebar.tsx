@@ -92,6 +92,13 @@ import { VexPortraitPlate } from "./VexPortraitPlate.js";
 import { VEX_HIDE_EPISODE_MS, registerVexCloser, setVexClosing } from "./vex-hide.js";
 import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 
+/**
+ * The Needs you opener lives in `needs-you-open.ts`, where the console, the
+ * page strip and the desk's list all read it; re-exported here for the
+ * importers that knew it from this module.
+ */
+export { openNeedsYouItem } from "./needs-you-open.js";
+
 export interface VexSidebarProps {
   /** Whether the column is open; the frame solved it (0px track when closed). */
   readonly open: boolean;

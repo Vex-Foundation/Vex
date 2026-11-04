@@ -357,8 +357,8 @@
 
 /* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
  * like the rest. Sticky at short heights against the card's scrolling
- * ancestor. H3 moves Reject and the approve key into the bottom row's chat
- * cells (section 1.8); until that grid exists the footer stays in the card. */
+ * ancestor. In a chat the waiting card draws this footer in the shell's
+ * bottom row instead (6. below); everywhere else it stays here. */
 .vex-appr__foot {
   position: sticky;
   bottom: 0;
@@ -371,6 +371,151 @@
   padding: 12px var(--vex-appr-inset);
   background: var(--vex-alias-bg-base);
   border-top: 1px solid var(--vex-alias-rule);
+}
+
+/* 6. THE DECISION ROW (docs/design/H3-DESKTOP.md sections 1.8 and 4.3).
+ *
+ * While a card waits in a chat, the chat's bottom-row cell (the composer seat,
+ * `SessionPanel`) holds the card's footer in its dock (`.vex-appr-dock`,
+ * `ApprovalCard/approval-dock.tsx`) and the composer gives way. The footer is
+ * then a grid of cells: the reason field across the top, 56 high where the
+ * composer's strip stood, sans 18; under it the bottom row, 72 high
+ * (`--vex-h3-bottom-h`): REJECT on the raised fill | the gate line | the
+ * approve key in the one blue, 168 | 392 | 200 at 1440 as H3 measures them,
+ * the middle giving way first.
+ *
+ * Only the drawing changes here. The keys are the card's own, with their own
+ * words, guards and states; the sheet reads them by `data-vex-key`,
+ * `data-armed` and `disabled`. An ARMED key (the second press of a high-risk
+ * card) turns to the reversed ink fill, the stamp's weight, never a second
+ * blue; a key with a decision in flight or landed takes the cell fill and
+ * muted words, except the approve key that is working, which keeps its fill.
+ * Focus is H3's 2px ring inside the cell. */
+/* The dock sits outside the card, so it carries the card's one inset itself. */
+.vex-appr-dock {
+  --vex-appr-inset: 24px;
+  container-type: inline-size;
+}
+.vex-appr-dock:empty {
+  display: none;
+}
+/* The composer gives way while the dock (its next sibling in the seat) holds
+ * a decision. It stays mounted (its draft and caret survive) and comes back
+ * the moment the card goes. */
+[data-vex-composer-dock]:has(+ .vex-appr-dock:not(:empty)) {
+  display: none;
+}
+.vex-appr__foot[data-docked] {
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(96px, 168px) minmax(0, 1fr) minmax(120px, 200px);
+  grid-template-areas:
+    "reason reason reason"
+    "reject gate approve";
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  background: var(--vex-alias-bg-base);
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__foot[data-docked] > input {
+  grid-area: reason;
+  width: 100%;
+  height: 56px;
+  margin: 0;
+  padding: 0 var(--vex-appr-inset);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-bg-base);
+  border: 0;
+  border-bottom: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__foot[data-docked] > input::placeholder {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__foot[data-docked] > input:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__foot[data-docked] > button {
+  height: var(--vex-h3-bottom-h);
+  min-width: 0;
+  margin: 0;
+  padding: 0 16px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: normal;
+  border: 0;
+  outline: none;
+}
+.vex-appr__foot[data-docked] > button:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-appr__foot[data-docked] > [data-vex-key="reject"] {
+  grid-area: reject;
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-solid);
+  border-right: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__foot[data-docked] > [data-vex-key="reject"]:enabled:hover {
+  color: var(--vex-alias-label-primary);
+  background: var(--vex-alias-interactive-active);
+}
+.vex-appr__foot[data-docked] > [data-vex-key="approve"] {
+  grid-area: approve;
+  color: var(--vex-alias-button-accent-ink);
+  background: var(--vex-alias-button-accent-fill);
+}
+.vex-appr__foot[data-docked] > [data-vex-key="approve"]:enabled:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+.vex-appr__foot[data-docked] > button[data-armed],
+.vex-appr__foot[data-docked] > button[data-armed]:enabled:hover {
+  color: var(--vex-alias-label-on-primary);
+  background: var(--vex-alias-rule-ink);
+}
+.vex-appr__foot[data-docked] > button[data-armed]:focus-visible {
+  outline-color: var(--vex-alias-label-on-primary);
+}
+.vex-appr__foot[data-docked] > button:disabled:not([data-vex-approve-working]) {
+  color: var(--vex-alias-label-tertiary);
+  background: var(--vex-alias-bg-layer-3);
+}
+/* The middle cell: the gate line in ink 2, sans 14, 24 in. No control. */
+.vex-appr__gate {
+  grid-area: gate;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--vex-appr-inset);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--vex-alias-label-secondary);
+  border-right: 1px solid var(--vex-alias-rule);
+}
+/* A narrow chat (the 1024 window's 469) keeps both keys whole: the gate line
+ * moves to a slim row of its own over them, and the keys share the row. */
+@container (max-width: 560px) {
+  .vex-appr__foot[data-docked] {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "reason reason"
+      "gate gate"
+      "reject approve";
+  }
+  .vex-appr__gate {
+    padding: 8px var(--vex-appr-inset);
+    border-right: 0;
+    border-bottom: 1px solid var(--vex-alias-rule);
+  }
 }
 
 /* ── The folded row (Needs you page, section 8.5) ──────────────────────── */
