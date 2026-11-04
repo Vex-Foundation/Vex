@@ -908,10 +908,13 @@
 /* ---------------------------------------------------------------------------
  * "Review order" in the ticket's place (docs/design/R3-MINIMAL.md section
  * 8.6). The slot sits beside the ticket's form and scrolls on its own, so the
- * card's sticky footer holds at short heights. The review is the same R3
- * approval card as the transcript's (approval.css), narrower: padding 12 14
- * 12 16, the sentence at 18, definition columns 112 and 1fr, rows 13 / 1.35,
- * Reject and the action key side by side. No modal, no veil.
+ * card's sticky footer holds at short heights. The review is the same
+ * approval card as the transcript's (approval.css), narrower: H3's cells keep
+ * their rules edge to edge with the text 14 in (the card's one inset,
+ * `--vex-appr-inset`, in place of its 24; the card's inner padding is 0, as
+ * the cells own their inset), the sentence at 18, definition columns 112 and
+ * 1fr, rows 13 / 1.35, Reject and the action key side by side. No modal, no
+ * veil.
  * ------------------------------------------------------------------------- */
 
 .lit-review-slot {
@@ -969,8 +972,11 @@
   font-size: 12.5px;
 }
 
-.lit-order-review .vex-appr { margin: 12px 0 0; }
-.lit-order-review .vex-appr__in { padding: 12px 14px 12px 16px; }
+.lit-order-review .vex-appr {
+  --vex-appr-inset: 14px;
+  margin: 12px 0 0;
+}
+.lit-order-review .vex-appr__in { padding: 0; }
 
 .lit-order-review .vex-appr__title {
   margin-bottom: 8px;
@@ -981,7 +987,7 @@
 
 .lit-order-review .vex-appr__dl dt,
 .lit-order-review .vex-appr__dl dd {
-  padding: 5px 0;
+  padding-block: 5px;
   font-size: 13px;
   line-height: 1.35;
 }

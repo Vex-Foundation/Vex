@@ -29,6 +29,7 @@ vi.mock("../../../lib/api/approvals.js", () => ({
 }));
 
 const { ApprovalsRegion } = await import("../ApprovalsRegion.js");
+const { ApprovalDockProvider } = await import("../ApprovalCard/approval-dock.js");
 
 const SESSION = "00000000-0000-4000-8000-00000000aa01";
 
@@ -180,5 +181,45 @@ describe("ApprovalsRegion", () => {
     // The oldest of the new arrivals owns initial focus → its Reject button.
     const olderReject = olderCard?.querySelector("button");
     expect(document.activeElement).toBe(olderReject);
+  });
+
+  it("docks ONE decision row in the chat's bottom row: the oldest card's, the one a fresh batch focuses", () => {
+    pendingState = {
+      data: {
+        ok: true,
+        data: [
+          makeSummary({ id: "appr-newer", createdAt: "2026-05-28T10:05:00.000Z", riskLevel: "info", actionKind: "read" }),
+          makeSummary({ id: "appr-older", createdAt: "2026-05-28T10:00:00.000Z", riskLevel: "info", actionKind: "read" }),
+        ],
+      },
+    };
+    const dock = document.createElement("div");
+    document.body.appendChild(dock);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApprovalDockProvider value={dock}>
+          <ApprovalsRegion sessionId={SESSION} />
+        </ApprovalDockProvider>
+      </QueryClientProvider>,
+    );
+    const older = document.querySelector("[data-approval-id='appr-older']");
+    const newer = document.querySelector("[data-approval-id='appr-newer']");
+    expect(older?.hasAttribute("data-vex-decision-docked")).toBe(true);
+    expect(older?.querySelector("[data-vex-area='approval-foot']")).toBeNull();
+    // The newer card keeps its footer in the card.
+    expect(newer?.hasAttribute("data-vex-decision-docked")).toBe(false);
+    expect(newer?.querySelector("[data-vex-area='approval-foot']")).not.toBeNull();
+    // One footer in the dock, and it is the focused card's.
+    expect(dock.querySelectorAll("[data-vex-area='approval-foot']")).toHaveLength(1);
+    expect(dock.contains(document.activeElement)).toBe(true);
+    dock.remove();
+  });
+
+  it("docks nothing where the panel offers no dock", () => {
+    pendingState = { data: { ok: true, data: [makeSummary({ id: "appr-only" })] } };
+    renderRegion();
+    const card = document.querySelector("[data-approval-id='appr-only']");
+    expect(card?.hasAttribute("data-vex-decision-docked")).toBe(false);
+    expect(card?.querySelector("[data-vex-area='approval-foot']")).not.toBeNull();
   });
 });
