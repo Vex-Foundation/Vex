@@ -15,8 +15,9 @@
  * the money rule (section 3.6): a waiting card beside her never moves.
  *
  * WHAT IS IN IT, back to front: her ground (Kimm's blue gradient, one of the
- * two gradients H3 allows, section 2), her figure for her mood, and the
- * corner key. The figure is her art for the mood (`KimmArtSet.sections`); a
+ * two gradients H3 allows, section 2), the falling V, X and E of her glyph
+ * field (`KimmField`, running only while she is open and on screen), her
+ * figure for her mood, and the corner key. The figure is her art for the mood (`KimmArtSet.sections`); a
  * mood whose art is `missing` shows the ground alone, never another mood's
  * figure and never a placeholder. Her art comes from the nearest
  * `KimmArtProvider` (the shipped art in the app, the stand-ins in the H3
@@ -125,6 +126,7 @@ import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 import { handFocusToVexKey } from "./kimm-focus.js";
+import { KimmField } from "./KimmField.js";
 import { setKimmPhase, type KimmPhase } from "./kimm-section-state.js";
 
 export type { KimmPhase };
@@ -241,6 +243,9 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
         * live. */}
       <div aria-hidden="true" inert={moving} className="vex-kimm__body">
         <div className="vex-kimm__ground" />
+        {/* The glyph field, behind her figure: it runs while she is open and
+          * holds its frame in the strip (`KimmField.tsx`, S4-17). */}
+        <KimmField running={open} />
         {/* Her drop rides this layer, which stands from the first frame,
           * so her first open drops her too: her figure is only asked for at
           * that press, and a new element has no closed place to drop from. */}

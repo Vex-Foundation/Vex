@@ -87,6 +87,19 @@
     var(--vex-alias-bg-base) 82%
   );
 }
+/* Her glyph field (S4-17): a canvas over her ground and under her figure,
+ * the size of her box. Its glyphs are drawn in this ink and this face, read
+ * from the canvas's own computed style (`KimmField.tsx`), at the strength the
+ * model gives each one. */
+.vex-kimm__field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
 /* Her figure for her mood, the width of her box and anchored at its top, so
  * the corner of her art stays under her corner key at every width. Open: how
  * her figure fills a box of another size (anchor, scale, crop; section 1.5),
