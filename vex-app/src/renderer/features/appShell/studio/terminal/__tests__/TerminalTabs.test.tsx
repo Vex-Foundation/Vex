@@ -386,14 +386,22 @@ describe("terminal state on the tab", () => {
     };
   }
 
+  /** The tab's square: its fill and its colour class (the status squares, H3 section 2.2). */
   function dotStateOf(name: RegExp): string | null {
     const tab = screen.getByRole("tab", { name });
-    return tab.querySelector("[data-s]")?.getAttribute("data-s") ?? null;
+    const square = tab.querySelector("[data-s]");
+    if (square === null) return null;
+    const colour = square.classList.contains("text-running-mark")
+      ? ":grey"
+      : square.classList.contains("text-danger-mark")
+        ? ":red"
+        : "";
+    return `${square.getAttribute("data-s") ?? ""}${colour}`;
   }
 
   it("says RUNNING in words, not only in colour", () => {
     renderTabs(twoTabs("g1"), { runFacts: facts() });
-    expect(dotStateOf(/Terminal 1/)).toBe("ongoing");
+    expect(dotStateOf(/Terminal 1/)).toBe("done:grey");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Running/ })).toBeTruthy();
   });
 
@@ -401,23 +409,24 @@ describe("terminal state on the tab", () => {
     renderTabs(twoTabs("g1"), {
       runFacts: facts({ exits: new Map([["t1", { exitCode: 0, signal: null }]]) }),
     });
-    expect(dotStateOf(/Terminal 1/)).toBe("done");
+    // An ink outline: it finished, nothing went wrong.
+    expect(dotStateOf(/Terminal 1/)).toBe("idle");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Exited/ })).toBeTruthy();
     // The OTHER tab is untouched: state is per terminal, never per strip.
-    expect(dotStateOf(/Terminal 2/)).toBe("ongoing");
+    expect(dotStateOf(/Terminal 2/)).toBe("done:grey");
   });
 
   it("marks a failed exit and a host loss as errors", () => {
     const view = renderTabs(twoTabs("g1"), {
       runFacts: facts({ exits: new Map([["t1", { exitCode: 127, signal: null }]]) }),
     });
-    expect(dotStateOf(/Terminal 1/)).toBe("error");
+    expect(dotStateOf(/Terminal 1/)).toBe("done:red");
     view.unmount();
 
     renderTabs(twoTabs("g1"), {
       runFacts: facts({ lostTerminalIds: new Set(["t1"]) }),
     });
-    expect(dotStateOf(/Terminal 1/)).toBe("error");
+    expect(dotStateOf(/Terminal 1/)).toBe("done:red");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Ended with an error/ })).toBeTruthy();
   });
 
@@ -425,7 +434,8 @@ describe("terminal state on the tab", () => {
     renderTabs(twoTabs("g1"), {
       runFacts: facts({ lostTerminalIds: new Set(["t1"]), restoring: true }),
     });
-    expect(dotStateOf(/Terminal 1/)).toBe("ongoing");
+    // An outline, told apart from exited by its word.
+    expect(dotStateOf(/Terminal 1/)).toBe("idle");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Restoring/ })).toBeTruthy();
   });
 
@@ -828,7 +838,7 @@ describe("the close control sits inside its tab", () => {
  * which element wears which class, that the calm line icons replaced the px
  * sprite, and that the workspace draws no box.
  */
-describe("the R3 workspace chrome", () => {
+describe("the workspace chrome in H3 cells", () => {
   function splitState(activePaneId: string): WorkspaceState {
     const state = twoTabs("g1");
     return {
@@ -850,51 +860,70 @@ describe("the R3 workspace chrome", () => {
     };
   }
 
-  it("draws the strip, the tabs and the plus key with the named R3 rules and line icons", () => {
+  it("draws the tabs row: the tab cells, the + key cell and the shell picker at the right", () => {
     renderTabs(mixedWithFile());
     const list = screen.getByRole("tablist", { name: "Studio terminals and files" });
     expect(list.className).toContain("vex-terminal-tab-strip");
-    expect(list.parentElement?.className).toBe("vex-ws-strip");
+    expect(list.parentElement?.className).toBe("vex-ws-tabs");
+    const row = list.parentElement?.parentElement;
+    expect(row?.className).toBe("vex-ws-strip");
     const terminalTab = screen.getByRole("tab", { name: /Terminal 1/ });
     const fileTab = screen.getByRole("tab", { name: /service\.ts/ });
-    // 16 line icons: the px sprite is gone from the strip.
-    expect(terminalTab.querySelector("svg")?.getAttribute("width")).toBe("16");
-    expect(fileTab.querySelector("svg")?.getAttribute("width")).toBe("16");
-    // The active tab is ink and 500, an inactive one ink 2 and 400 (the
-    // underline is the shell's, in terminal.css).
+    // A terminal leads with its 6px state square and its name in caps; a
+    // file with its 14 glyph and its name in mono (terminal.css).
+    expect(terminalTab.querySelector("svg")).toBeNull();
+    expect(terminalTab.querySelector(".vex-swatch")?.getAttribute("style")).toContain("6px");
+    expect(terminalTab.className).toContain("vex-tab-trigger--terminal");
+    expect(fileTab.querySelector("svg")?.getAttribute("width")).toBe("14");
+    expect(fileTab.className).toContain("vex-tab-trigger--file");
+    // The active tab is ink, another ink 2; neither is a colour.
     expect(terminalTab.className).toContain("text-ink-primary");
-    expect(terminalTab.className).toContain("font-medium");
     expect(terminalTab.className).not.toContain("text-accent-primary");
-    expect(fileTab.className).not.toContain("font-medium");
     expect(fileTab.className).toContain("text-ink-secondary");
-    expect(fileTab.className).toContain("text-[13.5px]");
-    // The plus is a 32 x 32 icon key at the end of the strip.
+    // The + key cell stands right after the tabs, outside the tablist.
     const plus = screen.getByRole("button", { name: "New terminal" });
-    expect(plus.getAttribute("data-vex-button")).toBe("bare");
-    expect(plus.getAttribute("data-vex-button-size")).toBe("icon");
+    expect(plus.className).toBe("vex-ws-plus");
     expect(plus.querySelector("svg")?.getAttribute("width")).toBe("16");
-    expect(list.lastElementChild).toBe(plus);
-    // The tab's state swatch keeps its fill and its word.
-    expect(terminalTab.querySelector(".vex-swatch")?.getAttribute("style")).toContain("10px");
+    expect(list.contains(plus)).toBe(false);
+    expect(plus.previousElementSibling).toBe(list.parentElement);
+    // The shell picker is the row's last cell.
+    const picker = screen.getByRole("button", { name: "Shell for the next terminal" });
+    expect(row?.lastElementChild?.contains(picker)).toBe(true);
     expect(within(terminalTab).getByText("Running")).toBeTruthy();
   });
 
-  it("paints the panes as the field and the workspace as no box", () => {
+  it("paints the panes on the ground and the workspace as no box", () => {
     renderTabs(twoTabs("g1"));
     const body = panelFor("g1").parentElement;
-    // The body carries no frame and no fill: the strip's rule and the head's
-    // are the only lines, and the panes are the field.
+    // The body carries no frame and no fill: the rows' rules are the only
+    // lines, and the panes are the ground (terminal.css).
     expect(body?.className).not.toMatch(/(?<![\w-])border/);
     expect(body?.className).not.toMatch(/\bbg-/);
     const pane = panelFor("g1").querySelector(".vex-ws-pane");
-    expect(pane?.className).toContain("bg-surface-field");
+    expect(pane?.className).not.toMatch(/\bbg-/);
     expect(pane?.hasAttribute("data-active")).toBe(false);
+    // One pane has no head of its own: the panel header names it.
+    expect(pane?.querySelector("[data-vex-pane-head]")).toBeNull();
     expect(panelFor("g1").querySelector("[data-vex-terminal-header]")?.className).toBe(
       "vex-ws-head",
     );
   });
 
-  it("outlines only the focused pane of a split, and moves the outline with focus", () => {
+  it("gives each pane of a split a 36 head with its square, its process and its close key", () => {
+    renderTabs(splitState("g1:0"), { shellLabelById: new Map([["t1", "/bin/zsh"], ["t3", "node"]]) });
+    const heads = [...panelFor("g1").querySelectorAll("[data-vex-pane-head]")];
+    expect(heads.map((head) => head.className)).toEqual(["vex-ws-pane__head", "vex-ws-pane__head"]);
+    expect(heads.map((head) => head.querySelector(".vex-ws-pane__name")?.textContent)).toEqual([
+      "zsh",
+      "node",
+    ]);
+    expect(heads.every((head) => head.querySelector(".vex-swatch") !== null)).toBe(true);
+    expect(screen.getByRole("button", { name: "Close terminal 2 in Terminal 1" }).className).toBe(
+      "vex-ws-pane__close",
+    );
+  });
+
+  it("marks only the active pane of a split, and moves the mark with focus", () => {
     const view = renderTabs(splitState("g1:0"));
     const panes = (): Element[] => [...panelFor("g1").querySelectorAll(".vex-ws-pane")];
     expect(panes().map((pane) => pane.hasAttribute("data-active"))).toEqual([true, false]);

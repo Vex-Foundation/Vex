@@ -437,14 +437,14 @@ export function XtermHost({
       }}
     >
       {/*
-        THE GRID'S INSET from the pane edge: 12 above and below and 16 at the
-        sides (docs/design/R3-MINIMAL.md section 9.5), so the text never
-        touches the pane's outline or its rule. Margin, not padding: the
-        registry's wrapper is `inset: 0` of this box, and an absolutely
-        positioned child fills its parent's padding box, so only a margin moves
-        the grid.
+        THE GRID'S INSET from the pane edge: 16 above and below and 24 at the
+        sides (our approved Studio plate, docs/design/H3-DESKTOP.md section
+        4.9: a cell's text sits 24 in), so the text never touches the pane's
+        rule. Margin, not padding: the registry's wrapper is `inset: 0` of
+        this box, and an absolutely positioned child fills its parent's
+        padding box, so only a margin moves the grid.
       */}
-      <div ref={containerRef} className="relative mx-4 mt-3 mb-3 min-h-0 flex-1" />
+      <div ref={containerRef} className="relative mx-6 my-4 min-h-0 flex-1" />
 
       {droppedRows > 0 ? (
         <div className="pointer-events-none absolute top-3 right-4 border border-rule bg-surface-field px-2 py-0.5 text-[12px] leading-4 text-ink-secondary">

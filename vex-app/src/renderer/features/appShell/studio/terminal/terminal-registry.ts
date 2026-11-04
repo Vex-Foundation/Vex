@@ -215,6 +215,20 @@ export class TerminalRegistry {
     const record = this.#create(terminalId);
     this.#records.set(terminalId, record);
     record.consumers = 1;
+    // The face's two files load on first use. A glyph drawn before its file
+    // arrived was rasterized in a fallback and cached in the atlas, so once
+    // both weights are in, the atlas is redrawn from the real faces.
+    void terminalFacesReady().then(() => {
+      if (this.#records.get(terminalId) !== record) return;
+      const terminal: { clearTextureAtlas?: () => void } = record.entry.terminal;
+      if (typeof terminal.clearTextureAtlas !== "function") return;
+      try {
+        terminal.clearTextureAtlas();
+      } catch {
+        // A terminal with no renderer yet has no atlas to redraw; its first
+        // paint uses the loaded faces anyway.
+      }
+    });
     return record.entry;
   }
 
@@ -360,7 +374,13 @@ export class TerminalRegistry {
       cursorBlink: !prefersReducedMotion(),
       // The library's only inertial behaviour. Reduced motion collapses it.
       smoothScrollDuration: prefersReducedMotion() ? 0 : 125,
-      fontFamily: readCodeFontFamily(),
+      fontFamily: readTerminalFontFamily(),
+      fontSize: TERMINAL_FONT_SIZE,
+      lineHeight: TERMINAL_LINE_HEIGHT,
+      // The two weights the face ships (fonts.css): bold text is the real
+      // 700 file, never a synthesized one.
+      fontWeight: 400,
+      fontWeightBold: 700,
       theme: readTerminalTheme(document.documentElement),
       // Correct explicit program colours as well as themed ANSI slots. xterm
       // exempts background glyphs and halves this target for SGR 2.
@@ -480,23 +500,59 @@ export class TerminalRegistry {
 }
 
 /**
- * The code stack, read from the token rather than spelled here.
+ * THE TERMINAL'S FACE, read from the token rather than spelled here.
  *
- * xterm takes a font string, so the family cannot arrive as a `var()`. Reading
- * `--font-code` (JetBrains Mono) off the root keeps ONE definition of the code
- * face; a literal here would be a second one that silently stops matching the
- * app. `--font-mono` is the figures face (docs/design/R3-MINIMAL.md section
- * 1.3) and never sets code.
+ * Our approved Studio plate (docs/design/H3-DESKTOP.md sections 2.3 and 4.9)
+ * sets the terminal in Roboto Mono 13/20, the figures face: `--font-mono`,
+ * whose two bundled weights are 400 for text and 700 for the bold an SGR 1
+ * asks for (fonts.css). xterm takes a font string, so the family cannot arrive
+ * as a `var()`; reading the token off the root keeps ONE definition of the
+ * face, where a literal here would be a second one that silently stops
+ * matching the app. Code elsewhere (the file viewer, code blocks) keeps
+ * `--font-code`.
  */
-function readCodeFontFamily(): string {
+function readTerminalFontFamily(): string {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return "monospace";
   }
   const raw = window
     .getComputedStyle(document.documentElement)
-    .getPropertyValue("--font-code")
+    .getPropertyValue("--font-mono")
     .trim();
   return raw === "" ? "monospace" : raw;
+}
+
+/**
+ * The plate's 13 on a 20 line. xterm's `lineHeight` multiplies the face's own
+ * cell height, not the font size: Roboto Mono's cell at 13 is about 17.5px
+ * (measured in the harness), so 1.15 lands the rows on the 20 pitch.
+ */
+export const TERMINAL_FONT_SIZE = 13;
+export const TERMINAL_LINE_HEIGHT = 1.15;
+
+let facesReady: Promise<void> | null = null;
+
+/**
+ * Both weights of the terminal's face loaded, once per window. Resolves at
+ * once where the document has no font loading API (jsdom), and never
+ * rejects: a face that cannot load leaves the fallback xterm already drew.
+ */
+function terminalFacesReady(): Promise<void> {
+  if (facesReady !== null) return facesReady;
+  const fonts = typeof document === "undefined" ? undefined : document.fonts;
+  if (fonts === undefined || typeof fonts.load !== "function") {
+    facesReady = Promise.resolve();
+    return facesReady;
+  }
+  const family = readTerminalFontFamily();
+  facesReady = Promise.all([
+    fonts.load(`400 ${String(TERMINAL_FONT_SIZE)}px ${family}`),
+    fonts.load(`700 ${String(TERMINAL_FONT_SIZE)}px ${family}`),
+  ]).then(
+    () => undefined,
+    () => undefined,
+  );
+  return facesReady;
 }
 
 /** The window's registry. One per renderer process, like the terminals it holds. */

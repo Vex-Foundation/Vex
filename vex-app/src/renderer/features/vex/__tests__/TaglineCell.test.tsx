@@ -51,7 +51,15 @@ describe("taglineMomentOf", () => {
   it("is never a card's moment on the welcome, under a page or in Studio", () => {
     expect(taglineMomentOf({ ...chat, activeSessionId: null, state: "awaiting" })).toBe("rest");
     expect(taglineMomentOf({ ...chat, pageOpen: true, state: "awaiting" })).toBe("rest");
-    expect(taglineMomentOf({ ...chat, runtimeMode: "studio", state: "awaiting" })).toBe("rest");
+    // Studio has its own line, never the card's (our approved Studio plate).
+    expect(taglineMomentOf({ ...chat, runtimeMode: "studio", state: "awaiting" })).toBe("studio");
+  });
+
+  it("says Studio's line in Studio, whatever Vex's state", () => {
+    for (const state of ["ready", "thinking", "awaiting"] as const) {
+      expect(taglineMomentOf({ ...chat, runtimeMode: "studio", activeSessionId: null, state })).toBe("studio");
+    }
+    expect(`${TAGLINES.studio.lead} ${TAGLINES.studio.rest}`).toBe("Coding agents, on your computer.");
   });
 });
 

@@ -174,6 +174,21 @@ export function terminalGroupRunState(
   return failed ? "error" : "exited";
 }
 
+/**
+ * One PANE's state, by the same rule the group's reads for each of its
+ * shells: a split pane's head shows its own square, since one pane of a tab
+ * can end while the other runs.
+ */
+export function terminalPaneRunState(
+  terminalId: string,
+  facts: TerminalRunFacts,
+): TerminalTabRunState {
+  if (facts.lostTerminalIds.has(terminalId)) return facts.restoring ? "restoring" : "error";
+  const exit = facts.exits.get(terminalId);
+  if (exit === undefined) return "running";
+  return exit.signal !== null || exit.exitCode !== 0 ? "error" : "exited";
+}
+
 /** Whether a tab still holds a shell that closing it would end. */
 export function terminalGroupIsLive(
   group: WorkspaceTerminalGroup,

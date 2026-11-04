@@ -45,6 +45,28 @@ export function studioHostStatusWord(
 }
 
 /**
+ * THE HEADER'S HOST CELL says the same word in two lines (our approved Studio
+ * plate, docs/design/H3-DESKTOP.md section 4.9): the state over its figure,
+ * RUNNING over "2 connected". At capacity "At capacity" takes the figure's
+ * place, for the reason above; the other states have no figure.
+ */
+export function studioHostStateLine(state: StudioHostState): string {
+  if (state === "running") return "Running";
+  if (state === "locked") return "Locked";
+  if (state === "starting") return "Starting";
+  return "Unavailable";
+}
+
+export function studioHostFigureLine(
+  state: StudioHostState,
+  connectionCount: number,
+  atCapacity: boolean,
+): string | null {
+  if (state !== "running") return null;
+  return atCapacity ? "At capacity" : `${String(connectionCount)} connected`;
+}
+
+/**
  * The accessible description under the word: WHY the host is unavailable.
  *
  * One sentence per wire cause, so a screen reader hears the reason rather than

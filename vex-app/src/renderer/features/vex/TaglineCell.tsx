@@ -9,6 +9,11 @@
  *     would be false: desktop has no spend limits)
  *   a card waiting in the chat beside it
  *     "Check the card, then decide."            (H3's own words)
+ *   Studio, whatever it shows
+ *     "Coding agents, on your computer."        (our approved Studio plate,
+ *     docs/design/H3-DESKTOP.md section 4.9: the coding agents run in this
+ *     computer's terminals; Studio has no composer, so its bottom row is
+ *     the account cell and this one)
  *
  * The other moments (thinking, done, an error) have no tagline of their own
  * on the sheet; the contract's default is the first line, so they say it.
@@ -26,8 +31,8 @@ import { useUiStore } from "../../stores/uiStore.js";
 import { useVexPresence } from "./useVexPresence.js";
 import type { VexState } from "./vex-state.js";
 
-/** The two moments the sheet gives a tagline. */
-export type TaglineMoment = "rest" | "card";
+/** The two moments the sheet gives a tagline, and Studio's. */
+export type TaglineMoment = "rest" | "card" | "studio";
 
 export interface Tagline {
   /** The first clause, in ink. */
@@ -39,6 +44,7 @@ export interface Tagline {
 export const TAGLINES: Readonly<Record<TaglineMoment, Tagline>> = {
   rest: { lead: "An AI trading agent,", rest: "on your computer." },
   card: { lead: "Check the card,", rest: "then decide." },
+  studio: { lead: "Coding agents,", rest: "on your computer." },
 };
 
 /** Which tagline the moment takes. */
@@ -48,6 +54,7 @@ export function taglineMomentOf(input: {
   readonly pageOpen: boolean;
   readonly state: VexState;
 }): TaglineMoment {
+  if (input.runtimeMode === "studio") return "studio";
   const inChat = input.runtimeMode === "agent" && input.activeSessionId !== null && !input.pageOpen;
   return inChat && input.state === "awaiting" ? "card" : "rest";
 }
