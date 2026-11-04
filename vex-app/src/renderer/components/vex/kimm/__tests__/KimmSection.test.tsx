@@ -18,13 +18,21 @@
  *  - HIDE VEX (S4-07): a 420ms wipe on the clip and the push curve; the words
  *    change at the press; the `closing` phase ends on the clip's own
  *    transition end or when its 420ms are up, the JS half of the pair.
+ *  - SHOW VEX (S4-08): a 720ms wipe down on the same curve, the 1px scan head
+ *    keyed to its edge and drawn only while she opens, her 32px drop on a
+ *    layer that stands from the first frame.
+ *  - TURNED AROUND (S4-09): a press during the motion starts the new leg at
+ *    the press (her clip is read then, so the reversed transition starts from
+ *    the edge where it stands), clears the old leg's timer, and the phase
+ *    follows the last press. The no-jump, no-deeper reversal itself is the
+ *    browser's, read on real frames by `e2e/h3-card-proof.spec.ts`.
  */
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { JSX, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DURATION_VEX_CLOSE_MS,
@@ -358,6 +366,71 @@ describe("KimmSection, Show Vex opens her in 720ms with the scan head and her dr
     expect(waiting).toMatch(/transform:\s*translateY\(calc\(-1 \* var\(--vex-kimm-drop\)\)\)/);
     // A step after the close has ended: no motion upward.
     expect(waiting).toMatch(/transition:\s*transform 0s linear var\(--vex-duration-vex-close\)/);
+  });
+});
+
+describe("KimmSection, a press during the motion turns it around (S4-09)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function at(open: boolean): JSX.Element {
+    return (
+      <KimmArtProvider art={OFFER_ONLY}>
+        <KimmSection mood="offer" open={open} onOpenChange={() => undefined} />
+      </KimmArtProvider>
+    );
+  }
+
+  it("turns a close into an open 80ms in: the phase follows the second press, the close's end never comes", () => {
+    vi.useFakeTimers();
+    const view = render(at(true));
+    const key = screen.getByRole("button", { name: "Hide Vex" });
+    view.rerender(at(false));
+    act(() => {
+      vi.advanceTimersByTime(80);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("closing");
+    view.rerender(at(true));
+    expect(section().getAttribute("data-kimm-phase")).toBe("opening");
+    // The same key, saying what a press does now.
+    expect(screen.getByRole("button", { name: "Hide Vex" })).toBe(key);
+    // Past the close's 420ms: its timer is gone, she is still opening.
+    act(() => {
+      vi.advanceTimersByTime(DURATION_VEX_CLOSE_MS);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("opening");
+    // The reversed leg ends on its own transition end, well inside 720ms.
+    fireEvent.transitionEnd(section(), { propertyName: "clip-path" });
+    expect(section().getAttribute("data-kimm-phase")).toBe("open");
+  });
+
+  it("turns an open into a close, and back again, without a rest in between", () => {
+    vi.useFakeTimers();
+    const view = render(at(false));
+    view.rerender(at(true));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    view.rerender(at(false));
+    expect(section().getAttribute("data-kimm-phase")).toBe("closing");
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    view.rerender(at(true));
+    expect(section().getAttribute("data-kimm-phase")).toBe("opening");
+    act(() => {
+      vi.advanceTimersByTime(DURATION_VEX_OPEN_MS);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("open");
+  });
+
+  it("reads her clip at the press, so the new leg starts from the edge where it stands", () => {
+    const view = render(at(true));
+    const read = vi.spyOn(window, "getComputedStyle");
+    view.rerender(at(false));
+    expect(read.mock.calls.some(([element]) => element === section())).toBe(true);
   });
 });
 

@@ -65,6 +65,20 @@
  * does not draw it); her figure takes its raised place only once a close has
  * ended, so it never rises in view.
  *
+ * A PRESS DURING THE MOTION TURNS IT AROUND FROM WHERE IT IS (section 3.4;
+ * plan row S4-09): Hide Vex, then Show Vex 80ms later, and the wipe goes no
+ * deeper after the second press, reverses from the edge where it stands
+ * without a jump, and ends open; the words follow the press. The wipe is a
+ * CSS transition, and a transition sent back to where it came from reverses
+ * from its current value on the leg's curve over the share of the leg it had
+ * covered ("the push curve from the current inset over the part of 720ms
+ * that is left", the plate's default). This component's part is to start the
+ * new leg AT the press: the layout effect reads her clip, which makes the
+ * style change, and with it the reversed transition, happen then, not a
+ * frame later. The phase follows the last press, and its timer is the new
+ * leg's (the old one is cleared), so the reversed leg ends on its own
+ * `transitionend`, well inside that bound.
+ *
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
  * (`opening` or `closing` until the wipe ends, then `open` or `closed`). The
@@ -154,9 +168,15 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
   // frame paints, so the first frame of the wipe already carries it.
   const [phase, setPhase] = useState<KimmPhase>(open ? "open" : "closed");
   const shown = useRef(open);
+  const box = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     if (shown.current === open) return undefined;
     shown.current = open;
+    // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): read
+    // her clip now, so the new leg's transition starts at the press, from the
+    // wipe's edge as it stands, rather than at the next style pass, a frame
+    // or more later, while the old leg would have gone on deeper.
+    if (box.current !== null) void getComputedStyle(box.current).clipPath;
     const leg = legOf(open);
     setPhase(leg.moving);
     // The pair of `--vex-duration-vex-open` and `--vex-duration-vex-close`
@@ -172,6 +192,7 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
 
   return (
     <div
+      ref={box}
       data-vex-area="kimm-section"
       data-kimm-open={open ? "true" : "false"}
       data-kimm-phase={phase}
