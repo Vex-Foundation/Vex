@@ -171,6 +171,7 @@ button.lit-market-select .lit-chevron { width: 14px; height: 14px; flex: 0 0 aut
 /* A figure gives way before LIVE does: the last figure's words end in an
  * ellipsis rather than push the state off the bar's end. */
 .lit-market-bar > .lit-market-metric { flex-shrink: 1; overflow: hidden; }
+.lit-market-bar > .lit-market-metric[data-metric="funding"] { flex-shrink: 12; }
 .lit-market-metric > :is(small, b) { overflow: hidden; text-overflow: ellipsis; }
 
 /* LIVE at the right end: a 6px status square in the status green and the
