@@ -544,38 +544,41 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 html[data-os="mac"] .vex-ls-railhead {
   display: none;
 }
+/* THE RAIL IN H3 CELLS (docs/design/H3-DESKTOP.md sections 1.10 and 4.12):
+ * 76 wide under the header's logo cell, the open column's cells in its order,
+ * each the rail's whole width with its icon centred: the Expand key (the
+ * sidebar key's twin, the panel icon in ink) 48 high behind its rule; NEW
+ * CHAT 55 high on the cell fill; Search chats 48; the nav keys on the 40
+ * pitch, the block 6 in from its rules, the selected key on the row
+ * gradient; the account cell's disc centred at the foot. The rail scrolls
+ * when a short window cannot hold the nine nav keys (section 4.6 leaves the
+ * short heights open). Studio's rail and the Lighter desk's share these
+ * cells. */
 .vex-ls[data-rail] .vex-ls-body {
-  align-items: center;
-  padding: 8px 0 0;
+  padding: 0;
   overflow-y: auto;
-}
-.vex-ls[data-rail] .vex-ls-nav {
-  display: flex;
-  justify-content: center;
 }
 .vex-ls[data-rail] .vex-ls-nrow {
   justify-content: center;
-  width: 40px;
-  height: 40px;
   padding: 0;
 }
-.vex-ls[data-rail] .vex-ls-new__stroke {
-  right: 8px;
-  bottom: 4px;
-  left: 8px;
+.vex-ls-nrow--expand {
+  height: 48px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
-/* The Expand key heads the rail, the collapse key's twin (the panel icon), and
- * a short quiet rule sets it apart from the keys that go somewhere. */
-.vex-ls-rule {
-  flex: none;
-  width: 24px;
-  height: 1px;
-  margin: 6px 0;
-  background: var(--vex-alias-rule-quiet);
+.vex-ls-nrow--expand .vex-ls-nrow__i {
+  color: var(--vex-alias-label-primary);
+}
+.vex-ls[data-rail] .vex-ls-new__stroke {
+  right: 18px;
+  bottom: 12px;
+  left: 18px;
+}
+.vex-ls[data-rail] .vex-ls-new__glint {
+  right: 8px;
 }
 .vex-ls[data-rail] .vex-prof {
-  width: 100%;
-  padding: 12px 0 14px;
+  padding: 0;
 }
 
 /* STUDIO (docs/design/R3-MINIMAL.md section 4, "Studio"): the same column

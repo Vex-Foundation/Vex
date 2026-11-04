@@ -28,13 +28,17 @@
  *            the frame's header it is the bottom row's account cell
  *            instead (`headless`).
  *
- * The rail keeps the same order as 40 x 40 keys with their names as tooltips,
- * under the Expand key (the panel icon, the collapse key's twin, the one way
- * back to the open sidebar): New chat, Search, the nav, and the account box
- * at the foot. Chat and Missions pressed on the rail open the sidebar on
- * their list, since a list out of sight cannot show that they did anything.
- * The Lighter desk's rail (`expandable` false) has neither: its drawer opens
- * from the desk's own Markets & sessions key.
+ * THE RAIL (76 wide; H3-DESKTOP.md sections 1.10 and 4.12) keeps the same
+ * order in H3 cells, each the rail's whole width, icon only, its name the
+ * tooltip and the accessible name: the Expand key (the panel icon, the
+ * sidebar key's twin, the one way back to the open column), 48 high behind
+ * its rule; NEW CHAT, 55 high on the cell fill; Search chats, 48; the nav
+ * keys on the 40 pitch between their rules; the account cell's disc at the
+ * foot. Chat and Missions pressed on the rail open the column on their list,
+ * since a list out of sight cannot show that they did anything. The band's
+ * rail and the Lighter desk's (`expandable` false) have no Expand key: the
+ * band keeps the rail, and the desk's drawer opens from its own Markets &
+ * sessions key.
  *
  * Row behaviour (pin, remove, inline rename, the hover preview) is the shared
  * `SessionRow`'s; the list model is `sessionListModel.ts`'s. Scrollbars in
@@ -282,21 +286,21 @@ export function SessionsList({
             </div>
           )}
           <div className="vex-ls-body">
+            {/* The rail's cells, the open column's in the same order, each
+              * 76 wide: the Expand key behind its rule, then New chat,
+              * Search chats and the nav block between its rules. */}
             {expandable ? (
-              <>
-                <Tooltip label="Expand sidebar">
-                  <button
-                    type="button"
-                    aria-label="Expand sessions sidebar"
-                    aria-expanded={false}
-                    onClick={onToggleSidebar}
-                    className="vex-ls-nrow"
-                  >
-                    <LinePanelLeft className="vex-ls-nrow__i" />
-                  </button>
-                </Tooltip>
-                <div aria-hidden className="vex-ls-rule" />
-              </>
+              <Tooltip label="Expand sidebar">
+                <button
+                  type="button"
+                  aria-label="Expand sessions sidebar"
+                  aria-expanded={false}
+                  onClick={onToggleSidebar}
+                  className="vex-ls-nrow vex-ls-nrow--expand"
+                >
+                  <LinePanelLeft className="vex-ls-nrow__i" />
+                </button>
+              </Tooltip>
             ) : null}
             <NewChatKey rail onCreate={onCreate} />
             <NavKey
@@ -306,7 +310,6 @@ export function SessionsList({
               onClick={openSearch}
               className="vex-ls-nrow--search"
             />
-            <div aria-hidden className="vex-ls-gap" />
             <SidebarNav
               rail
               onMissions={openMissions}

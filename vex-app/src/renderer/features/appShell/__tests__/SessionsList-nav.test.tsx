@@ -439,6 +439,21 @@ describe("the rail", () => {
     expect(screen.getByTestId("account").getAttribute("data-open")).toBe("false");
   });
 
+  it("stacks the rail's H3 cells in the open column's order, with no stray rule or gap", () => {
+    // docs/design/H3-DESKTOP.md sections 1.10 and 4.12 (S5-08): the Expand
+    // key, NEW CHAT, Search chats, then the nav block, each a full-width cell.
+    renderSidebar(true);
+    const body = document.querySelector("[data-vex-area='sessions-sidebar'] .vex-ls-body");
+    const cells = Array.from(body?.children ?? []).map((el) =>
+      el.classList.contains("vex-ls-nav")
+        ? "nav"
+        : (Array.from(el.classList).find((c) => c.startsWith("vex-ls-nrow--")) ?? el.className),
+    );
+    expect(cells).toEqual(["vex-ls-nrow--expand", "vex-ls-nrow--new", "vex-ls-nrow--search", "nav"]);
+    expect(document.querySelector(".vex-ls-rule, .vex-ls-gap")).toBeNull();
+    expect(screen.getByRole("button", { name: "Search chats" }).textContent).toBe("");
+  });
+
   it("opens the sidebar from the Expand key, and from Search straight into the field", () => {
     const { onToggle, rerender } = renderSidebar(true);
     const expand = screen.getByRole("button", { name: "Expand sessions sidebar" });

@@ -81,9 +81,12 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   Personalize (which asks for a name while there is none), Memory (when
   enabled), Sessions, Agent Scan, How Vex works, Settings, Lock Vex, a disabled
   Runtime row. Pages open from the trigger's rect (`origin`).
-- Rail: 40 x 40 keys with tooltips (New chat, Search, Chats, the nav, the
-  account box); Chats opens the sidebar, in Lighter the desk's Markets & sessions
-  drawer. No update slot.
+- Rail (76 wide): the open column's H3 cells at the rail's whole width, icon only
+  with tooltips: the Expand key (48, behind its rule; none on the band or the
+  Lighter desk), New chat (55, the cell fill), Search chats (48), the nav keys on
+  the 40 pitch, and the account cell's disc. Chat and Missions open the column on
+  their list; on the Lighter desk the drawer opens from Markets & sessions. No
+  update slot.
 - Studio (`studio/sidebar/StudioSidebar.tsx`): same head, rows, nav and account;
   under the nav New project, Projects with a Welcome row, and the open project's
   explorer in a `SplitPane` sized by `studioRailExplorerShare` (0.2 to 0.8).
