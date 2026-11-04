@@ -51,6 +51,8 @@ vi.mock("@thesvg/react", async (importOriginal) => {
 // The heavy sections, stubbed with light ones that echo what they are handed.
 vi.mock("../../book/portfolio/LighterAccountCard.js", () => ({
   LighterAccountCard: () => <div data-testid="lighter-stub" />,
+  // The tiles read the account through the section; with no account, no tile.
+  lighterTileFigures: () => null,
 }));
 vi.mock("../../book/SessionActivityCard.js", () => ({
   SessionActivityCard: ({

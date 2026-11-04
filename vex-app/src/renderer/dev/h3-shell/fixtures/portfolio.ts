@@ -12,9 +12,10 @@
  * it has no source for are not answered, because the product does not draw
  * them (plan section 4.6, item 12).
  *
- * The Lighter account answers as not onboarded, the image locker as empty
- * and the VEX strip with a day of fixed prices: real, quiet states of each panel,
- * rather than the refusals an unanswered read would draw.
+ * The Lighter account answers onboarded with two open perps (below), the
+ * image locker as empty and the VEX strip with a day of fixed prices: real
+ * states of each panel, rather than the refusals an unanswered read would
+ * draw.
  */
 
 import type { AgentScanActivityEntry, AgentScanDto } from "@shared/schemas/agent-scan-feed.js";
@@ -140,21 +141,55 @@ const AGENT_SCAN: AgentScanDto = fixture("agent-scan", {
   hasMore: false,
 });
 
-const LIGHTER_NOT_ONBOARDED: LighterTradingAccount = {
+/**
+ * The Lighter account, onboarded on core with two open perps: a long ETH at
+ * 10x cross that is up and a short BTC at 5x isolated a little down, so the
+ * page draws its Lighter tiles and the positions table with both trading
+ * colours. The summary's uPnL is the two positions' sum (19.88 - 0.53), and
+ * each position's value is its size at a mark near the swap chat's ETH price.
+ */
+const LIGHTER_ACCOUNT: LighterTradingAccount = fixture("lighter-account", {
   environment: "core",
-  retrievedAt: H3_NOW,
-  status: "unavailable",
-  unavailableReason: "not_onboarded",
-  accountIndex: null,
-  openOrdersAvailable: false,
+  retrievedAt: H3_NOW - 20_000,
+  status: "ready",
+  unavailableReason: null,
+  accountIndex: 281_474,
+  openOrdersAvailable: true,
   openOrdersTruncated: false,
-  summary: null,
+  summary: { collateral: "1250.00", availableBalance: "742.10", unrealizedPnl: "19.35" },
   assets: [],
-  positions: [],
+  positions: [
+    {
+      marketId: 0,
+      symbol: "ETH",
+      side: "long",
+      size: "0.25",
+      entryPrice: "3420.50",
+      value: "895.00",
+      unrealizedPnl: "19.88",
+      liquidationPrice: "2140.20",
+      initialMarginFraction: 1000,
+      marginMode: "cross",
+      allocatedMargin: null,
+    },
+    {
+      marketId: 1,
+      symbol: "BTC",
+      side: "short",
+      size: "0.004",
+      entryPrice: "97250.00",
+      value: "389.53",
+      unrealizedPnl: "-0.53",
+      liquidationPrice: "118400.00",
+      initialMarginFraction: 2000,
+      marginMode: "isolated",
+      allocatedMargin: "77.90",
+    },
+  ],
   marginTerms: [],
-  exchangeFees: null,
+  exchangeFees: { makerTicks: 0, takerTicks: 350, source: "account" },
   openOrders: [],
-};
+});
 
 /** The page's VEX strip: a day of hourly prices on a gentle, fixed curve. */
 const VEX_MARKET: VexMarketSnapshot = fixture("vex-market", {
@@ -181,7 +216,7 @@ export function portfolioAnswers(): BridgeAnswers {
       listAgentScan: () => ok(AGENT_SCAN),
     },
     lighterTrading: {
-      getAccount: () => ({ promise: ok(LIGHTER_NOT_ONBOARDED), cancel: () => undefined }),
+      getAccount: () => ({ promise: ok(LIGHTER_ACCOUNT), cancel: () => undefined }),
     },
     images: { list: () => ok({ images: [] }) },
     market: { getVexSnapshot: () => ok(VEX_MARKET) },

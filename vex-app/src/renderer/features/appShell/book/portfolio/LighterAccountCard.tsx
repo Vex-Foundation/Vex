@@ -145,6 +145,34 @@ function signedPercent(fraction: number | null): string | null {
   return `${fraction > 0 ? "+" : ""}${text}%`;
 }
 
+/**
+ * The account's two headline figures for the page's tiles (`PositionBlock`):
+ * equity and the unrealized PnL in the settlement unit, with the PnL's
+ * trading direction and how many positions it is open on. The SAME
+ * derivations this section prints (`accountRisk`, the money words above), so a
+ * tile and the section under it can never disagree. Null for an account that
+ * is not ready, and each figure null where the read does not carry it.
+ */
+export interface LighterTileFigures {
+  readonly unit: "USDC" | "USDG";
+  readonly equity: string | null;
+  readonly unrealizedPnl: string | null;
+  readonly pnlDirection: "up" | "down" | null;
+  readonly openPositions: number;
+}
+
+export function lighterTileFigures(account: LighterTradingAccount | null): LighterTileFigures | null {
+  if (account === null || account.status !== "ready") return null;
+  const risk = accountRisk(account.summary);
+  return {
+    unit: account.environment === "core" ? "USDC" : "USDG",
+    equity: money(risk.equity),
+    unrealizedPnl: signedMoney(risk.unrealizedPnl),
+    pnlDirection: direction(risk.unrealizedPnl),
+    openPositions: account.positions.length,
+  };
+}
+
 /** "Not available" in muted ink where the read carries no figure. */
 function Missing(): JSX.Element {
   return <span className="vex-pf-muted">{NOT_AVAILABLE}</span>;
