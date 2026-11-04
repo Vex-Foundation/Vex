@@ -25,6 +25,7 @@ export type HarnessUi = Partial<
   Pick<
     UiState,
     | "activeSessionId"
+    | "activeProjectId"
     | "shellRoute"
     | "runtimeMode"
     | "leftOpen"

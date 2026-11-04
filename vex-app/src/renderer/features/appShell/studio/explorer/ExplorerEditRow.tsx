@@ -48,11 +48,11 @@ import {
 import { cn } from "../../../../lib/utils.js";
 import { EXPLORER_EDIT_ARIA_LABEL } from "./explorer-copy.js";
 import type { EditIntent } from "./explorer-rows.js";
-import { EXPLORER_ROW_HEIGHT } from "./ExplorerRow.js";
-
-/** Matches `ExplorerRow`'s grid so the box sits exactly where the row would. */
-const INDENT_PER_LEVEL = 12;
-const BASE_INDENT = 4;
+import {
+  EXPLORER_BASE_INDENT,
+  EXPLORER_INDENT_PER_LEVEL,
+  EXPLORER_ROW_HEIGHT,
+} from "./ExplorerRow.js";
 
 export interface ExplorerEditRowProps {
   readonly domId: string;
@@ -156,7 +156,7 @@ export function ExplorerEditRow({
 
   const style: CSSProperties = {
     height: `${String(EXPLORER_ROW_HEIGHT)}px`,
-    paddingInlineStart: `${String(BASE_INDENT + level * INDENT_PER_LEVEL)}px`,
+    paddingInlineStart: `${String(EXPLORER_BASE_INDENT + level * EXPLORER_INDENT_PER_LEVEL)}px`,
   };
   const shown = message ?? liveMessage;
   const messageId = `${domId}-message`;
@@ -172,7 +172,7 @@ export function ExplorerEditRow({
       aria-setsize={setSize}
       aria-selected={false}
       style={style}
-      className="flex w-full select-none items-center gap-[7px] pr-2 text-[13.5px] leading-[28px]"
+      className="flex w-full select-none items-center gap-2 pr-5 text-[14px] leading-[30px]"
       // The box is not the tree's focus target; the input inside it is, and it
       // is the one element in this tree that legitimately holds DOM focus.
       // Clicks must not reach the tree's row-select handler behind it.
@@ -186,7 +186,7 @@ export function ExplorerEditRow({
       <span aria-hidden="true" className="h-4 w-3.5 shrink-0" />
       <span
         aria-hidden="true"
-        className="flex h-4 w-4 shrink-0 items-center justify-center text-ink-secondary"
+        className="flex h-4 w-3.5 shrink-0 items-center justify-center text-ink-secondary"
       >
         {intent === "createFolder" ? <LineFolder size={14} /> : <LineFile size={14} />}
       </span>

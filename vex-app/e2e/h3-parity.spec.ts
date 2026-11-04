@@ -72,6 +72,11 @@ const STATES = [
   "activity",
   "markets",
   "how-vex-works",
+  // Studio on a project (our approved Studio plates, H3-DESKTOP.md section
+  // 4.9): one terminal, a split, and under 1024 the rail's files drawer.
+  "studio-project",
+  "studio-split",
+  "studio-band-files",
 ] as const;
 
 /**

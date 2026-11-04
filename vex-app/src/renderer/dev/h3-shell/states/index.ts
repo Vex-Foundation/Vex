@@ -18,6 +18,7 @@ import { memory } from "./memory.js";
 import { newChat } from "./new-chat.js";
 import { portfolio } from "./portfolio.js";
 import { settings } from "./settings.js";
+import { studioBandFiles, studioProject, studioSplit } from "./studio.js";
 import { swapWaiting } from "./swap-waiting.js";
 import { thinking } from "./thinking.js";
 import { thought } from "./thought.js";
@@ -43,6 +44,9 @@ export const HARNESS_STATES: readonly HarnessState[] = [
   activity,
   markets,
   howVexWorks,
+  studioProject,
+  studioSplit,
+  studioBandFiles,
   // Harness-only below: their reads are not stood in, so the parity spec
   // does not capture them (`HARNESS_ONLY` in e2e/h3-parity.spec.ts).
   settings,

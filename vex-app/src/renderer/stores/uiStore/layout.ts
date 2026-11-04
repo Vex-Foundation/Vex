@@ -175,12 +175,15 @@ export function clampBookWidth(px: number): number {
 export const STUDIO_RAIL_EXPLORER_SHARE_MIN = 0.2;
 export const STUDIO_RAIL_EXPLORER_SHARE_MAX = 0.8;
 /**
- * 0.6, raised from 0.55 when the Watchlist joined the nav: the nav sits above
- * the Studio body, so each nav row takes height from this split, and at a
- * 900px window 0.55 left the explorer just under the 200px the rail-parity
- * e2e (I6) holds it to. A saved share is the user's and is kept.
+ * 0.7, the split our approved Studio plate draws (docs/design/H3-DESKTOP.md
+ * section 4.9): the nav folds to its Studio row there, so the body under it
+ * keeps most of the column, and three project rows with their head and
+ * "Show all N" fill the 30% above the rule at a 900px window. It was 0.6
+ * while the nine nav rows stood above the body (0.55 before the Watchlist
+ * joined the nav, which left the explorer under the 200px the rail-parity
+ * e2e, I6, holds it to). A saved share is the user's and is kept.
  */
-export const STUDIO_RAIL_EXPLORER_SHARE_DEFAULT = 0.6;
+export const STUDIO_RAIL_EXPLORER_SHARE_DEFAULT = 0.7;
 
 /**
  * Clamp a live drag of the rail's vertical seam.

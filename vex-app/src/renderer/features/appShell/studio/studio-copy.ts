@@ -310,13 +310,32 @@ export const STUDIO_EXPLORER_SECTION = "Explorer";
  * so: the header toggle OPENS or CLOSES the search, the field's control CLEARS
  * the query, and the field itself is named by what it searches.
  */
-export const STUDIO_SEARCH_ROW_LABEL = "Search";
+export const STUDIO_SEARCH_ROW_LABEL = "Search files";
 export const STUDIO_SEARCH_OPEN_LABEL = "Search projects and files";
 export const STUDIO_SEARCH_CLOSE_LABEL = "Close search";
 export const STUDIO_SEARCH_CLEAR_LABEL = "Clear search";
 export const STUDIO_SEARCH_PLACEHOLDER = "Search projects and files";
 export const STUDIO_SIDEBAR_COLLAPSE_LABEL = "Collapse Studio sidebar";
 export const STUDIO_SIDEBAR_EXPAND_LABEL = "Expand Studio sidebar";
+
+/**
+ * THE NAV'S FOLD in Studio's column (our approved Studio plate): the nav
+ * stands as its Studio row, and the chevron key beside it unfolds the nine
+ * rows in place and folds them again. One key, its name the press's effect,
+ * `aria-expanded` its state.
+ */
+export const STUDIO_NAV_UNFOLD_LABEL = "Show every page";
+export const STUDIO_NAV_FOLD_LABEL = "Show Studio alone";
+
+/**
+ * THE RAIL'S PROJECTS AND FILES KEY, under 1024 where the column is the rail
+ * and cannot open: it opens the projects and the explorer as a 248 drawer
+ * under the band. The key, the drawer and its closing all say the same name.
+ */
+export const STUDIO_FILES_DRAWER_LABEL = "Projects and files";
+
+/** A project row's tag while a shell of the project's is live. */
+export const STUDIO_PROJECT_RUNNING_LABEL = "Running";
 
 /* --------------------------------- search --------------------------------- */
 
@@ -402,12 +421,15 @@ export const STUDIO_PROJECTS_EMPTY = "No projects yet.";
 export const STUDIO_PROJECTS_ERROR = "Vex could not read your projects.";
 export const STUDIO_PROJECTS_RETRY = "Retry";
 
-/** The bounded PROJECTS list's tail control. The count is the whole list. */
+/**
+ * The bounded PROJECTS list's tail control. The count is the whole list; the
+ * plate's words, set in caps by the row ("SHOW ALL 4").
+ */
 export function studioShowAllProjectsLabel(total: number): string {
-  return `Show all ${String(total)} projects`;
+  return `Show all ${String(total)}`;
 }
 
-export const STUDIO_SHOW_FEWER_PROJECTS = "Show fewer projects";
+export const STUDIO_SHOW_FEWER_PROJECTS = "Show fewer";
 
 /* ------------------------------- rail chrome ------------------------------ */
 

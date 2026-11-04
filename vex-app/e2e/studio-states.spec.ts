@@ -625,13 +625,14 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   await expect(welcome.getByRole("button", { name: /^Open / })).toHaveCount(0);
   await expect(welcome).toContainText("No projects yet.");
   // The way back is a real control, not a sentence about one: the left
-  // sidebar nav's Chat row, beside this welcome (docs/design/R3-MINIMAL.md
-  // section 4). No capsule anywhere, and the stand-in button is gone.
+  // sidebar nav, folded to its Studio row, unfolds the Chat row in place
+  // (our approved Studio plate, docs/design/H3-DESKTOP.md section 4.9). No
+  // capsule anywhere, and the stand-in button is gone.
   await expect(
     page
       .locator('[data-vex-area="studio-sidebar"]')
       .getByRole("navigation", { name: "Main" })
-      .getByRole("button", { name: "Chat" }),
+      .getByRole("button", { name: "Show every page" }),
   ).toBeVisible();
   await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
   await expect(welcome.getByRole("button", { name: "Back to Agent mode" })).toHaveCount(0);
@@ -682,9 +683,13 @@ test("UX-3 welcome and status pill: the hero, the recents, the card", async ({
   });
   await page.getByRole("button", { name: /Done|Close/ }).first().click();
 
-  // Back to the welcome through the rail's own row, which is the path a user
-  // has: creating a project leaves the user in its workspace.
-  await sidebar.getByRole("button", { name: "Welcome", exact: true }).click();
+  // Back to the welcome through the nav's Studio row, pressed where it is the
+  // current one, which is the path a user has: creating a project leaves the
+  // user in its workspace.
+  await sidebar
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: "Studio", exact: true })
+    .click();
   await expect(welcome).toBeVisible();
   const row = welcome.getByRole("button", { name: new RegExp(projectName) });
   await expect(row.first()).toBeVisible();

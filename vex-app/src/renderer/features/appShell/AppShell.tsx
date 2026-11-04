@@ -472,6 +472,8 @@ function ShellFrame({
             headless
             collapsed={sidebarCollapsed}
             onToggleSidebar={toggleSidebar}
+            // The band keeps the rail: its files open in the rail's drawer.
+            expandable={tier !== "band"}
             activeProjectId={activeProjectId}
             onSelectProject={setActiveProjectId}
             onSelectWelcome={() => setActiveProjectId(null)}

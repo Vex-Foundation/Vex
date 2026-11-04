@@ -378,10 +378,11 @@ export function registerRailParityScenarios(
     /* ---- 01: the welcome rail, and the way back to Agent ---------------- */
 
     // No capsule anywhere: the Studio sidebar is the left sidebar, and its
-    // nav's Chat row is the way back (docs/design/R3-MINIMAL.md section 4).
+    // nav, folded to its Studio row, unfolds the Chat row that is the way
+    // back (docs/design/H3-DESKTOP.md section 4.9).
     await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
     await expect(
-      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Chat" }),
+      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Show every page" }),
     ).toBeVisible();
     await shot(page, `${theme}-01-studio-welcome-empty`);
 
@@ -407,7 +408,7 @@ export function registerRailParityScenarios(
     // I9's rail half: once a project is open the welcome is gone and the nav
     // stays in the sidebar, so Studio is never a one-way door.
     await expect(
-      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Chat" }),
+      sidebar.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "Show every page" }),
     ).toBeVisible();
     await expect(page.getByRole("radiogroup", { name: "Runtime mode" })).toHaveCount(0);
 
