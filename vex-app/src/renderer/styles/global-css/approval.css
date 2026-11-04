@@ -234,20 +234,27 @@
   border-top: 1px solid var(--vex-alias-rule);
 }
 
-/* 4. "All signed fields": 38 high, blue 13.5 / 500, a chevron that turns
- * when the well is open. */
+/* 4. "ALL SIGNED FIELDS": H3's disclosure (section 1.7), one ruled cell on
+ * the table's 34px pitch: the chevron 24 in, then the words in sans 13 caps,
+ * tracked, in ink, as H3 sets every key word. Desktop's note of what it folds
+ * ("kyberswap:swap.execute, wallet broadcast, expiry, raw arguments") sits at
+ * the right in muted sentence case and gives way first. The chevron turns
+ * when the fields are open. Focus is H3's 2px ring inside the cell. */
 .vex-appr__more {
-  margin: 8px 24px 0;
+  margin: 0;
 }
 .vex-appr__more-key {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  min-height: 34px;
+  padding: 0 24px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+  border-top: 1px solid var(--vex-alias-rule);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -255,9 +262,12 @@
 .vex-appr__more-key::-webkit-details-marker {
   display: none;
 }
+.vex-appr__more-key:hover {
+  background: var(--vex-alias-interactive-hover);
+}
 .vex-appr__more-key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 3px;
+  outline-offset: -2px;
 }
 .vex-appr__chev {
   display: inline-flex;
@@ -269,38 +279,50 @@
 }
 .vex-appr__more-sum {
   min-width: 0;
+  margin-left: auto;
   overflow: hidden;
-  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--vex-alias-label-tertiary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The well: the second paper, the key in 12 muted, the value in mono 12. */
+/* The fields, open: the record as bound, one ruled row per field on the cell
+ * fill, edge to edge like the table above it. Key and value are both mono 12:
+ * the key exactly as bound, never in caps (a person checking `amountIn` must
+ * see `amountIn`), muted, 24 in; the value in ink, at the left of its column
+ * so a long address or quote line reads from its start, wrapping inside its
+ * cell. */
 .vex-appr__well {
   display: grid;
   grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
-  gap: 4px 12px;
-  margin: 0;
-  padding: 10px 14px;
-  font-size: 12.5px;
-  background: var(--vex-alias-bg-layer-3);
-}
-.vex-appr__well dt {
   margin: 0;
   font-size: 12px;
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-appr__well dt,
+.vex-appr__well dd {
+  margin: 0;
+  padding: 7px 0;
+  line-height: 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-appr__well dt {
+  padding-right: 12px;
+  padding-left: 24px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-appr__well dd {
-  margin: 0;
+  padding-right: 24px;
   color: var(--vex-alias-label-primary);
 }
 .vex-appr__well .vex-appr__num {
   font-size: 12px;
-}
-.vex-appr__well--args {
-  padding-top: 4px;
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
 
 .vex-appr__error {

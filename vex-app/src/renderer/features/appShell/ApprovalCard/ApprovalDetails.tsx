@@ -481,12 +481,16 @@ export function ApprovalDetails({
         <p className="vex-appr__reason">{summary.reasoningPreview}</p>
       ) : null}
 
-      {/* ALL SIGNED FIELDS, closed (section 8.1, item 6). The row-level facts
+      {/* ALL SIGNED FIELDS, closed: H3's disclosure (H3-DESKTOP.md section
+          1.7), one ruled cell with the chevron and the words in caps, and
+          desktop's note of what it folds at the right. The row-level facts
           of the durable intent (proposal, project, expiry) are NOT
           `criticalArgs`: the card's `preview_json` is what the Studio authority
           digest covers, so they are shown here without touching what it
           binds. A card with no readable facts above opens it, so the only
-          facts it has are never folded away. */}
+          facts it has are never folded away. Inside, every field is a ruled
+          row in mono with its key exactly as bound ("amountIn", never caps):
+          this is the record the person is checking, not a label to read. */}
       <details className="vex-appr__more" open={facts === null}>
         <summary className="vex-appr__more-key">
           <span aria-hidden className="vex-appr__chev">

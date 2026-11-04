@@ -1279,4 +1279,77 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     expect(value).toContain("padding-right: 24px");
     expect(value).toContain("font-size: 14px");
   });
+
+  describe("All signed fields, H3's disclosure", () => {
+    function signed(): HTMLDetailsElement {
+      const details = screen.getByText("All signed fields").closest("details");
+      expect(details).not.toBeNull();
+      return details as HTMLDetailsElement;
+    }
+
+    it("is one key row: the chevron, the words in sentence case, and what it folds", () => {
+      renderCard(SWAP, false);
+      const key = signed().querySelector("summary");
+      expect(key?.className).toBe("vex-appr__more-key");
+      expect(key?.firstElementChild?.className).toBe("vex-appr__chev");
+      expect(key?.querySelector(".vex-appr__more-sum")?.textContent).toBe(
+        "kyberswap:swap.execute, wallet broadcast, raw arguments",
+      );
+      // Closed while the table above has facts to read.
+      expect(signed().open).toBe(false);
+    });
+
+    it("folds the same signed record as before, every field and the tool exactly as bound", () => {
+      renderCard(SWAP, false);
+      const details = signed();
+      const args = screen.getByTestId("critical-args");
+      expect(details.contains(args)).toBe(true);
+      expect(details.contains(screen.getByTestId("approval-proposal"))).toBe(true);
+      expect(details.contains(screen.getByTestId("action-chip"))).toBe(true);
+      const keys = Array.from(args.querySelectorAll("dt")).map((dt) => dt.textContent);
+      // Keys as bound (the Vex fee keeps its one human label), never re-cased.
+      expect(keys).toEqual([
+        "toolId",
+        "chain",
+        "tokenIn",
+        "tokenOut",
+        "amountIn",
+        "slippageBps",
+        "Vex fee",
+        "quoteBinding",
+      ]);
+      for (const dt of Array.from(details.querySelectorAll("dt"))) {
+        expect(dt.classList.contains("vex-field-label")).toBe(false);
+      }
+      expect(details.textContent).toContain("kyberswap:swap.execute");
+    });
+
+    it("sets the key in caps and tracked sans 13, ruled like a row, its note in sentence case", () => {
+      const key = ruleBody(".vex-appr__more-key");
+      expect(key).toContain("font-size: 13px");
+      expect(key).toContain("text-transform: uppercase");
+      expect(key).toContain("letter-spacing: var(--tracking-label)");
+      expect(key).toContain("border-top: 1px solid var(--vex-alias-rule)");
+      expect(key).toContain("padding: 0 24px");
+      expect(key).toContain("min-height: 34px");
+      // Ink, not the old blue link: blue is for the primary key only.
+      expect(key).toContain("color: var(--vex-alias-label-primary)");
+      expect(key).not.toContain("accent");
+      const note = ruleBody(".vex-appr__more-sum");
+      expect(note).toContain("text-transform: none");
+      expect(note).toContain("letter-spacing: normal");
+      // H3's focus: the 2px ring inside the cell.
+      expect(ruleBody(".vex-appr__more-key:focus-visible")).toContain("outline-offset: -2px");
+    });
+
+    it("rules every open field edge to edge, its key in mono and never in caps", () => {
+      const cell = ruleBody(".vex-appr__well dt,\n.vex-appr__well dd");
+      expect(cell).toContain("border-top: 1px solid var(--vex-alias-rule)");
+      const key = ruleBody(".vex-appr__well dt");
+      expect(key).toContain("font-family: var(--font-mono)");
+      expect(key).toContain("padding-left: 24px");
+      expect(key).not.toContain("text-transform");
+      expect(ruleBody(".vex-appr__well dd")).toContain("padding-right: 24px");
+    });
+  });
 });
