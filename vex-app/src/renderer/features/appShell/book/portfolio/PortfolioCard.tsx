@@ -1,11 +1,13 @@
 /**
  * PortfolioCard: the ONE section chrome every Portfolio page section composes
- * (Wallets, Balances, Lighter account, Activity, Launchpad), per
- * docs/design/R3-MINIMAL.md section 9.1: a head with the section's name in
- * Instrument Sans 15 / 600, an optional muted note after it, and the
- * section's link at the right (13 / 500 blue); then the body, usually a
- * table. No box, no fill, no radius, no shadow: the section sits on the
- * page's paper (`.vex-pf-sec`, styles/global-css/book.css).
+ * (Wallets, Balances, Lighter account, Activity, Launchpad). H3 sets a
+ * section's head as a label (docs/design/H3-DESKTOP.md section 2.3: EQUITY,
+ * ALLOCATION and OPEN POSITIONS, 13 caps tracked, 600, ink): the name is
+ * written in sentence case here and the sheet sets the caps, an optional
+ * muted note follows it in sentence case, and the section's link stands at
+ * the right, ink and underlined (H3's links are never blue); then the body,
+ * usually a table. No box, no fill, no radius, no shadow (`.vex-pf-sec`,
+ * styles/global-css/book.css).
  */
 
 import type { JSX, MouseEvent, ReactNode } from "react";
@@ -32,7 +34,7 @@ export function PortfolioCard({
       <header className="vex-pf-sec__h">
         <h2 className="vex-pf-sec__t">
           {leading}
-          <span>{title}</span>
+          <span className="vex-pf-sec__name">{title}</span>
           {note !== undefined && note !== null ? (
             <span className="vex-pf-sec__note">{note}</span>
           ) : null}
@@ -67,7 +69,7 @@ export function CardStateNote({
 }
 
 /**
- * A section head link (13 / 500 blue): a button, because it opens a page or a
+ * A section head link (13, ink, underlined): a button, because it opens a page or a
  * mode inside the app. Its own rect rides along as the opened page's origin.
  */
 export function SectionLink({

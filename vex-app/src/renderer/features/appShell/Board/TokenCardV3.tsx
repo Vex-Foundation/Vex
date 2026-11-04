@@ -346,7 +346,15 @@ export function TokenCardV3({
           * the right priority, because the delta and the window are short,
           * fixed and meaningless apart, and because the disclosure in the
           * header carries the whole decimal string either way. */}
-        <div className="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-2.5">
+        {/* 8px BETWEEN THE THREE, not R3's 10. H3's sans (Be Vietnam Pro)
+          * sets `24h` at 23.22px where Instrument Sans set 20.51, and at
+          * whole-pixel advances (Linux Chromium) the row of the widest price,
+          * delta and window measured about 290 against the 288 floor. The two
+          * gaps give 2px each back, so the row is 285.6 there (278.5 at
+          * fractional advances) and every column threshold in
+          * `board-layout.css` stays where it was. Derivation: the head of
+          * `boardCardValueBudget.ts` and its geometry test. */}
+        <div className="flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-2">
           <span
             data-vex-area="board-token-price"
             data-shortened={printedPrice.shortened ? "true" : undefined}

@@ -1,10 +1,12 @@
 /**
- * Manual portfolio refresh (Wave P): the Portfolio page's refresh key, a page
- * key in the title bar's right cluster as the d6 render draws it
- * (docs/design/R3-MINIMAL.md sections 3 and 9.1; the 32 x 32 icon key of
- * section 1.5 with the line refresh icon, `pageKeysSlot.tsx`). Its outcome
- * line stays on the page, at the top right of the total; without a title bar
- * the key stays there too.
+ * Manual portfolio refresh (Wave P): the Portfolio page's refresh key. H3
+ * moves a page's keys out of the title bar into the page's own tabs row, at
+ * the right beside "Updated {time}" (docs/design/H3-DESKTOP.md section 4.8),
+ * so the key is a square cell of that row, the height of the row, with the
+ * line refresh icon (`.vex-pg-key`, book.css). It renders where the page puts
+ * it: it no longer portals into the title bar's page-key slot
+ * (`pageKeysSlot.tsx`), so the key, its in-flight state and its outcome line
+ * all sit together on the page. Its outcome line hangs under the key.
  *
  * The portfolio refreshes itself: on a 300s periodic cycle, on a push the moment
  * a pending transaction terminalizes, and on an enqueued snapshot after each
@@ -21,13 +23,13 @@
  *     still valid, only not newer, and the copy says exactly that.
  *
  * The key never renders the money it fetched: the query cache does, after
- * the invalidation below.
+ * the invalidation below, and the row's "Updated" stamp moves with the
+ * re-read's own fetch time.
  */
 
 import { useCallback, useState, type JSX } from "react";
 import { LineRefresh } from "../../../components/icons/line/index.js";
 import { usePortfolioRefresh } from "../../../lib/api/portfolio.js";
-import { PageKey } from "../pageKeysSlot.js";
 
 type RefreshFeedback =
   | { readonly kind: "idle" }
@@ -62,22 +64,18 @@ export function PortfolioRefreshButton(): JSX.Element {
 
   return (
     <span className="vex-pf-refresh">
-      <PageKey>
-        {(inTitleBar) => (
-          <button
-            type="button"
-            onClick={() => void onClick()}
-            disabled={inFlight}
-            aria-busy={inFlight || undefined}
-            aria-label="Refresh portfolio"
-            title="Refresh portfolio"
-            className={inTitleBar ? "vex-tb-key" : "vex-pf-key"}
-            data-vex-page-key="refresh"
-          >
-            <LineRefresh size={16} />
-          </button>
-        )}
-      </PageKey>
+      <button
+        type="button"
+        onClick={() => void onClick()}
+        disabled={inFlight}
+        aria-busy={inFlight || undefined}
+        aria-label="Refresh portfolio"
+        title="Refresh portfolio"
+        className="vex-pg-key"
+        data-vex-page-key="refresh"
+      >
+        <LineRefresh size={16} />
+      </button>
       {feedback.kind !== "idle" ? (
         <span
           role={feedback.kind === "throttled" ? undefined : "status"}

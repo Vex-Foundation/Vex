@@ -20,7 +20,7 @@
  */
 
 import type { AvailableWalletDto } from "@shared/schemas/wallets.js";
-import type { PortfolioDto } from "@shared/schemas/portfolio.js";
+import type { PortfolioDto, PortfolioReadInput } from "@shared/schemas/portfolio.js";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { Result } from "@shared/ipc/result.js";
 import { usePortfolio, useWalletPortfolio } from "../../../../lib/api/portfolio.js";
@@ -162,6 +162,19 @@ export function cardScopeOf(scope: PortfolioPageScope): PortfolioCardScope {
     case "project":
       return { kind: "project", projectId: scope.projectId };
   }
+}
+
+/**
+ * The `PortfolioReadInput` a page scope reads its figures with: the card
+ * scope's input (`portfolioReadInputFor(cardScopeOf(scope))`), except that one
+ * inventory wallet is the global read narrowed by its address, exactly what
+ * `useWalletPortfolio` sends. The equity chart hands this same input to the
+ * history read, so the chart covers the wallets the figures beside it cover.
+ */
+export function pageScopeReadInput(scope: PortfolioPageScope): PortfolioReadInput {
+  return scope.kind === "wallet"
+    ? { scope: "global", walletAddress: scope.wallet.address }
+    : portfolioReadInputFor(cardScopeOf(scope));
 }
 
 /**

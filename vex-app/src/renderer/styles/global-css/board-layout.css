@@ -30,22 +30,33 @@
  * floor is the widest of three constraints, with realistic DexScreener
  * figures and the widest label the frozen safety table can produce:
  *
- *   price row   `$0.000001230` (mono 26 / 500, -.03em) 177.84 + 10 gap
- *               + `+661.00%` (mono 13) 61.36 + 10 gap + `24h` (sans 12)
- *               20.51 = 279.71 at fractional advances, 287 at whole pixel
+ *   price row   `$0.000001230` (mono 26 / 500, -.03em) 177.84 + 8 gap
+ *               + `+661.00%` (mono 13) 61.36 + 8 gap + `24h` (sans 12)
+ *               23.22 = 278.42 at fractional advances, 285.6 at whole pixel
  *               ones (below)
- *   four stats  `24h Volume` (sans 11.5) 62.85, so 63 a column:
- *               4 x 63 + 3 x 6 gap = 270
- *   header      34 photo + 11 + the ticker line `BITCOIN - Robinhood`
- *               (sans 12.5) 119.04, so 120, + 11 + the actions
- *               (26 key + 6 + 74 pressed Spotlight chip) = 282
+ *   four stats  `24h Volume` (sans 11.5) 66.48, so 67 a column:
+ *               4 x 67 + 3 x 6 gap = 286
+ *   header      34 photo + 11 + the ticker line `BITCOIN · Robinhood`
+ *               (sans 12.5) 125.95, so 126, + 11 + the actions
+ *               (26 key + 6 + 74 pressed Spotlight chip) = 288
  *
- * The price row binds: INNER FLOOR 288. Why 288 and not the header's 282:
- * Linux Chromium without subpixel text positioning rounds every glyph advance
- * to a whole pixel (the 15.6 of the price's mono 26 becomes 16, so 15.22 a
- * glyph after the -.03em tracking, not 14.82), the price then measures 183 and
- * the whole row 287, so 288. At that floor the header gives its identity
- * column 126 (288 - 162) instead of 120. The tile adds 36px of padding
+ * H3'S FACES (docs/design/H3-DESKTOP.md section 2.3; measured in Chromium on
+ * 4 November 2026). Roboto Mono advances 0.6em like JetBrains Mono, so the
+ * figures kept their widths; Be Vietnam Pro is wider than Instrument Sans,
+ * so `24h` grew from 20.51 to 23.22, the widest stat label from 62.85 to
+ * 66.48 and the ticker line from 119.04 to 125.95. The floor holds without
+ * moving a threshold: the price row's two gaps went from 10 to 8
+ * (`TokenCardV3.tsx`), the stat labels still fit their 67.5 columns, and the
+ * ticker line now fills the identity column the floor leaves exactly (its
+ * chain name is what ellipsizes when a longer one meets it).
+ *
+ * The price row binds: INNER FLOOR 288. Why 288: Linux Chromium without
+ * subpixel text positioning rounds every glyph advance to a whole pixel (the
+ * 15.6 of the price's mono 26 becomes 16, so 15.22 a glyph after the -.03em
+ * tracking, not 14.82; `24h` becomes 24), the price then measures 183 and the
+ * whole row 285.6, inside 288 (with R3's 10px gaps it would be 289.6). At
+ * that floor the header gives its identity column 126 (288 - 162). The tile
+ * adds 36px of padding
  * (18 + 18) and the 1px rule on its right edge: TILE FLOOR 325px. The checks
  * word (`Checks unavailable in this response`, 202 + 16 swatch and gap = 218)
  * and the two links (176.65) each take a row of 288 with room to spare, so

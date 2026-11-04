@@ -14,7 +14,8 @@
  *     ONLY, `~` / `est.` when the basis is estimated, the `~$X est.` figure,
  *     chain route plus clock, and the explorer link only when main resolved one,
  *   - Lighter fill rows: kind chip, compact trade, settled USD, no explorer link,
- *   - EVERY row ends in a StateWord, and `activityOutcome` is the table behind
+ *   - EVERY row ends in H3's status mark (an ink word beside a green, grey or
+ *     red square, `StatusMark`), and `activityOutcome` is the table behind
  *     it (a pending row with a transaction is submitted, not failed; stale or
  *     stalled tracking is "Status unknown", never "Failed"),
  *   - a timed-out page renders the calm note, NEVER the empty state, and a typed
@@ -176,11 +177,11 @@ function firstRow(container: HTMLElement): HTMLTableRowElement {
   return row;
 }
 
-/** The outcome cell's StateWord: its fill and its word. */
-function outcomeOf(row: HTMLTableRowElement): { readonly state: string | null; readonly word: string } {
-  const word = cell(row, 4).querySelector(".vex-state-word");
-  if (word === null) throw new Error("the row does not end in a StateWord");
-  return { state: word.getAttribute("data-s"), word: word.textContent ?? "" };
+/** The outcome cell's H3 status mark: its square's family and its word. */
+function outcomeOf(row: HTMLTableRowElement): { readonly status: string | null; readonly word: string } {
+  const word = cell(row, 4).querySelector(".vex-status-mark");
+  if (word === null) throw new Error("the row does not end in a status mark");
+  return { status: word.getAttribute("data-status"), word: word.textContent ?? "" };
 }
 
 /** A pending agent row, fresh by default: checked a minute ago, with a transaction. */
@@ -603,8 +604,8 @@ describe("SessionActivityCard - two ledgers, one table", () => {
   });
 });
 
-describe("SessionActivityCard - every row ends in a StateWord", () => {
-  it("closes each row with its fill and its word", () => {
+describe("SessionActivityCard - every row ends in a status mark", () => {
+  it("closes each row with its word and its square's colour", () => {
     mockFeed([
       entry({ id: "a-1", status: "confirmed" }),
       entry({ id: "a-2", status: "failed" }),
@@ -617,11 +618,11 @@ describe("SessionActivityCard - every row ends in a StateWord", () => {
     // real clock the card reads; only the tx hash separates "submitted" from
     // "pending".
     expect(bodyRows(container).map(outcomeOf)).toEqual([
-      { state: "done", word: "Confirmed" },
-      { state: "error", word: "Failed" },
-      { state: "listening", word: "Submitted, awaiting confirmation" },
-      { state: "listening", word: "Pending" },
-      { state: "done", word: "Confirmed" },
+      { status: "filled", word: "Confirmed" },
+      { status: "failed", word: "Failed" },
+      { status: "running", word: "Submitted, awaiting confirmation" },
+      { status: "running", word: "Pending" },
+      { status: "filled", word: "Confirmed" },
     ]);
   });
 
@@ -638,15 +639,17 @@ describe("SessionActivityCard - every row ends in a StateWord", () => {
       }),
     ]);
     const { container } = renderCard(SESSION_SCOPE);
-    expect(outcomeOf(firstRow(container))).toEqual({ state: "error", word: "Status unknown" });
+    expect(outcomeOf(firstRow(container))).toEqual({ status: "failed", word: "Status unknown" });
   });
 
-  it("the outcome cell holds the word and its fill and nothing else", () => {
+  it("the outcome cell holds the word and its square and nothing else", () => {
     mockFeed([entry({ id: "a-1", status: "confirmed" })]);
     const { container } = renderCard(SESSION_SCOPE);
     const outcome = cell(firstRow(container), 4);
     expect(outcome.textContent).toBe("Confirmed");
-    expect(outcome.querySelectorAll(".vex-state-word")).toHaveLength(1);
+    expect(outcome.querySelectorAll(".vex-status-mark")).toHaveLength(1);
+    // The square is decoration: the word beside it says the state.
+    expect(outcome.querySelector(".vex-status-mark__sq")?.getAttribute("aria-hidden")).toBe("true");
   });
 });
 
