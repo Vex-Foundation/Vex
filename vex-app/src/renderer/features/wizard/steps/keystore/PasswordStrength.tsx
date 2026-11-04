@@ -1,7 +1,8 @@
 /**
- * The master password's strength under its field (docs/design/R3-MINIMAL.md
- * section 10.3): four cells (the reached ones blue), then the rule at the
- * left and the verdict at the right as a fill and a word.
+ * The master password's strength under its field (docs/design/H3-DESKTOP.md
+ * section 4.9; the plate `stage-wizard-password`): four cells (the reached
+ * ones lit in ink), then the rule at the left and the verdict at the right as
+ * H3's status, a square and an ink word.
  *
  * Purely presentational: the zxcvbn estimate runs in
  * `useMasterPasswordStrength.ts`, and `blocked` mirrors the caller's own
@@ -9,15 +10,17 @@
  * component never recomputes that policy. Words follow zxcvbn's 0 to 4 score:
  * 0 and 1 weak, 2 fair, 3 good, 4 strong.
  *
- * Status by fill: nothing typed is the outline, a check in flight the dot
- * screen, a password the gate still refuses the target, an accepted one
- * solid.
+ * The square: nothing typed is the outline, a check in flight grey, a
+ * password the gate still refuses ink (the person is asked to act), an
+ * accepted one green.
  */
 
 import type { JSX } from "react";
 
-import { StateWord } from "../../../../components/ui/state-word.js";
-import type { SwatchState } from "../../../../components/ui/swatch.js";
+import {
+  StageStatus,
+  type StageSquareKind,
+} from "../../../../components/onboarding/StageFrame.js";
 import type { PasswordStrengthLabel } from "./useMasterPasswordStrength.js";
 
 export interface PasswordStrengthProps {
@@ -63,8 +66,8 @@ export function PasswordStrength({
 }: PasswordStrengthProps): JSX.Element {
   const checking = !ready && length > 0;
   const word = checking ? "Checking…" : LABEL_TEXT[label];
-  const fill: SwatchState =
-    length === 0 ? "idle" : checking ? "listening" : blocked ? "warning" : "done";
+  const square: StageSquareKind =
+    length === 0 ? "none" : checking ? "running" : blocked ? "ink" : "done";
   const reached = strengthCells(length, score);
   const feedback =
     blocked && length > 0 ? (warning ?? suggestions?.[0] ?? null) : null;
@@ -78,7 +81,7 @@ export function PasswordStrength({
       </div>
       <p className="vex-wz-hint">
         <span>10 characters minimum. Must score at least &quot;Good&quot;.</span>
-        <StateWord state={fill} word={word} className="text-ink-primary" />
+        <StageStatus kind={square} word={word} />
       </p>
       {feedback ? (
         <p className="vex-wz-hint text-warning" role="status">

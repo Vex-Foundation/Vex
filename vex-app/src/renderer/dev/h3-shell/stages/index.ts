@@ -8,12 +8,15 @@
 import { runtimeMovePending, runtimeOffline } from "./first-run.js";
 import { systemCheckBlocked, systemCheckReady } from "./system-check.js";
 import type { HarnessStage } from "./types.js";
+import { wizardPassword, wizardWallets } from "./wizard.js";
 
 export const HARNESS_STAGES: readonly HarnessStage[] = [
   systemCheckReady,
   systemCheckBlocked,
   runtimeOffline,
   runtimeMovePending,
+  wizardPassword,
+  wizardWallets,
 ];
 
 export function stageById(id: string | null): HarnessStage | null {

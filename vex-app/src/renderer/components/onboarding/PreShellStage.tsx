@@ -2,21 +2,19 @@
  * THE STAGE: what every pre-shell screen stands beside, and the furniture the screens share.
  *
  * `App` mounts ONE `StagePlate` with the pre-shell, so she holds still while the screens change
- * beside her. It has three layouts:
+ * beside her. It has two layouts:
  *
  *   stage  H3's stage (docs/design/H3-DESKTOP.md section 4.9, approved as drawn on 2026-11-04):
  *          her column on the shell's seams, laid over the empty middle column of every screen's
  *          frame (`StageFrame.tsx`): the Vex key in the header cell, Kimm's section from the
  *          header to the bottom row, and the tagline cell under her. The first run screens
  *          (system check, the local runtime and the move of a previous release's data, database)
- *          stand on it. Her section, the key and the chord are the shell's own (`KimmSection`,
- *          `VexKeyView`, `useVexToggleShortcut`, bound here once while no shell stands) and her
- *          open or closed choice is the shell's stored one (`vexOpenChat`).
- *   plate  R3's (`docs/design/R3-MINIMAL.md section 10`), until their own H3 rows: the wake and
+ *          and the setup wizard stand on it. Her section, the key and the chord are the shell's
+ *          own (`KimmSection`, `VexKeyView`, `useVexToggleShortcut`, bound here once while no
+ *          shell stands) and her open or closed choice is the shell's stored one (`vexOpenChat`).
+ *   plate  R3's (`docs/design/R3-MINIMAL.md section 10`), until their own H3 row: the wake and
  *          the unlock on a 720 wide plate at the left at the full window height (the plateau
- *          print, its grain, Vex rising from the VEX token) and paper at the right;
- *   print  R3's wizard, which draws its own frame and plate over it (`WizardShell`): the same
- *          print at window size, no animal on it.
+ *          print, its grain, Vex rising from the VEX token) and paper at the right.
  *
  *   StagePlate    the persistent layer
  *   VersionStamp  the small version at the window's bottom right (R3)
@@ -77,16 +75,16 @@ export function releaseOf(version: string): {
 }
 
 /** Which layout the plate takes for a view. */
-export type StageLayout = "stage" | "plate" | "print";
+export type StageLayout = "stage" | "plate";
 
 const STAGE_VIEWS: ReadonlySet<View> = new Set<View>([
   "systemCheck",
   "runtimeMigration",
   "runtimeBootstrap",
   "migrations",
+  "wizard",
 ]);
 const PLATE_VIEWS: ReadonlySet<View> = new Set<View>(["splash", "unlock"]);
-const PRINT_VIEWS: ReadonlySet<View> = new Set<View>(["wizard"]);
 
 /**
  * The plate's layout for a view, or null when nothing stands on a stage. The shell holds the plate
@@ -95,7 +93,6 @@ const PRINT_VIEWS: ReadonlySet<View> = new Set<View>(["wizard"]);
 export function stageLayoutFor(view: View, holding: boolean): StageLayout | null {
   if (STAGE_VIEWS.has(view)) return "stage";
   if (PLATE_VIEWS.has(view)) return "plate";
-  if (PRINT_VIEWS.has(view)) return "print";
   return holding ? "plate" : null;
 }
 
@@ -266,13 +263,7 @@ export function StagePlate({ className }: { readonly className?: string }): JSX.
       data-vex-motion-opacity=""
       className={cn("vex-stage-plate vex-gate-plate pointer-events-none", className)}
     >
-      {layout === "plate" ? (
-        <PlateScene />
-      ) : (
-        <div className="vex-stage-plate__full">
-          <PrintLayers />
-        </div>
-      )}
+      <PlateScene />
     </div>
   );
 }

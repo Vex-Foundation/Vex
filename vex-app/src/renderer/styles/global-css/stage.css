@@ -626,6 +626,311 @@ html[data-os="mac"] .vex-pre__logo {
   }
 }
 
+/* ---- The wizard on the stage (plates `stage-wizard-password`, `-wallets`) --
+ * A step's keys arrive as the step's own `Button`s; the bottom row lays them
+ * out by their variant, so no step names a cell: Back (`data-vex-wizard-back`)
+ * at the left, the step's other ways on (quiet keys) in the middle, its one
+ * primary key, blue, at the right edge. With no middle key an empty cell
+ * takes the room. */
+.vex-wzp__actions {
+  display: contents;
+}
+.vex-wzp__foot > [data-vex-wizard-back] {
+  order: 1;
+}
+.vex-wzp__foot > .vex-pre-gap {
+  order: 2;
+}
+.vex-wzp__foot:has(.vex-wzp__actions > [data-vex-button]:not([data-vex-button="primary"])) > .vex-pre-gap {
+  display: none;
+}
+.vex-wzp__actions > [data-vex-button] {
+  display: flex;
+  box-sizing: border-box;
+  height: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  order: 2;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 24px;
+  border: 0;
+  border-right: var(--vex-pre-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  translate: none;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+.vex-wzp__actions > [data-vex-button]:enabled:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-wzp__actions > [data-vex-button]:disabled {
+  background: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+.vex-wzp__actions > [data-vex-button="primary"] {
+  width: 200px;
+  flex: none;
+  order: 3;
+  padding: 0 16px;
+  border-right: 0;
+  background: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+}
+.vex-wzp__actions > [data-vex-button="primary"]:enabled:hover {
+  background: var(--vex-alias-button-accent-hover);
+}
+.vex-wzp__actions > [data-vex-button]:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -4px;
+}
+@media (max-width: 1279px) {
+  .vex-wzp__actions > [data-vex-button] {
+    padding: 0 16px;
+  }
+  .vex-wzp__actions > [data-vex-button="primary"] {
+    width: 168px;
+  }
+}
+
+/* The step's fields: a label in the eyebrow's caps over a framed cell, its
+ * dots in the figure face, SHOW a cell inside the field at its right. */
+.vex-pre .vex-wz-stack {
+  gap: 28px;
+}
+.vex-pre .vex-wz-group {
+  gap: 10px;
+}
+.vex-pre .vex-wz-group > label {
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-pre .vex-password {
+  display: flex;
+  box-sizing: border-box;
+  height: 56px;
+  align-items: stretch;
+  border: var(--vex-pre-rule);
+  background: var(--vex-alias-field);
+}
+.vex-pre .vex-password:focus-within {
+  border-color: var(--vex-alias-rule-chosen);
+}
+.vex-pre .vex-password > input {
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  padding: 0 20px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+}
+.vex-pre .vex-password > input[type="password"] {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 0.18em;
+}
+.vex-pre .vex-password > input::placeholder {
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+}
+.vex-pre .vex-password:has(> input[aria-invalid="true"]) {
+  border-color: var(--vex-alias-state-error-mark);
+}
+.vex-pre .vex-password__show {
+  position: static;
+  display: flex;
+  width: 74px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-left: var(--vex-pre-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-decoration: none;
+  text-transform: uppercase;
+  translate: none;
+}
+.vex-pre .vex-password__show:hover {
+  background: var(--vex-alias-interactive-active);
+  text-decoration: none;
+}
+.vex-pre .vex-password__show:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -4px;
+}
+/* The strength meter: four cells on the rule, the reached ones in ink. */
+.vex-pre .vex-wz-meter {
+  gap: 4px;
+  margin-top: 0;
+}
+.vex-pre .vex-wz-meter > i {
+  background: var(--vex-alias-rule);
+}
+.vex-pre .vex-wz-meter > i[data-on] {
+  background: var(--vex-alias-label-primary);
+}
+.vex-pre .vex-wz-hint {
+  align-items: center;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* The wallets step: the note with its ink square, the two chain cells side by
+ * side on the rule, each with its state and its three choices as rows, and
+ * the full backup as a row under them. */
+.vex-wz-note-sq {
+  display: flex;
+  max-width: 712px;
+  align-items: flex-start;
+  gap: 13px;
+  margin: -16px 0 28px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-wz-note-sq > .vex-pre-sq {
+  margin-top: 7px;
+}
+.vex-wz-chains {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: var(--vex-pre-rule);
+}
+.vex-wz-chain {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.vex-wz-chain + .vex-wz-chain {
+  border-left: var(--vex-pre-rule);
+}
+.vex-wz-chain__head {
+  display: flex;
+  box-sizing: border-box;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px 0 24px;
+  border-bottom: var(--vex-pre-rule);
+}
+.vex-wz-chain__name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.vex-wz-chain > [data-vex-wallet-state] {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0;
+}
+.vex-wz-chain .vex-wz-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.vex-wz-chain .vex-wz-card > .vex-wz-text {
+  flex: 1 1 auto;
+  padding: 16px 24px 18px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.vex-wz-chain .vex-wz-card__acts {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+}
+/* A choice, and the full backup under the cells: a row with an arrow. */
+.vex-wz-chain .vex-wz-card__acts > [data-vex-button],
+.vex-pre .vex-wz-wallet-more [data-vex-button] {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 0 24px;
+  border: 0;
+  border-top: var(--vex-pre-rule);
+  background: none;
+  color: var(--vex-alias-label-primary);
+  font-size: 15px;
+  font-weight: 400;
+  text-align: left;
+  translate: none;
+}
+.vex-wz-chain .vex-wz-card__acts > [data-vex-button]::after,
+.vex-pre .vex-wz-wallet-more [data-vex-button]::after {
+  content: "\2192" / "";
+  color: var(--vex-alias-label-primary);
+}
+.vex-wz-chain .vex-wz-card__acts > [data-vex-button]:enabled:hover,
+.vex-pre .vex-wz-wallet-more [data-vex-button]:enabled:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+.vex-wz-chain .vex-wz-card__acts > [data-vex-button]:disabled,
+.vex-pre .vex-wz-wallet-more [data-vex-button]:disabled {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-wz-chain [data-vex-wallet-state="configured"],
+.vex-wz-chain [data-vex-wallet-state="import"] {
+  padding: 16px 24px;
+  gap: 16px;
+}
+.vex-pre .vex-wz-wallet-more {
+  display: flex;
+  max-width: 712px;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0;
+  border: var(--vex-pre-rule);
+  border-top: 0;
+}
+.vex-pre .vex-wz-wallet-more > * {
+  width: 100%;
+}
+.vex-pre .vex-wz-wallet-more [data-vex-button] {
+  height: 48px;
+}
+.vex-pre .vex-wz-wallet-more > :first-child [data-vex-button] {
+  border-top: 0;
+}
+.vex-pre .vex-wz-wallet-more [data-vex-wallet-restore="expanded"] {
+  padding: 16px 24px;
+  border-top: var(--vex-pre-rule);
+}
+
 /* ---- Her column: the Vex key, Kimm, the tagline --------------------------
  * Laid over every screen's empty middle column, above the screens and below
  * the wake (z 50): the layer takes no pointer, its cells do. */

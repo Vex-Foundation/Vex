@@ -1,26 +1,27 @@
 /**
- * The setup wizard's frame (docs/design/R3-MINIMAL.md section 10.3).
+ * The setup wizard on H3's stage (docs/design/H3-DESKTOP.md section 4.9; the
+ * plates `stage-wizard-password` and `stage-wizard-wallets`, approved as
+ * drawn).
  *
- * Layout: a plate at the left (480 at 1440, a third of the window under it,
- * gone under 1180): the plateau print, its grain and Vex rising from the
- * token, with no word under her (owner). At the right: the named stepper in the
- * top band (the hidden title bar's drag region), then the current step's page
- * (`WizardStepPanel`): "Step N of 7 · {name}", the serif title, the lead, the
- * form, and a footer at the window's foot with the privacy link and the
- * step's actions. Under 1180 a small vx mark stands above the step instead of
- * the plate. No state word stands under or beside her anywhere in the wizard
- * (the owner, 2026-10-17 on the plate and 2026-10-18 on every stage). Loading
- * is the quiet loading line.
+ * Layout: the stage frame (`StageFrame`), with Kimm on her stage in the
+ * middle column (`App` mounts her column once, `StagePlate`). The left column
+ * says where you are: the seven steps, drawn like the nav (`wizard-where.ts`);
+ * the title cell says the step and "Setup · Step N of 7"; the work column is
+ * the current step's page (`WizardStepPanel`): the title, the lead, the form,
+ * and its keys in the bottom row. The bottom-left cell is the privacy link.
+ * Loading is the quiet loading line.
  *
- * Vex's mood follows real focus: she listens while a text field of the form
- * has focus, else she is at rest (her face on the plate; the frame carries it
- * as `data-vex-wizard-mood`).
+ * Vex follows real focus: she listens while a text field of the form has
+ * focus (the Vex key reads Listening, and she says hi), else she rests beside
+ * the step (Ready, at rest), as the plates draw her. The frame carries it as
+ * `data-vex-wizard-mood`, and the stage store carries it to her column
+ * (`useStageFace`).
  *
  * Per-step chrome lives in `WizardStepPanel`; the shell provides each step
- * its wizard host (`wizard-host.ts`): what stands above its title and, on
- * steps 2 to 7, Back. Each step returns a `WizardStepPanel` (ReviewStep's edit
- * path renders the edited step's panel with the editing row added above its
- * title, and no Back: it has "Return to review").
+ * its wizard host (`wizard-host.ts`): on steps 2 to 7, Back. Each step
+ * returns a `WizardStepPanel` (ReviewStep's edit path renders the edited
+ * step's panel with the editing row added above its title, and no Back: it
+ * has "Return to review").
  *
  * BACK (the mockups' footer key on steps 2 to 7, the owner 2026-10-18) moves
  * the view one step back and saves nothing. Every form step the user has
@@ -72,15 +73,17 @@ import {
 } from "@shared/schemas/wizard.js";
 import { Button } from "../../components/ui/button.js";
 import { OpenLogsLink } from "../../components/common/OpenLogsLink.js";
+import { StageActs, StageFrame, StageGap } from "../../components/onboarding/StageFrame.js";
+import { useStageFace, type StageVexView } from "../../components/onboarding/stage-vex.js";
 import { VexLoader } from "../../components/ui/vex-loader.js";
-import { VxToken } from "../../components/ui/vx-token.js";
-import { VexK2 } from "../../components/vex/k2/VexK2.js";
-import type { K2Emotion } from "../../components/vex/k2/k2-emotion.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { previousStepId, useWizardState } from "../../lib/api/wizard.js";
+import { kimmMoodOf } from "../vex/kimm-mood.js";
 import { resolveWizardEntry } from "./wizard-entry.js";
-import { HorizontalStepper, WizardStepEyebrow } from "./HorizontalStepper.js";
 import { WizardHostContext } from "./wizard-host.js";
+import { WIZARD_STEP_META } from "./wizard-icons.js";
+import { WIZARD_LABEL, wizardSub, wizardWhere } from "./wizard-where.js";
+import { WizardPrivacyLink } from "./WizardStepPanel.js";
 import { AgentCoreStep } from "./steps/AgentCoreStep.js";
 import { ApiKeysStep } from "./steps/ApiKeysStep.js";
 import { EmbeddingStep } from "./steps/EmbeddingStep.js";
@@ -118,19 +121,28 @@ function renderStep(
   }
 }
 
-/** The day and the night print (the plateau, `public/art/`). */
-const PRINT_ART = {
-  day: "/art/plateau.jpg",
-  night: "/art/plateau-night.jpg",
-} as const;
-
-/** What Vex shows: her face (no word goes with it, the owner). */
-interface WizardFace {
-  readonly emotion: K2Emotion;
-}
-
-const READY: WizardFace = { emotion: "idle" };
-const LISTENING: WizardFace = { emotion: "listening" };
+/**
+ * What Vex shows beside the wizard, as the approved plates draw her: while a
+ * text field has focus she listens and says hi (`stage-wizard-password`,
+ * through the shell's own map); else she rests beside the step, the Vex key
+ * reading Ready (`stage-wizard-wallets`: the plate's rest, not the map's hi).
+ */
+const READY: StageVexView = {
+  emotion: "idle",
+  swatch: "done",
+  state: "ready",
+  word: "Ready",
+  note: null,
+  mood: "rest",
+};
+const LISTENING: StageVexView = {
+  emotion: "listening",
+  swatch: "listening",
+  state: "listening",
+  word: "Listening",
+  note: null,
+  mood: kimmMoodOf("listening"),
+};
 
 const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set([
   "text",
@@ -165,79 +177,44 @@ function useGateDocumentScope(): void {
   }, []);
 }
 
-/** The plate: the print, its grain and Vex (her mood, no word under her). */
-function WizardPlate({ face }: { readonly face: WizardFace }): JSX.Element {
-  return (
-    <div className="vex-wz__plate">
-      <img
-        src={PRINT_ART.day}
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-        draggable={false}
-        className="vex-wz__print vex-wz__print--day"
-      />
-      <img
-        src={PRINT_ART.night}
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-        draggable={false}
-        className="vex-wz__print vex-wz__print--night"
-      />
-      <div aria-hidden="true" data-vex-print-grain="" className="vex-wz__grain" />
-      <VexK2
-        placement="stage"
-        ground="print"
-        emotion={face.emotion}
-        className="vex-wz__vex"
-      />
-      <div aria-hidden="true" className="vex-wz__drag vex-drag" />
-    </div>
-  );
-}
-
-/** The frame: the plate and the main column. */
+/**
+ * The frame: the stage frame with the wizard's left column, its title cell
+ * (the step's name over "Setup · Step N of 7") and the privacy link in the
+ * bottom-left cell; the step's page in the work column.
+ */
 function WizardFrame({
   face,
-  top,
+  current,
+  completedSteps,
   onFocusWithin,
   onBlurWithin,
   children,
 }: {
-  readonly face: WizardFace;
-  readonly top?: ReactNode;
+  readonly face: StageVexView;
+  readonly current: WizardStepId | null;
+  readonly completedSteps: ReadonlyArray<WizardStepId>;
   readonly onFocusWithin?: (event: FocusEvent<HTMLDivElement>) => void;
   readonly onBlurWithin?: (event: FocusEvent<HTMLDivElement>) => void;
   readonly children: ReactNode;
 }): JSX.Element {
   useGateDocumentScope();
+  useStageFace(face);
   return (
-    <main
-      data-vex-onboarding="true"
-      data-vex-gate="true"
-      data-vex-screen="wizard"
-      data-vex-wizard-mood={face.emotion}
-      className="vex-wz"
+    <StageFrame
+      screen="wizard"
+      title={current === null ? WIZARD_LABEL : WIZARD_STEP_META[current].label}
+      sub={current === null ? WIZARD_LABEL : wizardSub(current)}
+      // The step's page carries the heading (its title); the cell names it.
+      heading={false}
+      where={wizardWhere(current, completedSteps)}
+      foot={<WizardPrivacyLink />}
+      footVersion={false}
+      rootProps={{ "data-vex-wizard-mood": face.state }}
     >
-      <WizardPlate face={face} />
       <div className="vex-wz__main" onFocus={onFocusWithin} onBlur={onBlurWithin}>
-        <div className="vex-wz__top vex-drag">{top}</div>
-        <div className="vex-wz__body">{children}</div>
+        {children}
       </div>
-    </main>
-  );
-}
-
-/** The small mark's size under 1180 (spec 10.1: "a 40 mark" where the plate goes). */
-export const WIZARD_MINI_MARK = 40;
-
-/** Under 1180, above the step: the vx mark, with no state word (the owner). */
-function WizardMini(): JSX.Element {
-  return (
-    <div className="vex-wzp__mini" data-vex-wizard-mini>
-      <VxToken size={WIZARD_MINI_MARK} />
-    </div>
+    </StageFrame>
   );
 }
 
@@ -388,34 +365,39 @@ export function WizardShell(): JSX.Element {
         ? wizardStateQuery.data.error.message
         : "Could not load wizard state.";
     return (
-      <WizardFrame face={face}>
+      <WizardFrame face={face} current={null} completedSteps={[]}>
         <div className="vex-wzp">
-          <header className="vex-wzp__head">
-            <WizardMini />
-            <h1 className="vex-wzp__title">Setup unavailable</h1>
-          </header>
-          <div className="vex-wzp__content">
-            <div className="vex-wz-stack">
-              <p className="vex-callout">{message}</p>
-              <p className="vex-wz-note">
-                Most setup-state failures are transient - retry once, then
-                restart Vex if the problem persists.
-              </p>
-              <OpenLogsLink />
-              <div className="flex">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    void wizardStateQuery.refetch();
-                  }}
-                  disabled={wizardStateQuery.isFetching}
-                  data-vex-wizard-retry
-                >
-                  {wizardStateQuery.isFetching ? "Retrying…" : "Retry"}
-                </Button>
+          <div className="vex-pre__body vex-wzp__body">
+            <div className="vex-wzp__page">
+              <header className="vex-wzp__head">
+                <h1 className="vex-wzp__title">Setup unavailable</h1>
+              </header>
+              <div className="vex-wzp__content">
+                <div className="vex-wz-stack">
+                  <p className="vex-callout">{message}</p>
+                  <p className="vex-wz-note">
+                    Most setup-state failures are transient - retry once, then
+                    restart Vex if the problem persists.
+                  </p>
+                  <OpenLogsLink />
+                </div>
               </div>
             </div>
           </div>
+          <StageActs className="vex-wzp__foot">
+            <StageGap />
+            <Button
+              type="button"
+              onClick={() => {
+                void wizardStateQuery.refetch();
+              }}
+              disabled={wizardStateQuery.isFetching}
+              data-vex-wizard-retry
+              className="vex-pre-primary"
+            >
+              {wizardStateQuery.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </StageActs>
         </div>
       </WizardFrame>
     );
@@ -423,7 +405,7 @@ export function WizardShell(): JSX.Element {
 
   if (currentStepId === null) {
     return (
-      <WizardFrame face={face}>
+      <WizardFrame face={face} current={null} completedSteps={[]}>
         {/* The quiet loading line; the loader root carries role="status". */}
         <div className="vex-wz__loading">
           <VexLoader label="Loading wizard progress…" />
@@ -435,12 +417,8 @@ export function WizardShell(): JSX.Element {
   return (
     <WizardFrame
       face={face}
-      top={
-        <HorizontalStepper
-          currentStepId={currentStepId}
-          completedSteps={persisted?.completedSteps ?? []}
-        />
-      }
+      current={currentStepId}
+      completedSteps={persisted?.completedSteps ?? []}
       onFocusWithin={onFocusWithin}
       onBlurWithin={onBlurWithin}
     >
@@ -454,12 +432,6 @@ export function WizardShell(): JSX.Element {
           <WizardHostContext.Provider
             value={{
               host: "wizard",
-              before: (
-                <>
-                  <WizardMini />
-                  <WizardStepEyebrow currentStepId={id} />
-                </>
-              ),
               ...(previousStepId(id) === null ? {} : { onBack }),
             }}
           >

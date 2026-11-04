@@ -20,7 +20,7 @@
  * plate lifts away (240 ms) when its owner (the gate or the page turn) says so.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { kimmMoodOf } from "../../features/vex/kimm-mood.js";
 import type { VexState } from "../../features/vex/vex-state.js";
 import type { K2Emotion } from "../vex/k2/k2-emotion.js";
@@ -208,6 +208,27 @@ export function stageVexFace(face: StageVexView | null): void {
 /** The screen that set `face` is leaving: clears it unless another screen has already replaced it. */
 export function stageVexFaceClear(face: StageVexView): void {
   if (sameFace(state.face, face)) update({ face: null });
+}
+
+/**
+ * A screen says what she shows while it stands (the first run, the wizard): the face is set when
+ * it changes and cleared once, when the screen leaves, so a crossfade between two screens never
+ * flickers through the launch's own words.
+ */
+export function useStageFace(face: StageVexView): void {
+  const { emotion, swatch, state: vexState, word, note, mood } = face;
+  const mine = useRef<StageVexView | null>(null);
+  useEffect(() => {
+    const next: StageVexView = { emotion, swatch, state: vexState, word, note, mood };
+    mine.current = next;
+    stageVexFace(next);
+  }, [emotion, swatch, vexState, word, note, mood]);
+  useEffect(
+    () => () => {
+      if (mine.current !== null) stageVexFaceClear(mine.current);
+    },
+    [],
+  );
 }
 
 /** The stage to shell crossfade starts: the plate lifts away. */

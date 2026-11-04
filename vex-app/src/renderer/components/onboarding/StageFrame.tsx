@@ -109,6 +109,8 @@ export interface StageStep {
   readonly square?: StageSquareKind;
   /** The word at the right: DONE behind you unless set; none here or ahead. */
   readonly word?: string | null;
+  /** A screen's own test seams on the row (the wizard's `data-vex-wizard-step`). */
+  readonly attrs?: Readonly<Record<`data-${string}`, string>>;
 }
 
 /** Where you are: the column's head (its name and "n/N") and its steps. */
@@ -146,6 +148,7 @@ function WhereColumn({ where }: { readonly where: StageWhere }): JSX.Element {
               data-stage-step={step.id}
               data-state={step.at}
               aria-current={step.at === "now" ? "step" : undefined}
+              {...step.attrs}
             >
               <StageSquare kind={step.square ?? defaultSquare(step.at)} />
               <span className="vex-pre__step-name">{step.label}</span>

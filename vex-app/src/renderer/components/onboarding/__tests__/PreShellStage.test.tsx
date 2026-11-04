@@ -46,14 +46,19 @@ afterEach(() => {
 });
 
 describe("stageLayoutFor", () => {
-  it("puts the first run on H3's stage, the wake and the unlock on the plate, the wizard on the print, the shell on nothing", () => {
-    for (const view of ["systemCheck", "runtimeMigration", "runtimeBootstrap", "migrations"] as const) {
+  it("puts the first run and the wizard on H3's stage, the wake and the unlock on the plate, the shell on nothing", () => {
+    for (const view of [
+      "systemCheck",
+      "runtimeMigration",
+      "runtimeBootstrap",
+      "migrations",
+      "wizard",
+    ] as const) {
       expect(stageLayoutFor(view, false)).toBe("stage");
     }
     for (const view of ["splash", "unlock"] as const) {
       expect(stageLayoutFor(view, false)).toBe("plate");
     }
-    expect(stageLayoutFor("wizard", false)).toBe("print");
     expect(stageLayoutFor("appShell", false)).toBeNull();
   });
 
@@ -116,15 +121,15 @@ describe("StagePlate", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("keeps the wizard on a plain print with no animal and no state word", () => {
+  it("stands the wizard beside her H3 column too: no print, no K2", () => {
     stand("wizard");
     const { container } = render(<StagePlate />);
     expect(container.querySelector("[data-vex-stage-plate]")?.getAttribute("data-vex-stage-plate")).toBe(
-      "print",
+      "stage",
     );
-    expect(container.querySelector(".vex-stage-plate__full")).not.toBeNull();
+    expect(container.querySelector(".vex-stage-plate__full")).toBeNull();
     expect(container.querySelector("[data-vex-k2]")).toBeNull();
-    expect(container.querySelector(".vex-stage-plate__word")).toBeNull();
+    expect(container.querySelector("[data-vex-area='kimm-section']")).not.toBeNull();
   });
 
   it("stands a first run screen beside her H3 column: the Vex key, her section and the tagline", () => {

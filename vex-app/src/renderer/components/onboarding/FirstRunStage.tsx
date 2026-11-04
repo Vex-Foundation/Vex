@@ -18,15 +18,10 @@
  *              the red square, and Kimm offers the next move (the plate's "held", her open palm)
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { kimmMoodOf } from "../../features/vex/kimm-mood.js";
 import type { StageSquareKind, StageStep, StageWhere } from "./StageFrame.js";
-import {
-  formatCountdown,
-  stageVexFace,
-  stageVexFaceClear,
-  type StageVexView,
-} from "./stage-vex.js";
+import { formatCountdown, useStageFace, type StageVexView } from "./stage-vex.js";
 
 /**
  * The first run's steps. `runtime` covers the bundled local runtime's start
@@ -160,20 +155,6 @@ function useElapsedNote(active: boolean): string | null {
  */
 export function StageFace({ mood }: { readonly mood: FirstRunMood }): null {
   const timer = useElapsedNote(mood === "working");
-  const face = moodFace(mood, timer);
-  const { emotion, swatch, state, word, note } = face;
-  const herMood = face.mood;
-  const mine = useRef<StageVexView | null>(null);
-  useEffect(() => {
-    const next: StageVexView = { emotion, swatch, state, word, note, mood: herMood };
-    mine.current = next;
-    stageVexFace(next);
-  }, [emotion, swatch, state, word, note, herMood]);
-  useEffect(
-    () => () => {
-      if (mine.current !== null) stageVexFaceClear(mine.current);
-    },
-    [],
-  );
+  useStageFace(moodFace(mood, timer));
   return null;
 }
