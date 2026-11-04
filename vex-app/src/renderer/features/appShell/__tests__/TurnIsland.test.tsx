@@ -10,7 +10,7 @@
  * springing into the awaiting state.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render } from "@testing-library/react";
 import { createElement } from "react";
 import { TurnIsland } from "../TurnIsland/TurnIsland.js";
@@ -68,13 +68,16 @@ describe("TurnIsland reasoning segments", () => {
     ).container;
   }
 
-  it("streams the ACTIVE segment inline under a Thinking: row, with no height cut", () => {
+  it("streams the ACTIVE segment inline under the frame's THINKING head, with no height cut", () => {
     const container = renderIsland({
       status: "thinking",
       reasoningText: "weighing the route",
     });
+    // docs/design/H3-DESKTOP.md section 1.7: the head reads the state word,
+    // set in caps by the sheet; the source stays sentence case so a screen
+    // reader reads a word.
     const label = container.querySelector("[data-vex-island-label]");
-    expect(label?.textContent).toBe("Thinking:");
+    expect(label?.textContent).toBe("Thinking");
 
     const body = container.querySelector("[data-vex-island-reasoning]");
     expect(body?.textContent).toContain("weighing the route");
@@ -238,5 +241,128 @@ describe("TurnIsland reasoning segments", () => {
       ).not.toBeNull();
     }
     expect(renderIsland({ phase: "error" }).querySelector("[data-vex-island-clock]")).toBeNull();
+  });
+});
+
+/**
+ * H3's THINKING FRAME (docs/design/H3-DESKTOP.md section 1.7): the head on
+ * top, then the turn's finished thoughts as step rows in the order they were
+ * thought, then the live trace, all inside the one framed cell.
+ */
+describe("TurnIsland thinking frame", () => {
+  it("puts the head first, the settled thoughts under it, and the live trace last, in one frame", () => {
+    const { container } = render(
+      createElement(TurnIsland, {
+        preview: {
+          ...PREVIEW,
+          status: "thinking",
+          reasoningSegments: ["first thought"],
+          reasoningText: "the live one",
+        },
+      }),
+    );
+    const frame = container.querySelector("#vex-turn-island");
+    const head = frame?.querySelector("[data-vex-island-head]");
+    const thought = frame?.querySelector("[data-vex-reasoning-segment]");
+    const trace = frame?.querySelector("[data-vex-island-reasoning]");
+    expect(head).not.toBeNull();
+    expect(thought).not.toBeNull();
+    expect(trace).not.toBeNull();
+    expect(head?.compareDocumentPosition(thought as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(thought?.compareDocumentPosition(trace as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("keeps an opened thought open as the turn moves from thinking to calling a tool", () => {
+    const thinking: StreamPreview = {
+      ...PREVIEW,
+      status: "thinking",
+      toolName: null,
+      reasoningSegments: ["why I am calling this"],
+      reasoningText: "more",
+    };
+    const view = render(createElement(TurnIsland, { preview: thinking }));
+    fireEvent.click(
+      view.container.querySelector("[data-vex-reasoning-segment] button") as HTMLElement,
+    );
+    view.rerender(
+      createElement(TurnIsland, {
+        preview: { ...thinking, status: "calling", toolName: "wallet_send", reasoningText: "" },
+      }),
+    );
+    expect(
+      view.container
+        .querySelector("[data-vex-reasoning-segment] button")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+});
+
+/**
+ * THE LIVE TURN'S CLOCK, handed up once when the turn settles
+ * (`useSettledTurnClock`, `turnClock.ts`): the reading of the same clock the
+ * head showed, and nothing for a turn that waited on the person.
+ */
+describe("TurnIsland settled clock", () => {
+  const START = 1_000_000;
+
+  function live(over: Partial<StreamPreview> = {}): StreamPreview {
+    return { ...PREVIEW, status: "thinking", toolName: null, startedAtMs: START, ...over };
+  }
+
+  it("reports the turn's elapsed time once, from the earliest start it saw", () => {
+    const now = vi.spyOn(Date, "now");
+    const onSettled = vi.fn();
+    now.mockReturnValue(START + 500);
+    const view = render(createElement(TurnIsland, { preview: live(), onSettled }));
+    // The store's own start shows through later (a later instant): the
+    // earlier one, the send, is the turn the reader watched.
+    view.rerender(
+      createElement(TurnIsland, {
+        preview: live({ startedAtMs: START + 900, status: "writing", text: "Done." }),
+        onSettled,
+      }),
+    );
+    expect(onSettled).not.toHaveBeenCalled();
+    now.mockReturnValue(START + 2_800);
+    view.rerender(
+      createElement(TurnIsland, {
+        preview: live({ startedAtMs: START + 900, phase: "done", text: "Done." }),
+        onSettled,
+      }),
+    );
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onSettled).toHaveBeenCalledWith(2_800, START);
+    view.rerender(
+      createElement(TurnIsland, {
+        preview: live({ startedAtMs: START + 900, phase: "done", text: "Done!" }),
+        onSettled,
+      }),
+    );
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    now.mockRestore();
+  });
+
+  it("reports nothing for a turn that waited on an approval", () => {
+    const onSettled = vi.fn();
+    const view = render(
+      createElement(TurnIsland, { preview: live(), awaitingApproval: true, onSettled }),
+    );
+    view.rerender(
+      createElement(TurnIsland, { preview: live({ phase: "done", text: "Done." }), onSettled }),
+    );
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it("reports nothing for a turn that errored", () => {
+    const onSettled = vi.fn();
+    const view = render(createElement(TurnIsland, { preview: live(), onSettled }));
+    view.rerender(
+      createElement(TurnIsland, { preview: live({ phase: "error" }), onSettled }),
+    );
+    expect(onSettled).not.toHaveBeenCalled();
   });
 });
