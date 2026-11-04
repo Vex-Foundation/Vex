@@ -235,6 +235,8 @@ export const TranscriptMessage = memo(function TranscriptMessage({
   pendingApprovals,
   agentWorking = false,
   turnMark = true,
+  turnSteps,
+  thoughtMs,
   boardArrival = "settled",
   feedbackSessionId,
   feedbackMessageKey,
@@ -256,6 +258,17 @@ export const TranscriptMessage = memo(function TranscriptMessage({
    * the default.
    */
   readonly turnMark?: boolean;
+  /**
+   * Set only on the turn's thinking row (`turnSteps.ts`): the whole turn's
+   * steps, which its first Reasoned row says at its right. Two PRIMITIVES, so
+   * the memo boundary's shallow comparison keeps holding.
+   */
+  readonly turnSteps?: number;
+  /**
+   * The live turn clock's reading for this turn (`TurnIsland/turnClock.ts`),
+   * set only on the thinking row of a turn watched live.
+   */
+  readonly thoughtMs?: number;
   /**
    * How this row reached the screen, for a board card riding on it (A13).
    *
@@ -286,6 +299,10 @@ export const TranscriptMessage = memo(function TranscriptMessage({
     feedbackSessionId !== undefined && feedbackMessageKey !== undefined
       ? { sessionId: feedbackSessionId, messageKey: feedbackMessageKey }
       : undefined;
+  // The turn's thinking row is this row's FIRST Reasoned row; every other
+  // one stays a plain "Reasoned".
+  const headSteps = turnSteps ?? null;
+  const headThoughtMs = turnSteps === undefined ? null : (thoughtMs ?? null);
   switch (row.variant) {
     case "user": {
       // A desk message carries the market scope, the desk's values and the
@@ -359,7 +376,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {...turnSeams(turnMark, agentWorking)}
         >
           <AssistantSpeakerLabel />
-          <ReasonedBlock reasoning={row.reasoning} />
+          <ReasonedBlock
+            reasoning={row.reasoning}
+            steps={headSteps}
+            thoughtMs={headThoughtMs}
+          />
           <AssistantBody content={row.content} />
           {row.board != null ? (
             <BoardRowCard
@@ -390,7 +411,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {...turnSeams(turnMark, agentWorking)}
         >
           <AssistantSpeakerLabel />
-          <ReasonedBlock reasoning={row.reasoning} />
+          <ReasonedBlock
+            reasoning={row.reasoning}
+            steps={headSteps}
+            thoughtMs={headThoughtMs}
+          />
           <AssistantBody content={row.content} />
           <AssistantActionsTail
             createdAt={row.createdAt}
@@ -447,7 +472,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
           {row.content.length > 0 ? (
             <div data-time-hover-root="">
               <AssistantSpeakerLabel />
-              <ReasonedBlock reasoning={row.reasoning} />
+              <ReasonedBlock
+                reasoning={row.reasoning}
+                steps={headSteps}
+                thoughtMs={headThoughtMs}
+              />
               <AssistantBody content={row.content} />
               <AssistantActionsTail createdAt={row.createdAt} />
             </div>
@@ -456,7 +485,11 @@ export const TranscriptMessage = memo(function TranscriptMessage({
               split rows share `dto.id`, and `splitToolCallProse` guarantees
               only ONE of them ever holds it, so this can never double-render. */}
           {row.content.length === 0 ? (
-            <ReasonedBlock reasoning={row.reasoning} />
+            <ReasonedBlock
+              reasoning={row.reasoning}
+              steps={headSteps}
+              thoughtMs={headThoughtMs}
+            />
           ) : null}
           <ToolSteps row={row} pendingApprovals={pendingApprovals} />
         </div>
@@ -471,9 +504,19 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       // reordered or spliced.
       return (
         <div className="vex-reply" {...turnSeams(turnMark, false)}>
-          {(row.reasonings ?? []).map((trace, index) => (
-            <ReasonedBlock key={`${row.id}-${index}`} reasoning={trace} />
-          ))}
+          {(row.reasonings ?? []).map((trace, index, traces) => {
+            // The group's first non-empty trace is the one a thinking row
+            // can open, so it carries the turn's head (`turnSteps.ts`).
+            const head = index === traces.findIndex((t) => (t ?? "").length > 0);
+            return (
+              <ReasonedBlock
+                key={`${row.id}-${index}`}
+                reasoning={trace}
+                steps={head ? headSteps : null}
+                thoughtMs={head ? headThoughtMs : null}
+              />
+            );
+          })}
           <ToolGroupRow group={row} pendingApprovals={pendingApprovals} />
           {/* A group folds its acts; a mission result must not fold with them. */}
           {(row.calls ?? []).map((call) => {

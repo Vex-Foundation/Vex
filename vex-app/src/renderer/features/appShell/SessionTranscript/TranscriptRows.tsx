@@ -17,8 +17,10 @@
  *     decision travels on as `boardArrival`, so a board card's unseen dot and
  *     this animation can never disagree about which rows are new: a null
  *     `settledIds` (first page still landing) is history for both.
- *  3. THE TOKEN - Vex's turn hangs off the flat token ONCE: only the row that
- *     heads her turn carries it (`turnMarks.ts`).
+ *  3. THE TURN'S HEAD - only the row that heads Vex's turn is stamped as its
+ *     head (`turnMarks.ts`), and only the turn's first Reasoned row is its
+ *     thinking row, which says the turn's steps and, after a turn watched
+ *     live, its measured time (`turnSteps.ts`, `TurnIsland/turnClock.ts`).
  *
  * The animation rides an INNER wrapper, never the element carrying
  * `data-vex-entry-id` / `data-vex-anchor-key`. That element is the scroll
@@ -43,6 +45,8 @@ import { transcriptEntryKey as entryKey } from "../agentActivity.js";
 import type { TranscriptEntry } from "../transcriptRowModel.js";
 import { crossesLocalDay, dayLabel } from "./daySeparator.js";
 import { continuesStepRun, turnMarkKeys } from "./turnMarks.js";
+import { turnThinkingHeads } from "./turnSteps.js";
+import { useTurnClock } from "../TurnIsland/turnClock.js";
 import type { MessageForkActions } from "./useMessageForkActions.js";
 
 /**
@@ -80,6 +84,11 @@ export function TranscriptRows({
   readonly forkActions?: MessageForkActions;
 }): JSX.Element {
   const markKeys = useMemo(() => turnMarkKeys(rows), [rows]);
+  // Each whole turn's thinking row, its steps and the message that opened it
+  // (`turnSteps.ts`), and the live turn clock's readings for this session
+  // (`turnClock.ts`): only turns watched live have one.
+  const thinkingHeads = useMemo(() => turnThinkingHeads(rows), [rows]);
+  const turnClock = useTurnClock(sessionId);
   return (
     <>
       {rows.map((row, index) => {
@@ -88,6 +97,7 @@ export function TranscriptRows({
         const startsDay =
           prev === undefined || crossesLocalDay(prev.createdAt, row.createdAt);
         const continues = !startsDay && continuesStepRun(row, prev);
+        const thinkingHead = thinkingHeads.get(entryKey(row));
         return (
           <Fragment key={entryKey(row)}>
             {startsDay ? <DaySeparator iso={row.createdAt} /> : null}
@@ -114,6 +124,12 @@ export function TranscriptRows({
                   boardArrival={liveAppend ? "live-append" : "settled"}
                   agentWorking={workingAgentEntryKey === entryKey(row)}
                   turnMark={markKeys.has(entryKey(row))}
+                  turnSteps={thinkingHead?.steps}
+                  thoughtMs={
+                    thinkingHead === undefined
+                      ? undefined
+                      : turnClock.get(thinkingHead.anchorId)
+                  }
                   feedbackSessionId={sessionId}
                   feedbackMessageKey={entryKey(row)}
                   onEditMessage={forkActions?.onEditMessage}

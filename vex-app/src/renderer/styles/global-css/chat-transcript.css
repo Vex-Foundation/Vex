@@ -456,39 +456,56 @@
   color: var(--vex-alias-label-primary);
 }
 
-/* ── The live row ─────────────────────────────────────────────────────────
- * The turn in flight is one step row: the fill (working solid, thinking hatch,
- * waiting the target), the title in blue 500, its scope 13 muted, the timer in
- * the mono 12 blue at the right. A failure's title is ink. No box: the quiet
- * rules above and below are its whole frame. */
+/* ============================================================ *
+ *  THE THINKING FRAME                                           *
+ *                                                               *
+ *  docs/design/H3-DESKTOP.md section 1.7, measured in the chat  *
+ *  captures at 1440: "Vex's thinking is a framed row". A square *
+ *  cell on the ground in the 1px rule, the column's full width; *
+ *  its head 40 high, 16 in, the glyph (10) then the label 14    *
+ *  after it in caps 13 tracked ink, the figures at the right in *
+ *  the mono 12 muted. Under the head's rule, the step rows, the *
+ *  live trace or the opened trace, on the label's 40 edge. The  *
+ *  live turn's frame (`TurnIsland`) and a persisted thinking    *
+ *  row (`ReasonedBlock`) are the same cell.                     *
+ * ============================================================ */
+
+/* The live turn's frame (the island primitive's shell). */
 .vex-island {
-  border: 0;
-  border-top: 1px solid var(--vex-alias-rule-quiet);
-  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  border: 1px solid var(--vex-alias-rule);
   background: transparent;
 }
 .vex-live-row {
-  min-height: 36px;
+  gap: 14px;
+  min-height: 40px;
+  padding: 0 16px;
   border-bottom: 0;
 }
 .vex-live-row .vex-step__title {
   max-width: none;
   flex: 0 1 auto;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-live-row .vex-step__num {
-  color: var(--vex-alias-accent-primary);
-}
-.vex-island[data-vex-island-tone="error"] .vex-step__title {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
+.vex-live-row .vex-step__word {
+  font-size: 13px;
+}
+.vex-live-row .vex-step__num {
+  color: var(--vex-alias-label-tertiary);
+}
 .vex-live-row--settled .vex-step__title {
-  font-weight: 400;
   color: var(--vex-alias-label-secondary);
 }
-/* The live trace under a Thinking row, set as an opened Reasoned row. */
+/* The live trace under the head, the frame's last row: upright 14 ink 2, on
+ * the label's edge, under the head's rule. */
 .vex-live-trace {
-  margin-bottom: 10px;
+  margin: 0;
+  padding: 10px 16px 14px 40px;
+  border-top: 1px solid var(--vex-alias-rule);
+  border-left: 0;
 }
 /* What went wrong, under a failed live row. */
 .vex-live-error {
@@ -514,36 +531,68 @@
   margin: 0 0 12px;
 }
 
-/* ── Reasoned ──────────────────────────────────────────────────────────────
- * A closed row, 36 high: the chevron and the word in 14 ink 2 at 400, then a
- * one-line summary in 13 muted. Opened, the trace is italic 14 ink 2 on a 1px
- * rule with 12 clear. */
+/* ── The thinking row (a persisted Reasoned row) ─────────────────────────
+ * The frame closed to its head: the dot-grid glyph, "Reasoned" or "Thought
+ * for 2.8 s" in caps 13 tracked ink, the trace's first line in 13 muted, then
+ * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
+ * whole row is the key: the label is the button, and its hit area stretches
+ * over the row. Opened, the trace sits under the head's rule in the frame. */
+.vex-think {
+  margin-bottom: 12px;
+  border: 1px solid var(--vex-alias-rule);
+}
+/* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label. */
+.vex-reasoned__figure {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  text-transform: none;
+}
 .vex-reasoned__row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 36px;
+  gap: 14px;
   min-width: 0;
+  min-height: 40px;
+  padding: 0 16px;
+}
+.vex-reasoned__row .vex-step__fill {
+  color: var(--vex-alias-label-primary);
 }
 .vex-reasoned__key {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 10px;
+  /* A flex box drops the space at the end of "Thought for "; the gap is it. */
+  gap: 0.3em;
   padding: 0;
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 14px;
-  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
   cursor: pointer;
 }
-.vex-reasoned__key:hover {
-  color: var(--vex-alias-label-primary);
+/* The key's hit area is the whole row, so the summary, the count and the
+ * chevron open it too, while the button's name stays the label. */
+.vex-reasoned__key::after {
+  content: "";
+  position: absolute;
+  inset: 0;
 }
+.vex-reasoned__row:hover {
+  background: var(--vex-alias-interactive-hover);
+}
+/* H3's focus: the 2px white ring drawn inside the cell (section 2.4). */
 .vex-reasoned__key:focus-visible {
+  outline: 0;
+}
+.vex-reasoned__key:focus-visible::after {
   outline: 2px solid var(--vex-alias-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .vex-reasoned__summary {
   min-width: 0;
@@ -553,30 +602,50 @@
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
+.vex-reasoned__steps {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-reasoned__chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+/* A trace: upright 14 / 1.6 in ink 2 (H3 sets no italic), under the head's
+ * rule, on the label's 40 edge. */
 .vex-reasoned__body {
-  margin: 2px 0 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--vex-alias-rule);
+  margin: 0;
+  padding: 10px 16px 14px 40px;
+  border-top: 1px solid var(--vex-alias-rule);
   font-size: 14px;
-  font-style: italic;
+  font-style: normal;
   line-height: 1.6;
   color: var(--vex-alias-label-secondary);
   overflow-wrap: anywhere;
 }
 /* The trace renders through the chat markdown, whose prose class would set
- * the reading size; inside a trace it takes the trace's 14 / 1.6 instead. */
+ * the answer's size and ink; inside a trace it takes the trace's own. */
 .vex-reasoned__body .vex-chat-prose {
   font-size: inherit;
   line-height: inherit;
   gap: 8px;
+  color: inherit;
 }
-/* The folded thoughts of a turn in flight: quiet rows, 30 high, 13 muted. */
+/* The settled thoughts of a turn in flight: the frame's step rows under its
+ * head, 36 high on the rule, the small ink square and "Thought 1" in 14 ink
+ * (sentence case: a step, not a label). */
+.vex-reasoned--quiet {
+  border-top: 1px solid var(--vex-alias-rule);
+}
 .vex-reasoned--quiet .vex-reasoned__row {
-  min-height: 30px;
+  min-height: 36px;
 }
 .vex-reasoned--quiet .vex-reasoned__key {
-  font-size: 13px;
-  color: var(--vex-alias-label-tertiary);
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 /* ── Turn stats, on hover only (11.5 muted) ──────────────────────────────── */

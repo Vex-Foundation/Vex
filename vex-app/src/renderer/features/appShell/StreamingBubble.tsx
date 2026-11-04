@@ -33,6 +33,7 @@ export function StreamingBubble({
   awaitingApproval = false,
   leaseHeld = false,
   turnMark = false,
+  onTurnSettled,
 }: {
   readonly preview: StreamPreview;
   /** Pending approval in the active session - freezes the live row (S5). */
@@ -44,6 +45,8 @@ export function StreamingBubble({
    * (`turnMarks.ts`), stamped as `data-vex-turn-head`.
    */
   readonly turnMark?: boolean;
+  /** The turn settled live: its clock's reading (`TurnIsland`'s `onSettled`). */
+  readonly onTurnSettled?: (thoughtMs: number, startedAtMs: number) => void;
 }): JSX.Element {
   const streaming = preview.phase === "streaming";
 
@@ -84,6 +87,7 @@ export function StreamingBubble({
         preview={preview}
         awaitingApproval={awaitingApproval}
         leaseHeld={leaseHeld}
+        onSettled={onTurnSettled}
       />
       {/* The raw provider text never renders on the error path. */}
       {preview.phase === "error" ? null : answerBody}
