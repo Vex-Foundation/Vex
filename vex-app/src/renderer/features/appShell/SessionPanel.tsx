@@ -50,7 +50,7 @@
  *   - composer + slash      → `SessionComposer`
  */
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { JSX, ReactNode } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import {
@@ -76,6 +76,7 @@ import { cn } from "../../lib/utils.js";
 import { useStreamPreview } from "../../stores/streamStore.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { ApprovalsRegion } from "./ApprovalsRegion.js";
+import { ApprovalDockProvider } from "./ApprovalCard/approval-dock.js";
 import { MissionControls } from "./MissionControls.js";
 import { SessionComposer } from "./SessionComposer.js";
 import { SessionContext } from "./SessionContext.js";
@@ -161,6 +162,9 @@ export function SessionPanel({
     !createSessionOpen;
 
   const scrollBodyRef = useRef<HTMLDivElement>(null);
+  // The decision dock's element, once mounted: the seat the waiting card's
+  // decision row is drawn in (`ApprovalCard/approval-dock.tsx`).
+  const [approvalDock, setApprovalDock] = useState<HTMLDivElement | null>(null);
   // macOS-style overlay bar on the conversation scrollport. The transcript
   // runs the same hook on its own element for the standalone mount; scroll
   // events do not bubble, so each scrolling box owns its own.
@@ -311,7 +315,12 @@ export function SessionPanel({
                 <SessionSleepBanner sessionId={activeSession.id} />
               ) : null}
               {activeSession !== null ? (
-                <ApprovalsRegion sessionId={activeSession.id} />
+                // The shell's chat hands its waiting card the bottom row's
+                // decision seat (the dock in the composer seat below); the
+                // desk's embedded chat keeps the card's own footer.
+                <ApprovalDockProvider value={surface === "shell" ? approvalDock : null}>
+                  <ApprovalsRegion sessionId={activeSession.id} />
+                </ApprovalDockProvider>
               ) : null}
               {showMissionCard && activeSession !== null ? (
                 <MissionControls sessionId={activeSession.id} />
@@ -369,6 +378,17 @@ export function SessionPanel({
               pendingApproval={pendingApproval}
             />
           </div>
+          {/* THE DECISION DOCK (docs/design/H3-DESKTOP.md sections 1.8 and
+              4.3), last in the seat so it sits on the window's foot: empty
+              until a card waits in this chat, when the card renders its
+              reason field, Reject and its approve key here, as the bottom
+              row's chat cells. While it holds them the composer above gives
+              way (approval.css); it stays mounted, so its draft and caret
+              survive. After the band, so the welcome's crown keeps the band
+              directly under it. `ApprovalCard/approval-dock.tsx`. */}
+          {surface === "shell" ? (
+            <div ref={setApprovalDock} data-vex-area="approval-dock" className="vex-appr-dock" />
+          ) : null}
         </div>
       </div>
     </div>

@@ -258,18 +258,52 @@ export function approvalEyebrowWord(approval: ApprovalTarget): string {
   return APPROVAL_EYEBROW_WORDS[approvalFamily(approval)];
 }
 
-/** H3's own consequence line, kept for a swap and an order that places one. */
+/**
+ * H3's own consequence line, kept where it is true in full: a swap, a market
+ * order, an immediate-or-cancel order and a position close all fill (or die)
+ * the moment they are sent, so nothing is left to take back.
+ */
 export const CONSEQUENCE_PLACES_ORDER = "This places a real order on mainnet. It cannot be undone.";
+/**
+ * The same line without its second sentence, for an order that rests on the
+ * book: a limit order good till its time, a post-only order, a stop-loss or
+ * take-profit waiting on its trigger, an OCO pair. Each can still be
+ * cancelled before it fills, so "It cannot be undone." would be false.
+ */
+export const CONSEQUENCE_PLACES_RESTING_ORDER = "This places a real order on mainnet.";
 /** The desktop's line for a transfer and a bridge (Appendix A.7, proposed). */
 export const CONSEQUENCE_SENDS_FUNDS = "This sends real funds on mainnet. It cannot be undone.";
 
 /**
- * The Lighter tools whose approval places an order: a create (a single order
- * or an OCO pair) and a position close, which is a reduce-only order at its
- * worst price. A cancel, a modify and a cancel-all are orders too in the
- * family table, but "places a real order" would be false for them.
+ * A position close is a reduce-only order at its worst acceptable price,
+ * sent to fill at once: H3's full line holds for it.
  */
-const ORDER_PLACING_TOOLS: ReadonlySet<string> = new Set(["lighter.order.create", "lighter.position.close"]);
+const CLOSING_TOOLS: ReadonlySet<string> = new Set(["lighter.position.close"]);
+/**
+ * An order create places an order; whether it can still be taken back
+ * depends on its own bound terms (`placedOrderConsequence`). A cancel, a
+ * modify and a cancel-all are orders too in the family table, but "places a
+ * real order" would be false for them.
+ */
+const CREATING_TOOLS: ReadonlySet<string> = new Set(["lighter.order.create"]);
+
+/**
+ * The line for a Lighter order create, read from its bound terms: the full
+ * line only when the order cannot rest on the book, which is a market order
+ * or an immediate-or-cancel limit, and never an OCO pair or a trigger order
+ * (both wait). Every other create, and one whose terms the approval does not
+ * carry, takes the line without "It cannot be undone.": the shorter line is
+ * true either way, the longer only when the terms prove it.
+ */
+function placedOrderConsequence(args: Args | null): string {
+  const orderType = argText(args, "orderType");
+  const timeInForce = argText(args, "timeInForce");
+  const grouped = argText(args, "groupingType") !== null;
+  const fillsAtOnce =
+    !grouped &&
+    (orderType === "market" || (orderType === "limit" && timeInForce === "immediate-or-cancel"));
+  return fillsAtOnce ? CONSEQUENCE_PLACES_ORDER : CONSEQUENCE_PLACES_RESTING_ORDER;
+}
 
 /** Every dotted name the approval carries for its tool, lower-cased. */
 function dottedToolNames(approval: ApprovalTarget): readonly string[] {
@@ -288,8 +322,13 @@ function dottedToolNames(approval: ApprovalTarget): readonly string[] {
  * The consequence line under the sentence: what pressing Approve does to real
  * funds, and that it cannot be taken back. Only where it is true for the
  * whole family, read from the same names the family is:
- *   - a swap, and a Lighter order create or position close: H3's own line,
- *     "This places a real order on mainnet. It cannot be undone.";
+ *   - a swap, a Lighter position close, and a Lighter order create that
+ *     fills at once (market, or immediate-or-cancel): H3's own line, "This
+ *     places a real order on mainnet. It cannot be undone.";
+ *   - a Lighter order create that can rest on the book (a limit good till
+ *     its time, post-only, a trigger order, an OCO pair): "This places a
+ *     real order on mainnet." alone, because it can still be cancelled
+ *     before it fills;
  *   - a transfer (a wallet send, a Lighter deposit or withdrawal) and a
  *     bridge: "This sends real funds on mainnet. It cannot be undone.".
  * `null` for every other card, so it shows no line rather than a false one:
@@ -303,16 +342,35 @@ export function approvalConsequence(approval: ApprovalTarget): string | null {
   switch (approvalFamily(approval)) {
     case "swap":
       return CONSEQUENCE_PLACES_ORDER;
-    case "order":
-      return dottedToolNames(approval).some((name) => ORDER_PLACING_TOOLS.has(name))
-        ? CONSEQUENCE_PLACES_ORDER
-        : null;
+    case "order": {
+      const names = dottedToolNames(approval);
+      if (names.some((name) => CLOSING_TOOLS.has(name))) return CONSEQUENCE_PLACES_ORDER;
+      if (names.some((name) => CREATING_TOOLS.has(name))) {
+        return placedOrderConsequence(approval.preview?.criticalArgs ?? null);
+      }
+      return null;
+    }
     case "transfer":
     case "bridge":
       return CONSEQUENCE_SENDS_FUNDS;
     default:
       return null;
   }
+}
+
+/**
+ * The decision row's middle cell (docs/design/H3-DESKTOP.md section 4.3,
+ * Appendix A.7, proposed): the line for the card's gate, where H3 draws its
+ * tick box and its key hints, which desktop leaves out. On a card whose keys
+ * take two presses, "Two presses decide: the first arms the key for 4 s.",
+ * the window read from the card's own reset (`CONFIRM_RESET_MS`) so the line
+ * and the timer can never disagree; on any other, "Nothing signs until you
+ * approve.". Words only: the gate itself is the card's.
+ */
+export function approvalGateLine(twoPresses: boolean, armedWindowMs: number): string {
+  if (!twoPresses) return "Nothing signs until you approve.";
+  const seconds = Number((armedWindowMs / 1000).toFixed(1));
+  return `Two presses decide: the first arms the key for ${String(seconds)} s.`;
 }
 
 /** The Lighter deployment a call names, by its people name ("Lighter Core"); else `null`. */

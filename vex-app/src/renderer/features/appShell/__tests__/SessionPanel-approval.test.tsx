@@ -185,4 +185,32 @@ describe("SessionPanel - selected-session path mounts the approval card", () => 
     );
     expect(screen.getByTestId("composer-stub").getAttribute("data-pending-approval")).toBe("true");
   });
+
+  it("draws the waiting card's decision row in the composer seat, the bottom row's chat cell (H3-DESKTOP.md 1.8)", () => {
+    useUiStore.setState({
+      activeSessionId: "00000000-0000-4000-8000-00000000aa01",
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <SessionPanel />
+      </QueryClientProvider>,
+    );
+    const seat = document.querySelector<HTMLElement>("[data-vex-composer-seat]");
+    const dock = seat?.querySelector<HTMLElement>("[data-vex-area='approval-dock']");
+    expect(dock).not.toBeNull();
+    // The footer, its reason field and both keys live in the seat now, not the card.
+    const foot = dock?.querySelector<HTMLElement>("[data-vex-area='approval-foot']");
+    expect(foot?.hasAttribute("data-docked")).toBe(true);
+    expect(dock?.contains(screen.getByRole("button", { name: "Reject" }))).toBe(true);
+    const card = document.querySelector("[data-vex-area='approval-card']");
+    expect(card?.querySelector("[data-vex-area='approval-foot']")).toBeNull();
+    // The composer gives way by the sheet's sibling rule: it stays mounted right before the
+    // dock, and the dock is the seat's last cell, on the window's foot.
+    expect(dock?.previousElementSibling?.hasAttribute("data-vex-composer-dock")).toBe(true);
+    expect(seat?.lastElementChild).toBe(dock);
+    expect(screen.getByTestId("composer-stub")).toBeTruthy();
+  });
 });
