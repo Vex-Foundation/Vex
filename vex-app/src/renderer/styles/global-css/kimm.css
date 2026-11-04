@@ -60,6 +60,9 @@
   bottom: 1px;
   left: 0;
   overflow: hidden;
+  /* Open, the whole box. An inset, not `none`: the wipe interpolates
+   * between two insets, and `none` to an inset does not interpolate. */
+  clip-path: inset(0 0 0 0);
 }
 .vex-kimm__body {
   position: absolute;
@@ -96,9 +99,16 @@
  * card beside it never change. What the clip leaves out takes no pointer:
  * the console's rest under her is live again. In the strip the field's frame
  * stands at the left (her strip art, the strip's height) and her figure
- * gives way to it. */
+ * gives way to it once the close has ended (`data-kimm-phase`).
+ *
+ * HIDE VEX (section 3.1; S4-07): the wipe rises to the strip's edge in 420ms
+ * on the push curve. The duration is a JS/CSS PAIR (MOTION-POLICY.md,
+ * "Cross-file timing invariants"): `KimmSection.tsx` ends her `closing`
+ * phase on this transition's end, or after `DURATION_VEX_CLOSE_MS`, the
+ * mirror of `--vex-duration-vex-close`. Only clip-path moves. */
 .vex-kimm[data-kimm-open="false"] {
   clip-path: inset(0 0 calc(100% - var(--vex-h3-strip-h)) 0);
+  transition: clip-path var(--vex-duration-vex-close) var(--vex-ease-push);
 }
 .vex-kimm__strip {
   position: absolute;
@@ -110,10 +120,10 @@
   height: var(--vex-h3-strip-h);
   user-select: none;
 }
-.vex-kimm[data-kimm-open="false"] .vex-kimm__strip {
+.vex-kimm[data-kimm-phase="closed"] .vex-kimm__strip {
   display: block;
 }
-.vex-kimm[data-kimm-open="false"] .vex-kimm__figure {
+.vex-kimm[data-kimm-phase="closed"] .vex-kimm__figure {
   visibility: hidden;
 }
 

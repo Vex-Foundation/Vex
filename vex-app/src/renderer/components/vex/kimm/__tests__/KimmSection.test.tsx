@@ -12,14 +12,21 @@
  *  - CLOSED COSTS LITTLE (S4-05): no element asks for her figure's file
  *    until she first opens; the first open asks once, and a close and a
  *    second open never ask again.
+ *  - CLOSED, THE STRIP (S4-06): the same key in the same corner says Show
+ *    Vex and opens her; the field's frame stands in the strip; the fold is
+ *    her clip alone.
+ *  - HIDE VEX (S4-07): a 420ms wipe on the clip and the push curve; the words
+ *    change at the press; the `closing` phase ends on the clip's own
+ *    transition end or when its 420ms are up, the JS half of the pair.
  */
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DURATION_VEX_CLOSE_MS, EASE_PUSH } from "../../../../lib/motion/index.js";
 import { KimmArtProvider } from "../kimm-art-context.js";
 import { KIMM_SHIPPED_ART, type KimmArtSet } from "../kimm-assets.js";
 import { KimmSection } from "../KimmSection.js";
@@ -212,5 +219,67 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
     expect(closed).not.toMatch(/(?:^|[\s;])(?:top|bottom|left|right|width|height|margin|inset|display)\s*:/);
     // The strip's key covers the open key's box: 149 against 138, same corner.
     expect(rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__key')).toMatch(/width:\s*149px/);
+  });
+});
+
+describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function closeFromOpen(): ReturnType<typeof render> {
+    const view = render(withArt(OFFER_ONLY, <KimmSection mood="offer" open onOpenChange={() => undefined} />));
+    view.rerender(
+      withArt(OFFER_ONLY, <KimmSection mood="offer" open={false} onOpenChange={() => undefined} />),
+    );
+    return view;
+  }
+
+  it("wipes on the clip alone, 420ms on the push curve, the CSS half of the pair", () => {
+    const closed = rule('.vex-kimm[data-kimm-open="false"]');
+    expect(closed).toMatch(
+      /transition:\s*clip-path var\(--vex-duration-vex-close\) var\(--vex-ease-push\)/,
+    );
+    // The token is the JS constant's mirror; the curve is the push curve.
+    expect(DURATION_VEX_CLOSE_MS).toBe(420);
+    expect(EASE_PUSH).toEqual([0.22, 1, 0.36, 1]);
+    // Nothing but the clip is in her close's transition.
+    expect(closed.match(/transition:[^;]*/)?.[0]).not.toMatch(/\b(?:all|top|height|width|inset)\b/);
+  });
+
+  it("changes the words at the press and stays closing until the wipe's 420ms are up", () => {
+    vi.useFakeTimers();
+    closeFromOpen();
+    expect(screen.getByRole("button", { name: "Show Vex" })).not.toBeNull();
+    expect(section().getAttribute("data-kimm-phase")).toBe("closing");
+    // Her figure holds through the wipe; the strip's frame waits for its end.
+    expect(section().querySelector(".vex-kimm__figure")).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(DURATION_VEX_CLOSE_MS - 1);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("closing");
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(section().getAttribute("data-kimm-phase")).toBe("closed");
+  });
+
+  it("ends on the clip's own transition end, and on no other property's or child's", () => {
+    closeFromOpen();
+    const figure = section().querySelector(".vex-kimm__figure");
+    if (figure === null) throw new Error("figure missing");
+    fireEvent.transitionEnd(figure, { propertyName: "clip-path" });
+    fireEvent.transitionEnd(section(), { propertyName: "opacity" });
+    expect(section().getAttribute("data-kimm-phase")).toBe("closing");
+    fireEvent.transitionEnd(section(), { propertyName: "clip-path" });
+    expect(section().getAttribute("data-kimm-phase")).toBe("closed");
+  });
+
+  it("starts at rest: a section mounted closed or open plays nothing", () => {
+    render(<KimmSection mood="hi" open={false} onOpenChange={() => undefined} />);
+    expect(section().getAttribute("data-kimm-phase")).toBe("closed");
+    cleanup();
+    render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    expect(section().getAttribute("data-kimm-phase")).toBe("open");
   });
 });

@@ -49,6 +49,23 @@
  * tooltip adds the chord ("Hide Vex (Ctrl+Shift+B)", Appendix A.9). It
  * writes the same stored choice the Vex key writes (`onOpenChange`).
  *
+ * HIDE VEX CLOSES HER IN 420MS (sections 3.1 and 3.2; plan row S4-07): the
+ * wipe rises from her foot to the strip's edge on her clip-path, on the push
+ * curve, cubic-bezier(0.22, 1, 0.36, 1) ("arrive slowly, leave fast"). Only
+ * the clip moves; her box never does, so the card beside her never moves
+ * (section 3.6). The words changed at the press; her figure holds through
+ * the wipe and gives way to the strip's frame when it ends.
+ *
+ * THE PHASE is the motion's moment, beside the choice: `open` is what the
+ * last press asked for, `data-kimm-phase` where she is in getting there
+ * (`closing` until the wipe ends, then `closed`). The CSS transition IS the
+ * wipe; the phase follows it, ending on the clip's own `transitionend`, or
+ * when `DURATION_VEX_CLOSE_MS` has elapsed if no end ever comes (a section
+ * not on screen paints no transition). That timer and the sheet's
+ * `--vex-duration-vex-close` are one pair (MOTION-POLICY.md, "Cross-file
+ * timing invariants"): the JS constant is the CSS token's mirror, asserted
+ * by `motion-tokens.test.ts`, and the sheet names this file beside it.
+ *
  * THE MOUNT. This component draws; the feature that mounts it
  * (`features/vex/VexPortraitPlate.tsx`, in the Vex column where K2's print
  * window stood) maps her presence state to her mood, reads the platform's
@@ -58,10 +75,17 @@
  * Vex key and the console, so nothing depends on the picture.
  */
 
-import { useState, type JSX } from "react";
+import { useLayoutEffect, useRef, useState, type JSX, type TransitionEvent } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
+import { DURATION_VEX_CLOSE_MS } from "../../../lib/motion/index.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
+
+/**
+ * Where her section is in its motion: resting `open` or `closed`, or on its
+ * way, `opening` or `closing`, from the press until the wipe ends.
+ */
+export type KimmPhase = "open" | "closed" | "opening" | "closing";
 
 /** The Vex toggle's chord on this platform, as the corner key spells it. */
 export interface KimmShortcut {
@@ -94,10 +118,35 @@ export function KimmSection({ mood, open, onOpenChange, shortcut }: KimmSectionP
   // The words change at the press (section 3.3): the key says what a press
   // does now.
   const action = open ? "Hide Vex" : "Show Vex";
+
+  // The motion's phase (see "THE PHASE"). A press starts the leg before the
+  // frame paints, so the first frame of the wipe already carries it.
+  const [phase, setPhase] = useState<KimmPhase>(open ? "open" : "closed");
+  const shown = useRef(open);
+  useLayoutEffect(() => {
+    if (shown.current === open) return undefined;
+    shown.current = open;
+    if (open) {
+      setPhase("open");
+      return undefined;
+    }
+    setPhase("closing");
+    // The pair of `--vex-duration-vex-close` (kimm.css): the wipe's own end
+    // normally lands first, through `transitionend`.
+    const timer = window.setTimeout(() => setPhase("closed"), DURATION_VEX_CLOSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+  const onTransitionEnd = (event: TransitionEvent<HTMLDivElement>): void => {
+    if (event.target !== event.currentTarget || event.propertyName !== "clip-path") return;
+    setPhase((now) => (now === "closing" ? "closed" : now));
+  };
+
   return (
     <div
       data-vex-area="kimm-section"
       data-kimm-open={open ? "true" : "false"}
+      data-kimm-phase={phase}
+      onTransitionEnd={onTransitionEnd}
       data-kimm-mood={mood}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       className="vex-kimm"
