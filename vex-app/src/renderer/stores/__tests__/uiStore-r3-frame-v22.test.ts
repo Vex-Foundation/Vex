@@ -77,7 +77,11 @@ describe("uiStore v22 - the R3 frame", () => {
       string,
       unknown
     >;
-    expect(after).toMatchObject(stored);
+    // v22 seeds nothing over them; v24 then folds the avatar switch into her
+    // choice and pins it (`uiStore-kimm-choice-v24.test.ts`).
+    const { showAvatar: _folded, ...kept } = stored;
+    expect(after).toMatchObject(kept);
+    expect(after["showAvatar"]).toBe(true);
   });
 
   it("coerces a hostile slot on every rehydrate to the constructed default", () => {
@@ -146,17 +150,20 @@ describe("where Vex opens", () => {
   it("migrates no Vex slot: a stored choice keeps its value, now her plate in a chat", () => {
     // S2-11: in a chat the flag shows or hides her plate, on the table pages
     // it opens or folds the column; a person who hid her keeps her hidden,
-    // so the persisted values pass through every hop unchanged.
+    // so the persisted values pass through every hop unchanged. The one
+    // exception is v24's (S4-14): the retired avatar switch folds into her
+    // choice and is pinned true (`uiStore-kimm-choice-v24.test.ts`).
     // (The desk's `vexOpenLighter` is session-only and never stored.)
-    const stored = { vexOpenChat: false, vexOpenPages: true, showAvatar: false };
-    const migrated = migrateUiState({ ...stored }, 23) as Record<string, unknown>;
+    const stored = { vexOpenChat: false, vexOpenPages: true };
+    const migrated = migrateUiState({ ...stored, showAvatar: false }, 23) as Record<string, unknown>;
     for (const [key, value] of Object.entries(stored)) {
       expect(migrated[key], key).toBe(value);
     }
+    expect(migrated["showAvatar"]).toBe(true);
     const merged = mergeUiState(migrated, useUiStore.getState());
     expect(merged.vexOpenChat).toBe(false);
     expect(merged.vexOpenPages).toBe(true);
-    expect(merged.showAvatar).toBe(false);
+    expect(merged.showAvatar).toBe(true);
   });
 
   it("keeps the legacy writers working through the page class", () => {

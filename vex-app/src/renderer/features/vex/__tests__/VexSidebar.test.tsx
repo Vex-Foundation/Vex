@@ -10,16 +10,18 @@
  *    Kimm's section (`VexPortraitPlate` with `kimm`, plan row S4-04); K2's
  *    print window, her dock and her close stay on the Lighter desk until its
  *    restyle, so those blocks run there;
- *  - AVATAR OFF: no plate and no hologram anywhere, the 44px flat token
- *    (no ring round it) beside the state, and everything else stays; the
- *    switch writes the persisted preference;
+ *  - HER CHOICE (plan row S4-14, which retired R3's "Show avatar" foot and
+ *    switch): closed, her section folds and the 44px flat token (no ring
+ *    round it) stands beside the state, everything else stays; her corner
+ *    key writes the one persisted choice; on the desk the same choice hides
+ *    the K2 plate;
  *  - SHE DOCKS: a column that shows after the shell came up (off the
  *    welcome, or open again after a hide) plays her open episode; one open
  *    from the start shows her as she is;
  *  - HIDING PLAYS HER CLOSE FIRST: the hide key collapses her into the token
  *    and the column goes when that ends (the unmount waits), inert meanwhile,
  *    with focus handed to the token chip; a second press keeps her; the
- *    still frame, the avatar off or a column the shell closes go at once;
+ *    still frame, her figure hidden or a column the shell closes go at once;
  *  - Needs you never decides: its key for an approval in the open chat says
  *    "Review ↓" and only closes a page over the chat;
  *  - STUDIO: the "This project" block opens the project's own Project assets
@@ -150,6 +152,7 @@ beforeEach(() => {
     activeProjectId: null,
     shellRoute: { kind: "none" },
     showAvatar: true,
+    vexOpenChat: true,
   });
 });
 
@@ -188,12 +191,11 @@ describe("VexSidebar, open", () => {
     const plate = area("kimm-section");
     expect(plate).not.toBeNull();
     expect(document.querySelector("[data-vex-k2]")).toBeNull();
-    const avatarSwitch = screen.getByRole("switch", { name: "Show avatar" });
-    expect(avatarSwitch.getAttribute("aria-checked")).toBe("true");
+    // R3's "Show avatar" foot is gone: her choice is her section's (S4-14).
+    expect(screen.queryByRole("switch", { name: "Show avatar" })).toBeNull();
 
     expect(before(state, needsYou)).toBe(true);
     expect(before(needsYou, plate)).toBe(true);
-    expect(before(plate ?? null, avatarSwitch)).toBe(true);
   });
 
   it("hides through its key, named for what it does", () => {
@@ -265,10 +267,10 @@ describe("VexSidebar, the page slot", () => {
   });
 });
 
-describe("VexSidebar, avatar off", () => {
-  it("drops the plate and the hologram, keeps the token, the word, the narration and Needs you", () => {
-    useUiStore.setState({ showAvatar: false });
-    render(<VexSidebar open onHide={() => {}} />);
+describe("VexSidebar, her section closed (her choice, S4-14)", () => {
+  it("folds her section, keeps the token, the word, the narration and Needs you", () => {
+    render(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    expect(area("kimm-section")?.getAttribute("data-kimm-open")).toBe("false");
     expect(area("vex-portrait-plate")).toBeNull();
     expect(document.querySelector("[data-vex-k2]")).toBeNull();
     const state = area("vex-state");
@@ -283,14 +285,22 @@ describe("VexSidebar, avatar off", () => {
     expect(area("vex-needs-you")).not.toBeNull();
   });
 
-  it("writes the preference from the switch, both ways", () => {
-    render(<VexSidebar open onHide={() => {}} />);
-    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
-    expect(useUiStore.getState().showAvatar).toBe(false);
-    expect(area("kimm-section")?.getAttribute("data-kimm-open")).toBe("false");
-    fireEvent.click(screen.getByRole("switch", { name: "Show avatar" }));
+  it("writes her one choice from her corner key, both ways, and never the retired avatar slot", () => {
+    still.current = true;
+    useUiStore.setState({ vexOpenChat: true, showAvatar: true });
+    const view = render(<VexSidebar open stays onHide={() => {}} />);
+    const key = (): HTMLElement => {
+      const el = area("kimm-key");
+      if (el === null) throw new Error("her corner key is missing");
+      return el;
+    };
+    fireEvent.click(key());
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
+    view.rerender(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    expect(key().textContent).toBe("Show Vex");
+    fireEvent.click(key());
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
     expect(useUiStore.getState().showAvatar).toBe(true);
-    expect(area("kimm-section")?.getAttribute("data-kimm-open")).toBe("true");
   });
 });
 
@@ -352,12 +362,12 @@ describe("VexSidebar, the dock (K2, on the Lighter desk)", () => {
     expect(area("kimm-section")).not.toBeNull();
   });
 
-  it("plays it when the avatar is switched on in an open column", () => {
-    useUiStore.setState({ showAvatar: false });
+  it("plays it when her choice shows her again in an open column", () => {
+    useUiStore.setState({ vexOpenChat: false });
     const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
     rerender(<VexSidebar open onHide={() => {}} />);
     expect(holo()).toBeNull();
-    act(() => useUiStore.setState({ showAvatar: true }));
+    act(() => useUiStore.setState({ vexOpenChat: true }));
     expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
   });
 });
@@ -431,8 +441,8 @@ describe("VexSidebar, hiding plays her close first (K2, on the Lighter desk)", (
     expect(sidebar().hasAttribute("inert")).toBe(false);
   });
 
-  it("goes at once with the avatar off, where there is nothing of her to close", () => {
-    useUiStore.setState({ showAvatar: false });
+  it("goes at once with her figure hidden by her choice, where there is nothing of her to close", () => {
+    useUiStore.setState({ vexOpenChat: false });
     const onHide = vi.fn();
     render(
       <>

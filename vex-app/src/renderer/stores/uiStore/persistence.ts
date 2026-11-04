@@ -293,6 +293,16 @@ export function coerceBookTab(value: unknown): BookTab {
 //       what keeps a downgrade honest: an older release reading this payload
 //       finds dark rather than the light room it no longer ships here. The
 //       second hop that rewrites rather than seeds (after v19).
+//   v24: Kimm's open or closed choice REPLACES "Show avatar"
+//       (docs/design/H3-DESKTOP.md section 3.5; plan row S4-14). In a chat
+//       her section is open or folded to its strip on one choice,
+//       `vexOpenChat`; R3's separate avatar switch has nothing left to hide.
+//       So a stored `showAvatar: false` folds INTO the choice (closed: the
+//       person had hidden her figure, and keeps it hidden), and `showAvatar`
+//       is pinned true, the value under which an older build reads the
+//       choice alone. A missing or off-shape slot counts as its default
+//       (open, shown), so the hop never closes her on a guess. The third hop
+//       that rewrites rather than seeds.
 export function migrateUiState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== "object") {
     return persisted;
@@ -368,7 +378,18 @@ export function migrateUiState(persisted: unknown, version: number): unknown {
     const { theme: _retired, ...rest } = next;
     next = { ...rest, themePreference: VEX_THEME };
   }
+  if (version < 24) next = foldShowAvatarIntoKimmChoice(next);
   return next;
+}
+
+/**
+ * v24's fold: her choice stays open only if both the stored choice and the
+ * retired avatar switch said shown; the switch is then pinned true.
+ */
+function foldShowAvatarIntoKimmChoice(stored: Record<string, unknown>): Record<string, unknown> {
+  const open = coerceBooleanPreference(stored["vexOpenChat"], true);
+  const shown = coerceBooleanPreference(stored["showAvatar"], true);
+  return { ...stored, vexOpenChat: open && shown, showAvatar: true };
 }
 
 /**

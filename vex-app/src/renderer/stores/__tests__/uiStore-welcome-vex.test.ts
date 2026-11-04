@@ -1,9 +1,10 @@
 /**
  * The welcome token's own key, `welcomeVexShown` (the coordinator,
  * 2026-10-17): hiding Vex on the welcome is a "make room on this screen"
- * choice, persisted on its own, and it no longer doubles as the global
- * avatar switch (`showAvatar`, Settings "Show avatar" and the Vex sidebar).
- * The two keys never write each other. Added without a version hop: a
+ * choice, persisted on its own, and it never doubled as the global choice,
+ * once the avatar switch and now her section's open or closed choice
+ * (`vexOpenChat`, which replaced "Show avatar"). The two never write each
+ * other. Added without a version hop: a
  * payload that does not carry it hydrates to the default, Vex shown.
  */
 
@@ -24,13 +25,17 @@ describe("uiStore - the welcome's own Vex key", () => {
     expect(partializeUiState(useUiStore.getState())["welcomeVexShown"]).toBe(false);
   });
 
-  it("the welcome key and the avatar switch never write each other", () => {
+  it("the welcome key and her section's choice never write each other", () => {
+    // Her open or closed choice (`vexOpenChat`) replaced the avatar switch
+    // (plan row S4-14); the welcome's key stays its own.
+    useUiStore.setState({ vexOpenChat: true });
     useUiStore.getState().setWelcomeVexShown(false);
-    expect(useUiStore.getState().showAvatar).toBe(true);
-    useUiStore.getState().setShowAvatar(false);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+    useUiStore.getState().setVexOpen(false);
     expect(useUiStore.getState().welcomeVexShown).toBe(false);
     useUiStore.getState().setWelcomeVexShown(true);
-    expect(useUiStore.getState().showAvatar).toBe(false);
+    expect(useUiStore.getState().vexOpenChat).toBe(false);
+    useUiStore.getState().setVexOpen(true);
   });
 
   it("a payload without the key hydrates to Vex shown; a hostile value degrades to the default", () => {

@@ -12,13 +12,16 @@
  *       Needs you     the same list as the title bar's panel
  *       This project  Studio: the project's facts, Project assets, Agent Scan
  *       slot          a page's own block (the Board's Ask Vex)
- *       plate         the 280px print window with the K2 hologram
- *       foot          "Show avatar" and its switch
+ *       plate         H3's frame: Kimm's section, laid over the column
+ *                     (`VexPortraitPlate` with `kimm`); the Lighter desk:
+ *                     the 280px print window with the K2 hologram
  *
  * On the Lighter desk the plate is followed by the desk chat, which takes the
- * rest of the column, and there is no foot. With the avatar off there is no
- * plate and no hologram: the 44px flat token (`VexStatus`, no ring round it)
- * stands beside the state instead, and everything else stays.
+ * rest of the column. Her open or closed choice (`vexOpenChat`, which
+ * replaced R3's "Show avatar" foot and switch, plan row S4-14) closes her
+ * section to its strip in H3's frame and hides the K2 plate on the desk: the
+ * 44px flat token (`VexStatus`, no ring round it) then stands beside the
+ * state, and everything else stays.
  *
  * SHE DOCKS: a column shown again after a hide plays her open episode in the
  * plate; a column open from the start shows her as she is. The welcome keeps
@@ -39,12 +42,13 @@
  * column takes focus, runs a query or paints her. The header's token chip
  * keeps the fill, the word and the timer meanwhile.
  *
- * HIDING PLAYS HER CLOSE FIRST (`vex-hide.ts`): when the user hides her (the
- * column's hide key, the token chip, the shortcut), she collapses into the
- * token in the plate and only then does the write land, so the plate (or the
- * column) waits for the episode. Under reduced motion or Save-Data, with the
- * avatar off or with her plate hidden under the inspect view there is
- * nothing to watch and the write lands at once. While she closes the column
+ * HIDING PLAYS HER CLOSE FIRST on the Lighter desk (`vex-hide.ts`): when the
+ * user hides her (the column's hide key, the token chip, the shortcut), she
+ * collapses into the token in the plate and only then does the write land,
+ * so the column waits for the episode. Under reduced motion or Save-Data,
+ * with her figure hidden by her choice or under the inspect view there is
+ * nothing to watch and the write lands at once; so it does in H3's frame,
+ * where her section's own wipe is the close. While she closes the column
  * is inert (nothing in it takes a click or focus). Where the column goes with
  * her, focus that was inside it moves to the token chip, the control that
  * brings her back; where it stays (`stays`), focus stays on the key that was
@@ -228,11 +232,14 @@ function VexSidebarContent({
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
-  const showAvatar = useUiStore((s) => s.showAvatar);
-  const setShowAvatar = useUiStore((s) => s.setShowAvatar);
+  // Her one remembered choice (S4-14), which replaced "Show avatar": in H3's
+  // frame it reaches here as `plate`; the desk, which keeps K2's print window
+  // until its restyle, reads it to show or hide her figure there too.
+  const kimmChoice = useUiStore((s) => s.vexOpenChat);
   const presence = useVexPresence();
   const lighter = runtimeMode === "lighter";
   const studio = runtimeMode === "studio";
+  const figure = lighter ? kimmChoice && plate : plate;
 
   // The inspect view: only this session's call, and a session switch closes it.
   const inspect = useToolInspectStore((s) => s.inspect);
@@ -287,7 +294,7 @@ function VexSidebarContent({
         className="vex-vs__body"
       >
         <div className="vex-vs__info">
-          <VexStateBlock presence={presence} avatar={showAvatar && plate} />
+          <VexStateBlock presence={presence} avatar={figure} />
           <NeedsYouSection
             presence={presence}
             runtimeMode={runtimeMode}
@@ -298,7 +305,7 @@ function VexSidebarContent({
         </div>
         {lighter ? null : <div className="vex-vs__spacer" />}
         {lighter ? (
-          showAvatar && plate ? (
+          figure ? (
             <VexPortraitPlate
               emotion={vexEmotionOf(presence.state)}
               dock={dock}
@@ -308,25 +315,15 @@ function VexSidebarContent({
         ) : (
           // H3's frame: Kimm's section, laid over the column, mounted open
           // or closed so her large art loads only when she opens (S4-05).
-          <VexPortraitPlate kimm state={presence.state} open={showAvatar && plate} />
+          // Her corner key is the column's own open and close; the "Show
+          // avatar" foot it replaced is gone (S4-14).
+          <VexPortraitPlate kimm state={presence.state} open={plate} />
         )}
         {lighter ? (
           <div data-vex-area="vex-desk-chat" className="vex-vs__desk">
             <LighterChatRail />
           </div>
-        ) : (
-          <div className="vex-vs__foot">
-            <span id="vex-vs-avatar-label">Show avatar</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showAvatar}
-              aria-labelledby="vex-vs-avatar-label"
-              onClick={() => setShowAvatar(!showAvatar)}
-              className="vex-vs__switch"
-            />
-          </div>
-        )}
+        ) : null}
       </div>
     </>
   );
