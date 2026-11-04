@@ -275,7 +275,7 @@ describe("TranscriptMessage tool acts (S5)", () => {
     expect(container.querySelector("[data-vex-tool-fold]")).not.toBeNull();
   });
 
-  it("never lets a fold hide a failure: the folded row counts it, in ink with the cross", () => {
+  it("never lets a fold hide a failure: the folded row counts it, beside the red square", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -295,9 +295,53 @@ describe("TranscriptMessage tool acts (S5)", () => {
     );
     const failed = container.querySelector("[data-vex-tool-fold-failed]");
     expect(failed?.textContent).toBe("1 failed");
-    expect(failed?.querySelector('.vex-swatch[data-s="error"]')).not.toBeNull();
+    // docs/design/H3-DESKTOP.md section 2.2: a step that did not execute is
+    // the status red square beside an ink word.
+    expect(failed?.querySelector(".vex-swatch.text-danger-mark")).not.toBeNull();
     // No member was measured, so the fold prints no time at all.
     expect(container.querySelector("[data-vex-tool-duration]")).toBeNull();
+  });
+
+  it("squares each outcome in its H3 status colour beside its word", () => {
+    // docs/design/H3-DESKTOP.md section 2.2: ink for a step that ran, red
+    // for one that did not execute, grey for a broadcast still in flight.
+    const cases = [
+      { success: true, displayStatus: null, mark: "text-ink-primary", word: "Done" },
+      { success: false, displayStatus: null, mark: "text-danger-mark", word: "Failed" },
+      { success: false, displayStatus: "pending" as const, mark: "text-running-mark", word: "Pending" },
+    ];
+    for (const c of cases) {
+      const { container } = render(
+        createElement(TranscriptMessage, {
+          row: {
+            id: 6,
+            variant: "tool",
+            toolKind: "call",
+            label: "wallet:read",
+            content: "",
+            createdAt: ISO,
+            toolCalls: [],
+            toolActs: [
+              {
+                toolCallId: "a",
+                toolName: "wallet:read",
+                toolArgs: "{}",
+                output: "x",
+                success: c.success,
+                displayStatus: c.displayStatus,
+                durationMs: 812,
+              },
+            ],
+          },
+        }),
+      );
+      const square = container.querySelector("[data-vex-tool-status] .vex-swatch");
+      expect(square?.className).toContain(c.mark);
+      expect(container.querySelector("[data-vex-step-word]")?.textContent).toBe(c.word);
+      // The measured time rides at the row's right.
+      expect(container.querySelector("[data-vex-tool-duration]")?.textContent).toBe("812 ms");
+      cleanup();
+    }
   });
 
   it("keeps a single call as its own step row with its outcome word", () => {

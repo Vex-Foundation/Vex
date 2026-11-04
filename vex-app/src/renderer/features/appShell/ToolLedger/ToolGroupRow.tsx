@@ -1,14 +1,16 @@
 /**
- * THE FOLD (S5): finished steps in ONE quiet row (docs/design/R3-MINIMAL.md
- * section 6): the chevron, "{n} tool calls · {titles}" (each title carries its
- * venue, "Market data · DexScreener"), the time spent in the tools in the mono
- * 12 at the right. 30 high, 13 muted. Opening it reveals the member
- * `ToolActRow`s, each its own 36px step row. It folds a run the row model
- * grouped and the several calls of one call row alike.
+ * THE FOLD (S5): finished steps in ONE quiet row of the steps' frame
+ * (docs/design/H3-DESKTOP.md section 1.7): "{n} tool calls · {titles}" (each
+ * title carries its venue, "Market data · DexScreener") in 13 muted, the time
+ * spent in the tools in the mono 12 at the right, then the chevron, as every
+ * row of the frame ends. Opening it reveals the member `ToolActRow`s, each its
+ * own 40px step row. It folds a run the row model grouped and the several
+ * calls of one call row alike.
  *
  * Nothing that needs the reader is ever hidden by the fold: a member that
- * failed puts "{k} failed" with the ink cross on the folded row, and a member
- * matched to a pending approval puts its "Waiting for approval" link there.
+ * failed puts "{k} failed" with the red square on the folded row, and a
+ * member matched to a pending approval puts its "Waiting for approval" link
+ * there.
  *
  * The reveal is the shared `ExpandRegion` primitive (one curve, one duration,
  * one closed-content contract app-wide); the members carry no entrance
@@ -18,13 +20,12 @@
 import { useId, useMemo, useRef, useState, type JSX } from "react";
 import {
   LineChevronDown,
-  LineChevronRight,
+  LineChevronUp,
 } from "../../../components/icons/line/index.js";
-import { Swatch } from "../../../components/ui/swatch.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import type { ToolGroupRowModel } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
-import { ToolActRow } from "./ToolActRow.js";
+import { StepSquare, ToolActRow } from "./ToolActRow.js";
 import { formatToolDuration } from "./toolDuration.js";
 import { resolveToolIdentity } from "./toolIdentity.js";
 
@@ -104,16 +105,16 @@ export function ToolGroupRow({
           onClick={() => setOpen((v) => !v)}
           className="vex-step__key"
         >
-          <span aria-hidden className="vex-step__chev">
-            {open ? <LineChevronDown size={14} /> : <LineChevronRight size={14} />}
-          </span>
+          {/* An empty square slot, so the fold's words start on the same
+              edge as its members' titles. */}
+          <span aria-hidden className="vex-step__fill" />
           <span className="vex-step__title">
             <span className="tabular-nums">{group.calls.length} tool calls</span>
             {titles.length > 0 ? ` · ${titles}` : null}
           </span>
           {failed > 0 ? (
             <span data-vex-tool-fold-failed="" className="vex-step__failed">
-              <Swatch state="error" size={10} />
+              <StepSquare mark="danger" />
               {failed} failed
             </span>
           ) : null}
@@ -123,6 +124,9 @@ export function ToolGroupRow({
               {durationText}
             </span>
           ) : null}
+          <span aria-hidden className="vex-step__chev">
+            {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
+          </span>
         </button>
         {matchedApprovalId !== null ? (
           <ApprovalLinkStamp approvalId={matchedApprovalId} />
