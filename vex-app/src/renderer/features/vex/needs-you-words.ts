@@ -101,13 +101,26 @@ function pad2(value: number): string {
 export function formatNeedsYouTime(iso: string, nowMs: number): string | null {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return null;
-  const clock = `${pad2(at.getUTCHours())}:${pad2(at.getUTCMinutes())} UTC`;
   const now = new Date(nowMs);
   const sameDay =
     at.getUTCFullYear() === now.getUTCFullYear() &&
     at.getUTCMonth() === now.getUTCMonth() &&
     at.getUTCDate() === now.getUTCDate();
-  if (sameDay) return clock;
+  return sameDay ? utcClock(at) : formatUtcDayTime(iso);
+}
+
+/**
+ * An instant in UTC that always carries its date, "Dec 1, 14:30 UTC", for a
+ * value read away from today (an order's own expiry, days out). `null` for
+ * an unparseable value.
+ */
+export function formatUtcDayTime(iso: string): string | null {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
   const month = MONTHS[at.getUTCMonth()] ?? "";
-  return `${month} ${at.getUTCDate()}, ${clock}`;
+  return `${month} ${at.getUTCDate()}, ${utcClock(at)}`;
+}
+
+function utcClock(at: Date): string {
+  return `${pad2(at.getUTCHours())}:${pad2(at.getUTCMinutes())} UTC`;
 }
