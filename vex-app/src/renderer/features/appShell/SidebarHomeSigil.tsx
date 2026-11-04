@@ -1,9 +1,18 @@
 /**
- * Sidebar brand + home control: the vx wordmark crowns the left sidebar's
- * head row as the sole brand (no "VEX" text): the vx script monogram as
- * inline SVG in the one blue (periwinkle at night), 30 wide in the open head
- * (docs/design/R3-MINIMAL.md section 4), 20 high on a rail. No canvas, no
- * animation.
+ * Sidebar brand + home control: the vx wordmark crowns the chats column as
+ * the sole brand (no "VEX" text): the vx script monogram as inline SVG in the
+ * accent, which H3 sets in ink. No canvas, no animation.
+ *
+ * Three sizes, by where the mark stands:
+ *   - the header's LOGO CELL (docs/design/H3-DESKTOP.md section 1.3), over
+ *     the chats column and over its rail alike: 28 high, so 35 wide, the mark
+ *     as measured in `h3-merged__welcome-closed-1440` (about 34 x 28).
+ *     Desktop draws the mark alone where H3 writes "CLOUD" beside it
+ *     (Appendix A.1);
+ *   - R3's open head row, where a sidebar still draws its own (Studio's
+ *     standalone mount): 24 high, 30 wide (docs/design/R3-MINIMAL.md
+ *     section 4);
+ *   - R3's rail cap (the Lighter desk's rail): 20 high.
  *
  * Doubles as the "Back to welcome" control. When a session is open the mark
  * is a real button that clears the active session and returns the panel to
@@ -16,10 +25,16 @@ import type { JSX } from "react";
 import { VexMark } from "../../components/common/VexMark.js";
 import { useUiStore } from "../../stores/uiStore.js";
 
+/** The mark's height in the header's logo cell, open or over the rail. */
+export const LOGO_CELL_MARK_SIZE = 28;
+
 export function SidebarHomeSigil({
   sidebarOpen,
+  cell = false,
 }: {
   readonly sidebarOpen: boolean;
+  /** The mark stands in the header's logo cell: H3's size, open or rail. */
+  readonly cell?: boolean;
 }): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -27,11 +42,12 @@ export function SidebarHomeSigil({
   // Already on the welcome stage → the mark is inert, not a button.
   const onWelcome = activeSessionId === null;
 
-  // Height-driven size; width flows from the mark's native aspect: 30 x 24
-  // in the open head, 20 high on a rail.
+  // Height-driven size; width flows from the mark's native aspect (5:4):
+  // 35 x 28 in the logo cell, 30 x 24 in R3's open head, 20 high on its rail.
+  const size = cell ? LOGO_CELL_MARK_SIZE : sidebarOpen ? 24 : 20;
   const mark = (
     <span data-vex-home-mark className="select-none text-accent-primary">
-      <VexMark size={sidebarOpen ? 24 : 20} />
+      <VexMark size={size} />
     </span>
   );
 

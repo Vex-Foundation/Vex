@@ -1,17 +1,27 @@
 /**
  * THE LOGO CELL AND THE SIDEBAR KEY: the header's cells over the chats column
  * (docs/design/H3-DESKTOP.md section 1.3), drawn by the frame's one header
- * (`ShellHeader`) for the agent shell and Studio alike. Open, the vx wordmark
- * (30 wide, blue) at the left and the collapse key (32 x 32, the panel icon)
- * at the right; over the rail, the mark alone, centred, and the rail's own
- * Expand key is the way back. On macOS the open cell starts its content at
- * 92, clear of the traffic lights, and over the rail the lights take the
- * whole cell, so the mark is not drawn there; on Windows and Linux the
- * content starts at 16. The cell is a window drag region; the mark and the
- * key opt out.
+ * (`ShellHeader`) for the agent shell and Studio alike.
  *
- * Still R3's mark and key, moved up from the sidebar's own head row, which
- * the header replaces; the H3 cells themselves are the left column's slice.
+ * Open, at 1440 (measured in `h3-merged__welcome-closed-1440`), two cells
+ * divided by a rule:
+ *   - LOGO, 0 to 171: the vx mark, 35 x 28 in ink, set 24 in from the cell's
+ *     edge as every cell's content is (section 2.4). Desktop draws the mark
+ *     alone: H3's "CLOUD" beside it is Cloud's name (Appendix A.1). On macOS
+ *     the traffic lights stand in this cell, 12px circles from x 20 to 72
+ *     centred on the 76 row at y 32 (section 4.7, `TRAFFIC_LIGHT_POSITION`),
+ *     so the mark starts after them, at 92;
+ *   - SIDEBAR KEY, 171 to 248: the panel icon in ink, centred in a 76 x 76
+ *     key that is the whole cell. It folds the chats column to the rail.
+ * The chats cell ends in the column's own rule, so the column's right edge
+ * runs up through the header.
+ *
+ * Over the rail (76 wide) the logo cell stands alone and the rail's own
+ * Expand key is the way back. On macOS the lights fill that cell, so the mark
+ * is not drawn there; on Windows and Linux the mark stands centred.
+ *
+ * Every cell is a window drag region (`.vex-drag`); the mark, once it is a
+ * button (Back to welcome, with a chat open), and the key opt out.
  *
  * The way into Studio is no longer a capsule in this row: the sidebar's nav
  * carries Studio (and Lighter) as rows, open and on the rail alike.
@@ -37,7 +47,7 @@ export function AgentSidebarHeader({
     return (
       <div data-vex-head-cell="chats" className="vex-shell-head__rail vex-drag" data-rail>
         <div data-vex-head-cell="logo" className="vex-shell-head__logo">
-          <SidebarHomeSigil sidebarOpen={false} />
+          <SidebarHomeSigil sidebarOpen={false} cell />
         </div>
       </div>
     );
@@ -45,7 +55,7 @@ export function AgentSidebarHeader({
   return (
     <div data-vex-head-cell="chats" className="vex-ls-head vex-drag vex-lights-start">
       <div data-vex-head-cell="logo" className="vex-shell-head__logo">
-        <SidebarHomeSigil sidebarOpen />
+        <SidebarHomeSigil sidebarOpen cell />
       </div>
       <div data-vex-head-cell="sidebar-key" className="vex-shell-head__key">
         <Tooltip label="Collapse sidebar" side="bottom">
@@ -54,7 +64,7 @@ export function AgentSidebarHeader({
             aria-label={label}
             aria-expanded
             onClick={onCollapse}
-            className="vex-ls-ikey"
+            className="vex-ls-ikey vex-ls-hkey"
           >
             <LinePanelLeft />
           </button>

@@ -336,15 +336,20 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders the Vex shell hero and the profile footer with the night-shift hallmark", async () => {
+  it("renders the Vex shell hero and the account cell with H3's words", async () => {
     renderShell();
 
     // The welcome's greeting, H3's one line (docs/design/H3-DESKTOP.md
     // Appendix A.4), pinned close-range in SessionWelcomeHero.test.tsx.
     expect(screen.getByRole("heading", { name: "Ready when you are." })).not.toBeNull();
     expect(screen.getAllByRole("button", { name: /New chat/i }).length).toBeGreaterThan(0);
-    // Healthy runtime → the profile subtitle speaks the Chronos hallmark.
-    await screen.findByText("The night shift is active.");
+    // Healthy runtime → the account cell says H3's "Account and settings"
+    // (docs/design/H3-DESKTOP.md Appendix A.2), its trigger naming the
+    // runtime's word.
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
+    const account = document.querySelector("[data-vex-area='account-cell']");
+    expect(account?.textContent).toContain("Account and settings");
+    expect(screen.queryByText("The night shift is active.")).toBeNull();
     // The bare version stamp lives in the SESSION rail's collapse header;
     // on the welcome stage the right edge is the floating Portfolio tab
     // (no version chrome) and the hero carries only the eyebrow tooltip.
@@ -354,7 +359,7 @@ describe("AppShell", () => {
 
   it("profile menu carries seven actions including Lock Vex", async () => {
     renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
 
     fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
     // The status row speaks ONE short word (the long RuntimeLedger strings
@@ -416,7 +421,7 @@ describe("AppShell", () => {
 
   it.each(["Escape", "outside", "selection"])("profile menu retains an inert exit after %s until its own animation ends", async (dismissal) => {
     renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
     const trigger = screen.getByRole("button", { name: /Open menu/i });
     trigger.focus();
     fireEvent.click(trigger);
@@ -449,7 +454,7 @@ describe("AppShell", () => {
 
   it("reopening the profile menu cancels an exit without a stale event closing it", async () => {
     renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
     const trigger = screen.getByRole("button", { name: /Open menu/i });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
@@ -465,7 +470,7 @@ describe("AppShell", () => {
   it("opens and removes the profile menu immediately with reduced motion", async () => {
     reducedMotion = true;
     renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
     const trigger = screen.getByRole("button", { name: /Open menu/i });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
@@ -476,7 +481,7 @@ describe("AppShell", () => {
 
   it("removes a closing profile menu when reduced motion becomes active", async () => {
     renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
     const trigger = screen.getByRole("button", { name: /Open menu/i });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu");
@@ -491,7 +496,7 @@ describe("AppShell", () => {
 
   it("Sessions menu entry opens the Sessions screen mounting the sessions library", async () => {
     renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
 
     fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
     // Accessible row name = label + hint subline, so anchor on the label.
@@ -514,7 +519,7 @@ describe("AppShell", () => {
 
   it("shows no pulsing dots anywhere - status is color + words, never motion", async () => {
     const view = renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
     fireEvent.click(screen.getByRole("button", { name: /Open menu/i }));
     expect(view.container.querySelectorAll(".vex-pulse-dot")).toHaveLength(0);
   });
@@ -562,8 +567,8 @@ describe("AppShell", () => {
     renderShell();
     await screen.findByText("Portfolio Check");
 
-    fireEvent.click(screen.getByRole("button", { name: /Search sessions/i }));
-    const input = screen.getByRole("searchbox", { name: /Search sessions/i });
+    fireEvent.click(screen.getByRole("button", { name: /Search chats/i }));
+    const input = screen.getByRole("searchbox", { name: /Search chats/i });
     fireEvent.change(input, { target: { value: "arbitrum" } });
     // The match is marked, so the title is the mark plus the rest: the row's
     // select button still carries the whole name.
@@ -577,12 +582,12 @@ describe("AppShell", () => {
     // Escape closes the field AND clears the filter.
     fireEvent.keyDown(input, { key: "Escape" });
     expect(
-      screen.queryByRole("searchbox", { name: /Search sessions/i }),
+      screen.queryByRole("searchbox", { name: /Search chats/i }),
     ).toBeNull();
     expect(screen.getByText("Portfolio Check")).not.toBeNull();
   });
 
-  it("groups recent sessions into Today, Yesterday, and Older", async () => {
+  it("groups recent sessions into Today, Yesterday, and Earlier (H3-DESKTOP.md Appendix A.2)", async () => {
     sessionsListMock.mockResolvedValueOnce({
       ok: true,
       data: makeSessionRows(),
@@ -592,7 +597,7 @@ describe("AppShell", () => {
 
     await screen.findByText("Today");
     expect(screen.getByText("Yesterday")).not.toBeNull();
-    expect(screen.getByText("Older")).not.toBeNull();
+    expect(screen.getByText("Earlier")).not.toBeNull();
     expect(screen.getAllByText("Arbitrum LP Rebalance").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Open BTC Perp Position").length).toBeGreaterThan(0);
   });
@@ -928,7 +933,7 @@ describe("AppShell", () => {
     // The left sidebar says where you are (docs/design/R3-MINIMAL.md section
     // 4); the $VEX line moves to the Portfolio page.
     const view = renderShell();
-    await screen.findByText("The night shift is active.");
+    await screen.findByRole("button", { name: /, Connected\. Open menu$/ });
     const sidebar = view.container.querySelector(
       "[data-vex-area='sessions-sidebar']",
     );

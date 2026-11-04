@@ -1,33 +1,44 @@
 /**
- * THE LEFT SIDEBAR, in agent mode (docs/design/R3-MINIMAL.md section 4): it
- * says where you are. Paper, a quiet rule on its right, and a width that is
- * the shell track's (264, 224 at the medium tier, the 56px rail closed;
- * `lib/shell-columns.ts`). Nothing in it is wider than the track: every row
- * truncates, so the column reads the same at each seam of the solver.
+ * THE CHATS COLUMN, in agent mode (docs/design/H3-DESKTOP.md section 1.4;
+ * R3-MINIMAL.md section 4 for what H3 does not redraw): it says where you
+ * are. The ground, a rule on its right, and a width that is the shell
+ * track's (248 open, the 76px rail folded; `lib/shell-columns.ts`). Nothing
+ * in it is wider than the track: every row truncates, so the column reads
+ * the same at each seam of the solver.
  *
  * Open, top to bottom:
  *
- *   HEAD     the vx wordmark and the collapse key (`AgentSidebarHeader`):
- *            the frame's header draws them in its cells over this column
+ *   HEAD     the logo cell and the sidebar key (`AgentSidebarHeader`): the
+ *            frame's header draws them in its cells over this column
  *            (`headless`), so the column itself starts with ACTIONS.
- *   ACTIONS  New chat (500; "New mission" on the Mission tab) and Search, as
- *            nav rows. Search turns its row into the field with the All,
- *            Agent and Mission tabs under it, New chat staying above it;
- *            Escape or the field's Esc key brings back the sections.
- *   NAV      Chat, Missions, Portfolio, Board, Lighter, Studio, Settings,
- *            with a 12px gap above and below (`SidebarNav`).
- *   SESSIONS by name, in Pinned, Today, Yesterday and Older; the one scroller.
+ *   ACTIONS  two H3 cells, edge to edge: NEW CHAT, 55 high on the cell fill
+ *            ("New mission" on the Mission tab), and Search chats, 48 high
+ *            on the ground, each behind its rule. Search chats turns its
+ *            cell into the field with the All, Agent and Mission tabs under
+ *            it, New chat staying above it; Escape or the field's Esc key
+ *            brings back the sections.
+ *   NAV      Chat, Missions, Watchlist, Portfolio, Agent Scan, Lighter, Studio,
+ *            Board, Settings: nine H3 rows on the 40 pitch between two rules
+ *            (`SidebarNav`; H3-DESKTOP.md section 4.6).
+ *   CHATS    the CHATS heading (13, 600, caps, ink), then the chats by name
+ *            in Pinned, Today, Yesterday and Earlier on the 36 pitch; the one
+ *            scroller, under the heading, which stays put. In the search mode
+ *            the tabs head the list instead.
  *   ACCOUNT  pinned to the foot behind a quiet rule (`SidebarProfile`); under
  *            the frame's header it is the bottom row's account cell
  *            instead (`headless`).
  *
- * The rail keeps the same order as 40 x 40 keys with their names as tooltips,
- * under the Expand key (the panel icon, the collapse key's twin, the one way
- * back to the open sidebar): New chat, Search, the nav, and the account box
- * at the foot. Chat and Missions pressed on the rail open the sidebar on
- * their list, since a list out of sight cannot show that they did anything.
- * The Lighter desk's rail (`expandable` false) has neither: its drawer opens
- * from the desk's own Markets & sessions key.
+ * THE RAIL (76 wide; H3-DESKTOP.md sections 1.10 and 4.12) keeps the same
+ * order in H3 cells, each the rail's whole width, icon only, its name the
+ * tooltip and the accessible name: the Expand key (the panel icon, the
+ * sidebar key's twin, the one way back to the open column), 48 high behind
+ * its rule; NEW CHAT, 55 high on the cell fill; Search chats, 48; the nav
+ * keys on the 40 pitch between their rules; the account cell's disc at the
+ * foot. Chat and Missions pressed on the rail open the column on their list,
+ * since a list out of sight cannot show that they did anything. The band's
+ * rail and the Lighter desk's (`expandable` false) have no Expand key: the
+ * band keeps the rail, and the desk's drawer opens from its own Markets &
+ * sessions key.
  *
  * Row behaviour (pin, remove, inline rename, the hover preview) is the shared
  * `SessionRow`'s; the list model is `sessionListModel.ts`'s. Scrollbars in
@@ -37,7 +48,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { LineNewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
+import { LineH3NewChat, LinePanelLeft, LineSearch } from "../../components/icons/line/index.js";
 import { isDialogOnScreen } from "../../components/ui/dialog.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
@@ -57,7 +68,11 @@ import {
   SessionsLoadingPlaceholder,
   SidebarSessionGroups,
 } from "./SessionRows.js";
-import { SessionModeTabs, SessionSearchField } from "./SessionRows/SessionSearch.js";
+import {
+  SEARCH_FIELD_LABEL,
+  SessionModeTabs,
+  SessionSearchField,
+} from "./SessionRows/SessionSearch.js";
 import { NavKey, SidebarNav } from "./SessionRows/SidebarNav.js";
 import {
   filterSessionsByMode,
@@ -84,6 +99,13 @@ interface SessionsListProps {
 
 /** Proposal copy (section 4): the search mode's closing hint. */
 const SEARCH_HINT = "Esc closes search and brings back the sections.";
+
+/**
+ * The search cell's word, H3's own (Appendix A.2): the row, its rail key's
+ * name and the field it opens all say it, so the name a screen reader hears
+ * is the word on screen (`SEARCH_FIELD_LABEL` in SessionSearch.tsx).
+ */
+const SEARCH_LABEL = SEARCH_FIELD_LABEL;
 
 export function SessionsList({
   onCreate,
@@ -264,31 +286,30 @@ export function SessionsList({
             </div>
           )}
           <div className="vex-ls-body">
+            {/* The rail's cells, the open column's in the same order, each
+              * 76 wide: the Expand key behind its rule, then New chat,
+              * Search chats and the nav block between its rules. */}
             {expandable ? (
-              <>
-                <Tooltip label="Expand sidebar">
-                  <button
-                    type="button"
-                    aria-label="Expand sessions sidebar"
-                    aria-expanded={false}
-                    onClick={onToggleSidebar}
-                    className="vex-ls-nrow"
-                  >
-                    <LinePanelLeft className="vex-ls-nrow__i" />
-                  </button>
-                </Tooltip>
-                <div aria-hidden className="vex-ls-rule" />
-              </>
+              <Tooltip label="Expand sidebar">
+                <button
+                  type="button"
+                  aria-label="Expand sessions sidebar"
+                  aria-expanded={false}
+                  onClick={onToggleSidebar}
+                  className="vex-ls-nrow vex-ls-nrow--expand"
+                >
+                  <LinePanelLeft className="vex-ls-nrow__i" />
+                </button>
+              </Tooltip>
             ) : null}
             <NewChatKey rail onCreate={onCreate} />
             <NavKey
               icon={<LineSearch className="vex-ls-nrow__i" />}
-              label="Search"
-              ariaLabel="Search sessions"
+              label={SEARCH_LABEL}
               rail
               onClick={openSearch}
+              className="vex-ls-nrow--search"
             />
-            <div aria-hidden className="vex-ls-gap" />
             <SidebarNav
               rail
               onMissions={openMissions}
@@ -325,19 +346,27 @@ export function SessionsList({
                 <NewChatKey rail={false} onCreate={onCreate} />
                 <NavKey
                   icon={<LineSearch className="vex-ls-nrow__i" />}
-                  label="Search"
-                  ariaLabel="Search sessions"
+                  label={SEARCH_LABEL}
                   rail={false}
                   onClick={openSearch}
+                  className="vex-ls-nrow--search"
                 />
-                <div aria-hidden className="vex-ls-gap" />
+                {/* The nav block stands between two rules, Search chats'
+                  * and its own, so no gap sets it apart. */}
                 <SidebarNav
                   rail={false}
                   onMissions={openMissions}
                   activeSessionMode={activeSessionMode}
                 />
-                <div aria-hidden className="vex-ls-gap" />
               </>
+            )}
+            {/* CHATS (section 1.4): the list's section head, under the nav's
+              * rule. The words stay in sentence case; the class sets caps.
+              * The search mode heads its matches with the tabs instead. */}
+            {searchOpen ? null : (
+              <h2 id="ls-chats" className="vex-ls-chats">
+                Chats
+              </h2>
             )}
             <div
               ref={listScrollRef}
@@ -404,7 +433,7 @@ function NewChatKey({
   const mission = useUiStore((s) => s.runtimeMode === "agent" && s.sessionModeFilter === "mission");
   return (
     <NavKey
-      icon={<LineNewChat className="vex-ls-nrow__i" />}
+      icon={<LineH3NewChat className="vex-ls-nrow__i" />}
       label={mission ? "New mission" : "New chat"}
       rail={rail}
       onClick={onCreate}

@@ -1,12 +1,13 @@
 /**
  * One session row, in one of two settings that share every behaviour:
  *
- * - `sidebar` (the left sidebar, docs/design/R3-MINIMAL.md section 4): a 34px
- *   row, the name at 14 with an ellipsis, then at the right the start time in
- *   mono 11.5 muted, or a swatch and a word in 12 muted while a mission has a
- *   state (Running, Waiting, Sleeping, Paused, Error). The open session takes
- *   the selection wash, blue type and weight 500. A search marks its match
- *   with a blue wash.
+ * - `sidebar` (the chats column, docs/design/H3-DESKTOP.md section 1.4): a
+ *   36px row, the name at 15 with an ellipsis, then at the right the start
+ *   time (12, muted, tabular figures, the 24-hour clock or "Oct 28"), or,
+ *   while a mission has a state, H3's tag: the small status square and the
+ *   word in caps (12, ink): RUNNING, WAITING, and desktop's PAUSED, SLEEPING
+ *   and ERROR (`session-row-state.ts`). The open session takes the selected
+ *   step. A search marks its match with the chosen rule's white.
  * - `register` (the Sessions library): the generic 32px RailRow, the title,
  *   the state swatch in front and a quiet trailing time.
  *
@@ -22,7 +23,7 @@ import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { HoverCard } from "../../../components/ui/hover-card.js";
 import { RailRow } from "../../../components/ui/rail-list.js";
 import { Swatch } from "../../../components/ui/swatch.js";
-import { formatSessionTime, getSessionTitle } from "../sessionListModel.js";
+import { formatChatRowTime, formatSessionTime, getSessionTitle } from "../sessionListModel.js";
 import { SessionHoverContent } from "./SessionHoverContent.js";
 import { RemoveButton } from "./RemoveButton.js";
 import { PinToggle } from "./PinToggle.js";
@@ -181,10 +182,13 @@ export function SessionRow({
           * select button's accessible name. */}
         {" "}
         {state === null ? (
-          <span className="vex-ls-row__time vex-num">{formatSessionTime(row.startedAt)}</span>
+          <span className="vex-ls-row__time">{formatChatRowTime(row.startedAt)}</span>
         ) : (
+          // H3's tag: the status square (about 6px) beside the word, which the
+          // row's class sets in caps. The square is decoration; the word
+          // says the state.
           <span className="vex-ls-row__state">
-            <Swatch state={state.fill} size={10} />
+            <Swatch state={state.square.fill} size={6} className={state.square.className} />
             {state.word}
           </span>
         )}

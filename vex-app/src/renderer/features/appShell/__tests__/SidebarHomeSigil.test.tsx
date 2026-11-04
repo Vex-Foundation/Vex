@@ -64,4 +64,15 @@ describe("SidebarHomeSigil", () => {
         ?.getAttribute("height"),
     ).toBe("20");
   });
+
+  it("stands 28 high in the header's logo cell, open and over the rail alike", () => {
+    // docs/design/H3-DESKTOP.md section 1.3: the mark measured about 34 x 28
+    // in the logo cell; the rail's cell is the same header cell, 76 wide.
+    const { container, rerender } = render(<SidebarHomeSigil sidebarOpen cell />);
+    const height = (): string | null | undefined =>
+      container.querySelector("[data-vex-home-mark] svg")?.getAttribute("height");
+    expect(height()).toBe("28");
+    rerender(<SidebarHomeSigil sidebarOpen={false} cell />);
+    expect(height()).toBe("28");
+  });
 });
