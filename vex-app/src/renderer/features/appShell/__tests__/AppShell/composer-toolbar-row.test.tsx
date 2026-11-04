@@ -181,17 +181,16 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
       { modelId: "anthropic/claude-opus-4-1-20250805-extended", reasoning: null },
     ];
     const { container } = mountDocked();
-    const modelChip = container.querySelector(
-      '[data-vex-area="composer-model-chip"]',
-    ) as HTMLElement | null;
-    expect(modelChip).not.toBeNull();
-    const chip = modelChip as HTMLElement;
-    // The chip box MAY shrink: `min-w-0`, and no `shrink-0` pinning it.
-    expect(chip.className).toContain("min-w-0");
-    expect(chip.className).not.toContain("shrink-0");
-    // Its cluster is the shrinkable one.
-    const cluster = chip.parentElement as HTMLElement;
-    expect(cluster.className).toContain("min-w-0");
+    const label = container.querySelector("[data-vex-model-label]") as HTMLElement | null;
+    expect(label).not.toBeNull();
+    const name = label as HTMLElement;
+    // The name MAY shrink: `min-w-0`, and no `shrink-0` pinning it.
+    expect(name.className).toContain("min-w-0");
+    expect(name.className).not.toContain("shrink-0");
+    // Its frame and its cluster are the shrinkable ones.
+    const frame = name.parentElement as HTMLElement;
+    expect(frame.className).toContain("min-w-0");
+    expect((frame.parentElement as HTMLElement).className).toContain("min-w-0");
   });
 
   it("labels own the ellipsis, on the options control the bar draws", () => {
@@ -204,18 +203,16 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     ) as HTMLElement;
     expect(label.className).toContain("truncate");
     expect(label.className).toContain("min-w-0");
-    // R3 (section 7): the model's name is a sans word inside the one options
-    // frame - no brand glyph beside it, so the label is the only thing that
-    // concedes.
-    const chip = container.querySelector(
-      '[data-vex-area="composer-model-chip"]',
-    ) as HTMLElement;
-    expect(chip.className).toContain("vex-composer-options__model");
-    expect(chip.className).toContain("font-sans");
-    expect(chip.className).not.toContain("font-mono");
-    expect(chip.closest('[data-vex-area="composer-options"]')?.className).toContain(
+    // The model's name is a sans word inside the one options frame - no
+    // glyph beside it (the glyph is the model cell's), so the label is the
+    // only thing that concedes.
+    expect(label.className).toContain("vex-composer-options__model");
+    expect(label.className).toContain("font-sans");
+    expect(label.className).not.toContain("font-mono");
+    expect(label.closest('[data-vex-area="composer-options"]')?.className).toContain(
       "vex-composer-options",
     );
+    expect(label.querySelector("svg")).toBeNull();
     expect(container.querySelector('[data-testid="model-brand-icon"]')).toBeNull();
   });
 
@@ -280,19 +277,25 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     useUiStore.setState({ shellRoute: { kind: "none" } });
   });
 
-  it("the model key wears the vx disc when Vex Inference serves the model, and says so", () => {
+  it("the model cell wears the vx disc when Vex Inference serves the model, and says so", () => {
     models = [{ modelId: "openai/gpt-6-luna", reasoning: null, providerId: "vexcloud" }];
     const { container } = mountDocked();
     const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
+    // The key is the row's model cell (docs/design/H3-DESKTOP.md section 1.8).
+    expect(chip.className).toContain("vex-composer-model");
+    expect(chip.closest('[data-vex-area="composer-row"]')).not.toBeNull();
     const disc = chip.querySelector('[data-vex-provider-mark="vexcloud"] [data-vex-vx-token] svg');
-    expect([disc?.getAttribute("width"), disc?.getAttribute("height")]).toEqual(["16", "16"]);
+    expect([disc?.getAttribute("width"), disc?.getAttribute("height")]).toEqual(["20", "20"]);
     expect(disc?.getAttribute("aria-hidden")).toBe("true");
-    // The mark comes before the name, and the words carry the provider.
+    // The glyph is the cell's one child; the words carry the model and the
+    // provider, and the name reads in the options over the row.
+    expect(chip.children).toHaveLength(1);
     expect(chip.firstElementChild?.getAttribute("data-vex-provider-mark")).toBe("vexcloud");
     expect(chip.getAttribute("aria-label")).toBe(
       "Model: openai/gpt-6-luna on Vex Inference. Opens the model menu.",
     );
-    expect(chip.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
+    expect(chip.querySelector("[data-vex-model-label]")).toBeNull();
+    expect(container.querySelector("[data-vex-model-label]")?.textContent).toBe("gpt-6-luna");
   });
 
   it("the model key wears OpenRouter's one-ink mark when OpenRouter serves the model", () => {
@@ -308,11 +311,12 @@ describe("composer toolbar - the shrink chain (Bug 3)", () => {
     );
   });
 
-  it("an unknown provider draws no mark and claims no provider", () => {
+  it("an unknown provider draws the line model glyph and claims no provider", () => {
     models = [{ modelId: "openai/gpt-6-luna", reasoning: null, providerId: "somewhere-else" }];
     const { container } = mountDocked();
     const chip = container.querySelector('[data-vex-area="composer-model-chip"]') as HTMLElement;
     expect(chip.querySelector("[data-vex-provider-mark]")).toBeNull();
+    expect(chip.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(chip.getAttribute("aria-label")).toBe("Model: openai/gpt-6-luna. Opens the model menu.");
   });
 

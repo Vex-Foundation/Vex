@@ -93,12 +93,17 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   border-left: 1px solid var(--vex-alias-rule);
 }
 
+/* ── THE COMPOSER (docs/design/H3-DESKTOP.md section 1.8) ──────────────────
+ * The form holds the options bar and, under it, the composer row: the
+ * chat's cells of the bottom row. The form itself draws no frame: every cell
+ * draws its own 1px rules, as every H3 cell does. Square (radius 0), no
+ * shadow, no blur, and NO focus treatment on the field - the caret carries
+ * it; the keys show the 2px ink ring inside their cells (their classNames). */
 .vex-composer-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 14px 14px 10px 18px;
-  border: 1px solid var(--vex-alias-border-input);
+  min-width: 0;
   border-radius: 0;
   background: var(--vex-alias-composer);
   /* Elevated-surface scrollbar rebind (the indirection contract). */
@@ -106,29 +111,74 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   --vex-scrollbar-thumb-hover: var(--vex-alias-scrollbar-l2-hover);
 }
 
-/* While an approval waits the field takes the 1.5px ink frame, and the tag on
- * its top edge says "Waiting for approval". Status is shown by the frame and
- * the word, never by a colour. The padding gives back the extra half pixel so
- * the text does not move. */
+/* While an approval waits the composer takes the 1.5px ink frame, drawn
+ * inside its box so nothing moves, and the tag on the field's top edge says
+ * "Waiting for approval". Status is shown by the frame and the word, never
+ * by a colour. */
 .vex-composer-card[data-vex-composer-state="approval"] {
-  border-width: 1.5px;
-  border-color: var(--vex-alias-rule-ink);
-  padding: 13.5px 13.5px 9.5px 17.5px;
+  outline: 1.5px solid var(--vex-alias-rule-ink);
+  outline-offset: -1.5px;
 }
 
-/* Right under the mission strip (open at its foot) the field's top edge is
- * the strip's floor, drawn in the quiet rule (R3 d2x mission renders). */
-[data-vex-area="composer-mission-strip"] + .vex-composer-card {
-  border-top-color: var(--vex-alias-rule-quiet);
+/* THE COMPOSER ROW: at 1440,
+ *
+ *   model   680, 75     the model's glyph: the model choice, on the cell fill
+ *   field   755, 545    "Ask Vex...", running on to the send key (H3's image
+ *                       key, 1226 to 1300, is left out: attachments are not
+ *                       supported, so the field takes its 74)
+ *   send    1300, 140   the blue SEND, or STOP while a turn runs
+ *
+ * 72 high under the bottom row's top rule (827 at 1440): each cell draws
+ * that rule as its own top border, so a cell is 73 with it. A draft past one
+ * line grows the FIELD upward over the transcript: the row is bottom
+ * aligned, so the model and send cells keep their 73 at the window's foot
+ * and the frame's bottom row never changes height; only the field's cell,
+ * and its rule, rise. The row is its own size container, so a narrow chat
+ * (the Lighter desk's rail) folds the send cell to its glyph. */
+.vex-composer-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  container: composer-row / inline-size;
+}
+.vex-composer-model {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 75px;
+  height: calc(var(--vex-h3-bottom-h) + 1px);
+  border-top: 1px solid var(--vex-alias-rule);
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+  background-clip: padding-box;
+  color: var(--vex-alias-label-primary);
+}
+.vex-composer-model:hover:not(:disabled) {
+  background-color: var(--vex-alias-interactive-hover);
+}
+.vex-composer-model:disabled {
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+/* The field's cell: its one 24 high line centred in the 72 (24 above, 24
+ * below), text 24 in, growing up to the field's 336 cap. */
+.vex-composer-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(var(--vex-h3-bottom-h) + 1px);
+  padding: 24px;
+  border-top: 1px solid var(--vex-alias-rule);
 }
 
 /* The tag on the field's top edge: 22 high, field ground, a 1px ink border,
- * 12 / 500 (section 7). The stop acknowledgement wears the same shape on the
- * rule. */
+ * 12 / 500, clear of the send cell. The stop acknowledgement wears the same
+ * shape on the rule. */
 .vex-composer-tag {
   position: absolute;
   top: -11px;
-  right: 14px;
+  right: 154px;
   z-index: 20;
   display: inline-flex;
   align-items: center;
@@ -148,23 +198,88 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   color: var(--vex-alias-label-secondary);
 }
 
-/* The bar under the text: 8 apart, 6 below the field. */
-.vex-composer-bar {
-  margin-top: 6px;
+/* THE SEND CELL: 140 wide and the row's 72 under its top rule, the
+ * composer's one blue fill (section 2.4's primary key), white caps 14 behind
+ * the glyph: H3's three-by-three dots for SEND, a 9 x 9 square for STOP.
+ * The fill stops at the rule, which stays the ground's. SEND keeps its blue
+ * while there is nothing to send (disabled, the press does nothing), as H3
+ * draws the resting composer; a stop being acknowledged is section 2.4's
+ * disabled key, the cell fill with muted words. */
+.vex-composer-key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 140px;
+  height: calc(var(--vex-h3-bottom-h) + 1px);
+  padding: 0 16px;
+  border-top: 1px solid var(--vex-alias-rule);
+  background-clip: padding-box;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-/* H3's chat is narrower than R3's centre (docs/design/H3-DESKTOP.md section
- * 1.2: 648 at 1280, 641 at 1024), too narrow for the options and the
- * trailing cluster on one line: the options keep the room their keys need
- * (the model key collapsed to nothing under the squeeze) and the trailing
- * cluster wraps under them, the composer growing upward. */
-.vex-shell-frame[data-vex-frame="h3"] .vex-composer-bar {
+.vex-composer-send,
+.vex-composer-stop {
+  background-color: var(--vex-alias-button-accent-fill);
+  color: var(--vex-alias-button-accent-ink);
+}
+.vex-composer-send:hover:not(:disabled),
+.vex-composer-stop:hover:not(:disabled) {
+  background-color: var(--vex-alias-button-accent-hover);
+}
+.vex-composer-send:disabled {
+  cursor: default;
+}
+.vex-composer-stop:disabled {
+  background-color: var(--vex-alias-bg-layer-3);
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-composer-key__glyph {
+  flex: none;
+}
+.vex-composer-stop__mark {
+  display: block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: currentColor;
+}
+/* A row under 420 (the desk's rail, 300 at its narrowest): the model cell
+ * narrows to 56 and the send cell to a square of its glyph; the key keeps
+ * its name for assistive tech. */
+@container composer-row (max-width: 420px) {
+  .vex-composer-model {
+    width: 56px;
+  }
+  .vex-composer-key {
+    width: 72px;
+    padding: 0;
+  }
+  .vex-composer-key__word {
+    display: none;
+  }
+}
+
+/* THE OPTIONS BAR over the row: the options control leading; the
+ * permission as its promise and the context label trailing, 8 apart, on a
+ * 1px top rule, text 24 in. The chat is narrow (docs/design/H3-DESKTOP.md
+ * section 1.2: 648 at 1280, 641 at 1024), so the trailing cluster wraps
+ * under the options when they need the room. */
+.vex-composer-bar {
+  padding: 6px 24px;
+  border-top: 1px solid var(--vex-alias-rule);
   flex-wrap: wrap;
   row-gap: 6px;
 }
-.vex-shell-frame[data-vex-frame="h3"] .vex-composer-bar > :first-child {
+.vex-composer-bar > :first-child {
   min-width: min(100%, 17.5rem);
 }
-.vex-shell-frame[data-vex-frame="h3"] .vex-composer-bar > :last-child {
+.vex-composer-bar > :last-child {
   margin-left: auto;
 }
 
@@ -228,50 +343,6 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 .vex-context-meter > i {
   width: 4px;
   height: 10px;
-}
-
-/* The send key: 36 x 36. Waiting for text it is a dotted blue outline with a
- * blue arrow; with text it is the view's one blue fill (a periwinkle edge at
- * night, transparent by day). */
-.vex-composer-send {
-  border: 1px solid var(--vex-alias-button-accent-edge);
-  background: var(--vex-alias-button-accent-fill);
-  color: var(--vex-alias-button-accent-ink);
-}
-.vex-composer-send:disabled {
-  border: 1px dotted var(--vex-alias-accent-primary);
-  background: transparent;
-  color: var(--vex-alias-accent-primary);
-  cursor: not-allowed;
-}
-
-/* The named stop key: 36 high, ink fill, paper type, 13 / 500, a 9 x 9
- * square before the words ("Stop agent", "Stop mission"). Stopping keeps the
- * box on a dotted ink line until the stop is acknowledged. */
-.vex-composer-stop {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-rule-ink);
-  color: var(--vex-alias-bg-base);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.vex-composer-stop:disabled {
-  border-style: dotted;
-  background: transparent;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-composer-stop__mark {
-  display: block;
-  flex: none;
-  width: 9px;
-  height: 9px;
-  background: currentColor;
 }
 
 /* Dashed drop ring: a masked SVG rect with square corners. The 4px stroke is
