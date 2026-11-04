@@ -1,7 +1,9 @@
 /**
  * PositionBlock - the Portfolio page's total (docs/design/R3-MINIMAL.md
- * section 9.1): what the total includes, the money headline, the snapshot it
- * compares with and when the figures were loaded.
+ * section 9.1): what the total includes, the money headline and the snapshot
+ * it compares with. The scope tabs, the refresh key and "Updated {time}"
+ * stand in the page's tabs row (docs/design/H3-DESKTOP.md sections 1.9 and
+ * 4.8), pinned in `PortfolioScreen.test.tsx`.
  *
  * Pins:
  *   - SCOPE IS THE ONLY INPUT and it is never widened: global, session and
@@ -10,11 +12,11 @@
  *   - the headline is the full USD figure ("$12,345.67", Intl, never compact)
  *     and the line over it names what the total includes, per scope,
  *   - the per-scope empty notes, the Add wallet route, the loading and error
- *     lines, and the refresh key + the chips the page hands in always stand,
+ *     lines; the block itself draws neither the refresh key nor the tabs,
  *   - the snapshot line says what the DTO says (the delta is `pnlVsPrev`, never
  *     a live gain), prints the snapshot's AGE, and past 24 hours mutes the
  *     delta (`data-stale`); no age when the DTO carries no (or a future)
- *     timestamp; "loaded HH:MM" is the query's own fetch time,
+ *     timestamp; no fetch time is printed here (the tabs row's stamp has it),
  *   - chain read problems stay beside the cached total.
  *
  * The query hooks are mocked: this suite owns the block's display rules and
@@ -150,7 +152,7 @@ function subLine(): HTMLElement {
 function renderBlock(
   scope: Parameters<typeof PositionBlock>[0]["scope"] = { kind: "global" },
 ) {
-  return render(<PositionBlock scope={scope} chips={null} />);
+  return render(<PositionBlock scope={scope} />);
 }
 
 beforeEach(() => {
@@ -441,57 +443,21 @@ describe("PositionBlock - empty, loading and error", () => {
   });
 });
 
-describe("PositionBlock - the refresh key and the chips stand in every state", () => {
-  const chips = <div role="group" aria-label="Portfolio scope">chips</div>;
+describe("PositionBlock - the frame's parts are not the block's", () => {
+  it("draws neither the refresh key nor the scope tabs, in any state", () => {
+    renderBlock();
+    expect(screen.queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Portfolio scope" })).toBeNull();
+    cleanup();
 
-  function renderWithChips() {
-    return render(<PositionBlock scope={{ kind: "global" }} chips={chips} />);
-  }
-
-  it("renders the refresh key and the handed chips beside a total", () => {
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-    expect(
-      document.querySelector(".vex-pf-top__side")?.contains(
-        screen.getByRole("group", { name: "Portfolio scope" }),
-      ),
-    ).toBe(true);
-  });
-
-  it("keeps both through loading, error and empty", () => {
     mockUsePortfolio.mockReturnValue({
       isLoading: true,
       isError: false,
       data: undefined,
       dataUpdatedAt: 0,
     });
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-    cleanup();
-
-    mockUsePortfolio.mockReturnValue({
-      isLoading: false,
-      isError: true,
-      data: undefined,
-      dataUpdatedAt: 0,
-    });
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-    cleanup();
-
-    mockScopeRead(portfolio({ walletCount: 0 }));
-    renderWithChips();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Portfolio scope" })).not.toBeNull();
-  });
-
-  it("renders no chip group when the page hands none", () => {
     renderBlock();
-    expect(screen.queryByRole("group", { name: "Portfolio scope" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
   });
 });
 
@@ -539,10 +505,10 @@ describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
     expect(delta.getAttribute("style")).toBeNull();
   });
 
-  it("prints the whole line: snapshot age, figure, delta against the one before, loaded time", () => {
+  it("prints the whole line: snapshot age, figure, delta against the one before", () => {
     mountSnapshot("2026-09-04T11:55:00.000Z");
     expect(subLine().textContent).toBe(
-      `Snapshot 5 min ago $100.62 · +$0.41 since the snapshot before · loaded ${LOADED_CLOCK}`,
+      "Snapshot 5 min ago $100.62 · +$0.41 since the snapshot before",
     );
   });
 
@@ -580,9 +546,7 @@ describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
     mountSnapshot(null);
 
     expect(maybeArea("position-snapshot-age")).toBeNull();
-    expect(subLine().textContent).toBe(
-      `Snapshot $100.62 · +$0.41 since the snapshot before · loaded ${LOADED_CLOCK}`,
-    );
+    expect(subLine().textContent).toBe("Snapshot $100.62 · +$0.41 since the snapshot before");
     expect(screen.getByLabelText("Change from the snapshot before +$0.41")).not.toBeNull();
   });
 
@@ -607,31 +571,22 @@ describe("PositionBlock snapshot line (owner measurement 2026-09-04)", () => {
   it("a snapshot without a comparison (pnlVsPrev null) prints the figure and no delta", () => {
     mountSnapshot("2026-09-04T11:55:00.000Z", { pnlVsPrev: null });
 
-    expect(subLine().textContent).toBe(
-      `Snapshot 5 min ago $100.62 · loaded ${LOADED_CLOCK}`,
-    );
+    expect(subLine().textContent).toBe("Snapshot 5 min ago $100.62");
     expect(subLine().textContent).not.toContain("since the snapshot before");
     expect(document.querySelector(".vex-pf-top__pnl")).toBeNull();
   });
 
-  it("with no snapshot at all the line carries only when the figures were loaded", () => {
+  it("with no snapshot at all there is no line under the headline", () => {
     mountSnapshot(null, { snapshotTotalUsd: null, pnlVsPrev: null });
 
     expect(maybeArea("position-snapshot")).toBeNull();
-    expect(subLine().textContent).toBe(`Loaded ${LOADED_CLOCK}`);
+    expect(document.querySelector(".vex-pf-top__sub")).toBeNull();
   });
 
-  it("prints no loaded time when the query has no fetch time", () => {
-    mockScopeRead(portfolio({ snapshotTotalUsd: 100.62, pnlVsPrev: 0.41 }), 0);
-    renderBlock();
+  it("never prints the fetch time: the tabs row's Updated stamp carries it", () => {
+    mountSnapshot("2026-09-04T11:55:00.000Z");
     expect(subLine().textContent).not.toContain("loaded");
-    expect(subLine().textContent).toContain("Snapshot");
-
-    cleanup();
-    mockScopeRead(portfolio(), 0);
-    renderBlock();
-    // Nothing to say beneath the headline: no snapshot and no loaded time.
-    expect(document.querySelector(".vex-pf-top__sub")).toBeNull();
+    expect(subLine().textContent).not.toContain(LOADED_CLOCK);
   });
 });
 

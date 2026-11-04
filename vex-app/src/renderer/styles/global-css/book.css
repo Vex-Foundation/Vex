@@ -15,18 +15,134 @@
  * trading values (`[data-trade]`: the Lighter uPnL, Long and Short, the $VEX
  * 24 hour change), never on a state word. */
 
-/* The page asks the sheet for the centre's width (920 at 1440) and the
- * design's page padding (22 40 24, section 9.1), not the 760 reading column:
- * the tables need it. */
-.vex-ov:has(.vex-pf) {
-  --vex-ov-max: 920px;
-  --vex-ov-pad: 40px;
-  --vex-ov-top: 22px;
+/* ---- the H3 page frame (every page) ----------------------------------
+ * docs/design/H3-DESKTOP.md section 1.9: a tabs row of square cells about 57
+ * high across the page, the tabs at the left (the selected one on raised 2,
+ * the contract's selected tab fill) and "Updated {time}" with the page's
+ * keys at the right; under its rule the page body, 24 in from each edge and
+ * as wide as the column, not R3's centred reading column.
+ *
+ * These rules live here, with the pages, rather than in `overlay.css`, which
+ * keeps the sheet's box, its layer and its scroller. Every page's sheet
+ * carries `data-frame="h3"` (`ShellScreen`); the selector also names
+ * `[data-width]` (always set) so it outranks overlay.css's own
+ * `.vex-ov[data-width="wide"]` column, which loads after this sheet. */
+.vex-ov[data-frame="h3"][data-width] {
+  --vex-ov-max: none;
+  --vex-ov-pad: 24px;
+  --vex-ov-top: 24px;
 }
-@media (max-width: 1179px) {
-  .vex-ov:has(.vex-pf) {
-    --vex-ov-pad: 28px;
-  }
+/* The row stands above the scroller: the sheet's one grid row becomes two. */
+.vex-ov[data-frame="h3"]:has(> .vex-pg-bar) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.vex-pg-bar {
+  display: flex;
+  min-width: 0;
+  min-height: 57px;
+  align-items: stretch;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  font-family: var(--font-sans);
+}
+/* The tab cells: each bounded by the rule on both sides (two neighbours
+ * share one), 15 caps tracked 0.08em (section 2.3: "REVIEW and the page
+ * tabs ... sans 15"), ink 2 at rest, ink on raised 2 when selected. */
+.vex-pg-tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.vex-pg-tab {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  /* The detail span starts with " · ", whose space a flex item drops. */
+  gap: 0.35em;
+  margin-left: -1px;
+  padding: 0 24px;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pg-tab:first-child {
+  margin-left: 0;
+}
+.vex-pg-tab:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-tab[aria-pressed="true"] {
+  background: var(--vex-alias-interactive-active);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-tab:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-pg-tab__d {
+  color: var(--vex-alias-label-tertiary);
+}
+/* A card head's tabs (the equity chart's range): the same cells at the
+ * head's own height and the 13 label step. */
+.vex-pg-tabs[data-size="head"] .vex-pg-tab {
+  padding: 0 16px;
+  font-size: 13px;
+}
+.vex-pg-bar__end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  padding-left: 16px;
+}
+/* "Updated 14:30": 14, muted, sentence case; the clock is a figure. */
+.vex-pg-stamp {
+  margin: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-pg-stamp .vex-num {
+  font-size: 13px;
+}
+/* A page key in the row: a square cell the row's height, the rule on its
+ * left, the icon at rest in ink 2. */
+.vex-pg-key {
+  display: inline-flex;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: -24px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
+  background: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-pg-key:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-pg-key:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.vex-pg-key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
 }
 
 .vex-pf {
@@ -101,13 +217,6 @@
   align-items: flex-start;
   gap: 6px;
 }
-.vex-pf-top__side {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
 .vex-pf-warn {
   max-width: 620px;
   margin-top: 8px;
@@ -122,42 +231,7 @@
   margin-top: 4px;
 }
 
-/* The scope chips: a segmented control, 30 high, 13, a 1px rule border; the
- * selected chip takes the selection fill and blue 500 type. Chips that do not
- * fit wrap onto a second row with their borders still collapsed. */
-.vex-pf-seg {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  padding: 1px 0 0 1px;
-}
-.vex-pf-seg__b {
-  position: relative;
-  display: inline-flex;
-  height: 30px;
-  align-items: center;
-  margin: -1px 0 0 -1px;
-  padding: 0 12px;
-  border: 1px solid var(--vex-alias-rule);
-  background: transparent;
-  font-size: 13px;
-  white-space: nowrap;
-  color: var(--vex-alias-label-secondary);
-}
-.vex-pf-seg__b:hover {
-  background: var(--vex-alias-interactive-hover);
-}
-.vex-pf-seg__b[aria-pressed="true"] {
-  z-index: 1;
-  background: var(--vex-alias-interactive-active);
-  font-weight: 500;
-  color: var(--vex-alias-accent-primary);
-}
-.vex-pf-seg__d {
-  font-weight: 400;
-}
-
-/* The icon key (32 x 32, section 1.5): refresh, and a row's dots. */
+/* The icon key (32 x 32, section 1.5): a row's dots and keys. */
 .vex-pf-key {
   display: inline-flex;
   width: 32px;

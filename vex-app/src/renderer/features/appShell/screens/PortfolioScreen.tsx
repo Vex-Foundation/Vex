@@ -1,23 +1,29 @@
 /**
  * PortfolioScreen: the `portfolio` page in the centre column, both sidebars
- * standing (docs/design/R3-MINIMAL.md sections 2.3 and 9.1). Vex is hidden by
- * default here (a table page, `vexOpenPages`); the title bar keeps the page's
- * name, Needs you and the token chip.
+ * standing (docs/design/H3-DESKTOP.md sections 1.9 and 4.1, item 12;
+ * R3-MINIMAL.md section 9.1 before it). The title bar keeps the page's name.
+ *
+ * THE FRAME (H3 section 1.9): the tabs row is the page's scope, one cell per
+ * choice ("All wallets", each inventory wallet, "This chat", "This
+ * project"), where H3 draws Cloud's OVERVIEW and WALLET, and only when there
+ * is more than one to choose between; at its right,
+ * "Updated {time}", the fetch time of the read behind the page's figures, and
+ * the refresh key (section 4.8 moves the page's keys out of the title bar).
  *
  * The page, top to bottom:
- *  - the total (`PositionBlock`): what it includes, the money headline, the
- *    snapshot and when the figures were loaded, the refresh key and the scope
- *    chips;
+ *  - the total (`PositionBlock`): what it includes, the money headline and
+ *    the snapshot it compares with;
  *  - the reorderable sections, in the user's order (`bookSectionOrder`):
  *    Wallets and Balances (side by side as one band wherever the order puts
  *    them next to each other), the Lighter account, Activity, the Launchpad;
  *  - the $VEX line.
  *
- * The page owns ONE piece of state: which scope chip is selected. Every
+ * The page owns ONE piece of state: which scope tab is selected. Every
  * section is handed the resulting scope and reads it itself; nothing here
- * reads money. The context chips follow the shell: "This chat" while an agent
- * session is open outside Studio, "This project" in Studio with a project
- * selected (see `portfolio-page-scope.ts`).
+ * reads money except the stamp's fetch time, which comes from the same cached
+ * read the total draws. The context tabs follow the shell: "This chat" while
+ * an agent session is open outside Studio, "This project" in Studio with a
+ * project selected (see `portfolio-page-scope.ts`).
  */
 
 import { useMemo, useState, type JSX, type ReactNode } from "react";
@@ -25,7 +31,9 @@ import type { ShellScreenOrigin } from "../../../stores/uiStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
 import { useAvailableWallets } from "../../../lib/api/wallet-inventory.js";
 import { ShellScreen } from "./ShellScreen.js";
+import { PageBar, PageTabs, type PageTab } from "./PageBar.js";
 import { PositionBlock } from "../book/PositionBlock.js";
+import { PortfolioRefreshButton } from "../book/PortfolioRefreshButton.js";
 import { ImageLockerCard } from "../book/ImageLockerCard.js";
 import { SessionActivityCard } from "../book/SessionActivityCard.js";
 import { WalletPairCard } from "../book/WalletPairCard.js";
@@ -42,13 +50,14 @@ import {
 } from "../book/section-order.js";
 import { BalancesCard } from "../book/portfolio/BalancesCard.js";
 import { LighterAccountCard } from "../book/portfolio/LighterAccountCard.js";
-import { PortfolioScopeChips } from "../book/portfolio/PortfolioScopeChips.js";
 import { WalletsCard } from "../book/portfolio/WalletsCard.js";
 import {
   ALL_WALLETS_KEY,
   portfolioScopeOptions,
   selectScopeOption,
+  usePageScopePortfolio,
   type PortfolioPageScope,
+  type PortfolioScopeOption,
 } from "../book/portfolio/portfolio-page-scope.js";
 import { flattenPortfolioWallets } from "../book/portfolio/wallet-scope.js";
 import { VexTokenCardCompact } from "../market/VexTokenCardCompact.js";
@@ -60,51 +69,97 @@ export function PortfolioScreen({
   readonly origin: ShellScreenOrigin | null;
   readonly onClose: () => void;
 }): JSX.Element {
+  const { options, selected, select } = usePortfolioPageScope();
+  const scope = selected.scope;
+  const sessionId = useChatSessionId();
+  // The stamp's time is the fetch time of the read the total draws: the same
+  // query (one key, one cache entry), so "Updated" and the figure under it
+  // can never come from two different reads.
+  const read = usePageScopePortfolio(scope);
   return (
-    <ShellScreen title="Portfolio" origin={origin} onClose={onClose} chapter={null}>
-      <PortfolioPage />
+    <ShellScreen
+      title="Portfolio"
+      origin={origin}
+      onClose={onClose}
+      chapter={null}
+      bar={
+        <PageBar
+          // One option is "All wallets" alone, which is already what the page
+          // shows: a lone pressed tab would offer no choice, so it is left out
+          // and the row keeps only the stamp and the key.
+          tabs={
+            options.length > 1 ? (
+              <PageTabs
+                label="Portfolio scope"
+                tabs={options.map(scopeTab)}
+                selectedKey={selected.key}
+                onSelect={select}
+              />
+            ) : null
+          }
+          updatedAt={read.dataUpdatedAt}
+          keys={<PortfolioRefreshButton />}
+        />
+      }
+    >
+      <PortfolioPage scope={scope} chatOpen={sessionId !== null} />
     </ShellScreen>
   );
 }
 
-/** The page body: the total, the sections, the $VEX line. */
-export function PortfolioPage(): JSX.Element {
+/** One scope option as a tab cell: its word, its muted detail, its address. */
+function scopeTab(option: PortfolioScopeOption): PageTab {
+  return { key: option.key, label: option.label, detail: option.detail, title: option.title };
+}
+
+/** The open agent session outside Studio, the one a "This chat" tab reads. */
+function useChatSessionId(): string | null {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeSessionId = useUiStore((s) => s.activeSessionId);
+  return runtimeMode === "studio" ? null : activeSessionId;
+}
+
+/**
+ * The page's scope tabs and the selected one. A tab that vanished (a wallet
+ * removed, a chat closed) falls back to "All wallets" rather than a dead
+ * selection.
+ */
+function usePortfolioPageScope(): {
+  readonly options: readonly PortfolioScopeOption[];
+  readonly selected: PortfolioScopeOption;
+  readonly select: (key: string) => void;
+} {
+  const runtimeMode = useUiStore((s) => s.runtimeMode);
   const activeProjectId = useUiStore((s) => s.activeProjectId);
+  const sessionId = useChatSessionId();
   const walletsQuery = useAvailableWallets();
   const inventory = walletsQuery.data?.ok ? walletsQuery.data.data : null;
   const wallets = useMemo(
     () => (inventory !== null ? flattenPortfolioWallets(inventory) : []),
     [inventory],
   );
-  const sessionId = runtimeMode === "studio" ? null : activeSessionId;
   const projectId = runtimeMode === "studio" ? activeProjectId : null;
   const options = useMemo(
     () => portfolioScopeOptions(wallets, { sessionId, projectId }),
     [wallets, sessionId, projectId],
   );
   const [selectedKey, setSelectedKey] = useState(ALL_WALLETS_KEY);
-  // A chip that vanished (a wallet removed, a chat closed) falls back to
-  // "All wallets" rather than a dead selection.
-  const selected = selectScopeOption(options, selectedKey);
-  const scope = selected.scope;
+  return { options, selected: selectScopeOption(options, selectedKey), select: setSelectedKey };
+}
 
+/** The page body under the frame: the total, the sections, the $VEX line. */
+export function PortfolioPage({
+  scope,
+  chatOpen,
+}: {
+  readonly scope: PortfolioPageScope;
+  /** An agent session is open, so a launch can be signed from it. */
+  readonly chatOpen: boolean;
+}): JSX.Element {
   return (
     <div className="vex-pf">
-      <PositionBlock
-        scope={scope}
-        chips={
-          options.length > 1 ? (
-            <PortfolioScopeChips
-              options={options}
-              selectedKey={selected.key}
-              onSelect={setSelectedKey}
-            />
-          ) : null
-        }
-      />
-      <PortfolioSections scope={scope} chatOpen={sessionId !== null} />
+      <PositionBlock scope={scope} />
+      <PortfolioSections scope={scope} chatOpen={chatOpen} />
       <VexTokenCardCompact />
     </div>
   );

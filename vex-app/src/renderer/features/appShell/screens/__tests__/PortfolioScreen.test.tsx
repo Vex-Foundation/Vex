@@ -241,6 +241,12 @@ function stub(testId: string): HTMLElement {
   return found;
 }
 
+function tabsRow(): HTMLElement {
+  const found = document.querySelector('[data-vex-area="page-tabs-row"]');
+  if (!(found instanceof HTMLElement)) throw new Error("missing the tabs row");
+  return found;
+}
+
 function chipGroup(): HTMLElement | null {
   return screen.queryByRole("group", { name: "Portfolio scope" });
 }
@@ -323,6 +329,19 @@ describe("PortfolioScreen - the chrome", () => {
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
   });
 
+  it("stamps its tabs row with the total's read's own fetch time", async () => {
+    // Only Date is faked: the fetch time TanStack records is this clock's.
+    vi.useFakeTimers({ now: new Date(2026, 10, 3, 14, 30, 5), toFake: ["Date"] });
+    try {
+      renderPage();
+      await settleGlobal();
+      const stamp = tabsRow().querySelector('[data-vex-area="page-updated"]');
+      expect(stamp?.textContent).toBe("Updated 14:30");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("closes through the host's close on Escape when there is no page to return to", async () => {
     renderPage();
     await settleGlobal();
@@ -333,19 +352,21 @@ describe("PortfolioScreen - the chrome", () => {
 });
 
 describe("PortfolioScreen - composition", () => {
-  it("draws the total, then the sections, then the $VEX line, with the refresh key in the head", async () => {
+  it("draws the tabs row, then the total, the sections and the $VEX line", async () => {
     renderPage();
     await settleGlobal();
 
+    const row = tabsRow();
     const total = header();
     const list = sectionList();
     const vex = document.querySelector('[data-vex-area="vex-token-compact"]');
     if (vex === null) throw new Error("missing the $VEX line");
+    expect(row.compareDocumentPosition(total)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(total.compareDocumentPosition(list)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(list.compareDocumentPosition(vex)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(
-      within(total).getByRole("button", { name: "Refresh portfolio" }),
-    ).not.toBeNull();
+    // The page's key stands in its tabs row (H3 section 4.8), not in the total.
+    expect(within(row).getByRole("button", { name: "Refresh portfolio" })).not.toBeNull();
+    expect(within(total).queryByRole("button", { name: "Refresh portfolio" })).toBeNull();
     // What the total includes, and the headline.
     expect(
       within(total).getByText(
@@ -552,8 +573,9 @@ describe("PortfolioScreen - the scope chips", () => {
 
     const group = chipGroup();
     if (group === null) throw new Error("the scope chips are not offered");
-    // The chips ride at the right of the total.
-    expect(header().contains(group)).toBe(true);
+    // The scope is the page frame's tabs row (H3 section 1.9), not the total.
+    expect(tabsRow().contains(group)).toBe(true);
+    expect(header().contains(group)).toBe(false);
     expect(chipNames()).toEqual([
       "All wallets",
       "Main · Primary",
