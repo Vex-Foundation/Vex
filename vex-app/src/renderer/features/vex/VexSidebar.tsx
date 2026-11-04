@@ -12,10 +12,11 @@
  *                     (`VexPortraitPlate` with `kimm`, plan rows S4-04 on);
  *                     on the Lighter desk the print window with the K2
  *                     hologram
- *       console rest  Studio's This project, a page's own block (the Board's
- *                     Ask Vex), AI permission, recent activity and Open
- *                     activity: what her section covers while she is open,
- *                     inert until her close has ended (`useKimmCovers`)
+ *       console rest  Studio's This project (`VexConsoleThisProject`), a
+ *                     page's own block (the Board's Ask Vex), AI permission,
+ *                     recent activity (the open project's, in Studio) and
+ *                     Open activity: what her section covers while she is
+ *                     open, inert until her close has ended (`useKimmCovers`)
  *
  * The header's Vex key opens and closes her (`VexKey`), with the shortcut;
  * the column has no head row, no state block and no avatar switch of its own
@@ -77,21 +78,23 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { LineBack } from "../../components/icons/line/index.js";
 import { useKimmCovers } from "../../components/vex/kimm/kimm-section-state.js";
-import { useProject } from "../../lib/api/projects.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import { useUiStore, vexPageClass, type RuntimeMode } from "../../stores/uiStore.js";
-import { assetsRouteFor, type ShellScreenOrigin } from "../../stores/uiStore/shell-route.js";
 import { BookInspectPanel } from "../appShell/book/inspect/BookInspectPanel.js";
 import { useToolInspectStore } from "../appShell/book/inspect/inspect-store.js";
 import { LighterChatRail } from "../appShell/lighterTrading/LighterChatRail.js";
-import { formatSessionTime } from "../appShell/sessionListModel.js";
 import type { NeedsYouItem } from "./needs-you.js";
 import { NeedsYouList } from "./needs-you/NeedsYouList.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
 import { useAllMissions, useVexPresence, type VexPresence } from "./useVexPresence.js";
-import { VexConsoleActivity, VexConsolePermission, VexConsoleTop } from "./VexConsole.js";
+import {
+  VexConsoleActivity,
+  VexConsolePermission,
+  VexConsoleThisProject,
+  VexConsoleTop,
+} from "./VexConsole.js";
 import { vexEmotionOf } from "./vex-emotion.js";
 import { VexConsoleStrip } from "./VexConsoleStrip.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
@@ -348,10 +351,15 @@ function VexSidebarContent({
           // while open and shows while she is closed; inert while she covers
           // it, until a close has ended (S4-11).
           <div className="vex-vs__rest" data-vex-area="vex-console-rest" inert={covered}>
-            {studio && activeProjectId !== null ? <ThisProjectBlock projectId={activeProjectId} /> : null}
+            {/* In Studio, This project stands where a chat's AI permission
+              * does (our approved Studio plate), and recent activity is the
+              * open project's. */}
+            {studio && activeProjectId !== null ? (
+              <VexConsoleThisProject projectId={activeProjectId} />
+            ) : null}
             <div ref={setVexSidebarSlot} data-vex-area="vex-sidebar-slot" className="vex-vs__slot" />
             <VexConsolePermission sessionId={studio ? null : activeSessionId} />
-            <VexConsoleActivity />
+            <VexConsoleActivity projectId={studio ? activeProjectId : null} />
           </div>
         )}
       </div>
@@ -393,65 +401,3 @@ function NeedsYouSection({
   );
 }
 
-/* ------------------------------ This project ----------------------------- */
-
-/** The rect of the pressed key: the page's expand-from-trigger entrance. */
-function originOf(element: HTMLElement): ShellScreenOrigin {
-  const rect = element.getBoundingClientRect();
-  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-}
-
-/**
- * Studio's "This project": the project's facts as the Studio rail's Project
- * card read them (Mode, Access, Started, Path, from the same detail query),
- * then the two project-scoped pages: Project assets and Agent Scan.
- */
-function ThisProjectBlock({ projectId }: { readonly projectId: string }): JSX.Element {
-  const setShellRoute = useUiStore((s) => s.setShellRoute);
-  const query = useProject(projectId);
-  const project = query.data !== undefined && query.data.ok ? query.data.data : null;
-  return (
-    <section aria-label="This project" data-vex-area="vex-this-project" className="vex-vs__sec">
-      <h3 className="vex-vs__h">This project</h3>
-      {project === null ? (
-        <p className="vex-vs__note">{query.isLoading ? "Loading…" : "Unavailable."}</p>
-      ) : (
-        <>
-          <dl className="vex-vs__kv">
-            <dt>Mode</dt>
-            <dd>Studio</dd>
-            <dt>Access</dt>
-            <dd>{project.permission === "full" ? "Full" : "Restricted"}</dd>
-            <dt>Started</dt>
-            <dd>{formatSessionTime(project.createdAt)}</dd>
-          </dl>
-          <p className="vex-vs__path" title={project.displayPath}>
-            {project.displayPath}
-          </p>
-        </>
-      )}
-      <div className="vex-vs__links">
-        <button
-          type="button"
-          onClick={(event) => {
-            setShellRoute(
-              assetsRouteFor({ kind: "project", projectId }, originOf(event.currentTarget)),
-            );
-          }}
-          className="vex-vs__link"
-        >
-          Project assets
-        </button>
-        <button
-          type="button"
-          onClick={(event) => {
-            setShellRoute({ kind: "agentScan", origin: originOf(event.currentTarget), projectId });
-          }}
-          className="vex-vs__link"
-        >
-          Agent Scan
-        </button>
-      </div>
-    </section>
-  );
-}

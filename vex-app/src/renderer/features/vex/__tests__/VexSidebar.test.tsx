@@ -67,6 +67,23 @@ vi.mock("../../../lib/api/projects.js", () => ({
         permission: "full",
         createdAt: "2026-08-31T10:00:00.000Z",
         displayPath: "~/Vex/projects/core-tools",
+        agents: ["claude-code", "codex"],
+        wallets: {
+          evm: { id: "evm-1", address: "0x7e57a11e7000000000000000000000000000b45e" },
+          solana: null,
+        },
+      },
+    },
+  }),
+}));
+// This project names the project's wallet by the inventory's own label.
+vi.mock("../../../lib/api/wallet-inventory.js", () => ({
+  useAvailableWallets: () => ({
+    data: {
+      ok: true,
+      data: {
+        evm: [{ id: "evm-1", address: "0x7e57a11e7000000000000000000000000000b45e", label: "Main wallet" }],
+        solana: [],
       },
     },
   }),
@@ -634,14 +651,38 @@ describe("VexSidebar in Studio: This project", () => {
     presenceRef.current = presence({ scope: "This project:", state: "ready", word: "Ready", fill: "idle" });
   });
 
-  it("shows the project's facts and the two project pages", () => {
+  it("states the access in the project dialog's words, then the agents, the wallet and the folder", () => {
     render(<VexSidebar open onHide={() => {}} />);
     const block = area("vex-this-project");
     expect(block).not.toBeNull();
-    expect(block?.textContent).toContain("Studio");
-    expect(block?.textContent).toContain("Full");
-    expect(block?.textContent).toContain("~/Vex/projects/core-tools");
+    expect(block?.getAttribute("data-permission")).toBe("full");
+    expect(block?.querySelector(".vex-console__permission-sentence")?.textContent).toBe(
+      "Full access: agents execute supported Vex wallet actions without per-call approval.",
+    );
+    const facts = [...(block?.querySelectorAll(".vex-console__fact") ?? [])].map((row) => [
+      row.querySelector("dt")?.textContent,
+      row.querySelector("dd")?.textContent,
+    ]);
+    expect(facts).toEqual([
+      ["Agents", "Claude Code, Codex CLI"],
+      ["Wallet", "Main wallet 0x7e57…b45e"],
+      ["Folder", "~/Vex/projects/core-tools"],
+    ]);
+    // Where a chat's AI permission stands: after Needs you, before recent activity.
     expect(before(area("vex-needs-you"), block)).toBe(true);
+    expect(before(block, area("vex-recent-activity"))).toBe(true);
+    expect(area("vex-permission")).toBeNull();
+  });
+
+  it("opens the project's settings from Change in project settings", async () => {
+    const { useProjectDialogStore } = await import(
+      "../../appShell/studio/projects/project-dialog-intent.js"
+    );
+    render(<VexSidebar open onHide={() => {}} />);
+    const link = screen.getByRole("button", { name: "Change in project settings" });
+    expect(link.className).toBe("vex-console__link");
+    fireEvent.click(link);
+    expect(JSON.stringify(useProjectDialogStore.getState())).toContain(PROJECT);
   });
 
   it("opens Project assets in the PROJECT scope, never a session's or the global one", () => {
@@ -654,9 +695,10 @@ describe("VexSidebar in Studio: This project", () => {
     expect(route.sessionId ?? null).toBeNull();
   });
 
-  it("opens Agent Scan in the PROJECT scope, never a session's or the global one", () => {
+  it("scopes recent activity to the project, and Open activity opens that scope", () => {
     render(<VexSidebar open onHide={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Agent Scan" }));
+    expect(area("vex-recent-activity")?.getAttribute("data-vex-activity-scope")).toBe("project");
+    fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     const route = useUiStore.getState().shellRoute;
     expect(route.kind).toBe("agentScan");
     if (route.kind !== "agentScan") throw new Error("unreachable");
