@@ -70,7 +70,15 @@ here is a defect:
   full light until 92% of the leg (`KIMM_SCAN_FADE_AT`) and then fading
   linearly out over the leg's last 8%: an opacity keyed to the leg, not a
   duration of its own. Her 32px drop rides the same leg, driven by the
-  inset (-32 x inset / distance), so she rises as the wipe closes.
+  inset (-32 x inset / distance), so she rises as the wipe closes. A press
+  during a leg turns it from the edge where it stands over
+  max(`DURATION_VEX_TURN_MIN_MS`, base x distance left / distance), the
+  floor 140ms (VEX Cloud's `TURN_MIN_MS`), so a turn near a leg's end still
+  moves rather than snaps. After a pointer's Hide Vex, the console's rest
+  takes no pointer for at least `DURATION_VEX_GUARD_MS` (500ms, Cloud's
+  `SECTION_GUARD_MS`), until the close has ended and the pointer has left the
+  pressed key (`kimm-guard.ts`): a timer, not a motion, named here because it
+  is a number of hers.
 - The chats panel (`features/appShell/ChatsPanel.tsx`,
   `docs/design/H3-DESKTOP.md` section 4.12), VEX Cloud's own numbers
   (`h3-shell-gaps/js/shell.js`, its push, fold and scrim): the panel slides

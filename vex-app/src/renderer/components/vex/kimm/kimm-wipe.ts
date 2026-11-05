@@ -32,9 +32,11 @@
  *
  * A LEG STARTS FROM THE EDGE WHERE IT STANDS. A press during a motion reads
  * the running leg's inset (`KimmWipe.inset`), and the new leg starts there,
- * so the edge never jumps and goes no deeper after the press. A leg covers
- * its share of the distance in that share of its direction's duration: a
- * whole leg takes 720 or 420, a turned one only what is left of it.
+ * so the edge never jumps and goes no deeper after the press. A turned leg
+ * lasts max(140, base x distance left / distance), base being the new
+ * direction's 720 or 420 (`kimmLegMs`): a whole leg takes its 720 or 420, a
+ * turned one what is left of it, and never less than 140, so a turn near the
+ * end still reads as a motion rather than a snap.
  *
  * NO LAYOUT, NO WIPE. A box that is not laid out (the inspect view over her
  * column, a test's DOM) or an engine without Web Animations starts nothing:
@@ -50,7 +52,13 @@
  * stylesheet.
  */
 
-import { cssCurve, DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS, EASE_PUSH } from "../../../lib/motion/index.js";
+import {
+  cssCurve,
+  DURATION_VEX_CLOSE_MS,
+  DURATION_VEX_OPEN_MS,
+  DURATION_VEX_TURN_MIN_MS,
+  EASE_PUSH,
+} from "../../../lib/motion/index.js";
 
 /** The share of a leg the scan head holds its full light for, before it fades out. */
 export const KIMM_SCAN_FADE_AT = 0.92;
@@ -74,12 +82,14 @@ export function kimmDropAt(inset: number, distance: number, drop: number): strin
 }
 
 /**
- * How long a leg takes: its direction's duration (720 to open, 420 to
- * close) for the share of the distance it covers.
+ * How long a leg takes: max(140, base x distance left / distance), base being
+ * its direction's duration (720 to open, 420 to close). A whole leg is its
+ * base; a turned one the share of it the distance left asks for, floored at
+ * `DURATION_VEX_TURN_MIN_MS`.
  */
 export function kimmLegMs(open: boolean, from: number, to: number, distance: number): number {
   const base = open ? DURATION_VEX_OPEN_MS : DURATION_VEX_CLOSE_MS;
-  return (base * Math.abs(to - from)) / distance;
+  return Math.max(DURATION_VEX_TURN_MIN_MS, (base * Math.abs(to - from)) / distance);
 }
 
 /** One leg of her wipe, running. */

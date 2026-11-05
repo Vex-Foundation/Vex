@@ -87,6 +87,25 @@ export const DURATION_VEX_OPEN_MS = 720;
 export const DURATION_VEX_CLOSE_MS = 420;
 
 /**
+ * The shortest a turned-around leg of her wipe may take: a press during a
+ * motion turns it from the edge where it stands over
+ * max(140, base x distance left / distance), base being the new direction's
+ * 720 or 420 (VEX Cloud's `TURN_MIN_MS`, its motion contract section 4), so a
+ * turn near the end never snaps. JS only, a Web Animations duration with no
+ * CSS twin (`components/vex/kimm/kimm-wipe.ts`).
+ */
+export const DURATION_VEX_TURN_MIN_MS = 140;
+
+/**
+ * How long after a Hide Vex press the console's rest takes no pointer at the
+ * least (VEX Cloud's `SECTION_GUARD_MS`): the guard lifts once the close has
+ * ended, this long has passed since the press, and the pointer has left the
+ * pressed key's box (`components/vex/kimm/kimm-guard.ts`). A timer, not a
+ * motion: nothing moves for it.
+ */
+export const DURATION_VEX_GUARD_MS = 500;
+
+/**
  * THE CHATS PANEL (docs/design/H3-DESKTOP.md section 4.12; `ChatsPanel.tsx`):
  * under 1280 the rail's key slides the 248 chats panel out of the rail over
  * Vex's column. VEX Cloud's own motion (`h3-shell-gaps/js/shell.js`

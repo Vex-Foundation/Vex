@@ -105,6 +105,14 @@
  * a close has ended: the console reads that from her phase
  * (`kimm-section-state.ts`, `useKimmCovers`).
  *
+ * A HIDE VEX PRESS GUARDS WHAT IT REVEALS (section 3.4; `kimm-guard.ts`):
+ * after a close pressed with a pointer, on her corner key, the Vex key or
+ * any key that writes the choice, the console's rest under her strip takes
+ * no pointer until the close has ended, 500ms have passed since the press
+ * (`DURATION_VEX_GUARD_MS`) and the pointer has left the pressed key's box.
+ * The guard stands as `data-kimm-guard` on her box, which the sheet reads; a
+ * keyboard close stands none, and an open drops it.
+ *
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
  * (`opening` or `closing` until the wipe ends, then `open` or `closed`). The
@@ -133,15 +141,27 @@
  * Vex key and the console, so nothing depends on the picture.
  */
 
-import { useLayoutEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
-import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS } from "../../../lib/motion/index.js";
+import {
+  DURATION_VEX_CLOSE_MS,
+  DURATION_VEX_GUARD_MS,
+  DURATION_VEX_OPEN_MS,
+} from "../../../lib/motion/index.js";
 import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isWindowResizing } from "../../../lib/wide-zoom.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
 import { handFocusToVexKey, vexKeyElement } from "./kimm-focus.js";
 import { KimmField } from "./KimmField.js";
+import {
+  insidePress,
+  KIMM_GUARD_TICK_MS,
+  kimmGuardLifts,
+  notePointerPress,
+  takePointerPress,
+  type KimmPress,
+} from "./kimm-guard.js";
 import { setKimmPhase, type KimmPhase } from "./kimm-section-state.js";
 import { startKimmWipe, type KimmWipe } from "./kimm-wipe.js";
 
@@ -221,9 +241,24 @@ export function KimmSection({
   const key = useRef<HTMLButtonElement | null>(null);
   // The leg that is running, if any (see "THE WIPE IS WEB ANIMATIONS").
   const wipe = useRef<KimmWipe | null>(null);
+  // THE GUARD (see "A HIDE VEX PRESS GUARDS WHAT IT REVEALS"): the pressed
+  // key's box while it stands, and her phase as the guard's checks read it.
+  const [guard, setGuard] = useState<KimmPress | null>(null);
+  const phaseNow = useRef(phase);
+  useLayoutEffect(() => {
+    phaseNow.current = phase;
+  }, [phase]);
+  useEffect(() => {
+    document.addEventListener("click", notePointerPress, true);
+    return () => document.removeEventListener("click", notePointerPress, true);
+  }, []);
   useLayoutEffect(() => {
     if (shown.current === open) return undefined;
     shown.current = open;
+    // A pointer's Hide Vex guards what it reveals; a keyboard close or an
+    // open stands no guard.
+    const press = takePointerPress();
+    setGuard(open ? null : press);
     // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): the
     // running leg's edge, read before the leg is stopped.
     const turning = wipe.current;
@@ -273,6 +308,37 @@ export function KimmSection({
     },
     [],
   );
+  // The guard lifts once the close has ended, its 500ms are up and the
+  // pointer has left the pressed key's box, whichever comes last.
+  useEffect(() => {
+    if (guard === null) return undefined;
+    let x = (guard.left + guard.right) / 2;
+    let y = (guard.top + guard.bottom) / 2;
+    let waited = false;
+    let timer: number | undefined;
+    const lifts = (): boolean => {
+      if (!kimmGuardLifts({ waited, closed: phaseNow.current === "closed", inside: insidePress(guard, x, y) })) {
+        return false;
+      }
+      setGuard(null);
+      return true;
+    };
+    const move = (event: PointerEvent): void => {
+      x = event.clientX;
+      y = event.clientY;
+      lifts();
+    };
+    const tick = (): void => {
+      waited = true;
+      if (!lifts()) timer = window.setTimeout(tick, KIMM_GUARD_TICK_MS);
+    };
+    window.addEventListener("pointermove", move, { passive: true });
+    timer = window.setTimeout(tick, DURATION_VEX_GUARD_MS);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.clearTimeout(timer);
+    };
+  }, [guard]);
   // Her phase, for the console's rest under her (`kimm-section-state.ts`).
   useLayoutEffect(() => {
     if (reportsPhase) setKimmPhase(phase);
@@ -292,6 +358,7 @@ export function KimmSection({
       data-kimm-open={open ? "true" : "false"}
       data-kimm-phase={phase}
       data-kimm-mood={mood}
+      data-kimm-guard={guard === null ? undefined : ""}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       data-kimm-seat={band === undefined ? undefined : "band"}
       className={band === undefined ? "vex-kimm" : "vex-kimm vex-kimm--band"}
