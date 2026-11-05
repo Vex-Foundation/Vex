@@ -28,6 +28,17 @@
   user-select: none;
 }
 
+/* ---- held: the offer pose, dimmed (section 1.6) ----
+ * Held has no art of its own: the seam draws it from offer's cell and file
+ * (`KIMM_ART_MOOD`, kimm-assets.ts), and here it is dimmed to half its
+ * light, as Cloud lays its 50% scrim over her (the mood plate's held cell
+ * measures 0.50 of the offer cell's) and as desktop holds a locked vault.
+ * A still value, never animated: a change of mood is a change of picture. */
+.vex-kimm-key[data-kimm-mood="held"] .vex-kimm-key__sheet,
+.vex-kimm[data-kimm-mood="held"] .vex-kimm__figure {
+  opacity: 0.5;
+}
+
 /* ---- her section (sections 1.5 and 3.6) ----
  * A box laid over Vex's column, never a row in it: absolute in the column
  * (`.vex-vs` is its containing block), so nothing in the column moves under

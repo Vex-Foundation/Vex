@@ -159,18 +159,33 @@ The Vex key is the header cell over the Vex column, in three parts:
 
 The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
 
-Her moods, printed on `landing-r3__plate-key-moods`. Both apps must use the same list:
+Her moods, printed on `landing-r3__plate-key-moods`, with the still VEX Cloud draws after a fill (`signed`, its mockup's `js/data.js`). Both apps must use the same list:
 
 | Mood | Drawn | H3 moment |
 |---|---|---|
 | hi | the V sign | the welcome (READY) |
 | think | the hand at her mouth, with the running square | Vex works (THINKING) |
 | offer | the open palm | waiting in the app (WAITING FOR APPROVAL) |
-| offer, held | the open palm, dimmed | held for sign-in (Cloud only) |
-| refused | the whole anger mark | budget used (Cloud only) |
-| rest | resting | after the answer (DONE) |
+| offer, held | the open palm, dimmed | held for sign-in (Cloud); a locked vault (desktop) |
+| signed | after a fill | DONE after a fill |
+| refused | the whole anger mark | DONE after a refusal |
+| rest | resting | after the answer (DONE), and after a failure |
 
-Desktop has states H3 draws no mood for (Listening, Working, Concerned, Error, Sleeping, Waking up) and has neither Cloud's sign-in hold nor its budget. Open: their moods. S4-02 maps every desktop state to one of these moods; the designer's files may add moods.
+**Held is offer, dimmed.** It has no file of its own: the seam draws it from offer's cell and file (`KIMM_ART_MOOD`, `kimm-assets.ts`) and the sheet dims it to half its light (opacity 0.5, `kimm.css`), as Cloud lays its 50% scrim over her; the mood plate's held cell measures 0.50 of the offer cell's. **Signed** is in the list and the mood-to-file map (`section-signed.webp`, a cell of the sprite) with no file yet; until one arrives her section shows its ground and the key its fallback, as for any missing piece.
+
+**Desktop's states take Cloud's seats** (its `js/data.js`, and `h3-shell-gaps` decision 15, "she is not the failure"), in `features/vex/kimm-mood.ts`:
+
+| State | Mood |
+|---|---|
+| Ready, Listening | hi |
+| Thinking, Working | think |
+| Waiting for approval | offer |
+| Done | rest; signed after a fill; refused after a refusal; rest after a failure |
+| Concerned | rest in a chat; think on a status panel (`seat: "panel"`) |
+| Error | rest |
+| Sleeping, Waking up | rest; held while the vault is locked |
+
+Refused shows only for a refusal: never for an error, a failure or a stop. Open: nothing in desktop's presence reports a settled turn's outcome yet (`useVexPresence` says only that a turn finished), so Done rests until a caller passes `outcome`; and desktop draws no status panel with her plate, so no caller passes `seat: "panel"`.
 
 ### 1.7 The chat column
 Header cells as in section 1.3. The transcript and the welcome sit 24 in from both edges (704 to 1416 at 1440).

@@ -1,8 +1,9 @@
 /**
  * Kimm's asset seam (`kimm-assets.ts`) and her entries in the build check's
- * brand asset registry (`scripts/kimm-brand-assets.mjs`): six moods in the
- * plate's order; every mood maps to a portrait cell of the key's sprite and a
- * section, beside the one strip; the registry pins exactly the files the seam
+ * brand asset registry (`scripts/kimm-brand-assets.mjs`): the plate's moods
+ * in its order with Cloud's signed; held drawn from offer's art (the sheet
+ * dims it), every other mood from a portrait cell of the key's sprite and a
+ * section of its own, beside the one strip; the registry pins exactly the files the seam
  * expects, each with its byte budget; a piece is `missing` exactly while its
  * file is absent from `public/art/kimm/`, so neither side can claim art the
  * other does not have; the seam never reaches the harness's stand-ins; and an
@@ -25,6 +26,8 @@ import {
   isKimmArtReady,
   KIMM_ART,
   KIMM_ART_DIR,
+  KIMM_ART_MOOD,
+  KIMM_DRAWN_MOODS,
   KIMM_FILES,
   KIMM_MOODS,
   KIMM_SHIPPED_ART,
@@ -36,35 +39,64 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, "..", "..", "..", "..", "public");
 const SEAM_SOURCE = path.join(here, "..", "kimm-assets.ts");
+const KIMM_CSS = readFileSync(path.join(here, "..", "..", "..", "..", "styles", "global-css", "kimm.css"), "utf8");
 
 /** Every file the seam names, once each. */
 function seamFiles(): string[] {
-  return [KIMM_FILES.keyMoods, ...KIMM_MOODS.map((mood) => KIMM_FILES.sections[mood]), KIMM_FILES.strip];
+  return [KIMM_FILES.keyMoods, ...KIMM_DRAWN_MOODS.map((mood) => KIMM_FILES.sections[mood]), KIMM_FILES.strip];
 }
 
 /** Every piece of a set with the file it is drawn from. */
 function piecesOf(set: KimmArtSet): ReadonlyArray<{ readonly file: string; readonly art: KimmArt<object> }> {
   return [
     ...KIMM_MOODS.map((mood) => ({ file: KIMM_FILES.keyMoods, art: set.portraits[mood] })),
-    ...KIMM_MOODS.map((mood) => ({ file: KIMM_FILES.sections[mood], art: set.sections[mood] })),
+    ...KIMM_MOODS.map((mood) => ({ file: KIMM_FILES.sections[KIMM_ART_MOOD[mood]], art: set.sections[mood] })),
     { file: KIMM_FILES.strip, art: set.strip },
   ];
 }
 
 describe("Kimm's moods", () => {
-  it("are the plate's six, in its order, and the registry's", () => {
-    expect([...KIMM_MOODS]).toEqual(["hi", "think", "offer", "held", "refused", "rest"]);
-    expect([...REGISTRY_MOODS]).toEqual([...KIMM_MOODS]);
+  it("are the plate's six in its order, with Cloud's signed before refused", () => {
+    expect([...KIMM_MOODS]).toEqual(["hi", "think", "offer", "held", "signed", "refused", "rest"]);
+  });
+
+  it("draws every mood but held from art of its own, and the registry lists exactly those", () => {
+    expect([...KIMM_DRAWN_MOODS]).toEqual(KIMM_MOODS.filter((mood) => mood !== "held"));
+    expect([...REGISTRY_MOODS]).toEqual([...KIMM_DRAWN_MOODS]);
+  });
+});
+
+describe("held is offer, dimmed", () => {
+  it("draws held from offer's art, every other mood from its own", () => {
+    for (const mood of KIMM_MOODS) expect(KIMM_ART_MOOD[mood]).toBe(mood === "held" ? "offer" : mood);
+    expect(KIMM_SHIPPED_ART.sections.held).toEqual(KIMM_SHIPPED_ART.sections.offer);
+    expect(KIMM_SHIPPED_ART.portraits.held).toEqual(KIMM_SHIPPED_ART.portraits.offer);
+    expect(Object.keys(KIMM_FILES.sections)).not.toContain("held");
+  });
+
+  it("dims held's figure and portrait to half their light in the sheet, and nothing else", () => {
+    const css = KIMM_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = /([^{}]+)\{\s*opacity:\s*0\.5;\s*\}/.exec(css);
+    expect(rule).not.toBeNull();
+    const selectors = (rule?.[1] ?? "").split(",").map((selector) => selector.trim());
+    expect(selectors).toEqual([
+      '.vex-kimm-key[data-kimm-mood="held"] .vex-kimm-key__sheet',
+      '.vex-kimm[data-kimm-mood="held"] .vex-kimm__figure',
+    ]);
   });
 });
 
 describe("the mood-to-file map", () => {
-  it("gives every mood a portrait cell of the one sprite and a section of its own, beside one strip", () => {
+  it("gives every mood a portrait cell of the one sprite and a section, beside one strip", () => {
     for (const mood of KIMM_MOODS) {
       expect(KIMM_SHIPPED_ART.portraits[mood]).toBeDefined();
       expect(KIMM_SHIPPED_ART.sections[mood]).toBeDefined();
+    }
+    for (const mood of KIMM_DRAWN_MOODS) {
       expect(KIMM_FILES.sections[mood]).toBe(`art/kimm/section-${mood}.webp`);
     }
+    // Signed is in the map with no file yet: the seam reports it missing.
+    expect(KIMM_SHIPPED_ART.sections.signed).toEqual({ state: "missing", file: "art/kimm/section-signed.webp" });
     expect(KIMM_FILES.keyMoods).toBe("art/kimm/key-moods.webp");
     expect(KIMM_FILES.strip).toBe("art/kimm/strip.webp");
     expect(new Set(seamFiles()).size).toBe(seamFiles().length);
@@ -86,7 +118,7 @@ describe("the brand asset registry", () => {
     expect(KIMM_BUDGETS).toEqual({ keyMoods: 30_720, section: 409_600, strip: 65_536 });
     const budget = new Map(KIMM_BRAND_ASSETS.map((entry) => [entry.file, entry.maxBytes]));
     expect(budget.get(KIMM_FILES.keyMoods)).toBe(30_720);
-    for (const mood of KIMM_MOODS) expect(budget.get(KIMM_FILES.sections[mood])).toBe(409_600);
+    for (const mood of KIMM_DRAWN_MOODS) expect(budget.get(KIMM_FILES.sections[mood])).toBe(409_600);
     expect(budget.get(KIMM_FILES.strip)).toBe(65_536);
   });
 
@@ -116,7 +148,7 @@ describe("what ships", () => {
       const portrait = KIMM_SHIPPED_ART.portraits[mood];
       if (isKimmArtReady(portrait)) expect(portrait.sheet.src).toBe(`/${KIMM_FILES.keyMoods}`);
       const section = KIMM_SHIPPED_ART.sections[mood];
-      if (isKimmArtReady(section)) expect(section.src).toBe(`/${KIMM_FILES.sections[mood]}`);
+      if (isKimmArtReady(section)) expect(section.src).toBe(`/${KIMM_FILES.sections[KIMM_ART_MOOD[mood]]}`);
     }
     const strip = KIMM_SHIPPED_ART.strip;
     if (isKimmArtReady(strip)) expect(strip.src).toBe(`/${KIMM_FILES.strip}`);

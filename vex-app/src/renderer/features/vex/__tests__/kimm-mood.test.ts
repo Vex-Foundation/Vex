@@ -1,9 +1,11 @@
 /**
  * The presence state to Kimm's mood map (`kimm-mood.ts`): every state of the
- * `VexState` union has exactly one of her six moods, walked from the union as
+ * `VexState` union has exactly one of her moods, walked from the union as
  * `vex-state.ts` declares it, so a state added there without a mood turns this
- * red; H3's four moments keep H3's moods; every mood is shown by some state;
- * and a locked vault holds her, as it changes the word.
+ * red; H3's four moments keep H3's moods; Cloud's seats hold (a failure and an
+ * error rest, Concerned rests in a chat and thinks on a status panel, refused
+ * only for a refusal, signed after a fill); every mood is shown by some
+ * reading; and a locked vault holds her, as it changes the word.
  */
 
 import { readFileSync } from "node:fs";
@@ -63,8 +65,8 @@ describe("kimmMoodOf", () => {
       ["working", "think"],
       ["awaiting", "offer"],
       ["done", "rest"],
-      ["concerned", "held"],
-      ["error", "refused"],
+      ["concerned", "rest"],
+      ["error", "rest"],
       ["sleeping", "rest"],
       ["waking", "rest"],
     ]);
@@ -78,10 +80,49 @@ describe("kimmMoodOf", () => {
     expect(kimmMoodOf("done")).toBe("rest");
   });
 
-  it("holds her for a wait she cannot end, and refuses on a stop", () => {
-    expect(kimmMoodOf("concerned")).toBe("held");
+  it("rests on an error: she is not the failure", () => {
+    expect(kimmMoodOf("error")).toBe("rest");
+    expect(kimmMoodOf("error", { outcome: "failed" })).toBe("rest");
+  });
+
+  it("rests when Concerned in a chat, and thinks on a status panel", () => {
+    expect(kimmMoodOf("concerned")).toBe("rest");
+    expect(kimmMoodOf("concerned", { seat: "chat" })).toBe("rest");
+    expect(kimmMoodOf("concerned", { seat: "panel" })).toBe("think");
+    // The seat is Concerned's alone.
+    for (const state of VEX_STATES) {
+      if (state === "concerned") continue;
+      expect(kimmMoodOf(state, { seat: "panel" }), state).toBe(kimmMoodOf(state));
+    }
+  });
+
+  it("follows a settled turn's outcome: signed after a fill, refused for a refusal, rest after a failure", () => {
+    expect(kimmMoodOf("done", { outcome: "filled" })).toBe("signed");
+    expect(kimmMoodOf("done", { outcome: "refused" })).toBe("refused");
+    expect(kimmMoodOf("done", { outcome: "failed" })).toBe("rest");
+    expect(kimmMoodOf("done", { outcome: null })).toBe("rest");
+    // The outcome is Done's alone: no other state signs or refuses.
+    for (const state of VEX_STATES) {
+      if (state === "done") continue;
+      for (const outcome of ["filled", "refused", "failed"] as const) {
+        expect(kimmMoodOf(state, { outcome }), `${state} ${outcome}`).toBe(kimmMoodOf(state));
+      }
+    }
+  });
+
+  it("shows refused only for a refusal", () => {
+    const readings = VEX_STATES.flatMap((state) => [
+      kimmMoodOf(state),
+      kimmMoodOf(state, { locked: true }),
+      kimmMoodOf(state, { seat: "panel" }),
+      kimmMoodOf(state, { outcome: "filled" }),
+      kimmMoodOf(state, { outcome: "failed" }),
+    ]);
+    expect(readings).not.toContain("refused");
+  });
+
+  it("holds her for a locked vault, a wait only the person can end", () => {
     expect(kimmMoodOf("sleeping", { locked: true })).toBe("held");
-    expect(kimmMoodOf("error")).toBe("refused");
   });
 
   it("reads the lock only while sleeping", () => {
@@ -93,10 +134,12 @@ describe("kimmMoodOf", () => {
     }
   });
 
-  it("shows every one of her six moods from some state", () => {
+  it("shows every one of her moods from some reading", () => {
     const shown = new Set([
       ...VEX_STATES.map((state) => kimmMoodOf(state)),
       kimmMoodOf("sleeping", { locked: true }),
+      kimmMoodOf("done", { outcome: "filled" }),
+      kimmMoodOf("done", { outcome: "refused" }),
     ]);
     expect([...shown].sort()).toEqual([...KIMM_MOODS].sort());
   });

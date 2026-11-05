@@ -71,7 +71,7 @@ describe("stageVexView", () => {
       state: "concerned",
       word: "Concerned",
       note: null,
-      mood: "held",
+      mood: "rest",
     });
     stageVexConcerned(true, 28);
     expect(stageVexView(getStageVex()).note).toBe("0:28");

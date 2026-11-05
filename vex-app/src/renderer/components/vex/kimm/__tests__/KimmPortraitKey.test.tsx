@@ -13,7 +13,8 @@ import { kimmMoodOf } from "../../../../features/vex/kimm-mood.js";
 import { VEX_STATES } from "../../../../features/vex/vex-state.js";
 import { KimmArtProvider } from "../kimm-art-context.js";
 import {
-  KIMM_MOODS,
+  KIMM_ART_MOOD,
+  KIMM_DRAWN_MOODS,
   KIMM_SHIPPED_ART,
   type KimmArtSet,
   type KimmMood,
@@ -21,13 +22,16 @@ import {
 } from "../kimm-assets.js";
 import { KIMM_KEY_CELL_PX, KimmPortraitKey } from "../KimmPortraitKey.js";
 
-/** A sprite of six 100 x 120 cells in one row, the shape her real sheet may take. */
+/**
+ * A sprite of 100 x 120 cells in one row, one per drawn mood, the shape her
+ * real sheet may take; held is drawn from offer's cell (`KIMM_ART_MOOD`).
+ */
 const CELL_W = 100;
 const CELL_H = 120;
-const SHEET = { src: "/art/kimm/key-moods.webp", width: CELL_W * 6, height: CELL_H };
+const SHEET = { src: "/art/kimm/key-moods.webp", width: CELL_W * KIMM_DRAWN_MOODS.length, height: CELL_H };
 
 function cellOf(mood: KimmMood): KimmPixelBox {
-  const i = KIMM_MOODS.indexOf(mood);
+  const i = KIMM_DRAWN_MOODS.indexOf(KIMM_ART_MOOD[mood]);
   return [i * CELL_W, 0, (i + 1) * CELL_W, CELL_H];
 }
 
@@ -38,6 +42,7 @@ const READY: KimmArtSet = {
     think: { state: "ready", sheet: SHEET, cell: cellOf("think") },
     offer: { state: "ready", sheet: SHEET, cell: cellOf("offer") },
     held: { state: "ready", sheet: SHEET, cell: cellOf("held") },
+    signed: { state: "ready", sheet: SHEET, cell: cellOf("signed") },
     refused: { state: "ready", sheet: SHEET, cell: cellOf("refused") },
     rest: { state: "ready", sheet: SHEET, cell: cellOf("rest") },
   },
@@ -70,7 +75,7 @@ describe("KimmPortraitKey", () => {
     const img = cell(container).querySelector("img");
     expect(img?.getAttribute("src")).toBe(SHEET.src);
     // offer is the third cell: 200..300 across, scaled 76/100 and 76/120.
-    expect(parseFloat(img?.style.width ?? "")).toBeCloseTo(600 * 0.76);
+    expect(parseFloat(img?.style.width ?? "")).toBeCloseTo(CELL_W * KIMM_DRAWN_MOODS.length * 0.76);
     expect(parseFloat(img?.style.height ?? "")).toBeCloseTo(120 * (76 / 120));
     expect(parseFloat(img?.style.left ?? "")).toBeCloseTo(-200 * 0.76);
     expect(parseFloat(img?.style.top ?? "")).toBeCloseTo(0);
@@ -85,6 +90,16 @@ describe("KimmPortraitKey", () => {
     view.rerender(withArt(READY, <KimmPortraitKey mood="rest" open={false} />));
     expect(leftOf()).toBeCloseTo(-500 * 0.76);
     expect(cell(view.container).querySelector("img")?.getAttribute("src")).toBe(SHEET.src);
+  });
+
+  it("draws held from offer's cell, marked held so the sheet dims it", () => {
+    const view = render(withArt(READY, <KimmPortraitKey mood="offer" open={false} />));
+    const leftOf = (): number =>
+      parseFloat(cell(view.container).querySelector("img")?.style.left ?? "NaN");
+    const offer = leftOf();
+    view.rerender(withArt(READY, <KimmPortraitKey mood="held" open={false} />));
+    expect(leftOf()).toBeCloseTo(offer);
+    expect(cell(view.container).getAttribute("data-kimm-mood")).toBe("held");
   });
 
   it("scales to the size the key gives it", () => {
