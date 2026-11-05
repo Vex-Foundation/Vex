@@ -204,13 +204,17 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  *   key). Under H3_CHATS_OPEN_MIN it is the rail whatever the stored choice
  *   says: there the sidebar key slides the chats PANEL out of the rail, over
  *   Vex's column, and no track changes (section 4.12).
- * - The VEX column is H3_VEX_PERCENT (30%) of the frame, in whole pixels.
- *   Folding the chats never changes it: the chat gains the difference (172).
+ * - The VEX column is VEX Cloud's (PD-14, `--vex-w` in the H3 mockup's
+ *   tokens.css): clamp(360px, 30vw, 768px) from H3_VEX_SHARE_MIN (1280) up,
+ *   unrounded as Cloud lays it (409.8 at 1366), and a fixed H3_VEX_NARROW
+ *   (340) from H3_COLUMNS_MIN to 1279. Folding the chats never changes it:
+ *   the chat gains the difference (172).
  * - The CHAT takes the rest.
  *
  * Both proof plates fit this rule exactly: 248 | 432 | 760 at 1440, and the
- * chat starting at x 1016 (248 + 768) at 2560. Every other width is derived
- * from it, until Cloud's own breakpoints exist to reconcile with.
+ * chat starting at x 1016 (248 + 768) at 2560; Cloud's own measured boxes
+ * (`renders/checks.json`) give 384 at 1280, 409.8 at 1366, 576 at 1920 and
+ * 340 from 1024 to 1279.
  *
  * Under H3_COLUMNS_MIN (1024) the frame is the BAND layout: the chats fold to
  * the rail whatever the stored choice says (derived; the choice is never
@@ -238,8 +242,10 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  * waiting card in the chat never moves while the panel opens or closes. The
  * solver reads the stored choice only from H3_CHATS_OPEN_MIN up.
  *
- * Every width is an integer and the three add back up to the frame, so the
- * grid can hand the chat minmax(0, 1fr) and land exactly on `chat`.
+ * The chats track is an integer; the Vex track is Cloud's unrounded
+ * clamp(360px, 30vw, 768px), so the chat may carry the fraction. The three
+ * add back up to the frame, and the grid hands the chat minmax(0, 1fr), so
+ * it lands exactly on `chat`.
  */
 
 /** From this frame width up: three columns. Under it, the band. */
@@ -251,11 +257,18 @@ export const H3_CHATS_WIDTH = 248;
 export const H3_RAIL_WIDTH = 76;
 
 /**
- * The Vex column's share of the frame, as a whole percent: 432 at 1440 and
- * 768 at 2560 on the plates. A percent rather than 0.3 so the solve is one
- * division of two integers (see h3VexWidth).
+ * The Vex column's share of the frame from H3_VEX_SHARE_MIN up, as a whole
+ * percent: 432 at 1440 and 768 at 2560 on the plates. A percent rather than
+ * 0.3 so the solve is one division of two integers (see h3VexWidth).
  */
 export const H3_VEX_PERCENT = 30;
+/** The share's floor and cap, Cloud's clamp(360px, 30vw, 768px). */
+export const H3_VEX_MIN = 360;
+export const H3_VEX_MAX = 768;
+/** From this frame width up the Vex column is the share; under it, H3_VEX_NARROW. */
+export const H3_VEX_SHARE_MIN = 1280;
+/** The Vex column from H3_COLUMNS_MIN to 1279 (PD-14): a fixed 340. */
+export const H3_VEX_NARROW = 340;
 
 /** The H3 frame's two layouts: three columns from H3_COLUMNS_MIN up, the band under it. */
 export type H3ShellLayout = "columns" | "band";
@@ -313,9 +326,9 @@ export interface H3ShellColumns {
   readonly layout: H3ShellLayout;
   /** The chats track: H3_CHATS_WIDTH open, H3_RAIL_WIDTH folded or under H3_CHATS_OPEN_MIN. */
   readonly chats: number;
-  /** The Vex track: H3_VEX_PERCENT of the frame, or 0 for the band and a page's strip. */
+  /** The Vex track: 340, or clamp(360, 30%, 768) from 1280 up; 0 for the band and a page's strip. */
   readonly vex: number;
-  /** The chat track: the rest of the frame. Never negative. */
+  /** The chat track: the rest of the frame, the Vex track's fraction included. Never negative. */
   readonly chat: number;
   /** Whether the chats column renders as its rail (the user's fold, or under H3_CHATS_OPEN_MIN). */
   readonly chatsRail: boolean;
@@ -336,13 +349,16 @@ function h3FrameWidth(viewport: number): number {
 }
 
 /**
- * The Vex column at a whole frame width: H3_VEX_PERCENT of it, to the nearest
- * pixel, halves up. 1366 gives 409.8, so 410 (nearest, not floor); 1025 gives
- * 307.5, so 308; 1024 gives 307.2, so 307. Computed as width * 30 / 100, one
- * rounding step in floating point, where width * 0.3 would take two.
+ * The Vex column at a whole frame width, as Cloud lays it (PD-14): a fixed
+ * H3_VEX_NARROW (340) under H3_VEX_SHARE_MIN, and clamp(360px, 30vw, 768px)
+ * from there up, unrounded, so the grid and the CSS token
+ * (`--vex-h3-vex-w`) agree to the fraction: 1366 gives 409.8, Cloud's own
+ * measure. Computed as width * 30 / 100, one rounding step in floating
+ * point, where width * 0.3 would take two.
  */
 function h3VexWidth(width: number): number {
-  return Math.round((width * H3_VEX_PERCENT) / 100);
+  if (width < H3_VEX_SHARE_MIN) return H3_VEX_NARROW;
+  return Math.min(H3_VEX_MAX, Math.max(H3_VEX_MIN, (width * H3_VEX_PERCENT) / 100));
 }
 
 /**
@@ -378,8 +394,10 @@ export function computeH3ShellColumns(input: H3ShellInput): H3ShellColumns {
   const chats = Math.min(width, chatsRail ? H3_RAIL_WIDTH : H3_CHATS_WIDTH);
   // A page's strip wins over the band: a page under 1024 shows the strip.
   const vexSeat: H3VexSeat = input.vexStrip === true ? "strip" : band ? "band" : "column";
-  const vex = vexSeat === "column" ? h3VexWidth(width) : 0;
-  const chat = width - chats - vex;
+  // A frame narrower than the rail and the column leaves the column what
+  // there is, so no track is ever negative.
+  const vex = vexSeat === "column" ? Math.min(Math.max(0, width - chats), h3VexWidth(width)) : 0;
+  const chat = Math.max(0, width - chats - vex);
   return { layout, chats, vex, chat, chatsRail, vexSeat, chatLeft: chats + vex };
 }
 

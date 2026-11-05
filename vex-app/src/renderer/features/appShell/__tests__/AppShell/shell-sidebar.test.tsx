@@ -957,11 +957,11 @@ describe("AppShell", () => {
     };
     // The band: the rail, and no Vex track (she is the band, in the chat).
     expect(at(1023)).toEqual({ columns: "76px 0px minmax(0, 1fr)", open: "false", inline: "" });
-    // The medium tier: folded, Vex at 30%.
-    expect(at(1024)).toEqual({ columns: "76px 307px minmax(0, 1fr)", open: "false", inline: "" });
-    expect(at(1267)).toEqual({ columns: "76px 380px minmax(0, 1fr)", open: "false", inline: "" });
+    // The medium tier: the rail, Vex at Cloud's fixed 340.
+    expect(at(1024)).toEqual({ columns: "76px 340px minmax(0, 1fr)", open: "false", inline: "" });
+    expect(at(1267)).toEqual({ columns: "76px 340px minmax(0, 1fr)", open: "false", inline: "" });
     // From 1268 the stored choice, open by default.
-    expect(at(1268)).toEqual({ columns: "248px 380px minmax(0, 1fr)", open: "true", inline: "" });
+    expect(at(1268)).toEqual({ columns: "248px 340px minmax(0, 1fr)", open: "true", inline: "" });
     expect(at(1440)).toEqual({ columns: "248px 432px minmax(0, 1fr)", open: "true", inline: "" });
   });
 
@@ -1040,8 +1040,8 @@ describe("AppShell", () => {
     };
     // The stored default window: 248 | 384 | 648.
     expect(solved(1280)).toBe("248px 384px minmax(0, 1fr)");
-    // The chats start folded: 76 | 307 | 641.
-    expect(solved(1024)).toBe("76px 307px minmax(0, 1fr)");
+    // Under 1280: the rail and Cloud's 340, 76 | 340 | 608.
+    expect(solved(1024)).toBe("76px 340px minmax(0, 1fr)");
     // The band: the rail and the chat, 76 | 0 | 924.
     expect(solved(1000)).toBe("76px 0px minmax(0, 1fr)");
   });
@@ -1076,7 +1076,7 @@ describe("AppShell", () => {
     const scrim = (): HTMLElement | null =>
       view.container.querySelector<HTMLElement>("[data-vex-area='chats-scrim']");
     const columns = frame?.style.gridTemplateColumns;
-    expect(columns).toBe("76px 307px minmax(0, 1fr)");
+    expect(columns).toBe("76px 340px minmax(0, 1fr)");
     expect(panel()?.hasAttribute("data-open")).toBe(false);
     expect(panel()?.hasAttribute("inert")).toBe(true);
 

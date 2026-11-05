@@ -58,35 +58,33 @@ Three columns and three rows of cells.
 Her section ends one pixel above the bottom row (264 + 563 = 827). The swap card's box runs to the window's foot: its decision row is the bottom row's chat cells (section 1.8).
 
 ### 1.2 The column rule and the tiers
-The rule, derived on 3 November 2026 from the two printed card boxes and checked here against the proof plate's pixel counts:
+VEX Cloud's rule (PD-14 of its build plan; `--vex-w` in the H3 mockup's `css/tokens.css`, lines 180 and 202, and its measured boxes in `renders/checks.json`), which replaced the rule derived here on 3 November 2026:
 
-- the chats column is a fixed 248;
-- the Vex column is 30% of the window width, rounded to a whole pixel;
+- the chats column is a fixed 248 from the wide tier up (1280 in Cloud), the 76 rail under it (section 4.12);
+- the Vex column is clamp(360px, 30vw, 768px) from 1280 up, unrounded, and a fixed 340 from 1024 to 1279;
 - the chat column takes the rest;
 - under 1024 the band layout takes over (section 1.10).
 
 Evidence:
-- Printed boxes: at 1440 the card starts at 680 = 248 + 432, and 432 is 30% of 1440. At 2560 it starts at 1016 = 248 + 768, and 768 is 30% of 2560; its width 1544 is the rest.
-- The proof plate's "Pixels" rows count the card's area at DPR 2 (four device pixels per CSS pixel). Each count is exactly four times the rule's chat width times a whole height: 1280 gives 1,645,920 = 4 x 648 x 635; 1366 gives 1,707,696 = 4 x 708 x 603; 1920 gives 3,112,640 = 4 x 1096 x 710; 1440 and 2560 give 4 x 760 x 651 and 4 x 1544 x 946, their printed boxes. At 1366, 30% is 409.8; a chat of exactly 708 means the Vex column rounds to 410 and the chat takes the whole remainder. The heights at 1280, 1366 and 1920 depend on window heights the plate does not print.
-
-Open: Cloud's own breakpoints and widths, and whether Cloud's chat has a floor. Settled by desu's H3 branch.
+- Printed boxes: at 1440 the card starts at 680 = 248 + 432, and 432 is 30% of 1440. At 2560 it starts at 1016 = 248 + 768, and 768 is 30% of 2560 and the clamp's cap; its width 1544 is the rest.
+- Cloud's measured boxes (`renders/checks.json`, 4 November 2026): the Vex column 384 at 1280, 576 at 1920 and 768 at 2560; at 1024 x 768 the column is 340 and the content 608 (the README's table). At 1366 Cloud lays 30vw unrounded, 409.8; desktop's solver and its `--vex-h3-vex-w` token do the same, so the two apps agree to the fraction and need no tolerance.
 
 | Window width | Chats | Vex | Chat | Note |
 |---|---|---|---|---|
 | 1000 to 1023 | 76 rail | a band | 924 to 947 | the band layout; desktop's minimum window is 1000 x 720 (`src/main/windows/bounds.ts`) |
-| 1024 | 76 rail | 307 | 641 | no plate; the rule extended. The chats are the rail here; their key opens the chats panel over Vex's column (section 4.12) |
-| 1180 | 76 rail | 354 | 750 | the chats panel, as at 1024 |
-| 1224 | 76 rail | 367 | 781 | the first run's window on a 1440px display (85% of the work area) |
+| 1024 | 76 rail | 340 | 608 | Cloud's measure. The chats are the rail here; their key opens the chats panel over Vex's column (section 4.12) |
+| 1180 | 76 rail | 340 | 764 | the chats panel, as at 1024 |
+| 1224 | 76 rail | 340 | 808 | the first run's window on a 1440px display (85% of the work area) |
 | 1280 | 248 | 384 | 648 | the stored default window, 1280 x 800 |
-| 1366 | 248 | 410 | 708 | |
+| 1366 | 248 | 409.8 | 708.2 | Cloud's unrounded 30vw |
 | 1440 | 248 | 432 | 760 | the 1440 captures |
-| 1536 | 248 | 461 | 827 | |
+| 1536 | 248 | 460.8 | 827.2 | |
 | 1920 | 248 | 576 | 1096 | |
-| 2560 | 248 | 768 | 1544 | printed |
+| 2560 | 248 | 768 | 1544 | printed; the clamp's cap from here up |
 
 What follows from the rule:
 - The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first of the money rule's three legs (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
-- There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is 469, narrower than any plate. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3), and whether Cloud moves the band seam above 1024. Settled in the harness at 1024 and 1280 and with Cloud.
+- There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is Cloud's 608. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3). Settled in the harness at 1024 and 1280.
 - In a chat, the Vex column's width never depends on whether her section is open. On pages, closing her folds the column to a line (section 1.9).
 - The sidebar key, from the wide tier up, folds the chats column to the 76px rail and the chat takes the freed 172px: the person's own fold. Under it the chats are the rail at every moment and the key opens the chats panel over Vex's column, so no track changes (section 4.12).
 

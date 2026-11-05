@@ -13,7 +13,11 @@ import {
   H3_COLUMNS_MIN,
   H3_FOOT_ROW,
   H3_RAIL_WIDTH,
+  H3_VEX_MAX,
+  H3_VEX_MIN,
+  H3_VEX_NARROW,
   H3_VEX_PERCENT,
+  H3_VEX_SHARE_MIN,
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
@@ -53,6 +57,8 @@ describe("the H3 geometry", () => {
   it("states the plates' widths and the band seam", () => {
     expect([H3_CHATS_WIDTH, H3_RAIL_WIDTH, H3_VEX_PERCENT]).toEqual([248, 76, 30]);
     expect(H3_COLUMNS_MIN).toBe(1024);
+    // Cloud's Vex column (PD-14): clamp(360px, 30vw, 768px) from 1280, 340 under it.
+    expect([H3_VEX_MIN, H3_VEX_MAX, H3_VEX_SHARE_MIN, H3_VEX_NARROW]).toEqual([360, 768, 1280, 340]);
   });
 });
 
@@ -95,11 +101,12 @@ describe("the parity widths, chats open and folded, strip off and on", () => {
     expect(tracks(h3(1023, false, true))).toEqual([76, 0, 947]);
   });
 
-  it("1024, the first column pixel: 76 | 307 | 641 whatever the stored choice", () => {
+  it("1024, the first column pixel: 76 | 340 | 608 whatever the stored choice", () => {
     // Under H3_CHATS_OPEN_MIN the chats are the rail; their key opens the
-    // chats panel over Vex's column, never the track.
-    expect(tracks(h3(1024, true))).toEqual([76, 307, 641]);
-    expect(tracks(h3(1024, false))).toEqual([76, 307, 641]);
+    // chats panel over Vex's column, never the track. Vex's column is
+    // Cloud's fixed 340 here (PD-14), the chat 608 as Cloud measures it.
+    expect(tracks(h3(1024, true))).toEqual([76, 340, 608]);
+    expect(tracks(h3(1024, false))).toEqual([76, 340, 608]);
     expect(tracks(h3(1024, true, true))).toEqual([76, 0, 948]);
     expect(tracks(h3(1024, false, true))).toEqual([76, 0, 948]);
   });
@@ -111,9 +118,9 @@ describe("the parity widths, chats open and folded, strip off and on", () => {
     expect(tracks(h3(1280, false, true))).toEqual([76, 0, 1204]);
   });
 
-  it("1366 x 768: 248 | 410 | 708", () => {
-    expect(tracks(h3(1366, true))).toEqual([248, 410, 708]);
-    expect(tracks(h3(1366, false))).toEqual([76, 410, 880]);
+  it("1366 x 768: 248 | 409.8 | 708.2, Cloud's unrounded 30vw", () => {
+    expect(tracks(h3(1366, true))).toEqual([248, 409.8, 708.2]);
+    expect(tracks(h3(1366, false))).toEqual([76, 409.8, 880.2]);
     expect(tracks(h3(1366, true, true))).toEqual([248, 0, 1118]);
     expect(tracks(h3(1366, false, true))).toEqual([76, 0, 1290]);
   });
@@ -193,7 +200,7 @@ describe("what the grid reads", () => {
 
   it("the x where the chat starts", () => {
     expect(h3(1280, true).chatLeft).toBe(632);
-    expect(h3(1366, true).chatLeft).toBe(658);
+    expect(h3(1366, true).chatLeft).toBe(657.8);
     expect(h3(1440, false).chatLeft).toBe(508);
     expect(h3(1440, true, true).chatLeft).toBe(248);
     expect(h3(1023, true).chatLeft).toBe(76);
@@ -207,12 +214,26 @@ describe("what the grid reads", () => {
 });
 
 describe("the Vex column", () => {
-  it("is 30% of the frame to the nearest pixel, halves up", () => {
-    // 1366 x 0.3 = 409.8: nearest, not floor.
-    expect(h3(1366, true).vex).toBe(410);
-    // 1024 x 0.3 = 307.2 rounds down; 1025 x 0.3 = 307.5 rounds up.
-    expect(h3(1024, true).vex).toBe(307);
-    expect(h3(1025, true).vex).toBe(308);
+  it("is Cloud's: 340 from 1024 to 1279, clamp(360px, 30vw, 768px) from 1280, unrounded", () => {
+    expect(h3(1024, true).vex).toBe(340);
+    expect(h3(1180, true).vex).toBe(340);
+    expect(h3(1279, true).vex).toBe(340);
+    expect(h3(1280, true).vex).toBe(384);
+    // 1366 x 0.3 = 409.8, as Cloud measures it (renders/checks.json).
+    expect(h3(1366, true).vex).toBe(409.8);
+    expect(h3(1440, true).vex).toBe(432);
+    expect(h3(1920, true).vex).toBe(576);
+    expect(h3(2560, true).vex).toBe(768);
+    // The cap: 30% of 3000 would be 900.
+    expect(h3(3000, true).vex).toBe(768);
+  });
+
+  it("is a function of the window alone: the chats and her section never reach it", () => {
+    for (let viewport = H3_COLUMNS_MIN; viewport <= 3000; viewport += 1) {
+      const expected = viewport < 1280 ? 340 : Math.min(768, Math.max(360, (viewport * 30) / 100));
+      expect(h3(viewport, true).vex, String(viewport)).toBe(expected);
+      expect(h3(viewport, false).vex, String(viewport)).toBe(expected);
+    }
   });
 
   it("keeps its width when the chats fold; the chat gains the difference", () => {
@@ -221,7 +242,7 @@ describe("the Vex column", () => {
       const folded = h3(viewport, false);
       const label = String(viewport);
       expect(folded.vex, label).toBe(open.vex);
-      expect(folded.chat - open.chat, label).toBe(H3_CHATS_WIDTH - H3_RAIL_WIDTH);
+      expect(folded.chat - open.chat, label).toBeCloseTo(H3_CHATS_WIDTH - H3_RAIL_WIDTH, 9);
     }
   });
 
@@ -248,14 +269,14 @@ describe("no centre floor", () => {
     for (let viewport = 0; viewport < H3_CHATS_OPEN_MIN; viewport += 1) {
       expect(h3(viewport, true), String(viewport)).toEqual(h3(viewport, false));
     }
-    expect(h3(1024, true).chat).toBe(641);
-    expect(h3(1267, true).chat).toBe(811);
-    expect(h3(1268, true).chat).toBe(640);
+    expect(h3(1024, true).chat).toBe(608);
+    expect(h3(1267, true).chat).toBe(851);
+    expect(h3(1268, true).chat).toBe(680);
   });
 
-  it("with the chats folded the columns never take the chat under 641", () => {
+  it("with the chats folded the columns never take the chat under 608", () => {
     for (let viewport = H3_COLUMNS_MIN; viewport <= 2560; viewport += 1) {
-      expect(h3(viewport, false).chat, String(viewport)).toBeGreaterThanOrEqual(641);
+      expect(h3(viewport, false).chat, String(viewport)).toBeGreaterThanOrEqual(608);
     }
   });
 
@@ -276,17 +297,17 @@ describe("invariants", () => {
     1439.5,
   ];
 
-  it("integers, nothing negative, and the tracks add back up to the frame", () => {
+  it("an integer chats track, nothing negative, and the tracks add back up to the frame", () => {
     for (const viewport of widths) {
       for (const chats of [false, true]) {
         for (const vexStrip of [false, true]) {
           const cols = h3(viewport, chats, vexStrip);
           const label = `${String(viewport)} ${String(chats)} ${String(vexStrip)}`;
-          for (const track of tracks(cols)) {
-            expect(Number.isInteger(track), label).toBe(true);
-            expect(track, label).toBeGreaterThanOrEqual(0);
-          }
-          expect(total(cols), label).toBe(Math.round(viewport));
+          // The Vex track is Cloud's unrounded clamp, so only the chats
+          // track is a whole pixel; the chat carries the fraction.
+          expect(Number.isInteger(cols.chats), label).toBe(true);
+          for (const track of tracks(cols)) expect(track, label).toBeGreaterThanOrEqual(0);
+          expect(total(cols), label).toBeCloseTo(Math.round(viewport), 9);
           expect(cols.chatLeft, label).toBe(cols.chats + cols.vex);
           expect(cols.layout, label).toBe(h3ShellLayout(viewport));
           expect(cols.chatsRail, label).toBe(cols.chats !== H3_CHATS_WIDTH);
@@ -325,15 +346,16 @@ describe("the desktop's tiers (H3-DESKTOP.md section 4.12)", () => {
   });
 
   it("puts the seam where the open chats would first take the chat under 640", () => {
-    expect(h3(1268, true).chat).toBe(640);
+    expect(h3(1268, true).chat).toBe(680);
     expect(h3(1268, true).chatsRail).toBe(false);
     expect(h3(1267, true).chatsRail).toBe(true);
   });
 
-  it("keeps the chat at 640 or more at every width, whatever the stored choice", () => {
+  it("keeps the chat at 608 or more at every width, whatever the stored choice", () => {
+    // Cloud's 340 column leaves 608 at 1024 (PD-14), its narrowest.
     for (let width = 1000; width <= 2560; width += 1) {
       for (const chats of [false, true]) {
-        expect(h3(width, chats).chat, String(width)).toBeGreaterThanOrEqual(H3_CHAT_MIN);
+        expect(h3(width, chats).chat, String(width)).toBeGreaterThanOrEqual(608);
       }
     }
   });
