@@ -665,6 +665,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | the tick box, "I understand real funds can be lost" | left out | desktop keeps its two-step confirm |
 | CTRL+ENTER APPROVES, ESC REJECTS | left out; the middle cell says "Two presses decide: the first arms the key for 4 s." on a card that needs two presses, and "Nothing signs until you approve." on one that does not (proposed) | no card shortcuts on desktop |
 | APPROVE SWAP | "Approve swap", "Approve bridge", "Approve order", "Approve transfer", else "Approve"; Lighter's own words for a deposit and trading fees; "Click again to confirm approve" when armed | desktop's action words |
+| "Approving…", "Rejecting…" (Cloud's keys while a decision runs) | same on every card; a Lighter order create, deposit and trading-fee authorization keep their own steps ("Signing and sending", "Signing and depositing", "Authorizing", "Revoking") | the words only; the keys behave as before |
 
 ### A.8 The receipt, pages and the page strip
 | H3 | Desktop | Why |

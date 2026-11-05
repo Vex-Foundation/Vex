@@ -121,6 +121,19 @@ export const REJECT_REASON_PLACEHOLDER = "Tell Vex what to do instead";
 export const REJECT_REASON_LABEL = "Tell Vex what to do instead (optional, sent when you reject)";
 
 /**
+ * THE IN-FLIGHT WORDS (H3-DESKTOP.md Appendix A.7): Cloud's own, "Approving…"
+ * and "Rejecting…" (`TakeoverCard.tsx`), wherever no Lighter-specific word
+ * applies. Labels only: what the keys do while a decision runs is unchanged.
+ */
+export const APPROVING_WORD = "Approving…";
+export const REJECTING_WORD = "Rejecting…";
+
+/** A key's in-flight word as its accessible name says it, with no ellipsis. */
+function spokenWord(word: string): string {
+  return word.replace(/…$/, "");
+}
+
+/**
  * What the Reject key says and how it is named, in each of its states. One
  * source for the card's footer and the Needs you row, so the two keys can never
  * word a rejection differently.
@@ -130,7 +143,7 @@ export function rejectKeyWords(input: {
   readonly pending: boolean;
   readonly settled: "approved" | "rejected" | null;
 }): { readonly text: string; readonly aria: string } {
-  if (input.pending) return { text: "Rejecting", aria: "Rejecting, please wait" };
+  if (input.pending) return { text: REJECTING_WORD, aria: `${spokenWord(REJECTING_WORD)}, please wait` };
   if (input.settled === "rejected") return { text: "Rejected", aria: "Rejected" };
   if (input.armed) return { text: "Click again to confirm reject", aria: "Confirm reject" };
   return { text: "Reject", aria: "Reject" };
@@ -147,7 +160,7 @@ export function ApprovalDecisionActions({
   onRejectReasonChange,
   approveLabel = "Approve",
   confirmApproveLabel = "Click again to confirm approve",
-  pendingApproveLabel = "Working",
+  pendingApproveLabel = APPROVING_WORD,
   approvePending = false,
   rejectPending = false,
   settledDecision = null,
@@ -247,7 +260,7 @@ export function ApprovalDecisionActions({
         aria-busy={approvePending}
         aria-label={
           approvePending
-            ? `${pendingApproveLabel}, please wait`
+            ? `${spokenWord(pendingApproveLabel)}, please wait`
             : approveIdleAria
         }
         data-vex-approve-working={approvePending ? "" : undefined}

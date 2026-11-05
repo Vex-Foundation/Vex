@@ -665,7 +665,7 @@ describe("ApprovalCard", () => {
     expect(document.querySelector("[data-vex-signed-glint]")).toBeNull();
   });
 
-  it("buttons disabled while a mutation is in-flight, and the approve key says it is working", () => {
+  it("buttons disabled while a mutation is in-flight, and the approve key says Approving…", () => {
     approvePending = true;
     renderCard(
       makeSummary({ riskLevel: "info", actionKind: "read" }),
@@ -674,8 +674,10 @@ describe("ApprovalCard", () => {
     // The key the user pressed names what it is doing and is marked busy; a
     // dispatch can run for fifteen seconds, and a key that only dimmed for
     // that long read as a click that never landed.
-    const approve = screen.getByRole("button", { name: /working, please wait/i });
+    const approve = screen.getByRole("button", { name: /^approving, please wait$/i });
     const reject = screen.getByRole("button", { name: /^reject$/i });
+    // Cloud's own in-flight word (Appendix A.7), the ellipsis drawn, not spoken.
+    expect(approve.textContent).toContain("Approving…");
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(reject.getAttribute("disabled")).not.toBeNull();
     expect(approve.getAttribute("aria-busy")).toBe("true");
@@ -714,7 +716,7 @@ describe("ApprovalCard", () => {
       fireEvent.click(approveKey);
       fireEvent.click(approveKey);
       expect(mockApproveMutate).toHaveBeenCalledTimes(1);
-      const working = screen.getByRole("button", { name: /working, please wait/i });
+      const working = screen.getByRole("button", { name: /^approving, please wait$/i });
       expect(working.getAttribute("disabled")).not.toBeNull();
       expect(working.getAttribute("aria-busy")).toBe("true");
       const rejectKey = screen.getByRole("button", { name: /^reject$/i });
@@ -729,7 +731,7 @@ describe("ApprovalCard", () => {
       fireEvent.click(screen.getByRole("button", { name: /rejecting, please wait/i }));
       expect(mockRejectMutate).toHaveBeenCalledTimes(1);
       const rejecting = screen.getByRole("button", { name: /rejecting, please wait/i });
-      expect(rejecting.textContent).toBe("Rejecting");
+      expect(rejecting.textContent).toBe("Rejecting…");
       expect(rejecting.getAttribute("aria-busy")).toBe("true");
       expect(screen.getByRole("button", { name: /^approve transfer$/i }).getAttribute("disabled")).not.toBeNull();
     });
