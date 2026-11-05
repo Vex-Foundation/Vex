@@ -30,7 +30,7 @@
  *   Running   the same row once the provider stream has ended and the tool
  *             is executing ("Running {tool}"), until its round persists
  *   Writing   the ANSWER streams below the row; what the turn thought rides
- *             as its scope ("Reasoned · 1.2K tokens")
+ *             as its scope ("Thought · 1.2K tokens")
  *
  * Preserved from the working strip it replaces: the elapsed m:ss counter, the
  * awaiting-approval FREEZE (all motion stops, the target - trust equals

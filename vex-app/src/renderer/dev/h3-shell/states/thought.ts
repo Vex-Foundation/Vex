@@ -19,7 +19,7 @@
  * clock files a turn under its ask.
  *
  * The earlier turn in the same capture (the balances read, 18 minutes ago)
- * was not watched live, so its thinking row says only "Reasoned" and its
+ * was not watched live, so its thinking row says only "Thought" and its
  * steps: the two rows side by side are the contract's two cases.
  */
 

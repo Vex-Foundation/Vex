@@ -106,7 +106,7 @@ export interface TranscriptRowModel {
    * `SessionMessageDto.reasoning`). `null` on every non-assistant row, on
    * legacy rows written before the engine persisted it, and whenever the
    * provider emitted none — the renderer shows NOTHING in that case rather
-   * than an empty "Reasoned" affordance. When a `tool_call` DTO splits into a
+   * than an empty "Thought" affordance. When a `tool_call` DTO splits into a
    * prose row + a tool row (`splitToolCallProse`), the reasoning rides the
    * PROSE row when there is one and the tool row otherwise — never both, even
    * though the two rows share `dto.id`.
