@@ -349,7 +349,7 @@ describe("composer capsule - a pending approval in an agent chat", () => {
 });
 
 describe("composer capsule - send cell", () => {
-  it("the send cell is the blue key with the dot glyph and SEND, disabled while there is nothing to send", () => {
+  it("the send cell is the blue key with the dot glyph and SEND, held while there is nothing to send", () => {
     render(
       <SessionComposer activeSession={agentRow()} activeSessionId={SESSION} />,
     );
@@ -360,20 +360,21 @@ describe("composer capsule - send cell", () => {
     expect(send.className).toContain("vex-composer-send");
     expect(send.className).not.toMatch(/rounded/);
     expect(send.getAttribute("type")).toBe("submit");
-    // The word in sentence case (the sheet sets the caps) beside H3's
-    // three-by-three dot glyph, which is decoration.
+    // The word in sentence case (the sheet sets the caps) beside the
+    // three-by-three dot glyph, 20 square, which is decoration.
     expect(send.textContent).toBe("Send");
     const glyph = send.querySelector("svg");
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph?.getAttribute("width")).toBe("20");
     expect(glyph?.querySelectorAll("circle")).toHaveLength(9);
     expect(send.disabled).toBe(true);
     typeDraft("buy the dip");
     expect(send.disabled).toBe(false);
   });
 
-  it("raw-CSS contract: the send cell is 140 wide and the row's 72, the one blue fill, white caps 14", () => {
+  it("raw-CSS contract: the send cell is 138 wide and the row's 72, the one blue fill, white caps 13", () => {
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-key \{[^}]*width: 140px;[^}]*height: calc\(var\(--vex-h3-bottom-h\) \+ 1px\);[^}]*font-size: 14px;[^}]*letter-spacing: var\(--tracking-label\);[^}]*text-transform: uppercase;/,
+      /\.vex-composer-key \{[^}]*width: 138px;[^}]*height: calc\(var\(--vex-h3-bottom-h\) \+ 1px\);[^}]*padding: 0 30px 0 32px;[^}]*font-size: 13px;[^}]*letter-spacing: var\(--tracking-label\);[^}]*text-transform: uppercase;/,
     );
     expect(CONSOLE_CSS).toMatch(
       /\.vex-composer-send,\s*\.vex-composer-stop \{[^}]*background-color: var\(--vex-alias-button-accent-fill\);[^}]*color: var\(--vex-alias-button-accent-ink\);/,
@@ -381,10 +382,20 @@ describe("composer capsule - send cell", () => {
     expect(CONSOLE_CSS).toMatch(
       /:hover:not\(:disabled\) \{[^}]*background-color: var\(--vex-alias-button-accent-hover\);/,
     );
-    // The blue stays while there is nothing to send: H3 draws the resting
-    // composer with the blue SEND. No dotted outline, no transparent key.
-    expect(CONSOLE_CSS).not.toMatch(/\.vex-composer-send:disabled \{[^}]*background/);
+    // EC-04: an empty draft holds SEND. The held look is the cell fill with a
+    // muted word, never the blue: a blue key that does nothing is a trust
+    // regression. No dotted outline, no transparent key.
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-send:disabled,\s*\.vex-composer-stop:disabled \{[^}]*background-color: var\(--vex-alias-bg-layer-3\);[^}]*color: var\(--vex-alias-label-tertiary\);/,
+    );
     expect(CONSOLE_CSS).not.toMatch(/dotted/);
+    // The dots are faint at rest and white under the pointer.
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-label-faint\);/,
+    );
+    expect(CONSOLE_CSS).toMatch(
+      /\.vex-composer-key:hover:not\(:disabled\) \.vex-composer-key__glyph \{[^}]*color: var\(--color-white\);/,
+    );
   });
 
   it("a turn in flight swaps Send for STOP in the same cell, named by what it stops, with no second state mark beside it", () => {

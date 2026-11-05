@@ -250,6 +250,9 @@
   --vex-alias-label-tertiary: var(--color-h3-muted);
   --vex-alias-label-caption: var(--color-h3-muted);
   --vex-alias-label-dimmed: rgba(255, 255, 255, 0.18);
+  /* Faint: a glyph at rest that the pointer lights, never a word (VEX
+   * Cloud's --vx-faint, white at 55%: the Send key's dots). */
+  --vex-alias-label-faint: rgba(255, 255, 255, 0.55);
   /* Type painted on the ink fill (the primary key's ink inversion, the REAL
    * FUNDS stamp): the ground. */
   --vex-alias-label-on-primary: var(--color-h3-ground);

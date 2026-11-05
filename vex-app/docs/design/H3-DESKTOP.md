@@ -188,7 +188,9 @@ Header cells as in section 1.3. The transcript and the welcome sit 24 in from bo
 | model | 680, 75 | the model's glyph: the model choice | the same |
 | field | 755, 471 | "Ask Vex..." | the same, running on to the send key |
 | attach | 1226, 74 | an image key | left out: no attachments |
-| send | 1300, 140 | blue: a three-by-three dot glyph and SEND | the same; STOP while a turn runs |
+| send | 1302, 138 | blue: a three-by-three dot glyph and SEND | the same; STOP while a turn runs; held while the draft is blank (below) |
+
+**The send cell** is H3's `.cmp-send`: 138 wide, padding 0 30 0 32, a 20px dots glyph and SEND in 13px caps; the dots are faint (white at 55%) at rest and white under the pointer. Measured at 140 from the captures before Cloud's CSS was read; the CSS is the source. **While the draft is blank, SEND is held** (Cloud's EC-04, `specs/v99-web/PLAN.md`; `h3-chat-gaps` decision 6): the cell fill, a muted word and the faint dots, no blue and no hover, because a blue key that does nothing is a trust regression. It turns blue the moment the draft has text. Which drafts can be sent is unchanged; only the look follows the key's disabled state. STOP keeps the blue while a turn runs; a stop being acknowledged is the same held look.
 
 **The status strip** sits above the composer in the chat column, 31 high (797 to 827, measured): the model and its effort ("DeepSeek V4.1 Flash 1017 HIGH", 680 to 928), FUNDS REQUIRE APPROVAL (928 to 1139), an empty cell, and DAILY BUDGET with a ten-cell meter and a percentage (1186 to 1440). Desktop's strip is in section 4.1.
 
@@ -321,7 +323,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 ### 2.4 Cells, rules and keys
 - Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
 - A cell's text sits 24 in from its left edge (section 1.3).
-- **Primary key:** the blue fill with white caps, 14 (SEND; the card's decision key). One blue cell in view at a time. Hover takes blue hover.
+- **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
