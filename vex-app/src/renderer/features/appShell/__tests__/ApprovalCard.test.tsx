@@ -1189,7 +1189,7 @@ describe("ApprovalCard, the H3 head", () => {
       false,
     );
     // Outside the four families the eyebrow is the tool's own title.
-    expect(document.querySelector(".vex-appr__eyebrow")?.textContent).toBe("WalletEvmTransactionConfirm");
+    expect(document.querySelector(".vex-appr__eyebrow")?.textContent).toBe("Wallet evm transaction confirm");
     expect(screen.queryByTestId("approval-consequence")).toBeNull();
     // The card still says what it does: the risk sentence stays.
     expect(screen.getByText("High risk:")).toBeTruthy();
@@ -1638,7 +1638,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
         toolName: "WalletEvmTransactionConfirm",
         preview: { toolName: "WalletEvmTransactionConfirm", criticalArgs: { chain: "base", recipient: ADDRESS } },
       }),
-      eyebrow: "WalletEvmTransactionConfirm",
+      eyebrow: "Wallet evm transaction confirm",
       approve: "Approve",
       consequence: null,
       realFunds: true,

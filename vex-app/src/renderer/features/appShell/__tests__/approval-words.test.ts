@@ -253,7 +253,7 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
     ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", TRANSFER_LINE],
     ["lighter fee authorization", LIGHTER_FEES, "Lighter · Fees approve", null],
     ["token launch", LAUNCH, "pools.fun · Launch", null],
-    ["generic signed transaction", GENERIC_TX, "WalletEvmTransactionConfirm", null],
+    ["generic signed transaction", GENERIC_TX, "Wallet evm transaction confirm", null],
     ["the user's own MCP tool", MCP, "Deepwiki / read wiki structure", null],
   ];
 

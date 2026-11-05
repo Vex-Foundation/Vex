@@ -113,7 +113,11 @@ const EXACT_TITLES: Readonly<Record<string, string>> = {
 
 /** snake_case / colon symbol → "Sentence case words" (bounded, lossless-ish). */
 function humanizeToolName(name: string): string {
-  const words = name.replace(/[_:.]+/g, " ").trim();
+  // A joined-up name ("WalletEvmTransactionConfirm") reads as words too:
+  // split where a lower-case letter or digit meets a capital, then lower-case
+  // what the split produced.
+  const split = name.replace(/([a-z0-9])([A-Z])/g, (_m, a: string, b: string) => `${a} ${b.toLowerCase()}`);
+  const words = split.replace(/[_:.]+/g, " ").trim();
   if (words.length === 0) return "Tool call";
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
