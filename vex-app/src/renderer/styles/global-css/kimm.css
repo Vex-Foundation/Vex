@@ -35,7 +35,8 @@
  * of the window alone:
  *   - top: the foot of the console's top block, the console's own fixed
  *     `--vex-console-top-h` on `.vex-vs` (vex-sidebar.css): the Needs you
- *     head (43), its row (64), the missions row and its rule (41), 148 under
+ *     head (44), its row (64) and the missions row (40), each with its rule
+ *     inside, 148 under
  *     the header, with no strategies row (section 4.1): y 224 at any window
  *     height. A declared length, never a measure of the console's content,
  *     so a decision arriving or a mission starting never moves her.

@@ -5,8 +5,8 @@
  *
  * THE BOX. Not a row of the column: a box over it, whose size is a function
  * of the window alone. Its left and width are the column's; its top is the
- * foot of the console's top block (the Needs you head 43, its row 64, the
- * missions row 40 and their rule: 148 under the header, desktop having no
+ * foot of the console's top block (the Needs you head 44, its row 64 and the
+ * missions row 40, each with its rule inside: 148 under the header, desktop having no
  * strategies row, section 4.1); its foot is the bottom row's top rule.
  * At 1440 x 900 that is 248, 224 and 603 high (section 1.5, "Desktop's
  * box"): 423 at a 720-high window, 503 at 800. Nothing about her enters the

@@ -104,18 +104,21 @@
  * box of her section laid over the column (its top is the top block's foot)
  * never moves when a decision arrives, is taken, or a mission starts:
  *
- *   Needs you head   43   NEEDS YOU (14, 600, caps) and the count at the right
+ *   Needs you head   44   NEEDS YOU (14, 600, caps) and the count at the right
  *   decision row     64   the sentence (16) over its meta line (14, muted),
  *                          and the key cell at the right on the raised fill
- *   missions row     41   the missions icon, the words (15), a chevron: 40
- *                          and the rule her section starts under
+ *   missions row     40   the missions icon, the words (15), a chevron
  *
- * `--vex-console-top-h` (148) is the whole top block, the line her section's
- * box starts at: 224 in a 1440 x 900 window (section 1.5, desktop's box). */
+ * VEX Cloud's rows (the H3 mockup's `.cn-h` 44, `.cn-need` 64, `.cn-run`
+ * 40), each with its rule inside its own height, so the rule under the
+ * missions row is the line her section starts under. Desktop has no
+ * strategies row (section 4.1), so `--vex-console-top-h` is 148 where
+ * Cloud's head rows are 188: the line her section's box starts at, 224 in a
+ * 1440 x 900 window (section 1.5, desktop's box). */
 .vex-vs {
-  --vex-console-head-h: 43px;
+  --vex-console-head-h: 44px;
   --vex-console-row-h: 64px;
-  --vex-console-missions-h: 41px;
+  --vex-console-missions-h: 40px;
   --vex-console-top-h: calc(
     var(--vex-console-head-h) + var(--vex-console-row-h) + var(--vex-console-missions-h)
   );

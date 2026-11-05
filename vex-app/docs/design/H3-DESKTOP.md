@@ -127,10 +127,10 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 | Part | y, height | Contents |
 |---|---|---|
 | the Vex key | the header, 248 to 680 | section 1.6 |
-| Needs you head | 76, 43 | NEEDS YOU, and the count at the right |
-| Needs you row | 119, 64 | the decision as a sentence ("Approve swap: 200 USDC → ETH"), a meta line ("Mainnet, real funds · since 12:40") and a REVIEW key cell with a chevron (559 to 680, raised fill); at zero, "Nothing needs you." |
-| missions row | 183, 40 | the missions icon, "1 mission running on Mainnet · Grow ETH", a chevron |
-| strategies row | 223, 40 | "2 strategies running", a chevron. Not on desktop |
+| Needs you head | 76, 44 | NEEDS YOU, and the count at the right; VEX Cloud's `.cn-h`, its rule inside |
+| Needs you row | 120, 64 | the decision as a sentence ("Approve swap: 200 USDC → ETH"), a meta line ("Mainnet, real funds · since 12:40") and a REVIEW key cell with a chevron (559 to 680, raised fill); at zero, "Nothing needs you." |
+| missions row | 184, 40 | the missions icon, "1 mission running on Mainnet · Grow ETH", a chevron |
+| strategies row | 224, 40 | "2 strategies running", a chevron. Not on desktop |
 | Kimm's section | 264, 563 | a fixed box over the rest of the console |
 | the console's rest | under her section | seen while she is closed: strategy rows (62 each, with a MAINNET tag and a switch), AI PERMISSION (a 44 head, then its sentence and "Change in Settings"), RECENT ACTIVITY (a 44 head, rows about 43 high, each with a status square and word), OPEN ACTIVITY with an arrow, ending at 826 |
 
@@ -140,7 +140,7 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 **The box.** Her section is a box laid over the column, not a row in it: left and width are the column's, its top is the foot of the console's top block, and its foot is the bottom row's top rule (Cloud's foot line, section 1.11). Its size is a function of the window only; open and closed differ only in its clip-path (section 3.2). Its height is the window height less the foot row (73 at a zoom of 1) less its top; from 1760 up its top is 148 x zoom (section 1.11).
 
-**Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
+**Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter, 44 + 64 + 40 = 148 (Cloud's rows, each with its rule inside; Cloud's head rows are 188), and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
 
 Open:
 - What the Needs you row shows with two or more decisions; the plates draw one and none. Default: the one that expires first, the count in the head, Review opening its card, and the Needs you page for the rest. Settled with Cloud.
