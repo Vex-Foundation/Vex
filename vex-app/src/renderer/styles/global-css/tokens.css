@@ -237,6 +237,9 @@
    * it by 10px; desktop never blurs (no blur, no glass), so the strip is the
    * fill alone. */
   --vex-alias-strip: rgba(0, 1, 2, 0.82);
+  /* The bars under it (Cloud's bars canvas): white, each bar at 1.4% plus
+   * up to 55% by its level (the canvas sets the alpha, `vex-bars.ts`). */
+  --vex-alias-bars: var(--color-white);
   --vex-alias-sidebar-fill: var(--color-h3-ground);
   /* The field: inputs and the composer, on the ground behind their rule. */
   --vex-alias-field: var(--color-h3-ground);

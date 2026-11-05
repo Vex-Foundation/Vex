@@ -747,6 +747,17 @@
   height: 100%;
   overflow: hidden;
 }
+/* The bars (VexBars.tsx): the whole cell, under the strip, a picture that
+ * takes no pointer. Their colour is the canvas's own. */
+.vex-foot__bars {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--vex-alias-bars);
+  pointer-events: none;
+}
 .vex-tagline {
   position: absolute;
   inset: 0;

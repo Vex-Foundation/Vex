@@ -24,6 +24,10 @@
  *     person's own last message), or the state word alone where the
  *     narration has nothing true to add.
  *
+ * UNDER THE STRIP, THE BARS (`VexBars.tsx`, Cloud's bars canvas): a display
+ * of her mood (ready, busy, approve), never a key or a reading (PD-15). With
+ * a line on it the strip covers them at 82%; an empty line leaves them alone.
+ *
  * THE SETTLED LINE HOLDS 3.4 S (Cloud's `LINE_HOLD`, her act and a beat),
  * then the line empties and the strip goes, so the bars under it show
  * alone; it stays empty until the moment changes (a new turn, a card,
@@ -44,6 +48,8 @@
 import { useEffect, useState, type JSX } from "react";
 import { useUiStore } from "../../stores/uiStore.js";
 import { useVexPresence } from "./useVexPresence.js";
+import { VexBars } from "./VexBars.js";
+import { vexBarsMoodOf, type VexBarsMood } from "./vex-bars.js";
 import type { VexState } from "./vex-state.js";
 
 /** The moments the sheet gives a tagline, and Studio's. */
@@ -163,13 +169,22 @@ export function useSettledPhase(state: VexState, scope: string): SettledPhase | 
 }
 
 /**
- * The foot as drawn: the strip and the line on it. The shell's cell reads the
- * moment (`TaglineCell`); the stage before the shell hands in its rest line.
+ * The foot as drawn: the bars, and over them the strip and the line on it.
+ * The shell's cell reads the moment (`TaglineCell`); the stage before the
+ * shell hands in its rest line and its own state's mood for the bars.
  */
-export function TaglineView({ line }: { readonly line: VexLine }): JSX.Element {
+export function TaglineView({
+  line,
+  bars,
+}: {
+  readonly line: VexLine;
+  /** The bars' mood: her presence state's (`vexBarsMoodOf`). */
+  readonly bars: VexBarsMood;
+}): JSX.Element {
   const empty = line.reg === "caps" && line.empty;
   return (
     <div className="vex-foot" data-vex-area="vex-foot">
+      <VexBars mood={bars} />
       <p
         className="vex-tagline"
         data-vex-tagline={line.kind}
@@ -204,5 +219,5 @@ export function TaglineCell(): JSX.Element {
   const { state, word, narration } = useVexPresence();
   const settled = useSettledPhase(state, `${runtimeMode}:${activeSessionId ?? ""}`);
   const line = vexLineOf({ runtimeMode, activeSessionId, pageOpen, state, word, narration, settled });
-  return <TaglineView line={line} />;
+  return <TaglineView line={line} bars={vexBarsMoodOf(state)} />;
 }

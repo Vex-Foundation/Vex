@@ -133,9 +133,9 @@ lasts, the signing stroke only while a key is being made. Attention is ONCE
 (`docs/design/R3-MINIMAL.md` section 11): the "awaiting your action" badge
 (`vex-badge--shimmer`, a mission contract or a compaction ready to accept)
 dips its opacity once on arrival, on the reveal step each way, and then rests
-on its swatch and word; it no longer pulses for as long as it waits. The one
-named exception is Kimm's glyph field, bound by its own section below
-("Kimm's glyph field"). Motion never
+on its swatch and word; it no longer pulses for as long as it waits. The two
+named exceptions are Kimm's glyph field and Vex's bars, each bound by its own
+section below ("Kimm's glyph field", "Vex's bars"). Motion never
 delays a committed result, an approval, a final error or a security decision.
 
 Prefer `transform` and `opacity`. Animating a size is reserved for the owner
@@ -182,7 +182,8 @@ and where each part is stated:
 - the shell's column tracks snap: opening or hiding the Vex sidebar is a width
   change with no slide (`shell.css` states its own collapse);
 - swatches and the loading line stop stepping (`ui-primitives/marks.css`);
-- Kimm's glyph field paints one settled frame (`use-still-frame.ts`);
+- Kimm's glyph field paints one settled frame (`use-still-frame.ts`), and so
+  do Vex's bars, for her mood;
 - Save-Data asks for the same still frame, and since it has no media query
   it reaches CSS as `data-still` on `<html>`: `public/theme-boot.js` stamps
   it before first paint and follows the connection's change event
@@ -222,6 +223,33 @@ decoration, and it is bound four ways:
 It draws on a canvas, so it moves nothing in the layout and no transition or
 keyframe of it exists to collapse; the bounds above are the whole of its
 motion.
+
+### Vex's bars
+
+The bars on the foot of Vex's column, under her line
+(`src/renderer/features/vex/VexBars.tsx` over the pure model `vex-bars.ts`;
+`docs/design/H3-DESKTOP.md` section 1.8 and Appendix A.6; VEX Cloud's bars
+canvas, its `bars()` in the H3 mockup's js/stage.js) are the second named
+loop. They are a display of her mood (ready, busy while she thinks or works,
+approve while a decision waits), never a key and never a reading: no figure,
+no data, no claim (Cloud's PD-15). Their levels ease on a critically damped
+spring toward each mood's sweep or pulse, so they run in every mood, her rest
+included, and they are bound three ways:
+
+- **The run gate.** `lib/motion/run-gate.ts` runs them only while their canvas
+  is on screen and the window is shown; a hidden window, a column folded away
+  or a page without her column paints no frame and asks for none.
+- **A capped step.** One animation frame never eases the levels more than
+  50ms (`VEX_BARS_STEP_CAP_S`), so a stalled window resumes calmly. A frame
+  paints one fill per bar (12 to about 35) and reads no style: the colour is
+  read once per box.
+- **The still frame.** Reduced motion and Save-Data
+  (`lib/motion/use-still-frame.ts`) paint one settled frame for her mood
+  (`VEX_BARS_STILL_S`) and repaint only when her mood or the box changes; no
+  loop starts.
+
+Like the field, they draw on a canvas, so they move nothing in the layout;
+the bounds above are the whole of their motion.
 
 ### The shell and the Vex sidebar
 
