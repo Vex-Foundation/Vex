@@ -713,8 +713,8 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   margin: 0 0 12px;
 }
 
-/* ── The thinking row (a persisted Reasoned row) ─────────────────────────
- * The frame closed to its head: the dot-grid glyph, "Reasoned" or "Thought
+/* ── The thinking row (a persisted Thought row) ──────────────────────────
+ * The frame closed to its head: the dot-grid glyph, "Thought" or "Thought
  * for 2.8 s" in caps 13 tracked ink, the trace's first line in 13 muted, then
  * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
  * whole row is the key: the label is the button, and its hit area stretches

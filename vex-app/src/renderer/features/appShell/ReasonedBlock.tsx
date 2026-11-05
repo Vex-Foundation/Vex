@@ -1,5 +1,5 @@
 /**
- * PERSISTED REASONING — the collapsible "Reasoned" block above an assistant
+ * PERSISTED REASONING — the collapsible "Thought" block above an assistant
  * body (contract C1 `SessionMessageDto.reasoning`).
  *
  * Reasoning is no longer ephemeral: the engine persists it, so a settled turn
@@ -9,7 +9,7 @@
  *
  * `reasoning === null` — a non-assistant row, a legacy row written before the
  * engine persisted it, or a provider that emitted none — renders NOTHING. An
- * empty "Reasoned" affordance that opens onto nothing is a worse lie than an
+ * empty "Thought" affordance that opens onto nothing is a worse lie than an
  * absent one.
  *
  * The trace renders through `MarkdownContent` (safe React elements, never an
@@ -38,9 +38,10 @@
  * THE TURN'S HEAD. The first Reasoned row of a turn is the turn's thinking
  * row (`SessionTranscript/turnSteps.ts`), so it also says the turn's steps
  * ("3 steps") and, after a turn watched live, how long the turn took ("Thought
- * for 2.8 s", the live turn clock's own reading, `TurnIsland/turnClock.ts`).
- * A turn reopened from history has no stored duration, so it says "Reasoned"
- * and its steps only. Every other Reasoned row of the turn says "Reasoned".
+ * for 2.8s", the live turn clock's own reading, `TurnIsland/turnClock.ts`).
+ * A turn reopened from history has no stored duration, so it says "Thought"
+ * with no total, and its steps (VEX Cloud's EC-07 and its stored trace head).
+ * Every other thinking row of the turn says "Thought".
  */
 
 import { useEffect, useId, useRef, useState, type JSX } from "react";
@@ -129,7 +130,7 @@ export function ReasonedBlock({
   /**
    * The live turn clock's reading for this turn (`turnClock.ts`), set only
    * on the turn's thinking row after a turn watched live; `null` keeps
-   * "Reasoned".
+   * "Thought".
    */
   readonly thoughtMs?: number | null;
 }): JSX.Element | null {
@@ -156,11 +157,11 @@ export function ReasonedBlock({
 
   if (text.length === 0) return null;
 
-  // "Thought for 2.8 s" (docs/design/H3-DESKTOP.md Appendix A.7): the live
+  // "Thought for 2.8s" (docs/design/H3-DESKTOP.md Appendix A.7): the live
   // turn clock's own measurement, spelled as the step rows spell their
-  // measured times ("812 ms", "2.8 s", "1m 05s"). The words are a label
+  // measured times ("812ms", "2.8s", "1m 05s"). The words are a label
   // (caps); the figure keeps its own case, as H3 prints "THOUGHT FOR 2.8s".
-  // No measurement keeps "Reasoned": nothing is ever estimated.
+  // No measurement keeps "Thought", with no total: nothing is estimated.
   const thoughtFor = formatToolDuration(thoughtMs);
   const label =
     thoughtFor === null ? (

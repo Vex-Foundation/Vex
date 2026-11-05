@@ -483,7 +483,7 @@ Desktop is mainnet only ("Nothing here is a sandbox or testnet", `src/vex-agent/
 
 12. Portfolio: the wallet total, the change since the last snapshot, and Lighter's equity and positions; the equity chart once the balance snapshots reach the renderer (S7-05). Left out: P&L over today, 7 days and all time, drawdown, "of allocated", the 90-day range and allocation by venue.
 13. The open-positions table: Lighter perps only.
-14. The thinking row: "Thought for N s" only after a live turn, since persisted turns store no duration; tool rows keep their measured times.
+14. The thinking row: "Thought for 2.8s" only after a live turn; a stored turn reads "Thought" with no total, since persisted turns store no duration (VEX Cloud's EC-07); tool rows keep their measured times.
 15. Agent Scan's status words (H3's Activity): desktop's outcome words (Appendix A.3).
 16. The nav: section 4.6.
 
@@ -669,7 +669,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 ### A.7 The chat and the money card
 | H3 | Desktop | Why |
 |---|---|---|
-| THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history shows "{n} steps" only | desktop does not store a turn's duration |
+| THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history reads THOUGHT with no total, and "{n} steps" (VEX Cloud's EC-07 and its stored trace head; "Thought", "Thought for {s}" and "{n} steps" are Cloud DRAFT words); every other thinking row of a turn reads THOUGHT, and the live frame's writing scope "Thought · 1.2K tokens" | desktop does not store a turn's duration |
 | CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order", else "Confirm this action" | desktop's card serves every tool family (`approvalActionWord`) |
 | MAINNET, REAL FUNDS | same | every desktop approval moves real funds |
 | "Swap 200 USDC for ETH on Base." | desktop's sentence from the signed arguments; else "{tool title}: review the signed fields" | |

@@ -450,7 +450,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
   });
 
-  it("mounts the collapsible Reasoned block above the assistant body", () => {
+  it("mounts the collapsible Thought block above the assistant body", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -461,7 +461,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     );
     const block = container.querySelector('[data-vex-reasoning="persisted"]');
     expect(block).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Thought/ })).not.toBeNull();
     // Collapsed: only the trace's FIRST line rides beside the stamp, so the
     // answer stays the first substantial thing read.
     expect(container.textContent).not.toContain("Then I priced the route.");
@@ -515,7 +515,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     expect(
       container.querySelectorAll('[data-vex-reasoning="persisted"]'),
     ).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Thought/ })).not.toBeNull();
   });
 
   it("renders EVERY folded trace, in turn order, above the ledger line", () => {

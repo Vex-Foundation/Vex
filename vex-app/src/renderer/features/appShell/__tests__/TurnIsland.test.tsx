@@ -201,7 +201,7 @@ describe("TurnIsland reasoning segments", () => {
     });
     expect(writing.querySelector("[data-vex-island-label]")?.textContent).toBe("Writing");
     expect(writing.querySelector("[data-vex-island-detail]")?.textContent).toBe(
-      "Reasoned · 1.2K tokens",
+      "Thought · 1.2K tokens",
     );
     expect(
       renderIsland({ status: "writing" }).querySelector("[data-vex-island-detail]"),
