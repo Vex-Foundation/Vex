@@ -116,6 +116,33 @@
   font-size: 14px;
 }
 
+/* RECENT ACTIVITY's states (VEX Cloud's `.cn-recent`): while loading two
+ * rows of covers in the rows' own height; a read that failed "Could not load
+ * this section." beside the cross, 14 ink 2, at least 56 high; an empty feed
+ * "Vex has not acted yet.", 14 muted, padded 14 24 16, with no rule under it. */
+.vex-console__covers .vex-console__activity {
+  justify-content: space-between;
+  cursor: progress;
+}
+.vex-console__fail {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0 var(--vex-console-inset);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.vex-console__note--quiet {
+  padding: 14px var(--vex-console-inset) 16px;
+  border-bottom: 0;
+  color: var(--vex-alias-label-tertiary);
+  line-height: 1.45;
+}
+
 /* The page strip's loading and failed cells: a cover where the words will
  * land, "Not available" beside the cross. */
 .vex-strip__cover,

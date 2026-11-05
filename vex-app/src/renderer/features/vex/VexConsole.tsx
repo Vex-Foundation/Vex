@@ -475,7 +475,19 @@ export function OpenActivityKey({
   );
 }
 
-/** The feed's first page as the console's rows, or the page's own words for why there are none. */
+/** Recent activity with nothing in it (VEX Cloud's REAL `RecentActivity` empty line). */
+export const RECENT_ACTIVITY_EMPTY_COPY = "Vex has not acted yet.";
+
+/** A read of the section that failed or timed out (VEX Cloud's REAL console word). */
+export const SECTION_FAILED_COPY = "Could not load this section.";
+
+/**
+ * The feed's first page as the console's rows. While the first read runs,
+ * two cover rows hold the rows' height (never a pulse); a read that failed
+ * or timed out says "Could not load this section." beside the cross, never an
+ * empty history; an empty feed says "Vex has not acted yet." (VEX Cloud's
+ * console states, `h3-shell-gaps` decisions 5 and 6).
+ */
 function ActivityRows({ projectId }: { readonly projectId: string | null }): JSX.Element {
   const filters = useMemo(() => feedFiltersFor(projectId), [projectId]);
   const query = useAgentScanInfinite(filters);
@@ -487,19 +499,34 @@ function ActivityRows({ projectId }: { readonly projectId: string | null }): JSX
     () => (entries === null ? [] : consoleActivityRowsOf(entries, Date.now())),
     [entries],
   );
-  if (query.isLoading) return <p className="vex-console__note">Loading…</p>;
-  if ((first !== undefined && !first.ok) || (first === undefined && query.isError)) {
-    return <p className="vex-console__note">Couldn&apos;t load activity.</p>;
-  }
-  if (first !== undefined && first.ok && first.data.status === "unavailable") {
-    return <p className="vex-console__note">Activity is unavailable right now - try again shortly.</p>;
-  }
-  if (rows.length === 0) {
+  if (query.isLoading) {
     return (
-      <p className="vex-console__note">
-        No activity recorded yet - everything Vex executes appears here.
+      <div className="vex-console__covers" role="status" aria-label="Loading">
+        <div className="vex-console__activity" aria-hidden="true">
+          <Cover width="52%" />
+          <Cover width="64px" />
+        </div>
+        <div className="vex-console__activity" aria-hidden="true">
+          <Cover width="64%" />
+          <Cover width="56px" />
+        </div>
+      </div>
+    );
+  }
+  if (
+    (first !== undefined && !first.ok)
+    || (first === undefined && query.isError)
+    || (first !== undefined && first.ok && first.data.status === "unavailable")
+  ) {
+    return (
+      <p className="vex-console__fail" role="status">
+        <StateSquare state="error" />
+        {SECTION_FAILED_COPY}
       </p>
     );
+  }
+  if (rows.length === 0) {
+    return <p className="vex-console__note vex-console__note--quiet">{RECENT_ACTIVITY_EMPTY_COPY}</p>;
   }
   return (
     <ul className="vex-console__rows" aria-label="Recent activity">
@@ -518,7 +545,7 @@ function ActivityRows({ projectId }: { readonly projectId: string | null }): JSX
   );
 }
 
-/** RECENT ACTIVITY: the newest entries with their status, then Open activity. */
+/** RECENT ACTIVITY: the newest entries with their status, then Open activity; or why there are none. */
 export function VexConsoleActivity({
   projectId = null,
 }: {

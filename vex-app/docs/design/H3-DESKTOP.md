@@ -700,6 +700,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | "Restricted access: always asks before acting." | "Restricted: every mutating transaction requires your approval." or "Full access: auto-executes approved tools without prompting per call." | desktop's own words for its two modes (`ComposerPermissionSeat.tsx`); Restricted does not ask before reading |
 | "Change in Settings" | "Set when this chat was created." (proposed) | a chat's permission is set at creation and locked; Settings cannot change it |
 | RECENT ACTIVITY | same | |
+| (loading) covers; "Could not load this section."; "Vex has not acted yet." | same: two cover rows while the first read runs; "Could not load this section." beside the cross for a read that failed or timed out; "Vex has not acted yet." for an empty feed | Cloud's REAL words (`RecentActivity.tsx`, the console's failed section); they replace "Loading…", "Couldn't load activity.", "Activity is unavailable right now - try again shortly." and "No activity recorded yet - everything Vex executes appears here." |
 | FILLED | Confirmed | desktop knows a transaction confirmed, not an order filled (`agent-scan-outcome.ts`) |
 | RUNNING | Submitted, awaiting confirmation | desktop's pending word |
 | DID NOT EXECUTE | Failed or Refunded, with the failed cross; Status unknown with the concerned hatch (section 2.2) | "did not execute" for a rejected approval needs the approval history, which activity does not join yet; nobody knows an unknown outcome, so it is never drawn as a failure |

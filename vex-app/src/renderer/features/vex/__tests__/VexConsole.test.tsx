@@ -443,29 +443,32 @@ describe("the console's recent activity", () => {
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "agentScan", origin: null, sessionId: null });
   });
 
-  it("says the page's own words for a read that is loading, failed, timed out or empty", () => {
+  it("holds its rows with covers while loading, never words and never a pulse", () => {
     feed.current = { isLoading: true, isError: false, data: undefined };
-    const view = render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Loading…");
-    view.unmount();
+    render(<VexConsoleActivity />);
+    const covers = within(activity()).getByRole("status", { name: "Loading" });
+    expect(covers.querySelectorAll(".vex-console__activity")).toHaveLength(2);
+    expect(covers.querySelectorAll(".vex-cover")).toHaveLength(4);
+    expect(covers.textContent).toBe("");
+  });
 
+  it("says Could not load this section. for a read that failed or timed out, never an empty history", () => {
     answers({ ok: false, error: { code: "internal", message: "no", correlationId: "c" } });
     const failed = render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Couldn't load activity.");
+    expect(activity().querySelector(".vex-console__fail")?.textContent).toBe("Could not load this section.");
+    expect(activity().querySelector(".vex-console__fail .vex-sq")?.getAttribute("data-state")).toBe("error");
     failed.unmount();
 
     answers({ ok: true, data: { status: "unavailable", reason: "query_timeout" } });
-    const timedOut = render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__note")?.textContent).toBe(
-      "Activity is unavailable right now - try again shortly.",
-    );
-    timedOut.unmount();
+    render(<VexConsoleActivity />);
+    expect(activity().querySelector(".vex-console__fail")?.textContent).toBe("Could not load this section.");
+    expect(activity().textContent).not.toContain("Vex has not acted yet.");
+  });
 
+  it("says Vex has not acted yet. for an empty feed", () => {
     answers({ ok: true, data: { status: "available", entries: [], nextCursor: null, hasMore: false } });
     render(<VexConsoleActivity />);
-    expect(activity().querySelector(".vex-console__note")?.textContent).toBe(
-      "No activity recorded yet - everything Vex executes appears here.",
-    );
+    expect(activity().querySelector(".vex-console__note")?.textContent).toBe("Vex has not acted yet.");
     expect(activity().querySelector("li")).toBeNull();
   });
 });
