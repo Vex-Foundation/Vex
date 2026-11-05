@@ -23,14 +23,15 @@
  *  - SHOW VEX (S4-08): a 720ms wipe down on the same curve; the 1px scan head
  *    in Cloud's scan-head ink keyed to its edge on both legs, at full light
  *    until 92% of the leg and then fading out; her 32px drop on a layer that
- *    stands from the first frame.
+ *    stands from the first frame, driven by the inset both ways
+ *    (-32 x inset / distance), so she rises as the wipe closes.
  *  - TURNED AROUND (S4-09): a press during the motion stops the running leg
  *    and starts the new one from the edge where it stood, and the phase
  *    follows the last press. On real frames, `e2e/h3-card-proof.spec.ts`
  *    reads that the edge never jumps and goes no deeper.
  *  - THE STILL FRAME (S4-10): under reduced motion or Save-Data a press
  *    starts no wipe and rests her at once, with no moving phase and no timer,
- *    and the sheet states its own collapse for every rule it still moves.
+ *    and the sheet moves nothing of hers with a transition.
  *
  * jsdom has no Web Animations, so the wipe's tests install a recording
  * engine and lay her box out (`fake-animations.ts`).
@@ -467,15 +468,38 @@ describe("KimmSection, Show Vex opens her in 720ms with the scan head and her dr
     expect(tokens).toMatch(/--vex-alias-scan-head:\s*rgba\(243, 245, 249, 0\.85\);/);
   });
 
-  it("drops her 32px into place over the open, and never raises her in view", () => {
+  function dropLayer(): Element {
+    const drop = section().querySelector(".vex-kimm__drop");
+    if (drop === null) throw new Error("drop layer missing");
+    return drop;
+  }
+
+  it("drops her 32px into place as the wipe opens, on the clip's curve and duration", () => {
+    engine = installFakeAnimations();
+    openFromClosed();
+    const [drop] = engine.live(dropLayer());
+    // -32 x inset / distance: -32 x 547 / 547 at the strip, 0 at her foot.
+    expect(drop?.keyframes).toEqual([{ transform: "translateY(-32px)" }, { transform: "translateY(0px)" }]);
+    expect(drop?.options).toMatchObject({ duration: DURATION_VEX_OPEN_MS, easing: KIMM_PUSH_EASING });
+  });
+
+  it("raises her as the wipe closes, on the close's curve and duration", () => {
+    engine = installFakeAnimations();
+    const view = render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    layOut(section());
+    view.rerender(<KimmSection mood="hi" open={false} onOpenChange={() => undefined} />);
+    const [drop] = engine.live(dropLayer());
+    expect(drop?.keyframes).toEqual([{ transform: "translateY(0px)" }, { transform: "translateY(-32px)" }]);
+    expect(drop?.options).toMatchObject({ duration: DURATION_VEX_CLOSE_MS, easing: KIMM_PUSH_EASING });
+  });
+
+  it("rests her in place open and 32px up folded, in the sheet, with no transition", () => {
     expect(rule(".vex-kimm")).toMatch(/--vex-kimm-drop:\s*32px/);
-    expect(rule(".vex-kimm__drop")).toMatch(
-      /transition:\s*transform var\(--vex-duration-vex-open\) var\(--vex-ease-push\)/,
-    );
+    expect(rule(".vex-kimm__drop")).toMatch(/transform:\s*none/);
+    expect(rule(".vex-kimm__drop")).not.toMatch(/transition/);
     const waiting = rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__drop');
     expect(waiting).toMatch(/transform:\s*translateY\(calc\(-1 \* var\(--vex-kimm-drop\)\)\)/);
-    // A step after the close has ended: no motion upward.
-    expect(waiting).toMatch(/transition:\s*transform 0s linear var\(--vex-duration-vex-close\)/);
+    expect(waiting).not.toMatch(/transition/);
   });
 });
 
@@ -514,10 +538,16 @@ describe("KimmSection, a press during the motion turns it around (S4-09)", () =>
     expect(close.cancelled).toBe(true);
     const [open] = engine.live(section());
     expect(open?.keyframes).toEqual([{ clipPath: "inset(0px 0px 218.8px 0px)" }, { clipPath: "inset(0px 0px 0px 0px)" }]);
-    // The scan head turns with it, from the same edge.
+    // The scan head turns with it, from the same edge, and so does her drop:
+    // -32 x 218.8 / 547.
     const scan = section().querySelector(".vex-kimm__scan");
-    if (scan === null) throw new Error("scan head missing");
+    const drop = section().querySelector(".vex-kimm__drop");
+    if (scan === null || drop === null) throw new Error("scan head or drop missing");
     expect(engine.live(scan)[0]?.keyframes[0]).toEqual({ transform: "translateY(-218.8px)" });
+    expect(engine.live(drop)[0]?.keyframes).toEqual([
+      { transform: `translateY(${String((-32 * 218.8) / 547)}px)` },
+      { transform: "translateY(0px)" },
+    ]);
     // The stopped close never ends the phase; the open's end does.
     await act(async () => {
       await Promise.resolve();
@@ -588,8 +618,14 @@ describe("KimmSection, reduced motion and Save-Data open and close her at once (
     return "";
   }
 
-  /** What the sheet still moves with a transition of its own. */
-  const MOVERS = [".vex-kimm__drop", '.vex-kimm[data-kimm-open="false"] .vex-kimm__drop'];
+  /** Every rule of the sheet that places what her wipe moves. */
+  const MOVERS = [
+    ".vex-kimm",
+    '.vex-kimm[data-kimm-open="false"]',
+    ".vex-kimm__scan",
+    ".vex-kimm__drop",
+    '.vex-kimm[data-kimm-open="false"] .vex-kimm__drop',
+  ];
 
   it("rests her at once on a close and an open: no wipe, no moving phase, nothing pending", () => {
     vi.useFakeTimers();
@@ -605,20 +641,14 @@ describe("KimmSection, reduced motion and Save-Data open and close her at once (
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("states its own collapse for every rule that moves her, under reduced motion and Save-Data", () => {
+  it("moves nothing of hers in the sheet: no rule that places her wipe carries a transition or an animation", () => {
     const css = KIMM_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-    const reduced = reducedBlock(css);
     for (const selector of MOVERS) {
-      // Each mover has a transition outside the collapse...
-      expect(rulesFor(css, selector).some((body) => /transition:\s*(?!none)/.test(body)), selector).toBe(
-        true,
-      );
-      // ...and is named in both collapses with none.
-      expect(rulesFor(reduced, selector).some((body) => /transition:\s*none/.test(body)), selector).toBe(true);
-      expect(
-        rulesFor(css, `html[data-still] ${selector}`).some((body) => /transition:\s*none/.test(body)),
-        selector,
-      ).toBe(true);
+      const bodies = rulesFor(css, selector);
+      expect(bodies.length, selector).toBeGreaterThan(0);
+      for (const body of bodies) expect(body, selector).not.toMatch(/\b(?:transition|animation)\b/);
     }
+    // So no collapse of hers is left for reduced motion to state.
+    expect(reducedBlock(css)).not.toMatch(/vex-kimm(?:__drop|__scan)?[\s,{]/);
   });
 });

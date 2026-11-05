@@ -15,6 +15,12 @@
  *     on the same curve and duration. It holds its full light until 92% of
  *     the leg and then fades linearly to nothing (`KIMM_SCAN_FADE_AT`), so it
  *     is never left standing at her foot or at the strip.
+ *   - HER DROP. The layer that holds her figure stands 32px up while she is
+ *     folded and in place while she is open, and on a leg it is driven by the
+ *     inset: translateY = -32 x inset / distance, on the clip's curve and
+ *     duration. So she drops into place as the wipe opens and rises as it
+ *     closes, and a turned leg turns her with it. The 32 is the sheet's
+ *     `--vex-kimm-drop`, read from her box.
  *
  * Between legs the sheet holds her (kimm.css: the open and closed insets, the
  * head unlit), and a leg's last frame is that resting state, so cancelling a
@@ -60,6 +66,11 @@ export function kimmClipAt(inset: number): string {
 /** The scan head's layer at a bottom inset: its foot line on the clip's edge. */
 export function kimmScanAt(inset: number): string {
   return `translateY(${String(-inset)}px)`;
+}
+
+/** Her figure's layer at a bottom inset: `drop` px up when folded, in place when open. */
+export function kimmDropAt(inset: number, distance: number, drop: number): string {
+  return `translateY(${String((-drop * inset) / distance)}px)`;
 }
 
 /**
@@ -132,6 +143,16 @@ export function startKimmWipe(box: HTMLElement, open: boolean, from: number | nu
         easing: "linear",
         fill: "both",
       }),
+    );
+  }
+  const figure = box.querySelector<HTMLElement>(".vex-kimm__drop");
+  const drop = px(box, "--vex-kimm-drop");
+  if (figure !== null && Number.isFinite(drop)) {
+    animations.push(
+      figure.animate(
+        [{ transform: kimmDropAt(start, distance, drop) }, { transform: kimmDropAt(to, distance, drop) }],
+        timing,
+      ),
     );
   }
 

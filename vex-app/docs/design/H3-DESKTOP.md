@@ -439,17 +439,17 @@ Only clip-path, transform and opacity animate. Her section's box never changes (
 
 The card's box is 680, 249, 760 x 651 and the section's is 248, 264, 432 x 563 on every one of these frames. Desktop's closed inset is the box height less 56 (547 at 1440 x 900, section 1.5).
 
-**Opening:** the wipe grows from the strip's edge down to the foot line, behind a 1px scan head keyed to the same edge. The glyph field starts to run. Kimm drops 32px into place. The corner key says HIDE VEX from the press.
+**Opening:** the wipe grows from the strip's edge down to the foot line, behind a 1px scan head keyed to the same edge. The glyph field starts to run. Kimm drops 32px into place with the wipe. The corner key says HIDE VEX from the press.
 
-**Closing:** the wipe rises back to the strip's edge in 420ms, behind the same scan head. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
+**Closing:** the wipe rises back to the strip's edge in 420ms, behind the same scan head, and Kimm rises 32px with it. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
 
 **The scan head** (settled 2026-11-05 from VEX Cloud's mockup source, `h3-merged/js/stage.js` and `css/tokens.css`): a 1px line in Cloud's `--vx-scan-head`, oklch(97% 0.005 264 / 0.85) (desktop's `--vex-alias-scan-head`, the ink at 85%), keyed to the wipe's edge on the open and on the close, on the clip's own curve and duration. Its opacity stays 1 until 92% of the leg, then falls linearly to 0, so it is never left standing at her foot or at the strip.
 
 **The engine.** Desktop runs the wipe as Cloud's mockup does, on Web Animations (`components/vex/kimm/kimm-wipe.ts`): the clip's inset and the scan head's place are one leg on one clock, started at the press. The sheet (`kimm.css`) holds only her resting insets, open and at the strip; a leg's last frame is that resting state, and the leg is stopped when it ends. Every length is in her own pixels, before the wide zoom scales her (section 1.11), as her resting clip is, so the last frame lands on that inset at every width; under 1024 she folds to the band's stub, 0, not the strip. A box that is not laid out starts no wipe, and her phase then ends on the leg's duration.
 
-Open, each settled by the mockup source:
-- the drop's duration and curve (default: the push curve over the 720ms);
-- whether her figure also fades in (an opacity change is allowed).
+**Her drop** (settled 2026-11-05 from Cloud's `h3-merged/js/stage.js`): the layer that holds her figure is driven by the wipe's inset on both legs, translateY = -32 x inset / distance, on the clip's own curve and duration. Open she stands in place; folded she waits 32px up; so she drops into place as the wipe opens and rises as it closes, and a turned leg turns her with it from where she stands. The 32 is the sheet's `--vex-kimm-drop`, which the wipe reads from her box.
+
+Open, settled by the mockup source: whether her figure also fades in (an opacity change is allowed; Cloud's 900ms crossfade is between her still and her live model, which desktop does not have).
 
 ### 3.3 The controls
 One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the same place. Three controls carry it:

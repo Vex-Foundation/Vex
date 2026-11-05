@@ -127,22 +127,19 @@
   height: auto;
   user-select: none;
 }
-/* Her drop (S4-08): from 32px up into place over the open's 720ms, on the
- * push curve (the plate's default for its open line), on the layer that
- * holds her figure. A transform: no layout moves. */
+/* Her drop (S4-08), on the layer that holds her figure: in place while she
+ * is open, 32px up while she is folded. On a leg it is driven by the wipe's
+ * inset, -32 x inset / distance, on the clip's curve and duration
+ * (`kimm-wipe.ts`, which reads `--vex-kimm-drop` from her box): she drops
+ * into place as the wipe opens and rises as it closes. A transform: no
+ * layout moves. The sheet states only where she rests. */
 .vex-kimm__drop {
   position: absolute;
   inset: 0;
   transform: none;
-  transition: transform var(--vex-duration-vex-open) var(--vex-ease-push);
 }
-/* Closed, she waits 32px up for the next open. She takes that place only
- * when the close has ended (a delayed step, no motion), so she never rises
- * in view, and a Show Vex pressed during a close finds her where she
- * stands. */
 .vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
   transform: translateY(calc(-1 * var(--vex-kimm-drop)));
-  transition: transform 0s linear var(--vex-duration-vex-close);
 }
 
 /* ---- the scan head (section 3.2; S4-08) ----
@@ -332,24 +329,11 @@
 }
 
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----
- * Reduced motion and Save-Data open and close her at once. The wipe and the
- * scan head are Web Animations, which no sheet can collapse: under either,
- * `KimmSection.tsx` starts none and rests her phase at the press, and the
- * resting insets above are the whole of her. What the sheet still moves
- * states its own collapse here (MOTION-POLICY.md, "State your own
- * collapse"), beside the catch-alls in base.css, each rule named at its own
- * specificity so none outranks the collapse. Save-Data reaches CSS as
- * `data-still` on <html> (`use-still-frame.ts`). */
-@media (prefers-reduced-motion: reduce) {
-  .vex-kimm__drop,
-  .vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
-    transition: none;
-  }
-}
-html[data-still] .vex-kimm__drop,
-html[data-still] .vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
-  transition: none;
-}
+ * Reduced motion and Save-Data open and close her at once. Her wipe, its
+ * scan head and her drop are Web Animations, which no sheet can collapse:
+ * under either (and while the window is resized), `KimmSection.tsx` starts
+ * none and rests her phase at the press, and the resting states above are
+ * the whole of her. The sheet moves nothing of hers with a transition. */
 
 /* ---- the first close's hint (sections 2.4 and 3.5; S4-15) ----
  * "Show Vex" and its keycaps, larger than the key's own and in title case,

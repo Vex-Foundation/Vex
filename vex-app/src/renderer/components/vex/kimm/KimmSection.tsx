@@ -63,8 +63,12 @@
  * the wipe and gives way to the strip's frame when it ends.
  *
  * SHOW VEX OPENS HER IN 720MS (sections 3.1 and 3.2; plan row S4-08): the
- * wipe grows from the strip's edge down to her foot on the same curve, and
- * her figure drops 32px into place over the same 720ms.
+ * wipe grows from the strip's edge down to her foot on the same curve.
+ *
+ * HER 32PX DROP IS DRIVEN BY THE INSET, BOTH WAYS (section 3.2): the layer
+ * that holds her figure moves by -32 x inset / distance on the wipe's own
+ * curve and duration, so she drops into place as it opens and rises as it
+ * closes, and a turned leg turns her with it.
  *
  * THE SCAN HEAD RUNS BOTH WAYS (section 3.2): a 1px line in Cloud's scan-head
  * ink (oklch 97% at 85%) keyed to the wipe's edge on the open and on the

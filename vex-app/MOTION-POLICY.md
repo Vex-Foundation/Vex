@@ -69,7 +69,8 @@ here is a defect:
   clock from one edge. The scan head runs on the open and on the close, at
   full light until 92% of the leg (`KIMM_SCAN_FADE_AT`) and then fading
   linearly out over the leg's last 8%: an opacity keyed to the leg, not a
-  duration of its own.
+  duration of its own. Her 32px drop rides the same leg, driven by the
+  inset (-32 x inset / distance), so she rises as the wipe closes.
 - The chats panel (`features/appShell/ChatsPanel.tsx`,
   `docs/design/H3-DESKTOP.md` section 4.12), VEX Cloud's own numbers
   (`h3-shell-gaps/js/shell.js`, its push, fold and scrim): the panel slides
@@ -276,12 +277,15 @@ Live pairs:
 |---|---|---|
 | `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding the slot |
 | `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
-| `DURATION_VEX_OPEN_MS` (`components/vex/kimm/kimm-wipe.ts`, her open's clip and scan head) | `.vex-kimm__drop`'s transform transition, kimm.css (`--vex-duration-vex-open`) | her drop lands before or after the wipe reaches her foot |
-| `DURATION_VEX_CLOSE_MS` (`components/vex/kimm/kimm-wipe.ts`, her close's clip and scan head) | `.vex-kimm[data-kimm-open="false"] .vex-kimm__drop`'s delayed step, kimm.css (`--vex-duration-vex-close`) | she is raised for the next open while the strip still shows her |
 
-The wipe itself is no pair: its clip, its scan head and the end of her
-phase are one Web Animation's, timed by the JS constants alone; the sheet
-holds only her resting insets.
+Kimm's wipe is no pair: its clip, its scan head, her 32px drop and the end
+of her phase are one leg of Web Animations (`kimm-wipe.ts`), timed by
+`DURATION_VEX_OPEN_MS` and `DURATION_VEX_CLOSE_MS` alone; the sheet holds
+only where she rests, and no sheet reads `--vex-duration-vex-open` or
+`--vex-duration-vex-close` (they stay declared as the JS constants' mirrors,
+which `motion-tokens.test.ts` holds equal). The lengths the leg moves by are
+read from her box, never repeated: the strip (`--vex-h3-strip-h`, or a
+seat's `--vex-kimm-stub`) and the drop (`--vex-kimm-drop`).
 
 
 CSP for the renderer is strict: `style-src 'self'`: no `'unsafe-inline'`, no
