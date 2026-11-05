@@ -321,7 +321,8 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 - the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
 - the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
 - "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
-- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word.
+- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
+- the money card at a short window, Cloud's density rule (DG-0, H3 tokens.css: 1024 wide and up, 820 tall or less): the strip 4 shorter (2 over and 2 under its line), the head 10 under the consequence rather than 14, and the docked reason field 40 high rather than 56; the field rows stay 34 and the decision row 72. At 1280 x 720 this keeps the swap card's top under the header's rule, where the toast proof expects it.
 
 Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source. The left column's labels draw about 8% wider than H3's at `--tracking-label` 0.08em, which suggests H3 tracks tighter; the token is unchanged until the mockup source settles it.
 

@@ -1875,6 +1875,15 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
       return match?.[1] ?? "";
     };
 
+    it("tightens at a short window as Cloud's density rule does: the strip 40, the head 10 under, the reason 40", () => {
+      const block = /@media \(min-width: 1024px\) and \(max-height: 820px\) \{([\s\S]*?)\n\}/.exec(sheet)?.[1] ?? "";
+      expect(block).toMatch(/\.vex-appr__head \{\s*padding: 8px 0 10px;\s*\}/);
+      expect(block).toMatch(/\.vex-appr__title \{\s*margin-top: 7px;\s*\}/);
+      expect(block).toMatch(/\.vex-appr__foot\[data-docked\] > input \{\s*height: 40px;\s*\}/);
+      // The rows and the decision row keep their measures: nothing else steps down.
+      expect(block).not.toMatch(/vex-appr__dl|> button|--vex-h3-bottom-h/);
+    });
+
     it("hides the composer while the dock holds a decision, and only then", () => {
       expect(rule("[data-vex-composer-dock]:has(+ .vex-appr-dock:not(:empty))")).toContain("display: none");
       expect(rule(".vex-appr-dock:empty")).toContain("display: none");

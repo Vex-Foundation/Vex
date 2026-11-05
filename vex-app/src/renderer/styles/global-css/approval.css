@@ -602,6 +602,25 @@
   }
 }
 
+/* 7. THE SHORT WINDOW (Cloud's DG-0 density rule, H3 tokens.css: a desktop
+ * frame, 1024 wide and up, on a window 820 tall or less, as 1280 x 800,
+ * 1366 x 768 and 1280 x 720). The card's strip steps from 44 to 40 (2 less
+ * over its line and 2 less under it), its head ends 10 under the
+ * consequence, not 14, and the instruction row, the docked reason field, is
+ * 40 high, not 56. The field rows stay 34 and the decision row stays 72: the
+ * shared foot line. */
+@media (min-width: 1024px) and (max-height: 820px) {
+  .vex-appr__head {
+    padding: 8px 0 10px;
+  }
+  .vex-appr__title {
+    margin-top: 7px;
+  }
+  .vex-appr__foot[data-docked] > input {
+    height: 40px;
+  }
+}
+
 /* ── The folded row (Needs you page, section 8.5) ──────────────────────── */
 
 .vex-appr-row-frame {
