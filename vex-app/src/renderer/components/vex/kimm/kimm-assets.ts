@@ -11,8 +11,7 @@
  * rest. Cloud uses the same list (section 4.11). Which Vex state shows which
  * mood is `features/vex/kimm-mood.ts`, not this file.
  *
- * THE FILES, under `public/art/kimm/` (served at `/art/kimm/`, as K2's are at
- * `/art/vex-k2/`):
+ * THE FILES, under `public/art/kimm/` (served at `/art/kimm/`):
  *   - `key-moods.webp`: the key's mood sprite, all six moods in one file, so
  *     a change of mood never waits on a request. Closed, it is the only Kimm
  *     file that loads (section 3.5). Each mood is one cell of it.

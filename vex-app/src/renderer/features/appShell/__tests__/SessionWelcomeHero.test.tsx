@@ -56,15 +56,6 @@ vi.mock("../../vex/useVexPresence.js", () => ({
   useVexPresence: () => presence,
 }));
 
-// Her canvas would be K2's; the welcome must not mount it at all.
-const k2Mounts = vi.hoisted(() => ({ count: 0 }));
-vi.mock("../../../components/vex/k2/VexK2.js", () => ({
-  VexK2: () => {
-    k2Mounts.count += 1;
-    return <div data-vex-k2="" />;
-  },
-}));
-
 const { SessionWelcomeHero, WELCOME_GREETING, WELCOME_NOTES } = await import(
   "../SessionWelcomeHero.js"
 );
@@ -111,15 +102,13 @@ beforeEach(() => {
   envData = undefined;
   useUiStore.setState({ vexInferenceNoticeDismissed: false });
   presence = readyPresence();
-  k2Mounts.count = 0;
 });
 
 describe("SessionWelcomeHero - Vex stands in her column, not on the welcome", () => {
-  it("draws no Vex of its own: no stage, no hologram, no token key", () => {
+  it("draws no Vex of its own: no stage, no figure, no token key", () => {
     const { container } = render(<SessionWelcomeHero />);
     expect(container.querySelector("[data-vex-welcome-stage]")).toBeNull();
-    expect(container.querySelector("[data-vex-k2]")).toBeNull();
-    expect(k2Mounts.count).toBe(0);
+    expect(container.querySelector("[data-vex-area='kimm-section'], canvas")).toBeNull();
     expect(screen.queryByRole("button", { name: /Hide Vex|Show Vex/ })).toBeNull();
   });
 

@@ -4,9 +4,8 @@
  * sidebar's plate and the pre-shell stage (docs/design/R3-MINIMAL.md sections
  * 5.1 and 10), plus the grain tile laid over them. A re-export or a swapped
  * file shows up here before it shows up as a misplaced print. The eagle and
- * the far birds left with the flock; the K2 hologram's own assets are pinned
- * by `components/vex/k2/__tests__/k2-art.test.ts`. Dimensions are read from
- * the JPEG frame header.
+ * the far birds left with the flock, and the K2 hologram's art with K2 (plan
+ * row S8-16). Dimensions are read from the JPEG frame header.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -53,8 +52,9 @@ describe("the print art", () => {
     expect(svg).toContain("width='220' height='220'");
   });
 
-  it("no longer ships the eagle or the far birds", () => {
+  it("no longer ships the eagle, the far birds or K2's art", () => {
     expect(existsSync(fileOf("/art/eagle.png"))).toBe(false);
     expect(existsSync(fileOf("/art/birds"))).toBe(false);
+    expect(existsSync(fileOf("/art/vex-k2"))).toBe(false);
   });
 });

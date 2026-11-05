@@ -494,12 +494,6 @@
   mix-blend-mode: multiply;
   opacity: 0.1;
 }
-/* Her host fills the plate; the rig stands her bust over the token. */
-.vex-vs-plate__holo {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-}
 
 /* ---- the Lighter desk chat, under the plate ---- */
 .vex-vs__desk {

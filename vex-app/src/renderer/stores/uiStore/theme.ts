@@ -6,7 +6,7 @@
  * What is left is small on purpose:
  *   - the one room's name, `chronos`, which stays the `data-vex-theme` value
  *     so every reader keyed on it (the alias tier on :root, the Lighter
- *     desk's `data-lighter-theme` scopes, the K2 ground) keeps working
+ *     desk's `data-lighter-theme` scopes) keeps working
  *     unchanged;
  *   - the coercion for the persisted `themePreference` slot, kept so an old
  *     payload still has somewhere to land: ANY stored value, the retired
