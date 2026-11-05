@@ -88,7 +88,7 @@ describe("ReasonedBlock", () => {
     );
     expect(
       screen.getByRole("button", { name: /Thought for/ }).textContent,
-    ).toBe("Thought for 2.8 s");
+    ).toBe("Thought for 2.8s");
     expect(live.container.querySelector("[data-vex-turn-steps]")?.textContent).toBe("1 step");
     live.unmount();
 
@@ -98,17 +98,17 @@ describe("ReasonedBlock", () => {
     expect(plain.container.querySelector("[data-vex-thinking-head]")).toBeNull();
   });
 
-  it("draws H3's dot-grid glyph once settled and the thinking hatch while streaming", () => {
+  it("draws H3's dot-grid glyph once settled and the running node while streaming", () => {
     const settled = render(createElement(ReasonedBlock, { reasoning: "t" }));
     expect(settled.container.querySelector("[data-vex-think-glyph]")).not.toBeNull();
-    expect(settled.container.querySelector(".vex-swatch")).toBeNull();
+    expect(settled.container.querySelector(".vex-step-node")).toBeNull();
     settled.unmount();
     const running = render(
       createElement(ReasonedBlock, { reasoning: "t", running: true }),
     );
     expect(running.container.querySelector("[data-vex-think-glyph]")).toBeNull();
     expect(
-      running.container.querySelector('.vex-swatch[data-s="thinking"]'),
+      running.container.querySelector('.vex-step-node[data-step-node="running"]'),
     ).not.toBeNull();
   });
 

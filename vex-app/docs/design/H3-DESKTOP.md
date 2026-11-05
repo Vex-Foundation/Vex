@@ -176,6 +176,18 @@ Header cells as in section 1.3. The transcript and the welcome sit 24 in from bo
 
 **A chat:** the person's message is a raised bubble at the right beside their avatar disc. Vex's thinking is a framed row, "THOUGHT FOR 2.8s", with "5 steps" and a chevron at the right.
 
+**The trace's steps** say their state by a node and a word, never a colour alone (VEX Cloud's `h3-chat-gaps`, section 19 and "Trace step (status)"; `StepNode`). The node is 7px; the time column at the row's right holds a done step's measured time and the state's word where there is no time or the state outranks it:
+
+| Step | Node | Time column |
+|---|---|---|
+| done | the ink 2 square | its measured time ("812ms"); "Done" where nothing was measured |
+| running | the ink square, blinking (PD-06), half a square under reduced motion | the live timer: the live frame's head (`TurnIsland`), whose every live state (working, thinking, calling, running, writing) is the running node |
+| waiting | the target: a 1px ink ring and its 3px centre | the "Waiting for approval" link to its card |
+| failed | the ink cross | FAILED in the refusal ink; its first line beside the title in the refusal ink |
+| pending (a broadcast not yet confirmed) | the blinking node | PENDING in ink |
+
+A fold's failures read "{n} failed" in the refusal ink beside the ink cross. Times are spelled as Cloud's trace spells them, the unit against the figure: "812ms", "2.8s", "1m 05s". A finished thought in the live frame is the done node.
+
 **The swap card** (`h3-merged__approval-*-1440`), printed at 680, 249, 760 x 651, with its top rule at 248. Top to bottom: the eyebrow row (CONFIRM THIS SWAP, then MAINNET, the REAL FUNDS stamp and a collapse chevron at the right), the sentence, the consequence line, field rows on a 34px pitch with their labels in mono caps, ALL SIGNED FIELDS, and the reason field, "Tell Vex what to do instead" (771 to 826). Its decision row is the bottom row (section 1.8). Which rows desktop shows is in section 4.1.
 
 ### 1.8 The bottom row
@@ -281,6 +293,7 @@ A status is a square beside a word in caps, and **every status has its own drawi
 - **Refunded keeps desktop's mapping**: the funds came back, and A.3 lists it under H3's DID NOT EXECUTE, so it takes the failed cross. Open: the owner may move it to its own state.
 - **The status label in a row** (`StatusMark`) is caps 11 with the 6px square 6 before it, Cloud's built StatusLabel at its row size; caps 13 with the 8px square only at the md size.
 - **Running blinks everywhere** (PD-06; Cloud's HANDOFF, "Deviations already taken"): the console's recent activity, the chats list's RUNNING tag, the Vex key, Studio's terminal tabs, pane heads and panel header, a project's RUNNING in Studio's rail, Studio's host cell, Agent Scan, Portfolio and the screens before the shell. Under reduced motion and Save-Data each holds still as half a square. The chats list's other tags take Cloud's drawings too: WAITING the target, Paused and Sleeping the dotted frame, Error the cross.
+- **The trace's step nodes** draw their own states (section 1.7): done the ink 2 square, running the blinking ink square, waiting the target, failed the ink cross.
 - **The Vex key's square** is the H3 key's own (`vexKeySquareOf`, `h3-merged/js/data.js`): Ready and Listening the 1px muted frame; Thinking, Working and Waking up the hud square, which blinks; Waiting for approval solid ink; Done solid hud; Concerned the framed ink hatch; Error the ink cross; Sleeping the dotted frame.
 
 Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.

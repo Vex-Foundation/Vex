@@ -6,9 +6,9 @@
  * DESIGN INTENT. The waiting moment is not dressed up with a louder loader -
  * it is filled with the only thing that is actually true, and filled
  * IMMEDIATELY: the frame mounts on the SEND, not on the first provider delta,
- * so the send can never read as a no-op. Its head always carries a fill, a
- * word and a timer: the fill (working solid, thinking hatch, waiting the
- * target), the state word in caps 13 tracked ink ("THINKING"), its scope in
+ * so the send can never read as a no-op. Its head always carries a node, a
+ * word and a timer: the node (every live state the running node, blinking
+ * beside the live timer; waiting the target), the state word in caps 13 tracked ink ("THINKING"), its scope in
  * 13 muted, the real elapsed time in the mono 12 muted at the right. Under the
  * head, in the order they happened, the thoughts the turn has finished as
  * step rows, then the live one streaming in full, so waiting is spent reading
@@ -33,7 +33,7 @@
  *             as its scope ("Reasoned · 1.2K tokens")
  *
  * Preserved from the working strip it replaces: the elapsed m:ss counter, the
- * awaiting-approval FREEZE (all motion stops, the target fill - trust equals
+ * awaiting-approval FREEZE (all motion stops, the target - trust equals
  * stillness), the visually-hidden `role="status"` announcements (phase +
  * status change a few times per turn; the growing text is never announced),
  * and the error branch, which shows a safe generic line and NEVER the trace.
@@ -54,7 +54,7 @@ import {
 } from "../../../components/ui/dynamic-island.js";
 import type { StreamPreview } from "../../../stores/streamStore.js";
 import { cn } from "../../../lib/utils.js";
-import { Swatch, type SwatchState } from "../../../components/ui/swatch.js";
+import { StepNode, type StepNodeState } from "../ToolLedger/StepNode.js";
 import { ProtocolMark } from "../ToolLedger/ProtocolMark.js";
 import { toolGlyph } from "../ToolLedger/toolGlyph.js";
 import { resolveToolIdentity } from "../ToolLedger/toolIdentity.js";
@@ -67,23 +67,25 @@ import {
 } from "./islandTurnState.js";
 
 /**
- * The fill before the word - status by fill (docs/design/R3-MINIMAL.md
- * sections 1.6 and 6). Live work is the solid fill, thinking the hatch, the
- * awaiting freeze the target (it never moves), an error the ink cross, a
- * settled stamp the solid square. No state here steps or animates.
+ * The node before the word: the trace's running step (docs/design/
+ * H3-DESKTOP.md sections 1.7 and 2.2; VEX Cloud's trace). Every live state
+ * (working, thinking, calling a tool, running it, writing) is the running
+ * node, which blinks beside the live timer (PD-06); the awaiting freeze is
+ * the target, still (trust is stillness); an error the ink cross; a settled
+ * row the done node.
  */
-function islandSwatch(view: TurnIslandView): SwatchState {
-  if (view.state === "error") return "error";
-  if (view.state === "awaiting") return "awaiting";
-  if (view.state === "thinking") return "thinking";
-  return "done";
+export function islandNode(view: TurnIslandView): StepNodeState {
+  if (view.state === "error") return "failed";
+  if (view.state === "awaiting") return "waiting";
+  if (view.state === "settled") return "done";
+  return "running";
 }
 
-/** The fill that leads the live row; the word after it repeats the state. */
+/** The node that leads the live row; the word after it repeats the state. */
 function StatusFill({ view }: { readonly view: TurnIslandView }): JSX.Element {
   return (
     <span aria-hidden className="vex-step__fill">
-      <Swatch state={islandSwatch(view)} size={8} />
+      <StepNode state={islandNode(view)} />
     </span>
   );
 }

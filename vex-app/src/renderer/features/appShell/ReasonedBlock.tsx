@@ -21,8 +21,8 @@
  * line of the trace beside the stamp: the LATEST non-blank line while the
  * block is the streaming tail, reverting to the FIRST line once settled. While
  * following, that one-line scrollport is pinned to its inline end through the
- * shared 3-frame visual throttle, and the row leads with the thinking fill
- * (status by fill; `data-vex-sweep` stays the running seam). This is
+ * shared 3-frame visual throttle, and the row leads with the running node,
+ * blinking (`data-vex-sweep` stays the running seam). This is
  * live throughput WITHOUT exposing the chain of thought; expanding drops the
  * moving summary entirely so page reading never fights an internal follower.
  *
@@ -51,9 +51,9 @@ import {
 } from "../../components/icons/line/index.js";
 import { cn } from "../../lib/utils.js";
 import { ExpandRegion } from "../../components/ui/expand-region.js";
-import { Swatch } from "../../components/ui/swatch.js";
 import { useThrottledVisualUpdate } from "../../lib/use-throttled-visual-update.js";
 import { reasonedStampLabel, stepsLabel } from "./reasoning-stamp.js";
+import { StepNode } from "./ToolLedger/StepNode.js";
 import { formatToolDuration } from "./ToolLedger/toolDuration.js";
 
 /**
@@ -187,10 +187,10 @@ export function ReasonedBlock({
         className="vex-reasoned__row"
         data-vex-sweep={running ? "running" : undefined}
       >
-        {/* The glyph: the thinking hatch while the trace streams (status by
-            fill), H3's dot grid once it has settled. */}
+        {/* The glyph: the running node while the trace streams, blinking
+            (PD-06), H3's dot grid once it has settled. */}
         <span aria-hidden className="vex-step__fill">
-          {running ? <Swatch state="thinking" size={10} /> : <ThinkGlyph />}
+          {running ? <StepNode state="running" /> : <ThinkGlyph />}
         </span>
         {/* The key is the label; its hit area stretches over the whole row
             (`.vex-reasoned__key::after`), so the row opens wherever it is

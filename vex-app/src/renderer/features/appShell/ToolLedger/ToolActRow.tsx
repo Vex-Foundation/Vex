@@ -1,13 +1,23 @@
 /**
  * THE ACT LEDGER - one registered act (S5): a tool call plus its merged
  * output, presented as one H3 STEP ROW (docs/design/H3-DESKTOP.md section
- * 1.7, the thinking frame's TOOL rows): the outcome square, the venue mark,
- * the human title in caps 13 tracked ink ("KYBERSWAP · SWAP"), the word
- * ("Done", "Failed", "Pending") in caps 12, the measured duration in the mono
- * 12 muted at the right and the chevron. Status is a coloured square beside a
- * word (section 2.2: ink for a step that ran, red for one that did not
- * execute, grey for one in flight), and only for an outcome the engine
- * actually persisted.
+ * 1.7, the thinking frame's TOOL rows): the step's node, the venue mark, the
+ * human title in caps 13 tracked ink ("KYBERSWAP · SWAP"), then at the right
+ * the time column and the chevron. The node and the time column say the
+ * state by a drawing and a word, never a colour alone (VEX Cloud's trace,
+ * `h3-chat-gaps` section 19; `StepNode`), and only for an outcome the engine
+ * actually persisted or a card that waits:
+ *
+ *   done     the ink 2 square, and its measured time ("812ms"); "Done"
+ *            where nothing was measured
+ *   failed   the ink cross, and FAILED in the refusal ink; its first line,
+ *            in the refusal ink, beside the title
+ *   pending  the blinking square, and PENDING in ink (a broadcast not yet
+ *            confirmed)
+ *   waiting  the target, and the "Waiting for approval" link to its card
+ *
+ * A step still running is the live frame's head (`TurnIsland`): the blinking
+ * node and its live timer.
  *
  * The row reads as a fact about the world rather than a symbol dump: the
  * protocol mark (contract C5 - venue logo when provenance is proven, the
@@ -52,13 +62,14 @@ import {
   LineChevronUp,
 } from "../../../components/icons/line/index.js";
 import { JsonTree } from "../../../components/ui/json-tree.js";
-import { Swatch } from "../../../components/ui/swatch.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import { DeskTicketLoadStamp } from "../lighterTrading/DeskTicketLoadStamp.js";
 import type { ToolCallActView } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
 import { ExplorerRefLinks } from "./ExplorerRefLinks.js";
 import { ProtocolMark } from "./ProtocolMark.js";
+import { StepNode, type StepNodeState } from "./StepNode.js";
 import { ToolLegLine, ToolSingleLegLine } from "./ToolLegLine.js";
 import { formatToolDuration } from "./toolDuration.js";
 import { resolveToolIdentity } from "./toolIdentity.js";
@@ -118,58 +129,36 @@ function ConfirmedStamp(): JSX.Element {
       data-vex-transaction-status="confirmed"
       className="vex-step-confirmed"
     >
-      <Swatch state="done" size={8} className="text-success-mark" />
+      <StateSquare state="done" size={8} />
       Confirmed
     </span>
   );
 }
 
-/** What a step's square and word say: only an outcome the engine persisted. */
+/** What a step's node and word say: only an outcome the engine persisted. */
 interface StepOutcome {
-  /**
-   * The square's colour (docs/design/H3-DESKTOP.md section 2.2): ink for a
-   * step that ran (H3's step bullet), status red for one that did not
-   * execute, status grey for one still in flight.
-   */
-  readonly mark: StepMark;
+  /** The node's drawing (`StepNode`). */
+  readonly node: StepNodeState;
   readonly word: string;
   readonly state: "done" | "pending" | "failed";
 }
 
-type StepMark = "ink" | "danger" | "running";
-
-/** The square's class per mark: the H3 status utilities (tokens.css). */
-const MARK_CLASS: Readonly<Record<StepMark, string>> = {
-  ink: "text-ink-primary",
-  danger: "text-danger-mark",
-  running: "text-running-mark",
-};
-
 /**
  * The act's outcome - ONLY for an outcome the engine persisted. A success is
- * the ink square and "Done", an ambiguous broadcast the grey square and
- * "Pending" (not failed), a failure the red square and "Failed". A call with
- * no persisted outcome yet (still running, never run, or a legacy row) draws
- * no square and no word: `null` is not a status, and a guessed square would
- * be a claim.
+ * the ink 2 node and "Done", an ambiguous broadcast the blinking node and
+ * "Pending" (not failed: it is still under way), a failure the ink cross and
+ * "Failed". A call with no persisted outcome yet (still running, never run,
+ * or a legacy row) draws no node and no word: `null` is not a status, and a
+ * guessed node would be a claim.
  */
 function actOutcome(act: ToolCallActView): StepOutcome | null {
-  if (act.success === true) return { mark: "ink", word: "Done", state: "done" };
+  if (act.success === true) return { node: "done", word: "Done", state: "done" };
   if (act.success === false) {
     return act.displayStatus === "pending"
-      ? { mark: "running", word: "Pending", state: "pending" }
-      : { mark: "danger", word: "Failed", state: "failed" };
+      ? { node: "running", word: "Pending", state: "pending" }
+      : { node: "failed", word: "Failed", state: "failed" };
   }
   return null;
-}
-
-/**
- * The step's square: a small solid square in its mark's colour, beside the
- * word that says the same thing (status by a coloured square beside a word,
- * section 2.2).
- */
-export function StepSquare({ mark }: { readonly mark: StepMark }): JSX.Element {
-  return <Swatch state="done" size={8} className={MARK_CLASS[mark]} />;
 }
 
 /**
@@ -399,23 +388,30 @@ export function ToolActRow({
     ) : failureLine !== null ? (
       <span
         data-vex-tool-error-summary=""
-        className="vex-step__summary min-w-0 truncate text-destructive"
+        className="vex-step__summary min-w-0 truncate"
       >
         {failureLine}
       </span>
     ) : null;
-  // A leg line that already names its outcome ("Quote", "Failed", "Pending")
-  // says what the word would; the row does not say it twice. A step waiting
-  // on the reader says so through its link (the target fill and "Waiting for
-  // approval"), and a confirmed send through its "Confirmed" mark.
+  // THE NODE AND THE TIME COLUMN (VEX Cloud's trace): a step waiting on the
+  // reader is the target, with its link ("Waiting for approval") for its
+  // word; otherwise the persisted outcome's node. The time column holds a
+  // done step's measured time, and the state's word where there is no time
+  // or the state outranks it (FAILED, PENDING). A leg line that already names
+  // its outcome ("Quote", "Failed", "Pending") says what the word would, and
+  // a confirmed send says it through its "Confirmed" mark: the row does not
+  // say it twice.
   const legOutcome = legs?.outcome ?? singleLeg?.outcome ?? null;
   const legsNameOutcome = legOutcome !== null && legOutcome !== "executed";
   const awaiting = pendingApprovalId !== null;
-  const mark: StepMark | null = awaiting ? null : (outcome?.mark ?? null);
+  const node: StepNodeState | null = awaiting ? "waiting" : (outcome?.node ?? null);
   const word =
     outcome === null || awaiting || confirmed || legsNameOutcome
       ? null
-      : outcome.word;
+      : outcome.state === "done" && durationText !== null
+        ? null
+        : outcome.word;
+  const time = word === null ? durationText : null;
   return (
     // The step: a 40px row in the steps' frame, its links and its well
     // SIBLING lines below it, each on its own rule.
@@ -439,14 +435,14 @@ export function ToolActRow({
           title={act.toolName}
           className="vex-step__key"
         >
-          {/* The outcome square: its slot always 10px wide, so every title
-              starts on one edge whether or not an outcome is known. */}
+          {/* The node: its slot always 10px wide, so every title starts on
+              one edge whether or not an outcome is known. */}
           <span
             aria-hidden
-            data-vex-tool-status={outcome?.state}
+            data-vex-tool-status={awaiting ? "waiting" : outcome?.state}
             className="vex-step__fill"
           >
-            {mark !== null ? <StepSquare mark={mark} /> : null}
+            {node !== null ? <StepNode state={node} /> : null}
           </span>
           <span className="vex-step__mark">
             <ProtocolMark
@@ -455,19 +451,19 @@ export function ToolActRow({
               size={14}
             />
           </span>
-          {/* ONE LINE, always (deepseek ToolRow): title, word, the
-              FILL-truncating summary, then the measurement. `flex-none` on
-              every fixed member is what stops a long summary or a wide leg
-              line from folding the row into two lines. */}
+          {/* ONE LINE, always (deepseek ToolRow): title, the FILL-truncating
+              summary, then the time column. `flex-none` on every fixed member
+              is what stops a long summary or a wide leg line from folding the
+              row into two lines. */}
           <span className="vex-step__title vex-step__name">{identity.title}</span>
+          {summary}
+          <span aria-hidden className="vex-step__spacer" />
           {word !== null ? (
             <span data-vex-step-word="" className="vex-step__word">
               {word}
             </span>
           ) : null}
-          {summary}
-          <span aria-hidden className="vex-step__spacer" />
-          {durationText !== null ? <DurationChip text={durationText} /> : null}
+          {time !== null ? <DurationChip text={time} /> : null}
           <span aria-hidden className="vex-step__chev">
             {open ? <LineChevronUp size={14} /> : <LineChevronDown size={14} />}
           </span>
@@ -476,7 +472,7 @@ export function ToolActRow({
         {confirmed ? (
           <ConfirmedStamp />
         ) : pendingApprovalId !== null ? (
-          <ApprovalLinkStamp approvalId={pendingApprovalId} />
+          <ApprovalLinkStamp approvalId={pendingApprovalId} square={false} />
         ) : null}
       </div>
       {/* Explorer links get their OWN line under the row. They are anchors,
