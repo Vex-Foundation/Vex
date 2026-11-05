@@ -617,6 +617,9 @@ Cloud draws no order book, so it sets no rule for depth bars; desktop follows th
 ### 5.4 The tooltip
 Cloud's v99 rail tooltip (`.vx-tip`, D2-25): the dark plate (`--color-h3-tooltip`, oklch 20%) with ink words, not the inverted ink plate R3 drew. 12/1.35 with 0.02em tracking, padding 8 10, at most 280 wide (a reason wraps), 8 from its key, pointed by an 8px notch turned 45 degrees toward the key. It fades in over 160ms. Cloud fades it out over 220ms; desktop's bubble leaves at once, because fading out would need it to outlive its anchor's hover (Open: build it if the owner wants the exit too). The Lighter chart's tool labels take the same plate.
 
+### 5.5 Menus
+Every list that opens from a key is one material (Cloud's D2-5, `menu-material.css`): the card ground (`--color-h3-card`, Cloud's `--vx-card`, #030405) in the 24% lifted rule, never an ink border and no shadow (`ui-primitives/menu.css`). The rows, their heights and their keys are unchanged in this pass; Cloud's row grammar (actions in 13px caps, values in 14px words, 40 high rows) is left for the menu's own restyle.
+
 ---
 
 ## Appendix A. Words, keys and taglines
