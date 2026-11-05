@@ -362,6 +362,42 @@
   flex: none;
 }
 
+/* A CLOSED CONFIRMATION (Cloud's EC-09, the money gaps sheet's group 07;
+ * `ApprovalCard/ClosedApprovalCard.tsx`): the card's frame with what the
+ * attempt recorded. The strip: the square (an empty frame for Rejected and
+ * Expired, the ink square for Result uncertain) and the words in sans 13
+ * caps, ink. Then the card's own sentence, the answer row when the person
+ * chose here, the line in ink 15 (`.tk-alert`: 14 above, 18 under), and the
+ * footer's keys, each at least 160 wide. No network, no stamp: nothing is
+ * decided here. */
+.vex-appr__closed-sq {
+  display: inline-flex;
+  flex: none;
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-appr__closed-sq[data-vex-closed-sq="uncertain"] {
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__closed-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-appr__closed-alert {
+  margin: 0;
+  padding: 14px var(--vex-appr-inset) 18px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--vex-alias-label-primary);
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-appr--closed .vex-appr__foot > button {
+  min-width: 160px;
+}
+
 /* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
  * like the rest. Sticky at short heights against the card's scrolling
  * ancestor. In a chat the waiting card draws this footer in the shell's
