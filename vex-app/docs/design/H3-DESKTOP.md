@@ -324,6 +324,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **Primary key:** the blue fill with white caps, 14 (SEND; the card's decision key). One blue cell in view at a time. Hover takes blue hover.
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
+- **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
 - **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
 - **Keycaps:** 19 high, a 1px chosen-rule border, caps letters 11 to 12, 3 to 4 apart; CTRL about 40 wide, SHIFT about 42, B about 23 (measured). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
 - **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).

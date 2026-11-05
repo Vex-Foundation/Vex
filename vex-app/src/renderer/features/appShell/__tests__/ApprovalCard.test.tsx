@@ -729,9 +729,40 @@ describe("ApprovalCard", () => {
     expect(approve.getAttribute("disabled")).not.toBeNull();
     expect(approve.hasAttribute("data-vex-approve-working")).toBe(false);
     expect(approve.querySelector(".vex-swatch")).toBeNull();
-    // An inert primary is the dotted outline, never a faded fill.
-    expect(approve.className).toContain("disabled:border-dotted");
+    // An inert primary is HELD (Cloud's kit): the sheet draws the cell
+    // ground and the muted word from `disabled`, never a dotted blue outline.
+    expect(approve.className).not.toMatch(/disabled:(border-dotted|border-accent|text-accent|bg-transparent)/);
     expect(approve.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("draws a key that cannot act as Cloud's held key: the cell ground, the muted word, the 7% edge, no blue", () => {
+    const sheet = readFileSync(join(process.cwd(), "src/renderer/styles/global-css/approval.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = (selector: string): string => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = new RegExp(`(?:^|\\})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(sheet);
+      expect(match, `rule missing: ${selector}`).not.toBeNull();
+      return match?.[1] ?? "";
+    };
+    const held = rule(".vex-appr__foot > button:disabled:not([data-vex-approve-working])");
+    expect(held).toContain("background: var(--vex-alias-bg-layer-3)");
+    expect(held).toContain("color: var(--vex-alias-label-tertiary)");
+    expect(held).toContain("border-color: var(--vex-alias-rule)");
+    expect(held).toContain("border-style: solid");
+    expect(held).not.toMatch(/accent|opacity|dotted/);
+    // A running rejection keeps the held ground with its word in ink; the
+    // working approve key is pending, not held, and keeps its blue.
+    expect(rule('.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled')).toContain(
+      "color: var(--vex-alias-label-primary)",
+    );
+    expect(rule(".vex-appr-row__go > button:disabled")).toContain("background: var(--vex-alias-bg-layer-3)");
+    // Nothing on the keys draws a held state of its own any more.
+    rejectPending = true;
+    renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
+    for (const key of screen.getAllByRole("button")) {
+      if (key.closest('[data-vex-area="approval-foot"]') === null) continue;
+      expect(key.className).not.toMatch(/disabled:(border-dotted|text-accent|bg-transparent|text-ink-tertiary)/);
+    }
   });
   describe("click responsiveness (K-2 B1)", () => {
     const LOW = { riskLevel: "info", actionKind: "read" } as const;

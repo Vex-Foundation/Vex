@@ -494,6 +494,30 @@
   color: var(--vex-alias-label-tertiary);
   background: var(--vex-alias-bg-layer-3);
 }
+
+/* HELD KEYS (Cloud's kit, h3-kit-gaps "Held / pending"; H3-DESKTOP.md
+ * section 2.4). A decision key that cannot act, in the card's own footer as
+ * in the docked row above: the cell ground, the muted word, the 7% edge, no
+ * fill and no ring; never blue, never a dotted outline, never dimmed. Drawn
+ * from `disabled` alone, so when a key is enabled stays the card's own. The
+ * key whose decision is running is pending, not held: the approve key keeps
+ * its blue (Cloud's pending key keeps its fill), and a running rejection
+ * keeps the held ground with its word in ink. */
+.vex-appr__foot > button:disabled:not([data-vex-approve-working]) {
+  color: var(--vex-alias-label-tertiary);
+  background: var(--vex-alias-bg-layer-3);
+  border-style: solid;
+  border-color: var(--vex-alias-rule);
+  outline: none;
+  cursor: not-allowed;
+}
+.vex-appr__foot > button[data-vex-key="reject"][aria-busy="true"]:disabled {
+  color: var(--vex-alias-label-primary);
+  cursor: progress;
+}
+.vex-appr__foot > button[data-vex-approve-working] {
+  cursor: progress;
+}
 /* The middle cell: the gate line in ink 2, sans 14, 24 in. No control. */
 .vex-appr__gate {
   grid-area: gate;
@@ -557,6 +581,18 @@
   grid-column: 3;
   align-items: center;
   gap: 10px;
+}
+/* The row's keys hold as the card's do (Held keys, above). */
+.vex-appr-row__go > button:disabled {
+  color: var(--vex-alias-label-tertiary);
+  background: var(--vex-alias-bg-layer-3);
+  border-style: solid;
+  border-color: var(--vex-alias-rule);
+  outline: none;
+}
+.vex-appr-row__go > button[aria-busy="true"]:disabled {
+  color: var(--vex-alias-label-primary);
+  cursor: progress;
 }
 .vex-appr-row__meta {
   display: flex;
