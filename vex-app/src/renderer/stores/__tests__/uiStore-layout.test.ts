@@ -9,7 +9,7 @@ import {
   coerceBookWidth,
   coerceSidebarWidth,
 } from "../uiStore/layout.js";
-import { migrateUiState } from "../uiStore/persistence.js";
+import { mergeUiState, migrateUiState, partializeUiState, PERSISTED_UI_KEYS } from "../uiStore/persistence.js";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -78,5 +78,64 @@ describe("narrow-expand override", () => {
       const parsed = JSON.parse(raw) as { state: Record<string, unknown> };
       expect(parsed.state["sidebarNarrowExpanded"]).toBeUndefined();
     }
+  });
+});
+
+/**
+ * THE REMEMBERED CHOICE, SPLIT (docs/design/H3-DESKTOP.md section 3.5; VEX
+ * Cloud's PD-12): chats open by default, pages closed by default, both
+ * persisted; under 1024 the session's own, closed on every visit and never
+ * persisted.
+ */
+describe("her remembered choice, split three ways", () => {
+  it("opens her in chats, keeps her closed on pages and under 1024 on a fresh install", () => {
+    const fresh = useUiStore.getInitialState();
+    expect(fresh.vexOpenChat).toBe(true);
+    expect(fresh.vexOpenPages).toBe(false);
+    expect(fresh.vexOpenNarrow).toBe(false);
+  });
+
+  it("persists the chats' and the pages' choices, never the session's own under 1024", () => {
+    expect(PERSISTED_UI_KEYS).toContain("vexOpenChat");
+    expect(PERSISTED_UI_KEYS).toContain("vexOpenPages");
+    expect(PERSISTED_UI_KEYS).not.toContain("vexOpenNarrow");
+    useUiStore.getState().setVexOpenNarrow(true);
+    expect(partializeUiState(useUiStore.getState())).not.toHaveProperty("vexOpenNarrow");
+    // A hand-edited payload cannot open the band on the next launch.
+    const merged = mergeUiState({ vexOpenNarrow: true }, useUiStore.getInitialState());
+    expect(merged.vexOpenNarrow).toBe(false);
+    useUiStore.getState().setVexOpenNarrow(false);
+  });
+
+  it("writes each choice alone: a page's never closes a chat's, the band's never touches either", () => {
+    useUiStore.setState({ runtimeMode: "agent", shellRoute: { kind: "none" }, vexOpenChat: true, vexOpenPages: false });
+    useUiStore.getState().setVexOpenNarrow(true);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+    useUiStore.setState({ shellRoute: { kind: "portfolio", origin: null } });
+    useUiStore.getState().setVexOpen(true);
+    expect(useUiStore.getState().vexOpenPages).toBe(true);
+    useUiStore.getState().setVexOpen(false);
+    expect(useUiStore.getState().vexOpenPages).toBe(false);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+    expect(useUiStore.getState().vexOpenNarrow).toBe(true);
+    useUiStore.setState({ shellRoute: { kind: "none" }, vexOpenNarrow: false });
+  });
+
+  it("keeps every saved choice through the migrations from v21 on", () => {
+    const saved = migrateUiState({ vexOpenChat: false, vexOpenPages: true, bookOpen: true }, 21) as Record<
+      string,
+      unknown
+    >;
+    expect(saved["vexOpenChat"]).toBe(false);
+    expect(saved["vexOpenPages"]).toBe(true);
+    expect(saved).not.toHaveProperty("vexOpenNarrow");
+    // v24 folds only a hidden avatar into the chats' choice; the pages' stays.
+    const folded = migrateUiState({ vexOpenChat: true, vexOpenPages: true, showAvatar: false }, 23) as Record<
+      string,
+      unknown
+    >;
+    expect(folded["vexOpenChat"]).toBe(false);
+    expect(folded["vexOpenPages"]).toBe(true);
   });
 });

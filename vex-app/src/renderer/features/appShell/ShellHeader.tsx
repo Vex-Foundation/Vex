@@ -108,7 +108,7 @@ export function ShellHeader({
         * the running head after it keeps its place in the tree; its named
         * lines put it over the right-hand column on the desk. */}
       <div data-vex-head-cell="vex-key" className="vex-shell-head__vex vex-drag">
-        {vex === null ? null : <VexKey open={vex.open} onToggle={vex.onToggle} />}
+        {vex === null ? null : <VexKey open={vex.open} onToggle={vex.onToggle} held={vex.held ?? null} />}
       </div>
       <RunningHead
         runtimeMode={runtimeMode}

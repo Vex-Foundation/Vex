@@ -141,7 +141,8 @@ describe("KimmSection, open and still (S4-04)", () => {
     expect(box).toMatch(/position:\s*absolute/);
     expect(box).toMatch(/top:\s*var\(--vex-kimm-top\)/);
     expect(box).toMatch(/--vex-kimm-top:\s*var\(--vex-console-top-h, 148px\)/);
-    expect(box).toMatch(/bottom:\s*1px/);
+    // Her foot is the foot row's top rule (section 1.11: 72 x zoom and its rule).
+    expect(box).toMatch(/bottom:\s*0;/);
     expect(box).toMatch(/left:\s*0/);
     expect(box).toMatch(/right:\s*0/);
     // Nothing in her box is sized by her state: no width, height or margin.
@@ -245,7 +246,7 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
   it("folds by its clip alone: her box is the same rule open and closed", () => {
     const closed = rule('.vex-kimm[data-kimm-open="false"]');
     expect(closed).toMatch(
-      /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-h3-strip-h\)\) 0\)/,
+      /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-kimm-stub, var\(--vex-h3-strip-h\)\)\) 0\)/,
     );
     expect(closed).not.toMatch(/(?:^|[\s;])(?:top|bottom|left|right|width|height|margin|inset|display)\s*:/);
     // The strip's key covers the open key's box: 149 against 138, same corner.
@@ -294,7 +295,9 @@ describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => 
 
   it("rests her at the strip in the sheet, with no transition of its own", () => {
     const closed = rule('.vex-kimm[data-kimm-open="false"]');
-    expect(closed).toMatch(/clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-h3-strip-h\)\) 0\)/);
+    expect(closed).toMatch(
+      /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-kimm-stub, var\(--vex-h3-strip-h\)\)\) 0\)/,
+    );
     expect(closed).not.toMatch(/transition/);
     expect(rule(".vex-kimm")).not.toMatch(/transition/);
   });

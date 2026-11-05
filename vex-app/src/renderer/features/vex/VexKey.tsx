@@ -35,6 +35,13 @@
  *
  * THE ANNOUNCER of the state word (`VexStateAnnouncer`) sits beside the
  * button, never inside it, so the key's name stays its action.
+ *
+ * UNDER 1024 (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's 288 key):
+ * the key's cell is 288 wide and carries the waiting count beside her state,
+ * since the console's Needs you is a line away (`vex-key__count`, drawn only
+ * in the band tier). While her band rests (`held`: a turn, a waiting card,
+ * the composer in use) the key says why instead of acting: its tooltip is
+ * the reason and a press changes nothing.
  */
 
 import { useId, type JSX, type ReactNode } from "react";
@@ -97,16 +104,21 @@ export interface VexKeyProps {
   readonly onToggle: () => void;
   /** The platform whose keys and spelling apply; this window's by default. */
   readonly platform?: StudioPlatform;
+  /** Her band rests under 1024: why, in words; the key then acts on nothing. */
+  readonly held?: string | null;
 }
 
-export function VexKey({ open, onToggle, platform = studioPlatform }: VexKeyProps): JSX.Element {
+export function VexKey({ open, onToggle, platform = studioPlatform, held = null }: VexKeyProps): JSX.Element {
   const presence = useVexPresence();
+  const waiting = presence.needsYou.status === "ready" ? presence.needsYou.count : null;
   return (
     <>
       <VexKeyView
         open={open}
         onToggle={onToggle}
         platform={platform}
+        held={held}
+        count={waiting}
         state={presence.state}
         word={presence.word}
         timer={
@@ -129,6 +141,8 @@ export interface VexKeyViewProps extends VexKeyProps {
   readonly timer?: ReactNode;
   /** Her face's mood while she is closed, where the place names its own (the stage). */
   readonly mood?: KimmMood;
+  /** The waiting count the key carries under 1024; nothing when there is none. */
+  readonly count?: number | null;
 }
 
 /**
@@ -146,6 +160,8 @@ export function VexKeyView({
   word,
   timer = null,
   mood,
+  held = null,
+  count = null,
 }: VexKeyViewProps): JSX.Element {
   const closing = useVexClosing();
   // While her close plays her section still stands, but the person has
@@ -156,7 +172,7 @@ export function VexKeyView({
   const square = vexKeySquareOf(state);
 
   return (
-    <Tooltip label={vexToggleTooltipLabel(shown, platform)} side="bottom">
+    <Tooltip label={held ?? vexToggleTooltipLabel(shown, platform)} side="bottom">
       <button
         type="button"
         className="vex-key"
@@ -167,7 +183,10 @@ export function VexKeyView({
         aria-expanded={shown}
         aria-describedby={stateId}
         aria-keyshortcuts={vexToggleAriaShortcut(platform)}
+        aria-disabled={held === null ? undefined : true}
+        data-vex-key-held={held === null ? undefined : ""}
         onClick={() => {
+          if (held !== null) return;
           pressVexToggle(open, onToggle);
         }}
       >
@@ -193,6 +212,12 @@ export function VexKeyView({
             <Keycaps chord={VEX_TOGGLE_CHORD} platform={platform} decorative />
           </span>
         </span>
+        {count !== null && count > 0 ? (
+          <span className="vex-key__count vex-num" aria-hidden="true">
+            <span aria-hidden="true" className="vex-key__square" data-key-square="waiting" />
+            {count}
+          </span>
+        ) : null}
         <span className="vex-key__chevron">
           {shown ? <LineChevronUp size={16} /> : <LineChevronDown size={16} />}
         </span>

@@ -904,8 +904,85 @@ html[data-os="mac"] .vex-ls-railhead {
 .vex-ls.vex-st-drawer {
   position: absolute;
   z-index: 30;
-  bottom: calc(-1 * var(--vex-h3-bottom-h));
+  bottom: calc(-1 * var(--vex-h3-foot));
   left: 100%;
   width: var(--vex-h3-chats-w);
   height: auto;
+}
+
+/* THE CHATS PANEL (docs/design/H3-DESKTOP.md section 4.12; ChatsPanel.tsx):
+ * under 1280 the rail's key slides the 248 chats panel out of the rail's
+ * right edge, from under the header to the window's foot, VEX Cloud's
+ * history panel. It is a frame child laid OVER Vex's column, never a track,
+ * so the frame's grid is the same open or closed and a waiting card in the
+ * chat never moves (section 3.6). It stacks over Vex's column and her
+ * section (10) and under the chats column (20), so the rail's own layers
+ * stay above it. Closed it is hidden and inert; Web Animations slide it
+ * (transform) and fade its scrim (opacity), and nothing else moves.
+ *
+ * The scrim lies beside it over the rest of Vex's column (her column's
+ * track less the panel); where the panel covers what is read (under 1024,
+ * a page with her column folded to its strip) it runs to the window's
+ * edge. A press on it closes the panel. */
+.vex-shell-frame > .vex-chats-panel {
+  position: absolute;
+  z-index: 19;
+  top: var(--head-h);
+  bottom: 0;
+  left: var(--vex-h3-rail-w);
+  width: var(--vex-h3-chats-w);
+  height: auto;
+  border-right-color: var(--vex-alias-rule-chosen);
+  transform: translate3d(-100%, 0, 0);
+  visibility: hidden;
+}
+.vex-shell-frame > .vex-chats-panel[data-open] {
+  transform: none;
+  visibility: visible;
+}
+.vex-chats-panel__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-chats-panel__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--vex-alias-label-primary);
+}
+.vex-chats-panel__list {
+  padding: 6px 0 12px;
+}
+.vex-shell-frame > .vex-chats-scrim {
+  position: absolute;
+  z-index: 18;
+  top: var(--head-h);
+  bottom: 0;
+  left: calc(var(--vex-h3-rail-w) + var(--vex-h3-chats-w));
+  width: max(0px, calc(var(--vex-vex-track) - var(--vex-h3-chats-w)));
+  padding: 0;
+  border: 0;
+  background: var(--vex-alias-bg-mask-1);
+  cursor: default;
+  opacity: 0;
+  visibility: hidden;
+}
+.vex-shell-frame > .vex-chats-scrim[data-covers] {
+  right: 0;
+  width: auto;
+}
+.vex-shell-frame > .vex-chats-scrim[data-open] {
+  opacity: 1;
+  visibility: visible;
+}
+/* While it closes nothing in it takes a press: the slide is on its way out. */
+.vex-shell-frame > :is(.vex-chats-panel, .vex-chats-scrim)[data-closing] {
+  pointer-events: none;
 }

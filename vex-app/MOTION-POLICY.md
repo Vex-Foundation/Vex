@@ -47,8 +47,9 @@ here is a defect:
   `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
   `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot
   under a hovering pointer. A transform only (`scaleY`), on the entrance
-  curve (Cloud draws it on its own `--vx-ease-ease`, which is not one of
-  this family's four); reduced motion lands it at once. It shares Kimm's
+  curve (Cloud draws it on its own `--vx-ease-ease`, the house curve,
+  which desktop keeps for a page's re-lay alone); reduced motion lands it at
+  once. It shares Kimm's
   close number by coincidence and borrows nothing of hers.
 - The transcript keyframes (180ms / 260ms / 280ms) and the landing motifs -
   authored against the landing's own timing and out of scope for the desktop
@@ -58,15 +59,29 @@ here is a defect:
   `DURATION_VEX_CLOSE_MS`), both on the push curve - printed on the H3
   mockup's strips (`docs/design/H3-DESKTOP.md` section 3.1) and shared with
   VEX Cloud, so they are a cross-app contract rather than a style step. They
-  are hers alone: nothing else may borrow them. Her wipe animates clip-path,
-  transform and opacity only, never a size, so the money card beside her
-  never moves (section 3.6); reduced motion and Save-Data land her at once.
+  are hers, the chats panel's and a page's re-lay's alone (below): nothing
+  else may borrow them.
+  Her wipe animates clip-path, transform and opacity only, never a size, so
+  the money card beside her never moves (section 3.6); reduced motion and
+  Save-Data land her at once.
   The wipe runs on Web Animations (`components/vex/kimm/kimm-wipe.ts`), as
   VEX Cloud's mockup runs it, so its clip and its 1px scan head share one
   clock from one edge. The scan head runs on the open and on the close, at
   full light until 92% of the leg (`KIMM_SCAN_FADE_AT`) and then fading
   linearly out over the leg's last 8%: an opacity keyed to the leg, not a
   duration of its own.
+- The chats panel (`features/appShell/ChatsPanel.tsx`,
+  `docs/design/H3-DESKTOP.md` section 4.12), VEX Cloud's own numbers
+  (`h3-shell-gaps/js/shell.js`, its push, fold and scrim): the panel slides
+  over Vex's column in `DURATION_VEX_OPEN_MS` (720ms) and back in
+  `DURATION_VEX_CLOSE_MS` (420ms) on the push curve; its scrim fades in over
+  `DURATION_CHATS_SCRIM_OPEN_MS` (600ms) and out over
+  `DURATION_CHATS_SCRIM_CLOSE_MS` (300ms); its first rows enter over
+  `DURATION_CHATS_ROW_MS` (620ms), row n after `CHATS_ROW_DELAY_MS` +
+  n x `CHATS_ROW_STAGGER_MS` (120 + 45n ms). Web Animations on transform and
+  opacity, JS constants with no CSS twin (no sheet reads them), and no grid
+  track moves, so a waiting card never does. Reduced motion and Save-Data
+  land it at once.
 - The running blink, 600ms a cycle (`--vex-duration-blink`,
   `DURATION_BLINK_MS`) on `steps(2, end)`: a running square's opacity steps
   from 1 to 0.25 and back (PD-06, `docs/design/H3-DESKTOP.md` section 2.2).
@@ -79,15 +94,16 @@ here is a defect:
 
 ### The easing family
 
-One family, four curves, no fifth. All four are declared in `tokens.css`
-and mirrored in `lib/motion/index.ts`:
+One family, five curves, no sixth. The first four are declared in
+`tokens.css` and mirrored in `lib/motion/index.ts`; the fifth is JS only:
 
 | Token | JS mirror | For |
 |---|---|---|
 | `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
-| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and the toast's arrival (VEX Cloud's caption curve, the same control points), and nothing else |
+| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, the chats panel's slide, and the toast's arrival (VEX Cloud's caption curve, the same control points), and nothing else |
+| (none: Web Animations only) | `EASE_HOUSE` | a page's fade from 0.4 as it re-lays at a Show Vex or Hide Vex press (`features/appShell/page-relay.ts`, VEX Cloud's `--vx-ease-ease`), and nothing else |
 
 The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
 chosen: the H3 mockup prints her section's clip inset at 120, 240 and 480ms
@@ -149,6 +165,14 @@ every movement and leaves at most an opacity change. Its holders are the
 toasts (their exit fade stays a fade) and the pre-shell stage plate with the
 handoff turn (the stage and the shell crossfade over a fixed 240ms linear).
 
+**While the window is resized** (VEX Cloud's motion contract, section 3 rule
+6): `data-vex-resizing` stands on `<html>` while the window is dragged and for
+220ms after its last resize event (`RESIZE_SETTLE_MS`, `lib/wide-zoom.ts`),
+`base.css` holds every transition still meanwhile, and the Web Animations
+owners (the chats panel, a page's re-lay, Kimm's wipe) read
+`isWindowResizing()` and land at once, so nothing trails the layout as it
+follows the window. Keyframe loops keep their own time.
+
 What reduced motion means across R3 (`docs/design/R3-MINIMAL.md` section 11),
 and where each part is stated:
 
@@ -205,10 +229,17 @@ motion.
 
 ### The shell and the Vex sidebar
 
-- **The column tracks.** The frame's `grid-template-columns` rides
-  `--vex-duration-reveal` on `--vex-ease-inout`; a sidebar and its rail swap in
-  one commit and only the tracks move. Lighter's chat share drag pauses the
-  transition. Reduced motion snaps the tracks.
+- **The column tracks.** In H3's frame (the agent shell and Studio) the
+  tracks never animate (`docs/design/H3-DESKTOP.md` section 3.6, VEX Cloud's
+  EC-26): a track that slid would carry a waiting card, so the grid snaps at
+  every seam, fold and page strip. On a table page Show Vex and Hide Vex
+  re-lay the page at the press, and it fades in from 0.4 over 720ms opening
+  and 420ms closing on the house curve while her column wipes in with
+  clip-path on the push curve (`features/appShell/page-relay.ts`). On the
+  Lighter desk the frame's `grid-template-columns` still rides
+  `--vex-duration-reveal` on `--vex-ease-inout`; its chat share drag pauses
+  the transition. Reduced motion snaps the tracks and lands the re-lay at
+  once.
 - **Her section opens and closes in its own wipe.** Kimm's section, the
   welcome's column included, opens in a 720ms clip-path wipe and closes in a
   420ms one, Web Animations started at the press (`KimmSection`,

@@ -29,7 +29,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  CHATS_ROW_DELAY_MS,
+  CHATS_ROW_STAGGER_MS,
+  DURATION_CHATS_ROW_MS,
+  DURATION_CHATS_SCRIM_CLOSE_MS,
+  DURATION_CHATS_SCRIM_OPEN_MS,
+  cssCurve,
   DURATION_BASE_MS,
+  EASE_HOUSE,
   DURATION_BLINK_MS,
   DURATION_FAST_MS,
   DURATION_INSTANT_MS,
@@ -216,6 +223,26 @@ describe("Kimm's section: the push curve against the printed frames", () => {
   });
 });
 
+describe("the chats panel (docs/design/H3-DESKTOP.md section 4.12)", () => {
+  it("moves on VEX Cloud's numbers: 600 and 300 for the scrim, 620 for a row after 120 + 45n", () => {
+    // MOTION-POLICY.md names these in the exception list; the panel itself
+    // slides on her section's 720 and 420 and the push curve.
+    expect(DURATION_CHATS_SCRIM_OPEN_MS).toBe(600);
+    expect(DURATION_CHATS_SCRIM_CLOSE_MS).toBe(300);
+    expect(DURATION_CHATS_ROW_MS).toBe(620);
+    expect(CHATS_ROW_DELAY_MS).toBe(120);
+    expect(CHATS_ROW_STAGGER_MS).toBe(45);
+    expect(cssCurve(EASE_PUSH)).toBe(declaration(tokensCss, "--vex-ease-push"));
+  });
+});
+
+describe("a page's re-lay (docs/design/H3-DESKTOP.md section 1.9, EC-26)", () => {
+  it("fades on the house curve, Cloud's --vx-ease-ease, which is not her section's push", () => {
+    expect(cssCurve(EASE_HOUSE)).toBe("cubic-bezier(0.625, 0.05, 0, 1)");
+    expect(cssCurve(EASE_HOUSE)).not.toBe(cssCurve(EASE_PUSH));
+  });
+});
+
 describe("motion primitives", () => {
   it("states a reduced-motion collapse for every primitive it adds", () => {
     const reduced = motionCss.slice(
@@ -264,14 +291,27 @@ describe("motion primitives", () => {
 });
 
 describe("cross-file timing invariants", () => {
-  it("opens and closes the frame's columns on the track transition alone, never a JS timer", () => {
-    // A sidebar and its rail swap in one commit; only the grid tracks move,
-    // on the reveal duration, and the chat share drag pauses them.
+  it("opens and closes the desk's columns on the track transition alone, never a JS timer", () => {
+    // On the Lighter desk a sidebar and its rail swap in one commit; only the
+    // grid tracks move, on the reveal duration, and the chat share drag
+    // pauses them.
     expect(shellCss).toContain(
       "transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);",
     );
     expect(shellCss).toContain(".vex-shell-frame[data-dragging] {");
     expect(stripComments(shellCss)).not.toMatch(/vex-sidebar-(fading|rail-in)|@keyframes vex-rail/);
+  });
+
+  it("holds every transition still while the window is resized (Cloud's resize freeze)", () => {
+    const baseCss = read("base.css");
+    expect(stripComments(baseCss)).toMatch(
+      /html\[data-vex-resizing\] \*,\s*html\[data-vex-resizing\] \*::before,\s*html\[data-vex-resizing\] \*::after \{\s*transition-duration: 0s !important;\s*transition-delay: 0s !important;\s*\}/,
+    );
+  });
+
+  it("never animates a track in H3's frame (EC-26: a sliding track would carry a waiting card)", () => {
+    const rule = /\.vex-shell-frame\[data-vex-frame="h3"\] \{\s*transition: none;\s*\}/;
+    expect(stripComments(shellCss)).toMatch(rule);
   });
 
   it("keeps the toast exit pair in agreement", () => {

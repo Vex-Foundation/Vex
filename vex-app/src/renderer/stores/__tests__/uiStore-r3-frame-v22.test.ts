@@ -135,7 +135,7 @@ describe("where Vex opens", () => {
 
   it("showing Vex leaves the chats as the person opened them; on the desk it still closes the drawer", () => {
     // H3 never folds the chats for her (docs/design/H3-DESKTOP.md section
-    // 3.6): a chats column opened between 1024 and 1267 stays open.
+    // 3.6): under 1280 the chats are the rail and their panel opens over her column.
     useUiStore.setState({ vexOpenChat: false, sidebarNarrowExpanded: true });
     useUiStore.getState().setVexOpen(true);
     expect(useUiStore.getState().vexOpenChat).toBe(true);

@@ -46,7 +46,8 @@
  * of the window alone:
  *   - top: the foot of the console's top block, the console's own fixed
  *     `--vex-console-top-h` on `.vex-vs` (vex-sidebar.css): the Needs you
- *     head (43), its row (64), the missions row and its rule (41), 148 under
+ *     head (44), its row (64) and the missions row (40), each with its rule
+ *     inside, 148 under
  *     the header, with no strategies row (section 4.1): y 224 at any window
  *     height. A declared length, never a measure of the console's content,
  *     so a decision arriving or a mission starting never moves her. Every
@@ -54,7 +55,9 @@
  *     than push her down (vex-console.css), so her top holds while she
  *     waits; VEX Cloud's 240 floor never binds here (at the 720 window
  *     floor her box is 423 high).
- *   - foot: one pixel above the bottom row (the column ends at the row).
+ *   - foot: the bottom row's top rule, where the column ends (the row is
+ *     72 x zoom and that rule, `--vex-h3-foot`), so she ends at 827 at
+ *     1440 x 900, as VEX Cloud's section does.
  *   - left and width: the column's, her ground under its 1px rule at the
  *     right, which the column draws (vex-sidebar.css) as the mockup draws it
  *     over her. At 1440 x 900 she is 248, 224, 431 x 603 with the rule at
@@ -73,7 +76,7 @@
   z-index: 2;
   top: var(--vex-kimm-top);
   right: 0;
-  bottom: 1px;
+  bottom: 0;
   left: 0;
   overflow: hidden;
   /* Open, the whole box: where an open rests. The wipe between this and the
@@ -176,7 +179,7 @@
  * on the push curve, a Web Animation that lands on this inset
  * (`kimm-wipe.ts`). Only clip-path moves. */
 .vex-kimm[data-kimm-open="false"] {
-  clip-path: inset(0 0 calc(100% - var(--vex-h3-strip-h)) 0);
+  clip-path: inset(0 0 calc(100% - var(--vex-kimm-stub, var(--vex-h3-strip-h))) 0);
 }
 .vex-kimm__strip {
   position: absolute;
@@ -241,6 +244,91 @@
 .vex-kimm__key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
+}
+
+/* ---- under 1024: her band (section 1.10; VEX Cloud's 768 to 1023) ----
+ * The same section, laid over the chat's top under the console line (the
+ * aside, `.vex-vs[data-vex-seat="band"]`, is its containing block): the
+ * chat's width and `--vex-band-h` high, its rule under it. No strip: closed,
+ * it folds away to nothing (`--vex-kimm-stub` 0) and, once the close has
+ * ended, there is no band at all. Her figure stands head to chest, as
+ * Cloud's still does: as wide as the band's room allows (its height less the
+ * 56 foot row and 12 over her), centred, from 12 under the band's top, cut
+ * by the foot row. The foot row holds Vex's line and the Hide Vex cell, and
+ * the whole row is the key that closes the band. */
+.vex-kimm--band {
+  --vex-kimm-stub: 0px;
+  /* Under the line's own rule, which the aside draws at its foot. */
+  top: calc(100% + 1px);
+  bottom: auto;
+  height: var(--vex-band-h);
+  border-bottom: 1px solid var(--vex-alias-rule-quiet);
+}
+.vex-kimm--band[data-kimm-phase="closed"] {
+  visibility: hidden;
+}
+.vex-kimm--band .vex-kimm__figure {
+  top: 12px;
+  left: 50%;
+  width: min(100%, calc((var(--vex-band-h) - 68px) / 0.566));
+  transform: translateX(-50%);
+}
+.vex-kimm--band .vex-kimm__strip {
+  display: none;
+}
+.vex-kimm__foot {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  height: var(--vex-h3-strip-h);
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--vex-alias-rule-quiet);
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 82%, transparent);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+}
+.vex-kimm__foot:hover {
+  background: color-mix(in oklch, var(--vex-alias-bg-base) 92%, transparent);
+}
+.vex-kimm__foot:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-kimm__line {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.35em;
+  overflow: hidden;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.vex-kimm__rest {
+  color: var(--vex-alias-label-tertiary);
+}
+.vex-kimm__cell {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 0 18px;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: var(--vex-alias-bg-base);
+  font-size: 13px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----

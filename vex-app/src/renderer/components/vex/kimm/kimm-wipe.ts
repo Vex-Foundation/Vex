@@ -6,7 +6,8 @@
  * on one clock from one edge:
  *
  *   - THE CLIP. Her section's bottom inset runs from where it stands to where
- *     the leg goes: 0 open, the box less the strip closed (547 at 1440 x 900),
+ *     the leg goes: 0 open, the box less the strip closed (547 at 1440 x 900;
+ *     the whole box in the band under 1024, whose stub is 0),
  *     on the push curve, 720ms to open and 420ms to close. Only clip-path
  *     moves, so her box, the column and a waiting card never do (section 3.6).
  *   - THE SCAN HEAD. A 1px line keyed to the clip's edge on both legs: a
@@ -32,18 +33,20 @@
  * (`KimmSection` lands her at once, MOTION-POLICY.md).
  *
  * The durations and the curve are the motion vocabulary's
- * (`DURATION_VEX_OPEN_MS`, `DURATION_VEX_CLOSE_MS`, `EASE_PUSH`), and the
- * strip's height is the sheet's own `--vex-h3-strip-h`, read from her box, so
- * no number here repeats one in a stylesheet.
+ * (`DURATION_VEX_OPEN_MS`, `DURATION_VEX_CLOSE_MS`, `EASE_PUSH`), and what
+ * she folds to is the sheet's own, read from her box: `--vex-kimm-stub` where
+ * a seat sets one (the band's 0), else the strip's `--vex-h3-strip-h`, the
+ * same pair her closed clip reads, so no number here repeats one in a
+ * stylesheet.
  */
 
-import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS, EASE_PUSH } from "../../../lib/motion/index.js";
+import { cssCurve, DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS, EASE_PUSH } from "../../../lib/motion/index.js";
 
 /** The share of a leg the scan head holds its full light for, before it fades out. */
 export const KIMM_SCAN_FADE_AT = 0.92;
 
 /** The push curve, as Web Animations spells an easing. */
-export const KIMM_PUSH_EASING = `cubic-bezier(${EASE_PUSH.join(", ")})`;
+export const KIMM_PUSH_EASING = cssCurve(EASE_PUSH);
 
 /** Her section's clip at a bottom inset, in px. */
 export function kimmClipAt(inset: number): string {
@@ -91,7 +94,8 @@ function px(el: Element, property: string): number {
 export function startKimmWipe(box: HTMLElement, open: boolean, from: number | null): KimmWipe | null {
   if (typeof box.animate !== "function") return null;
   const height = box.getBoundingClientRect().height;
-  const strip = px(box, "--vex-h3-strip-h");
+  const stub = px(box, "--vex-kimm-stub");
+  const strip = Number.isFinite(stub) ? stub : px(box, "--vex-h3-strip-h");
   if (!Number.isFinite(strip) || !(height > strip)) return null;
   const distance = height - strip;
   const to = open ? 0 : distance;
