@@ -70,6 +70,13 @@ export function selectVexOpen(
  * current class's slot only (the Lighter desk writes `vexOpenLighter`, never
  * the table pages' slot).
  *
+ * THE CHOICE IS SPLIT (docs/design/H3-DESKTOP.md section 3.5; VEX Cloud's
+ * PD-12): chats remember theirs (`vexOpenChat`, open by default), the table
+ * pages theirs (`vexOpenPages`, closed by default), and under 1024 her band
+ * keeps the session's own (`vexOpenNarrow`, closed on every visit, never
+ * persisted, written by the frame with `setVexOpenNarrow`): this patch never
+ * writes it, and the frame never calls this under 1024.
+ *
  * WHAT THE SLOTS MEAN (docs/design/H3-DESKTOP.md sections 1.9 and 3.5). In
  * the agent shell and Studio `vexOpenChat` now shows or hides her plate
  * inside a column that always stands in a chat, and `vexOpenPages` folds the
@@ -81,8 +88,9 @@ export function selectVexOpen(
  * On the desk opening also closes the top bar's drawer (the same ephemeral
  * flag), as an open chat always has. In the agent shell and Studio it no
  * longer touches that flag, R3's narrow-tier override: H3 never folds the
- * chats column for her (section 3.6, "H3 has no derived close"), so a
- * column the person opened between 1024 and 1267 stays open. `bookOpen`
+ * chats column for her (section 3.6, "H3 has no derived close"), and under
+ * the wide tier the chats are the rail with their panel over her column
+ * (section 4.12), never a wider track. `bookOpen`
  * mirrors the last write: it is the legacy slot that `vexOpenChat` was seeded
  * from, and the Lighter desk still watches it to focus the composer once the
  * chat has mounted.

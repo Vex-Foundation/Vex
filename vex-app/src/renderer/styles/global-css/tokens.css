@@ -596,9 +596,11 @@
    * 1.10), declared ahead of the grid that reads it: the R3 names above stay
    * the frame's until the shell grid moves (S2), and nothing reads these yet.
    *
-   * The column rule: the chats column is a fixed 248; the Vex column is 30%
-   * of the window width rounded to a whole pixel (432 at 1440, 410 at 1366,
-   * 384 at 1280, 307 at 1024); the chat column takes the rest, with no floor.
+   * The column rule, VEX Cloud's (PD-14, the H3 mockup's `--vex-w`): the
+   * chats column is a fixed 248; the Vex column is clamp(360px, 30vw, 768px)
+   * from 1280 up, unrounded (432 at 1440, 409.8 at 1366, 384 at 1280, 768
+   * from 2560), and a fixed 340 from 1024 to 1279; the chat column takes the
+   * rest, with no floor.
    * The tracks are a function of the window width alone, never of Kimm's
    * section, which is the first leg of the money rule (section 3.6); the
    * column solver mirrors the rule in JS (`lib/shell-columns.ts`).
@@ -611,12 +613,34 @@
    * edge is stated here for the record and spelled by the rules that use it. */
   --vex-h3-chats-w: 248px;
   --vex-h3-vex-share: 30vw;
-  --vex-h3-vex-w: round(nearest, var(--vex-h3-vex-share), 1px);
+  --vex-h3-vex-w: clamp(360px, var(--vex-h3-vex-share), 768px);
   --vex-h3-header-h: 76px;
   --vex-h3-bottom-h: 72px;
   --vex-h3-strip-h: 56px;
   --vex-h3-band-under: 1024px;
   --vex-h3-rail-w: 76px;
+  /* THE WIDE ZOOM (section 1.11; VEX Cloud's `--vx-zoom`, the mockup's
+   * `--z`): clamp(1, window / 1760, 1.5), written on <html> by
+   * `lib/wide-zoom.ts`; 1 until it runs. The transcript, the composer dock,
+   * the picker, the console, a page, her section's key and its strip zoom;
+   * the frame's cells never do. The foot row grows with it, 72 x zoom and its
+   * 1px rule (Cloud's `--foot`: 73 at 1440), so the zoomed composer and the
+   * card's decision row still fill it. */
+  --vex-zoom: 1;
+  /* HER BAND under 1024 (section 1.10; VEX Cloud's `--band-h`): a box over
+   * the chat's top under the 48 console line, min(clamp(220, 34dvh, 296),
+   * 40dvh) high: 244.8 at a 720-high window, 261.1 at 768. */
+  --vex-band-h: min(clamp(220px, 34dvh, 296px), 40dvh);
+  --vex-h3-foot: calc(var(--vex-h3-bottom-h) * var(--vex-zoom) + 1px);
+}
+
+/* The Vex column from 1024 to 1279 (PD-14): a fixed 340, the share's
+ * place (`H3_VEX_NARROW` in lib/shell-columns.ts). Under 1024 the shell has
+ * no Vex column; the screens before it keep this one. */
+@media (max-width: 1279px) {
+  :root {
+    --vex-h3-vex-w: 340px;
+  }
 }
 
 /* Utility tier - alias projections. `@theme inline` is REQUIRED here: the

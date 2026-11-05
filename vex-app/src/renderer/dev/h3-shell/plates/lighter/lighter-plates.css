@@ -45,7 +45,7 @@
   --lp-row-h: 36px;
   --lp-book-row: 20px;
   --lp-dock-row: 34px;
-  /* Under 1024 her section is the band's 132 (H3_BAND_HEIGHT), not the box. */
+  /* Under 1024 her section on the desk is its own 132, not the box. */
   --lp-kimm-h: 132px;
 }
 
@@ -720,9 +720,9 @@
  * over the column, the desk chat under it, the composer at the foot. */
 .lp-vex {
   /* The console's own measures (vex-sidebar.css, `.vex-vs`). */
-  --vex-console-head-h: 43px;
+  --vex-console-head-h: 44px;
   --vex-console-row-h: 64px;
-  --vex-console-missions-h: 41px;
+  --vex-console-missions-h: 40px;
   --vex-console-top-h: calc(
     var(--vex-console-head-h) + var(--vex-console-row-h) + var(--vex-console-missions-h)
   );

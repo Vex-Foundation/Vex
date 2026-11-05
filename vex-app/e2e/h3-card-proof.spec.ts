@@ -46,7 +46,11 @@ const SIZES = [
   { width: 2560, height: 1440 },
 ] as const;
 
-type Size = (typeof SIZES)[number];
+/** A window size: the proof's five, and the narrower legs' own. */
+interface Size {
+  readonly width: number;
+  readonly height: number;
+}
 
 const CARD = '[data-vex-area="approvals-region"] [data-vex-area="approval-card"]';
 const SECTION = '[data-vex-area="kimm-section"]';
@@ -57,8 +61,19 @@ const SEEK_STEP_MS = 30;
 /** Her motion's two legs (section 3.1; `DURATION_VEX_*_MS` in the renderer). */
 const OPEN_MS = 720;
 const CLOSE_MS = 420;
-/** The strip her section folds to (`--vex-h3-strip-h`). */
+/** The strip her section folds to (`--vex-h3-strip-h`), before the wide zoom. */
 const STRIP_PX = 56;
+
+/**
+ * The wide zoom at a window width (docs/design/H3-DESKTOP.md section 1.11,
+ * `lib/wide-zoom.ts`): clamp(1, width / 1760, 1.5) to three decimals, 1.091
+ * at 1920 and 1.455 at 2560 as VEX Cloud's `renders/checks.json` reads them.
+ * Her console zooms with it, so her strip is 56 x zoom: 61.1 at 1920 and
+ * 81.5 at 2560.
+ */
+function zoomAt(width: number): number {
+  return Math.round(Math.min(1.5, Math.max(1, width / 1760)) * 1000) / 1000;
+}
 
 interface Box {
   readonly x: number;
@@ -201,18 +216,21 @@ async function liveFrames(
 }
 
 /**
- * The wipe's bottom inset in px, from a computed clip and her box's height:
- * `inset(0px)` when open, `inset(0px 0px calc(A% - Bpx))` mid-wipe, and
- * `inset(0px 0px calc(100% - 56px))` at the strip.
+ * The wipe's bottom inset in screen px, from a computed clip and her box's
+ * screen height: `inset(0px)` when open, `inset(0px 0px calc(A% - Bpx))`
+ * mid-wipe, and `inset(0px 0px calc(100% - 56px))` at the strip. A computed
+ * clip is in her section's own pixels, which the wide zoom scales (section
+ * 1.11), so it is read at the box's own height and scaled back by `zoom`.
  */
-function bottomInset(clip: string, height: number): number {
+function bottomInset(clip: string, height: number, zoom = 1): number {
+  const own = height / zoom;
   const calc = /calc\(\s*([\d.e+-]+)%\s*-\s*([\d.e+-]+)px\s*\)/.exec(clip);
-  if (calc !== null) return (Number(calc[1]) / 100) * height - Number(calc[2]);
+  if (calc !== null) return ((Number(calc[1]) / 100) * own - Number(calc[2])) * zoom;
   const parts = /inset\(([^)]*)\)/.exec(clip)?.[1]?.trim().split(/\s+/) ?? [];
   const bottom = parts.length >= 3 ? parts[2] : parts[0];
   if (bottom === undefined) return 0;
   if (bottom.endsWith("%")) return (Number.parseFloat(bottom) / 100) * height;
-  return Number.parseFloat(bottom);
+  return Number.parseFloat(bottom) * zoom;
 }
 
 async function cardBox(page: Page): Promise<Box> {
@@ -322,6 +340,347 @@ test.describe("H3 card proof on the Lighter desk: the Review order never moves",
   }
 });
 
+/**
+ * THE CHATS PANEL LEG (docs/design/H3-DESKTOP.md section 4.12): under 1280
+ * the chats column is the rail at every moment, and its key slides the chats
+ * panel over Vex's column. Nothing in the grid changes, so a waiting card
+ * never moves while the panel opens or closes, on any frame: read seeked
+ * every 30ms through both slides and live on every painted frame, with the
+ * grid's column template read beside the card. The panel must be seen to
+ * move, so a slide that never ran cannot pass.
+ */
+const PANEL_SIZES = [
+  { width: 1024, height: 768 },
+  { width: 1180, height: 800 },
+  { width: 1279, height: 800 },
+] as const;
+const PANEL = '[data-vex-area="chats-panel"]';
+const PANEL_KEY = '[data-chats-panel-key="toggle"]';
+
+interface PanelFrame {
+  readonly at: number;
+  readonly card: Box;
+  readonly columns: string;
+  readonly panelX: number;
+}
+
+/** Press the rail's key and read every seek of the slide it starts, or every painted frame. */
+async function panelPress(page: Page, mode: "seek" | "live", durationMs: number): Promise<PanelFrame[]> {
+  return page.evaluate(
+    async ({ card, panel, key, mode, duration, step }) => {
+      const cardEl = document.querySelector(card);
+      const panelEl = document.querySelector<HTMLElement>(panel);
+      const keyEl = document.querySelector<HTMLElement>(key);
+      const frameEl = document.querySelector<HTMLElement>(".vex-shell-frame");
+      if (cardEl === null || panelEl === null || keyEl === null || frameEl === null) {
+        throw new Error("the card, the panel, its key or the frame is missing");
+      }
+      const read = (at: number): PanelFrame => {
+        const r = cardEl.getBoundingClientRect();
+        return {
+          at,
+          card: { x: r.x, y: r.y, width: r.width, height: r.height },
+          columns: getComputedStyle(frameEl).gridTemplateColumns,
+          panelX: panelEl.getBoundingClientRect().x,
+        };
+      };
+      const wasOpen = panelEl.hasAttribute("inert");
+      keyEl.click();
+      while (panelEl.hasAttribute("inert") === wasOpen) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      // The panel's own slide, scrim and row entries; a running square's
+      // blink in a row is a loop with no end, not the press's motion.
+      const running = document.getAnimations().filter((animation) => {
+        const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
+        const end = animation.effect?.getComputedTiming().endTime;
+        return (
+          target !== null
+          && (panelEl.contains(target) || target === panelEl.previousElementSibling)
+          && typeof end === "number"
+          && Number.isFinite(end)
+        );
+      });
+      if (running.length === 0) throw new Error("the press started no motion");
+      const frames: PanelFrame[] = [];
+      if (mode === "seek") {
+        for (const animation of running) animation.pause();
+        for (let at = 0; at <= duration; at += step) {
+          for (const animation of running) animation.currentTime = at;
+          frames.push(read(at));
+        }
+        for (const animation of running) animation.finish();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        frames.push(read(duration + 1));
+        return frames;
+      }
+      const start = performance.now();
+      await new Promise<void>((resolve, reject) => {
+        const tick = (): void => {
+          const at = performance.now() - start;
+          frames.push(read(at));
+          if (running.every((animation) => animation.playState === "finished" || animation.playState === "idle") && at > 120) {
+            resolve();
+            return;
+          }
+          if (at > 6000) {
+            reject(new Error("the panel never came to rest"));
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return frames;
+    },
+    { card: CARD, panel: PANEL, key: PANEL_KEY, mode, duration: durationMs, step: SEEK_STEP_MS },
+  );
+}
+
+test.describe("H3 card proof: the chats panel never moves a waiting card", () => {
+  for (const size of PANEL_SIZES) {
+    test(`the chats panel opens and closes over Vex's column at ${sizeName(size)}`, async ({ page }) => {
+      await open(page, size, "open");
+      const card = await cardBox(page);
+      const columns = await page.evaluate(
+        () => getComputedStyle(document.querySelector(".vex-shell-frame") as Element).gridTemplateColumns,
+      );
+      // The rail at every moment, the panel closed.
+      expect(columns.split(" ")[0]).toBe("76px");
+      await expect(page.locator(PANEL)).toHaveAttribute("inert", "");
+
+      const seekOpen = await panelPress(page, "seek", OPEN_MS);
+      const seekClose = await panelPress(page, "seek", CLOSE_MS);
+      const liveOpen = await panelPress(page, "live", OPEN_MS);
+      const liveClose = await panelPress(page, "live", CLOSE_MS);
+      for (const [name, frames] of [
+        ["seek open", seekOpen],
+        ["seek close", seekClose],
+        ["live open", liveOpen],
+        ["live close", liveClose],
+      ] as const) {
+        for (const frame of frames) {
+          expect(frame.card, `${name} ${frame.at.toFixed(1)}ms`).toEqual(card);
+          expect(frame.columns, `${name} ${frame.at.toFixed(1)}ms`).toBe(columns);
+        }
+      }
+      // The panel moved: out of the rail to its place at x 76, and back.
+      expect(seekOpen[0]?.panelX).toBeLessThan(0);
+      expect(seekOpen.at(-1)?.panelX).toBe(76);
+      expect(seekClose[0]?.panelX).toBe(76);
+      expect(seekClose.at(-2)?.panelX).toBeLessThan(0);
+      expect(liveOpen.length).toBeGreaterThanOrEqual(2);
+      expect(liveClose.length).toBeGreaterThanOrEqual(2);
+      expect(await cardBox(page)).toEqual(card);
+    });
+  }
+});
+
+/**
+ * THE BAND LEG (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's rule (a)
+ * under 1024): at 1000 x 720, the window minimum, her console is a 48 line
+ * under the header and her section a band laid over the chat's top. The
+ * band rests while a card waits: with the swap card waiting it is closed
+ * whatever the person chose (`?vex=open` asks for it open), her keys say why
+ * instead of acting, and a press on the Vex key, on the console line's key
+ * or on the chord changes nothing, on any painted frame, nor does the chats
+ * panel opening and closing over the chat. The grid's rows and columns are
+ * read beside the card throughout. With no card waiting the band does open
+ * and close, so a band that never opened cannot pass.
+ */
+const BAND_SIZE = { width: 1000, height: 720 } as const;
+
+interface BandFrame {
+  readonly at: number;
+  readonly card: Box;
+  readonly rows: string;
+  readonly columns: string;
+  readonly phase: string | null;
+}
+
+/** Press a control (by selector) and read the card on every painted frame for `ms`. */
+async function bandPress(page: Page, control: string, ms: number): Promise<BandFrame[]> {
+  return page.evaluate(
+    async ({ card, section, control, ms }) => {
+      const cardEl = document.querySelector(card);
+      const frameEl = document.querySelector<HTMLElement>(".vex-shell-frame");
+      const sectionEl = document.querySelector<HTMLElement>(section);
+      const controlEl = document.querySelector<HTMLElement>(control);
+      if (cardEl === null || frameEl === null || sectionEl === null || controlEl === null) {
+        throw new Error(`the card, the frame, her band or ${control} is missing`);
+      }
+      const frames: BandFrame[] = [];
+      const read = (at: number): BandFrame => {
+        const r = cardEl.getBoundingClientRect();
+        return {
+          at,
+          card: { x: r.x, y: r.y, width: r.width, height: r.height },
+          rows: getComputedStyle(frameEl).gridTemplateRows,
+          columns: getComputedStyle(frameEl).gridTemplateColumns,
+          phase: sectionEl.getAttribute("data-kimm-phase"),
+        };
+      };
+      const start = performance.now();
+      controlEl.click();
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          const at = performance.now() - start;
+          frames.push(read(at));
+          if (at > ms) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return frames;
+    },
+    { card: CARD, section: SECTION, control, ms },
+  );
+}
+
+test.describe("H3 card proof under 1024: the band never moves a waiting card", () => {
+  test(`her band rests while the card waits, and nothing moves it at ${sizeName(BAND_SIZE)}`, async ({ page }) => {
+    // Asked open: the band still rests, because a card waits.
+    await open(page, BAND_SIZE, "closed");
+    await page.goto("/?state=swap-waiting&vex=open");
+    await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    const frameEl = page.locator('[data-vex-area="shell-frame"]');
+    await expect(frameEl).toHaveAttribute("data-vex-tier", "band");
+    await expect(frameEl).toHaveAttribute("data-vex-band", "closed");
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    const key = page.locator('[data-vex-area="vex-key"]');
+    await expect(key).toHaveAttribute("aria-disabled", "true");
+    await expect(page.locator('[data-vex-area="vex-console-line-key"]')).toHaveAttribute("aria-disabled", "true");
+    // The console line is the frame's 48 row: the chat starts under it.
+    const rows = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateRows);
+    expect(rows.split(" ").slice(0, 2)).toEqual(["76px", "48px"]);
+    const card = await cardBox(page);
+    const columns = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
+
+    for (const control of ['[data-vex-area="vex-key"]', '[data-vex-area="vex-console-line-key"]']) {
+      const frames = await bandPress(page, control, OPEN_MS + 120);
+      for (const frame of frames) {
+        expect(frame.card, `${control} ${frame.at.toFixed(1)}ms`).toEqual(card);
+        expect(frame.rows, `${control} ${frame.at.toFixed(1)}ms`).toBe(rows);
+        expect(frame.columns, `${control} ${frame.at.toFixed(1)}ms`).toBe(columns);
+        expect(frame.phase, `${control} ${frame.at.toFixed(1)}ms`).toBe("closed");
+      }
+    }
+    // The chord, from anywhere: the same rest.
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B");
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    expect(await cardBox(page)).toEqual(card);
+
+    // The chats panel over what is read: it covers, it never moves the card.
+    const panelOpen = await bandPress(page, PANEL_KEY, OPEN_MS + 120);
+    const panelClose = await bandPress(page, PANEL_KEY, CLOSE_MS + 120);
+    for (const frame of [...panelOpen, ...panelClose]) {
+      expect(frame.card, `panel ${frame.at.toFixed(1)}ms`).toEqual(card);
+      expect(frame.rows, `panel ${frame.at.toFixed(1)}ms`).toBe(rows);
+      expect(frame.columns, `panel ${frame.at.toFixed(1)}ms`).toBe(columns);
+    }
+  });
+
+  test(`with no card waiting her band opens and closes over the chat at ${sizeName(BAND_SIZE)}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize(BAND_SIZE);
+    await page.goto("/?state=new-chat");
+    await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+    // It starts closed on every visit: no band at all.
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    const frameEl = page.locator('[data-vex-area="shell-frame"]');
+    const columns = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
+    const rows = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateRows);
+    await page.locator('[data-vex-area="vex-key"]').click();
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "open");
+    await expect(frameEl).toHaveAttribute("data-vex-band", "open");
+    // Under the line's rule, the chat's width, min(clamp(220, 34dvh, 296), 40dvh) high.
+    const band = (await page.locator(SECTION).boundingBox()) as Box;
+    expect(band.x).toBe(76);
+    expect(band.y).toBe(124);
+    expect(band.width).toBe(924);
+    expect(band.height).toBeCloseTo(Math.min(Math.max(220, 0.34 * 720), 296, 0.4 * 720), 1);
+    // The grid never changed; the band is a box over the chat.
+    expect(await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateColumns)).toBe(columns);
+    expect(await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateRows)).toBe(rows);
+    // A press anywhere on its foot row closes it, and focus goes to the Vex key.
+    const foot = (await page.locator(KEY).boundingBox()) as Box;
+    expect(foot.height).toBe(56);
+    expect(foot.width).toBe(924);
+    await page.mouse.click(foot.x + 40, foot.y + foot.height / 2);
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    await expect(frameEl).toHaveAttribute("data-vex-band", "closed");
+    await expect(page.locator('[data-vex-area="vex-key"]')).toBeFocused();
+    expect(errors).toEqual([]);
+  });
+});
+
+/**
+ * THE WIDE WINDOWS (docs/design/H3-DESKTOP.md section 1.11), against VEX
+ * Cloud's measured boxes (`h3-merged/renders/checks.json`, approval-open at
+ * 1920 and 2560): the chat's title and the card's text start on the reading
+ * line (983.6 at 1920, 1270 at 2560); her section starts under a console
+ * zoomed with the window (Cloud's 188 x zoom less desktop's missing 40-high
+ * strategies row: 76 + 148 x zoom) and folds to a 56 x zoom strip (Cloud's
+ * stub, 61 and 81.5); the foot row is 72 x zoom and its rule.
+ */
+const WIDE = [
+  { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 983.6, sectionY: 237.47, strip: 61.1, foot: 79.55 },
+  { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 1270, sectionY: 291.34, strip: 81.48, foot: 105.76 },
+] as const;
+
+test.describe("H3 card proof: Cloud's boxes at the wide windows", () => {
+  for (const wide of WIDE) {
+    test(`the reading line, her box and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
+      await open(page, wide.size, "open");
+      expect(zoomAt(wide.size.width)).toBe(wide.zoom);
+      const read = await page.evaluate(
+        ({ card }) => {
+          const title = document.querySelector<HTMLElement>('[data-vex-head-cell="title"]');
+          const cardEl = document.querySelector<HTMLElement>(card);
+          const column = document.querySelector<HTMLElement>("[data-vex-transcript-column]");
+          const account = document.querySelector<HTMLElement>('[data-vex-area="account-cell"]');
+          if (title === null || cardEl === null || column === null || account === null) {
+            throw new Error("the title, the card, the transcript or the account cell is missing");
+          }
+          const zoom = Number(getComputedStyle(document.documentElement).getPropertyValue("--vex-zoom"));
+          // The card's own inset, in its zoomed pixels: its first row's padding.
+          const inset = Number.parseFloat(getComputedStyle(cardEl).getPropertyValue("--vex-appr-inset")) || 24;
+          return {
+            zoom,
+            title: title.getBoundingClientRect().x + Number.parseFloat(getComputedStyle(title).paddingLeft),
+            transcript: column.getBoundingClientRect().x,
+            cardText: cardEl.getBoundingClientRect().x + inset * zoom,
+            foot: account.getBoundingClientRect().height,
+          };
+        },
+        { card: CARD },
+      );
+      expect(read.zoom).toBe(wide.zoom);
+      expect(Math.abs(read.title - wide.line), `title ${String(read.title)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.transcript - wide.line), `transcript ${String(read.transcript)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.cardText - wide.line), `card ${String(read.cardText)}`).toBeLessThanOrEqual(0.5);
+      expect(read.foot).toBeCloseTo(wide.foot, 1);
+      const section = (await page.locator(SECTION).boundingBox()) as Box;
+      expect(section.x).toBe(248);
+      expect(section.y).toBeCloseTo(wide.sectionY, 1);
+      expect(section.y + section.height).toBeCloseTo(wide.size.height - wide.foot, 1);
+      const key = (await page.locator(KEY).boundingBox()) as Box;
+      expect(key.height).toBeCloseTo(wide.strip, 1);
+    });
+  }
+});
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("H3 card proof: a waiting money card never moves", () => {
@@ -331,7 +690,9 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
       const card = await cardBox(page);
       const section = (await page.locator(SECTION).boundingBox()) as Box;
       expect(section).not.toBeNull();
-      const closedInset = section.height - STRIP_PX;
+      // Her strip zooms with her console (section 1.11): 56 x zoom.
+      const zoom = zoomAt(size.width);
+      const closedInset = section.height - STRIP_PX * zoom;
 
       // 1. Seeked: Hide Vex every 30ms to 420, then Show Vex every 30ms to 720.
       const close = await seekedPress(page, CLOSE_MS);
@@ -345,7 +706,7 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
         expect(frame.section, `seek ${String(frame.at)}ms`).toEqual(section);
       }
       // The seeks moved her: open to the strip, and back to open.
-      const insets = (frames: Frame[]): number[] => frames.map((f) => bottomInset(f.clip, section.height));
+      const insets = (frames: Frame[]): number[] => frames.map((f) => bottomInset(f.clip, section.height, zoom));
       expect(insets(close)[0]).toBeCloseTo(0, 0);
       expect(insets(close).at(-1)).toBeCloseTo(closedInset, 0);
       expect(insets(reopen)[0]).toBeCloseTo(closedInset, 0);
@@ -366,8 +727,8 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
       for (const frame of turned) expect(frame.card, `turned ${frame.at.toFixed(1)}ms`).toEqual(card);
       const second = turned.findIndex((frame) => frame.at === -1);
       expect(second).toBeGreaterThan(0);
-      const atPress = bottomInset(turned[second - 1]?.clip ?? "", section.height);
-      const after = turned.slice(second + 1).map((frame) => bottomInset(frame.clip, section.height));
+      const atPress = bottomInset(turned[second - 1]?.clip ?? "", section.height, zoom);
+      const after = turned.slice(second + 1).map((frame) => bottomInset(frame.clip, section.height, zoom));
       for (const inset of after) expect(inset).toBeLessThanOrEqual(atPress + 0.5);
       expect(after.at(-1)).toBeCloseTo(0, 0);
     });

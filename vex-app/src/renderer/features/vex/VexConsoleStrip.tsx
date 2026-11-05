@@ -13,6 +13,13 @@
  *   (H3's strategies cell is left out: desktop has no strategies, 4.1)
  *   OPEN ACTIVITY and an arrow at the right edge, a key to Agent Scan
  *
+ * UNDER 1024 THE SAME LINE IS THE CONSOLE LINE (docs/design/H3-DESKTOP.md
+ * section 1.10; VEX Cloud's `.cline` from 768 to 1023), in chats and on pages
+ * alike, with `band`: its first cell is her state (the square, the word and
+ * the timer while a turn runs), a key named by its action that opens and
+ * closes her band as the Vex key does, and says why instead while the band
+ * rests; the decision gives way, and the missions cell keeps its count.
+ *
  * The words, counts and keys are the console's own (`VexConsole.tsx`): the
  * same model, the same lead decision, the same missions words, the same
  * openers, so the strip and the column can never disagree. While the first
@@ -37,16 +44,52 @@ import {
   openMissions,
   useMissionsReadFailed,
 } from "./VexConsole.js";
+import { VexElapsed } from "./VexElapsed.js";
+import { vexToggleName } from "./vex-toggle-shortcut.js";
 
-export function VexConsoleStrip(): JSX.Element {
-  const { needsYou } = useVexPresence();
+/** The console line's own key under 1024: her band, as the frame solved it. */
+export interface VexConsoleLineBand {
+  /** Her band is open. */
+  readonly open: boolean;
+  /** It rests: why, in words; the key then acts on nothing. */
+  readonly held: string | null;
+  /** Open or close it: the same press as the Vex key's. */
+  readonly onToggle: () => void;
+}
+
+export function VexConsoleStrip({ band }: { readonly band?: VexConsoleLineBand } = {}): JSX.Element {
+  const presence = useVexPresence();
+  const { needsYou } = presence;
   const missions = useAllMissions();
   const count = needsYouCountText(needsYou);
   const lead = needsYou.status === "loading" ? null : needsYouLeadOf(needsYou.items);
   const row = missions === null ? null : missionsRowOf(missions);
+  // The missions count, the line's short word for the row (Cloud's `.cl-short`).
+  const missionsCount = row === null ? null : (/^\d+/.exec(row.lead)?.[0] ?? "0");
   const missionsFailed = useMissionsReadFailed(missions);
   return (
-    <div className="vex-strip" data-vex-area="vex-console-strip">
+    <div className="vex-strip" data-vex-area="vex-console-strip" data-band={band === undefined ? undefined : ""}>
+      {band === undefined ? null : (
+        <div className="vex-strip__cell vex-strip__state">
+          <button
+            type="button"
+            className="vex-strip__key"
+            data-vex-area="vex-console-line-key"
+            aria-label={vexToggleName(band.open)}
+            aria-disabled={band.held === null ? undefined : true}
+            title={band.held ?? undefined}
+            onClick={() => {
+              if (band.held === null) band.onToggle();
+            }}
+          >
+            <StateSquare state={presence.state === "ready" ? "idle" : "done"} className="vex-strip__square" />
+            <span className="vex-strip__word">{presence.word}</span>
+            {presence.timerStartedAt === null ? null : (
+              <VexElapsed startedAtMs={presence.timerStartedAt} className="vex-strip__timer" />
+            )}
+          </button>
+        </div>
+      )}
       <div className="vex-strip__cell vex-strip__head">
         <span className="vex-console__label">Needs you</span>
         {count === null ? null : <span className="vex-console__count vex-num">{count}</span>}
@@ -99,6 +142,9 @@ export function VexConsoleStrip(): JSX.Element {
           >
             <LineMissions size={16} className="vex-console__icon" />
             <span className="vex-strip__text">{row.lead}</span>
+            {band === undefined || missionsCount === null ? null : (
+              <span className="vex-strip__short vex-num" aria-hidden="true">{missionsCount}</span>
+            )}
           </button>
         )}
       </div>

@@ -223,6 +223,13 @@ export interface UiState {
    */
   readonly vexOpenLighter: boolean;
   /**
+   * Her band under 1024 (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's
+   * PD-12): closed on every visit, a press kept for the session only. NOT
+   * persisted, so every launch starts it closed, and nothing narrow writes
+   * `vexOpenChat` or `vexOpenPages`.
+   */
+  readonly vexOpenNarrow: boolean;
+  /**
    * @deprecated R3's "Show avatar", retired by her section's open or closed
    * choice (`vexOpenChat`, plan row S4-14). v24 folded a stored `false` into
    * that choice and pinned this slot true, and nothing reads or writes it
@@ -264,10 +271,11 @@ export interface UiState {
   /** @deprecated The previous frame's BOOK drag width. See `sidebarWidth`. */
   readonly bookWidth: number;
   /**
-   * Below the medium tier the left sidebar renders the rail unless the user
-   * manually re-expands it; this is that override (and, in Lighter, the top
-   * bar's drawer). NOT persisted: a relaunch under a narrow window starts
-   * back at the rail.
+   * The Lighter desk's drawer (Markets and sessions), opened from its title
+   * cell. It was also R3's narrow-tier override that widened the chats
+   * column; H3 never widens a track there (docs/design/H3-DESKTOP.md section
+   * 4.12: the chats panel, the frame's own state), so the agent shell and
+   * Studio no longer set it. NOT persisted.
    */
   readonly sidebarNarrowExpanded: boolean;
   /**
@@ -471,6 +479,8 @@ export interface UiState {
    * its rail.
    */
   readonly setVexOpen: (value: boolean) => void;
+  /** Open (true) or close (false) her band under 1024, for the session only. */
+  readonly setVexOpenNarrow: (value: boolean) => void;
   /** Legacy name of `setVexOpen`. */
   readonly setBookOpen: (value: boolean) => void;
   /** Flip the current page class's stored choice. */
@@ -623,6 +633,7 @@ export const useUiStore = create<UiState>()(
       vexOpenChat: true,
       vexOpenPages: false,
       vexOpenLighter: false,
+      vexOpenNarrow: false,
       showAvatar: true,
       welcomeVexShown: true,
       vexInferenceNoticeDismissed: false,
@@ -666,6 +677,7 @@ export const useUiStore = create<UiState>()(
       setSidebarNarrowExpanded: (sidebarNarrowExpanded) =>
         set({ sidebarNarrowExpanded }),
       setVexOpen: (value) => set((state) => vexOpenPatch(state, value)),
+      setVexOpenNarrow: (vexOpenNarrow) => set({ vexOpenNarrow }),
       setBookOpen: (value) => set((state) => vexOpenPatch(state, value)),
       toggleBook: () =>
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),

@@ -23,12 +23,14 @@
  *
  * ## The easing family
  *
- * ONE family, four curves, no fifth. CSS mirrors `--vex-ease-standard`,
+ * ONE family, five curves, no sixth. CSS mirrors `--vex-ease-standard`,
  * `--vex-ease-out`, `--vex-ease-inout` and `--vex-ease-push`, all declared in
  * `tokens.css` (they used to be split across `shell.css` and
  * `motion-primitives.css`, which is how `dialog[open]` came to hardcode a
  * stray curve while its comment claimed it was on the family one). The
- * fourth, the push curve, belongs to Kimm's section alone.
+ * fourth, the push curve, belongs to Kimm's section and the chats panel. The
+ * fifth, the house curve (`EASE_HOUSE`), is JS only: a page's fade as it
+ * re-lays (`features/appShell/page-relay.ts`), and nothing else.
  *
  * ## Springs
  *
@@ -85,6 +87,32 @@ export const DURATION_VEX_OPEN_MS = 720;
 export const DURATION_VEX_CLOSE_MS = 420;
 
 /**
+ * THE CHATS PANEL (docs/design/H3-DESKTOP.md section 4.12; `ChatsPanel.tsx`):
+ * under 1280 the rail's key slides the 248 chats panel out of the rail over
+ * Vex's column. VEX Cloud's own motion (`h3-shell-gaps/js/shell.js`
+ * `setLeftOver`), a named exception in MOTION-POLICY.md:
+ *
+ *   - the panel: translate3d(-100%) to none, `DURATION_VEX_OPEN_MS` to open
+ *     and `DURATION_VEX_CLOSE_MS` to close (Cloud's push and fold), on
+ *     `EASE_PUSH`, the close playing the same keyframes in reverse;
+ *   - the scrim beside it: opacity, `DURATION_CHATS_SCRIM_OPEN_MS` in and
+ *     `DURATION_CHATS_SCRIM_CLOSE_MS` out, on `EASE_PUSH`;
+ *   - its first rows as it opens: from 16px left and transparent, each over
+ *     `DURATION_CHATS_ROW_MS` on `EASE_PUSH`, row n after
+ *     `CHATS_ROW_DELAY_MS + n * CHATS_ROW_STAGGER_MS`, the first
+ *     `CHATS_ROW_ENTER_MAX` of them.
+ *
+ * Web Animations only, no CSS twin: nothing in a sheet reads these. Reduced
+ * motion and Save-Data land the panel at once.
+ */
+export const DURATION_CHATS_SCRIM_OPEN_MS = 600;
+export const DURATION_CHATS_SCRIM_CLOSE_MS = 300;
+export const DURATION_CHATS_ROW_MS = 620;
+export const CHATS_ROW_DELAY_MS = 120;
+export const CHATS_ROW_STAGGER_MS = 45;
+export const CHATS_ROW_ENTER_MAX = 12;
+
+/**
  * One cycle of the running square's blink (PD-06): opacity 1 to 0.25 on
  * steps(2, end), VEX Cloud's built `--vx-blink`. A named exception to the
  * scale (MOTION-POLICY.md). Nothing in JS times against it; the mirror keeps
@@ -134,9 +162,28 @@ export const EASE_OUT = [0.25, 1, 0.5, 1] as const;
 export const EASE_INOUT = [0.76, 0, 0.24, 1] as const;
 
 /**
- * The push curve, Kimm's section only (docs/design/H3-DESKTOP.md section
- * 3.1): derived from the clip insets the mockup prints on its open and close
+ * The push curve, Kimm's section and the chats panel only
+ * (docs/design/H3-DESKTOP.md sections 3.1 and 4.12): derived from the clip insets the mockup prints on its open and close
  * strips, which it reproduces to the printed digits. CSS mirror:
  * `--vex-ease-push`.
  */
 export const EASE_PUSH = [0.22, 1, 0.36, 1] as const;
+
+/**
+ * The house curve, VEX Cloud's `--vx-ease-ease` (motion contract section 2):
+ * a page's fade from 0.4 as it re-lays at a Show Vex or Hide Vex press
+ * (docs/design/H3-DESKTOP.md section 1.9, EC-26; `page-relay.ts`), and
+ * nothing else on desktop. JS only, a Web Animations curve with no CSS twin.
+ * It is the review sheet's `--ease`, which is NOT her section's wipe (that is
+ * `EASE_PUSH`, `motion-tokens.test.ts`).
+ */
+export const EASE_HOUSE = [0.625, 0.05, 0, 1] as const;
+
+/**
+ * A curve of the family as CSS spells it, for a Web Animations call: the one
+ * place outside tokens.css a `cubic-bezier()` string is made, and only from
+ * the family's own control points.
+ */
+export function cssCurve(curve: readonly [number, number, number, number]): string {
+  return `cubic-bezier(${curve.join(", ")})`;
+}

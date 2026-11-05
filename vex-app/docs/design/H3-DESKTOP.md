@@ -50,45 +50,43 @@ Three columns and three rows of cells.
 | chats column | 0, 76, 248 x 752 | measured |
 | Vex column | 248, 76, 432 x 752 | printed: the section's x and width |
 | chat column | 680, 76, 760 x 752 | printed: the card's x and width |
-| bottom row | 0, 828, 1440 x 72 | measured: its top rule at y 827 to 828 |
+| bottom row | 0, 827, 1440 x 73 | measured: its top rule at y 827 to 828, then 72; VEX Cloud's foot line, 72 x zoom and its rule (`--vex-h3-foot`, section 1.11) |
 | Kimm's section, open | 248, 264, 432 x 563 | printed |
 | Kimm's section, closed (the strip) | 248, 264, 432 x 56 | printed: clip inset 507 of 563 |
 | the swap card | 680, 249, 760 x 651 | printed |
 
-Her section ends one pixel above the bottom row (264 + 563 = 827). The swap card's box runs to the window's foot: its decision row is the bottom row's chat cells (section 1.8).
+Her section ends on the bottom row's top rule (264 + 563 = 827). The swap card's box runs to the window's foot: its decision row is the bottom row's chat cells (section 1.8).
 
 ### 1.2 The column rule and the tiers
-The rule, derived on 3 November 2026 from the two printed card boxes and checked here against the proof plate's pixel counts:
+VEX Cloud's rule (PD-14 of its build plan; `--vex-w` in the H3 mockup's `css/tokens.css`, lines 180 and 202, and its measured boxes in `renders/checks.json`), which replaced the rule derived here on 3 November 2026:
 
-- the chats column is a fixed 248;
-- the Vex column is 30% of the window width, rounded to a whole pixel;
+- the chats column is a fixed 248 from 1280 up, the 76 rail under it (section 4.12);
+- the Vex column is clamp(360px, 30vw, 768px) from 1280 up, unrounded, and a fixed 340 from 1024 to 1279;
 - the chat column takes the rest;
 - under 1024 the band layout takes over (section 1.10).
 
 Evidence:
-- Printed boxes: at 1440 the card starts at 680 = 248 + 432, and 432 is 30% of 1440. At 2560 it starts at 1016 = 248 + 768, and 768 is 30% of 2560; its width 1544 is the rest.
-- The proof plate's "Pixels" rows count the card's area at DPR 2 (four device pixels per CSS pixel). Each count is exactly four times the rule's chat width times a whole height: 1280 gives 1,645,920 = 4 x 648 x 635; 1366 gives 1,707,696 = 4 x 708 x 603; 1920 gives 3,112,640 = 4 x 1096 x 710; 1440 and 2560 give 4 x 760 x 651 and 4 x 1544 x 946, their printed boxes. At 1366, 30% is 409.8; a chat of exactly 708 means the Vex column rounds to 410 and the chat takes the whole remainder. The heights at 1280, 1366 and 1920 depend on window heights the plate does not print.
-
-Open: Cloud's own breakpoints and widths, and whether Cloud's chat has a floor. Settled by desu's H3 branch.
+- Printed boxes: at 1440 the card starts at 680 = 248 + 432, and 432 is 30% of 1440. At 2560 it starts at 1016 = 248 + 768, and 768 is 30% of 2560 and the clamp's cap; its width 1544 is the rest.
+- Cloud's measured boxes (`renders/checks.json`, 4 November 2026): the Vex column 384 at 1280, 576 at 1920 and 768 at 2560; at 1024 x 768 the column is 340 and the content 608 (the README's table). At 1366 Cloud lays 30vw unrounded, 409.8; desktop's solver and its `--vex-h3-vex-w` token do the same, so the two apps agree to the fraction and need no tolerance.
 
 | Window width | Chats | Vex | Chat | Note |
 |---|---|---|---|---|
 | 1000 to 1023 | 76 rail | a band | 924 to 947 | the band layout; desktop's minimum window is 1000 x 720 (`src/main/windows/bounds.ts`) |
-| 1024 | 248 | 307 | 469 | no plate; the rule extended. Desktop starts the chats folded here: 76, 307, 641 (section 4.12) |
-| 1180 | 248 | 354 | 578 | desktop folded: 76, 354, 750 |
-| 1224 | 248 | 367 | 609 | the first run's window on a 1440px display (85% of the work area); desktop folded: 76, 367, 781 |
+| 1024 | 76 rail | 340 | 608 | Cloud's measure. The chats are the rail here; their key opens the chats panel over Vex's column (section 4.12) |
+| 1180 | 76 rail | 340 | 764 | the chats panel, as at 1024 |
+| 1224 | 76 rail | 340 | 808 | the first run's window on a 1440px display (85% of the work area) |
 | 1280 | 248 | 384 | 648 | the stored default window, 1280 x 800 |
-| 1366 | 248 | 410 | 708 | |
+| 1366 | 248 | 409.8 | 708.2 | Cloud's unrounded 30vw |
 | 1440 | 248 | 432 | 760 | the 1440 captures |
-| 1536 | 248 | 461 | 827 | |
+| 1536 | 248 | 460.8 | 827.2 | |
 | 1920 | 248 | 576 | 1096 | |
-| 2560 | 248 | 768 | 1544 | printed |
+| 2560 | 248 | 768 | 1544 | printed; the clamp's cap from here up |
 
 What follows from the rule:
 - The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first of the money rule's three legs (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
-- There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is 469, narrower than any plate. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3), and whether Cloud moves the band seam above 1024. Settled in the harness at 1024 and 1280 and with Cloud.
+- There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is Cloud's 608. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3). Settled in the harness at 1024 and 1280.
 - In a chat, the Vex column's width never depends on whether her section is open. On pages, closing her folds the column to a line (section 1.9).
-- Open: what the sidebar key does at 1024 and up; it is drawn but never pressed. Presumed: it folds the chats column to the 76px rail and the chat takes the freed 172px. A fold the person asks for may move a card; her section never does. Desktop builds the presumption, and from 1024 to 1267 starts the chats folded (section 4.12).
+- The sidebar key, from 1280 up, folds the chats column to the 76px rail and the chat takes the freed 172px: the person's own fold. Under it the chats are the rail at every moment and the key opens the chats panel over Vex's column, so no track changes (section 4.12).
 
 ### 1.3 The header row
 76 high, one row of cells across the window. It is mounted once, because it hosts the app-wide approvals sync (`RunningHead.tsx`: preload allows one subscriber per event), and every cell that is not a control is a window drag region (`.vex-drag`).
@@ -106,7 +104,7 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 | network | 1078, 240 | MAINNET, the REAL FUNDS mark and a chevron: a network menu | MAINNET and the REAL FUNDS mark, with no chevron: a statement, not a menu |
 | pause | 1318, 122 | PAUSE ALL | left out (no global pause); on Windows and Linux the caption buttons sit here (section 4.7) |
 
-Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344) and 12 from its right.
+Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344) and 12 from its right. Under 1024 the Vex key's cell is 288 wide with the waiting count (section 1.10).
 
 The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide (the chevron's 60 and the column's rule), and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. How they give way is VEX Cloud's (the H3 mockup's width rules, 2026-11-05), on the window's width: under 1440 the Vex key drops its keycaps and sets its state line at 12; under 1280 the key says the short state word ("Waiting") and the network cell says MAIN with the hatch, its words kept for assistive tech (section 1.6, Appendix A.1).
 
@@ -129,10 +127,10 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 | Part | y, height | Contents |
 |---|---|---|
 | the Vex key | the header, 248 to 680 | section 1.6 |
-| Needs you head | 76, 43 | NEEDS YOU, and the count at the right |
-| Needs you row | 119, 64 | the decision as a sentence ("Approve swap: 200 USDC → ETH"), a meta line ("Mainnet, real funds · since 12:40") and a REVIEW key cell with a chevron (559 to 680, raised fill); at zero, "Nothing needs you." |
-| missions row | 183, 40 | the missions icon, "1 mission running on Mainnet · Grow ETH", a chevron |
-| strategies row | 223, 40 | "2 strategies running", a chevron. Not on desktop |
+| Needs you head | 76, 44 | NEEDS YOU, and the count at the right; VEX Cloud's `.cn-h`, its rule inside |
+| Needs you row | 120, 64 | the decision as a sentence ("Approve swap: 200 USDC → ETH"), a meta line ("Mainnet, real funds · since 12:40") and a REVIEW key cell with a chevron (559 to 680, raised fill); at zero, "Nothing needs you." |
+| missions row | 184, 40 | the missions icon, "1 mission running on Mainnet · Grow ETH", a chevron |
+| strategies row | 224, 40 | "2 strategies running", a chevron. Not on desktop |
 | Kimm's section | 264, 563 | a fixed box over the rest of the console |
 | the console's rest | under her section | seen while she is closed: strategy rows (62 each, with a MAINNET tag and a switch), AI PERMISSION (a 44 head, then its sentence and "Change in Settings"), RECENT ACTIVITY (a 44 head, rows about 43 high, each with a status square and word), OPEN ACTIVITY with an arrow, ending at 826 |
 
@@ -140,9 +138,9 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 **Closed:** the section folds to its top 56, the strip, 264 to 320: the glyph field's frame at the left and the same key, now SHOW VEX with a down chevron, 531 to 680 (149 x 56, measured). The console's rest starts under the strip.
 
-**The box.** Her section is a box laid over the column, not a row in it: left and width are the column's, its top is the foot of the console's top block, and its foot is one pixel above the bottom row. Its size is a function of the window only; open and closed differ only in its clip-path (section 3.2). Its height is the window height less 73 less its top.
+**The box.** Her section is a box laid over the column, not a row in it: left and width are the column's, its top is the foot of the console's top block, and its foot is the bottom row's top rule (Cloud's foot line, section 1.11). Its size is a function of the window only; open and closed differ only in its clip-path (section 3.2). Its height is the window height less the foot row (73 at a zoom of 1) less its top; from 1760 up its top is 148 x zoom (section 1.11).
 
-**Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
+**Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter, 44 + 64 + 40 = 148 (Cloud's rows, each with its rule inside; Cloud's head rows are 188), and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
 
 **Needs you lists every decision** (VEX Cloud's `h3-shell-gaps`, decisions 4 to 6, settled 2026-11-05). Cloud lets the list grow until her section reaches a 240 floor and then scrolls it. Desktop's box must not move, not even while she waits, so the top block keeps its 148 and her top its 224: the list scrolls inside the decision row, one whole 63 row at a time (scroll snap, no bar), the decision that expires first leading, then the rest in the model's reading order. A cue cell at the head's right end, behind its rule, says "{n} more below" with its chevron down and pages the list; at the list's end it reads "{n} more above" with the chevron turned. The 240 floor never binds on desktop: at the 720 window floor her box is 423 high.
 
@@ -202,7 +200,7 @@ Open, for the owner:
 **The swap card** (`h3-merged__approval-*-1440`), printed at 680, 249, 760 x 651, with its top rule at 248. Top to bottom: the eyebrow row (CONFIRM THIS SWAP, then MAINNET, the REAL FUNDS stamp and a collapse chevron at the right), the sentence, the consequence line, field rows on a 34px pitch with their labels in mono caps, ALL SIGNED FIELDS, and the reason field, "Tell Vex what to do instead" (771 to 826). Its decision row is the bottom row (section 1.8). Which rows desktop shows is in section 4.1.
 
 ### 1.8 The bottom row
-72 high, across the window, in a chat. Cells at 1440, measured in `h3-merged__welcome-closed-1440`:
+73 high with its top rule (72 x the wide zoom and the rule, section 1.11), across the window, in a chat. Cells at 1440, measured in `h3-merged__welcome-closed-1440`:
 
 | Cell | x, width | H3 draws | Desktop puts |
 |---|---|---|---|
@@ -234,20 +232,29 @@ From `h3-merged__portfolio-*-1440`.
 - **Her section closed:** the console folds to one line under the header (76 to 123, measured): NEEDS YOU and its count (248, 142), the decision or "Nothing needs you." (390, 290), the missions cell (680, 258), the strategies cell, and OPEN ACTIVITY with an arrow at the right edge (1277, 163). The page takes the whole width right of the chats, 248 to 1440.
 - **The page frame:** a tabs row (about 57 high) with the tabs as cells (OVERVIEW selected on a raised fill, WALLET) and "Updated 12:41" at the right, then the page body, 24 in from each edge.
 
-Open: whether a page's width change, when she closes on a page, slides or snaps. Default: it snaps when her close ends. Desktop's pages that can hold a money card keep the chat layout (section 4.10).
+**The re-lay** (VEX Cloud's EC-26; the H3 mockup's `js/stage.js`, lines 283 to 287): the frame's tracks never animate. Show Vex or Hide Vex on a page re-lays the page into its new width at the press, in one frame, and the page then fades in from 0.4 opacity over the leg's duration (720ms opening, 420ms closing) on the house curve, cubic-bezier(0.625, 0.05, 0, 1); her column, opening, wipes in from its top with clip-path on the push curve (`features/appShell/page-relay.ts`). A press only, never a cue. Cloud also wipes her section away over the re-laid page as she closes; desktop's section lives inside her column, which folds to the strip at the press, so the close shows the fade alone (left for the owner, section 4.11). Desktop's pages that can hold a money card keep the chat layout (section 4.10).
 
-### 1.10 Under 1024: the band
-H3 draws the band only on the phone and prints one box at 900. What is known:
+### 1.10 Under 1024: the console line and her band
+VEX Cloud's 768 to 1023 layout (the H3 mockup's `css/app.css` section 14, `css/tokens.css` lines 190 to 191, `js/main.js` and `js/stage.js`; the README's "Under 1024 ... one rule (a)"), which desktop takes for its 1000 to 1023, in chats and on pages alike.
 
-- Printed: at 900 the card box is 76, 284, 824 x 516 (a 900 x 800 window). The chats fold to the 76 rail, and the chat runs from 76 to the right edge.
-- Printed, in the proof plate's note: under 1024 the band rests for the whole turn, so a card's arrival and Approve change nothing.
-- Measured on the phone (`h3-merged__phone-band-*-390`): the header is 59 high; the console line under it is 40, and its first cell carries her state and SHOW VEX or HIDE VEX; open, the band is her figure (230 high) and a 56-high foot row holding Vex's line and the HIDE VEX cell, and "the whole 56 tall row closes the band"; closed, there is no band, and the header's second cell shows her face with a chevron badge.
+- **The frame.** The chats are the 76 rail (their key opens the chats panel over the chat, section 4.12); there is no Vex column. Under the header a **console line**, 48 high, is a row of the frame across the chat (`H3_CONSOLE_LINE_HEIGHT`): her state as its first cell (the square, the word and the timer while a turn runs; a key named by its action that opens and closes her band), NEEDS YOU and its count, the missions count, and Open activity at the right edge. The chat runs from under it to the window's foot.
+- **The Vex key** is 288 wide (`H3_BAND_KEY_WIDTH`) and carries the waiting count beside her state; its keycaps leave (the chord stays in its name and tooltip) and its chevron cell is 48.
+- **Her band.** Her section, laid over the chat's top under the console line: the chat's width and min(clamp(220, 34dvh, 296), 40dvh) high (`--vex-band-h`: 244.8 at a 720-high window). Inside it her figure stands head to chest on her ground, and a 56 foot row holds Vex's line (the moment's words, the tagline) and the HIDE VEX cell; the whole foot row is one key, and a press anywhere on it closes the band, handing focus to the Vex key. It opens and closes with her section's own wipe from its top edge (720ms, 420ms, the push curve). While it is open the chat's transcript starts under it, its newest line still on the composer.
+- **Closed, there is no band**: no strip, the room goes back to the transcript.
+- **It starts closed on every visit** and a press holds for the session only (`vexOpenNarrow`, never persisted); nothing narrow writes `vexOpenChat` or `vexOpenPages` (section 3.5).
+- **It rests** while a turn runs or a card waits (Thinking, Working, Waiting for approval: "Vex shows her section after this turn.") and while the composer holds the focus, Cloud's keyboard ("Vex steps aside while you type."): closed whatever was chosen, its keys say the reason instead of acting, and the choice comes back when the hold ends. Vex's cues never open or close it.
+- **The money rule.** The console line is a row of the window; the band is a box over the chat that never enters the grid, and it rests whenever a card waits, so a card is never under it and never moves when it opens or closes. The card proof reads it at 1000 x 720 (`e2e/h3-card-proof.spec.ts`): with the swap card waiting and the band asked open, the band stays closed, and presses on the Vex key, the console line's key, the chord and the chats panel change neither the card nor a track on any painted frame; with no card, the band opens at 76, 124, 924 x 244.8 and its foot row closes it.
 
-Desktop's default, derived for S2-08: the 76 header with the rail's cell (the mark), the Vex key, the chat title, the network cell and the caption reserve; the console line across the window right of the rail; her band under the console line while open; the chat under that.
+Desktop differs from Cloud here in one thing: Cloud hides the console line while a card takes the chat (its G10); desktop keeps it standing, because it is a row of the frame and hiding it would change the chat's box under a waiting card.
 
-Built in S2-08: the band is a row of the frame under the header, over the chat's track, 132 high at every desktop width (`H3_BAND_HEIGHT`): the Vex column's own parts laid in one row, its head (44) over her state and Needs you beside her portrait (88). Its height is a function of nothing, so a card under it never moves when a turn starts, waits or ends. The chats rail runs from the header to the foot beside it. A page shows no band (the strip, section 1.9).
+### 1.11 Wide windows: the zoom and the reading line
+VEX Cloud's (`apps/web/src/lib/ui/wide-zoom.ts`, built; the H3 mockup's `css/tokens.css` lines 163, 183, 187 to 188 and 201; `renders/checks.json`), which desktop takes whole (`lib/wide-zoom.ts`).
 
-Open: the band's heights at a desktop width; whether the band may stand open over a waiting card (the proof's narrow rows were read with "states closed"); the header cells at this width. Settled in the harness at 1000 x 720 and with Cloud.
+- **The zoom.** `--vex-zoom` on `<html>` is clamp(1, window width / 1760, 1.5), to three decimals: 1 up to 1760, 1.091 at 1920, 1.455 at 2560, 1.5 from 2640. The shell frame writes it before its first paint and keeps it current as the window resizes.
+- **What zooms:** the transcript (the reading column), the composer dock and its model picker, the card's decision row, the console (Vex's column body, so her section's top, her corner key and her strip go with it: 148, 56 and 56 x zoom), a page, and the page strip (48 x zoom). **What never zooms:** the frame's cells, the header, the chats column, the account cell, the tagline cell and the column widths.
+- **The foot row** is 72 x zoom and its 1px top rule (`--vex-h3-foot`, Cloud's `--foot`): 73 at 1440, 79.55 at 1920, 105.76 at 2560. Her section ends on that rule. The Lighter desk keeps its 72.
+- **The reading line,** `--vex-read-x` = max(24, (chat - 760 x zoom) / 2 + 24 x zoom), and 24 under 1024: the chat's title, the transcript's text and the waiting card's text start on it (the card stands one 24 inset wider than the reading column). 24 at 1440 (704 in the window), 159.6 at 1920 (983.6) and 254 at 2560 (1270), Cloud's measured lefts. Over a page's strip the title keeps 24.
+- The card proof reads these at 1920 and 2560: the three lefts on the line within half a pixel, her box from 76 + 148 x zoom to the foot rule, her strip 56 x zoom, the foot row 72 x zoom + 1.
 
 ---
 
@@ -391,6 +398,9 @@ These replace R3's tokens and its guard contracts: the 23 primitives and both th
 | the push curve, both ways | cubic-bezier(0.22, 1, 0.36, 1) | derived from the printed insets, below |
 | reduced motion | at once | printed: "reduced motion lands it at once", on both strip plates |
 | Save-Data | at once | desktop's still-frame rule (`lib/motion/use-still-frame.ts`), as for K2 |
+| a page's re-lay | the page fades from 0.4 over 720ms opening and 420ms closing on the house curve, cubic-bezier(0.625, 0.05, 0, 1); her column wipes in on the push curve | VEX Cloud's EC-26 (section 1.9) |
+| the grid's tracks | never | VEX Cloud's EC-26: a track that slid would carry a waiting card (section 3.6) |
+| while the window is resized | every transition held still, Web Animations land at once, during the drag and for 220ms after its last resize (`data-vex-resizing` on <html>, `lib/wide-zoom.ts`) | VEX Cloud's motion contract, section 3 rule 6 |
 
 The strip plates print the section's clip inset at 120, 240 and 480ms while opening and at 120 and 240ms while closing. The closed inset is 507 (563 less the 56 strip). cubic-bezier(0.22, 1, 0.36, 1) reproduces all five values to the printed digits. The review sheet's own `--ease`, cubic-bezier(0.625, 0.05, 0, 1), does not:
 
@@ -446,8 +456,12 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 - **Vex never opens her section by herself.** Her cue (a card arriving, a turn ending) changes her mood and her words, never her section's state (printed in the proof's note).
 - **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Esc in Lighter Zen closed the Vex overlay until S2-13 removed it (`AppShell.tsx`).
 - **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15).
-- **The choice is remembered.** Cloud keeps it per browser; desktop keeps it in the persisted layout store, one choice for chats and pages, replacing "Show avatar" and R3's `vexOpenChat` and `vexOpenPages` slots, which migrate into it (S2-11, S4-14). Open: whether pages keep a choice of their own; the plates draw Portfolio both ways but print no rule.
-- **First launch: open.** The sheet's drawn answer for computers.
+- **The choice is remembered, split three ways** (VEX Cloud's PD-12 and its README's "What it remembers"). Cloud keeps it per browser (`vexChat`, `vexPages`; the mockup's `h3.section.chat`, `h3.section.pages` and, under 1024, the session's `h3.section.narrow`); desktop keeps it per profile in the layout store:
+  - **in chats** (and on approvals and in Studio), `vexOpenChat`, persisted, **open** by default; v24 folded R3's "Show avatar" into it, so someone who had hidden her avatar finds her closed;
+  - **on pages** (Portfolio and its subpages, Board, Watchlist, Settings), `vexOpenPages`, persisted, **closed** by default; hiding her on a page never closes her in a chat, nor the other way round;
+  - **under 1024**, `vexOpenNarrow`, **closed on every visit** and kept for the session only (never persisted), so a relaunch starts it closed; nothing narrow writes `vexOpenChat` or `vexOpenPages` (section 1.10).
+  Every saved choice survives the migrations: v22 seeded the two persisted slots only where a payload lacked them, and v24 touched only the chat's.
+- **First launch: open** in chats, closed on pages, closed under 1024. The sheet's drawn answer for computers, and Cloud's PD-12.
 - **The freed room in a chat goes to the console** (drawn): the chat keeps its width, and the console's rest shows under the strip.
 - **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint still shows, without a fade.
 - **Closed costs little.** Closed, only the key's mood sprite loads (the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17).
@@ -466,7 +480,7 @@ What the proof read (printed, `h3-merged__plate-proof`, in Chromium on the GPU a
 Desktop ports the proof as a CI test (S4-16, `e2e/h3-card-proof.spec.ts`): the card's box is read with her section open, closed and on every frame of both motions at 1280, 1366, 1440, 1920 and 2560, and the card's pixels open and closed are compared. Any change fails the build.
 
 What desktop stops doing, because R3 does it and H3 forbids it:
-- R3 animates the shell's `grid-template-columns` when Vex hides (`--vex-duration-reveal`, `AppShell.tsx`). In a chat, H3 never changes a track for her section.
+- R3 animates the shell's `grid-template-columns` when Vex hides (`--vex-duration-reveal`, `AppShell.tsx`). H3's frame never animates a track at all (`shell.css`; VEX Cloud's EC-26): in a chat no track changes for her section, and where a track does change (the band seam, the chats fold from 1280 up, a page's strip) it snaps.
 - R3's hide waits for K2's close episode before the column goes (`features/vex/vex-hide.ts`). H3's close is the wipe itself, and the words change at the press.
 - R3 closes Vex by itself under its medium tier when the left sidebar opens (`lib/shell-columns.ts`). H3 has no derived close.
 
@@ -595,7 +609,7 @@ Already known for those plates:
 
 ### 4.10 Other desktop rules
 - **A page that can hold a money card keeps the chat layout.** On the Needs you page, closing her folds only her section, never the column, so a card there never moves. Cloud has no such page.
-- Her open or closed choice and the first-close flag live in the persisted layout store, per profile, not per browser (section 3.5).
+- Her open or closed choices (chats, pages; the session's own under 1024) and the first-close flag live in the layout store, per profile, not per browser (section 3.5).
 - First launch opens her. The sheet's question whether hiding her on the home page also hides her in the app does not apply to desktop.
 - There is no phone layout. The window floor is 1000 x 720, and the band borrows from the phone only between 1000 and 1023 (section 1.10).
 - One release carries the new look, with no flag.
@@ -604,14 +618,17 @@ Already known for those plates:
 ### 4.11 What Cloud and desktop must agree on
 The column rule and tiers (section 1.2), the words of every element both apps show (Appendix A, where desktop says "same"), the keys (Appendix A.9, less desktop's old chord and its Linux binding), the timings and the push curve (section 3.1), the mood list (section 1.6) and the open-and-closed memory rule (section 3.5). These go to desu; Cloud's answers are recorded here when they come, and each "Open" line above that Cloud settles is rewritten then.
 
-### 4.12 The chats column from 1024 to 1267
-Decided on 3 November 2026, for S2-07: desktop keeps the chat at 640 or more wherever the window allows, by folding the chats column rather than bending the column rule (section 1.2), which stays as printed.
+### 4.12 The chats column under 1280: the chats panel
+VEX Cloud's rule (PD-14; `h3-shell-gaps/README.md` decision 3 and its measures; `css/shell.css` section 5), which desktop takes whole. It replaces the unsaved override desktop had from 1024 to 1267 (and the fold point of 1268 that R3's 640 floor set), which widened the chats track and so narrowed the chat (to 469 at 1024) and moved a waiting card, with the move animated: a break of the money rule (section 3.6).
 
-- From 1268 up the chats column is the person's stored choice: 248 open, the 76px rail folded. 1268 is the first width at which 248 + 30% + 640 fits (248 + 380 + 640); at 1267 the chat would be 639.
-- From 1024 to 1267 the chats column starts folded to the 76px rail, so the chat keeps at least 640 (641 at 1024: 76 + 307 + 641; 811 at 1267). The sidebar key and the rail's Expand key still open it there. That opening is an unsaved override, as R3's narrow tier had (the store's `sidebarNarrowExpanded`): the chat then takes what the rule leaves (469 at 1024), and leaving the tier, past 1267 or under 1024, clears it, so the next entry starts folded again. The stored choice is never rewritten.
-- Under 1024 the band (section 1.10) folds the chats whatever either says, and the rail has no Expand key there.
-- Nothing about her section enters this: the Vex column is 30% of the window at every width, and the fold is only what the shell asks the solver (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`). A fold the person asks for may move a card (section 1.2); her section never does.
-- Open: whether Cloud folds its chats under 1268 too. Settled with Cloud.
+- Under 1280 the chats column is the 76 rail at every moment. Its key (the rail's Expand key), the rail's Search chats and its Chat and Missions keys slide a 248 CHATS PANEL out of the rail's right edge instead: the CHATS head (56), the Search chats field (48) and the chats by day, the open column's rows. Search opens it with its field focused.
+- The panel is a box over Vex's column, from under the header to the window's foot, above her section; a scrim lies over the rest of her column beside it. No grid track changes, so a waiting card's box is identical open or closed (the card proof reads it at 1024, 1180 and 1279, seeked and live).
+- Under 1024, and on a page whose Vex column has folded to its strip, there is no column to lie over: the scrim runs to the window's edge and the chat behind it rests (inert) until the panel closes.
+- Esc (focus in the panel or on its key), a press outside it, and a row's press close it; Esc in its field clears a typed query first. Nothing writes the stored fold: the panel is the visit's own and closes when the window grows past 1279.
+- Motion, Cloud's (`h3-shell-gaps/js/shell.js` `setLeftOver`): the panel slides from translate3d(-100%) to none in 720ms and back in 420ms on the push curve, the close playing the same keyframes in reverse; the scrim fades in over 600ms and out over 300ms; its first twelve rows enter from 16px left and transparent over 620ms, row n after 120 + 45n ms. Transform and opacity only. Reduced motion and Save-Data land it at once.
+- From 1280 up the key folds the track to the rail and back, as before: the stored choice (`leftOpen`), the person's own fold.
+- Studio's rail has no chats to slide out: under 1280 it ends in its Projects and files key, whose drawer is the same kind of box over Vex's column.
+- Nothing about her section enters this; the fold is what the solver reads (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`), and the panel is `ChatsPanel.tsx`.
 
 ---
 

@@ -40,12 +40,12 @@
  *
  * Folded to the 76px rail, the column keeps one key per control, each the
  * rail's whole width in the open column's order: the Expand key (where the
- * column can open, 1024 to 1267), New project, Search, the nine nav keys.
- * Tooltips and accessible names carry the words. Under 1024 the column cannot
- * open (the band), so the rail ends in a Projects and files key instead: it
- * opens the same projects and explorer as a 248 drawer over the centre's left
- * edge, under the band, and the drawer closes on a pick, on Escape and on the
- * key.
+ * column can open, from 1280 up), New project, Search, the nine nav keys.
+ * Tooltips and accessible names carry the words. Under 1280 the column never
+ * opens (docs/design/H3-DESKTOP.md section 4.12: no track changes there), so
+ * the rail ends in a Projects and files key instead: it opens the same
+ * projects and explorer as a 248 drawer over Vex's column (under the band
+ * below 1024), and the drawer closes on a pick, on Escape and on the key.
  *
  * ## Search
  *
@@ -86,7 +86,7 @@ import {
 } from "../../../../components/icons/line/index.js";
 import { SplitPane } from "../../../../components/ui/split-pane.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
-import { H3_BAND_HEIGHT } from "../../../../lib/shell-columns.js";
+import { H3_CONSOLE_LINE_HEIGHT } from "../../../../lib/shell-columns.js";
 import { useQuietScrollbars } from "../../../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 import { cn } from "../../../../lib/utils.js";
@@ -211,10 +211,12 @@ export interface StudioSidebarProps {
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
   /**
-   * Whether the rail can open into the column. False under 1024 (the band),
-   * where the rail ends in the Projects and files key and its drawer instead.
+   * Whether the rail can open into the column. False under 1280, where the
+   * rail ends in the Projects and files key and its drawer instead.
    */
   readonly expandable?: boolean;
+  /** The drawer's top under the header: the console line's under 1024, else 0. */
+  readonly drawerTop?: number;
   readonly activeProjectId: string | null;
   readonly onSelectProject: (projectId: string) => void;
   readonly onSelectWelcome: () => void;
@@ -233,6 +235,7 @@ export function StudioSidebar({
   collapsed,
   onToggleSidebar,
   expandable = true,
+  drawerTop = H3_CONSOLE_LINE_HEIGHT,
   activeProjectId,
   onSelectProject,
   onSelectWelcome,
@@ -797,7 +800,7 @@ export function StudioSidebar({
           aria-label={STUDIO_FILES_DRAWER_LABEL}
           className="vex-ls vex-st vex-st-drawer"
           data-vex-area="studio-files-drawer"
-          style={{ top: H3_BAND_HEIGHT }}
+          style={{ top: drawerTop }}
         >
           <div className="vex-st-body flex min-h-0 flex-1 flex-col">{projectsAndFiles}</div>
         </section>

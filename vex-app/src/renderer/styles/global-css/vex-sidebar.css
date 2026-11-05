@@ -59,6 +59,14 @@
 .vex-vs__body[hidden] {
   display: none;
 }
+/* THE WIDE ZOOM (docs/design/H3-DESKTOP.md section 1.11): in H3's frame the
+ * console zooms with the window from 1760 up, and her section with it, so
+ * her box starts 148 x zoom under the header, her key is 56 x zoom high and
+ * her strip folds to 56 x zoom, as VEX Cloud lays them; the column's width
+ * is the frame's and never zooms. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="column"] > .vex-vs__body {
+  zoom: var(--vex-zoom);
+}
 /* What scrolls when the information outgrows the column: never the plate. */
 .vex-vs__info {
   min-height: 0;
@@ -96,18 +104,21 @@
  * box of her section laid over the column (its top is the top block's foot)
  * never moves when a decision arrives, is taken, or a mission starts:
  *
- *   Needs you head   43   NEEDS YOU (14, 600, caps) and the count at the right
+ *   Needs you head   44   NEEDS YOU (14, 600, caps) and the count at the right
  *   decision row     64   the sentence (16) over its meta line (14, muted),
  *                          and the key cell at the right on the raised fill
- *   missions row     41   the missions icon, the words (15), a chevron: 40
- *                          and the rule her section starts under
+ *   missions row     40   the missions icon, the words (15), a chevron
  *
- * `--vex-console-top-h` (148) is the whole top block, the line her section's
- * box starts at: 224 in a 1440 x 900 window (section 1.5, desktop's box). */
+ * VEX Cloud's rows (the H3 mockup's `.cn-h` 44, `.cn-need` 64, `.cn-run`
+ * 40), each with its rule inside its own height, so the rule under the
+ * missions row is the line her section starts under. Desktop has no
+ * strategies row (section 4.1), so `--vex-console-top-h` is 148 where
+ * Cloud's head rows are 188: the line her section's box starts at, 224 in a
+ * 1440 x 900 window (section 1.5, desktop's box). */
 .vex-vs {
-  --vex-console-head-h: 43px;
+  --vex-console-head-h: 44px;
   --vex-console-row-h: 64px;
-  --vex-console-missions-h: 41px;
+  --vex-console-missions-h: 40px;
   --vex-console-top-h: calc(
     var(--vex-console-head-h) + var(--vex-console-row-h) + var(--vex-console-missions-h)
   );
@@ -553,30 +564,59 @@
   word-break: break-word;
 }
 
-/* THE BAND (docs/design/H3-DESKTOP.md section 1.10): under 1024 the same
- * parts lie in one row under the header, over the chat, at the band's fixed
- * height (H3_BAND_HEIGHT, the frame's row): the console's top block, which
- * scrolls there, beside her portrait, which crops to the row. The console's
- * rest is the column's alone. Her rule is under her. */
+/* UNDER 1024 (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's 768 to
+ * 1023 layout): no column. The aside is the CONSOLE LINE, the frame's 48 row
+ * under the header across the chat (`H3_CONSOLE_LINE_HEIGHT`), drawn by the
+ * strip's own cells with her state first; her BAND hangs under it, laid over
+ * the chat's top (kimm.css, `.vex-kimm--band`), so the aside lets it
+ * overflow and stands over the chat (shell.css). */
 .vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="band"] {
+  overflow: visible;
   border-right: 0;
+  border-left: 0;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
-.vex-vs[data-vex-seat="band"] .vex-vs__body {
-  flex-direction: row;
+/* The line's first cell: her state, a key that opens and closes her band
+ * (named by its action), the timer while a turn runs; the decision gives way
+ * and the missions cell keeps its count (Cloud's `.cl-short`). */
+.vex-strip__state {
+  flex: 0 1 auto;
 }
-.vex-vs[data-vex-seat="band"] .vex-vs__info {
-  flex: 1 1 auto;
-  padding-bottom: 12px;
+.vex-strip__state .vex-strip__key {
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
-.vex-vs[data-vex-seat="band"] .vex-console__top {
-  height: auto;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow-y: auto;
+.vex-strip__state .vex-strip__key[aria-disabled="true"] {
+  cursor: not-allowed;
 }
-.vex-vs[data-vex-seat="band"] .vex-vs__rest {
+.vex-strip__square {
+  flex: none;
+}
+.vex-strip__word {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vex-strip__timer {
+  flex: none;
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.vex-strip__short {
   display: none;
+}
+.vex-strip[data-band] .vex-strip__decision {
+  display: none;
+}
+.vex-strip[data-band] .vex-strip__missions .vex-strip__text {
+  display: none;
+}
+.vex-strip[data-band] .vex-strip__short {
+  display: inline;
 }
 
 /* ---- THE CONSOLE STRIP (docs/design/H3-DESKTOP.md section 1.9;
@@ -590,6 +630,13 @@
  * the strip stands under the centre's connection row, as a page does. */
 .vex-shell-frame {
   --vex-console-strip-h: 48px;
+}
+/* The strip zooms with the console it stands for (section 1.11). */
+.vex-shell-frame[data-vex-frame="h3"] {
+  --vex-console-strip-h: calc(48px * var(--vex-zoom));
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-strip {
+  zoom: var(--vex-zoom);
 }
 .vex-shell-frame[data-vex-frame="h3"][data-vex-seat="strip"] > .vex-shell-vex {
   z-index: 31;

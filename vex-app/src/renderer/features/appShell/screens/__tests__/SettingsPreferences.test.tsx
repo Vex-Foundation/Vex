@@ -184,7 +184,7 @@ describe("SettingsPreferences", () => {
     const row = document.querySelector("[data-vex-settings-vex-open-chat]");
     if (!(row instanceof HTMLElement)) throw new Error("Show Vex row missing");
     expect(row.querySelector(".vex-pref__help")?.textContent).toBe(
-      `Kimm's section in Vex's column, in chats, on approvals and in Studio. Off, she folds to her strip; Show Vex in its corner, the Vex key at the top, or ${chord}, opens her again. Her state word still shows what she is doing.`,
+      `Kimm's section in Vex's column, in chats, on approvals and in Studio. Off, she folds to her strip; Show Vex in its corner, the Vex key at the top, or ${chord}, opens her again. Her state word still shows what she is doing. Pages keep a choice of their own, closed until you show her there, and in a window under 1024 wide she starts closed on every visit.`,
     );
   });
 

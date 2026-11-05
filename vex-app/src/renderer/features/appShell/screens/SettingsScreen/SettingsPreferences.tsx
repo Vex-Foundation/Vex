@@ -8,7 +8,7 @@
  * 6), so Celeris and the "System" choice left with the theme picker, and a
  * saved choice migrates to dark (`uiStore/persistence.ts`, v23).
  *
- * Show Vex is Kimm's open or closed choice (`vexOpenChat`,
+ * Show Vex is Kimm's open or closed choice in chats (`vexOpenChat`,
  * docs/design/H3-DESKTOP.md section 3.5; plan row S4-14), the same choice her
  * corner key, the Vex key and the chord write. It replaced R3's two rows,
  * Show avatar (with its "Looking at you" preview) and Open Vex's sidebar in
@@ -122,7 +122,7 @@ function ShowVexRow(): JSX.Element {
   return (
     <SwitchRow
       title="Show Vex"
-      help={`Kimm's section in Vex's column, in chats, on approvals and in Studio. Off, she folds to her strip; Show Vex in its corner, the Vex key at the top, or ${vexToggleShortcutLabel(studioPlatform)}, opens her again. Her state word still shows what she is doing.`}
+      help={`Kimm's section in Vex's column, in chats, on approvals and in Studio. Off, she folds to her strip; Show Vex in its corner, the Vex key at the top, or ${vexToggleShortcutLabel(studioPlatform)}, opens her again. Her state word still shows what she is doing. Pages keep a choice of their own, closed until you show her there, and in a window under 1024 wide she starts closed on every visit.`}
       enabled={enabled}
       onToggle={() => useUiStore.setState({ vexOpenChat: !enabled })}
       seam="data-vex-settings-vex-open-chat"
