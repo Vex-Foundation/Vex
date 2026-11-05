@@ -112,8 +112,8 @@
   font-weight: 400;
 }
 
-.lit-desk-scope-chip i[data-side="long"] { color: var(--lit-trade-up); }
-.lit-desk-scope-chip i[data-side="short"] { color: var(--lit-trade-down); }
+/* The position's side is a word in ink (DG5-07): red means refused. */
+.lit-desk-scope-chip i[data-side] { color: var(--lit-ink); }
 
 .lit-desk-quick {
   display: flex;

@@ -579,6 +579,21 @@ The primitives H3's app plates do not draw, taken from what VEX Cloud decided an
 - **Timings,** Cloud's: the hold is 3s, 6s for a toast with an action or whose words (title, message and action labels) reach 75 characters; then a 1000ms fade (Cloud's `toastFade`; Cloud's `HANDOFF.md` records the hold plus 1000ms as a deviation it keeps, against the drawn 300). The toast arrives in 620ms on the push curve, which has the control points of Cloud's caption curve, 8px down and in; reduced motion drops the arrival and keeps the fade. Hover or focus pauses the hold, and a sticky notification (progress still running, a failure with a working primary action) never fades, as before.
 - **What waits** behind the slot is reported under the words ("+2 more in the notification center"), never dropped: the queue, the center and the announcer are unchanged. An urgent notification still passes the slot and stands under it; nothing raises one yet.
 
+### 5.3 Sides in ink
+Buy, Sell, Long and Short read as words in ink, never in the trading green and red (Cloud's DG5-07, confirmed by both token comparisons): red means refused in v99, so a red Sell or Short reads as a refusal. The word carries the side. Profit and loss keep the gain and loss colours, and so do a price's change and the last trade's tick (a movement, not a side). The token values of gain and loss are left to the token pass; only their use for sides stops here.
+
+| Where | Before | Now |
+|---|---|---|
+| the ticket's LONG and SHORT keys (`lighter-ticket.css`) | the side word in gain or loss type | ink; the keys stay raised cells, never blue |
+| the order book's prices (`lighter-book.css`) | bids in gain, asks in loss | bids in ink, asks in ink 2, as the tape's buys and sells |
+| the book's depth bars and their one-frame flash (`--lit-depth-bid`, `--lit-depth-ask`) | a 14% wash of gain or loss | an ink wash, 12% for bids and 7% for asks, so the sides still read apart where they meet |
+| the book's bid and ask share ("B 54%", "46% S", the bar) | gain and loss | ink and ink 2; the bar's bid share ink over a 24% ink track |
+| the desk chat's scope chip (`lighter-chat.css`) | Long or Short in gain or loss | ink |
+| the account dock: a position's Long or Short, an order's and a fill's Buy or Sell (`AccountPanel.tsx`) | gain or loss (`data-trade`, `data-tone`) | ink (`data-side`); uPnL and realized PnL keep their colours |
+| Portfolio's Lighter positions: Long or Short (`LighterAccountCard.tsx`, `book.css`) | gain or loss (`data-trade`) | ink (`.vex-pf-side`, `data-side`); uPnL keeps its colour |
+
+Cloud draws no order book, so it sets no rule for depth bars; desktop follows the side rule there too. Nothing about an order changes: its side, size and every key's action are what they were.
+
 ---
 
 ## Appendix A. Words, keys and taglines

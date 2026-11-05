@@ -802,7 +802,9 @@
   background: var(--vex-alias-interactive-hover);
 }
 
-/* Trading values only: the Lighter uPnL, Long and Short, the $VEX change. */
+/* Trading values only: the Lighter uPnL and the $VEX change. A position's
+ * side, Long or Short, is a word in ink (`.vex-pf-side`), never the trading
+ * pair (VEX Cloud's DG5-07, docs/design/H3-DESKTOP.md section 5.3). */
 .vex-pf [data-trade="up"],
 .vex-pf-vex [data-trade="up"] {
   color: var(--vex-alias-trade-up);
@@ -812,6 +814,7 @@
   color: var(--vex-alias-trade-down);
 }
 .vex-pf-side {
+  color: var(--vex-alias-label-primary);
   font-weight: 600;
 }
 .vex-pf-pct {

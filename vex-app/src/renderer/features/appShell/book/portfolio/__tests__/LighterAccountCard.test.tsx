@@ -425,7 +425,7 @@ describe("LighterAccountCard - trading colours on trading values only", () => {
     expect(container.querySelector("[data-trade]")).toBeNull();
   });
 
-  it("on the whole page, data-trade is only the account uPnL, each position's uPnL, and the Long or Short word", () => {
+  it("on the whole page, data-trade is only the account uPnL and each position's uPnL; the side is a word in ink", () => {
     mockReady({ positions: [LONG_ETH, SHORT_BTC, BARE_SOL] });
     const { container } = renderCard();
     const marked = Array.from(container.querySelectorAll("[data-trade]"));
@@ -433,13 +433,17 @@ describe("LighterAccountCard - trading colours on trading values only", () => {
     expect(rows).toHaveLength(3);
     const expected = [
       figure(container, "Unrealized trading PnL"),
-      rows[0]?.querySelector(".vex-pf-side") ?? null,
       cell(rows[0], 6),
-      rows[1]?.querySelector(".vex-pf-side") ?? null,
       cell(rows[1], 6),
-      rows[2]?.querySelector(".vex-pf-side") ?? null,
       // BARE_SOL's own uPnL is unknown: its cell is NOT marked.
     ];
+    // Long and Short carry their side, never the trading pair (DG5-07).
+    expect(rows.map((row) => row?.querySelector(".vex-pf-side")?.getAttribute("data-side"))).toEqual([
+      "long",
+      "short",
+      expect.any(String),
+    ]);
+    for (const row of rows) expect(row?.querySelector(".vex-pf-side")?.hasAttribute("data-trade")).toBe(false);
     expect(marked).toHaveLength(expected.length);
     for (const node of expected) expect(marked).toContain(node);
     expect(marked).not.toContain(cell(rows[2], 6));
@@ -478,11 +482,11 @@ describe("LighterAccountCard - the positions", () => {
     // 100 over that 110 is +90.91%.
     expect(cell(row, 6).textContent).toBe("+100.00 +90.91%");
     expect(row?.querySelector(".vex-pf-side")?.textContent).toBe("Long");
-    expect(row?.querySelector(".vex-pf-side")?.getAttribute("data-trade")).toBe("up");
+    expect(row?.querySelector(".vex-pf-side")?.getAttribute("data-side")).toBe("long");
     expect(cell(row, 6).getAttribute("data-trade")).toBe("up");
   });
 
-  it("a short isolated position: Short is trade down, margin is the allocated one, uPnL is signed", () => {
+  it("a short isolated position: Short is a word in ink, margin is the allocated one, uPnL is signed", () => {
     mockReady({ positions: [SHORT_BTC] });
     const { container } = renderCard();
     const [row] = positionRows(container);
@@ -495,7 +499,7 @@ describe("LighterAccountCard - the positions", () => {
     expect(cell(row, 5).textContent).toBe("200.00");
     expect(cell(row, 6).textContent).toBe("-50.00 -25%");
     expect(row?.querySelector(".vex-pf-side")?.textContent).toBe("Short");
-    expect(row?.querySelector(".vex-pf-side")?.getAttribute("data-trade")).toBe("down");
+    expect(row?.querySelector(".vex-pf-side")?.getAttribute("data-side")).toBe("short");
     expect(cell(row, 6).getAttribute("data-trade")).toBe("down");
   });
 

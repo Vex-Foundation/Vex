@@ -76,9 +76,9 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(css).toMatch(/\.lit-desk-scope\s*\{[^}]*flex-direction: column;[^}]*gap: 10px;[^}]*padding: 12px 0 10px;/s);
     expect(css).toMatch(/\.lit-desk-quick\s*\{[^}]*display: flex;[^}]*flex-wrap: wrap;[^}]*gap: 6px;/s);
     expect(css).toMatch(/\.lit-desk-quick > button\s*\{[^}]*min-height: 28px;[^}]*font-size: 12\.5px;/s);
-    // The position's side is a trading value.
-    expect(css).toContain('.lit-desk-scope-chip i[data-side="long"] { color: var(--lit-trade-up); }');
-    expect(css).toContain('.lit-desk-scope-chip i[data-side="short"] { color: var(--lit-trade-down); }');
+    // The position's side is a word in ink, never the trading pair (DG5-07).
+    expect(css).toContain('.lit-desk-scope-chip i[data-side] { color: var(--lit-ink); }');
+    expect(css).not.toMatch(/\.lit-desk-scope-chip i\[data-side[^\]]*\] \{ color: var\(--lit-trade-/);
   });
 
   it("lays the ticket out in cells: the account row, Market | Limit, the fields, the foot", () => {
@@ -93,10 +93,11 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(css).toMatch(/\.lit-review-note\s*\{[^}]*border-top: 1px solid var\(--vex-alias-rule\);/s);
   });
 
-  it("draws Long and Short as raised cells, the side word in gain or loss, never a fill of the pair or the blue", () => {
+  it("draws Long and Short as raised cells, the side word in ink, never the trading pair or the blue", () => {
     expect(css).toMatch(/\.lit-side-actions \.lit-review-button\s*\{[^}]*min-height: 56px;[^}]*background: var\(--vex-alias-interactive-solid\);/s);
-    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="buy"] b { color: var(--lit-trade-up); }');
-    expect(css).toContain('.lit-side-actions .lit-review-button[data-side="sell"] b { color: var(--lit-trade-down); }');
+    // A side is a word in ink (VEX Cloud's DG5-07): red means refused.
+    expect(css).toContain('.lit-side-actions .lit-review-button[data-side] b { color: var(--lit-ink); }');
+    expect(css).not.toMatch(/\.lit-review-button\[data-side="(?:buy|sell)"\] b \{ color: var\(--lit-trade-/);
     expect(css).not.toMatch(/\.lit-review-button\[data-side="(?:buy|sell)"\]\s*\{[^}]*background: var\(--vex-alias-trade-/s);
     expect(css).not.toMatch(/\.lit-side-actions[^{]*\{[^}]*background: var\(--lit-action\)/s);
     // No arrows: the word carries the side.
@@ -183,15 +184,18 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     }
   });
 
-  it("paints bids, asks and the B and S ratio in the trading pair, and keeps it off the chart chrome", () => {
-    expect(css).toContain("--lit-depth-bid: color-mix(in srgb, var(--lit-trade-up) 14%, transparent);");
-    expect(css).toContain("--lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 14%, transparent);");
-    expect(css).toContain('.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-trade-up); }');
-    expect(css).toContain('.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-trade-down); }');
-    expect(css).toContain('.lit-book-ratio > [data-side="bid"] { color: var(--lit-trade-up); }');
-    expect(css).toContain('.lit-book-ratio > [data-side="ask"] { color: var(--lit-trade-down); }');
-    expect(css).toMatch(/\.lit-book-ratio i\s*\{[^}]*background: var\(--lit-trade-down\);/s);
-    expect(css).toMatch(/\.lit-book-ratio i::before\s*\{[^}]*background: var\(--lit-trade-up\);/s);
+  it("paints bids, asks and the B and S ratio in ink, never the trading pair, and keeps it off the chart chrome", () => {
+    // A side is a word in ink (VEX Cloud's DG5-07, H3-DESKTOP.md section 5.3):
+    // red means refused. Bids the ink, asks ink 2, the depth an ink wash.
+    expect(css).toContain("--lit-depth-bid: color-mix(in srgb, var(--lit-positive) 12%, transparent);");
+    expect(css).toContain("--lit-depth-ask: color-mix(in srgb, var(--lit-positive) 7%, transparent);");
+    expect(css).toContain('.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-positive); }');
+    expect(css).toContain('.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-negative); }');
+    expect(css).toContain('.lit-book-ratio > [data-side="bid"] { color: var(--lit-positive); }');
+    expect(css).toContain('.lit-book-ratio > [data-side="ask"] { color: var(--lit-negative); }');
+    expect(css).toMatch(/\.lit-book-ratio i\s*\{[^}]*background: color-mix\(in srgb, var\(--lit-positive\) 24%, transparent\);/s);
+    expect(css).toMatch(/\.lit-book-ratio i::before\s*\{[^}]*background: var\(--lit-positive\);/s);
+    expect(sheetRules("lighter-book.css")).not.toMatch(/data-side[^{]*\{[^}]*trade-(?:up|down)/);
     // Price lines, studies, drawings and the order handle stay the blue and the ink.
     for (const name of ["chart-tools.css", "lighter-chart.css"]) {
       expect(sheetRules(name)).not.toMatch(/trade-(?:up|down)/);
