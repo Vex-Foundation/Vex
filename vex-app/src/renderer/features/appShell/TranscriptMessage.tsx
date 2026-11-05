@@ -308,7 +308,7 @@ export const TranscriptMessage = memo(function TranscriptMessage({
       ? { sessionId: feedbackSessionId, messageKey: feedbackMessageKey }
       : undefined;
   // The turn's thinking row is this row's FIRST Reasoned row; every other
-  // one stays a plain "Reasoned".
+  // one stays a plain "Thought".
   const headSteps = turnSteps ?? null;
   const headThoughtMs = turnSteps === undefined ? null : (thoughtMs ?? null);
   switch (row.variant) {

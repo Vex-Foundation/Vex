@@ -24,10 +24,11 @@
  * the tag's words are `ActivityBadge`'s, repainted plain for the page), the
  * legs `IN -> OUT` (15, ink), the figure, the chain and time (with the
  * main-resolved explorer link when there is one), and every row ENDS IN A
- * WORD: ink caps beside H3's coloured status square (`StatusMark`: green for
- * Confirmed, grey for "Submitted, awaiting confirmation" and Pending, red for
- * Failed and Status unknown), desktop's words where H3 says FILLED, RUNNING
- * and DID NOT EXECUTE. The rows sit in one framed cell. The outcome word
+ * WORD: caps beside H3's status square, each status its own drawing
+ * (`StatusMark`: solid green for Confirmed, the blinking hud for "Submitted,
+ * awaiting confirmation" and Pending, the refusal cross for Failed, the
+ * concerned hatch for Status unknown), desktop's words where H3 says FILLED,
+ * RUNNING and DID NOT EXECUTE. The rows sit in one framed cell. The outcome word
  * follows the plan's money-outcome rules: a pending row with a transaction on
  * chain is submitted and awaiting confirmation; a pending row whose tracking
  * has fallen behind or whose checks stalled, or whose nonce was taken, has an
@@ -283,9 +284,10 @@ function ActivityRow({ entry }: { readonly entry: AgentScanEntry }): JSX.Element
 }
 
 /**
- * The row's closing cell: the outcome word, ink caps, beside H3's coloured
- * status square (green confirmed, grey submitted or pending, red failed or
- * unknown; `StatusMark`). The word is `activityOutcome`'s, unchanged.
+ * The row's closing cell: the outcome word in caps beside H3's status square
+ * (solid green confirmed, the blinking hud submitted or pending, the cross
+ * failed, the concerned hatch unknown; `StatusMark`). The word is
+ * `activityOutcome`'s, unchanged.
  */
 function OutcomeCell({ entry }: { readonly entry: AgentScanEntry }): JSX.Element {
   const outcome = activityOutcome(entry);

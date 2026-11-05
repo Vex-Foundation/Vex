@@ -35,7 +35,7 @@ import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
 export function AgentSidebarHeader({
   onCollapse,
   rail = false,
-  label = "Collapse sessions sidebar",
+  label = "Collapse sidebar",
 }: {
   readonly onCollapse: () => void;
   /** The chats column is its rail: the logo cell stands alone. */

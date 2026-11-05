@@ -8,7 +8,8 @@
  * calls of one call row alike.
  *
  * Nothing that needs the reader is ever hidden by the fold: a member that
- * failed puts "{k} failed" with the red square on the folded row, and a
+ * failed puts "{k} failed" with the ink cross, in the refusal ink, on the
+ * folded row, and a
  * member matched to a pending approval puts its "Waiting for approval" link
  * there.
  *
@@ -25,7 +26,8 @@ import {
 import { ExpandRegion } from "../../../components/ui/expand-region.js";
 import type { ToolGroupRowModel } from "../transcriptRowModel.js";
 import { ApprovalLinkStamp } from "./ApprovalLinkStamp.js";
-import { StepSquare, ToolActRow } from "./ToolActRow.js";
+import { StepNode } from "./StepNode.js";
+import { ToolActRow } from "./ToolActRow.js";
 import { formatToolDuration } from "./toolDuration.js";
 import { resolveToolIdentity } from "./toolIdentity.js";
 
@@ -114,7 +116,7 @@ export function ToolGroupRow({
           </span>
           {failed > 0 ? (
             <span data-vex-tool-fold-failed="" className="vex-step__failed">
-              <StepSquare mark="danger" />
+              <StepNode state="failed" />
               {failed} failed
             </span>
           ) : null}

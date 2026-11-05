@@ -36,7 +36,7 @@ describe("AgentSidebarHeader (the head row)", () => {
   it("collapses the sidebar from its key, which says the sidebar is open", () => {
     const onCollapse = vi.fn();
     render(<AgentSidebarHeader onCollapse={onCollapse} />);
-    const key = screen.getByRole("button", { name: "Collapse sessions sidebar" });
+    const key = screen.getByRole("button", { name: "Collapse sidebar" });
     expect(key.getAttribute("aria-expanded")).toBe("true");
     expect(key.querySelector("svg")).not.toBeNull();
     fireEvent.click(key);

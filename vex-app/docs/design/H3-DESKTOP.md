@@ -10,7 +10,7 @@ The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 
 - The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0, no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the selected nav row's fill.
 - Labels are uppercase and tracked; sentences, names and values are in sentence case. Words are written in sentence case in code and uppercased by the label style, so a screen reader reads words, not letters.
 - One saturated blue fills primary keys and nothing else. It is never type on the ground.
-- A status is a small coloured square beside a light word. Green, red and grey are the only status colours; gains and losses in trading values take green and red type.
+- A status is a small square beside a word, and every status has its own drawing (solid, blink, target, cross, frame, dotted frame, hatch), so a colour never stands alone (section 2.2). Gains and losses in trading values take green and red type.
 - Be Vietnam Pro for words, Roboto Mono for figures and for the money card's field labels.
 - Opening or closing Kimm's section never moves, resizes or covers a waiting money card (section 3.6).
 - Desktop shows only what it can back with real data (`AGENTS.md`). An H3 element with no desktop source is left out or replaced by a true one, never drawn with sample values.
@@ -142,14 +142,17 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 **Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter, 44 + 64 + 40 = 148 (Cloud's rows, each with its rule inside; Cloud's head rows are 188), and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
 
-Open:
-- What the Needs you row shows with two or more decisions; the plates draw one and none. Default: the one that expires first, the count in the head, Review opening its card, and the Needs you page for the rest. Settled with Cloud.
+**Needs you lists every decision** (VEX Cloud's `h3-shell-gaps`, decisions 4 to 6, settled 2026-11-05). Cloud lets the list grow until her section reaches a 240 floor and then scrolls it. Desktop's box must not move, not even while she waits, so the top block keeps its 148 and her top its 224: the list scrolls inside the decision row, one whole 63 row at a time (scroll snap, no bar), the decision that expires first leading, then the rest in the model's reading order. A cue cell at the head's right end, behind its rule, says "{n} more below" with its chevron down and pages the list; at the list's end it reads "{n} more above" with the chevron turned. The 240 floor never binds on desktop: at the 720 window floor her box is 423 high.
+
+- **Loading** holds the rows' height with parked covers (`Cover`: a 12 high bar on the raised fill, its 1px head at the left, never a pulse): the decision row a 70% cover, the missions row a 16 square cover and a 62% cover. The head has no count while it is unknown. The covers are one `role="status"` named Loading.
+- **A failed read** says so where the fact would be: the cross and "Not available", no count, no Retry (the reads are polled). The detailed statement stays on the line's title. One source failed out of several: the list it has, then "Could not load every decision." beside the cross. A failed sessions read makes the missions row "Missions · Not available", never a zero.
+- **The page strip** (section 1.9) follows: covers while loading, the cross and "Not available" when the read failed, no count and no Retry.
 - How her figure fills a box of another size (anchor, scale, crop): desktop's box is 40 taller than the plate's, and the box narrows with the column. Settled by the mockup source and Kimm's files from the designer.
 
 ### 1.6 The Vex key and her moods
 The Vex key is the header cell over the Vex column, in three parts:
 - **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, the fold glyph (an up chevron under a bar) on a raised fill: she has stepped down into her section.
-- **State cell.** Line one: a small square (about 6px) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut.
+- **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut.
 - **Chevron cell.** Down while she is closed, up while she is open.
 
 The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
@@ -173,6 +176,25 @@ Header cells as in section 1.3. The transcript and the welcome sit 24 in from bo
 **The welcome** (`h3-merged__welcome-*-1440`): a greeting bubble, "Ready when you are.", at 704, 104 on a raised fill; two notes under it, each a small square and a caps line; and, low in the column, a two-by-two grid of suggestion cells, 704 to 1416 by 536 to 762, each about 356 x 113 with an icon, a title, a muted line and an arrow.
 
 **A chat:** the person's message is a raised bubble at the right beside their avatar disc. Vex's thinking is a framed row, "THOUGHT FOR 2.8s", with "5 steps" and a chevron at the right.
+
+**The trace's steps** say their state by a node and a word, never a colour alone (VEX Cloud's `h3-chat-gaps`, section 19 and "Trace step (status)"; `StepNode`). The node is 7px; the time column at the row's right holds a done step's measured time and the state's word where there is no time or the state outranks it:
+
+| Step | Node | Time column |
+|---|---|---|
+| done | the ink 2 square | its measured time ("812ms"); "Done" where nothing was measured |
+| running | the ink square, blinking (PD-06), half a square under reduced motion | the live timer: the live frame's head (`TurnIsland`), whose every live state (working, thinking, calling, running, writing) is the running node |
+| waiting | the target: a 1px ink ring and its 3px centre | the "Waiting for approval" link to its card |
+| failed | the ink cross | FAILED in the refusal ink; its first line beside the title in the refusal ink |
+| pending (a broadcast not yet confirmed) | the blinking node | PENDING in ink |
+
+A fold's failures read "{n} failed" in the refusal ink beside the ink cross.
+
+**The turn error row** (`TurnErrorRow`, after the last turn; VEX Cloud's `h3-chat-gaps`, "The turn error row, by kind", and its `.t-fail`): one row for every kind of failure, outcome first, never a new layout. The 1px rule on the card ground (Cloud's `--vx-card`, desktop's `--vex-alias-card`); the body 8 | 1fr, 14 apart, padded 14 18 16 16: the 8px status red square at 7, the title 15/1.45 in the refusal ink, the words 14/1.5 in ink 2; then a strip of zero to three key cells, 48 high under a 1px rule, each in caps 13 on the raised fill, padding 0 22, a rule at its right. The row never moves focus and is not a live region (see below); the title and the words read as two. On desktop the kind is the engine error's category (`shared/engine-error-copy.ts`): its title heads the row, and the words are the scope ("This turn failed."), the category's sentence, the remedy in ink, the sanitized cause and the code trailer in the mono 11.5 muted. The strip holds Dismiss ("Dismiss error"), the one key desktop has here; it replaces R3's ink callout (`SessionErrorBanner`).
+
+Open, for the owner:
+- Red titles are Cloud's drawn default (its open question 4): a conflict or a missing chat is not a refusal and could keep the ink.
+- Cloud draws the row as `role="alert"`. Desktop leaves the role off: its notification announcer already speaks each failure once (as B2.2 decided), and two live carriers would make a screen reader hear the failure twice.
+- VEX Cloud's built `TurnErrorRow` (`apps/web`, 2026-11-05) still draws R3's cross callout; the row above is its drawn DG-4 default. Times are spelled as Cloud's trace spells them, the unit against the figure: "812ms", "2.8s", "1m 05s". A finished thought in the live frame is the done node.
 
 **The swap card** (`h3-merged__approval-*-1440`), printed at 680, 249, 760 x 651, with its top rule at 248. Top to bottom: the eyebrow row (CONFIRM THIS SWAP, then MAINNET, the REAL FUNDS stamp and a collapse chevron at the right), the sentence, the consequence line, field rows on a 34px pitch with their labels in mono caps, ALL SIGNED FIELDS, and the reason field, "Tell Vex what to do instead" (771 to 826). Its decision row is the bottom row (section 1.8). Which rows desktop shows is in section 4.1.
 
@@ -260,29 +282,40 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | gain | `--live` oklch(78% 0.13 150) | #76CF8A | Portfolio's +$182.40 peaks at #88D09E | the sheet value, as type |
 | loss | `--err` oklch(74% 0.17 27) | #FF7A6E | no loss is drawn as type | the sheet value, as type |
 | status green | none | | #1B813F (a square), #1D7E3F (the FILLED stamp): about oklch(52% 0.13 150) | #1D7E3F |
-| status red | none | | #C22226 (a square): about oklch(53% 0.19 27) | #C22226 |
-| status grey | none | | #8F9190 (RUNNING in the chats list); #3B3D3D (RUNNING in recent activity) | muted |
+| status red | none | | #C22226 (a square): about oklch(53% 0.19 27) | #C22226, the turn error row's square (section 2.2) |
+| status grey | none | | #8F9190 (RUNNING in the chats list); #3B3D3D (RUNNING in recent activity) | replaced by the hud, below |
+| hud | Cloud's built `--vx-hud` oklch(94% 0 0) | #EBEBEB | | #EBEBEB: the running square, which blinks |
+| refusal ink | Cloud's built `--vx-err-text` oklch(74% 0.17 27) | #FF7A6E | | #FF7A6E: the failed cross, a failure's word, a failed step's word and first line, the turn error row's title |
 
 Where the app screens differ from the sheet:
 1. **The ground is closer to black.** It matches `--panel` (8.5%) better than `--page` (9%) and shows no blue tint at WebP's resolution; the two differ by one to three sRGB steps. Desktop's ground is #010203. The window's `backgroundColor` (`src/main/windows/main-window.ts`, today `#1b1412`) and the Windows caption overlay colour (`src/main/windows/chrome-options.ts`, today `#1B1412`) take the same value, since the theme-matrix test ties them to the ground (S1-06).
 2. **There are raised steps above `--raised`.** The bubbles, the selected tab and the open fold cell use fills between 15 and 26% that the sheet has no token for. Desktop adds raised 2 and bubble as measured.
 3. **Status fills are darker than `--live` and `--err`.** The sheet's green and red are type colours, which the app uses for gains and losses; the status squares and the FILLED stamp use a darker green and red.
-4. **Two greys mark running.** Desktop uses muted for every running or pending square.
+4. **Two greys mark running in the captures.** Cloud's built status sheet (`apps/web/src/styles/status.css`, 2026-11-05) settles it: a running square is the hud (#EBEBEB) and blinks (section 2.2). Cloud's built values win over the mockup where they differ, so the hud and the refusal ink are primitives of their own (`--color-h3-hud`, `--color-h3-err-text`); the refusal ink has the loss colour's hex but never reads a trading primitive.
 
 Open: the exact values of every "none" row and of the ground. Settled by the mockup source from the designer; the measured values stand until then.
 
 ### 2.2 Status
-A status is a square of about 6px and a word in caps, 13, ink. (The words' glyph peaks, #CED0CF to #DDDFDE, are lighter than ink 2, so they are ink.)
+A status is a square beside a word in caps, and **every status has its own drawing**, so a colour never stands alone (VEX Cloud's PD-03 and `contracts/status.md`; the square is Cloud's StateDot, desktop's `StateSquare`, `.vex-sq` in `ui-primitives/marks.css`). The square is 8px, 6px in a row, and every frame is 1px. The word is ink; a failure's word is the refusal ink.
 
-| Status | Square | H3's word | Where H3 draws it |
+| State | Drawing | Ink | Desktop's words |
 |---|---|---|---|
-| filled | status green | FILLED | recent activity; the receipt's stamp, a green fill with a white word |
-| running | status grey | RUNNING | the chats list, recent activity |
-| waiting | ink | WAITING | the chats list |
-| did not execute | status red | DID NOT EXECUTE | recent activity |
-| Vex's state | ink; an outline at Ready | READY, THINKING, WAITING FOR APPROVAL, DONE | the Vex key |
+| done | solid | status green | Confirmed, Filled, Fired |
+| ongoing | blink (PD-06), half a square under reduced motion and Save-Data | the hud | Running, "Submitted, awaiting confirmation", Pending |
+| warning | target: the 1px frame and a dot | ink | Waiting, Waiting for approval |
+| error | cross | refusal ink | Failed, Refunded (desktop's mapping, below), Error |
+| idle | empty frame | muted | Ready, Exited, a status word this build does not map |
+| paused | dotted frame | ink 2 | Paused, Sleeping |
+| draft | hatch | ink 2 | a draft |
+| concerned | framed hatch | ink | Status unknown, Concerned |
 
-Desktop's true words for these are in Appendix A.
+- **The running square blinks** (PD-06): opacity 1 to 0.25 on steps(2, end), 600ms a cycle (`--vex-duration-blink`, Cloud's `--vx-blink`). It is never solid-still in motion and never green: green is Filled. Under reduced motion and Save-Data it holds still as half a square, so it never reads as Filled. Every running square in view blinks in phase.
+- **Status unknown is concerned**, the framed ink hatch, not the failed cross: nobody knows the outcome. Its words and its note ("ask Vex before retrying") are unchanged.
+- **Refunded keeps desktop's mapping**: the funds came back, and A.3 lists it under H3's DID NOT EXECUTE, so it takes the failed cross. Open: the owner may move it to its own state.
+- **The status label in a row** (`StatusMark`) is caps 11 with the 6px square 6 before it, Cloud's built StatusLabel at its row size; caps 13 with the 8px square only at the md size.
+- **Running blinks everywhere** (PD-06; Cloud's HANDOFF, "Deviations already taken"): the console's recent activity, the chats list's RUNNING tag, the Vex key, Studio's terminal tabs, pane heads and panel header, a project's RUNNING in Studio's rail, Studio's host cell, Agent Scan, Portfolio and the screens before the shell. Under reduced motion and Save-Data each holds still as half a square. The chats list's other tags take Cloud's drawings too: WAITING the target, Paused and Sleeping the dotted frame, Error the cross.
+- **The trace's step nodes** draw their own states (section 1.7): done the ink 2 square, running the blinking ink square, waiting the target, failed the ink cross.
+- **The Vex key's square** is the H3 key's own (`vexKeySquareOf`, `h3-merged/js/data.js`): Ready and Listening the 1px muted frame; Thinking, Working and Waking up the hud square, which blinks; Waiting for approval solid ink; Done solid hud; Concerned the framed ink hatch; Error the ink cross; Sleeping the dotted frame.
 
 Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.
 
@@ -299,6 +332,7 @@ Contrast on the ground (#010203), computed from the values above:
 | white on blue, on blue hover | 8.6, 5.5 |
 | white on status green, on status red | 5.1, 5.9 |
 | status green, status red squares on the ground | 4.1, 3.5 (marks beside a word: above the 3:1 for graphics) |
+| the hud square, the refusal ink on the ground | 17.4, 8.2 |
 | blue on the ground | 2.4: blue is never type on the ground |
 
 ### 2.3 Type
@@ -481,7 +515,7 @@ Desktop is mainnet only ("Nothing here is a sandbox or testnet", `src/vex-agent/
 
 12. Portfolio: the wallet total, the change since the last snapshot, and Lighter's equity and positions; the equity chart once the balance snapshots reach the renderer (S7-05). Left out: P&L over today, 7 days and all time, drawdown, "of allocated", the 90-day range and allocation by venue.
 13. The open-positions table: Lighter perps only.
-14. The thinking row: "Thought for N s" only after a live turn, since persisted turns store no duration; tool rows keep their measured times.
+14. The thinking row: "Thought for 2.8s" only after a live turn; a stored turn reads "Thought" with no total, since persisted turns store no duration (VEX Cloud's EC-07); tool rows keep their measured times.
 15. Agent Scan's status words (H3's Activity): desktop's outcome words (Appendix A.3).
 16. The nav: section 4.6.
 
@@ -675,12 +709,18 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | TODAY, YESTERDAY, EARLIER | Pinned, Today, Yesterday, Earlier | "Earlier" replaces desktop's "Older"; pinned chats are desktop's |
 | a time, or RUNNING or WAITING | a time, or Running, Paused, Waiting or Sleeping | desktop's chat rows have four states |
 | You, Account and settings | same | |
+| "Loading chats", "Chats could not load.", "No chats yet.", "No chats match your search." | same | Cloud's REAL list words (`shell/sidebar/chat-list.tsx`); they replace "Loading sessions", the read's raw cause or "Vex could not read your sessions.", and "No sessions". The search's or a tab's empty list says none match; "No chats yet." only when there are none |
+| "Untitled chat" | same, for a chat with no title and no first message, and where the Needs you rows and the inbox name an untitled chat | replaces "Agent session" and "Untitled session"; a mission with no title stays "Mission setup" |
+| Collapse sidebar, Expand sidebar | same, as the sidebar key's and the rail's names | Cloud's REAL `page-key.tsx`; "chat", never "session", in every word a person reads; the column is named "Chats" |
 
 ### A.3 The console
 | H3 | Desktop | Why |
 |---|---|---|
 | NEEDS YOU and a count | same | |
 | "Nothing needs you." | same | |
+| (loading: covers; failed: "Not available"; partial: "Could not load every decision.") | same: covers, the cross and "Not available" with no count and no Retry, "Could not load every decision." | Cloud's REAL words |
+| "{n} more below", "{n} more above" | same, on the cue at the head's right (DRAFT in Cloud) | every decision is listed; the list scrolls inside the row |
+| "Missions · Not available" | same (DRAFT in Cloud: REAL words joined) | the sessions read failed |
 | "Approve swap: 200 USDC → ETH" | the decision from desktop's approval sentence (`approvalSentence`), for example "Swap 200 USDC for ETH on Base"; for a mission, "Recover the mission", "Accept the contract" or "Fill in the form" | desktop builds the sentence from the signed arguments; missions wait on these three decisions too |
 | "Mainnet, real funds · since 12:40" | same, or "expires {time} UTC" when the approval has an expiry | |
 | REVIEW | same | |
@@ -691,9 +731,10 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | "Restricted access: always asks before acting." | "Restricted: every mutating transaction requires your approval." or "Full access: auto-executes approved tools without prompting per call." | desktop's own words for its two modes (`ComposerPermissionSeat.tsx`); Restricted does not ask before reading |
 | "Change in Settings" | "Set when this chat was created." (proposed) | a chat's permission is set at creation and locked; Settings cannot change it |
 | RECENT ACTIVITY | same | |
+| (loading) covers; "Could not load this section."; "Vex has not acted yet." | same: two cover rows while the first read runs; "Could not load this section." beside the cross for a read that failed or timed out; "Vex has not acted yet." for an empty feed | Cloud's REAL words (`RecentActivity.tsx`, the console's failed section); they replace "Loading…", "Couldn't load activity.", "Activity is unavailable right now - try again shortly." and "No activity recorded yet - everything Vex executes appears here." |
 | FILLED | Confirmed | desktop knows a transaction confirmed, not an order filled (`agent-scan-outcome.ts`) |
 | RUNNING | Submitted, awaiting confirmation | desktop's pending word |
-| DID NOT EXECUTE | Failed, Refunded or Status unknown, as the entry says | "did not execute" for a rejected approval needs the approval history, which activity does not join yet |
+| DID NOT EXECUTE | Failed or Refunded, with the failed cross; Status unknown with the concerned hatch (section 2.2) | "did not execute" for a rejected approval needs the approval history, which activity does not join yet; nobody knows an unknown outcome, so it is never drawn as a failure |
 | OPEN ACTIVITY | same; it opens Agent Scan | |
 | the first-close hint: "Show Vex" and keycaps | same | |
 
@@ -733,7 +774,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 ### A.7 The chat and the money card
 | H3 | Desktop | Why |
 |---|---|---|
-| THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history shows "{n} steps" only | desktop does not store a turn's duration |
+| THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history reads THOUGHT with no total, and "{n} steps" (VEX Cloud's EC-07 and its stored trace head; "Thought", "Thought for {s}" and "{n} steps" are Cloud DRAFT words); every other thinking row of a turn reads THOUGHT, and the live frame's writing scope "Thought · 1.2K tokens" | desktop does not store a turn's duration |
 | CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order"; any other card, the tool's own title ("Lighter · Fees approve"), and "Confirm this action" only where no tool name is readable | desktop's card serves every tool family (`approvalActionWord`); a card outside them is named as Cloud names its generic card, by the tool's title (DG5-01) |
 | MAINNET, REAL FUNDS | same | every desktop approval moves real funds |
 | "Swap 200 USDC for ETH on Base." | desktop's sentence from the signed arguments; else "{tool title}: review the signed fields" | |

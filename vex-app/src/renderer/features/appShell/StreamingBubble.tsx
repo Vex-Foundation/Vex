@@ -18,7 +18,7 @@
  *
  * When the canonical message DTO lands, `useStreamPreviewSync` clears the
  * whole preview and the persisted row takes over seamlessly - the live row's
- * "Reasoned" stamp is the same grammar as the persisted `ReasonedBlock`
+ * "Thought" stamp is the same grammar as the persisted `ReasonedBlock`
  * (`reasoning-stamp.ts`).
  */
 

@@ -3,7 +3,7 @@
  *
  * The load-bearing case is NULL vs PRESENT: until Lane ENGINE lands (and
  * forever, for legacy rows and providers that emit no reasoning) `reasoning`
- * is null, and the block must render NOTHING — an empty "Reasoned" affordance
+ * is null, and the block must render NOTHING — an empty "Thought" affordance
  * that opens onto nothing is a worse lie than an absent one.
  *
  * Also pins that the stamp matches the island's post-thinking stamp, and that
@@ -34,7 +34,7 @@ describe("ReasonedBlock", () => {
       }),
     );
     expect(container.querySelector('[data-vex-reasoning="persisted"]')).not.toBeNull();
-    const btn = screen.getByRole("button", { name: /Reasoned/ });
+    const btn = screen.getByRole("button", { name: /Thought/ });
     expect(btn.getAttribute("aria-expanded")).toBe("false");
     // Collapsed by default: the summary is the FIRST line and nothing more, so
     // a long trace still never buries the answer it produced.
@@ -48,7 +48,7 @@ describe("ReasonedBlock", () => {
     const { container } = render(
       createElement(ReasonedBlock, { reasoning: "weighed the **ledger**" }),
     );
-    const btn = screen.getByRole("button", { name: /Reasoned/ });
+    const btn = screen.getByRole("button", { name: /Thought/ });
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
     const body = document.getElementById(btn.getAttribute("aria-controls")!);
@@ -58,25 +58,26 @@ describe("ReasonedBlock", () => {
 
   it("omits a token count we do not have, and prints one we do", () => {
     const bare = render(createElement(ReasonedBlock, { reasoning: "t" }));
-    expect(screen.getByRole("button", { name: /Reasoned/ }).textContent).toBe(
-      "Reasoned",
+    expect(screen.getByRole("button", { name: /Thought/ }).textContent).toBe(
+      "Thought",
     );
     bare.unmount();
 
     render(createElement(ReasonedBlock, { reasoning: "t", tokens: 1234 }));
     // Identical grammar to the island's post-thinking stamp.
     expect(
-      screen.getByRole("button", { name: /Reasoned/ }).textContent,
-    ).toContain("Reasoned · 1.2K tokens");
+      screen.getByRole("button", { name: /Thought/ }).textContent,
+    ).toContain("Thought · 1.2K tokens");
   });
 
   it("heads a turn: its steps at the right, and the live clock's reading only when there is one", () => {
-    // docs/design/H3-DESKTOP.md Appendix A.7: "Thought for N s" after a live
-    // turn; a turn reopened from history says its steps only.
+    // docs/design/H3-DESKTOP.md Appendix A.7 (VEX Cloud's EC-07): "Thought
+    // for Ns" after a live turn; a turn reopened from history says "Thought"
+    // with no total, and its steps.
     const history = render(
       createElement(ReasonedBlock, { reasoning: "t", steps: 3 }),
     );
-    expect(screen.getByRole("button", { name: /Reasoned/ }).textContent).toBe("Reasoned");
+    expect(screen.getByRole("button", { name: /Thought/ }).textContent).toBe("Thought");
     expect(
       history.container.querySelector("[data-vex-turn-steps]")?.textContent,
     ).toBe("3 steps");
@@ -88,7 +89,7 @@ describe("ReasonedBlock", () => {
     );
     expect(
       screen.getByRole("button", { name: /Thought for/ }).textContent,
-    ).toBe("Thought for 2.8 s");
+    ).toBe("Thought for 2.8s");
     expect(live.container.querySelector("[data-vex-turn-steps]")?.textContent).toBe("1 step");
     live.unmount();
 
@@ -98,17 +99,17 @@ describe("ReasonedBlock", () => {
     expect(plain.container.querySelector("[data-vex-thinking-head]")).toBeNull();
   });
 
-  it("draws H3's dot-grid glyph once settled and the thinking hatch while streaming", () => {
+  it("draws H3's dot-grid glyph once settled and the running node while streaming", () => {
     const settled = render(createElement(ReasonedBlock, { reasoning: "t" }));
     expect(settled.container.querySelector("[data-vex-think-glyph]")).not.toBeNull();
-    expect(settled.container.querySelector(".vex-swatch")).toBeNull();
+    expect(settled.container.querySelector(".vex-step-node")).toBeNull();
     settled.unmount();
     const running = render(
       createElement(ReasonedBlock, { reasoning: "t", running: true }),
     );
     expect(running.container.querySelector("[data-vex-think-glyph]")).toBeNull();
     expect(
-      running.container.querySelector('.vex-swatch[data-s="thinking"]'),
+      running.container.querySelector('.vex-step-node[data-step-node="running"]'),
     ).not.toBeNull();
   });
 
@@ -118,7 +119,7 @@ describe("ReasonedBlock", () => {
         reasoning: '<img src=x onerror="alert(1)">',
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Thought/ }));
     expect(container.querySelector("img")).toBeNull();
   });
 
@@ -130,7 +131,7 @@ describe("ReasonedBlock", () => {
       }),
     );
     expect(container.querySelector("[data-vex-reasoning-summary]")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Reasoned/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Thought/ }));
     // Expanded, the full trace is in ordinary page flow - page reading must
     // never fight an internal follower.
     expect(container.querySelector("[data-vex-reasoning-summary]")).toBeNull();

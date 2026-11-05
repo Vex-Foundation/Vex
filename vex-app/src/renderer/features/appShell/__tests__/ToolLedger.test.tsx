@@ -358,7 +358,7 @@ describe("ToolGroupRow", () => {
     );
     expect(
       measured.container.querySelector("[data-vex-tool-duration]")?.textContent,
-    ).toBe("2.3 s");
+    ).toBe("2.3s");
     measured.unmount();
     const partial = render(
       createElement(ToolGroupRow, {

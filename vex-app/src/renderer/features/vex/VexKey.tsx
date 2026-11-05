@@ -29,8 +29,8 @@
  * Everything shown comes from `useVexPresence`, the same read her column
  * draws, so the two can never disagree: the word is the state machine's
  * (`vex-state.ts`: Ready, Thinking, Waiting for approval and the rest), the
- * square H3's (an outline at Ready, solid otherwise), the timer only while a
- * turn is live. Words are written in
+ * square H3's key square (`vexKeySquareOf`), the timer only while a turn is
+ * live. Words are written in
  * sentence case and the key's label register sets them in caps.
  *
  * THE ANNOUNCER of the state word (`VexStateAnnouncer`) sits beside the
@@ -48,7 +48,7 @@ import { useId, type JSX, type ReactNode } from "react";
 import { LineChevronDown, LineChevronUp } from "../../components/icons/line/index.js";
 import type { KimmMood } from "../../components/vex/kimm/kimm-assets.js";
 import { Keycaps } from "../../components/ui/keycaps.js";
-import { Swatch } from "../../components/ui/swatch.js";
+import { syncBlink } from "../../components/ui/state-square.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { studioPlatform, type StudioPlatform } from "../appShell/studio/keybindings-labels.js";
 import { useVexPresence } from "./useVexPresence.js";
@@ -63,6 +63,39 @@ import {
   vexToggleName,
   vexToggleTooltipLabel,
 } from "./vex-toggle-shortcut.js";
+
+/**
+ * THE KEY'S SQUARE (docs/design/H3-DESKTOP.md sections 1.6 and 2.2; VEX
+ * Cloud's H3 key, `h3-merged/js/data.js`): its own drawing per state, so the
+ * state never rests on a colour. Ready is the 1px muted frame; Thinking,
+ * Working and Waking up the hud square, which blinks while it lasts (PD-06);
+ * Waiting for approval solid ink; Done solid hud; Concerned the framed ink
+ * hatch; Error the ink cross; Sleeping the dotted frame. Listening, the
+ * person typing, is Vex at rest: the Ready frame.
+ */
+export type VexKeySquare = "ready" | "running" | "waiting" | "done" | "concerned" | "error" | "sleeping";
+
+export function vexKeySquareOf(state: VexState): VexKeySquare {
+  switch (state) {
+    case "ready":
+    case "listening":
+      return "ready";
+    case "thinking":
+    case "working":
+    case "waking":
+      return "running";
+    case "awaiting":
+      return "waiting";
+    case "done":
+      return "done";
+    case "concerned":
+      return "concerned";
+    case "error":
+      return "error";
+    case "sleeping":
+      return "sleeping";
+  }
+}
 
 export interface VexKeyProps {
   /** Her section is open, as the frame solved it. */
@@ -136,6 +169,7 @@ export function VexKeyView({
   const shown = open && !closing;
   const name = vexToggleName(shown);
   const stateId = useId();
+  const square = vexKeySquareOf(state);
 
   return (
     <Tooltip label={held ?? vexToggleTooltipLabel(shown, platform)} side="bottom">
@@ -161,12 +195,14 @@ export function VexKeyView({
         </span>
         <span className="vex-key__state">
           <span id={stateId} className="vex-key__line vex-key__status">
-            {/* H3's state square (section 2.2): ink, an outline at Ready
-              * and solid in every other state; the word says which. */}
-            <Swatch
-              state={state === "ready" ? "idle" : "done"}
-              size={6}
+            {/* H3's key square (section 1.6): a drawing per state, the
+              * running one blinking in phase with every other; the word
+              * says which. */}
+            <span
+              ref={square === "running" ? syncBlink : undefined}
+              aria-hidden="true"
               className="vex-key__square"
+              data-key-square={square}
             />
             <span className="vex-key__word">{word}</span>
             {timer}
@@ -178,7 +214,7 @@ export function VexKeyView({
         </span>
         {count !== null && count > 0 ? (
           <span className="vex-key__count vex-num" aria-hidden="true">
-            <Swatch state="awaiting" size={6} className="vex-key__square" />
+            <span aria-hidden="true" className="vex-key__square" data-key-square="waiting" />
             {count}
           </span>
         ) : null}

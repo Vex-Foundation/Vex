@@ -237,12 +237,12 @@ describe("TranscriptMessage tool acts (S5)", () => {
     );
     const link = screen.getByRole("button", { name: /waiting for approval/i });
     expect(link.textContent).toBe("Waiting for approval");
-    // The target fill rides the link, so the step's own fill slot stays empty
-    // and the row shows the state once.
-    expect(link.querySelector('.vex-swatch[data-s="awaiting"]')).not.toBeNull();
+    // The target is the step's own node (VEX Cloud's trace), so the link
+    // carries the word alone and the row shows the state once.
     expect(
-      document.querySelector("[data-vex-tool-status] .vex-swatch"),
-    ).toBeNull();
+      document.querySelector('[data-vex-tool-status="waiting"] .vex-step-node')?.getAttribute("data-step-node"),
+    ).toBe("waiting");
+    expect(link.querySelector(".vex-sq, .vex-step-node")).toBeNull();
   });
 
   it("folds two or more calls of one row into one quiet row that opens to the steps", () => {
@@ -266,16 +266,18 @@ describe("TranscriptMessage tool acts (S5)", () => {
     const fold = screen.getByRole("button", { name: /2 tool calls/ });
     expect(fold.textContent).toContain("2 tool calls · Wallet read, Search web");
     // Time spent in the tools: the measured durations, summed.
-    expect(fold.querySelector("[data-vex-tool-duration]")?.textContent).toBe("2.3 s");
+    expect(fold.querySelector("[data-vex-tool-duration]")?.textContent).toBe("2.3s");
     expect(fold.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Done")).toBeNull();
+    expect(screen.queryByText("27ms")).toBeNull();
     fireEvent.click(fold);
     expect(fold.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getAllByText("Done")).toHaveLength(2);
+    // A done step's time column holds its measured time, not a word.
+    expect(screen.getByText("27ms")).not.toBeNull();
+    expect(screen.queryByText("Done")).toBeNull();
     expect(container.querySelector("[data-vex-tool-fold]")).not.toBeNull();
   });
 
-  it("never lets a fold hide a failure: the folded row counts it, beside the red square", () => {
+  it("never lets a fold hide a failure: the folded row counts it, beside the ink cross", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -296,19 +298,20 @@ describe("TranscriptMessage tool acts (S5)", () => {
     const failed = container.querySelector("[data-vex-tool-fold-failed]");
     expect(failed?.textContent).toBe("1 failed");
     // docs/design/H3-DESKTOP.md section 2.2: a step that did not execute is
-    // the status red square beside an ink word.
-    expect(failed?.querySelector(".vex-swatch.text-danger-mark")).not.toBeNull();
+    // the ink cross beside its count in the refusal ink.
+    expect(failed?.querySelector('.vex-step-node[data-step-node="failed"]')).not.toBeNull();
     // No member was measured, so the fold prints no time at all.
     expect(container.querySelector("[data-vex-tool-duration]")).toBeNull();
   });
 
-  it("squares each outcome in its H3 status colour beside its word", () => {
-    // docs/design/H3-DESKTOP.md section 2.2: ink for a step that ran, red
-    // for one that did not execute, grey for a broadcast still in flight.
+  it("draws each outcome as the trace's node, with its time or its word", () => {
+    // docs/design/H3-DESKTOP.md sections 1.7 and 2.2 (VEX Cloud's trace): done
+    // the ink 2 square and its time; failed the ink cross and FAILED; a
+    // broadcast still in flight the blinking node and PENDING.
     const cases = [
-      { success: true, displayStatus: null, mark: "text-ink-primary", word: "Done" },
-      { success: false, displayStatus: null, mark: "text-danger-mark", word: "Failed" },
-      { success: false, displayStatus: "pending" as const, mark: "text-running-mark", word: "Pending" },
+      { success: true, displayStatus: null, node: "done", word: null, time: "812ms" },
+      { success: false, displayStatus: null, node: "failed", word: "Failed", time: null },
+      { success: false, displayStatus: "pending" as const, node: "running", word: "Pending", time: null },
     ];
     for (const c of cases) {
       const { container } = render(
@@ -335,11 +338,11 @@ describe("TranscriptMessage tool acts (S5)", () => {
           },
         }),
       );
-      const square = container.querySelector("[data-vex-tool-status] .vex-swatch");
-      expect(square?.className).toContain(c.mark);
-      expect(container.querySelector("[data-vex-step-word]")?.textContent).toBe(c.word);
-      // The measured time rides at the row's right.
-      expect(container.querySelector("[data-vex-tool-duration]")?.textContent).toBe("812 ms");
+      const node = container.querySelector("[data-vex-tool-status] .vex-step-node");
+      expect(node?.getAttribute("data-step-node")).toBe(c.node);
+      expect(container.querySelector("[data-vex-step-word]")?.textContent ?? null).toBe(c.word);
+      // The time column: the measured time, or the word where it outranks it.
+      expect(container.querySelector("[data-vex-tool-duration]")?.textContent ?? null).toBe(c.time);
       cleanup();
     }
   });
@@ -447,7 +450,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     expect(container.querySelector('[data-vex-reasoning="persisted"]')).toBeNull();
   });
 
-  it("mounts the collapsible Reasoned block above the assistant body", () => {
+  it("mounts the collapsible Thought block above the assistant body", () => {
     const { container } = render(
       createElement(TranscriptMessage, {
         row: {
@@ -458,7 +461,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     );
     const block = container.querySelector('[data-vex-reasoning="persisted"]');
     expect(block).not.toBeNull();
-    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Thought/ })).not.toBeNull();
     // Collapsed: only the trace's FIRST line rides beside the stamp, so the
     // answer stays the first substantial thing read.
     expect(container.textContent).not.toContain("Then I priced the route.");
@@ -512,7 +515,7 @@ describe("TranscriptMessage persisted reasoning", () => {
     expect(
       container.querySelectorAll('[data-vex-reasoning="persisted"]'),
     ).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /Reasoned/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Thought/ })).not.toBeNull();
   });
 
   it("renders EVERY folded trace, in turn order, above the ledger line", () => {
@@ -685,7 +688,7 @@ describe("TranscriptMessage tool card duration", () => {
     );
     expect(
       container.querySelector("[data-vex-tool-duration]")?.textContent,
-    ).toBe("2.3 s");
+    ).toBe("2.3s");
   });
 
   it("shows NO chip for a call that never ran - null must not read as 0 s", () => {

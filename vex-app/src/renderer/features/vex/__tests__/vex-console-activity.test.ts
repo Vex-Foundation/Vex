@@ -92,39 +92,39 @@ describe("activityLine", () => {
 
 describe("consoleActivityRowOf", () => {
   it("ends a confirmed row in Confirmed on the green square", () => {
-    expect(consoleActivityRowOf(entry(), NOW)).toMatchObject({ word: "Confirmed", mark: "success" });
+    expect(consoleActivityRowOf(entry(), NOW)).toMatchObject({ word: "Confirmed", status: "filled" });
   });
 
-  it("ends a row in flight in its in-flight word on the running square", () => {
+  it("ends a row in flight in its in-flight word on the running square, which blinks", () => {
     const sent = entry({ status: "pending", explorerUrl: "https://basescan.org/tx/0x1" });
     expect(consoleActivityRowOf(sent, NOW)).toMatchObject({
       word: "Submitted, awaiting confirmation",
-      mark: "running",
+      status: "running",
     });
     expect(consoleActivityRowOf(entry({ status: "pending" }), NOW)).toMatchObject({
       word: "Pending",
-      mark: "running",
+      status: "running",
     });
   });
 
-  it("ends a row that did not execute in Failed, Refunded or Status unknown on the red square", () => {
+  it("ends a row that did not execute in Failed or Refunded on the cross, Status unknown on the hatch", () => {
     expect(consoleActivityRowOf(entry({ status: "failed" }), NOW)).toMatchObject({
       word: "Failed",
-      mark: "danger",
+      status: "failed",
     });
     expect(
       consoleActivityRowOf(entry({ status: "failed", failureCode: "bridge_refunded" }), NOW),
-    ).toMatchObject({ word: "Refunded", mark: "danger" });
+    ).toMatchObject({ word: "Refunded", status: "failed" });
     expect(consoleActivityRowOf(entry({ status: "superseded_unproven" }), NOW)).toMatchObject({
       word: "Status unknown",
-      mark: "danger",
+      status: "concerned",
     });
   });
 
-  it("keeps a word it does not map on the running grey", () => {
+  it("keeps a word it does not map on the empty frame, never running", () => {
     expect(consoleActivityRowOf(entry({ status: "queued_somewhere" }), NOW)).toMatchObject({
       word: "Queued somewhere",
-      mark: "running",
+      status: "unknown",
     });
   });
 
@@ -140,7 +140,7 @@ describe("consoleActivityRowOf", () => {
       key: "lighter_fill:77",
       title: "Buy 0.0050 ETH",
       word: "Filled",
-      mark: "success",
+      status: "filled",
     });
   });
 });

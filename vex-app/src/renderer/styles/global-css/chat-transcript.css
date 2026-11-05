@@ -318,8 +318,9 @@
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
-/* The step's word: caps 12 tracked, muted for a step that ran, ink for a
- * status the reader must see (failed, pending). */
+/* The step's word, in the time column where there is no time (VEX Cloud's
+ * trace): caps 12 tracked, muted for a step that ran, ink for one still
+ * pending, FAILED in the refusal ink. */
 .vex-step__word {
   flex: none;
   font-size: 12px;
@@ -327,9 +328,64 @@
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
 }
-.vex-step[data-vex-step-state="failed"] .vex-step__word,
 .vex-step[data-vex-step-state="pending"] .vex-step__word {
   color: var(--vex-alias-label-primary);
+}
+.vex-step[data-vex-step-state="failed"] .vex-step__word,
+.vex-step[data-vex-step-state="failed"] .vex-step__summary {
+  color: var(--vex-alias-state-refusal);
+}
+
+/* THE STEP'S NODE (section 2.2; VEX Cloud's trace node, `.rz-n`): 7px, a
+ * drawing per state, never a colour alone. Done the ink 2 square; running
+ * the ink square, blinking in phase with every running square (PD-06);
+ * waiting the target, a 1px ink ring and its 3px centre; failed the ink
+ * cross. Under reduced motion and Save-Data a running node holds still as
+ * half a square. */
+.vex-step-node {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-step-node[data-step-node="done"] {
+  background-color: var(--vex-alias-label-secondary);
+}
+.vex-step-node[data-step-node="running"] {
+  background-color: currentColor;
+  animation: vex-sq-blink var(--vex-duration-blink) steps(2, end) infinite;
+}
+.vex-step-node[data-step-node="waiting"] {
+  background: linear-gradient(currentColor, currentColor) center / 3px 3px no-repeat;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.vex-step-node[data-step-node="failed"] {
+  background-image:
+    linear-gradient(45deg, transparent 38%, currentColor 38% 62%, transparent 62%),
+    linear-gradient(-45deg, transparent 38%, currentColor 38% 62%, transparent 62%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-step-node[data-step-node="running"] {
+    animation: none;
+    background-color: transparent;
+    background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
+  }
+}
+html[data-still] .vex-step-node[data-step-node="running"] {
+  animation: none;
+  background-color: transparent;
+  background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
+}
+@media (forced-colors: active) {
+  .vex-step-node {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+  .vex-step-node[data-step-node="done"] {
+    background-color: CanvasText;
+  }
 }
 .vex-step__spacer {
   flex: 1 1 0;
@@ -348,8 +404,8 @@
   flex: none;
   color: var(--vex-alias-label-tertiary);
 }
-/* A failure's first line beside its title, 13 in the error ink (never red:
- * red is the square's, never type), truncated. */
+/* A failure's first line beside its title, 13, in the refusal ink on a failed
+ * step (VEX Cloud's trace), truncated. */
 .vex-step__summary {
   min-width: 0;
   flex: 0 1 auto;
@@ -367,14 +423,14 @@
   max-width: none;
   flex: 0 1 auto;
 }
-/* A failure inside a fold is never hidden by it: the red square and the
- * count in ink. */
+/* A failure inside a fold is never hidden by it: the ink cross and the
+ * count in the refusal ink. */
 .vex-step__failed {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: 8px;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-state-refusal);
 }
 
 /* The members of an opened fold, under it, on the fold's rule. */
@@ -667,16 +723,106 @@
   color: var(--vex-alias-label-tertiary);
 }
 
-/* The turn error callout (the kit's `.vex-callout`) after the last turn, on
- * the turn's edge (the column's own, as H3 draws Vex's turn), at most 600
- * wide. */
+/* THE TURN ERROR ROW (`TurnErrorRow`; VEX Cloud's `h3-chat-gaps` section 20,
+ * `.t-fail`), after the last turn on the turn's edge: one pattern for every
+ * kind, outcome first. The 1px rule on the card ground (Cloud's --vx-card); the body a grid of
+ * 8 | 1fr, 14 apart, padded 14 18 16 16: the 8px red square at 7, the title
+ * 15/1.45 in the refusal ink, the words 14/1.5 in ink 2 (the hint in ink, the
+ * cause and the codes in the mono 11.5 muted); then the key strip, 48 high
+ * under a 1px rule, each key a cell in caps 13 tracked on the raised fill,
+ * padding 0 22, a rule at its right. */
 .vex-turn-error {
-  max-width: 600px;
   margin: 0 0 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-card);
+}
+.vex-turn-error__body {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 14px;
+  padding: 14px 18px 16px 16px;
+}
+.vex-turn-error__sq {
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  background: var(--vex-alias-state-error-mark);
+}
+.vex-turn-error__text {
+  min-width: 0;
+  margin: 0;
+}
+.vex-turn-error__title {
+  display: block;
+  color: var(--vex-alias-state-refusal);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.vex-turn-error__words {
+  display: block;
+  margin-top: 3px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.vex-turn-error__hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-turn-error__detail,
+.vex-turn-error__code {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.vex-turn-error__keys {
+  display: flex;
+  height: 48px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-turn-error__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 22px;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.vex-turn-error__key:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-turn-error__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  .vex-turn-error__sq {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .vex-turn-error__key {
+    border: 1px solid ButtonText;
+  }
 }
 
-/* ── The thinking row (a persisted Reasoned row) ─────────────────────────
- * The frame closed to its head: the dot-grid glyph, "Reasoned" or "Thought
+/* ── The thinking row (a persisted Thought row) ──────────────────────────
+ * The frame closed to its head: the dot-grid glyph, "Thought" or "Thought
  * for 2.8 s" in caps 13 tracked ink, the trace's first line in 13 muted, then
  * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
  * whole row is the key: the label is the button, and its hit area stretches

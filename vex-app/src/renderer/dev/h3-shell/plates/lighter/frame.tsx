@@ -32,7 +32,7 @@ import {
   LineZen,
 } from "../../../../components/icons/line/index.js";
 import { Keycaps } from "../../../../components/ui/keycaps.js";
-import { Swatch } from "../../../../components/ui/swatch.js";
+import { vexKeySquareOf } from "../../../../features/vex/VexKey.js";
 import { AgentSidebarHeader } from "../../../../features/appShell/AgentSidebarHeader.js";
 import { ChatHeaderCells } from "../../../../features/appShell/ChatHeaderCells.js";
 import { SessionsList } from "../../../../features/appShell/SessionsList.js";
@@ -112,7 +112,7 @@ function PlateVexKey({ open, state }: { readonly open: boolean; readonly state: 
       </span>
       <span className="vex-key__state">
         <span className="vex-key__line vex-key__status">
-          <Swatch state={state === "ready" ? "idle" : "done"} size={6} className="vex-key__square" />
+          <span aria-hidden="true" className="vex-key__square" data-key-square={vexKeySquareOf(state)} />
           <span className="vex-key__word">{STATE_WORDS[state]}</span>
         </span>
         <span className="vex-key__line vex-key__action">

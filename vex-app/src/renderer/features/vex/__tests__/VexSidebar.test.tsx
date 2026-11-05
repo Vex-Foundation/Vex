@@ -96,10 +96,12 @@ vi.mock("../../../lib/api/portfolio.js", () => ({
   useAgentScanInfinite: () => ({ isLoading: true, isError: false, data: undefined }),
 }));
 // The console's AI permission reads the open chat; its words are
-// `VexConsole.test.tsx`'s. Here the chat's read has not answered.
+// `VexConsole.test.tsx`'s. Here the chat's read has not answered, and the
+// sessions list (the missions row reads its failure) has not failed.
 vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useSession: () => ({ data: undefined }),
+  useSessionsList: () => ({ data: undefined, isError: false }),
 }));
 vi.mock("../../appShell/lighterTrading/LighterChatRail.js", () => ({
   LighterChatRail: () => <div data-testid="desk-chat" />,
@@ -543,13 +545,15 @@ describe("VexSidebar, Needs you", () => {
     expect(useUiStore.getState().activeSessionId).toBe(other);
   });
 
-  it("says a read it could not make is unknown, never zero", () => {
+  it("says a read it could not make is Not available, never zero, with no count", () => {
     presenceRef.current = presence({
       needsYou: { status: "unknown", unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.", count: null, items: [], retry: vi.fn(), retrying: false },
     });
     render(<VexSidebar open onHide={() => {}} />);
-    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you: ?");
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(area("vex-needs-you")?.querySelector("h3")?.textContent).toBe("Needs you");
+    expect(area("vex-needs-you-row")?.textContent).toBe("Not available");
+    // VEX Cloud's console: a polled read offers no Retry.
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("draws the console's Needs you on the Lighter desk too (the approved desk plate)", () => {

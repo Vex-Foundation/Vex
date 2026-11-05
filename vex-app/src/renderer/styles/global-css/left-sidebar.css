@@ -463,9 +463,9 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
  * (9.6 image px in `h3-merged__welcome-open-1440`, 8.6 CSS px), where the
  * type table says 13; RUNNING spans 55px there, narrower than 12 draws with
  * the 0.08em label tracking (61), so H3's tracking reads tighter than the
- * sheet's value (section 2.3 leaves it open). The square's colour is the
- * status mark's class on the swatch (`session-row-state.ts`), so no rule
- * here colours it. */
+ * sheet's value (section 2.3 leaves it open). The square is the shared
+ * state square (`StateSquare`, `session-row-state.ts`): RUNNING blinks,
+ * WAITING is the target, so no rule here draws it. */
 .vex-ls-row__state {
   display: inline-flex;
   flex: none;
@@ -739,7 +739,7 @@ html[data-os="mac"] .vex-ls-railhead {
   align-items: center;
   gap: 8px;
 }
-/* RUNNING: the status square (muted, `text-running-mark`) 8 before the word;
+/* RUNNING: the blinking state square (`StateSquare`) 8 before the word;
  * the word 12, caps, tracked, ink, as the chats list's tags (section 1.4). */
 .vex-st-proj__run {
   display: inline-flex;

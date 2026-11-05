@@ -386,22 +386,18 @@ describe("terminal state on the tab", () => {
     };
   }
 
-  /** The tab's square: its fill and its colour class (the status squares, H3 section 2.2). */
+  /** The tab's state square: its drawing (H3 section 2.2, `StateSquare`). */
   function dotStateOf(name: RegExp): string | null {
     const tab = screen.getByRole("tab", { name });
-    const square = tab.querySelector("[data-s]");
+    const square = tab.querySelector(".vex-sq");
     if (square === null) return null;
-    const colour = square.classList.contains("text-running-mark")
-      ? ":grey"
-      : square.classList.contains("text-danger-mark")
-        ? ":red"
-        : "";
-    return `${square.getAttribute("data-s") ?? ""}${colour}`;
+    return square.getAttribute("data-state");
   }
 
   it("says RUNNING in words, not only in colour", () => {
     renderTabs(twoTabs("g1"), { runFacts: facts() });
-    expect(dotStateOf(/Terminal 1/)).toBe("done:grey");
+    // Running blinks everywhere (PD-06).
+    expect(dotStateOf(/Terminal 1/)).toBe("ongoing");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Running/ })).toBeTruthy();
   });
 
@@ -413,20 +409,20 @@ describe("terminal state on the tab", () => {
     expect(dotStateOf(/Terminal 1/)).toBe("idle");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Exited/ })).toBeTruthy();
     // The OTHER tab is untouched: state is per terminal, never per strip.
-    expect(dotStateOf(/Terminal 2/)).toBe("done:grey");
+    expect(dotStateOf(/Terminal 2/)).toBe("ongoing");
   });
 
   it("marks a failed exit and a host loss as errors", () => {
     const view = renderTabs(twoTabs("g1"), {
       runFacts: facts({ exits: new Map([["t1", { exitCode: 127, signal: null }]]) }),
     });
-    expect(dotStateOf(/Terminal 1/)).toBe("done:red");
+    expect(dotStateOf(/Terminal 1/)).toBe("error");
     view.unmount();
 
     renderTabs(twoTabs("g1"), {
       runFacts: facts({ lostTerminalIds: new Set(["t1"]) }),
     });
-    expect(dotStateOf(/Terminal 1/)).toBe("done:red");
+    expect(dotStateOf(/Terminal 1/)).toBe("error");
     expect(screen.getByRole("tab", { name: /Terminal 1\s*Ended with an error/ })).toBeTruthy();
   });
 
@@ -452,7 +448,7 @@ describe("terminal state on the tab", () => {
     const base = twoTabs("g1");
     renderTabs({ ...base, tabs: [...base.tabs, fileTab("f1", "docs/README.md")] });
     expect(
-      screen.getByRole("tab", { name: /README\.md/ }).querySelector("[data-s]"),
+      screen.getByRole("tab", { name: /README\.md/ }).querySelector(".vex-sq"),
     ).toBeNull();
   });
 });
@@ -872,7 +868,7 @@ describe("the workspace chrome in H3 cells", () => {
     // A terminal leads with its 6px state square and its name in caps; a
     // file with its 14 glyph and its name in mono (terminal.css).
     expect(terminalTab.querySelector("svg")).toBeNull();
-    expect(terminalTab.querySelector(".vex-swatch")?.getAttribute("style")).toContain("6px");
+    expect(terminalTab.querySelector(".vex-sq")?.getAttribute("style")).toContain("6px");
     expect(terminalTab.className).toContain("vex-tab-trigger--terminal");
     expect(fileTab.querySelector("svg")?.getAttribute("width")).toBe("14");
     expect(fileTab.className).toContain("vex-tab-trigger--file");
@@ -917,7 +913,7 @@ describe("the workspace chrome in H3 cells", () => {
       "zsh",
       "node",
     ]);
-    expect(heads.every((head) => head.querySelector(".vex-swatch") !== null)).toBe(true);
+    expect(heads.every((head) => head.querySelector(".vex-sq") !== null)).toBe(true);
     expect(screen.getByRole("button", { name: "Close terminal 2 in Terminal 1" }).className).toBe(
       "vex-ws-pane__close",
     );

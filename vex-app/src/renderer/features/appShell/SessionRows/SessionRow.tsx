@@ -22,6 +22,7 @@ import { useState, type JSX, type KeyboardEvent, type MouseEvent } from "react";
 import type { SessionListItem } from "@shared/schemas/sessions.js";
 import { HoverCard } from "../../../components/ui/hover-card.js";
 import { RailRow } from "../../../components/ui/rail-list.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 import { Swatch } from "../../../components/ui/swatch.js";
 import { formatChatRowTime, formatSessionTime, getSessionTitle } from "../sessionListModel.js";
 import { SessionHoverContent } from "./SessionHoverContent.js";
@@ -188,7 +189,7 @@ export function SessionRow({
           // row's class sets in caps. The square is decoration; the word
           // says the state.
           <span className="vex-ls-row__state">
-            <Swatch state={state.square.fill} size={6} className={state.square.className} />
+            <StateSquare state={state.square} size={6} />
             {state.word}
           </span>
         )}

@@ -3,8 +3,9 @@
  * Agent Scan's two arms and the token history draw one grid, 112 | 1fr | 120
  * | 250, and end in the same place: the state word and, under it, the
  * consequence in muted type. The word is H3's status mark
- * (docs/design/H3-DESKTOP.md section 2.2, `StatusMark`): ink caps beside a
- * square that carries the colour, green, grey or red. The grid's R3 rules
+ * (docs/design/H3-DESKTOP.md section 2.2, `StatusMark`): caps beside a
+ * square with its own drawing per status, so the colour never stands alone
+ * (solid, blink, cross, hatch, target, frame). The grid's R3 rules
  * live in `styles/global-css/overlay.css` (`.vex-scan-*`); H3's rows are
  * laid over them in `book.css`, under the page frame.
  *

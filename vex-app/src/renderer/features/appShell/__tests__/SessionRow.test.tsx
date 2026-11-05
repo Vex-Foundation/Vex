@@ -217,22 +217,22 @@ describe("a SIDEBAR row (H3-DESKTOP.md section 1.4)", () => {
     expect(row?.textContent).not.toMatch(/\(\d{2}\)/);
   });
 
-  it("trades the time for H3's tag while a mission runs: the grey square and the word", () => {
+  it("trades the time for H3's tag while a mission runs: the blinking square and the word", () => {
     renderRow(session({ mode: "mission", missionStatus: "running" }), false, "sidebar");
     const state = document.querySelector(".vex-ls-row__state");
     expect(state?.textContent).toBe("Running");
-    const square = state?.querySelector(".vex-swatch");
-    expect(square?.getAttribute("data-s")).toBe("done");
-    expect(square?.classList.contains("text-running-mark")).toBe(true);
+    const square = state?.querySelector(".vex-sq");
+    // Running blinks everywhere (PD-06): the hud square, never solid-still.
+    expect(square?.getAttribute("data-state")).toBe("ongoing");
     expect((square as HTMLElement | null)?.style.width).toBe("6px");
     expect(document.querySelector(".vex-ls-row__time")).toBeNull();
   });
 
-  it("gives Waiting the ink square", () => {
+  it("gives Waiting the target", () => {
     renderRow(session({ mode: "mission", missionStatus: "paused_approval" }), false, "sidebar");
     const state = document.querySelector(".vex-ls-row__state");
     expect(state?.textContent).toBe("Waiting");
-    expect(state?.querySelector(".vex-swatch")?.classList.contains("text-ink-primary")).toBe(true);
+    expect(state?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("warning");
   });
 
   it("marks the open session with the selection and aria-current, without a swatch", () => {
@@ -240,6 +240,7 @@ describe("a SIDEBAR row (H3-DESKTOP.md section 1.4)", () => {
     expect(document.querySelector("[data-vex-ls-item][data-selected]")).not.toBeNull();
     expect(document.querySelector('[aria-current="true"]')).not.toBeNull();
     expect(document.querySelector(".vex-swatch")).toBeNull();
+    expect(document.querySelector(".vex-sq")).toBeNull();
   });
 
   it("keeps Pin and Remove beside the select button, and the hover preview around it", () => {
@@ -287,18 +288,18 @@ describe("the row's state words", () => {
     expect(of("paused_error")).toEqual({ word: "Error", fill: "error" });
   });
 
-  it("gives each word H3's square: grey for Running, ink for Waiting, red for Error", () => {
+  it("gives each word H3's square: the blink for Running, the target for Waiting, the cross for Error", () => {
     // docs/design/H3-DESKTOP.md section 2.2 and Appendix A.2; Paused and
-    // Sleeping, which H3 does not draw, take the grey outline and dotted line.
+    // Sleeping, which H3 does not draw, take VEX Cloud's dotted frame.
     const square = (missionStatus: SessionListItem["missionStatus"]) =>
       sessionRowState(session({ mode: "mission", missionStatus }))?.square;
-    expect(square("running")).toEqual({ fill: "done", className: "text-running-mark" });
+    expect(square("running")).toBe("ongoing");
     for (const waiting of ["paused_approval", "paused_plan_acceptance", "paused_user_form"] as const) {
-      expect(square(waiting)).toEqual({ fill: "done", className: "text-ink-primary" });
+      expect(square(waiting)).toBe("warning");
     }
-    expect(square("paused_user")).toEqual({ fill: "idle", className: "text-running-mark" });
-    expect(square("paused_wake")).toEqual({ fill: "sleeping", className: "text-running-mark" });
-    expect(square("paused_error")).toEqual({ fill: "done", className: "text-danger-mark" });
+    expect(square("paused_user")).toBe("paused");
+    expect(square("paused_wake")).toBe("paused");
+    expect(square("paused_error")).toBe("error");
   });
 
   it("says nothing for agent sessions and finished missions (the time shows)", () => {

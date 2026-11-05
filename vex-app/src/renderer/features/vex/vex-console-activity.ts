@@ -15,10 +15,11 @@
  *     a fill (`AgentScanLighterRow`): the venue matched it and its economics
  *     are final.
  *
- * THE SQUARE IS THE STATUS's (section 2.2): status green for Confirmed and
- * Filled, status red for Failed, Refunded and "Status unknown", the muted
- * grey for a row still in flight and for a word this build does not map. The
- * word stays ink.
+ * THE SQUARE IS THE STATUS's (section 2.2), Agent Scan's own reading of it
+ * (`outcomeStatus`, the `StatusMark` families), each status its own drawing:
+ * solid green for Confirmed and Filled, the blinking hud for a row still in
+ * flight (PD-06), the cross for Failed and Refunded, the concerned hatch for
+ * "Status unknown", the empty frame for a word this build does not map.
  *
  * THE LINE says what happened from the entry's own fields: the kind in words,
  * then the token it spent and the token it got ("Swap USDC → ETH"), each the
@@ -43,12 +44,13 @@ import type {
 import { legSymbolText } from "../appShell/screens/agent-scan/agent-scan-display.js";
 import { lighterCompactTradeText } from "../appShell/screens/agent-scan/agent-scan-lighter-display.js";
 import { activityOutcome } from "../appShell/screens/agent-scan/agent-scan-outcome.js";
+import {
+  outcomeStatus,
+  type StatusFamily,
+} from "../appShell/screens/agent-scan/StatusMark.js";
 
 /** How many rows the console shows: H3 draws four. */
 export const CONSOLE_ACTIVITY_ROWS = 4;
-
-/** Which status colour the row's square takes (section 2.2). */
-export type ConsoleActivityMark = "success" | "danger" | "running";
 
 export interface ConsoleActivityRow {
   /** Stable React key: the arm and the arm's own id. */
@@ -57,7 +59,8 @@ export interface ConsoleActivityRow {
   readonly title: string;
   /** The status word, Agent Scan's. */
   readonly word: string;
-  readonly mark: ConsoleActivityMark;
+  /** The status family the row's square draws, Agent Scan's (`outcomeStatus`). */
+  readonly status: StatusFamily;
 }
 
 /**
@@ -103,14 +106,10 @@ export function activityLine(entry: AgentScanActivityEntry): string {
   return one === null ? kind : `${kind} ${one}`;
 }
 
-/** The square for an activity row's outcome. */
-function markOf(entry: AgentScanActivityEntry, nowMs: number): { word: string; mark: ConsoleActivityMark } {
+/** The word and the square for an activity row's outcome, as Agent Scan reads them. */
+function statusOf(entry: AgentScanActivityEntry, nowMs: number): { word: string; status: StatusFamily } {
   const outcome = activityOutcome(entry, nowMs);
-  if (outcome.state === "done") return { word: outcome.word, mark: "success" };
-  if (outcome.state === "error" || outcome.word === "Refunded") {
-    return { word: outcome.word, mark: "danger" };
-  }
-  return { word: outcome.word, mark: "running" };
+  return { word: outcome.word, status: outcomeStatus(outcome.state, outcome.word) };
 }
 
 /** One feed entry as a console row. */
@@ -120,10 +119,10 @@ export function consoleActivityRowOf(entry: AgentScanEntry, nowMs: number): Cons
       key: `lighter_fill:${entry.id}`,
       title: lighterCompactTradeText(entry),
       word: "Filled",
-      mark: "success",
+      status: "filled",
     };
   }
-  return { key: `agent_activity:${entry.id}`, title: activityLine(entry), ...markOf(entry, nowMs) };
+  return { key: `agent_activity:${entry.id}`, title: activityLine(entry), ...statusOf(entry, nowMs) };
 }
 
 /** The newest rows, at most `CONSOLE_ACTIVITY_ROWS`, in the feed's own order. */

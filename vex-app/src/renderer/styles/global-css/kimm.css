@@ -39,7 +39,11 @@
  *     inside, 148 under
  *     the header, with no strategies row (section 4.1): y 224 at any window
  *     height. A declared length, never a measure of the console's content,
- *     so a decision arriving or a mission starting never moves her.
+ *     so a decision arriving or a mission starting never moves her. Every
+ *     decision is listed, and the list scrolls inside the row's 64 rather
+ *     than push her down (vex-console.css), so her top holds while she
+ *     waits; VEX Cloud's 240 floor never binds here (at the 720 window
+ *     floor her box is 423 high).
  *   - foot: the bottom row's top rule, where the column ends (the row is
  *     72 x zoom and that rule, `--vex-h3-foot`), so she ends at 827 at
  *     1440 x 900, as VEX Cloud's section does.

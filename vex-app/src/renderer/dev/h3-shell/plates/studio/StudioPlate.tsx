@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useState, type CSSProperties, type JSX } from "react";
-import { Swatch } from "../../../../components/ui/swatch.js";
+import { StateSquare } from "../../../../components/ui/state-square.js";
 import { AgentSidebarHeader } from "../../../../features/appShell/AgentSidebarHeader.js";
 import { ChatHeaderCells } from "../../../../features/appShell/ChatHeaderCells.js";
 import { SidebarProfile } from "../../../../features/appShell/SidebarProfile.js";
@@ -100,7 +100,7 @@ function StudioHeaderTitle(): JSX.Element {
           title={`Vex Studio is serving your projects. ${String(SAMPLE_HOST.connected)} of ${String(SAMPLE_HOST.max)} connections in use.`}
         >
           <span className="vex-plate-host__state">
-            <Swatch state="done" size={6} className="text-running-mark" />
+            <StateSquare state="ongoing" size={6} />
             <span>Running</span>
           </span>
           <span className="vex-plate-host__figure">{`${String(SAMPLE_HOST.connected)} connected`}</span>

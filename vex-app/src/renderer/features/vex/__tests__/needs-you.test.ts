@@ -322,7 +322,7 @@ describe("approvalNeedsYouItem", () => {
 
   it("falls back to the same labels the inbox always used", () => {
     expect(approvalNeedsYouItem(approval({ sessionTitle: null }), NOW).where).toBe(
-      "Untitled session",
+      "Untitled chat",
     );
     expect(
       approvalNeedsYouItem(approval({ sessionId: null, sessionTitle: null }), NOW).where,

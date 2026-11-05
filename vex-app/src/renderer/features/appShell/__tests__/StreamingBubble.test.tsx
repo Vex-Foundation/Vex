@@ -5,7 +5,7 @@
  * Pins the row's state machine end to end: Working, Thinking (FULL live
  * reasoning as markdown, no masked peek, no "Ephemeral" label now that
  * reasoning is persisted), Calling {tool}, Writing (answer below, the
- * "Reasoned" stamp as the row's inline scope). Plus the invariants inherited
+ * "Thought" stamp as the row's inline scope). Plus the invariants inherited
  * from the working strip it replaces: the elapsed m:ss counter, the
  * awaiting-approval FREEZE ("Waiting for approval"), the sr-only
  * `role="status"` announcements, and an error branch that shows a safe
@@ -82,7 +82,7 @@ describe("StreamingBubble - answer stream", () => {
 });
 
 describe("TurnIsland - state transitions", () => {
-  it("starts in the working state, worded 'Working' behind the solid fill - the 'vexing…' word is retired", () => {
+  it("starts in the working state, worded 'Working' behind the running node - the 'vexing…' word is retired", () => {
     const { container } = render(
       createElement(StreamingBubble, { preview: preview({ status: "working" }) }),
     );
@@ -90,11 +90,10 @@ describe("TurnIsland - state transitions", () => {
     const label = container.querySelector("[data-vex-island-label]");
     expect(label?.textContent).toBe("Working");
     expect(label?.textContent).not.toContain("vexing");
-    // Live work wears the solid fill (the same swatch the Working sidebar
-    // state uses), never the old stepping dot screen.
+    // Live work is the trace's running node, which blinks (PD-06).
     expect(
-      label?.parentElement?.querySelector(".vex-swatch")?.getAttribute("data-s"),
-    ).toBe("done");
+      label?.parentElement?.querySelector(".vex-step-node")?.getAttribute("data-step-node"),
+    ).toBe("running");
   });
 
   it("keeps the working row in flow - it is the ONLY pending surface", () => {
@@ -173,9 +172,9 @@ describe("TurnIsland - state transitions", () => {
     const label = container.querySelector("[data-vex-island-label]");
     expect(label?.textContent).toBe("Writing");
     const detail = container.querySelector("[data-vex-island-detail]");
-    expect(detail?.textContent).toBe("Reasoned · 1.2K tokens");
+    expect(detail?.textContent).toBe("Thought · 1.2K tokens");
     expect(detail?.parentElement).toBe(label?.parentElement);
-    expect(container.textContent).toContain("Reasoned · 1.2K tokens");
+    expect(container.textContent).toContain("Thought · 1.2K tokens");
     // The answer is below the island, and the trace is no longer on screen.
     expect(container.textContent).toContain("The answer");
     expect(container.textContent).not.toContain("the trace");

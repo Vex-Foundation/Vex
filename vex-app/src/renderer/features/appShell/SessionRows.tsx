@@ -141,6 +141,23 @@ export function SessionGroups({
   );
 }
 
+/**
+ * The chats list's words (VEX Cloud's REAL `shell/sidebar/chat-list.tsx`):
+ * "chat", never "session", in every word a person reads. A failed read says
+ * so in Cloud's words, followed by main's own reason when its Result carries
+ * one (`chatsFailedWords`); a transport failure has no reason to add.
+ */
+export const CHATS_LOADING_COPY = "Loading chats";
+export const CHATS_FAILED_COPY = "Chats could not load.";
+export const CHATS_EMPTY_COPY = "No chats yet.";
+export const CHATS_NO_MATCH_COPY = "No chats match your search.";
+
+/** "Chats could not load." and main's reason after it, when it gave one. */
+export function chatsFailedWords(reason: string | null | undefined): string {
+  const cause = reason?.trim() ?? "";
+  return cause.length === 0 ? CHATS_FAILED_COPY : `${CHATS_FAILED_COPY} ${cause}`;
+}
+
 export function SessionsLoadingPlaceholder({
   sidebarOpen,
 }: {
@@ -150,7 +167,7 @@ export function SessionsLoadingPlaceholder({
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
       register="sentence"
-      text="Loading sessions"
+      text={CHATS_LOADING_COPY}
       icon={<Swatch state="listening" size={10} />}
     />
   );
@@ -158,10 +175,11 @@ export function SessionsLoadingPlaceholder({
 
 export function SessionsErrorPlaceholder({
   sidebarOpen,
-  message,
+  message = CHATS_FAILED_COPY,
 }: {
   readonly sidebarOpen: boolean;
-  readonly message: string;
+  /** The words; Cloud's "Chats could not load." unless the owner names others. */
+  readonly message?: string;
 }): JSX.Element {
   return (
     <ListPlaceholder
@@ -176,14 +194,17 @@ export function SessionsErrorPlaceholder({
 
 export function SessionsEmptyPlaceholder({
   sidebarOpen,
+  searching = false,
 }: {
   readonly sidebarOpen: boolean;
+  /** A search or a tab narrowed a list that has chats: none match it. */
+  readonly searching?: boolean;
 }): JSX.Element {
   return (
     <ListPlaceholder
       sidebarOpen={sidebarOpen}
       register="sentence"
-      text="No sessions"
+      text={searching ? CHATS_NO_MATCH_COPY : CHATS_EMPTY_COPY}
     />
   );
 }

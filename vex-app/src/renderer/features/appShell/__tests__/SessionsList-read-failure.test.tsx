@@ -81,23 +81,19 @@ describe("SessionsList read failure", () => {
   it("renders the failure placeholder on a TRANSPORT rejection, not a blank rail", () => {
     harness.query = { isLoading: false, isError: true, data: undefined };
     renderRail();
-    expect(
-      screen.getByText("Vex could not read your sessions."),
-    ).toBeTruthy();
-    expect(screen.queryByText("No sessions")).toBeNull();
+    // VEX Cloud's words for the chats list (chat-list.tsx).
+    expect(screen.getByText("Chats could not load.")).toBeTruthy();
+    expect(screen.queryByText("No chats yet.")).toBeNull();
   });
 
-  it("keeps the settled ok:false read on its own message", () => {
+  it("says Chats could not load. for a settled ok:false read, then main's own reason", () => {
     harness.query = {
       isLoading: false,
       isError: false,
       data: { ok: false, error: { message: "Vault is locked." } },
     };
     renderRail();
-    expect(screen.getByText("Vault is locked.")).toBeTruthy();
-    expect(
-      screen.queryByText("Vex could not read your sessions."),
-    ).toBeNull();
+    expect(screen.getByText("Chats could not load. Vault is locked.")).toBeTruthy();
   });
 
   it("keeps a good empty read on the empty state, never the failure copy", () => {
@@ -107,9 +103,7 @@ describe("SessionsList read failure", () => {
       data: { ok: true, data: [] },
     };
     renderRail();
-    expect(screen.getByText("No sessions")).toBeTruthy();
-    expect(
-      screen.queryByText("Vex could not read your sessions."),
-    ).toBeNull();
+    expect(screen.getByText("No chats yet.")).toBeTruthy();
+    expect(screen.queryByText("Chats could not load.")).toBeNull();
   });
 });

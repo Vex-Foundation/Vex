@@ -69,7 +69,7 @@ describe("ToolActRow one-line collapsed header", () => {
     // The measurement never shrinks - a duration clipped to "2" is a wrong
     // number, whereas a clipped summary is still honest prose.
     const duration = container.querySelector("[data-vex-tool-duration]");
-    expect(duration?.textContent).toBe("27 ms");
+    expect(duration?.textContent).toBe("27ms");
     expect(duration?.className).toContain("flex-none");
     // The summary slot is the only thing that fills.
     const summary = container.querySelector("[data-vex-tool-legs]");
@@ -93,13 +93,14 @@ describe("ToolActRow error summary", () => {
     success: false,
   });
 
-  it("shows the failure's FIRST line in the error tone", () => {
+  it("shows the failure's FIRST line, on the failed step (the refusal ink's row)", () => {
     const { container } = render(createElement(ToolActRow, { act: failing }));
     const summary = container.querySelector("[data-vex-tool-error-summary]");
     expect(summary?.textContent).toBe(
       "Insufficient balance for the requested route.",
     );
-    expect(summary?.className).toContain("text-destructive");
+    // chat-transcript.css paints a failed step's summary in the refusal ink.
+    expect(summary?.closest("[data-vex-step-state]")?.getAttribute("data-vex-step-state")).toBe("failed");
     expect(summary?.className).toContain("truncate");
     // The FIRST line only - the rest stays in the expanded Output section.
     expect(container.textContent).not.toContain("Route id: 88");

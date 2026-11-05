@@ -257,7 +257,7 @@ export function reducePreview(
       // store path coalesces the deltas instead (see `applyDelta`).
       return appendReasoning(base, event.delta.text);
     case "usage":
-      // Surfaces as the strip's "Reasoned · N tokens" summary. A usage delta
+      // Surfaces as the strip's "Thought · N tokens" summary. A usage delta
       // without the optional field keeps the last seen value.
       return {
         ...base,
