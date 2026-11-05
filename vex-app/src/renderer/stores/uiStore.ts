@@ -223,6 +223,13 @@ export interface UiState {
    */
   readonly vexOpenLighter: boolean;
   /**
+   * Her band under 1024 (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's
+   * PD-12): closed on every visit, a press kept for the session only. NOT
+   * persisted, so every launch starts it closed, and nothing narrow writes
+   * `vexOpenChat` or `vexOpenPages`.
+   */
+  readonly vexOpenNarrow: boolean;
+  /**
    * @deprecated R3's "Show avatar", retired by her section's open or closed
    * choice (`vexOpenChat`, plan row S4-14). v24 folded a stored `false` into
    * that choice and pinned this slot true, and nothing reads or writes it
@@ -472,6 +479,8 @@ export interface UiState {
    * its rail.
    */
   readonly setVexOpen: (value: boolean) => void;
+  /** Open (true) or close (false) her band under 1024, for the session only. */
+  readonly setVexOpenNarrow: (value: boolean) => void;
   /** Legacy name of `setVexOpen`. */
   readonly setBookOpen: (value: boolean) => void;
   /** Flip the current page class's stored choice. */
@@ -624,6 +633,7 @@ export const useUiStore = create<UiState>()(
       vexOpenChat: true,
       vexOpenPages: false,
       vexOpenLighter: false,
+      vexOpenNarrow: false,
       showAvatar: true,
       welcomeVexShown: true,
       vexInferenceNoticeDismissed: false,
@@ -667,6 +677,7 @@ export const useUiStore = create<UiState>()(
       setSidebarNarrowExpanded: (sidebarNarrowExpanded) =>
         set({ sidebarNarrowExpanded }),
       setVexOpen: (value) => set((state) => vexOpenPatch(state, value)),
+      setVexOpenNarrow: (vexOpenNarrow) => set({ vexOpenNarrow }),
       setBookOpen: (value) => set((state) => vexOpenPatch(state, value)),
       toggleBook: () =>
         set((state) => vexOpenPatch(state, !selectVexOpen(state))),

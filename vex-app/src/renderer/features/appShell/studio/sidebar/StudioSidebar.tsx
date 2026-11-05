@@ -86,7 +86,7 @@ import {
 } from "../../../../components/icons/line/index.js";
 import { SplitPane } from "../../../../components/ui/split-pane.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
-import { H3_BAND_HEIGHT } from "../../../../lib/shell-columns.js";
+import { H3_CONSOLE_LINE_HEIGHT } from "../../../../lib/shell-columns.js";
 import { useQuietScrollbars } from "../../../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../../../lib/useScrollbarVisibility.js";
 import { cn } from "../../../../lib/utils.js";
@@ -215,7 +215,7 @@ export interface StudioSidebarProps {
    * rail ends in the Projects and files key and its drawer instead.
    */
   readonly expandable?: boolean;
-  /** The drawer's top under the header: the band's height under 1024, else 0. */
+  /** The drawer's top under the header: the console line's under 1024, else 0. */
   readonly drawerTop?: number;
   readonly activeProjectId: string | null;
   readonly onSelectProject: (projectId: string) => void;
@@ -235,7 +235,7 @@ export function StudioSidebar({
   collapsed,
   onToggleSidebar,
   expandable = true,
-  drawerTop = H3_BAND_HEIGHT,
+  drawerTop = H3_CONSOLE_LINE_HEIGHT,
   activeProjectId,
   onSelectProject,
   onSelectWelcome,

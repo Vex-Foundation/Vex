@@ -239,7 +239,7 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
   it("folds by its clip alone: her box is the same rule open and closed", () => {
     const closed = rule('.vex-kimm[data-kimm-open="false"]');
     expect(closed).toMatch(
-      /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-h3-strip-h\)\) 0\)/,
+      /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-kimm-stub, var\(--vex-h3-strip-h\)\)\) 0\)/,
     );
     expect(closed).not.toMatch(/(?:^|[\s;])(?:top|bottom|left|right|width|height|margin|inset|display)\s*:/);
     // The strip's key covers the open key's box: 149 against 138, same corner.
@@ -364,7 +364,7 @@ describe("KimmSection, Show Vex opens her in 720ms with the scan head and her dr
       /transition:\s*transform var\(--vex-duration-vex-close\) var\(--vex-ease-push\)/,
     );
     // Closed, its foot line sits at the strip's edge: moved up by its height less 56.
-    expect(closedScan).toMatch(/transform:\s*translateY\(calc\(var\(--vex-h3-strip-h\) - 100%\)\)/);
+    expect(closedScan).toMatch(/transform:\s*translateY\(calc\(var\(--vex-kimm-stub, var\(--vex-h3-strip-h\)\) - 100%\)\)/);
     expect(scan).toMatch(/inset:\s*0/);
     expect(rule(".vex-kimm__scan::after")).toMatch(/height:\s*1px/);
     expect(rule(".vex-kimm__scan::after")).toMatch(/bottom:\s*0/);

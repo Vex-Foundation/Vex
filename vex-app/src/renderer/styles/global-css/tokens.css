@@ -593,6 +593,10 @@
    * 1px rule (Cloud's `--foot`: 73 at 1440), so the zoomed composer and the
    * card's decision row still fill it. */
   --vex-zoom: 1;
+  /* HER BAND under 1024 (section 1.10; VEX Cloud's `--band-h`): a box over
+   * the chat's top under the 48 console line, min(clamp(220, 34dvh, 296),
+   * 40dvh) high: 244.8 at a 720-high window, 261.1 at 768. */
+  --vex-band-h: min(clamp(220px, 34dvh, 296px), 40dvh);
   --vex-h3-foot: calc(var(--vex-h3-bottom-h) * var(--vex-zoom) + 1px);
 }
 

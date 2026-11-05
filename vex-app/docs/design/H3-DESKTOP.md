@@ -104,7 +104,7 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 | network | 1078, 240 | MAINNET, the REAL FUNDS mark and a chevron: a network menu | MAINNET and the REAL FUNDS mark, with no chevron: a statement, not a menu |
 | pause | 1318, 122 | PAUSE ALL | left out (no global pause); on Windows and Linux the caption buttons sit here (section 4.7) |
 
-Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344).
+Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344). Under 1024 the Vex key's cell is 288 wide with the waiting count (section 1.10).
 
 The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide, and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. Open: how these cells give way under 1280 (shorter words, the network word dropped for its mark, the chevron cell folded into the state cell). Settled in the harness (S2-07) and with Cloud.
 
@@ -211,18 +211,18 @@ From `h3-merged__portfolio-*-1440`.
 
 **The re-lay** (VEX Cloud's EC-26; the H3 mockup's `js/stage.js`, lines 283 to 287): the frame's tracks never animate. Show Vex or Hide Vex on a page re-lays the page into its new width at the press, in one frame, and the page then fades in from 0.4 opacity over the leg's duration (720ms opening, 420ms closing) on the house curve, cubic-bezier(0.625, 0.05, 0, 1); her column, opening, wipes in from its top with clip-path on the push curve (`features/appShell/page-relay.ts`). A press only, never a cue. Cloud also wipes her section away over the re-laid page as she closes; desktop's section lives inside her column, which folds to the strip at the press, so the close shows the fade alone (left for the owner, section 4.11). Desktop's pages that can hold a money card keep the chat layout (section 4.10).
 
-### 1.10 Under 1024: the band
-H3 draws the band only on the phone and prints one box at 900. What is known:
+### 1.10 Under 1024: the console line and her band
+VEX Cloud's 768 to 1023 layout (the H3 mockup's `css/app.css` section 14, `css/tokens.css` lines 190 to 191, `js/main.js` and `js/stage.js`; the README's "Under 1024 ... one rule (a)"), which desktop takes for its 1000 to 1023, in chats and on pages alike.
 
-- Printed: at 900 the card box is 76, 284, 824 x 516 (a 900 x 800 window). The chats fold to the 76 rail, and the chat runs from 76 to the right edge.
-- Printed, in the proof plate's note: under 1024 the band rests for the whole turn, so a card's arrival and Approve change nothing.
-- Measured on the phone (`h3-merged__phone-band-*-390`): the header is 59 high; the console line under it is 40, and its first cell carries her state and SHOW VEX or HIDE VEX; open, the band is her figure (230 high) and a 56-high foot row holding Vex's line and the HIDE VEX cell, and "the whole 56 tall row closes the band"; closed, there is no band, and the header's second cell shows her face with a chevron badge.
+- **The frame.** The chats are the 76 rail (their key opens the chats panel over the chat, section 4.12); there is no Vex column. Under the header a **console line**, 48 high, is a row of the frame across the chat (`H3_CONSOLE_LINE_HEIGHT`): her state as its first cell (the square, the word and the timer while a turn runs; a key named by its action that opens and closes her band), NEEDS YOU and its count, the missions count, and Open activity at the right edge. The chat runs from under it to the window's foot.
+- **The Vex key** is 288 wide (`H3_BAND_KEY_WIDTH`) and carries the waiting count beside her state; its keycaps leave (the chord stays in its name and tooltip) and its chevron cell is 48.
+- **Her band.** Her section, laid over the chat's top under the console line: the chat's width and min(clamp(220, 34dvh, 296), 40dvh) high (`--vex-band-h`: 244.8 at a 720-high window). Inside it her figure stands head to chest on her ground, and a 56 foot row holds Vex's line (the moment's words, the tagline) and the HIDE VEX cell; the whole foot row is one key, and a press anywhere on it closes the band, handing focus to the Vex key. It opens and closes with her section's own wipe from its top edge (720ms, 420ms, the push curve). While it is open the chat's transcript starts under it, its newest line still on the composer.
+- **Closed, there is no band**: no strip, the room goes back to the transcript.
+- **It starts closed on every visit** and a press holds for the session only (`vexOpenNarrow`, never persisted); nothing narrow writes `vexOpenChat` or `vexOpenPages` (section 3.5).
+- **It rests** while a turn runs or a card waits (Thinking, Working, Waiting for approval: "Vex shows her section after this turn.") and while the composer holds the focus, Cloud's keyboard ("Vex steps aside while you type."): closed whatever was chosen, its keys say the reason instead of acting, and the choice comes back when the hold ends. Vex's cues never open or close it.
+- **The money rule.** The console line is a row of the window; the band is a box over the chat that never enters the grid, and it rests whenever a card waits, so a card is never under it and never moves when it opens or closes. The card proof reads it at 1000 x 720 (`e2e/h3-card-proof.spec.ts`): with the swap card waiting and the band asked open, the band stays closed, and presses on the Vex key, the console line's key, the chord and the chats panel change neither the card nor a track on any painted frame; with no card, the band opens at 76, 124, 924 x 244.8 and its foot row closes it.
 
-Desktop's default, derived for S2-08: the 76 header with the rail's cell (the mark), the Vex key, the chat title, the network cell and the caption reserve; the console line across the window right of the rail; her band under the console line while open; the chat under that.
-
-Built in S2-08: the band is a row of the frame under the header, over the chat's track, 132 high at every desktop width (`H3_BAND_HEIGHT`): the Vex column's own parts laid in one row, its head (44) over her state and Needs you beside her portrait (88). Its height is a function of nothing, so a card under it never moves when a turn starts, waits or ends. The chats rail runs from the header to the foot beside it. A page shows no band (the strip, section 1.9).
-
-Open: the band's heights at a desktop width; whether the band may stand open over a waiting card (the proof's narrow rows were read with "states closed"); the header cells at this width. Settled in the harness at 1000 x 720 and with Cloud.
+Desktop differs from Cloud here in one thing: Cloud hides the console line while a card takes the chat (its G10); desktop keeps it standing, because it is a row of the frame and hiding it would change the chat's box under a waiting card.
 
 ### 1.11 Wide windows: the zoom and the reading line
 VEX Cloud's (`apps/web/src/lib/ui/wide-zoom.ts`, built; the H3 mockup's `css/tokens.css` lines 163, 183, 187 to 188 and 201; `renders/checks.json`), which desktop takes whole (`lib/wide-zoom.ts`).

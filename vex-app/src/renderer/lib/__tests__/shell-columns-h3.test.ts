@@ -22,7 +22,8 @@ import {
   computeH3ShellColumns,
   h3GridTemplateColumns,
   h3ShellLayout,
-  H3_BAND_HEIGHT,
+  H3_BAND_KEY_WIDTH,
+  H3_CONSOLE_LINE_HEIGHT,
   H3_CHATS_OPEN_MIN,
   LIGHTER_CHAT_MAX,
   LIGHTER_CHAT_MIN,
@@ -174,14 +175,14 @@ describe("the band seam", () => {
     expect(h3(1000, false)).toEqual(h3(1000, true));
   });
 
-  it("a page's strip wins over the band", () => {
+  it("the band wins over a page's strip: under 1024 a page has the console line and her band", () => {
     expect(h3(1000, true, true)).toEqual({
       layout: "band",
       chats: 76,
       vex: 0,
       chat: 924,
       chatsRail: true,
-      vexSeat: "strip",
+      vexSeat: "band",
       chatLeft: 76,
     });
   });
@@ -195,7 +196,7 @@ describe("what the grid reads", () => {
     expect(seat(h3(1440, true, true))).toEqual(["columns", "strip", false]);
     expect(seat(h3(1440, false, true))).toEqual(["columns", "strip", true]);
     expect(seat(h3(1000, true))).toEqual(["band", "band", true]);
-    expect(seat(h3(1000, true, true))).toEqual(["band", "strip", true]);
+    expect(seat(h3(1000, true, true))).toEqual(["band", "band", true]);
   });
 
   it("the x where the chat starts", () => {
@@ -473,10 +474,12 @@ describe("the frame's rows", () => {
     );
   });
 
-  it("under 1024 puts Vex's band between the header and the body, a fixed 132", () => {
-    expect(H3_BAND_HEIGHT).toBe(132);
+  it("under 1024 puts the console line between the header and the body, a fixed 48", () => {
+    // Her band is a box over the chat under it (`--vex-band-h`), never a row.
+    expect(H3_CONSOLE_LINE_HEIGHT).toBe(48);
+    expect(H3_BAND_KEY_WIDTH).toBe(288);
     expect(shellGridTemplateRows({ head: true, foot: false, band: true })).toBe(
-      "var(--head-h) 132px minmax(0, 1fr) 0px",
+      "var(--head-h) 48px minmax(0, 1fr) 0px",
     );
     expect(shellGridTemplateRows({ head: true, foot: true, band: false })).toBe(
       "var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)",

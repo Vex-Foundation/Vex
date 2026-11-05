@@ -785,6 +785,34 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
+/* Under 1024 the key carries the waiting count beside her state (VEX Cloud's
+ * `.vk-count`, section 1.10): the console's Needs you is a line away. */
+.vex-key__count {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 0;
+  font-size: 13px;
+}
+.vex-shell-frame[data-vex-tier="band"] .vex-key__count {
+  display: flex;
+}
+/* In the band's 288 the keycaps leave (the chord stays in the key's name and
+ * tooltip, as VEX Cloud's key keeps it under 1440) and the chevron cell is
+ * Cloud's 48, so her state word keeps its room. */
+.vex-shell-frame[data-vex-tier="band"] .vex-key .vex-keycaps {
+  display: none;
+}
+.vex-shell-frame[data-vex-tier="band"] .vex-key__chevron {
+  width: 48px;
+}
+.vex-shell-frame[data-vex-tier="band"] .vex-key__state {
+  padding-inline: 16px 12px;
+}
+.vex-key[aria-disabled="true"] {
+  cursor: not-allowed;
+}
 .vex-key__chevron {
   display: flex;
   flex: none;

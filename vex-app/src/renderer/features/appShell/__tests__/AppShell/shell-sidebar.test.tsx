@@ -1171,25 +1171,45 @@ describe("AppShell", () => {
     expect(account?.hasAttribute("data-rail")).toBe(true);
   });
 
-  it("under 1024 seats Vex as the band under the header, over the chat", () => {
+  it("under 1024 seats Vex as the console line under the header, her band over the chat", () => {
     // docs/design/H3-DESKTOP.md section 1.10: no Vex track; a fourth row of
-    // the frame, a fixed 132, holds her over the chat's track.
+    // the frame, the 48 console line, and her band a box over the chat under
+    // it, closed on every visit (the session's own choice, never persisted).
     setWindowWidth(1000);
-    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenNarrow: false });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-seat")).toBe("band");
+    expect(frame?.getAttribute("data-vex-band")).toBe("closed");
     expect(frame?.style.gridTemplateColumns).toBe("76px 0px minmax(0, 1fr)");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 132px minmax(0, 1fr) var(--vex-h3-foot)");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 48px minmax(0, 1fr) var(--vex-h3-foot)");
     const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
     expect(aside?.getAttribute("data-vex-seat")).toBe("band");
-    expect(aside?.getAttribute("data-vex-vex-open")).toBe("true");
-    // A page has no band: the strip.
+    // The console line, with her state as its first key, and her band.
+    const line = aside?.querySelector("[data-vex-area='vex-console-strip']");
+    expect(line?.hasAttribute("data-band")).toBe(true);
+    const lineKey = aside?.querySelector<HTMLElement>("[data-vex-area='vex-console-line-key']");
+    expect(lineKey?.getAttribute("aria-label")).toBe("Show Vex");
+    const section = aside?.querySelector("[data-vex-area='kimm-section']");
+    expect(section?.getAttribute("data-kimm-seat")).toBe("band");
+    expect(section?.getAttribute("data-kimm-open")).toBe("false");
+    // The Vex key's cell is 288 wide.
+    const head = view.container.querySelector<HTMLElement>("[data-vex-area='shell-head']");
+    expect(head?.style.gridTemplateColumns).toContain("[chats-end vex-start] 288px [vex-end");
+    // Opening it writes the session's own choice, never the chat's.
+    fireEvent.click(lineKey as HTMLElement);
+    expect(useUiStore.getState().vexOpenNarrow).toBe(true);
+    expect(useUiStore.getState().vexOpenChat).toBe(true);
+    expect(frame?.getAttribute("data-vex-band")).toBe("open");
+    expect(section?.getAttribute("data-kimm-open")).toBe("true");
+    // Its foot row closes it.
+    fireEvent.click(within(section as HTMLElement).getByRole("button", { name: "Hide Vex" }));
+    expect(useUiStore.getState().vexOpenNarrow).toBe(false);
+    expect(frame?.getAttribute("data-vex-band")).toBe("closed");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 48px minmax(0, 1fr) var(--vex-h3-foot)");
+    // A page under 1024 keeps the console line and her band.
     act(() => useUiStore.getState().navigate("portfolio"));
-    expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-foot)");
-    // Her element draws the console's one line there (section 1.9).
-    expect(aside?.getAttribute("data-vex-seat")).toBe("strip");
+    expect(frame?.getAttribute("data-vex-seat")).toBe("band");
     expect(aside?.querySelector("[data-vex-area='vex-console-strip']")).not.toBeNull();
   });
 
@@ -1305,9 +1325,15 @@ describe("AppShell", () => {
   it("in a chat never moves a track for her: hiding Vex folds only her plate, at every size", () => {
     // docs/design/H3-DESKTOP.md section 3.6, the money rule's first leg: the
     // chat's track is a function of the window alone. The stored choice
-    // reaches her plate, never the grid, in the columns and in the band.
-    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    // reaches her plate, never the grid, in the columns and in the band;
+    // under 1024 her band follows the session's own choice (section 1.10).
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, vexOpenNarrow: true });
     for (const width of [1000, 1023, 1024, 1280, 1366, 1440, 1920, 2560]) {
+      const narrow = width < 1024;
+      const show = (open: boolean): void => {
+        if (narrow) useUiStore.getState().setVexOpenNarrow(open);
+        else useUiStore.getState().setVexOpen(open);
+      };
       setWindowWidth(width);
       const view = renderShell();
       const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
@@ -1321,7 +1347,7 @@ describe("AppShell", () => {
       const section = (): Element | null | undefined =>
         aside()?.querySelector("[data-vex-area='kimm-section']");
       expect(section()?.getAttribute("data-kimm-open"), String(width)).toBe("true");
-      act(() => useUiStore.getState().setVexOpen(false));
+      act(() => show(false));
       expect(
         {
           columns: frame?.style.gridTemplateColumns,
@@ -1334,9 +1360,11 @@ describe("AppShell", () => {
       // The column stands, open; only her plate went, the flat token in its place.
       expect(aside()?.getAttribute("data-vex-vex-open"), String(width)).toBe("true");
       expect(section()?.getAttribute("data-kimm-open"), String(width)).toBe("false");
-      // The stored flag is the same one the toggle always wrote.
-      expect(useUiStore.getState().vexOpenChat).toBe(false);
-      act(() => useUiStore.getState().setVexOpen(true));
+      // The stored flag is the same one the toggle always wrote; under 1024
+      // the session's own, the chat's untouched.
+      expect(useUiStore.getState().vexOpenChat).toBe(narrow);
+      expect(useUiStore.getState().vexOpenNarrow).toBe(!narrow);
+      act(() => show(true));
       view.unmount();
     }
   });

@@ -237,6 +237,18 @@
 .vex-shell-frame[data-vex-frame="h3"][data-vex-seat="band"] > .vex-shell-centre {
   grid-row: 3 / -1;
 }
+/* Her element is the console line, and her band hangs from it over the
+ * chat's top: it stands over the chat (10) and under the chats panel (19)
+ * and the chats column (20). While her band is open the chat's transcript
+ * starts under it (VEX Cloud's `.cc-scroll` margin), its newest line still
+ * on the composer; the band rests whenever a card waits, so no card is ever
+ * under it or moved by it (section 1.10). */
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="band"] > .vex-shell-vex {
+  z-index: 15;
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-band="open"] .vex-shell-centre [data-vex-conversation-scroll] {
+  margin-top: var(--vex-band-h);
+}
 
 /* The one drag handle left, Lighter's chat share, is a frame child (columns
  * clip overflow): an 8px hit strip centered on the column border via inline

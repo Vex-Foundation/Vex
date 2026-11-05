@@ -469,6 +469,155 @@ test.describe("H3 card proof: the chats panel never moves a waiting card", () =>
 });
 
 /**
+ * THE BAND LEG (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's rule (a)
+ * under 1024): at 1000 x 720, the window minimum, her console is a 48 line
+ * under the header and her section a band laid over the chat's top. The
+ * band rests while a card waits: with the swap card waiting it is closed
+ * whatever the person chose (`?vex=open` asks for it open), her keys say why
+ * instead of acting, and a press on the Vex key, on the console line's key
+ * or on the chord changes nothing, on any painted frame, nor does the chats
+ * panel opening and closing over the chat. The grid's rows and columns are
+ * read beside the card throughout. With no card waiting the band does open
+ * and close, so a band that never opened cannot pass.
+ */
+const BAND_SIZE = { width: 1000, height: 720 } as const;
+
+interface BandFrame {
+  readonly at: number;
+  readonly card: Box;
+  readonly rows: string;
+  readonly columns: string;
+  readonly phase: string | null;
+}
+
+/** Press a control (by selector) and read the card on every painted frame for `ms`. */
+async function bandPress(page: Page, control: string, ms: number): Promise<BandFrame[]> {
+  return page.evaluate(
+    async ({ card, section, control, ms }) => {
+      const cardEl = document.querySelector(card);
+      const frameEl = document.querySelector<HTMLElement>(".vex-shell-frame");
+      const sectionEl = document.querySelector<HTMLElement>(section);
+      const controlEl = document.querySelector<HTMLElement>(control);
+      if (cardEl === null || frameEl === null || sectionEl === null || controlEl === null) {
+        throw new Error(`the card, the frame, her band or ${control} is missing`);
+      }
+      const frames: BandFrame[] = [];
+      const read = (at: number): BandFrame => {
+        const r = cardEl.getBoundingClientRect();
+        return {
+          at,
+          card: { x: r.x, y: r.y, width: r.width, height: r.height },
+          rows: getComputedStyle(frameEl).gridTemplateRows,
+          columns: getComputedStyle(frameEl).gridTemplateColumns,
+          phase: sectionEl.getAttribute("data-kimm-phase"),
+        };
+      };
+      const start = performance.now();
+      controlEl.click();
+      await new Promise<void>((resolve) => {
+        const tick = (): void => {
+          const at = performance.now() - start;
+          frames.push(read(at));
+          if (at > ms) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return frames;
+    },
+    { card: CARD, section: SECTION, control, ms },
+  );
+}
+
+test.describe("H3 card proof under 1024: the band never moves a waiting card", () => {
+  test(`her band rests while the card waits, and nothing moves it at ${sizeName(BAND_SIZE)}`, async ({ page }) => {
+    // Asked open: the band still rests, because a card waits.
+    await open(page, BAND_SIZE, "closed");
+    await page.goto("/?state=swap-waiting&vex=open");
+    await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    const frameEl = page.locator('[data-vex-area="shell-frame"]');
+    await expect(frameEl).toHaveAttribute("data-vex-tier", "band");
+    await expect(frameEl).toHaveAttribute("data-vex-band", "closed");
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    const key = page.locator('[data-vex-area="vex-key"]');
+    await expect(key).toHaveAttribute("aria-disabled", "true");
+    await expect(page.locator('[data-vex-area="vex-console-line-key"]')).toHaveAttribute("aria-disabled", "true");
+    // The console line is the frame's 48 row: the chat starts under it.
+    const rows = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateRows);
+    expect(rows.split(" ").slice(0, 2)).toEqual(["76px", "48px"]);
+    const card = await cardBox(page);
+    const columns = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
+
+    for (const control of ['[data-vex-area="vex-key"]', '[data-vex-area="vex-console-line-key"]']) {
+      const frames = await bandPress(page, control, OPEN_MS + 120);
+      for (const frame of frames) {
+        expect(frame.card, `${control} ${frame.at.toFixed(1)}ms`).toEqual(card);
+        expect(frame.rows, `${control} ${frame.at.toFixed(1)}ms`).toBe(rows);
+        expect(frame.columns, `${control} ${frame.at.toFixed(1)}ms`).toBe(columns);
+        expect(frame.phase, `${control} ${frame.at.toFixed(1)}ms`).toBe("closed");
+      }
+    }
+    // The chord, from anywhere: the same rest.
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+B" : "Control+Shift+B");
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    expect(await cardBox(page)).toEqual(card);
+
+    // The chats panel over what is read: it covers, it never moves the card.
+    const panelOpen = await bandPress(page, PANEL_KEY, OPEN_MS + 120);
+    const panelClose = await bandPress(page, PANEL_KEY, CLOSE_MS + 120);
+    for (const frame of [...panelOpen, ...panelClose]) {
+      expect(frame.card, `panel ${frame.at.toFixed(1)}ms`).toEqual(card);
+      expect(frame.rows, `panel ${frame.at.toFixed(1)}ms`).toBe(rows);
+      expect(frame.columns, `panel ${frame.at.toFixed(1)}ms`).toBe(columns);
+    }
+  });
+
+  test(`with no card waiting her band opens and closes over the chat at ${sizeName(BAND_SIZE)}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize(BAND_SIZE);
+    await page.goto("/?state=new-chat");
+    await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+    // It starts closed on every visit: no band at all.
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    const frameEl = page.locator('[data-vex-area="shell-frame"]');
+    const columns = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateColumns);
+    const rows = await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateRows);
+    await page.locator('[data-vex-area="vex-key"]').click();
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "open");
+    await expect(frameEl).toHaveAttribute("data-vex-band", "open");
+    // Under the line's rule, the chat's width, min(clamp(220, 34dvh, 296), 40dvh) high.
+    const band = (await page.locator(SECTION).boundingBox()) as Box;
+    expect(band.x).toBe(76);
+    expect(band.y).toBe(124);
+    expect(band.width).toBe(924);
+    expect(band.height).toBeCloseTo(Math.min(Math.max(220, 0.34 * 720), 296, 0.4 * 720), 1);
+    // The grid never changed; the band is a box over the chat.
+    expect(await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateColumns)).toBe(columns);
+    expect(await frameEl.evaluate((el) => getComputedStyle(el).gridTemplateRows)).toBe(rows);
+    // A press anywhere on its foot row closes it, and focus goes to the Vex key.
+    const foot = (await page.locator(KEY).boundingBox()) as Box;
+    expect(foot.height).toBe(56);
+    expect(foot.width).toBe(924);
+    await page.mouse.click(foot.x + 40, foot.y + foot.height / 2);
+    await expect(page.locator(SECTION)).toHaveAttribute("data-kimm-phase", "closed");
+    await expect(frameEl).toHaveAttribute("data-vex-band", "closed");
+    await expect(page.locator('[data-vex-area="vex-key"]')).toBeFocused();
+    expect(errors).toEqual([]);
+  });
+});
+
+/**
  * THE WIDE WINDOWS (docs/design/H3-DESKTOP.md section 1.11), against VEX
  * Cloud's measured boxes (`h3-merged/renders/checks.json`, approval-open at
  * 1920 and 2560): the chat's title and the card's text start on the reading

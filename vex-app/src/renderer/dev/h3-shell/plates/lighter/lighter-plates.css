@@ -45,7 +45,7 @@
   --lp-row-h: 36px;
   --lp-book-row: 20px;
   --lp-dock-row: 34px;
-  /* Under 1024 her section is the band's 132 (H3_BAND_HEIGHT), not the box. */
+  /* Under 1024 her section on the desk is its own 132, not the box. */
   --lp-kimm-h: 132px;
 }
 

@@ -64,7 +64,8 @@ import {
   deskChatDragMax,
   deskGridTemplateColumns,
   deskVexWidth,
-  H3_BAND_HEIGHT,
+  H3_BAND_KEY_WIDTH,
+  H3_CONSOLE_LINE_HEIGHT,
   h3GridTemplateColumns,
   h3ShellTier,
   shellColumnOrder,
@@ -115,6 +116,7 @@ import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js
 import { VexSidebar } from "../vex/VexSidebar.js";
 import { TaglineCell } from "../vex/TaglineCell.js";
 import { useVexToggleShortcut } from "../vex/useVexToggleShortcut.js";
+import { BAND_HOLD_REASONS, BandHoldProbe } from "../vex/band-hold.js";
 import { startWideZoom } from "../../lib/wide-zoom.js";
 
 import { LockVexControl } from "./LockVexControl.js";
@@ -399,19 +401,48 @@ function ShellFrame({
   // The chats panel lies over what is read where no Vex column stands under
   // it: the band, or a page whose column folded to its strip.
   const chatsPanelCovers = band || cols.vex === 0;
+  // UNDER 1024, HER BAND (docs/design/H3-DESKTOP.md section 1.10; VEX
+  // Cloud's 768 to 1023 layout and PD-12). Her section is a band over the
+  // chat's top, under the console line. It starts closed on every visit and
+  // a press holds for the session only (`vexOpenNarrow`, never persisted;
+  // nothing here writes `vexOpenChat` or `vexOpenPages`). It RESTS while a
+  // turn runs, a card waits or the composer is in use (`BandHoldProbe`, which
+  // reads it only under 1024 and reports before paint; until it has, the
+  // band rests): closed
+  // whatever was chosen, its keys saying why, so a waiting card is never
+  // under it and never moves when it opens or closes.
+  const narrowOpen = useUiStore((s) => s.vexOpenNarrow);
+  const setVexOpenNarrow = useUiStore((s) => s.setVexOpenNarrow);
+  const [bandHold, setBandHold] = useState<string | null>(BAND_HOLD_REASONS.turn);
+  const bandProbed = band && !lighter;
+  useEffect(() => {
+    // Leaving the band forgets the last hold: the next entry rests until read.
+    if (!bandProbed) setBandHold(BAND_HOLD_REASONS.turn);
+  }, [bandProbed]);
+  const bandOpen = band && !lighter && narrowOpen && bandHold === null;
   // H3 has no derived close, so Vex is shown exactly when asked: her plate
-  // where the column stays, the column itself on a table page and the desk.
-  const vexEffectiveOpen = !zen && vexOpen && (cols.vex > 0 || band);
+  // where the column stays, the column itself on a table page and the desk,
+  // and under 1024 her band, as its own choice and its hold say.
+  const vexEffectiveOpen = !zen && (band ? bandOpen : vexOpen && cols.vex > 0);
   // Whether her column (or the band) stands at all, whatever she shows in it.
   const vexColumnStands = cols.vex > 0 || band;
   // THE VEX TOGGLE, as the frame solved it: her section in a chat and on the
-  // Lighter desk, the column on a table page. The Vex key, her corner key
-  // and the shortcut all press this one, and it writes the same stored
-  // choice as ever (the desk's own, `vexOpenLighter`). Zen has no column:
+  // Lighter desk, the column on a table page, the band under 1024. The Vex
+  // key, her corner key, the console line and the shortcut all press this
+  // one; it writes the stored choice as ever (the desk's own,
+  // `vexOpenLighter`), and under 1024 the session's own. Zen has no column:
   // no toggle.
   const vexToggle = zen
     ? null
-    : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) };
+    : band
+      ? {
+          open: bandOpen,
+          held: bandHold,
+          onToggle: () => {
+            if (bandHold === null) setVexOpenNarrow(!bandOpen);
+          },
+        }
+      : { open: vexEffectiveOpen, onToggle: () => setVexOpen(!vexEffectiveOpen) };
   // Cmd or Ctrl + Shift + B from anywhere in the shell
   // (docs/design/H3-DESKTOP.md section 4.4), bound here for as long as the
   // shell stands rather than inside a key that may not be mounted.
@@ -532,7 +563,8 @@ function ShellFrame({
       })
     : shellHeadTemplateColumns({
         chats: cols.left,
-        vex: headVex > 0 ? headVex : null,
+        // Under 1024 the key's cell is Cloud's 288, with the waiting count.
+        vex: band ? H3_BAND_KEY_WIDTH : headVex > 0 ? headVex : null,
         vexBetween: true,
       });
 
@@ -570,7 +602,7 @@ function ShellFrame({
             // Under 1280 the rail stays the rail (section 4.12): its files
             // open in the rail's drawer, over Vex's column, never the track.
             expandable={tier === "wide"}
-            drawerTop={band ? H3_BAND_HEIGHT : 0}
+            drawerTop={band ? H3_CONSOLE_LINE_HEIGHT : 0}
             activeProjectId={activeProjectId}
             onSelectProject={setActiveProjectId}
             onSelectWelcome={() => setActiveProjectId(null)}
@@ -698,6 +730,16 @@ function ShellFrame({
       <VexSidebar
         open={zen ? zenAssistantOpen : vexColumnStands}
         seat={band ? "band" : "column"}
+        band={
+          band && vexToggle !== null
+            ? {
+                open: bandOpen,
+                held: bandHold,
+                onToggle: vexToggle.onToggle,
+                onClose: () => setVexOpenNarrow(false),
+              }
+            : undefined
+        }
         // In H3's frame the stored choice shows or hides her plate; her
         // column stays wherever the solve keeps it (a chat), and hiding
         // there keeps focus where it is.
@@ -781,6 +823,9 @@ function ShellFrame({
       // page's strip; the band's row placement keys off it (shell.css).
       data-vex-seat={h3Cols?.vexSeat}
       data-vex-tier={tier}
+      // Her band under 1024 stands over the chat's top: the chat's
+      // transcript then starts under it (shell.css).
+      data-vex-band={band ? (bandOpen ? "open" : "closed") : undefined}
       data-dragging={dragging || undefined}
       data-vex-sidebar-collapsed={sidebarCollapsed || undefined}
       data-lighter-zen={zen ? "true" : undefined}
@@ -816,6 +861,9 @@ function ShellFrame({
         * bottom row cell after it, so Vex's column comes before the chat in
         * focus order too; the Lighter desk's own rail | desk | Vex. */}
       {shellColumnOrder(runtimeMode).flatMap((name) => columnOf[name])}
+
+      {/* Her band's hold under 1024, read only there (section 1.10). */}
+      {bandProbed ? <BandHoldProbe onHold={setBandHold} /> : null}
 
       {chatHandle ? (
         <ShellDragHandle

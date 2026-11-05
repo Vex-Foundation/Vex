@@ -218,8 +218,9 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  *
  * Under H3_COLUMNS_MIN (1024) the frame is the BAND layout: the chats fold to
  * the rail whatever the stored choice says (derived; the choice is never
- * rewritten, so widening the window restores it), the Vex column is 0 and
- * Vex is drawn as a band under the header inside the chat, and the chat runs
+ * rewritten, so widening the window restores it), the Vex column is 0, her
+ * console rides in a 48 line under the header (H3_CONSOLE_LINE_HEIGHT) and
+ * her section is a band laid over the chat's top under it, and the chat runs
  * from the rail to the right edge. The window minimum is 1000, so 1000 to 1023
  * is a real band, not a fallback.
  *
@@ -386,8 +387,9 @@ export function computeH3ShellColumns(input: H3ShellInput): H3ShellColumns {
   // as it is, so widening the window restores it.
   const chatsRail = width < H3_CHATS_OPEN_MIN || !input.chats;
   const chats = Math.min(width, chatsRail ? H3_RAIL_WIDTH : H3_CHATS_WIDTH);
-  // A page's strip wins over the band: a page under 1024 shows the strip.
-  const vexSeat: H3VexSeat = input.vexStrip === true ? "strip" : band ? "band" : "column";
+  // The band wins over a page's strip: under 1024 a page has the console
+  // line and her band as a chat does (VEX Cloud's 768 to 1023 layout).
+  const vexSeat: H3VexSeat = band ? "band" : input.vexStrip === true ? "strip" : "column";
   // A frame narrower than the rail and the column leaves the column what
   // there is, so no track is ever negative.
   const vex = vexSeat === "column" ? Math.min(Math.max(0, width - chats), h3VexWidth(width)) : 0;
@@ -543,9 +545,10 @@ export interface ShellRows {
   /** The bottom row stands. */
   readonly foot: boolean;
   /**
-   * Vex's band stands under the header, over the chat (the band layout's
-   * vexSeat "band", section 1.10): a fourth row between the header and the
-   * body, H3_BAND_HEIGHT high.
+   * The band layout's console line stands under the header, over the chat
+   * (vexSeat "band", section 1.10): a fourth row between the header and the
+   * body, H3_CONSOLE_LINE_HEIGHT high. Her band itself is a box laid over the
+   * chat under it, never a row.
    */
   readonly band?: boolean;
   /**
@@ -557,13 +560,17 @@ export interface ShellRows {
 }
 
 /**
- * Vex's band under 1024 (docs/design/H3-DESKTOP.md section 1.10), chosen for
- * S2-08 where H3 prints no desktop height: the column's own head row (44)
- * and one 88 row of her state, Needs you and her portrait. A function of
- * nothing: the band rests whatever she says or shows, so a card under it
- * never moves when a turn starts, ends or waits.
+ * The console line under 1024 (docs/design/H3-DESKTOP.md section 1.10; VEX
+ * Cloud's `--cline-h`, 48 from 768 up): her state, Needs you and its count,
+ * the missions count and Open activity in one row of cells under the header,
+ * across the chat. A row of the frame and a function of nothing, so the chat
+ * under it never moves. Her band, when the person opens it, is a box laid
+ * over the chat under this line (`--vex-band-h`), never a row.
  */
-export const H3_BAND_HEIGHT = 132;
+export const H3_CONSOLE_LINE_HEIGHT = 48;
+
+/** The Vex key's cell under 1024 (VEX Cloud's `.hd-vex` at 288): her face, her state, the waiting count. */
+export const H3_BAND_KEY_WIDTH = 288;
 
 /**
  * The bottom row's height, the H3 size token (tokens.css, 72: measured, its
@@ -582,11 +589,11 @@ export const H3_FOOT_ROW = "var(--vex-h3-bottom-h)";
  */
 export const H3_ZOOMED_FOOT_ROW = "var(--vex-h3-foot)";
 
-/** The grid's row template: head | body | foot, or head | band | body | foot. */
+/** The grid's row template: head | body | foot, or head | console line | body | foot. */
 export function shellGridTemplateRows(rows: ShellRows): string {
   const head = rows.head ? "var(--head-h)" : "0px";
   const foot = rows.foot ? (rows.zoomFoot === true ? H3_ZOOMED_FOOT_ROW : H3_FOOT_ROW) : "0px";
-  const band = rows.band === true ? ` ${String(H3_BAND_HEIGHT)}px` : "";
+  const band = rows.band === true ? ` ${String(H3_CONSOLE_LINE_HEIGHT)}px` : "";
   return `${head}${band} minmax(0, 1fr) ${foot}`;
 }
 
