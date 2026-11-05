@@ -50,12 +50,12 @@ Three columns and three rows of cells.
 | chats column | 0, 76, 248 x 752 | measured |
 | Vex column | 248, 76, 432 x 752 | printed: the section's x and width |
 | chat column | 680, 76, 760 x 752 | printed: the card's x and width |
-| bottom row | 0, 828, 1440 x 72 | measured: its top rule at y 827 to 828 |
+| bottom row | 0, 827, 1440 x 73 | measured: its top rule at y 827 to 828, then 72; VEX Cloud's foot line, 72 x zoom and its rule (`--vex-h3-foot`, section 1.11) |
 | Kimm's section, open | 248, 264, 432 x 563 | printed |
 | Kimm's section, closed (the strip) | 248, 264, 432 x 56 | printed: clip inset 507 of 563 |
 | the swap card | 680, 249, 760 x 651 | printed |
 
-Her section ends one pixel above the bottom row (264 + 563 = 827). The swap card's box runs to the window's foot: its decision row is the bottom row's chat cells (section 1.8).
+Her section ends on the bottom row's top rule (264 + 563 = 827). The swap card's box runs to the window's foot: its decision row is the bottom row's chat cells (section 1.8).
 
 ### 1.2 The column rule and the tiers
 VEX Cloud's rule (PD-14 of its build plan; `--vex-w` in the H3 mockup's `css/tokens.css`, lines 180 and 202, and its measured boxes in `renders/checks.json`), which replaced the rule derived here on 3 November 2026:
@@ -138,7 +138,7 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 **Closed:** the section folds to its top 56, the strip, 264 to 320: the glyph field's frame at the left and the same key, now SHOW VEX with a down chevron, 531 to 680 (149 x 56, measured). The console's rest starts under the strip.
 
-**The box.** Her section is a box laid over the column, not a row in it: left and width are the column's, its top is the foot of the console's top block, and its foot is one pixel above the bottom row. Its size is a function of the window only; open and closed differ only in its clip-path (section 3.2). Its height is the window height less 73 less its top.
+**The box.** Her section is a box laid over the column, not a row in it: left and width are the column's, its top is the foot of the console's top block, and its foot is the bottom row's top rule (Cloud's foot line, section 1.11). Its size is a function of the window only; open and closed differ only in its clip-path (section 3.2). Its height is the window height less the foot row (73 at a zoom of 1) less its top; from 1760 up its top is 148 x zoom (section 1.11).
 
 **Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
 
@@ -177,7 +177,7 @@ Header cells as in section 1.3. The transcript and the welcome sit 24 in from bo
 **The swap card** (`h3-merged__approval-*-1440`), printed at 680, 249, 760 x 651, with its top rule at 248. Top to bottom: the eyebrow row (CONFIRM THIS SWAP, then MAINNET, the REAL FUNDS stamp and a collapse chevron at the right), the sentence, the consequence line, field rows on a 34px pitch with their labels in mono caps, ALL SIGNED FIELDS, and the reason field, "Tell Vex what to do instead" (771 to 826). Its decision row is the bottom row (section 1.8). Which rows desktop shows is in section 4.1.
 
 ### 1.8 The bottom row
-72 high, across the window, in a chat. Cells at 1440, measured in `h3-merged__welcome-closed-1440`:
+73 high with its top rule (72 x the wide zoom and the rule, section 1.11), across the window, in a chat. Cells at 1440, measured in `h3-merged__welcome-closed-1440`:
 
 | Cell | x, width | H3 draws | Desktop puts |
 |---|---|---|---|
@@ -221,6 +221,15 @@ Desktop's default, derived for S2-08: the 76 header with the rail's cell (the ma
 Built in S2-08: the band is a row of the frame under the header, over the chat's track, 132 high at every desktop width (`H3_BAND_HEIGHT`): the Vex column's own parts laid in one row, its head (44) over her state and Needs you beside her portrait (88). Its height is a function of nothing, so a card under it never moves when a turn starts, waits or ends. The chats rail runs from the header to the foot beside it. A page shows no band (the strip, section 1.9).
 
 Open: the band's heights at a desktop width; whether the band may stand open over a waiting card (the proof's narrow rows were read with "states closed"); the header cells at this width. Settled in the harness at 1000 x 720 and with Cloud.
+
+### 1.11 Wide windows: the zoom and the reading line
+VEX Cloud's (`apps/web/src/lib/ui/wide-zoom.ts`, built; the H3 mockup's `css/tokens.css` lines 163, 183, 187 to 188 and 201; `renders/checks.json`), which desktop takes whole (`lib/wide-zoom.ts`).
+
+- **The zoom.** `--vex-zoom` on `<html>` is clamp(1, window width / 1760, 1.5), to three decimals: 1 up to 1760, 1.091 at 1920, 1.455 at 2560, 1.5 from 2640. The shell frame writes it before its first paint and keeps it current as the window resizes.
+- **What zooms:** the transcript (the reading column), the composer dock and its model picker, the card's decision row, the console (Vex's column body, so her section's top, her corner key and her strip go with it: 148, 56 and 56 x zoom), a page, and the page strip (48 x zoom). **What never zooms:** the frame's cells, the header, the chats column, the account cell, the tagline cell and the column widths.
+- **The foot row** is 72 x zoom and its 1px top rule (`--vex-h3-foot`, Cloud's `--foot`): 73 at 1440, 79.55 at 1920, 105.76 at 2560. Her section ends on that rule. The Lighter desk keeps its 72.
+- **The reading line,** `--vex-read-x` = max(24, (chat - 760 x zoom) / 2 + 24 x zoom), and 24 under 1024: the chat's title, the transcript's text and the waiting card's text start on it (the card stands one 24 inset wider than the reading column). 24 at 1440 (704 in the window), 159.6 at 1920 (983.6) and 254 at 2560 (1270), Cloud's measured lefts. Over a page's strip the title keeps 24.
+- The card proof reads these at 1920 and 2560: the three lefts on the line within half a pixel, her box from 76 + 148 x zoom to the foot rule, her strip 56 x zoom, the foot row 72 x zoom + 1.
 
 ---
 

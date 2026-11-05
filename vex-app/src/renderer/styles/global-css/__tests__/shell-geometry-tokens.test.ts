@@ -13,7 +13,7 @@
  *      chats column it reproduces the contract's tier table, the printed
  *      plates at 1440 and 2560 included, so the chat keeps the rest;
  *   3. the 1440 frame closes: header plus columns plus bottom row is 900, and
- *      Kimm's section ends one pixel above the bottom row.
+ *      Kimm's section ends on the bottom row's top rule.
  */
 
 import { readFileSync } from "node:fs";
@@ -93,9 +93,14 @@ describe("the H3 shell geometry", () => {
     expect(window - px("--vex-h3-chats-w") - vexWidth(window)).toBeCloseTo(chat, 9);
   });
 
+  it("zooms from 1760 up (section 1.11): 1 until the shell writes it, the foot line 72 x zoom and its rule", () => {
+    expect(token("--vex-zoom")).toBe("1");
+    expect(token("--vex-h3-foot")).toBe("calc(var(--vex-h3-bottom-h) * var(--vex-zoom) + 1px)");
+  });
+
   it("closes the 1440 x 900 frame and keeps Kimm's section clear of the bottom row", () => {
     // Section 1.1: header 76, columns 752, bottom 72; her section 264 + 563
-    // ends at 827, one pixel above the bottom row's top rule at 827 to 828.
+    // ends at 827, on the foot line's top rule at 827 to 828 (72 and the rule).
     const columns = 900 - px("--vex-h3-header-h") - px("--vex-h3-bottom-h");
     expect(columns).toBe(752);
     expect(264 + 563).toBe(900 - px("--vex-h3-bottom-h") - 1);

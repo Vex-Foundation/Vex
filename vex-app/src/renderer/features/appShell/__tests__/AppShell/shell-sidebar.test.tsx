@@ -972,7 +972,7 @@ describe("AppShell", () => {
     expect(frame?.style.gridTemplateColumns).toBe("248px 432px minmax(0, 1fr)");
     // H3's head | body | foot rows: the header row holds the header's cells,
     // the bottom row its cells (section 1.8).
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-foot)");
     expect(frame?.getAttribute("data-vex-frame")).toBe("h3");
     expect(frame?.getAttribute("data-vex-tier")).toBe("wide");
     expect(frame?.style.getPropertyValue("--vex-vex-track")).toBe("432px");
@@ -1141,7 +1141,7 @@ describe("AppShell", () => {
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-foot)");
     // The account row moved out of the sidebar into the account cell.
     const account = view.container.querySelector<HTMLElement>("[data-vex-area='account-cell']");
     expect(account?.querySelector("[data-vex-area='sidebar-profile']")).not.toBeNull();
@@ -1180,14 +1180,14 @@ describe("AppShell", () => {
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-seat")).toBe("band");
     expect(frame?.style.gridTemplateColumns).toBe("76px 0px minmax(0, 1fr)");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 132px minmax(0, 1fr) var(--vex-h3-bottom-h)");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) 132px minmax(0, 1fr) var(--vex-h3-foot)");
     const aside = view.container.querySelector("[data-vex-area='vex-sidebar']");
     expect(aside?.getAttribute("data-vex-seat")).toBe("band");
     expect(aside?.getAttribute("data-vex-vex-open")).toBe("true");
     // A page has no band: the strip.
     act(() => useUiStore.getState().navigate("portfolio"));
     expect(frame?.getAttribute("data-vex-seat")).toBe("strip");
-    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)");
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-foot)");
     // Her element draws the console's one line there (section 1.9).
     expect(aside?.getAttribute("data-vex-seat")).toBe("strip");
     expect(aside?.querySelector("[data-vex-area='vex-console-strip']")).not.toBeNull();

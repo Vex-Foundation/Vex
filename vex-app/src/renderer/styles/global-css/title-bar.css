@@ -111,6 +111,15 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   padding-inline: 22px 16px;
   border-bottom: 0;
 }
+/* In H3's frame the chat's title starts on the reading line, as the
+ * transcript's text does (section 1.11, `--vex-read-x`); over a page's
+ * strip, where the page takes the whole width, 24 in. */
+.vex-shell-frame[data-vex-frame="h3"] > .vex-shell-head > [data-vex-head-cell="title"] {
+  padding-inline-start: var(--vex-read-x);
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-seat="strip"] > .vex-shell-head > [data-vex-head-cell="title"] {
+  padding-inline-start: 24px;
+}
 .vex-shell-head > [data-vex-head-cell="funds"] {
   grid-column: funds;
   gap: 8px;

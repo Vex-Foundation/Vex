@@ -904,7 +904,7 @@ html[data-os="mac"] .vex-ls-railhead {
 .vex-ls.vex-st-drawer {
   position: absolute;
   z-index: 30;
-  bottom: calc(-1 * var(--vex-h3-bottom-h));
+  bottom: calc(-1 * var(--vex-h3-foot));
   left: 100%;
   width: var(--vex-h3-chats-w);
   height: auto;

@@ -12,6 +12,7 @@ import {
   H3_CHATS_WIDTH,
   H3_COLUMNS_MIN,
   H3_FOOT_ROW,
+  H3_ZOOMED_FOOT_ROW,
   H3_RAIL_WIDTH,
   H3_VEX_MAX,
   H3_VEX_MIN,
@@ -480,6 +481,16 @@ describe("the frame's rows", () => {
     expect(shellGridTemplateRows({ head: true, foot: true, band: false })).toBe(
       "var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)",
     );
+  });
+
+  it("in H3's own frame the foot row is the zoomed foot line, 72 x zoom and its rule", () => {
+    // docs/design/H3-DESKTOP.md section 1.11: `--vex-h3-foot` in tokens.css,
+    // Cloud's `--foot`. The Lighter desk keeps the 72 token.
+    expect(H3_ZOOMED_FOOT_ROW).toBe("var(--vex-h3-foot)");
+    expect(shellGridTemplateRows({ head: true, foot: true, zoomFoot: true })).toBe(
+      "var(--head-h) minmax(0, 1fr) var(--vex-h3-foot)",
+    );
+    expect(shellGridTemplateRows({ head: false, foot: false, zoomFoot: true })).toBe("0px minmax(0, 1fr) 0px");
   });
 
   it("reads the bottom row from its H3 size token (72), and no row is auto", () => {

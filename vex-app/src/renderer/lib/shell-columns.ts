@@ -548,6 +548,12 @@ export interface ShellRows {
    * body, H3_BAND_HEIGHT high.
    */
   readonly band?: boolean;
+  /**
+   * The foot row is H3's zoomed foot line, 72 x `--vex-zoom` and its 1px
+   * rule (`H3_ZOOMED_FOOT_ROW`, section 1.11): the agent shell and Studio.
+   * Without it the row is the 72 token, as the Lighter desk keeps it.
+   */
+  readonly zoomFoot?: boolean;
 }
 
 /**
@@ -568,10 +574,18 @@ export const H3_BAND_HEIGHT = 132;
  */
 export const H3_FOOT_ROW = "var(--vex-h3-bottom-h)";
 
+/**
+ * The foot row in H3's own frame (docs/design/H3-DESKTOP.md sections 1.8 and
+ * 1.11): VEX Cloud's foot line, 72 x the wide zoom and its 1px top rule (73
+ * at 1440, 79.6 at 1920, 105.8 at 2560; `--vex-h3-foot` in tokens.css), so
+ * the zoomed composer and the card's decision row fill it at every width.
+ */
+export const H3_ZOOMED_FOOT_ROW = "var(--vex-h3-foot)";
+
 /** The grid's row template: head | body | foot, or head | band | body | foot. */
 export function shellGridTemplateRows(rows: ShellRows): string {
   const head = rows.head ? "var(--head-h)" : "0px";
-  const foot = rows.foot ? H3_FOOT_ROW : "0px";
+  const foot = rows.foot ? (rows.zoomFoot === true ? H3_ZOOMED_FOOT_ROW : H3_FOOT_ROW) : "0px";
   const band = rows.band === true ? ` ${String(H3_BAND_HEIGHT)}px` : "";
   return `${head}${band} minmax(0, 1fr) ${foot}`;
 }

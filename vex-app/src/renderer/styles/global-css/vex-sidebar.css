@@ -59,6 +59,14 @@
 .vex-vs__body[hidden] {
   display: none;
 }
+/* THE WIDE ZOOM (docs/design/H3-DESKTOP.md section 1.11): in H3's frame the
+ * console zooms with the window from 1760 up, and her section with it, so
+ * her box starts 148 x zoom under the header, her key is 56 x zoom high and
+ * her strip folds to 56 x zoom, as VEX Cloud lays them; the column's width
+ * is the frame's and never zooms. */
+.vex-shell-frame[data-vex-frame="h3"] .vex-vs[data-vex-seat="column"] > .vex-vs__body {
+  zoom: var(--vex-zoom);
+}
 /* What scrolls when the information outgrows the column: never the plate. */
 .vex-vs__info {
   min-height: 0;
@@ -579,6 +587,13 @@
  * the strip stands under the centre's connection row, as a page does. */
 .vex-shell-frame {
   --vex-console-strip-h: 48px;
+}
+/* The strip zooms with the console it stands for (section 1.11). */
+.vex-shell-frame[data-vex-frame="h3"] {
+  --vex-console-strip-h: calc(48px * var(--vex-zoom));
+}
+.vex-shell-frame[data-vex-frame="h3"] .vex-strip {
+  zoom: var(--vex-zoom);
 }
 .vex-shell-frame[data-vex-frame="h3"][data-vex-seat="strip"] > .vex-shell-vex {
   z-index: 31;

@@ -118,6 +118,21 @@
 .vex-shell-frame[data-vex-frame="h3"] {
   transition: none;
 }
+/* THE READING LINE (docs/design/H3-DESKTOP.md section 1.11; VEX Cloud's
+ * `--read-x`, the mockup's tokens.css line 201): the transcript's text edge
+ * inside the chat column, where the chat's title, the transcript and the
+ * card's text start. 24 where the chat is no wider than the zoomed 760
+ * column, else the column centred: 24 at 1440, 159.6 at 1920 and 254.1 at
+ * 2560. Under 1024 it is 24. `--vex-chat-track` is the frame's solve. */
+.vex-shell-frame[data-vex-frame="h3"] {
+  --vex-read-x: max(
+    24px,
+    calc((var(--vex-chat-track) - var(--vex-transcript-max) * var(--vex-zoom)) / 2 + 24px * var(--vex-zoom))
+  );
+}
+.vex-shell-frame[data-vex-frame="h3"][data-vex-tier="band"] {
+  --vex-read-x: 24px;
+}
 /* Each column's place: its own track, every row, in R3's order (left |
  * centre | Vex), which the Lighter desk keeps. In H3's frame (the agent
  * shell and Studio) the header (ShellHeader, title-bar.css) takes the first

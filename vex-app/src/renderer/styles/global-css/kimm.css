@@ -39,7 +39,9 @@
  *     the header, with no strategies row (section 4.1): y 224 at any window
  *     height. A declared length, never a measure of the console's content,
  *     so a decision arriving or a mission starting never moves her.
- *   - foot: one pixel above the bottom row (the column ends at the row).
+ *   - foot: the bottom row's top rule, where the column ends (the row is
+ *     72 x zoom and that rule, `--vex-h3-foot`), so she ends at 827 at
+ *     1440 x 900, as VEX Cloud's section does.
  *   - left and width: the column's, her ground under its 1px rule at the
  *     right, which the column draws (vex-sidebar.css) as the mockup draws it
  *     over her. At 1440 x 900 she is 248, 224, 431 x 603 with the rule at
@@ -58,7 +60,7 @@
   z-index: 2;
   top: var(--vex-kimm-top);
   right: 0;
-  bottom: 1px;
+  bottom: 0;
   left: 0;
   overflow: hidden;
   /* Open, the whole box. An inset, not `none`: the wipe interpolates

@@ -134,7 +134,8 @@ describe("KimmSection, open and still (S4-04)", () => {
     expect(box).toMatch(/position:\s*absolute/);
     expect(box).toMatch(/top:\s*var\(--vex-kimm-top\)/);
     expect(box).toMatch(/--vex-kimm-top:\s*var\(--vex-console-top-h, 148px\)/);
-    expect(box).toMatch(/bottom:\s*1px/);
+    // Her foot is the foot row's top rule (section 1.11: 72 x zoom and its rule).
+    expect(box).toMatch(/bottom:\s*0;/);
     expect(box).toMatch(/left:\s*0/);
     expect(box).toMatch(/right:\s*0/);
     // Nothing in her box is sized by her state: no width, height or margin.

@@ -115,6 +115,7 @@ import { AgentLighterSetupHost } from "./lighterTrading/AgentLighterSetupHost.js
 import { VexSidebar } from "../vex/VexSidebar.js";
 import { TaglineCell } from "../vex/TaglineCell.js";
 import { useVexToggleShortcut } from "../vex/useVexToggleShortcut.js";
+import { startWideZoom } from "../../lib/wide-zoom.js";
 
 import { LockVexControl } from "./LockVexControl.js";
 
@@ -231,6 +232,10 @@ function ShellFrame({
   const [viewport, setViewport] = useState(() =>
     typeof window === "undefined" ? 0 : window.innerWidth,
   );
+
+  // THE WIDE ZOOM (docs/design/H3-DESKTOP.md section 1.11): `--vex-zoom` on
+  // <html> for as long as the shell stands, set before its first paint.
+  useLayoutEffect(() => startWideZoom(), []);
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   // jsdom has no ResizeObserver; viewport stays at innerWidth there.
@@ -479,7 +484,7 @@ function ShellFrame({
   // interpolable and once swept the right column through the centre on the
   // welcome edge). H3's frame never animates a track (shell.css).
   const frameStyle: CSSProperties &
-    Record<"--vex-vex-track" | "--vex-overlay-left", string> &
+    Record<"--vex-vex-track" | "--vex-chat-track" | "--vex-overlay-left", string> &
     Partial<Record<"--lit-zen-seat", string>> = {
     // chats | Vex | chat (docs/design/H3-DESKTOP.md section 1); the Lighter
     // desk's own order, rail | desk | Vex.
@@ -495,7 +500,7 @@ function ShellFrame({
     // the bottom row holds the account cell under the rail; the desk and the
     // desk chat run on to the window's foot. Zen has neither row: its one
     // row is the chart's own toolbar (`ZenRow.tsx`).
-    gridTemplateRows: shellGridTemplateRows({ head: !zen, foot: !zen, band }),
+    gridTemplateRows: shellGridTemplateRows({ head: !zen, foot: !zen, band, zoomFoot: !lighter }),
     // The solved Vex track, for R3's running-head reserve (title-bar.css).
     "--vex-vex-track": `${cols.vex}px`,
     // Where a page starts in the window: where the chat does, past the
@@ -503,6 +508,8 @@ function ShellFrame({
     // sits inside the centre (shell.css resets it there); this value is the
     // frame-level box its entrance morph measures against.
     "--vex-overlay-left": `${h3Cols === null ? cols.left : h3Cols.chatLeft}px`,
+    // The chat's track, for the reading line (`--vex-read-x`, shell.css).
+    "--vex-chat-track": `${String(cols.center)}px`,
     // Zen's desk chat stands in her column's seat, over the chart: as wide
     // as her column on the desk, so leaving Zen with her open keeps her box.
     ...(zen ? { "--lit-zen-seat": `${deskVexWidth(viewport, lighterChatShare)}px` } : {}),

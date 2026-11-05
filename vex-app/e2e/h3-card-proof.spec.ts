@@ -61,8 +61,19 @@ const SEEK_STEP_MS = 30;
 /** Her motion's two legs (section 3.1; `DURATION_VEX_*_MS` in the renderer). */
 const OPEN_MS = 720;
 const CLOSE_MS = 420;
-/** The strip her section folds to (`--vex-h3-strip-h`). */
+/** The strip her section folds to (`--vex-h3-strip-h`), before the wide zoom. */
 const STRIP_PX = 56;
+
+/**
+ * The wide zoom at a window width (docs/design/H3-DESKTOP.md section 1.11,
+ * `lib/wide-zoom.ts`): clamp(1, width / 1760, 1.5) to three decimals, 1.091
+ * at 1920 and 1.455 at 2560 as VEX Cloud's `renders/checks.json` reads them.
+ * Her console zooms with it, so her strip is 56 x zoom: 61.1 at 1920 and
+ * 81.5 at 2560.
+ */
+function zoomAt(width: number): number {
+  return Math.round(Math.min(1.5, Math.max(1, width / 1760)) * 1000) / 1000;
+}
 
 interface Box {
   readonly x: number;
@@ -205,18 +216,21 @@ async function liveFrames(
 }
 
 /**
- * The wipe's bottom inset in px, from a computed clip and her box's height:
- * `inset(0px)` when open, `inset(0px 0px calc(A% - Bpx))` mid-wipe, and
- * `inset(0px 0px calc(100% - 56px))` at the strip.
+ * The wipe's bottom inset in screen px, from a computed clip and her box's
+ * screen height: `inset(0px)` when open, `inset(0px 0px calc(A% - Bpx))`
+ * mid-wipe, and `inset(0px 0px calc(100% - 56px))` at the strip. A computed
+ * clip is in her section's own pixels, which the wide zoom scales (section
+ * 1.11), so it is read at the box's own height and scaled back by `zoom`.
  */
-function bottomInset(clip: string, height: number): number {
+function bottomInset(clip: string, height: number, zoom = 1): number {
+  const own = height / zoom;
   const calc = /calc\(\s*([\d.e+-]+)%\s*-\s*([\d.e+-]+)px\s*\)/.exec(clip);
-  if (calc !== null) return (Number(calc[1]) / 100) * height - Number(calc[2]);
+  if (calc !== null) return ((Number(calc[1]) / 100) * own - Number(calc[2])) * zoom;
   const parts = /inset\(([^)]*)\)/.exec(clip)?.[1]?.trim().split(/\s+/) ?? [];
   const bottom = parts.length >= 3 ? parts[2] : parts[0];
   if (bottom === undefined) return 0;
   if (bottom.endsWith("%")) return (Number.parseFloat(bottom) / 100) * height;
-  return Number.parseFloat(bottom);
+  return Number.parseFloat(bottom) * zoom;
 }
 
 async function cardBox(page: Page): Promise<Box> {
@@ -454,6 +468,62 @@ test.describe("H3 card proof: the chats panel never moves a waiting card", () =>
   }
 });
 
+/**
+ * THE WIDE WINDOWS (docs/design/H3-DESKTOP.md section 1.11), against VEX
+ * Cloud's measured boxes (`h3-merged/renders/checks.json`, approval-open at
+ * 1920 and 2560): the chat's title and the card's text start on the reading
+ * line (983.6 at 1920, 1270 at 2560); her section starts under a console
+ * zoomed with the window (Cloud's 188 x zoom less desktop's missing 40-high
+ * strategies row: 76 + 148 x zoom) and folds to a 56 x zoom strip (Cloud's
+ * stub, 61 and 81.5); the foot row is 72 x zoom and its rule.
+ */
+const WIDE = [
+  { size: { width: 1920, height: 1080 }, zoom: 1.091, line: 983.6, sectionY: 237.47, strip: 61.1, foot: 79.55 },
+  { size: { width: 2560, height: 1440 }, zoom: 1.455, line: 1270, sectionY: 291.34, strip: 81.48, foot: 105.76 },
+] as const;
+
+test.describe("H3 card proof: Cloud's boxes at the wide windows", () => {
+  for (const wide of WIDE) {
+    test(`the reading line, her box and the foot row at ${sizeName(wide.size)}`, async ({ page }) => {
+      await open(page, wide.size, "open");
+      expect(zoomAt(wide.size.width)).toBe(wide.zoom);
+      const read = await page.evaluate(
+        ({ card }) => {
+          const title = document.querySelector<HTMLElement>('[data-vex-head-cell="title"]');
+          const cardEl = document.querySelector<HTMLElement>(card);
+          const column = document.querySelector<HTMLElement>("[data-vex-transcript-column]");
+          const account = document.querySelector<HTMLElement>('[data-vex-area="account-cell"]');
+          if (title === null || cardEl === null || column === null || account === null) {
+            throw new Error("the title, the card, the transcript or the account cell is missing");
+          }
+          const zoom = Number(getComputedStyle(document.documentElement).getPropertyValue("--vex-zoom"));
+          // The card's own inset, in its zoomed pixels: its first row's padding.
+          const inset = Number.parseFloat(getComputedStyle(cardEl).getPropertyValue("--vex-appr-inset")) || 24;
+          return {
+            zoom,
+            title: title.getBoundingClientRect().x + Number.parseFloat(getComputedStyle(title).paddingLeft),
+            transcript: column.getBoundingClientRect().x,
+            cardText: cardEl.getBoundingClientRect().x + inset * zoom,
+            foot: account.getBoundingClientRect().height,
+          };
+        },
+        { card: CARD },
+      );
+      expect(read.zoom).toBe(wide.zoom);
+      expect(Math.abs(read.title - wide.line), `title ${String(read.title)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.transcript - wide.line), `transcript ${String(read.transcript)}`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(read.cardText - wide.line), `card ${String(read.cardText)}`).toBeLessThanOrEqual(0.5);
+      expect(read.foot).toBeCloseTo(wide.foot, 1);
+      const section = (await page.locator(SECTION).boundingBox()) as Box;
+      expect(section.x).toBe(248);
+      expect(section.y).toBeCloseTo(wide.sectionY, 1);
+      expect(section.y + section.height).toBeCloseTo(wide.size.height - wide.foot, 1);
+      const key = (await page.locator(KEY).boundingBox()) as Box;
+      expect(key.height).toBeCloseTo(wide.strip, 1);
+    });
+  }
+});
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("H3 card proof: a waiting money card never moves", () => {
@@ -463,7 +533,9 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
       const card = await cardBox(page);
       const section = (await page.locator(SECTION).boundingBox()) as Box;
       expect(section).not.toBeNull();
-      const closedInset = section.height - STRIP_PX;
+      // Her strip zooms with her console (section 1.11): 56 x zoom.
+      const zoom = zoomAt(size.width);
+      const closedInset = section.height - STRIP_PX * zoom;
 
       // 1. Seeked: Hide Vex every 30ms to 420, then Show Vex every 30ms to 720.
       const close = await seekedPress(page, CLOSE_MS);
@@ -477,7 +549,7 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
         expect(frame.section, `seek ${String(frame.at)}ms`).toEqual(section);
       }
       // The seeks moved her: open to the strip, and back to open.
-      const insets = (frames: Frame[]): number[] => frames.map((f) => bottomInset(f.clip, section.height));
+      const insets = (frames: Frame[]): number[] => frames.map((f) => bottomInset(f.clip, section.height, zoom));
       expect(insets(close)[0]).toBeCloseTo(0, 0);
       expect(insets(close).at(-1)).toBeCloseTo(closedInset, 0);
       expect(insets(reopen)[0]).toBeCloseTo(closedInset, 0);
@@ -498,8 +570,8 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
       for (const frame of turned) expect(frame.card, `turned ${frame.at.toFixed(1)}ms`).toEqual(card);
       const second = turned.findIndex((frame) => frame.at === -1);
       expect(second).toBeGreaterThan(0);
-      const atPress = bottomInset(turned[second - 1]?.clip ?? "", section.height);
-      const after = turned.slice(second + 1).map((frame) => bottomInset(frame.clip, section.height));
+      const atPress = bottomInset(turned[second - 1]?.clip ?? "", section.height, zoom);
+      const after = turned.slice(second + 1).map((frame) => bottomInset(frame.clip, section.height, zoom));
       for (const inset of after) expect(inset).toBeLessThanOrEqual(atPress + 0.5);
       expect(after.at(-1)).toBeCloseTo(0, 0);
     });

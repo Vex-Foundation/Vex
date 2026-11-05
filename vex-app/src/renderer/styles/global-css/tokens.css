@@ -558,6 +558,15 @@
   --vex-h3-strip-h: 56px;
   --vex-h3-band-under: 1024px;
   --vex-h3-rail-w: 76px;
+  /* THE WIDE ZOOM (section 1.11; VEX Cloud's `--vx-zoom`, the mockup's
+   * `--z`): clamp(1, window / 1760, 1.5), written on <html> by
+   * `lib/wide-zoom.ts`; 1 until it runs. The transcript, the composer dock,
+   * the picker, the console, a page, her section's key and its strip zoom;
+   * the frame's cells never do. The foot row grows with it, 72 x zoom and its
+   * 1px rule (Cloud's `--foot`: 73 at 1440), so the zoomed composer and the
+   * card's decision row still fill it. */
+  --vex-zoom: 1;
+  --vex-h3-foot: calc(var(--vex-h3-bottom-h) * var(--vex-zoom) + 1px);
 }
 
 /* The Vex column from 1024 to 1279 (PD-14): a fixed 340, the share's
