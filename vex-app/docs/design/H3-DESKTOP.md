@@ -207,7 +207,7 @@ From `h3-merged__portfolio-*-1440`.
 - **Her section closed:** the console folds to one line under the header (76 to 123, measured): NEEDS YOU and its count (248, 142), the decision or "Nothing needs you." (390, 290), the missions cell (680, 258), the strategies cell, and OPEN ACTIVITY with an arrow at the right edge (1277, 163). The page takes the whole width right of the chats, 248 to 1440.
 - **The page frame:** a tabs row (about 57 high) with the tabs as cells (OVERVIEW selected on a raised fill, WALLET) and "Updated 12:41" at the right, then the page body, 24 in from each edge.
 
-Open: whether a page's width change, when she closes on a page, slides or snaps. Default: it snaps when her close ends. Desktop's pages that can hold a money card keep the chat layout (section 4.10).
+**The re-lay** (VEX Cloud's EC-26; the H3 mockup's `js/stage.js`, lines 283 to 287): the frame's tracks never animate. Show Vex or Hide Vex on a page re-lays the page into its new width at the press, in one frame, and the page then fades in from 0.4 opacity over the leg's duration (720ms opening, 420ms closing) on the house curve, cubic-bezier(0.625, 0.05, 0, 1); her column, opening, wipes in from its top with clip-path on the push curve (`features/appShell/page-relay.ts`). A press only, never a cue. Cloud also wipes her section away over the re-laid page as she closes; desktop's section lives inside her column, which folds to the strip at the press, so the close shows the fade alone (left for the owner, section 4.11). Desktop's pages that can hold a money card keep the chat layout (section 4.10).
 
 ### 1.10 Under 1024: the band
 H3 draws the band only on the phone and prints one box at 900. What is known:
@@ -343,6 +343,8 @@ These replace R3's tokens and its guard contracts: the 23 primitives and both th
 | the push curve, both ways | cubic-bezier(0.22, 1, 0.36, 1) | derived from the printed insets, below |
 | reduced motion | at once | printed: "reduced motion lands it at once", on both strip plates |
 | Save-Data | at once | desktop's still-frame rule (`lib/motion/use-still-frame.ts`), as for K2 |
+| a page's re-lay | the page fades from 0.4 over 720ms opening and 420ms closing on the house curve, cubic-bezier(0.625, 0.05, 0, 1); her column wipes in on the push curve | VEX Cloud's EC-26 (section 1.9) |
+| the grid's tracks | never | VEX Cloud's EC-26: a track that slid would carry a waiting card (section 3.6) |
 
 The strip plates print the section's clip inset at 120, 240 and 480ms while opening and at 120 and 240ms while closing. The closed inset is 507 (563 less the 56 strip). cubic-bezier(0.22, 1, 0.36, 1) reproduces all five values to the printed digits. The review sheet's own `--ease`, cubic-bezier(0.625, 0.05, 0, 1), does not:
 
@@ -418,7 +420,7 @@ What the proof read (printed, `h3-merged__plate-proof`, in Chromium on the GPU a
 Desktop ports the proof as a CI test (S4-16, `e2e/h3-card-proof.spec.ts`): the card's box is read with her section open, closed and on every frame of both motions at 1280, 1366, 1440, 1920 and 2560, and the card's pixels open and closed are compared. Any change fails the build.
 
 What desktop stops doing, because R3 does it and H3 forbids it:
-- R3 animates the shell's `grid-template-columns` when Vex hides (`--vex-duration-reveal`, `AppShell.tsx`). In a chat, H3 never changes a track for her section.
+- R3 animates the shell's `grid-template-columns` when Vex hides (`--vex-duration-reveal`, `AppShell.tsx`). H3's frame never animates a track at all (`shell.css`; VEX Cloud's EC-26): in a chat no track changes for her section, and where a track does change (the band seam, the chats fold from 1280 up, a page's strip) it snaps.
 - R3's hide waits for K2's close episode before the column goes (`features/vex/vex-hide.ts`). H3's close is the wipe itself, and the words change at the press.
 - R3 closes Vex by itself under its medium tier when the left sidebar opens (`lib/shell-columns.ts`). H3 has no derived close.
 

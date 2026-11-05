@@ -44,7 +44,8 @@ here is a defect:
   `DURATION_VEX_CLOSE_MS`), both on the push curve - printed on the H3
   mockup's strips (`docs/design/H3-DESKTOP.md` section 3.1) and shared with
   VEX Cloud, so they are a cross-app contract rather than a style step. They
-  are hers and the chats panel's alone (below): nothing else may borrow them.
+  are hers, the chats panel's and a page's re-lay's alone (below): nothing
+  else may borrow them.
   Her wipe animates clip-path, transform and opacity only, never a size, so
   the money card beside her never moves (section 3.6); reduced motion and
   Save-Data land her at once.
@@ -63,8 +64,8 @@ here is a defect:
 
 ### The easing family
 
-One family, four curves, no fifth. All four are declared in `tokens.css`
-and mirrored in `lib/motion/index.ts`:
+One family, five curves, no sixth. The first four are declared in
+`tokens.css` and mirrored in `lib/motion/index.ts`; the fifth is JS only:
 
 | Token | JS mirror | For |
 |---|---|---|
@@ -72,6 +73,7 @@ and mirrored in `lib/motion/index.ts`:
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
 | `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and the chats panel's slide, and nothing else |
+| (none: Web Animations only) | `EASE_HOUSE` | a page's fade from 0.4 as it re-lays at a Show Vex or Hide Vex press (`features/appShell/page-relay.ts`, VEX Cloud's `--vx-ease-ease`), and nothing else |
 
 The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
 chosen: the H3 mockup prints her section's clip inset at 120, 240 and 480ms
@@ -185,10 +187,17 @@ motion.
 
 ### The shell and the Vex sidebar
 
-- **The column tracks.** The frame's `grid-template-columns` rides
-  `--vex-duration-reveal` on `--vex-ease-inout`; a sidebar and its rail swap in
-  one commit and only the tracks move. Lighter's chat share drag pauses the
-  transition. Reduced motion snaps the tracks.
+- **The column tracks.** In H3's frame (the agent shell and Studio) the
+  tracks never animate (`docs/design/H3-DESKTOP.md` section 3.6, VEX Cloud's
+  EC-26): a track that slid would carry a waiting card, so the grid snaps at
+  every seam, fold and page strip. On a table page Show Vex and Hide Vex
+  re-lay the page at the press, and it fades in from 0.4 over 720ms opening
+  and 420ms closing on the house curve while her column wipes in with
+  clip-path on the push curve (`features/appShell/page-relay.ts`). On the
+  Lighter desk the frame's `grid-template-columns` still rides
+  `--vex-duration-reveal` on `--vex-ease-inout`; its chat share drag pauses
+  the transition. Reduced motion snaps the tracks and lands the re-lay at
+  once.
 - **Her section opens and closes in its own wipe.** Kimm's section, the
   welcome's column included, opens in a 720ms clip-path wipe and closes in a
   420ms one (`KimmSection`, kimm.css; `docs/design/H3-DESKTOP.md` section

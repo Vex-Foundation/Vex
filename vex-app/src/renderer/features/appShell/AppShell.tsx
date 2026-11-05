@@ -49,6 +49,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -74,6 +75,7 @@ import {
   type ShellColumns,
 } from "../../lib/shell-columns.js";
 import { CHATS_PANEL_ID, ChatsPanel, type ChatsPanelFocus } from "./ChatsPanel.js";
+import { relayPage } from "./page-relay.js";
 import { SessionCreator } from "./SessionCreator.js";
 import { SessionPanel } from "./SessionPanel.js";
 import { SessionsList } from "./SessionsList.js";
@@ -453,11 +455,29 @@ function ShellFrame({
   const chatHandle = lighter && !zen && !deskCardWaiting;
   const frameKind = shellFrameKind(runtimeMode);
 
+  // A PAGE RE-LAYS AT THE PRESS (docs/design/H3-DESKTOP.md sections 1.9 and
+  // 3.6, EC-26). H3's tracks never animate (shell.css): on a table page,
+  // Show Vex and Hide Vex snap the page into its new width, and the page then
+  // fades in from 0.4 while her column, opening, wipes in from its top
+  // (`page-relay.ts`). Only her stored choice flipping while the same table
+  // page stands counts: arriving on a page, leaving one or the band moves
+  // nothing.
+  const centreRef = useRef<HTMLElement | null>(null);
+  const vexColumnRef = useRef<HTMLDivElement | null>(null);
+  const relayWas = useRef({ page: tablePage, open: vexOpen });
+  useLayoutEffect(() => {
+    const was = relayWas.current;
+    relayWas.current = { page: tablePage, open: vexOpen };
+    if (lighter || tier === "band" || !tablePage || !was.page || was.open === vexOpen) return;
+    relayPage(centreRef.current, vexColumnRef.current, vexOpen);
+  }, [lighter, tier, tablePage, vexOpen]);
+
   const networkOnline = useNetworkOnline();
 
-  // Every track is a LENGTH: the 300ms track transition then only ever
-  // interpolates length-to-length (`auto` <-> length is not interpolable and
-  // once swept the right column through the centre on the welcome edge).
+  // Every track is a LENGTH: on the Lighter desk the 300ms track transition
+  // then only ever interpolates length-to-length (`auto` <-> length is not
+  // interpolable and once swept the right column through the centre on the
+  // welcome edge). H3's frame never animates a track (shell.css).
   const frameStyle: CSSProperties &
     Record<"--vex-vex-track" | "--vex-overlay-left", string> &
     Partial<Record<"--lit-zen-seat", string>> = {
@@ -599,6 +619,7 @@ function ShellFrame({
   const centreColumn = (
     <section
       key="centre"
+      ref={centreRef}
       className="vex-shell-centre relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
       inert={chatsPanelOn && chatsPanel.open && chatsPanelCovers}
     >
@@ -660,6 +681,7 @@ function ShellFrame({
   const vexColumn = (
     <div
       key="vex"
+      ref={vexColumnRef}
       className="vex-shell-vex lit-zen-assistant relative z-10 h-full min-h-0 min-w-0 overflow-visible"
     >
       {/* Mounted in every session - the sidebar owns its hidden rendering,

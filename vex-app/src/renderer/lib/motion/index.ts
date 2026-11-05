@@ -21,12 +21,14 @@
  *
  * ## The easing family
  *
- * ONE family, four curves, no fifth. CSS mirrors `--vex-ease-standard`,
+ * ONE family, five curves, no sixth. CSS mirrors `--vex-ease-standard`,
  * `--vex-ease-out`, `--vex-ease-inout` and `--vex-ease-push`, all declared in
  * `tokens.css` (they used to be split across `shell.css` and
  * `motion-primitives.css`, which is how `dialog[open]` came to hardcode a
  * stray curve while its comment claimed it was on the family one). The
- * fourth, the push curve, belongs to Kimm's section alone.
+ * fourth, the push curve, belongs to Kimm's section and the chats panel. The
+ * fifth, the house curve (`EASE_HOUSE`), is JS only: a page's fade as it
+ * re-lays (`features/appShell/page-relay.ts`), and nothing else.
  *
  * ## Springs
  *
@@ -147,6 +149,16 @@ export const EASE_INOUT = [0.76, 0, 0.24, 1] as const;
  * `--vex-ease-push`.
  */
 export const EASE_PUSH = [0.22, 1, 0.36, 1] as const;
+
+/**
+ * The house curve, VEX Cloud's `--vx-ease-ease` (motion contract section 2):
+ * a page's fade from 0.4 as it re-lays at a Show Vex or Hide Vex press
+ * (docs/design/H3-DESKTOP.md section 1.9, EC-26; `page-relay.ts`), and
+ * nothing else on desktop. JS only, a Web Animations curve with no CSS twin.
+ * It is the review sheet's `--ease`, which is NOT her section's wipe (that is
+ * `EASE_PUSH`, `motion-tokens.test.ts`).
+ */
+export const EASE_HOUSE = [0.625, 0.05, 0, 1] as const;
 
 /**
  * A curve of the family as CSS spells it, for a Web Animations call: the one

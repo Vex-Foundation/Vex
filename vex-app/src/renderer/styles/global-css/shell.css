@@ -88,10 +88,11 @@
   background: transparent;
 }
 /* THE FRAME (docs/design/R3-MINIMAL.md section 2): three grid tracks, left
- * sidebar | centre | Vex sidebar, solved by lib/shell-columns.ts. Opening and
- * closing animates the tracks on the standard curve; Lighter's chat share drag
- * writes widths at pointer cadence, so easing them would detach the column
- * edge from the handle.
+ * sidebar | centre | Vex sidebar, solved by lib/shell-columns.ts. On the
+ * Lighter desk opening and closing animates the tracks on the standard
+ * curve; its chat share drag writes widths at pointer cadence, so easing them
+ * would detach the column edge from the handle. H3's frame never animates a
+ * track (below).
  *
  * The rows are H3's (docs/design/H3-DESKTOP.md section 1.1): head | body |
  * foot, written inline by the frame (`shellGridTemplateRows`). A row the
@@ -105,6 +106,16 @@
   transition: grid-template-columns var(--vex-duration-reveal) var(--vex-ease-inout);
 }
 .vex-shell-frame[data-dragging] {
+  transition: none;
+}
+/* H3's frame: THE TRACKS NEVER ANIMATE (docs/design/H3-DESKTOP.md section
+ * 3.6; VEX Cloud's EC-26). A track that slid would carry a waiting card
+ * with it, so the grid snaps: at the band seam, at the chats fold from 1280
+ * up, and on a page whose Vex column folds to its strip or comes back. Only
+ * clip-path, transform and opacity move in this frame; on a page the re-lay
+ * at the press fades in from 0.4 while her column wipes in
+ * (`features/appShell/page-relay.ts`). */
+.vex-shell-frame[data-vex-frame="h3"] {
   transition: none;
 }
 /* Each column's place: its own track, every row, in R3's order (left |
