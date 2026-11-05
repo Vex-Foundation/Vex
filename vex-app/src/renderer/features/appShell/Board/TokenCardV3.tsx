@@ -171,11 +171,11 @@ export function TokenCardV3({
   // budgets belong to `boardCardValueBudget.ts`; the accessible name below
   // and the disclosure panel both keep the WHOLE strings, so nothing here
   // removes a value from the reader - it decides which copy is on the plate.
-  // The ticker is the tile's one PROPORTIONAL surface: it renders in
-  // Instrument Sans, where `W` advances well over twice as far as `I`, so it
-  // is weighed per glyph rather than counted. Everything below renders in
-  // JetBrains Mono with `tabular-nums`, where a count of characters genuinely
-  // is a width.
+  // The ticker is the tile's one PROPORTIONAL surface: it renders in the
+  // sans (Be Vietnam Pro), where `W` advances well over twice as far as `I`,
+  // so it is weighed per glyph rather than counted. Everything below renders
+  // in the mono (Roboto Mono) with `tabular-nums`, where a count of
+  // characters genuinely is a width.
   const printedTicker = boardCardValue(
     ticker,
     BOARD_CARD_TICKER_MAX_SLOTS,
