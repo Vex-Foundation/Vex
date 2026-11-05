@@ -183,9 +183,9 @@
 }
 
 /* ---- the lead line and the tiles --------------------------------------
- * docs/design/H3-DESKTOP.md sections 1.9 and 2.3 (`PositionBlock`): the REAL
- * FUNDS stamp and the lead (15, "Real money on mainnet." in ink, the rest in
- * ink 2), then the tiles: square cells told apart by 1px rules (the grid's
+ * docs/design/H3-DESKTOP.md sections 1.9 and 2.3 (`PositionBlock`): the quiet
+ * hatch and MAINNET (PD-05) and the lead (15, "Real money on mainnet." in
+ * ink, the rest in ink 2), then the tiles: square cells told apart by 1px rules (the grid's
  * 1px gaps over the rule colour, so two cells share one rule and the frame is
  * one rule all round), each a caps label (13, muted), the figure (sans, 24 /
  * 400; the wallet total 33 / 600) and a muted line (14). As many columns as
@@ -205,7 +205,7 @@
   line-height: 1.45;
   color: var(--vex-alias-label-secondary);
 }
-.vex-pf-lead__stamp {
+.vex-pf-lead__net {
   flex: none;
 }
 .vex-pf-lead__ink {

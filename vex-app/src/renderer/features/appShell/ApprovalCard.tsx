@@ -63,7 +63,7 @@ import { invalidateOnApprovalResolve } from "./approvals/invalidate-on-resolve.j
 import { isHighRisk as classifyHighRisk } from "./ApprovalCard/risk.js";
 import { approvalGateLine, approvalReviewWord } from "./ApprovalCard/approval-sentence.js";
 import { ApprovalDetails } from "./ApprovalCard/ApprovalDetails.js";
-import { ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
+import { APPROVING_WORD, ApprovalDecisionActions } from "./ApprovalCard/ApprovalDecisionActions.js";
 import { ApprovalRow } from "./ApprovalCard/ApprovalRow.js";
 
 const CONFIRM_RESET_MS = 4_000;
@@ -102,6 +102,8 @@ function approveLabelFor(summary: ApprovalSummaryDto): string {
  * key that only dims for that long reads as a click that did not land, so it
  * names the step it is on instead, and the name has to stay true for the
  * whole window, which rules out a phase the card cannot actually observe.
+ * Every other card says Cloud's word for the same moment, "Approving…"
+ * (H3-DESKTOP.md Appendix A.7).
  */
 function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
   if (isLighterOrderCreateApproval(summary)) return "Signing and sending";
@@ -109,7 +111,7 @@ function pendingApproveLabelFor(summary: ApprovalSummaryDto): string {
   if (summary.preview?.criticalArgs.toolId === "lighter.fees.approve") {
     return summary.preview.criticalArgs.revoke === true ? "Revoking" : "Authorizing";
   }
-  return "Working";
+  return APPROVING_WORD;
 }
 
 function confirmApproveLabelFor(summary: ApprovalSummaryDto): string {

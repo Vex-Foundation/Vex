@@ -122,9 +122,13 @@ function sentence(text: string): string {
 
 /** The tool's human title ("Bridge · Relay"), from the names the approval carries. */
 export function approvalToolTitle(summary: ApprovalTarget): string {
+  return resolveToolIdentity(approvalToolName(summary), null).title;
+}
+
+/** The most specific tool name the approval carries, or "" when it carries none. */
+function approvalToolName(summary: ApprovalTarget): string {
   const args = summary.preview?.criticalArgs ?? null;
-  const name = argText(args, "toolId") ?? summary.preview?.toolName ?? summary.toolName ?? "";
-  return resolveToolIdentity(name, null).title;
+  return (argText(args, "toolId") ?? summary.preview?.toolName ?? summary.toolName ?? "").trim();
 }
 
 function bridgeSentence(args: Args): string | null {
@@ -240,22 +244,34 @@ export function approvalSentence(summary: ApprovalTarget): string {
 
 /**
  * The eyebrow over the card, by tool family: "Confirm this swap", "Confirm
- * this bridge", "Confirm this transfer", "Confirm this order", else "Confirm
- * this action". The family is the action-word table's, so the eyebrow, the
- * approve key ("Approve swap") and the Needs you row can never name one card
- * two ways. Written in sentence case; the eyebrow's style sets the caps.
+ * this bridge", "Confirm this transfer", "Confirm this order". The family is
+ * the action-word table's, so the eyebrow, the approve key ("Approve swap")
+ * and the Needs you row can never name one card two ways. Written in sentence
+ * case; the eyebrow's style sets the caps.
  */
-export const APPROVAL_EYEBROW_WORDS: Readonly<Record<ApprovalFamily, string>> = {
+export const APPROVAL_EYEBROW_WORDS: Readonly<Record<Exclude<ApprovalFamily, "other">, string>> = {
   bridge: "Confirm this bridge",
   order: "Confirm this order",
   swap: "Confirm this swap",
   transfer: "Confirm this transfer",
-  other: "Confirm this action",
 };
 
-/** The card's eyebrow for this approval's family. */
+/**
+ * The eyebrow only a card with no readable tool name keeps, where the tool's
+ * own title would be blank.
+ */
+export const APPROVAL_EYEBROW_FALLBACK = "Confirm this action";
+
+/**
+ * The card's eyebrow for this approval's family. A card outside the four
+ * families names itself by the tool's own title ("Lighter · fees approve"),
+ * as Cloud's generic card does (the money gaps sheet, DG5-01: "the tool's
+ * title"), so no two unlike cards share one eyebrow.
+ */
 export function approvalEyebrowWord(approval: ApprovalTarget): string {
-  return APPROVAL_EYEBROW_WORDS[approvalFamily(approval)];
+  const family = approvalFamily(approval);
+  if (family !== "other") return APPROVAL_EYEBROW_WORDS[family];
+  return approvalToolName(approval).length > 0 ? approvalToolTitle(approval) : APPROVAL_EYEBROW_FALLBACK;
 }
 
 /**
@@ -271,8 +287,13 @@ export const CONSEQUENCE_PLACES_ORDER = "This places a real order on mainnet. It
  * cancelled before it fills, so "It cannot be undone." would be false.
  */
 export const CONSEQUENCE_PLACES_RESTING_ORDER = "This places a real order on mainnet.";
-/** The desktop's line for a transfer and a bridge (Appendix A.7, proposed). */
-export const CONSEQUENCE_SENDS_FUNDS = "This sends real funds on mainnet. It cannot be undone.";
+/**
+ * A transfer's line, Cloud's own words (`realFundsCopy` in the money gaps
+ * sheet, Appendix A.7): a wallet send, a Lighter deposit or withdrawal.
+ */
+export const CONSEQUENCE_TRANSFER = "This sends real funds on mainnet. A transfer cannot be reversed.";
+/** A bridge's line, Cloud's own words (Appendix A.7). */
+export const CONSEQUENCE_BRIDGE = "This moves real funds between chains. It cannot be undone.";
 
 /**
  * A position close is a reduce-only order at its worst acceptable price,
@@ -329,8 +350,10 @@ function dottedToolNames(approval: ApprovalTarget): readonly string[] {
  *     its time, post-only, a trigger order, an OCO pair): "This places a
  *     real order on mainnet." alone, because it can still be cancelled
  *     before it fills;
- *   - a transfer (a wallet send, a Lighter deposit or withdrawal) and a
- *     bridge: "This sends real funds on mainnet. It cannot be undone.".
+ *   - a transfer (a wallet send, a Lighter deposit or withdrawal): "This
+ *     sends real funds on mainnet. A transfer cannot be reversed.";
+ *   - a bridge: "This moves real funds between chains. It cannot be
+ *     undone.".
  * `null` for every other card, so it shows no line rather than a false one:
  * a Lighter cancel or modify places nothing, a trading-fee authorization can
  * be revoked, and a call to the user's own MCP tool signs nothing. Those
@@ -351,8 +374,9 @@ export function approvalConsequence(approval: ApprovalTarget): string | null {
       return null;
     }
     case "transfer":
+      return CONSEQUENCE_TRANSFER;
     case "bridge":
-      return CONSEQUENCE_SENDS_FUNDS;
+      return CONSEQUENCE_BRIDGE;
     default:
       return null;
   }

@@ -555,9 +555,14 @@ export function ApprovalDetails({
         {curated ? null : argsList}
       </details>
 
+      {/* THE FAILURE LINE (Cloud's DG5-28): one ink line with the cross, a
+          ruled cell one step lighter than the card, right above the
+          decision band (the card's footer follows it; a docked card's band
+          is the bottom row under it). Never red: nothing was refused here,
+          the decision did not go through, and the keys are live again. */}
       {inlineError !== null ? (
-        <p role="alert" className="vex-appr__error">
-          <Swatch state="error" size={10} className="mt-[4px] shrink-0" />
+        <p role="alert" data-vex-area="approval-failure" className="vex-appr__fail">
+          <Swatch state="error" size={9} className="vex-appr__fail-mark" />
           <span>{inlineError}</span>
         </p>
       ) : null}

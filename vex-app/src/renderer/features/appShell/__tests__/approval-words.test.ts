@@ -15,10 +15,12 @@
 import { describe, expect, it } from "vitest";
 import type { ApprovalPreview, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import {
+  APPROVAL_EYEBROW_FALLBACK,
   APPROVAL_EYEBROW_WORDS,
   CONSEQUENCE_PLACES_ORDER,
   CONSEQUENCE_PLACES_RESTING_ORDER,
-  CONSEQUENCE_SENDS_FUNDS,
+  CONSEQUENCE_BRIDGE,
+  CONSEQUENCE_TRANSFER,
   actionKindWords,
   addressIn,
   approvalConsequence,
@@ -227,7 +229,8 @@ describe("approvalFamily and approvalReviewWord", () => {
 describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.7)", () => {
   const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
   const RESTING_LINE = "This places a real order on mainnet.";
-  const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
+  const TRANSFER_LINE = "This sends real funds on mainnet. A transfer cannot be reversed.";
+  const BRIDGE_LINE = "This moves real funds between chains. It cannot be undone.";
   const LIGHTER_CANCEL = previewOf("order.cancel", { toolId: "lighter.order.cancel", providerOrderId: "7" }, "lighter");
   const LIGHTER_CLOSE = previewOf("position.close", { toolId: "lighter.position.close", symbol: "BTC" }, "lighter");
   const LIGHTER_DEPOSIT = previewOf("deposit", { toolId: "lighter.deposit", summary: "Deposit 5 USDC" }, "lighter");
@@ -236,22 +239,22 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   const LAUNCH = previewOf("launch_execute", { toolId: "pools.launch_execute", name: "My Token" }, "pools");
 
   const cases: readonly (readonly [string, ApprovalPreview, string, string | null])[] = [
-    ["bridge", BRIDGE, "Confirm this bridge", FUNDS_LINE],
-    ["namespaced bridge", BRIDGE_NAMESPACED, "Confirm this bridge", FUNDS_LINE],
+    ["bridge", BRIDGE, "Confirm this bridge", BRIDGE_LINE],
+    ["namespaced bridge", BRIDGE_NAMESPACED, "Confirm this bridge", BRIDGE_LINE],
     ["kyber swap", KYBER, "Confirm this swap", ORDER_LINE],
     ["jupiter swap", JUPITER, "Confirm this swap", ORDER_LINE],
-    ["native send", SEND_NATIVE, "Confirm this transfer", FUNDS_LINE],
-    ["token send", SEND_USDC, "Confirm this transfer", FUNDS_LINE],
+    ["native send", SEND_NATIVE, "Confirm this transfer", TRANSFER_LINE],
+    ["token send", SEND_USDC, "Confirm this transfer", TRANSFER_LINE],
     ["lighter market order", LIGHTER_MARKET, "Confirm this order", ORDER_LINE],
     ["lighter limit order", LIGHTER_LIMIT, "Confirm this order", RESTING_LINE],
     ["lighter position close", LIGHTER_CLOSE, "Confirm this order", ORDER_LINE],
     ["lighter order cancel", LIGHTER_CANCEL, "Confirm this order", null],
-    ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", FUNDS_LINE],
-    ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", FUNDS_LINE],
-    ["lighter fee authorization", LIGHTER_FEES, "Confirm this action", null],
-    ["token launch", LAUNCH, "Confirm this action", null],
-    ["generic signed transaction", GENERIC_TX, "Confirm this action", null],
-    ["the user's own MCP tool", MCP, "Confirm this action", null],
+    ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", TRANSFER_LINE],
+    ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", TRANSFER_LINE],
+    ["lighter fee authorization", LIGHTER_FEES, "Lighter · Fees approve", null],
+    ["token launch", LAUNCH, "pools.fun · Launch", null],
+    ["generic signed transaction", GENERIC_TX, "WalletEvmTransactionConfirm", null],
+    ["the user's own MCP tool", MCP, "Deepwiki / read wiki structure", null],
   ];
 
   it.each(cases)("%s reads %s, with its consequence line", (_name, preview, eyebrow, consequence) => {
@@ -261,15 +264,26 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   });
 
   it("names every family once, from the same table as the approve key", () => {
-    for (const family of Object.keys(APPROVAL_ACTION_WORDS) as (keyof typeof APPROVAL_ACTION_WORDS)[]) {
-      const word = APPROVAL_EYEBROW_WORDS[family];
-      expect(word).toMatch(/^Confirm this [a-z]+$/);
+    for (const family of Object.keys(APPROVAL_EYEBROW_WORDS) as (keyof typeof APPROVAL_EYEBROW_WORDS)[]) {
+      expect(APPROVAL_EYEBROW_WORDS[family]).toMatch(/^Confirm this [a-z]+$/);
     }
     for (const [, preview] of cases) {
       const approval = approvalFrom(preview);
-      const noun = APPROVAL_ACTION_WORDS[approvalFamily(approval)].replace(/^Approve ?/, "") || "action";
+      const family = approvalFamily(approval);
+      if (family === "other") continue;
+      const noun = APPROVAL_ACTION_WORDS[family].replace(/^Approve ?/, "");
       expect(approvalEyebrowWord(approval)).toBe(`Confirm this ${noun}`);
     }
+  });
+
+  it("names a card outside the families by the tool's own title, as Cloud's generic card does", () => {
+    for (const [, preview] of cases) {
+      const approval = approvalFrom(preview);
+      if (approvalFamily(approval) !== "other") continue;
+      expect(approvalEyebrowWord(approval)).toBe(approvalToolTitle(approval));
+    }
+    // A card with no readable tool name keeps the one fallback.
+    expect(approvalEyebrowWord({ toolName: "", preview: null })).toBe(APPROVAL_EYEBROW_FALLBACK);
   });
 
   it("reads the order line from the tool names alone when the arguments carry no toolId", () => {
@@ -311,13 +325,16 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   });
 
   it("writes each line in sentence case with no dash and no figure", () => {
-    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_PLACES_RESTING_ORDER, CONSEQUENCE_SENDS_FUNDS]) {
+    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_PLACES_RESTING_ORDER, CONSEQUENCE_TRANSFER, CONSEQUENCE_BRIDGE]) {
       expect(line).not.toMatch(DASHES);
       expect(line).not.toMatch(/\d/);
       expect(line.startsWith("This ")).toBe(true);
     }
     expect(CONSEQUENCE_PLACES_ORDER.endsWith("It cannot be undone.")).toBe(true);
-    expect(CONSEQUENCE_SENDS_FUNDS.endsWith("It cannot be undone.")).toBe(true);
+    // Cloud's words (the money gaps sheet's realFundsCopy): a transfer cannot
+    // be reversed, a bridge cannot be undone.
+    expect(CONSEQUENCE_TRANSFER).toBe("This sends real funds on mainnet. A transfer cannot be reversed.");
+    expect(CONSEQUENCE_BRIDGE).toBe("This moves real funds between chains. It cannot be undone.");
     expect(CONSEQUENCE_PLACES_RESTING_ORDER).not.toMatch(/undone/);
     expect(CONSEQUENCE_PLACES_ORDER.startsWith(CONSEQUENCE_PLACES_RESTING_ORDER)).toBe(true);
   });
@@ -778,8 +795,8 @@ function textsOf(rows: readonly MoneyLine[]): string[] {
 
 describe("approvalMoneyLines: bridge", () => {
   it("gives exactly the four labels", () => {
-    expect(labelsOf(lines(BRIDGE))).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
-    expect(labelsOf(lines(BRIDGE_NAMESPACED))).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(labelsOf(lines(BRIDGE))).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
+    expect(labelsOf(lines(BRIDGE_NAMESPACED))).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
   });
 
   it("reads the whole bridge card", () => {
@@ -794,15 +811,14 @@ describe("approvalMoneyLines: bridge", () => {
         parts: [{ kind: "missing" }, { kind: "note", text: "· slippage limit 0.5%" }],
       },
       {
-        label: "Costs",
+        label: "Fees",
         parts: [
           { kind: "text", text: "Vex fee" },
           { kind: "figure", text: "0.0025 USDC" },
           { kind: "note", text: "(0.25%)" },
-          { kind: "text", text: "· network fee" },
-          { kind: "missing" },
         ],
       },
+      { label: "Network fee", parts: [{ kind: "missing" }] },
     ]);
   });
 
@@ -810,21 +826,23 @@ describe("approvalMoneyLines: bridge", () => {
     const rows = lines(BRIDGE);
     expect(lineNamed(rows, "You receive").parts[0]).toEqual({ kind: "missing" });
     expect(lineNamed(rows, "Minimum receipt").parts[0]).toEqual({ kind: "missing" });
-    expect(lineNamed(rows, "Costs").parts.at(-1)).toEqual({ kind: "missing" });
+    expect(lineNamed(rows, "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
-  it("carries the Vex fee figure and rate, and a missing network fee, on Costs", () => {
-    const costs = lineNamed(lines(BRIDGE), "Costs").parts;
-    expect(costs).toContainEqual({ kind: "figure", text: "0.0025 USDC" });
-    expect(costs).toContainEqual({ kind: "note", text: "(0.25%)" });
-    expect(costs.at(-1)).toEqual({ kind: "missing" });
+  it("carries the Vex fee figure and rate on Fees, and the network fee on its own row (DG5-06)", () => {
+    const fees = lineNamed(lines(BRIDGE), "Fees").parts;
+    expect(fees).toContainEqual({ kind: "figure", text: "0.0025 USDC" });
+    expect(fees).toContainEqual({ kind: "note", text: "(0.25%)" });
+    expect(fees).not.toContainEqual({ kind: "missing" });
+    expect(lineNamed(lines(BRIDGE), "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
-  it("names the network fee alone when the Vex fee statement is unreadable or absent", () => {
-    const expected = [{ kind: "text", text: "Network fee" }, { kind: "missing" }];
-    expect(lineNamed(lines(dropped(BRIDGE, "vexFee")), "Costs").parts).toEqual(expected);
+  it("reads Fees as missing when the Vex fee statement is unreadable or absent", () => {
+    const expected = [{ kind: "missing" }];
+    expect(lineNamed(lines(dropped(BRIDGE, "vexFee")), "Fees").parts).toEqual(expected);
     const garbled = previewOf("BridgeExecute", { ...BRIDGE_ARGS, vexFee: "fee to be decided" });
-    expect(lineNamed(lines(garbled), "Costs").parts).toEqual(expected);
+    expect(lineNamed(lines(garbled), "Fees").parts).toEqual(expected);
+    expect(lineNamed(lines(garbled), "Network fee").parts).toEqual(expected);
   });
 
   it("says no Vex fee when the engine states none", () => {
@@ -832,11 +850,8 @@ describe("approvalMoneyLines: bridge", () => {
       ...BRIDGE_ARGS,
       vexFee: "Vex fee: none on this swap (below the minimum); the full 100 raw units are swapped.",
     });
-    expect(lineNamed(lines(none), "Costs").parts).toEqual([
-      { kind: "text", text: "No Vex fee" },
-      { kind: "text", text: "· network fee" },
-      { kind: "missing" },
-    ]);
+    expect(lineNamed(lines(none), "Fees").parts).toEqual([{ kind: "text", text: "No Vex fee" }]);
+    expect(lineNamed(lines(none), "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
   it("leaves out the notes whose arguments are absent", () => {
@@ -845,7 +860,8 @@ describe("approvalMoneyLines: bridge", () => {
       { label: "You send", parts: [{ kind: "missing" }] },
       { label: "You receive", parts: [{ kind: "missing" }] },
       { label: "Minimum receipt", parts: [{ kind: "missing" }] },
-      { label: "Costs", parts: [{ kind: "text", text: "Network fee" }, { kind: "missing" }] },
+      { label: "Fees", parts: [{ kind: "missing" }] },
+      { label: "Network fee", parts: [{ kind: "missing" }] },
     ]);
   });
 
@@ -863,7 +879,7 @@ describe("approvalMoneyLines: bridge", () => {
 describe("approvalMoneyLines: swap", () => {
   it("reads the Kyber quote as You receive and Minimum receipt", () => {
     const rows = lines(KYBER);
-    expect(labelsOf(rows)).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(labelsOf(rows)).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
     expect(lineNamed(rows, "You send").parts).toEqual([
       { kind: "figure", text: "1.5 ETH" },
       { kind: "note", text: "· on Base" },
@@ -876,7 +892,8 @@ describe("approvalMoneyLines: swap", () => {
       { kind: "figure", text: "2.4 USDC" },
       { kind: "note", text: "· slippage limit 4%" },
     ]);
-    expect(lineNamed(rows, "Costs").parts).toEqual([{ kind: "text", text: "Network fee" }, { kind: "missing" }]);
+    expect(lineNamed(rows, "Fees").parts).toEqual([{ kind: "missing" }]);
+    expect(lineNamed(rows, "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
   it("reads both receive lines as missing when the lane binds no quote", () => {
@@ -908,26 +925,22 @@ describe("approvalMoneyLines: swap", () => {
     expect(lineNamed(lines(garbled), "Minimum receipt").parts[0]).toEqual({ kind: "missing" });
   });
 
-  it("carries the Vex fee on Costs, or says there is none", () => {
+  it("carries the Vex fee on Fees, or says there is none", () => {
     const fee = "Vex fee 0.25% (25 bps): 0.00375 ETH | 3750000000000000 raw units | 18 decimals, taken on the input token.";
     const rated = previewOf("kyberswap.swap.execute", { ...KYBER_ARGS, vexFee: fee }, "kyberswap");
-    expect(lineNamed(lines(rated), "Costs").parts).toEqual([
+    expect(lineNamed(lines(rated), "Fees").parts).toEqual([
       { kind: "text", text: "Vex fee" },
       { kind: "figure", text: "0.00375 ETH" },
       { kind: "note", text: "(0.25%)" },
-      { kind: "text", text: "· network fee" },
-      { kind: "missing" },
     ]);
+    expect(lineNamed(lines(rated), "Network fee").parts).toEqual([{ kind: "missing" }]);
     const none = previewOf(
       "solana.swap.execute",
       { ...JUPITER_ARGS, vexFee: "Vex fee: none on this swap (below the minimum); the full 100 raw units are swapped." },
       "solana",
     );
-    expect(lineNamed(lines(none), "Costs").parts).toEqual([
-      { kind: "text", text: "No Vex fee" },
-      { kind: "text", text: "· network fee" },
-      { kind: "missing" },
-    ]);
+    expect(lineNamed(lines(none), "Fees").parts).toEqual([{ kind: "text", text: "No Vex fee" }]);
+    expect(lineNamed(lines(none), "Network fee").parts).toEqual([{ kind: "missing" }]);
   });
 
   it("cuts an address input token short and sends nothing when there is no amount", () => {
@@ -944,9 +957,16 @@ describe("approvalMoneyLines: swap", () => {
 });
 
 describe("approvalMoneyLines: wallet send", () => {
-  it("gives You send, To, Costs", () => {
-    expect(labelsOf(lines(SEND_NATIVE))).toEqual(["You send", "To", "Costs"]);
-    expect(labelsOf(lines(SEND_USDC))).toEqual(["You send", "To", "Costs"]);
+  it("gives You send, To, Fees: a transfer's Fees is its network fee (DG5-06)", () => {
+    expect(labelsOf(lines(SEND_NATIVE))).toEqual(["You send", "To", "Fees"]);
+    expect(labelsOf(lines(SEND_USDC))).toEqual(["You send", "To", "Fees"]);
+  });
+
+  it("takes the swap's two fee rows only if a transfer ever states a Vex fee", () => {
+    const fee = "Vex fee 0.25% (25 bps): 0.00125 USDC | 1250 raw units | 6 decimals.";
+    const rows = lines(previewOf("WalletSendConfirm", { ...SEND_USDC.criticalArgs, vexFee: fee }));
+    expect(labelsOf(rows)).toEqual(["You send", "To", "Fees", "Network fee"]);
+    expect(lineNamed(rows, "Fees").parts[1]).toEqual({ kind: "figure", text: "0.00125 USDC" });
   });
 
   it("marks a send with no token as the native token", () => {
@@ -956,7 +976,7 @@ describe("approvalMoneyLines: wallet send", () => {
         parts: [{ kind: "figure", text: "0.5" }, { kind: "note", text: "· native token, on Base" }],
       },
       { label: "To", parts: [{ kind: "figure", text: DESTINATION }] },
-      { label: "Costs", parts: [{ kind: "text", text: "Network fee" }, { kind: "missing" }] },
+      { label: "Fees", parts: [{ kind: "missing" }] },
     ]);
   });
 
@@ -970,7 +990,7 @@ describe("approvalMoneyLines: wallet send", () => {
   });
 
   it("drops the To line when there is no recipient, and reads the aliases", () => {
-    expect(labelsOf(lines(dropped(SEND_USDC, "to")))).toEqual(["You send", "Costs"]);
+    expect(labelsOf(lines(dropped(SEND_USDC, "to")))).toEqual(["You send", "Fees"]);
     const alias = previewOf("WalletSendConfirm", { chain: "ethereum", asset: "ETH", amount: "0.5", recipient: "0xabc" });
     const rows = lines(alias);
     expect(lineNamed(rows, "You send").parts[0]).toEqual({ kind: "figure", text: "0.5 ETH" });
@@ -1064,7 +1084,9 @@ describe("approvalMoneyLines: nothing is invented", () => {
     for (const preview of MONEY_PREVIEWS) {
       const rows = lines(preview) ?? [];
       expect(labelsOf(rows)).not.toContain("Total debit");
-      expect(lineNamed(rows, "Costs").parts.at(-1)).toEqual({ kind: "missing" });
+      // The network fee is unknown on every lane: its row (a transfer's Fees) reads missing.
+      const network = rows.find((row) => row.label === "Network fee") ?? lineNamed(rows, "Fees");
+      expect(network.parts).toEqual([{ kind: "missing" }]);
     }
   });
 });

@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Stamp, Tag } from "../stamp.js";
+import { MainnetMark, Stamp, Tag } from "../stamp.js";
 import { Chip } from "../chip.js";
 import { CellMeter } from "../cell-meter.js";
 
@@ -21,6 +21,15 @@ afterEach(() => {
 });
 
 describe("Stamp", () => {
+  it("draws the quiet mark as the word Mainnet beside the hatch, with no fill (PD-05, EC-10)", () => {
+    const { container } = render(<MainnetMark className="x" />);
+    const mark = mustQuery(container, ".vex-rf");
+    expect(mark.textContent).toBe("Mainnet");
+    expect(mark.className).toContain("x");
+    expect(mark.className).not.toContain("vex-stamp");
+    expect(mark.getAttribute("data-vex-real-funds-mark")).toBe("quiet");
+  });
+
   it("reads REAL FUNDS by default and carries no status hue", () => {
     const { container } = render(<Stamp />);
     const stamp = mustQuery(container, ".vex-stamp");
