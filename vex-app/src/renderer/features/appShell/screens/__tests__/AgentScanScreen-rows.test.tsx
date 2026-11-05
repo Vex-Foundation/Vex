@@ -158,7 +158,7 @@ describe("AgentScanScreen - rows and audit detail", () => {
     expect(screen.getByText(/50 USDC/)).not.toBeNull();
     expect(screen.getByText(/0\.02 WETH/)).not.toBeNull();
     // Every USD figure in this feed is a quote-time estimate - it must say so.
-    expect(screen.getByText("~$49.80 est.")).not.toBeNull();
+    expect(screen.getByText("about $49.80")).not.toBeNull();
     const link = screen.getByRole("link", {
       name: "Open transaction on block explorer",
     });

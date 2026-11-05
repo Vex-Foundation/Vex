@@ -673,6 +673,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | SWAP · MAINNET, a time, FILLED | the kind, MAINNET, the time, and desktop's outcome word (Confirmed) | |
 | "USDC → ETH · Base (your trading wallet)" | the pair, the chain and the wallet's name from the activity entry | |
 | SELL, VALUE (USD), RECEIVED, VEX FEE | those the activity entry holds | |
+| a dollar estimate, "about $200.00" (Cloud's DG5-40) | same on the receipt, Portfolio's activity table and Agent Scan; it replaces "~$200.00 est." | the feed's dollar values are quote-time estimates, so they say "about" |
 | APPROVAL, "Approved by you" | left out | approvals are not joined to activity yet |
 | OVERVIEW, WALLET, "Updated 12:41" | the page's own tabs; "Updated {time}" | |
 | PAPER, LIVE · MAINNET, REAL FUNDS | the REAL FUNDS stamp alone | no paper mode |

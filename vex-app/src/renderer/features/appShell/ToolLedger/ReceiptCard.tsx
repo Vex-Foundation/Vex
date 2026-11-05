@@ -8,7 +8,7 @@
  *   USDC → ETH · Base
  *   ---------------------------------------------------------------
  *   SELL                                                   200 USDC
- *   VALUE (USD)                                       ~$200.00 est.
+ *   VALUE (USD)                                       about $200.00
  *   RECEIVED                                           0.05709 ETH
  *   VEX FEE                                               0.5 USDC
  *
@@ -19,8 +19,9 @@
  * receipt and Activity can never disagree:
  *   - SELL and RECEIVED are each leg's `displayAmount` (main's status-aware
  *     C20 choice) and its main-resolved symbol;
- *   - VALUE (USD) is the sold leg's quote-time `usdEst`, with the feed's
- *     mandatory "~ … est." marker: there is no settlement-time USD anywhere;
+ *   - VALUE (USD) is the sold leg's quote-time `usdEst`, said as the
+ *     estimate it is, "about $200.00" (Cloud's DG5-40): there is no
+ *     settlement-time USD anywhere;
  *   - VEX FEE is the fee the row records (`vexFee`), or the fee attempt's own
  *     state when it has no settled amount;
  *   - the time is the entry's own, the chain its own (by name, never

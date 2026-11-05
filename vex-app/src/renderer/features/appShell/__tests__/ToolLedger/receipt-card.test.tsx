@@ -129,7 +129,7 @@ describe("ReceiptCard", () => {
     const value = (label: string): string | null | undefined =>
       container.querySelector(`[data-vex-receipt-row="${label}"] dd`)?.textContent;
     expect(value("Sell")).toBe("200 USDC");
-    expect(value("Value (USD)")).toBe("~$200.00 est.");
+    expect(value("Value (USD)")).toBe("about $200.00");
     expect(value("Received")).toBe("0.05709 ETH");
     expect(value("Vex fee")).toBe("0.5 USDC");
     // The labels are the field-label register (mono caps).
