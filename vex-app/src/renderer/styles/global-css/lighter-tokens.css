@@ -73,9 +73,11 @@
   --lit-ink-fill-ink: var(--vex-alias-label-on-primary);
   --lit-ink-fill-hover: var(--vex-alias-button-primary-hover);
 
-  /* Book depth: each side a wash of its trading colour at 14%. */
-  --lit-depth-bid: color-mix(in srgb, var(--lit-trade-up) 14%, transparent);
-  --lit-depth-ask: color-mix(in srgb, var(--lit-trade-down) 14%, transparent);
+  /* Book depth: a side is ink, never the trading pair (VEX Cloud's DG5-07,
+   * docs/design/H3-DESKTOP.md section 5.3): the bids a wash of the ink, the
+   * asks a fainter one, so the two still read apart where they meet. */
+  --lit-depth-bid: color-mix(in srgb, var(--lit-positive) 12%, transparent);
+  --lit-depth-ask: color-mix(in srgb, var(--lit-positive) 7%, transparent);
 
   --lit-focus: var(--vex-alias-focus);
   --lit-hover: var(--vex-alias-interactive-hover);

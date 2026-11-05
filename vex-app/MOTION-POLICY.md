@@ -31,11 +31,25 @@ here is a defect:
 
 - `.vex-expand` (220ms) - the open/close primitive's own budget, one value for
   both directions, stated at its declaration.
-- `TOAST_EXIT_MS` (200ms) and the notification enter (160ms) - the exit is a
-  JS-owned pair (`lib/notifications/notification-model.ts` removes the node
-  when it elapses), so its duration is a behaviour of the notification model
-  rather than a style choice; retuning it is a notification change, not a
-  motion change.
+- `TOAST_EXIT_MS` (1000ms) and the toast's enter (620ms on the push curve,
+  8px down and in) - VEX Cloud's toast (`--vx-duration-toast-fade`,
+  `--vx-dur-caption` on its caption curve, which has the push curve's control
+  points; `docs/design/H3-DESKTOP.md` section 5.1), a cross-app contract. The
+  exit is a JS-owned pair (`lib/notifications/notification-model.ts` removes
+  the node when it elapses), so its duration is a behaviour of the
+  notification model rather than a style choice; retuning it is a
+  notification change, not a motion change.
+- The tooltip's fade in, 160ms - VEX Cloud's `--vx-tooltip-in`
+  (`docs/design/H3-DESKTOP.md` section 5.4): opacity only, on the entrance
+  curve; reduced motion shows it at once. It leaves at once (Cloud fades it
+  out in 220ms, which would need the bubble to outlive its anchor's hover).
+- The general key's hover fill, 420ms (`--vex-duration-key-fill`,
+  `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
+  `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot
+  under a hovering pointer. A transform only (`scaleY`), on the entrance
+  curve (Cloud draws it on its own `--vx-ease-ease`, which is not one of
+  this family's four); reduced motion lands it at once. It shares Kimm's
+  close number by coincidence and borrows nothing of hers.
 - The transcript keyframes (180ms / 260ms / 280ms) and the landing motifs -
   authored against the landing's own timing and out of scope for the desktop
   scale.
@@ -67,7 +81,7 @@ and mirrored in `lib/motion/index.ts`:
 | `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
-| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and nothing else |
+| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and the toast's arrival (VEX Cloud's caption curve, the same control points), and nothing else |
 
 The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
 chosen: the H3 mockup prints her section's clip inset at 120, 240 and 480ms
@@ -216,7 +230,7 @@ Live pairs:
 
 | JS constant | CSS site | Consequence of drift |
 |---|---|---|
-| `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding a stack slot |
+| `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding the slot |
 | `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
 | `DURATION_VEX_CLOSE_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `closing` phase when no `transitionend` comes) | `.vex-kimm[data-kimm-open="false"]`'s clip-path transition, kimm.css (`--vex-duration-vex-close`) | her figure gives way to the strip mid-wipe, or she reads as closing after the wipe has ended |
 | `DURATION_VEX_OPEN_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `opening` phase when no `transitionend` comes) | `.vex-kimm`'s clip-path transition, kimm.css (`--vex-duration-vex-open`) | the scan head goes before the wipe reaches her foot, or stays after it |

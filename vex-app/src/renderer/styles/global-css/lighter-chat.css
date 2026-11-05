@@ -112,8 +112,8 @@
   font-weight: 400;
 }
 
-.lit-desk-scope-chip i[data-side="long"] { color: var(--lit-trade-up); }
-.lit-desk-scope-chip i[data-side="short"] { color: var(--lit-trade-down); }
+/* The position's side is a word in ink (DG5-07): red means refused. */
+.lit-desk-scope-chip i[data-side] { color: var(--lit-ink); }
 
 .lit-desk-quick {
   display: flex;
@@ -349,8 +349,9 @@
 }
 
 /* While a desk review waits in the ticket's place, SEND steps down to the
- * raised fill, so the review's Approve is the window's one blue cell. */
-.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send {
+ * raised fill, so the review's Approve is the window's one blue cell. A held
+ * SEND (nothing to send) keeps its held look (console.css). */
+.vex-shell-frame[data-lighter-review="waiting"] .vex-vs .vex-composer-send:not(:disabled) {
   background-color: var(--vex-alias-interactive-active);
   color: var(--vex-alias-label-primary);
 }

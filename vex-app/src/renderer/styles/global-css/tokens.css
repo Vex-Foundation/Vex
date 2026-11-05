@@ -90,6 +90,12 @@
   --color-h3-ground: #010203;
   --color-h3-cell: #040406; /* oklch(11% 0.006 264) */
   --color-h3-raised: #070709; /* oklch(13% 0.004 264) */
+  /* VEX Cloud's card ground, oklch(10.5% 0.006 264): menus, dialogs and the
+   * ground a floating failure lays its red over (Cloud's --vx-card). */
+  --color-h3-card: #030405;
+  /* VEX Cloud's tooltip plate, oklch(20% 0.004 264), the top of the ground
+   * ladder: tooltips and toasts, ink on it (Cloud's --vx-tooltip). */
+  --color-h3-tooltip: #151618;
   /* Measured, no sheet token (about oklch 18%): the greeting bubble, the
    * selected tab, the open Vex key's fold cell. */
   --color-h3-raised-2: #101214;
@@ -263,13 +269,17 @@
   --vex-alias-label-tertiary: var(--color-h3-muted);
   --vex-alias-label-caption: var(--color-h3-muted);
   --vex-alias-label-dimmed: rgba(255, 255, 255, 0.18);
+  /* Faint: a glyph at rest that the pointer lights, never a word (VEX
+   * Cloud's --vx-faint, white at 55%: the Send key's dots). */
+  --vex-alias-label-faint: rgba(255, 255, 255, 0.55);
   /* Type painted on the ink fill (the primary key's ink inversion, the REAL
    * FUNDS stamp): the ground. */
   --vex-alias-label-on-primary: var(--color-h3-ground);
   /* Type painted on a solid accent fill: the ground. */
   --vex-alias-label-on-accent: var(--color-h3-ground);
-  /* Type painted on the reversed chrome plate (tooltip, hover card, toast,
-   * connection banner): the ground on the ink plate. */
+  /* Type painted on the reversed chrome plate (the ink label box, the
+   * connection banner): the ground on the ink plate. The tooltip and the
+   * toast moved to the dark floating plate (--vex-alias-label-on-plate). */
   --vex-alias-label-on-chrome: var(--color-h3-ground);
 
   /* Keys (docs/design/H3-DESKTOP.md section 2.4). THE PRIMARY KEY is the one
@@ -285,6 +295,12 @@
   --vex-alias-button-accent-hover: var(--color-h3-blue-hover);
   --vex-alias-button-accent-ink: var(--color-white);
   --vex-alias-button-accent-edge: transparent;
+  /* The general key (components/ui/button.tsx, section 5.2): VEX Cloud's
+   * v99 keys. The fill that rises on hover is white at 7% (on the blue key,
+   * the blue hover); a strong key wears the 40% control edge, because the
+   * raised ground alone is 1.02:1 on the card (Cloud's --vx-rule-control). */
+  --vex-alias-key-fill-hover: rgba(255, 255, 255, 0.07);
+  --vex-alias-rule-control: rgba(255, 255, 255, 0.4);
 
   /* The accent as TYPE AND LINES is the ink: the blue measures 2.42:1 on the
    * ground, so it is never type there (section 2.1). A selected word, a link
@@ -356,10 +372,15 @@
   --vex-alias-bg-mask-1: rgba(0, 0, 0, 0.6);
   --vex-alias-bg-mask-drop: rgba(1, 2, 3, 0.7);
 
-  /* The reversed chrome plate: tooltip, hover card and toast: the ink
-   * plate, with --vex-alias-label-on-chrome on top. */
-  --vex-alias-tooltip-bg: var(--color-h3-ink);
-  --vex-alias-toast-bg: var(--color-h3-ink);
+  /* The floating plate (VEX Cloud's tooltip and toast, docs/design/
+   * H3-DESKTOP.md sections 5.1 and 5.4): the top of the ground ladder, ink
+   * words on it (--vex-alias-label-on-plate). The toast wears the chosen rule;
+   * a failure lays the refusal red at 16% over the card ground. */
+  --vex-alias-tooltip-bg: var(--color-h3-tooltip);
+  --vex-alias-toast-bg: var(--color-h3-tooltip);
+  --vex-alias-label-on-plate: var(--color-h3-ink);
+  --vex-alias-card: var(--color-h3-card);
+  --vex-alias-refusal-tint: color-mix(in srgb, var(--vex-alias-state-error-mark) 16%, transparent);
   /* The standalone vx mark: the ink. */
   --vex-alias-brand-mark: var(--color-h3-ink);
 
@@ -543,6 +564,12 @@
    * a square. */
   --vex-duration-blink: 600ms;
 
+  /* THE KEY'S FILL (docs/design/H3-DESKTOP.md section 5.2): on hover a fill
+   * rises from a key's foot in 420ms, VEX Cloud's --vx-dur-fill, a named
+   * exception to the scale (MOTION-POLICY lists it), on the entrance curve.
+   * Hovering pointers only; reduced motion lands it at once. */
+  --vex-duration-key-fill: 420ms;
+
   /* SHELL GEOMETRY - the R3 column widths (docs/design/R3-MINIMAL.md
    * section 2). Theme-independent like the motion vocabulary. The left
    * sidebar is 264 (224 from 1180 to 1359, the 56 rail under 1180); the Vex
@@ -649,6 +676,8 @@
   --color-interactive-active: var(--vex-alias-interactive-active);
   --color-interactive-solid: var(--vex-alias-interactive-solid);
   --color-interactive-danger: var(--vex-alias-interactive-danger);
+  --color-rule-control: var(--vex-alias-rule-control);
+  --color-surface-card: var(--vex-alias-card);
 
   --color-success: var(--vex-alias-state-success);
   --color-success-wash: var(--vex-alias-state-success-wash);

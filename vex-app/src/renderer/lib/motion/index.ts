@@ -15,10 +15,11 @@
  * `styles/global-css/__tests__/motion-tokens.test.ts`, which fails if either
  * side moves alone.
  *
- * Three durations sit outside the scale, named in the policy's exception
+ * Four durations sit outside the scale, named in the policy's exception
  * list: Kimm's section opens in `DURATION_VEX_OPEN_MS` and closes in
- * `DURATION_VEX_CLOSE_MS` (docs/design/H3-DESKTOP.md section 3.1), and a
- * running square blinks once every `DURATION_BLINK_MS` (section 2.2).
+ * `DURATION_VEX_CLOSE_MS` (docs/design/H3-DESKTOP.md section 3.1), a running
+ * square blinks once every `DURATION_BLINK_MS` (section 2.2), and a key's
+ * hover fill rises in `DURATION_KEY_FILL_MS` (section 5.2).
  *
  * ## The easing family
  *
@@ -91,6 +92,14 @@ export const DURATION_VEX_CLOSE_MS = 420;
  * CSS: `--vex-duration-blink`.
  */
 export const DURATION_BLINK_MS = 600;
+
+/**
+ * The general key's hover fill: it rises from the key's foot (VEX Cloud's
+ * `--vx-dur-fill`, docs/design/H3-DESKTOP.md section 5.2). A named exception
+ * to the scale (MOTION-POLICY.md), owned by `components/ui/button.tsx`.
+ * CSS: `--vex-duration-key-fill`.
+ */
+export const DURATION_KEY_FILL_MS = 420;
 
 export const SPRING_PANEL = {
   type: "spring",

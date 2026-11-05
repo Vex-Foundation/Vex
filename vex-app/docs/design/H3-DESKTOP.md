@@ -210,7 +210,9 @@ Open, for the owner:
 | model | 680, 75 | the model's glyph: the model choice | the same |
 | field | 755, 471 | "Ask Vex..." | the same, running on to the send key |
 | attach | 1226, 74 | an image key | left out: no attachments |
-| send | 1300, 140 | blue: a three-by-three dot glyph and SEND | the same; STOP while a turn runs |
+| send | 1302, 138 | blue: a three-by-three dot glyph and SEND | the same; STOP while a turn runs; held while the draft is blank (below) |
+
+**The send cell** is H3's `.cmp-send`: 138 wide, padding 0 30 0 32, a 20px dots glyph and SEND in 13px caps; the dots are faint (white at 55%) at rest and white under the pointer. Measured at 140 from the captures before Cloud's CSS was read; the CSS is the source. **While the draft is blank, SEND is held** (Cloud's EC-04, `specs/v99-web/PLAN.md`; `h3-chat-gaps` decision 6): the cell fill, a muted word and the faint dots, no blue and no hover, because a blue key that does nothing is a trust regression. It turns blue the moment the draft has text. Which drafts can be sent is unchanged; only the look follows the key's disabled state. STOP keeps the blue while a turn runs; a stop being acknowledged is the same held look.
 
 **The status strip** sits above the composer in the chat column, 31 high (797 to 827, measured): the model and its effort ("DeepSeek V4.1 Flash 1017 HIGH", 680 to 928), FUNDS REQUIRE APPROVAL (928 to 1139), an empty cell, and DAILY BUDGET with a ten-cell meter and a percentage (1186 to 1440). Desktop's strip is in section 4.1.
 
@@ -258,6 +260,8 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | ground | `--page` oklch(9% 0.012 264); `--panel` oklch(8.5% 0.008 264) | #020205; #010203 | #000002 to #020202 (OKLCH 7 to 8.5%) in every column, no readable hue | oklch(8.5% 0.008 264), #010203 |
 | cell | `--cell` oklch(11% 0.006 264) | #040406 | #050407: the New chat cell, the composer's model cell, the greyed approve key | the sheet value |
 | raised | `--raised` oklch(13% 0.004 264) | #070709 | #070709: the REVIEW and REJECT keys | the sheet value |
+| card | none; Cloud's `--vx-card` oklch(10.5% 0.006 264) | #030405 | not drawn on the app plates | Cloud's value: menus, dialogs, the ground under a failure's red (section 5) |
+| plate | none; Cloud's `--vx-tooltip` oklch(20% 0.004 264) | #151618 | not drawn on the app plates | Cloud's value: the toast and the tooltip, ink on it (section 5.1) |
 | raised 2 | none | | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell; #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
 | bubble | none | | #212325 (25.5%): the person's message bubble; #151718 (20%): their avatar disc | #212325 |
 | selected row | none | | a gradient from #181A1C (21.6%) at the chats column's left edge to the ground at its right | as measured |
@@ -355,7 +359,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 ### 2.4 Cells, rules and keys
 - Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.
 - A cell's text sits 24 in from its left edge (section 1.3).
-- **Primary key:** the blue fill with white caps, 14 (SEND; the card's decision key). One blue cell in view at a time. Hover takes blue hover.
+- **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
@@ -593,6 +597,62 @@ Decided on 3 November 2026, for S2-07: desktop keeps the chat at 640 or more whe
 - Under 1024 the band (section 1.10) folds the chats whatever either says, and the rail has no Expand key there.
 - Nothing about her section enters this: the Vex column is 30% of the window at every width, and the fold is only what the shell asks the solver (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`). A fold the person asks for may move a card (section 1.2); her section never does.
 - Open: whether Cloud folds its chats under 1268 too. Settled with Cloud.
+
+---
+
+## 5. The kit
+
+The primitives H3's app plates do not draw, taken from what VEX Cloud decided and built on `origin/rebranding-v99-ui` (the `h3-kit-gaps`, `h3-shell-gaps`, `h3-chat-gaps` and `h3-money-gaps` mockups, `contracts/keys.md`, `apps/web/src/styles/overlays.css` and `keys.css`, and Cloud's `HANDOFF.md`). The owner asked for desktop to take every change Cloud made here, however small. Where desktop keeps a rule of its own, the line says why.
+
+### 5.1 The toast
+- **One slot.** One floating cell, never a stack: the plate (`--color-h3-tooltip`, Cloud's `--vx-tooltip`, oklch 20%) in the chosen rule (24%), square, no shadow, at least 44 high, at most min(640, the window less 48) wide. Cloud's D2-16.
+- **Anatomy.** The status column (44) first: the cross for a failure, the concerned hatch for a warning, the info glyph for information. Then the words, 14/1.45 in sentence case (a title, where the producer gives one, over the message in ink 2 at 13). Then each action as a key cell on the right edge: 13px caps, ink, padding 0 20, its left rule, never blue. Desktop keeps its dismiss key as the last cell (44, the cross glyph), because its notifications are dismissible and some are not.
+- **A failure** is the refusal register: the red 16% over the card ground (`--vex-alias-refusal-tint` over `--color-h3-card`). Its words stay ink, where Cloud uses its refusal ink: a status word is ink on desktop (section 2.2).
+- **Place.** 12 under the header, centred on the content column (the chat, a page or the desk), clamped 12 from the window's edges. Before the shell exists, 12 under the old 44 title row.
+- **Never over a waiting card** (Cloud's DG-3 decision 16). A card's strip carries the network and REAL FUNDS, and on a short window it starts at the header's rule. When any `[data-vex-area="approval-card"]` would meet the toast's box, or come within 8 of its foot, the toast takes the header's message slot instead: the header's title cell, for its hold, on the header's ground with no plate of its own, the words 24 in at H3's `.hd-msg` (12/1.35), its keys as the cell's key cells. Words longer than the cell scroll inside it; the slot never grows onto the card. The seat is measured on show, on resize, on any scroll and whenever the document's tree changes, once a frame at most, and only while a toast is on screen (`toastSeat`, `components/ui/notification-toast.tsx`). The desk's Review order is a modal dialog, and a toast never paints while a modal holds the top layer: it waits in the center (unchanged). `e2e/h3-card-proof.spec.ts` proves both in a real browser at 1280 x 720 to 1920 x 1080.
+- **Timings,** Cloud's: the hold is 3s, 6s for a toast with an action or whose words (title, message and action labels) reach 75 characters; then a 1000ms fade (Cloud's `toastFade`; Cloud's `HANDOFF.md` records the hold plus 1000ms as a deviation it keeps, against the drawn 300). The toast arrives in 620ms on the push curve, which has the control points of Cloud's caption curve, 8px down and in; reduced motion drops the arrival and keeps the fade. Hover or focus pauses the hold, and a sticky notification (progress still running, a failure with a working primary action) never fades, as before.
+- **What waits** behind the slot is reported under the words ("+2 more in the notification center"), never dropped: the queue, the center and the announcer are unchanged. An urgent notification still passes the slot and stands under it; nothing raises one yet.
+
+### 5.2 Keys and dialogs
+**The general key** (`components/ui/button.tsx`) is Cloud's v99 key (`contracts/keys.md`, `keys.css`, D2-1 to D2-4). A key is a square, its word in caps at 13 and 400 with the label tracking; on a page it has a fixed height and its own 1px edge. Desktop's variant names stay, each keeping the action its call sites give it; only the look follows Cloud's map:
+
+| Desktop variant | Cloud's look |
+|---|---|
+| primary | `primary`: the blue fill, white word, a blue edge; the view's one blue |
+| ink (Reject, Decline, a danger confirm) and stop (Stop agent, Stop mission) | `strong`: the raised ground at full ink in the 40% control edge (`--vex-alias-rule-control`), because raised alone is 1.02:1 on the card |
+| quiet, ghost, armed | `outline`: the framed key, the cell ground in the 7% rule, ink 2 words; armed turns blue on `data-armed="true"` |
+| bare | `ghost`: no ground and no edge, ink 2 words |
+
+Sizes: 40 high with padding 0 18 (the default), 32 with 0 14 at 12px (`sm`), 44 with 0 24 (`lg`), the 32 square glyph key (`icon`). Hover lifts the word to ink and raises a fill from the key's foot in 420ms (white 7%, the blue hover on the blue key; `--vex-duration-key-fill`, Cloud's `--vx-dur-fill`), hovering pointers only; a press moves the key down 1px. A key that will not act is held, never dimmed: the cell ground, a muted word, the 7% edge, no fill. **Red is never a key** and neither is a blue danger. Differences from Cloud: the fill rides the entrance curve, because Cloud's `--vx-ease-ease` is not one of desktop's four (MOTION-POLICY); the label roll (520ms) is not built, since it needs every label wrapped; the wizard's approved plate keeps its own keys and rows (`stage.css` opts them out of the caps and the fill).
+
+**The dialog** (`components/ui/dialog.tsx`) is H3's `.dlg` (Cloud's D2-32, D2-33):
+- One width, 560 (the window less 32 under it), confirms and forms alike; the width is stated in `overlays.css` so a call site's old `max-w-*` no longer decides it. A board and a sheet keep their own boxes.
+- The card ground (`--color-h3-card`, Cloud's `--vx-card`) in the chosen rule (24%), square, no shadow.
+- A head band 44 high under the 7% rule: an optional word 24 in (`kicker`, after the ink square of a decision that waits) and Close at its end, a 44 glyph cell with its left rule. Close takes no Tab stop, so the dialog's keys keep the focus order they had, and it closes through the very path Esc takes (it raises the dialog's own `cancel` event), so a surface that ignores a close while it is busy ignores this one too. Cloud holds Close while pending; desktop's dialogs hold it the way they hold Esc.
+- The title 22/600 tracked in; the description 15/1.5 in ink.
+- Where the foot is keys and nothing else, it is a foot of cell keys: 64 high under the 7% rule, each key full height and at least 150 wide (four keys share the width), its left rule shared with its neighbour. Default tone: the keys on the right, Cancel raised, the confirm blue.
+- **The danger confirm** (a foot whose last key is `ink`, with a Cancel before it) is the strong ink key, raised in the 40% control edge, on the right, beside a frameless Cancel on the left (Cloud's D2-3). Never red, never blue. Which key acts, which takes the first focus and what Esc does stay the call site's.
+
+### 5.3 Sides in ink
+Buy, Sell, Long and Short read as words in ink, never in the trading green and red (Cloud's DG5-07, confirmed by both token comparisons): red means refused in v99, so a red Sell or Short reads as a refusal. The word carries the side. Profit and loss keep the gain and loss colours, and so do a price's change and the last trade's tick (a movement, not a side). The token values of gain and loss are left to the token pass; only their use for sides stops here.
+
+| Where | Before | Now |
+|---|---|---|
+| the ticket's LONG and SHORT keys (`lighter-ticket.css`) | the side word in gain or loss type | ink; the keys stay raised cells, never blue |
+| the order book's prices (`lighter-book.css`) | bids in gain, asks in loss | bids in ink, asks in ink 2, as the tape's buys and sells |
+| the book's depth bars and their one-frame flash (`--lit-depth-bid`, `--lit-depth-ask`) | a 14% wash of gain or loss | an ink wash, 12% for bids and 7% for asks, so the sides still read apart where they meet |
+| the book's bid and ask share ("B 54%", "46% S", the bar) | gain and loss | ink and ink 2; the bar's bid share ink over a 24% ink track |
+| the desk chat's scope chip (`lighter-chat.css`) | Long or Short in gain or loss | ink |
+| the account dock: a position's Long or Short, an order's and a fill's Buy or Sell (`AccountPanel.tsx`) | gain or loss (`data-trade`, `data-tone`) | ink (`data-side`); uPnL and realized PnL keep their colours |
+| Portfolio's Lighter positions: Long or Short (`LighterAccountCard.tsx`, `book.css`) | gain or loss (`data-trade`) | ink (`.vex-pf-side`, `data-side`); uPnL keeps its colour |
+
+Cloud draws no order book, so it sets no rule for depth bars; desktop follows the side rule there too. Nothing about an order changes: its side, size and every key's action are what they were.
+
+### 5.4 The tooltip
+Cloud's v99 rail tooltip (`.vx-tip`, D2-25): the dark plate (`--color-h3-tooltip`, oklch 20%) with ink words, not the inverted ink plate R3 drew. 12/1.35 with 0.02em tracking, padding 8 10, at most 280 wide (a reason wraps), 8 from its key, pointed by an 8px notch turned 45 degrees toward the key. It fades in over 160ms. Cloud fades it out over 220ms; desktop's bubble leaves at once, because fading out would need it to outlive its anchor's hover (Open: build it if the owner wants the exit too). The Lighter chart's tool labels take the same plate.
+
+### 5.5 Menus
+Every list that opens from a key is one material (Cloud's D2-5, `menu-material.css`): the card ground (`--color-h3-card`, Cloud's `--vx-card`, #030405) in the 24% lifted rule, never an ink border and no shadow (`ui-primitives/menu.css`). The rows, their heights and their keys are unchanged in this pass; Cloud's row grammar (actions in 13px caps, values in 14px words, 40 high rows) is left for the menu's own restyle.
 
 ---
 

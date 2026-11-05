@@ -1,7 +1,7 @@
 /**
  * THE NOTIFICATION MODEL - one owner for every app-wide signal: what exists,
- * what is sticky, which three are on screen, when a toast stops being on
- * screen, what the announcer says, and what the center retains.
+ * what is sticky, which one is on screen, when a toast stops being on screen,
+ * what the announcer says, and what the center retains.
  *
  * ## Why a model at all
  *
@@ -19,11 +19,15 @@
  *    ordering (the newer message wins and moves to the top), stickiness as a
  *    DERIVED property rather than a caller flag, and one model event stream
  *    that every surface listens to instead of each surface polling.
- *  - `browser/parts/notifications/notificationsToasts.ts` - the cap of 3
- *    visible toasts, the per-severity purge table (10s/12s/15s), and above all
- *    its re-arm-instead-of-cancel pause: when the timer fires while the user is
- *    hovering or focused, it schedules the FULL timeout again rather than
- *    tracking remaining time. Fewer states, and it cannot round down to zero.
+ *  - `browser/parts/notifications/notificationsToasts.ts` - a visible cap
+ *    with a reported queue behind it, and above all its re-arm-instead-of-
+ *    cancel pause: when the timer fires while the user is hovering or
+ *    focused, it schedules the FULL hold again rather than tracking remaining
+ *    time. Fewer states, and it cannot round down to zero. Its cap of three
+ *    and its per-severity purge table (10s/12s/15s) gave way to VEX Cloud's
+ *    H3 toast (docs/design/H3-DESKTOP.md section 5.1): ONE slot, and Cloud's
+ *    hold (3s, 6s with an action or from 75 characters) before a 1000ms
+ *    fade.
  *  - `browser/parts/notifications/notificationsAlerts.ts` - a single
  *    model-driven aria owner, and "every error is also `console.error`".
  *    Implemented by `notification-announcer.tsx`, which listens to
@@ -70,28 +74,49 @@ import type {
 } from "./types.js";
 
 /**
- * At most three toasts on screen. Everything beyond waits in the center and
- * is REPORTED as "+N more" - it is a queue, never a drop.
+ * One toast on screen: the H3 toast is one slot (VEX Cloud's single-slot
+ * toast, docs/design/H3-DESKTOP.md section 5.1). Everything beyond it waits
+ * in the center and is REPORTED as "+N more" - it is a queue, never a drop,
+ * and a new arrival never takes the slot from a toast the user is reading.
  */
-export const MAX_VISIBLE_TOASTS = 3;
+export const MAX_VISIBLE_TOASTS = 1;
 
 /**
- * How long a visible toast holds before it purges, by severity. The single
- * JS owner of dismissal timing (the stylesheet no longer holds a second copy).
+ * VEX Cloud's hold before the fade (`TOAST_HOLD_MS`, `TOAST_HOLD_LONG_MS`,
+ * `TOAST_LONG_TEXT` in Cloud's `lib/ui/motion.ts` and `store/toast.ts`): 3s,
+ * and 6s for a toast with an action or whose words reach 75 characters, so a
+ * longer sentence is read before it goes. The single JS owner of dismissal
+ * timing; the sheet holds no copy.
  */
-export const PURGE_MS: Readonly<Record<NotificationSeverity, number>> = {
-  info: 10_000,
-  warning: 12_000,
-  error: 15_000,
-};
+export const TOAST_HOLD_MS = 3000;
+export const TOAST_HOLD_LONG_MS = 6000;
+/** Characters (UTF-16) of title, message and action labels from which the long hold applies. */
+export const TOAST_LONG_TEXT = 75;
+
+/** How long a visible toast holds before its fade starts. */
+export function toastHoldMs(item: {
+  readonly title: string | null;
+  readonly message: string;
+  readonly actions: readonly { readonly label: string }[];
+}): number {
+  const length = item.actions.reduce(
+    (sum, action) => sum + action.label.length,
+    (item.title?.length ?? 0) + item.message.length,
+  );
+  return item.actions.length > 0 || length >= TOAST_LONG_TEXT ? TOAST_HOLD_LONG_MS : TOAST_HOLD_MS;
+}
 
 /**
+ * The fade after the hold: VEX Cloud's `toastFade`, 1000ms (Cloud keeps the
+ * hold plus 1000ms, its HANDOFF's "Deviations"). A toast's whole life on
+ * screen is its hold plus this.
+ *
  * INVARIANT: the exit fade in `ui-primitives/overlays.css`
  * (`.vex-notification-toast[data-phase="exiting"]`) MUST run for exactly this
  * long. The model removes the node when this elapses; a longer sheet cuts the
- * fade, a shorter one leaves an invisible node holding a slot.
+ * fade, a shorter one leaves an invisible node holding the slot.
  */
-export const TOAST_EXIT_MS = 200;
+export const TOAST_EXIT_MS = 1000;
 
 /**
  * Retention cap for the center.
@@ -568,7 +593,7 @@ export class NotificationsModel {
         this.#reconcileToasts();
         this.#invalidate();
       }, TOAST_EXIT_MS);
-    }, PURGE_MS[item.severity]);
+    }, toastHoldMs(item));
   }
 
   #invalidate(): void {

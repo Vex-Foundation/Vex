@@ -185,7 +185,9 @@ it("shows the notice and no controls when there is no row to change", () => {
 it("holds Apply and Close while a change is in flight", () => {
   const { onClose } = renderSheet({ busy: true });
   expect(applyButton().disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  // The sheet's own Close and the head band's Close cell (H3-DESKTOP.md
+  // section 5.2) both hold while the change is in flight.
+  for (const close of screen.getAllByRole("button", { name: "Close" })) fireEvent.click(close);
   expect(onClose).not.toHaveBeenCalled();
   expect(screen.getByRole("status").textContent).toBe("Preparing…");
   expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");

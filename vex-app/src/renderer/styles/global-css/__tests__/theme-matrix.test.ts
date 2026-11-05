@@ -113,6 +113,9 @@ const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
   "--color-h3-ground": [0.085, 0.008, 264],
   "--color-h3-cell": [0.11, 0.006, 264],
   "--color-h3-raised": [0.13, 0.004, 264],
+  // VEX Cloud's card ground and tooltip plate (--vx-card, --vx-tooltip).
+  "--color-h3-card": [0.105, 0.006, 264],
+  "--color-h3-tooltip": [0.2, 0.004, 264],
   "--color-h3-ink": [0.97, 0.005, 264],
   "--color-h3-ink-2": [0.8, 0.012, 264],
   "--color-h3-muted": [0.62, 0.02, 264],
@@ -183,6 +186,8 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-h3-ground": "#010203",
   "--color-h3-cell": "#040406",
   "--color-h3-raised": "#070709",
+  "--color-h3-card": "#030405",
+  "--color-h3-tooltip": "#151618",
   "--color-h3-raised-2": "#101214",
   "--color-h3-bubble": "#212325",
   "--color-h3-row": "#181a1c",
@@ -200,13 +205,13 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 21 primitives, at their values", () => {
+  it("holds exactly the 23 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(21);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(23);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 

@@ -5,6 +5,9 @@
  * dismissal, and portal mode rendering into document.body.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Menu, type MenuEntry } from "../menu.js";
@@ -128,5 +131,18 @@ describe("Menu", () => {
     );
     fireEvent.click(screen.getByRole("menuitem", { name: "Child" }));
     expect(onSelect).toHaveBeenCalledWith("child");
+  });
+});
+
+describe("Menu material (docs/design/H3-DESKTOP.md section 5.5)", () => {
+  it("is VEX Cloud's one material: the card ground in the 24% rule, never an ink border", () => {
+    const css = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../styles/global-css/ui-primitives/menu.css"),
+      "utf8",
+    );
+    const card = /\.vex-menu,\s*\.vex-menu-submenu \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(card).toContain("border: 1px solid var(--vex-alias-rule-chosen);");
+    expect(card).toContain("background: var(--vex-alias-card);");
+    expect(card).not.toMatch(/rule-ink|box-shadow/);
   });
 });
