@@ -1111,19 +1111,24 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
     expect(frame).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
   });
 
-  it("draws the stamp as H3's ink fill, 23 high, caps 12, led by its hatch glyph", () => {
+  it("draws the stamp as Cloud's ink tag, 24 high, caps 11 at 400, a 1px ink edge, led by its 10 x 14 hatch", () => {
     const stamp = ruleBody(".vex-appr__top .vex-stamp,\n.vex-appr__top .vex-tag");
-    expect(stamp).toContain("height: 23px");
-    expect(stamp).toContain("font-size: 12px");
+    expect(stamp).toContain("height: 24px");
+    expect(stamp).toContain("font-size: 11px");
+    expect(stamp).toContain("font-weight: 400");
+    const own = ruleBody(".vex-appr__top .vex-stamp");
+    expect(own).toContain("padding: 0 8px 0 3px");
+    expect(own).toContain("border: 1px solid var(--vex-alias-rule-ink)");
     const glyph = ruleBody(".vex-appr__top .vex-stamp::before");
-    expect(glyph).toContain("width: 12px");
+    expect(glyph).toContain("width: 10px");
+    expect(glyph).toContain("height: 14px");
     expect(glyph).toMatch(
       /repeating-linear-gradient\(\s*135deg,\s*var\(--vex-alias-label-on-primary\) 0 1\.5px,\s*transparent 1\.5px 4px\s*\)/,
     );
     expect(glyph).not.toMatch(/#[0-9a-f]{3,8}\b|accent|state-warn|destructive/i);
   });
 
-  it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at 20", () => {
+  it("sets the eyebrow and MAINNET as tracked sans caps, and the sentence at Cloud's 18 / 1.3", () => {
     for (const selector of [".vex-appr__eyebrow", ".vex-appr__net"]) {
       const body = ruleBody(selector);
       expect(body).toContain("font-size: 13px");
@@ -1131,7 +1136,10 @@ describe("ApprovalCard REAL FUNDS treatment", () => {
       expect(body).toContain("letter-spacing: var(--tracking-label)");
       expect(body).not.toContain("--font-mono");
     }
-    expect(ruleBody(".vex-appr__title")).toContain("font-size: 20px");
+    const title = ruleBody(".vex-appr__title");
+    expect(title).toContain("font-size: 18px");
+    expect(title).toContain("line-height: 1.3");
+    expect(title).toContain("letter-spacing: -0.01em");
     expect(ruleBody(".vex-appr__consequence")).toContain("font-size: 15px");
   });
 });
@@ -1335,12 +1343,17 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     const label = ruleBody(".vex-appr__dl dt");
     expect(label).toContain("padding-left: var(--vex-appr-inset)");
     expect(label).toContain("color: var(--vex-alias-label-tertiary)");
-    // The register owns the label's face, size and caps; the table never overrides them.
+    // The register owns the label's face and caps; the row never overrides them.
     expect(label).not.toMatch(/font-family|font-size|text-transform|letter-spacing/);
+    // The card sets the register at Cloud's card measure, mono 12 at 0.06em, in one place.
+    const measure = ruleBody(".vex-appr .vex-field-label");
+    expect(measure).toContain("font-size: 12px");
+    expect(measure).toContain("letter-spacing: 0.06em");
     const value = ruleBody(".vex-appr__dl dd");
     expect(value).toContain("text-align: right");
     expect(value).toContain("padding-right: var(--vex-appr-inset)");
-    expect(value).toContain("font-size: 14px");
+    expect(value).toContain("font-size: 13px");
+    expect(ruleBody(".vex-appr__num")).toContain("font-size: 12px");
   });
 
   describe("All signed fields, H3's disclosure", () => {
@@ -1869,12 +1882,15 @@ describe("ApprovalCard, its decision row docked in the shell's bottom row", () =
 
     it("lays the row out as H3's cells: the reason across, then Reject 168 | the gate | approve 200, 72 high", () => {
       const row = rule(".vex-appr__foot[data-docked]");
-      expect(row).toContain("grid-template-columns: minmax(96px, 168px) minmax(0, 1fr) minmax(120px, 200px)");
+      expect(row).toContain("grid-template-columns: 168px minmax(0, 1fr) 200px");
       expect(row).toContain('"reason reason reason"');
       expect(row).toContain('"reject gate approve"');
       expect(row).toContain("position: static");
       expect(rule(".vex-appr__foot[data-docked] > button")).toContain("height: var(--vex-h3-bottom-h)");
       expect(rule(".vex-appr__foot[data-docked] > input")).toContain("font-size: 18px");
+      // Cloud's keys: 13 caps, the approve key 32 each side of its word.
+      expect(rule(".vex-appr__foot[data-docked] > button")).toContain("font-size: 13px");
+      expect(rule('.vex-appr__foot[data-docked] > [data-vex-key="approve"]')).toContain("padding: 0 32px");
     });
 
     it("fills Reject raised and the approve key blue, an armed key in reversed ink and never a second blue", () => {

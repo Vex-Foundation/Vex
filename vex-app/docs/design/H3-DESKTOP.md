@@ -275,7 +275,7 @@ Desktop's true words for these are in Appendix A.
 
 Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.
 
-The REAL FUNDS stamp in a card is an ink fill with ground-coloured caps (12) and a hatch glyph, about 105 x 23. In the header the same glyph and words stand without the fill.
+The REAL FUNDS stamp in a card is an ink fill with ground-coloured caps and a hatch glyph. As built, it takes Cloud's tag (the status contract, H3 app.css `.tag.is-real`): 24 high, caps 11 at 400, a 1px ink edge, 3 in on its hatch side, the hatch a 10 x 14 block of 135 degree strokes, 1.5px every 4px; the risk tag beside it is 24 high and caps 11 too. In the header the same glyph and words stand without the fill.
 
 Where money is shown but not decided (Portfolio's lead, the settled receipt), desktop takes Cloud's quiet mark (PD-05, EC-10; `.vex-rf`, `MainnetMark`): the word MAINNET in ink, 11 caps at 400, after a 10 x 14 hatch of 135 degree strokes, 1.5px every 4px, gap 6, no fill. The solid stamp stays only where money is decided: the waiting card and the Needs you row.
 
@@ -316,7 +316,8 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 **As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
 - the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
 - the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
-- "Account and settings": sans 13, not 14, so it fits its cell (S5-07).
+- "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
+- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word.
 
 Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source. The left column's labels draw about 8% wider than H3's at `--tracking-label` 0.08em, which suggests H3 tracks tighter; the token is unchanged until the mockup source settles it.
 
