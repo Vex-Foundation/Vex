@@ -419,8 +419,11 @@
 
 /* The side line under the market: the Long or Short word in the pair, the
  * leverage after it muted. */
-.lit-order-cell small > [data-trade="up"] { color: var(--vex-alias-trade-up); font-weight: 500; }
-.lit-order-cell small > [data-trade="down"] { color: var(--vex-alias-trade-down); font-weight: 500; }
+/* A side (Long, Short, Buy, Sell) is a word in ink, never the trading pair
+ * (VEX Cloud's DG5-07, docs/design/H3-DESKTOP.md section 5.3): red means
+ * refused. Profit and loss keep their colours above. */
+.lit-order-cell small > [data-side] { color: var(--vex-alias-label-primary); font-weight: 500; }
+.lit-account-row > span[data-side] { color: var(--vex-alias-label-primary); }
 
 /* An empty TP or SL is a quiet "--". */
 .lit-order-cell > [data-empty] { color: var(--lit-ink-muted); }

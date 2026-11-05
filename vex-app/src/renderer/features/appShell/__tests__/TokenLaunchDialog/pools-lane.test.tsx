@@ -545,7 +545,12 @@ describe("pools lane - the R3 paint keeps its meaning without colour", () => {
 
     const sentence = await screen.findByText("Launched 0xabc.");
     expect(swatchIn(withRole(sentence, "status"))).toBe("done");
-    // The dialog now offers Close, and Cancel is gone.
-    expect(screen.getByRole("button", { name: /^close$/i })).toBeTruthy();
+    // The dialog now offers Close in its foot (beside the head band's own
+    // Close cell, docs/design/H3-DESKTOP.md section 5.2), and Cancel is gone.
+    expect(
+      screen
+        .getAllByRole("button", { name: /^close$/i })
+        .filter((key) => key.closest("[data-vex-dialog-head]") === null),
+    ).toHaveLength(1);
   });
 });

@@ -20,9 +20,12 @@ export {
   HISTORY_CAP,
   MAX_VISIBLE_TOASTS,
   NotificationsModel,
-  PURGE_MS,
   TOAST_EXIT_MS,
+  TOAST_HOLD_LONG_MS,
+  TOAST_HOLD_MS,
+  TOAST_LONG_TEXT,
   isSticky,
+  toastHoldMs,
 } from "./notification-model.js";
 export type * from "./types.js";
 

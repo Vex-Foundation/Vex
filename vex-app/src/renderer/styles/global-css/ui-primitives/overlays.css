@@ -75,6 +75,138 @@ dialog[open]::backdrop {
   animation: vex-backdrop-enter 240ms ease-out both;
 }
 
+/* ── The dialog: H3's `.dlg` ───────────────────────────────────────────────
+ * VEX Cloud's H3 dialog (docs/design/H3-DESKTOP.md section 5.2; Cloud's
+ * D2-32, D2-33 and `.vx-dlg`): ONE width, 560 (the window less 32 under it),
+ * confirms included; the card ground in the chosen rule (24%), square, no
+ * shadow. Its head band is 44 high, the 7% rule under it: the optional word
+ * 24 in, and Close, a 44 glyph cell with its left rule, at the end. The
+ * width is stated here, unlayered, so a call site's old `max-w-*` no longer
+ * decides it; a board and a sheet keep their own boxes. */
+dialog.vex-dialog[data-vex-dialog-size="default"] {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.vex-dialog-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 44px;
+  padding-left: 24px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The mark of a decision that waits and the word of the page it belongs to;
+ * with no word the band holds Close alone. */
+.vex-dialog-kicker {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.vex-dialog-kicker::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background-color: var(--vex-alias-label-primary);
+}
+
+.vex-dialog-x {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 100%;
+  margin-left: auto;
+  border-left: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-dialog-x:hover {
+  background-color: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-dialog-x:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* THE FOOT OF CELL KEYS (H3's `.vx-dlg-foot`): where the foot is a row of
+ * keys and nothing else, it is 64 high under the 7% rule and each key is a
+ * full-height cell, at least 150 wide, its left rule shared with its
+ * neighbour. Default tone: the keys on the right, Cancel raised, the confirm
+ * the view's blue. A foot that also holds words keeps its padded row. */
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) {
+  height: 64px;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button] {
+  height: auto;
+  min-width: 150px;
+  padding: 0 26px;
+  border-width: 0 0 0 1px;
+  border-style: solid;
+  border-color: var(--vex-alias-rule);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button]:not([data-vex-button="primary"]):enabled {
+  background-color: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button="primary"] {
+  border-left-color: var(--vex-alias-button-accent-fill);
+}
+
+/* Four keys share the 560: each takes its words, not 150. */
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> :nth-child(4)) > [data-vex-button] {
+  min-width: 0;
+  padding: 0 18px;
+}
+
+/* THE DANGER CONFIRM (Cloud's D2-3 and D2-4): the strong ink key, raised in
+ * the 40% control edge, on the right, beside a frameless Cancel on the left.
+ * Never red and never blue: red is never a key. Which key acts, the order the
+ * keys take focus in and what Esc does are the call site's, unchanged. */
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> [data-vex-button="ink"]:last-child):has(> :nth-child(2)) {
+  justify-content: space-between;
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> [data-vex-button="ink"]:last-child) > [data-vex-button]:first-child:not(:last-child) {
+  border-left-color: transparent;
+  background-color: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> [data-vex-button="ink"]:last-child) > [data-vex-button]:first-child:not(:last-child):hover {
+  color: var(--vex-alias-label-primary);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button="ink"]:last-child {
+  border: 1px solid var(--vex-alias-rule-control);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button="ink"]:last-child:disabled {
+  border-color: var(--vex-alias-rule);
+}
+
 /* ── Sheet over the centre column ──────────────────────────────────────────
  * A modal dialog pinned to the box of the element it covers (sheet.tsx sets
  * the coordinates), paper, no frame of its own: the head's and the foot's
@@ -130,77 +262,69 @@ dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge] [data-vex-sheet-cancel] {
   .vex-sheet-nudge { animation: none; }
 }
 
-/* ── Notification toast stack ──────────────────────────────────────────────
- * The app's ONE floating notification surface (lib/notifications): flat
- * paper panels with an ink rule, stacked top centre at 56, at most three,
- * plus the "+N more" line. Severity is the frame and the fill, never a hue:
- * info has no swatch, a warning takes a 1.5px frame, a failure a 1.5px frame
- * and a 7px hatch band.
+/* ── The toast ─────────────────────────────────────────────────────────────
+ * The app's ONE floating notification surface (lib/notifications), in VEX
+ * Cloud's H3 grammar (docs/design/H3-DESKTOP.md section 5.1; Cloud's
+ * `.vx-tst`): one slot, one floating cell on the plate in the chosen rule,
+ * square, no shadow, at least 44 high. The status column (44) first, the
+ * words (14/1.45, sentence case), each action a key cell on the right edge
+ * (13px caps, ink, its left rule, never blue), the dismiss key last. A
+ * failure is the refusal register: the red 16% over the card ground, the
+ * cross in its column; the words stay ink.
+ *
+ * The region is placed by notification-toast.tsx: 12 under the header,
+ * centred on the content column, or, where a waiting approval card would
+ * meet it, in the header's message slot (the title cell, H3's `.hd-msg`).
  *
  * This sheet owns ONLY the enter and the exit; the HOLD belongs to the model
- * (PURGE_MS per severity, paused by hover and focus, never for a sticky one).
+ * (`toastHoldMs`, paused by hover and focus, never for a sticky one). The
+ * enter is Cloud's: 620ms on the push curve (Cloud's caption curve, the same
+ * control points), 8px down and in.
  * INVARIANT: the exit fade below must run for exactly TOAST_EXIT_MS
  * (notification-model.ts) - the model removes the node when that elapses, so a
- * longer fade is cut off and a shorter one leaves an invisible node holding a
- * slot. */
+ * longer fade is cut off and a shorter one leaves an invisible node holding
+ * the slot. */
 .vex-notification-stack {
   position: fixed;
   top: 56px;
-  left: 50%;
+  left: 0;
   z-index: 1100;
   display: flex;
+  /* One slot; an urgent notification (none is raised yet) is the one thing
+   * the model lets past it, and stands under it. */
   flex-direction: column;
-  align-items: center;
   gap: 8px;
-  width: min(460px, calc(100vw - 48px));
-  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(640px, calc(100vw - 48px));
 }
 
 .vex-notification-toast {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: min(300px, 100%);
+  align-items: stretch;
+  min-width: 0;
   max-width: 100%;
-  padding: 10px 12px 10px 14px;
-  background: var(--vex-alias-bg-base);
-  border: 1px solid var(--vex-alias-rule-ink);
-  color: var(--vex-alias-label-primary);
-  font-size: 14px;
-  line-height: 20px;
-  animation: vex-notification-toast-in 160ms ease-out;
-}
-
-.vex-notification-toast[data-severity="warning"] {
-  border-width: 1.5px;
+  min-height: 44px;
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-toast-bg);
+  color: var(--vex-alias-label-on-plate);
+  font-family: var(--font-sans);
+  animation: vex-notification-toast-in 620ms var(--vex-ease-push);
 }
 
 .vex-notification-toast[data-severity="error"] {
-  border-width: 1.5px;
-  padding-left: 22px;
-}
-
-.vex-notification-toast[data-severity="error"]::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 7px;
-  background: repeating-linear-gradient(45deg, var(--vex-alias-rule-ink) 0 1px, transparent 1px 4px);
-  border-right: 1px solid var(--vex-alias-rule-ink);
+  background: linear-gradient(var(--vex-alias-refusal-tint), var(--vex-alias-refusal-tint)), var(--vex-alias-card);
 }
 
 .vex-notification-toast[data-phase="exiting"] {
-  animation: vex-toast-fade 200ms ease forwards;
+  animation: vex-toast-fade 1000ms ease forwards;
   pointer-events: none;
 }
 
 @keyframes vex-notification-toast-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(-8px);
   }
 
   to {
@@ -215,19 +339,145 @@ dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge] [data-vex-sheet-cancel] {
   }
 }
 
-.vex-notification-toast-icon {
+/* The status column: 44 wide, the mark centred on the first line. */
+.vex-notification-toast__mark {
   display: grid;
-  place-items: center;
   flex: none;
-  height: 20px;
-  color: var(--vex-alias-accent-primary);
+  place-items: center;
+  align-self: stretch;
+  width: 44px;
+  max-height: 44px;
+  color: var(--vex-alias-label-secondary);
 }
 
+.vex-notification-toast__text {
+  align-self: center;
+  min-width: 0;
+  padding: 11px 18px 11px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.vex-notification-toast__title {
+  font-weight: 600;
+}
+
+.vex-notification-toast__title + .vex-notification-toast__message {
+  margin-top: 2px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+}
+
+/* An action is a key cell on the right edge: never blue, never a link. */
+.vex-notification-act,
+.vex-notification-dismiss {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-on-plate);
+  cursor: pointer;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-notification-act {
+  padding: 0 20px;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vex-notification-dismiss {
+  width: 44px;
+  color: var(--vex-alias-label-secondary);
+}
+
+.vex-notification-act:hover:not(:disabled),
+.vex-notification-dismiss:hover {
+  background-color: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-on-plate);
+}
+
+.vex-notification-act:disabled {
+  color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
+}
+
+.vex-notification-act:focus-visible,
+.vex-notification-dismiss:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* What waits behind the one slot, reported under the words. */
 .vex-notification-stack-overflow {
-  align-self: flex-start;
+  margin-top: 4px;
+  color: var(--vex-alias-label-tertiary);
   font-size: 12px;
   line-height: 16px;
-  color: var(--vex-alias-label-tertiary);
+}
+
+/* The progress line: a quiet rule track, an ink fill. */
+.vex-notification-track {
+  height: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+  background: var(--vex-alias-rule-quiet);
+}
+
+.vex-notification-track__fill {
+  height: 100%;
+  background: var(--vex-alias-label-on-plate);
+}
+
+/* THE HEADER'S MESSAGE SLOT (DG-3 decision 16): over a waiting card the toast
+ * takes the header's title cell for its hold, where the window's words
+ * already are: the header's ground, no plate and no frame of its own, the
+ * words 24 in at H3's `.hd-msg` (12/1.35, up to the cell's height), the keys
+ * as the cell's own key cells. The region carries the cell's box. */
+.vex-notification-stack[data-vex-toast-seat="header"] {
+  max-width: none;
+  overflow: hidden;
+}
+
+.vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast {
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--vex-alias-bg-base);
+}
+
+.vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast[data-severity="error"] {
+  background: linear-gradient(var(--vex-alias-refusal-tint), var(--vex-alias-refusal-tint)), var(--vex-alias-bg-base);
+}
+
+.vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast__mark {
+  width: 48px;
+  max-height: none;
+  padding-left: 4px;
+}
+
+/* The slot never grows past the header onto the card: words longer than the
+ * cell scroll inside it, never cut (the whole sentence is in the center and
+ * was announced). */
+.vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast__text {
+  flex: 1;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 8px 18px 8px 0;
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+}
+
+.vex-notification-stack[data-vex-toast-seat="header"] .vex-notification-toast__title + .vex-notification-toast__message {
+  font-size: 12px;
 }
 
 /* Reduced motion drops the entrance (movement) and keeps the exit fade
@@ -240,39 +490,80 @@ dialog.vex-dialog.vex-sheet[data-vex-sheet-nudge] [data-vex-sheet-cancel] {
   }
 
   .vex-notification-toast[data-phase="exiting"] {
-    animation: vex-toast-fade 200ms ease forwards;
+    animation: vex-toast-fade 1000ms ease forwards;
+  }
+
+  .vex-notification-act,
+  .vex-notification-dismiss {
+    transition: none;
   }
 }
 
-/* Toast row controls: a plain hover wash and a quiet rule track for the
- * progress line. */
-.vex-notification-ghost:hover:not(:disabled) {
-  background: var(--vex-alias-interactive-hover);
-}
-
-.vex-notification-track {
-  background: var(--vex-alias-rule-quiet);
-}
-
 /* ── Tooltip ───────────────────────────────────────────────────────────────
- * The existing tooltip tokens: the reversed chrome plate (ink by day, paper
- * at night), no arrow, no motion. */
+ * VEX Cloud's v99 rail tooltip (docs/design/H3-DESKTOP.md section 5.4;
+ * Cloud's `.vx-tip`, D2-25): the dark plate at the top of the ground ladder
+ * with ink words at 12/1.35, pointed by an 8px notch toward its key, 8 from
+ * it, at most 280 wide (a reason wraps). It fades in over 160ms, Cloud's
+ * --vx-tooltip-in; it leaves at once (Cloud fades it out in 220ms). */
 .vex-tooltip {
   position: fixed;
   z-index: 1200;
   /* Fixed-position shrink-to-fit measures only left->viewport-edge space, so
    * right-edge anchors would wrap early; max-content sizes by the label. */
   width: max-content;
-  max-width: 50vw;
-  padding: 4px 8px;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px 10px;
   background: var(--vex-alias-tooltip-bg);
-  color: var(--vex-alias-label-on-chrome);
+  color: var(--vex-alias-label-on-plate);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
   white-space: pre-line;
   overflow-wrap: break-word;
   pointer-events: none;
+  animation: vex-tooltip-in 160ms var(--vex-ease-out);
+}
+
+@keyframes vex-tooltip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The notch: a square turned 45 degrees, half out of the plate toward the key. */
+.vex-tooltip::before {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.vex-tooltip[data-side="right"]::before {
+  top: calc(50% - 4px);
+  left: -4px;
+}
+
+.vex-tooltip[data-side="left"]::before {
+  top: calc(50% - 4px);
+  right: -4px;
+}
+
+.vex-tooltip[data-side="bottom"]::before {
+  top: -4px;
+  left: calc(50% - 4px);
+}
+
+.vex-tooltip[data-side="top"]::before {
+  bottom: -4px;
+  left: calc(50% - 4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-tooltip {
+    animation: none;
+  }
 }
 
 .vex-tooltip[data-side="right"],

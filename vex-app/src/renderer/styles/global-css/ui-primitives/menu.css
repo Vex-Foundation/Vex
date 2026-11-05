@@ -2,8 +2,9 @@
  * card, items, submenu bridge. */
 
 /* ── Menu ──────────────────────────────────────────────────────────────────
- * Dropdown card: the field, one 1px ink rule for an edge (no shadow; the card
- * is told apart by its rule), 4px top and bottom pad, square, NO entry
+ * Dropdown card: VEX Cloud's one menu material (docs/design/H3-DESKTOP.md
+ * section 5.5; DG-2 D2-5): the card ground in the 24% lifted rule, never an
+ * ink border and no shadow, 4px top and bottom pad, square, NO entry
  * animation. Items 32 high at 13.5; a selected row takes the selection wash
  * and keeps its trailing check; a shortcut sits at the right in 12 muted. */
 .vex-menu-root {
@@ -17,8 +18,8 @@
   padding: 4px 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--vex-alias-rule-ink);
-  background: var(--vex-alias-field);
+  border: 1px solid var(--vex-alias-rule-chosen);
+  background: var(--vex-alias-card);
   font-family: var(--font-sans);
   letter-spacing: normal;
   text-transform: none;

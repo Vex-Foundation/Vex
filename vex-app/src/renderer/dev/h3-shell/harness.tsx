@@ -61,8 +61,9 @@
  * The frame carries `data-vex-h3-ready` once the state's own element is on
  * screen and no query is still fetching; a spec waits for it rather than for
  * a timer. `window.__vexH3Harness` exposes the bridge's record (`calls()`,
- * `unanswered()`), its `emit` and the state ids, for the spec and for a
- * person at the console.
+ * `unanswered()`), its `emit`, the state ids and `notify` (a toast through the
+ * window's own notification model, for the toast's seat proof), for the spec
+ * and for a person at the console.
  */
 
 import "./boot.js";
@@ -77,6 +78,8 @@ import { ErrorBoundary } from "../../components/ui/error-boundary.js";
 import { KIMM_SHIPPED_ART } from "../../components/vex/kimm/kimm-assets.js";
 import { KimmArtProvider } from "../../components/vex/kimm/kimm-art-context.js";
 import { ToastHost } from "../../components/ui/toast-host.js";
+import { notifications } from "../../lib/notifications/index.js";
+import type { NotificationInput } from "../../lib/notifications/types.js";
 import { AppShell } from "../../features/appShell/AppShell.js";
 import {
   applyWindowChrome,
@@ -437,6 +440,7 @@ Object.defineProperty(window, "__vexH3Harness", {
     calls: () => bridge?.calls() ?? [],
     unanswered: () => bridge?.unanswered() ?? [],
     emit: (path: `${string}.on${string}`, event: unknown) => bridge?.emit(path, event) ?? 0,
+    notify: (input: NotificationInput) => notifications.notify(input).id,
   },
 });
 

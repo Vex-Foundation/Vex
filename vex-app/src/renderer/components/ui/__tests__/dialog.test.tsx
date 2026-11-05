@@ -9,9 +9,13 @@
  * real small-viewport scroll behaviour is a manual/Playwright check.
  */
 
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
+import { Button } from "../button.js";
 import {
   Dialog,
   DialogBody,
@@ -287,5 +291,105 @@ describe("the jsdom dialog polyfill's focusing steps", () => {
     );
     expect(document.activeElement).toBe(dialog.querySelector("#second"));
     dialog.remove();
+  });
+});
+
+/**
+ * THE H3 DIALOG (docs/design/H3-DESKTOP.md section 5.2; VEX Cloud's `.vx-dlg`,
+ * D2-3, D2-32 and D2-33): one width, a head band with Close, the foot of cell
+ * keys, the danger confirm the strong ink key beside a frameless Cancel. All
+ * of it is look: which key acts, the focus order and what Esc does stay the
+ * call site's.
+ */
+describe("the H3 dialog", () => {
+  const OVERLAYS_CSS = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../styles/global-css/ui-primitives/overlays.css"),
+    "utf8",
+  );
+
+  function mountConfirm(onOpenChange: (next: boolean) => void, onCancel?: () => void) {
+    return render(
+      <Dialog open onOpenChange={onOpenChange}>
+        <DialogContent onCancel={onCancel}>
+          <DialogHeader>
+            <DialogTitle>Remove session?</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="quiet" {...DIALOG_INITIAL_FOCUS}>
+              Cancel
+            </Button>
+            <Button variant="ink">Remove</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>,
+    );
+  }
+
+  it("draws a head band with Close, which takes no Tab stop and closes as Esc does", () => {
+    const onOpenChange = vi.fn();
+    const onCancel = vi.fn();
+    const { container } = mountConfirm(onOpenChange, onCancel);
+    const head = container.querySelector("[data-vex-dialog-head]");
+    expect(head).not.toBeNull();
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(head?.contains(close)).toBe(true);
+    // The keys keep their focus order: Close is reachable by pointer and by
+    // assistive tech, never by Tab.
+    expect(close.getAttribute("tabindex")).toBe("-1");
+    // Initial focus is still the element the dialog named.
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(close);
+    // The very path Esc takes: the dialog's own cancel, then the close intent.
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the footer keys in the Tab order they had", () => {
+    mountConfirm(() => {});
+    const keys = screen.getAllByRole("button").filter((key) => key.getAttribute("tabindex") !== "-1");
+    expect(keys.map((key) => key.textContent)).toEqual(["Cancel", "Remove"]);
+  });
+
+  it("draws no head band on a sheet or a board", () => {
+    for (const size of ["sheet", "board"] as const) {
+      const { container, unmount } = render(
+        <Dialog open onOpenChange={() => {}}>
+          <DialogContent size={size}>
+            <DialogTitle>Board</DialogTitle>
+          </DialogContent>
+        </Dialog>,
+      );
+      expect(container.querySelector("[data-vex-dialog-head]"), size).toBeNull();
+      unmount();
+    }
+  });
+
+  it("names the head band's word when a surface gives one", () => {
+    const { container } = render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent kicker="Chat">
+          <DialogTitle>Delete this chat?</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+    expect(container.querySelector(".vex-dialog-kicker")?.textContent).toBe("Chat");
+  });
+
+  it("raw-CSS contract: 560, the head band, the foot of cell keys and the danger confirm", () => {
+    expect(OVERLAYS_CSS).toMatch(
+      /dialog\.vex-dialog\[data-vex-dialog-size="default"\] \{[^}]*width: min\(560px, calc\(100vw - 32px\)\);/,
+    );
+    expect(OVERLAYS_CSS).toMatch(/\.vex-dialog-head \{[^}]*height: 44px;[^}]*padding-left: 24px;[^}]*border-bottom: 1px solid var\(--vex-alias-rule\);/);
+    expect(OVERLAYS_CSS).toMatch(/\.vex-dialog-x \{[^}]*width: 44px;[^}]*border-left: 1px solid var\(--vex-alias-rule\);/);
+    const foot = OVERLAYS_CSS.slice(OVERLAYS_CSS.indexOf("/* THE FOOT OF CELL KEYS"), OVERLAYS_CSS.indexOf("/* ── Sheet over the centre column"));
+    expect(foot).toMatch(/height: 64px;/);
+    expect(foot).toMatch(/min-width: 150px;/);
+    // The danger confirm: the strong ink key in the 40% edge on the right, a
+    // frameless Cancel on the left; never red, never blue.
+    expect(foot).toMatch(/:has\(> \[data-vex-button="ink"\]:last-child\):has\(> :nth-child\(2\)\) \{\s*justify-content: space-between;/);
+    expect(foot).toMatch(/> \[data-vex-button="ink"\]:last-child \{\s*border: 1px solid var\(--vex-alias-rule-control\);/);
+    const code = foot.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/status-red|trade-down|danger|button-accent-hover/);
   });
 });

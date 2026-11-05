@@ -486,7 +486,8 @@ function PositionsTab({ account, activeMarketId, activeMarkPrice, activePriceDec
                     {position.symbol}
                   </button>
                   <small>
-                    <span data-trade={position.side === "long" ? "up" : "down"}>{position.side === "long" ? "Long" : "Short"}</span> · {leverageText(metrics.leverage, position.marginMode)}
+                    {/* A side is a word in ink (DG5-07, H3-DESKTOP.md section 5.3). */}
+                    <span data-side={position.side}>{position.side === "long" ? "Long" : "Short"}</span> · {leverageText(metrics.leverage, position.marginMode)}
                   </small>
                 </span>
               </span>
@@ -614,7 +615,7 @@ function OpenOrdersTab({ account, cancellingOrders, cancelAllPending, actions }:
                   <b>{order.symbol}</b>
                   <small title={identityTitle}>Order {shortOrderId(order.orderId)}</small>
                 </span>
-                <span role="cell" data-tone={order.side === "buy" ? "positive" : "negative"}>
+                <span role="cell" data-side={order.side}>
                   {order.side === "buy" ? "Buy" : "Sell"}
                 </span>
                 <span className="lit-order-cell" role="cell">
@@ -726,7 +727,7 @@ function FillsTab({ environment }: {
                   <b>{fill.symbol}</b>
                   {detail === null ? null : <small>{detail}</small>}
                 </span>
-                <span role="cell" data-tone={fill.side === "buy" ? "positive" : "negative"}>
+                <span role="cell" data-side={fill.side}>
                   {fill.side === "buy" ? "Buy" : "Sell"}
                 </span>
                 <span role="cell">{num(fill.price)}</span>

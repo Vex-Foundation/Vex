@@ -392,3 +392,125 @@ test.describe("H3 card proof: a waiting money card never moves", () => {
     });
   }
 });
+
+/**
+ * A TOAST NEVER LIES OVER A WAITING CARD (docs/design/H3-DESKTOP.md section
+ * 5.1; VEX Cloud's DG-3 decision 16). The toast stands 12 under the header,
+ * centred on the content column; where a waiting approval card would meet
+ * it, the toast takes the header's message slot instead. Read in a real
+ * browser: a toast is raised through the window's own notification model,
+ * and its box (the region's) must meet no `[data-vex-area="approval-card"]`,
+ * at the widths and heights a person runs, on the chat's swap card and on
+ * the desk's Review order card. A short window must show the detour.
+ */
+test.describe("H3 card proof: a toast never lies over a waiting card", () => {
+  const TOAST_SIZES = [
+    { width: 1280, height: 720 },
+    { width: 1280, height: 800 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+  ] as const;
+  const STATES = ["swap-waiting", "lighter-desk-review"] as const;
+
+  /**
+   * Raise a toast and read its box, its seat and every card's box once it
+   * stands. A card that sits in an open modal dialog (the desk's Review order)
+   * holds the top layer, where the model defers every ordinary toast to the
+   * center: then there is no toast box at all.
+   */
+  async function raise(page: Page, message: string, withAction: boolean): Promise<{
+    readonly seat: string | null;
+    readonly toast: Box | null;
+    readonly cards: readonly Box[];
+    readonly modalCard: boolean;
+  }> {
+    await page.evaluate(
+      ({ text, action }) => {
+        window.__vexH3Harness.notify({
+          severity: "error",
+          scope: { kind: "global" },
+          source: "h3-card-proof",
+          message: text,
+          // Sticky, so it holds while it is read.
+          sticky: true,
+          actions: action ? [{ id: "retry", label: "Retry", rank: "secondary", run: () => {} }] : [],
+        });
+      },
+      { text: message, action: withAction },
+    );
+    // The seat settles in the frame it is measured; give the observers a frame.
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)))),
+    );
+    return page.evaluate(() => {
+      const box = (el: Element): Box => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      const stack = document.querySelector('[data-vex-area="notification-stack"]');
+      const cards = [...document.querySelectorAll('[data-vex-area="approval-card"]')].filter((card) => {
+        const r = card.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+      return {
+        seat: stack?.getAttribute("data-vex-toast-seat") ?? null,
+        toast: stack === null ? null : box(stack),
+        cards: cards.map(box),
+        modalCard: cards.some((card) => card.closest("dialog[open]") !== null),
+      };
+    });
+  }
+
+  const meet = (a: Box, b: Box): boolean =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  for (const state of STATES) {
+    for (const size of TOAST_SIZES) {
+      test(`${state} at ${String(size.width)}x${String(size.height)}`, async ({ page }) => {
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        await page.setViewportSize(size);
+        await page.goto(`/?state=${state}`);
+        await page.waitForSelector('[data-vex-h3-ready="true"]', { timeout: 30_000 });
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+        });
+        for (const [message, action] of [
+          ["Could not refresh the Lighter account. Try again.", false],
+          [
+            "Could not reach the Lighter gateway to read the order book; the desk keeps its last read until it answers again.",
+            true,
+          ],
+        ] as const) {
+          const read = await raise(page, message, action);
+          expect(read.cards.length, "a card is on screen").toBeGreaterThan(0);
+          if (read.modalCard) {
+            // The Review order holds the top layer: the toast waits in the
+            // center and is drawn nowhere.
+            expect(read.toast).toBeNull();
+            continue;
+          }
+          expect(read.toast, "the toast is on screen").not.toBeNull();
+          for (const card of read.cards) {
+            const toast = read.toast as Box;
+            expect(meet(toast, card), `toast ${JSON.stringify(toast)} over card ${JSON.stringify(card)}`).toBe(false);
+          }
+          // The card's top strip (network, REAL FUNDS) starts under the
+          // header's rule at a short window: there the toast must have
+          // stepped into the header.
+          if (state === "swap-waiting" && size.height <= 720) expect(read.seat).toBe("header");
+          await page.evaluate(() => {
+            for (const button of document.querySelectorAll<HTMLButtonElement>(
+              '[data-vex-area="notification-toast"] .vex-notification-dismiss',
+            )) {
+              button.click();
+            }
+          });
+          await expect(page.locator('[data-vex-area="notification-stack"]')).toHaveCount(0);
+        }
+        expect(errors).toEqual([]);
+      });
+    }
+  }
+});
