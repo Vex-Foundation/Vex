@@ -705,12 +705,102 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   color: var(--vex-alias-label-tertiary);
 }
 
-/* The turn error callout (the kit's `.vex-callout`) after the last turn, on
- * the turn's edge (the column's own, as H3 draws Vex's turn), at most 600
- * wide. */
+/* THE TURN ERROR ROW (`TurnErrorRow`; VEX Cloud's `h3-chat-gaps` section 20,
+ * `.t-fail`), after the last turn on the turn's edge: one pattern for every
+ * kind, outcome first. The 1px rule on the cell ground; the body a grid of
+ * 8 | 1fr, 14 apart, padded 14 18 16 16: the 8px red square at 7, the title
+ * 15/1.45 in the refusal ink, the words 14/1.5 in ink 2 (the hint in ink, the
+ * cause and the codes in the mono 11.5 muted); then the key strip, 48 high
+ * under a 1px rule, each key a cell in caps 13 tracked on the raised fill,
+ * padding 0 22, a rule at its right. */
 .vex-turn-error {
-  max-width: 600px;
   margin: 0 0 12px;
+  border: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-bg-layer-3);
+}
+.vex-turn-error__body {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 14px;
+  padding: 14px 18px 16px 16px;
+}
+.vex-turn-error__sq {
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  background: var(--vex-alias-state-error-mark);
+}
+.vex-turn-error__text {
+  min-width: 0;
+  margin: 0;
+}
+.vex-turn-error__title {
+  display: block;
+  color: var(--vex-alias-state-refusal);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.vex-turn-error__words {
+  display: block;
+  margin-top: 3px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.vex-turn-error__hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--vex-alias-label-primary);
+}
+.vex-turn-error__detail,
+.vex-turn-error__code {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: var(--vex-alias-label-tertiary);
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.vex-turn-error__keys {
+  display: flex;
+  height: 48px;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+.vex-turn-error__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 22px;
+  border: 0;
+  border-right: 1px solid var(--vex-alias-rule);
+  background: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.vex-turn-error__key:hover {
+  background: var(--vex-alias-interactive-active);
+}
+.vex-turn-error__key:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  .vex-turn-error__sq {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .vex-turn-error__key {
+    border: 1px solid ButtonText;
+  }
 }
 
 /* ── The thinking row (a persisted Thought row) ──────────────────────────

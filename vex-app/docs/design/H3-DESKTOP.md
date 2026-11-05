@@ -186,7 +186,14 @@ Header cells as in section 1.3. The transcript and the welcome sit 24 in from bo
 | failed | the ink cross | FAILED in the refusal ink; its first line beside the title in the refusal ink |
 | pending (a broadcast not yet confirmed) | the blinking node | PENDING in ink |
 
-A fold's failures read "{n} failed" in the refusal ink beside the ink cross. Times are spelled as Cloud's trace spells them, the unit against the figure: "812ms", "2.8s", "1m 05s". A finished thought in the live frame is the done node.
+A fold's failures read "{n} failed" in the refusal ink beside the ink cross.
+
+**The turn error row** (`TurnErrorRow`, after the last turn; VEX Cloud's `h3-chat-gaps`, "The turn error row, by kind", and its `.t-fail`): one row for every kind of failure, outcome first, never a new layout. The 1px rule on the cell ground; the body 8 | 1fr, 14 apart, padded 14 18 16 16: the 8px status red square at 7, the title 15/1.45 in the refusal ink, the words 14/1.5 in ink 2; then a strip of zero to three key cells, 48 high under a 1px rule, each in caps 13 on the raised fill, padding 0 22, a rule at its right. The row is `role="alert"` and never moves focus; the title and the words read as two. On desktop the kind is the engine error's category (`shared/engine-error-copy.ts`): its title heads the row, and the words are the scope ("This turn failed."), the category's sentence, the remedy in ink, the sanitized cause and the code trailer in the mono 11.5 muted. The strip holds Dismiss ("Dismiss error"), the one key desktop has here; it replaces R3's ink callout (`SessionErrorBanner`).
+
+Open, for the owner:
+- Red titles are Cloud's drawn default (its open question 4): a conflict or a missing chat is not a refusal and could keep the ink.
+- `role="alert"` is Cloud's. Desktop's notification announcer also speaks each failure once (B2.2 dropped the card's live role for that reason), so a screen reader may hear the failure twice; one carrier should stay.
+- VEX Cloud's built `TurnErrorRow` (`apps/web`, 2026-11-05) still draws R3's cross callout; the row above is its drawn DG-4 default. Times are spelled as Cloud's trace spells them, the unit against the figure: "812ms", "2.8s", "1m 05s". A finished thought in the live frame is the done node.
 
 **The swap card** (`h3-merged__approval-*-1440`), printed at 680, 249, 760 x 651, with its top rule at 248. Top to bottom: the eyebrow row (CONFIRM THIS SWAP, then MAINNET, the REAL FUNDS stamp and a collapse chevron at the right), the sentence, the consequence line, field rows on a 34px pitch with their labels in mono caps, ALL SIGNED FIELDS, and the reason field, "Tell Vex what to do instead" (771 to 826). Its decision row is the bottom row (section 1.8). Which rows desktop shows is in section 4.1.
 
