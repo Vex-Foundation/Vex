@@ -646,7 +646,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | H3 | Desktop | Why |
 |---|---|---|
 | THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history shows "{n} steps" only | desktop does not store a turn's duration |
-| CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order", else "Confirm this action" | desktop's card serves every tool family (`approvalActionWord`) |
+| CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order"; any other card, the tool's own title ("Lighter · Fees approve"), and "Confirm this action" only where no tool name is readable | desktop's card serves every tool family (`approvalActionWord`); a card outside them is named as Cloud names its generic card, by the tool's title (DG5-01) |
 | MAINNET, REAL FUNDS | same | every desktop approval moves real funds |
 | "Swap 200 USDC for ETH on Base." | desktop's sentence from the signed arguments; else "{tool title}: review the signed fields" | |
 | "This places a real order on mainnet. It cannot be undone." | same for a swap or an order; "This sends real funds on mainnet. A transfer cannot be reversed." for a transfer; "This moves real funds between chains. It cannot be undone." for a bridge | Cloud's own lines for the transfer and the bridge (the money gaps sheet's `realFundsCopy`) |

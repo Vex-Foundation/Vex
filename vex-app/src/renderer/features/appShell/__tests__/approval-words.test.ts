@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 import type { ApprovalPreview, ApprovalSummaryDto } from "@shared/schemas/approvals.js";
 import {
+  APPROVAL_EYEBROW_FALLBACK,
   APPROVAL_EYEBROW_WORDS,
   CONSEQUENCE_PLACES_ORDER,
   CONSEQUENCE_PLACES_RESTING_ORDER,
@@ -250,10 +251,10 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
     ["lighter order cancel", LIGHTER_CANCEL, "Confirm this order", null],
     ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", TRANSFER_LINE],
     ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", TRANSFER_LINE],
-    ["lighter fee authorization", LIGHTER_FEES, "Confirm this action", null],
-    ["token launch", LAUNCH, "Confirm this action", null],
-    ["generic signed transaction", GENERIC_TX, "Confirm this action", null],
-    ["the user's own MCP tool", MCP, "Confirm this action", null],
+    ["lighter fee authorization", LIGHTER_FEES, "Lighter · Fees approve", null],
+    ["token launch", LAUNCH, "pools.fun · Launch", null],
+    ["generic signed transaction", GENERIC_TX, "WalletEvmTransactionConfirm", null],
+    ["the user's own MCP tool", MCP, "Deepwiki / read wiki structure", null],
   ];
 
   it.each(cases)("%s reads %s, with its consequence line", (_name, preview, eyebrow, consequence) => {
@@ -263,15 +264,26 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   });
 
   it("names every family once, from the same table as the approve key", () => {
-    for (const family of Object.keys(APPROVAL_ACTION_WORDS) as (keyof typeof APPROVAL_ACTION_WORDS)[]) {
-      const word = APPROVAL_EYEBROW_WORDS[family];
-      expect(word).toMatch(/^Confirm this [a-z]+$/);
+    for (const family of Object.keys(APPROVAL_EYEBROW_WORDS) as (keyof typeof APPROVAL_EYEBROW_WORDS)[]) {
+      expect(APPROVAL_EYEBROW_WORDS[family]).toMatch(/^Confirm this [a-z]+$/);
     }
     for (const [, preview] of cases) {
       const approval = approvalFrom(preview);
-      const noun = APPROVAL_ACTION_WORDS[approvalFamily(approval)].replace(/^Approve ?/, "") || "action";
+      const family = approvalFamily(approval);
+      if (family === "other") continue;
+      const noun = APPROVAL_ACTION_WORDS[family].replace(/^Approve ?/, "");
       expect(approvalEyebrowWord(approval)).toBe(`Confirm this ${noun}`);
     }
+  });
+
+  it("names a card outside the families by the tool's own title, as Cloud's generic card does", () => {
+    for (const [, preview] of cases) {
+      const approval = approvalFrom(preview);
+      if (approvalFamily(approval) !== "other") continue;
+      expect(approvalEyebrowWord(approval)).toBe(approvalToolTitle(approval));
+    }
+    // A card with no readable tool name keeps the one fallback.
+    expect(approvalEyebrowWord({ toolName: "", preview: null })).toBe(APPROVAL_EYEBROW_FALLBACK);
   });
 
   it("reads the order line from the tool names alone when the arguments carry no toolId", () => {

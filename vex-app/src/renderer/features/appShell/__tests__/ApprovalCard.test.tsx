@@ -1119,7 +1119,8 @@ describe("ApprovalCard, the H3 head", () => {
       }),
       false,
     );
-    expect(screen.getByText("Confirm this action")).toBeTruthy();
+    // Outside the four families the eyebrow is the tool's own title.
+    expect(document.querySelector(".vex-appr__eyebrow")?.textContent).toBe("WalletEvmTransactionConfirm");
     expect(screen.queryByTestId("approval-consequence")).toBeNull();
     // The card still says what it does: the risk sentence stays.
     expect(screen.getByText("High risk:")).toBeTruthy();
@@ -1515,7 +1516,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
           perpetualFee: "0.02%",
         }),
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "Lighter · Fees approve",
       approve: "Approve trading fees",
       consequence: null,
       realFunds: true,
@@ -1532,7 +1533,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
           criticalArgs: { toolId: "pools.launch_execute", name: "Harbor Token", symbol: "HRBR", pairedAsset: "weth" },
         },
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "pools.fun · Launch",
       approve: "Approve",
       consequence: null,
       realFunds: true,
@@ -1550,7 +1551,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
           criticalArgs: { server: "deepwiki", tool: "read_wiki_structure", arguments: "{}" },
         },
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "Deepwiki / read wiki structure",
       approve: "Approve",
       consequence: null,
       realFunds: false,
@@ -1562,7 +1563,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
         toolName: "WalletEvmTransactionConfirm",
         preview: { toolName: "WalletEvmTransactionConfirm", criticalArgs: { chain: "base", recipient: ADDRESS } },
       }),
-      eyebrow: "Confirm this action",
+      eyebrow: "WalletEvmTransactionConfirm",
       approve: "Approve",
       consequence: null,
       realFunds: true,

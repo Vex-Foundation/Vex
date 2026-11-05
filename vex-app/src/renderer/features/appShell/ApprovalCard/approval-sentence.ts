@@ -122,9 +122,13 @@ function sentence(text: string): string {
 
 /** The tool's human title ("Bridge · Relay"), from the names the approval carries. */
 export function approvalToolTitle(summary: ApprovalTarget): string {
+  return resolveToolIdentity(approvalToolName(summary), null).title;
+}
+
+/** The most specific tool name the approval carries, or "" when it carries none. */
+function approvalToolName(summary: ApprovalTarget): string {
   const args = summary.preview?.criticalArgs ?? null;
-  const name = argText(args, "toolId") ?? summary.preview?.toolName ?? summary.toolName ?? "";
-  return resolveToolIdentity(name, null).title;
+  return (argText(args, "toolId") ?? summary.preview?.toolName ?? summary.toolName ?? "").trim();
 }
 
 function bridgeSentence(args: Args): string | null {
@@ -240,22 +244,34 @@ export function approvalSentence(summary: ApprovalTarget): string {
 
 /**
  * The eyebrow over the card, by tool family: "Confirm this swap", "Confirm
- * this bridge", "Confirm this transfer", "Confirm this order", else "Confirm
- * this action". The family is the action-word table's, so the eyebrow, the
- * approve key ("Approve swap") and the Needs you row can never name one card
- * two ways. Written in sentence case; the eyebrow's style sets the caps.
+ * this bridge", "Confirm this transfer", "Confirm this order". The family is
+ * the action-word table's, so the eyebrow, the approve key ("Approve swap")
+ * and the Needs you row can never name one card two ways. Written in sentence
+ * case; the eyebrow's style sets the caps.
  */
-export const APPROVAL_EYEBROW_WORDS: Readonly<Record<ApprovalFamily, string>> = {
+export const APPROVAL_EYEBROW_WORDS: Readonly<Record<Exclude<ApprovalFamily, "other">, string>> = {
   bridge: "Confirm this bridge",
   order: "Confirm this order",
   swap: "Confirm this swap",
   transfer: "Confirm this transfer",
-  other: "Confirm this action",
 };
 
-/** The card's eyebrow for this approval's family. */
+/**
+ * The eyebrow only a card with no readable tool name keeps, where the tool's
+ * own title would be blank.
+ */
+export const APPROVAL_EYEBROW_FALLBACK = "Confirm this action";
+
+/**
+ * The card's eyebrow for this approval's family. A card outside the four
+ * families names itself by the tool's own title ("Lighter · fees approve"),
+ * as Cloud's generic card does (the money gaps sheet, DG5-01: "the tool's
+ * title"), so no two unlike cards share one eyebrow.
+ */
 export function approvalEyebrowWord(approval: ApprovalTarget): string {
-  return APPROVAL_EYEBROW_WORDS[approvalFamily(approval)];
+  const family = approvalFamily(approval);
+  if (family !== "other") return APPROVAL_EYEBROW_WORDS[family];
+  return approvalToolName(approval).length > 0 ? approvalToolTitle(approval) : APPROVAL_EYEBROW_FALLBACK;
 }
 
 /**
