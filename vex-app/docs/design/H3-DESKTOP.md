@@ -418,8 +418,12 @@ One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the s
 - **Vex never opens her section by herself.** Her cue (a card arriving, a turn ending) changes her mood and her words, never her section's state (printed in the proof's note).
 - **Esc never closes her section.** Esc belongs to the money card; in H3 the first Esc clears a typed instruction and the next rejects. Desktop's card keys are in section 4.3. Esc in Lighter Zen closed the Vex overlay until S2-13 removed it (`AppShell.tsx`).
 - **The first close teaches the way back, once.** For 2.4s the key's name and its keycaps ("Show Vex", Ctrl, Shift, B) stand under the Vex key, over Vex's column only. Cloud shows it once per browser; desktop shows it once per profile, behind a saved flag (S4-15).
-- **The choice is remembered.** Cloud keeps it per browser; desktop keeps it in the persisted layout store, one choice for chats and pages, replacing "Show avatar" and R3's `vexOpenChat` and `vexOpenPages` slots, which migrate into it (S2-11, S4-14). Open: whether pages keep a choice of their own; the plates draw Portfolio both ways but print no rule.
-- **First launch: open.** The sheet's drawn answer for computers.
+- **The choice is remembered, split three ways** (VEX Cloud's PD-12 and its README's "What it remembers"). Cloud keeps it per browser (`vexChat`, `vexPages`; the mockup's `h3.section.chat`, `h3.section.pages` and, under 1024, the session's `h3.section.narrow`); desktop keeps it per profile in the layout store:
+  - **in chats** (and on approvals and in Studio), `vexOpenChat`, persisted, **open** by default; v24 folded R3's "Show avatar" into it, so someone who had hidden her avatar finds her closed;
+  - **on pages** (Portfolio and its subpages, Board, Watchlist, Settings), `vexOpenPages`, persisted, **closed** by default; hiding her on a page never closes her in a chat, nor the other way round;
+  - **under 1024**, `vexOpenNarrow`, **closed on every visit** and kept for the session only (never persisted), so a relaunch starts it closed; nothing narrow writes `vexOpenChat` or `vexOpenPages` (section 1.10).
+  Every saved choice survives the migrations: v22 seeded the two persisted slots only where a payload lacked them, and v24 touched only the chat's.
+- **First launch: open** in chats, closed on pages, closed under 1024. The sheet's drawn answer for computers, and Cloud's PD-12.
 - **The freed room in a chat goes to the console** (drawn): the chat keeps its width, and the console's rest shows under the strip.
 - **Reduced motion and Save-Data** open and close her at once; the glyph field paints one still frame. The first-close hint still shows, without a fade.
 - **Closed costs little.** Closed, only the key's mood sprite loads (the sheet: 415 KB closed against 15 MB open). Her large art loads when her section first opens (S4-05). The glyph field runs only while her section is open and on screen (S4-17).
@@ -567,7 +571,7 @@ Already known for those plates:
 
 ### 4.10 Other desktop rules
 - **A page that can hold a money card keeps the chat layout.** On the Needs you page, closing her folds only her section, never the column, so a card there never moves. Cloud has no such page.
-- Her open or closed choice and the first-close flag live in the persisted layout store, per profile, not per browser (section 3.5).
+- Her open or closed choices (chats, pages; the session's own under 1024) and the first-close flag live in the layout store, per profile, not per browser (section 3.5).
 - First launch opens her. The sheet's question whether hiding her on the home page also hides her in the app does not apply to desktop.
 - There is no phone layout. The window floor is 1000 x 720, and the band borrows from the phone only between 1000 and 1023 (section 1.10).
 - One release carries the new look, with no flag.

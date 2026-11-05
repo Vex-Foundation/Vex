@@ -70,6 +70,13 @@ export function selectVexOpen(
  * current class's slot only (the Lighter desk writes `vexOpenLighter`, never
  * the table pages' slot).
  *
+ * THE CHOICE IS SPLIT (docs/design/H3-DESKTOP.md section 3.5; VEX Cloud's
+ * PD-12): chats remember theirs (`vexOpenChat`, open by default), the table
+ * pages theirs (`vexOpenPages`, closed by default), and under 1024 her band
+ * keeps the session's own (`vexOpenNarrow`, closed on every visit, never
+ * persisted, written by the frame with `setVexOpenNarrow`): this patch never
+ * writes it, and the frame never calls this under 1024.
+ *
  * WHAT THE SLOTS MEAN (docs/design/H3-DESKTOP.md sections 1.9 and 3.5). In
  * the agent shell and Studio `vexOpenChat` now shows or hides her plate
  * inside a column that always stands in a chat, and `vexOpenPages` folds the
