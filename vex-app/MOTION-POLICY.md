@@ -61,6 +61,12 @@ here is a defect:
   are hers alone: nothing else may borrow them. Her wipe animates clip-path,
   transform and opacity only, never a size, so the money card beside her
   never moves (section 3.6); reduced motion and Save-Data land her at once.
+  The wipe runs on Web Animations (`components/vex/kimm/kimm-wipe.ts`), as
+  VEX Cloud's mockup runs it, so its clip and its 1px scan head share one
+  clock from one edge. The scan head runs on the open and on the close, at
+  full light until 92% of the leg (`KIMM_SCAN_FADE_AT`) and then fading
+  linearly out over the leg's last 8%: an opacity keyed to the leg, not a
+  duration of its own.
 - The running blink, 600ms a cycle (`--vex-duration-blink`,
   `DURATION_BLINK_MS`) on `steps(2, end)`: a running square's opacity steps
   from 1 to 0.25 and back (PD-06, `docs/design/H3-DESKTOP.md` section 2.2).
@@ -158,8 +164,12 @@ and where each part is stated:
   it before first paint and follows the connection's change event
   (`stampSaveData`, `use-still-frame.ts`), and `base.css` carries a twin of
   the reduced-motion catch-all under it, with the same one opt-out. A
-  CSS-only motion, Kimm's clip-path wipe included
-  (`docs/design/H3-DESKTOP.md` section 3.7), lands at once under either;
+  CSS-only motion lands at once under either;
+- Kimm's wipe is Web Animations, which no catch-all reaches, so it takes
+  the instant path in JS: under either, `KimmSection` reads
+  `prefersStillFrame()` at the press, starts no animation and rests her
+  phase at once; the sheet's resting insets are the whole of her
+  (`docs/design/H3-DESKTOP.md` section 3.7);
 - the stage and the shell crossfade over a fixed 240ms linear (the opt-out
   above). Nothing slides.
 
@@ -201,8 +211,11 @@ motion.
   transition. Reduced motion snaps the tracks.
 - **Her section opens and closes in its own wipe.** Kimm's section, the
   welcome's column included, opens in a 720ms clip-path wipe and closes in a
-  420ms one (`KimmSection`, kimm.css; `docs/design/H3-DESKTOP.md` section
-  3.1). Under the still frame she simply appears or folds.
+  420ms one, Web Animations started at the press (`KimmSection`,
+  `kimm-wipe.ts`; the resting insets in kimm.css;
+  `docs/design/H3-DESKTOP.md` section 3.1). A press during a leg stops it
+  and starts the next from the edge where it stood. Under the still frame
+  she simply appears or folds.
 - **A hide lands at the press.** When the user hides her (the header's Vex
   key, the desk's token chip, Cmd or Ctrl + Shift + B), the toggle writes the
   store at once and her section's wipe is the close
@@ -232,8 +245,12 @@ Live pairs:
 |---|---|---|
 | `TOAST_EXIT_MS` | `.vex-notification-toast[data-phase="exiting"]`, overlays.css | a cut-off fade, or an invisible node holding the slot |
 | `SECTION_SETTLE_MS` (`book/ReorderableSection.tsx`) | `.vex-section-settle`, motion-primitives.css (240ms) | the class is removed mid-settle, or held after it |
-| `DURATION_VEX_CLOSE_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `closing` phase when no `transitionend` comes) | `.vex-kimm[data-kimm-open="false"]`'s clip-path transition, kimm.css (`--vex-duration-vex-close`) | her figure gives way to the strip mid-wipe, or she reads as closing after the wipe has ended |
-| `DURATION_VEX_OPEN_MS` (`components/vex/kimm/KimmSection.tsx`, the end of her `opening` phase when no `transitionend` comes) | `.vex-kimm`'s clip-path transition, kimm.css (`--vex-duration-vex-open`) | the scan head goes before the wipe reaches her foot, or stays after it |
+| `DURATION_VEX_OPEN_MS` (`components/vex/kimm/kimm-wipe.ts`, her open's clip and scan head) | `.vex-kimm__drop`'s transform transition, kimm.css (`--vex-duration-vex-open`) | her drop lands before or after the wipe reaches her foot |
+| `DURATION_VEX_CLOSE_MS` (`components/vex/kimm/kimm-wipe.ts`, her close's clip and scan head) | `.vex-kimm[data-kimm-open="false"] .vex-kimm__drop`'s delayed step, kimm.css (`--vex-duration-vex-close`) | she is raised for the next open while the strip still shows her |
+
+The wipe itself is no pair: its clip, its scan head and the end of her
+phase are one Web Animation's, timed by the JS constants alone; the sheet
+holds only her resting insets.
 
 
 CSP for the renderer is strict: `style-src 'self'`: no `'unsafe-inline'`, no
@@ -331,6 +348,10 @@ If a primitive injects runtime `<style>`, two options exist:
 
 - `motion.div`, `motion.span`, etc. with `initial`, `animate`, `exit`,
   `transition` props (React-JSX path).
+- `element.animate()` (Web Animations) for Kimm's wipe (`kimm-wipe.ts`):
+  its keyframes are values handed to the animation engine, not a style
+  string parsed into a `style` attribute or a stylesheet, so `style-src`
+  does not govern it.
 - `useAnimate`, `useScroll`, `useTransform` hooks.
 - `AnimatePresence` for component mount/unmount transitions WITHOUT
   `layout`/`layoutId`.

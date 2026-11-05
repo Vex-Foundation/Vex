@@ -76,14 +76,10 @@
   bottom: 1px;
   left: 0;
   overflow: hidden;
-  /* Open, the whole box. An inset, not `none`: the wipe interpolates
-   * between two insets, and `none` to an inset does not interpolate.
-   * SHOW VEX (section 3.1; S4-08): the wipe grows to her foot in 720ms on
-   * the push curve, a JS/CSS PAIR like the close's (`KimmSection.tsx` ends
-   * her `opening` phase on this transition's end, or after
-   * `DURATION_VEX_OPEN_MS`, the mirror of `--vex-duration-vex-open`). */
+  /* Open, the whole box: where an open rests. The wipe between this and the
+   * strip is a Web Animation (`kimm-wipe.ts`, started by `KimmSection.tsx`),
+   * so the sheet states the resting insets and no transition. */
   clip-path: inset(0 0 0 0);
-  transition: clip-path var(--vex-duration-vex-open) var(--vex-ease-push);
   /* Her drop into place as she opens: printed, "Kimm drops 32 px". */
   --vex-kimm-drop: 32px;
 }
@@ -147,17 +143,16 @@
 }
 
 /* ---- the scan head (section 3.2; S4-08) ----
- * A 1px line keyed to the wipe's edge: a layer as tall as her box, moved by
- * a transform on the clip's own duration and curve, whose foot line sits at
- * the edge on every frame (closed, at the strip's 56; open, at her foot).
- * Drawn only while she opens. Open: its colour; ink here. */
+ * A 1px line keyed to the wipe's edge, on the open and on the close: a layer
+ * as tall as her box whose foot line is the edge, moved up by the clip's
+ * inset on its own duration and curve (`kimm-wipe.ts`). It holds its light
+ * until 92% of the leg, then fades linearly out. Its ink is Cloud's scan
+ * head, oklch(97% 0.005 264 / 0.85). At rest it is unlit. */
 .vex-kimm__scan {
   position: absolute;
   inset: 0;
   opacity: 0;
   pointer-events: none;
-  transform: none;
-  transition: transform var(--vex-duration-vex-open) var(--vex-ease-push);
 }
 .vex-kimm__scan::after {
   content: "";
@@ -166,14 +161,7 @@
   bottom: 0;
   left: 0;
   height: 1px;
-  background: var(--vex-alias-label-primary);
-}
-.vex-kimm[data-kimm-open="false"] .vex-kimm__scan {
-  transform: translateY(calc(var(--vex-h3-strip-h) - 100%));
-  transition: transform var(--vex-duration-vex-close) var(--vex-ease-push);
-}
-.vex-kimm[data-kimm-phase="opening"] .vex-kimm__scan {
-  opacity: 1;
+  background: var(--vex-alias-scan-head);
 }
 
 /* ---- closed: the strip (sections 1.5 and 3.2) ----
@@ -185,13 +173,10 @@
  * gives way to it once the close has ended (`data-kimm-phase`).
  *
  * HIDE VEX (section 3.1; S4-07): the wipe rises to the strip's edge in 420ms
- * on the push curve. The duration is a JS/CSS PAIR (MOTION-POLICY.md,
- * "Cross-file timing invariants"): `KimmSection.tsx` ends her `closing`
- * phase on this transition's end, or after `DURATION_VEX_CLOSE_MS`, the
- * mirror of `--vex-duration-vex-close`. Only clip-path moves. */
+ * on the push curve, a Web Animation that lands on this inset
+ * (`kimm-wipe.ts`). Only clip-path moves. */
 .vex-kimm[data-kimm-open="false"] {
   clip-path: inset(0 0 calc(100% - var(--vex-h3-strip-h)) 0);
-  transition: clip-path var(--vex-duration-vex-close) var(--vex-ease-push);
 }
 .vex-kimm__strip {
   position: absolute;
@@ -259,29 +244,22 @@
 }
 
 /* ---- the still frame (sections 3.1 and 3.5; S4-10) ----
- * Reduced motion and Save-Data open and close her at once: her own collapse,
- * stated here so the wipe is provably still in isolation (MOTION-POLICY.md,
- * "State your own collapse"), beside the catch-alls in base.css. Every rule
- * that moves her is named at its own specificity, so none outranks the
- * collapse. Save-Data reaches CSS as `data-still` on <html>
- * (`use-still-frame.ts`); `KimmSection.tsx` rests her phase at once under
- * either. */
+ * Reduced motion and Save-Data open and close her at once. The wipe and the
+ * scan head are Web Animations, which no sheet can collapse: under either,
+ * `KimmSection.tsx` starts none and rests her phase at the press, and the
+ * resting insets above are the whole of her. What the sheet still moves
+ * states its own collapse here (MOTION-POLICY.md, "State your own
+ * collapse"), beside the catch-alls in base.css, each rule named at its own
+ * specificity so none outranks the collapse. Save-Data reaches CSS as
+ * `data-still` on <html> (`use-still-frame.ts`). */
 @media (prefers-reduced-motion: reduce) {
-  .vex-kimm,
-  .vex-kimm[data-kimm-open="false"],
   .vex-kimm__drop,
-  .vex-kimm[data-kimm-open="false"] .vex-kimm__drop,
-  .vex-kimm__scan,
-  .vex-kimm[data-kimm-open="false"] .vex-kimm__scan {
+  .vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
     transition: none;
   }
 }
-html[data-still] .vex-kimm,
-html[data-still] .vex-kimm[data-kimm-open="false"],
 html[data-still] .vex-kimm__drop,
-html[data-still] .vex-kimm[data-kimm-open="false"] .vex-kimm__drop,
-html[data-still] .vex-kimm__scan,
-html[data-still] .vex-kimm[data-kimm-open="false"] .vex-kimm__scan {
+html[data-still] .vex-kimm[data-kimm-open="false"] .vex-kimm__drop {
   transition: none;
 }
 

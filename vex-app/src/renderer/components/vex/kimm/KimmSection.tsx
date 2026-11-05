@@ -50,6 +50,11 @@
  * tooltip adds the chord ("Hide Vex (Ctrl+Shift+B)", Appendix A.9). It
  * writes the same stored choice the Vex key writes (`onOpenChange`).
  *
+ * THE WIPE IS WEB ANIMATIONS (`kimm-wipe.ts`), started at the press in a
+ * layout effect, so its first frame is the press's frame. The sheet holds
+ * her at rest, open or at the strip; a leg animates between those insets and
+ * is cancelled when it ends, its last frame being the resting state.
+ *
  * HIDE VEX CLOSES HER IN 420MS (sections 3.1 and 3.2; plan row S4-07): the
  * wipe rises from her foot to the strip's edge on her clip-path, on the push
  * curve, cubic-bezier(0.22, 1, 0.36, 1) ("arrive slowly, leave fast"). Only
@@ -58,35 +63,30 @@
  * the wipe and gives way to the strip's frame when it ends.
  *
  * SHOW VEX OPENS HER IN 720MS (sections 3.1 and 3.2; plan row S4-08): the
- * wipe grows from the strip's edge down to her foot on the same curve, behind
- * a 1px scan head keyed to the same edge (a layer the height of her box,
- * moved with the clip on the same duration and curve, so its foot line IS
- * the wipe's edge on every frame), and her figure drops 32px into place over
- * the same 720ms. The scan head draws only while she opens (the close plate
- * does not draw it); her figure takes its raised place only once a close has
- * ended, so it never rises in view.
+ * wipe grows from the strip's edge down to her foot on the same curve, and
+ * her figure drops 32px into place over the same 720ms.
+ *
+ * THE SCAN HEAD RUNS BOTH WAYS (section 3.2): a 1px line in Cloud's scan-head
+ * ink (oklch 97% at 85%) keyed to the wipe's edge on the open and on the
+ * close, a layer the height of her box moved with the clip on the same
+ * duration and curve, so its foot line IS the edge on every frame. It holds
+ * its light until 92% of the leg, then fades linearly out.
  *
  * A PRESS DURING THE MOTION TURNS IT AROUND FROM WHERE IT IS (section 3.4;
  * plan row S4-09): Hide Vex, then Show Vex 80ms later, and the wipe goes no
  * deeper after the second press, reverses from the edge where it stands
- * without a jump, and ends open; the words follow the press. The wipe is a
- * CSS transition, and a transition sent back to where it came from reverses
- * from its current value on the leg's curve over the share of the leg it had
- * covered ("the push curve from the current inset over the part of 720ms
- * that is left", the plate's default). This component's part is to start the
- * new leg AT the press: the layout effect reads her clip, which makes the
- * style change, and with it the reversed transition, happen then, not a
- * frame later. The phase follows the last press, and its timer is the new
- * leg's (the old one is cleared), so the reversed leg ends on its own
- * `transitionend`, well inside that bound.
+ * without a jump, and ends open; the words follow the press. The layout
+ * effect reads the running leg's inset, cancels it and starts the new leg
+ * from there, over the share of its direction's duration the distance left
+ * asks for (`kimmLegMs`). The phase follows the last press.
  *
  * THE STILL FRAME (sections 3.1 and 3.5; plan row S4-10): under reduced
- * motion and under Save-Data she opens and closes at once, in both halves of
- * the pair. The sheet states its own collapse (kimm.css, beside the
- * catch-alls in base.css, `prefers-reduced-motion` and `html[data-still]`),
- * and here a press read under `prefersStillFrame()` rests the phase at once,
- * so no one who asked for less motion waits out a wipe that is not playing:
- * no `opening` or `closing`, no scan head, no drop, no timer.
+ * motion and under Save-Data she opens and closes at once. A press read
+ * under `prefersStillFrame()` starts no Web Animation and rests the phase at
+ * once, so no one who asked for less motion waits out a wipe: no `opening`
+ * or `closing`, no scan head, no drop, no timer. What the sheet itself moves
+ * states its own collapse (kimm.css, beside the catch-alls in base.css,
+ * `prefers-reduced-motion` and `html[data-still]`).
  *
  * WHILE SHE MOVES (section 3.4; plan row S4-11): her section's body is inert
  * from the press until the wipe ends, so nothing in it takes a click or
@@ -102,13 +102,11 @@
  * THE PHASE is the motion's moment, beside the choice: `open` is what the
  * last press asked for, `data-kimm-phase` where she is in getting there
  * (`opening` or `closing` until the wipe ends, then `open` or `closed`). The
- * CSS transition IS the wipe; the phase follows it, ending on the clip's own
- * `transitionend`, or when the leg's duration has elapsed if no end ever
- * comes (a section not on screen paints no transition). Those timers and the
- * sheet's `--vex-duration-vex-open` and `--vex-duration-vex-close` are pairs
- * (MOTION-POLICY.md, "Cross-file timing invariants"): `DURATION_VEX_OPEN_MS`
- * and `DURATION_VEX_CLOSE_MS` are the CSS tokens' mirrors, asserted by
- * `motion-tokens.test.ts`, and the sheet names this file beside them.
+ * phase ends when the leg's clip animation finishes, or, where no wipe could
+ * start (a box not laid out, no Web Animations), when its direction's
+ * duration has elapsed (`DURATION_VEX_OPEN_MS`, `DURATION_VEX_CLOSE_MS`, the
+ * mirrors of the sheet's `--vex-duration-vex-open` and
+ * `--vex-duration-vex-close`, asserted by `motion-tokens.test.ts`).
  *
  * THE MOUNT. This component draws; the feature that mounts it
  * (`features/vex/VexPortraitPlate.tsx`, in the Vex column) maps her presence
@@ -119,7 +117,7 @@
  * Vex key and the console, so nothing depends on the picture.
  */
 
-import { useLayoutEffect, useRef, useState, type JSX, type TransitionEvent } from "react";
+import { useLayoutEffect, useRef, useState, type JSX } from "react";
 import { LineChevronDown, LineClose } from "../../icons/line/index.js";
 import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS } from "../../../lib/motion/index.js";
 import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
@@ -128,6 +126,7 @@ import { useKimmArt } from "./kimm-art-context.js";
 import { handFocusToVexKey } from "./kimm-focus.js";
 import { KimmField } from "./KimmField.js";
 import { setKimmPhase, type KimmPhase } from "./kimm-section-state.js";
+import { startKimmWipe, type KimmWipe } from "./kimm-wipe.js";
 
 export type { KimmPhase };
 
@@ -143,13 +142,6 @@ export function legOf(open: boolean): KimmLeg {
   return open
     ? { moving: "opening", rest: "open", ms: DURATION_VEX_OPEN_MS }
     : { moving: "closing", rest: "closed", ms: DURATION_VEX_CLOSE_MS };
-}
-
-/** The phase a motion rests in when it ends; a resting phase stays. */
-function restOf(phase: KimmPhase): KimmPhase {
-  if (phase === "opening") return "open";
-  if (phase === "closing") return "closed";
-  return phase;
 }
 
 /** The Vex toggle's chord on this platform, as the corner key spells it. */
@@ -203,19 +195,20 @@ export function KimmSection({
   const shown = useRef(open);
   const box = useRef<HTMLDivElement | null>(null);
   const key = useRef<HTMLButtonElement | null>(null);
+  // The leg that is running, if any (see "THE WIPE IS WEB ANIMATIONS").
+  const wipe = useRef<KimmWipe | null>(null);
   useLayoutEffect(() => {
     if (shown.current === open) return undefined;
     shown.current = open;
-    if (box.current !== null) {
-      // FOCUS (see "WHILE SHE MOVES"): what her press is about to hide hands
-      // its focus to the Vex key; her corner key keeps its own.
-      handFocusToVexKey(box.current, key.current, open);
-      // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): read
-      // her clip now, so the new leg's transition starts at the press, from
-      // the wipe's edge as it stands, rather than at the next style pass, a
-      // frame or more later, while the old leg would have gone on deeper.
-      void getComputedStyle(box.current).clipPath;
-    }
+    // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): the
+    // running leg's edge, read before the leg is stopped.
+    const turning = wipe.current;
+    const from = turning === null ? null : turning.inset();
+    turning?.cancel();
+    wipe.current = null;
+    // FOCUS (see "WHILE SHE MOVES"): what her press is about to hide hands
+    // its focus to the Vex key; her corner key keeps its own.
+    if (box.current !== null) handFocusToVexKey(box.current, key.current, open);
     const leg = legOf(open);
     // REDUCED MOTION AND SAVE-DATA land her at once (see "THE STILL FRAME").
     if (prefersStillFrame()) {
@@ -223,16 +216,30 @@ export function KimmSection({
       return undefined;
     }
     setPhase(leg.moving);
-    // The pair of `--vex-duration-vex-open` and `--vex-duration-vex-close`
-    // (kimm.css): the wipe's own end normally lands first, through
-    // `transitionend`.
-    const timer = window.setTimeout(() => setPhase(leg.rest), leg.ms);
-    return () => window.clearTimeout(timer);
+    const run = box.current === null ? null : startKimmWipe(box.current, open, from);
+    if (run === null) {
+      // No wipe to watch: the leg ends on its direction's duration.
+      const timer = window.setTimeout(() => setPhase(leg.rest), leg.ms);
+      return () => window.clearTimeout(timer);
+    }
+    wipe.current = run;
+    void run.finished.then((ended) => {
+      if (!ended || wipe.current !== run) return;
+      wipe.current = null;
+      // Its last frame is the sheet's resting state: stopping it moves nothing.
+      run.cancel();
+      setPhase(leg.rest);
+    });
+    return undefined;
   }, [open]);
-  const onTransitionEnd = (event: TransitionEvent<HTMLDivElement>): void => {
-    if (event.target !== event.currentTarget || event.propertyName !== "clip-path") return;
-    setPhase(restOf);
-  };
+  // A section that leaves mid-motion stops its leg.
+  useLayoutEffect(
+    () => () => {
+      wipe.current?.cancel();
+      wipe.current = null;
+    },
+    [],
+  );
   // Her phase, for the console's rest under her (`kimm-section-state.ts`).
   useLayoutEffect(() => {
     if (reportsPhase) setKimmPhase(phase);
@@ -251,7 +258,6 @@ export function KimmSection({
       data-vex-area="kimm-section"
       data-kimm-open={open ? "true" : "false"}
       data-kimm-phase={phase}
-      onTransitionEnd={onTransitionEnd}
       data-kimm-mood={mood}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
       className="vex-kimm"

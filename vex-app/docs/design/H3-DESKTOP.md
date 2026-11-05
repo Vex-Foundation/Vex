@@ -431,12 +431,15 @@ The card's box is 680, 249, 760 x 651 and the section's is 248, 264, 432 x 563 o
 
 **Opening:** the wipe grows from the strip's edge down to the foot line, behind a 1px scan head keyed to the same edge. The glyph field starts to run. Kimm drops 32px into place. The corner key says HIDE VEX from the press.
 
-**Closing:** the wipe rises back to the strip's edge in 420ms. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
+**Closing:** the wipe rises back to the strip's edge in 420ms, behind the same scan head. The field holds its frame in the strip. The key says SHOW VEX from the press. The console's rest stays inert until the close has ended.
+
+**The scan head** (settled 2026-11-05 from VEX Cloud's mockup source, `h3-merged/js/stage.js` and `css/tokens.css`): a 1px line in Cloud's `--vx-scan-head`, oklch(97% 0.005 264 / 0.85) (desktop's `--vex-alias-scan-head`, the ink at 85%), keyed to the wipe's edge on the open and on the close, on the clip's own curve and duration. Its opacity stays 1 until 92% of the leg, then falls linearly to 0, so it is never left standing at her foot or at the strip.
+
+**The engine.** Desktop runs the wipe as Cloud's mockup does, on Web Animations (`components/vex/kimm/kimm-wipe.ts`): the clip's inset and the scan head's place are one leg on one clock, started at the press. The sheet (`kimm.css`) holds only her resting insets, open and at the strip; a leg's last frame is that resting state, and the leg is stopped when it ends. A box that is not laid out starts no wipe, and her phase then ends on the leg's duration.
 
 Open, each settled by the mockup source:
 - the drop's duration and curve (default: the push curve over the 720ms);
-- whether her figure also fades in (an opacity change is allowed);
-- the scan head's colour, and whether it also draws while closing (the close plate does not mention it).
+- whether her figure also fades in (an opacity change is allowed).
 
 ### 3.3 The controls
 One meaning everywhere: Hide Vex closes her section, Show Vex opens it, in the same place. Three controls carry it:
@@ -487,7 +490,9 @@ What desktop stops doing, because R3 does it and H3 forbids it:
 - 720ms and 420ms, as her section's open and close, named in the policy's exception list;
 - the push curve, cubic-bezier(0.22, 1, 0.36, 1), as a fourth curve, for her section;
 - the glyph field's loop as a named exception beside K2's portrait, bound by the run gate and the still frame (S4-17);
-- Save-Data on `html` as an attribute (S1-13), so the wipe collapses in CSS as well as in JS.
+- Save-Data on `html` as an attribute (S1-13), so what the sheet moves collapses in CSS as well as in JS.
+
+The wipe itself is Web Animations (section 3.2, "The engine"), which no stylesheet collapses: under reduced motion and Save-Data `KimmSection` starts none and rests her phase at the press.
 
 Any JS timer paired with these durations follows the policy's cross-file pair rule.
 
