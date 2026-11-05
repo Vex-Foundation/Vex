@@ -61,6 +61,15 @@ here is a defect:
   are hers alone: nothing else may borrow them. Her wipe animates clip-path,
   transform and opacity only, never a size, so the money card beside her
   never moves (section 3.6); reduced motion and Save-Data land her at once.
+- The running blink, 600ms a cycle (`--vex-duration-blink`,
+  `DURATION_BLINK_MS`) on `steps(2, end)`: a running square's opacity steps
+  from 1 to 0.25 and back (PD-06, `docs/design/H3-DESKTOP.md` section 2.2).
+  It is VEX Cloud's built `--vx-blink`, a cross-app contract like Kimm's
+  timings. It is the drawing of a live state, not decoration: it runs only
+  while the running, working or pending state lasts, and every running square
+  in view blinks in phase (`StateSquare` pins its animation to document time
+  zero). Reduced motion and Save-Data hold it still as half a square, so it
+  never reads as the solid Filled square (`ui-primitives/marks.css`).
 
 ### The easing family
 

@@ -1,9 +1,16 @@
 /**
- * Session-agnostic engine-error card: the turn error callout of
- * docs/design/R3-MINIMAL.md section 6, drawn with the kit's `ErrorCallout`
- * (1.5px ink frame, 8px hatch band, never red): the error fill and the scope
- * title ("This turn failed"), the cause line, the hint, the remedy, the code
- * trailer in the mono 11.5 muted, and Dismiss.
+ * Session-agnostic engine-error card: the turn error row of
+ * docs/design/H3-DESKTOP.md section 1.7 (`TurnErrorRow`, VEX Cloud's one row
+ * for every kind): the red square and the category's title in the refusal
+ * ink, then the words in ink 2 (whose failure it is, what the category means,
+ * the sanitized real cause, the remedy, and the code trailer in the mono 11.5
+ * muted), then the key strip, which holds Dismiss. It replaces R3's ink
+ * callout.
+ *
+ * ONE ROW PER KIND. The kind is the classified category
+ * (`shared/engine-error-copy.ts`): its title heads the row, its sentence
+ * follows. The scope ("This turn failed", "The mission run failed") opens the
+ * words, so the outcome leads and whose it is follows.
  *
  * Mounted by `SessionPanel` for EVERY session, mission or agent. The mission
  * paused_error alert lives inside `MissionControls`, which only renders when
@@ -13,21 +20,18 @@
  *
  * ## What it is, after B2.2
  *
- * The CONTEXTUAL surface, and only that. The app-wide "a failure happened"
- * signal is now a notification (raised by `engineErrorStore` on the same
- * event), which announces once, retains, and is re-readable in the
- * notification center. This card is where the failure is READ in place: the
- * bounded codes turned into fixed copy (`shared/engine-error-copy.ts`), the
- * SANITIZED real cause as `detail`, the remedy action hint (owner decree
- * 2026-08-02) and the small monospace code trailer a user quotes in a bug
- * report. All of that is more than one notification message can carry, which
- * is why the card stayed rather than being folded away.
+ * The CONTEXTUAL surface. The app-wide "a failure happened" signal is a
+ * notification (raised by `engineErrorStore` on the same event), which
+ * announces once, retains, and is re-readable in the notification center.
+ * This row is where the failure is READ in place: the bounded codes turned
+ * into fixed copy, the SANITIZED real cause as `detail`, the remedy action
+ * hint (owner decree 2026-08-02) and the small monospace code trailer a user
+ * quotes in a bug report.
  *
- * `role="alert"` is deliberately GONE with the migration. The notification
- * announcer speaks each failure once, from the model event; leaving a live
- * role on this card as well would speak the same failure twice for anyone
- * with a screen reader open, and a card that renders whenever its session is
- * on screen would also re-announce on every remount.
+ * `role="alert"` is VEX Cloud's (the row "is an alert, never moves focus").
+ * B2.2 had dropped it because the notification announcer already speaks each
+ * failure once, so with both a screen reader may hear the failure twice; the
+ * owner decides which carrier stays (H3-DESKTOP.md section 1.7).
  *
  * Dismissible, unlike the standing `MissionErrorAlert`: this is a "what just
  * happened" signal for a discrete failure, not a standing state. Dismissing
@@ -39,13 +43,13 @@
 
 import type { JSX } from "react";
 import { engineErrorCopy } from "@shared/engine-error-copy.js";
-import { ErrorCallout } from "../../components/ui/error-callout.js";
 import {
   engineErrorActionHint,
   engineErrorCodeTrailer,
   sessionScopeLabel,
 } from "../../stores/engine-error-notice.js";
 import { useEngineErrorStore } from "../../stores/engineErrorStore.js";
+import { TurnErrorRow } from "./TurnErrorRow.js";
 
 export function SessionErrorBanner({
   sessionId,
@@ -62,33 +66,34 @@ export function SessionErrorBanner({
   const codes = engineErrorCodeTrailer(event);
 
   return (
-    <ErrorCallout
-      data-vex-area="session-error-banner"
-      data-vex-category={event.category}
-      className="vex-turn-error"
-      title={sessionScopeLabel(event.scope)}
-      cause={copy.title}
-      hint={
+    <TurnErrorRow
+      area="session-error-banner"
+      kind={event.category}
+      title={copy.title}
+      words={
         <>
-          <span className="block">{copy.body}</span>
+          <span className="block">
+            {sessionScopeLabel(event.scope)}. {copy.body}
+          </span>
+          {actionHint !== null ? (
+            <span className="vex-turn-error__hint">{actionHint}</span>
+          ) : null}
           {/* Sanitized REAL cause (decree 2026-08-02) - technical register. */}
           {event.detail !== null ? (
-            <span className="mt-1 block break-words font-code text-[12px] leading-[1.5] text-ink-tertiary">
-              {event.detail}
-            </span>
+            <span className="vex-turn-error__detail">{event.detail}</span>
           ) : null}
-          {actionHint !== null ? (
-            <span className="mt-1.5 block font-semibold text-ink-primary">
-              {actionHint}
-            </span>
-          ) : null}
+          {codes !== null ? <span className="vex-turn-error__code">{codes}</span> : null}
         </>
       }
-      code={codes ?? undefined}
-      dismissLabel="Dismiss error"
-      onDismiss={() => {
-        clear(sessionId);
-      }}
+      keys={[
+        {
+          label: "Dismiss",
+          ariaLabel: "Dismiss error",
+          onPress: () => {
+            clear(sessionId);
+          },
+        },
+      ]}
     />
   );
 }

@@ -136,7 +136,7 @@ export function GlobalApprovalItem({
 }: GlobalApprovalItemProps): JSX.Element {
   const { openSession, openProject } = useNeedsYouNavigation();
   const sessionLabel =
-    row.sessionTitle ?? (row.sessionId !== null ? "Untitled session" : "Background approval");
+    row.sessionTitle ?? (row.sessionId !== null ? "Untitled chat" : "Background approval");
 
   // The upstream read nulls `sessionId` for session-less and deleted-session
   // rows, so "Open session" gates on it directly; a Studio approval with no

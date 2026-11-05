@@ -37,16 +37,14 @@ import {
   LineSplitVertical,
   LineTrash,
 } from "../../../../components/icons/line/index.js";
-import { Swatch } from "../../../../components/ui/swatch.js";
+import { StateSquare as Square } from "../../../../components/ui/state-square.js";
+import { TerminalStateSquare } from "../../../../features/appShell/studio/terminal/TerminalStateSquare.js";
 import type { TerminalTabRunState } from "../../../../features/appShell/studio/terminal/terminal-tab-model.js";
 import type { SampleTab, TermLine } from "./studio-sample.js";
 
-/** A terminal state's square (docs/design/H3-DESKTOP.md section 2.2). */
+/** A terminal state's square: the product's own (docs/design/H3-DESKTOP.md section 2.2). */
 function StateSquare({ state }: { readonly state: TerminalTabRunState }): JSX.Element {
-  if (state === "running") return <Swatch state="done" size={6} className="text-running-mark" />;
-  if (state === "error") return <Swatch state="done" size={6} className="text-danger-mark" />;
-  // Exited and restoring: an ink outline, as the Vex key's Ready square.
-  return <Swatch state="idle" size={6} />;
+  return <TerminalStateSquare state={state} />;
 }
 
 function Tabs({ tabs }: { readonly tabs: readonly SampleTab[] }): JSX.Element {
@@ -114,7 +112,7 @@ function PanelHeader({
         <span className="vex-plate-studio__where">{where}</span>
       </div>
       <span className="vex-plate-studio__state">
-        <Swatch state="done" size={6} className="text-running-mark" />
+        <Square state="ongoing" size={6} />
         <span>{state}</span>
       </span>
       <span className="vex-plate-studio__key" title="Split right">

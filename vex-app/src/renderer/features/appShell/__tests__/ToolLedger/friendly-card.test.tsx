@@ -61,7 +61,7 @@ describe("ToolActRow - friendly card presentation", () => {
     );
     expect(
       measured.container.querySelector("[data-vex-tool-duration]")?.textContent,
-    ).toBe("2.3 s");
+    ).toBe("2.3s");
     measured.unmount();
 
     // A call that never ran carries null — and must show nothing at all.

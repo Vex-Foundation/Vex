@@ -117,8 +117,8 @@ describe("the RUNNING tag", () => {
     const word = screen.getByText("Running");
     const tag = word.closest("[data-vex-project-running]");
     expect(tag?.className).toContain("vex-st-proj__run");
-    // The square is the running grey, beside an ink word (section 2.2).
-    expect(tag?.querySelector(".vex-swatch")?.className).toContain("text-running-mark");
+    // The square is the running blink, beside an ink word (section 2.2).
+    expect(tag?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("ongoing");
     // The word is part of the row's name, after the project's.
     expect(screen.getByRole("button", { name: "vex-core Running" })).not.toBeNull();
 

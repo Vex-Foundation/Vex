@@ -23,6 +23,7 @@
 
 import type { JSX, ReactNode } from "react";
 import type { ProjectDto } from "@shared/schemas/projects.js";
+import { StateSquare } from "../../../../components/ui/state-square.js";
 import { Swatch } from "../../../../components/ui/swatch.js";
 import { Tooltip } from "../../../../components/ui/tooltip.js";
 import { cn } from "../../../../lib/utils.js";
@@ -94,7 +95,7 @@ export function ProjectRailRow({
             {driftMark}
             {running ? (
               <span className="vex-st-proj__run" data-vex-project-running="">
-                <Swatch state="done" size={6} className="text-running-mark" />
+                <StateSquare state="ongoing" size={6} />
                 <span>{STUDIO_PROJECT_RUNNING_LABEL}</span>
               </span>
             ) : null}

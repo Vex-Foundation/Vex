@@ -8,10 +8,11 @@
  * category (never the generic "Unable to process the message"), and that no
  * provider prose can reach the DOM.
  *
- * Since B2.2 the card carries NO live role: the notification announcer speaks
- * each failure once from the model event, so a `role="alert"` here as well
- * would say the same failure twice. The card is found by its area attribute
- * instead, and `engine-error-notifications.test.tsx` owns the announcement
+ * The card is H3's turn error row (docs/design/H3-DESKTOP.md section 1.7,
+ * VEX Cloud's one row per kind): the red square, the category's title in the
+ * refusal ink, the words, and a key strip holding Dismiss, with
+ * `role="alert"` as Cloud draws it. It is found by its area attribute;
+ * `engine-error-notifications.test.tsx` owns the notification's announcement
  * and the two-way dismissal binding.
  */
 
@@ -114,11 +115,31 @@ describe("SessionErrorBanner", () => {
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
 
     const alert = card();
-    expect(alert.getAttribute("data-vex-category")).toBe("capacity");
+    expect(alert.getAttribute("data-vex-turn-error-kind")).toBe("capacity");
     expect(alert.textContent).toContain("rate-limited");
     // The whole point: the provider's own retry hint, in seconds.
     expect(alert.textContent).toContain("Retry in 41s.");
     expect(alert.textContent).not.toContain("Unable to process the message");
+  });
+
+  it("is H3's turn error row: the red square, the kind's title, the words and the key strip", () => {
+    useEngineErrorStore.getState().record(makeEvent());
+    render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
+    const row = card();
+    // VEX Cloud's row: an alert that never moves focus, outcome first.
+    expect(row.getAttribute("role")).toBe("alert");
+    expect(row.className).toContain("vex-turn-error");
+    expect(row.querySelector(".vex-turn-error__sq")?.getAttribute("aria-hidden")).toBe("true");
+    expect(row.querySelector(".vex-turn-error__title")?.textContent).toBe(
+      "Provider rate-limited or unavailable",
+    );
+    // Whose failure it is opens the words.
+    expect(row.querySelector(".vex-turn-error__words")?.textContent).toContain("This turn failed.");
+    // The strip holds the one key desktop has here: Dismiss.
+    const keys = Array.from(row.querySelectorAll(".vex-turn-error__keys button"));
+    expect(keys.map((key) => key.textContent)).toEqual(["Dismiss"]);
+    expect(keys[0]?.getAttribute("aria-label")).toBe("Dismiss error");
+    expect(document.activeElement).not.toBe(keys[0]);
   });
 
   it("shows the bounded technical codes and NOTHING resembling prose", () => {

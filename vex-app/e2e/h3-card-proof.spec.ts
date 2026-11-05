@@ -301,7 +301,7 @@ test.describe("H3 card proof on the Lighter desk: the Review order never moves",
 
       // The chats column's Expand opens the 248 for the visit: the desk
       // narrows at its left, the card at its right stands.
-      await page.getByRole("button", { name: "Expand sessions sidebar" }).click();
+      await page.getByRole("button", { name: "Expand sidebar" }).click();
       await page.evaluate(
         () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)))),
       );

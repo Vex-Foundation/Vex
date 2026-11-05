@@ -429,7 +429,7 @@ describe("the rail", () => {
     expect(aside?.getAttribute("data-vex-sidebar-open")).toBe("false");
     // The Expand key heads the rail; the old Chats key is gone.
     const keys = Array.from(aside?.querySelectorAll(".vex-ls-body button") ?? []);
-    expect(keys[0]?.getAttribute("aria-label")).toBe("Expand sessions sidebar");
+    expect(keys[0]?.getAttribute("aria-label")).toBe("Expand sidebar");
     expect(screen.queryByRole("button", { name: "Chats" })).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" }).textContent).toBe("");
     expect(navRow("Portfolio").textContent).toBe("");
@@ -456,7 +456,7 @@ describe("the rail", () => {
 
   it("opens the sidebar from the Expand key, and from Search straight into the field", () => {
     const { onToggle, rerender } = renderSidebar(true);
-    const expand = screen.getByRole("button", { name: "Expand sessions sidebar" });
+    const expand = screen.getByRole("button", { name: "Expand sidebar" });
     expect(expand.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(expand);
     expect(onToggle).toHaveBeenCalledTimes(1);
@@ -490,7 +490,7 @@ describe("the rail", () => {
     render(
       <SessionsList onCreate={vi.fn()} collapsed expandable={false} onToggleSidebar={onToggle} />,
     );
-    expect(screen.queryByRole("button", { name: "Expand sessions sidebar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand sidebar" })).toBeNull();
     fireEvent.click(navRow("Chat"));
     fireEvent.click(navRow("Missions"));
     expect(onToggle).not.toHaveBeenCalled();

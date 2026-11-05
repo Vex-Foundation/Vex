@@ -53,7 +53,7 @@ export function resolveComposerLiveStep(
   return {
     label: view.label,
     // Only the working wait carries a scope worth repeating; the writing
-    // row's "Reasoned" stamp stays on the row.
+    // row's "Thought" stamp stays on the row.
     detail: view.state === "working" ? (view.detail ?? null) : null,
     startedAtMs: view.showElapsed ? preview.startedAtMs : null,
     awaiting: view.state === "awaiting",

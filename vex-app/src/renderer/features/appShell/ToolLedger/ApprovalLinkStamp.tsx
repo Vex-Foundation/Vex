@@ -5,14 +5,15 @@
  * the disclosure button, never nested inside it (nested buttons are invalid
  * HTML and break both contracts' aria semantics).
  *
- * Quiet by design (docs/design/R3-MINIMAL.md section 6): the word in the blue
- * at 13 / 500 with the target fill, no frame, no pulse - the card itself is
- * the place that asks for the decision. The target is the same fill the card,
- * the live row and the Vex sidebar carry for this state.
+ * Quiet by design (docs/design/R3-MINIMAL.md section 6): the word in ink at
+ * 13 with H3's target (docs/design/H3-DESKTOP.md section 2.2), no frame, no
+ * pulse - the card itself is the place that asks for the decision. Inside a
+ * step row the target is the row's own node, so the link draws the word
+ * alone.
  */
 
 import type { JSX } from "react";
-import { Swatch } from "../../../components/ui/swatch.js";
+import { StateSquare } from "../../../components/ui/state-square.js";
 
 /**
  * Escape an approval id for the attribute selector. `CSS.escape` is the
@@ -60,8 +61,14 @@ function jumpToApproval(approvalId: string, trigger: HTMLElement): void {
 
 export function ApprovalLinkStamp({
   approvalId,
+  square = true,
 }: {
   readonly approvalId: string;
+  /**
+   * Draw the target before the word. A step row draws the target as its own
+   * node (`StepNode`), so its link leaves it out and the state shows once.
+   */
+  readonly square?: boolean;
 }): JSX.Element {
   return (
     <button
@@ -71,7 +78,7 @@ export function ApprovalLinkStamp({
       onClick={(event) => jumpToApproval(approvalId, event.currentTarget)}
       className="vex-step-await"
     >
-      <Swatch state="awaiting" size={10} />
+      {square ? <StateSquare state="warning" size={8} /> : null}
       Waiting for approval
     </button>
   );

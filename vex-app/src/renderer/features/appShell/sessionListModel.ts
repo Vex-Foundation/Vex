@@ -129,7 +129,8 @@ const SESSION_TITLE_DISPLAY_MAX = 48;
  * Display title resolution for a session row. Priority:
  *   1. User-entered `title` (new rows post-migration 020).
  *   2. `initialGoal` (legacy mission rows before users started typing names).
- *   3. Mode-specific default ("Mission setup" / "Agent session").
+ *   3. Mode-specific default ("Mission setup" / "Untitled chat", VEX Cloud's
+ *      word for a chat with no title).
  *
  * The title is truncated with an ellipsis past 48 chars — the sidebar's
  * single-line truncation handles overflow visually but a hard cap here
@@ -148,7 +149,7 @@ function resolveSessionTitle(row: SessionListItem): string {
     const trimmed = row.initialGoal.trim();
     if (trimmed.length > 0) return trimmed;
   }
-  return row.mode === "mission" ? "Mission setup" : "Agent session";
+  return row.mode === "mission" ? "Mission setup" : "Untitled chat";
 }
 
 function truncateForDisplay(value: string): string {

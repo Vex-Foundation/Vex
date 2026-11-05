@@ -2,9 +2,10 @@
  * The Studio shell's one live status surface: a header cell at the end of the
  * title cell while `runtimeMode === "studio"` (our approved Studio plate,
  * docs/design/H3-DESKTOP.md sections 4.8 and 4.9): a state square and the
- * state in caps, RUNNING, over its figure, "2 connected". The squares are the
- * status colours (section 2.2): running and starting grey, locked ink,
- * unavailable red. It stays in view while her section is open, which is why
+ * state in caps, RUNNING, over its figure, "2 connected". The squares are H3's
+ * state squares (section 2.2): running and starting the blinking hud, locked
+ * the target, unavailable the cross. It stays in view while her section is
+ * open, which is why
  * it is the header's and not the console's. The card behind it is a flat
  * popover: the ground, a 1.5px ink frame, no shadow.
  *
@@ -51,7 +52,8 @@ import type {
   StudioHostUnavailableCause,
 } from "@shared/schemas/studio.js";
 import { Button } from "../../components/ui/button.js";
-import { Swatch, type SwatchState } from "../../components/ui/swatch.js";
+import { StateSquare, type StateSquareState } from "../../components/ui/state-square.js";
+import type { SwatchState } from "../../components/ui/swatch.js";
 import { useDismissOutside } from "../../lib/use-dismiss-outside.js";
 import { usePointerGrace } from "../../lib/pointer-grace.js";
 import { useStudioHostStatus } from "../../lib/api/studio.js";
@@ -82,11 +84,15 @@ import {
   type StudioHostCardButton,
 } from "./studio/studio-copy.js";
 
-/** The square's colour class per mark: the status squares of section 2.2. */
-const HOST_MARK_CLASS: Readonly<Record<StudioHostStatusView["mark"], string>> = {
-  running: "text-running-mark",
-  ink: "text-ink-primary",
-  danger: "text-danger-mark",
+/**
+ * The state square per mark (section 2.2, `StateSquare`): running and
+ * starting the hud square, which blinks while they last (PD-06); locked and
+ * an unread status the target, your move; unavailable the cross.
+ */
+const HOST_MARK_SQUARE: Readonly<Record<StudioHostStatusView["mark"], StateSquareState>> = {
+  running: "ongoing",
+  ink: "warning",
+  danger: "error",
 };
 
 /** Hover dwell before the card opens, matching the house `HoverCard`'s intent. */
@@ -400,7 +406,7 @@ export function StudioHostStatusPill({
         }}
       >
         <span className="vex-tb-hostcell__state">
-          <Swatch state="done" size={6} className={HOST_MARK_CLASS[view.mark]} />
+          <StateSquare state={HOST_MARK_SQUARE[view.mark]} size={6} />
           <span>{view.stateLine}</span>
         </span>
         {view.figureLine === null ? null : (

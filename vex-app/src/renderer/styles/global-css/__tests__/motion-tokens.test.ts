@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DURATION_BASE_MS,
+  DURATION_BLINK_MS,
   DURATION_FAST_MS,
   DURATION_INSTANT_MS,
   DURATION_KEY_FILL_MS,
@@ -97,6 +98,7 @@ describe("motion vocabulary", () => {
       ["--vex-duration-reveal", DURATION_REVEAL_MS],
       ["--vex-duration-vex-open", DURATION_VEX_OPEN_MS],
       ["--vex-duration-vex-close", DURATION_VEX_CLOSE_MS],
+      ["--vex-duration-blink", DURATION_BLINK_MS],
       ["--vex-duration-key-fill", DURATION_KEY_FILL_MS],
     ];
     for (const [token, ms] of pairs) {
@@ -124,6 +126,7 @@ describe("motion vocabulary", () => {
       "--vex-duration-reveal",
       "--vex-duration-vex-open",
       "--vex-duration-vex-close",
+      "--vex-duration-blink",
       "--vex-duration-key-fill",
       "--vex-ease-standard",
       "--vex-ease-out",
