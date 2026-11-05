@@ -780,7 +780,7 @@ describe("shell design guard (R3 bans)", () => {
     expect(strayColours("x.css", ".a { background: var(--color-night-0); }")).toHaveLength(1);
     expect(strayColours("x.css", ".a { background: var(--color-h3-ground); }")).toHaveLength(1);
     expect(strayColours("x.css", ".a { color: var(--vex-alias-label-primary); }")).toEqual([]);
-    expect(strayColours("x.css", ".a { background: url(/art/grain.svg); }")).toEqual([]);
+    expect(strayColours("x.css", ".a { background: url(/art/kimm/strip.webp); }")).toEqual([]);
     expect(strayColours("x.css", "html, body, #root { height: 100%; }")).toEqual([]);
     expect(
       strayColours("lighter-tokens.css", ".c { --lit-candle-up: var(--color-candle-up); }"),

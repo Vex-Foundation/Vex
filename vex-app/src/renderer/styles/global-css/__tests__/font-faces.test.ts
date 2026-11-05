@@ -14,12 +14,16 @@
  *      renders in the face rather than in the fallback;
  *   3. its licence ships beside the others and NOTICE.txt lists every file;
  *   4. the faces block like every other face (local files load at once, so
- *      blocking avoids the fallback swap).
+ *      blocking avoids the fallback swap);
+ *   5. R3's faces are retired (plan row S8-17): Instrument Sans, its metric
+ *      twin, Instrument Serif and Inter Tight have no face, no file, no
+ *      licence and no NOTICE line, and every WOFF2 left on disk is a face
+ *      the sheet declares, so no file ships that nothing names.
  *
  * Tested as text: jsdom loads no font and resolves no cascade.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -116,6 +120,36 @@ describe.each(H3_FACES)("the bundled $family", ({ family, licence, files }) => {
     );
     expect(NOTICE).toContain(licence);
     for (const file of Object.keys(files)) expect(NOTICE).toContain(`/fonts/${file}`);
+  });
+});
+
+describe("R3's retired faces", () => {
+  const RETIRED_FAMILIES = [
+    "Instrument Sans",
+    "Instrument Sans Fallback",
+    "Instrument Serif",
+    "Inter Tight",
+  ];
+
+  it.each(RETIRED_FAMILIES)("declares no %s face", (family) => {
+    expect(facesOf(family)).toEqual([]);
+  });
+
+  it("ships none of their files, licences or NOTICE lines", () => {
+    const files = readdirSync(PUBLIC_FONTS);
+    expect(files.filter((file) => /^(instrument-|inter-tight-)/.test(file))).toEqual([]);
+    const licences = readdirSync(path.join(PUBLIC_FONTS, "licenses"));
+    expect(licences.filter((file) => /instrument|intertight/i.test(file))).toEqual([]);
+    expect(NOTICE).not.toMatch(/\/fonts\/(instrument-|inter-tight-)/);
+  });
+
+  it("leaves no WOFF2 on disk that no face declares", () => {
+    const css = FONTS_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+    const declared = new Set([...css.matchAll(/url\("\/fonts\/([^"]+)"\)/g)].map((m) => m[1]));
+    const onDisk = readdirSync(PUBLIC_FONTS).filter((file) => file.endsWith(".woff2"));
+    expect(onDisk.filter((file) => !declared.has(file))).toEqual([]);
+    // JetBrains Mono stays: --font-code sets code in it.
+    expect(declared.has("jetbrains-mono-latin-wght.woff2")).toBe(true);
   });
 });
 

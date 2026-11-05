@@ -12,15 +12,12 @@
  *    header's Vex key says her state and hides her, and her one remembered
  *    choice (`vexOpenChat`) replaced "Show avatar" (S4-14); her corner key in
  *    her section writes that choice, hiding through the frame's `onHide`;
- *  - SHE DOCKS (K2, on the Lighter desk until its restyle): a column that
- *    shows after the shell came up plays her open episode; one open from the
- *    start shows her as she is;
- *  - HIDING PLAYS HER CLOSE FIRST (K2, on the desk): a hide (the chip, the
- *    shortcut) collapses her into the token and the column goes when that
- *    ends (the unmount waits), inert meanwhile, with focus handed to the
- *    toggle; a second press keeps her; the still frame, her figure hidden by
- *    her choice or a column the shell closes go at once; in H3's frame the
- *    hide lands at once, her section's own wipe being the close;
+ *  - Kimm's section is her plate everywhere, the welcome's column and the
+ *    Lighter desk included, open or folded by the stored choice;
+ *  - A HIDE LANDS AT THE PRESS: her section's own wipe is the close, so a
+ *    hide (the Vex key, the chip, the shortcut) commits at once, the column
+ *    never inert, with focus handed to the toggle where the column goes and
+ *    kept where it stays;
  *  - Needs you never decides: its key opens the card, and only closes a
  *    page over the chat;
  *  - STUDIO: the "This project" block opens the project's own Project assets
@@ -131,7 +128,7 @@ function PageBlock(): JSX.Element | null {
   return slot === null ? null : createPortal(<p data-testid="page-block">Ask Vex</p>, slot);
 }
 const { useUiStore } = await import("../../../stores/uiStore.js");
-const { VEX_HIDE_EPISODE_MS, keepVex, requestVexHide, vexClosing } = await import("../vex-hide.js");
+const { requestVexHide, vexClosing } = await import("../vex-hide.js");
 const { DURATION_VEX_CLOSE_MS } = await import("../../../lib/motion/index.js");
 
 const SESSION = "00000000-0000-4000-8000-0000000000a1";
@@ -277,7 +274,7 @@ describe("VexSidebar, open", () => {
       "1 mission running on Mainnet",
     );
 
-    // H3's frame: her section where K2's print window stood, and no hologram.
+    // H3's frame: her section is the plate, and no other figure stands.
     const plate = area("kimm-section");
     expect(plate).not.toBeNull();
     expect(area("vex-portrait-plate")).toBeNull();
@@ -394,7 +391,7 @@ describe("VexSidebar, her section closed (her choice, S4-14)", () => {
     expect(area("vex-console-rest")).not.toBeNull();
   });
 
-  it("hides the desk's K2 plate when her choice is closed", () => {
+  it("folds her section on the desk when her choice is closed", () => {
     useUiStore.setState({ runtimeMode: "lighter", vexOpenChat: false });
     render(<VexSidebar open onHide={() => {}} />);
     expect(area("vex-portrait-plate")).toBeNull();
@@ -431,7 +428,7 @@ describe("VexSidebar, a column that stays (H3, a chat)", () => {
   });
 });
 
-describe("VexSidebar, her section everywhere (no K2 hologram in her column)", () => {
+describe("VexSidebar, her section everywhere (no other figure in her column)", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
 
   it("shows her section, not the hologram, in the welcome's column: nothing docks", () => {

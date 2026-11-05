@@ -172,7 +172,7 @@ export function renderBlock(
         );
       }
       // Chat headings keep their original semantic decision (no h-tags in
-      // chat prose); the Instrument Sans document scale carries the hierarchy
+      // chat prose); the sans (Be Vietnam Pro) document scale carries the hierarchy
       // (h1 700 24/34, h2 600 20/28, h3+ 600 17/24 — design-language §4).
       return (
         <p
