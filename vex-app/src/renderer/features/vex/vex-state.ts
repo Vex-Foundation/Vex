@@ -123,6 +123,16 @@ export function vexWordOf(
   return VEX_STATE_WORD[state];
 }
 
+/**
+ * The short word where the room is narrow (VEX Cloud's `short`, the H3
+ * mockup's `.vk-short`: the Vex key under 1280, docs/design/H3-DESKTOP.md
+ * section 1.6): the chat row's own word for a decision waiting, "Waiting".
+ * Every other state keeps its word, already short.
+ */
+export function vexShortWordOf(state: VexState, word: string): string {
+  return state === "awaiting" ? "Waiting" : word;
+}
+
 /** What the live turn is doing, in the two states the fill distinguishes. */
 export type VexLive = "thinking" | "working";
 

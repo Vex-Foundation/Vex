@@ -846,6 +846,50 @@ html[data-still] .vex-key__square[data-key-square="running"] {
 .vex-key:hover .vex-key__chevron {
   color: var(--vex-alias-label-primary);
 }
+/* The short word ("Waiting") waits for the narrow window (below). */
+.vex-key__short {
+  display: none;
+}
+/* THE WIDTH RULES (section 1.6; VEX Cloud's H3 mockup, app.css sections 15
+ * and 16), on the window's width, as Cloud's are:
+ *   - under 1440 the keycaps leave (the chord stays in the key's name,
+ *     `aria-keyshortcuts`, its tooltip and the first-close hint), the state
+ *     line is 12 at 0.06em with its parts 8 apart, the text 16 in and the
+ *     chevron cell 48;
+ *   - under 1280 the state line says the short word ("Waiting"), so it never
+ *     ends in an ellipsis;
+ *   - from 1920 the state line is 14 and the keycaps 20 high at 11. */
+@media (max-width: 1439px) {
+  .vex-key .vex-keycaps {
+    display: none;
+  }
+  .vex-key__state {
+    padding-left: 16px;
+  }
+  .vex-key__status {
+    gap: 8px;
+    font-size: 12px;
+  }
+  .vex-key__word {
+    letter-spacing: 0.06em;
+  }
+  .vex-key__chevron {
+    width: 48px;
+  }
+}
+@media (max-width: 1279px) {
+  .vex-key__word[data-short] > .vex-key__long {
+    display: none;
+  }
+  .vex-key__word[data-short] > .vex-key__short {
+    display: inline;
+  }
+}
+@media (min-width: 1920px) {
+  .vex-key__status {
+    font-size: 14px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .vex-key {
     transition: none;
@@ -889,6 +933,14 @@ html[data-still] .vex-key__square[data-key-square="running"] {
  * their cap. */
 .vex-keycaps[data-platform="darwin"] > .vex-keycap {
   letter-spacing: 0;
+}
+/* From 1920, 20 high with letters at 11 (Cloud's wide rule). */
+@media (min-width: 1920px) {
+  .vex-keycaps:not([data-variant="hint"]) > .vex-keycap {
+    min-width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
 }
 .vex-keycaps[data-variant="hint"] {
   gap: 4px;

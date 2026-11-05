@@ -51,7 +51,7 @@ import { pressVexToggle, useVexClosing } from "./vex-hide.js";
 import { VexElapsed } from "./VexElapsed.js";
 import { VexKeyPortrait } from "./VexKeyPortrait.js";
 import { VexStateAnnouncer } from "./VexStateAnnouncer.js";
-import type { VexState } from "./vex-state.js";
+import { vexShortWordOf, type VexState } from "./vex-state.js";
 import {
   VEX_TOGGLE_CHORD,
   vexToggleAriaShortcut,
@@ -156,6 +156,10 @@ export function VexKeyView({
   const name = vexToggleName(shown);
   const stateId = useId();
   const square = vexKeySquareOf(state);
+  // Under 1280 the key says the chat row's short word ("Waiting"), so the
+  // word never ends in an ellipsis there; it is a picture of the long one,
+  // which stays the key's description.
+  const short = vexShortWordOf(state, word);
 
   return (
     <Tooltip label={vexToggleTooltipLabel(shown, platform)} side="bottom">
@@ -187,7 +191,14 @@ export function VexKeyView({
               className="vex-key__square"
               data-key-square={square}
             />
-            <span className="vex-key__word">{word}</span>
+            <span className="vex-key__word" data-short={short === word ? undefined : ""}>
+              <span className="vex-key__long">{word}</span>
+              {short === word ? null : (
+                <span className="vex-key__short" aria-hidden="true">
+                  {short}
+                </span>
+              )}
+            </span>
             {timer}
           </span>
           <span className="vex-key__line vex-key__action">

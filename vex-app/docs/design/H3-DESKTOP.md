@@ -108,7 +108,7 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 
 Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344) and 12 from its right.
 
-The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide (the chevron's 60 and the column's rule), and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. Open: how these cells give way under 1280 (shorter words, the network word dropped for its mark, the chevron cell folded into the state cell). Settled in the harness (S2-07) and with Cloud.
+The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide (the chevron's 60 and the column's rule), and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. How they give way is VEX Cloud's (the H3 mockup's width rules, 2026-11-05), on the window's width: under 1440 the Vex key drops its keycaps and sets its state line at 12; under 1280 the key says the short state word ("Waiting") and the network cell says MAIN with the hatch, its words kept for assistive tech (section 1.6, Appendix A.1).
 
 ### 1.4 The chats column
 248 wide. Measured in `h3-merged__welcome-closed-1440`, top to bottom:
@@ -156,6 +156,7 @@ The Vex key is the header cell over the Vex column, in three parts:
 - **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, the fold glyph (an up chevron under a bar) on a raised fill: she has stepped down into her section.
 - **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut. At VEX Cloud's measures (the H3 mockup's `.vk`, 2026-11-05): the text 20 in and 12 from the right, the two lines 10 apart; the state word 13 in caps in ink, the timer after it 10 on, in the sans, muted, at 0.04em with tabular figures; the action 12 in caps in ink, its keycaps 12 after it (section 2.4).
 - **Chevron cell.** Down while she is closed, up while she is open: 60 wide, then the column's rule; muted, ink under the pointer.
+- **Width rules** (VEX Cloud's, on the window's width): under 1440 no keycaps (the chord stays in the key's name, `aria-keyshortcuts`, its tooltip and the first-close hint), the state line 12 at 0.06em with its parts 8 apart, the text 16 in, the chevron cell 48, and the console's decision 14 with its Review cell 14 in from each side; under 1280 the state line says the chat row's short word ("Waiting" for Waiting for approval; every other word is already short), the long word staying the key's description; from 1920 the state line is 14 and the keycaps 20 high at 11.
 
 The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
 
@@ -353,7 +354,7 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 | figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
 
 **As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
-- the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
+- the Needs you row's decision sentence: sans 16, not 20 (14 under 1440, Cloud's width rule); the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
 - the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
 - "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
 - the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
@@ -679,6 +680,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | CLOUD, beside the mark | the mark alone | desktop is not Cloud. Open: a word beside the mark, if the owner wants one |
 | READY, THINKING 0:03, WAITING FOR APPROVAL, DONE | Ready, Listening, Thinking, Working, Waiting for approval, Done, Concerned, Error, Sleeping, Waking up (`features/vex/vex-state.ts`), with the timer while Thinking or Working | desktop's state machine has ten states |
 | HIDE VEX, SHOW VEX | same | |
+| under 1280: WAITING for WAITING FOR APPROVAL in the Vex key; MAIN and the hatch for MAINNET and REAL FUNDS | same | Cloud's short words (`.vk-short`, `.hd-short`); the long words stay for assistive tech |
 | keycaps CTRL, SHIFT, B | same on Windows and Linux; ⇧, ⌘, B on macOS, in Apple's modifier order | each platform's keys (section A.9) |
 | "SAMPLE DATA" under the chat title | the chat's kind and access: "Agent · Restricted", "Mission · Full access"; a page's own line, or none | "SAMPLE DATA" marks the mockup |
 | MAINNET, REAL FUNDS, a chevron | MAINNET and REAL FUNDS, no chevron | desktop is mainnet only; there is nothing to choose |

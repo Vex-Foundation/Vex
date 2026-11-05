@@ -196,6 +196,17 @@
   font-size: 14px;
   line-height: 18px;
 }
+/* Under 1440 (VEX Cloud's H3 mockup, `.cn-need b` and `.cn-review`): the
+ * decision is 14 and the Review cell 14 in from each side, so the narrower
+ * column keeps the decision's subject. */
+@media (max-width: 1439px) {
+  .vex-console__sentence {
+    font-size: 14px;
+  }
+  .vex-console__key {
+    padding: 0 14px;
+  }
+}
 /* An unreadable inbox: its sentence in two lines at most, in ink. */
 .vex-console__alert {
   display: -webkit-box;
