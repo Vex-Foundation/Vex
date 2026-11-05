@@ -20,7 +20,7 @@
  */
 
 import { useEffect, type JSX } from "react";
-import { TAGLINES } from "../../features/vex/TaglineCell.js";
+import { REST_LINE, TaglineView } from "../../features/vex/TaglineCell.js";
 import { useVexToggleShortcut } from "../../features/vex/useVexToggleShortcut.js";
 import { VexKeyView } from "../../features/vex/VexKey.js";
 import { VexSectionAnnouncer } from "../../features/vex/VexSectionAnnouncer.js";
@@ -122,12 +122,7 @@ function StageVexColumn(): JSX.Element {
         {hint ? <KimmHint keys={KIMM_HINT_KEYS} /> : null}
       </div>
       <div className="vex-pre-vex__tagline vex-drag">
-        <p className="vex-tagline" data-vex-tagline="rest">
-          <span className="vex-tagline__text">
-            <span className="vex-tagline__lead">{TAGLINES.rest.lead}</span>{" "}
-            <span className="vex-tagline__rest">{TAGLINES.rest.rest}</span>
-          </span>
-        </p>
+        <TaglineView line={REST_LINE} />
       </div>
     </div>
   );

@@ -232,6 +232,11 @@
   /* The parked cover's 1px head (VEX Cloud's --vx-scan-head): the ink at
    * 85%, on the cover's raised fill (`.vex-cover`). */
   --vex-alias-scan-head: rgba(243, 245, 249, 0.85);
+  /* Vex's line's strip over the bars on her column's foot (VEX Cloud's
+   * --vx-strip, oklch(6% 0.01 264 / 0.82)). Cloud also blurs what is under
+   * it by 10px; desktop never blurs (no blur, no glass), so the strip is the
+   * fill alone. */
+  --vex-alias-strip: rgba(0, 1, 2, 0.82);
   --vex-alias-sidebar-fill: var(--color-h3-ground);
   /* The field: inputs and the composer, on the ground behind their rule. */
   --vex-alias-field: var(--color-h3-ground);

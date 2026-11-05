@@ -205,7 +205,7 @@ Open, for the owner:
 | Cell | x, width | H3 draws | Desktop puts |
 |---|---|---|---|
 | account | 0, 248 | the avatar disc, "You", "Account and settings", a chevron | the same |
-| tagline | 248, 432 | the moment's tagline (Appendix A) | the same, in desktop's words |
+| tagline | 248, 432 | the moment's tagline (Appendix A) | Vex's line on a strip over the bars: the same, in desktop's words (Appendix A.6) |
 | model | 680, 75 | the model's glyph: the model choice | the same |
 | field | 755, 471 | "Ask Vex..." | the same, running on to the send key |
 | attach | 1226, 74 | an image key | left out: no attachments |
@@ -362,7 +362,7 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 | figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
 
 **As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
-- the Needs you row's decision sentence: sans 16, not 20 (14 under 1440, Cloud's width rule); the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
+- the Needs you row's decision sentence: sans 16, not 20 (14 under 1440, Cloud's width rule); the bottom row's tagline: Cloud's `--moment-size`, clamp(14px, 1.1vw, 22px) (14 at 1280, 16 at 1440, 21 at 1920), 600 caps at 0.01em, line height 1.15, not 20; the narration in its place while Vex works, sans 14 times the wide zoom in ink 2, sentence case, line height 1.4 (Cloud's two registers, `.moment`);
 - the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
 - "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
 - the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
@@ -769,14 +769,17 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | DAILY BUDGET, a meter and "38%" | CONTEXT, its meter and the real share ("Context 21%") | desktop has no daily budget; the context meter is real |
 
 ### A.6 Taglines
-The tagline cell says the moment. H3 draws two.
+The tagline cell is Vex's line on her column's foot (VEX Cloud's `.moment`, the H3 mockup's app.css and js/data.js, 2026-11-05): a strip over the bars (Cloud's `--vx-strip`, oklch(6% 0.01 264) at 0.82; Cloud blurs what lies under it by 10px, desktop does not, since desktop never blurs), and on it the moment's line in one of two registers: CAPS, two tones, the first clause in ink and the second muted; or SAY, the narration in sentence case in ink 2. The line is a picture of what the Vex key's state word and the transcript say (Cloud's G14), so it is hidden from assistive tech, as Cloud's is.
 
-| Moment | H3 | Desktop | Why |
+| Moment | H3 (Cloud) | Desktop | Why |
 |---|---|---|---|
-| the welcome and an idle chat | AN AI TRADING AGENT, INSIDE YOUR LIMITS. | AN AI TRADING AGENT, ON YOUR COMPUTER. (proposed) | desktop has no spend limits to be inside |
-| a card waiting | CHECK THE CARD, THEN DECIDE. | same | |
+| the welcome and an idle chat | AN AI TRADING AGENT, INSIDE YOUR LIMITS. (DRAFT in Cloud) | AN AI TRADING AGENT, ON YOUR COMPUTER. (proposed) | desktop has no spend limits to be inside; Cloud shows its line only at the welcome and leaves an idle chat to the bars, desktop keeps its rest line |
+| a card waiting | CHECK THE CARD, THEN DECIDE. (DRAFT in Cloud) | same | |
+| Vex works (Thinking, Working) | the narration: "Running Read balances to answer “…”" (Cloud's REAL templates) | the narration from real parts (`narration.ts`): the live word the turn island shows, the resolved tool title, the person's own last message, as "Running Swap to answer “…”", "Thinking to answer “…”"; the state word alone (Thinking, Working) where it has nothing true to add | the same templates; nothing invented |
+| a settled turn | FILLED, APPROVED BY YOU. (3.4 s); NOT PLACED, OVER THE POLICY'S LIMIT PER ORDER. (4.0 s) (DRAFT in Cloud) | DONE. for 3.4 s, then the line empties and the bars show alone until the moment changes | desktop proves no fill, no approval and no refusal at the turn's end (nothing joins a turn to its activity), so its settled line is the state word alone; Cloud's 4.0 s refusal has no desktop moment |
+| Studio | (none) | CODING AGENTS, ON YOUR COMPUTER. | our approved Studio plate (section 4.9) |
 
-The second clause of each is muted. Open: the taglines for the other moments (thinking, done, an error); default, the first line. Settled by the mockup source or the owner.
+An error, a concern, sleep and the rest keep the rest line. The band's foot row under 1024 says the caps line of the moment (rest, card, Studio); Open: whether it also narrates, as Cloud's band line does.
 
 ### A.7 The chat and the money card
 | H3 | Desktop | Why |
