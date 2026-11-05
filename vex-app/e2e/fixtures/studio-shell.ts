@@ -253,7 +253,7 @@ export async function openFirstProjectWithATerminal(
   const projectName = `${namePrefix}${Date.now().toString(36)}`;
   await creator.getByLabel("Name").fill(projectName);
   await creator.getByRole("button", { name: "Create", exact: true }).click();
-  await creator.getByRole("button", { name: "Close" }).click();
+  await creator.locator(".vex-dialog-foot").getByRole("button", { name: "Close" }).click();
   await expect(creator).toBeHidden();
 
   await sidebar.getByRole("button", { name: new RegExp(`^${projectName}\\b`) }).click();

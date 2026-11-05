@@ -178,7 +178,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 .vex-composer-tag {
   position: absolute;
   top: -11px;
-  right: 154px;
+  right: 152px;
   z-index: 20;
   display: inline-flex;
   align-items: center;
@@ -198,25 +198,28 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   color: var(--vex-alias-label-secondary);
 }
 
-/* THE SEND CELL: 140 wide and the row's 72 under its top rule, the
- * composer's one blue fill (section 2.4's primary key), white caps 14 behind
- * the glyph: H3's three-by-three dots for SEND, a 9 x 9 square for STOP.
- * The fill stops at the rule, which stays the ground's. SEND keeps its blue
- * while there is nothing to send (disabled, the press does nothing), as H3
- * draws the resting composer; a stop being acknowledged is section 2.4's
- * disabled key, the cell fill with muted words. */
+/* THE SEND CELL: 138 wide and the row's 72 under its top rule, padding 0 30
+ * 0 32 (H3's `.cmp-send`), the composer's one blue fill (section 2.4's
+ * primary key), white caps 13 behind the glyph: the 20px dots for SEND, faint
+ * at rest and white under the pointer, a 9 x 9 square for STOP. The fill
+ * stops at the rule, which stays the ground's.
+ *
+ * HELD (VEX Cloud's EC-04): while there is nothing to send, SEND is
+ * disabled and says so by its look, the cell fill with a muted word and the
+ * faint dots, no blue and no hover; a blue key that does nothing would be a
+ * trust regression. A stop being acknowledged is the same held key. */
 .vex-composer-key {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  width: 140px;
+  gap: 14px;
+  width: 138px;
   height: calc(var(--vex-h3-bottom-h) + 1px);
-  padding: 0 16px;
+  padding: 0 30px 0 32px;
   border-top: 1px solid var(--vex-alias-rule);
   background-clip: padding-box;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1;
   letter-spacing: var(--tracking-label);
@@ -232,15 +235,18 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 .vex-composer-stop:hover:not(:disabled) {
   background-color: var(--vex-alias-button-accent-hover);
 }
-.vex-composer-send:disabled {
-  cursor: default;
-}
+.vex-composer-send:disabled,
 .vex-composer-stop:disabled {
   background-color: var(--vex-alias-bg-layer-3);
   color: var(--vex-alias-label-tertiary);
+  cursor: not-allowed;
 }
 .vex-composer-key__glyph {
   flex: none;
+  color: var(--vex-alias-label-faint);
+}
+.vex-composer-key:hover:not(:disabled) .vex-composer-key__glyph {
+  color: var(--vex-alias-button-accent-ink);
 }
 .vex-composer-stop__mark {
   display: block;

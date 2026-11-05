@@ -672,6 +672,10 @@ html[data-os="mac"] .vex-pre__logo {
 .vex-wzp__actions > [data-vex-button]:enabled:hover {
   background: var(--vex-alias-interactive-active);
 }
+/* The approved plate's own hover: the general key's rising fill stays out. */
+.vex-wzp__actions > [data-vex-button]::before {
+  content: none;
+}
 .vex-wzp__actions > [data-vex-button]:disabled {
   background: var(--vex-alias-bg-layer-3);
   color: var(--vex-alias-label-tertiary);
@@ -887,8 +891,16 @@ html[data-os="mac"] .vex-pre__logo {
   color: var(--vex-alias-label-primary);
   font-size: 15px;
   font-weight: 400;
+  letter-spacing: normal;
   text-align: left;
+  text-transform: none;
   translate: none;
+}
+/* The approved plate's rows are sentences with an arrow: the general key's
+ * caps and its rising fill stay out. */
+.vex-wz-chain .vex-wz-card__acts > [data-vex-button]::before,
+.vex-pre .vex-wz-wallet-more [data-vex-button]::before {
+  content: none;
 }
 .vex-wz-chain .vex-wz-card__acts > [data-vex-button]::after,
 .vex-pre .vex-wz-wallet-more [data-vex-button]::after {

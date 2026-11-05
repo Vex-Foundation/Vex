@@ -313,7 +313,9 @@ function PositionRow({ position }: { readonly position: LighterPositionRow }): J
       <td className="vex-pf-pos">
         <span className="vex-pf-pos__m">
           {position.symbol}{" "}
-          <span className="vex-pf-side" data-trade={position.side === "long" ? "up" : "down"}>
+          {/* The side is a word in ink, never the trading pair (DG5-07,
+            * docs/design/H3-DESKTOP.md section 5.3). */}
+          <span className="vex-pf-side" data-side={position.side}>
             {side}
           </span>
         </span>

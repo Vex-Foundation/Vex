@@ -398,7 +398,13 @@ describe("the result phase", () => {
       expect(screen.getAllByText(".codex/config.toml")).toHaveLength(2);
     });
     expect(screen.queryByLabelText("Name")).toBeNull();
-    expect(screen.getByRole("button", { name: "Close" })).not.toBeNull();
+    // The foot's Close, beside the head band's own Close cell (H3-DESKTOP.md
+    // section 5.2).
+    expect(
+      screen
+        .getAllByRole("button", { name: "Close" })
+        .filter((key) => key.closest("[data-vex-dialog-head]") === null),
+    ).toHaveLength(1);
   });
 
   it("shows a REFUSED file rather than a green success", async () => {

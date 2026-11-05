@@ -110,6 +110,14 @@ export const CHATS_ROW_DELAY_MS = 120;
 export const CHATS_ROW_STAGGER_MS = 45;
 export const CHATS_ROW_ENTER_MAX = 12;
 
+/**
+ * The general key's hover fill: it rises from the key's foot (VEX Cloud's
+ * `--vx-dur-fill`, docs/design/H3-DESKTOP.md section 5.2). A named exception
+ * to the scale (MOTION-POLICY.md), owned by `components/ui/button.tsx`.
+ * CSS: `--vex-duration-key-fill`.
+ */
+export const DURATION_KEY_FILL_MS = 420;
+
 export const SPRING_PANEL = {
   type: "spring",
   stiffness: 260,

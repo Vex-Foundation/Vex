@@ -309,9 +309,10 @@
 
 .lit-book-row b { font-weight: 400; }
 
-/* The trading pair: bid prices up, ask prices down. */
-.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-trade-up); }
-.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-trade-down); }
+/* A side is ink, never the trading pair (DG5-07): bid prices in the ink,
+ * ask prices in ink 2, as the tape's buys and sells below. */
+.lit-book-rows[data-side="bid"] .lit-book-row b { color: var(--lit-positive); }
+.lit-book-rows[data-side="ask"] .lit-book-row b { color: var(--lit-negative); }
 
 /* The tape's prints: a buy in the blue, a sell in the ink. */
 .lit-trade-row b { color: var(--lit-positive); }
@@ -385,8 +386,9 @@
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row span:last-child { color: var(--lit-ink-secondary); }
 .lit-book-stack .lit-book-rows[data-side] .lit-book-row::before { right: 0; left: auto; }
 
-/* Bid and ask share of the visible depth: "B 54%" in trade up, "46% S" in
- * trade down, and a 6 high bar of the two fills between them. */
+/* Bid and ask share of the visible depth: "B 54%" in the ink, "46% S" in
+ * ink 2, and a 6 high bar between them, the bids' share the ink over the
+ * asks' faint ink (a side is never the trading pair, DG5-07). */
 .lit-book-ratio {
   display: grid;
   min-height: 28px;
@@ -398,15 +400,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.lit-book-ratio > [data-side="bid"] { color: var(--lit-trade-up); }
-.lit-book-ratio > [data-side="ask"] { color: var(--lit-trade-down); }
+.lit-book-ratio > [data-side="bid"] { color: var(--lit-positive); }
+.lit-book-ratio > [data-side="ask"] { color: var(--lit-negative); }
 
 .lit-book-ratio i {
   --lit-bid-share: 50%;
   position: relative;
   display: block;
   height: 6px;
-  background: var(--lit-trade-down);
+  background: color-mix(in srgb, var(--lit-positive) 24%, transparent);
 }
 
 .lit-book-ratio i::before {
@@ -414,7 +416,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--lit-bid-share);
-  background: var(--lit-trade-up);
+  background: var(--lit-positive);
 }
 
 .lit-trades-list {

@@ -249,7 +249,7 @@ test("Studio journey: create a project, see its report, open it and get a termin
   await expect(report).toBeVisible();
   // The Close button is the other half of the invariant: the pinned slot bounds
   // itself, so the footer keeps its seat whatever the report's length.
-  const close = creator.getByRole("button", { name: "Close" });
+  const close = creator.locator(".vex-dialog-foot").getByRole("button", { name: "Close" });
   await expect(close).toBeVisible();
 
   const runFailure = await report.getAttribute("data-vex-run-failure");

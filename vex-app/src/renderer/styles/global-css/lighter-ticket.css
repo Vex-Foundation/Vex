@@ -792,9 +792,10 @@
 
 /* LONG | SHORT: the active side submits, the other flips the ticket and
  * submits for it. Both are orders, so both are keys: raised cells, 56 high,
- * side by side on one rule, the side word in caps in its gain or loss type
- * over the order in mono muted. Never a green or red fill, never the blue
- * (the approved desk plate). */
+ * side by side on one rule, the side word in caps in INK over the order in
+ * mono muted (VEX Cloud's DG5-07, docs/design/H3-DESKTOP.md section 5.3: a
+ * side is a word, never the trading green and red, because red means
+ * refused). Never a green or red fill, never the blue. */
 .lit-side-actions {
   display: grid;
   flex: 0 0 auto;
@@ -835,8 +836,7 @@
   text-transform: uppercase;
 }
 
-.lit-side-actions .lit-review-button[data-side="buy"] b { color: var(--lit-trade-up); }
-.lit-side-actions .lit-review-button[data-side="sell"] b { color: var(--lit-trade-down); }
+.lit-side-actions .lit-review-button[data-side] b { color: var(--lit-ink); }
 .lit-side-actions .lit-review-button:disabled b { color: var(--lit-ink-muted); }
 
 .lit-side-actions .lit-review-button small {
