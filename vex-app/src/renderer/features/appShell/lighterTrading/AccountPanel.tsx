@@ -236,7 +236,9 @@ export function TradingBottomPanel({
             aria-busy={accountQuery.isFetching}
           >
             <LineRefresh size={14} />
-            Refresh
+            {/* The word goes from sight in a narrow dock, never from the
+              * key's name (lighter-account.css). */}
+            <span className="lit-account-refresh-word">Refresh</span>
           </button>
           <button
             type="button"

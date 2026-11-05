@@ -1008,4 +1008,21 @@
   }
   .lit-positions :is(.lit-account-columns, .lit-account-row) > :is(:nth-child(6), :nth-child(8)) { display: none; }
   .lit-positions .lit-row-key__word { display: none; }
+  /* The tabs and the row's end keep one row, as the plate draws it at a
+   * 1000 window: REFRESH is a 40 icon cell, its word still its name, and
+   * the tabs close up to 12 at their sides. */
+  .lit-bottom-status > .lit-account-refresh-button {
+    width: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+  .lit-account-refresh-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .lit-bottom-panel .lit-bottom-tabs button { padding: 0 12px; }
 }

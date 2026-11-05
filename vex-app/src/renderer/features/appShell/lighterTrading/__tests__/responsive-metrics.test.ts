@@ -268,6 +268,13 @@ describe("Lighter desk sheets (docs/design/H3-DESKTOP.md sections 2 and 4.9)", (
     expect(animated).toEqual(["transform", "opacity", "clip-path", "visibility"]);
   });
 
+  it("keeps the dock's tabs and its end keys on one row under a 760 dock: REFRESH an icon cell, its word its name", () => {
+    const narrow = /@container \(max-width: 760px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
+    expect(narrow).toMatch(/\.lit-bottom-status > \.lit-account-refresh-button \{[^}]*width: 40px;/s);
+    expect(narrow).toMatch(/\.lit-account-refresh-word \{[^}]*clip-path: inset\(50%\);/s);
+    expect(narrow).not.toMatch(/\.lit-account-refresh-word \{[^}]*display: none/s);
+  });
+
   it("keeps a short message of yours on one line in her narrow column: its clock and keys give way first", () => {
     expect(css).toMatch(/\.lit-chat-shell \.vex-you__cap \{[^}]*flex: 0 1 auto;[^}]*min-width: 0;[^}]*overflow: hidden;/s);
     expect(css).toMatch(/\.lit-chat-shell \.vex-you__stack \{[^}]*flex: 0 0 auto;[^}]*max-width: calc\(100% - 60px\);/s);
