@@ -62,11 +62,14 @@ vi.mock("../../../lib/api/wallet-inventory.js", () => ({
 }));
 /** What `sessions.get` answers for the open chat, per test. */
 const chat = vi.hoisted(() => ({ current: null as unknown }));
+/** What the sessions list answers, per test: the missions row reads its failure. */
+const sessionsList = vi.hoisted(() => ({ current: { data: undefined, isError: false } as unknown }));
 vi.mock("../../../lib/api/sessions.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useSession: (id: string | null) => ({
     data: id === null || chat.current === null ? undefined : { ok: true, data: chat.current },
   }),
+  useSessionsList: () => sessionsList.current,
 }));
 
 const {
@@ -131,7 +134,8 @@ describe("the console's Needs you head", () => {
   it("says NEEDS YOU and the count, which a failed read never makes a zero", () => {
     expect(needsYouCountText(model({ count: 0 }))).toBe("0");
     expect(needsYouCountText(model({ count: 3 }))).toBe("3");
-    expect(needsYouCountText(model({ status: "unknown", count: null }))).toBe("?");
+    // A failed read draws no count at all (VEX Cloud's console): not "?", never 0.
+    expect(needsYouCountText(model({ status: "unknown", count: null }))).toBeNull();
     expect(needsYouCountText(model({ status: "loading", count: null }))).toBeNull();
 
     render(<VexConsoleNeedsYou needsYou={model({ count: 0 })} />);
@@ -142,10 +146,13 @@ describe("the console's Needs you head", () => {
     expect(screen.getByRole("region", { name: /^Needs you/ })).toBe(section());
   });
 
-  it("draws no count while the first read runs", () => {
+  it("draws no count while the first read runs, and holds the row with a cover", () => {
     render(<VexConsoleNeedsYou needsYou={model({ status: "loading", count: null })} />);
     expect(section().querySelector(".vex-console__count")).toBeNull();
-    expect(row().textContent).toBe("Checking for pending approvals");
+    // The parked cover, never a pulse: one status named Loading, no words.
+    const cover = within(row()).getByRole("status", { name: "Loading" });
+    expect(cover.querySelector(".vex-cover")).not.toBeNull();
+    expect(row().textContent).toBe("");
     expect(row().textContent).not.toContain("Nothing needs you.");
   });
 });
@@ -192,7 +199,7 @@ describe("the console's decision row", () => {
     expect(useUiStore.getState().activeSessionId).toBe(OTHER);
   });
 
-  it("shows the decision that expires first when several wait, and counts them all", () => {
+  it("lists every decision, the one that expires first leading, and counts them all", () => {
     const soon = approvalNeedsYouItem(
       approval({ id: "a1", sessionId: OTHER, expiresAt: "2026-11-04T12:40:00.000Z" }),
       NOW,
@@ -204,28 +211,80 @@ describe("the console's decision row", () => {
     const open = approvalNeedsYouItem(approval({ id: "a3", sessionId: OTHER, expiresAt: null }), NOW);
     render(<VexConsoleNeedsYou needsYou={ready([open, later, soon])} />);
     expect(section().querySelector(".vex-console__count")?.textContent).toBe("3");
-    expect(row().querySelectorAll(".vex-console__sentence")).toHaveLength(1);
-    expect(row().querySelector("[data-vex-needs-you-item]")).not.toBeNull();
-    expect(row().querySelector(".vex-console__meta")?.textContent).toContain("expires");
+    // Every decision is listed (VEX Cloud's console), the soonest first.
+    const items = within(row()).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]?.querySelector(".vex-console__meta")?.textContent).toContain("expires");
+    expect(
+      within(row()).getAllByRole("button").map((key) => key.getAttribute("aria-label")),
+    ).toEqual([soon, open, later].map((item) => `Review: ${item.title}`));
+    // The cue says how many wait beyond the row, and pages the list.
+    const cue = section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-cue']");
+    expect(cue?.textContent).toBe("2 more below");
+    expect(cue?.getAttribute("data-dir")).toBe("down");
   });
 
-  it("says a read it could not make is unknown, with Retry, never Nothing needs you.", () => {
-    const retry = vi.fn();
+  it("pages the list a row at a time and turns the cue at its end", () => {
+    const items = ["a1", "a2", "a3"].map((id) =>
+      approvalNeedsYouItem(approval({ id, sessionId: OTHER, expiresAt: null }), NOW),
+    );
+    render(<VexConsoleNeedsYou needsYou={ready(items)} />);
+    const list = section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-list']");
+    if (list === null) throw new Error("no list");
+    // jsdom lays nothing out: give the row its height, one decision a page.
+    Object.defineProperty(list, "clientHeight", { configurable: true, value: 63 });
+    const cue = (): HTMLElement | null =>
+      section().querySelector<HTMLElement>("[data-vex-area='vex-needs-you-cue']");
+    fireEvent.click(cue() ?? document.body);
+    expect(cue()?.textContent).toBe("1 more below");
+    fireEvent.click(cue() ?? document.body);
+    expect(cue()?.textContent).toBe("2 more above");
+    expect(cue()?.getAttribute("data-dir")).toBe("up");
+    // A scroll by hand reads the place back.
+    list.scrollTop = 63;
+    fireEvent.scroll(list);
+    expect(cue()?.textContent).toBe("1 more below");
+  });
+
+  it("draws no cue for one decision", () => {
+    const one = approvalNeedsYouItem(approval({ id: "a1", sessionId: OTHER }), NOW);
+    render(<VexConsoleNeedsYou needsYou={ready([one])} />);
+    expect(section().querySelector("[data-vex-area='vex-needs-you-cue']")).toBeNull();
+  });
+
+  it("says a read it could not make is Not available, with the cross, no count and no Retry", () => {
     render(
       <VexConsoleNeedsYou
         needsYou={model({
           status: "unknown",
           count: null,
           unknownCopy: "Couldn't check for pending approvals. Some may be waiting for your signature.",
-          retry,
         })}
       />,
     );
-    expect(section().querySelector(".vex-console__count")?.textContent).toBe("?");
-    expect(row().textContent).toContain("Couldn't check for pending approvals.");
+    expect(section().querySelector(".vex-console__count")).toBeNull();
+    expect(row().textContent).toBe("Not available");
+    expect(row().querySelector(".vex-sq")?.getAttribute("data-state")).toBe("error");
+    // The full statement stays on the line's title.
+    expect(row().querySelector("[title]")?.getAttribute("title")).toContain(
+      "Couldn't check for pending approvals.",
+    );
     expect(row().textContent).not.toContain("Nothing needs you.");
-    fireEvent.click(within(row()).getByRole("button", { name: "Retry" }));
-    expect(retry).toHaveBeenCalledTimes(1);
+    // These reads are polled: no Retry.
+    expect(within(row()).queryByRole("button")).toBeNull();
+  });
+
+  it("lists what it has when one source failed, then Could not load every decision.", () => {
+    const item = approvalNeedsYouItem(approval({ id: "a1", sessionId: OTHER }), NOW);
+    render(
+      <VexConsoleNeedsYou
+        needsYou={model({ status: "unknown", count: null, items: [item] })}
+      />,
+    );
+    const items = within(row()).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[1]?.textContent).toBe("Could not load every decision.");
+    expect(section().querySelector(".vex-console__count")).toBeNull();
   });
 });
 
@@ -264,11 +323,21 @@ describe("the console's missions row", () => {
     expect(useUiStore.getState().shellRoute).toEqual({ kind: "none" });
   });
 
-  it("stands empty, never saying none, until the sessions list answers", () => {
+  it("holds its row with covers, never saying none, until the sessions list answers", () => {
     render(<VexConsoleMissions missions={null} />);
     const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
     expect(row).not.toBeNull();
     expect(row?.textContent).toBe("");
+    expect(row?.querySelectorAll(".vex-cover")).toHaveLength(2);
+  });
+
+  it("says Missions · Not available when the sessions list failed, never a zero", () => {
+    sessionsList.current = { data: undefined, isError: true };
+    render(<VexConsoleMissions missions={null} />);
+    const row = document.querySelector<HTMLElement>("[data-vex-area='vex-missions']");
+    expect(row?.textContent).toBe("Missions · Not available");
+    expect(row?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("error");
+    sessionsList.current = { data: undefined, isError: false };
   });
 
   it("closes the top block at a fixed foot: Needs you, then the missions row", () => {

@@ -14,3 +14,124 @@
 .vex-console__activity[data-vex-activity-status="failed"] .vex-console__status-word {
   color: var(--vex-alias-state-refusal);
 }
+
+/* NEEDS YOU, H3-DESKTOP.md section 1.5 and VEX Cloud's console states
+ * (`h3-shell-gaps` decisions 4 to 6). The top block keeps its fixed 148, so
+ * her section's box never moves:
+ *
+ *   the head        NEEDS YOU and the count, then the cue as a cell at the
+ *                   right end ("2 more below", 11 caps ink 2, the chevron
+ *                   14, turned at the list's end), behind its rule
+ *   the decision    every decision, listed: the list scrolls in place in
+ *   row             the row's 63, whole rows at a time (scroll snap), no
+ *                   bar; a source that failed among several ends it with
+ *                   "Could not load every decision." beside the cross
+ *   loading         a parked cover row, 70% wide, never a pulse
+ *   failed          "Not available" beside the cross, 14 ink 2, no count */
+.vex-console__head--needs {
+  padding-right: 0;
+}
+.vex-console__heading {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding-right: var(--vex-console-inset);
+  font: inherit;
+}
+.vex-console__cue {
+  display: inline-flex;
+  flex: none;
+  align-self: stretch;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 0 16px;
+  border: 0;
+  border-left: 1px solid var(--vex-alias-rule-quiet);
+  background: none;
+  color: var(--vex-alias-label-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.vex-console__cue:hover {
+  background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+.vex-console__cue:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+.vex-console__cue[data-dir="up"] .vex-console__cue-chevron {
+  transform: rotate(180deg);
+}
+.vex-console__list {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+.vex-console__list::-webkit-scrollbar {
+  display: none;
+}
+.vex-console__item {
+  display: flex;
+  box-sizing: border-box;
+  height: 100%;
+  align-items: stretch;
+  scroll-snap-align: start;
+}
+.vex-console__note-row {
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0 var(--vex-console-inset);
+  color: var(--vex-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.vex-console__cover-row {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 var(--vex-console-inset);
+  cursor: progress;
+}
+.vex-console__na {
+  gap: 10px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+}
+
+/* The page strip's loading and failed cells: a cover where the words will
+ * land, "Not available" beside the cross. */
+.vex-strip__cover,
+.vex-strip__na {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.vex-strip__na {
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.vex-strip__missions > .vex-strip__cover,
+.vex-strip__missions > .vex-strip__na {
+  padding: 0 var(--vex-console-inset);
+}

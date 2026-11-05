@@ -15,24 +15,36 @@
  *
  * The words, counts and keys are the console's own (`VexConsole.tsx`): the
  * same model, the same lead decision, the same missions words, the same
- * openers, so the strip and the column can never disagree. Nothing in it
- * decides anything.
+ * openers, so the strip and the column can never disagree. While the first
+ * reads run its cells are parked covers; a read that failed says "Not
+ * available" beside the cross, with no count and no Retry (VEX Cloud's
+ * console line). Nothing in it decides anything.
  */
 
 import type { JSX } from "react";
 import { LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
+import { Cover } from "../../components/ui/cover.js";
+import { StateSquare } from "../../components/ui/state-square.js";
 import { missionsRowOf } from "./background-work.js";
 import { NEEDS_YOU_EMPTY_COPY, needsYouLeadOf } from "./needs-you.js";
 import { openNeedsYouItem } from "./needs-you-open.js";
 import { useAllMissions, useVexPresence } from "./useVexPresence.js";
-import { needsYouCountText, OpenActivityKey, openMissions } from "./VexConsole.js";
+import {
+  MISSIONS_NOT_AVAILABLE,
+  needsYouCountText,
+  NOT_AVAILABLE,
+  OpenActivityKey,
+  openMissions,
+  useMissionsReadFailed,
+} from "./VexConsole.js";
 
 export function VexConsoleStrip(): JSX.Element {
   const { needsYou } = useVexPresence();
   const missions = useAllMissions();
   const count = needsYouCountText(needsYou);
-  const lead = needsYou.status === "ready" ? needsYouLeadOf(needsYou.items) : null;
+  const lead = needsYou.status === "loading" ? null : needsYouLeadOf(needsYou.items);
   const row = missions === null ? null : missionsRowOf(missions);
+  const missionsFailed = useMissionsReadFailed(missions);
   return (
     <div className="vex-strip" data-vex-area="vex-console-strip">
       <div className="vex-strip__cell vex-strip__head">
@@ -41,11 +53,14 @@ export function VexConsoleStrip(): JSX.Element {
       </div>
       <div className="vex-strip__cell vex-strip__decision" data-vex-area="vex-strip-decision">
         {needsYou.status === "loading" ? (
-          <span className="vex-console__quiet">Checking for pending approvals</span>
-        ) : needsYou.status === "unknown" ? (
-          <button type="button" className="vex-strip__key" disabled={needsYou.retrying} onClick={needsYou.retry}>
-            {needsYou.retrying ? "Checking" : "Retry"}
-          </button>
+          <span className="vex-strip__cover" role="status" aria-label="Loading">
+            <Cover width="60%" />
+          </span>
+        ) : needsYou.status === "unknown" && lead === null ? (
+          <span className="vex-strip__na">
+            <StateSquare state="error" />
+            {NOT_AVAILABLE}
+          </span>
         ) : lead === null ? (
           <span className="vex-console__empty">{NEEDS_YOU_EMPTY_COPY}</span>
         ) : (
@@ -63,7 +78,18 @@ export function VexConsoleStrip(): JSX.Element {
         )}
       </div>
       <div className="vex-strip__cell vex-strip__missions" data-vex-area="vex-strip-missions">
-        {row === null ? null : (
+        {row === null ? (
+          missionsFailed ? (
+            <span className="vex-strip__na">
+              <StateSquare state="error" />
+              {MISSIONS_NOT_AVAILABLE}
+            </span>
+          ) : (
+            <span className="vex-strip__cover" aria-hidden="true">
+              <Cover width="160px" />
+            </span>
+          )
+        ) : (
           <button
             type="button"
             className="vex-strip__key"

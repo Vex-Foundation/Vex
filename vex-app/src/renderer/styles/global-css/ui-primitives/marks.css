@@ -118,6 +118,33 @@ html[data-still] .vex-sq[data-state="ongoing"] {
   }
 }
 
+/* ── The parked cover (H3) ──────────────────────────────────────────────────
+ * VEX Cloud's `.cover` (its status contract: "a loading value is the parked
+ * cover, never a figure"): a value still loading is a 12 high bar on the
+ * raised fill with the scan's 1px head parked at its left edge. Never a
+ * pulse and never a sweep, so it does not move; it holds the box the value
+ * will take, so nothing jumps when the read lands. Its width comes inline
+ * from `Cover`. */
+.vex-cover {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 64px;
+  max-width: 100%;
+  height: 12px;
+  border-left: 1px solid var(--vex-alias-scan-head);
+  background: var(--vex-alias-interactive-solid);
+  vertical-align: middle;
+}
+
+@media (forced-colors: active) {
+  .vex-cover {
+    forced-color-adjust: none;
+    border-left-color: CanvasText;
+    background: GrayText;
+  }
+}
+
 /* ── Swatch ────────────────────────────────────────────────────────────────
  * data-s: done | ongoing | warning | draft | idle | error (V10 names, kept)
  * and listening | thinking | awaiting | concerned | sleeping (R3, added).

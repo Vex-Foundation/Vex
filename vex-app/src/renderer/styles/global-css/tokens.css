@@ -219,6 +219,9 @@
    * reads as its own cell before its rule does. */
   --vex-alias-bg-overlay: var(--color-h3-raised-2);
   --vex-alias-bg-skeleton: rgba(255, 255, 255, 0.06);
+  /* The parked cover's 1px head (VEX Cloud's --vx-scan-head): the ink at
+   * 85%, on the cover's raised fill (`.vex-cover`). */
+  --vex-alias-scan-head: rgba(243, 245, 249, 0.85);
   --vex-alias-sidebar-fill: var(--color-h3-ground);
   /* The field: inputs and the composer, on the ground behind their rule. */
   --vex-alias-field: var(--color-h3-ground);

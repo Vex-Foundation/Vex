@@ -144,8 +144,11 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 **Desktop's box.** Desktop has no strategies row (section 4.1), so the console's top block is 40 shorter and her section starts at y 224, not 264. At 1440 x 900 the box is 248, 224, 432 x 603 and the strip is 248, 224, 432 x 56 (derived). Its height is 423 at a 720-high window, 503 at 800 and 603 at 900. The missions row stays when no mission runs, with its own words (Appendix A), so the box never moves when a mission starts or ends.
 
-Open:
-- What the Needs you row shows with two or more decisions; the plates draw one and none. Default: the one that expires first, the count in the head, Review opening its card, and the Needs you page for the rest. Settled with Cloud.
+**Needs you lists every decision** (VEX Cloud's `h3-shell-gaps`, decisions 4 to 6, settled 2026-11-05). Cloud lets the list grow until her section reaches a 240 floor and then scrolls it. Desktop's box must not move, not even while she waits, so the top block keeps its 148 and her top its 224: the list scrolls inside the decision row, one whole 63 row at a time (scroll snap, no bar), the decision that expires first leading, then the rest in the model's reading order. A cue cell at the head's right end, behind its rule, says "{n} more below" with its chevron down and pages the list; at the list's end it reads "{n} more above" with the chevron turned. The 240 floor never binds on desktop: at the 720 window floor her box is 423 high.
+
+- **Loading** holds the rows' height with parked covers (`Cover`: a 12 high bar on the raised fill, its 1px head at the left, never a pulse): the decision row a 70% cover, the missions row a 16 square cover and a 62% cover. The head has no count while it is unknown. The covers are one `role="status"` named Loading.
+- **A failed read** says so where the fact would be: the cross and "Not available", no count, no Retry (the reads are polled). The detailed statement stays on the line's title. One source failed out of several: the list it has, then "Could not load every decision." beside the cross. A failed sessions read makes the missions row "Missions · Not available", never a zero.
+- **The page strip** (section 1.9) follows: covers while loading, the cross and "Not available" when the read failed, no count and no Retry.
 - How her figure fills a box of another size (anchor, scale, crop): desktop's box is 40 taller than the plate's, and the box narrows with the column. Settled by the mockup source and Kimm's files from the designer.
 
 ### 1.6 The Vex key and her moods
@@ -624,6 +627,9 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 |---|---|---|
 | NEEDS YOU and a count | same | |
 | "Nothing needs you." | same | |
+| (loading: covers; failed: "Not available"; partial: "Could not load every decision.") | same: covers, the cross and "Not available" with no count and no Retry, "Could not load every decision." | Cloud's REAL words |
+| "{n} more below", "{n} more above" | same, on the cue at the head's right (DRAFT in Cloud) | every decision is listed; the list scrolls inside the row |
+| "Missions · Not available" | same (DRAFT in Cloud: REAL words joined) | the sessions read failed |
 | "Approve swap: 200 USDC → ETH" | the decision from desktop's approval sentence (`approvalSentence`), for example "Swap 200 USDC for ETH on Base"; for a mission, "Recover the mission", "Accept the contract" or "Fill in the form" | desktop builds the sentence from the signed arguments; missions wait on these three decisions too |
 | "Mainnet, real funds · since 12:40" | same, or "expires {time} UTC" when the approval has an expiry | |
 | REVIEW | same | |
