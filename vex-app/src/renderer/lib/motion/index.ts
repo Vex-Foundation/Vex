@@ -15,9 +15,10 @@
  * `styles/global-css/__tests__/motion-tokens.test.ts`, which fails if either
  * side moves alone.
  *
- * Two durations sit outside the scale, named in the policy's exception list:
- * Kimm's section opens in `DURATION_VEX_OPEN_MS` and closes in
- * `DURATION_VEX_CLOSE_MS` (docs/design/H3-DESKTOP.md section 3.1).
+ * Three durations sit outside the scale, named in the policy's exception
+ * list: Kimm's section opens in `DURATION_VEX_OPEN_MS` and closes in
+ * `DURATION_VEX_CLOSE_MS` (docs/design/H3-DESKTOP.md section 3.1), and a
+ * running square blinks once every `DURATION_BLINK_MS` (section 2.2).
  *
  * ## The easing family
  *
@@ -81,6 +82,15 @@ export const DURATION_VEX_OPEN_MS = 720;
  * CSS: `--vex-duration-vex-close`.
  */
 export const DURATION_VEX_CLOSE_MS = 420;
+
+/**
+ * One cycle of the running square's blink (PD-06): opacity 1 to 0.25 on
+ * steps(2, end), VEX Cloud's built `--vx-blink`. A named exception to the
+ * scale (MOTION-POLICY.md). Nothing in JS times against it; the mirror keeps
+ * the number in one place.
+ * CSS: `--vex-duration-blink`.
+ */
+export const DURATION_BLINK_MS = 600;
 
 export const SPRING_PANEL = {
   type: "spring",

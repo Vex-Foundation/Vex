@@ -28,12 +28,13 @@
  * below; R3's Night Ledger (the sepia night paper, its periwinkle and the
  * #0000c0 fill) retired with the last role that read it.
  *
- * STATUS IS A COLOURED SQUARE BESIDE AN INK WORD (docs/design/H3-DESKTOP.md
- * section 2.2). The word is always ink; the square carries the colour, and
- * green, red and grey are the only status colours (filled, did not execute,
- * running). Gains and losses in trading values take their own green and red
- * as TYPE (the sheet's --live and --err), lighter than the squares and never
- * a status. The candlestick pair stays inside the Lighter chart only.
+ * STATUS IS A SQUARE BESIDE A WORD, AND EVERY STATUS HAS ITS OWN DRAWING
+ * (docs/design/H3-DESKTOP.md section 2.2; PD-03): solid, blink, target,
+ * cross, frame, dotted frame and hatch, so a colour never stands alone. The
+ * word is ink, a failure's in the refusal ink. Gains and losses in trading
+ * values take their own green and red as TYPE (the sheet's --live and
+ * --err), lighter than the squares and never a status. The candlestick pair
+ * stays inside the Lighter chart only.
  *
  * SHAPE. Radius 0 everywhere (base.css enforces it for every element), no
  * shadow, no blur, no glass, no gradient ramp. */
@@ -116,6 +117,16 @@
   /* Measured, no sheet token (about oklch 53% 0.19 27): the status square of
    * DID NOT EXECUTE. */
   --color-h3-status-red: #c22226;
+  /* VEX Cloud's built tokens (apps/web/src/styles.css, read by its
+   * styles/status.css), where they win over the mockup:
+   *   - the HUD, --vx-hud, oklch(94% 0 0): the running square, which blinks
+   *     (PD-06). Never green: green is Filled;
+   *   - the REFUSAL INK, --vx-err-text, oklch(74% 0.17 27), outside sRGB:
+   *     channel-clipped. The failed cross, a failed step's word and the turn
+   *     error row's title. Its hex is the loss type colour's, kept a
+   *     primitive of its own so no status alias reads a trading colour. */
+  --color-h3-hud: #ebebeb;
+  --color-h3-err-text: #ff7a6e;
 
   /* Shape. Tailwind's default radius, shadow and blur scales are killed so a
    * stray `rounded-xl`, `shadow-lg` or `backdrop-blur-md` compiles to nothing.
@@ -310,16 +321,21 @@
   --vex-alias-state-error: var(--color-h3-ink);
   --vex-alias-state-error-wash: var(--color-h3-raised-2);
 
-  /* Status SQUARES (section 2.2): the ~6px mark beside the word carries the
-   * colour. Filled is the status green (#1D7E3F, 4.06:1 on the ground), did
-   * not execute the status red (#C22226, 3.51:1), running and pending the
-   * muted grey; waiting and Vex's own state are ink. A mark beside a word
+  /* Status SQUARES (section 2.2): every status has its own drawing, so a
+   * colour never stands alone (PD-03; `.vex-sq` in ui-primitives/marks.css).
+   * Filled is the solid status green (#1D7E3F, 4.06:1 on the ground); the
+   * turn error row's square is the solid status red (#C22226, 3.51:1);
+   * running and pending the hud square, which blinks (#EBEBEB, VEX Cloud's
+   * --vx-hud); a failure the cross in the refusal ink. A mark beside a word
    * owes the 3:1 for graphics, and each clears it on every H3 cell. The
-   * receipt's FILLED stamp is the green fill with white caps (5.11:1). The
-   * components move their squares onto these as each restyles. */
+   * receipt's FILLED stamp is the green fill with white caps (5.11:1). */
   --vex-alias-state-success-mark: var(--color-h3-status-green);
   --vex-alias-state-error-mark: var(--color-h3-status-red);
-  --vex-alias-state-running-mark: var(--color-h3-muted);
+  --vex-alias-state-running-mark: var(--color-h3-hud);
+  /* The refusal ink (VEX Cloud's --vx-err-text, 8.17:1 on the ground): a
+   * failure's cross and its word, a failed step's word and first line, the
+   * turn error row's title. The one status ink that is not the ink. */
+  --vex-alias-state-refusal: var(--color-h3-err-text);
   --vex-alias-stamp-filled: var(--color-h3-status-green);
   --vex-alias-stamp-filled-ink: var(--color-white);
 
@@ -516,6 +532,14 @@
   --vex-duration-vex-open: 720ms;
   --vex-duration-vex-close: 420ms;
   --vex-ease-push: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* THE RUNNING BLINK (PD-06; docs/design/H3-DESKTOP.md section 2.2): a
+   * running square blinks, opacity 1 to 0.25 on steps(2, end), one cycle in
+   * 600ms, VEX Cloud's built --vx-blink. A NAMED EXCEPTION to the scale
+   * (MOTION-POLICY lists it), shared with Cloud. It loops only while the
+   * running state lasts; reduced motion and Save-Data hold it still as half
+   * a square. */
+  --vex-duration-blink: 600ms;
 
   /* SHELL GEOMETRY - the R3 column widths (docs/design/R3-MINIMAL.md
    * section 2). Theme-independent like the motion vocabulary. The left

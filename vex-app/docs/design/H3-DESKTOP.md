@@ -10,7 +10,7 @@ The source is the VEX Cloud "v99 round 3" mockup sheet, app variant H3, dated 3 
 - The ground is near black, and every surface is a square cell divided from its neighbours by 1px rules. Radius 0, no shadow, no blur, no glass. The only gradients are Kimm's blue ground and the selected nav row's fill.
 - Labels are uppercase and tracked; sentences, names and values are in sentence case. Words are written in sentence case in code and uppercased by the label style, so a screen reader reads words, not letters.
 - One saturated blue fills primary keys and nothing else. It is never type on the ground.
-- A status is a small coloured square beside a light word. Green, red and grey are the only status colours; gains and losses in trading values take green and red type.
+- A status is a small square beside a word, and every status has its own drawing (solid, blink, target, cross, frame, dotted frame, hatch), so a colour never stands alone (section 2.2). Gains and losses in trading values take green and red type.
 - Be Vietnam Pro for words, Roboto Mono for figures and for the money card's field labels.
 - Opening or closing Kimm's section never moves, resizes or covers a waiting money card (section 3.6).
 - Desktop shows only what it can back with real data (`AGENTS.md`). An H3 element with no desktop source is left out or replaced by a true one, never drawn with sample values.
@@ -249,29 +249,37 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | gain | `--live` oklch(78% 0.13 150) | #76CF8A | Portfolio's +$182.40 peaks at #88D09E | the sheet value, as type |
 | loss | `--err` oklch(74% 0.17 27) | #FF7A6E | no loss is drawn as type | the sheet value, as type |
 | status green | none | | #1B813F (a square), #1D7E3F (the FILLED stamp): about oklch(52% 0.13 150) | #1D7E3F |
-| status red | none | | #C22226 (a square): about oklch(53% 0.19 27) | #C22226 |
-| status grey | none | | #8F9190 (RUNNING in the chats list); #3B3D3D (RUNNING in recent activity) | muted |
+| status red | none | | #C22226 (a square): about oklch(53% 0.19 27) | #C22226, the turn error row's square (section 2.2) |
+| status grey | none | | #8F9190 (RUNNING in the chats list); #3B3D3D (RUNNING in recent activity) | replaced by the hud, below |
+| hud | Cloud's built `--vx-hud` oklch(94% 0 0) | #EBEBEB | | #EBEBEB: the running square, which blinks |
+| refusal ink | Cloud's built `--vx-err-text` oklch(74% 0.17 27) | #FF7A6E | | #FF7A6E: the failed cross, a failure's word, a failed step's word and first line, the turn error row's title |
 
 Where the app screens differ from the sheet:
 1. **The ground is closer to black.** It matches `--panel` (8.5%) better than `--page` (9%) and shows no blue tint at WebP's resolution; the two differ by one to three sRGB steps. Desktop's ground is #010203. The window's `backgroundColor` (`src/main/windows/main-window.ts`, today `#1b1412`) and the Windows caption overlay colour (`src/main/windows/chrome-options.ts`, today `#1B1412`) take the same value, since the theme-matrix test ties them to the ground (S1-06).
 2. **There are raised steps above `--raised`.** The bubbles, the selected tab and the open fold cell use fills between 15 and 26% that the sheet has no token for. Desktop adds raised 2 and bubble as measured.
 3. **Status fills are darker than `--live` and `--err`.** The sheet's green and red are type colours, which the app uses for gains and losses; the status squares and the FILLED stamp use a darker green and red.
-4. **Two greys mark running.** Desktop uses muted for every running or pending square.
+4. **Two greys mark running in the captures.** Cloud's built status sheet (`apps/web/src/styles/status.css`, 2026-11-05) settles it: a running square is the hud (#EBEBEB) and blinks (section 2.2). Cloud's built values win over the mockup where they differ, so the hud and the refusal ink are primitives of their own (`--color-h3-hud`, `--color-h3-err-text`); the refusal ink has the loss colour's hex but never reads a trading primitive.
 
 Open: the exact values of every "none" row and of the ground. Settled by the mockup source from the designer; the measured values stand until then.
 
 ### 2.2 Status
-A status is a square of about 6px and a word in caps, 13, ink. (The words' glyph peaks, #CED0CF to #DDDFDE, are lighter than ink 2, so they are ink.)
+A status is a square beside a word in caps, and **every status has its own drawing**, so a colour never stands alone (VEX Cloud's PD-03 and `contracts/status.md`; the square is Cloud's StateDot, desktop's `StateSquare`, `.vex-sq` in `ui-primitives/marks.css`). The square is 8px, 6px in a row, and every frame is 1px. The word is ink; a failure's word is the refusal ink.
 
-| Status | Square | H3's word | Where H3 draws it |
+| State | Drawing | Ink | Desktop's words |
 |---|---|---|---|
-| filled | status green | FILLED | recent activity; the receipt's stamp, a green fill with a white word |
-| running | status grey | RUNNING | the chats list, recent activity |
-| waiting | ink | WAITING | the chats list |
-| did not execute | status red | DID NOT EXECUTE | recent activity |
-| Vex's state | ink; an outline at Ready | READY, THINKING, WAITING FOR APPROVAL, DONE | the Vex key |
+| done | solid | status green | Confirmed, Filled, Fired |
+| ongoing | blink (PD-06), half a square under reduced motion and Save-Data | the hud | Running, "Submitted, awaiting confirmation", Pending |
+| warning | target: the 1px frame and a dot | ink | Waiting, Waiting for approval |
+| error | cross | refusal ink | Failed, Refunded (desktop's mapping, below), Error |
+| idle | empty frame | muted | Ready, Exited, a status word this build does not map |
+| paused | dotted frame | ink 2 | Paused, Sleeping |
+| draft | hatch | ink 2 | a draft |
+| concerned | framed hatch | ink | Status unknown, Concerned |
 
-Desktop's true words for these are in Appendix A.
+- **The running square blinks** (PD-06): opacity 1 to 0.25 on steps(2, end), 600ms a cycle (`--vex-duration-blink`, Cloud's `--vx-blink`). It is never solid-still in motion and never green: green is Filled. Under reduced motion and Save-Data it holds still as half a square, so it never reads as Filled. Every running square in view blinks in phase.
+- **Status unknown is concerned**, the framed ink hatch, not the failed cross: nobody knows the outcome. Its words and its note ("ask Vex before retrying") are unchanged.
+- **Refunded keeps desktop's mapping**: the funds came back, and A.3 lists it under H3's DID NOT EXECUTE, so it takes the failed cross. Open: the owner may move it to its own state.
+- **The status label in a row** (`StatusMark`) is caps 11 with the 6px square 6 before it, Cloud's built StatusLabel at its row size; caps 13 with the 8px square only at the md size.
 
 Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.
 
@@ -286,6 +294,7 @@ Contrast on the ground (#010203), computed from the values above:
 | white on blue, on blue hover | 8.6, 5.5 |
 | white on status green, on status red | 5.1, 5.9 |
 | status green, status red squares on the ground | 4.1, 3.5 (marks beside a word: above the 3:1 for graphics) |
+| the hud square, the refusal ink on the ground | 17.4, 8.2 |
 | blue on the ground | 2.4: blue is never type on the ground |
 
 ### 2.3 Type
@@ -605,7 +614,7 @@ Every word the H3 app screens show, and the word desktop shows in its place. "Sa
 | RECENT ACTIVITY | same | |
 | FILLED | Confirmed | desktop knows a transaction confirmed, not an order filled (`agent-scan-outcome.ts`) |
 | RUNNING | Submitted, awaiting confirmation | desktop's pending word |
-| DID NOT EXECUTE | Failed, Refunded or Status unknown, as the entry says | "did not execute" for a rejected approval needs the approval history, which activity does not join yet |
+| DID NOT EXECUTE | Failed or Refunded, with the failed cross; Status unknown with the concerned hatch (section 2.2) | "did not execute" for a rejected approval needs the approval history, which activity does not join yet; nobody knows an unknown outcome, so it is never drawn as a failure |
 | OPEN ACTIVITY | same; it opens Agent Scan | |
 | the first-close hint: "Show Vex" and keycaps | same | |
 

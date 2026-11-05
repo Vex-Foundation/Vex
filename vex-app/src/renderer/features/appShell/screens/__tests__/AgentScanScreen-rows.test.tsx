@@ -625,7 +625,7 @@ describe("AgentScanScreen - the word each row ends in", () => {
     return mark === null ? null : mark.getAttribute("data-status");
   }
 
-  it("ends each row in H3's status mark: an ink word beside a green, grey or red square", () => {
+  it("ends each row in H3's status mark: a word beside a square with its own drawing", () => {
     mockQuery([
       availablePage([
         entry({ id: "1" }),
@@ -636,7 +636,8 @@ describe("AgentScanScreen - the word each row ends in", () => {
     mountScreen();
     expect(markFamily("Confirmed")).toBe("filled");
     expect(markFamily("Submitted, awaiting confirmation")).toBe("running");
-    expect(markFamily("Status unknown")).toBe("failed");
+    // Nobody knows the outcome: the concerned hatch, never the failed cross.
+    expect(markFamily("Status unknown")).toBe("concerned");
   });
 
   it("a pending row with a hash is Submitted, awaiting confirmation; without one it keeps Pending", () => {

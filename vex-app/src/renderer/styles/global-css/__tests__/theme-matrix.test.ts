@@ -103,7 +103,8 @@ const gateAliases = [
 
 /**
  * The H3 primitives taken from the design sheet (docs/design/H3-DESKTOP.md
- * section 2.1), as the sheet's oklch [lightness 0-1, chroma, hue]. tokens.css
+ * section 2.1), or from VEX Cloud's built tokens where those win (the hud and
+ * the refusal ink), as oklch [lightness 0-1, chroma, hue]. tokens.css
  * carries each as its sRGB hex; the suite converts these itself and holds the
  * sheet to them, so a hand-typed hex cannot drift from the design. The ground
  * is the sheet's --panel (the captures read it, not --page).
@@ -119,6 +120,10 @@ const H3_SHEET: Readonly<Record<string, readonly [number, number, number]>> = {
   "--color-h3-blue-hover": [0.56, 0.28, 264],
   "--color-h3-gain": [0.78, 0.13, 150],
   "--color-h3-loss": [0.74, 0.17, 27],
+  // VEX Cloud's built tokens (apps/web/src/styles.css), which win over the
+  // mockup where they differ: the running square's hud and the refusal ink.
+  "--color-h3-hud": [0.94, 0, 0],
+  "--color-h3-err-text": [0.74, 0.17, 27],
 };
 
 /**
@@ -190,16 +195,18 @@ const PRIMITIVES: Readonly<Record<string, string>> = {
   "--color-h3-loss": "#ff7a6e",
   "--color-h3-status-green": "#1d7e3f",
   "--color-h3-status-red": "#c22226",
+  "--color-h3-hud": "#ebebeb",
+  "--color-h3-err-text": "#ff7a6e",
 };
 
 describe("the static tier", () => {
-  it("holds exactly the 19 primitives, at their values", () => {
+  it("holds exactly the 21 primitives, at their values", () => {
     const colours = new Map(
       [...declarations(staticTier)].filter(([name, value]) =>
         name.startsWith("--color-") && /^#[0-9a-f]{6}$/i.test(value),
       ),
     );
-    expect(Object.keys(PRIMITIVES)).toHaveLength(19);
+    expect(Object.keys(PRIMITIVES)).toHaveLength(21);
     expect(Object.fromEntries(colours)).toEqual(PRIMITIVES);
   });
 
@@ -227,13 +234,14 @@ describe("the static tier", () => {
     });
   });
 
-  it("names the two values the clip moved, and only those", () => {
-    // The blue hover and the loss red sit outside sRGB as the sheet states
-    // them; every other sheet value is inside and converts unchanged.
+  it("names the three values the clip moved, and only those", () => {
+    // The blue hover, the loss red and Cloud's refusal ink (the loss red's
+    // own oklch) sit outside sRGB as stated; every other value is inside and
+    // converts unchanged.
     const moved = Object.entries(H3_SHEET)
       .filter(([, [l, c, h]]) => !inSrgb(oklchToSrgb(l, c, h)))
       .map(([name]) => name);
-    expect(moved).toEqual(["--color-h3-blue-hover", "--color-h3-loss"]);
+    expect(moved).toEqual(["--color-h3-blue-hover", "--color-h3-loss", "--color-h3-err-text"]);
   });
 
   it("pins the measured H3 primitives, and gives every H3 primitive one source", () => {
@@ -337,6 +345,13 @@ describe("the trading pair and the night edge", () => {
       "--vex-alias-state-error-mark",
       "--vex-alias-state-success-mark",
     ]);
+    // The hud and the refusal ink are the status squares' own: the running
+    // square and the refusal ink alone read them.
+    const statusInks = [...chronos]
+      .filter(([, value]) => /var\(--color-h3-(?:hud|err-text)\)/.test(value))
+      .map(([name]) => name)
+      .sort();
+    expect(statusInks).toEqual(["--vex-alias-state-refusal", "--vex-alias-state-running-mark"]);
   });
 
   it("fills the primary key with the bare H3 blue, and its hover with the blue hover", () => {

@@ -891,17 +891,20 @@
 }
 
 /* ---- H3's status mark (every activity row: Portfolio's and Activity's) --
- * docs/design/H3-DESKTOP.md section 2.2: a square of about 6px beside the
- * state word in caps 13, ink. The square carries the colour: the status
- * green (filled: Confirmed), the muted grey (running: submitted, pending),
- * the status red (did not execute: Failed, Refunded, Status unknown), or a
- * muted outline for a word this build does not know (`StatusMark`). */
+ * docs/design/H3-DESKTOP.md section 2.2, VEX Cloud's StatusLabel at its row
+ * size (`.vx-sq-word`, sm): the 6px state square 6 before the state word in
+ * caps 11, ink; a failure's word in the refusal ink. The square is the
+ * shared state square (`StateSquare`, ui-primitives/marks.css), so every
+ * status keeps its own drawing: solid green for filled, the blinking hud for
+ * running, the cross for failed, the framed ink hatch for Status unknown,
+ * the target for waiting, an empty muted frame for a word this build does
+ * not know (`StatusMark`). */
 .vex-status-mark {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   line-height: 1.3;
@@ -909,22 +912,8 @@
   white-space: nowrap;
   color: var(--vex-alias-label-primary);
 }
-.vex-status-mark__sq {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  background: var(--vex-alias-state-running-mark);
-}
-.vex-status-mark[data-status="filled"] .vex-status-mark__sq {
-  background: var(--vex-alias-state-success-mark);
-}
-.vex-status-mark[data-status="failed"] .vex-status-mark__sq {
-  background: var(--vex-alias-state-error-mark);
-}
-.vex-status-mark[data-status="unknown"] .vex-status-mark__sq {
-  box-sizing: border-box;
-  border: 1px solid var(--vex-alias-label-tertiary);
-  background: transparent;
+.vex-status-mark[data-status="failed"] {
+  color: var(--vex-alias-state-refusal);
 }
 
 /* Activity, in H3's rows (the console's RECENT ACTIVITY grammar): one framed
@@ -1116,9 +1105,6 @@
   font-size: 13px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
-}
-.vex-ov[data-frame="h3"] .vex-scan-leg .vex-status-mark {
-  font-size: 12px;
 }
 .vex-ov[data-frame="h3"] .vex-scan-note {
   font-size: 14px;
@@ -1324,9 +1310,6 @@
   font-size: 13px;
   line-height: 1.5;
   color: var(--vex-alias-label-tertiary);
-}
-.vex-status-mark[data-status="waiting"] .vex-status-mark__sq {
-  background: var(--vex-alias-label-primary);
 }
 
 /* The Launchpad: square tiles on a 1px rule, then Add image and the launch. */

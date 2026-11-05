@@ -2,10 +2,121 @@
  * the state word, the flat vx token, the chip, the stamp and the tag, the cell
  * meter and the quiet loading line. Every mark draws in the current text
  * colour, so its colour is the caller's. H3 (docs/design/H3-DESKTOP.md
- * section 2.2) colours the square and never the word: a square takes
- * `text-success-mark` (filled), `text-danger-mark` (did not execute) or
- * `text-running-mark` (running), or stays ink (waiting, Vex's own state),
- * beside an ink word; each component moves onto those as it restyles. */
+ * section 2.2) draws each status with its own pattern, the state square
+ * below (`StateSquare`), beside an ink word; each component moves its R3
+ * swatch onto it as it restyles. */
+
+/* ── The state square (H3) ──────────────────────────────────────────────────
+ * docs/design/H3-DESKTOP.md section 2.2; VEX Cloud's StateDot (`.vx-sq`,
+ * apps/web/src/styles/status.css, PD-03 and PD-06). Every status has its own
+ * drawing, so a colour never stands alone: the state survives forced colours,
+ * reduced motion and a colour-blind eye.
+ *
+ *   done       solid             status green   Confirmed, Filled
+ *   ongoing    blink             the hud        Running, Submitted, Pending
+ *   warning    target            ink            Waiting, your move
+ *   error      cross             refusal ink    Failed, Did not execute
+ *   idle       empty frame       muted          Ready, Exited, a word this
+ *                                                build does not map
+ *   paused     dotted frame      ink 2          Paused, Sleeping
+ *   draft      hatch             ink 2          a draft
+ *   concerned  framed hatch      ink            Status unknown, Concerned
+ *
+ * 8px by default, 6px in rows (the size comes inline from `StateSquare`);
+ * every frame is 1px. Every drawing is in currentColor, so forced colours
+ * reach it. A running square is never solid-still and never green: green
+ * is Filled. With no blink left (reduced motion, Save-Data) it would match
+ * Filled but for its colour, so it holds still as half a square. */
+.vex-sq {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  color: var(--vex-alias-state-running-mark);
+  vertical-align: middle;
+}
+
+.vex-sq[data-state="done"] {
+  background-color: currentColor;
+  color: var(--vex-alias-state-success-mark);
+}
+
+.vex-sq[data-state="ongoing"] {
+  background-color: currentColor;
+  animation: vex-sq-blink var(--vex-duration-blink) steps(2, end) infinite;
+}
+
+.vex-sq[data-state="warning"] {
+  border: 1px solid currentColor;
+  background-image: radial-gradient(currentColor 0 1.5px, transparent 1.6px);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-sq[data-state="error"] {
+  background-image:
+    linear-gradient(45deg, transparent 40%, currentColor 40% 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, currentColor 40% 60%, transparent 60%);
+  color: var(--vex-alias-state-refusal);
+}
+
+.vex-sq[data-state="idle"] {
+  border: 1px solid currentColor;
+  color: var(--vex-alias-label-tertiary);
+}
+
+.vex-sq[data-state="paused"] {
+  border: 1px dotted currentColor;
+  color: var(--vex-alias-label-secondary);
+}
+
+/* Both hatches: a frame tells Concerned from a draft, with no colour to lean
+ * on. */
+.vex-sq[data-state="draft"],
+.vex-sq[data-state="concerned"] {
+  background-image: repeating-linear-gradient(135deg, currentColor 0 1px, transparent 1px 3px);
+}
+
+.vex-sq[data-state="draft"] {
+  color: var(--vex-alias-label-secondary);
+}
+
+.vex-sq[data-state="concerned"] {
+  border: 1px solid currentColor;
+  color: var(--vex-alias-label-primary);
+}
+
+/* The blink: the running square at full ink, then at a quarter, on two
+ * steps (VEX Cloud's `vx-blink`). */
+@keyframes vex-sq-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vex-sq[data-state="ongoing"] {
+    animation: none;
+    background-color: transparent;
+    background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
+  }
+}
+
+html[data-still] .vex-sq[data-state="ongoing"] {
+  animation: none;
+  background-color: transparent;
+  background-image: linear-gradient(135deg, currentColor 50%, transparent 50%);
+}
+
+/* Forced colours flatten a fill to Canvas, so every square paints its own
+ * drawing in the system ink. */
+@media (forced-colors: active) {
+  .vex-sq,
+  .vex-sq[data-state] {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+}
 
 /* ── Swatch ────────────────────────────────────────────────────────────────
  * data-s: done | ongoing | warning | draft | idle | error (V10 names, kept)

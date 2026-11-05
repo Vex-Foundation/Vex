@@ -1,16 +1,18 @@
 /**
- * A STATUS IS A COLOURED SQUARE BESIDE AN INK WORD, AND EVERY INK IS READABLE
- * - a measured contrast contract over the alias tier, in the one room (the
- * app is dark only). docs/design/H3-DESKTOP.md section 2.2 replaces R3's
- * "status by fill, never by colour":
+ * A STATUS IS A SQUARE BESIDE A WORD, AND EVERY INK IS READABLE - a
+ * measured contrast contract over the alias tier, in the one room (the app is
+ * dark only). docs/design/H3-DESKTOP.md section 2.2 replaces R3's "status by
+ * fill, never by colour":
  *
- *   - the WORD is ink, always: success, attention and error collapse onto the
+ *   - the WORD is ink: success, attention and error collapse onto the
  *     primary label, pinned as an identity, so no hue can creep back into a
- *     status word under an old alias name;
- *   - the SQUARE beside it carries the colour, and green (filled), red (did
- *     not execute) and grey (running) are the only ones; each square owes the
- *     3:1 for graphics on every cell it can sit on, and the FILLED stamp
- *     carries its white word at the body floor;
+ *     status word under an old alias name; a failure's word alone takes the
+ *     refusal ink (VEX Cloud's --vx-err-text), measured as a text tier;
+ *   - the SQUARE beside it has a drawing of its own per status (PD-03), and
+ *     its colours are green (filled), red (the turn error row) and the hud
+ *     (running, which blinks); each owes the 3:1 for graphics on every cell
+ *     it can sit on, and the FILLED stamp carries its white word at the body
+ *     floor;
  *   - gains and losses in trading values take their own green and red as
  *     TYPE, lighter than the squares, and neither pair is ever the other.
  *
@@ -214,7 +216,7 @@ describe("status words are ink", () => {
 const STATUS_MARKS = [
   ["filled", "--vex-alias-state-success-mark", "--color-h3-status-green"],
   ["did not execute", "--vex-alias-state-error-mark", "--color-h3-status-red"],
-  ["running", "--vex-alias-state-running-mark", "--color-h3-muted"],
+  ["running", "--vex-alias-state-running-mark", "--color-h3-hud"],
 ] as const;
 const MARK_GROUNDS = [
   "--vex-alias-bg-base",
@@ -262,6 +264,7 @@ const TEXT_TIERS = [
   "--vex-alias-label-tertiary",
   "--vex-alias-label-caption",
   "--vex-alias-accent-primary",
+  "--vex-alias-state-refusal",
 ] as const;
 
 const TEXT_GROUNDS = [
