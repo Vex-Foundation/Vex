@@ -105,9 +105,11 @@ export function ApprovalRow({
         <span>{meta}</span>
         {isUserMcpApproval(summary) ? null : <Stamp data-testid="real-funds-stamp" className="vex-appr-row__stamp" />}
       </p>
+      {/* The card's failure line (Cloud's DG5-28): one ink line with the
+          cross under the row's words, never red. */}
       {inlineError !== null ? (
-        <p role="alert" className="vex-appr__error vex-appr-row__error">
-          <Swatch state="error" size={10} className="mt-[4px] shrink-0" />
+        <p role="alert" data-vex-area="approval-failure" className="vex-appr__fail vex-appr-row__fail">
+          <Swatch state="error" size={9} className="vex-appr__fail-mark" />
           <span>{inlineError}</span>
         </p>
       ) : null}

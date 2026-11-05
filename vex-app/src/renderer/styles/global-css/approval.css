@@ -339,20 +339,27 @@
   font-size: 12px;
 }
 
-.vex-appr__error {
+/* THE FAILURE LINE (Cloud's DG5-28, the money gaps sheet's `.tk-fail`): when
+ * a decision does not go through, one ink line above the decision band: the
+ * cross (the error swatch, ink, never red), then the sentence in sans 14 ink.
+ * A ruled cell edge to edge like every other, its text 24 in, on the raised
+ * ground, one lightness step over the card. `role="alert"` is on the element;
+ * nothing here is a refusal, so nothing here is red. */
+.vex-appr__fail {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 8px 12px;
-  font-size: 13px;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+  padding: 12px var(--vex-appr-inset);
+  font-size: 14px;
   line-height: 1.45;
   color: var(--vex-alias-label-primary);
-  border: 1px solid var(--vex-alias-rule-ink);
+  background: var(--vex-alias-interactive-solid);
+  border-top: 1px solid var(--vex-alias-rule);
 }
-/* In the card the alert sits in the cells' 24 inset. */
-.vex-appr__in > .vex-appr__error {
-  margin: 12px var(--vex-appr-inset);
+/* The cross sits on the first line's baseline, as Cloud's square does. */
+.vex-appr__fail-mark {
+  flex: none;
 }
 
 /* 5. The footer: the optional Reason, Reject, the action button, a ruled cell
@@ -565,8 +572,11 @@
   height: 18px;
   font-size: 10px;
 }
-.vex-appr-row__error {
-  grid-column: 2 / span 2;
+/* In the folded row the failure line is the row's foot, bled to its frame. */
+.vex-appr-row__fail {
+  grid-column: 1 / -1;
+  margin: 11px -16px -13px;
+  padding: 10px 16px;
 }
 
 /* ── The Needs you page (route `needsYou`, section 8.5) ────────────────── */

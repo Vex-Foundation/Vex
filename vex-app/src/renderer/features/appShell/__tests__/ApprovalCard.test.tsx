@@ -620,6 +620,34 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("says a failure as Cloud's one ink line with the cross, right above the decision band (DG5-28)", () => {
+    mockApproveMutate.mockImplementation((_input, options) => {
+      void options?.onSuccess?.({
+        ok: false,
+        error: {
+          code: "approvals.dispatch_failed",
+          domain: "approvals",
+          message: "Wallet rejected the request.",
+          retryable: true,
+          userActionable: true,
+          redacted: true,
+          correlationId: "req-x",
+        },
+      });
+    });
+    renderCard(makeSummary({ riskLevel: "info", actionKind: "read" }), false);
+    fireEvent.click(screen.getByRole("button", { name: /^approve transfer$/i }));
+    const line = screen.getByRole("alert");
+    expect(line.classList.contains("vex-appr__fail")).toBe(true);
+    expect(line.getAttribute("data-vex-area")).toBe("approval-failure");
+    // The cross is the ink error swatch, the words follow it; nothing is red.
+    expect(line.firstElementChild?.getAttribute("data-s")).toBe("error");
+    expect(line.textContent).toBe("Wallet rejected the request.");
+    expect(line.className).not.toMatch(/danger|red|err/);
+    // The decision band follows it at once: the line is the last cell above the footer.
+    expect(line.nextElementSibling?.getAttribute("data-vex-area")).toBe("approval-foot");
+  });
+
   it("invalidates approval queries when approve returns a Result-level failure", async () => {
     const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries").mockResolvedValue();
     mockApproveMutate.mockImplementation((_input, options) => {
