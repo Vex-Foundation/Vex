@@ -60,7 +60,7 @@ Her section ends one pixel above the bottom row (264 + 563 = 827). The swap card
 ### 1.2 The column rule and the tiers
 VEX Cloud's rule (PD-14 of its build plan; `--vex-w` in the H3 mockup's `css/tokens.css`, lines 180 and 202, and its measured boxes in `renders/checks.json`), which replaced the rule derived here on 3 November 2026:
 
-- the chats column is a fixed 248 from the wide tier up (1280 in Cloud), the 76 rail under it (section 4.12);
+- the chats column is a fixed 248 from 1280 up, the 76 rail under it (section 4.12);
 - the Vex column is clamp(360px, 30vw, 768px) from 1280 up, unrounded, and a fixed 340 from 1024 to 1279;
 - the chat column takes the rest;
 - under 1024 the band layout takes over (section 1.10).
@@ -86,7 +86,7 @@ What follows from the rule:
 - The tracks are a function of the window width only: no drag, no hysteresis, nothing that reads her section's state. This is the first of the money rule's three legs (section 3.6). The solver is S2-01's (`lib/shell-columns.ts`).
 - There is no chat floor. R3's `CENTER_MIN` of 640 goes: the H3 proof shows the card working at 1280 with one to three rows below the fold, and at 1024 the chat is Cloud's 608. Open: whether the cells in the header and the bottom row fit between 1024 and 1279 (section 1.3). Settled in the harness at 1024 and 1280.
 - In a chat, the Vex column's width never depends on whether her section is open. On pages, closing her folds the column to a line (section 1.9).
-- The sidebar key, from the wide tier up, folds the chats column to the 76px rail and the chat takes the freed 172px: the person's own fold. Under it the chats are the rail at every moment and the key opens the chats panel over Vex's column, so no track changes (section 4.12).
+- The sidebar key, from 1280 up, folds the chats column to the 76px rail and the chat takes the freed 172px: the person's own fold. Under it the chats are the rail at every moment and the key opens the chats panel over Vex's column, so no track changes (section 4.12).
 
 ### 1.3 The header row
 76 high, one row of cells across the window. It is mounted once, because it hosts the app-wide approvals sync (`RunningHead.tsx`: preload allows one subscriber per event), and every cell that is not a control is a window drag region (`.vex-drag`).
@@ -549,16 +549,16 @@ Already known for those plates:
 ### 4.11 What Cloud and desktop must agree on
 The column rule and tiers (section 1.2), the words of every element both apps show (Appendix A, where desktop says "same"), the keys (Appendix A.9, less desktop's old chord and its Linux binding), the timings and the push curve (section 3.1), the mood list (section 1.6) and the open-and-closed memory rule (section 3.5). These go to desu; Cloud's answers are recorded here when they come, and each "Open" line above that Cloud settles is rewritten then.
 
-### 4.12 The chats column under the wide tier: the chats panel
-VEX Cloud's rule (PD-14, under 1280 there; desktop's wide tier starts at `H3_CHATS_OPEN_MIN`, 1268 today; `h3-shell-gaps/README.md` decision 3 and its measures; `css/shell.css` section 5), which desktop takes whole. It replaces the unsaved override desktop had from 1024 to 1267, which widened the chats track and so narrowed the chat (to 469 at 1024) and moved a waiting card, with the move animated: a break of the money rule (section 3.6).
+### 4.12 The chats column under 1280: the chats panel
+VEX Cloud's rule (PD-14; `h3-shell-gaps/README.md` decision 3 and its measures; `css/shell.css` section 5), which desktop takes whole. It replaces the unsaved override desktop had from 1024 to 1267 (and the fold point of 1268 that R3's 640 floor set), which widened the chats track and so narrowed the chat (to 469 at 1024) and moved a waiting card, with the move animated: a break of the money rule (section 3.6).
 
-- Under the wide tier the chats column is the 76 rail at every moment. Its key (the rail's Expand key), the rail's Search chats and its Chat and Missions keys slide a 248 CHATS PANEL out of the rail's right edge instead: the CHATS head (56), the Search chats field (48) and the chats by day, the open column's rows. Search opens it with its field focused.
-- The panel is a box over Vex's column, from under the header to the window's foot, above her section; a scrim lies over the rest of her column beside it. No grid track changes, so a waiting card's box is identical open or closed (the card proof reads it at 1024 and 1180, seeked and live).
+- Under 1280 the chats column is the 76 rail at every moment. Its key (the rail's Expand key), the rail's Search chats and its Chat and Missions keys slide a 248 CHATS PANEL out of the rail's right edge instead: the CHATS head (56), the Search chats field (48) and the chats by day, the open column's rows. Search opens it with its field focused.
+- The panel is a box over Vex's column, from under the header to the window's foot, above her section; a scrim lies over the rest of her column beside it. No grid track changes, so a waiting card's box is identical open or closed (the card proof reads it at 1024, 1180 and 1279, seeked and live).
 - Under 1024, and on a page whose Vex column has folded to its strip, there is no column to lie over: the scrim runs to the window's edge and the chat behind it rests (inert) until the panel closes.
-- Esc (focus in the panel or on its key), a press outside it, and a row's press close it; Esc in its field clears a typed query first. Nothing writes the stored fold: the panel is the visit's own and closes when the window grows into the wide tier.
+- Esc (focus in the panel or on its key), a press outside it, and a row's press close it; Esc in its field clears a typed query first. Nothing writes the stored fold: the panel is the visit's own and closes when the window grows past 1279.
 - Motion, Cloud's (`h3-shell-gaps/js/shell.js` `setLeftOver`): the panel slides from translate3d(-100%) to none in 720ms and back in 420ms on the push curve, the close playing the same keyframes in reverse; the scrim fades in over 600ms and out over 300ms; its first twelve rows enter from 16px left and transparent over 620ms, row n after 120 + 45n ms. Transform and opacity only. Reduced motion and Save-Data land it at once.
-- From the wide tier up the key folds the track to the rail and back, as before: the stored choice (`leftOpen`), the person's own fold.
-- Studio's rail has no chats to slide out: under the wide tier it ends in its Projects and files key, whose drawer is the same kind of box over Vex's column.
+- From 1280 up the key folds the track to the rail and back, as before: the stored choice (`leftOpen`), the person's own fold.
+- Studio's rail has no chats to slide out: under 1280 it ends in its Projects and files key, whose drawer is the same kind of box over Vex's column.
 - Nothing about her section enters this; the fold is what the solver reads (`h3ShellTier` and `H3_CHATS_OPEN_MIN` in `lib/shell-columns.ts`), and the panel is `ChatsPanel.tsx`.
 
 ---

@@ -22,7 +22,6 @@ import {
   h3GridTemplateColumns,
   h3ShellLayout,
   H3_BAND_HEIGHT,
-  H3_CHAT_MIN,
   H3_CHATS_OPEN_MIN,
   LIGHTER_CHAT_MAX,
   LIGHTER_CHAT_MIN,
@@ -265,13 +264,13 @@ describe("the Vex column", () => {
  * that matters, so a change to either is a visible decision.
  */
 describe("no centre floor", () => {
-  it("under 1268 the chats are the rail whatever the stored choice says, so no track waits on it", () => {
+  it("under 1280 the chats are the rail whatever the stored choice says, so no track waits on it", () => {
     for (let viewport = 0; viewport < H3_CHATS_OPEN_MIN; viewport += 1) {
       expect(h3(viewport, true), String(viewport)).toEqual(h3(viewport, false));
     }
     expect(h3(1024, true).chat).toBe(608);
-    expect(h3(1267, true).chat).toBe(851);
-    expect(h3(1268, true).chat).toBe(680);
+    expect(h3(1279, true).chat).toBe(863);
+    expect(h3(1280, true).chat).toBe(648);
   });
 
   it("with the chats folded the columns never take the chat under 608", () => {
@@ -338,21 +337,24 @@ describe("invariants", () => {
 
 describe("the desktop's tiers (H3-DESKTOP.md section 4.12)", () => {
   it("names the band, the medium tier and the wide tier, each seam to the wider side", () => {
-    expect(H3_CHATS_OPEN_MIN).toBe(1268);
-    expect(H3_CHAT_MIN).toBe(640);
+    // Cloud's fold point (PD-14): the chats open from 1280, the rail under it.
+    expect(H3_CHATS_OPEN_MIN).toBe(1280);
+    expect(H3_CHATS_OPEN_MIN).toBe(H3_VEX_SHARE_MIN);
     expect([1000, 1023, 1023.4].map(h3ShellTier)).toEqual(["band", "band", "band"]);
-    expect([1023.5, 1024, 1267].map(h3ShellTier)).toEqual(["medium", "medium", "medium"]);
-    expect([1268, 1280, 1440, 2560].map(h3ShellTier)).toEqual(["wide", "wide", "wide", "wide"]);
+    expect([1023.5, 1024, 1279].map(h3ShellTier)).toEqual(["medium", "medium", "medium"]);
+    expect([1279.5, 1280, 1440, 2560].map(h3ShellTier)).toEqual(["wide", "wide", "wide", "wide"]);
   });
 
-  it("puts the seam where the open chats would first take the chat under 640", () => {
-    expect(h3(1268, true).chat).toBe(680);
-    expect(h3(1268, true).chatsRail).toBe(false);
-    expect(h3(1267, true).chatsRail).toBe(true);
+  it("folds the chats at Cloud's 1280, where Vex's column leaves the fixed 340", () => {
+    expect(h3(1280, true).chatsRail).toBe(false);
+    expect(h3(1279, true).chatsRail).toBe(true);
+    expect(tracks(h3(1279, true))).toEqual([76, 340, 863]);
+    expect(tracks(h3(1280, true))).toEqual([248, 384, 648]);
   });
 
   it("keeps the chat at 608 or more at every width, whatever the stored choice", () => {
-    // Cloud's 340 column leaves 608 at 1024 (PD-14), its narrowest.
+    // Cloud's 340 column leaves 608 at 1024 (PD-14), its narrowest; there is
+    // no other floor.
     for (let width = 1000; width <= 2560; width += 1) {
       for (const chats of [false, true]) {
         expect(h3(width, chats).chat, String(width)).toBeGreaterThanOrEqual(608);

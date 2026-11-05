@@ -12,7 +12,7 @@
  *   studio-band-files
  *                   the first plate under 1024 (open it at 1000 x 720) with
  *                   the rail's Projects and files drawer open: where the
- *                   explorer goes when the column is the rail. At 1268 and
+ *                   explorer goes when the column is the rail. At 1280 and
  *                   up it is the first plate, since the column holds them
  *
  * The plates mount the shell's existing parts over the base fixtures, as

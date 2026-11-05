@@ -27,7 +27,7 @@
  * - The LEFT column hosts the sessions sidebar in agent mode, the Studio
  *   projects and explorer in Studio, and the rail on the Lighter desk. Its
  *   widths are fixed (H3's 248 and the 76px rail); there is no drag handle.
- *   Under 1268 it is the rail at every moment, and its key slides the chats
+ *   Under 1280 it is the rail at every moment, and its key slides the chats
  *   panel over Vex's column instead (`ChatsPanel`, H3-DESKTOP.md section
  *   4.12), so no track changes; Studio's rail opens its files drawer there.
  *   On the desk it is the rail at every width, its Expand the visit's own.
@@ -305,9 +305,9 @@ function ShellFrame({
   }, [lighter, lighterZen, setZenMode, setVexOpen, zenAssistantOpen, zenControlsOpen]);
 
   // THE TIERS. The agent shell and Studio stand on H3's
-  // (docs/design/H3-DESKTOP.md sections 1.2 and 4.12): from 1268 up the
+  // (docs/design/H3-DESKTOP.md sections 1.2 and 4.12): from 1280 up the
   // chats column is the stored choice, and the sidebar key folds it; under
-  // 1268 the solver keeps it the 76px rail whatever is stored, and the key
+  // 1280 the solver keeps it the 76px rail whatever is stored, and the key
   // slides the CHATS PANEL over Vex's column instead (`ChatsPanel`): a box,
   // never a track, so a waiting card never moves while it opens or closes
   // (section 3.6, the money rule). The panel is the visit's own and closes
@@ -341,7 +341,7 @@ function ShellFrame({
   useEffect(() => {
     if (deskBand) setDeskChatsExpanded(false);
   }, [deskBand]);
-  // The stored choice; the solver reads it from 1268 up only.
+  // The stored choice; the solver reads it from 1280 up only.
   const leftAsked = leftOpen;
   const toggleSidebar = useCallback((): void => {
     if (lighter) setDeskChatsExpanded((current) => !current);
@@ -528,7 +528,7 @@ function ShellFrame({
             onCreate={onCreate}
             collapsed={sidebarCollapsed}
             onToggleSidebar={toggleSidebar}
-            // Under 1268 the rail's keys open the chats panel over Vex's
+            // Under 1280 the rail's keys open the chats panel over Vex's
             // column rather than the column (section 4.12).
             chatsPanel={chatsPanelOn ? { open: chatsPanel.open, id: CHATS_PANEL_ID, onOpen: openChatsPanel } : undefined}
             headless
@@ -540,7 +540,7 @@ function ShellFrame({
             headless
             collapsed={sidebarCollapsed}
             onToggleSidebar={toggleSidebar}
-            // Under 1268 the rail stays the rail (section 4.12): its files
+            // Under 1280 the rail stays the rail (section 4.12): its files
             // open in the rail's drawer, over Vex's column, never the track.
             expandable={tier === "wide"}
             drawerTop={band ? H3_BAND_HEIGHT : 0}
@@ -716,7 +716,7 @@ function ShellFrame({
   // tagline cell: the desk and the desk chat run on to the window's foot
   // (the approved desk plate). Zen has no bottom row.
   // THE CHATS PANEL (section 4.12), right after the chats column in the DOM
-  // so focus reaches it from the rail's key: under 1268, a box over Vex's
+  // so focus reaches it from the rail's key: under 1280, a box over Vex's
   // column, never a track. Where it lies over what is read (the band, a
   // page's strip), the chat behind it rests until it closes
   // (`chatsPanelCovers`).

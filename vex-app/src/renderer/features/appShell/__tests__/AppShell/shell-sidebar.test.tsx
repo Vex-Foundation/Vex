@@ -933,12 +933,12 @@ describe("AppShell", () => {
     ).toBeNull();
   });
 
-  it("keeps the chats column inside its track at the 1023, 1024, 1267 and 1268 seams", () => {
+  it("keeps the chats column inside its track at the 1023, 1024, 1279 and 1280 seams", () => {
     // The wave 1 defect: a sidebar's page content ran past its track. The
     // column fills its track (left-sidebar.css, pinned in
     // SessionsList-nav.test.tsx) and is never given a width here. H3's tiers
     // (docs/design/H3-DESKTOP.md sections 1.2 and 4.12): the band under 1024,
-    // the chats folded from 1024 to 1267, the stored choice from 1268.
+    // the chats the rail from 1024 to 1279, the stored choice from 1280.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const at = (width: number): { columns: string | undefined; open: string | null; inline: string } => {
       setWindowWidth(width);
@@ -957,9 +957,9 @@ describe("AppShell", () => {
     expect(at(1023)).toEqual({ columns: "76px 0px minmax(0, 1fr)", open: "false", inline: "" });
     // The medium tier: the rail, Vex at Cloud's fixed 340.
     expect(at(1024)).toEqual({ columns: "76px 340px minmax(0, 1fr)", open: "false", inline: "" });
-    expect(at(1267)).toEqual({ columns: "76px 340px minmax(0, 1fr)", open: "false", inline: "" });
-    // From 1268 the stored choice, open by default.
-    expect(at(1268)).toEqual({ columns: "248px 340px minmax(0, 1fr)", open: "true", inline: "" });
+    expect(at(1279)).toEqual({ columns: "76px 340px minmax(0, 1fr)", open: "false", inline: "" });
+    // From 1280 the stored choice, open by default.
+    expect(at(1280)).toEqual({ columns: "248px 384px minmax(0, 1fr)", open: "true", inline: "" });
     expect(at(1440)).toEqual({ columns: "248px 432px minmax(0, 1fr)", open: "true", inline: "" });
   });
 
@@ -1044,7 +1044,7 @@ describe("AppShell", () => {
     expect(solved(1000)).toBe("76px 0px minmax(0, 1fr)");
   });
 
-  it("from 1024 to 1267 starts the chats folded, the header's logo cell over the rail", () => {
+  it("from 1024 to 1279 keeps the chats the rail, the header's logo cell over it", () => {
     setWindowWidth(1024);
     useUiStore.setState({ activeSessionId: "s-1", leftOpen: true });
     const view = renderShell();
@@ -1061,9 +1061,9 @@ describe("AppShell", () => {
     expect(chats?.querySelector("[data-vex-head-cell='sidebar-key']")).toBeNull();
   });
 
-  it("from 1024 to 1267 the rail's key opens the chats panel over Vex's column, and no track moves", () => {
+  it("from 1024 to 1279 the rail's key opens the chats panel over Vex's column, and no track moves", () => {
     // docs/design/H3-DESKTOP.md section 4.12, the money rule (section 3.6):
-    // under 1268 the chats are the rail at every moment; the key slides the
+    // under 1280 the chats are the rail at every moment; the key slides the
     // chats panel over Vex's column instead of widening the track.
     setWindowWidth(1024);
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, leftOpen: true });
@@ -1114,7 +1114,7 @@ describe("AppShell", () => {
     expect(panel()?.hasAttribute("inert")).toBe(true);
     view.unmount();
 
-    // From 1268 the key folds the track as ever, and there is no panel.
+    // From 1280 the key folds the track as ever, and there is no panel.
     setWindowWidth(1440);
     const wide = renderShell();
     expect(wide.container.querySelector("[data-vex-area='chats-panel']")).toBeNull();

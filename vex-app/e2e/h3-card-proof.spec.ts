@@ -338,6 +338,7 @@ test.describe("H3 card proof on the Lighter desk: the Review order never moves",
 const PANEL_SIZES = [
   { width: 1024, height: 768 },
   { width: 1180, height: 800 },
+  { width: 1279, height: 800 },
 ] as const;
 const PANEL = '[data-vex-area="chats-panel"]';
 const PANEL_KEY = '[data-chats-panel-key="toggle"]';

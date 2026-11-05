@@ -120,9 +120,9 @@ export interface StudioPlateScene {
 
 export function StudioPlate({ scene }: { readonly scene: StudioPlateScene }): JSX.Element {
   const viewport = useWindowWidth();
-  // AppShell's solve for the agent shell and Studio: from 1268 up the chats
-  // column is the stored choice (open here); from 1024 to 1267 it starts
-  // folded to the rail; under 1024 the band folds it whatever is asked.
+  // AppShell's solve for the agent shell and Studio: from 1280 up the chats
+  // column is the stored choice (open here); from 1024 to 1279 it is
+  // the rail (its drawer over Vex's column); under 1024 the band too.
   const tier = h3ShellTier(viewport);
   const cols = computeH3ShellColumns({ viewport, chats: tier === "wide" });
   const band = cols.vexSeat === "band";

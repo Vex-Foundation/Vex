@@ -40,8 +40,8 @@
  *
  * Folded to the 76px rail, the column keeps one key per control, each the
  * rail's whole width in the open column's order: the Expand key (where the
- * column can open, from 1268 up), New project, Search, the nine nav keys.
- * Tooltips and accessible names carry the words. Under 1268 the column never
+ * column can open, from 1280 up), New project, Search, the nine nav keys.
+ * Tooltips and accessible names carry the words. Under 1280 the column never
  * opens (docs/design/H3-DESKTOP.md section 4.12: no track changes there), so
  * the rail ends in a Projects and files key instead: it opens the same
  * projects and explorer as a 248 drawer over Vex's column (under the band
@@ -211,7 +211,7 @@ export interface StudioSidebarProps {
   readonly collapsed: boolean;
   readonly onToggleSidebar: () => void;
   /**
-   * Whether the rail can open into the column. False under 1268, where the
+   * Whether the rail can open into the column. False under 1280, where the
    * rail ends in the Projects and files key and its drawer instead.
    */
   readonly expandable?: boolean;

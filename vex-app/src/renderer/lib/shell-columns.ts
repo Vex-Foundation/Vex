@@ -231,8 +231,9 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  * is 0, the strip is drawn inside the chat, and the chat takes the room.
  *
  * No centre floor. R3's CENTER_MIN (640) is not an H3 rule and is not applied
- * here. Under H3_CHATS_OPEN_MIN the chats are the rail, so the columns
- * layout never takes the chat under 641 there, and the band never under 924
+ * here, nor any 640 of its own: under H3_CHATS_OPEN_MIN the chats are the
+ * rail and Vex's column Cloud's 340, so the columns layout never takes the
+ * chat under 608 (Cloud's own measure at 1024), and the band never under 924
  * from the window minimum up.
  *
  * THE CHATS UNDER H3_CHATS_OPEN_MIN (section 4.12, the money rule's first
@@ -274,19 +275,12 @@ export const H3_VEX_NARROW = 340;
 export type H3ShellLayout = "columns" | "band";
 
 /**
- * The chat's floor with the chats column open, the one R3 kept: the width a
- * waiting card's rows were laid out for. H3's own rule has no floor; the
- * desktop keeps it by folding the chats where it would not hold.
+ * From this frame width up the chats column follows the stored choice: VEX
+ * Cloud's fold point (PD-14, "left column 248 from 1280, the 76 rail under
+ * 1280"), the same seam as H3_VEX_SHARE_MIN. Under it the chats are the
+ * rail, and their key opens the chats panel over Vex's column instead.
  */
-export const H3_CHAT_MIN = 640;
-
-/**
- * From this frame width up the chats column follows the stored choice: the
- * first width at which 248 + 30% + H3_CHAT_MIN fits (1268: 248 + 380 + 640;
- * at 1267 the chat would be 639). Under it the chats are the rail, and their
- * key opens the chats panel over Vex's column instead.
- */
-export const H3_CHATS_OPEN_MIN = 1268;
+export const H3_CHATS_OPEN_MIN = H3_VEX_SHARE_MIN;
 
 /**
  * The H3 frame's three tiers: "wide" from H3_CHATS_OPEN_MIN up (the chats as

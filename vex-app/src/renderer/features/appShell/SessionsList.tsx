@@ -35,7 +35,7 @@
  * its rule; NEW CHAT, 55 high on the cell fill; Search chats, 48; the nav
  * keys on the 40 pitch between their rules; the account cell's disc at the
  * foot. Chat and Missions pressed on the rail open the column on their list,
- * since a list out of sight cannot show that they did anything. Under 1268
+ * since a list out of sight cannot show that they did anything. Under 1280
  * (`chatsPanel`) the rail stays the rail: its Expand key, Search chats and
  * Chat and Missions open the CHATS PANEL over Vex's column instead
  * (`ChatsPanel.tsx`, section 4.12), Search with the panel's field focused.
@@ -99,7 +99,7 @@ interface SessionsListProps {
    */
   readonly headless?: boolean;
   /**
-   * Under 1268 the rail's keys open the chats panel over Vex's column
+   * Under 1280 the rail's keys open the chats panel over Vex's column
    * (`ChatsPanel`, section 4.12): whether it is open, its id for the keys'
    * `aria-controls`, and the opener, which says where its focus lands. The
    * Expand key still toggles through `onToggleSidebar`.
@@ -236,7 +236,7 @@ export function SessionsList({
   }, [searchOpen, rail, closeSearch]);
 
   const openSearch = useCallback((): void => {
-    // Under 1268 the rail's search opens the chats panel, its field focused.
+    // Under 1280 the rail's search opens the chats panel, its field focused.
     if (rail && chatsPanel !== undefined) {
       chatsPanel.onOpen("search");
       return;
