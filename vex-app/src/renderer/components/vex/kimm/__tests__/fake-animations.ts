@@ -87,11 +87,15 @@ export function installFakeAnimations(): FakeAnimations {
 /**
  * Lay her box out as the browser would at 1440 x 900: 603 high, under a
  * 56px strip (`--vex-h3-strip-h`, which her box inherits from the root).
+ * `zoom` is the wide zoom her column wears from 1760 up: her rect is then in
+ * the window's pixels, `height` x `zoom`, and `currentCSSZoom` says so.
  */
-export function layOut(box: HTMLElement, height = 603): void {
+export function layOut(box: HTMLElement, height = 603, zoom = 1): void {
   document.documentElement.style.setProperty("--vex-h3-strip-h", "56px");
+  const shown = height * zoom;
   box.getBoundingClientRect = () =>
-    ({ top: 224, bottom: 224 + height, left: 248, right: 679, width: 431, height, x: 248, y: 224, toJSON: () => ({}) }) as DOMRect;
+    ({ top: 224, bottom: 224 + shown, left: 248, right: 679, width: 431, height: shown, x: 248, y: 224, toJSON: () => ({}) }) as DOMRect;
+  Object.defineProperty(box, "currentCSSZoom", { configurable: true, value: zoom });
 }
 
 /** Undo `layOut`'s strip on the root. */

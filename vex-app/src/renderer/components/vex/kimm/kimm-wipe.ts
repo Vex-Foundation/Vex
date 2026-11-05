@@ -20,6 +20,10 @@
  * head unlit), and a leg's last frame is that resting state, so cancelling a
  * finished leg changes no pixel.
  *
+ * IN HER OWN PIXELS. Every length here is hers, before the wide zoom scales
+ * her (`ownHeight`), as her resting clip is: so a leg's last frame is the
+ * sheet's resting inset at every window width.
+ *
  * A LEG STARTS FROM THE EDGE WHERE IT STANDS. A press during a motion reads
  * the running leg's inset (`KimmWipe.inset`), and the new leg starts there,
  * so the edge never jumps and goes no deeper after the press. A leg covers
@@ -87,13 +91,26 @@ function px(el: Element, property: string): number {
 }
 
 /**
+ * Her box's height in her own pixels. From 1760 up the wide zoom scales her
+ * console and her with it (`zoom: var(--vex-zoom)`, vex-sidebar.css): her
+ * rect is in the window's pixels, while her clip and her layers move in her
+ * own, which the zoom scales. So the rect is scaled back by her effective
+ * zoom (`currentCSSZoom`; 1 where the engine has none).
+ */
+function ownHeight(box: HTMLElement): number {
+  const zoom = (box as { readonly currentCSSZoom?: number }).currentCSSZoom;
+  const scale = typeof zoom === "number" && zoom > 0 ? zoom : 1;
+  return box.getBoundingClientRect().height / scale;
+}
+
+/**
  * Start a leg on her section's box: to open (`open`) or to close, from the
  * inset `from` where a running leg stands, or from rest. Null when nothing
  * can be drawn (no Web Animations, a box not laid out, nothing to cover).
  */
 export function startKimmWipe(box: HTMLElement, open: boolean, from: number | null): KimmWipe | null {
   if (typeof box.animate !== "function") return null;
-  const height = box.getBoundingClientRect().height;
+  const height = ownHeight(box);
   const stub = px(box, "--vex-kimm-stub");
   const strip = Number.isFinite(stub) ? stub : px(box, "--vex-h3-strip-h");
   if (!Number.isFinite(strip) || !(height > strip)) return null;

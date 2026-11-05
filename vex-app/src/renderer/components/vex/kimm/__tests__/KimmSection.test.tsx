@@ -293,6 +293,17 @@ describe("KimmSection, Hide Vex closes her in 420ms on the clip (S4-07)", () => 
     ]);
   });
 
+  it("wipes in her own pixels under the wide zoom, landing on the sheet's resting inset", () => {
+    engine = installFakeAnimations();
+    const view = render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    // 1920 x 1080: her column zooms 1.091, so her 699.358 own pixels show as 763.
+    layOut(section(), 699.358, 1.091);
+    view.rerender(<KimmSection mood="hi" open={false} onOpenChange={() => undefined} />);
+    const [clip] = engine.live(section());
+    // calc(100% - 56px) in her own pixels: 643.358, never the window's 707.
+    expect(clip?.keyframes[1]).toEqual({ clipPath: "inset(0px 0px 643.358px 0px)" });
+  });
+
   it("rests her at the strip in the sheet, with no transition of its own", () => {
     const closed = rule('.vex-kimm[data-kimm-open="false"]');
     expect(closed).toMatch(
