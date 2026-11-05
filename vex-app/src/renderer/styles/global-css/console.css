@@ -16,7 +16,8 @@
  *
  * THE TITLE CELL (680, 398 at 1440): the chat's title, sans 15 in ink, and
  * under it its kind and access ("Agent · Restricted"), the line H3 draws as
- * "SAMPLE DATA": sans 12 caps, tracked, muted (section 2.3). Text sits 24 in
+ * "SAMPLE DATA": sans 11 caps, tracked, muted (section 2.3; VEX Cloud's
+ * `.sample`). Text sits 24 in
  * from the cell's edge (704 at 1440). The markup is the running head's
  * (`RunningHead.tsx`, `.vex-tb-title`); a page's crumb (a `nav`) keeps its
  * one line, and a page's own line ("Needs you" and its count) stacks like
@@ -38,15 +39,16 @@
 }
 .vex-shell-head > [data-vex-head-cell="title"] span.vex-tb-title > .vex-tb-title__sub {
   max-width: 100%;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
 
-/* THE NETWORK CELL (1078, 240 at 1440): MAINNET, sans 14 caps in ink, then
- * the REAL FUNDS mark, the hatch glyph and the words, caps 12, the card's
- * stamp without its fill (section 2.2). A statement: no chevron, no menu,
+/* THE NETWORK CELL (1078, 240 at 1440): MAINNET, a key's caps 13 in ink,
+ * then the REAL FUNDS mark, the hatch glyph and the words, caps 11, the
+ * card's stamp without its fill (section 2.2; VEX Cloud's `.hd-net` and
+ * `.rf`). A statement: no chevron, no menu,
  * no hover. A 1px rule divides it from the title cell, as every cell is
  * divided from its neighbour (section 2.4); text 24 in from each side. */
 .vex-shell-head > .vex-chat-funds {
@@ -56,7 +58,7 @@
   color: var(--vex-alias-label-primary);
 }
 .vex-chat-funds__net {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1;
   letter-spacing: var(--tracking-label);
@@ -66,7 +68,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   line-height: 1;
   letter-spacing: var(--tracking-label);
@@ -357,7 +359,8 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
 }
 
 /* The options control: the model's name, sans 13 in ink, then the effort
- * key's word in muted caps ("HIGH"), its menu opening upward and keeping the
+ * key's word in muted caps 11 ("HIGH", the strip's caps, VEX Cloud's
+ * `.cmp-meta.cap`), its menu opening upward and keeping the
  * width of its longest word ("Minimal"), whatever the trigger's own width. */
 .vex-composer-options {
   display: inline-flex;
@@ -369,7 +372,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   white-space: nowrap;
 }
 .vex-composer-options .vex-composer-options__effort {
-  font-size: 13px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -389,22 +392,22 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   border: 1px solid var(--vex-alias-rule-quiet);
 }
 
-/* The permission as its promise: caps 13 in ink 2, its icon only when the
- * words have given way. */
+/* The permission as its promise: caps 11 in ink 2 (the strip's caps), its
+ * icon only when the words have given way. */
 .vex-composer-promise {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   color: var(--vex-alias-label-secondary);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-/* CONTEXT, the meter and the share: the label in muted caps 13, ten cells 4
+/* CONTEXT, the meter and the share: the label in muted caps 11, ten cells 4
  * x 12 two apart (the rule outline, the used share filled), the share a
  * figure in ink 2; the key is the whole cell, its text 24 in. */
 .vex-composer-context {
@@ -418,6 +421,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   white-space: nowrap;
 }
 .vex-composer-context__label {
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }

@@ -4,7 +4,7 @@
  * `.vex-micro-label` in `styles/global-css/type.css` is the single
  * owner of the app-wide label stamp, with `.vex-micro` (the caption) and
  * `.vex-eyebrow` (the section head and field label) beside it. H3 sets all
- * three in Be Vietnam Pro CAPS, tracked 0.08em, at 12 or 13px: the source
+ * three in Be Vietnam Pro CAPS, tracked 0.08em, at VEX Cloud's 11 or 12px: the source
  * stays sentence case and the class paints the caps, so a screen reader
  * reads words. The money card's field labels are the one mono caps register
  * (`.vex-field-label`). Figures are Roboto Mono with `.vex-num`. This
@@ -63,9 +63,9 @@ describe("micro-label register", () => {
     expect(ruleBody(SHEET, ".vex-micro-label")).toContain("font-family: var(--font-sans)");
   });
 
-  it("pins the 12px label tier and the 13px meta step for --wide", () => {
-    expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(/font-size:\s*12px\s*;/);
-    expect(ruleBody(SHEET, ".vex-micro-label--wide")).toMatch(/font-size:\s*13px\s*;/);
+  it("pins the 11px label tier and the 12px meta step for --wide (VEX Cloud's .cap and .head)", () => {
+    expect(ruleBody(SHEET, ".vex-micro-label")).toMatch(/font-size:\s*11px\s*;/);
+    expect(ruleBody(SHEET, ".vex-micro-label--wide")).toMatch(/font-size:\s*12px\s*;/);
   });
 
   it("pins the regular weight", () => {
@@ -119,16 +119,16 @@ describe("the caption and the eyebrow speak the same register", () => {
     expect(body).not.toContain("var(--font-mono)");
   });
 
-  it.each(REGISTER)("sets %s at 12 or 13px, never through a size hook", (selector) => {
+  it.each(REGISTER)("sets %s at 11 or 12px, never through a size hook", (selector) => {
     const body = ruleBody(SHEET, selector);
-    expect(body).toMatch(/font-size:\s*1[23]px\s*;/);
+    expect(body).toMatch(/font-size:\s*1[12]px\s*;/);
     expect(body).not.toContain("--vex-micro-size");
     expect(body).not.toContain("--vex-micro-tracking");
   });
 
-  it("sets the caption at 12px and the eyebrow at 13px, the kit's small and field-label steps", () => {
-    expect(ruleBody(SHEET, ".vex-micro")).toMatch(/font-size:\s*12px\s*;/);
-    expect(ruleBody(SHEET, ".vex-eyebrow")).toMatch(/font-size:\s*13px\s*;/);
+  it("sets the caption at 11px and the eyebrow at 12px, VEX Cloud's .cap and .head", () => {
+    expect(ruleBody(SHEET, ".vex-micro")).toMatch(/font-size:\s*11px\s*;/);
+    expect(ruleBody(SHEET, ".vex-eyebrow")).toMatch(/font-size:\s*12px\s*;/);
   });
 
   it("gives the eyebrow the section head's 600, in ink", () => {
@@ -149,13 +149,15 @@ describe("the caption and the eyebrow speak the same register", () => {
 });
 
 describe("the money card's field labels", () => {
-  it("are the one mono caps register: mono 13, 400, caps, tracked, tabular", () => {
+  it("are the one mono caps register: mono 12, 400, caps, the field row's tracking, tabular", () => {
     const body = ruleBody(SHEET, ".vex-field-label");
     expect(body).toContain("font-family: var(--font-mono)");
-    expect(body).toMatch(/font-size:\s*13px\s*;/);
+    expect(body).toMatch(/font-size:\s*12px\s*;/);
     expect(body).toMatch(/font-weight:\s*400\s*;/);
     expect(body).toMatch(/text-transform:\s*uppercase\s*;/);
-    expect(body).toMatch(/letter-spacing:\s*var\(--tracking-label\)\s*;/);
+    // VEX Cloud's field row (`.fr > dt`): 0.06em, not the label's 0.08em.
+    expect(body).toMatch(/letter-spacing:\s*var\(--tracking-field\)\s*;/);
+    expect(token("--tracking-field")).toBe("0.06em");
     expect(body).toContain("font-variant-numeric: tabular-nums");
     // The call site owns the ink tier, as for every label.
     expect(body).not.toMatch(/(?<!-)\bcolor:/);
@@ -193,6 +195,11 @@ describe("the tokens the register stands on", () => {
     for (const step of ["eyebrow", "status", "chip", "caption", "tape"]) {
       expect(token(`--tracking-${step}`), step).toBe("var(--tracking-label)");
     }
+    // VEX Cloud's roles that track apart (the H3 mockup's app.css): field
+    // and check rows, times and counts, the trace's kind.
+    expect(token("--tracking-field")).toBe("0.06em");
+    expect(token("--tracking-figure")).toBe("0.04em");
+    expect(token("--tracking-kind")).toBe("0.1em");
     // The tags and the stamp take it too, each in its own rule after the
     // shared `.vex-stamp, .vex-tag` block.
     const marks = read("ui-primitives/marks.css");

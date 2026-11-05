@@ -191,13 +191,14 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 }
 /* NEW CHAT (section 1.4): the column's first cell, 55 high on the cell fill
  * (a control at rest, section 2.4; #050407 measured against the ground's
- * #010203), behind the rule under it. The word is a key's: 14, caps, tracked,
- * in ink, and so is its icon. The source stays "New chat" (or "New mission"
+ * #010203), behind the rule under it. The word is a key's: 13, caps, tracked
+ * (VEX Cloud's `.lc-new`), in ink, and so is its icon. The source stays "New chat" (or "New mission"
  * on the Mission tab); the caps are the class's. */
 .vex-ls-nrow--new {
   height: 55px;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
   background: var(--vex-alias-bg-layer-3);
+  font-size: 13px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
@@ -219,7 +220,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 /* THE NAV (sections 1.4 and 4.6): nine rows on the 40 pitch, the block 6 in
  * from the rule above it and from its own rule under it (at 1440 H3's seven
  * rows fill 179 to 472; desktop's nine run on to about 552). Each word is a
- * label: 14, caps, tracked, in ink (the measured peaks, #D6D8D7, read as
+ * label: 13, caps, tracked (VEX Cloud's `.lc-sec a`), in ink (the measured peaks, #D6D8D7, read as
  * ink, as the status words' do), its icon muted. The selected row takes the
  * one row gradient, from #181A1C at the column's left edge to the ground at
  * its right, and its icon turns ink. */
@@ -230,6 +231,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 }
 .vex-ls-nrow--nav {
   height: 40px;
+  font-size: 13px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
@@ -324,7 +326,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   color: var(--vex-alias-label-primary);
 }
 /* All, Agent, Mission: gap 16, 13, the active one in ink with a 1.5px
- * underline; counts in mono 11 muted. The row's words start 24 in, under the
+ * underline; counts in mono 11 muted, at the figures' 0.04em. The row's words start 24 in, under the
  * field's icon. */
 .vex-ls-tabs {
   display: flex;
@@ -354,6 +356,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 .vex-ls-tabs__n {
   font-size: 11px;
   font-weight: 400;
+  letter-spacing: var(--tracking-figure);
   line-height: 1.2;
   color: var(--vex-alias-label-tertiary);
 }
@@ -364,13 +367,14 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
  * head, then rows on the 36 pitch, and each later head 34 under the row
  * above it. Every word is set 24 in, the row's right end 20 in.
  *
- * CHATS is a section head, the eyebrow's register: 13, 600, caps, tracked,
- * in ink. It stands above the scroller, so it stays while the list scrolls. */
+ * CHATS is a section head, the eyebrow's register: 12, 600, caps, tracked,
+ * in ink (VEX Cloud's `.head`). It stands above the scroller, so it stays
+ * while the list scrolls. */
 .vex-ls-chats {
   flex: none;
   margin: 0;
   padding: 18px 20px 16px 24px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 14px;
   letter-spacing: var(--tracking-label);
@@ -378,14 +382,14 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   color: var(--vex-alias-label-primary);
 }
 /* A group head (TODAY, YESTERDAY, EARLIER, and desktop's PINNED): the
- * caption's register, 12, 400, caps, tracked, muted (#8B8D91 measured, the
+ * caption's register, 11, 400, caps, tracked, muted (VEX Cloud's `.lc-day`) (#8B8D91 measured, the
  * sheet's muted). The muted ink on a caps caption is H3's own: these are
  * sheet rules, not `.vex-micro-label` call sites, so the micro label's ink
  * floor (shell-design-guard) does not reach them. */
 .vex-ls-group {
   margin: 0;
   padding: 10px 20px 5px 24px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   line-height: 14px;
   letter-spacing: var(--tracking-label);
@@ -448,30 +452,27 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   color: inherit;
 }
 /* The row's right end (section 1.4): its time, or H3's tag while a mission
- * has a state. The time is the caption's size, 12, muted (#8F9192 measured),
- * in the sans with tabular figures, as H3 sets the times in rows (section
- * 2.3), never in caps ("Oct 28"). */
+ * has a state. The time is the caption's size, 11, muted, in the sans with
+ * tabular figures and the figures' 0.04em (VEX Cloud's `.lc-time`), never
+ * in caps ("Oct 28"). */
 .vex-ls-row__time {
   flex: none;
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-figure);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--vex-alias-label-tertiary);
 }
-/* The tag: the status square, about 6px, 7 before the word; the word in
- * caps, tracked, in ink (section 2.2). Its size is 12, from its cap height
- * (9.6 image px in `h3-merged__welcome-open-1440`, 8.6 CSS px), where the
- * type table says 13; RUNNING spans 55px there, narrower than 12 draws with
- * the 0.08em label tracking (61), so H3's tracking reads tighter than the
- * sheet's value (section 2.3 leaves it open). The square is the shared
- * state square (`StateSquare`, `session-row-state.ts`): RUNNING blinks,
- * WAITING is the target, so no rule here draws it. */
+/* The tag: the status square, 6px, 6 before the word; the word in caps 11,
+ * tracked, in ink (section 2.2; VEX Cloud's `.lc-state`). The square is the
+ * shared state square (`StateSquare`, `session-row-state.ts`): RUNNING
+ * blinks, WAITING is the target, so no rule here draws it. */
 .vex-ls-row__state {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
@@ -668,12 +669,12 @@ html[data-os="mac"] .vex-ls-railhead {
   padding-bottom: 8px;
 }
 
-/* A 44 head: PROJECTS and EXPLORER, the CHATS register (13, 600, caps,
+/* A 44 head: PROJECTS and EXPLORER, the CHATS register (12, 600, caps,
  * tracked, ink), set 24 in. */
 .vex-st-head,
 .vex-st-xhead__t {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 14px;
   letter-spacing: var(--tracking-label);
@@ -739,14 +740,14 @@ html[data-os="mac"] .vex-ls-railhead {
   align-items: center;
   gap: 8px;
 }
-/* RUNNING: the blinking state square (`StateSquare`) 8 before the word;
- * the word 12, caps, tracked, ink, as the chats list's tags (section 1.4). */
+/* RUNNING: the blinking state square (`StateSquare`) 6 before the word;
+ * the word 11, caps, tracked, ink, as the chats list's tags (section 1.4). */
 .vex-st-proj__run {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
@@ -794,7 +795,7 @@ html[data-os="mac"] .vex-ls-railhead {
   background: var(--vex-alias-interactive-hover);
   color: var(--vex-alias-label-primary);
 }
-/* SHOW ALL N: a 32 row, the caption's register (12, caps, tracked, muted). */
+/* SHOW ALL N: a 32 row, the caption's register (11, caps, tracked, muted). */
 .vex-st-more {
   display: flex;
   align-items: center;
@@ -803,7 +804,7 @@ html[data-os="mac"] .vex-ls-railhead {
   padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-align: left;
   text-transform: uppercase;
@@ -950,7 +951,7 @@ html[data-os="mac"] .vex-ls-railhead {
 }
 .vex-chats-panel__title {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 14px;
   letter-spacing: var(--tracking-label);

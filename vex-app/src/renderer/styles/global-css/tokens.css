@@ -195,6 +195,13 @@
   --tracking-chip: var(--tracking-label);
   --tracking-caption: var(--tracking-label);
   --tracking-tape: var(--tracking-label);
+  /* VEX Cloud's roles that track apart from the label (the H3 mockup's
+   * app.css): a field row's and a check row's caps (`.fr > dt`, `.ck`)
+   * 0.06em; times and counts (`.lc-time`, `.cn-h b`, `.xc-when`) 0.04em; the
+   * trace's kind (`.rz-k`, Model / Tool / Runtime) 0.1em. */
+  --tracking-field: 0.06em;
+  --tracking-figure: 0.04em;
+  --tracking-kind: 0.1em;
 }
 
 /* Alias tier - the one room, on :root. The theme attribute still rides on

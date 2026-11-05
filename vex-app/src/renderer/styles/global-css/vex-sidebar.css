@@ -104,7 +104,7 @@
  * box of her section laid over the column (its top is the top block's foot)
  * never moves when a decision arrives, is taken, or a mission starts:
  *
- *   Needs you head   44   NEEDS YOU (14, 600, caps) and the count at the right
+ *   Needs you head   44   NEEDS YOU (12, 600, caps) and the count at the right
  *   decision row     64   the sentence (16) over its meta line (14, muted),
  *                          and the key cell at the right on the raised fill
  *   missions row     40   the missions icon, the words (15), a chevron
@@ -141,7 +141,7 @@
   padding: 0 var(--vex-console-inset);
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
   color: var(--vex-alias-label-primary);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
 }
@@ -149,10 +149,13 @@
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
+/* The count: a figure, 13 at the figures' 0.04em, in ink (VEX Cloud's
+ * `.cn-h b`). */
 .vex-console__count {
-  color: var(--vex-alias-label-secondary);
-  font-size: 14px;
+  color: var(--vex-alias-label-primary);
+  font-size: 13px;
   font-weight: 400;
+  letter-spacing: var(--tracking-figure);
 }
 .vex-console__decision {
   display: flex;
@@ -217,7 +220,8 @@
   line-height: 18px;
   padding-top: 13px;
 }
-/* The key cell: the raised fill, its word in caps, a chevron after it. */
+/* The key cell: the raised fill, its word a key's caps 13 (VEX Cloud's
+ * `.key` on `.cn-review`), a chevron after it. */
 .vex-console__key {
   display: inline-flex;
   flex: none;
@@ -231,7 +235,7 @@
   background: var(--vex-alias-interactive-solid);
   color: var(--vex-alias-label-primary);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -300,7 +304,7 @@
 /* ---- the console's rest (VexConsole.tsx): under her section ----
  * What her section covers while she is open and shows while she is closed,
  * scrolling within the column when it outgrows it. Each part opens with a 44
- * head (13, 600, caps) over the rule. */
+ * head (12, 600, caps) over the rule. */
 .vex-vs__rest {
   min-height: 0;
   flex: 1 1 0;
@@ -308,7 +312,7 @@
 }
 .vex-console__head--section {
   height: 44px;
-  font-size: 13px;
+  font-size: 12px;
 }
 .vex-console__note {
   margin: 0;
@@ -343,7 +347,7 @@
 /* THIS PROJECT (our approved Studio plate, docs/design/H3-DESKTOP.md section
  * 4.9; VexConsoleThisProject): the access sentence and "Change in project
  * settings", a link in ink with an underline (section 2.3: never blue); then
- * the facts on 40 rows, each label 12 in caps, muted, its value 15 at the
+ * the facts on 40 rows, each label 11 in caps, muted, its value 15 at the
  * right (a folder and an address in mono 13); PROJECT ASSETS is the Open
  * activity key's shape. */
 .vex-console__link {
@@ -375,7 +379,7 @@
 .vex-console__fact > dt {
   flex: none;
   color: var(--vex-alias-label-tertiary);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
@@ -394,7 +398,8 @@
   font-size: 13px;
 }
 /* One activity: its line (15, ink), then its status at the right: the 6px
- * square in the status colour beside the word (13, caps, ink). */
+ * square in the status colour 8 before the word (11, caps, ink; VEX Cloud's
+ * `.rc-s`). */
 .vex-console__activity {
   display: flex;
   box-sizing: border-box;
@@ -416,9 +421,9 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   max-width: 55%;
-  font-size: 13px;
+  font-size: 11px;
 }
 .vex-console__status-word {
   overflow: hidden;
@@ -427,7 +432,8 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
-/* OPEN ACTIVITY: 12 in caps, the arrow at the right edge. */
+/* OPEN ACTIVITY: 11 in caps (VEX Cloud's `.cn-more .cap`), the arrow at the
+ * right edge. */
 .vex-console__open {
   display: flex;
   box-sizing: border-box;
@@ -442,7 +448,7 @@
   background: none;
   color: var(--vex-alias-label-secondary);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;

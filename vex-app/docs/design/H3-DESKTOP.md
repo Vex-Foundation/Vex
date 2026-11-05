@@ -337,7 +337,7 @@ Contrast on the ground (#010203), computed from the values above:
 
 ### 2.3 Type
 - **Families.** Be Vietnam Pro, 400 and 600, for every word. Roboto Mono 400 with tabular figures for figures, balances, addresses, the money card's field labels and the receipt's labels. Both are bundled as local woff2 files with their licences (S1-01, S1-02). Instrument Sans and Instrument Serif retire. Studio's approved plate (section 4.9) moves the terminal onto Roboto Mono 13/20, with a bundled 700 for its bold text (2026-11-04); code elsewhere keeps `--font-code` (JetBrains Mono) until its own change.
-- **Labels.** Caps with 0.08em tracking (the sheet's value; the measured widths were not checked against the font files). Labels are sans, except the money card's and the receipt's field labels, which are mono caps. Mono with caps, banned by R3's `shell-design-guard.test.ts`, is H3's style for those labels.
+- **Labels.** Caps with 0.08em tracking (`--tracking-label`), at VEX Cloud's sizes: the caps label 11 (the mockup's `.cap`), the section head 12 at 600 (`.head`), a key 13 (`.key`). Desktop first set each label 1px above these, which is what made the left column measure about 8% wide; the tracking was right. Cloud tracks a few roles apart, and so does desktop: field and check rows 0.06em (`--tracking-field`), times and counts 0.04em (`--tracking-figure`), the trace's kind 0.1em (`--tracking-kind`; desktop's trace has no kind label yet). Labels are sans, except the money card's and the receipt's field labels, which are mono caps 12 at the field row's 0.06em. Mono with caps, banned by R3's `shell-design-guard.test.ts`, is H3's style for those labels.
 - **Weights,** read by eye: 600 for section heads (NEEDS YOU, CHATS, AI PERMISSION, RECENT ACTIVITY, Portfolio's EQUITY, ALLOCATION and OPEN POSITIONS), the tagline and Portfolio's equity figure; 400 for everything else.
 - **Links** are ink with an underline ("Change in Settings"), never blue.
 
@@ -365,7 +365,7 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 - the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
 - the money card at a short window, Cloud's density rule (DG-0, H3 tokens.css: 1024 wide and up, 820 tall or less): the strip 4 shorter (2 over and 2 under its line), the head 10 under the consequence rather than 14, and the docked reason field 40 high rather than 56; the field rows stay 34 and the decision row 72. At 1280 x 720 this keeps the swap card's top under the header's rule, where the toast proof expects it.
 
-Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source. The left column's labels draw about 8% wider than H3's at `--tracking-label` 0.08em, which suggests H3 tracks tighter; the token is unchanged until the mockup source settles it.
+Settled by the mockup source (2026-11-05): the labels' 8% came from their sizes, 1px over Cloud's, not from the tracking, which stays 0.08em.
 
 ### 2.4 Cells, rules and keys
 - Every cell is bounded by 1px rules in the rule colour. The chosen rule marks a total (above TOTAL DEBIT) and draws keycaps.

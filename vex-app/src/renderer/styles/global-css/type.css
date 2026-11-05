@@ -21,8 +21,13 @@
  *
  * A label is written in sentence case in the source and uppercased by the
  * class here, so a screen reader reads words, not letters. Every caps label
- * is tracked 0.08em (--tracking-label), the sheet's own value. Weights are
- * the two the face ships: 600 for section heads, 400 for everything else.
+ * is tracked 0.08em (--tracking-label), the sheet's own value, at VEX
+ * Cloud's sizes (the H3 mockup's `.cap` 11, `.head` 12 and `.key` 13): R3's
+ * steps sat 1px above them, which is what made the left column measure about
+ * 8% wide. Cloud tracks a few roles apart: field and check rows 0.06em
+ * (--tracking-field), times and counts 0.04em (--tracking-figure), the trace
+ * kind 0.1em (--tracking-kind). Weights are the two the face ships: 600 for
+ * section heads, 400 for everything else.
  *
  * The classes below own family, scale, case and tracking at the CLASS
  * level, so their call sites change register in one edit: this sheet is
@@ -31,13 +36,13 @@
  * ------------------------------------------------------------------------- */
 
 /* Eyebrow: the section head and the field label (a form legend, a section
- * head, a dialog's small title): 13px caps, 600, tracked, in ink, as H3
- * draws NEEDS YOU, CHATS and RECENT ACTIVITY. */
+ * head, a dialog's small title): 12px caps, 600, tracked, in ink, as VEX
+ * Cloud sets NEEDS YOU, CHATS and RECENT ACTIVITY (the H3 mockup's `.head`). */
 .vex-eyebrow {
   display: inline-flex;
   align-items: center;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -45,15 +50,15 @@
 }
 
 /* Micro: the caption register (group heads such as TODAY, stepper lines,
- * trailing meta). 12px caps, 400, tracked, the sheet's small label step,
- * everywhere: the pre-shell and the shell read one size.
+ * trailing meta). 11px caps, 400, tracked, VEX Cloud's small label step
+ * (`.cap`), everywhere: the pre-shell and the shell read one size.
  *
  * Sets NO color and no display: every call site owns its own text tier and
  * its own box. Unlayered, so it beats Tailwind's `@layer utilities`; a call
  * site that needs a different size must not use this class. */
 .vex-micro {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -64,7 +69,8 @@
  *
  * H3 sets it in the sans at the small label step:
  *
- *   font-size   12px      (labels run 11 to 14; this is the small one)
+ *   font-size   11px      (labels run 11 to 13; this is the small one,
+ *                          VEX Cloud's `.cap`)
  *   font-weight 400
  *   case        uppercase (the source stays sentence case, so assistive
  *                          tech reads words; the class paints the caps)
@@ -83,28 +89,29 @@
  * NO BACKING CHIP: a label never carries its own plate. */
 .vex-micro-label {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }
-/* The meta step: 13px, for the label that is a small key, a status word or
- * a chip's word (THOUGHT FOR, the status strip, the chats list's tags). */
+/* The meta step: 12px, for the label that is a small key, a status word or
+ * a chip's word (VEX Cloud's `.head` and `.vk-act` step). */
 .vex-micro-label--wide {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* Field label: the money card's and the receipt's field labels (FROM,
- * AMOUNT TO SWAP, QUOTED PRICE), which H3 sets in MONO caps, 13, 400,
- * tracked like every label. The one register where the mono face takes
- * caps; `shell-design-guard.test.ts` keeps mono caps to it and the tags.
- * Sets no colour: the call site owns its ink tier. */
+ * AMOUNT TO SWAP, QUOTED PRICE), which H3 sets in MONO caps, 12, 400,
+ * tracked at the field row's 0.06em (VEX Cloud's `.fr > dt`). The one
+ * register where the mono face takes caps; `shell-design-guard.test.ts`
+ * keeps mono caps to it and the tags. Sets no colour: the call site owns its
+ * ink tier. */
 .vex-field-label {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-field);
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
 }

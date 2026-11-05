@@ -241,7 +241,7 @@ describe("SessionWelcomeHero - the notes", () => {
     const line = cssRule(".vex-welcome__note");
     expect(line).toMatch(/text-transform:\s*uppercase;/);
     expect(line).toMatch(/letter-spacing:\s*var\(--tracking-label\);/);
-    expect(line).toMatch(/font-size:\s*12px;/);
+    expect(line).toMatch(/font-size:\s*11px;/);
     expect(line).toMatch(/color:\s*var\(--vex-alias-label-tertiary\);/);
     const square = cssRule(".vex-welcome__note::before");
     expect(square).toMatch(/width:\s*6px;/);

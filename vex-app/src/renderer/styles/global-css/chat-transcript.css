@@ -192,10 +192,10 @@
   gap: 12px;
   color: var(--vex-alias-label-primary);
 }
-/* A table's head cells in an answer are labels: caps 12, tracked, muted, as
- * H3 sets its table heads. */
+/* A table's head cells in an answer are labels: caps 11, tracked, muted, as
+ * VEX Cloud sets its table heads (`.tbl th`). */
 .vex-reply .vex-chat-prose th {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -212,13 +212,14 @@
 }
 
 /* "Stopped", a status in H3's grammar (section 2.2): the small outline square
- * and the word in caps 13, tracked, in ink. */
+ * 6 before the word in caps 11, tracked, in ink (VEX Cloud's status label at
+ * its row size). */
 .vex-reply__stopped {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.45;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -319,11 +320,11 @@
   text-transform: uppercase;
 }
 /* The step's word, in the time column where there is no time (VEX Cloud's
- * trace): caps 12 tracked, muted for a step that ran, ink for one still
+ * trace): caps 11 tracked, muted for a step that ran, ink for one still
  * pending, FAILED in the refusal ink. */
 .vex-step__word {
   flex: none;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-tertiary);
@@ -563,9 +564,10 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 /* ── The filled receipt ──────────────────────────────────────────────────
  * docs/design/H3-DESKTOP.md sections 1.7, 2.4 and Appendix A.8, measured in
  * the signed-moment capture at 1440: a framed card the column's full width,
- * 12 under the steps. Its head, 16 in: the kind and the chain in caps 13
- * tracked muted, the time in the mono 13 muted and the stamp (the status
- * green fill, white caps 12, 24 high) at the right; under them the pair in
+ * 12 under the steps. Its head, 16 in: the kind and the chain in caps 11
+ * tracked muted, the time in the mono 11 muted at the figures' 0.04em and
+ * the stamp (the status green fill, white caps 11, 24 high) at the right
+ * (VEX Cloud's `.xc-top.cap`, `.xc-when` and `.tag`); under them the pair in
  * sans 20 ink and the chain in 16 ink 2. Then the rows on a 34 pitch, each on
  * the rule: the label in the mono caps of the field-label register, muted,
  * and the value in the mono 13 ink at the right. */
@@ -592,7 +594,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 11px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   white-space: nowrap;
@@ -602,7 +604,8 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 .vex-receipt__time {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-figure);
   font-variant-numeric: tabular-nums;
   color: var(--vex-alias-label-tertiary);
 }
@@ -614,7 +617,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   align-items: center;
   height: 24px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
@@ -663,8 +666,8 @@ html[data-still] .vex-step-node[data-step-node="running"] {
  *  captures at 1440: "Vex's thinking is a framed row". A square *
  *  cell on the ground in the 1px rule, the column's full width; *
  *  its head 40 high, 16 in, the glyph (10) then the label 14    *
- *  after it in caps 13 tracked ink, the figures at the right in *
- *  the mono 12 muted. Under the head's rule, the step rows, the *
+ *  after it in caps 11 tracked ink (VEX Cloud's `.rz-h.cap`),   *
+ *  the figures at the right in the mono 12 muted. Under the head's rule, the step rows, the *
  *  live trace or the opened trace, on the label's 40 edge. The  *
  *  live turn's frame (`TurnIsland`) and a persisted thinking    *
  *  row (`ReasonedBlock`) are the same cell.                     *
@@ -684,14 +687,14 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 .vex-live-row .vex-step__title {
   max-width: none;
   flex: 0 1 auto;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--vex-alias-label-primary);
 }
 .vex-live-row .vex-step__word {
-  font-size: 13px;
+  font-size: 11px;
 }
 .vex-live-row .vex-step__num {
   color: var(--vex-alias-label-tertiary);
@@ -823,7 +826,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 
 /* ── The thinking row (a persisted Thought row) ──────────────────────────
  * The frame closed to its head: the dot-grid glyph, "Thought" or "Thought
- * for 2.8 s" in caps 13 tracked ink, the trace's first line in 13 muted, then
+ * for 2.8 s" in caps 11 tracked ink (VEX Cloud's `.rz-h.cap`), the trace's first line in 13 muted, then
  * at the right the turn's steps ("5 steps", 13 muted) and the chevron. The
  * whole row is the key: the label is the button, and its hit area stretches
  * over the row. Opened, the trace sits under the head's rule in the frame. */
@@ -831,10 +834,11 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   margin-bottom: 12px;
   border: 1px solid var(--vex-alias-rule);
 }
-/* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label. */
+/* The figure in "Thought for 2.8 s" keeps its case: a unit is not a label.
+ * It takes the figures' 0.04em (VEX Cloud's `.rz-ms`). */
 .vex-reasoned__figure {
   font-variant-numeric: tabular-nums;
-  letter-spacing: normal;
+  letter-spacing: var(--tracking-figure);
   text-transform: none;
 }
 .vex-reasoned__row {
@@ -859,7 +863,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
   border: 0;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
