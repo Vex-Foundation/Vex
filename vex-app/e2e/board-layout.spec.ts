@@ -464,8 +464,8 @@ test.describe("board grid geometry", () => {
         "true",
       ]);
       // The wide-Latin row exactly, because it is the one whose width a
-      // character count claimed to know: a `W` is about 13.61px in Instrument
-      // Sans at 12.5, so four fit where eight (about 107px) would not.
+      // character count claimed to know: a `W` is about 12.56px in Be Vietnam
+      // Pro at 12.5, so four fit where eight (about 100px) would not.
       expect(tickers[2]?.text).toBe("WWWW…");
     });
   }

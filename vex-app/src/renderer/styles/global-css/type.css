@@ -120,14 +120,14 @@
 
 /* Chat prose: the READING register for message bodies.
  *
- * The register (V10):
- *   BODY      -> Instrument Sans 15.5px/1.65 (reading scale). The serif is
- *                a display face and never sets a paragraph.
- *   HEADINGS  -> Instrument Sans 600/700, set per-node in `MarkdownContent`.
- *   REASONING -> Instrument Sans 14px muted (`.vex-reasoning-prose` below),
- *                a quieter voice for a different kind of speech.
+ * The register (H3, docs/design/H3-DESKTOP.md section 2.3):
+ *   BODY      -> the sans (--font-sans, Be Vietnam Pro) 15.5px/1.65
+ *                (reading scale).
+ *   HEADINGS  -> the sans 600/700, set per-node in `MarkdownContent`.
+ *   REASONING -> the sans 14px muted (`.vex-reasoning-prose` below), a
+ *                quieter voice for a different kind of speech.
  *   CODE      -> JetBrains Mono (--font-code) for code and raw JSON, and
- *                (--font-mono) for figures. */
+ *                Roboto Mono (--font-mono) for figures. */
 .vex-chat-prose {
   font-family: var(--font-sans);
   font-size: 15.5px;

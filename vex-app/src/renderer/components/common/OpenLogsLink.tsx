@@ -14,7 +14,7 @@ export function OpenLogsLink({ className }: OpenLogsLinkProps): JSX.Element {
         void window.vex.support.openLogsFolder().catch(() => undefined);
       }}
       className={cn(
-        // Inter Tight, NOT mono: this is a UI action label, and mono is
+        // The sans (Be Vietnam Pro), NOT mono: this is a UI action label, and mono is
         // reserved for technical artifacts - code, JSON, addresses, hashes
         // (design-language §4). Colour is token-driven: `--vex-accent-text`
         // is the accent tuned for use AS TEXT, defined by both the gate and

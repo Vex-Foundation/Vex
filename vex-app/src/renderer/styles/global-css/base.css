@@ -99,10 +99,9 @@ html {
  *
  * EVERYTHING ELSE R3 MOVES comes to rest here or in its own rule: the shell's
  * column tracks snap (shell.css states its own collapse), swatches and the
- * loading line stop stepping (ui-primitives/marks.css), and the K2 hologram
- * paints one still frame from JS (`lib/motion/use-still-frame.ts`), so her
- * dock into the sidebar is her simply appearing and a hide does not wait for
- * her close.
+ * loading line stop stepping (ui-primitives/marks.css), Kimm's section rests
+ * at once (kimm.css states its own collapse), and her glyph field paints one
+ * still frame from JS (`lib/motion/use-still-frame.ts`).
  *
  * DELAYS COLLAPSE TOO. A stagger (`.vex-rise-d1` to `-d3` on the wake and
  * unlock type, both-filled) would otherwise hold its line at the animation's

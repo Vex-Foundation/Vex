@@ -111,8 +111,8 @@
  * `motion-tokens.test.ts`, and the sheet names this file beside them.
  *
  * THE MOUNT. This component draws; the feature that mounts it
- * (`features/vex/VexPortraitPlate.tsx`, in the Vex column where K2's print
- * window stood) maps her presence state to her mood, reads the platform's
+ * (`features/vex/VexPortraitPlate.tsx`, in the Vex column) maps her presence
+ * state to her mood, reads the platform's
  * chord and writes the store.
  *
  * The figure is decorative (`aria-hidden`): her state is said in words by the

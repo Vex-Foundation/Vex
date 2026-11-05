@@ -1,6 +1,6 @@
 /**
  * The run gate of a canvas loop: it runs only while its element is on screen and the window is
- * shown (MOTION-POLICY.md, "The K2 portrait"). A hidden window or an element scrolled or folded
+ * shown (MOTION-POLICY.md, "Kimm's glyph field"). A hidden window or an element scrolled or folded
  * out of view stops the loop at once; it resumes when both hold again. Where
  * `IntersectionObserver` does not exist the element counts as on screen.
  */
