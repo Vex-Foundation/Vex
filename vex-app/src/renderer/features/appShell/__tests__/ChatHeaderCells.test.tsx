@@ -97,9 +97,9 @@ describe("the chat's title cell, in H3 type", () => {
     expect(rule(`${TITLE} span.vex-tb-title`)).toMatch(/flex-direction:\s*column;/);
   });
 
-  it("draws the title in sans 15 and its kind in tracked caps 11", () => {
+  it("draws the title in sans 14 and its kind in tracked caps 11", () => {
     const name = rule(`${TITLE} span.vex-tb-title > .vex-tb-title__name`);
-    expect(name).toMatch(/font-size:\s*15px;/);
+    expect(name).toMatch(/font-size:\s*14px;/);
     expect(name).toMatch(/font-weight:\s*400;/);
     const sub = rule(`${TITLE} span.vex-tb-title > .vex-tb-title__sub`);
     expect(sub).toMatch(/font-size:\s*11px;/);

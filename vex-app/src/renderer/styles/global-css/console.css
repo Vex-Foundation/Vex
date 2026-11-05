@@ -14,7 +14,8 @@
  * cells' places are the header's (title-bar.css); what the chat's cells say
  * and how they read is here.
  *
- * THE TITLE CELL (680, 398 at 1440): the chat's title, sans 15 in ink, and
+ * THE TITLE CELL (680, 398 at 1440): the chat's title, sans 14 / 1.3 in ink
+ * (VEX Cloud's `.hd-title h1`), and
  * under it its kind and access ("Agent · Restricted"), the line H3 draws as
  * "SAMPLE DATA": sans 11 caps, tracked, muted (section 2.3; VEX Cloud's
  * `.sample`). Text sits 24 in
@@ -33,9 +34,9 @@
 }
 .vex-shell-head > [data-vex-head-cell="title"] span.vex-tb-title > .vex-tb-title__name {
   max-width: 100%;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 1.3;
 }
 .vex-shell-head > [data-vex-head-cell="title"] span.vex-tb-title > .vex-tb-title__sub {
   max-width: 100%;
@@ -273,16 +274,18 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   }
 }
 
-/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section 1.8): 31
- * high (797 to 827 at 1440), its top rule across the chat column, four cells
- * divided by the rule, each one's words 24 in, sans 13:
+/* THE STATUS STRIP over the row (docs/design/H3-DESKTOP.md section 1.8): 32
+ * high with its top rule (VEX Cloud's `.cmp-meta`, 796 to 827 at 1440), its
+ * top rule across the chat column, four cells divided by the rule, each
+ * one's words 24 in, in the strip's caps 11:
  *
- *   model    the model's name in ink, then the effort word in muted caps
+ *   model    the model's name, 12 in ink, then the effort word in muted
+ *            caps
  *   promise  FUNDS REQUIRE APPROVAL or FULL ACCESS, caps, ink 2
  *   state    H3's empty cell, holding desktop's composer state while it
  *            lasts
- *   context  CONTEXT in muted caps, ten cells and the share, the cell's
- *            own key
+ *   context  CONTEXT in muted caps, ten cells and the share in ink 2,
+ *            the cell's own key
  *
  * A narrow strip (the chat at 1280 and under) tightens the cells to 16 in;
  * under 600 the promise's words give way to its icon (the seat's classes),
@@ -293,9 +296,9 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   display: flex;
   align-items: stretch;
   min-width: 0;
-  height: 31px;
+  height: 32px;
   border-top: 1px solid var(--vex-alias-rule);
-  font-size: 13px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .vex-composer-strip__cell {
@@ -358,7 +361,8 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   }
 }
 
-/* The options control: the model's name, sans 13 in ink, then the effort
+/* The options control: the model's name, sans 12 in ink (VEX Cloud's
+ * `.meta-model b`), then the effort
  * key's word in muted caps 11 ("HIGH", the strip's caps, VEX Cloud's
  * `.cmp-meta.cap`), its menu opening upward and keeping the
  * width of its longest word ("Minimal"), whatever the trigger's own width. */
@@ -368,7 +372,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   gap: 10px;
   min-width: 0;
   color: var(--vex-alias-label-primary);
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .vex-composer-options .vex-composer-options__effort {
@@ -417,7 +421,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   height: 100%;
   padding: 0 24px;
   color: var(--vex-alias-label-tertiary);
-  font-size: 13px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .vex-composer-context__label {

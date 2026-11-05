@@ -103,9 +103,9 @@
 /* ── The person's message ────────────────────────────────────────────────
  * docs/design/H3-DESKTOP.md section 1.7, measured in the chat captures at
  * 1440: one right-anchored row, the bubble and then the avatar cell 12 to its
- * right. The bubble is the bubble fill (#212325) with the
- * words in sans 17 / 24 ink, 11 above and below and 16 at the sides (46 high
- * on one line), at most 560 wide; square, by the shape law (base.css), where
+ * right. The bubble is the bubble fill (#212325) with the words in sans 16 /
+ * 1.45 ink, 12 above and below and 16 at the sides, at most 74% of the
+ * column (VEX Cloud's `.t-you p`); square, by the shape law (base.css), where
  * the capture rounds three corners. The avatar is a 36px disc. The clock and
  * the message keys sit at the bubble's left, hover-revealed, so at rest the
  * row is the bubble and the disc alone. */
@@ -121,26 +121,26 @@
   align-items: center;
   gap: 8px;
   height: 20px;
-  /* Centred on the bubble's first line: 11 + 24 / 2 - 20 / 2. */
-  margin-top: 13px;
+  /* Centred on the bubble's first line: 12 + 23.2 / 2 - 20 / 2. */
+  margin-top: 14px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-you__stack {
   display: flex;
   min-width: 0;
-  max-width: min(560px, 100%);
+  max-width: 74%;
   flex-direction: column;
   align-items: flex-end;
 }
 .vex-you__body {
   max-width: 100%;
   margin: 0;
-  padding: 11px 16px;
+  padding: 12px 16px;
   background: var(--vex-alias-bubble);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 400;
-  line-height: 24px;
+  line-height: 1.45;
   text-align: left;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -180,17 +180,28 @@
  * column's own left edge: the thinking row, the steps, the answer and the
  * receipt span the column, level with the person's bubble on the right, with
  * no token beside them (her presence is the Vex key in the header). Her
- * answer is the sans at 16 / 1.6 in ink, 12 between paragraphs: a step under
- * the bubble's 17, the reading size H3 gives a message. */
+ * answer stands in her bubble, as VEX Cloud draws it (`.t-vex p`): the sans
+ * at 16 / 1.45 at -0.005em in ink, 12 between paragraphs, padded 12 by 16,
+ * as wide as its words and at most 82% of the column, the reading size of
+ * the person's message. The bubble is the answer's own wrapper
+ * (`.vex-answer`, and `.vex-answer-resolve` while it streams), so the
+ * reasoning trace, which renders the same markdown, keeps its own frame. */
 .vex-reply {
   position: relative;
 }
 .vex-reply .vex-chat-prose {
   font-size: 16px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
   gap: 12px;
   color: var(--vex-alias-label-primary);
+}
+.vex-reply :is(.vex-answer, .vex-answer-resolve) {
+  width: fit-content;
+  max-width: 82%;
+  padding: 12px 16px;
+  background: var(--vex-alias-bg-overlay);
 }
 /* A table's head cells in an answer are labels: caps 11, tracked, muted, as
  * VEX Cloud sets its table heads (`.tbl th`). */

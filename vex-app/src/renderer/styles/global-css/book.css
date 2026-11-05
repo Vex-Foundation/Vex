@@ -188,8 +188,8 @@
  * ink, the rest in ink 2), then the tiles: square cells told apart by 1px rules (the grid's
  * 1px gaps over the rule colour, so two cells share one rule and the frame is
  * one rule all round), each a caps label (11, muted; VEX Cloud's `.fig
- * dt`), the figure (sans, 24 /
- * 400; the wallet total 33 / 600) and a muted line (14). As many columns as
+ * dt`), the figure (sans 18 / 1.1 at -0.01em, 400; the wallet total 24 /
+ * 600, VEX Cloud's `.fig dd` and `.fig.is-hero dd`) and a muted line (12). As many columns as
  * tiles, up to four in a row where the page is wide; two in a row when four
  * would not fit; one under 480. */
 
@@ -241,7 +241,7 @@
 }
 .vex-pf-tile {
   min-width: 0;
-  padding: 18px 20px 20px;
+  padding: 16px 16px 18px;
   background: var(--vex-alias-bg-base);
 }
 .vex-pf-tile__l {
@@ -254,18 +254,19 @@
 .vex-pf-tile__fig {
   margin: 10px 0 0;
   font-family: var(--font-sans);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 400;
-  line-height: 1.2;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--vex-alias-label-primary);
 }
-/* The wallet total: the contract's equity figure, 33 / 600. */
+/* The wallet total: the equity figure, 24 / 600 (VEX Cloud's hero tile). */
 .vex-pf-tile[data-vex-tile="total"] .vex-pf-tile__fig {
-  font-size: 33px;
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.01em;
@@ -277,17 +278,18 @@
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tile__u {
-  font-size: 14px;
+  font-size: 12px;
+  letter-spacing: 0;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tile__sub {
-  margin: 6px 0 0;
-  font-size: 14px;
+  margin: 8px 0 0;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-pf-tile__sub .vex-num {
-  font-size: 13px;
+  font-size: 11px;
 }
 
 /* ---- the wallet total chart (`EquityChart`) ---------------------------

@@ -191,9 +191,10 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 }
 /* NEW CHAT (section 1.4): the column's first cell, 55 high on the cell fill
  * (a control at rest, section 2.4; #050407 measured against the ground's
- * #010203), behind the rule under it. The word is a key's: 13, caps, tracked
- * (VEX Cloud's `.lc-new`), in ink, and so is its icon. The source stays "New chat" (or "New mission"
- * on the Mission tab); the caps are the class's. */
+ * #010203), behind the rule under it. The word is a key's: 13, caps,
+ * tracked, in ink 2 with its icon (VEX Cloud's `.lc-new`); the pointer
+ * lights both to ink. The source stays "New chat" (or "New mission" on the
+ * Mission tab); the caps are the class's. */
 .vex-ls-nrow--new {
   height: 55px;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
@@ -201,17 +202,21 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   font-size: 13px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
 }
 .vex-ls-nrow--new .vex-ls-nrow__i {
+  color: currentColor;
+}
+.vex-ls-nrow--new:hover {
   color: var(--vex-alias-label-primary);
 }
 /* SEARCH CHATS (section 1.4): 48 high on the ground behind its rule, the
- * search icon and "Search chats" in sentence case at 15, both muted: it reads
- * as the field it opens (the measured peaks, #9EA0A0, sit at the muted step). */
+ * search icon and "Search chats" in sentence case at 14 (VEX Cloud's
+ * `.lc-search input`), both muted: it reads as the field it opens. */
 .vex-ls-nrow--search {
   height: 48px;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--vex-alias-label-tertiary);
 }
 .vex-ls-nrow--search:hover {
@@ -220,10 +225,10 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
 /* THE NAV (sections 1.4 and 4.6): nine rows on the 40 pitch, the block 6 in
  * from the rule above it and from its own rule under it (at 1440 H3's seven
  * rows fill 179 to 472; desktop's nine run on to about 552). Each word is a
- * label: 13, caps, tracked (VEX Cloud's `.lc-sec a`), in ink (the measured peaks, #D6D8D7, read as
- * ink, as the status words' do), its icon muted. The selected row takes the
- * one row gradient, from #181A1C at the column's left edge to the ground at
- * its right, and its icon turns ink. */
+ * label: 13, caps, tracked, in ink 2, its icon muted (VEX Cloud's
+ * `.lc-sec a`). The selected row takes the one row gradient, from #181A1C
+ * at the column's left edge to the ground at its right, and its word and
+ * icon turn ink; the pointer lights the word to ink. */
 .vex-ls-nav {
   flex: none;
   padding: 6px 0;
@@ -234,6 +239,10 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   font-size: 13px;
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-nrow--nav:hover {
+  color: var(--vex-alias-label-primary);
 }
 .vex-ls-nrow--nav[data-selected] {
   background: var(--vex-alias-row-selected);
@@ -279,7 +288,7 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   border: 0;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
   background: var(--vex-alias-field);
-  font-size: 15px;
+  font-size: 14px;
 }
 .vex-ls-search:focus-within {
   outline: 1px solid var(--vex-alias-rule-chosen);
@@ -401,7 +410,8 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   padding: 0;
   list-style: none;
 }
-/* A chat row: 36 high, the title at 15 in ink with an ellipsis. The open chat
+/* A chat row: 36 high, the title at 14 / 1.3 in ink 2 with an ellipsis
+ * (VEX Cloud's `.lc-chat a`); the open chat's title is ink. The open chat
  * takes the selected step (raised 2): the gradient is the nav's alone, H3's
  * one row gradient. */
 .vex-ls-row {
@@ -428,9 +438,12 @@ html:not([data-os="mac"]) .vex-shell-head > .vex-ls-head.vex-lights-start {
   padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 15px;
-  line-height: 1.2;
+  font-size: 14px;
+  line-height: 1.3;
   text-align: left;
+  color: var(--vex-alias-label-secondary);
+}
+.vex-ls-row:hover .vex-ls-row__select {
   color: var(--vex-alias-label-primary);
 }
 .vex-ls-row__t {
@@ -694,9 +707,9 @@ html[data-os="mac"] .vex-ls-railhead {
   padding: 0;
   list-style: none;
 }
-/* A project row: 36 high, the name at 15 in ink; the open project on the
- * selected row's fade (the nav's gradient, from #181A1C at the column's left
- * edge to the ground); a hover the cell hover. */
+/* A project row: 36 high, the name at 14 in ink, the chats list's size; the
+ * open project on the selected row's fade (the nav's gradient, from #181A1C
+ * at the column's left edge to the ground); a hover the cell hover. */
 .vex-st-proj {
   position: relative;
   display: flex;
@@ -722,8 +735,8 @@ html[data-os="mac"] .vex-ls-railhead {
   padding: 0 20px 0 24px;
   border: 0;
   background: transparent;
-  font-size: 15px;
-  line-height: 1.2;
+  font-size: 14px;
+  line-height: 1.3;
   text-align: left;
   color: var(--vex-alias-label-primary);
 }

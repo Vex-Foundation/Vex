@@ -341,28 +341,46 @@ Contrast on the ground (#010203), computed from the values above:
 - **Weights,** read by eye: 600 for section heads (NEEDS YOU, CHATS, AI PERMISSION, RECENT ACTIVITY, Portfolio's EQUITY, ALLOCATION and OPEN POSITIONS), the tagline and Portfolio's equity figure; 400 for everything else.
 - **Links** are ink with an underline ("Change in Settings"), never blue.
 
-Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70em and Roboto Mono's as 0.711em. One image pixel of cap height is 1.3px of size at this scale, so each size is plus or minus 1. The sheet's own labels run 12 to 13; the app's labels measure 11 to 14.
+The sizes are VEX Cloud's (2026-11-05), read from its mockup source, `v99-ui-rebrand/mockups/h3-merged/css/app.css` on Cloud's `rebranding-v99-ui` branch; the line given is that file's. They replace the cap-height measures this table first held (each was plus or minus 1, and every label read 1px large). Where a caps label is listed, it is the label register's (section 2.3, Labels).
 
-| Use | Face, size, weight | Captures |
+| Use | Face, size, weight | app.css |
 |---|---|---|
-| Portfolio's equity figure | sans 33, 600 | portfolio |
-| Portfolio's tile figures | sans 24, 400; gains in the gain colour | portfolio |
-| the card's sentence; the Needs you row's decision; the tagline | sans 20; the tagline 600 in caps, its second clause muted | approval, welcome |
-| the greeting; the reason field | sans 18, 400 | welcome, approval |
-| suggestion titles; the composer field; the person's message; the permission sentence | sans 16 to 17, 400 | welcome, approval |
-| rows: chat rows, "Search chats", the chat title, "Nothing needs you.", activity rows, the card's consequence line, "You"; REVIEW and the page tabs; nav labels | sans 15 (nav labels 14 to 15), caps where they are keys or labels | welcome, approval, portfolio |
-| the state word, MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
-| HIDE VEX or SHOW VEX in the Vex key, CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
-| the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 13, caps | approval |
-| group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY, keycap letters | sans 11 to 12, caps (times are figures) | welcome |
-| a tag inside a row (MAINNET on a strategy row) | sans 10, caps | welcome |
-| figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
+| Portfolio's wallet total (the hero tile) | sans 24 / 1.1, 600, -0.01em | 757 |
+| Portfolio's other tile figures | sans 18 / 1.1, 400, -0.01em; gains in the gain colour | 756 |
+| Portfolio's tile labels; its table heads | sans 11, caps, muted | 756 (`.fig dt`, `.cap`), 808 |
+| Portfolio's tile lines | sans 12, muted, 8 under the figure | 758 |
+| the page tabs (ALL WALLETS) | sans 13, caps, ink 2 | 731 |
+| the person's message | sans 16 / 1.45 in their bubble, 12 by 16, at most 74% | 291 |
+| Vex's answer and the greeting | sans 16 / 1.45, -0.005em, in her bubble, 12 by 16, at most 82% | 292 |
+| the welcome's notes | sans 11 / 1.55 caps, muted, 10 after a 6px hud square, 6 apart | 308, 309 |
+| a starter's title; its line | sans 15 / 1.3 ink; sans 13 / 1.4 muted, 6 under it | 319, 320 |
+| the chat's title; the line under it | sans 14 / 1.3 ink; sans 11 caps, muted | 196, 156 |
+| NEW CHAT; the nav | sans 13 caps, ink 2 (ink when chosen or under the pointer) | 248, 255 |
+| "Search chats" | sans 14 | 252 |
+| CHATS; a section head (NEEDS YOU, RECENT ACTIVITY, AI PERMISSION, Portfolio's heads) | sans 12, 600, caps, ink | 49 |
+| a group head (TODAY) | sans 11 caps, muted | 261 (`.cap`) |
+| a chat row | sans 14 / 1.3, ink 2 (ink when open) | 262 |
+| a row's time; a count | sans 11 (a count 13), 0.04em, tabular | 266, 601 |
+| a row's tag (RUNNING) | sans 11 caps, ink, 6 after a 6px square | 265 |
+| the account row | sans 14 / 1.25 ink over sans 12 / 1.3 muted | 273, 274 |
+| the Needs you count | sans 13, 0.04em, ink | 601 |
+| a decision in the console; its line | sans 15 / 1.3 ink; sans 13 / 1.3 muted (14 under 1440, section 1.5) | 607, 608 |
+| REVIEW, a key | sans 13 caps | 53, 609 |
+| "Nothing needs you." | sans 15, muted | 613 |
+| the missions row | sans 14 / 1.3, ink 2 | 614 |
+| the permission sentence; where it comes from | sans 14 / 1.45 ink; sans 13 | 630, 631 |
+| an activity row; its status | sans 14 / 1.3 ink 2; sans 11 caps, 8 after the square | 637, 638 |
+| OPEN ACTIVITY | sans 11 caps, ink 2 | 639 (`.cap`) |
+| the status strip | sans 11 caps, 32 high with its rule; the model's name sans 12 ink | 365, 370 |
+| the status label in a row | sans 11 caps, 6 after the 6px square | 265 |
+| the trace's head (THOUGHT FOR); its figure | sans 11 caps; 0.04em | 48, 329 |
+| the receipt's head (its kind, time and stamp) | sans 11 caps, the time at 0.04em | 353 |
+| the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 12, caps, 0.06em | 115 |
+| figures in rows and tables, balances, the amount field | mono 12 to 13, tabular | 808 to 812 |
 
-**As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
-- the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
-- the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
-- "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
-- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
+**As built, beside the table:**
+- the bottom row's tagline: sans 14, 600 caps (S3-10; the tagline cell is its own builder's);
+- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself, so the Lighter ticket and the receipt take it too); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
 - the money card at a short window, Cloud's density rule (DG-0, H3 tokens.css: 1024 wide and up, 820 tall or less): the strip 4 shorter (2 over and 2 under its line), the head 10 under the consequence rather than 14, and the docked reason field 40 high rather than 56; the field rows stay 34 and the decision row 72. At 1280 x 720 this keeps the swap card's top under the header's rule, where the toast proof expects it.
 
 Settled by the mockup source (2026-11-05): the labels' 8% came from their sizes, 1px over Cloud's, not from the tracking, which stays 0.08em.

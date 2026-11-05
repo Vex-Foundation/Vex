@@ -105,9 +105,11 @@
  * never moves when a decision arrives, is taken, or a mission starts:
  *
  *   Needs you head   44   NEEDS YOU (12, 600, caps) and the count at the right
- *   decision row     64   the sentence (16) over its meta line (14, muted),
- *                          and the key cell at the right on the raised fill
- *   missions row     40   the missions icon, the words (15), a chevron
+ *   decision row     64   the sentence (15 / 1.3) over its meta line (13 /
+ *                          1.3, muted), and the key cell at the right on the
+ *                          raised fill
+ *   missions row     40   the missions icon, the words (14 / 1.3, ink 2), a
+ *                          chevron
  *
  * VEX Cloud's rows (the H3 mockup's `.cn-h` 44, `.cn-need` 64, `.cn-run`
  * 40), each with its rule inside its own height, so the rule under the
@@ -172,8 +174,9 @@
   margin: 0;
   padding: 0 var(--vex-console-inset);
 }
+/* "Nothing needs you.": 15, muted (VEX Cloud's `.cn-none`). */
 .vex-console__empty {
-  color: var(--vex-alias-label-secondary);
+  color: var(--vex-alias-label-tertiary);
   font-size: 15px;
 }
 .vex-console__quiet {
@@ -197,18 +200,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 16: the plate's decision measures 238 wide for 28 characters at 1440
- * ("Approve swap: 200 USDC → ETH", 265 image px), about 8.5 a character,
- * which the sans gives at 15 to 16; under the type table's 20 read from its
- * cap height. */
+/* The decision 15 / 1.3 in ink over its meta line 13 / 1.3, muted, 4 apart
+ * (VEX Cloud's `.cn-need b` and `small`). */
 .vex-console__sentence {
-  font-size: 16px;
-  line-height: 22px;
+  font-size: 15px;
+  line-height: 1.3;
 }
 .vex-console__meta {
   color: var(--vex-alias-label-tertiary);
-  font-size: 14px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 1.3;
 }
 /* An unreadable inbox: its sentence in two lines at most, in ink. */
 .vex-console__alert {
@@ -252,7 +253,8 @@
 }
 
 /* The missions row, 40 and the rule over her section: the missions icon at
- * 24, the words (15, the one mission's name muted), a chevron at the right.
+ * 24, the words (14 / 1.3 in ink 2, the one mission's name muted; ink under
+ * the pointer), a chevron at the right 20 in (VEX Cloud's `.cn-run`).
  * It stays with no mission running, in its own words, so her box never
  * moves. */
 .vex-console__missions {
@@ -267,17 +269,19 @@
   flex: 1 1 auto;
   align-items: center;
   gap: 12px;
-  padding: 0 var(--vex-console-inset);
+  padding: 0 20px 0 var(--vex-console-inset);
   border: 0;
   background: none;
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
+  line-height: 1.3;
   text-align: left;
 }
 .vex-console__row-key:hover {
   background: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
 }
 .vex-console__row-key:focus-visible {
   outline: 2px solid var(--vex-alias-focus);
@@ -327,22 +331,24 @@
   padding: 0;
   list-style: none;
 }
-/* AI PERMISSION: the chat's permission as its sentence (16, ink), then where
- * it comes from (14, muted). */
+/* AI PERMISSION: the chat's permission as its sentence (14 / 1.45, ink),
+ * then where it comes from (13, muted), as VEX Cloud's `.cn-perm` sets the
+ * sentence and its link. */
 .vex-console__permission {
   padding: 14px var(--vex-console-inset) 16px;
   border-bottom: 1px solid var(--vex-alias-rule-quiet);
 }
 .vex-console__permission-sentence {
   margin: 0;
-  font-size: 16px;
-  line-height: 23px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-wrap: pretty;
 }
 .vex-console__permission-origin {
   margin: 8px 0 0;
   color: var(--vex-alias-label-tertiary);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 /* THIS PROJECT (our approved Studio plate, docs/design/H3-DESKTOP.md section
  * 4.9; VexConsoleThisProject): the access sentence and "Change in project
@@ -397,7 +403,8 @@
   font-family: var(--font-mono);
   font-size: 13px;
 }
-/* One activity: its line (15, ink), then its status at the right: the 6px
+/* One activity: its line (14 / 1.3, ink 2; VEX Cloud's `.rc-t`), then its
+ * status at the right: the 6px
  * square in the status colour 8 before the word (11, caps, ink; VEX Cloud's
  * `.rc-s`). */
 .vex-console__activity {
@@ -413,7 +420,9 @@
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  font-size: 15px;
+  color: var(--vex-alias-label-secondary);
+  font-size: 14px;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
