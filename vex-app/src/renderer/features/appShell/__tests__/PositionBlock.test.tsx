@@ -513,10 +513,12 @@ describe("PositionBlock - empty, loading and error", () => {
 });
 
 describe("PositionBlock - the tiles are real figures only (H3 section 4.1, item 12)", () => {
-  it("draws the REAL FUNDS stamp and the lead, and no PAPER or LIVE key", () => {
+  it("draws the quiet hatch and Mainnet, the lead, and no solid stamp, PAPER or LIVE key (PD-05)", () => {
     renderBlock();
     const lead = area("portfolio-total").querySelector(".vex-pf-lead");
-    expect(lead?.querySelector(".vex-stamp")?.textContent).toBe("Real funds");
+    // A page shows real money and decides none: the quiet mark, not the solid stamp.
+    expect(lead?.querySelector(".vex-rf")?.textContent).toBe("Mainnet");
+    expect(lead?.querySelector(".vex-stamp")).toBeNull();
     expect(lead?.textContent).toContain("Real money on mainnet.");
     expect(screen.queryByText(/paper/i)).toBeNull();
     expect(screen.queryByText(/^live/i)).toBeNull();

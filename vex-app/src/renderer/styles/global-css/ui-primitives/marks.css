@@ -227,6 +227,37 @@ html[data-still] .vex-swatch {
   color: var(--vex-alias-label-tertiary);
 }
 
+/* ── The quiet REAL FUNDS mark ─────────────────────────────────────────────
+ * Cloud's quiet form (`.vx-rf`, status contract section 2; PD-05, EC-10):
+ * where real money is SHOWN rather than decided, the hatch and the word in
+ * ink with no fill. 11 caps at 400, gap 6; the hatch a 10 x 14 block of
+ * 135 degree strokes, 1.5px every 4px, in the word's own ink. It stands
+ * beside "Mainnet" (`MainnetMark`, stamp.tsx); the solid stamp stays where
+ * money is decided (H3-DESKTOP.md section 2.2). */
+.vex-rf {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-rf::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 14px;
+  background-image: repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 4px);
+}
+
 /* ── Cell meter ────────────────────────────────────────────────────────────
  * A row of cells: filled cells in the blue, empty cells in a rule outline.
  * Over the limit the fill turns ink (never red). */

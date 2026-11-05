@@ -191,6 +191,12 @@ describe("resolveToolIdentity - named tools (prefix map is primary)", () => {
     });
   });
 
+  it("humanizes a joined-up name as words, as a card's eyebrow reads it", () => {
+    expect(resolveToolIdentity("WalletEvmTransactionConfirm", null).title).toBe(
+      "Wallet evm transaction confirm",
+    );
+  });
+
   it("never consults args for a NAMED tool - identity cannot be spoofed by payload", () => {
     const spoofed = resolveToolIdentity(
       "wallet_balances",

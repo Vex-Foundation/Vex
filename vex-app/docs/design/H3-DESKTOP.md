@@ -286,7 +286,9 @@ Desktop's true words for these are in Appendix A.
 
 Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.
 
-The REAL FUNDS stamp in a card is an ink fill with ground-coloured caps (12) and a hatch glyph, about 105 x 23. In the header the same glyph and words stand without the fill.
+The REAL FUNDS stamp in a card is an ink fill with ground-coloured caps and a hatch glyph. As built, it takes Cloud's tag (the status contract, H3 app.css `.tag.is-real`): 24 high, caps 11 at 400, a 1px ink edge, 3 in on its hatch side, the hatch a 10 x 14 block of 135 degree strokes, 1.5px every 4px; the risk tag beside it is 24 high and caps 11 too. In the header the same glyph and words stand without the fill.
+
+Where money is shown but not decided (Portfolio's lead, the settled receipt), desktop takes Cloud's quiet mark (PD-05, EC-10; `.vex-rf`, `MainnetMark`): the word MAINNET in ink, 11 caps at 400, after a 10 x 14 hatch of 135 degree strokes, 1.5px every 4px, gap 6, no fill. The solid stamp stays only where money is decided: the waiting card and the Needs you row.
 
 Contrast on the ground (#010203), computed from the values above:
 
@@ -325,7 +327,9 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 **As built, where the builders' widths measured against the plates differ from the cap-height table** (harness at 1440x900, the bundled fonts):
 - the Needs you row's decision sentence: sans 16, not 20; the bottom row's tagline: sans 14, 600 caps, not 20 (S3-04, S3-10);
 - the chats list's RUNNING and WAITING tags: sans 12, not 13 (S5-06);
-- "Account and settings": sans 13, not 14, so it fits its cell (S5-07).
+- "Account and settings": sans 13, not 14, so it fits its cell (S5-07);
+- the money card, at Cloud's measures (H3 app.css, the takeover): the sentence sans 18 / 1.3 at -0.01em, not 20 (20 is a question card's); the field labels mono 12 caps at 0.06em, not 13 at 0.08em (the register itself is unchanged for the Lighter ticket and the receipt); the values sans 13 with their figures mono 12, on the same 34 row; the docked decision keys sans 13 caps, Reject 168 and the approve key 200 with 32 each side of its word;
+- the money card at a short window, Cloud's density rule (DG-0, H3 tokens.css: 1024 wide and up, 820 tall or less): the strip 4 shorter (2 over and 2 under its line), the head 10 under the consequence rather than 14, and the docked reason field 40 high rather than 56; the field rows stay 34 and the decision row 72. At 1280 x 720 this keeps the swap card's top under the header's rule, where the toast proof expects it.
 
 Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) and the mockup source. The left column's labels draw about 8% wider than H3's at `--tracking-label` 0.08em, which suggests H3 tracks tighter; the token is unchanged until the mockup source settles it.
 
@@ -335,6 +339,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **Primary key:** the blue fill with white caps, 14 (the card's decision key; SEND is 13, section 1.8). One blue cell in view at a time. Hover takes blue hover. A primary key that will not act is held, never blue (SEND on a blank draft, section 1.8).
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
+- **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
 - **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
 - **Keycaps:** 19 high, a 1px chosen-rule border, caps letters 11 to 12, 3 to 4 apart; CTRL about 40 wide, SHIFT about 42, B about 23 (measured). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
 - **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
@@ -494,6 +499,13 @@ H3 swaps desktop's two-step confirm for a tick ("I understand real funds can be 
 - The approve key is the blue primary while it can be pressed. H3 never draws the enabled key; blue is presumed from SEND.
 - R3's safety flow stays: REAL FUNDS on every card, Reject first, Lock Vex refused while signing, nothing signs until the person confirms.
 - While a card waits in a chat, the composer gives way to the card, as H3 draws it: the reason field, "Tell Vex what to do instead", is the way to tell Vex something else, and it rejects with the reason, which reaches Vex. Open: whether desktop's composer stays usable under a waiting card, as it is today with its "Waiting for approval" tag. Default: H3's.
+
+**Closed cards** (Cloud's EC-09, the money gaps sheet's group 07). When a card stops waiting while the chat shows it, decided here or elsewhere or expired, a closed card stands in its place in the approvals stack (`ApprovalCard/ClosedApprovalCard.tsx`, `closed-approval.ts`). It reads only what desktop already holds: the approval's row from the approvals read that exists (`approvals.get`) and the reply this chat's own card received; no new IPC, and it decides nothing. It says only what that record proves:
+- "Expired. Nothing was run." with "This confirmation expired before it was answered.": the row carries the expiry sweep's own reason, was resolved at or after its own deadline, and its tool never ran. Next key: Dismiss.
+- "Rejected. Nothing was run.": any other rejection whose tool never ran. "You chose to reject." and "You rejected it, so nothing from this confirmation ran." only when the person rejected on this card; a rejection made elsewhere or by the engine names no one. Next key: Dismiss.
+- "Result uncertain" with "The result is uncertain. Check Agent Scan before trying again.": an approve whose outcome the engine could not prove (`indeterminate`); "You chose to approve." only when approved here. Next keys: Open Agent Scan, Dismiss.
+- Nothing for an approve that settled (the act row and the receipt tell it), a row still being read, or a row the read does not return. No closed card names a network, carries the REAL FUNDS stamp or the quiet hatch, or says "Not submitted".
+A closed card never holds the dock, so the composer comes back at once; its keys are the card's ink-outline keys, at least 160 wide, none blue. It lives while the chat stays open, or until Dismiss.
 
 Adopting the tick and the card keys later needs the owner's decision and a safety review. The card work (S6b) is kept in one builder's files so that review reads one diff.
 
@@ -718,17 +730,17 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | H3 | Desktop | Why |
 |---|---|---|
 | THOUGHT FOR 2.8s, "5 steps" | same after a live turn; a turn reopened from history shows "{n} steps" only | desktop does not store a turn's duration |
-| CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order", else "Confirm this action" | desktop's card serves every tool family (`approvalActionWord`) |
+| CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order"; any other card, the tool's own title ("Lighter · Fees approve"), and "Confirm this action" only where no tool name is readable | desktop's card serves every tool family (`approvalActionWord`); a card outside them is named as Cloud names its generic card, by the tool's title (DG5-01) |
 | MAINNET, REAL FUNDS | same | every desktop approval moves real funds |
 | "Swap 200 USDC for ETH on Base." | desktop's sentence from the signed arguments; else "{tool title}: review the signed fields" | |
-| "This places a real order on mainnet. It cannot be undone." | same for a swap or an order; "This sends real funds on mainnet. It cannot be undone." for a transfer or a bridge (proposed) | |
+| "This places a real order on mainnet. It cannot be undone." | same for a swap or an order; "This sends real funds on mainnet. A transfer cannot be reversed." for a transfer; "This moves real funds between chains. It cannot be undone." for a bridge | Cloud's own lines for the transfer and the bridge (the money gaps sheet's `realFundsCopy`) |
 | FROM, "Your trading wallet on Base", "Available 1,240.55 USDC" | left out | the card has no source wallet or balance today |
 | AMOUNT TO SWAP, an editable field, and "At most what you hold is sold..." | YOU SEND, as signed | the card shows the signed arguments; a new amount is a new proposal |
 | QUOTED PRICE | left out | no separate quoted price |
 | YOU RECEIVE, "Not available" | same | |
 | SLIPPAGE LIMIT | MINIMUM RECEIPT, with the slippage limit in its note | desktop's real line |
-| FEES, "Vex fee 0.25% of the amount: about 0.5 USDC" | FEES, the Vex fee as the engine states it | |
-| NETWORK FEE, "Not available" | same | |
+| FEES, "Vex fee 0.25% of the amount: about 0.5 USDC" | FEES, the Vex fee as the engine states it ("Vex fee 0.5 USDC (0.25%)"), on a swap and a bridge; on a transfer, FEES is the network fee and reads "Not available" | Cloud's rows (DG5-06): a transfer has no Vex fee, so its one fee row is the network fee |
+| NETWORK FEE, "Not available" | same, on a swap and a bridge; no second row on a transfer | one unknown said once (DG5-06); the word is DRAFT in Cloud |
 | TOTAL DEBIT, "Not available" | shown only when every part is known | desktop never shows a total it cannot add up |
 | "up to 10,000 USD per order, 50,000 USD a day", "Change in Settings" | left out | no spend limits (F04 has not started) |
 | ALL SIGNED FIELDS | same | |
@@ -737,16 +749,20 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | the tick box, "I understand real funds can be lost" | left out | desktop keeps its two-step confirm |
 | CTRL+ENTER APPROVES, ESC REJECTS | left out; the middle cell says "Two presses decide: the first arms the key for 4 s." on a card that needs two presses, and "Nothing signs until you approve." on one that does not (proposed) | no card shortcuts on desktop |
 | APPROVE SWAP | "Approve swap", "Approve bridge", "Approve order", "Approve transfer", else "Approve"; Lighter's own words for a deposit and trading fees; "Click again to confirm approve" when armed | desktop's action words |
+| a failure: one ink line with the cross above the band, one step lighter than the card, `role="alert"` (Cloud's DG5-28) | same: the decision's own error, in ink, never red, as the card's last cell over its footer or the docked band; on the Needs you row, the row's foot | nothing was refused, so nothing is red; the keys are live again |
+| the closed cards: "Rejected. Nothing was run.", "Expired. Nothing was run.", "Result uncertain"; "You chose to reject.", "You chose to approve."; "You rejected it, so nothing from this confirmation ran. Reload the chat to continue.", "This confirmation expired before it was answered.", "The result is uncertain. Check Activity before trying again."; RELOAD CHAT, DISMISS, OPEN ACTIVITY | the same titles and answers; "You rejected it, so nothing from this confirmation ran." without its second sentence; "The result is uncertain. Check Agent Scan before trying again."; DISMISS in place of RELOAD CHAT, OPEN AGENT SCAN in place of OPEN ACTIVITY (section 4.3) | desktop's chat goes on by itself after a rejection, so there is nothing to reload; Agent Scan is desktop's Activity (section 4.6); the answer and the "You rejected it" line only where the person decided on this card |
+| "Approving…", "Rejecting…" (Cloud's keys while a decision runs) | same on every card; a Lighter order create, deposit and trading-fee authorization keep their own steps ("Signing and sending", "Signing and depositing", "Authorizing", "Revoking") | the words only; the keys behave as before |
 
 ### A.8 The receipt, pages and the page strip
 | H3 | Desktop | Why |
 |---|---|---|
-| SWAP · MAINNET, a time, FILLED | the kind, MAINNET, the time, and desktop's outcome word (Confirmed) | |
+| SWAP · MAINNET, a time, FILLED | the kind and its chain ("Swap · Base"), MAINNET on the quiet hatch, the time, and desktop's outcome word (Confirmed); the chain stays in the title line | Cloud's EC-10: a settled mainnet money card carries the quiet hatch and the word Mainnet, never the solid stamp |
 | "USDC → ETH · Base (your trading wallet)" | the pair, the chain and the wallet's name from the activity entry | |
 | SELL, VALUE (USD), RECEIVED, VEX FEE | those the activity entry holds | |
+| a dollar estimate, "about $200.00" (Cloud's DG5-40) | same on the receipt, Portfolio's activity table and Agent Scan; it replaces "~$200.00 est." | the feed's dollar values are quote-time estimates, so they say "about" |
 | APPROVAL, "Approved by you" | left out | approvals are not joined to activity yet |
 | OVERVIEW, WALLET, "Updated 12:41" | the page's own tabs; "Updated {time}" | |
-| PAPER, LIVE · MAINNET, REAL FUNDS | the REAL FUNDS stamp alone | no paper mode |
+| PAPER, LIVE · MAINNET, REAL FUNDS | MAINNET on the quiet hatch | no paper mode; a page shows real money and decides none, so it takes Cloud's quiet mark (PD-05), not the solid stamp |
 | "Real money on mainnet. Equity = the cash and open positions of your 2 running live strategies." | "Real money on mainnet. Total value of your {n} on-chain wallets · Lighter is shown separately." | no strategies; desktop's total is wallets, with Lighter apart |
 | EQUITY, "of $25,000.00 allocated" | the wallet total; no "allocated" | nothing is allocated |
 | TODAY, 7 DAYS, ALL TIME "trading P&L", "realized and open" | left out; the change since the last snapshot | no P&L history over these spans |

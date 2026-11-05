@@ -94,7 +94,11 @@ export interface ApprovalDecisionActionsProps {
 // the action button is the view's one blue fill. Focus is the 2px focus
 // outline, 3px out. The ARMED (second click) key turns into an ink outline
 // with a 2px ink ring 3px out: the second press is the irreversible one, and
-// ink is how this card says weight.
+// ink is how this card says weight. A key that cannot act (disabled, while a
+// decision runs or after it landed) is HELD, Cloud's look (h3-kit-gaps keys):
+// the cell ground, the muted word, the 7% edge, never blue, never dotted and
+// never dimmed. The sheet draws it (approval.css, "Held keys") from
+// `disabled` alone, so when a key is enabled is exactly as before.
 const KEY_BASE =
   "inline-flex h-10 shrink-0 items-center justify-center border px-[18px] font-sans text-[14px] font-medium leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-focus disabled:cursor-not-allowed";
 const ARMED_RING = "outline outline-2 outline-offset-[3px] outline-rule-ink";
@@ -121,6 +125,19 @@ export const REJECT_REASON_PLACEHOLDER = "Tell Vex what to do instead";
 export const REJECT_REASON_LABEL = "Tell Vex what to do instead (optional, sent when you reject)";
 
 /**
+ * THE IN-FLIGHT WORDS (H3-DESKTOP.md Appendix A.7): Cloud's own, "Approving…"
+ * and "Rejecting…" (`TakeoverCard.tsx`), wherever no Lighter-specific word
+ * applies. Labels only: what the keys do while a decision runs is unchanged.
+ */
+export const APPROVING_WORD = "Approving…";
+export const REJECTING_WORD = "Rejecting…";
+
+/** A key's in-flight word as its accessible name says it, with no ellipsis. */
+function spokenWord(word: string): string {
+  return word.replace(/…$/, "");
+}
+
+/**
  * What the Reject key says and how it is named, in each of its states. One
  * source for the card's footer and the Needs you row, so the two keys can never
  * word a rejection differently.
@@ -130,7 +147,7 @@ export function rejectKeyWords(input: {
   readonly pending: boolean;
   readonly settled: "approved" | "rejected" | null;
 }): { readonly text: string; readonly aria: string } {
-  if (input.pending) return { text: "Rejecting", aria: "Rejecting, please wait" };
+  if (input.pending) return { text: REJECTING_WORD, aria: `${spokenWord(REJECTING_WORD)}, please wait` };
   if (input.settled === "rejected") return { text: "Rejected", aria: "Rejected" };
   if (input.armed) return { text: "Click again to confirm reject", aria: "Confirm reject" };
   return { text: "Reject", aria: "Reject" };
@@ -147,7 +164,7 @@ export function ApprovalDecisionActions({
   onRejectReasonChange,
   approveLabel = "Approve",
   confirmApproveLabel = "Click again to confirm approve",
-  pendingApproveLabel = "Working",
+  pendingApproveLabel = APPROVING_WORD,
   approvePending = false,
   rejectPending = false,
   settledDecision = null,
@@ -217,7 +234,7 @@ export function ApprovalDecisionActions({
         // keep drawing the key inside the card.
         data-vex-key="reject"
         data-armed={rejectArmed ? "" : undefined}
-        className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary disabled:border-dotted disabled:text-ink-tertiary${
+        className={`${KEY_BASE} border-rule-ink bg-transparent text-ink-primary enabled:hover:bg-rule-ink enabled:hover:text-ink-on-primary${
           rejectArmed ? ` ${ARMED_RING}` : ""
         }`}
       >
@@ -235,8 +252,9 @@ export function ApprovalDecisionActions({
           While its own dispatch runs this button is the only live thing on
           screen, so it keeps its full blue fill and leads its label with the
           ONGOING SWATCH in its own ink (status by fill, the page's one state
-          motion), while the Reject beside it goes inert in a dotted outline:
-          the action you took stays alive, the one you did not recedes.
+          motion), as Cloud's pending key keeps its blue, while the Reject
+          beside it is held (the cell ground and the muted word): the action
+          you took stays alive, the one you did not recedes.
           `aria-busy` and the swapped label carry the same fact without the
           motion, which is what a screen reader and a reduced-motion viewer
           each get. */}
@@ -247,7 +265,7 @@ export function ApprovalDecisionActions({
         aria-busy={approvePending}
         aria-label={
           approvePending
-            ? `${pendingApproveLabel}, please wait`
+            ? `${spokenWord(pendingApproveLabel)}, please wait`
             : approveIdleAria
         }
         data-vex-approve-working={approvePending ? "" : undefined}
@@ -257,10 +275,6 @@ export function ApprovalDecisionActions({
           approveArmed
             ? `border-rule-ink bg-transparent text-ink-primary ${ARMED_RING}`
             : "border-button-accent-edge bg-button-accent text-ink-on-button-accent enabled:hover:bg-button-accent-hover"
-        }${
-          approvePending
-            ? ""
-            : " disabled:border-dotted disabled:border-accent-primary disabled:bg-transparent disabled:text-accent-primary"
         }`}
       >
         {approvePending ? (
