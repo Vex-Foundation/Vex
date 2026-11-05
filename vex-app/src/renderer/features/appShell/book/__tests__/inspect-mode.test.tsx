@@ -38,6 +38,8 @@ vi.mock("../../../../lib/api/portfolio.js", () => ({
 vi.mock("../../../../lib/api/sessions.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useSession: () => ({ data: undefined }),
+  // The missions row asks whether the sessions read failed.
+  useSessionsList: () => ({ data: undefined, isError: false }),
 }));
 vi.mock("../../../../lib/api/shell-backdrop.js", () => ({
   useShellBackdrop: () => ({ data: undefined }),
