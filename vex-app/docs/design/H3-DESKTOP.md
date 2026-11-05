@@ -277,6 +277,8 @@ Gains and losses in trading values take the gain and loss colours as type (Portf
 
 The REAL FUNDS stamp in a card is an ink fill with ground-coloured caps (12) and a hatch glyph, about 105 x 23. In the header the same glyph and words stand without the fill.
 
+Where money is shown but not decided (Portfolio's lead, the settled receipt), desktop takes Cloud's quiet mark (PD-05, EC-10; `.vex-rf`, `MainnetMark`): the word MAINNET in ink, 11 caps at 400, after a 10 x 14 hatch of 135 degree strokes, 1.5px every 4px, gap 6, no fill. The solid stamp stays only where money is decided: the waiting card and the Needs you row.
+
 Contrast on the ground (#010203), computed from the values above:
 
 | Pair | Ratio |
@@ -672,13 +674,13 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 ### A.8 The receipt, pages and the page strip
 | H3 | Desktop | Why |
 |---|---|---|
-| SWAP · MAINNET, a time, FILLED | the kind, MAINNET, the time, and desktop's outcome word (Confirmed) | |
+| SWAP · MAINNET, a time, FILLED | the kind and its chain ("Swap · Base"), MAINNET on the quiet hatch, the time, and desktop's outcome word (Confirmed); the chain stays in the title line | Cloud's EC-10: a settled mainnet money card carries the quiet hatch and the word Mainnet, never the solid stamp |
 | "USDC → ETH · Base (your trading wallet)" | the pair, the chain and the wallet's name from the activity entry | |
 | SELL, VALUE (USD), RECEIVED, VEX FEE | those the activity entry holds | |
 | a dollar estimate, "about $200.00" (Cloud's DG5-40) | same on the receipt, Portfolio's activity table and Agent Scan; it replaces "~$200.00 est." | the feed's dollar values are quote-time estimates, so they say "about" |
 | APPROVAL, "Approved by you" | left out | approvals are not joined to activity yet |
 | OVERVIEW, WALLET, "Updated 12:41" | the page's own tabs; "Updated {time}" | |
-| PAPER, LIVE · MAINNET, REAL FUNDS | the REAL FUNDS stamp alone | no paper mode |
+| PAPER, LIVE · MAINNET, REAL FUNDS | MAINNET on the quiet hatch | no paper mode; a page shows real money and decides none, so it takes Cloud's quiet mark (PD-05), not the solid stamp |
 | "Real money on mainnet. Equity = the cash and open positions of your 2 running live strategies." | "Real money on mainnet. Total value of your {n} on-chain wallets · Lighter is shown separately." | no strategies; desktop's total is wallets, with Lighter apart |
 | EQUITY, "of $25,000.00 allocated" | the wallet total; no "allocated" | nothing is allocated |
 | TODAY, 7 DAYS, ALL TIME "trading P&L", "realized and open" | left out; the change since the last snapshot | no P&L history over these spans |

@@ -4,7 +4,7 @@
  * row): a framed card for a swap that went through, from the ACTIVITY LEDGER'S
  * OWN ENTRY for it, never from the tool's output.
  *
- *   SWAP · BASE                                  14:28  [CONFIRMED]
+ *   SWAP · BASE                     //// MAINNET  14:28  [CONFIRMED]
  *   USDC → ETH · Base
  *   ---------------------------------------------------------------
  *   SELL                                                   200 USDC
@@ -24,8 +24,11 @@
  *     settlement-time USD anywhere;
  *   - VEX FEE is the fee the row records (`vexFee`), or the fee attempt's own
  *     state when it has no settled amount;
- *   - the time is the entry's own, the chain its own (by name, never
- *     "MAINNET": every desktop chain is mainnet, the name is the news).
+ *   - the time is the entry's own, the chain its own, by name, in the kind
+ *     and the title line;
+ *   - MAINNET with the quiet hatch (Cloud's EC-10: a settled mainnet money
+ *     card carries the quiet mark, never the solid stamp, which belongs
+ *     where money is decided). Desktop is mainnet only, so it is always true.
  * A row whose value the entry does not hold is left out, never filled.
  *
  * WHICH ACT GETS ONE (`receiptTxRef`). Only an act the engine persisted as a
@@ -49,6 +52,7 @@
 import { useMemo, type JSX } from "react";
 import type { AgentScanActivityEntry } from "@shared/schemas/agent-scan-feed.js";
 import { chainDisplay, chainDisplayBySlug } from "@shared/chains/display.js";
+import { MainnetMark } from "../../../components/ui/stamp.js";
 import { useAgentScanInfinite } from "../../../lib/api/portfolio.js";
 import {
   entryClockText,
@@ -152,6 +156,7 @@ export function ReceiptCard({
           <span className="vex-receipt__kind">
             {chain === null ? "Swap" : `Swap · ${chain}`}
           </span>
+          <MainnetMark data-vex-receipt-net="" />
           {clock !== null ? (
             <span data-vex-receipt-time="" className="vex-receipt__time">
               {clock}

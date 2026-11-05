@@ -30,8 +30,10 @@
  * Left out, with no desktop source (section 4.1 item 12): P&L over today, 7
  * days and all time, drawdown, "of allocated" and the strategies count.
  *
- * THE LEAD LINE (A.8): the REAL FUNDS stamp alone (no paper mode, so no
- * PAPER and LIVE pair), "Real money on mainnet." and what the total includes.
+ * THE LEAD LINE (A.8): the quiet hatch and "Mainnet" (Cloud's PD-05: a page
+ * shows real money, it decides none, so the solid stamp is not its mark; no
+ * paper mode, so no PAPER and LIVE pair), "Real money on mainnet." and what
+ * the total includes.
  *
  * SCOPE IS THE ONLY INPUT (`PortfolioPageScope`): the whole inventory, one
  * inventory wallet, the open chat's wallets or the selected project's. The
@@ -51,7 +53,7 @@
 
 import type { JSX, ReactNode } from "react";
 import type { PortfolioDto } from "@shared/schemas/portfolio.js";
-import { Stamp } from "../../../components/ui/stamp.js";
+import { MainnetMark } from "../../../components/ui/stamp.js";
 import { useLighterTradingAccount } from "../../../lib/api/lighter-trading.js";
 import { useLighterAnalysisStore } from "../../../stores/lighterAnalysisStore.js";
 import { useUiStore } from "../../../stores/uiStore.js";
@@ -281,7 +283,7 @@ function Tiles({
   return (
     <>
       <p className="vex-pf-lead">
-        <Stamp className="vex-pf-lead__stamp" />
+        <MainnetMark className="vex-pf-lead__net" />
         <span className="vex-pf-lead__words">
           <span className="vex-pf-lead__ink">Real money on mainnet.</span>{" "}
           <span className="vex-pf-top__line">{totalIncludesLine(scope, portfolio.walletCount)}</span>

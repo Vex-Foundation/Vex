@@ -111,11 +111,18 @@ describe("receiptEntry", () => {
 });
 
 describe("ReceiptCard", () => {
-  it("says the kind and the chain by name, the time, and desktop's outcome word on the filled stamp", () => {
+  it("says the kind and the chain by name, Mainnet on the quiet hatch, the time, and desktop's outcome word on the filled stamp", () => {
     const { container } = render(createElement(ReceiptCard, { entry: swapEntry() }));
     expect(container.textContent).toContain("Swap · Base");
-    // The chain's name, never MAINNET (every desktop chain is mainnet).
-    expect(container.textContent).not.toMatch(/mainnet/i);
+    // EC-10: a settled mainnet card carries the quiet hatch and the word
+    // Mainnet, never the solid REAL FUNDS stamp; the chain stays named in
+    // the kind and the title line.
+    const net = container.querySelector("[data-vex-receipt-net]");
+    expect(net?.textContent).toBe("Mainnet");
+    expect(net?.classList.contains("vex-rf")).toBe(true);
+    expect(container.querySelector(".vex-stamp")).toBeNull();
+    expect(container.textContent).not.toMatch(/real funds/i);
+    expect(container.querySelector(".vex-receipt__title")?.textContent).toContain("· Base");
     expect(container.querySelector("[data-vex-receipt-time]")?.textContent).toMatch(/^\d{2}:\d{2}$/);
     const stamp = container.querySelector("[data-vex-receipt-stamp]");
     expect(stamp?.textContent).toBe("Confirmed");
