@@ -10,8 +10,8 @@
  *
  * The card is H3's turn error row (docs/design/H3-DESKTOP.md section 1.7,
  * VEX Cloud's one row per kind): the red square, the category's title in the
- * refusal ink, the words, and a key strip holding Dismiss, with
- * `role="alert"` as Cloud draws it. It is found by its area attribute;
+ * refusal ink, the words, and a key strip holding Dismiss. It is not a live
+ * region (the notification announces once). It is found by its area attribute;
  * `engine-error-notifications.test.tsx` owns the notification's announcement
  * and the two-way dismissal binding.
  */
@@ -126,8 +126,10 @@ describe("SessionErrorBanner", () => {
     useEngineErrorStore.getState().record(makeEvent());
     render(createElement(SessionErrorBanner, { sessionId: SESSION_A }));
     const row = card();
-    // VEX Cloud's row: an alert that never moves focus, outcome first.
-    expect(row.getAttribute("role")).toBe("alert");
+    // Cloud's row, outcome first, never moving focus. Not a live region: the
+    // notification already announces the failure once.
+    expect(row.getAttribute("role")).toBeNull();
+    expect(row.getAttribute("aria-live")).toBeNull();
     expect(row.className).toContain("vex-turn-error");
     expect(row.querySelector(".vex-turn-error__sq")?.getAttribute("aria-hidden")).toBe("true");
     expect(row.querySelector(".vex-turn-error__title")?.textContent).toBe(

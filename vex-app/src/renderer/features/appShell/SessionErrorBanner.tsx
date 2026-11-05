@@ -28,10 +28,10 @@
  * hint (owner decree 2026-08-02) and the small monospace code trailer a user
  * quotes in a bug report.
  *
- * `role="alert"` is VEX Cloud's (the row "is an alert, never moves focus").
- * B2.2 had dropped it because the notification announcer already speaks each
- * failure once, so with both a screen reader may hear the failure twice; the
- * owner decides which carrier stays (H3-DESKTOP.md section 1.7).
+ * VEX Cloud draws the row as `role="alert"`. Desktop keeps B2.2's choice and
+ * leaves the role off: the notification announcer already speaks each failure
+ * once, and with both a screen reader would hear it twice (H3-DESKTOP.md
+ * section 1.7).
  *
  * Dismissible, unlike the standing `MissionErrorAlert`: this is a "what just
  * happened" signal for a discrete failure, not a standing state. Dismissing

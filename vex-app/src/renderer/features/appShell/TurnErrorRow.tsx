@@ -3,7 +3,7 @@
  * `h3-chat-gaps`, "The turn error row, by kind", and its `.t-fail`): ONE row
  * for every kind of failure, outcome first, never a new layout:
  *
- *   div[role=alert].vex-turn-error           the 1px rule on the cell ground
+ *   div.vex-turn-error                       the 1px rule on the cell ground
  *   ├─ .vex-turn-error__body                 8 | 1fr, 14 apart, 14 18 16 16
  *   │   ├─ the red square, 8px, at 7          the outcome (decoration)
  *   │   └─ p
@@ -16,8 +16,11 @@
  *
  * The keys are a strip, so a new remedy is a key, never a layout. A key cell
  * is 13 caps tracked on the raised fill, padding 0 22, with a rule at its
- * right. The row is `role="alert"` and never moves focus; the title and the
- * words read as two (a hidden space between them).
+ * right. The row never moves focus, and it is NOT a live region: Cloud draws
+ * `role="alert"`, but on desktop the notification announcer already speaks
+ * each failure once (`engineErrorStore`), so a second live region would make
+ * a screen reader hear the failure twice. The row is where it is READ; the
+ * title and the words read as two (a hidden space between them).
  *
  * Red titles are Cloud's drawn default (its open question 4: a conflict or a
  * missing chat is not a refusal and could keep the ink); desktop takes the
@@ -58,7 +61,7 @@ export function TurnErrorRow({
 }): JSX.Element {
   const shown = keys.slice(0, TURN_ERROR_MAX_KEYS);
   return (
-    <div role="alert" className="vex-turn-error" data-vex-area={area} data-vex-turn-error-kind={kind}>
+    <div className="vex-turn-error" data-vex-area={area} data-vex-turn-error-kind={kind}>
       <div className="vex-turn-error__body">
         <span aria-hidden="true" className="vex-turn-error__sq" />
         <p className="vex-turn-error__text">
