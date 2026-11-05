@@ -1085,7 +1085,7 @@ describe("ApprovalCard, the H3 head", () => {
     const consequence = screen.getByTestId("approval-consequence");
     expect(eyebrow?.textContent).toBe("Confirm this bridge");
     expect(title.textContent).toBe("Bridge 1 USDC from Base to Arbitrum.");
-    expect(consequence.textContent).toBe("This sends real funds on mainnet. It cannot be undone.");
+    expect(consequence.textContent).toBe("This moves real funds between chains. It cannot be undone.");
     expect(head?.contains(title)).toBe(true);
     expect(head?.contains(consequence)).toBe(true);
     // Document order: eyebrow row, then the sentence, then the consequence.
@@ -1366,7 +1366,8 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
 describe("ApprovalCard, every kind in the same frame", () => {
   const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
   const RESTING_LINE = "This places a real order on mainnet.";
-  const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
+  const TRANSFER_LINE = "This sends real funds on mainnet. A transfer cannot be reversed.";
+  const BRIDGE_LINE = "This moves real funds between chains. It cannot be undone.";
   const ADDRESS = "0x9a3c5f1e2d4b6a8c0e1f3a5b7c9d0e2f4a6b8c0d";
 
   interface Kind {
@@ -1394,7 +1395,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this transfer",
       approve: "Approve transfer",
-      consequence: FUNDS_LINE,
+      consequence: TRANSFER_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1403,7 +1404,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       summary: makeSummary({ toolName: "BridgeExecute", preview: BRIDGE_PREVIEW }),
       eyebrow: "Confirm this bridge",
       approve: "Approve bridge",
-      consequence: FUNDS_LINE,
+      consequence: BRIDGE_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1479,7 +1480,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this transfer",
       approve: "Approve and deposit",
-      consequence: FUNDS_LINE,
+      consequence: TRANSFER_LINE,
       realFunds: true,
       twoPress: true,
     },
@@ -1498,7 +1499,7 @@ describe("ApprovalCard, every kind in the same frame", () => {
       }),
       eyebrow: "Confirm this transfer",
       approve: "Approve transfer",
-      consequence: FUNDS_LINE,
+      consequence: TRANSFER_LINE,
       realFunds: true,
       twoPress: true,
     },

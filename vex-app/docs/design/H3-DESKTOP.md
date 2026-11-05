@@ -649,7 +649,7 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | CONFIRM THIS SWAP | "Confirm this swap", "Confirm this bridge", "Confirm this transfer", "Confirm this order", else "Confirm this action" | desktop's card serves every tool family (`approvalActionWord`) |
 | MAINNET, REAL FUNDS | same | every desktop approval moves real funds |
 | "Swap 200 USDC for ETH on Base." | desktop's sentence from the signed arguments; else "{tool title}: review the signed fields" | |
-| "This places a real order on mainnet. It cannot be undone." | same for a swap or an order; "This sends real funds on mainnet. It cannot be undone." for a transfer or a bridge (proposed) | |
+| "This places a real order on mainnet. It cannot be undone." | same for a swap or an order; "This sends real funds on mainnet. A transfer cannot be reversed." for a transfer; "This moves real funds between chains. It cannot be undone." for a bridge | Cloud's own lines for the transfer and the bridge (the money gaps sheet's `realFundsCopy`) |
 | FROM, "Your trading wallet on Base", "Available 1,240.55 USDC" | left out | the card has no source wallet or balance today |
 | AMOUNT TO SWAP, an editable field, and "At most what you hold is sold..." | YOU SEND, as signed | the card shows the signed arguments; a new amount is a new proposal |
 | QUOTED PRICE | left out | no separate quoted price |

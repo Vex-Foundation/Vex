@@ -271,8 +271,13 @@ export const CONSEQUENCE_PLACES_ORDER = "This places a real order on mainnet. It
  * cancelled before it fills, so "It cannot be undone." would be false.
  */
 export const CONSEQUENCE_PLACES_RESTING_ORDER = "This places a real order on mainnet.";
-/** The desktop's line for a transfer and a bridge (Appendix A.7, proposed). */
-export const CONSEQUENCE_SENDS_FUNDS = "This sends real funds on mainnet. It cannot be undone.";
+/**
+ * A transfer's line, Cloud's own words (`realFundsCopy` in the money gaps
+ * sheet, Appendix A.7): a wallet send, a Lighter deposit or withdrawal.
+ */
+export const CONSEQUENCE_TRANSFER = "This sends real funds on mainnet. A transfer cannot be reversed.";
+/** A bridge's line, Cloud's own words (Appendix A.7). */
+export const CONSEQUENCE_BRIDGE = "This moves real funds between chains. It cannot be undone.";
 
 /**
  * A position close is a reduce-only order at its worst acceptable price,
@@ -329,8 +334,10 @@ function dottedToolNames(approval: ApprovalTarget): readonly string[] {
  *     its time, post-only, a trigger order, an OCO pair): "This places a
  *     real order on mainnet." alone, because it can still be cancelled
  *     before it fills;
- *   - a transfer (a wallet send, a Lighter deposit or withdrawal) and a
- *     bridge: "This sends real funds on mainnet. It cannot be undone.".
+ *   - a transfer (a wallet send, a Lighter deposit or withdrawal): "This
+ *     sends real funds on mainnet. A transfer cannot be reversed.";
+ *   - a bridge: "This moves real funds between chains. It cannot be
+ *     undone.".
  * `null` for every other card, so it shows no line rather than a false one:
  * a Lighter cancel or modify places nothing, a trading-fee authorization can
  * be revoked, and a call to the user's own MCP tool signs nothing. Those
@@ -351,8 +358,9 @@ export function approvalConsequence(approval: ApprovalTarget): string | null {
       return null;
     }
     case "transfer":
+      return CONSEQUENCE_TRANSFER;
     case "bridge":
-      return CONSEQUENCE_SENDS_FUNDS;
+      return CONSEQUENCE_BRIDGE;
     default:
       return null;
   }

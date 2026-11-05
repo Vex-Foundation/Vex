@@ -18,7 +18,8 @@ import {
   APPROVAL_EYEBROW_WORDS,
   CONSEQUENCE_PLACES_ORDER,
   CONSEQUENCE_PLACES_RESTING_ORDER,
-  CONSEQUENCE_SENDS_FUNDS,
+  CONSEQUENCE_BRIDGE,
+  CONSEQUENCE_TRANSFER,
   actionKindWords,
   addressIn,
   approvalConsequence,
@@ -227,7 +228,8 @@ describe("approvalFamily and approvalReviewWord", () => {
 describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.7)", () => {
   const ORDER_LINE = "This places a real order on mainnet. It cannot be undone.";
   const RESTING_LINE = "This places a real order on mainnet.";
-  const FUNDS_LINE = "This sends real funds on mainnet. It cannot be undone.";
+  const TRANSFER_LINE = "This sends real funds on mainnet. A transfer cannot be reversed.";
+  const BRIDGE_LINE = "This moves real funds between chains. It cannot be undone.";
   const LIGHTER_CANCEL = previewOf("order.cancel", { toolId: "lighter.order.cancel", providerOrderId: "7" }, "lighter");
   const LIGHTER_CLOSE = previewOf("position.close", { toolId: "lighter.position.close", symbol: "BTC" }, "lighter");
   const LIGHTER_DEPOSIT = previewOf("deposit", { toolId: "lighter.deposit", summary: "Deposit 5 USDC" }, "lighter");
@@ -236,18 +238,18 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   const LAUNCH = previewOf("launch_execute", { toolId: "pools.launch_execute", name: "My Token" }, "pools");
 
   const cases: readonly (readonly [string, ApprovalPreview, string, string | null])[] = [
-    ["bridge", BRIDGE, "Confirm this bridge", FUNDS_LINE],
-    ["namespaced bridge", BRIDGE_NAMESPACED, "Confirm this bridge", FUNDS_LINE],
+    ["bridge", BRIDGE, "Confirm this bridge", BRIDGE_LINE],
+    ["namespaced bridge", BRIDGE_NAMESPACED, "Confirm this bridge", BRIDGE_LINE],
     ["kyber swap", KYBER, "Confirm this swap", ORDER_LINE],
     ["jupiter swap", JUPITER, "Confirm this swap", ORDER_LINE],
-    ["native send", SEND_NATIVE, "Confirm this transfer", FUNDS_LINE],
-    ["token send", SEND_USDC, "Confirm this transfer", FUNDS_LINE],
+    ["native send", SEND_NATIVE, "Confirm this transfer", TRANSFER_LINE],
+    ["token send", SEND_USDC, "Confirm this transfer", TRANSFER_LINE],
     ["lighter market order", LIGHTER_MARKET, "Confirm this order", ORDER_LINE],
     ["lighter limit order", LIGHTER_LIMIT, "Confirm this order", RESTING_LINE],
     ["lighter position close", LIGHTER_CLOSE, "Confirm this order", ORDER_LINE],
     ["lighter order cancel", LIGHTER_CANCEL, "Confirm this order", null],
-    ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", FUNDS_LINE],
-    ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", FUNDS_LINE],
+    ["lighter deposit", LIGHTER_DEPOSIT, "Confirm this transfer", TRANSFER_LINE],
+    ["lighter withdrawal", LIGHTER_WITHDRAW, "Confirm this transfer", TRANSFER_LINE],
     ["lighter fee authorization", LIGHTER_FEES, "Confirm this action", null],
     ["token launch", LAUNCH, "Confirm this action", null],
     ["generic signed transaction", GENERIC_TX, "Confirm this action", null],
@@ -311,13 +313,16 @@ describe("approvalEyebrowWord and approvalConsequence (H3-DESKTOP.md Appendix A.
   });
 
   it("writes each line in sentence case with no dash and no figure", () => {
-    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_PLACES_RESTING_ORDER, CONSEQUENCE_SENDS_FUNDS]) {
+    for (const line of [CONSEQUENCE_PLACES_ORDER, CONSEQUENCE_PLACES_RESTING_ORDER, CONSEQUENCE_TRANSFER, CONSEQUENCE_BRIDGE]) {
       expect(line).not.toMatch(DASHES);
       expect(line).not.toMatch(/\d/);
       expect(line.startsWith("This ")).toBe(true);
     }
     expect(CONSEQUENCE_PLACES_ORDER.endsWith("It cannot be undone.")).toBe(true);
-    expect(CONSEQUENCE_SENDS_FUNDS.endsWith("It cannot be undone.")).toBe(true);
+    // Cloud's words (the money gaps sheet's realFundsCopy): a transfer cannot
+    // be reversed, a bridge cannot be undone.
+    expect(CONSEQUENCE_TRANSFER).toBe("This sends real funds on mainnet. A transfer cannot be reversed.");
+    expect(CONSEQUENCE_BRIDGE).toBe("This moves real funds between chains. It cannot be undone.");
     expect(CONSEQUENCE_PLACES_RESTING_ORDER).not.toMatch(/undone/);
     expect(CONSEQUENCE_PLACES_ORDER.startsWith(CONSEQUENCE_PLACES_RESTING_ORDER)).toBe(true);
   });
