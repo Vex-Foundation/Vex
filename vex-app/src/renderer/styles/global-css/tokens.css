@@ -160,11 +160,10 @@
    *   --font-code  = JetBrains Mono: code - code blocks, the file viewer,
    *     raw JSON. Code and figures parted here, as the token was kept for.
    *   --font-serif = the sans now: H3 sets display type in Be Vietnam Pro
-   *     (docs/design/H3-DESKTOP.md section 2.3), and Instrument Serif
-   *     retires. The name stays only so the `font-serif` utility's call
+   *     (docs/design/H3-DESKTOP.md section 2.3); R3's serif and its files
+   *     are retired. The name stays only so the `font-serif` utility's call
    *     sites keep compiling, as the radius names stay at zero; the display
-   *     rules in the sheets read --font-display. Its faces stay in fonts.css
-   *     until their files go.
+   *     rules in the sheets read --font-display.
    * The sans stack names its metric-matched `Fallback` twin right after the
    * web face, so the block period lays out at the final metrics. Be Vietnam
    * Pro carries latin-ext itself, so no coverage face follows it. */

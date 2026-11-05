@@ -1,7 +1,7 @@
 /**
  * VEX STATE TO KIMM'S MOOD: which of her six moods the Vex key and her
  * section show for each presence state (docs/design/H3-DESKTOP.md section 1.6;
- * plan row S4-02). Kimm replaces K2, whose own map is `vex-emotion.ts`.
+ * plan row S4-02).
  *
  * Pure, one lookup, total over `VexState`: a state added to the union without
  * a mood here is a type error, and the test walks the union itself, so it

@@ -42,8 +42,9 @@ What follows from it:
 
 ## 0. How these numbers were obtained, and what to trust
 
-The advances below are COMPUTED from the shipped font files, not read off a
-rendered page: `public/fonts/instrument-sans-latin-var.woff2` and
+The advances below are COMPUTED from the font files R3 shipped, not read off a
+rendered page: `public/fonts/instrument-sans-latin-var.woff2` (retired with
+the H3 faces' arrival, plan row S8-17; the H3 table above wins) and
 `jetbrains-mono-latin-wght.woff2`, converted to TTF with fontTools and shaped
 with FreeType and Raqm (GPOS kerning applied) at the tile's sizes, with the
 variable weight axis set to the weight the tile paints. JetBrains Mono advances

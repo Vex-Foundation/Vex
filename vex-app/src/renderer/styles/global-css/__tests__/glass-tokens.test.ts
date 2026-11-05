@@ -13,7 +13,8 @@
  *  3. the shape law: base.css squares every element with one `!important`
  *     rule, the radius tokens are 0, the shadow tokens are transparent, and
  *     Tailwind's default radius, shadow and blur scales are reset;
- *  4. the Vex sidebar's print window shows the print as it is;
+ *  4. no print, grain or veil is laid anywhere: the wall and the Vex
+ *     sidebar's print window are retired;
  *  5. a compatibility alias outliving its last consumer (dead-code decree:
  *     when this fails, delete the alias in shell.css).
  */
@@ -184,43 +185,18 @@ describe("the shape law", () => {
   });
 });
 
-describe("the Vex sidebar's print window (vex-sidebar.css)", () => {
-  it("shows the print as it is: no veil, no filter, no motion over it", () => {
+describe("the retired prints (shell.css, vex-sidebar.css)", () => {
+  it("lays no print, grain or veil anywhere: the wall, its veil and the plate's print window are gone", () => {
     const shell = stripComments(shellCss);
-    // The full-window wall and its veil are gone, and so is the left page's
-    // print: the print lives in the Vex sidebar's plate only, and nothing
-    // dims it.
+    const sidebar = stripComments(vexSidebarCss);
+    // The full-window wall and its veil went first, then the left page's
+    // print, and with K2 the Vex sidebar's print window (plan rows S8-16 and
+    // S8-17): her column is Kimm's section, which draws its own ground.
     expect(shell).not.toMatch(/vex-backdrop-(veil|drift|chronos|celeris)/);
     expect(shell).not.toContain("data-vex-backdrop-dimmed");
     expect(shell).not.toContain(".vex-print");
-    for (const selector of [".vex-vs-plate", ".vex-vs-plate__img", ".vex-vs-plate__grain"]) {
-      const body = ruleBody(vexSidebarCss, selector);
-      expect(body, selector).not.toMatch(/(?:^|[\s;])(filter|backdrop-filter|animation|transition):/);
-    }
-  });
-
-  it("cuts the print into the plate at the sidebar's focal point", () => {
-    const body = ruleBody(vexSidebarCss, ".vex-vs-plate__img");
-    expect(declarationValue(body, "width")).toBe("100%");
-    expect(declarationValue(body, "height")).toBe("100%");
-    expect(declarationValue(body, "object-fit")).toBe("cover");
-    expect(declarationValue(body, "object-position")).toBe("50% 82%");
-    // The user's own image is shown as it is, centred.
-    expect(
-      declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--custom"), "object-position"),
-    ).toBe("50% 50%");
-  });
-
-  it("keeps the plate 280 high, 220 at the least in a low window", () => {
-    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate"), "height")).toBe(
-      "clamp(220px, calc(24.4vh + 60px), 280px)",
-    );
-  });
-
-  it("shows the night print only: the day print never displays in a dark-only app", () => {
-    expect(declarationValue(ruleBody(vexSidebarCss, ".vex-vs-plate__img--day"), "display")).toBe(
-      "none",
-    );
+    expect(sidebar).not.toContain(".vex-vs-plate");
+    for (const sheet of [shell, sidebar]) expect(sheet).not.toMatch(/\/art\/(?:plateau|grain)/);
     expect(vexSidebarCss).not.toContain('[data-vex-theme="celeris"]');
   });
 });

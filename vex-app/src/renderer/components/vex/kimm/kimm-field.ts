@@ -19,8 +19,7 @@ export const KIMM_FIELD_GLYPHS = ["V", "X", "E"] as const;
 export const KIMM_FIELD_CELL = { width: 15, height: 20 } as const;
 
 /**
- * The field's step: 10 a second, K2's idle step (MOTION-POLICY.md, "Kimm's
- * glyph field"). One frame never advances it by more than
+ * The field's step: 10 a second (MOTION-POLICY.md, "Kimm's glyph field"). One frame never advances it by more than
  * `KIMM_FIELD_CLOCK_CAP_MS`, so a stalled window resumes where it stopped.
  */
 export const KIMM_FIELD_STEP_MS = 100;

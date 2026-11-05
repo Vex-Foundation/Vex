@@ -1,41 +1,29 @@
 /**
- * HIDING VEX PLAYS HER CLOSE FIRST (docs/design/R3-MINIMAL.md sections 2.4, 5.1 and 11): when the
- * user hides the Vex sidebar, she collapses into her token in the plate (the K2 close episode) and
- * only then does the column go (its track closes to zero on the shell's reveal transition). Under
- * reduced motion or Save-Data there is no episode to wait for, so the column goes at once; with
- * the avatar off, or her plate hidden under the inspect view, there is nothing of her to close, so
- * it goes at once too.
+ * WHERE THE VEX TOGGLES MEET THE OPEN COLUMN (docs/design/H3-DESKTOP.md sections 3.4 and 3.6).
  *
- * Three controls hide her (the sidebar's own hide key, the title bar's token chip and the
- * Cmd or Ctrl + Shift + Period shortcut) and one component plays the close (the open sidebar).
- * They meet here: a toggle asks `requestVexHide(commit)`, where `commit` is the store write it
- * would have made at once; the open sidebar either plays her close and commits when it ends, or
- * declines and the commit runs now. Pressing a toggle again while she closes keeps her
- * (`keepVex`): the close stops and she opens from the token again, and nothing was written.
+ * Three controls hide her (the header's Vex key, the desk's token chip and the Cmd or Ctrl +
+ * Shift + B shortcut) and they meet here: a toggle asks `requestVexHide(commit)`, where `commit`
+ * is the store write it would have made at once. The open column (`VexSidebar`) answers through
+ * its registered closer: it may take the request, play a close and commit when that ends, or
+ * decline, and the commit runs now. In H3 her section's own wipe is the close (`KimmSection`,
+ * after the write), so the column hands focus on and declines: the write lands at the press.
+ * Pressing a toggle again while a close plays keeps her (`keepVex`), and nothing is written.
  *
- * Only a hide the user asked for waits. A column the shell closes on its own (the narrow tier's
- * derived close, a table page's default, Lighter's Zen) goes at once, so a left sidebar opening
- * beside her is never held back.
+ * Only a hide the user asked for reaches the column. A column the shell closes on its own (the
+ * narrow tier's derived close, a table page's default, Lighter's Zen) goes at once.
  *
- * Module state, not store state: a closing is a moment of the open sidebar, never persisted, and
- * there is at most one sidebar. `useVexClosing()` lets the chip read it, so while she closes the
- * chip already reads "Show Vex" and its press keeps her.
+ * Module state, not store state: a closing is a moment of the open column, never persisted, and
+ * there is at most one column. `useVexClosing()` lets the toggles read it, so while a close plays
+ * they already read "Show Vex" and a press keeps her.
  */
 
 import { useSyncExternalStore } from "react";
-import { CLOSE_MS } from "../../components/vex/k2/k2-time.js";
-
-/**
- * How long a hide waits for her close: the episode's own length on her clock, imported rather
- * than restated, so the column never goes in the middle of it nor stands as a bare token after.
- */
-export const VEX_HIDE_EPISODE_MS = CLOSE_MS;
 
 /** What the open sidebar answers when a toggle asks to hide it. */
 export interface VexCloser {
   /**
-   * Play her close, then run `commit`; `true` when it took the request. `false` declines (the
-   * still frame, no plate on screen): the caller commits now.
+   * Play her close, then run `commit`; `true` when it took the request. `false` declines (her
+   * section's own wipe is the close): the caller commits now.
    */
   readonly close: (commit: () => void) => boolean;
   /** Stop a close in flight: she opens again and nothing is committed. */
