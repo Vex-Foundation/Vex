@@ -246,7 +246,7 @@ html[data-chrome="overlay"] .vex-shell-head > [data-vex-head-cell="caption-reser
   color: var(--vex-alias-label-faint);
 }
 .vex-composer-key:hover:not(:disabled) .vex-composer-key__glyph {
-  color: var(--color-white);
+  color: var(--vex-alias-button-accent-ink);
 }
 .vex-composer-stop__mark {
   display: block;

@@ -394,7 +394,7 @@ describe("composer capsule - send cell", () => {
       /\.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-label-faint\);/,
     );
     expect(CONSOLE_CSS).toMatch(
-      /\.vex-composer-key:hover:not\(:disabled\) \.vex-composer-key__glyph \{[^}]*color: var\(--color-white\);/,
+      /\.vex-composer-key:hover:not\(:disabled\) \.vex-composer-key__glyph \{[^}]*color: var\(--vex-alias-button-accent-ink\);/,
     );
   });
 
