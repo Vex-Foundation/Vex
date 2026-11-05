@@ -1182,14 +1182,15 @@ describe("ApprovalCard, the H3 table (H3-DESKTOP.md sections 1.7 and 4.1)", () =
     });
   }
 
-  it("keeps the same rows and the same data: send, receive, minimum, costs", () => {
+  it("keeps the same data: send, receive, minimum, and the fees on Cloud's two rows (DG5-06)", () => {
     renderCard(SWAP, false);
     const rows = moneyRows();
-    expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Costs"]);
+    expect(rows.map((row) => row.label)).toEqual(["You send", "You receive", "Minimum receipt", "Fees", "Network fee"]);
     expect(rows[0]?.value).toBe("200 USDC · on Base");
     expect(rows[1]?.value).toBe("0.05714 ETH · quoted");
     expect(rows[2]?.value).toBe("0.05686 ETH · slippage limit 0.5%");
-    expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%) · network fee Not available");
+    expect(rows[3]?.value).toBe("Vex fee 0.5 USDC (0.25%)");
+    expect(rows[4]?.value).toBe("Not available");
     // The network fee is never quoted, so the total stays hidden.
     expect(document.body.textContent).not.toMatch(/total debit/i);
     // H3 rows desktop has no data for are not drawn (section 4.1).

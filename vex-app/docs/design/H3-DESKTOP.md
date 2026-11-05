@@ -655,8 +655,8 @@ The second clause of each is muted. Open: the taglines for the other moments (th
 | QUOTED PRICE | left out | no separate quoted price |
 | YOU RECEIVE, "Not available" | same | |
 | SLIPPAGE LIMIT | MINIMUM RECEIPT, with the slippage limit in its note | desktop's real line |
-| FEES, "Vex fee 0.25% of the amount: about 0.5 USDC" | FEES, the Vex fee as the engine states it | |
-| NETWORK FEE, "Not available" | same | |
+| FEES, "Vex fee 0.25% of the amount: about 0.5 USDC" | FEES, the Vex fee as the engine states it ("Vex fee 0.5 USDC (0.25%)"), on a swap and a bridge; on a transfer, FEES is the network fee and reads "Not available" | Cloud's rows (DG5-06): a transfer has no Vex fee, so its one fee row is the network fee |
+| NETWORK FEE, "Not available" | same, on a swap and a bridge; no second row on a transfer | one unknown said once (DG5-06); the word is DRAFT in Cloud |
 | TOTAL DEBIT, "Not available" | shown only when every part is known | desktop never shows a total it cannot add up |
 | "up to 10,000 USD per order, 50,000 USD a day", "Change in Settings" | left out | no spend limits (F04 has not started) |
 | ALL SIGNED FIELDS | same | |
