@@ -96,8 +96,12 @@
   /* VEX Cloud's tooltip plate, oklch(20% 0.004 264), the top of the ground
    * ladder: tooltips and toasts, ink on it (Cloud's --vx-tooltip). */
   --color-h3-tooltip: #151618;
+  /* VEX Cloud's open ground, oklch(16% 0.004 264) (Cloud's --vx-cell-open):
+   * the Vex key's portrait cell while her section is open, under the
+   * portrait glyph. */
+  --color-h3-cell-open: #0c0d0f;
   /* Measured, no sheet token (about oklch 18%): the greeting bubble, the
-   * selected tab, the open Vex key's fold cell. */
+   * selected tab. */
   --color-h3-raised-2: #101214;
   /* Measured, no sheet token (oklch 25.5%): the person's message bubble. */
   --color-h3-bubble: #212325;
@@ -325,6 +329,9 @@
   --vex-alias-interactive-active: var(--color-h3-raised-2);
   --vex-alias-interactive-solid: var(--color-h3-raised);
   --vex-alias-interactive-danger: rgba(255, 255, 255, 0.06);
+  /* The open ground (Cloud's --vx-cell-open): the Vex key's portrait cell
+   * while she is in her section, the frame she left. */
+  --vex-alias-cell-open: var(--color-h3-cell-open);
 
   /* Status words (section 2.2): ink, every one of them. The state inks keep
    * their names because they paint words and plates (`text-success`, the

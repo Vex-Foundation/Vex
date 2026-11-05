@@ -4,9 +4,10 @@
  * One button in three parts, each a cell divided by a 1px rule:
  *
  *   button.vex-key[data-vex-area="vex-key"]
- *     .vex-key__portrait   76 x 76: the fold glyph on the raised fill while
- *                          she is open, her face while she is closed
- *                          (`VexKeyPortrait`, the seam S4-03 fills)
+ *     .vex-key__portrait   76 x 76: the portrait glyph on the open ground
+ *                          while she is open, her face while she is closed,
+ *                          crossfading over 200ms (`VexKeyPortrait`, the
+ *                          seam S4-03 fills)
  *     .vex-key__state      line one: the state square and word (13, caps),
  *                          and the live timer while a turn runs ("Thinking
  *                          0:03"); line two, 10 under it: the action (12,
@@ -178,7 +179,7 @@ export function VexKeyView({
         }}
       >
         <span className="vex-key__portrait" data-open={shown ? "" : undefined}>
-          <VexKeyPortrait open={shown} state={state} {...(mood === undefined ? {} : { mood })} />
+          <VexKeyPortrait state={state} {...(mood === undefined ? {} : { mood })} />
         </span>
         <span className="vex-key__state">
           <span id={stateId} className="vex-key__line vex-key__status">

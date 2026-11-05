@@ -99,7 +99,7 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 |---|---|---|---|
 | logo | 0, 171 | the mark and "CLOUD" | the mark; on macOS it starts after the traffic lights (section 4.7) |
 | sidebar key | 171, 77 | the panel icon | the same key: it folds the chats column to the rail |
-| Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | the same (section 1.6) |
+| Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | her mood still closed; open, Cloud's portrait glyph on the open ground, the two crossfading (section 1.6) |
 | Vex key, state | 324, 295 | the state square and word, a timer while live; then HIDE VEX or SHOW VEX and three keycaps | the same, with desktop's state words |
 | Vex key, chevron | 619, 61 | down when closed, up when open | the same: 60 and the column's own rule, as Cloud's CSS draws it (`.vk-dir`) |
 | chat title | 680, 398 | the chat's title, and "SAMPLE DATA" under it | the title, and under it the chat's kind and access ("Agent · Restricted") |
@@ -153,7 +153,7 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 
 ### 1.6 The Vex key and her moods
 The Vex key is the header cell over the Vex column, in three parts:
-- **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, the fold glyph (an up chevron under a bar) on a raised fill: she has stepped down into her section.
+- **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, VEX Cloud's portrait glyph (DG-1 `portrait`, a framed bust: the frame she left; the direction is the chevron cell's, never the glyph's) at 20 in ink 2, ink under the pointer, on the open ground (`--vx-cell-open`, #0C0D0F). The two stand in the cell together and crossfade over 200ms, opacity only (MOTION-POLICY.md names it); reduced motion and Save-Data change it at once. The open ground fades in with the glyph, so a face that has not arrived leaves the header's own ground. The plates' fold glyph (an up chevron under a bar) on a raised fill is replaced.
 - **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut. At VEX Cloud's measures (the H3 mockup's `.vk`, 2026-11-05): the text 20 in and 12 from the right, the two lines 10 apart; the state word 13 in caps in ink, the timer after it 10 on, in the sans, muted, at 0.04em with tabular figures; the action 12 in caps in ink, its keycaps 12 after it (section 2.4).
 - **Chevron cell.** Down while she is closed, up while she is open: 60 wide, then the column's rule; muted, ink under the pointer.
 - **Width rules** (VEX Cloud's, on the window's width): under 1440 no keycaps (the chord stays in the key's name, `aria-keyshortcuts`, its tooltip and the first-close hint), the state line 12 at 0.06em with its parts 8 apart, the text 16 in, the chevron cell 48, and the console's decision 14 with its Review cell 14 in from each side; under 1280 the state line says the chat row's short word ("Waiting" for Waiting for approval; every other word is already short), the long word staying the key's description; from 1920 the state line is 14 and the keycaps 20 high at 11.
@@ -263,7 +263,8 @@ Two sources: the review sheet's own CSS tokens (the mockup page that frames the 
 | raised | `--raised` oklch(13% 0.004 264) | #070709 | #070709: the REVIEW and REJECT keys | the sheet value |
 | card | none; Cloud's `--vx-card` oklch(10.5% 0.006 264) | #030405 | not drawn on the app plates | Cloud's value: menus, dialogs, the ground under a failure's red (section 5) |
 | plate | none; Cloud's `--vx-tooltip` oklch(20% 0.004 264) | #151618 | not drawn on the app plates | Cloud's value: the toast and the tooltip, ink on it (section 5.1) |
-| raised 2 | none | | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell; #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
+| open ground | none; Cloud's `--vx-cell-open` oklch(16% 0.004 264) | #0C0D0F | #0B0D0F (OKLCH 15.5%): the open Vex key's fold cell | Cloud's value: the Vex key's portrait cell while she is open (section 1.6) |
+| raised 2 | none | | #0F1112 to #121416 (17.6 to 19%): the greeting bubble, the selected tab | #101214, oklch 18% |
 | bubble | none | | #212325 (25.5%): the person's message bubble; #151718 (20%): their avatar disc | #212325 |
 | selected row | none | | a gradient from #181A1C (21.6%) at the chats column's left edge to the ground at its right | as measured |
 | ink | `--ink` oklch(97% 0.005 264) | #F3F5F9 | glyph peaks up to #FFFFFF | the sheet value |

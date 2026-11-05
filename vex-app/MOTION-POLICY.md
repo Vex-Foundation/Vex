@@ -43,6 +43,12 @@ here is a defect:
   (`docs/design/H3-DESKTOP.md` section 5.4): opacity only, on the entrance
   curve; reduced motion shows it at once. It leaves at once (Cloud fades it
   out in 220ms, which would need the bubble to outlive its anchor's hover).
+- The Vex key's portrait crossfade, 200ms - VEX Cloud's `.vk-face img` and
+  `.vk-pic` (the H3 mockup's app.css; `docs/design/H3-DESKTOP.md` section
+  1.6): her face and the portrait glyph swap by opacity, with the open
+  ground's fill, on the standard curve, as her section opens or closes.
+  Opacity and a fill only, inside a fixed 76 cell, so nothing moves; reduced
+  motion and Save-Data change it at once (title-bar.css states both).
 - The general key's hover fill, 420ms (`--vex-duration-key-fill`,
   `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
   `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot

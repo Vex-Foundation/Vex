@@ -23,10 +23,10 @@ import {
   LineArrowUp,
   LineChevronUp,
   LineClose,
-  LineSvg,
 } from "../../../../components/icons/line/index.js";
 import { Keycaps } from "../../../../components/ui/keycaps.js";
 import type { StudioPlatform } from "../../../../features/appShell/studio/keybindings-labels.js";
+import { PortraitGlyph } from "../../../../features/vex/VexKeyPortrait.js";
 import { VEX_TOGGLE_CHORD } from "../../../../features/vex/vex-toggle-shortcut.js";
 import { KIMM_STANDINS, type KimmStandinSectionMood } from "../../standins/manifest.js";
 import "./stages.css";
@@ -114,19 +114,9 @@ function platform(): StudioPlatform {
   return os === "win" ? "win32" : os === "linux" ? "linux" : "darwin";
 }
 
-/** The fold glyph the open Vex key shows (`VexKeyPortrait.tsx`). */
-function FoldGlyph(): JSX.Element {
-  return (
-    <LineSvg size={20}>
-      <path d="M3.5 4h9" />
-      <path d="M4 11.5l4-4 4 4" />
-    </LineSvg>
-  );
-}
-
 /**
  * The Vex key as the shell draws it with her section open (section 1.6): the
- * fold glyph on the raised fill, her state, Hide Vex with its keycaps, the
+ * portrait glyph on the open ground, her state, Hide Vex with its keycaps, the
  * up chevron. On the stage it means what it means in the shell: Hide Vex
  * folds her to the strip, and the choice is the one stored choice.
  */
@@ -135,7 +125,7 @@ function VexKeyCells({ vex }: { readonly vex: StageVexKey }): JSX.Element {
   return (
     <button type="button" className="vex-key" aria-label="Hide Vex" aria-expanded>
       <span className="vex-key__portrait" data-open="">
-        <FoldGlyph />
+        <PortraitGlyph />
       </span>
       <span className="vex-key__state">
         <span className="vex-key__line vex-key__status">

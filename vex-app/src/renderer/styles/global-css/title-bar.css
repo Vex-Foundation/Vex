@@ -688,8 +688,8 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
 
 /* ── The Vex key (docs/design/H3-DESKTOP.md sections 1.3 and 1.6; VexKey.tsx)
  * One button across the Vex key's cell, in three cells divided by the rule:
- * her portrait (76 square; the fold glyph on the raised fill while she is
- * open), the state cell and the chevron (60, then the column's own rule).
+ * her portrait (76 square; the portrait glyph on the open ground while she
+ * is open), the state cell and the chevron (60, then the column's own rule).
  * VEX Cloud's key (the H3 mockup's `.vk`): the state cell's text 20 in and
  * 12 from its right, two lines 10 apart: the square and the word in caps at
  * 13 in ink, the timer after it in the sans, muted; then the action in caps
@@ -718,7 +718,15 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   outline: 2px solid var(--vex-alias-focus);
   outline-offset: -2px;
 }
+/* HER PORTRAIT CELL (section 1.6; VEX Cloud's `.vk-face`): her face and the
+ * portrait glyph stand in it together and crossfade over 200ms, opacity
+ * only (MOTION-POLICY.md names the exception). Closed, her face; open, the
+ * glyph, 20 in ink 2 (ink under the pointer), on the open ground. The open
+ * ground fades with them, so a face that has not arrived yet leaves the
+ * header's own ground, never an empty plate. Reduced motion and Save-Data
+ * change it at once. */
 .vex-key__portrait {
+  position: relative;
   display: flex;
   flex: none;
   width: 76px;
@@ -726,10 +734,39 @@ html[data-os="mac"] .vex-shell-head__rail > .vex-shell-head__logo {
   justify-content: center;
   overflow: hidden;
   border-right: 1px solid var(--vex-alias-rule-quiet);
-  color: var(--vex-alias-label-primary);
+  color: var(--vex-alias-label-secondary);
+  transition: background-color 200ms var(--vex-ease-standard);
 }
 .vex-key__portrait[data-open] {
-  background: var(--vex-alias-interactive-active);
+  background: var(--vex-alias-cell-open);
+}
+.vex-key__portrait > .vex-key__chip {
+  position: absolute;
+  inset: 0;
+  transition: opacity 200ms var(--vex-ease-standard);
+}
+.vex-key__portrait[data-open] > .vex-key__chip {
+  opacity: 0;
+}
+.vex-key__pic {
+  position: relative;
+  opacity: 0;
+  transition: opacity 200ms var(--vex-ease-standard);
+}
+.vex-key__portrait[data-open] > .vex-key__pic {
+  opacity: 1;
+}
+.vex-key:hover .vex-key__pic {
+  color: var(--vex-alias-label-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-key__portrait,
+  .vex-key__portrait > * {
+    transition: none;
+  }
+}
+html[data-still] :is(.vex-key__portrait, .vex-key__portrait > *) {
+  transition: none;
 }
 .vex-key__state {
   display: flex;
