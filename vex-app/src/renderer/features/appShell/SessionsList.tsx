@@ -66,6 +66,7 @@ import {
   SessionsEmptyPlaceholder,
   SessionsErrorPlaceholder,
   SessionsLoadingPlaceholder,
+  chatsFailedWords,
   SidebarSessionGroups,
 } from "./SessionRows.js";
 import {
@@ -241,8 +242,9 @@ export function SessionsList({
   const listBody = query.isLoading ? (
     <SessionsLoadingPlaceholder sidebarOpen />
   ) : query.data && query.data.ok === false ? (
-    // Cloud's words, never the raw cause.
-    <SessionsErrorPlaceholder sidebarOpen />
+    // Cloud's words first, then main's own reason for the failed read (for
+    // example "Vault is locked."): the person learns what to do about it.
+    <SessionsErrorPlaceholder sidebarOpen message={chatsFailedWords(query.data.error.message)} />
   ) : query.isError ? (
     // A TRANSPORT rejection never produces a Result, so without this branch
     // it fell through to `null` and the column went blank: a lie by omission

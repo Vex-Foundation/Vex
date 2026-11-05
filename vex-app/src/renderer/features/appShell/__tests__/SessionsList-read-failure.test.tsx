@@ -86,15 +86,14 @@ describe("SessionsList read failure", () => {
     expect(screen.queryByText("No chats yet.")).toBeNull();
   });
 
-  it("says Chats could not load. for a settled ok:false read, never its raw cause", () => {
+  it("says Chats could not load. for a settled ok:false read, then main's own reason", () => {
     harness.query = {
       isLoading: false,
       isError: false,
       data: { ok: false, error: { message: "Vault is locked." } },
     };
     renderRail();
-    expect(screen.getByText("Chats could not load.")).toBeTruthy();
-    expect(screen.queryByText("Vault is locked.")).toBeNull();
+    expect(screen.getByText("Chats could not load. Vault is locked.")).toBeTruthy();
   });
 
   it("keeps a good empty read on the empty state, never the failure copy", () => {
