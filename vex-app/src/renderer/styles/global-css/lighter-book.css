@@ -2,8 +2,8 @@
  * Order book (asks over bids, or bids beside asks) and trades
  * (docs/design/R3-MINIMAL.md sections 1.2 and 9.3). Bids are trading values
  * in trade up, asks in trade down, each over a wash of its colour (14% and
- * 12%); the B and S ratio bar is the same pair. Rows 22 high in JetBrains
- * Mono 11.5; the column heads 11.5 / 500 muted in Instrument Sans. The tape
+ * 12%); the B and S ratio bar is the same pair. Rows 22 high in the mono
+ * (--font-mono) 11.5; the column heads 11.5 / 500 muted in the sans. The tape
  * keeps the blue and the ink for its prints.
  * ------------------------------------------------------------------------- */
 

@@ -10,10 +10,10 @@
  *     .vex-pf-vex                   the $VEX line
  *
  * Paper, ink, one blue; radius 0, no shadow, no blur; every colour an alias,
- * so the Night Ledger needs no second rule set. Figures are JetBrains Mono
- * (`.vex-num`); words are Instrument Sans. Trading colours appear only on
- * trading values (`[data-trade]`: the Lighter uPnL, Long and Short, the $VEX
- * 24 hour change), never on a state word. */
+ * so the Night Ledger needs no second rule set. Figures are Roboto Mono
+ * (`.vex-num`, --font-mono); words are Be Vietnam Pro (--font-sans). Trading
+ * colours appear only on trading values (`[data-trade]`: the Lighter uPnL,
+ * Long and Short, the $VEX 24 hour change), never on a state word. */
 
 /* ---- the H3 page frame (every page) ----------------------------------
  * docs/design/H3-DESKTOP.md section 1.9: a tabs row of square cells about 57

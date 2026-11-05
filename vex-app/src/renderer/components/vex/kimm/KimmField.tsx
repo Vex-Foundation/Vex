@@ -2,7 +2,7 @@
  * HER GLYPH FIELD (docs/design/H3-DESKTOP.md sections 1.5, 3.2 and 3.5; plan
  * row S4-17): the falling V, X and E on her blue ground, behind her figure.
  * A canvas the model (`kimm-field.ts`) is drawn into, bound four ways, the
- * named exception MOTION-POLICY.md gives it beside K2's portrait:
+ * named exception MOTION-POLICY.md gives it:
  *
  *   - IT RUNS ONLY WHILE HER SECTION IS OPEN (`running`): closed, the field
  *     holds its frame in the strip ("the field holds its frame", section

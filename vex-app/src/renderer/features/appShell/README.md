@@ -134,7 +134,7 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
 - Props `open` and `onHide`; hidden is 0 width and renders nothing inside. Body:
   head and hide key, state (swatch, scope, word, timer, narration, background
   missions), Needs you, Studio's "This project", the page slot (`vex-sidebar-slot.ts`,
-  the Board's Ask Vex), the K2 plate, the "Show avatar" foot. Lighter puts the
+  the Board's Ask Vex), Kimm's section, the "Show avatar" foot. Lighter puts the
   desk chat under the plate. Avatar off: no plate, the 44px `VexStatus` token.
   Words come from `useVexPresence` (precedence in `vex-state.ts`).
 - Open by page class (`vexPageClass`, `uiStore/layout.ts`): `chat` (`vexOpenChat`,
@@ -144,10 +144,10 @@ Styled in `global-css/left-sidebar.css`. Open, top to bottom:
   current class's slot; the frame hands her `vexEffectiveOpen`, the solved width.
 - She docks when her column shows again after a hide; the welcome keeps her
   column (docs/design/H3-DESKTOP.md section 1.7), so nothing hands her over.
-  Hiding plays her close first (`vex-hide.ts`): hide key, chip and shortcut call
-  `requestVexHide(commit)`; the sidebar plays the K2 close, then commits (at once
-  under reduced motion, Save-Data, avatar off). A second press keeps her. Derived
-  closes (narrow tier, page default, Zen) go at once.
+  Hiding lands at the press (`vex-hide.ts`): the Vex key, chip and shortcut call
+  `requestVexHide(commit)`; the sidebar hands focus on and the write lands at
+  once, her section's own wipe being the close. Derived closes (narrow tier, page
+  default, Zen) go at once.
 
 ## Persisted layout (`stores/uiStore.ts`, `uiStore/persistence.ts`)
 

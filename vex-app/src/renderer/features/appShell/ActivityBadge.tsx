@@ -64,7 +64,8 @@ const MAX_VOCAB_CHARS = 16;
 
 /**
  * The chip silhouette every activity mark shares: a tag (docs/design/R3-MINIMAL.md
- * section 1.3, the only caps in the app), Instrument Sans 11 / 600 at `.08em`.
+ * section 1.3, the only caps in the app), the sans (--font-sans, Be Vietnam
+ * Pro) 11 / 600 at `.08em`.
  * The Agent Scan rows and the Portfolio activity table read it as plain caps
  * words (`.vex-scan-kind`, `.vex-pf-kind`), dropping the frame and the fill.
  */
