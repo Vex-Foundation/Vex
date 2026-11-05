@@ -389,9 +389,17 @@ async function panelPress(page: Page, mode: "seek" | "live", durationMs: number)
       while (panelEl.hasAttribute("inert") === wasOpen) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
+      // The panel's own slide, scrim and row entries; a running square's
+      // blink in a row is a loop with no end, not the press's motion.
       const running = document.getAnimations().filter((animation) => {
         const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
-        return target !== null && (panelEl.contains(target) || target === panelEl.previousElementSibling);
+        const end = animation.effect?.getComputedTiming().endTime;
+        return (
+          target !== null
+          && (panelEl.contains(target) || target === panelEl.previousElementSibling)
+          && typeof end === "number"
+          && Number.isFinite(end)
+        );
       });
       if (running.length === 0) throw new Error("the press started no motion");
       const frames: PanelFrame[] = [];
