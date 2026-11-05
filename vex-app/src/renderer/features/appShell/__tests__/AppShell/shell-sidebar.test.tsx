@@ -1063,43 +1063,79 @@ describe("AppShell", () => {
     expect(chats?.querySelector("[data-vex-head-cell='sidebar-key']")).toBeNull();
   });
 
-  it("from 1024 to 1267 the person may open the chats, unsaved; leaving the tier clears it", () => {
+  it("from 1024 to 1267 the rail's key opens the chats panel over Vex's column, and no track moves", () => {
+    // docs/design/H3-DESKTOP.md section 4.12, the money rule (section 3.6):
+    // under 1268 the chats are the rail at every moment; the key slides the
+    // chats panel over Vex's column instead of widening the track.
     setWindowWidth(1024);
-    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, leftOpen: false });
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true, leftOpen: true });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.style.gridTemplateColumns).toBe("76px 307px minmax(0, 1fr)");
+    const panel = (): HTMLElement | null =>
+      view.container.querySelector<HTMLElement>("[data-vex-area='chats-panel']");
+    const scrim = (): HTMLElement | null =>
+      view.container.querySelector<HTMLElement>("[data-vex-area='chats-scrim']");
+    const columns = frame?.style.gridTemplateColumns;
+    expect(columns).toBe("76px 307px minmax(0, 1fr)");
+    expect(panel()?.hasAttribute("data-open")).toBe(false);
+    expect(panel()?.hasAttribute("inert")).toBe(true);
 
-    // The rail's Expand key opens it here: the ephemeral override, never the
-    // stored choice. Vex's column keeps its 30%; the chat takes what is left.
-    fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
-    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(true);
-    expect(useUiStore.getState().leftOpen).toBe(false);
-    expect(frame?.style.gridTemplateColumns).toBe("248px 307px minmax(0, 1fr)");
-    expect(
-      view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open"),
-    ).toBe("true");
-    // The header's sidebar key folds it back.
+    const expand = screen.getByRole("button", { name: "Expand sessions sidebar" });
+    expect(expand.getAttribute("aria-controls")).toBe("chats-panel");
+    fireEvent.click(expand);
+    expect(panel()?.hasAttribute("data-open")).toBe(true);
+    expect(panel()?.hasAttribute("inert")).toBe(false);
+    expect(scrim()?.hasAttribute("data-open")).toBe(true);
+    // Over her column: the scrim stops at her column's edge, the chat is live.
+    expect(scrim()?.hasAttribute("data-covers")).toBe(false);
+    expect(view.container.querySelector(".vex-shell-centre")?.hasAttribute("inert")).toBe(false);
+    // Nothing in the grid changed, and nothing was written.
+    expect(frame?.style.gridTemplateColumns).toBe(columns);
+    expect(useUiStore.getState().leftOpen).toBe(true);
+    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
+    // The panel follows the rail in the DOM, so focus reaches it from the key.
+    const order = Array.from(frame?.children ?? []).map((el) => el.getAttribute("data-vex-area") ?? el.className);
+    expect(order.indexOf("chats-panel")).toBe(order.indexOf("left-page") + 2);
+    expect(within(panel() as HTMLElement).getByRole("heading", { name: "Chats" })).toBeTruthy();
+
+    // The same key closes it; so does the scrim, and Escape from inside.
     fireEvent.click(screen.getByRole("button", { name: "Collapse sessions sidebar" }));
-    expect(frame?.style.gridTemplateColumns).toBe("76px 307px minmax(0, 1fr)");
+    expect(panel()?.hasAttribute("inert")).toBe(true);
+    expect(frame?.style.gridTemplateColumns).toBe(columns);
     fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
-    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(true);
+    fireEvent.pointerDown(scrim() as HTMLElement);
+    expect(panel()?.hasAttribute("inert")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
+    const field = within(panel() as HTMLElement).getByRole("searchbox", { name: "Search chats" });
+    field.focus();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(panel()?.hasAttribute("inert")).toBe(true);
+    // A press outside closes it as well.
+    fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
+    fireEvent.pointerDown(view.container.querySelector(".vex-shell-centre") as HTMLElement);
+    expect(panel()?.hasAttribute("inert")).toBe(true);
     view.unmount();
 
-    // Leaving the tier (here, past 1267) clears the override, and the
-    // stored choice (folded) stands.
+    // From 1268 the key folds the track as ever, and there is no panel.
     setWindowWidth(1440);
     const wide = renderShell();
-    const wideFrame = wide.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(useUiStore.getState().sidebarNarrowExpanded).toBe(false);
-    expect(wideFrame?.style.gridTemplateColumns).toBe("76px 432px minmax(0, 1fr)");
-    wide.unmount();
-    // Back in the tier, it starts folded again.
-    setWindowWidth(1024);
-    const again = renderShell();
+    expect(wide.container.querySelector("[data-vex-area='chats-panel']")).toBeNull();
     expect(
-      again.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']")?.style.gridTemplateColumns,
-    ).toBe("76px 307px minmax(0, 1fr)");
+      wide.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']")?.style.gridTemplateColumns,
+    ).toBe("248px 432px minmax(0, 1fr)");
+    wide.unmount();
+  });
+
+  it("opens the chats panel from the rail's search with its field focused", () => {
+    setWindowWidth(1180);
+    useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
+    const view = renderShell();
+    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
+    const panel = view.container.querySelector<HTMLElement>("[data-vex-area='chats-panel']");
+    expect(panel?.hasAttribute("data-open")).toBe(true);
+    expect(document.activeElement).toBe(
+      within(panel as HTMLElement).getByRole("searchbox", { name: "Search chats" }),
+    );
   });
 
   it("holds the account cell, the tagline cell and the chat's foot in a 72 bottom row", () => {
@@ -1179,14 +1215,19 @@ describe("AppShell", () => {
     expect(aside()?.querySelector("[data-vex-area='vex-console-top']")).not.toBeNull();
   });
 
-  it("under 1024 the band keeps the rail, with no Expand key to open it", () => {
+  it("under 1024 the rail's key opens the chats panel over what is read, the chat resting behind it", () => {
     setWindowWidth(1000);
     useUiStore.setState({ activeSessionId: "s-1", leftOpen: true });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     expect(frame?.getAttribute("data-vex-tier")).toBe("band");
     expect(frame?.style.gridTemplateColumns).toBe("76px 0px minmax(0, 1fr)");
-    expect(screen.queryByRole("button", { name: "Expand sessions sidebar" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
+    expect(frame?.style.gridTemplateColumns).toBe("76px 0px minmax(0, 1fr)");
+    expect(
+      view.container.querySelector("[data-vex-area='chats-scrim']")?.hasAttribute("data-covers"),
+    ).toBe(true);
+    expect(view.container.querySelector(".vex-shell-centre")?.hasAttribute("inert")).toBe(true);
     expect(useUiStore.getState().leftOpen).toBe(true);
   });
 

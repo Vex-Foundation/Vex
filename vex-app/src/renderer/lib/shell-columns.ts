@@ -199,8 +199,11 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  *
  *   chats | Vex | chat
  *
- * - The CHATS column is a fixed H3_CHATS_WIDTH (248). Folded by the user (the
- *   sidebar key) it is the H3_RAIL_WIDTH (76) rail, at any width.
+ * - The CHATS column is a fixed H3_CHATS_WIDTH (248) from H3_CHATS_OPEN_MIN
+ *   up, or the H3_RAIL_WIDTH (76) rail where the user folded it (the sidebar
+ *   key). Under H3_CHATS_OPEN_MIN it is the rail whatever the stored choice
+ *   says: there the sidebar key slides the chats PANEL out of the rail, over
+ *   Vex's column, and no track changes (section 4.12).
  * - The VEX column is H3_VEX_PERCENT (30%) of the frame, in whole pixels.
  *   Folding the chats never changes it: the chat gains the difference (172).
  * - The CHAT takes the rest.
@@ -224,19 +227,16 @@ export function lighterChatDragMax(cols: ShellColumns, viewport: number): number
  * is 0, the strip is drawn inside the chat, and the chat takes the room.
  *
  * No centre floor. R3's CENTER_MIN (640) is not an H3 rule and is not applied
- * here: with the chats open the chat is under 640 from 1024 to 1267 (469 at
- * 1024, 648 at 1280 just above it), and across the 1024 seam it narrows from
- * 947 to 469 in one pixel. H3's proof has the card working at 1280 with rows
- * below the fold; the plate rule is kept as measured rather than bent to a
- * floor. With the chats folded the columns layout never takes the chat under
- * 641, and the band never under 924 from the window minimum up.
+ * here. Under H3_CHATS_OPEN_MIN the chats are the rail, so the columns
+ * layout never takes the chat under 641 there, and the band never under 924
+ * from the window minimum up.
  *
- * The desktop's own rule sits on top, in what the shell ASKS (section 4.12):
- * from H3_COLUMNS_MIN to H3_CHATS_OPEN_MIN (1024 to 1267, h3ShellTier's
- * "medium") the chats column starts folded to the rail, so the chat keeps
- * at least H3_CHAT_MIN (640); the person may open it there, an unsaved
- * override the shell clears when the window leaves the tier. The solver only
- * takes the answer as `chats`.
+ * THE CHATS UNDER H3_CHATS_OPEN_MIN (section 4.12, the money rule's first
+ * leg). From H3_COLUMNS_MIN to H3_CHATS_OPEN_MIN (h3ShellTier's "medium")
+ * the chats column is the rail, and it stays the rail: the sidebar key opens
+ * the chats panel, a box laid over Vex's column (`ChatsPanel.tsx`), so a
+ * waiting card in the chat never moves while the panel opens or closes. The
+ * solver reads the stored choice only from H3_CHATS_OPEN_MIN up.
  *
  * Every width is an integer and the three add back up to the frame, so the
  * grid can hand the chat minmax(0, 1fr) and land exactly on `chat`.
@@ -247,7 +247,7 @@ export const H3_COLUMNS_MIN = 1024;
 
 /** The open chats column, fixed at every width (the plates' 248). */
 export const H3_CHATS_WIDTH = 248;
-/** The folded chats column: the rail, by the user's choice or under the band seam. */
+/** The folded chats column: the rail, by the user's choice or under H3_CHATS_OPEN_MIN. */
 export const H3_RAIL_WIDTH = 76;
 
 /**
@@ -270,16 +270,16 @@ export const H3_CHAT_MIN = 640;
 /**
  * From this frame width up the chats column follows the stored choice: the
  * first width at which 248 + 30% + H3_CHAT_MIN fits (1268: 248 + 380 + 640;
- * at 1267 the chat would be 639). Under it, down to H3_COLUMNS_MIN, it
- * starts folded.
+ * at 1267 the chat would be 639). Under it the chats are the rail, and their
+ * key opens the chats panel over Vex's column instead.
  */
 export const H3_CHATS_OPEN_MIN = 1268;
 
 /**
  * The H3 frame's three tiers: "wide" from H3_CHATS_OPEN_MIN up (the chats as
- * the person left them), "medium" from H3_COLUMNS_MIN (the chats folded
- * unless opened here), "band" under it (the rail, and Vex as a band). Each
- * seam belongs to the wider side, as shellTier's do.
+ * the person left them), "medium" from H3_COLUMNS_MIN (the rail, its key
+ * opening the chats panel), "band" under it (the rail, and Vex as a band).
+ * Each seam belongs to the wider side, as shellTier's do.
  */
 export type H3ShellTier = "wide" | "medium" | "band";
 
@@ -296,7 +296,8 @@ export interface H3ShellInput {
   readonly viewport: number;
   /**
    * Whether the chats column is asked open: the stored sidebar choice. False
-   * is the rail at any width. Under H3_COLUMNS_MIN it is ignored (the rail).
+   * is the rail at any width. Under H3_CHATS_OPEN_MIN it is ignored (the
+   * rail, and the chats panel over Vex's column).
    */
   readonly chats: boolean;
   /**
@@ -310,13 +311,13 @@ export interface H3ShellInput {
 export interface H3ShellColumns {
   /** Three columns from H3_COLUMNS_MIN up; the band under it. */
   readonly layout: H3ShellLayout;
-  /** The chats track: H3_CHATS_WIDTH open, H3_RAIL_WIDTH folded or in the band. */
+  /** The chats track: H3_CHATS_WIDTH open, H3_RAIL_WIDTH folded or under H3_CHATS_OPEN_MIN. */
   readonly chats: number;
   /** The Vex track: H3_VEX_PERCENT of the frame, or 0 for the band and a page's strip. */
   readonly vex: number;
   /** The chat track: the rest of the frame. Never negative. */
   readonly chat: number;
-  /** Whether the chats column renders as its rail (the user's fold, or the band). */
+  /** Whether the chats column renders as its rail (the user's fold, or under H3_CHATS_OPEN_MIN). */
   readonly chatsRail: boolean;
   /** Where the Vex console is drawn: its column, the band, or a page's strip. */
   readonly vexSeat: H3VexSeat;
@@ -371,8 +372,9 @@ export function computeH3ShellColumns(input: H3ShellInput): H3ShellColumns {
   const width = h3FrameWidth(input.viewport);
   const layout = h3ShellLayout(width);
   const band = layout === "band";
-  // Under the seam the rail is derived; the stored choice is left as it is.
-  const chatsRail = band || !input.chats;
+  // Under H3_CHATS_OPEN_MIN the rail is derived; the stored choice is left
+  // as it is, so widening the window restores it.
+  const chatsRail = width < H3_CHATS_OPEN_MIN || !input.chats;
   const chats = Math.min(width, chatsRail ? H3_RAIL_WIDTH : H3_CHATS_WIDTH);
   // A page's strip wins over the band: a page under 1024 shows the strip.
   const vexSeat: H3VexSeat = input.vexStrip === true ? "strip" : band ? "band" : "column";

@@ -264,10 +264,11 @@ export interface UiState {
   /** @deprecated The previous frame's BOOK drag width. See `sidebarWidth`. */
   readonly bookWidth: number;
   /**
-   * Below the medium tier the left sidebar renders the rail unless the user
-   * manually re-expands it; this is that override (and, in Lighter, the top
-   * bar's drawer). NOT persisted: a relaunch under a narrow window starts
-   * back at the rail.
+   * The Lighter desk's drawer (Markets and sessions), opened from its title
+   * cell. It was also R3's narrow-tier override that widened the chats
+   * column; H3 never widens a track there (docs/design/H3-DESKTOP.md section
+   * 4.12: the chats panel, the frame's own state), so the agent shell and
+   * Studio no longer set it. NOT persisted.
    */
   readonly sidebarNarrowExpanded: boolean;
   /**

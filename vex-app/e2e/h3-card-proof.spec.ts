@@ -46,7 +46,11 @@ const SIZES = [
   { width: 2560, height: 1440 },
 ] as const;
 
-type Size = (typeof SIZES)[number];
+/** A window size: the proof's five, and the narrower legs' own. */
+interface Size {
+  readonly width: number;
+  readonly height: number;
+}
 
 const CARD = '[data-vex-area="approvals-region"] [data-vex-area="approval-card"]';
 const SECTION = '[data-vex-area="kimm-section"]';
@@ -318,6 +322,133 @@ test.describe("H3 card proof on the Lighter desk: the Review order never moves",
       expect(closedBox).toEqual(openBox);
       const closedPixels = await page.screenshot({ clip: onScreen(closedBox, size as Size), animations: "disabled", caret: "hide" });
       expect(closedPixels.equals(openPixels)).toBe(true);
+    });
+  }
+});
+
+/**
+ * THE CHATS PANEL LEG (docs/design/H3-DESKTOP.md section 4.12): under 1280
+ * the chats column is the rail at every moment, and its key slides the chats
+ * panel over Vex's column. Nothing in the grid changes, so a waiting card
+ * never moves while the panel opens or closes, on any frame: read seeked
+ * every 30ms through both slides and live on every painted frame, with the
+ * grid's column template read beside the card. The panel must be seen to
+ * move, so a slide that never ran cannot pass.
+ */
+const PANEL_SIZES = [
+  { width: 1024, height: 768 },
+  { width: 1180, height: 800 },
+] as const;
+const PANEL = '[data-vex-area="chats-panel"]';
+const PANEL_KEY = '[data-chats-panel-key="toggle"]';
+
+interface PanelFrame {
+  readonly at: number;
+  readonly card: Box;
+  readonly columns: string;
+  readonly panelX: number;
+}
+
+/** Press the rail's key and read every seek of the slide it starts, or every painted frame. */
+async function panelPress(page: Page, mode: "seek" | "live", durationMs: number): Promise<PanelFrame[]> {
+  return page.evaluate(
+    async ({ card, panel, key, mode, duration, step }) => {
+      const cardEl = document.querySelector(card);
+      const panelEl = document.querySelector<HTMLElement>(panel);
+      const keyEl = document.querySelector<HTMLElement>(key);
+      const frameEl = document.querySelector<HTMLElement>(".vex-shell-frame");
+      if (cardEl === null || panelEl === null || keyEl === null || frameEl === null) {
+        throw new Error("the card, the panel, its key or the frame is missing");
+      }
+      const read = (at: number): PanelFrame => {
+        const r = cardEl.getBoundingClientRect();
+        return {
+          at,
+          card: { x: r.x, y: r.y, width: r.width, height: r.height },
+          columns: getComputedStyle(frameEl).gridTemplateColumns,
+          panelX: panelEl.getBoundingClientRect().x,
+        };
+      };
+      const wasOpen = panelEl.hasAttribute("inert");
+      keyEl.click();
+      while (panelEl.hasAttribute("inert") === wasOpen) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const running = document.getAnimations().filter((animation) => {
+        const target = (animation.effect as KeyframeEffect | null)?.target ?? null;
+        return target !== null && (panelEl.contains(target) || target === panelEl.previousElementSibling);
+      });
+      if (running.length === 0) throw new Error("the press started no motion");
+      const frames: PanelFrame[] = [];
+      if (mode === "seek") {
+        for (const animation of running) animation.pause();
+        for (let at = 0; at <= duration; at += step) {
+          for (const animation of running) animation.currentTime = at;
+          frames.push(read(at));
+        }
+        for (const animation of running) animation.finish();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        frames.push(read(duration + 1));
+        return frames;
+      }
+      const start = performance.now();
+      await new Promise<void>((resolve, reject) => {
+        const tick = (): void => {
+          const at = performance.now() - start;
+          frames.push(read(at));
+          if (running.every((animation) => animation.playState === "finished" || animation.playState === "idle") && at > 120) {
+            resolve();
+            return;
+          }
+          if (at > 6000) {
+            reject(new Error("the panel never came to rest"));
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return frames;
+    },
+    { card: CARD, panel: PANEL, key: PANEL_KEY, mode, duration: durationMs, step: SEEK_STEP_MS },
+  );
+}
+
+test.describe("H3 card proof: the chats panel never moves a waiting card", () => {
+  for (const size of PANEL_SIZES) {
+    test(`the chats panel opens and closes over Vex's column at ${sizeName(size)}`, async ({ page }) => {
+      await open(page, size, "open");
+      const card = await cardBox(page);
+      const columns = await page.evaluate(
+        () => getComputedStyle(document.querySelector(".vex-shell-frame") as Element).gridTemplateColumns,
+      );
+      // The rail at every moment, the panel closed.
+      expect(columns.split(" ")[0]).toBe("76px");
+      await expect(page.locator(PANEL)).toHaveAttribute("inert", "");
+
+      const seekOpen = await panelPress(page, "seek", OPEN_MS);
+      const seekClose = await panelPress(page, "seek", CLOSE_MS);
+      const liveOpen = await panelPress(page, "live", OPEN_MS);
+      const liveClose = await panelPress(page, "live", CLOSE_MS);
+      for (const [name, frames] of [
+        ["seek open", seekOpen],
+        ["seek close", seekClose],
+        ["live open", liveOpen],
+        ["live close", liveClose],
+      ] as const) {
+        for (const frame of frames) {
+          expect(frame.card, `${name} ${frame.at.toFixed(1)}ms`).toEqual(card);
+          expect(frame.columns, `${name} ${frame.at.toFixed(1)}ms`).toBe(columns);
+        }
+      }
+      // The panel moved: out of the rail to its place at x 76, and back.
+      expect(seekOpen[0]?.panelX).toBeLessThan(0);
+      expect(seekOpen.at(-1)?.panelX).toBe(76);
+      expect(seekClose[0]?.panelX).toBe(76);
+      expect(seekClose.at(-2)?.panelX).toBeLessThan(0);
+      expect(liveOpen.length).toBeGreaterThanOrEqual(2);
+      expect(liveClose.length).toBeGreaterThanOrEqual(2);
+      expect(await cardBox(page)).toEqual(card);
     });
   }
 });

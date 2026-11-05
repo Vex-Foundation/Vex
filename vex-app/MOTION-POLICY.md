@@ -44,9 +44,22 @@ here is a defect:
   `DURATION_VEX_CLOSE_MS`), both on the push curve - printed on the H3
   mockup's strips (`docs/design/H3-DESKTOP.md` section 3.1) and shared with
   VEX Cloud, so they are a cross-app contract rather than a style step. They
-  are hers alone: nothing else may borrow them. Her wipe animates clip-path,
-  transform and opacity only, never a size, so the money card beside her
-  never moves (section 3.6); reduced motion and Save-Data land her at once.
+  are hers and the chats panel's alone (below): nothing else may borrow them.
+  Her wipe animates clip-path, transform and opacity only, never a size, so
+  the money card beside her never moves (section 3.6); reduced motion and
+  Save-Data land her at once.
+- The chats panel (`features/appShell/ChatsPanel.tsx`,
+  `docs/design/H3-DESKTOP.md` section 4.12), VEX Cloud's own numbers
+  (`h3-shell-gaps/js/shell.js`, its push, fold and scrim): the panel slides
+  over Vex's column in `DURATION_VEX_OPEN_MS` (720ms) and back in
+  `DURATION_VEX_CLOSE_MS` (420ms) on the push curve; its scrim fades in over
+  `DURATION_CHATS_SCRIM_OPEN_MS` (600ms) and out over
+  `DURATION_CHATS_SCRIM_CLOSE_MS` (300ms); its first rows enter over
+  `DURATION_CHATS_ROW_MS` (620ms), row n after `CHATS_ROW_DELAY_MS` +
+  n x `CHATS_ROW_STAGGER_MS` (120 + 45n ms). Web Animations on transform and
+  opacity, JS constants with no CSS twin (no sheet reads them), and no grid
+  track moves, so a waiting card never does. Reduced motion and Save-Data
+  land it at once.
 
 ### The easing family
 
@@ -58,7 +71,7 @@ and mirrored in `lib/motion/index.ts`:
 | `--vex-ease-standard` | `EASE_STANDARD` | movement BETWEEN two resting states: crossfades, staggers, tints |
 | `--vex-ease-out` | `EASE_OUT` | ENTRANCES: a surface arriving from nothing |
 | `--vex-ease-inout` | `EASE_INOUT` | full-surface reveals |
-| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and nothing else |
+| `--vex-ease-push` | `EASE_PUSH` | Kimm's section opening and closing, and the chats panel's slide, and nothing else |
 
 The fourth curve, `cubic-bezier(0.22, 1, 0.36, 1)`, is derived rather than
 chosen: the H3 mockup prints her section's clip inset at 120, 240 and 480ms

@@ -95,10 +95,12 @@ describe("the parity widths, chats open and folded, strip off and on", () => {
     expect(tracks(h3(1023, false, true))).toEqual([76, 0, 947]);
   });
 
-  it("1024, the first column pixel: 248 | 307 | 469, folded 76 | 307 | 641", () => {
-    expect(tracks(h3(1024, true))).toEqual([248, 307, 469]);
+  it("1024, the first column pixel: 76 | 307 | 641 whatever the stored choice", () => {
+    // Under H3_CHATS_OPEN_MIN the chats are the rail; their key opens the
+    // chats panel over Vex's column, never the track.
+    expect(tracks(h3(1024, true))).toEqual([76, 307, 641]);
     expect(tracks(h3(1024, false))).toEqual([76, 307, 641]);
-    expect(tracks(h3(1024, true, true))).toEqual([248, 0, 776]);
+    expect(tracks(h3(1024, true, true))).toEqual([76, 0, 948]);
     expect(tracks(h3(1024, false, true))).toEqual([76, 0, 948]);
   });
 
@@ -214,7 +216,7 @@ describe("the Vex column", () => {
   });
 
   it("keeps its width when the chats fold; the chat gains the difference", () => {
-    for (let viewport = H3_COLUMNS_MIN; viewport <= 2560; viewport += 1) {
+    for (let viewport = H3_CHATS_OPEN_MIN; viewport <= 2560; viewport += 1) {
       const open = h3(viewport, true);
       const folded = h3(viewport, false);
       const label = String(viewport);
@@ -242,9 +244,12 @@ describe("the Vex column", () => {
  * that matters, so a change to either is a visible decision.
  */
 describe("no centre floor", () => {
-  it("with the chats open the chat is under 640 from 1024 to 1267, and 640 at 1268", () => {
-    expect(h3(1024, true).chat).toBe(469);
-    expect(h3(1267, true).chat).toBe(639);
+  it("under 1268 the chats are the rail whatever the stored choice says, so no track waits on it", () => {
+    for (let viewport = 0; viewport < H3_CHATS_OPEN_MIN; viewport += 1) {
+      expect(h3(viewport, true), String(viewport)).toEqual(h3(viewport, false));
+    }
+    expect(h3(1024, true).chat).toBe(641);
+    expect(h3(1267, true).chat).toBe(811);
     expect(h3(1268, true).chat).toBe(640);
   });
 
@@ -320,15 +325,16 @@ describe("the desktop's tiers (H3-DESKTOP.md section 4.12)", () => {
   });
 
   it("puts the seam where the open chats would first take the chat under 640", () => {
-    expect(h3(1267, true).chat).toBe(639);
     expect(h3(1268, true).chat).toBe(640);
+    expect(h3(1268, true).chatsRail).toBe(false);
+    expect(h3(1267, true).chatsRail).toBe(true);
   });
 
-  it("keeps the chat at 640 or more wherever the shell asks the chats as the tier says", () => {
+  it("keeps the chat at 640 or more at every width, whatever the stored choice", () => {
     for (let width = 1000; width <= 2560; width += 1) {
-      const tier = h3ShellTier(width);
-      const cols = h3(width, tier === "wide");
-      expect(cols.chat, String(width)).toBeGreaterThanOrEqual(H3_CHAT_MIN);
+      for (const chats of [false, true]) {
+        expect(h3(width, chats).chat, String(width)).toBeGreaterThanOrEqual(H3_CHAT_MIN);
+      }
     }
   });
 });

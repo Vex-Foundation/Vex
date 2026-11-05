@@ -35,10 +35,12 @@
  * its rule; NEW CHAT, 55 high on the cell fill; Search chats, 48; the nav
  * keys on the 40 pitch between their rules; the account cell's disc at the
  * foot. Chat and Missions pressed on the rail open the column on their list,
- * since a list out of sight cannot show that they did anything. The band's
- * rail and the Lighter desk's (`expandable` false) have no Expand key: the
- * band keeps the rail, and the desk's drawer opens from its own Markets &
- * sessions key.
+ * since a list out of sight cannot show that they did anything. Under 1268
+ * (`chatsPanel`) the rail stays the rail: its Expand key, Search chats and
+ * Chat and Missions open the CHATS PANEL over Vex's column instead
+ * (`ChatsPanel.tsx`, section 4.12), Search with the panel's field focused.
+ * The Lighter desk's rail (`expandable` false) has no Expand key: the desk's
+ * drawer opens from its own Markets & sessions key.
  *
  * Row behaviour (pin, remove, inline rename, the hover preview) is the shared
  * `SessionRow`'s; the list model is `sessionListModel.ts`'s. Scrollbars in
@@ -57,6 +59,7 @@ import { useQuietScrollbars } from "../../lib/useQuietScrollbars.js";
 import { useScrollbarVisibility } from "../../lib/useScrollbarVisibility.js";
 import { useUiStore, type SessionModeFilter } from "../../stores/uiStore.js";
 import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
+import { CHATS_PANEL_KEY_ATTR, type ChatsPanelFocus } from "./ChatsPanel.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import { SidebarHomeSigil } from "./SidebarHomeSigil.js";
 import { SidebarProfile } from "./SidebarProfile.js";
@@ -95,6 +98,17 @@ interface SessionsListProps {
    * keeps its own head on the rail's cap and its own account row.
    */
   readonly headless?: boolean;
+  /**
+   * Under 1268 the rail's keys open the chats panel over Vex's column
+   * (`ChatsPanel`, section 4.12): whether it is open, its id for the keys'
+   * `aria-controls`, and the opener, which says where its focus lands. The
+   * Expand key still toggles through `onToggleSidebar`.
+   */
+  readonly chatsPanel?: {
+    readonly open: boolean;
+    readonly id: string;
+    readonly onOpen: (focus: ChatsPanelFocus) => void;
+  };
 }
 
 /** Proposal copy (section 4): the search mode's closing hint. */
@@ -113,6 +127,7 @@ export function SessionsList({
   onToggleSidebar,
   expandable = true,
   headless = false,
+  chatsPanel,
 }: SessionsListProps): JSX.Element {
   const activeSessionId = useUiStore((s) => s.activeSessionId);
   const setActiveSessionId = useUiStore((s) => s.setActiveSessionId);
@@ -221,9 +236,14 @@ export function SessionsList({
   }, [searchOpen, rail, closeSearch]);
 
   const openSearch = useCallback((): void => {
+    // Under 1268 the rail's search opens the chats panel, its field focused.
+    if (rail && chatsPanel !== undefined) {
+      chatsPanel.onOpen("search");
+      return;
+    }
     setSearchOpen(true);
     if (rail) onToggleSidebar();
-  }, [rail, onToggleSidebar]);
+  }, [rail, onToggleSidebar, chatsPanel]);
 
   const openMissions = useCallback((): void => {
     setSearchOpen(true);
@@ -231,8 +251,9 @@ export function SessionsList({
 
   // Chat and Missions on the rail: open the sidebar on the list they filter.
   const showSessionList = useCallback((): void => {
-    if (rail && expandable) onToggleSidebar();
-  }, [rail, expandable, onToggleSidebar]);
+    if (rail && chatsPanel !== undefined) chatsPanel.onOpen("list");
+    else if (rail && expandable) onToggleSidebar();
+  }, [rail, expandable, onToggleSidebar, chatsPanel]);
 
   // The column's one scroller, carrying the overlay bar.
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -290,13 +311,15 @@ export function SessionsList({
               * 76 wide: the Expand key behind its rule, then New chat,
               * Search chats and the nav block between its rules. */}
             {expandable ? (
-              <Tooltip label="Expand sidebar">
+              <Tooltip label={chatsPanel?.open === true ? "Collapse sidebar" : "Expand sidebar"}>
                 <button
                   type="button"
-                  aria-label="Expand sessions sidebar"
-                  aria-expanded={false}
+                  aria-label={chatsPanel?.open === true ? "Collapse sessions sidebar" : "Expand sessions sidebar"}
+                  aria-expanded={chatsPanel?.open ?? false}
+                  aria-controls={chatsPanel?.id}
                   onClick={onToggleSidebar}
                   className="vex-ls-nrow vex-ls-nrow--expand"
+                  {...(chatsPanel === undefined ? {} : { [CHATS_PANEL_KEY_ATTR]: "toggle" })}
                 >
                   <LinePanelLeft className="vex-ls-nrow__i" />
                 </button>
