@@ -579,6 +579,26 @@ The primitives H3's app plates do not draw, taken from what VEX Cloud decided an
 - **Timings,** Cloud's: the hold is 3s, 6s for a toast with an action or whose words (title, message and action labels) reach 75 characters; then a 1000ms fade (Cloud's `toastFade`; Cloud's `HANDOFF.md` records the hold plus 1000ms as a deviation it keeps, against the drawn 300). The toast arrives in 620ms on the push curve, which has the control points of Cloud's caption curve, 8px down and in; reduced motion drops the arrival and keeps the fade. Hover or focus pauses the hold, and a sticky notification (progress still running, a failure with a working primary action) never fades, as before.
 - **What waits** behind the slot is reported under the words ("+2 more in the notification center"), never dropped: the queue, the center and the announcer are unchanged. An urgent notification still passes the slot and stands under it; nothing raises one yet.
 
+### 5.2 Keys and dialogs
+**The general key** (`components/ui/button.tsx`) is Cloud's v99 key (`contracts/keys.md`, `keys.css`, D2-1 to D2-4). A key is a square, its word in caps at 13 and 400 with the label tracking; on a page it has a fixed height and its own 1px edge. Desktop's variant names stay, each keeping the action its call sites give it; only the look follows Cloud's map:
+
+| Desktop variant | Cloud's look |
+|---|---|
+| primary | `primary`: the blue fill, white word, a blue edge; the view's one blue |
+| ink (Reject, Decline, a danger confirm) and stop (Stop agent, Stop mission) | `strong`: the raised ground at full ink in the 40% control edge (`--vex-alias-rule-control`), because raised alone is 1.02:1 on the card |
+| quiet, ghost, armed | `outline`: the framed key, the cell ground in the 7% rule, ink 2 words; armed turns blue on `data-armed="true"` |
+| bare | `ghost`: no ground and no edge, ink 2 words |
+
+Sizes: 40 high with padding 0 18 (the default), 32 with 0 14 at 12px (`sm`), 44 with 0 24 (`lg`), the 32 square glyph key (`icon`). Hover lifts the word to ink and raises a fill from the key's foot in 420ms (white 7%, the blue hover on the blue key; `--vex-duration-key-fill`, Cloud's `--vx-dur-fill`), hovering pointers only; a press moves the key down 1px. A key that will not act is held, never dimmed: the cell ground, a muted word, the 7% edge, no fill. **Red is never a key** and neither is a blue danger. Differences from Cloud: the fill rides the entrance curve, because Cloud's `--vx-ease-ease` is not one of desktop's four (MOTION-POLICY); the label roll (520ms) is not built, since it needs every label wrapped; the wizard's approved plate keeps its own keys and rows (`stage.css` opts them out of the caps and the fill).
+
+**The dialog** (`components/ui/dialog.tsx`) is H3's `.dlg` (Cloud's D2-32, D2-33):
+- One width, 560 (the window less 32 under it), confirms and forms alike; the width is stated in `overlays.css` so a call site's old `max-w-*` no longer decides it. A board and a sheet keep their own boxes.
+- The card ground (`--color-h3-card`, Cloud's `--vx-card`) in the chosen rule (24%), square, no shadow.
+- A head band 44 high under the 7% rule: an optional word 24 in (`kicker`, after the ink square of a decision that waits) and Close at its end, a 44 glyph cell with its left rule. Close takes no Tab stop, so the dialog's keys keep the focus order they had, and it closes through the very path Esc takes (it raises the dialog's own `cancel` event), so a surface that ignores a close while it is busy ignores this one too. Cloud holds Close while pending; desktop's dialogs hold it the way they hold Esc.
+- The title 22/600 tracked in; the description 15/1.5 in ink.
+- Where the foot is keys and nothing else, it is a foot of cell keys: 64 high under the 7% rule, each key full height and at least 150 wide (four keys share the width), its left rule shared with its neighbour. Default tone: the keys on the right, Cancel raised, the confirm blue.
+- **The danger confirm** (a foot whose last key is `ink`, with a Cancel before it) is the strong ink key, raised in the 40% control edge, on the right, beside a frameless Cancel on the left (Cloud's D2-3). Never red, never blue. Which key acts, which takes the first focus and what Esc does stay the call site's.
+
 ### 5.3 Sides in ink
 Buy, Sell, Long and Short read as words in ink, never in the trading green and red (Cloud's DG5-07, confirmed by both token comparisons): red means refused in v99, so a red Sell or Short reads as a refusal. The word carries the side. Profit and loss keep the gain and loss colours, and so do a price's change and the last trade's tick (a movement, not a side). The token values of gain and loss are left to the token pass; only their use for sides stops here.
 

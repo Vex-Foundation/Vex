@@ -39,6 +39,13 @@ here is a defect:
   the node when it elapses), so its duration is a behaviour of the
   notification model rather than a style choice; retuning it is a
   notification change, not a motion change.
+- The general key's hover fill, 420ms (`--vex-duration-key-fill`,
+  `DURATION_KEY_FILL_MS`) - VEX Cloud's `--vx-dur-fill` (`contracts/keys.md`,
+  `docs/design/H3-DESKTOP.md` section 5.2): a fill rises from the key's foot
+  under a hovering pointer. A transform only (`scaleY`), on the entrance
+  curve (Cloud draws it on its own `--vx-ease-ease`, which is not one of
+  this family's four); reduced motion lands it at once. It shares Kimm's
+  close number by coincidence and borrows nothing of hers.
 - The transcript keyframes (180ms / 260ms / 280ms) and the landing motifs -
   authored against the landing's own timing and out of scope for the desktop
   scale.

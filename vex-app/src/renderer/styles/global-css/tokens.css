@@ -280,6 +280,12 @@
   --vex-alias-button-accent-hover: var(--color-h3-blue-hover);
   --vex-alias-button-accent-ink: var(--color-white);
   --vex-alias-button-accent-edge: transparent;
+  /* The general key (components/ui/button.tsx, section 5.2): VEX Cloud's
+   * v99 keys. The fill that rises on hover is white at 7% (on the blue key,
+   * the blue hover); a strong key wears the 40% control edge, because the
+   * raised ground alone is 1.02:1 on the card (Cloud's --vx-rule-control). */
+  --vex-alias-key-fill-hover: rgba(255, 255, 255, 0.07);
+  --vex-alias-rule-control: rgba(255, 255, 255, 0.4);
 
   /* The accent as TYPE AND LINES is the ink: the blue measures 2.42:1 on the
    * ground, so it is never type there (section 2.1). A selected word, a link
@@ -531,6 +537,12 @@
   --vex-duration-vex-close: 420ms;
   --vex-ease-push: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /* THE KEY'S FILL (docs/design/H3-DESKTOP.md section 5.2): on hover a fill
+   * rises from a key's foot in 420ms, VEX Cloud's --vx-dur-fill, a named
+   * exception to the scale (MOTION-POLICY lists it), on the entrance curve.
+   * Hovering pointers only; reduced motion lands it at once. */
+  --vex-duration-key-fill: 420ms;
+
   /* SHELL GEOMETRY - the R3 column widths (docs/design/R3-MINIMAL.md
    * section 2). Theme-independent like the motion vocabulary. The left
    * sidebar is 264 (224 from 1180 to 1359, the 56 rail under 1180); the Vex
@@ -637,6 +649,8 @@
   --color-interactive-active: var(--vex-alias-interactive-active);
   --color-interactive-solid: var(--vex-alias-interactive-solid);
   --color-interactive-danger: var(--vex-alias-interactive-danger);
+  --color-rule-control: var(--vex-alias-rule-control);
+  --color-surface-card: var(--vex-alias-card);
 
   --color-success: var(--vex-alias-state-success);
   --color-success-wash: var(--vex-alias-state-success-wash);

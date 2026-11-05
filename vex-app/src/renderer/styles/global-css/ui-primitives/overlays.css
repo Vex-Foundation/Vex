@@ -75,6 +75,138 @@ dialog[open]::backdrop {
   animation: vex-backdrop-enter 240ms ease-out both;
 }
 
+/* ── The dialog: H3's `.dlg` ───────────────────────────────────────────────
+ * VEX Cloud's H3 dialog (docs/design/H3-DESKTOP.md section 5.2; Cloud's
+ * D2-32, D2-33 and `.vx-dlg`): ONE width, 560 (the window less 32 under it),
+ * confirms included; the card ground in the chosen rule (24%), square, no
+ * shadow. Its head band is 44 high, the 7% rule under it: the optional word
+ * 24 in, and Close, a 44 glyph cell with its left rule, at the end. The
+ * width is stated here, unlayered, so a call site's old `max-w-*` no longer
+ * decides it; a board and a sheet keep their own boxes. */
+dialog.vex-dialog[data-vex-dialog-size="default"] {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.vex-dialog-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 44px;
+  padding-left: 24px;
+  border-bottom: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-tertiary);
+}
+
+/* The mark of a decision that waits and the word of the page it belongs to;
+ * with no word the band holds Close alone. */
+.vex-dialog-kicker {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.vex-dialog-kicker::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background-color: var(--vex-alias-label-primary);
+}
+
+.vex-dialog-x {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 100%;
+  margin-left: auto;
+  border-left: 1px solid var(--vex-alias-rule);
+  color: var(--vex-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color var(--vex-duration-fast) var(--vex-ease-standard);
+}
+
+.vex-dialog-x:hover {
+  background-color: var(--vex-alias-interactive-hover);
+  color: var(--vex-alias-label-primary);
+}
+
+.vex-dialog-x:focus-visible {
+  outline: 2px solid var(--vex-alias-focus);
+  outline-offset: -2px;
+}
+
+/* THE FOOT OF CELL KEYS (H3's `.vx-dlg-foot`): where the foot is a row of
+ * keys and nothing else, it is 64 high under the 7% rule and each key is a
+ * full-height cell, at least 150 wide, its left rule shared with its
+ * neighbour. Default tone: the keys on the right, Cancel raised, the confirm
+ * the view's blue. A foot that also holds words keeps its padded row. */
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) {
+  height: 64px;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid var(--vex-alias-rule);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button] {
+  height: auto;
+  min-width: 150px;
+  padding: 0 26px;
+  border-width: 0 0 0 1px;
+  border-style: solid;
+  border-color: var(--vex-alias-rule);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button]:not([data-vex-button="primary"]):enabled {
+  background-color: var(--vex-alias-interactive-solid);
+  color: var(--vex-alias-label-primary);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button="primary"] {
+  border-left-color: var(--vex-alias-button-accent-fill);
+}
+
+/* Four keys share the 560: each takes its words, not 150. */
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> :nth-child(4)) > [data-vex-button] {
+  min-width: 0;
+  padding: 0 18px;
+}
+
+/* THE DANGER CONFIRM (Cloud's D2-3 and D2-4): the strong ink key, raised in
+ * the 40% control edge, on the right, beside a frameless Cancel on the left.
+ * Never red and never blue: red is never a key. Which key acts, the order the
+ * keys take focus in and what Esc does are the call site's, unchanged. */
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> [data-vex-button="ink"]:last-child):has(> :nth-child(2)) {
+  justify-content: space-between;
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> [data-vex-button="ink"]:last-child) > [data-vex-button]:first-child:not(:last-child) {
+  border-left-color: transparent;
+  background-color: transparent;
+  color: var(--vex-alias-label-secondary);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))):has(> [data-vex-button="ink"]:last-child) > [data-vex-button]:first-child:not(:last-child):hover {
+  color: var(--vex-alias-label-primary);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button="ink"]:last-child {
+  border: 1px solid var(--vex-alias-rule-control);
+}
+
+dialog.vex-dialog .vex-dialog-foot:not(:has(> :not([data-vex-button]))) > [data-vex-button="ink"]:last-child:disabled {
+  border-color: var(--vex-alias-rule);
+}
+
 /* ── Sheet over the centre column ──────────────────────────────────────────
  * A modal dialog pinned to the box of the element it covers (sheet.tsx sets
  * the coordinates), paper, no frame of its own: the head's and the foot's

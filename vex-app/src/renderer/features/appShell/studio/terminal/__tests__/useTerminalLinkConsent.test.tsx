@@ -81,7 +81,7 @@ describe("isolated Vex consent page dialog", () => {
     const fills = dialog.querySelectorAll('[data-vex-button="primary"]');
     expect(fills).toHaveLength(1);
     expect(fills[0]?.textContent).toBe("Open link");
-    expect(screen.getByRole("heading", { name: "Open a link from the terminal" }).className).toContain("text-[21px]");
+    expect(screen.getByRole("heading", { name: "Open a link from the terminal" }).className).toContain("text-[22px]");
   });
   it.each(["Cancel", "Escape"])("%s closes through the primitive and restores focus before answering", async method => {
     const trigger = document.createElement("textarea"); document.body.append(trigger); trigger.focus();
