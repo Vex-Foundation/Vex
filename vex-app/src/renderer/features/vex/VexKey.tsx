@@ -7,11 +7,13 @@
  *     .vex-key__portrait   76 x 76: the fold glyph on the raised fill while
  *                          she is open, her face while she is closed
  *                          (`VexKeyPortrait`, the seam S4-03 fills)
- *     .vex-key__state      line one: the state square and word, and the live
- *                          timer while a turn runs ("Thinking 0:03"); line
- *                          two: the action, Hide Vex or Show Vex, then the
- *                          chord's keycaps
- *     .vex-key__chevron    61 wide: down while she is closed, up while open
+ *     .vex-key__state      line one: the state square and word (13, caps),
+ *                          and the live timer while a turn runs ("Thinking
+ *                          0:03"); line two, 10 under it: the action (12,
+ *                          caps), Hide Vex or Show Vex, then the chord's
+ *                          keycaps
+ *     .vex-key__chevron    60 wide, then the column's rule: down while she
+ *                          is closed, up while open
  *
  * ONE CONTROL, NAMED FOR WHAT IT DOES (section 1.6): "Hide Vex" while she is
  * open, "Show Vex" while she is closed, with `aria-expanded` for the section

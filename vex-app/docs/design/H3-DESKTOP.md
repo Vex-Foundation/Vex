@@ -101,14 +101,14 @@ Cells at 1440, measured from the rules in `h3-merged__welcome-closed-1440`:
 | sidebar key | 171, 77 | the panel icon | the same key: it folds the chats column to the rail |
 | Vex key, portrait | 248, 76 | her mood still when closed; the fold glyph on a raised fill when open | the same (section 1.6) |
 | Vex key, state | 324, 295 | the state square and word, a timer while live; then HIDE VEX or SHOW VEX and three keycaps | the same, with desktop's state words |
-| Vex key, chevron | 619, 61 | down when closed, up when open | the same |
+| Vex key, chevron | 619, 61 | down when closed, up when open | the same: 60 and the column's own rule, as Cloud's CSS draws it (`.vk-dir`) |
 | chat title | 680, 398 | the chat's title, and "SAMPLE DATA" under it | the title, and under it the chat's kind and access ("Agent · Restricted") |
 | network | 1078, 240 | MAINNET, the REAL FUNDS mark and a chevron: a network menu | MAINNET and the REAL FUNDS mark, with no chevron: a statement, not a menu |
 | pause | 1318, 122 | PAUSE ALL | left out (no global pause); on Windows and Linux the caption buttons sit here (section 4.7) |
 
-Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344).
+Text sits 24 in from a cell's left edge (the chat title at 704); the Vex key's state cell sets its text 20 in (at 344) and 12 from its right.
 
-The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide, and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. Open: how these cells give way under 1280 (shorter words, the network word dropped for its mark, the chevron cell folded into the state cell). Settled in the harness (S2-07) and with Cloud.
+The three Vex key cells span the Vex column, so they narrow with it: at 1024 the state cell is 307 - 76 - 61 = 170 wide (the chevron's 60 and the column's rule), and the chat column's 469 must hold the title, the network cell and, on Windows, the 138px caption reserve. Open: how these cells give way under 1280 (shorter words, the network word dropped for its mark, the chevron cell folded into the state cell). Settled in the harness (S2-07) and with Cloud.
 
 ### 1.4 The chats column
 248 wide. Measured in `h3-merged__welcome-closed-1440`, top to bottom:
@@ -154,8 +154,8 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 ### 1.6 The Vex key and her moods
 The Vex key is the header cell over the Vex column, in three parts:
 - **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, the fold glyph (an up chevron under a bar) on a raised fill: she has stepped down into her section.
-- **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut.
-- **Chevron cell.** Down while she is closed, up while she is open.
+- **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut. At VEX Cloud's measures (the H3 mockup's `.vk`, 2026-11-05): the text 20 in and 12 from the right, the two lines 10 apart; the state word 13 in caps in ink, the timer after it 10 on, in the sans, muted, at 0.04em with tabular figures; the action 12 in caps in ink, its keycaps 12 after it (section 2.4).
+- **Chevron cell.** Down while she is closed, up while she is open: 60 wide, then the column's rule; muted, ink under the pointer.
 
 The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
 
@@ -344,10 +344,11 @@ Sizes are measured from cap heights, taking Be Vietnam Pro's cap height as 0.70e
 | the greeting; the reason field | sans 18, 400 | welcome, approval |
 | suggestion titles; the composer field; the person's message; the permission sentence | sans 16 to 17, 400 | welcome, approval |
 | rows: chat rows, "Search chats", the chat title, "Nothing needs you.", activity rows, the card's consequence line, "You"; REVIEW and the page tabs; nav labels | sans 15 (nav labels 14 to 15), caps where they are keys or labels | welcome, approval, portfolio |
-| the state word, MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
-| HIDE VEX or SHOW VEX in the Vex key, CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
+| MAINNET, PAUSE ALL, NEW CHAT, NEEDS YOU, SEND, REJECT, APPROVE SWAP, HIDE VEX on her section; the suggestions' lines, "Account and settings", card values ("Not available") | sans 14 | welcome, approval |
+| the Vex key's state word (13, Cloud's CSS); CHATS, RECENT ACTIVITY, AI PERMISSION, the chats list's tags, status words, the status strip, CONFIRM THIS SWAP, the tick's key line, THOUGHT FOR, Portfolio's tile labels and table heads | sans 13, caps | welcome, approval, portfolio |
 | the card's field labels (FROM, AMOUNT TO SWAP, QUOTED PRICE and the rest) | mono 13, caps | approval |
-| group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY, keycap letters | sans 11 to 12, caps (times are figures) | welcome |
+| HIDE VEX or SHOW VEX in the Vex key (12, Cloud's CSS); group heads (TODAY), times in rows, the line under the chat title, the welcome's notes, OPEN ACTIVITY | sans 11 to 12, caps (times are figures) | welcome |
+| keycap letters | sans 10 at 0.04em, caps, muted (Cloud's CSS) | welcome |
 | a tag inside a row (MAINNET on a strategy row) | sans 10, caps | welcome |
 | figures in rows and tables, balances, the amount field | mono 13 to 14, tabular | approval, portfolio |
 
@@ -368,7 +369,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
 - **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
-- **Keycaps:** 19 high, a 1px chosen-rule border, caps letters 11 to 12, 3 to 4 apart; CTRL about 40 wide, SHIFT about 42, B about 23 (measured). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
+- **Keycaps:** VEX Cloud's keycaps beside a label (the H3 mockup's `.vk-keys kbd`, the kit's plain variant): 18 high and at least 18 wide, 5 in from each side, a 1px chosen-rule border, caps letters 10 at 0.04em, muted, 3 apart (the captures measured 19 high with letters 11 to 12; Cloud's CSS is the source). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
 - **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
 - **Switch** (strategy rows; not on desktop): 36 x 20, a 1px light border, the thumb a light square at the right when on.
 - **Tick box** (the card's middle cell; not on desktop, section 4.3): 18 x 18, a 1px light border.

@@ -24,8 +24,9 @@
  * picture of it: `decorative` hides them from assistive technology, so the
  * chord is not read twice.
  *
- * Styles: `.vex-keycaps` in `styles/global-css/title-bar.css` (19 high, a 1px
- * chosen-rule border, caps 11 to 12, 3 apart; section 2.4).
+ * Styles: `.vex-keycaps` in `styles/global-css/title-bar.css` (18 high, a 1px
+ * chosen-rule border, caps 10 at 0.04em, muted, 3 apart: VEX Cloud's
+ * keycaps beside a label; section 2.4).
  */
 
 import type { JSX } from "react";
@@ -75,7 +76,7 @@ export interface KeycapsProps {
   /** Whose keys to spell; this window's by default. */
   readonly platform?: StudioPlatform;
   /**
-   * `key`: the Vex key's caps, caps letters at 11 (the default). `hint`: the
+   * `key`: the Vex key's caps, caps letters at 10 (the default). `hint`: the
    * first-close hint's, larger and in title case.
    */
   readonly variant?: "key" | "hint";
