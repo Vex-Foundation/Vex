@@ -707,7 +707,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 
 /* THE TURN ERROR ROW (`TurnErrorRow`; VEX Cloud's `h3-chat-gaps` section 20,
  * `.t-fail`), after the last turn on the turn's edge: one pattern for every
- * kind, outcome first. The 1px rule on the cell ground; the body a grid of
+ * kind, outcome first. The 1px rule on the card ground (Cloud's --vx-card); the body a grid of
  * 8 | 1fr, 14 apart, padded 14 18 16 16: the 8px red square at 7, the title
  * 15/1.45 in the refusal ink, the words 14/1.5 in ink 2 (the hint in ink, the
  * cause and the codes in the mono 11.5 muted); then the key strip, 48 high
@@ -716,7 +716,7 @@ html[data-still] .vex-step-node[data-step-node="running"] {
 .vex-turn-error {
   margin: 0 0 12px;
   border: 1px solid var(--vex-alias-rule);
-  background: var(--vex-alias-bg-layer-3);
+  background: var(--vex-alias-card);
 }
 .vex-turn-error__body {
   display: grid;
