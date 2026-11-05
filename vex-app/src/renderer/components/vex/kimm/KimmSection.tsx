@@ -43,10 +43,12 @@
  *
  * THE CORNER KEY is the same control as the Vex key in the header, in the
  * same corner whatever her state (section 3.3): HIDE VEX and a cross while
- * she is open, SHOW VEX and a down chevron in the strip, a solid 56-high
- * cell on a dark translucent fill over her ground (138 wide open, 149 in the
- * strip, measured: the strip's key covers the open key's box, so the way
- * back is where the person pressed). Its name is the action, and its
+ * she is open, SHOW VEX and a down chevron in the strip, VEX Cloud's opaque
+ * 56-high cell on the header's ground without its alpha (#010102, no blur),
+ * ruled on its left and its foot (the foot clear in the strip), 13px caps and
+ * an 18px glyph, its width its words' (137 open, 148 in the strip, the
+ * plates' 138 and 149 within 1px: the strip's key covers the open key's box, so the way back is where the person
+ * pressed). Its name is the action, and its
  * tooltip adds the chord ("Hide Vex (Ctrl+Shift+B)", Appendix A.9). It
  * writes the same stored choice the Vex key writes (`onOpenChange`).
  *
@@ -411,7 +413,7 @@ export function KimmSection({
           className="vex-kimm__key"
         >
           <span>{action}</span>
-          {open ? <LineClose size={14} /> : <LineChevronDown size={14} />}
+          {open ? <LineClose size={16} /> : <LineChevronDown size={16} />}
         </button>
       ) : (
         // The band's foot row: Vex's line and the Hide Vex cell, one key the

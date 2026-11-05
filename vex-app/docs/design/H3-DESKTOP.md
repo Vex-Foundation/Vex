@@ -134,7 +134,7 @@ Measured in the approval and welcome captures at 1440, top to bottom:
 | Kimm's section | 264, 563 | a fixed box over the rest of the console |
 | the console's rest | under her section | seen while she is closed: strategy rows (62 each, with a MAINNET tag and a switch), AI PERMISSION (a 44 head, then its sentence and "Change in Settings"), RECENT ACTIVITY (a 44 head, rows about 43 high, each with a status square and word), OPEN ACTIVITY with an arrow, ending at 826 |
 
-**Her section, open:** her figure on a blue gradient behind the falling V, X and E glyph field. The HIDE VEX key, the words and a cross, is a solid 56-high cell in the section's top right corner, 542 to 680 (138 x 56, measured), on a dark translucent fill over her ground.
+**Her section, open:** her figure on a blue gradient behind the falling V, X and E glyph field. The HIDE VEX key, the words and a cross, is a solid 56-high cell in the section's top right corner, 542 to 680 (138 x 56, measured). Desktop draws it as VEX Cloud's mockup source does (`.kz-cell`, settled 2026-11-05): opaque on the header's ground without its alpha (`--vex-alias-header-solid`, #010102, Cloud's `--vx-header-solid`), no blur, a 1px rule on its left and its foot (the foot clear on the strip), padding 0 18 0 20, a 12 gap, 13px caps, an 18px glyph, the raised fill under a hovering pointer; its width is its words', 137 open and 148 in the strip at 1440.
 
 **Closed:** the section folds to its top 56, the strip, 264 to 320: the glyph field's frame at the left and the same key, now SHOW VEX with a down chevron, 531 to 680 (149 x 56, measured). The console's rest starts under the strip.
 
@@ -389,7 +389,7 @@ Open: the sizes and tracking against the bundled fonts' metrics (S1-01, S1-02) a
 - **Key cell:** the raised fill with ink caps (REVIEW, REJECT).
 - **A control at rest** (New chat, the model cell) has the cell fill; **a disabled key** has the cell fill with muted words (APPROVE SWAP before the tick).
 - **A held key** (Cloud's kit, h3-kit-gaps "Held / pending"): a decision key that cannot act, on the card, in the docked row and on the Needs you row, takes the cell fill, the muted word and the 7% edge; never blue, never a dotted outline, never dimmed. The key whose decision is running is pending, not held: the approve key keeps its blue (and its working swatch), a running rejection keeps the held fill with its word in ink. Desktop's armed key (the reversed ink fill of the two-press confirm) stays: Cloud has no armed state. Only the look changes; when a key is enabled is the card's own.
-- **Her corner key** is a dark translucent fill over her ground, 56 high (section 1.5).
+- **Her corner key** is an opaque cell on the header's ground without its alpha (#010102), no blur, 56 high (section 1.5).
 - **Keycaps:** 19 high, a 1px chosen-rule border, caps letters 11 to 12, 3 to 4 apart; CTRL about 40 wide, SHIFT about 42, B about 23 (measured). The first-close hint draws them larger and in title case ("Ctrl", "Shift", "B").
 - **Focus:** a 2px white ring drawn inside the cell ("the 2px white ring inside the cell", `h3-merged__plate-controls`).
 - **Switch** (strategy rows; not on desktop): 36 x 20, a 1px light border, the thumb a light square at the right when on.

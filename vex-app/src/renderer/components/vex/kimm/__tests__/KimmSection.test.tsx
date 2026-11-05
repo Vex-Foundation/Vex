@@ -155,7 +155,38 @@ describe("KimmSection, open and still (S4-04)", () => {
     expect(key).toMatch(/top:\s*0/);
     expect(key).toMatch(/right:\s*0/);
     expect(key).toMatch(/height:\s*var\(--vex-h3-strip-h\)/);
-    expect(key).toMatch(/width:\s*138px/);
+    // Its width is its words': no width of its own.
+    expect(key).not.toMatch(/(?:^|[\s;])width\s*:/);
+  });
+
+  it("is Cloud's opaque cell: the header's ground without its alpha, no blur, ruled left and foot", () => {
+    const key = rule(".vex-kimm__key");
+    expect(key).toMatch(/background:\s*var\(--vex-alias-header-solid\)/);
+    expect(key).not.toMatch(/color-mix|transparent|blur|backdrop/);
+    expect(key).toMatch(/border-left:\s*1px solid var\(--vex-alias-rule\)/);
+    expect(key).toMatch(/border-bottom:\s*1px solid var\(--vex-alias-rule\)/);
+    // Padding 0 18 0 20, a 12 gap, 13px caps at the label tracking.
+    expect(key).toMatch(/padding:\s*0 18px 0 20px/);
+    expect(key).toMatch(/gap:\s*12px/);
+    expect(key).toMatch(/font-size:\s*13px/);
+    expect(key).toMatch(/letter-spacing:\s*var\(--tracking-label\)/);
+    expect(key).toMatch(/text-transform:\s*uppercase/);
+    // The raised fill under a hovering pointer.
+    expect(rule(".vex-kimm__key:hover")).toMatch(/background:\s*var\(--vex-alias-interactive-solid\)/);
+    const tokens = readFileSync(path.join(here, "..", "..", "..", "..", "styles", "global-css", "tokens.css"), "utf8");
+    expect(tokens).toMatch(/--color-h3-header-solid:\s*#010102;/);
+    expect(tokens).toMatch(/--vex-alias-header-solid:\s*var\(--color-h3-header-solid\);/);
+  });
+
+  it("draws an 18px glyph beside its words, both ways", () => {
+    // The line icon's 16 grid, drawn at 18 by the sheet (the line set has no 18).
+    const view = render(<KimmSection mood="hi" open onOpenChange={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Hide Vex" }).querySelector("svg")).not.toBeNull();
+    view.rerender(<KimmSection mood="hi" open={false} onOpenChange={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Show Vex" }).querySelector("svg")).not.toBeNull();
+    const glyph = rule(".vex-kimm__key svg");
+    expect(glyph).toMatch(/width:\s*18px/);
+    expect(glyph).toMatch(/height:\s*18px/);
   });
 });
 
@@ -250,8 +281,10 @@ describe("KimmSection, closed: the 56px strip with Show Vex (S4-06)", () => {
       /clip-path:\s*inset\(0 0 calc\(100% - var\(--vex-kimm-stub, var\(--vex-h3-strip-h\)\)\) 0\)/,
     );
     expect(closed).not.toMatch(/(?:^|[\s;])(?:top|bottom|left|right|width|height|margin|inset|display)\s*:/);
-    // The strip's key covers the open key's box: 149 against 138, same corner.
-    expect(rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__key')).toMatch(/width:\s*149px/);
+    // The strip's key: the same corner, its foot rule clear (the strip's foot is the rule).
+    const stripKey = rule('.vex-kimm[data-kimm-open="false"] .vex-kimm__key');
+    expect(stripKey).toMatch(/border-bottom-color:\s*transparent/);
+    expect(stripKey).not.toMatch(/(?:^|[\s;])(?:width|top|right)\s*:/);
   });
 
   it("leaves the strip its room: the console's rest starts under it", () => {
