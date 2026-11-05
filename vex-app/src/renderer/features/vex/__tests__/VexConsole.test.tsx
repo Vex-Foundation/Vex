@@ -361,9 +361,10 @@ describe("the console's recent activity", () => {
       "Confirmed",
       "Failed",
     ]);
-    // The square takes the status colour; the word stays ink.
-    expect(rows[0]?.querySelector(".vex-swatch")?.className).toContain("text-success-mark");
-    expect(rows[1]?.querySelector(".vex-swatch")?.className).toContain("text-danger-mark");
+    // The square draws the status: solid for Confirmed, the cross for Failed.
+    expect(rows[0]?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("done");
+    expect(rows[1]?.querySelector(".vex-sq")?.getAttribute("data-state")).toBe("error");
+    expect(rows[1]?.getAttribute("data-vex-activity-status")).toBe("failed");
   });
 
   it("opens Agent Scan from Open activity", () => {

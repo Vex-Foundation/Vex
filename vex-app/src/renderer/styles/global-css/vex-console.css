@@ -1,0 +1,16 @@
+/* THE CONSOLE'S STATUS GRAMMAR, H3 (docs/design/H3-DESKTOP.md sections 1.5
+ * and 2.2; VEX Cloud's built status sheet and its console gaps,
+ * `v99-ui-rebrand/mockups/h3-shell-gaps`). The console's cells and rules
+ * stand in vex-sidebar.css; what this sheet adds is how the console says a
+ * status, and it loads after that sheet so its rules lead.
+ *
+ * RECENT ACTIVITY's status is Cloud's StatusLabel at its row size: the 6px
+ * state square (`StateSquare`) 6 before the word in caps 11, the word ink,
+ * a failure's in the refusal ink. A row in flight blinks (PD-06). */
+.vex-console__status {
+  gap: 6px;
+  font-size: 11px;
+}
+.vex-console__activity[data-vex-activity-status="failed"] .vex-console__status-word {
+  color: var(--vex-alias-state-refusal);
+}

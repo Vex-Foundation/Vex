@@ -151,7 +151,7 @@ Open:
 ### 1.6 The Vex key and her moods
 The Vex key is the header cell over the Vex column, in three parts:
 - **Portrait cell, 76 x 76.** Closed, her face: one cell of a mood sprite (28.5 KB, `stills/key-moods.webp` on the mood plate), cropped so each mood reads at 76px, the mood still set at her eye line. Open, the fold glyph (an up chevron under a bar) on a raised fill: she has stepped down into her section.
-- **State cell.** Line one: a small square (about 6px) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut.
+- **State cell.** Line one: a small square (6px, a drawing per state, blinking while Vex works; section 2.2) and the state word, with a timer while live ("THINKING 0:03"). Line two: the action, HIDE VEX or SHOW VEX, then the keycaps of the shortcut.
 - **Chevron cell.** Down while she is closed, up while she is open.
 
 The key is one control. Its name is the action ("Show Vex", "Hide Vex"), and it opens and closes her section (section 3.3).
@@ -280,6 +280,8 @@ A status is a square beside a word in caps, and **every status has its own drawi
 - **Status unknown is concerned**, the framed ink hatch, not the failed cross: nobody knows the outcome. Its words and its note ("ask Vex before retrying") are unchanged.
 - **Refunded keeps desktop's mapping**: the funds came back, and A.3 lists it under H3's DID NOT EXECUTE, so it takes the failed cross. Open: the owner may move it to its own state.
 - **The status label in a row** (`StatusMark`) is caps 11 with the 6px square 6 before it, Cloud's built StatusLabel at its row size; caps 13 with the 8px square only at the md size.
+- **Running blinks everywhere** (PD-06; Cloud's HANDOFF, "Deviations already taken"): the console's recent activity, the chats list's RUNNING tag, the Vex key, Studio's terminal tabs, pane heads and panel header, a project's RUNNING in Studio's rail, Studio's host cell, Agent Scan, Portfolio and the screens before the shell. Under reduced motion and Save-Data each holds still as half a square. The chats list's other tags take Cloud's drawings too: WAITING the target, Paused and Sleeping the dotted frame, Error the cross.
+- **The Vex key's square** is the H3 key's own (`vexKeySquareOf`, `h3-merged/js/data.js`): Ready and Listening the 1px muted frame; Thinking, Working and Waking up the hud square, which blinks; Waiting for approval solid ink; Done solid hud; Concerned the framed ink hatch; Error the ink cross; Sleeping the dotted frame.
 
 Gains and losses in trading values take the gain and loss colours as type (Portfolio's tiles and positions). This replaces R3's `trade-up` and `trade-down` pair and R3's rule that status is never a colour; S1-08 rewrites `status-contrast.test.ts` to this section.
 

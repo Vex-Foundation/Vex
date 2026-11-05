@@ -389,7 +389,7 @@ describe("the panel header in H3 cells", () => {
     expect(cell?.getAttribute("data-vex-terminal-state")).toBe(state);
     expect(cell?.className).toBe("vex-ws-head__state");
     expect(cell?.textContent).toBe(word);
-    expect(cell?.querySelector(".vex-swatch")).not.toBeNull();
+    expect(cell?.querySelector(".vex-sq")).not.toBeNull();
   });
 
   it("draws the four actions as 56 key cells with 16 icons, in the design's order", () => {

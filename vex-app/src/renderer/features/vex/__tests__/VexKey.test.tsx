@@ -5,7 +5,8 @@
  * what the key draws from it and what a press does:
  *
  *  - three cells in order: her portrait, the state, the chevron;
- *  - the state line: H3's ink square (an outline at Ready, solid otherwise),
+ *  - the state line: H3's key square (a drawing per state, the running one
+ *    blinking),
  *    the state machine's own word, and the live timer only while a turn runs;
  *  - the action line: Hide Vex or Show Vex, then the chord's keycaps in the
  *    platform's spelling, hidden from assistive technology;
@@ -33,7 +34,8 @@ vi.mock("../useVexPresence.js", () => ({
   },
 }));
 
-const { VexKey } = await import("../VexKey.js");
+const { VexKey, vexKeySquareOf } = await import("../VexKey.js");
+const { VEX_STATES } = await import("../vex-state.js");
 const { registerVexCloser, setVexClosing } = await import("../vex-hide.js");
 
 const NOW = Date.parse("2026-11-04T12:00:00.000Z");
@@ -97,9 +99,9 @@ describe("VexKey: what it draws", () => {
     expect(key().getAttribute("data-vex-state")).toBe("awaiting");
     const status = part("status");
     expect(status?.textContent).toBe("Waiting for approval");
-    const square = status?.querySelector(".vex-swatch");
-    // H3's state square: solid in every state but Ready (section 2.2).
-    expect(square?.getAttribute("data-s")).toBe("done");
+    const square = status?.querySelector(".vex-key__square");
+    // H3's key square: waiting is solid ink (section 1.6).
+    expect(square?.getAttribute("data-key-square")).toBe("waiting");
     expect(square?.getAttribute("aria-hidden")).toBe("true");
     expect(part("timer")).toBeNull();
   });
@@ -107,7 +109,26 @@ describe("VexKey: what it draws", () => {
   it("draws the state square as an outline at Ready", () => {
     render(<VexKey open={false} onToggle={() => undefined} platform="win32" />);
     expect(part("status")?.textContent).toBe("Ready");
-    expect(part("status")?.querySelector(".vex-swatch")?.getAttribute("data-s")).toBe("idle");
+    expect(part("status")?.querySelector(".vex-key__square")?.getAttribute("data-key-square")).toBe(
+      "ready",
+    );
+  });
+
+  it("gives each state the key square H3 draws: running blinks, waiting ink, done hud", () => {
+    // VEX Cloud's H3 key (h3-merged/js/data.js): Ready the muted frame,
+    // Thinking and Working the blinking hud, Waiting ink, Done solid hud.
+    expect(VEX_STATES.map((state) => [state, vexKeySquareOf(state)])).toEqual([
+      ["ready", "ready"],
+      ["listening", "ready"],
+      ["thinking", "running"],
+      ["working", "running"],
+      ["awaiting", "waiting"],
+      ["done", "done"],
+      ["concerned", "concerned"],
+      ["error", "error"],
+      ["sleeping", "sleeping"],
+      ["waking", "running"],
+    ]);
   });
 
   it("counts the live turn beside the word, in m:ss from its start", () => {

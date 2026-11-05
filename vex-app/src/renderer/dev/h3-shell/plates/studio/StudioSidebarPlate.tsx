@@ -47,7 +47,7 @@ import {
   LineWatchlist,
   type LineIconComponent,
 } from "../../../../components/icons/line/index.js";
-import { Swatch } from "../../../../components/ui/swatch.js";
+import { StateSquare } from "../../../../components/ui/state-square.js";
 import {
   SAMPLE_PROJECTS,
   SAMPLE_PROJECT_TOTAL,
@@ -103,7 +103,7 @@ function ProjectsAndFiles(): JSX.Element {
             <span className="vex-plate-studio-side__name">{project.name}</span>
             {project.running ? (
               <span className="vex-plate-studio-side__tag">
-                <Swatch state="done" size={6} className="text-running-mark" />
+                <StateSquare state="ongoing" size={6} />
                 <span>Running</span>
               </span>
             ) : null}

@@ -218,8 +218,21 @@ html[data-os="mac"] .vex-pre__logo {
 .vex-pre-sq[data-sq="failed"] {
   background: var(--vex-alias-state-error-mark);
 }
+/* Running blinks everywhere (PD-06, section 2.2): the hud square, held still
+ * as half a square under reduced motion and Save-Data. */
 .vex-pre-sq[data-sq="running"] {
   background: var(--vex-alias-state-running-mark);
+  animation: vex-sq-blink var(--vex-duration-blink) steps(2, end) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vex-pre-sq[data-sq="running"] {
+    animation: none;
+    background: linear-gradient(135deg, var(--vex-alias-state-running-mark) 50%, transparent 50%);
+  }
+}
+html[data-still] .vex-pre-sq[data-sq="running"] {
+  animation: none;
+  background: linear-gradient(135deg, var(--vex-alias-state-running-mark) 50%, transparent 50%);
 }
 .vex-pre-sq[data-sq="none"] {
   border: 1px solid var(--vex-alias-label-tertiary);

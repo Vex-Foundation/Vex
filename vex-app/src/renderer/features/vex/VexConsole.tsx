@@ -63,7 +63,8 @@
  * and OPEN ACTIVITY opens that scope. Its status
  * words are that page's (Confirmed, "Submitted, awaiting confirmation",
  * Failed, Refunded, "Status unknown"; Filled for a Lighter fill), its squares
- * the status colours (section 2.2). A read that failed or timed out says so in
+ * that page's drawings (section 2.2): a row in flight blinks, a failure is the
+ * cross with its word in the refusal ink. A read that failed or timed out says so in
  * the page's words, never as an empty history.
  *
  * THE COUNT is the shared Needs you model's (`needs-you.ts`), the same the
@@ -93,7 +94,7 @@
 
 import { useId, useMemo, type JSX } from "react";
 import { LineChevronDown, LineChevronRight, LineMissions } from "../../components/icons/line/index.js";
-import { Swatch } from "../../components/ui/swatch.js";
+import { StateSquare } from "../../components/ui/state-square.js";
 import type { ProjectDto } from "@shared/schemas/projects.js";
 import type { SessionPermission } from "@shared/schemas/sessions.js";
 import type { AvailableWalletsDto } from "@shared/schemas/wallets/session-available.js";
@@ -107,6 +108,7 @@ import {
   EMPTY_FILTER_STATE,
   toAgentScanFilters,
 } from "../appShell/screens/agent-scan/AgentScanFilterBar.js";
+import { STATUS_FAMILY_SQUARE } from "../appShell/screens/agent-scan/StatusMark.js";
 import { openProjectSettings } from "../appShell/studio/projects/project-dialog-intent.js";
 import { agentPresentation } from "../appShell/studio/projects/studio-agent-catalogue.js";
 import { missionsRowOf, type BackgroundWork, type MissionsRow } from "./background-work.js";
@@ -118,10 +120,7 @@ import {
   type NeedsYouItem,
 } from "./needs-you.js";
 import { needsYouItemIsHere, openNeedsYouItem } from "./needs-you-open.js";
-import {
-  consoleActivityRowsOf,
-  type ConsoleActivityMark,
-} from "./vex-console-activity.js";
+import { consoleActivityRowsOf } from "./vex-console-activity.js";
 
 /** The head's count: the number, "?" for a read that failed, nothing before the first read. */
 export function needsYouCountText(model: Pick<NeedsYouResult, "status" | "count">): string | null {
@@ -293,13 +292,6 @@ export function VexConsoleTop({
  */
 const CONSOLE_FEED_FILTERS = toAgentScanFilters(EMPTY_FILTER_STATE);
 
-/** The status colour each square takes (section 2.2); the word stays ink. */
-const MARK_CLASS: Readonly<Record<ConsoleActivityMark, string>> = {
-  success: "text-success-mark",
-  danger: "text-danger-mark",
-  running: "text-running-mark",
-};
-
 /**
  * Open activity: Agent Scan (H3's Activity page is desktop's Agent Scan), the
  * global feed, or one Studio project's through the page's own project scope.
@@ -375,12 +367,12 @@ function ActivityRows({ projectId }: { readonly projectId: string | null }): JSX
   return (
     <ul className="vex-console__rows" aria-label="Recent activity">
       {rows.map((row) => (
-        <li key={row.key} className="vex-console__activity" data-vex-activity-mark={row.mark}>
+        <li key={row.key} className="vex-console__activity" data-vex-activity-status={row.status}>
           <span className="vex-console__activity-title" title={row.title}>
             {row.title}
           </span>
           <span className="vex-console__status">
-            <Swatch state="done" size={6} className={MARK_CLASS[row.mark]} />
+            <StateSquare state={STATUS_FAMILY_SQUARE[row.status]} size={6} />
             <span className="vex-console__status-word">{row.word}</span>
           </span>
         </li>

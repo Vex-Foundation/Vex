@@ -10,55 +10,35 @@
  *   solid for Running, the target for a mission waiting on the user (an
  *   approval, the plan, a form), the dotted outline for Sleeping and Paused,
  *   the ink cross for a run paused on an error.
- * - `square`, H3's status square in the chats column (docs/design/
- *   H3-DESKTOP.md sections 1.4 and 2.2): a small square beside the word in
- *   caps. H3 draws RUNNING with the status grey square and WAITING with an
- *   ink one; its colours are the status marks (`text-running-mark`,
- *   `text-danger-mark`, ink). Desktop's rows have two states H3 draws no
- *   square for (Appendix A.2): Paused takes the grey outline, Sleeping the
- *   grey dotted outline, so neither reads as running. A mission paused on an
- *   error says Error beside the status red square: it is a real state the
- *   row must not hide, though H3's list draws none.
+ * - `square`, H3's state square in the chats column (docs/design/
+ *   H3-DESKTOP.md sections 1.4 and 2.2; `StateSquare`): a small square beside
+ *   the word in caps, a drawing of its own per state, so no colour stands
+ *   alone. RUNNING is the hud square, which blinks (PD-06); WAITING the
+ *   target. Desktop's rows have states H3's list draws no square for
+ *   (Appendix A.2): Paused and Sleeping take the dotted frame, VEX Cloud's
+ *   `paused`; a mission paused on an error says Error beside the cross: it
+ *   is a real state the row must not hide.
  */
 
 import type { MissionRunStatus, SessionListItem } from "@shared/schemas/sessions.js";
+import type { StateSquareState } from "../../../components/ui/state-square.js";
 import type { SwatchState } from "../../../components/ui/swatch.js";
-
-/** H3's square: the swatch's fill, and the status mark's colour class. */
-export interface SessionRowSquare {
-  readonly fill: SwatchState;
-  readonly className: "text-running-mark" | "text-ink-primary" | "text-danger-mark";
-}
 
 export interface SessionRowState {
   readonly word: string;
   readonly fill: SwatchState;
-  readonly square: SessionRowSquare;
+  /** H3's state square in the chats column. */
+  readonly square: StateSquareState;
 }
 
-const RUNNING: SessionRowSquare = { fill: "done", className: "text-running-mark" };
-const WAITING: SessionRowSquare = { fill: "done", className: "text-ink-primary" };
-
 const ROW_STATES: Partial<Readonly<Record<MissionRunStatus, SessionRowState>>> = {
-  running: { word: "Running", fill: "done", square: RUNNING },
-  paused_approval: { word: "Waiting", fill: "awaiting", square: WAITING },
-  paused_plan_acceptance: { word: "Waiting", fill: "awaiting", square: WAITING },
-  paused_user_form: { word: "Waiting", fill: "awaiting", square: WAITING },
-  paused_wake: {
-    word: "Sleeping",
-    fill: "sleeping",
-    square: { fill: "sleeping", className: "text-running-mark" },
-  },
-  paused_user: {
-    word: "Paused",
-    fill: "sleeping",
-    square: { fill: "idle", className: "text-running-mark" },
-  },
-  paused_error: {
-    word: "Error",
-    fill: "error",
-    square: { fill: "done", className: "text-danger-mark" },
-  },
+  running: { word: "Running", fill: "done", square: "ongoing" },
+  paused_approval: { word: "Waiting", fill: "awaiting", square: "warning" },
+  paused_plan_acceptance: { word: "Waiting", fill: "awaiting", square: "warning" },
+  paused_user_form: { word: "Waiting", fill: "awaiting", square: "warning" },
+  paused_wake: { word: "Sleeping", fill: "sleeping", square: "paused" },
+  paused_user: { word: "Paused", fill: "sleeping", square: "paused" },
+  paused_error: { word: "Error", fill: "error", square: "error" },
 };
 
 /** The row's state, or `null` when the row shows its time. */
