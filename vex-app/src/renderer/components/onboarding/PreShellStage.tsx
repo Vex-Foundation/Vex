@@ -130,9 +130,8 @@ export function StagePlate({ className }: { readonly className?: string }): JSX.
   const exit = useStageVex().exit;
   const layout = stageLayoutFor(view, holding);
 
-  // She has no wake episode to wait for (K2's rise from the token is retired with its plate): on a
-  // launch she is awake as her stage mounts, and the Vex key says "Waking up" only until the
-  // pipeline hands off.
+  // She has no wake episode to wait for: on a launch she is awake as her stage mounts, and the Vex
+  // key says "Waking up" only until the pipeline hands off.
   useEffect(() => {
     if (layout === "stage" && getStageVex().launching) stageVexWoken();
   }, [layout]);

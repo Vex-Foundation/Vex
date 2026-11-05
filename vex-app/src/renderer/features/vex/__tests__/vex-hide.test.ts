@@ -1,13 +1,11 @@
 /**
- * The meeting point of the Vex toggles and the open sidebar (docs/design/R3-MINIMAL.md sections
- * 2.4 and 11): a hide the user asks for waits for her close when the sidebar can play it, and
- * commits at once when it cannot or when no sidebar is open.
+ * The meeting point of the Vex toggles and the open sidebar (docs/design/H3-DESKTOP.md sections
+ * 3.4 and 3.6): a hide the user asks for is left to the sidebar that takes it, and commits at
+ * once when the sidebar declines or when no sidebar is open.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CLOSE_MS } from "../../../components/vex/k2/k2-time.js";
 import {
-  VEX_HIDE_EPISODE_MS,
   keepVex,
   registerVexCloser,
   requestVexHide,
@@ -30,10 +28,6 @@ afterEach(() => {
 });
 
 describe("requestVexHide", () => {
-  it("waits exactly her close, read from her own clock", () => {
-    expect(VEX_HIDE_EPISODE_MS).toBe(CLOSE_MS);
-  });
-
   it("commits at once when no sidebar is open", () => {
     const commit = vi.fn();
     requestVexHide(commit);
@@ -49,7 +43,7 @@ describe("requestVexHide", () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
-  it("commits at once when the sidebar declines (the still frame, no plate)", () => {
+  it("commits at once when the sidebar declines (her section's own wipe is the close)", () => {
     const commit = vi.fn();
     register({ close: () => false, keep: () => undefined });
     requestVexHide(commit);

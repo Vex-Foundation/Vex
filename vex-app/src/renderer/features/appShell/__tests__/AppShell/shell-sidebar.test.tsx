@@ -649,9 +649,8 @@ describe("AppShell", () => {
 
   it("stands Kimm's section in the Vex column, where the print stood, and none on the left page", () => {
     // docs/design/H3-DESKTOP.md section 1.5 (plan row S4-04): in H3's frame
-    // her plate is her section, laid over the column; K2's print window and
-    // the user's own image in it stay the Lighter desk's until its restyle
-    // (`VexPortraitPlate.test.tsx` owns that plate).
+    // her plate is her section, laid over the column (`VexPortraitPlate.test.tsx`
+    // owns its mount); no print window and no other figure stand there.
     useUiStore.setState({ activeSessionId: "s-1", vexOpenChat: true });
     const view = renderShell();
 
@@ -664,7 +663,6 @@ describe("AppShell", () => {
     );
     expect(section).not.toBeNull();
     expect(view.container.querySelector("[data-vex-area='vex-portrait-plate']")).toBeNull();
-    expect(view.container.querySelector("[data-vex-k2='sidebar']")).toBeNull();
     // Her art is missing until her files arrive: no figure, never a stand-in.
     expect(section?.getAttribute("data-kimm-art")).toBe("missing");
     expect(section?.querySelector("img")).toBeNull();
@@ -1382,7 +1380,7 @@ describe("AppShell", () => {
     // corner key (S4-04): the Vex key hides her, her section folds to its
     // strip, the column stands, focus stays on the key. In H3's frame the
     // write lands at the press: her section's own wipe is the close
-    // (docs/design/H3-DESKTOP.md section 3.6), never K2's episode.
+    // (docs/design/H3-DESKTOP.md section 3.6), and nothing waits for it.
     expect(
       within(aside)
         .queryAllByRole("button", { name: "Hide Vex" })

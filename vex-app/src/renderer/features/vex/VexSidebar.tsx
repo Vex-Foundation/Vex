@@ -9,7 +9,7 @@
  *       console top   Needs you, its decision row and the missions row, a
  *                     fixed height (`VexConsoleTop`)
  *       plate         Kimm's section, laid over the console's rest
- *                     (`VexPortraitPlate` with `kimm`, plan rows S4-04 on);
+ *                     (`VexPortraitPlate`, plan rows S4-04 on);
  *                     on the Lighter desk over the desk chat
  *       console rest  Studio's This project (`VexConsoleThisProject`), a
  *                     page's own block (the Board's Ask Vex), AI permission,
@@ -53,21 +53,16 @@
  * column takes focus, runs a query or paints her. The header's Vex key keeps
  * the fill, the word and the timer meanwhile.
  *
- * HIDING PLAYS HER CLOSE FIRST where K2's plate stands (`vex-hide.ts`): when
- * the user hides her, she collapses into the token in the plate and only then
- * does the write land, so the column waits for the episode. Under reduced
- * motion or Save-Data, with her figure hidden by
- * her choice or under the inspect view there is nothing to watch and the
- * write lands at once; so it does in H3's frame, where her section's own
- * wipe is the close. While she closes the column
- * is inert (nothing in it takes a click or focus). Where the column goes with
- * her, focus that was inside it moves to the header's Vex key (the desk's
- * token chip), the control that brings her back (section 3.4); where it stays
- * (`stays`), focus stays on the key that was pressed. A column the shell
- * closes on its own goes at once.
+ * A HIDE LANDS AT THE PRESS (`vex-hide.ts`): her section's own wipe is the
+ * close (docs/design/H3-DESKTOP.md section 3.6), so the open column takes a
+ * toggle's hide only to hand focus on, and the write lands at once. Where the
+ * column goes with her, focus that was inside it moves to the header's Vex
+ * key (the desk's token chip), the control that brings her back (section
+ * 3.4); where it stays (`stays`), focus stays on the key that was pressed. A
+ * column the shell closes on its own goes at once.
  *
  * THE INSPECT VIEW takes over the body for one tool call (a Back key returns):
- * the body is hidden, never unmounted, so her canvas and the page slot keep
+ * the body is hidden, never unmounted, so her section and the page slot keep
  * their state. A payload from another session never renders, and switching
  * the session closes the view.
  *
@@ -77,10 +72,9 @@
  * ones.
  */
 
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useRef, type JSX } from "react";
 import { LineBack } from "../../components/icons/line/index.js";
 import { useKimmCovers } from "../../components/vex/kimm/kimm-section-state.js";
-import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
 import { cn } from "../../lib/utils.js";
 import { useLighterAnalysisStore } from "../../stores/lighterAnalysisStore.js";
 import { useUiStore, vexPageClass } from "../../stores/uiStore.js";
@@ -96,7 +90,7 @@ import {
 } from "./VexConsole.js";
 import { VexConsoleStrip } from "./VexConsoleStrip.js";
 import { VexPortraitPlate } from "./VexPortraitPlate.js";
-import { VEX_HIDE_EPISODE_MS, registerVexCloser, setVexClosing } from "./vex-hide.js";
+import { registerVexCloser } from "./vex-hide.js";
 import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 
 /**
@@ -151,12 +145,6 @@ function handFocusOut(aside: HTMLElement | null): void {
   vexToggleControl()?.focus({ preventScroll: true });
 }
 
-/** Her plate is in the column and not hidden under the inspect view. */
-function plateOnScreen(aside: HTMLElement): boolean {
-  const plate = aside.querySelector("[data-vex-area='vex-portrait-plate']");
-  return plate !== null && plate.closest("[hidden]") === null;
-}
-
 export function VexSidebar({
   open,
   onHide,
@@ -177,41 +165,17 @@ export function VexSidebar({
   const strip = !open && !lighter && tablePage;
   const asideRef = useRef<HTMLElement | null>(null);
 
-  // Her close, played before a hide the user asked for commits.
-  const [closing, setClosing] = useState(false);
+  // A hide the user asked for: her section's own wipe is the close, so the
+  // open column only hands focus on and declines, and the write lands now.
   useEffect(() => {
     if (!open) return undefined;
-    let timer: number | null = null;
-    const stop = (): void => {
-      if (timer !== null) window.clearTimeout(timer);
-      timer = null;
-      setClosing(false);
-      setVexClosing(false);
-    };
-    const unregister = registerVexCloser({
-      close: (commit) => {
-        const aside = asideRef.current;
-        if (!stays) handFocusOut(aside);
-        if (timer !== null) return true;
-        if (aside === null || prefersStillFrame() || !plateOnScreen(aside)) return false;
-        setClosing(true);
-        setVexClosing(true);
-        timer = window.setTimeout(() => {
-          timer = null;
-          // Committed in the same task as the reset, so the column closes
-          // on the token she became rather than opening her first.
-          setClosing(false);
-          setVexClosing(false);
-          commit();
-        }, VEX_HIDE_EPISODE_MS);
-        return true;
+    return registerVexCloser({
+      close: () => {
+        if (!stays) handFocusOut(asideRef.current);
+        return false;
       },
-      keep: stop,
+      keep: () => undefined,
     });
-    return () => {
-      stop();
-      unregister();
-    };
   }, [open, stays]);
 
   return (
@@ -222,8 +186,6 @@ export function VexSidebar({
       data-vex-vex-open={open ? "true" : "false"}
       data-vex-vs-mode={runtimeMode}
       data-vex-seat={strip ? "strip" : seat}
-      data-vex-vs-closing={open && closing ? "" : undefined}
-      inert={open && closing}
       // On the desk the column carries the Lighter role scope, as the desk
       // chat's frame always has (lighter-tokens.css).
       data-lighter-theme={lighter ? theme : undefined}
@@ -303,7 +265,7 @@ function VexSidebarContent({
         {/* Kimm's section, laid over the column's rest (on the desk, over
           * the desk chat), mounted open or closed so her large art loads only
           * when she opens (S4-05). */}
-        <VexPortraitPlate kimm state={presence.state} open={plate} onHide={onHide} />
+        <VexPortraitPlate state={presence.state} open={plate} onHide={onHide} />
         {lighter ? (
           // The desk chat, under her strip; her open section covers its top
           // and moves nothing in it (section 3.6).

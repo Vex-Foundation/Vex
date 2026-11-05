@@ -31,7 +31,7 @@ function hint(): HTMLElement | null {
 }
 
 function plate(open: boolean): JSX.Element {
-  return <VexPortraitPlate kimm state="ready" open={open} onHide={() => undefined} />;
+  return <VexPortraitPlate state="ready" open={open} onHide={() => undefined} />;
 }
 
 beforeEach(() => {
