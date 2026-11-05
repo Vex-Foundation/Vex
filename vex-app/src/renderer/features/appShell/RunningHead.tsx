@@ -81,6 +81,8 @@ export { titleBarPageOf };
 export interface VexToggle {
   readonly open: boolean;
   readonly onToggle: () => void;
+  /** Her band rests under 1024: the reason, said instead of acting. */
+  readonly held?: string | null;
 }
 
 export interface RunningHeadProps {

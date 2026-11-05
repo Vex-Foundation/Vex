@@ -183,7 +183,8 @@ function WindowChromeStandin(): JSX.Element | null {
  * Point the store where the state says, before the first render. The view is
  * the shell (the pre-shell machine is not mounted here at all), the mode is
  * the agent shell unless the state says otherwise, and `?vex=` writes the
- * stored choice for BOTH page classes so it holds whichever the state opens.
+ * stored choice for BOTH page classes so it holds whichever the state opens,
+ * and the band's session choice under 1024.
  */
 function pointStore(state: { readonly ui?: HarnessUi; readonly prepare?: () => void }): void {
   const vex = VEX === "open" ? true : VEX === "closed" ? false : null;
@@ -194,7 +195,7 @@ function pointStore(state: { readonly ui?: HarnessUi; readonly prepare?: () => v
     currentView: "appShell",
     runtimeMode: "agent",
     ...state.ui,
-    ...(vex === null ? {} : { vexOpenChat: vex, vexOpenPages: vex, vexOpenLighter: vex }),
+    ...(vex === null ? {} : { vexOpenChat: vex, vexOpenPages: vex, vexOpenLighter: vex, vexOpenNarrow: vex }),
   });
 }
 

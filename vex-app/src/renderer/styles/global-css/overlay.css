@@ -69,6 +69,11 @@
   overflow-y: auto;
   padding: var(--vex-ov-top) 0 56px;
 }
+/* A page zooms with the window from 1760 up in H3's frame
+ * (docs/design/H3-DESKTOP.md section 1.11, `--vex-zoom`). */
+.vex-shell-frame[data-vex-frame="h3"] .vex-ov__scroll {
+  zoom: var(--vex-zoom);
+}
 .vex-ov__body {
   box-sizing: border-box;
   width: 100%;

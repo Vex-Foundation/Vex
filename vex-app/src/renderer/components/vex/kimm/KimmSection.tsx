@@ -5,9 +5,9 @@
  *
  * THE BOX. Not a row of the column: a box over it, whose size is a function
  * of the window alone. Its left and width are the column's; its top is the
- * foot of the console's top block (the Needs you head 43, its row 64, the
- * missions row 40 and their rule: 148 under the header, desktop having no
- * strategies row, section 4.1); its foot is one pixel above the bottom row.
+ * foot of the console's top block (the Needs you head 44, its row 64 and the
+ * missions row 40, each with its rule inside: 148 under the header, desktop having no
+ * strategies row, section 4.1); its foot is the bottom row's top rule.
  * At 1440 x 900 that is 248, 224 and 603 high (section 1.5, "Desktop's
  * box"): 423 at a 720-high window, 503 at 800. Nothing about her enters the
  * frame's grid, and nothing in the column moves under her: the console
@@ -110,6 +110,16 @@
  * and `DURATION_VEX_CLOSE_MS` are the CSS tokens' mirrors, asserted by
  * `motion-tokens.test.ts`, and the sheet names this file beside them.
  *
+ * UNDER 1024, THE BAND (docs/design/H3-DESKTOP.md section 1.10; VEX Cloud's
+ * 768 to 1023 layout): with `band` the same section is a band laid over the
+ * chat's top under the console line, `--vex-band-h` high (kimm.css). It has
+ * no strip: closed, there is no band at all. Her figure stands head to chest
+ * on her ground, and its foot is a 56 row holding Vex's line (`band.line`,
+ * the moment's words) and the Hide Vex cell; the whole row is one key that
+ * closes the band, so a press anywhere on it does. The wipe is the column's,
+ * from the band's top edge down (720ms) and back up (420ms). A close from
+ * that row hands focus to the Vex key, since the row goes with the band.
+ *
  * THE MOUNT. This component draws; the feature that mounts it
  * (`features/vex/VexPortraitPlate.tsx`, in the Vex column) maps her presence
  * state to her mood, reads the platform's
@@ -125,7 +135,7 @@ import { DURATION_VEX_CLOSE_MS, DURATION_VEX_OPEN_MS } from "../../../lib/motion
 import { prefersStillFrame } from "../../../lib/motion/use-still-frame.js";
 import { isKimmArtReady, type KimmMood } from "./kimm-assets.js";
 import { useKimmArt } from "./kimm-art-context.js";
-import { handFocusToVexKey } from "./kimm-focus.js";
+import { handFocusToVexKey, vexKeyElement } from "./kimm-focus.js";
 import { KimmField } from "./KimmField.js";
 import { setKimmPhase, type KimmPhase } from "./kimm-section-state.js";
 
@@ -176,6 +186,12 @@ export interface KimmSectionProps {
    * passes false and never writes, or clears, the shell's phase.
    */
   readonly reportsPhase?: boolean;
+  /**
+   * Under 1024 her section is the band over the chat (see "UNDER 1024, THE
+   * BAND"): its foot row carries Vex's line, the moment's words in two
+   * clauses, and closes the band.
+   */
+  readonly band?: { readonly line: { readonly lead: string; readonly rest: string } };
 }
 
 export function KimmSection({
@@ -184,6 +200,7 @@ export function KimmSection({
   onOpenChange,
   shortcut,
   reportsPhase = true,
+  band,
 }: KimmSectionProps): JSX.Element {
   const art = useKimmArt();
   const figure = art.sections[mood];
@@ -200,6 +217,7 @@ export function KimmSection({
   // The motion's phase (see "THE PHASE"). A press starts the leg before the
   // frame paints, so the first frame of the wipe already carries it.
   const [phase, setPhase] = useState<KimmPhase>(open ? "open" : "closed");
+  const inBand = band !== undefined;
   const shown = useRef(open);
   const box = useRef<HTMLDivElement | null>(null);
   const key = useRef<HTMLButtonElement | null>(null);
@@ -210,6 +228,11 @@ export function KimmSection({
       // FOCUS (see "WHILE SHE MOVES"): what her press is about to hide hands
       // its focus to the Vex key; her corner key keeps its own.
       handFocusToVexKey(box.current, key.current, open);
+      // The band's foot row goes with the band: a close pressed there hands
+      // its focus to the Vex key, the way back.
+      if (inBand && !open && key.current !== null && key.current === document.activeElement) {
+        vexKeyElement()?.focus({ preventScroll: true });
+      }
       // TURN AROUND FROM WHERE SHE IS (see "A PRESS DURING THE MOTION"): read
       // her clip now, so the new leg's transition starts at the press, from
       // the wipe's edge as it stands, rather than at the next style pass, a
@@ -228,7 +251,7 @@ export function KimmSection({
     // `transitionend`.
     const timer = window.setTimeout(() => setPhase(leg.rest), leg.ms);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [open, inBand]);
   const onTransitionEnd = (event: TransitionEvent<HTMLDivElement>): void => {
     if (event.target !== event.currentTarget || event.propertyName !== "clip-path") return;
     setPhase(restOf);
@@ -254,7 +277,8 @@ export function KimmSection({
       onTransitionEnd={onTransitionEnd}
       data-kimm-mood={mood}
       data-kimm-art={isKimmArtReady(figure) ? "ready" : "missing"}
-      className="vex-kimm"
+      data-kimm-seat={band === undefined ? undefined : "band"}
+      className={band === undefined ? "vex-kimm" : "vex-kimm vex-kimm--band"}
     >
       {/* Inert while she moves: nothing in her body takes a click or focus
         * (see "WHILE SHE MOVES"). Her corner key is outside it and stays
@@ -293,18 +317,44 @@ export function KimmSection({
         ) : null}
         <div className="vex-kimm__scan" />
       </div>
-      <button
-        ref={key}
-        type="button"
-        data-vex-area="kimm-key"
-        title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
-        aria-keyshortcuts={shortcut?.aria}
-        onClick={() => onOpenChange(!open)}
-        className="vex-kimm__key"
-      >
-        <span>{action}</span>
-        {open ? <LineClose size={14} /> : <LineChevronDown size={14} />}
-      </button>
+      {band === undefined ? (
+        <button
+          ref={key}
+          type="button"
+          data-vex-area="kimm-key"
+          title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
+          aria-keyshortcuts={shortcut?.aria}
+          onClick={() => onOpenChange(!open)}
+          className="vex-kimm__key"
+        >
+          <span>{action}</span>
+          {open ? <LineClose size={14} /> : <LineChevronDown size={14} />}
+        </button>
+      ) : (
+        // The band's foot row: Vex's line and the Hide Vex cell, one key the
+        // row's whole width, named by its words. It closes the band only:
+        // the band is opened from the Vex key and the console line.
+        <button
+          ref={key}
+          type="button"
+          data-vex-area="kimm-key"
+          aria-label={action}
+          title={shortcut === undefined ? undefined : `${action} (${shortcut.label})`}
+          aria-keyshortcuts={shortcut?.aria}
+          hidden={!open && phase === "closed"}
+          onClick={() => onOpenChange(false)}
+          className="vex-kimm__foot"
+        >
+          <span className="vex-kimm__line" aria-hidden="true">
+            <span className="vex-kimm__lead">{band.line.lead}</span>{" "}
+            <span className="vex-kimm__rest">{band.line.rest}</span>
+          </span>
+          <span className="vex-kimm__cell" aria-hidden="true">
+            <span>{action}</span>
+            {open ? <LineClose size={14} /> : <LineChevronDown size={14} />}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

@@ -32,8 +32,12 @@
  * and opens or folds her section alone. On a table page with her closed the
  * column is the page strip, the console's one line (`VexConsoleStrip`,
  * section 1.9).
- * Under 1024 the same parts lie in the band, one row under the header
- * (section 1.10).
+ * Under 1024 (section 1.10; VEX Cloud's 768 to 1023 layout) there is no
+ * column: the aside is the console line, one 48 row under the header across
+ * the chat (`VexConsoleStrip` with its state key), and her section is the
+ * band, a box laid over the chat's top under it (`KimmSection` with `band`),
+ * opened and closed by the person's own session choice and resting while a
+ * turn runs, a card waits or the composer is in use (`band-hold.ts`).
  *
  * SHE OPENS in her section's own wipe (`KimmSection`), the welcome's
  * included (docs/design/H3-DESKTOP.md section 1.7). Under reduced motion she
@@ -88,8 +92,11 @@ import {
   VexConsoleThisProject,
   VexConsoleTop,
 } from "./VexConsole.js";
-import { VexConsoleStrip } from "./VexConsoleStrip.js";
-import { VexPortraitPlate } from "./VexPortraitPlate.js";
+import { VexConsoleStrip, type VexConsoleLineBand } from "./VexConsoleStrip.js";
+import { KIMM_SHORTCUT, VexPortraitPlate } from "./VexPortraitPlate.js";
+import { KimmSection } from "../../components/vex/kimm/KimmSection.js";
+import { kimmMoodOf } from "./kimm-mood.js";
+import { TAGLINES, taglineMomentOf } from "./TaglineCell.js";
 import { registerVexCloser } from "./vex-hide.js";
 import { setVexSidebarSlot } from "./vex-sidebar-slot.js";
 
@@ -126,6 +133,11 @@ export interface VexSidebarProps {
    * is rather than handing it to the token chip.
    */
   readonly stays?: boolean;
+  /**
+   * Under 1024 (`seat` "band"): her band as the frame solved it, the console
+   * line's key, and the band's own close (its foot row).
+   */
+  readonly band?: VexConsoleLineBand & { readonly onClose: () => void };
 }
 
 /**
@@ -151,6 +163,7 @@ export function VexSidebar({
   seat = "column",
   plate = true,
   stays = false,
+  band,
 }: VexSidebarProps): JSX.Element {
   const runtimeMode = useUiStore((s) => s.runtimeMode);
   const theme = useUiStore((s) => s.theme);
@@ -193,10 +206,39 @@ export function VexSidebar({
       className={cn("vex-vs", lighter && "lit-chat-frame")}
     >
       {strip ? <VexConsoleStrip /> : null}
-      {open ? (
+      {seat === "band" && band !== undefined && !lighter ? (
+        <>
+          <VexConsoleStrip band={band} />
+          <VexBand open={band.open} onClose={band.onClose} />
+        </>
+      ) : open ? (
         <VexSidebarContent plate={plate} onHide={onHide} />
       ) : null}
     </aside>
+  );
+}
+
+/**
+ * Her band under 1024 (section 1.10): her section in its band seat, her mood
+ * from Vex's state, and on its foot row the moment's words, the tagline the
+ * bottom row says beside her column from 1024 up.
+ */
+function VexBand({ open, onClose }: { readonly open: boolean; readonly onClose: () => void }): JSX.Element {
+  const runtimeMode = useUiStore((s) => s.runtimeMode);
+  const activeSessionId = useUiStore((s) => s.activeSessionId);
+  const pageOpen = useUiStore((s) => s.shellRoute.kind !== "none");
+  const { state } = useVexPresence();
+  const line = TAGLINES[taglineMomentOf({ runtimeMode, activeSessionId, pageOpen, state })];
+  return (
+    <KimmSection
+      mood={kimmMoodOf(state)}
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      shortcut={KIMM_SHORTCUT}
+      band={{ line }}
+    />
   );
 }
 
