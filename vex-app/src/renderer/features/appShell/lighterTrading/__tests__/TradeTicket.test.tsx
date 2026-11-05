@@ -197,18 +197,23 @@ describe("Light it up trade ticket", () => {
     }
   });
 
-  it("keeps account context and order actions outside the scrolling field body", () => {
-    renderTicket();
+  it("keeps account context, Market | Limit and the order actions outside the scrolling field body", () => {
+    renderTicket({ onAsk: vi.fn() });
     const ticket = document.querySelector<HTMLFormElement>("form.lit-ticket");
     if (ticket === null) throw new Error("ticket missing");
+    // H3-DESKTOP.md section 4.9: only the order fields scroll.
     expect(Array.from(ticket.children).map((node) => node.className)).toEqual([
       "lit-ticket-meta",
+      "lit-order-type-controls",
       "lit-ticket-body",
       "lit-ticket-footer",
     ]);
     expect(ticket.querySelector(".lit-ticket-meta")?.parentElement).toBe(ticket);
     expect(ticket.querySelector(".lit-side-actions")?.parentElement?.className).toBe("lit-ticket-footer");
     expect(screen.getByText("Price click → Limit · Shift-click → Trigger")).toBeTruthy();
+    // The foot in the plate's order: Review with Vex, the promise, the sides.
+    const foot = Array.from(ticket.querySelector(".lit-ticket-footer")?.children ?? []).map((node) => node.className);
+    expect(foot.slice(0, 3)).toEqual(["lit-ask-draft", "lit-review-note", "lit-side-actions"]);
   });
 
   it("collapses to one truthful setup block while no account is onboarded", () => {

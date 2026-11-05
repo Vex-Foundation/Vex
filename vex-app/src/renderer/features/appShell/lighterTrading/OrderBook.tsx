@@ -91,6 +91,7 @@ export function MarketBookPanel({
   collapsed = false,
   onToggleCollapse,
   preferredView = "stack",
+  chooseView = true,
   book,
   baseSymbol,
   quoteSymbol,
@@ -109,6 +110,11 @@ export function MarketBookPanel({
   readonly onToggleCollapse?: () => void;
   /** A shallow panel uses side-by-side prices until the user chooses a view. */
   readonly preferredView?: BookView;
+  /**
+   * The Stacked | Side by side chooser. The H3 desk keeps bids beside asks
+   * under the chart (H3-DESKTOP.md section 4.9) and draws no chooser.
+   */
+  readonly chooseView?: boolean;
   readonly book: LighterOrderBookData;
   readonly baseSymbol: string;
   readonly quoteSymbol: string;
@@ -218,17 +224,19 @@ export function MarketBookPanel({
             <button type="button" aria-pressed={unit === "base"} onClick={() => setUnit("base")}>{baseSymbol}</button>
             <button type="button" aria-pressed={unit === "quote"} onClick={() => setUnit("quote")}>{quoteSymbol}</button>
           </div>
-          <div className="lit-unit-switch lit-view-switch" role="group" aria-label="Book view">
-            {/* The words where the panel is wide (lighter-book.css), the icons at the column's floor. */}
-            <button type="button" aria-pressed={view === "stack"} aria-label="Stacked" title="Asks over bids" onClick={() => setView("stack")}>
-              <LineSplitHorizontal size={16} className="lit-view-icon" />
-              <span className="lit-view-word" aria-hidden="true">Stacked</span>
-            </button>
-            <button type="button" aria-pressed={view === "split"} aria-label="Side by side" title="Bids beside asks" onClick={() => setView("split")}>
-              <LineSplitVertical size={16} className="lit-view-icon" />
-              <span className="lit-view-word" aria-hidden="true">Side by side</span>
-            </button>
-          </div>
+          {chooseView ? (
+            <div className="lit-unit-switch lit-view-switch" role="group" aria-label="Book view">
+              {/* The words where the panel is wide (lighter-book.css), the icons at the column's floor. */}
+              <button type="button" aria-pressed={view === "stack"} aria-label="Stacked" title="Asks over bids" onClick={() => setView("stack")}>
+                <LineSplitHorizontal size={16} className="lit-view-icon" />
+                <span className="lit-view-word" aria-hidden="true">Stacked</span>
+              </button>
+              <button type="button" aria-pressed={view === "split"} aria-label="Side by side" title="Bids beside asks" onClick={() => setView("split")}>
+                <LineSplitVertical size={16} className="lit-view-icon" />
+                <span className="lit-view-word" aria-hidden="true">Side by side</span>
+              </button>
+            </div>
+          ) : null}
         </div>
         <span
           className="lit-live-dot"
@@ -250,10 +258,10 @@ export function MarketBookPanel({
           </>
         ) : (
           <>
-            <span aria-hidden="true">Size</span>
+            <span aria-hidden="true">Size ({unitSymbol})</span>
             <span aria-hidden="true">Bid</span>
             <span aria-hidden="true">Ask</span>
-            <span aria-hidden="true">Size</span>
+            <span aria-hidden="true">Size ({unitSymbol})</span>
           </>
         )}
         </div>

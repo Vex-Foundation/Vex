@@ -17,6 +17,10 @@ import {
   coerceLighterLayout,
   resolveLighterLayout,
   reviewTicketWidth,
+  LIGHTER_DESK_CHART_MIN,
+  deskBookHeight,
+  deskBookRows,
+  resolveDeskDock,
 } from "../desk-preferences.js";
 
 describe("resolveLighterLayout", () => {
@@ -114,7 +118,7 @@ describe("resolveLighterLayout", () => {
 
   it("bounds the trades panel by the book floor and follows a dragged share", () => {
     const height = 800;
-    const roomy = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, { width: 1200, height });
+    const roomy = resolveLighterLayout({ ...DEFAULT_LIGHTER_LAYOUT, bottomShare: 0.2 }, { width: 1200, height });
     expect(roomy.bottomHeight).toBe(160);
     // 800 - 1 - 160 leaves a 639 column; trades stop at 70% of it or a minimum book plus the seam.
     expect(roomy.tradesMax).toBe(Math.round(639 * 0.7));
@@ -156,8 +160,9 @@ describe("coerceLighterLayout", () => {
 
 describe("coerceLighterDesk", () => {
   it("migrates old preferences to an agent share and bounds saved resizes", () => {
-    expect(coerceLighterDesk({}).chatShare).toBe(0.32);
-    expect(coerceLighterDesk({ chatShare: NaN }).chatShare).toBe(0.32);
+    // H3: her column on the desk is 30% of the window by default.
+    expect(coerceLighterDesk({}).chatShare).toBe(0.3);
+    expect(coerceLighterDesk({ chatShare: NaN }).chatShare).toBe(0.3);
     expect(coerceLighterDesk({ chatShare: 0.4 }).chatShare).toBe(0.4);
     expect(coerceLighterDesk({ chatShare: -1 }).chatShare).toBe(0);
     expect(coerceLighterDesk({ chatShare: 9 }).chatShare).toBe(0.5);
@@ -194,5 +199,33 @@ describe("reviewTicketWidth", () => {
     const frame = { width: 640, height: 800 };
     const pixels = resolveLighterLayout(DEFAULT_LIGHTER_LAYOUT, frame);
     expect(reviewTicketWidth(pixels, frame)).toBe(Math.max(pixels.ticketWidth, 640 - 1 - 360));
+  });
+});
+
+describe("the H3 desk's dock and book (H3-DESKTOP.md section 4.9)", () => {
+  it("shows five levels a side, four under an 800-high window, and sizes the book to them", () => {
+    expect(deskBookRows(900)).toBe(5);
+    expect(deskBookRows(800)).toBe(5);
+    expect(deskBookRows(799)).toBe(4);
+    expect(deskBookRows(720)).toBe(4);
+    expect(deskBookHeight(5) - deskBookHeight(4)).toBe(22);
+    // Five rows and their rules (the plate draws its book 238 high, its rules shared).
+    expect(deskBookHeight(5)).toBe(242);
+  });
+
+  it("keeps the dock's share, floor and ceiling, and folds it only when the chart and the book would not fit", () => {
+    const book = deskBookHeight(5);
+    // 900 less the header and the market bar: the plate's desk, a 184 dock.
+    const roomy = resolveDeskDock(DEFAULT_LIGHTER_LAYOUT, { height: 768, bookHeight: book });
+    expect(roomy.bottomHeight).toBe(Math.round(768 * DEFAULT_LIGHTER_LAYOUT.bottomShare));
+    expect(roomy.dockSqueezed).toBe(false);
+    const big = resolveDeskDock({ bottomShare: 0.9 }, { height: 768, bookHeight: book });
+    expect(big.bottomHeight).toBe(big.bottomMax);
+    expect(big.bottomMax).toBe(768 - 1 - (LIGHTER_DESK_CHART_MIN + 1 + book));
+    // The window floor, 720 high: 588 under the header and the bar.
+    expect(resolveDeskDock(DEFAULT_LIGHTER_LAYOUT, { height: 588, bookHeight: deskBookHeight(4) }).dockSqueezed).toBe(false);
+    const short = resolveDeskDock(DEFAULT_LIGHTER_LAYOUT, { height: 400, bookHeight: book });
+    expect(short.dockSqueezed).toBe(true);
+    expect(short.bottomHeight).toBe(LIGHTER_BOTTOM_MIN);
   });
 });

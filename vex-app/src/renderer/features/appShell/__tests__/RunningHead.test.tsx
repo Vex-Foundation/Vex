@@ -2,7 +2,7 @@
  * The title bar's two cells, in every mode, and its place in the window
  * (docs/design/R3-MINIMAL.md section 3): a 44px drag row whose left cell says
  * where you are and whose right cluster holds the page keys, the Studio host
- * pill, Notices, "Needs you · N", and on the Lighter desk the token chip.
+ * pill, Notices and "Needs you · N"; on the Lighter desk, Notices alone.
  *
  * The cells divide by WHOSE they are. `MissionRail`, `SessionExportControl`
  * and the session title are scoped to a session, and a session belongs to the
@@ -438,14 +438,14 @@ describe("the right cluster", () => {
     expect(screen.queryByTestId("token-chip")).toBeNull();
   });
 
-  it("on the desk the chip still ends the cluster, in the desk's title row", () => {
+  it("on the desk keeps only Notices in the cluster: Needs you is the console's, no export, no chip", () => {
     renderHead("lighter", SESSION, { vex: { open: true, onToggle: () => undefined } });
     const flank = document.querySelector(".vex-running-head__flank");
     const order = Array.from(flank?.querySelectorAll("[data-testid]") ?? []).map((el) =>
       el.getAttribute("data-testid"),
     );
-    expect(order).toEqual(["export-control", "notices", "needs-you", "token-chip"]);
-    expect(document.querySelector("[data-vex-head-cell]")).toBeNull();
+    expect(order).toEqual(["notices"]);
+    expect(screen.queryByTestId("token-chip")).toBeNull();
   });
 
   it("Needs you is present in EVERY mode, the welcome included", () => {
@@ -487,31 +487,11 @@ describe("the right cluster", () => {
   });
 });
 
-describe("the token chip, on the Lighter desk", () => {
-  it("toggles the column the frame solved", () => {
-    const onToggle = vi.fn();
-    renderHead("lighter", SESSION, { vex: { open: false, onToggle } });
-    const chip = screen.getByTestId("token-chip");
-    expect(chip.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(chip);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-  });
-
-  it("is absent where there is no Vex column to toggle: Zen", () => {
-    renderHead("lighter", SESSION, { vex: null });
+describe("the token chip", () => {
+  it("is never drawn, on the desk or in H3's header: the Vex key has that cell", () => {
+    renderHead("lighter", SESSION, { vex: { open: true, onToggle: () => undefined } });
     expect(screen.queryByTestId("token-chip")).toBeNull();
-  });
-
-  it("without the frame's solve, reads and writes the stored choice", () => {
-    useUiStore.setState({ runtimeMode: "lighter", vexOpenLighter: true });
-    renderHead("lighter", SESSION);
-    const chip = screen.getByTestId("token-chip");
-    expect(chip.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(chip);
-    expect(useUiStore.getState().vexOpenLighter).toBe(false);
-  });
-
-  it("is never drawn in H3's header, the welcome included: the Vex key has that cell", () => {
+    cleanup();
     renderHead("agent", null, { empty: true, vex: { open: true, onToggle: () => undefined } });
     expect(screen.queryByTestId("token-chip")).toBeNull();
     cleanup();
@@ -543,10 +523,23 @@ describe("the head row", () => {
     expect(head.querySelector("[data-vex-tape-state]")).toBeNull();
   });
 
-  it("collapses in Lighter, whose top bar is its title bar", () => {
-    const head = renderHead("lighter", SESSION, { empty: true });
-    expect(head.className).toBe("contents");
-    expect(head.hasAttribute("data-empty")).toBe(false);
-    expect(head.getAttribute("data-collapsed")).toBe("true");
+  it("is the desk's title cell on the Lighter desk, the desk's head first", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <RunningHead
+          runtimeMode="lighter"
+          activeSessionId={SESSION}
+          deskHead={<span data-testid="desk-head">Lighter</span>}
+        />
+      </QueryClientProvider>,
+    );
+    const head = view.container.querySelector<HTMLElement>("[data-vex-area='shell-status-strip']");
+    expect(head?.getAttribute("data-vex-head-cell")).toBe("title");
+    expect(head?.hasAttribute("data-vex-desk-head")).toBe(true);
+    expect(head?.classList.contains("vex-drag")).toBe(true);
+    expect(head?.querySelector(".vex-running-head__start > [data-testid='desk-head']")).not.toBeNull();
+    // The session's title is the desk's, not the chat's.
+    expect(head?.querySelector("[data-vex-area='title-bar-title']")).toBeNull();
   });
 });

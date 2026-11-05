@@ -1,9 +1,8 @@
 /**
  * THE TITLE BAR: the header's title cell (docs/design/H3-DESKTOP.md section
  * 1.3; its contents are still R3-MINIMAL.md section 3's). The Vex key's cell
- * beside it is the header's own (`ShellHeader`, `VexKey`); on the Lighter
- * desk the token chip ("Vex chat" and its state) still ends the cluster and
- * shows and hides the desk's Vex column.
+ * beside it is the header's own (`ShellHeader`, `VexKey`), on the Lighter
+ * desk as everywhere else.
  *
  *   - the TITLE cell, over the chat, says where you are: the session title
  *     with its mode ("Agent · Restricted", and the mission badge for a
@@ -45,16 +44,18 @@
  * would speak every message twice. The announcer renders only screen-reader
  * live regions (no pixels).
  *
- * Lighter has no header cells of its own: the desk's top bar is its title
- * bar, and the cluster (the chip at its end) rides there through a portal
- * (`lighterTrading/shellStripSlot.ts`). The cells collapse; the cluster only
- * moves in the DOM. `data-vex-area="shell-status-strip"` stays the test seam:
- * the title cell, or on the desk the box-less wrapper of the portal.
+ * ON THE LIGHTER DESK (docs/design/H3-DESKTOP.md section 4.9, the approved
+ * desk plate) the title cell holds the desk's own head (`deskHead`: where
+ * you are and the desk's three keys, `LighterSidebar`), and the cluster
+ * keeps only what the desk can need there: a page's keys and close key while
+ * a page stands over the desk, and Notices while notices exist. Needs you
+ * is the console's on the desk too, and the desk chat's export is not in the
+ * desk's row. `data-vex-area="shell-status-strip"` stays the test seam: the
+ * title cell in every mode.
  */
 
 import { Fragment, type JSX, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { selectVexOpen, useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
+import { useUiStore, type RuntimeMode } from "../../stores/uiStore.js";
 import { LineClose } from "../../components/icons/line/index.js";
 import { Tooltip } from "../../components/ui/tooltip.js";
 import { ErrorBoundary } from "../../components/ui/error-boundary.js";
@@ -62,7 +63,6 @@ import { useProject } from "../../lib/api/projects.js";
 import { useSession } from "../../lib/api/sessions.js";
 import { NotificationAnnouncer } from "../../components/ui/notification-announcer.js";
 import { NeedsYouControl } from "../vex/NeedsYouControl.js";
-import { VexTokenChip } from "../vex/VexTokenChip.js";
 import { useNeedsYou } from "../vex/useVexPresence.js";
 import { GlobalApprovalsSync } from "./GlobalApprovals.js";
 import { MissionRail } from "./MissionRail.js";
@@ -70,7 +70,6 @@ import { NotificationCenter } from "./NotificationCenter.js";
 import { SessionExportControl } from "./SessionExportControl.js";
 import { StudioHostStatusWord } from "./StudioHostStatusWord.js";
 import { getSessionTitle } from "./sessionListModel.js";
-import { useShellStripSlot } from "./lighterTrading/shellStripSlot.js";
 import { setPageKeysSlot } from "./pageKeysSlot.js";
 import { assetsPageTitle, titleBarPageOf, type PageTitle } from "./screens/page-crumbs.js";
 import { assetsRouteScope } from "../../stores/uiStore/shell-route.js";
@@ -95,6 +94,8 @@ export interface RunningHeadProps {
    * toggle (Zen). Omitted, the chip reads the stored choice.
    */
   readonly vex?: VexToggle | null;
+  /** The Lighter desk's head, which the desk's title cell holds. */
+  readonly deskHead?: ReactNode;
 }
 
 /** The access word of a session or a project. */
@@ -269,32 +270,15 @@ function TitleCellBoundary({
   );
 }
 
-/** The stored choice, for a head mounted without the frame's solve. */
-function useStoredVexToggle(): VexToggle {
-  const open = useUiStore(selectVexOpen);
-  const setVexOpen = useUiStore((s) => s.setVexOpen);
-  return { open, onToggle: () => setVexOpen(!open) };
-}
-
 export function RunningHead({
   runtimeMode,
   activeSessionId,
   empty = false,
-  vex,
+  deskHead = null,
 }: RunningHeadProps): JSX.Element {
   // See the module note: the session-scoped parts belong to the agent shell.
   const sessionScopedId = runtimeMode === "studio" ? null : activeSessionId;
   const lighter = runtimeMode === "lighter";
-  const lighterSlot = useShellStripSlot();
-  const stored = useStoredVexToggle();
-  const toggle = vex === undefined ? stored : vex;
-  // The chip is the desk's alone: in H3's header the Vex key has the Vex
-  // key's cell (`ShellHeader`). A frame with no Vex to toggle (Zen) hands in
-  // null.
-  const chip =
-    !lighter || toggle === null ? null : (
-      <VexTokenChip open={toggle.open} onToggle={toggle.onToggle} />
-    );
 
   const flank = (
     <div className="vex-running-head__flank">
@@ -302,38 +286,38 @@ export function RunningHead({
        * the cluster, before export and the close key. */}
       <div className="vex-tb-pagekeys" data-vex-area="title-bar-page-keys" ref={setPageKeysSlot} />
       <PageCloseKey runtimeMode={runtimeMode} />
-      <SessionExportControl activeSessionId={sessionScopedId} />
+      {lighter ? null : <SessionExportControl activeSessionId={sessionScopedId} />}
       {runtimeMode === "studio" ? <StudioHostStatusWord /> : null}
       {/* Session-LESS failures (memory maintenance) reach the user here too:
        * they are notifications, so the center is their surface. Renders null
        * while there are none. */}
       <NotificationCenter />
-      <NeedsYouControl />
-      {/* On the desk the chip ends the cluster, in the desk's title row; in
-       * the header the Vex key has a cell of its own, over the Vex column. */}
-      {chip}
+      {/* On the desk Needs you is the console's (the approved desk plate). */}
+      {lighter ? null : <NeedsYouControl />}
       <NotificationAnnouncer />
     </div>
   );
 
   // A fragment in every mode, the sync its first child: across a mode switch
-  // only what follows the sync changes type, so the sync itself is never
+  // only what follows the sync changes, so the sync itself is never
   // remounted (its subscription would otherwise be dropped and taken again).
   return (
     <>
       <GlobalApprovalsSync />
-      {lighter ? (
-        <div className="contents" data-vex-area="shell-status-strip" data-collapsed="true">
-          {lighterSlot === null ? <div hidden>{flank}</div> : createPortal(flank, lighterSlot)}
-        </div>
-      ) : (
-        <>
-          <div
-            data-vex-head-cell="title"
-            className="vex-running-head vex-drag"
-            data-vex-area="shell-status-strip"
-            data-empty={empty || undefined}
-          >
+      <div
+        data-vex-head-cell="title"
+        className="vex-running-head vex-drag"
+        data-vex-area="shell-status-strip"
+        data-vex-desk-head={lighter ? "" : undefined}
+        data-empty={empty || undefined}
+      >
+        {lighter ? (
+          <>
+            <div className="vex-running-head__start">{deskHead}</div>
+            {flank}
+          </>
+        ) : (
+          <>
             <div className="vex-running-head__start">
               {empty ? null : (
                 <TitleCellBoundary runtimeMode={runtimeMode} sessionId={sessionScopedId}>
@@ -343,9 +327,9 @@ export function RunningHead({
               <MissionRail activeSessionId={sessionScopedId} />
             </div>
             {flank}
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </div>
     </>
   );
 }

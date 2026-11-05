@@ -41,7 +41,8 @@
  *   ?state=<id>              the state (`states/index.ts`); none is the bare
  *                            install, an unknown id lists the states
  *   ?vex=open|closed         the Vex column's stored choice for the state's
- *                            page class (each state's own default otherwise)
+ *                            page class, the Lighter desk's included (each
+ *                            state's own default otherwise)
  *   ?os=mac|win|linux        the window chrome (mac)
  *   ?kimm=standins|shipped   Kimm's art: the dev stand-ins cropped from the
  *                            mockup (`kimm-standin-art.ts`, the default), or
@@ -181,15 +182,16 @@ function WindowChromeStandin(): JSX.Element | null {
  * the agent shell unless the state says otherwise, and `?vex=` writes the
  * stored choice for BOTH page classes so it holds whichever the state opens.
  */
-function pointStore(state: { readonly ui?: HarnessUi }): void {
+function pointStore(state: { readonly ui?: HarnessUi; readonly prepare?: () => void }): void {
   const vex = VEX === "open" ? true : VEX === "closed" ? false : null;
+  state.prepare?.();
   useUiStore.setState({
     theme: THEME,
     themePreference: THEME,
     currentView: "appShell",
     runtimeMode: "agent",
     ...state.ui,
-    ...(vex === null ? {} : { vexOpenChat: vex, vexOpenPages: vex }),
+    ...(vex === null ? {} : { vexOpenChat: vex, vexOpenPages: vex, vexOpenLighter: vex }),
   });
 }
 

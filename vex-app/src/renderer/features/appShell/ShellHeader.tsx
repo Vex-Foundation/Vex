@@ -34,13 +34,28 @@
  * layout mounts a second head or remounts the one there is
  * (`ShellHeader.test.tsx`).
  *
- * The Lighter desk keeps R3's frame until its own restyle: the desk's title
- * row is its title bar and the cluster rides there through a portal, so on
- * the desk this element has no box (`contents`) and draws no cell; only the
- * head's services stay mounted.
+ * THE LIGHTER DESK (docs/design/H3-DESKTOP.md section 4.9, the approved desk
+ * plate) has the same row with its own cells, its Vex key at the right end
+ * over her column:
+ *
+ *     [data-vex-head-cell="chats"]     the logo cell over the rail
+ *     [data-vex-head-cell="title"]     the desk's head (`deskHead`, the
+ *                                      desk's `LighterSidebar`): "Lighter"
+ *                                      over the section and deployment, then
+ *                                      its three icon keys; the running
+ *                                      head's cluster after the words
+ *     [data-vex-head-cell="funds"]     Mainnet and Real funds, no chevron
+ *     [data-vex-head-cell="vex-key"]   the Vex key over her column, which on
+ *                                      Windows and Linux shares the column
+ *                                      with the caption reserve at its top
+ *                                      right
+ *     [data-vex-head-cell="caption-reserve"]
+ *
+ * Exit Lighter is not in the row: the nav is the way out. Needs you is the
+ * console's, never a header control.
  */
 
-import type { CSSProperties, JSX } from "react";
+import type { CSSProperties, JSX, ReactNode } from "react";
 import type { RuntimeMode } from "../../stores/uiStore.js";
 import { VexKey } from "../vex/VexKey.js";
 import { AgentSidebarHeader } from "./AgentSidebarHeader.js";
@@ -61,6 +76,8 @@ export interface ShellHeaderProps {
   readonly chatsRail: boolean;
   /** The sidebar key: fold or unfold the chats column. */
   readonly onToggleSidebar: () => void;
+  /** The Lighter desk's head cells, drawn in the title cell on the desk. */
+  readonly deskHead?: ReactNode;
 }
 
 /** The sidebar key's name in each mode that has one. */
@@ -76,37 +93,31 @@ export function ShellHeader({
   columns,
   chatsRail,
   onToggleSidebar,
+  deskHead = null,
 }: ShellHeaderProps): JSX.Element {
-  const lighter = runtimeMode === "lighter";
-  const style: CSSProperties | undefined = lighter ? undefined : { gridTemplateColumns: columns };
+  const style: CSSProperties = { gridTemplateColumns: columns };
   return (
-    <header
-      className={lighter ? "contents" : "vex-shell-head vex-drag"}
-      data-vex-area="shell-head"
-      style={style}
-    >
-      {lighter ? null : (
-        <AgentSidebarHeader
-          rail={chatsRail}
-          label={collapseLabel(runtimeMode)}
-          onCollapse={onToggleSidebar}
-        />
-      )}
+    <header className="vex-shell-head vex-drag" data-vex-area="shell-head" style={style}>
+      <AgentSidebarHeader
+        rail={chatsRail}
+        label={collapseLabel(runtimeMode)}
+        onCollapse={onToggleSidebar}
+      />
       {/* The Vex key's cell, over the Vex column (section 1.6): the key, or
         * nothing where the frame has no Vex to toggle. Always this slot, so
-        * the running head after it keeps its place in the tree. */}
-      {lighter ? null : (
-        <div data-vex-head-cell="vex-key" className="vex-shell-head__vex vex-drag">
-          {vex === null ? null : <VexKey open={vex.open} onToggle={vex.onToggle} />}
-        </div>
-      )}
+        * the running head after it keeps its place in the tree; its named
+        * lines put it over the right-hand column on the desk. */}
+      <div data-vex-head-cell="vex-key" className="vex-shell-head__vex vex-drag">
+        {vex === null ? null : <VexKey open={vex.open} onToggle={vex.onToggle} />}
+      </div>
       <RunningHead
         runtimeMode={runtimeMode}
         activeSessionId={activeSessionId}
         empty={empty}
         vex={vex}
+        deskHead={deskHead}
       />
-      {lighter ? null : <ChatHeaderCells />}
+      <ChatHeaderCells />
     </header>
   );
 }

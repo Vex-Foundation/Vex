@@ -77,6 +77,14 @@ const STATES = [
   "studio-project",
   "studio-split",
   "studio-band-files",
+  // The Lighter desk (section 4.9), for review beside its approved plates
+  // (`?plate=lighter-desk` and the rest).
+  "lighter-desk",
+  "lighter-desk-review",
+  "lighter-desk-two-step",
+  "lighter-zen",
+  "lighter-zen-folded",
+  "lighter-zen-ask",
 ] as const;
 
 /**

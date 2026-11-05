@@ -38,11 +38,12 @@
 }
 /* Under H3's header (docs/design/H3-DESKTOP.md section 1.3) the head row is
  * the frame's own, above the centre, so a sheet starts at the centre's top,
- * or under the offline row. */
-.vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre .vex-ov {
+ * or under the offline row. The Lighter desk stands under the same header
+ * (section 4.9). */
+.vex-shell-frame:is([data-vex-frame="h3"], [data-vex-frame="desk"]) .vex-shell-centre .vex-ov {
   top: 0;
 }
-.vex-shell-frame[data-vex-frame="h3"] .vex-shell-centre:has(> .vex-connection-banner) .vex-ov {
+.vex-shell-frame:is([data-vex-frame="h3"], [data-vex-frame="desk"]) .vex-shell-centre:has(> .vex-connection-banner) .vex-ov {
   top: 40px;
 }
 /* The money ledgers (Agent Scan, All assets, token history): 1100 with the

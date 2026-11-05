@@ -1,16 +1,18 @@
 /* ---------------------------------------------------------------------------
- * Chart panel (docs/design/R3-MINIMAL.md section 9.3). Words are Instrument
- * Sans in sentence case, figures are JetBrains Mono; every rule that sets a
- * word sets the sans, because the desk's own base is the mono. The candles
- * and their volume are the one place green and red appear (lighter-tokens.css
- * scopes the pair to the canvas host); everything drawn around them is blue
- * and ink, and the chrome carries no trading colour.
+ * Chart panel in H3 cells (docs/design/H3-DESKTOP.md section 4.9, the
+ * approved desk plate; plan row S8-08): the 40 toolbar row of cells over the
+ * 40 wide drawing-tools strip and the canvas. The grid is drawn on the rule;
+ * the candles and their volume are trading values in the gain and loss pair
+ * (lighter-tokens.css scopes it to the canvas host); the last price is an
+ * ink tag and an open position's entry a dashed line with its ENTRY tag.
+ * Every rule that sets a word sets the sans, because the desk's own base is
+ * the mono.
  * ------------------------------------------------------------------------- */
 
 .lit-chart-body {
-  /* The analysis toolbar above and the drawing rail beside the canvas. */
-  --lit-chart-toolbar: 36px;
-  --lit-chart-rail: 34px;
+  /* The analysis toolbar above and the drawing-tools strip beside the canvas. */
+  --lit-chart-toolbar: 40px;
+  --lit-chart-rail: 40px;
   position: relative;
   min-height: 260px;
   flex: 1 1 auto;
@@ -26,41 +28,35 @@
   left: var(--lit-chart-rail);
 }
 
-/* Intervals: 24 high mono keys; the chosen one is blue in a 1px blue frame.
- * The strip ends in the 1 x 16 rule that sets the chart controls apart. */
+/* Intervals: mono cells the toolbar's height, one rule between each and
+ * after the last; the chosen one on raised 2 in ink. */
 .lit-resolution-tabs {
   display: flex;
   min-width: 0;
-  align-items: center;
+  align-items: stretch;
   overflow: auto hidden;
+  border-right: 1px solid var(--vex-alias-rule);
   scrollbar-width: none;
 }
 
 .lit-resolution-tabs::-webkit-scrollbar { display: none; }
 
-.lit-resolution-tabs::after {
-  width: 1px;
-  height: 16px;
-  flex: 0 0 1px;
-  align-self: center;
-  margin: 0 8px;
-  background: var(--lit-line-quiet);
-  content: "";
-}
-
 .lit-resolution-tabs button {
-  min-width: 30px;
-  height: 24px;
+  min-width: 36px;
+  height: 100%;
   flex: 0 0 auto;
   border: 0;
+  border-left: 1px solid var(--vex-alias-rule);
   background: transparent;
-  padding: 0 6px;
-  color: var(--lit-ink-secondary);
+  padding: 0 10px;
+  color: var(--lit-ink-muted);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--lit-tr-data);
 }
+
+.lit-resolution-tabs button:first-child { border-left: 0; }
 
 .lit-resolution-tabs button:hover {
   background: var(--lit-hover);
@@ -68,17 +64,15 @@
 }
 
 .lit-resolution-tabs button[aria-pressed="true"] {
-  color: var(--lit-accent);
-  font-weight: 500;
-  outline: 1px solid var(--lit-accent);
-  outline-offset: -1px;
+  background: var(--lit-pressed);
+  color: var(--lit-ink);
 }
 
 .lit-resolution-tabs button:focus-visible,
 .lit-chart-tools button:focus-visible,
 .lit-chart-empty-actions button:focus-visible {
   outline: 2px solid var(--lit-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .lit-chart-heading-end {
@@ -86,6 +80,7 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+  padding-inline: 12px;
 }
 
 /* The chart only speaks up when its candles lag; Live is the market bar's. */
@@ -105,10 +100,10 @@
   position: absolute;
   z-index: 3;
   bottom: 34px;
-  left: calc(var(--lit-chart-rail, 34px) + 10px);
+  left: calc(var(--lit-chart-rail, 40px) + 10px);
   display: flex;
   gap: 0;
-  border: 1px solid var(--lit-line);
+  border: 1px solid var(--vex-alias-rule-chosen);
   background: var(--lit-panel);
 }
 
@@ -344,7 +339,7 @@
 .lit-chart-footer {
   position: absolute;
   z-index: 3;
-  top: 44px;
+  top: 48px;
   right: 80px;
   min-height: 0;
   border: 0;
@@ -366,8 +361,8 @@
 @container (max-width: 560px) {
   .lit-chart-history-boundary {
     bottom: 70px;
-    left: calc(var(--lit-chart-rail, 34px) + 10px);
-    max-width: calc(100% - var(--lit-chart-rail, 34px) - 80px);
+    left: calc(var(--lit-chart-rail, 40px) + 10px);
+    max-width: calc(100% - var(--lit-chart-rail, 40px) - 80px);
     transform: none;
   }
 }

@@ -43,9 +43,32 @@ vi.mock("../../screens/AgentScanScreen.js", () => ({
   AgentScanScreen: () => null,
 }));
 
+// Zen's row is the chart's toolbar (`ZenRow.tsx`): the desk draws its keys
+// from the shell's Zen controls. Folded, it is the fold key and Exit Zen.
 vi.mock("../../lighterTrading/LighterCenter.js", () => ({
-  LighterCenter: ({ zenMode }: { readonly zenMode: boolean }) => (
-    <div data-testid="lighter-center" data-zen-mode={zenMode ? "true" : undefined} />
+  LighterCenter: ({ zenMode, zenControls }: {
+    readonly zenMode: boolean;
+    readonly zenControls?: import("../../lighterTrading/ZenRow.js").ZenControls;
+  }) => (
+    <div data-testid="lighter-center" data-zen-mode={zenMode ? "true" : undefined}>
+      {zenMode && zenControls !== undefined ? (
+        <>
+          {zenControls.controlsOpen ? (
+            <button
+              type="button"
+              aria-label={zenControls.assistantOpen ? "Close Vex" : "Ask Vex"}
+              onClick={zenControls.onToggleAssistant}
+            />
+          ) : null}
+          <button
+            type="button"
+            aria-label={zenControls.controlsOpen ? "Hide Zen controls" : "Show Zen controls"}
+            onClick={zenControls.onToggleControls}
+          />
+          <button type="button" aria-label="Exit Zen Mode" onClick={zenControls.onExit} />
+        </>
+      ) : null}
+    </div>
   ),
 }));
 
@@ -53,21 +76,11 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
   LighterSidebar: ({
     collapsed,
     onToggleSidebar,
-    zenMode,
-    zenAssistantOpen,
-    zenControlsOpen,
-    onToggleZen,
-    onToggleZenControls,
-    onToggleZenAssistant,
+    onEnterZen,
   }: {
     readonly collapsed: boolean;
     readonly onToggleSidebar: () => void;
-    readonly zenMode: boolean;
-    readonly zenAssistantOpen: boolean;
-    readonly zenControlsOpen: boolean;
-    readonly onToggleZen: () => void;
-    readonly onToggleZenControls: () => void;
-    readonly onToggleZenAssistant: () => void;
+    readonly onEnterZen: () => void;
   }) => (
     <aside
       data-vex-area="lighter-sidebar"
@@ -78,25 +91,7 @@ vi.mock("../../lighterTrading/LighterSidebar.js", () => ({
         aria-label={collapsed ? "Open markets and sessions" : "Close markets and sessions"}
         onClick={onToggleSidebar}
       />
-      {!zenMode ? (
-        <button
-          type="button"
-          aria-label="Enter Zen Mode"
-          onClick={onToggleZen}
-        />
-      ) : !zenControlsOpen ? (
-        <button type="button" aria-label="Show Zen controls" onClick={onToggleZenControls} />
-      ) : (
-        <>
-          <button type="button" aria-label="Exit Zen Mode" onClick={onToggleZen} />
-          <button type="button" aria-label="Hide Zen controls" onClick={onToggleZenControls} />
-          <button
-            type="button"
-            aria-label={zenAssistantOpen ? "Close Vex" : "Ask Vex"}
-            onClick={onToggleZenAssistant}
-          />
-        </>
-      )}
+      <button type="button" aria-label="Enter Zen Mode" onClick={onEnterZen} />
     </aside>
   ),
 }));
@@ -716,7 +711,7 @@ describe("AppShell", () => {
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
-  it("places the Lighter title row in the centre column and keeps the content columns full-height", () => {
+  it("draws the desk's title row in the header's title cell, over the 76 rail", () => {
     useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false });
     const view = renderShell();
     const topbar = view.container.querySelector("[data-vex-area='lighter-sidebar']");
@@ -725,22 +720,39 @@ describe("AppShell", () => {
     const vexColumn = view.container.querySelector("[data-vex-area='vex-sidebar']")?.parentElement;
     const columns = [centerColumn, vexColumn];
 
-    // The title row is the centre's head row, under the running head (W4-2).
-    expect(topbar?.parentElement?.classList.contains("vex-shell-centre")).toBe(true);
-    expect(frame?.style.paddingTop).toBe("");
-    // Lighter always uses the left rail, and it mounts the real sidebar on it.
-    expect(frame?.style.gridTemplateColumns).toMatch(/^56px minmax\(0, 1fr\) /);
+    // The desk's head is the header's title cell (H3-DESKTOP.md section 4.9).
+    expect(topbar?.closest("[data-vex-head-cell='title']")?.hasAttribute("data-vex-desk-head")).toBe(true);
+    expect(topbar?.closest(".vex-shell-centre")).toBeNull();
+    // The rail at 76 under the header's logo cell, the account cell under it.
+    expect(frame?.style.gridTemplateColumns).toMatch(/^76px minmax\(0, 1fr\) /);
     expect(
       view.container
         .querySelector("[data-vex-area='left-page'] [data-vex-area='sessions-sidebar']")
         ?.getAttribute("data-rail"),
     ).toBe("true");
+    expect(view.container.querySelector("[data-vex-area='account-cell']")).not.toBeNull();
+    expect(view.container.querySelector("[data-vex-area='tagline-cell']")).toBeNull();
 
     for (const column of columns) {
       expect(column).not.toBeNull();
       expect(column?.classList.contains("h-full")).toBe(true);
       expect(column?.classList.contains("min-h-0")).toBe(true);
     }
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+  });
+
+  it("opens the desk's rail to the 248 for the visit only, and starts the next visit on the rail", () => {
+    useUiStore.setState({ runtimeMode: "lighter", sidebarNarrowExpanded: false, leftOpen: false });
+    const view = renderShell();
+    const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
+    expect(frame?.style.gridTemplateColumns).toMatch(/^76px /);
+    fireEvent.click(screen.getByRole("button", { name: "Expand sessions sidebar" }));
+    expect(frame?.style.gridTemplateColumns).toMatch(/^248px /);
+    // Never saved: the stored chats choice is untouched.
+    expect(useUiStore.getState().leftOpen).toBe(false);
+    act(() => useUiStore.getState().setRuntimeMode("agent"));
+    act(() => useUiStore.getState().setRuntimeMode("lighter"));
+    expect(frame?.style.gridTemplateColumns).toMatch(/^76px /);
     act(() => useUiStore.getState().setRuntimeMode("agent"));
   });
 
@@ -759,6 +771,9 @@ describe("AppShell", () => {
     expect(frame?.getAttribute("data-lighter-zen-controls")).toBe("closed");
     expect(frame?.style.paddingTop).toBe("");
     expect(frame?.style.gridTemplateColumns).toBe("0px minmax(0, 1fr) 0px");
+    // Her desk chat stands over the chart in her column's seat, as wide as
+    // her column on the desk (lighter-desk.css).
+    expect(frame?.style.getPropertyValue("--lit-zen-seat")).toMatch(/^\d+(\.\d+)?px$/);
     expect(screen.getByTestId("lighter-center").getAttribute("data-zen-mode")).toBe("true");
     expect(view.container.querySelector("[data-vex-area='vex-sidebar']")?.getAttribute("data-vex-vex-open")).toBe("false");
 
@@ -823,8 +838,8 @@ describe("AppShell", () => {
     useLighterAnalysisStore.getState().saveDesk({ chatShare: 0.32 });
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
-    expect(frame?.getAttribute("data-vex-frame")).toBe("r3");
-    // R3's order, in the DOM as on screen: rail | desk | chat.
+    expect(frame?.getAttribute("data-vex-frame")).toBe("desk");
+    // The desk's order, in the DOM as on screen: rail | desk | chat.
     const order = Array.from(frame?.children ?? [])
       .map((el) =>
         el.classList.contains("vex-left-page") ? "chats"
@@ -834,15 +849,15 @@ describe("AppShell", () => {
       )
       .filter((name) => name !== null);
     expect(order).toEqual(["chats", "chat", "vex"]);
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 461px");
-    // One frame row, no header row: the desk's title row is its own.
-    expect(frame?.style.gridTemplateRows).toBe("0px minmax(0, 1fr) 0px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 461px");
+    // H3's header and bottom rows over the desk (H3-DESKTOP.md section 4.9).
+    expect(frame?.style.gridTemplateRows).toBe("var(--head-h) minmax(0, 1fr) var(--vex-h3-bottom-h)");
     // The handle grips the chat's left edge: 1440 - 461.
     const handle = screen.getByRole("separator", { name: "Resize the Vex panel" });
     expect(handle.style.left).toBe("979px");
     // A step to the left widens the chat on the right.
     fireEvent.keyDown(handle, { key: "ArrowLeft" });
-    expect(frame?.style.gridTemplateColumns).toMatch(/^56px minmax\(0, 1fr\) 4\d\dpx$/);
+    expect(frame?.style.gridTemplateColumns).toMatch(/^76px minmax\(0, 1fr\) 4\d\dpx$/);
     const after = Number(/(\d+)px$/.exec(frame?.style.gridTemplateColumns ?? "")?.[1]);
     expect(after).toBeGreaterThan(461);
     act(() => {
@@ -858,11 +873,11 @@ describe("AppShell", () => {
     const view = renderShell();
     const frame = view.container.querySelector<HTMLElement>("[data-vex-area='shell-frame']");
     // 1440 x 0.32 = 460.8, rounded by the solver.
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 461px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 461px");
     act(() => useLighterAnalysisStore.getState().saveDesk({ chatShare: 310 / window.innerWidth }));
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 310px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 310px");
     fireEvent.keyDown(screen.getByRole("separator", { name: "Resize the Vex panel" }), { key: "ArrowLeft" });
-    expect(frame?.style.gridTemplateColumns).toBe("56px minmax(0, 1fr) 334px");
+    expect(frame?.style.gridTemplateColumns).toBe("76px minmax(0, 1fr) 334px");
     expect(useLighterAnalysisStore.getState().desk.chatShare).toBeCloseTo(334 / window.innerWidth);
     expect(useUiStore.getState().bookWidth).toBe(300);
     act(() => {

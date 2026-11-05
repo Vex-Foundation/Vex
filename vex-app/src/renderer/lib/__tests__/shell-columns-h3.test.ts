@@ -20,6 +20,12 @@ import {
   H3_BAND_HEIGHT,
   H3_CHAT_MIN,
   H3_CHATS_OPEN_MIN,
+  LIGHTER_CHAT_MAX,
+  LIGHTER_CHAT_MIN,
+  computeDeskColumns,
+  deskChatDragMax,
+  deskGridTemplateColumns,
+  deskVexWidth,
   h3ShellTier,
   shellColumnOrder,
   shellFrameKind,
@@ -335,9 +341,63 @@ describe("the frame per mode", () => {
     }
   });
 
-  it("keeps the Lighter desk's chat on the right until its own restyle", () => {
-    expect(shellFrameKind("lighter")).toBe("r3");
+  it("stands the Lighter desk in H3's rows with its own order: rail | desk | Vex", () => {
+    expect(shellFrameKind("lighter")).toBe("desk");
     expect(shellColumnOrder("lighter")).toEqual(["chats", "chat", "vex"]);
+  });
+});
+
+describe("the Lighter desk's tracks (H3-DESKTOP.md section 4.9)", () => {
+  const desk = (viewport: number, share = 0.3, chatsExpanded = false) =>
+    computeDeskColumns({ viewport, share, chatsExpanded });
+
+  it("keeps the chats column on the 76 rail at every width, Expand opening the 248 from 1024 up", () => {
+    for (const width of [1000, 1023, 1024, 1280, 1440, 1920]) {
+      expect(desk(width).chats, String(width)).toBe(H3_RAIL_WIDTH);
+      expect(desk(width).chatsRail).toBe(true);
+    }
+    expect(desk(1440, 0.3, true)).toMatchObject({ chats: H3_CHATS_WIDTH, chatsRail: false, expandable: true });
+    expect(desk(1023, 0.3, true)).toMatchObject({ chats: H3_RAIL_WIDTH, chatsRail: true, expandable: false });
+  });
+
+  it("sizes the desk chat at its share of the window, 300 to 520, and the desk takes the rest", () => {
+    expect(desk(1440)).toMatchObject({ chats: 76, vex: 432, desk: 932 });
+    expect(desk(1280)).toMatchObject({ vex: 384, desk: 820 });
+    expect(desk(1000)).toMatchObject({ vex: 300, desk: 624 });
+    expect(desk(1920).vex).toBe(LIGHTER_CHAT_MAX);
+    expect(desk(1440, 0.01).vex).toBe(LIGHTER_CHAT_MIN);
+    for (const width of [1000, 1024, 1366, 1440, 2560]) {
+      const cols = desk(width, 0.36);
+      expect(cols.chats + cols.desk + cols.vex, String(width)).toBe(width);
+    }
+    expect(deskGridTemplateColumns(desk(1440))).toBe("76px minmax(0, 1fr) 432px");
+  });
+
+  it("gives back toward its floor where the share would leave the desk under 640 beside the rail", () => {
+    expect(deskVexWidth(1100, 0.4)).toBe(1100 - H3_RAIL_WIDTH - 640);
+    expect(deskVexWidth(1000, 0.5)).toBe(LIGHTER_CHAT_MIN);
+    expect(deskChatDragMax(1440)).toBe(LIGHTER_CHAT_MAX);
+    expect(deskChatDragMax(1100)).toBe(1100 - H3_RAIL_WIDTH - 640);
+    expect(deskChatDragMax(1000)).toBe(LIGHTER_CHAT_MIN);
+  });
+
+  it("never moves her column when the rail's Expand opens: the desk alone gives the room", () => {
+    for (const width of [1024, 1280, 1440, 1920]) {
+      const folded = desk(width, 0.3, false);
+      const open = desk(width, 0.3, true);
+      expect(open.vex, String(width)).toBe(folded.vex);
+      expect(open.desk, String(width)).toBe(folded.desk - (H3_CHATS_WIDTH - H3_RAIL_WIDTH));
+    }
+  });
+
+  it("hands Zen the window: no rail and no column", () => {
+    expect(computeDeskColumns({ viewport: 1440, share: 0.3, chatsExpanded: true, zen: true })).toEqual({
+      chats: 0,
+      desk: 1440,
+      vex: 0,
+      chatsRail: true,
+      expandable: false,
+    });
   });
 });
 
@@ -353,6 +413,13 @@ describe("the header's cells", () => {
     expect(shellHeadTemplateColumns({ chats: 264, vex: null, vexBetween: false })).toBe(
       "[chats-start] 264px [chats-end title-start] minmax(0, 1fr) [title-end funds-start] auto " +
         "[funds-end vex-start] auto [vex-end reserve-start] var(--overlay-w) [reserve-end]",
+    );
+  });
+
+  it("on the desk shares the right-hand column between the Vex key and the caption reserve", () => {
+    expect(shellHeadTemplateColumns({ chats: 76, vex: 432, vexBetween: false, reserveInVex: true })).toBe(
+      "[chats-start] 76px [chats-end title-start] minmax(0, 1fr) [title-end funds-start] auto " +
+        "[funds-end vex-start] calc(432px - var(--overlay-w)) [vex-end reserve-start] var(--overlay-w) [reserve-end]",
     );
   });
 

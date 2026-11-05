@@ -32,6 +32,7 @@ export type HarnessUi = Partial<
     | "sidebarOpen"
     | "vexOpenChat"
     | "vexOpenPages"
+    | "vexOpenLighter"
     | "reasoningEffortBySession"
     | "modelPickBySession"
   >
@@ -48,4 +49,9 @@ export interface HarnessState {
   readonly ready: string;
   /** Settles when what it delivered is on screen; the ready stamp waits for it. */
   readonly afterMount?: (bridge: HarnessBridge) => Promise<void>;
+  /**
+   * Point the stores the UI store does not cover (the Lighter desk's market),
+   * before the first render, as `ui` points the UI store.
+   */
+  readonly prepare?: () => void;
 }

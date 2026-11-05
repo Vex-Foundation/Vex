@@ -431,24 +431,8 @@ describe("VexSidebar, a column that stays (H3, a chat)", () => {
   });
 });
 
-describe("VexSidebar, the dock (K2, on the Lighter desk)", () => {
+describe("VexSidebar, her section everywhere (no K2 hologram in her column)", () => {
   const holo = () => document.querySelector("[data-vex-k2]");
-  beforeEach(() => {
-    useUiStore.setState({ runtimeMode: "lighter" });
-  });
-
-  it("shows her as she is in a column open from the start", () => {
-    render(<VexSidebar open onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(false);
-  });
-
-  it("plays her open episode when the column shows again after a hide", () => {
-    const { rerender } = render(<VexSidebar open onHide={() => {}} />);
-    rerender(<VexSidebar open={false} onHide={() => {}} />);
-    expect(holo()).toBeNull();
-    rerender(<VexSidebar open onHide={() => {}} />);
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
-  });
 
   it("shows her section, not the hologram, in the welcome's column: nothing docks", () => {
     // docs/design/H3-DESKTOP.md section 1.7: the welcome keeps her column, in
@@ -463,22 +447,26 @@ describe("VexSidebar, the dock (K2, on the Lighter desk)", () => {
     expect(area("kimm-section")).not.toBeNull();
   });
 
-  it("plays it when her choice shows her again in an open column", () => {
-    useUiStore.setState({ vexOpenChat: false });
-    const { rerender } = render(<VexSidebar open={false} onHide={() => {}} />);
-    rerender(<VexSidebar open onHide={() => {}} />);
+  it("on the Lighter desk is Kimm's section too, open or folded by the desk's choice", () => {
+    // The approved desk plate (section 4.9): her section over the desk chat.
+    useUiStore.setState({ runtimeMode: "lighter" });
+    const { rerender } = render(<VexSidebar open plate stays onHide={() => {}} />);
     expect(holo()).toBeNull();
-    act(() => useUiStore.setState({ vexOpenChat: true }));
-    expect(holo()?.hasAttribute("data-vex-k2-open")).toBe(true);
+    const section = area("kimm-section");
+    expect(section?.getAttribute("data-kimm-open")).toBe("true");
+    rerender(<VexSidebar open plate={false} stays onHide={() => {}} />);
+    // Folded to the strip by its clip alone: the same box, the chat stays.
+    expect(area("kimm-section")).toBe(section);
+    expect(section?.getAttribute("data-kimm-open")).toBe("false");
+    expect(area("vex-desk-chat")).not.toBeNull();
   });
 });
 
-describe("VexSidebar, hiding plays her close first (K2, on the Lighter desk)", () => {
-  const holo = () => document.querySelector("[data-vex-k2]");
+describe("VexSidebar, hiding on the Lighter desk", () => {
   beforeEach(() => {
     useUiStore.setState({ runtimeMode: "lighter" });
   });
-  /** A press of the header's Vex key or the shortcut: both hide her through her close. */
+  /** A press of the header's Vex key or the shortcut. */
   const hide = (onHide: () => void): void => {
     act(() => {
       requestVexHide(onHide);
@@ -487,58 +475,28 @@ describe("VexSidebar, hiding plays her close first (K2, on the Lighter desk)", (
   /** A control inside the column that can hold focus: a block in its slot. */
   const insideKey = (): HTMLElement => screen.getByTestId("slot-key");
 
-  it("collapses her into the token, and the column goes when that ends", () => {
-    vi.useFakeTimers();
+  it("folds her at the press: her section's own wipe is the close, nothing waits", () => {
     const onHide = vi.fn();
-    render(<VexSidebar open onHide={onHide} />);
+    render(<VexSidebar open stays onHide={onHide} />);
     hide(onHide);
-    expect(onHide).not.toHaveBeenCalled();
-    expect(holo()?.hasAttribute("data-vex-k2-closed")).toBe(true);
-    expect(sidebar().hasAttribute("data-vex-vs-closing")).toBe(true);
-    expect(vexClosing()).toBe(true);
-    act(() => {
-      vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS - 1);
-    });
-    expect(onHide).not.toHaveBeenCalled();
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
     expect(onHide).toHaveBeenCalledTimes(1);
+    expect(sidebar().hasAttribute("inert")).toBe(false);
     expect(vexClosing()).toBe(false);
   });
 
-  it("is inert while she closes, and hands focus to the Vex key", () => {
-    vi.useFakeTimers();
+  it("keeps focus where it is in a column that stays", () => {
     render(
       <>
         <button type="button" data-vex-area="vex-key">
           Show Vex
         </button>
-        <VexSidebar open onHide={() => {}} />
+        <VexSidebar open stays onHide={() => {}} />
         <FocusBlock />
       </>,
     );
     insideKey().focus();
     hide(() => {});
-    expect(sidebar().hasAttribute("inert")).toBe(true);
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
-  });
-
-  it("keeps her on a second press: she opens again and nothing is written", () => {
-    vi.useFakeTimers();
-    const onHide = vi.fn();
-    render(<VexSidebar open onHide={onHide} />);
-    hide(onHide);
-    act(() => {
-      keepVex();
-    });
-    expect(holo()?.hasAttribute("data-vex-k2-closed")).toBe(false);
-    expect(sidebar().hasAttribute("inert")).toBe(false);
-    expect(vexClosing()).toBe(false);
-    act(() => {
-      vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS * 2);
-    });
-    expect(onHide).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(insideKey());
   });
 
   it("goes at once under the still frame (reduced motion or Save-Data)", () => {
@@ -547,39 +505,6 @@ describe("VexSidebar, hiding plays her close first (K2, on the Lighter desk)", (
     render(<VexSidebar open onHide={onHide} />);
     hide(onHide);
     expect(onHide).toHaveBeenCalledTimes(1);
-    expect(sidebar().hasAttribute("inert")).toBe(false);
-  });
-
-  it("goes at once with her figure hidden by her choice, where there is nothing of her to close", () => {
-    useUiStore.setState({ vexOpenChat: false });
-    const onHide = vi.fn();
-    render(
-      <>
-        <button type="button" data-vex-area="vex-key">
-          Show Vex
-        </button>
-        <VexSidebar open onHide={onHide} />
-        <FocusBlock />
-      </>,
-    );
-    insideKey().focus();
-    hide(onHide);
-    expect(onHide).toHaveBeenCalledTimes(1);
-    // The column is about to go: focus moves out of it first.
-    expect(document.activeElement?.getAttribute("data-vex-area")).toBe("vex-key");
-  });
-
-  it("drops the close when the shell closes the column on its own", () => {
-    vi.useFakeTimers();
-    const onHide = vi.fn();
-    const { rerender } = render(<VexSidebar open onHide={onHide} />);
-    hide(onHide);
-    rerender(<VexSidebar open={false} onHide={onHide} />);
-    expect(vexClosing()).toBe(false);
-    act(() => {
-      vi.advanceTimersByTime(VEX_HIDE_EPISODE_MS * 2);
-    });
-    expect(onHide).not.toHaveBeenCalled();
     expect(sidebar().hasAttribute("inert")).toBe(false);
   });
 });
@@ -630,7 +555,7 @@ describe("VexSidebar, Needs you", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
-  it("keeps R3's list on the Lighter desk, which has no console until its restyle", () => {
+  it("draws the console's Needs you on the Lighter desk too (the approved desk plate)", () => {
     const item = approvalNeedsYouItem(
       approval({ id: "a4", sessionId: SESSION, toolName: "BridgeExecute", sessionTitle: "Treasury chat" }),
       NOW,
@@ -639,9 +564,9 @@ describe("VexSidebar, Needs you", () => {
     useUiStore.setState({ runtimeMode: "lighter" });
     render(<VexSidebar open onHide={() => {}} />);
     const section = area("vex-needs-you");
-    expect(section?.querySelector("h3")?.textContent).toBe("Needs you · 1");
-    expect(section?.querySelector("[data-vex-area='needs-you-list']")).not.toBeNull();
-    expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).toBeNull();
+    expect(section?.querySelector("h3")?.textContent).toBe("Needs you: 1");
+    expect(section?.querySelector("[data-vex-area='vex-needs-you-row']")).not.toBeNull();
+    expect(section?.querySelector("[data-vex-area='needs-you-list']")).toBeNull();
   });
 });
 
@@ -714,14 +639,18 @@ describe("VexSidebar in Studio: This project", () => {
 });
 
 describe("VexSidebar on the Lighter desk", () => {
-  it("mounts the desk chat under the plate, in the Lighter role scope, with no foot", () => {
+  it("stands the console's top block, her section and the desk chat, in the Lighter role scope", () => {
+    // The approved desk plate (H3-DESKTOP.md section 4.9): the console's top,
+    // her section as a box over the column, the desk chat under it.
     useUiStore.setState({ runtimeMode: "lighter" });
-    render(<VexSidebar open onHide={() => {}} />);
+    render(<VexSidebar open stays onHide={() => {}} />);
     expect(sidebar().className).toContain("lit-chat-frame");
     expect(sidebar().getAttribute("data-lighter-theme")).toBe(useUiStore.getState().theme);
     const chat = area("vex-desk-chat");
     expect(chat?.querySelector("[data-testid='desk-chat']")).not.toBeNull();
-    expect(before(area("vex-portrait-plate"), chat)).toBe(true);
+    expect(before(area("vex-console-top"), area("kimm-section"))).toBe(true);
+    expect(before(area("kimm-section"), chat)).toBe(true);
+    expect(area("vex-portrait-plate")).toBeNull();
     expect(screen.queryByRole("switch", { name: "Show avatar" })).toBeNull();
   });
 });

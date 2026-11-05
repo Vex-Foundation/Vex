@@ -182,6 +182,24 @@
   border-right: 1px solid var(--vex-alias-rule-quiet);
 }
 
+/* THE LIGHTER DESK (docs/design/H3-DESKTOP.md section 4.9, the approved desk
+ * plate): H3's header and bottom rows over the desk's own order, rail | desk
+ * | Vex, each column on its own track as the rules at the top place them.
+ * The rail stops over the bottom row, whose cell under it is the account
+ * cell; the desk and the desk chat run on to the window's foot (a desk, like
+ * a page, has no tagline cell). Zen has neither row. */
+.vex-shell-frame[data-vex-frame="desk"] > .vex-left-page {
+  grid-row: 2 / -2;
+}
+.vex-shell-frame[data-vex-frame="desk"] > :is(.vex-shell-centre, .vex-shell-vex) {
+  grid-row: 2 / -1;
+}
+/* Under the header the rail and the desk chat's column keep R3's 44 for a
+ * head row they still draw of their own, as H3's columns do above. */
+.vex-shell-frame[data-vex-frame="desk"]:not([data-lighter-zen]) > :is(.vex-left-page, .vex-shell-vex) {
+  --head-h: 44px;
+}
+
 /* Under 1024, Vex's band (docs/design/H3-DESKTOP.md section 1.10): the frame
  * has a fourth row under the header (`shellGridTemplateRows`), her element
  * stands in it over the chat's track, and the chat starts under it; the
@@ -272,37 +290,15 @@
   }
 }
 
-/* The rail's paper cap, on the Lighter desk's R3 frame only (under H3's
- * header the rail starts below it): the head row runs across it, rule
- * included, and the rail's content starts under it, clear of the macOS
- * traffic lights. A window drag region like every head row. */
-.vex-left-page__cap {
-  position: absolute;
-  z-index: 3;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: var(--head-h);
-  background: var(--vex-surface-0);
-  border-bottom: 1px solid var(--vex-alias-rule);
-}
-/* The column's content, over the print. On the rail it starts under the
- * cap, clear of the macOS traffic lights. */
+/* The column's content, over the print. */
 .vex-left-page__content {
   position: relative;
   z-index: 4;
   height: 100%;
   min-height: 0;
 }
-.vex-shell-frame[data-vex-frame="r3"] [data-vex-left-page="spine"] > .vex-left-page__content {
-  padding-top: var(--head-h);
-}
 
 /* The title bar's own rules live in title-bar.css, the header's with them. */
-/* The welcome stage's clear head row runs across the rail's cap too. */
-.vex-shell-frame:has(.vex-running-head[data-empty]) .vex-left-page__cap {
-  border-bottom-color: transparent;
-}
 /* Pages open inside the centre column (docs/design/R3-MINIMAL.md section 2.3):
  * the sheet's left edge is the column's own, so both sidebars stay standing.
  * The frame keeps the window-level value for the sheet's entrance morph. */

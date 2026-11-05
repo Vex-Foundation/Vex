@@ -457,15 +457,19 @@ describe("TradingBottomPanel", () => {
     expect(screen.getByText("+0.8%")).toBeTruthy();
     // The uPnL cell carries its sign as the tone the trading pair paints, figure and ROE together.
     expect(screen.getByText("+0.8%").closest('[role="cell"]')?.getAttribute("data-tone")).toBe("positive");
-    // A plain resting limit is not protection: TP / SL stay empty.
+    // A plain resting limit is not protection: TP / SL reads None, on one
+    // line (H3-DESKTOP.md section 4.9).
     const tpSl = screen.getAllByRole("cell")[7];
-    expect(tpSl?.querySelector("b")?.textContent).toBe("--");
-    expect(tpSl?.querySelector("small")?.textContent).toBe("--");
+    expect(tpSl?.querySelector("b")?.textContent).toBe("None");
+    expect(tpSl?.querySelector("small")).toBeNull();
     expect(tpSl?.querySelector("b")?.hasAttribute("data-empty")).toBe(true);
+    // The market's cell carries its mark beside the symbol.
+    expect(screen.getAllByRole("cell")[0]?.querySelector(".lit-market-symbol")).not.toBeNull();
 
-    // The key says "Ask Vex"; its accessible name still says what it asks about.
+    // Ask Vex is the vx mark; its accessible name still says what it asks about.
     const askKey = screen.getByRole("button", { name: "Review BTC position with Vex" });
-    expect(askKey.textContent).toBe("Ask Vex");
+    expect(askKey.getAttribute("title")).toBe("Ask Vex");
+    expect(askKey.querySelector("svg")).not.toBeNull();
     fireEvent.click(askKey);
     expect(mocks.actions.onReviewPosition).toHaveBeenCalledWith(account.positions[0]);
     // The row's one close key opens the card; it decides nothing by itself.

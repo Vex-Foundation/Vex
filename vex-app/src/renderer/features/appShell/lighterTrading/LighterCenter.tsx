@@ -12,42 +12,43 @@ import { MarketPicker } from "./MarketPicker.js";
 import { MarketBookPanel, TradesPanel } from "./OrderBook.js";
 import { TradeTicket } from "./TradeTicket.js";
 import {
-  LIGHTER_BOOK_COLUMN_DEFAULT_SHARE,
-  LIGHTER_BOOK_COLUMN_MIN,
-  LIGHTER_COMPACT_BOOK_MIN,
-  LIGHTER_COMPACT_BOOK_DEFAULT_SHARE,
   LIGHTER_BOTTOM_COLLAPSED,
   LIGHTER_BOTTOM_DEFAULT_SHARE,
   LIGHTER_BOTTOM_MIN,
   LIGHTER_RESOLUTIONS,
-  LIGHTER_STACK_BELOW,
-  LIGHTER_TICKET_DEFAULT_SHARE,
-  LIGHTER_TICKET_MIN,
-  LIGHTER_TRADES_DEFAULT_SHARE,
-  LIGHTER_TRADES_MIN,
-  resolveLighterLayout,
-  reviewTicketWidth,
+  deskBookHeight,
+  deskBookRows,
+  resolveDeskDock,
   type LighterLayout,
 } from "./desk-preferences.js";
 import { useDeskReviewShowing } from "./desk-review-slot.js";
 import { formatRetrievedAt, marketSymbols } from "./format.js";
 import { useLighterDesk, type LighterDesk } from "./useLighterDesk.js";
 import { useSplitter } from "./useSplitter.js";
+import { ZenRowEnd, ZenRowStart, type ZenControls } from "./ZenRow.js";
 
 const EMPTY_MARKETS: readonly LighterTradingMarket[] = [];
 
 /**
- * The Lighter desk under its title row (docs/design/R3-MINIMAL.md section
- * 9.3): the market bar, then the chart, the book and the ticket, with the
- * account dock below. The title bar's cluster rides in the title row
+ * The Lighter desk under the shell's header (docs/design/H3-DESKTOP.md
+ * section 4.9): the market bar, then the chart, the book and the ticket,
+ * with the account dock below. The desk's title cells are the header's
  * (`LighterSidebar`), not here.
+ *
+ * In Zen the chart takes the whole window and its toolbar is Zen's row
+ * (`ZenRow.tsx`); the rest of the desk stays mounted, unseen, so its
+ * streams and its Review order keep running.
  */
-export function LighterCenter({ zenMode, onOpenZenAssistant }: {
+export function LighterCenter({ zenMode, onOpenZenAssistant, zenControls }: {
   readonly zenMode?: boolean;
   readonly onOpenZenAssistant?: () => void;
+  /** Zen's row: its fold, the desk chat over the chart, the way out. */
+  readonly zenControls?: ZenControls;
 } = {}): JSX.Element {
   const zenActive = zenMode === true;
+  const zen = zenActive ? zenControls ?? null : null;
   const theme = useUiStore((state) => state.theme);
+  const saveDesk = useLighterAnalysisStore((state) => state.saveDesk);
   const desk = useLighterDesk();
   const { environment, market, marketList, marketsQuery, marketPickerOpen, setMarketPickerOpen } = desk;
   const askVex = (): void => {
@@ -69,14 +70,29 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); };
   }, []);
+  // In Zen the market picker hangs from Zen's row and is one of Zen's own
+  // panels: Escape closes it first, wherever focus is, before the shell's
+  // Zen key reads the press (it skips a handled one). Off Zen the picker
+  // keeps its own Escape.
+  useEffect(() => {
+    if (!zenActive || !marketPickerOpen) return undefined;
+    const onEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setMarketPickerOpen(false);
+    };
+    window.addEventListener("keydown", onEscape, true);
+    return () => { window.removeEventListener("keydown", onEscape, true); };
+  }, [zenActive, marketPickerOpen, setMarketPickerOpen]);
   return (
     <div
       className="lit-desk"
       data-vex-area="lighter-desk"
       data-lighter-theme={theme}
       data-lighter-environment={environment}
-      data-chart-expanded={zenActive || undefined}
       data-zen-mode={zenActive || undefined}
+      // Zen opens folded: the row is its fold key and Exit Zen alone.
+      data-zen-controls={zenActive ? zen?.controlsOpen === true ? "open" : "closed" : undefined}
     >
       <div className="lit-desk-top">
         <MarketBar
@@ -84,7 +100,9 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
           market={market}
           marketPickerOpen={marketPickerOpen}
           onOpenMarketPicker={() => setMarketPickerOpen((current) => !current)}
-          onSelectSection={desk.selectSection}
+          // Core | RHC (H3-DESKTOP.md section 4.9): switching drops the
+          // market, and the desk opens that deployment's default.
+          onSelectEnvironment={(next) => saveDesk({ environment: next, marketId: null })}
           snapshot={desk.snapshot}
           liveStats={desk.publicMarketStream.stats}
           streamStatus={desk.publicMarketStream.statsStatus}
@@ -121,7 +139,7 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
       ) : market === null ? (
         <WorkspaceLoading label="Choosing a market…" />
       ) : (
-        <DeskBody desk={desk} theme={theme} />
+        <DeskBody desk={desk} theme={theme} zen={zen} />
       )}
       {/* Keep the native modal outside the chart-expansion visibility layer.
        * Zen deliberately hides the desk chrome, but a newly selected
@@ -138,18 +156,19 @@ export function LighterCenter({ zenMode, onOpenZenAssistant }: {
   );
 }
 
-function DeskBody({ desk, theme }: {
+function DeskBody({ desk, theme, zen }: {
   readonly desk: LighterDesk;
   readonly theme: VexTheme;
+  /** Zen's controls while Zen stands, its row's two ends. */
+  readonly zen: ZenControls | null;
 }): JSX.Element {
   const market = desk.market!;
   const { environment, resolution, activeSessionId, approvals } = desk;
   const savedLayout = useLighterAnalysisStore((state) => state.desk.layout);
   const saveDesk = useLighterAnalysisStore((state) => state.saveDesk);
   const [layout, setLayoutState] = useState<LighterLayout>(savedLayout);
-  // Compact desk: the market-depth panel below the chart shares book/trades tabs.
+  // The market depth under the chart: the book and the trades as tabs.
   const [bookTab, setBookTab] = useState<"book" | "trades">("book");
-  const [bookCollapsed, setBookCollapsed] = useState(false);
   const [approvalReopenSignal, setApprovalReopenSignal] = useState(0);
   // A key step or reset commits in the same tick as its change, before React
   // re-renders, so the value to persist has to live outside the closure.
@@ -166,27 +185,21 @@ function DeskBody({ desk, theme }: {
   const resolutionTabsRef = useRef<HTMLDivElement>(null);
   useRevealSelectedTab(resolutionTabsRef, resolution);
   const body = useElementSize(bodyRef);
+  // Five levels a side, four under an 800-high window (the approved plate).
+  const bookRows = deskBookRows(useWindowHeight());
+  const bookHeight = deskBookHeight(bookRows);
 
-  // Shares become pixels against the measured desk, so a resized window or a
-  // folded rail scales every panel together.
-  const pixels = resolveLighterLayout(layout, { width: body.width, height: body.height });
-  const stacked = body.width > 0 && body.width < LIGHTER_STACK_BELOW;
-  const bottomVisible = layout.bottomCollapsed ? LIGHTER_BOTTOM_COLLAPSED : pixels.bottomHeight;
-  const column = body.height - 1 - bottomVisible;
-  const bookTrack = bookCollapsed ? 36 : pixels.bookWidth;
-  // "Review order" stands in the ticket's place: the column grows to the
-  // review's width (where the chart keeps its minimum), then returns to the
-  // saved share once the review closes.
+  // The dock's share becomes pixels against the measured desk, so a resized
+  // window scales it with the desk.
+  const dock = resolveDeskDock(layout, { height: body.height, bookHeight });
+  const bottomVisible = layout.bottomCollapsed ? LIGHTER_BOTTOM_COLLAPSED : dock.bottomHeight;
+  // "Review order" stands in the ticket's place, in the ticket's own column.
   const reviewShowing = useDeskReviewShowing();
-  const ticketTrack = reviewShowing
-    ? reviewTicketWidth({ ticketWidth: pixels.ticketWidth, bookWidth: bookTrack }, body)
-    : pixels.ticketWidth;
-  const compactBookTrack = bookCollapsed ? 36 : pixels.compactBookHeight;
 
-  // A minimum book plus a minimum trades panel outranks the dock: when even the
-  // dock's floor is too much, it folds to its bar, and it reopens once the
-  // space is back. A dock the user reopens meanwhile stays open.
-  const { dockSqueezed } = pixels;
+  // The chart and the book outrank the dock: when even the dock's floor is
+  // too much, it folds to its bar, and it reopens once the space is back. A
+  // dock the user reopens meanwhile stays open.
+  const { dockSqueezed } = dock;
   const autoFolded = useRef(false);
   useEffect(() => {
     if (dockSqueezed && !layoutRef.current.bottomCollapsed) {
@@ -203,72 +216,29 @@ function DeskBody({ desk, theme }: {
     // patch/commit are stable closures over refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dockSqueezed]);
-  // The splitters drag in pixels; what persists is the share of the desk.
-  const bookSplitter = useSplitter({
-    axis: "x",
-    grows: "start",
-    value: pixels.bookWidth,
-    min: LIGHTER_BOOK_COLUMN_MIN,
-    max: pixels.bookMax,
-    defaultValue: Math.round(body.width * LIGHTER_BOOK_COLUMN_DEFAULT_SHARE),
-    label: "Resize the order book column",
-    onChange: (bookWidth) => { if (body.width > 0) patch({ bookShare: bookWidth / body.width }); },
-    onCommit: commit,
-  });
-  const ticketSplitter = useSplitter({
-    axis: "x",
-    grows: "start",
-    value: pixels.ticketWidth,
-    min: LIGHTER_TICKET_MIN,
-    max: pixels.ticketMax,
-    defaultValue: Math.round(body.width * LIGHTER_TICKET_DEFAULT_SHARE),
-    label: "Resize the order ticket column",
-    onChange: (ticketWidth) => { if (body.width > 0) patch({ ticketShare: ticketWidth / body.width }); },
-    onCommit: commit,
-  });
-  const tradesSplitter = useSplitter({
-    axis: "y",
-    grows: "start",
-    value: pixels.tradesHeight,
-    min: LIGHTER_TRADES_MIN,
-    max: pixels.tradesMax,
-    defaultValue: Math.round(column * LIGHTER_TRADES_DEFAULT_SHARE),
-    label: "Resize the trades panel",
-    onChange: (tradesHeight) => { if (column > 0) patch({ tradesShare: tradesHeight / column }); },
-    onCommit: commit,
-  });
+  // The dock's splitter drags in pixels; what persists is its share of the desk.
   const bottomSplitter = useSplitter({
     axis: "y",
     grows: "start",
-    value: pixels.bottomHeight,
+    value: dock.bottomHeight,
     min: LIGHTER_BOTTOM_MIN,
-    max: pixels.bottomMax,
+    max: dock.bottomMax,
     defaultValue: Math.round(body.height * LIGHTER_BOTTOM_DEFAULT_SHARE),
     label: "Resize the account dock",
     onChange: (bottomHeight) => { if (body.height > 0) patch({ bottomShare: bottomHeight / body.height }); },
     onCommit: commit,
   });
-  const compactBookSplitter = useSplitter({
-    axis: "y",
-    grows: "start",
-    value: pixels.compactBookHeight,
-    min: LIGHTER_COMPACT_BOOK_MIN,
-    max: pixels.compactBookMax,
-    defaultValue: Math.round(column * LIGHTER_COMPACT_BOOK_DEFAULT_SHARE),
-    label: "Resize chart and market depth",
-    onChange: (height) => { if (column > 0) patch({ compactBookShare: height / column }); },
-    onCommit: commit,
-  });
-  const resizing = bookSplitter.dragging || ticketSplitter.dragging || tradesSplitter.dragging || bottomSplitter.dragging || compactBookSplitter.dragging;
-  // The desk's own clicks pop as a modal; the agent's proposals stay in chat.
+  const resizing = bottomSplitter.dragging;
+  // The desk's own clicks pop in the ticket's place; the agent's proposals stay in chat.
   const deskApprovals = approvals.filter((summary) => summary.origin === "desk");
   const symbols = marketSymbols(market.symbol, market.marketType);
-  const bookTabs = stacked ? (
+  // Order book | Trades: the depth panel's tabs (the approved plate).
+  const bookTabs = (
     <div className="lit-panel-tabs" role="tablist" aria-label="Book panel">
       <button type="button" role="tab" aria-selected={bookTab === "book"} onClick={() => setBookTab("book")}>Order book</button>
       <button type="button" role="tab" aria-selected={bookTab === "trades"} onClick={() => setBookTab("trades")}>Trades</button>
     </div>
-  ) : undefined;
+  );
 
   return (
     <div
@@ -279,106 +249,116 @@ function DeskBody({ desk, theme }: {
     >
       <div
         className="lit-desk-upper"
-        data-stacked={stacked || undefined}
-        data-book-collapsed={bookCollapsed || undefined}
         data-ticket-review={reviewShowing || undefined}
-        style={stacked
-          ? { gridTemplateColumns: `minmax(0, 1fr) ${ticketTrack}px`, gridTemplateRows: `minmax(0, 1fr) ${compactBookTrack}px` }
-          : { gridTemplateColumns: `minmax(0, 1fr) ${bookTrack}px ${ticketTrack}px` }}
       >
-        <section className="lit-panel lit-chart-panel" aria-label="Price chart">
-          <div className="lit-chart-body">
-            <MarketChart
-              candles={desk.candleStream.candles}
-              status={desk.candleStream.status}
-              symbol={market.symbol}
-              theme={theme}
-              environment={environment}
-              marketId={market.marketId}
-              resolution={resolution}
-              pricePrecision={market.decimals.price}
-              priceMinMove={10 ** -market.decimals.price}
-              snapshotFailed={desk.snapshotQuery.isError || desk.snapshotQuery.data?.ok === false}
-              levels={desk.chartLevels}
-              fills={desk.chartFills}
-              onRetry={() => { void desk.snapshotQuery.refetch(); }}
-              onChooseMarket={() => desk.setMarketPickerOpen(true)}
-              onDragOrder={(price, side) => desk.setPricePick({ key: Date.now(), price, kind: "limit", side })}
-              onPricePick={(price) => desk.setPricePick({ key: Date.now(), price, kind: "limit", source: "chart" })}
-              onLoadOlder={desk.candleStream.loadOlder}
-              historyStatus={desk.candleStream.history}
-              toolbarStart={(
-                <div className="lit-resolution-tabs" role="group" aria-label="Chart interval" ref={resolutionTabsRef}>
-                  {LIGHTER_RESOLUTIONS.map((item) => (
-                    <button
-                      type="button"
-                      key={item}
-                      aria-pressed={resolution === item}
-                      onClick={() => desk.setResolution(item)}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              )}
-              toolbarEnd={(
-                <span className="lit-chart-heading-end">
-                  {/* Live is the market bar's word; the chart only speaks up when its candles lag. */}
-                  {desk.candleStream.status === "live" ? null : (
-                  <span
-                    className="lit-chart-connection"
-                    data-status={desk.candleStream.status}
-                    title={`Trade-price candles · Updated ${formatRetrievedAt(
-                      desk.candleStream.receivedAt
-                      ?? desk.snapshot?.retrievedAt
-                      ?? desk.marketList?.retrievedAt
-                      ?? 0,
-                    )}`}
-                  >
-                    <i aria-hidden="true" />
-                    {streamStatusLabel(desk.candleStream.status)}
-                  </span>
-                  )}
-                </span>
-              )}
-            />
-          </div>
-          <footer className="lit-chart-footer">
-            <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">Charts by TradingView</a>
-          </footer>
-        </section>
-        <div className="lit-book-column" data-tab={stacked ? bookTab : undefined}>
-          {stacked ? <div className="lit-splitter" data-axis="y" {...compactBookSplitter.handleProps} /> : null}
-          <MarketBookPanel
-            preferredView={stacked ? "split" : "stack"}
-            collapsed={bookCollapsed}
-            onToggleCollapse={() => setBookCollapsed((current) => !current)}
-            splitter={stacked || bookCollapsed ? undefined : <div className="lit-splitter" data-axis="x" {...bookSplitter.handleProps} />}
-            heading={bookTabs}
-            book={desk.book}
-            baseSymbol={symbols.base}
-            quoteSymbol={symbols.quote}
-            priceDecimals={market.decimals.price}
-            lastPrice={desk.lastPrice}
-            markPrice={desk.publicMarketStream.stats?.markPrice ?? null}
-            bookStatus={desk.publicMarketStream.bookStatus}
-            onPriceSelect={(price, kind) => desk.setPricePick({ key: Date.now(), price, kind })}
-          />
-          <div className="lit-trades-slot" style={stacked ? undefined : { height: pixels.tradesHeight }}>
-            <TradesPanel
-              // Remount per market so the new market's history is not flashed as "new".
-              key={`${environment}:${market.marketId}`}
-              splitter={stacked ? undefined : <div className="lit-splitter" data-axis="y" {...tradesSplitter.handleProps} />}
+        <div className="lit-desk-main" style={{ gridTemplateRows: `minmax(0, 1fr) ${bookHeight}px` }}>
+          <section className="lit-panel lit-chart-panel" aria-label="Price chart">
+            <div className="lit-chart-body">
+              <MarketChart
+                candles={desk.candleStream.candles}
+                status={desk.candleStream.status}
+                symbol={market.symbol}
+                theme={theme}
+                environment={environment}
+                marketId={market.marketId}
+                resolution={resolution}
+                pricePrecision={market.decimals.price}
+                priceMinMove={10 ** -market.decimals.price}
+                snapshotFailed={desk.snapshotQuery.isError || desk.snapshotQuery.data?.ok === false}
+                levels={desk.chartLevels}
+                fills={desk.chartFills}
+                onRetry={() => { void desk.snapshotQuery.refetch(); }}
+                onChooseMarket={() => desk.setMarketPickerOpen(true)}
+                onDragOrder={(price, side) => desk.setPricePick({ key: Date.now(), price, kind: "limit", side })}
+                onPricePick={(price) => desk.setPricePick({ key: Date.now(), price, kind: "limit", source: "chart" })}
+                onLoadOlder={desk.candleStream.loadOlder}
+                historyStatus={desk.candleStream.history}
+                toolbarStart={(
+                  <>
+                    {/* Zen's row leads with the market and its price
+                      * (`ZenRow.tsx`); the desk has them in its market bar. */}
+                    {zen === null ? null : (
+                      <ZenRowStart
+                        environment={environment}
+                        market={market}
+                        snapshot={desk.snapshot}
+                        liveStats={desk.publicMarketStream.stats}
+                        pickerOpen={desk.marketPickerOpen}
+                        onOpenPicker={() => desk.setMarketPickerOpen((current) => !current)}
+                      />
+                    )}
+                    <div className="lit-resolution-tabs" role="group" aria-label="Chart interval" ref={resolutionTabsRef}>
+                      {LIGHTER_RESOLUTIONS.map((item) => (
+                        <button
+                          type="button"
+                          key={item}
+                          aria-pressed={resolution === item}
+                          onClick={() => desk.setResolution(item)}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                toolbarEnd={(
+                  <>
+                    <span className="lit-chart-heading-end">
+                      {/* Live is the market bar's word; the chart only speaks up when its candles lag. */}
+                      {desk.candleStream.status === "live" ? null : (
+                        <span
+                          className="lit-chart-connection"
+                          data-status={desk.candleStream.status}
+                          title={`Trade-price candles · Updated ${formatRetrievedAt(
+                            desk.candleStream.receivedAt
+                            ?? desk.snapshot?.retrievedAt
+                            ?? desk.marketList?.retrievedAt
+                            ?? 0,
+                          )}`}
+                        >
+                          <i aria-hidden="true" />
+                          {streamStatusLabel(desk.candleStream.status)}
+                        </span>
+                      )}
+                    </span>
+                    {/* Zen's row ends in Ask Vex, its fold key and Exit Zen. */}
+                    {zen === null ? null : <ZenRowEnd zen={zen} />}
+                  </>
+                )}
+              />
+            </div>
+            <footer className="lit-chart-footer">
+              <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">Charts by TradingView</a>
+            </footer>
+          </section>
+          <div className="lit-book-column" data-tab={bookTab} data-book-rows={bookRows}>
+            <MarketBookPanel
+              preferredView="split"
+              chooseView={false}
               heading={bookTabs}
-              trades={desk.publicMarketStream.trades}
+              book={desk.book}
               baseSymbol={symbols.base}
-              tradesStatus={desk.publicMarketStream.tradesStatus}
+              quoteSymbol={symbols.quote}
+              priceDecimals={market.decimals.price}
+              lastPrice={desk.lastPrice}
+              markPrice={desk.publicMarketStream.stats?.markPrice ?? null}
+              bookStatus={desk.publicMarketStream.bookStatus}
               onPriceSelect={(price, kind) => desk.setPricePick({ key: Date.now(), price, kind })}
             />
+            <div className="lit-trades-slot">
+              <TradesPanel
+                // Remount per market so the new market's history is not flashed as "new".
+                key={`${environment}:${market.marketId}`}
+                heading={bookTabs}
+                trades={desk.publicMarketStream.trades}
+                baseSymbol={symbols.base}
+                tradesStatus={desk.publicMarketStream.tradesStatus}
+                onPriceSelect={(price, kind) => desk.setPricePick({ key: Date.now(), price, kind })}
+              />
+            </div>
           </div>
         </div>
         <div className="lit-ticket-column">
-          <div className="lit-splitter" data-axis="x" {...ticketSplitter.handleProps} />
           <section
             className="lit-panel lit-ticket-panel"
             aria-label="Order ticket"
@@ -459,6 +439,17 @@ function DeskBody({ desk, theme }: {
       )}
     </div>
   );
+}
+
+/** The window's height, for the book's levels a side. */
+function useWindowHeight(): number {
+  const [height, setHeight] = useState(() => (typeof window === "undefined" ? 0 : window.innerHeight));
+  useEffect(() => {
+    const onResize = (): void => setHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return height;
 }
 
 /** The interval strip scrolls when narrow; the selected interval must never sit out of view. */
