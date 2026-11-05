@@ -30,8 +30,8 @@
  * slides in from translate3d(-100%) over 720ms and back over 420ms, on the
  * push curve; the scrim fades over 600ms in and 300ms out; its first rows
  * enter from 16px left over 620ms, row n after 120 + 45n ms. Transform and
- * opacity only, so nothing in the layout moves. Reduced motion and Save-Data
- * land it at once.
+ * opacity only, so nothing in the layout moves. Reduced motion, Save-Data
+ * and a window being resized land it at once.
  */
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type JSX } from "react";
@@ -50,6 +50,7 @@ import {
   cssCurve,
 } from "../../lib/motion/index.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
+import { isWindowResizing } from "../../lib/wide-zoom.js";
 import { useUiStore } from "../../stores/uiStore.js";
 import { SessionDeleteDialog } from "./SessionDeleteDialog.js";
 import {
@@ -165,7 +166,7 @@ export function ChatsPanel({ open, focus, covers, onClose }: ChatsPanelProps): J
         for (const animation of node.getAnimations()) animation.cancel();
       }
     }
-    if (!animated || prefersStillFrame()) {
+    if (!animated || prefersStillFrame() || isWindowResizing()) {
       setClosing(false);
       return undefined;
     }

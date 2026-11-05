@@ -397,6 +397,7 @@ These replace R3's tokens and its guard contracts: the 23 primitives and both th
 | Save-Data | at once | desktop's still-frame rule (`lib/motion/use-still-frame.ts`), as for K2 |
 | a page's re-lay | the page fades from 0.4 over 720ms opening and 420ms closing on the house curve, cubic-bezier(0.625, 0.05, 0, 1); her column wipes in on the push curve | VEX Cloud's EC-26 (section 1.9) |
 | the grid's tracks | never | VEX Cloud's EC-26: a track that slid would carry a waiting card (section 3.6) |
+| while the window is resized | every transition held still, Web Animations land at once, during the drag and for 220ms after its last resize (`data-vex-resizing` on <html>, `lib/wide-zoom.ts`) | VEX Cloud's motion contract, section 3 rule 6 |
 
 The strip plates print the section's clip inset at 120, 240 and 480ms while opening and at 120 and 240ms while closing. The closed inset is 507 (563 less the 56 strip). cubic-bezier(0.22, 1, 0.36, 1) reproduces all five values to the printed digits. The review sheet's own `--ease`, cubic-bezier(0.625, 0.05, 0, 1), does not:
 

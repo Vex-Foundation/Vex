@@ -76,6 +76,18 @@ describe("relayPage", () => {
     expect(new Set(properties)).toEqual(new Set(["opacity", "clipPath"]));
   });
 
+  it("lands at once while the window is being resized (data-vex-resizing)", () => {
+    document.documentElement.setAttribute("data-vex-resizing", "");
+    try {
+      const page = fakeElement();
+      const column = fakeElement();
+      expect(relayPage(page.el, column.el, true)).toEqual([]);
+      expect(page.calls).toEqual([]);
+    } finally {
+      document.documentElement.removeAttribute("data-vex-resizing");
+    }
+  });
+
   it("lands at once under the still frame (reduced motion or Save-Data)", () => {
     setSaveData(true);
     const page = fakeElement();

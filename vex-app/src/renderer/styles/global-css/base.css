@@ -141,3 +141,16 @@ html[data-still] *:not([data-vex-motion-opacity])::after {
   scroll-behavior: auto !important;
 }
 
+/* WHILE THE WINDOW IS RESIZED (VEX Cloud's motion contract, section 3 rule
+ * 6; MOTION-POLICY.md "Reduced motion"): `data-vex-resizing` stands on
+ * <html> while the window is dragged and for 220ms after its last resize
+ * (`lib/wide-zoom.ts`), and every transition is held still meanwhile, so
+ * nothing trails the layout as it follows the window: a hover fill, her
+ * section's clip, a key's chevron. Keyframe loops keep their own time. */
+html[data-vex-resizing] *,
+html[data-vex-resizing] *::before,
+html[data-vex-resizing] *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+

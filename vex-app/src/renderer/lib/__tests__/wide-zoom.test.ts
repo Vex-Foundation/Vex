@@ -4,11 +4,22 @@
  * `<html>` as `--vex-zoom` while the window resizes.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
-import { ZOOM_BASE_WIDTH, ZOOM_MAX, ZOOM_PROPERTY, startWideZoom, wideZoomFor } from "../wide-zoom.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  RESIZE_SETTLE_MS,
+  RESIZING_ATTRIBUTE,
+  ZOOM_BASE_WIDTH,
+  ZOOM_MAX,
+  ZOOM_PROPERTY,
+  isWindowResizing,
+  startWideZoom,
+  wideZoomFor,
+} from "../wide-zoom.js";
 
 afterEach(() => {
   document.documentElement.style.removeProperty(ZOOM_PROPERTY);
+  document.documentElement.removeAttribute(RESIZING_ATTRIBUTE);
+  vi.useRealTimers();
 });
 
 describe("wideZoomFor", () => {
@@ -52,5 +63,26 @@ describe("startWideZoom", () => {
     } finally {
       setWidth(was);
     }
+  });
+});
+
+describe("the resize freeze", () => {
+  it("marks <html> while the window is resized and for 220ms after the last resize", () => {
+    vi.useFakeTimers();
+    expect([RESIZING_ATTRIBUTE, RESIZE_SETTLE_MS]).toEqual(["data-vex-resizing", 220]);
+    const stop = startWideZoom(window);
+    expect(isWindowResizing()).toBe(false);
+    window.dispatchEvent(new Event("resize"));
+    expect(isWindowResizing()).toBe(true);
+    vi.advanceTimersByTime(200);
+    window.dispatchEvent(new Event("resize"));
+    vi.advanceTimersByTime(200);
+    // 200ms after the second resize: still settling.
+    expect(isWindowResizing()).toBe(true);
+    vi.advanceTimersByTime(20);
+    expect(isWindowResizing()).toBe(false);
+    window.dispatchEvent(new Event("resize"));
+    stop();
+    expect(isWindowResizing()).toBe(false);
   });
 });

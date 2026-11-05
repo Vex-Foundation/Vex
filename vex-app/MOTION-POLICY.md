@@ -159,6 +159,14 @@ every movement and leaves at most an opacity change. Its holders are the
 toasts (their exit fade stays a fade) and the pre-shell stage plate with the
 handoff turn (the stage and the shell crossfade over a fixed 240ms linear).
 
+**While the window is resized** (VEX Cloud's motion contract, section 3 rule
+6): `data-vex-resizing` stands on `<html>` while the window is dragged and for
+220ms after its last resize event (`RESIZE_SETTLE_MS`, `lib/wide-zoom.ts`),
+`base.css` holds every transition still meanwhile, and the Web Animations
+owners (the chats panel, a page's re-lay) read `isWindowResizing()` and land
+at once, so nothing trails the layout as it follows the window. Keyframe loops
+keep their own time.
+
 What reduced motion means across R3 (`docs/design/R3-MINIMAL.md` section 11),
 and where each part is stated:
 

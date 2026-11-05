@@ -11,8 +11,8 @@
  * moves after the press. It is a person's press only, never a cue, and never
  * where a money card can wait (a table page holds none).
  *
- * Reduced motion and Save-Data land it at once. Without Web Animations
- * (jsdom) nothing runs.
+ * Reduced motion, Save-Data and a window being resized land it at once.
+ * Without Web Animations (jsdom) nothing runs.
  */
 
 import {
@@ -23,6 +23,7 @@ import {
   cssCurve,
 } from "../../lib/motion/index.js";
 import { prefersStillFrame } from "../../lib/motion/use-still-frame.js";
+import { isWindowResizing } from "../../lib/wide-zoom.js";
 
 /** The opacity a re-laid page starts its fade from (Cloud's 0.4). */
 export const PAGE_RELAY_FROM_OPACITY = 0.4;
@@ -32,7 +33,9 @@ export const PAGE_RELAY_FROM_OPACITY = 0.4;
  * when she opens, her column. Returns the animations it started.
  */
 export function relayPage(page: HTMLElement | null, column: HTMLElement | null, open: boolean): readonly Animation[] {
-  if (page === null || typeof page.animate !== "function" || prefersStillFrame()) return [];
+  if (page === null || typeof page.animate !== "function" || prefersStillFrame() || isWindowResizing()) {
+    return [];
+  }
   const duration = open ? DURATION_VEX_OPEN_MS : DURATION_VEX_CLOSE_MS;
   const started = [
     page.animate([{ opacity: PAGE_RELAY_FROM_OPACITY }, { opacity: 1 }], {

@@ -302,6 +302,13 @@ describe("cross-file timing invariants", () => {
     expect(stripComments(shellCss)).not.toMatch(/vex-sidebar-(fading|rail-in)|@keyframes vex-rail/);
   });
 
+  it("holds every transition still while the window is resized (Cloud's resize freeze)", () => {
+    const baseCss = read("base.css");
+    expect(stripComments(baseCss)).toMatch(
+      /html\[data-vex-resizing\] \*,\s*html\[data-vex-resizing\] \*::before,\s*html\[data-vex-resizing\] \*::after \{\s*transition-duration: 0s !important;\s*transition-delay: 0s !important;\s*\}/,
+    );
+  });
+
   it("never animates a track in H3's frame (EC-26: a sliding track would carry a waiting card)", () => {
     const rule = /\.vex-shell-frame\[data-vex-frame="h3"\] \{\s*transition: none;\s*\}/;
     expect(stripComments(shellCss)).toMatch(rule);
